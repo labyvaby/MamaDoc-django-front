@@ -31,6 +31,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { SettingsLayout } from "./SettingsLayout";
 import { getSpecializations, type DjangoSpecialization } from "../../api/staff";
+import { getServices } from "../../api/catalog";
 import { parseBackendError } from "../../api/expenses";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
@@ -44,6 +45,15 @@ import {
   type ConclusionFormTemplate,
 } from "../../api/conclusionForms";
 import { FormBuilderDialog } from "../../components/conclusion-forms/FormBuilderDialog";
+import { DefaultFormRules } from "../../components/conclusion-forms/DefaultFormRules";
+import { updateOrganization } from "../../api/organization";
+import { useCanChecker } from "../../hooks/useCan";
+import { retryAuth } from "../../hooks/usePermissions";
+import {
+  buildConclusionFormDefaultsThemeConfig,
+  readConclusionFormDefaults,
+  type ConclusionFormDefaultRule,
+} from "../../api/conclusionFormDefaults";
 
 /**
  * Настройки → Бланки заключений.
@@ -62,7 +72,12 @@ const PAGE_LABEL: Record<string, string> = {
 
 const ConclusionFormsSettingsPage: React.FC = () => {
   usePageTitle("Бланки заключений");
-  const { activeOrganization, loading: permLoading } = usePermissions();
+  const {
+    activeOrganization,
+    activeMembership,
+    activeBranch,
+    loading: permLoading,
+  } = usePermissions();
   const orgId = useApiOrgId();
   const queryClient = useQueryClient();
 
@@ -72,6 +87,52 @@ const ConclusionFormsSettingsPage: React.FC = () => {
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = React.useState<ConclusionFormTemplate | null>(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
+
+  // ── Бланк по умолчанию ─────────────────────────────────────────────────────
+  // Правила лежат в themeConfig организации (см. api/conclusionFormDefaults):
+  // поля на модели бланка бэк не имеет, тикет отправлен. Локальная копия нужна,
+  // чтобы список не «прыгал» до перечитывания /auth/me/ после сохранения.
+  const { can } = useCanChecker();
+  const canEditDefaults = can("organization.update");
+  const [rules, setRules] = React.useState<ConclusionFormDefaultRule[]>(() =>
+    readConclusionFormDefaults(activeOrganization?.themeConfig),
+  );
+  const [rulesSaving, setRulesSaving] = React.useState(false);
+  const [rulesError, setRulesError] = React.useState<string | null>(null);
+  // Организация приходит асинхронно (и меняется при переключении контекста) —
+  // подхватываем её правила, пока пользователь их не правил.
+  const themeConfigKey = JSON.stringify(
+    readConclusionFormDefaults(activeOrganization?.themeConfig),
+  );
+  React.useEffect(() => {
+    setRules(JSON.parse(themeConfigKey) as ConclusionFormDefaultRule[]);
+  }, [themeConfigKey]);
+
+  const handleRulesChange = async (next: ConclusionFormDefaultRule[]) => {
+    if (!activeOrganization) return;
+    const previous = rules;
+    setRules(next); // оптимистично: правило добавляется одним кликом
+    setRulesSaving(true);
+    setRulesError(null);
+    try {
+      await updateOrganization(activeOrganization.id, {
+        // ⚠ Патч строго поверх текущего themeConfig: там же палитра CRM,
+        // лендинг `/site` и терминология организации.
+        themeConfig: buildConclusionFormDefaultsThemeConfig(
+          activeOrganization.themeConfig,
+          next,
+        ),
+      });
+      // /auth/me/ — источник themeConfig для всего приложения, включая дровер
+      // заключения, который и подставляет бланк.
+      retryAuth();
+    } catch (e) {
+      setRules(previous);
+      setRulesError(parseBackendError(e));
+    } finally {
+      setRulesSaving(false);
+    }
+  };
 
   const formsQuery = useQuery({
     queryKey: djangoQueryKeys.conclusionForms.list(orgId ?? null),
@@ -86,6 +147,19 @@ const ConclusionFormsSettingsPage: React.FC = () => {
   const specsQuery = useQuery({
     queryKey: djangoQueryKeys.staff.specializations(orgId ?? null),
     queryFn: ({ signal }) => getSpecializations(signal),
+    enabled: !permLoading,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+    retry: (count, err) => {
+      if ([403, 429].includes((err as ApiError)?.status)) return false;
+      return count < 1;
+    },
+  });
+
+  // Услуги нужны только секции «Бланк по умолчанию»: правило привязывает бланк
+  // к услуге строки заключения (см. api/conclusionFormDefaults).
+  const servicesQuery = useQuery({
+    queryKey: djangoQueryKeys.catalog.services({ orgId: orgId ?? null }),
+    queryFn: ({ signal }) => getServices({ organizationId: orgId ?? undefined }, undefined, signal),
     enabled: !permLoading,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     retry: (count, err) => {
@@ -182,6 +256,21 @@ const ConclusionFormsSettingsPage: React.FC = () => {
 
         {formsQuery.error && (
           <Alert severity="error">{parseBackendError(formsQuery.error)}</Alert>
+        )}
+
+        {/* Правила подстановки — до таблицы: это то, что настраивают после
+            сборки бланков, и в конце длинного списка секция бы не нашлась. */}
+        {!formsQuery.isLoading && forms.length > 0 && (
+          <DefaultFormRules
+            forms={forms.filter((form) => form.isActive)}
+            services={servicesQuery.data ?? []}
+            branches={activeMembership?.branches ?? (activeBranch ? [activeBranch] : [])}
+            rules={rules}
+            canEdit={canEditDefaults}
+            saving={rulesSaving}
+            error={rulesError}
+            onChange={handleRulesChange}
+          />
         )}
 
         {formsQuery.isLoading ? (

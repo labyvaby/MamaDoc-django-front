@@ -20,6 +20,7 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -38,17 +39,19 @@ import {
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import ExpandLessOutlined from "@mui/icons-material/ExpandLessOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import AddPhotoAlternateOutlined from "@mui/icons-material/AddPhotoAlternateOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
-import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import StarBorderOutlined from "@mui/icons-material/StarBorderOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import ArticleOutlined from "@mui/icons-material/ArticleOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { useNotification } from "@refinedev/core";
+import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
 import { useFormValidation } from "../../hooks/useFormValidation";
@@ -63,8 +66,24 @@ import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
 import { tt } from "../../i18n/t";
 import { agree } from "../../i18n/formatters";
-import { FillFormDialog } from "../../components/conclusion-forms/FillFormDialog";
-import type { FormTarget } from "../../api/conclusionForms";
+import { ConclusionFormInline } from "../../components/conclusion-forms/ConclusionFormInline";
+import type { SheetContext } from "../../components/conclusion-forms/FormSheet";
+import { generateFormSheetPdf } from "../../components/conclusion-forms/printFormSheet";
+import { loadDjangoPrintData } from "../print/djangoPrintData";
+import {
+  getConclusionForms,
+  renderFilledForm,
+  type ConclusionFormTemplate,
+  type FormFieldSlot,
+  type FormTarget,
+} from "../../api/conclusionForms";
+import {
+  readConclusionFormDefaults,
+  resolveDefaultFormId,
+} from "../../api/conclusionFormDefaults";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { usePermissions } from "../../hooks/usePermissions";
+import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 
 import {
   upsertConclusion,
@@ -136,7 +155,30 @@ type ConclusionDraftBody = {
   temperature: string;
   internalComment: string;
   status: ConclusionStatus;
+  /**
+   * Прикреплённый бланк и значения его полей.
+   *
+   * ⚠ Живут только в локальном черновике: у заключения на бэке поля под них
+   * нет (`formData` запрошен тикетом backend_ticket_conclusion_form_data.md).
+   * Поэтому до сохранения врач может закрыть дровер и вернуться к своим полям,
+   * а после сохранения на сервере остаётся собранный текст — при повторном
+   * открытии бланк не прикреплён. Разбирать текст обратно в поля не пытаемся:
+   * на любой ручной правке такой разбор врёт.
+   *
+   * ⚠ Когда `formData` появится, привязки полей (`slot`) нужно читать из
+   * снапшота бланка внутри самого заключения, а не из текущего бланка:
+   * администратор мог переназначить слот позже, и тогда старое заключение
+   * записало бы значение в чужую колонку.
+   */
+  formId?: number | null;
+  formValues?: Record<string, string>;
+  /** Свободный хвост бланка (см. manualText в компоненте). */
+  formManual?: string;
 };
+
+/** Поле формы, в которое бланк собирает свой текст. */
+const targetField = (target: FormTarget): keyof ConclusionDraftBody =>
+  target === "anamnesis" ? "anamnesis" : target === "objective" ? "objective" : "conclusionText";
 
 type ConclusionDraft = ConclusionDraftBody & { savedAt: string };
 
@@ -400,7 +442,22 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [tplName, setTplName] = React.useState("");
   const [tplBusy, setTplBusy] = React.useState(false);
   // Бланки: конструктор печатных форм (Настройки → Бланки заключений).
-  const [fillFormOpen, setFillFormOpen] = React.useState(false);
+  // Прикреплённый бланк и значения его полей — поля стоят прямо в дровере, а
+  // целевое текстовое поле собирается из них (см. ConclusionFormInline).
+  const [formId, setFormId] = React.useState<number | null>(null);
+  const [formValues, setFormValues] = React.useState<Record<string, string>>({});
+  /**
+   * Свободный хвост бланка: вывод и рекомендации, которых в строках нет.
+   * Держим отдельно от собранного текста — иначе его пришлось бы вырезать из
+   * проекции при каждой правке значений.
+   */
+  const [manualText, setManualText] = React.useState("");
+  /** Итог, собранный бланком, по умолчанию свёрнут: он дублирует поля выше. */
+  const [projectionOpen, setProjectionOpen] = React.useState(false);
+  const [formPrinting, setFormPrinting] = React.useState(false);
+  const [formPrintError, setFormPrintError] = React.useState<string | null>(null);
+  /** Черновик принёс свой выбор бланка — дефолт его не перебивает. */
+  const restoredWithFormRef = React.useRef(false);
   const [weightKg, setWeightKg] = React.useState("");
   const [heightCm, setHeightCm] = React.useState("");
   const [temperature, setTemperature] = React.useState("");
@@ -411,6 +468,16 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
   const readOnly = !canEdit;
+
+  /**
+   * Блок-подсказку «жалобы при регистрации» показываем только когда врач
+   * изменил перенесённый текст. Пока текст совпадает слово в слово, блок
+   * дублировал бы поле ниже; как только врач переписал жалобы по-своему,
+   * первичная запись снова становится полезной — видно, с чем пришёл пациент.
+   */
+  const patientComplaintsText = (patientComplaints ?? "").trim();
+  const showPatientComplaints =
+    patientComplaintsText.length > 0 && patientComplaintsText !== complaints.trim();
 
   // Локальный черновик: hydratedRef — форма заполнена (можно писать черновик),
   // baselineRef — снимок формы на момент открытия (не пишем, пока нет правок),
@@ -434,6 +501,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     setTemperature(body.temperature ?? "");
     setInternalComment(body.internalComment ?? "");
     setStatus(body.status ?? "draft");
+    setFormId(body.formId ?? null);
+    setFormValues(body.formValues ?? {});
+    setManualText(body.formManual ?? "");
   };
 
   // Ключ гидратации. Пересобирать форму нужно при открытии, смене строки услуги,
@@ -496,6 +566,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       applyDraftBody(body);
       baselineRef.current = JSON.stringify(body);
       hydratedRef.current = true;
+      // Черновик несёт свой выбор бланка (в том числе сознательное «без
+      // бланка») — дефолт по правилам его не перебивает.
+      restoredWithFormRef.current = true;
       if (!draftNotifiedRef.current) {
         draftNotifiedRef.current = true;
         notify?.({
@@ -535,9 +608,19 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           temperature: trimDecimalInput(conclusion.temperature),
           internalComment: conclusion.internalComment ?? "",
           status: conclusion.status ?? "draft",
+          // Сохранённое заключение хранит только собранный текст: значений
+          // полей бланка на бэке пока негде держать (см. ConclusionDraftBody).
+          formId: null,
+          formValues: {},
+          formManual: "",
         }
       : {
-          complaints: "",
+          // Жалобы, записанные при регистрации, переносим в поле сразу: врач
+          // перепечатывал их руками с блока-подсказки выше, хотя это тот же
+          // текст. Дальше поле его — правки и стирание остаются как есть, и
+          // перенос в baseline попадает вместе со всем телом, поэтому просто
+          // открытое заключение по-прежнему не создаёт черновик.
+          complaints: patientComplaints?.trim() ? patientComplaints : "",
           anamnesis: "",
           objective: "",
           conclusionText: "",
@@ -548,12 +631,431 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           temperature: "",
           internalComment: "",
           status: "draft",
+          // Бланк прикрепляется отдельным эффектом ниже: список бланков
+          // приходит с сервера позже гидратации.
+          formId: null,
+          formValues: {},
+          formManual: "",
         };
     applyDraftBody(body);
     baselineRef.current = JSON.stringify(body);
     hydratedRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrationKey]);
+
+  // ── бланк по умолчанию для НОВОГО заключения ──────────────────────────────
+  // Заполненный бланк и есть тело заключения, поэтому у нового заключения он
+  // должен быть уже раскрыт: врач дописывает значения по строкам протокола, а
+  // не начинает с пустого поля и не ищет нужный бланк в списке.
+  //
+  // Какой именно бланк — решают правила «филиал × услуга» из настроек
+  // (api/conclusionFormDefaults): заключение привязано к строке услуги, и это
+  // единственный ключ, который на живых данных заполнен — специализацию
+  // сотруднику PATCH-ем не назначить. Филиал берём из сессии, а не из приёма:
+  // врач работает в филиале, куда переключён, и печатает на его форме.
+  const defaultsOrgId = useApiOrgId();
+  const { activeOrganization, activeBranch } = usePermissions();
+  const defaultRules = React.useMemo(
+    () => readConclusionFormDefaults(activeOrganization?.themeConfig),
+    [activeOrganization],
+  );
+  // Бланки нужны и для подстановки, и для селекта в секции полей, поэтому
+  // грузим их всегда, пока дровер открыт на правку.
+  const formsEnabled = open && !readOnly;
+
+  const formsQuery = useQuery({
+    queryKey: djangoQueryKeys.conclusionForms.list(defaultsOrgId ?? null),
+    queryFn: ({ signal }) => getConclusionForms(defaultsOrgId, signal),
+    enabled: formsEnabled,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+    retry: false,
+  });
+  // useMemo, а не `?? []`: новый пустой массив на каждом рендере пересчитывал
+  // бы мемо ниже и дёргал эффекты секции бланка.
+  const availableForms = React.useMemo(() => formsQuery.data ?? [], [formsQuery.data]);
+
+  /** Бланк, положенный правилами именно этому заключению. */
+  const defaultForm: ConclusionFormTemplate | null = React.useMemo(() => {
+    if (!formsEnabled || conclusion || defaultRules.length === 0) return null;
+    if (availableForms.length === 0) return null;
+    const id = resolveDefaultFormId(defaultRules, {
+      branchId: activeBranch?.id ?? null,
+      serviceId: serviceId ?? null,
+    });
+    // Бланк могли выключить или удалить после того, как правило записали:
+    // getConclusionForms без includeInactive неактивные уже не отдаёт.
+    return availableForms.find((form) => form.id === id) ?? null;
+  }, [formsEnabled, conclusion, defaultRules, availableForms, activeBranch, serviceId]);
+
+  const attachedForm = React.useMemo(
+    () => availableForms.find((form) => form.id === formId) ?? null,
+    [availableForms, formId],
+  );
+
+  /** Значения по умолчанию бланка — то, что уже стоит в его строках как норма. */
+  const formDefaults = React.useCallback(
+    (form: ConclusionFormTemplate) =>
+      Object.fromEntries(form.fields.map((field) => [field.id, field.defaultValue ?? ""])),
+    [],
+  );
+
+  // Прикрепление дефолтного бланка. Ждём гидратацию: иначе поля легли бы в
+  // форму до того, как её перезапишет пустое тело нового заключения.
+  const attachedForLineRef = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    if (!defaultForm || !hydratedRef.current) return;
+    if (attachedForLineRef.current === serviceLineId) return;
+    attachedForLineRef.current = serviceLineId;
+    // Восстановленный черновик уже несёт свой бланк (или сознательно ни один)
+    // — не перебиваем его дефолтом.
+    if (formId != null || restoredWithFormRef.current) return;
+
+    const defaults = formDefaults(defaultForm);
+    setFormId(defaultForm.id);
+    setFormValues(defaults);
+
+    // Прикрепление и нормы — не правка врача: без этого автосейв счёл бы их
+    // изменением и создавал черновик на каждом просто открытом заключении.
+    try {
+      const baseline = JSON.parse(baselineRef.current) as ConclusionDraftBody;
+      baselineRef.current = JSON.stringify({
+        ...baseline,
+        formId: defaultForm.id,
+        formValues: defaults,
+        [targetField(defaultForm.target)]: renderFilledForm(defaultForm, defaults),
+      });
+    } catch {
+      /* baseline ещё не собран — следующая гидратация его перезапишет */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultForm, serviceLineId, hydrationKey]);
+
+  // Закрыли дровер — метку снимаем: следующее открытие снова подставит бланк.
+  React.useEffect(() => {
+    if (!open) {
+      attachedForLineRef.current = null;
+      restoredWithFormRef.current = false;
+    }
+  }, [open]);
+
+  /**
+   * Целевое поле — проекция значений бланка, а не свободный текст: пока бланк
+   * прикреплён, поле собирается заново на каждое изменение и руками не
+   * правится (иначе правку пришлось бы разбирать обратно в поля — а разбор
+   * текста врёт на любой вольности врача).
+   */
+  React.useEffect(() => {
+    if (!attachedForm || readOnly) return;
+    // Привязанные к колонкам поля renderFilledForm пропускает сам — в тексте
+    // они задвоились бы с собственной колонкой. Хвост дописываем последним.
+    const body = renderFilledForm(attachedForm, formValues);
+    const tail = manualText.trim();
+    const text = [body, tail].filter(Boolean).join("\n\n");
+    if (attachedForm.target === "anamnesis") setAnamnesis(text);
+    else if (attachedForm.target === "objective") setObjective(text);
+    else setConclusionText(text);
+  }, [attachedForm, formValues, manualText, readOnly]);
+
+  /** Колонки заключения, которыми управляет прикреплённый бланк. */
+  const attachedSlots = React.useMemo(() => {
+    const set = new Set<FormFieldSlot>();
+    for (const field of attachedForm?.fields ?? []) if (field.slot) set.add(field.slot);
+    return set;
+  }, [attachedForm]);
+
+  // ── штатные поля как узлы ─────────────────────────────────────────────────
+  // Одно и то же поле рисуется либо на своём обычном месте, либо в потоке
+  // полей бланка — если администратор привязал к нему строку протокола.
+  // Поэтому разметка каждого такого поля живёт в одном месте, а решение «где»
+  // принимается ниже (slotFree / slotNodes).
+  type VitalKind = "heightCm" | "weightKg" | "temperature";
+
+  const VITAL_PROPS: Record<
+    VitalKind,
+    { label: string; suffix: string; step: number; min: number; max: number; decimals: number }
+  > = {
+    // Нижние границы совпадают с validateVitals: иначе минус доводил поле до 0
+    // и сохранение падало на «от 1 до 999».
+    heightCm: {
+      label: t("conclusion.height"),
+      suffix: t("conclusion.heightUnit"),
+      step: 1,
+      min: 1,
+      max: 999,
+      decimals: HEIGHT_DECIMALS,
+    },
+    // Педиатрия: вес младенца меняется десятыми долями килограмма, а хранится
+    // с точностью до грамма (3.456 кг).
+    weightKg: {
+      label: t("conclusion.weight"),
+      suffix: t("conclusion.weightUnit"),
+      step: 0.1,
+      min: 1,
+      max: 999,
+      decimals: WEIGHT_DECIMALS,
+    },
+    temperature: {
+      label: t("conclusion.temperature"),
+      suffix: "°C",
+      step: 0.1,
+      min: 34,
+      max: 42,
+      decimals: TEMPERATURE_DECIMALS,
+    },
+  };
+
+  const VITAL_STATE: Record<VitalKind, { value: string; onChange: (v: string) => void }> = {
+    heightCm: { value: heightCm, onChange: setHeightCm },
+    weightKg: { value: weightKg, onChange: setWeightKg },
+    temperature: { value: temperature, onChange: setTemperature },
+  };
+
+  const vitalNode = (kind: VitalKind) => {
+    const props = VITAL_PROPS[kind];
+    const state = VITAL_STATE[kind];
+    return (
+      <VitalStepper
+        label={props.label}
+        suffix={props.suffix}
+        value={state.value}
+        onChange={state.onChange}
+        step={props.step}
+        min={props.min}
+        max={props.max}
+        decimalPlaces={props.decimals}
+        disabled={readOnly}
+      />
+    );
+  };
+
+  /** Подписи целевых полей — те же слова, что видит врач в форме. */
+  const TARGET_LABELS: Record<FormTarget, string> = {
+    conclusion: t("conclusion.conclusionRequired"),
+    anamnesis: t("conclusion.anamnesis"),
+    objective: t("conclusion.objectively"),
+  };
+
+  /**
+   * Итог бланка — не поле ввода, а результат: сворачиваемый блок вместо
+   * заблокированной копии текста.
+   *
+   * Read-only поле на том же месте дублировало строки, введённые парой
+   * сантиметров выше, занимало треть высоты дровера и выглядело сломанным —
+   * первое, что делает врач, это пробует в него написать. Посмотреть, что
+   * уйдёт в карту и в печать, всё равно нужно, поэтому блок раскрывается
+   * одним нажатием.
+   */
+  const projectionNode = (label: string, text: string, error: string | null) => (
+    <Stack spacing={0.5}>
+      <Button
+        size="small"
+        color="inherit"
+        onClick={() => setProjectionOpen((prev) => !prev)}
+        endIcon={projectionOpen ? <ExpandLessOutlined /> : <ExpandMoreOutlined />}
+        sx={{ alignSelf: "flex-start", color: "text.secondary", fontWeight: 600 }}
+      >
+        Что уйдёт в «{label}»
+      </Button>
+      <Collapse in={projectionOpen} unmountOnExit>
+        <Paper variant="outlined" sx={{ p: 1.5 }}>
+          <Typography
+            variant="body2"
+            color={text.trim() ? "text.primary" : "text.disabled"}
+            sx={{ whiteSpace: "pre-wrap" }}
+          >
+            {text.trim() || "Пока пусто — заполните строки бланка."}
+          </Typography>
+        </Paper>
+      </Collapse>
+      {error && <Alert severity="error">{error}</Alert>}
+    </Stack>
+  );
+
+  /** Текстовое поле заключения одним узлом: подпись + поле. */
+  const textFieldNode = (
+    label: string,
+    value: string,
+    onChange: (next: string) => void,
+    options: { minRows?: number; required?: boolean; hint?: string; locked?: boolean } = {},
+  ) => (
+    <Stack spacing={0.5}>
+      <Typography variant="body2" color="text.secondary" fontWeight={600}>
+        {label} {options.required && !readOnly && "*"}
+      </Typography>
+      <TextField
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={readOnly || Boolean(options.locked)}
+        multiline
+        minRows={options.minRows ?? 2}
+        fullWidth
+        size="small"
+        placeholder={readOnly ? "—" : t("conclusion.optional")}
+        helperText={options.hint}
+      />
+    </Stack>
+  );
+
+  /** Степперы, которые бланк не забрал, — остаются в своей карточке. */
+  const freeVitals = (Object.keys(VITAL_PROPS) as VitalKind[]).filter((kind) =>
+    slotFree(kind),
+  );
+
+  /** Штатное поле показываем на своём месте, только если бланк его не забрал. */
+  const slotFree = (slot: FormFieldSlot) => !attachedSlots.has(slot);
+
+  const handleSelectForm = (nextId: number) => {
+    const next = availableForms.find((form) => form.id === nextId);
+    if (!next) return;
+    setFormId(next.id);
+    setFormValues(formDefaults(next));
+    // Хвост не сбрасываем: это вывод врача, а не часть протокола — он
+    // остаётся при смене бланка и снова попадёт в конец проекции.
+  };
+
+  /**
+   * Поле, которое собирает бланк. Врач его не правит: текст — проекция
+   * значений полей выше, и правку пришлось бы разбирать обратно в поля, а
+   * такой разбор врёт на любой вольности формулировки. Вместо поля ввода на
+   * его месте стоит сворачиваемый итог (projectionNode).
+   */
+  const managedByForm = (field: FormTarget) =>
+    attachedForm != null && attachedForm.target === field;
+
+  const handleDetachForm = () => {
+    // Текст остаётся: врач дописывает уже собранное заключение руками.
+    setFormId(null);
+    setFormValues({});
+  };
+
+  /**
+   * Контролы для привязанных полей бланка. Собираем только те слоты, которые
+   * бланк действительно занял: незанятые остаются на своих обычных местах.
+   */
+  const slotNodes = React.useMemo<Partial<Record<FormFieldSlot, React.ReactNode>>>(() => {
+    const nodes: Partial<Record<FormFieldSlot, React.ReactNode>> = {};
+    for (const slot of attachedSlots) {
+      switch (slot) {
+        case "complaints":
+          nodes.complaints = textFieldNode(
+            t("conclusion.doctorComplaints"),
+            complaints,
+            setComplaints,
+          );
+          break;
+        case "anamnesis":
+          nodes.anamnesis = textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
+            minRows: 3,
+          });
+          break;
+        case "objective":
+          nodes.objective = textFieldNode(t("conclusion.objectively"), objective, setObjective, {
+            minRows: 3,
+          });
+          break;
+        case "conclusion":
+          nodes.conclusion = textFieldNode(
+            t("conclusion.conclusionRequired"),
+            conclusionText,
+            setConclusionText,
+            { minRows: 4, required: true },
+          );
+          break;
+        case "heightCm":
+        case "weightKg":
+        case "temperature":
+          nodes[slot] = (
+            <Stack direction="row" spacing={1.5}>
+              {vitalNode(slot)}
+            </Stack>
+          );
+          break;
+        default:
+          break;
+      }
+    }
+    return nodes;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    attachedSlots,
+    complaints,
+    anamnesis,
+    objective,
+    conclusionText,
+    heightCm,
+    weightKg,
+    temperature,
+    readOnly,
+  ]);
+
+  // ── печать листа бланка ────────────────────────────────────────────────────
+  // Данные шапки (ФИО, ДР, дата приёма, врач) те же, что у штатной печати
+  // заключения, поэтому берём их тем же загрузчиком.
+  const printDataQuery = useQuery({
+    queryKey: ["django", "conclusion-forms", "print-data", appointmentId ?? null, serviceLineId] as const,
+    queryFn: () => loadDjangoPrintData(appointmentId as number, serviceLineId),
+    enabled: formsEnabled && attachedForm != null && appointmentId != null,
+    retry: false,
+  });
+
+  /**
+   * Значения для печатного листа: свободные поля плюс значения привязанных
+   * колонок. В тексте заключения слоты не дублируются, а на листе они —
+   * обычные строки протокола, и без них лист вышел бы с пустыми линейками.
+   */
+  const sheetValues = React.useMemo(() => {
+    const slotValue: Record<FormFieldSlot, string> = {
+      complaints,
+      anamnesis,
+      objective,
+      conclusion: conclusionText,
+      weightKg,
+      heightCm,
+      temperature,
+    };
+    const values: Record<string, string> = { ...formValues };
+    for (const field of attachedForm?.fields ?? []) {
+      if (field.slot) values[field.id] = slotValue[field.slot] ?? "";
+    }
+    return values;
+  }, [
+    attachedForm,
+    formValues,
+    complaints,
+    anamnesis,
+    objective,
+    conclusionText,
+    weightKg,
+    heightCm,
+    temperature,
+  ]);
+
+  const handlePrintForm = async () => {
+    if (!attachedForm) return;
+    setFormPrinting(true);
+    setFormPrintError(null);
+    try {
+      const printData = printDataQuery.data;
+      const context: SheetContext = {
+        patientFio: printData?.patientFio ?? "—",
+        patientDob: printData?.patientDob ?? "—",
+        appointmentDateTime: printData?.appt.scheduledAt
+          ? dayjs(printData.appt.scheduledAt).format("DD.MM.YYYY HH:mm")
+          : "—",
+        doctorFio: printData?.doctorFio ?? doctorName,
+        clinicName: activeOrganization?.name ?? "",
+        clinicLogoUrl: activeOrganization?.logoUrl,
+      };
+      const blob = await generateFormSheetPdf(attachedForm, context, sheetValues);
+      // Открываем во вкладке, а не скачиваем: врачу нужен диалог печати, а не
+      // файл в загрузках.
+      window.open(URL.createObjectURL(blob), "_blank", "noopener");
+    } catch {
+      setFormPrintError("Не удалось сформировать PDF бланка.");
+    } finally {
+      setFormPrinting(false);
+    }
+  };
 
   // Каталог МКБ-10 приходит уже после гидратации: дозаполняем выбранные
   // диагнозы настоящими записями каталога, не трогая остальные поля формы.
@@ -596,6 +1098,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       temperature,
       internalComment,
       status,
+      formId,
+      formValues,
+      formManual: manualText,
     };
     // Пока пользователь ничего не менял — фантомный черновик не создаём.
     if (JSON.stringify(body) === baselineRef.current) {
@@ -627,6 +1132,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     temperature,
     internalComment,
     status,
+    formId,
+    formValues,
+    manualText,
   ]);
 
   // Размонтирование (дровер удаляют из дерева, уход со страницы) — дописываем
@@ -722,15 +1230,6 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
    * заменяем: у приёма может быть несколько бланков (осмотр + протокол УЗИ),
    * и второй не должен затирать первый.
    */
-  const applyFilledForm = (target: FormTarget, text: string) => {
-    if (!text.trim()) return;
-    const append = (prev: string) => (prev.trim() ? `${prev.trim()}\n\n${text}` : text);
-    if (target === "anamnesis") setAnamnesis(append);
-    else if (target === "objective") setObjective(append);
-    else setConclusionText(append);
-    notify?.({ type: "success", message: "Бланк добавлен в заключение" });
-  };
-
   const handleDeleteTemplate = async (id: number) => {
     try {
       await deleteConclusionTemplate(id);
@@ -747,8 +1246,12 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     vitals: validateVitals(weightKg, heightCm, temperature),
   });
   const completion = useFormValidation({
+    // Пустое заключение при бланке — это незаполненный протокол, а не
+    // незаполненное поле: поля как такового врач уже не видит.
     conclusionText: conclusionText.trim()
       ? null
+      : managedByForm("conclusion")
+      ? "Заполните хотя бы одну строку бланка — заключение не может быть пустым."
       : t("conclusion.errors.fillBeforeComplete"),
   });
 
@@ -911,16 +1414,6 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         <Stack direction="row" spacing={0.5} alignItems="center">
           {!readOnly && (
             <>
-              {appointmentId != null && (
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<DescriptionOutlined />}
-                  onClick={() => setFillFormOpen(true)}
-                >
-                  Бланк
-                </Button>
-              )}
               <Button
                 size="small"
                 variant="outlined"
@@ -1109,7 +1602,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               </Paper>
 
               {/* Жалобы пациента (контекст) */}
-              {(patientComplaints ?? "").trim() && (
+              {showPatientComplaints && (
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                     {t("conclusion.patientComplaints")}
@@ -1224,55 +1717,26 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {!readOnly && (
           <>
           {/* ── vitals (степперы как в оригинале) ── */}
-          <Paper ref={vitals.anchor("vitals")} variant="outlined" sx={{ p: 1.5 }}>
-            <Stack direction="row" spacing={1.5}>
-              <VitalStepper
-                label={t("conclusion.height")}
-                suffix={t("conclusion.heightUnit")}
-                value={heightCm}
-                onChange={setHeightCm}
-                step={1}
-                // Нижняя граница кнопок совпадает с validateVitals: иначе минус
-                // доводил поле до 0 и сохранение падало на «от 1 до 999».
-                min={1}
-                max={999}
-                decimalPlaces={HEIGHT_DECIMALS}
-                disabled={readOnly}
-              />
-              <VitalStepper
-                label={t("conclusion.weight")}
-                suffix={t("conclusion.weightUnit")}
-                value={weightKg}
-                onChange={setWeightKg}
-                // Педиатрия: вес младенца меняется десятыми долями килограмма,
-                // а хранится с точностью до грамма (3.456 кг).
-                step={0.1}
-                min={1}
-                max={999}
-                decimalPlaces={WEIGHT_DECIMALS}
-                disabled={readOnly}
-              />
-              <VitalStepper
-                label={t("conclusion.temperature")}
-                suffix="°C"
-                value={temperature}
-                onChange={setTemperature}
-                step={0.1}
-                min={34}
-                max={42}
-                decimalPlaces={TEMPERATURE_DECIMALS}
-                disabled={readOnly}
-              />
-            </Stack>
-            {vitals.errorOf("vitals") && (
-              <Alert severity="error" sx={{ py: 0, mt: 1 }}>
-                {vitals.errorOf("vitals")}
-              </Alert>
-            )}
-          </Paper>
+          {/* Степпер, который забрал бланк, здесь не рисуем: он стоит в потоке
+              его полей (см. slotNodes). Карточку показываем, пока в ней есть
+              хоть один степпер или пока есть что сказать об ошибке. */}
+          {(freeVitals.length > 0 || Boolean(vitals.errorOf("vitals"))) && (
+            <Paper ref={vitals.anchor("vitals")} variant="outlined" sx={{ p: 1.5 }}>
+              <Stack direction="row" spacing={1.5}>
+                {freeVitals.map((kind) => (
+                  <React.Fragment key={kind}>{vitalNode(kind)}</React.Fragment>
+                ))}
+              </Stack>
+              {vitals.errorOf("vitals") && (
+                <Alert severity="error" sx={{ py: 0, mt: 1 }}>
+                  {vitals.errorOf("vitals")}
+                </Alert>
+              )}
+            </Paper>
+          )}
 
           {/* ── patient complaints (read-only context) ── */}
-          {(patientComplaints ?? "").trim() && (
+          {showPatientComplaints && (
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
                 {t("conclusion.patientComplaints")}
@@ -1285,56 +1749,55 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             </Stack>
           )}
 
-          {/* ── doctor complaints ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              {t("conclusion.doctorComplaints")}
-            </Typography>
-            <TextField
-              value={complaints}
-              onChange={(e) => setComplaints(e.target.value)}
+          {/* ── поля бланка ── */}
+          {/* Пустой протокол — это незаполненное заключение, поэтому при
+              «Завершить» скролл и фокус ведут сюда, к строкам бланка. */}
+          {!readOnly && (
+          <Box ref={managedByForm("conclusion") ? completion.anchor("conclusionText") : undefined}>
+            <ConclusionFormInline
+              forms={availableForms}
+              loading={formsQuery.isLoading}
+              form={attachedForm}
+              values={formValues}
+              onSelectForm={handleSelectForm}
+              onChangeValue={(fieldId, value) =>
+                setFormValues((prev) => ({ ...prev, [fieldId]: value }))
+              }
+              onDetach={handleDetachForm}
+              slotNodes={slotNodes}
+              manual={manualText}
+              onManualChange={setManualText}
+              targetLabel={
+                attachedForm ? TARGET_LABELS[attachedForm.target] : TARGET_LABELS.conclusion
+              }
               disabled={readOnly}
-              multiline
-              minRows={2}
-              fullWidth
-              size="small"
-              placeholder={readOnly ? "—" : t("conclusion.optional")}
             />
-          </Stack>
+          </Box>
+          )}
+
+          {formPrintError && <Alert severity="error">{formPrintError}</Alert>}
+
+          {/* ── doctor complaints ── */}
+          {/* Поле, забранное бланком, здесь не рисуем: оно стоит в потоке его
+              полей (slotNodes) — иначе врач вводил бы жалобы дважды. */}
+          {slotFree("complaints") &&
+            textFieldNode(t("conclusion.doctorComplaints"), complaints, setComplaints)}
 
           {/* ── anamnesis ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              {t("conclusion.anamnesis")}
-            </Typography>
-            <TextField
-              value={anamnesis}
-              onChange={(e) => setAnamnesis(e.target.value)}
-              disabled={readOnly}
-              multiline
-              minRows={3}
-              fullWidth
-              size="small"
-              placeholder={readOnly ? "—" : t("conclusion.optional")}
-            />
-          </Stack>
+          {slotFree("anamnesis") &&
+            (managedByForm("anamnesis")
+              ? projectionNode(t("conclusion.anamnesis"), anamnesis, null)
+              : textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
+                  minRows: 3,
+                }))}
 
           {/* ── objective ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              {t("conclusion.objectively")}
-            </Typography>
-            <TextField
-              value={objective}
-              onChange={(e) => setObjective(e.target.value)}
-              disabled={readOnly}
-              multiline
-              minRows={3}
-              fullWidth
-              size="small"
-              placeholder={readOnly ? "—" : t("conclusion.optional")}
-            />
-          </Stack>
+          {slotFree("objective") &&
+            (managedByForm("objective")
+              ? projectionNode(t("conclusion.objectively"), objective, null)
+              : textFieldNode(t("conclusion.objectively"), objective, setObjective, {
+                  minRows: 3,
+                }))}
 
           {/* ── diagnosis (catalog multi-select + free text) ── */}
           <Stack spacing={0.5}>
@@ -1415,22 +1878,38 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           </Stack>
 
           {/* ── conclusion (main) ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              {t("conclusion.conclusionRequired")} {!readOnly && "*"}
-            </Typography>
-            <TextField
-              value={conclusionText}
-              onChange={(e) => setConclusionText(e.target.value)}
-              disabled={readOnly}
-              multiline
-              minRows={4}
-              fullWidth
-              size="small"
-              placeholder={readOnly ? "—" : t("conclusion.text")}
-              {...completion.field("conclusionText", "")}
-            />
-          </Stack>
+          {/* Забрать заключение в поток бланка можно (slot "conclusion"), но
+              обязательным оно остаётся: скрываем только когда бланк его правда
+              рисует, иначе врачу негде выполнить требование «*». */}
+          {slotFree("conclusion") &&
+            // Бланк собирает это поле сам — вместо заблокированной копии текста
+            // показываем сворачиваемый итог. Якорь валидации при этом уезжает
+            // на секцию бланка (см. ниже, ref у ConclusionFormInline): иначе
+            // «Завершить» с пустым протоколом ругался бы в никуда.
+            (managedByForm("conclusion") ? (
+              projectionNode(
+                t("conclusion.conclusionRequired"),
+                conclusionText,
+                completion.errorOf("conclusionText"),
+              )
+            ) : (
+              <Stack spacing={0.5}>
+                <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                  {t("conclusion.conclusionRequired")} {!readOnly && "*"}
+                </Typography>
+                <TextField
+                  value={conclusionText}
+                  onChange={(e) => setConclusionText(e.target.value)}
+                  disabled={readOnly}
+                  multiline
+                  minRows={4}
+                  fullWidth
+                  size="small"
+                  placeholder={readOnly ? "—" : t("conclusion.text")}
+                  {...completion.field("conclusionText", "")}
+                />
+              </Stack>
+            ))}
 
           {/* ── internal comment ── */}
           <Stack spacing={0.5}>
@@ -1608,6 +2087,19 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           </Button>
           {!readOnly && (
             <>
+              {/* Печать одна: прикреплён бланк — печатаем его лист (шапка
+                  клиники, подложка, значения полей), иначе документ печатается
+                  штатной формой заключения из кнопок выше. */}
+              {attachedForm && canPrint && (
+                <Button
+                  variant="outlined"
+                  startIcon={<PrintOutlined />}
+                  disabled={formPrinting}
+                  onClick={handlePrintForm}
+                >
+                  {t("conclusion.print")}
+                </Button>
+              )}
               <Button
                 variant="outlined"
                 disabled={saving}
@@ -1640,19 +2132,6 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         </Stack>
       </Box>
       </>
-      )}
-
-      {/* ── заполнение по бланку ── */}
-      {appointmentId != null && (
-        <FillFormDialog
-          open={fillFormOpen}
-          onClose={() => setFillFormOpen(false)}
-          appointmentId={appointmentId}
-          serviceLineId={serviceLineId}
-          doctorId={doctorId}
-          doctorName={doctorName}
-          onApply={applyFilledForm}
-        />
       )}
 
       {/* ── save-as-template dialog ── */}

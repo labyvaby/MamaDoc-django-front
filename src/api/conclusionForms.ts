@@ -96,6 +96,52 @@ export type FormFieldType = "text" | "multiline";
 /** Доля ширины строки, которую занимает поле. */
 export type FormFieldWidth = "full" | "half";
 
+/**
+ * Поле заключения, в которое пишет поле бланка.
+ *
+ * Зачем. Администраторы заводят полями бланка то, что в заключении уже есть
+ * отдельной колонкой: «Карта осмотра педиатра» содержит «Температура, °C»,
+ * «Вес, кг», «Рост, см», «Жалобы», «Анамнез заболевания». Без привязки врач
+ * видит их дважды (в бланке и в штатном поле), а температура уезжает в текст
+ * — колонка остаётся пустой, и динамика по ней не считается.
+ *
+ * Привязка необязательна: поле без неё работает как раньше — свободная строка
+ * протокола, попадающая в собираемый текст. Привязанное поле в текст НЕ идёт:
+ * его значение уже лежит в своей колонке, и в тексте оно бы задвоилось.
+ *
+ * ⚠ Одна колонка — максимум одно привязанное поле в бланке (проверяется в
+ * конструкторе): иначе два контрола писали бы в одно значение.
+ */
+export type FormFieldSlot =
+  | "complaints"
+  | "anamnesis"
+  | "objective"
+  | "conclusion"
+  | "weightKg"
+  | "heightCm"
+  | "temperature";
+
+export const FORM_FIELD_SLOTS: FormFieldSlot[] = [
+  "complaints",
+  "anamnesis",
+  "objective",
+  "conclusion",
+  "weightKg",
+  "heightCm",
+  "temperature",
+];
+
+/** Подписи слотов в конструкторе — те же слова, что видит врач в заключении. */
+export const FORM_FIELD_SLOT_LABELS: Record<FormFieldSlot, string> = {
+  complaints: "Жалобы",
+  anamnesis: "Анамнез",
+  objective: "Объективно",
+  conclusion: "Заключение",
+  weightKg: "Вес, кг",
+  heightCm: "Рост, см",
+  temperature: "Температура, °C",
+};
+
 export interface FormField {
   /** Стабильный идентификатор: переживает переименование и сортировку. */
   id: string;
@@ -107,6 +153,21 @@ export interface FormField {
   width?: FormFieldWidth;
   /** Высота многострочного поля в строках. */
   rows?: number;
+  /**
+   * Куда поле пишет в самом заключении. Не задано — свободная строка
+   * протокола (см. FormFieldSlot).
+   */
+  slot?: FormFieldSlot | null;
+}
+
+/** Занятые слоты бланка: для проверки «одна колонка — одно поле». */
+export function usedSlots(fields: FormField[]): Map<FormFieldSlot, number> {
+  const used = new Map<FormFieldSlot, number>();
+  for (const field of fields) {
+    if (!field.slot) continue;
+    used.set(field.slot, (used.get(field.slot) ?? 0) + 1);
+  }
+  return used;
 }
 
 // ── Шаблон ─────────────────────────────────────────────────────────────────────
@@ -377,6 +438,11 @@ export async function uploadConclusionFormBackground(
  * «Шевеление:» без значения выглядит как недоделанная работа врача, а не как
  * «признак не оценивался». Многострочные значения переносятся на строку ниже
  * подписи — так они читаются в PDF, где ширина листа фиксирована.
+ *
+ * Привязанные к колонкам заключения поля (`slot`) пропускаются: их значение
+ * уже лежит в своей колонке, и в тексте жалобы или температура задвоились бы.
+ * На печатном ЛИСТЕ они, наоборот, нужны — там значения слотов подмешиваются
+ * в `values`, и лист рисует их как обычные строки (см. FormSheet).
  */
 export function renderFilledForm(
   template: Pick<ConclusionFormTemplate, "title" | "fields" | "footerNote">,
@@ -388,6 +454,7 @@ export function renderFilledForm(
   if (title) lines.push(title, "");
 
   for (const field of template.fields) {
+    if (field.slot) continue; // значение живёт в своей колонке заключения
     const value = (values[field.id] ?? "").trim();
     if (!value) continue;
     const label = field.label.trim();

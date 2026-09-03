@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   renderFilledForm,
   sheetSizeMm,
+  usedSlots,
   type FormField,
 } from "./conclusionForms";
 
@@ -88,5 +89,53 @@ describe("renderFilledForm", () => {
     expect(renderFilledForm(template, {})).toBe(
       "Протокол УЗИ\n\nУЗИ — метод визуализации.",
     );
+  });
+});
+
+describe("renderFilledForm со слотами", () => {
+  it("не дублирует в тексте поля, привязанные к колонкам заключения", () => {
+    // Жалобы и температура уже лежат в своих колонках: в тексте они задвоились бы.
+    const text = renderFilledForm(
+      {
+        title: "Карта осмотра педиатра",
+        footerNote: "",
+        fields: [
+          field({ id: "a", label: "Жалобы", slot: "complaints" }),
+          field({ id: "b", label: "Температура, °C", slot: "temperature" }),
+          field({ id: "c", label: "Зев" }),
+        ],
+      },
+      { a: "кашель", b: "37.2", c: "спокоен" },
+    );
+
+    expect(text).toBe("Карта осмотра педиатра\n\nЗев: спокоен");
+  });
+
+  it("привязка null и её отсутствие равнозначны — поле идёт в текст", () => {
+    const text = renderFilledForm(
+      {
+        title: "",
+        footerNote: "",
+        fields: [field({ id: "a", label: "Зев", slot: null })],
+      },
+      { a: "спокоен" },
+    );
+
+    expect(text).toBe("Зев: спокоен");
+  });
+});
+
+describe("usedSlots", () => {
+  it("считает занятые колонки — по ним конструктор запрещает вторую привязку", () => {
+    const used = usedSlots([
+      field({ id: "a", slot: "complaints" }),
+      field({ id: "b", slot: "temperature" }),
+      field({ id: "c", slot: "complaints" }),
+      field({ id: "d" }),
+    ]);
+
+    expect(used.get("complaints")).toBe(2);
+    expect(used.get("temperature")).toBe(1);
+    expect(used.get("weightKg")).toBeUndefined();
   });
 });

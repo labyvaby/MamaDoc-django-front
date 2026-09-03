@@ -45,7 +45,11 @@ import {
   uploadConclusionFormBackground,
   type ConclusionFormPayload,
   type ConclusionFormTemplate,
+  FORM_FIELD_SLOTS,
+  FORM_FIELD_SLOT_LABELS,
+  usedSlots,
   type FormField,
+  type FormFieldSlot,
   type FormFieldType,
 } from "../../api/conclusionForms";
 import type { DjangoSpecialization } from "../../api/staff";
@@ -155,6 +159,9 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
     setFocusedFieldId(field.id);
   };
 
+  /** Занятые колонки: одна колонка — максимум одно привязанное поле. */
+  const slotTaken = usedSlots(draft.fields);
+
   const patchField = (id: string, patchValue: Partial<FormField>) =>
     setDraft((prev) => ({
       ...prev,
@@ -228,6 +235,23 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
     }
     if (draft.fields.some((f) => !f.label.trim())) {
       setLocalError("У каждого поля должна быть подпись.");
+      return;
+    }
+    // Инварианты привязки проверяем и здесь, а не только выпадающим списком:
+    // список гасит занятые колонки в момент выбора, но `target` бланка может
+    // измениться позже (сейчас его правит только код, дальше появится и UI) —
+    // тогда уже сделанная привязка молча начала бы спорить с проекцией текста.
+    const doubled = [...usedSlots(draft.fields)].find(([, count]) => count > 1);
+    if (doubled) {
+      setLocalError(
+        `В колонку «${FORM_FIELD_SLOT_LABELS[doubled[0]]}» пишет больше одного поля — оставьте одно.`,
+      );
+      return;
+    }
+    if (draft.fields.some((f) => f.slot && f.slot === draft.target)) {
+      setLocalError(
+        `Бланк собирает текст в поле «${FORM_FIELD_SLOT_LABELS[draft.target]}» — привязать к нему ещё и строку нельзя.`,
+      );
       return;
     }
     onSave({
@@ -558,6 +582,36 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
                             <MenuItem value="full">Во всю ширину</MenuItem>
                             <MenuItem value="half">В половину</MenuItem>
                           </Select>
+                          <TextField
+                            select
+                            size="small"
+                            label="Пишет в поле заключения"
+                            value={field.slot ?? ""}
+                            onChange={(e) =>
+                              patchField(field.id, {
+                                slot: e.target.value ? (e.target.value as FormFieldSlot) : null,
+                              })
+                            }
+                            sx={{ minWidth: 210 }}
+                          >
+                            <MenuItem value="">Не привязано</MenuItem>
+                            {FORM_FIELD_SLOTS.map((slot) => (
+                              <MenuItem
+                                key={slot}
+                                value={slot}
+                                // Колонку, уже занятую другим полем, выбрать нельзя:
+                                // два контрола писали бы в одно значение.
+                                disabled={
+                                  (slotTaken.get(slot) ?? 0) > 0 && field.slot !== slot
+                                  // Поле, в которое бланк собирает текст, слотом быть не может:
+                                  // проекция и привязанный контрол писали бы в одну колонку.
+                                  || slot === draft.target
+                                }
+                              >
+                                {FORM_FIELD_SLOT_LABELS[slot]}
+                              </MenuItem>
+                            ))}
+                          </TextField>
                           {field.type === "multiline" && (
                             <TextField
                               label="Высота, строк"
