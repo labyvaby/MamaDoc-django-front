@@ -9,36 +9,33 @@ import {
   IconButton,
   InputAdornment,
   Paper,
+  Menu,
+  MenuItem,
   Skeleton,
   Stack,
-  Switch,
   TextField,
   Tooltip,
   Typography,
   alpha,
   useMediaQuery,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
 import {
   AdminPanelSettingsOutlined,
   AddOutlined,
   CloseOutlined,
   EditOutlined,
-  KeyOutlined,
-  KeyboardArrowRightOutlined,
+  ContentCopyOutlined,
+  GroupOutlined,
   LockOutlined,
   SearchOutlined,
 } from "@mui/icons-material";
-import Autocomplete from "@mui/material/Autocomplete";
-import Checkbox from "@mui/material/Checkbox";
-import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
-import CheckBoxIcon from "@mui/icons-material/CheckBox";
 
 import { subtleBg } from "../../theme";
 import SettingsLayout from "./SettingsLayout";
 import { AppButton } from "../../components/ui/AppButton";
 import { CanAccess } from "../../components/rbac/CanAccess";
 import {
+  getMemberships,
   getPermissions,
   getRoles,
   createRole,
@@ -53,6 +50,7 @@ import { usePermissions, retryAuth } from "../../hooks/usePermissions";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { getModuleCodeForPermission } from "../../utils/moduleMapping";
 import { useT } from "../../i18n/VerticalProvider";
+import PermissionPicker, { type PermissionGroup } from "./roles/PermissionPicker";
 
 // ── Category label mapping ──────────────────────────────────────────────────
 // Ключи CATEGORY_LABELS фиксированы бэкендом; отображаемые подписи берутся из
@@ -62,7 +60,12 @@ import { useT } from "../../i18n/VerticalProvider";
 const CATEGORY_KEYS = [
   "appointments", "patients", "staff", "catalog", "content", "organization",
   "branches", "rbac", "roles", "users", "finance", "warehouse", "reports",
-  "attendance", "schedule", "services", "expenses",
+  "attendance", "schedule", "services", "expenses", "achievements",
+  "announcements", "billing", "bookings", "chatwoot", "cleaning", "clients",
+  "deals", "documents", "ecommerce", "knowledge", "loyalty", "medical",
+  "messaging", "notifications", "odoctor", "offerings", "payroll", "pos",
+  "printforms", "procurement", "profigram", "programs", "promotions", "retail",
+  "reviews", "targets", "tasks", "tenancy", "vaccinations",
 ] as const;
 
 function categoryLabel(cat: string, t: (key: string) => string): string {
@@ -71,18 +74,12 @@ function categoryLabel(cat: string, t: (key: string) => string): string {
     : cat;
 }
 
-// ── Permission label helper ─────────────────────────────────────────────────
-
-function permissionLabel(p: RbacPermission): string {
-  return p.name ? `${p.name} (${p.code})` : p.code;
-}
-
 // ── Group permissions by category ───────────────────────────────────────────
 
 function groupPermissions(
   permissions: RbacPermission[],
   t: (key: string) => string,
-): { category: string; label: string; items: RbacPermission[] }[] {
+): PermissionGroup[] {
   const map = new Map<string, RbacPermission[]>();
   for (const p of permissions) {
     const cat = p.category || p.code.split(".")[0] || "other";
@@ -122,241 +119,6 @@ function useSnack() {
   return { snack, show, hide };
 }
 
-// ── MobilePermissionPicker ──────────────────────────────────────────────────
-// Тач-редактор прав для мобильной версии: аккордеон категорий с мастер-
-// переключателем, крупные тумблеры, поиск и липкая сводка — вместо десктопного
-// Autocomplete с грудой чипов, неудобного на телефоне.
-
-interface MobilePermissionPickerProps {
-  grouped: { category: string; label: string; items: RbacPermission[] }[];
-  selectedCodes: string[];
-  onChange: (codes: string[]) => void;
-  isModuleOff: (code: string) => boolean;
-  disabled?: boolean;
-  totalCount: number;
-  /** Права роли на момент открытия — задают, какие категории раскрыты сразу. */
-  initialSelectedCodes: string[];
-}
-
-function MobilePermissionPicker({
-  grouped,
-  selectedCodes,
-  onChange,
-  isModuleOff,
-  disabled,
-  totalCount,
-  initialSelectedCodes,
-}: MobilePermissionPickerProps) {
-  const { t } = useT("settings");
-  const [search, setSearch] = React.useState("");
-  // По умолчанию раскрыты категории, где у роли уже есть права.
-  const [expanded, setExpanded] = React.useState<Set<string>>(() => {
-    const init = new Set(initialSelectedCodes);
-    return new Set(
-      grouped.filter((g) => g.items.some((p) => init.has(p.code))).map((g) => g.category),
-    );
-  });
-
-  const selected = React.useMemo(() => new Set(selectedCodes), [selectedCodes]);
-  const q = search.trim().toLowerCase();
-
-  const togglePerm = (code: string) => {
-    if (disabled) return;
-    const next = new Set(selected);
-    if (next.has(code)) next.delete(code);
-    else next.add(code);
-    onChange([...next]);
-  };
-  const toggleCategory = (items: RbacPermission[]) => {
-    if (disabled) return;
-    const codes = items.map((p) => p.code);
-    const allOn = codes.every((c) => selected.has(c));
-    const next = new Set(selected);
-    codes.forEach((c) => (allOn ? next.delete(c) : next.add(c)));
-    onChange([...next]);
-  };
-  const toggleExpand = (cat: string) => {
-    setExpanded((prev) => {
-      const n = new Set(prev);
-      if (n.has(cat)) n.delete(cat);
-      else n.add(cat);
-      return n;
-    });
-  };
-
-  const visibleGroups = grouped
-    .map((g) => ({
-      ...g,
-      matched: q
-        ? g.items.filter(
-            (p) =>
-              (p.name || "").toLowerCase().includes(q) ||
-              p.code.toLowerCase().includes(q) ||
-              g.label.toLowerCase().includes(q),
-          )
-        : g.items,
-    }))
-    .filter((g) => g.matched.length > 0);
-
-  return (
-    <Box>
-      {/* Липкая сводка + поиск */}
-      <Box sx={{ position: "sticky", top: 0, zIndex: 2, bgcolor: "background.paper", pb: 1 }}>
-        <Stack
-          direction="row"
-          alignItems="center"
-          gap={1.5}
-          sx={(theme) => ({
-            px: 1.5,
-            py: 1,
-            mb: 1,
-            borderRadius: "12px",
-            bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.16 : 0.1),
-          })}
-        >
-          <Typography
-            sx={{
-              fontSize: 22,
-              fontWeight: 700,
-              color: "primary.onSurface",
-              lineHeight: 1,
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {selected.size}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-            {t("roles.mobilePicker.selectedOfTotal", { total: totalCount })}
-            {selected.size ? "" : t("roles.mobilePicker.noPermissionsHint")}
-          </Typography>
-          {selected.size > 0 && !disabled && (
-            <Button
-              size="small"
-              onClick={() => onChange([])}
-              sx={{ textTransform: "none", minWidth: 0, px: 1 }}
-            >
-              {t("roles.mobilePicker.clearButton")}
-            </Button>
-          )}
-        </Stack>
-        <TextField
-          fullWidth
-          size="small"
-          placeholder={t("roles.mobilePicker.searchPlaceholder")}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchOutlined fontSize="small" />
-              </InputAdornment>
-            ),
-          }}
-        />
-      </Box>
-
-      <Stack spacing={1} sx={{ mt: 1 }}>
-        {visibleGroups.length === 0 ? (
-          <Typography variant="body2" color="text.disabled" sx={{ textAlign: "center", py: 3 }}>
-            {t("roles.mobilePicker.noResults")}
-          </Typography>
-        ) : (
-          visibleGroups.map((g) => {
-            const selCount = g.items.filter((p) => selected.has(p.code)).length;
-            const allOn = selCount === g.items.length;
-            const open = expanded.has(g.category) || !!q;
-            return (
-              <Paper key={g.category} variant="outlined" sx={{ overflow: "hidden" }}>
-                <Stack
-                  direction="row"
-                  alignItems="center"
-                  gap={1}
-                  sx={{ px: 1.5, py: 1.25, cursor: "pointer" }}
-                  onClick={() => toggleExpand(g.category)}
-                >
-                  <KeyboardArrowRightOutlined
-                    sx={{
-                      color: open ? "primary.onSurface" : "text.disabled",
-                      transform: open ? "rotate(90deg)" : "none",
-                      transition: "transform .2s ease",
-                    }}
-                  />
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography variant="subtitle2" fontWeight={600}>
-                      {g.label}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{ color: selCount ? "primary.onSurface" : "text.secondary" }}
-                    >
-                      {t("roles.mobilePicker.ofCount", { selected: selCount, total: g.items.length })}
-                    </Typography>
-                  </Box>
-                  <Switch
-                    size="small"
-                    checked={allOn}
-                    disabled={disabled}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={() => toggleCategory(g.items)}
-                  />
-                </Stack>
-                {open && (
-                  <Box sx={{ borderTop: "1px solid", borderColor: "divider" }}>
-                    {g.matched.map((p, i) => {
-                      const off = isModuleOff(p.code);
-                      return (
-                        <Stack
-                          key={p.code}
-                          direction="row"
-                          alignItems="center"
-                          gap={1}
-                          sx={{
-                            px: 1.5,
-                            py: 1,
-                            borderTop: i > 0 ? "1px solid" : "none",
-                            borderColor: "divider",
-                          }}
-                        >
-                          <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography variant="body2" fontWeight={500} lineHeight={1.3}>
-                              {p.name || p.code}
-                            </Typography>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                              sx={{ fontFamily: "monospace" }}
-                            >
-                              {p.code}
-                            </Typography>
-                            {off && (
-                              <Typography
-                                variant="caption"
-                                sx={{ display: "block", color: "warning.main", fontWeight: 600, mt: 0.25 }}
-                              >
-                                {t("roles.mobilePicker.moduleOffHint")}
-                              </Typography>
-                            )}
-                          </Box>
-                          <Switch
-                            size="small"
-                            checked={selected.has(p.code)}
-                            disabled={disabled}
-                            onChange={() => togglePerm(p.code)}
-                          />
-                        </Stack>
-                      );
-                    })}
-                  </Box>
-                )}
-              </Paper>
-            );
-          })
-        )}
-      </Stack>
-    </Box>
-  );
-}
-
 // ── RoleFormDrawer ──────────────────────────────────────────────────────────
 
 interface RoleFormDrawerProps {
@@ -364,6 +126,10 @@ interface RoleFormDrawerProps {
   mode: "create" | "edit";
   initial?: RbacRole | null;
   permissions: RbacPermission[];
+  /** Роли организации — источник для «Скопировать права из роли». */
+  roles: RbacRole[];
+  /** Сколько активных сотрудников работает с этой ролью; undefined — данных нет. */
+  memberCount?: number;
   organizationId?: number;
   onClose: () => void;
   onSaved: (role: RbacRole) => void;
@@ -374,6 +140,8 @@ function RoleFormDrawer({
   mode,
   initial,
   permissions,
+  roles,
+  memberCount,
   organizationId,
   onClose,
   onSaved,
@@ -401,12 +169,15 @@ function RoleFormDrawer({
   const [selectedCodes, setSelectedCodes] = React.useState<string[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [copyAnchor, setCopyAnchor] = React.useState<HTMLElement | null>(null);
+  const [copiedFrom, setCopiedFrom] = React.useState<string | null>(null);
 
   // Reset form when opening
   React.useEffect(() => {
     if (!open) return;
     setError(null);
     setBusy(false);
+    setCopiedFrom(null);
     if (mode === "edit" && initial) {
       setName(initial.name);
       setCode(initial.code);
@@ -419,11 +190,6 @@ function RoleFormDrawer({
       setSelectedCodes([]);
     }
   }, [open, mode, initial]);
-
-  const theme = useTheme();
-  // sm=360 в теме → down("sm") почти не срабатывает на реальных телефонах;
-  // берём md (768), чтобы тач-редактор прав включался на телефонах и мелких планшетах.
-  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const isSystemRole = mode === "edit" && !!initial?.isSystem;
   const grouped = React.useMemo(() => groupPermissions(permissions, t), [permissions, t]);
@@ -440,11 +206,25 @@ function RoleFormDrawer({
     [enabledModules],
   );
 
-  // Selected permission objects (for Autocomplete value)
-  const selectedPerms = React.useMemo(
-    () => permissions.filter((p) => selectedCodes.includes(p.code)),
-    [permissions, selectedCodes],
+  // Роли-доноры для «Скопировать права»: сама редактируемая роль и роли без
+  // прав в списке бесполезны.
+  const donorRoles = React.useMemo(
+    () =>
+      roles
+        .filter((r) => r.id !== initial?.id && r.permissions.length > 0)
+        .sort((a, b) => a.name.localeCompare(b.name, "ru")),
+    [roles, initial?.id],
   );
+
+  const handleCopyFrom = (role: RbacRole) => {
+    setSelectedCodes([...role.permissions]);
+    setCopiedFrom(role.name);
+    setCopyAnchor(null);
+  };
+
+  // Фокус в поиск прав экономит клик мышью, но на телефоне поднял бы клавиатуру
+  // поверх формы — поэтому только для точного указателя.
+  const hasFinePointer = useMediaQuery("(pointer: fine)");
 
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
@@ -492,6 +272,13 @@ function RoleFormDrawer({
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
   const title = mode === "create" ? t("roles.form.createTitle") : t("roles.form.editTitle");
 
   return (
@@ -500,6 +287,7 @@ function RoleFormDrawer({
       open={open}
       onClose={busy ? undefined : onClose}
       PaperProps={{
+        onKeyDown: handleKeyDown,
         sx: {
           width: { xs: "100%", sm: 480, md: "40vw" },
           maxWidth: "100vw",
@@ -530,6 +318,12 @@ function RoleFormDrawer({
           {isSystemRole && (
             <Alert severity="warning" icon={<LockOutlined fontSize="small" />}>
               {t("roles.form.systemWarning")}
+            </Alert>
+          )}
+
+          {mode === "edit" && (memberCount ?? 0) > 0 && (
+            <Alert severity="info" icon={<GroupOutlined fontSize="small" />}>
+              {t("roles.form.affectsMembers", { count: memberCount })}
             </Alert>
           )}
 
@@ -595,132 +389,55 @@ function RoleFormDrawer({
             <Typography variant="caption" color="text.secondary" display="block" mb={1.5}>
               {t("roles.form.permissionsHint")}
             </Typography>
-            {isMobile ? (
-              <MobilePermissionPicker
-                grouped={grouped}
-                selectedCodes={selectedCodes}
-                onChange={setSelectedCodes}
-                isModuleOff={isModuleOff}
-                disabled={busy}
-                totalCount={permissions.length}
-                initialSelectedCodes={initial?.permissions ?? []}
-              />
-            ) : (
-             <>
-            {/* Quick overview by group */}
-            {grouped.length > 0 && selectedCodes.length > 0 && (
-              <Box mb={1.5}>
-                <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" mb={0.5}>
-                  {t("roles.form.byCategoryLabel")}
-                </Typography>
-                <Stack direction="row" flexWrap="wrap" gap={0.5}>
-                  {grouped.map((g) => {
-                    const count = g.items.filter((p) =>
-                      selectedCodes.includes(p.code),
-                    ).length;
-                    if (count === 0) return null;
-                    return (
-                      <Chip
-                        key={g.category}
-                        label={`${g.label} · ${count}/${g.items.length}`}
-                        size="small"
-                        variant="outlined"
-                        color="primary"
-                      />
-                    );
-                  })}
-                </Stack>
-              </Box>
+
+            {donorRoles.length > 0 && (
+              <Stack direction="row" alignItems="center" gap={1} mb={1.5} flexWrap="wrap">
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<ContentCopyOutlined />}
+                  disabled={busy}
+                  onClick={(e) => setCopyAnchor(e.currentTarget)}
+                  sx={{ textTransform: "none" }}
+                >
+                  {t("roles.form.copyFromButton")}
+                </Button>
+                {copiedFrom && (
+                  <Typography variant="caption" color="text.secondary">
+                    {t("roles.form.copiedFrom", { role: copiedFrom })}
+                  </Typography>
+                )}
+                <Menu
+                  anchorEl={copyAnchor}
+                  open={Boolean(copyAnchor)}
+                  onClose={() => setCopyAnchor(null)}
+                  slotProps={{ paper: { sx: { maxHeight: 320 } } }}
+                >
+                  {donorRoles.map((r) => (
+                    <MenuItem key={r.id} onClick={() => handleCopyFrom(r)}>
+                      <Box>
+                        <Typography variant="body2">{r.name}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {t("roles.row.permCount", { count: r.permissions.length })}
+                        </Typography>
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Menu>
+              </Stack>
             )}
 
-            <Autocomplete
-              multiple
-              disableCloseOnSelect
-              options={permissions}
-              value={selectedPerms}
-              groupBy={(option) => categoryLabel(option.category || option.code.split(".")[0] || "other", t)}
-              getOptionLabel={permissionLabel}
-              isOptionEqualToValue={(o, v) => o.code === v.code}
-              onChange={(_, newValue) => {
-                setSelectedCodes(newValue.map((p) => p.code));
-              }}
+            <PermissionPicker
+              grouped={grouped}
+              allPermissions={permissions}
+              selectedCodes={selectedCodes}
+              onChange={setSelectedCodes}
+              isModuleOff={isModuleOff}
               disabled={busy}
-              renderOption={(props, option, { selected }) => {
-                const { key, ...rest } = props as React.LiHTMLAttributes<HTMLLIElement> & { key?: React.Key };
-                return (
-                  <li key={option.code} {...rest}>
-                    <Checkbox
-                      icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
-                      checkedIcon={<CheckBoxIcon fontSize="small" />}
-                      style={{ marginRight: 8 }}
-                      checked={selected}
-                      size="small"
-                    />
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="body2" lineHeight={1.3}>
-                        {option.name || option.code}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {option.code}
-                      </Typography>
-                    </Box>
-                    {isModuleOff(option.code) && (
-                      <Chip
-                        label={t("roles.form.moduleOffChip")}
-                        size="small"
-                        color="warning"
-                        variant="outlined"
-                        sx={{ ml: 1, flexShrink: 0, height: 20, fontSize: "0.65rem" }}
-                      />
-                    )}
-                  </li>
-                );
-              }}
-              renderTags={(value, getTagProps) =>
-                value.map((option, index) => {
-                  const { key, ...tagProps } = getTagProps({ index });
-                  return (
-                    <Chip
-                      key={option.code}
-                      label={option.name || option.code}
-                      size="small"
-                      {...tagProps}
-                    />
-                  );
-                })
-              }
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder={
-                    selectedCodes.length === 0
-                      ? t("roles.form.permissionsPlaceholder")
-                      : ""
-                  }
-                  fullWidth
-                  size="small"
-                  InputProps={{
-                    ...params.InputProps,
-                    startAdornment: (
-                      <>
-                        <InputAdornment position="start">
-                          <KeyOutlined fontSize="small" color="action" />
-                        </InputAdornment>
-                        {params.InputProps.startAdornment}
-                      </>
-                    ),
-                  }}
-                />
-              )}
-              sx={{ "& .MuiAutocomplete-listbox": { maxHeight: 320 } }}
+              totalCount={permissions.length}
+              initialSelectedCodes={initial?.permissions ?? []}
+              autoFocusSearch={hasFinePointer && mode === "edit"}
             />
-            {selectedCodes.length > 0 && (
-              <Typography variant="caption" color="text.secondary" mt={0.5} display="block">
-                {t("roles.form.selectedOfTotal", { selected: selectedCodes.length, total: permissions.length })}
-              </Typography>
-            )}
-             </>
-            )}
           </Box>
         </Stack>
       </Box>
@@ -755,11 +472,13 @@ function RoleFormDrawer({
 interface RoleRowProps {
   role: RbacRole;
   allPermissions: RbacPermission[];
+  /** Активные сотрудники с этой ролью; undefined — список доступов не загрузился. */
+  memberCount?: number;
   onEdit: () => void;
   canEdit: boolean;
 }
 
-function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
+function RoleRow({ role, allPermissions, memberCount, onEdit, canEdit }: RoleRowProps) {
   const { t } = useT("settings");
   // Build a quick lookup to resolve permission names
   const permMap = React.useMemo(() => {
@@ -799,6 +518,17 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
               icon={<LockOutlined />}
               sx={{ height: 18, fontSize: 10 }}
             />
+          )}
+          {(memberCount ?? 0) > 0 && (
+            <Tooltip title={t("roles.row.memberCountTooltip")} arrow placement="top">
+              <Chip
+                label={t("roles.row.memberCount", { count: memberCount })}
+                size="small"
+                variant="outlined"
+                icon={<GroupOutlined />}
+                sx={{ height: 18, fontSize: 10, "& .MuiChip-icon": { fontSize: 12 } }}
+              />
+            </Tooltip>
           )}
         </Stack>
         <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "monospace" }}>
@@ -913,6 +643,9 @@ const RolesSettingsPage: React.FC = () => {
   const { activeOrganization } = usePermissions();
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
   const [permissions, setPermissions] = React.useState<RbacPermission[]>([]);
+  // null — доступы не загрузились (нет права users.view или ошибка): счётчик
+  // сотрудников тогда просто не показываем, страница ролей от него не зависит.
+  const [memberCounts, setMemberCounts] = React.useState<Map<number, number> | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
@@ -929,12 +662,22 @@ const RolesSettingsPage: React.FC = () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const [rolesData, permsData] = await Promise.all([
+      const [rolesData, permsData, membershipsData] = await Promise.all([
         getRoles(activeOrganization?.id),
         getPermissions(),
+        getMemberships().catch(() => null),
       ]);
       setRoles(rolesData);
       setPermissions(permsData);
+      setMemberCounts(
+        membershipsData
+          ? membershipsData.reduce((acc, m) => {
+              if (!m.isActive || m.role?.id == null) return acc;
+              acc.set(m.role.id, (acc.get(m.role.id) ?? 0) + 1);
+              return acc;
+            }, new Map<number, number>())
+          : null,
+      );
     } catch (err) {
       setLoadError(extractErrorMessage(err));
     } finally {
@@ -1155,6 +898,7 @@ const RolesSettingsPage: React.FC = () => {
                     <RoleRow
                       role={role}
                       allPermissions={permissions}
+                      memberCount={memberCounts?.get(role.id)}
                       onEdit={() => handleOpenEdit(role)}
                       canEdit={false}
                     />
@@ -1163,6 +907,7 @@ const RolesSettingsPage: React.FC = () => {
                   <RoleRow
                     role={role}
                     allPermissions={permissions}
+                    memberCount={memberCounts?.get(role.id)}
                     onEdit={() => handleOpenEdit(role)}
                     canEdit
                   />
@@ -1187,6 +932,7 @@ const RolesSettingsPage: React.FC = () => {
                     <RoleRow
                       role={role}
                       allPermissions={permissions}
+                      memberCount={memberCounts?.get(role.id)}
                       onEdit={() => handleOpenEdit(role)}
                       canEdit={false}
                     />
@@ -1195,6 +941,7 @@ const RolesSettingsPage: React.FC = () => {
                   <RoleRow
                     role={role}
                     allPermissions={permissions}
+                    memberCount={memberCounts?.get(role.id)}
                     onEdit={() => handleOpenEdit(role)}
                     canEdit
                   />
@@ -1211,6 +958,8 @@ const RolesSettingsPage: React.FC = () => {
         mode={drawerMode}
         initial={editingRole}
         permissions={permissions}
+        roles={orgRoles}
+        memberCount={editingRole ? memberCounts?.get(editingRole.id) : undefined}
         organizationId={activeOrganization?.id}
         onClose={() => setDrawerOpen(false)}
         onSaved={handleSaved}
