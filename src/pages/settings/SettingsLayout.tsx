@@ -5,8 +5,6 @@ import {
   GlobalStyles,
   Paper,
   Stack,
-  Tab,
-  Tabs,
   Typography,
   alpha,
 } from "@mui/material";
@@ -426,6 +424,13 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
     return () => document.body.classList.remove("mamadoc-settings-mobile");
   }, [isMobile]);
 
+  // Рельс разделов скроллится сам, поэтому открытый раздел может оказаться за
+  // его нижним краем — подтягиваем активный пункт в видимую часть.
+  const activeItemRef = React.useRef<HTMLElement | null>(null);
+  React.useEffect(() => {
+    activeItemRef.current?.scrollIntoView({ block: "nearest" });
+  }, [location.pathname]);
+
   if (visibleTabs.length === 0) {
     return <AccessDenied />;
   }
@@ -659,13 +664,9 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
   }
 
   // ── Desktop: left rail + content ──
-  const activeIndex = Math.max(
-    0,
-    visibleTabs.findIndex((tab) =>
-      location.pathname === tab.to ||
-      location.pathname.startsWith(`${tab.to}/`),
-    ),
-  );
+  const isActiveTab = (to: string) =>
+    location.pathname === to || location.pathname.startsWith(`${to}/`);
+
 
   return (
     <Box sx={{ p: 2, height: "100%" }}>
@@ -689,34 +690,101 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
             minHeight: 0,
           }}
         >
-          <Paper variant="outlined" sx={{ p: 1, alignSelf: "start" }}>
-            <Tabs
-              value={activeIndex}
-              orientation="vertical"
-              variant="standard"
-              aria-label={t("layout.tabsAriaLabel")}
-              sx={{
-                borderRight: 0,
-                "& .MuiTab-root": {
-                  alignItems: "flex-start",
-                  justifyContent: "flex-start",
-                  textAlign: "left",
-                  minHeight: 44,
-                  textTransform: "none",
-                },
-              }}
-            >
-              {visibleTabs.map((tab) => (
-                <Tab
-                  key={tab.key}
-                  component={RouterLink}
-                  to={tab.to}
-                  icon={tab.icon}
-                  iconPosition="start"
-                  label={t(`layout.tabs.${tab.key}`)}
-                />
-              ))}
-            </Tabs>
+          {/* Рельс разделов: те же группы, что на мобильном хабе, и свой
+              скролл — разделов больше двух десятков, плоским списком нижние
+              уходили за край экрана без возможности доскроллить. */}
+          <Paper
+            component="nav"
+            aria-label={t("layout.tabsAriaLabel")}
+            variant="outlined"
+            sx={{
+              p: 1,
+              alignSelf: "stretch",
+              minHeight: 0,
+              overflowY: "auto",
+              overscrollBehavior: "contain",
+            }}
+          >
+            {SETTINGS_GROUPS.map((group) => {
+              const groupTabs = visibleTabs.filter((tab) => tab.group === group);
+              if (groupTabs.length === 0) return null;
+              return (
+                <Box key={group} sx={{ "&:not(:first-of-type)": { mt: 1.5 } }}>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{
+                      px: 1,
+                      pb: 0.5,
+                      display: "block",
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    {t(`layout.groups.${group}`)}
+                  </Typography>
+                  <Stack spacing={0.25}>
+                    {groupTabs.map((tab) => {
+                      const active = isActiveTab(tab.to);
+                      return (
+                        <Box
+                          key={tab.key}
+                          ref={active ? activeItemRef : undefined}
+                          component={RouterLink}
+                          to={tab.to}
+                          aria-current={active ? "page" : undefined}
+                          sx={(theme) => {
+                            const accent =
+                              tab.tone === "success"
+                                ? theme.palette.success.main
+                                : theme.palette.primary.main;
+                            return {
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 1.25,
+                              px: 1,
+                              py: 0.625,
+                              minHeight: 38,
+                              borderRadius: "10px",
+                              textDecoration: "none",
+                              color: active ? "primary.onSurface" : "text.primary",
+                              bgcolor: active
+                                ? alpha(accent, theme.palette.mode === "dark" ? 0.18 : 0.1)
+                                : "transparent",
+                              transition: "background-color .15s ease, color .15s ease",
+                              "&:hover": {
+                                bgcolor: active
+                                  ? alpha(accent, theme.palette.mode === "dark" ? 0.24 : 0.14)
+                                  : theme.palette.action.hover,
+                              },
+                              "& .MuiSvgIcon-root": {
+                                fontSize: 19,
+                                flexShrink: 0,
+                                color: active ? accent : theme.palette.text.secondary,
+                              },
+                            };
+                          }}
+                        >
+                          {tab.icon}
+                          <Typography
+                            noWrap
+                            sx={{
+                              flex: 1,
+                              minWidth: 0,
+                              fontSize: 14,
+                              fontWeight: active ? 600 : 500,
+                            }}
+                          >
+                            {t(`layout.tabs.${tab.key}`)}
+                          </Typography>
+                        </Box>
+                      );
+                    })}
+                  </Stack>
+                </Box>
+              );
+            })}
           </Paper>
 
           <Paper
