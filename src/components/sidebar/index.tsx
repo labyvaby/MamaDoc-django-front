@@ -36,6 +36,7 @@ import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
+import PointOfSaleOutlined from "@mui/icons-material/PointOfSaleOutlined";
 // import BlockOutlined from "@mui/icons-material/BlockOutlined";
 // import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
@@ -420,6 +421,7 @@ const SidebarSecondary: React.FC = () => {
     services: !isRetail && can(PAGE_PERMISSIONS.services),
     documents: moduleGate("documents"),
     // СКЛАДЫ
+    pos: can(PAGE_PERMISSIONS.pos),
     products: can(PAGE_PERMISSIONS.products),
     sales: can(PAGE_PERMISSIONS.sales),
     storage: can(PAGE_PERMISSIONS.warehouses),
@@ -590,7 +592,7 @@ const SidebarSecondary: React.FC = () => {
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
-    "storage": can_.products || can_.vaccinations || can_.sales || can_.storage,
+    "storage": can_.pos || can_.products || can_.vaccinations || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
 
@@ -849,6 +851,10 @@ const SidebarSecondary: React.FC = () => {
             ══════════════════════════════════════════ */}
 
         {/* Товары */}
+        {show("storage") && can_.pos && (
+          <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса" collapsed={siderCollapsed} />
+        )}
+
         {show("storage") && can_.products && (
           <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
         )}
