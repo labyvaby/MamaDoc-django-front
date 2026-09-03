@@ -7,7 +7,13 @@
  */
 import dayjs, { type Dayjs } from "dayjs";
 
-import type { AppointmentServiceLine, DjangoAppointment } from "../../../api/appointments";
+import type {
+  AppointmentCancelReason,
+  AppointmentPriceOverride,
+  AppointmentServiceLine,
+  DjangoAppointment,
+} from "../../../api/appointments";
+import { APPOINTMENT_CANCEL_REASONS, isAppointmentCancelReason } from "../../../api/appointments";
 import type { PaymentStatus } from "../../../api/payments";
 import type { StatusCode } from "../../../config/appointmentStatuses";
 import {
@@ -47,6 +53,12 @@ export const VISIT_FILTER_CODES: StatusCode[] = [
  * осталось.
  *
  * «Возврат» своего чипа в строке не имеет и остаётся нейтральным.
+ *
+ * ⚠ «Со скидкой» из этой оси убрано и живёт в оси правок цены
+ * (MONEY_FLAG_OPTIONS): статус `discounted` бэк ставит только при закрытии
+ * чека, поэтому чип пропускал приём со скидкой, который ещё не оплатили или
+ * оплатили частично. Старые ссылки `?pay=discounted` отбраковываются —
+ * фильтровать скидки следует через `?money=discount`.
  */
 export const PAYMENT_FILTER_OPTIONS: {
   value: PaymentStatus;
@@ -55,9 +67,123 @@ export const PAYMENT_FILTER_OPTIONS: {
 }[] = [
   { value: "paid", statusCode: "paid" },
   { value: "partial", statusCode: "debt" },
-  { value: "discounted", statusCode: "discounted" },
   { value: "refunded", statusCode: null },
 ];
+
+/**
+ * Ось «что сделали с ценой»: скидка на чек и правки цены услуги.
+ *
+ * Отдельная от статуса оплаты, потому что отвечает на другой вопрос: не
+ * «взяли ли деньги», а «отдали ли дешевле/дороже прайса». Владелец смотрит
+ * её, чтобы увидеть, кому и на сколько скидывали и где цену поднимали руками.
+ *
+ * ⚠ Задаёт допустимые значения URL-параметра `money` (useReceptionFilters).
+ */
+export type AppointmentMoneyFlag = "discount" | "price_up" | "price_down";
+
+export const MONEY_FLAG_OPTIONS: AppointmentMoneyFlag[] = [
+  "discount",
+  "price_up",
+  "price_down",
+];
+
+/** Ключ подписи в словаре: значения фильтра snake_case, ключи локали — camelCase. */
+export const MONEY_FLAG_LABEL_KEY: Record<AppointmentMoneyFlag, string> = {
+  discount: "discount",
+  price_up: "priceUp",
+  price_down: "priceDown",
+};
+
+/** Есть ли на чеке скидка. Факт скидки, а не статус оплаты (см. выше). */
+export function hasDiscount(appt: DjangoAppointment): boolean {
+  return (parseFloat(appt.discountAmount ?? "") || 0) > 0;
+}
+
+/**
+ * На сколько правки цены изменили чек приёма: > 0 — стало дороже прайса,
+ * < 0 — дешевле.
+ *
+ * Считаем по строкам: у строки берём самую раннюю `oldUnitPrice` и самую
+ * позднюю `newUnitPrice`, то есть сравниваем с ценой ДО первой правки, а не с
+ * предыдущим значением. Иначе приём, которому цену подняли и вернули назад,
+ * попадал бы в «дороже» по последней записи истории.
+ *
+ * Каталожную `service.basePrice` для сравнения намеренно не берём: это
+ * текущая цена справочника, и после подорожания прайса все старые приёмы
+ * читались бы как «дешевле». История правок — факт, прайс — нет.
+ *
+ * Правки строки, которой в приёме уже нет, пропускаем: её количество (а
+ * значит и вклад в чек) восстановить не из чего.
+ */
+export function priceOverrideDelta(appt: DjangoAppointment): number {
+  const byLine = new Map<number, AppointmentPriceOverride[]>();
+  for (const override of appt.priceOverrides ?? []) {
+    if (override.serviceLineId == null) continue;
+    const list = byLine.get(override.serviceLineId);
+    if (list) list.push(override);
+    else byLine.set(override.serviceLineId, [override]);
+  }
+
+  let delta = 0;
+  for (const [lineId, list] of byLine) {
+    const line = appt.services.find((sl) => sl.id === lineId);
+    if (!line) continue;
+
+    const sorted = [...list].sort((a, b) => Date.parse(a.changedAt) - Date.parse(b.changedAt));
+    const before = Number(sorted[0].oldUnitPrice);
+    const after = Number(sorted[sorted.length - 1].newUnitPrice);
+    if (!Number.isFinite(before) || !Number.isFinite(after)) continue;
+
+    delta += (after - before) * (Number(line.quantity) || 1);
+  }
+  return delta;
+}
+
+/** Флаги оси «цена» для одного приёма: скидка и направление правки цены. */
+export function appointmentMoneyFlags(appt: DjangoAppointment): AppointmentMoneyFlag[] {
+  const flags: AppointmentMoneyFlag[] = [];
+  if (hasDiscount(appt)) flags.push("discount");
+
+  const delta = priceOverrideDelta(appt);
+  if (delta > 0) flags.push("price_up");
+  else if (delta < 0) flags.push("price_down");
+
+  return flags;
+}
+
+/** Подходит ли приём под выбранные флаги (несколько выбранных — ИЛИ, как у чипов оплаты). */
+export function matchesMoneyFlags(
+  appt: DjangoAppointment,
+  selected: AppointmentMoneyFlag[],
+): boolean {
+  if (selected.length === 0) return true;
+  const flags = appointmentMoneyFlags(appt);
+  return selected.some((flag) => flags.includes(flag));
+}
+
+/**
+ * Ось «почему отменили» — видна и фильтруется только у отменённых приёмов.
+ * Добавлена вслед за bulk-отменой отсутствия врача (03.09.2026): без неё
+ * «отменено по вине клиники» неотличимо от «пациент передумал» в отчёте.
+ *
+ * ⚠ Задаёт допустимые значения URL-параметра `reason` (useReceptionFilters).
+ * Легаси-записи со свободным текстом (до 03.09.2026) под фильтр не попадают —
+ * значение неизвестно, фильтровать по нему нечем; см. isAppointmentCancelReason.
+ */
+export const CANCEL_REASON_OPTIONS: readonly AppointmentCancelReason[] = APPOINTMENT_CANCEL_REASONS;
+
+/** Подходит ли приём под выбранные причины отмены (несколько — ИЛИ). */
+export function matchesCancelReasons(
+  appt: DjangoAppointment,
+  selected: AppointmentCancelReason[],
+): boolean {
+  if (selected.length === 0) return true;
+  return (
+    appt.status === "canceled" &&
+    isAppointmentCancelReason(appt.cancelReason) &&
+    selected.includes(appt.cancelReason)
+  );
+}
 
 /** Шаг сетки записи: как и длительность приёма по умолчанию (slotAvailability). */
 const SLOT_STEP_MINUTES = 30;
@@ -94,7 +220,9 @@ export function firstFreeSlotInSegment(
     .add(minutesIntoStep === 0 ? 0 : SLOT_STEP_MINUTES - minutesIntoStep, "minute");
 
   const candidate = roundedNow.isAfter(segStart) ? roundedNow : segStart;
-  return candidate.isBefore(segEnd) ? candidate : null;
+  return candidate.add(SLOT_STEP_MINUTES, "minute").valueOf() <= segEnd.valueOf()
+    ? candidate
+    : null;
 }
 
 /**
@@ -116,11 +244,58 @@ export function firstFreeSlotInSegmentFor(
   const segEnd = day.hour(endH).minute(endM).second(0).millisecond(0);
 
   let candidate = firstFreeSlotInSegment(day, segment, now);
-  while (candidate && isSlotCovered(intervals, candidate.valueOf())) {
+  while (
+    candidate &&
+    intervals.some((interval) => {
+      const start = candidate!.valueOf();
+      const end = candidate!.add(SLOT_STEP_MINUTES, "minute").valueOf();
+      return start < interval.end && interval.start < end;
+    })
+  ) {
     candidate = candidate.add(SLOT_STEP_MINUTES, "minute");
-    if (!candidate.isBefore(segEnd)) return null;
+    if (candidate.add(SLOT_STEP_MINUTES, "minute").valueOf() > segEnd.valueOf()) return null;
   }
   return candidate;
+}
+
+/**
+ * Первое свободное получасовое окно с привязкой к началу смены.
+ *
+ * Нельзя начинать сетку от конца предыдущего приёма: при смене 09:00,
+ * приёмах 09:00–09:40 и 10:20–10:50 это ошибочно давало окно 09:40, хотя
+ * реальные слоты 09:00, 09:30 и 10:00 все заняты.
+ */
+export function firstFreeSlotAtOrAfter(
+  day: Dayjs,
+  segment: { start: string; end: string },
+  intervals: BusyInterval[],
+  notBefore: Dayjs,
+  latestEnd?: Dayjs,
+  now: Dayjs = dayjs(),
+): Dayjs | null {
+  const [startH, startM] = segment.start.split(":").map(Number);
+  const [endH, endM] = segment.end.split(":").map(Number);
+  if ([startH, startM, endH, endM].some((n) => !Number.isFinite(n))) return null;
+
+  const segStart = day.hour(startH).minute(startM).second(0).millisecond(0);
+  const segEnd = day.hour(endH).minute(endM).second(0).millisecond(0);
+  if (!segEnd.isAfter(segStart)) return null;
+  const end = latestEnd && latestEnd.isBefore(segEnd) ? latestEnd : segEnd;
+  const isToday = day.isSame(now, "day");
+
+  for (
+    let candidate = segStart;
+    candidate.add(SLOT_STEP_MINUTES, "minute").valueOf() <= end.valueOf();
+    candidate = candidate.add(SLOT_STEP_MINUTES, "minute")
+  ) {
+    const candidateEnd = candidate.add(SLOT_STEP_MINUTES, "minute");
+    if (candidate.isBefore(notBefore) || (isToday && candidate.isBefore(now))) continue;
+    const overlaps = intervals.some(
+      (interval) => candidate.valueOf() < interval.end && interval.start < candidateEnd.valueOf(),
+    );
+    if (!overlaps) return candidate;
+  }
+  return null;
 }
 
 /** Только цифры — номера в базе лежат в разном формате (+996, 0555, пробелы). */

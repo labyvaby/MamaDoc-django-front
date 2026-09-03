@@ -923,8 +923,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       void queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.appointments.payments(appointment.id),
       });
-      // Слоты заключений держат serviceLineId, а смена услуги или исполнителя
-      // пересоздаёт строку с новым id (строка уходит в PATCH без id). Без
+      // Слоты заключений держат serviceLineId, а смена услуги пересоздаёт
+      // строку с новым id (строка уходит в PATCH без id). Без
       // сброса кэша колонка заключения продолжила бы работать со старым id и
       // получила бы 404 «Service line not found» на первом же сохранении.
       void queryClient.invalidateQueries({
@@ -993,18 +993,22 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
           employee !== null &&
           (row.serviceId === null ||
             data.canEmployeeProvideService(employee.id, row.serviceId));
+        // Исполнителя меняем НА МЕСТЕ: строка сохраняет id, а с ним расходники,
+        // заметки и скидку. Цена от исполнителя не зависит вовсе — это снимок
+        // `service.base_price`, а `EmployeeService.price_override` в расчёт
+        // приёма пока не входит, поэтому пересоздание строки цену и не меняло,
+        // зато уносило её расходники (ответ бэка 03.09.2026 §5; бэк прямо
+        // просит от пересоздания отказаться). Длительность и признак «нужно
+        // заключение» бэк пересчитывает сам по новому исполнителю.
+        //
+        // Услугу строки сбрасываем, если новый исполнитель её не оказывает —
+        // это уже смена услуги, и там пересоздание остаётся: PATCH с id
+        // актуальную цену новой услуги не подставляет (см. onChange услуги).
         return {
           ...row,
           groupId: groupId ?? row.groupId,
           employeeId,
           serviceId: keepService ? row.serviceId : null,
-          // Цена строки зафиксирована для старой пары услуга/исполнитель, и
-          // PATCH с id её не пересчитывает — пересоздаём строку, чтобы бэк взял
-          // актуальную цену новой пары.
-          lineId: null,
-          unitPrice: "",
-          durationMinutes: "",
-          discountAmount: "",
         };
       });
     });

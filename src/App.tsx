@@ -133,6 +133,9 @@ const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
 const ProfilePage = lazy(() => import("./pages/profile"));
 const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPage"));
+// Касса (POS) — полноэкранный модуль: собственная шапка вместо общей, поэтому
+// живёт в отдельной ветке layout (см. ниже renderNoHeader).
+const PosPage = lazy(() => import("./pages/pos"));
 
 
 // Вспомогательный компонент для защиты корневого редиректа
@@ -201,6 +204,9 @@ const DjangoContextRemount = ({ children }: { children: ReactNode }) => {
 // теряется позиция скролла (выбрасывает наверх при выборе пункта снизу).
 const renderHeader = () => <Header sticky />;
 const renderSider = () => <Sidebar />;
+// Касса рисует свою шапку (поиск товара, кассир, действия с чеком) — общая
+// шапка приложения там лишняя и съедала бы 64px рабочей области.
+const renderNoHeader = () => null;
 
 function App() {
   const theme = useTheme();
@@ -458,6 +464,44 @@ function App() {
                     }}
                   >
                     <Routes>
+                      {/* Касса (POS): та же авторизация и сайдбар, но без общей
+                          шапки и без отступов — модуль занимает всю рабочую
+                          область и держит свой каркас (макет Monogram). */}
+                      <Route
+                        element={
+                          <RequireAuth>
+                            <MobileSidebarProvider>
+                              <ThemedLayout
+                                Header={renderNoHeader}
+                                Sider={renderSider}
+                                childrenBoxProps={{
+                                  sx: {
+                                    p: 0,
+                                    height: { xs: "100dvh", md: "100vh" },
+                                    overflow: "hidden",
+                                    position: "relative",
+                                  },
+                                }}
+                              >
+                                <DjangoContextRemount>
+                                  <Outlet />
+                                </DjangoContextRemount>
+                              </ThemedLayout>
+                            </MobileSidebarProvider>
+                          </RequireAuth>
+                        }
+                      >
+                        <Route
+                          path="pos"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.pos}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <PosPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                      </Route>
                       <Route
                         element={
                           <RequireAuth>

@@ -85,9 +85,11 @@ const OverlapConfirmDialog: React.FC<OverlapConfirmDialogProps> = ({
           {t("overlapDialog.text")}
         </Typography>
         <Stack spacing={1} sx={{ mt: 0.75 }}>
-          {(conflict?.overlaps ?? []).map((o) => (
+          {(conflict?.overlaps ?? []).map((o, i) => (
             <Box
-              key={o.appointmentId}
+              // appointmentId у чужого филиала null и одинаков у всех таких
+              // строк — ключом он больше не годится.
+              key={o.appointmentId ?? `other-${i}`}
               sx={{
                 borderLeft: "3px solid",
                 borderColor: "warning.main",

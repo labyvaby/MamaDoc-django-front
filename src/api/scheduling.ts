@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { ApiError, apiRequest } from "./client";
 
 // ── Types (mirror server/apps/scheduling/api/payloads.py) ─────────────────────
 
@@ -23,6 +23,8 @@ export interface ScheduleRule {
 
 export interface ScheduleRuleWrite {
   employeeId: number;
+  /** Подтверждение пересечения смен после 409 — см. ShiftOverlapConflict. */
+  allowOverlap?: boolean;
   dateFrom: string;
   dateTo: string;
   weekdays: number[];
@@ -36,6 +38,8 @@ export interface ScheduleRuleWrite {
 }
 
 export interface ScheduleRulePatch {
+  /** Подтверждение пересечения смен после 409 — см. ShiftOverlapConflict. */
+  allowOverlap?: boolean;
   dateFrom?: string;
   dateTo?: string;
   weekdays?: number[];
@@ -61,10 +65,17 @@ export interface ScheduleException {
   startTime: string | null;
   endTime: string | null;
   comment: string;
+  /**
+   * Общий идентификатор пачки, созданной одним `POST exceptions/period/`.
+   * У точечного исключения — `null`; на окружении без выкладки поля нет вовсе.
+   */
+  groupId?: string | null;
 }
 
 export interface ScheduleExceptionWrite {
   employeeId: number;
+  /** Подтверждение пересечения смен после 409 — см. ShiftOverlapConflict. */
+  allowOverlap?: boolean;
   date: string;
   kind: ScheduleExceptionKind;
   startTime?: string | null;
@@ -75,6 +86,8 @@ export interface ScheduleExceptionWrite {
 }
 
 export interface ScheduleExceptionPatch {
+  /** Подтверждение пересечения смен после 409 — см. ShiftOverlapConflict. */
+  allowOverlap?: boolean;
   date?: string;
   kind?: ScheduleExceptionKind;
   startTime?: string;
@@ -170,6 +183,13 @@ export interface AvailabilitySummary {
 
 export interface AvailabilityParams {
   employeeId?: number;
+  /**
+   * Явный режим «все филиалы организации». До 02.09.2026 availability этот
+   * параметр не читала вовсе, и org-wide получался сам собой — просто не
+   * передавали branchId. Теперь режим назван своим именем и побеждает branchId,
+   * если пришли оба.
+   */
+  allBranches?: boolean;
   specializationId?: number;
   /** Опционально: задаёт длину окна. Без него бэкенд режет сетку по 30 мин. */
   serviceId?: number;
@@ -182,8 +202,64 @@ export interface AvailabilityParams {
 export interface AvailabilitySummaryParams {
   /** Дата для бейджей доступности; по умолчанию — сегодня. */
   date?: string;
+  /** См. AvailabilityParams.allBranches. */
+  allBranches?: boolean;
   branchId?: number;
   organizationId?: number;
+}
+
+// ── Пересечение смен одного сотрудника (HTTP 409) ─────────────────────────────
+
+/**
+ * Одна пересекающаяся смена того же сотрудника — правило или рабочее исключение.
+ *
+ * Филиал приходит с названием, в отличие от конфликта приёмов: скрывать нечего,
+ * это график того же человека, а без адреса предупреждение бесполезно.
+ */
+export interface ShiftOverlap {
+  kind: "rule" | "exception";
+  /** Заполнено при kind = "rule". */
+  ruleId: number | null;
+  /** Заполнено при kind = "exception". */
+  exceptionId: number | null;
+  branchId: number | null;
+  branchName: string | null;
+  /** Конфликт в другом филиале — человек один, а не «две колонки». */
+  otherBranch?: boolean;
+  /** Конкретный день пересечения, YYYY-MM-DD. */
+  date: string;
+  start: string; // HH:MM
+  end: string;
+}
+
+/**
+ * Тело 409 при сохранении смены в режиме организации `warn`
+ * (тот же тумблер appointment_overlap_mode, что у приёмов; ветка бэка
+ * feature/multi-branch-schedule, 02.09.2026).
+ *
+ * В режиме `forbid` пересечение отдаётся плоским 400 с текстом в поле
+ * startTime — подтверждать там нечего, диалог не нужен.
+ */
+export interface ShiftOverlapConflict {
+  code: "schedule_shift_overlap";
+  message: string;
+  employeeId: number;
+  /** Не больше 10 — диалогу нужна причина, а не весь календарь. */
+  overlaps: ShiftOverlap[];
+}
+
+/**
+ * Распознаём пересечение смен: 409 с машинным кодом `schedule_shift_overlap`.
+ * Ключимся на код, не на текст. Любая другая ошибка — null, её показывает
+ * обычный разбор.
+ */
+export function parseShiftOverlapConflict(err: unknown): ShiftOverlapConflict | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null;
+  const p = err.payload as Record<string, unknown> | undefined;
+  if (p && typeof p === "object" && p.code === "schedule_shift_overlap") {
+    return p as unknown as ShiftOverlapConflict;
+  }
+  return null;
 }
 
 // ── API ────────────────────────────────────────────────────────────────────────
@@ -269,6 +345,110 @@ export function deleteScheduleException(exceptionId: number): Promise<void> {
   return apiRequest<void>(`/scheduling/exceptions/${exceptionId}/`, { method: "DELETE" });
 }
 
+// ── Исключение графика периодом ──────────────────────────────────────────────
+
+/**
+ * Отпуск/больничный одним запросом. Бэк разворачивает период в N однодневных
+ * исключений с общим `groupUuid` — выборка доступности ищет по конкретной дате.
+ * Создание атомарное: либо все дни, либо ни одного. Потолок — 366 дней.
+ */
+export interface ScheduleExceptionPeriodWrite {
+  employeeId: number;
+  dateFrom: string; // YYYY-MM-DD
+  dateTo: string;
+  kind: ScheduleExceptionKind;
+  /** Не передан — исключение «в любом филиале». */
+  branchId?: number | null;
+  comment?: string;
+  organizationId?: number | null;
+}
+
+export interface ScheduleExceptionPeriodResult {
+  groupId: string;
+  count: number;
+  items: ScheduleException[];
+}
+
+export function createScheduleExceptionPeriod(
+  payload: ScheduleExceptionPeriodWrite,
+): Promise<ScheduleExceptionPeriodResult> {
+  return apiRequest<ScheduleExceptionPeriodResult>("/scheduling/exceptions/period/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+/** Снимает всю пачку целиком — по `groupId` из ответа создания или из GET. */
+export function deleteScheduleExceptionPeriod(groupId: string): Promise<void> {
+  return apiRequest<void>(`/scheduling/exceptions/period/${groupId}/`, {
+    method: "DELETE",
+  });
+}
+
+// ── Конфликты отсутствия ─────────────────────────────────────────────────────
+
+/**
+ * Приём, попадающий под отсутствие сотрудника.
+ *
+ * Это НЕ объект приёма из `/appointments/`: ручка отдаёт свою плоскую сводку
+ * (пациент строкой, услуги — массивом названий) — проверено живым запросом на
+ * test 03.09.2026. Всё, что нужно экрану разбора, здесь есть; за деталями
+ * приёма ходить в `/appointments/<id>/`.
+ */
+export interface ScheduleConflictAppointment {
+  id: number;
+  startsAt: string;
+  endsAt: string;
+  /** Только незакрытые: `scheduled` | `confirmed` | `arrived`. */
+  status: string;
+  branchId: number | null;
+  branchName: string | null;
+  patientId: number | null;
+  patientName: string;
+  patientPhone: string;
+  /** Названия услуг приёма, без цен и исполнителей. */
+  services: string[];
+  /** decimal-строка; > 0 — по приёму уже есть деньги (предоплата). */
+  paidTotal: string;
+  /** true — отсутствующий «врач приёма», false — исполнитель одной из строк. */
+  isPerformerPrimary: boolean;
+}
+
+/** Ответ ручки — объект-обёртка с эхом параметров запроса. */
+export interface ScheduleConflictsResponse {
+  employeeId: number;
+  dateFrom: string;
+  dateTo: string;
+  appointments: ScheduleConflictAppointment[];
+}
+
+/**
+ * Приёмы сотрудника за период в статусах `scheduled`, `confirmed`, `arrived`.
+ *
+ * Скоуп — все филиалы, доступные вызывающему, а не активный филиал сессии:
+ * исключение ставится на один филиал, а предупреждать надо пациентов всех
+ * (ответ бэка §8). Право — `appointments.view`.
+ */
+export function getScheduleConflicts(
+  params: {
+    employeeId: number;
+    dateFrom: string;
+    dateTo: string;
+    organizationId?: number | null;
+  },
+  signal?: AbortSignal,
+): Promise<ScheduleConflictAppointment[]> {
+  const q = new URLSearchParams();
+  q.set("employeeId", String(params.employeeId));
+  q.set("dateFrom", params.dateFrom);
+  q.set("dateTo", params.dateTo);
+  if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
+  return apiRequest<ScheduleConflictsResponse>(
+    `/scheduling/exceptions/conflicts/?${q.toString()}`,
+    { signal },
+  ).then((data) => (Array.isArray(data?.appointments) ? data.appointments : []));
+}
+
 export function getAvailability(
   params: AvailabilityParams,
   signal?: AbortSignal,
@@ -281,7 +461,8 @@ export function getAvailability(
   if (params.serviceId != null) q.set("serviceId", String(params.serviceId));
   if (params.dateFrom) q.set("dateFrom", params.dateFrom);
   if (params.dateTo) q.set("dateTo", params.dateTo);
-  if (params.branchId != null) q.set("branchId", String(params.branchId));
+  if (params.allBranches) q.set("allBranches", "1");
+  else if (params.branchId != null) q.set("branchId", String(params.branchId));
   if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
   return apiRequest<Availability>(`/scheduling/availability/?${q.toString()}`, { signal });
 }
@@ -293,7 +474,8 @@ export function getAvailabilitySummary(
 ): Promise<AvailabilitySummary> {
   const q = new URLSearchParams();
   if (params.date) q.set("date", params.date);
-  if (params.branchId != null) q.set("branchId", String(params.branchId));
+  if (params.allBranches) q.set("allBranches", "1");
+  else if (params.branchId != null) q.set("branchId", String(params.branchId));
   if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
   const qs = q.toString();
   return apiRequest<AvailabilitySummary>(

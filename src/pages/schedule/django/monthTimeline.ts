@@ -54,6 +54,42 @@ export interface PackedLane {
   lastEndMin: number;
 }
 
+/** Отрезок шкалы в минутах от полуночи. */
+export interface MinuteSpan {
+  startMin: number;
+  endMin: number;
+}
+
+/**
+ * Обед сегмента в координатах шкалы, обрезанный по его границам.
+ * null — обеда нет либо он целиком вне нарисованного куска смены
+ * (смена прижата к краю окна, а перерыв остался снаружи).
+ */
+export function segmentLunch(seg: LaneSegment): MinuteSpan | null {
+  if (!seg.occ.lunch) return null;
+  const startMin = Math.max(occMinutes(seg.occ.lunch.start), seg.startMin);
+  const endMin = Math.min(occMinutes(seg.occ.lunch.end), seg.endMin);
+  return endMin > startMin ? { startMin, endMin } : null;
+}
+
+/**
+ * Рабочие куски сегмента: обед разрывает полосу на «до» и «после».
+ *
+ * Полоса рисуется отрезками, а перерыв остаётся пустотой — на линии видно
+ * ровно то время, когда сотрудник работает (просьба заказчика 03.09.2026).
+ * Обед, примыкающий к краю смены, оставляет один кусок; съевший её целиком —
+ * отдаёт сегмент как есть, иначе смена пропала бы со шкалы.
+ */
+export function segmentWorkSpans(seg: LaneSegment): MinuteSpan[] {
+  const whole = { startMin: seg.startMin, endMin: seg.endMin };
+  const lunch = segmentLunch(seg);
+  if (!lunch) return [whole];
+  const spans: MinuteSpan[] = [];
+  if (lunch.startMin > seg.startMin) spans.push({ startMin: seg.startMin, endMin: lunch.startMin });
+  if (lunch.endMin < seg.endMin) spans.push({ startMin: lunch.endMin, endMin: seg.endMin });
+  return spans.length > 0 ? spans : [whole];
+}
+
 /** Окно, в котором раскладываются смены. По умолчанию — месячное 07:00–22:00. */
 export interface LaneWindow {
   startMin?: number;

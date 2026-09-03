@@ -45,6 +45,38 @@ export function lunchNote(occ: DayOccurrence): string {
   return occ.lunch ? `обед ${occ.lunch.start}–${occ.lunch.end}` : "";
 }
 
+/**
+ * Рабочие отрезки смены: обед делит её на «до» и «после».
+ *
+ * Полосу календаря обед по-прежнему не режет (см. lunchWithin), но в тексте
+ * человеку нужно именно рабочее время — «09:00–13:00, 14:00–17:00», а не
+ * «09:00–17:00» с перерывом отдельной строкой. Обед, примыкающий к краю смены,
+ * оставляет один отрезок; съевший смену целиком — отдаём смену как есть, чтобы
+ * подпись не оказалась пустой.
+ */
+export function workingSpans(occ: DayOccurrence): { start: string; end: string }[] {
+  const whole = { start: occ.startTime, end: occ.endTime };
+  if (!occ.lunch) return [whole];
+  const spans: { start: string; end: string }[] = [];
+  if (occ.startTime < occ.lunch.start) spans.push({ start: occ.startTime, end: occ.lunch.start });
+  if (occ.lunch.end < occ.endTime) spans.push({ start: occ.lunch.end, end: occ.endTime });
+  return spans.length > 0 ? spans : [whole];
+}
+
+/**
+ * Подпись рабочего времени смены: «09:00–13:00, 14:00–17:00».
+ * `formatTime` — форматтер конкретного экрана (в календаре часы без ведущего
+ * нуля), по умолчанию время выводится как есть.
+ */
+export function shiftTimeLabel(
+  occ: DayOccurrence,
+  formatTime: (time: string) => string = (time) => time,
+): string {
+  return workingSpans(occ)
+    .map((span) => `${formatTime(span.start)}–${formatTime(span.end)}`)
+    .join(", ");
+}
+
 /** "HH:MM" → минуты от полуночи. Некорректное время считаем полуночью. */
 const minutesOf = (t: string): number => {
   const m = /^([01]?\d|2[0-3]):([0-5]\d)/.exec(t);
@@ -79,17 +111,13 @@ export function formatDuration(minutes: number): string {
 }
 
 /**
- * Полная подпись смены для тултипа: часы, длительность, обед и чистое время.
- * «Чистых» показываем только когда обед есть — иначе строка дублирует себя.
+ * Полная подпись смены для тултипа: рабочие часы, длительность и обед.
+ * Длительность — всегда чистая: «09:00–13:00, 14:00–17:00 · 8 ч» противоречило
+ * бы само себе.
  */
 export function occurrenceNote(occ: DayOccurrence): string {
-  const parts = [
-    `${occ.startTime}–${occ.endTime}`,
-    formatDuration(shiftMinutes(occ)),
-  ];
-  if (occ.lunch) {
-    parts.push(lunchNote(occ), `чистых ${formatDuration(netShiftMinutes(occ))}`);
-  }
+  const parts = [shiftTimeLabel(occ), formatDuration(netShiftMinutes(occ))];
+  if (occ.lunch) parts.push(lunchNote(occ));
   if (occ.kind !== "rule") parts.push("точечная смена");
   return parts.join(" · ");
 }

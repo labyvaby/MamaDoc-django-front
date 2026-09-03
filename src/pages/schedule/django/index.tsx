@@ -28,6 +28,8 @@ import { motion } from "framer-motion";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
+import DeleteSweepOutlined from "@mui/icons-material/DeleteSweepOutlined";
+import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
@@ -39,7 +41,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
-import { CustomDatePicker } from "../../../components/ui";
+import { ConfirmDialog, CustomDatePicker } from "../../../components/ui";
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../../api/staff";
 import { useAllActiveEmployees } from "../../../hooks/useAllActiveEmployees";
 import {
@@ -49,18 +51,26 @@ import {
   deleteScheduleRule,
   getScheduleExceptions,
   createScheduleException,
+  createScheduleExceptionPeriod,
+  deleteScheduleExceptionPeriod,
   updateScheduleException,
   deleteScheduleException,
+  parseShiftOverlapConflict,
   type ScheduleRule,
   type ScheduleException,
   type ScheduleExceptionKind,
+  type ShiftOverlapConflict,
 } from "../../../api/scheduling";
 import { parseBackendError } from "../../../api/appointments";
+import { pluralRu } from "../../../utility/amountInWords";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/queryKeys";
 import ScheduleCalendar from "./ScheduleCalendar";
 import { useFormValidation } from "../../../hooks/useFormValidation";
 import ScheduleDayDrawer from "./ScheduleDayDrawer";
 import SchedulePointEditDialog, { type SchedulePointEditValues } from "./SchedulePointEditDialog";
+import ShiftOverlapDialog from "./ShiftOverlapDialog";
+import AbsenceConflictsDrawer, { type AbsenceSpan } from "./AbsenceConflictsDrawer";
+import { isAbsenceKind, useAbsenceConflicts } from "./useAbsenceConflicts";
 import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
 import { useEmployeeColorMap } from "./employeeColors";
 
@@ -80,6 +90,14 @@ function weekdaysLabel(weekdays: number[]): string {
 /** dayjs считает 0=Вс, а бэкенд расписания — 0=Пн. */
 function toRuleWeekday(date: Dayjs): number {
   return (date.day() + 6) % 7;
+}
+
+function pluralDays(n: number): string {
+  return pluralRu(n, ["день", "дня", "дней"]);
+}
+
+function pluralVisits(n: number): string {
+  return pluralRu(n, ["запись", "записи", "записей"]);
 }
 
 // ── Мелкие общие блоки форм ───────────────────────────────────────────────────
@@ -263,6 +281,9 @@ const RuleFormDrawer: React.FC<{
   const [comment, setComment] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // Пересечение смен одного сотрудника в режиме «warn»: бэк отвечает 409 со
+  // списком, сохранение повторяется с allowOverlap.
+  const [overlap, setOverlap] = React.useState<ShiftOverlapConflict | null>(null);
   // Филиал правила: null — «общее», такое правило видно во всех филиалах
   // (бэкенд отдаёт «правила филиала ИЛИ branchId=null»).
   const [ruleBranchId, setRuleBranchId] = React.useState<number | null>(branchId ?? null);
@@ -273,6 +294,7 @@ const RuleFormDrawer: React.FC<{
     if (!open) return;
     setError(null);
     setBusy(false);
+    setOverlap(null);
     if (rule) {
       setEmployee({ id: rule.employeeId, fullName: rule.employeeName } as DjangoEmployeeListItem);
       setDateFrom(dayjs(rule.dateFrom));
@@ -322,13 +344,14 @@ const RuleFormDrawer: React.FC<{
         : "Начало обеда должно быть раньше его конца",
   });
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (allowOverlap = false) => {
     if (!form.validate()) return;
     setError(null);
     setBusy(true);
     try {
       if (isEdit) {
         await updateScheduleRule(rule.id, {
+          ...(allowOverlap ? { allowOverlap: true } : {}),
           dateFrom: dateFrom.format("YYYY-MM-DD"),
           dateTo: dateTo.format("YYYY-MM-DD"),
           weekdays,
@@ -342,6 +365,7 @@ const RuleFormDrawer: React.FC<{
       } else {
         await createScheduleRule({
           employeeId: employee!.id,
+          ...(allowOverlap ? { allowOverlap: true } : {}),
           dateFrom: dateFrom.format("YYYY-MM-DD"),
           dateTo: dateTo.format("YYYY-MM-DD"),
           weekdays,
@@ -354,9 +378,17 @@ const RuleFormDrawer: React.FC<{
           branchId: ruleBranchId,
         });
       }
+      setOverlap(null);
       onSaved();
       onClose();
     } catch (e) {
+      // Режим «warn»: смена накладывается на другую смену того же сотрудника —
+      // показываем список и ждём подтверждения, а не сырую ошибку.
+      const conflict = parseShiftOverlapConflict(e);
+      if (conflict && !allowOverlap) {
+        setOverlap(conflict);
+        return;
+      }
       setError(parseBackendError(e));
     } finally {
       setBusy(false);
@@ -550,12 +582,19 @@ const RuleFormDrawer: React.FC<{
           variant="contained"
           size="large"
           disabled={busy}
-          onClick={handleSubmit}
+          onClick={() => void handleSubmit()}
           startIcon={busy ? <CircularProgress size={20} color="inherit" /> : undefined}
         >
           {busy ? "Сохранение…" : isEdit ? "Сохранить" : "Добавить правило"}
         </Button>
       </Box>
+
+      <ShiftOverlapDialog
+        conflict={overlap}
+        saving={busy}
+        onCancel={() => setOverlap(null)}
+        onConfirm={() => void handleSubmit(true)}
+      />
     </Drawer>
   );
 };
@@ -568,7 +607,12 @@ const ExceptionDrawer: React.FC<{
   organizationId?: number;
   /** Активный филиал — новое исключение создаётся в нём, а не «общим». */
   branchId?: number;
-  onSaved: () => void;
+  /**
+   * Сохранение прошло. Для отсутствия (выходной/отпуск) приходит и период, за
+   * который его поставили — страница поднимает по нему разбор уже записанных
+   * приёмов (см. AbsenceConflictsDrawer).
+   */
+  onSaved: (absence?: AbsenceSpan) => void;
   initialDate?: Dayjs | null;
   /** Тип, с которым открывается форма. «Добавить смену» → "extra". */
   initialKind?: ScheduleExceptionKind;
@@ -592,16 +636,30 @@ const ExceptionDrawer: React.FC<{
   const [comment, setComment] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // См. RuleFormDrawer: пересечение смен подтверждается тем же диалогом.
+  // Выходной и отпуск бэк не проверяет — они ничего не занимают.
+  const [overlap, setOverlap] = React.useState<ShiftOverlapConflict | null>(null);
   // Повтор: разовая смена уходит в исключения, «по дням недели» — в недельный
   // шаблон (/scheduling/rules/), чтобы не заводить смены по одной.
   const [repeat, setRepeat] = React.useState<"once" | "weekly">("once");
   const [weekdays, setWeekdays] = React.useState<number[]>([]);
   const [dateTo, setDateTo] = React.useState<Dayjs>(dayjs().add(1, "year"));
+  // Выходной и отпуск ставятся либо на день, либо на период: отпуск на две
+  // недели — это 14 исключений, и раньше их заводили по одному. Период уходит
+  // отдельной ручкой (POST exceptions/period/), которая создаёт всю пачку
+  // атомарно и возвращает groupId для снятия одним запросом.
+  const [span, setSpan] = React.useState<"single" | "period">("single");
+  const [absenceDateTo, setAbsenceDateTo] = React.useState<Dayjs>(dayjs());
   const [hasLunch, setHasLunch] = React.useState(true);
   const [lunchStart, setLunchStart] = React.useState("13:00");
   const [lunchEnd, setLunchEnd] = React.useState("14:00");
 
   const isRule = kind === "extra" && repeat === "weekly";
+  const isAbsence = kind === "day_off" || kind === "vacation";
+  const isAbsencePeriod = isAbsence && span === "period";
+  // Потолок периода на бэке — 366 дней; проверяем до запроса, чтобы вместо
+  // 400-го показать понятную подсказку под полем.
+  const absenceDays = isAbsencePeriod ? absenceDateTo.diff(date, "day") + 1 : 1;
 
   React.useEffect(() => {
     if (open) {
@@ -614,11 +672,14 @@ const ExceptionDrawer: React.FC<{
       setComment("");
       setError(null);
       setBusy(false);
+      setOverlap(null);
       setRepeat("once");
       // Предзаполняем днём недели выбранной даты: пользователь пришёл из
       // конкретного дня календаря, «повторять как сегодня» — ожидаемый сценарий.
       setWeekdays([toRuleWeekday(start)]);
       setDateTo(start.add(1, "year"));
+      setSpan("single");
+      setAbsenceDateTo(start);
       setHasLunch(true);
       setLunchStart("13:00");
       setLunchEnd("14:00");
@@ -649,6 +710,15 @@ const ExceptionDrawer: React.FC<{
         : date.isAfter(dateTo)
           ? "Начало периода позже его конца"
           : null,
+    absencePeriod: !isAbsencePeriod
+      ? null
+      : !date.isValid() || !absenceDateTo.isValid()
+        ? "Укажите период отсутствия"
+        : date.isAfter(absenceDateTo)
+          ? "Начало периода позже его конца"
+          : absenceDays > 366
+            ? "Период длиннее года — разбейте на части"
+            : null,
     hours:
       (kind !== "extra" && !isRule) || startTime < endTime
         ? null
@@ -659,7 +729,7 @@ const ExceptionDrawer: React.FC<{
         : "Начало обеда должно быть раньше его конца",
   });
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (allowOverlap = false) => {
     if (!form.validate()) return;
     setError(null);
     setBusy(true);
@@ -667,6 +737,7 @@ const ExceptionDrawer: React.FC<{
       if (isRule) {
         await createScheduleRule({
           employeeId: employee!.id,
+          ...(allowOverlap ? { allowOverlap: true } : {}),
           dateFrom: date.format("YYYY-MM-DD"),
           dateTo: dateTo.format("YYYY-MM-DD"),
           weekdays,
@@ -678,9 +749,20 @@ const ExceptionDrawer: React.FC<{
           organizationId,
           branchId,
         });
+      } else if (isAbsencePeriod) {
+        await createScheduleExceptionPeriod({
+          employeeId: employee!.id,
+          dateFrom: date.format("YYYY-MM-DD"),
+          dateTo: absenceDateTo.format("YYYY-MM-DD"),
+          kind,
+          comment: comment.trim(),
+          organizationId,
+          branchId,
+        });
       } else {
         await createScheduleException({
           employeeId: employee!.id,
+          ...(allowOverlap ? { allowOverlap: true } : {}),
           date: date.format("YYYY-MM-DD"),
           kind,
           startTime: kind === "extra" ? startTime : undefined,
@@ -690,9 +772,27 @@ const ExceptionDrawer: React.FC<{
           branchId,
         });
       }
-      onSaved();
+      setOverlap(null);
+      // Отсутствие поставлено — но записанные пациенты об этом ещё не знают:
+      // отдаём период наверх, чтобы страница подняла разбор их приёмов.
+      onSaved(
+        isAbsence && employee
+          ? {
+              employeeId: employee.id,
+              employeeName: employee.fullName,
+              dateFrom: date.format("YYYY-MM-DD"),
+              dateTo: (isAbsencePeriod ? absenceDateTo : date).format("YYYY-MM-DD"),
+              kind,
+            }
+          : undefined,
+      );
       onClose();
     } catch (e) {
+      const conflict = parseShiftOverlapConflict(e);
+      if (conflict && !allowOverlap) {
+        setOverlap(conflict);
+        return;
+      }
       setError(parseBackendError(e));
     } finally {
       setBusy(false);
@@ -765,6 +865,31 @@ const ExceptionDrawer: React.FC<{
             </TextField>
           </Stack>
 
+          {isAbsence && (
+            <Stack spacing={0.75}>
+              <FieldLabel>Насколько</FieldLabel>
+              <SegmentToggle
+                value={span}
+                onChange={(next: "single" | "period") => {
+                  setSpan(next);
+                  if (next === "period" && !absenceDateTo.isAfter(date)) {
+                    setAbsenceDateTo(date);
+                  }
+                }}
+                disabled={busy}
+                options={[
+                  { id: "single", label: "Один день" },
+                  { id: "period", label: "Период" },
+                ]}
+              />
+              <Typography variant="caption" color="text.disabled">
+                {isAbsencePeriod
+                  ? `Отсутствие на все дни периода — ${absenceDays} ${pluralDays(absenceDays)}. Снимается одной кнопкой целиком.`
+                  : "Отсутствие на выбранную дату."}
+              </Typography>
+            </Stack>
+          )}
+
           {kind === "extra" && (
             <Stack spacing={0.75}>
               <FieldLabel>Повтор</FieldLabel>
@@ -819,6 +944,27 @@ const ExceptionDrawer: React.FC<{
                 )}
               </Stack>
             </>
+          ) : isAbsencePeriod ? (
+            <Stack spacing={0.5}>
+              <FieldLabel>Период отсутствия *</FieldLabel>
+              <Stack ref={form.anchor("absencePeriod")} direction="row" spacing={1}>
+                <CustomDatePicker shortYearMode="nearest"
+                  value={date}
+                  onChange={(v) => v && setDate(v)}
+                  slotProps={{ textField: { size: "small", sx: { flex: 1, minWidth: 0 } } }}
+                />
+                <CustomDatePicker shortYearMode="nearest"
+                  value={absenceDateTo}
+                  onChange={(v) => v && setAbsenceDateTo(v)}
+                  slotProps={{ textField: { size: "small", sx: { flex: 1, minWidth: 0 } } }}
+                />
+              </Stack>
+              {form.errorOf("absencePeriod") && (
+                <Typography variant="caption" color="error">
+                  {form.errorOf("absencePeriod")}
+                </Typography>
+              )}
+            </Stack>
           ) : (
             <Stack spacing={0.5}>
               <FieldLabel>Дата *</FieldLabel>
@@ -934,13 +1080,26 @@ const ExceptionDrawer: React.FC<{
           fullWidth
           variant="contained"
           size="large"
-          onClick={handleSubmit}
+          onClick={() => void handleSubmit()}
           disabled={busy}
           startIcon={busy ? <CircularProgress size={20} color="inherit" /> : undefined}
         >
-          {busy ? "Сохранение…" : isRule ? "Добавить график" : "Добавить"}
+          {busy
+            ? "Сохранение…"
+            : isRule
+              ? "Добавить график"
+              : isAbsencePeriod
+                ? `Отметить отсутствие (${absenceDays} ${pluralDays(absenceDays)})`
+                : "Добавить"}
         </Button>
       </Box>
+
+      <ShiftOverlapDialog
+        conflict={overlap}
+        saving={busy}
+        onCancel={() => setOverlap(null)}
+        onConfirm={() => void handleSubmit(true)}
+      />
     </Drawer>
   );
 };
@@ -988,6 +1147,13 @@ const DjangoSchedulePage: React.FC = () => {
     endTime: string;
     comment: string;
   } | null>(null);
+  // Пересечение смен при точечной правке: подтверждение показываем поверх дня,
+  // потому что диалог правки к этому моменту уже закрыт.
+  const [pointOverlap, setPointOverlap] = React.useState<{
+    conflict: ShiftOverlapConflict;
+    values: SchedulePointEditValues;
+  } | null>(null);
+  const [pointOverlapSaving, setPointOverlapSaving] = React.useState(false);
 
   // Правила/исключения скоупятся по активному филиалу на сервере (branchId =
   // этот филиал ИЛИ общие, branchId=null) — тикет
@@ -1062,6 +1228,23 @@ const DjangoSchedulePage: React.FC = () => {
     onSuccess: invalidate,
   });
 
+  // Отпуск, поставленный периодом, снимается целиком: пачка живёт как N
+  // однодневных исключений с общим groupId, и удалять их по одному —
+  // ровно та работа, от которой период и избавляет.
+  const deletePeriodMutation = useMutation({
+    mutationFn: (groupId: string) => deleteScheduleExceptionPeriod(groupId),
+    onSuccess: () => {
+      invalidate();
+      notify?.({ type: "success", message: "Период отсутствия снят" });
+    },
+    onError: (e) =>
+      notify?.({ type: "error", message: "Ошибка", description: parseBackendError(e) }),
+  });
+  const [periodToDelete, setPeriodToDelete] = React.useState<ScheduleException | null>(null);
+  // Отсутствие поставлено — но записанные пациенты об этом не знают: сразу
+  // поднимаем разбор их приёмов (отменить / передать коллеге / перенести).
+  const [absenceReview, setAbsenceReview] = React.useState<AbsenceSpan | null>(null);
+
   const employees = React.useMemo(() => employeesQuery.data?.results ?? [], [employeesQuery.data]);
 
   const rules = React.useMemo(() => rulesQuery.data ?? [], [rulesQuery.data]);
@@ -1071,6 +1254,49 @@ const DjangoSchedulePage: React.FC = () => {
     [monthExceptionsQuery.data],
   );
   const employeesById = React.useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
+  // Сколько дней в каждой пачке периода — считаем по загруженному списку, чтобы
+  // строка честно говорила «часть периода», а не выглядела одиночным днём.
+  const periodSizes = React.useMemo(() => {
+    const sizes = new Map<string, number>();
+    for (const exc of exceptions) {
+      if (!exc.groupId) continue;
+      sizes.set(exc.groupId, (sizes.get(exc.groupId) ?? 0) + 1);
+    }
+    return sizes;
+  }, [exceptions]);
+  // Дни каждой пачки — чтобы «Разобрать записи» на любой её строке считало
+  // приёмы за весь период, а не только за эту дату.
+  const periodDates = React.useMemo(() => {
+    const dates = new Map<string, string[]>();
+    for (const exc of exceptions) {
+      if (!exc.groupId) continue;
+      const list = dates.get(exc.groupId) ?? [];
+      list.push(exc.date);
+      dates.set(exc.groupId, list);
+    }
+    return dates;
+  }, [exceptions]);
+  // Записанные пациенты в дни отсутствия: и для кнопки разбора в таблице, и для
+  // маркера на календаре. Без права на приёмы не запрашиваем.
+  const canViewAppointments = useCan("appointments.view");
+  const absenceConflicts = useAbsenceConflicts(
+    React.useMemo(() => [...exceptions, ...monthExceptions], [exceptions, monthExceptions]),
+    orgId,
+    canViewAppointments,
+  );
+
+  /** Открыть разбор по строке исключения — днём или всей пачкой периода. */
+  const openAbsenceReview = (exc: ScheduleException) => {
+    const dates = exc.groupId ? periodDates.get(exc.groupId) ?? [exc.date] : [exc.date];
+    const sorted = [...dates].sort();
+    setAbsenceReview({
+      employeeId: exc.employeeId,
+      employeeName: exc.employeeName,
+      dateFrom: sorted[0],
+      dateTo: sorted[sorted.length - 1],
+      kind: exc.kind,
+    });
+  };
   // Пул цветов — сотрудники со сменами в отображаемом периоде (месяц + 2
   // недели, как monthRange). Раньше нумерация шла по всему справочнику, и
   // соседние строки календаря часто делили один оттенок. Карта одна на
@@ -1114,16 +1340,24 @@ const DjangoSchedulePage: React.FC = () => {
 
   const handleMarkDayOff = async (employeeId: number) => {
     if (!selectedDay) return;
+    const date = selectedDay.format("YYYY-MM-DD");
     try {
       await createScheduleException({
         employeeId,
-        date: selectedDay.format("YYYY-MM-DD"),
+        date,
         kind: "day_off",
         organizationId: orgId,
         branchId,
       });
       void queryClient.invalidateQueries({ queryKey: ["django", "scheduling"] });
       notify?.({ type: "success", message: "Выходной отмечен" });
+      setAbsenceReview({
+        employeeId,
+        employeeName: employeesById.get(employeeId)?.fullName ?? "Сотрудник",
+        dateFrom: date,
+        dateTo: date,
+        kind: "day_off",
+      });
     } catch (e) {
       notify?.({ type: "error", message: "Ошибка", description: parseBackendError(e) });
       throw e;
@@ -1163,12 +1397,16 @@ const DjangoSchedulePage: React.FC = () => {
     });
   };
 
-  const handleSavePointEdit = async (values: SchedulePointEditValues) => {
+  const handleSavePointEdit = async (
+    values: SchedulePointEditValues,
+    allowOverlap = false,
+  ) => {
     if (!selectedDay || !pointEdit) return;
     const date = selectedDay.format("YYYY-MM-DD");
     try {
       if (pointEdit.existing) {
         await updateScheduleException(pointEdit.existing.id, {
+          ...(allowOverlap ? { allowOverlap: true } : {}),
           date,
           kind: pointEdit.existing.kind,
           startTime: values.startTime,
@@ -1179,6 +1417,7 @@ const DjangoSchedulePage: React.FC = () => {
       } else {
         await createScheduleException({
           employeeId: pointEdit.occurrence.employeeId,
+          ...(allowOverlap ? { allowOverlap: true } : {}),
           date,
           kind: "override",
           startTime: values.startTime,
@@ -1188,11 +1427,33 @@ const DjangoSchedulePage: React.FC = () => {
           branchId,
         });
       }
+      setPointOverlap(null);
       invalidate();
       notify?.({ type: "success", message: "Точечное расписание сохранено" });
     } catch (e) {
+      // Пересечение смен в режиме «warn» — не ошибка, а вопрос: показываем
+      // список и повторяем сохранение с подтверждением.
+      const conflict = parseShiftOverlapConflict(e);
+      if (conflict && !allowOverlap) {
+        setPointOverlap({ conflict, values });
+        // Диалог правки закрывается сам — подтверждение идёт поверх дня.
+        return;
+      }
       notify?.({ type: "error", message: "Ошибка", description: parseBackendError(e) });
       throw e;
+    }
+  };
+
+  /** Повтор точечного сохранения после подтверждения пересечения. */
+  const confirmPointOverlap = async () => {
+    if (!pointOverlap) return;
+    setPointOverlapSaving(true);
+    try {
+      await handleSavePointEdit(pointOverlap.values, true);
+    } catch {
+      // Текст уже показан уведомлением внутри handleSavePointEdit.
+    } finally {
+      setPointOverlapSaving(false);
     }
   };
 
@@ -1328,6 +1589,22 @@ const DjangoSchedulePage: React.FC = () => {
               onDayClick={handleDayClick}
               currentEmployeeId={activeEmployee?.id ?? null}
               employeeColorMap={employeeColorMap}
+              absenceDayTotals={absenceConflicts.dayTotals}
+              absenceDayEmployees={absenceConflicts.dayEmployees}
+              onAbsenceBadgeClick={(employeeId, date) =>
+                setAbsenceReview({
+                  employeeId,
+                  employeeName: employeesById.get(employeeId)?.fullName ?? "Сотрудник",
+                  dateFrom: date,
+                  dateTo: date,
+                  kind:
+                    exceptions.find((e) => e.employeeId === employeeId && e.date === date)
+                      ?.kind ??
+                    monthExceptions.find((e) => e.employeeId === employeeId && e.date === date)
+                      ?.kind ??
+                    "day_off",
+                })
+              }
             />
           </>
         )}
@@ -1490,12 +1767,45 @@ const DjangoSchedulePage: React.FC = () => {
                       <TableCell>{exc.employeeName}</TableCell>
                       <TableCell>{dayjs(exc.date).format("DD.MM.YYYY")}</TableCell>
                       <TableCell>
-                        <Chip
-                          label={KIND_LABELS[exc.kind]}
-                          size="small"
-                          variant="outlined"
-                          color={exc.kind === "extra" || exc.kind === "override" ? "success" : "default"}
-                        />
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <Chip
+                            label={KIND_LABELS[exc.kind]}
+                            size="small"
+                            variant="outlined"
+                            color={exc.kind === "extra" || exc.kind === "override" ? "success" : "default"}
+                          />
+                          {exc.groupId && (
+                            <Chip
+                              label={`Период · ${periodSizes.get(exc.groupId) ?? 1} ${pluralDays(periodSizes.get(exc.groupId) ?? 1)}`}
+                              size="small"
+                              variant="outlined"
+                            />
+                          )}
+                          {isAbsenceKind(exc.kind) &&
+                            (() => {
+                              // Записанные пациенты в этот день (или во все дни
+                              // пачки) — та самая дыра, из-за которой человек
+                              // приезжает к отсутствующему врачу.
+                              const dates = exc.groupId
+                                ? periodDates.get(exc.groupId) ?? [exc.date]
+                                : [exc.date];
+                              const count = absenceConflicts.countForDays(
+                                exc.employeeId,
+                                dates,
+                              );
+                              if (count === 0) return null;
+                              return (
+                                <Chip
+                                  label={`${count} ${pluralVisits(count)} без разбора`}
+                                  size="small"
+                                  color="error"
+                                  variant="outlined"
+                                  clickable
+                                  onClick={() => openAbsenceReview(exc)}
+                                />
+                              );
+                            })()}
+                        </Stack>
                       </TableCell>
                       <TableCell sx={{ fontFamily: "monospace" }}>
                         {exc.startTime ? `${exc.startTime}–${exc.endTime}` : "—"}
@@ -1503,15 +1813,35 @@ const DjangoSchedulePage: React.FC = () => {
                       <TableCell>{exc.comment || "—"}</TableCell>
                       {canManage && (
                         <TableCell align="right">
-                          <Tooltip title="Удалить">
-                            <IconButton
-                              size="small"
-                              onClick={() => deleteExceptionMutation.mutate(exc.id)}
-                              disabled={deleteExceptionMutation.isPending}
-                            >
-                              <DeleteOutline fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          <Stack direction="row" spacing={0.25} justifyContent="flex-end">
+                            {isAbsenceKind(exc.kind) && canViewAppointments && (
+                              <Tooltip title="Разобрать записи: отменить, передать коллеге или перенести">
+                                <IconButton size="small" onClick={() => openAbsenceReview(exc)}>
+                                  <GroupsOutlined fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                            <Tooltip title={exc.groupId ? "Удалить только этот день" : "Удалить"}>
+                              <IconButton
+                                size="small"
+                                onClick={() => deleteExceptionMutation.mutate(exc.id)}
+                                disabled={deleteExceptionMutation.isPending}
+                              >
+                                <DeleteOutline fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            {exc.groupId && (
+                              <Tooltip title="Снять весь период">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => setPeriodToDelete(exc)}
+                                  disabled={deletePeriodMutation.isPending}
+                                >
+                                  <DeleteSweepOutlined fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                          </Stack>
                         </TableCell>
                       )}
                     </TableRow>
@@ -1538,10 +1868,19 @@ const DjangoSchedulePage: React.FC = () => {
         onClose={closeExceptionDialog}
         organizationId={orgId}
         branchId={branchId}
-        onSaved={invalidate}
+        onSaved={(absence) => {
+          invalidate();
+          if (absence) setAbsenceReview(absence);
+        }}
         initialDate={exceptionDialog.date}
         initialKind={exceptionDialog.kind}
         title={exceptionDialog.title}
+      />
+      <AbsenceConflictsDrawer
+        open={absenceReview !== null}
+        onClose={() => setAbsenceReview(null)}
+        absence={absenceReview}
+        employeeOptions={employees}
       />
       <ScheduleDayDrawer
         open={dayDrawerOpen}
@@ -1556,6 +1895,36 @@ const DjangoSchedulePage: React.FC = () => {
         onEditOccurrence={handleEditOccurrence}
         onAddShift={handleAddShiftForSelectedDay}
       />
+      <ConfirmDialog
+        open={periodToDelete !== null}
+        onClose={() => setPeriodToDelete(null)}
+        onConfirm={() => {
+          const groupId = periodToDelete?.groupId;
+          if (groupId) deletePeriodMutation.mutate(groupId);
+          setPeriodToDelete(null);
+        }}
+        title="Снять весь период отсутствия"
+        message={
+          periodToDelete
+            ? `${periodToDelete.employeeName}: снять ${
+                periodToDelete.groupId ? periodSizes.get(periodToDelete.groupId) ?? 1 : 1
+              } ${pluralDays(
+                periodToDelete.groupId ? periodSizes.get(periodToDelete.groupId) ?? 1 : 1,
+              )} отсутствия целиком? Приёмы, отменённые из-за него, не восстановятся.`
+            : ""
+        }
+        confirmText="Снять период"
+        variant="warning"
+        loading={deletePeriodMutation.isPending}
+      />
+
+      <ShiftOverlapDialog
+        conflict={pointOverlap?.conflict ?? null}
+        saving={pointOverlapSaving}
+        onCancel={() => setPointOverlap(null)}
+        onConfirm={() => void confirmPointOverlap()}
+      />
+
       <SchedulePointEditDialog
         open={pointEdit !== null}
         onClose={() => setPointEdit(null)}

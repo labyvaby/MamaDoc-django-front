@@ -33,7 +33,12 @@ import "dayjs/locale/ru";
 import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
 import type { ScheduleException, ScheduleRule } from "../../../api/scheduling";
-import { computeDayOccurrences, lunchNote, type DayOccurrence } from "./occurrences";
+import {
+  computeDayOccurrences,
+  lunchNote,
+  shiftTimeLabel,
+  type DayOccurrence,
+} from "./occurrences";
 import { employeeColorHex, lunchFill } from "./employeeColors";
 import {
   HOUR_GUIDES,
@@ -44,8 +49,9 @@ import {
   MONTH_DAY_END_MIN,
   MONTH_DAY_START_MIN,
   hourlyOccupancy,
-  occMinutes,
   packIntoLanes,
+  segmentLunch,
+  segmentWorkSpans,
   timeToLeftPct,
   type LaneSegment,
   type PackedLane,
@@ -67,7 +73,7 @@ const shortTime = (t: string): string => {
   return `${parseInt(hh, 10)}:${mm}`;
 };
 
-const timeRange = (occ: DayOccurrence): string => `${shortTime(occ.startTime)}–${shortTime(occ.endTime)}`;
+const timeRange = (occ: DayOccurrence): string => shiftTimeLabel(occ, shortTime);
 
 /** Фамилия — первое слово ФИО. */
 const surname = (fullName: string): string => fullName.trim().split(/\s+/)[0] || fullName;
@@ -99,6 +105,18 @@ export interface ScheduleCalendarProps {
   currentEmployeeId?: number | null;
   /** Общая карта цветов (строится в index.tsx по сменам периода). */
   employeeColorMap: Map<number, number>;
+  /**
+   * Записи, оставшиеся без разбора в дни отсутствия (выходной/отпуск) — дата
+   * YYYY-MM-DD → сколько всего приёмов у всех отсутствующих в этот день.
+   * Отметка отсутствия сама ничего не отменяет (см. AbsenceConflictsDrawer),
+   * поэтому день выходного, на который записаны пациенты, — дыра, которую
+   * иначе видно только открыв разбор вручную.
+   */
+  absenceDayTotals?: Map<string, number>;
+  /** Кто именно отсутствует в этот день и сколько у него записей — для тултипа. */
+  absenceDayEmployees?: Map<string, { employeeId: number; count: number }[]>;
+  /** Клик по маркеру — открыть разбор по конкретному сотруднику и дню. */
+  onAbsenceBadgeClick?: (employeeId: number, date: string) => void;
 }
 
 const WEEKDAY_FULL = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
@@ -115,6 +133,9 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
   onDayClick,
   currentEmployeeId,
   employeeColorMap,
+  absenceDayTotals,
+  absenceDayEmployees,
+  onAbsenceBadgeClick,
 }) => {
   const theme = useTheme();
   const mode = theme.palette.mode;
@@ -273,6 +294,43 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
     [],
   );
 
+  // Маркер «записаны пациенты, а врач отсутствует» — красный, чтобы бросался в
+  // глаза среди нейтральных счётчиков смен. Пусто, если пропсы не переданы
+  // (страница без права appointments.view их не считает вовсе).
+  const AbsenceBadge: React.FC<{ day: Dayjs; show: boolean }> = ({ day, show }) => {
+    const key = day.format("YYYY-MM-DD");
+    const total = absenceDayTotals?.get(key) ?? 0;
+    if (!show || total === 0) return null;
+    const byEmployee = [...(absenceDayEmployees?.get(key) ?? [])].sort((a, b) => b.count - a.count);
+    const tip = byEmployee
+      .map((e) => `${employeesById.get(e.employeeId)?.fullName ?? `#${e.employeeId}`}: ${e.count}`)
+      .join("  •  ");
+    const primary = byEmployee[0];
+    return (
+      <Tooltip title={tip || `Записей без разбора: ${total}`} arrow placement="right">
+        <Chip
+          label={total}
+          size="small"
+          color="error"
+          onClick={
+            onAbsenceBadgeClick && primary
+              ? (e) => {
+                  e.stopPropagation();
+                  onAbsenceBadgeClick(primary.employeeId, key);
+                }
+              : undefined
+          }
+          sx={{
+            pointerEvents: "auto",
+            height: 18,
+            minWidth: 18,
+            "& .MuiChip-label": { px: "5px", fontSize: "0.65rem", fontWeight: 700 },
+          }}
+        />
+      </Tooltip>
+    );
+  };
+
   // Число дня + нейтральный счётчик работающих сотрудников
   const DayCounter: React.FC<{ day: Dayjs; occs: DayOccurrence[]; show: boolean }> = ({ day, occs, show }) => {
     const isToday = day.isSame(today, "day");
@@ -329,7 +387,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
       .sort((a, b) => a.startMin - b.startMin)
       .map(
         (s) =>
-          `${s.occ.employeeName}: ${shortTime(s.occ.startTime)}–${shortTime(s.occ.endTime)}` +
+          `${s.occ.employeeName}: ${timeRange(s.occ)}` +
           (s.occ.lunch ? ` (${lunchNote(s.occ)})` : ""),
       )
       .join("  •  ");
@@ -350,64 +408,83 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
             const occ = s.occ;
             const c = colorOf(occ.employeeId);
             const isExtra = occ.kind === "extra" || occ.kind === "override";
-            const left = timeToLeftPct(s.startMin);
-            const width = Math.max(timeToLeftPct(s.endMin) - left, 3);
             const emp = employeesById.get(occ.employeeId);
+            const lunch = segmentLunch(s);
+            const spans = segmentWorkSpans(s);
+            // Имя ставим в самый широкий отрезок: после разрыва на обед первый
+            // кусок бывает короче второго, и подпись в нём не помещалась бы.
+            const widest = spans.reduce((a, b) =>
+              b.endMin - b.startMin > a.endMin - a.startMin ? b : a,
+            );
             return (
-              <Box
-                key={`${occ.kind}_${occ.sourceId}_${s.startMin}`}
-                sx={{
-                  position: "absolute",
-                  left: `${left}%`,
-                  width: `${width}%`,
-                  top: "1px",
-                  bottom: "1px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 0.5,
-                  px: "3px",
-                  borderRadius: "3px",
-                  overflow: "hidden",
-                  bgcolor: alpha(c, mode === "dark" ? 0.9 : 0.85),
-                  border: isExtra ? `1.5px dashed ${theme.palette.background.paper}` : undefined,
-                }}
-              >
-                <UserAvatar name={occ.employeeName} src={emp?.photoUrl} size={16} />
-                <Typography
-                  noWrap
-                  sx={{
-                    fontSize: "0.62rem",
-                    fontWeight: 700,
-                    color: "#fff",
-                    lineHeight: 1,
-                    textShadow: "0 1px 2px rgba(0,0,0,0.55)",
-                  }}
-                >
-                  {surname(occ.employeeName)}
-                </Typography>
-                {/* Обед — вырез внутри полосы; проценты пересчитаны от ширины
-                    сегмента, потому что сегмент сам позиционирован в % дорожки. */}
-                {occ.lunch && (() => {
-                  const lunchLeft = timeToLeftPct(occMinutes(occ.lunch.start));
-                  const lunchRight = timeToLeftPct(occMinutes(occ.lunch.end));
-                  if (lunchRight <= left || lunchLeft >= left + width) return null;
+              <React.Fragment key={`${occ.kind}_${occ.sourceId}_${s.startMin}`}>
+                {spans.map((span, si) => {
+                  const left = timeToLeftPct(span.startMin);
+                  const width = Math.max(timeToLeftPct(span.endMin) - left, 3);
+                  // Внутренние края у выреза обеда прямые — вместе с ним
+                  // отрезки читаются как одна смена.
+                  const first = si === 0;
+                  const last = si === spans.length - 1;
                   return (
                     <Box
+                      key={span.startMin}
                       sx={{
                         position: "absolute",
-                        left: `${((lunchLeft - left) / width) * 100}%`,
-                        width: `${((lunchRight - lunchLeft) / width) * 100}%`,
-                        top: 0,
-                        bottom: 0,
-                        // Красный вырез — как в дневной ленте (просьба заказчика
-                        // 02.09.2026). Сегмент бывает в пару пикселей шириной,
-                        // поэтому здесь только заливка, без иконки.
-                        bgcolor: lunchFill(theme),
+                        left: `${left}%`,
+                        width: `${width}%`,
+                        top: "1px",
+                        bottom: "1px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 0.5,
+                        px: "3px",
+                        borderRadius: `${first ? "3px" : "0"} ${last ? "3px" : "0"} ${last ? "3px" : "0"} ${first ? "3px" : "0"}`,
+                        overflow: "hidden",
+                        bgcolor: alpha(c, mode === "dark" ? 0.9 : 0.85),
+                        border: isExtra
+                          ? `1.5px dashed ${theme.palette.background.paper}`
+                          : undefined,
                       }}
-                    />
+                    >
+                      {span === widest && (
+                        <>
+                          <UserAvatar name={occ.employeeName} src={emp?.photoUrl} size={16} />
+                          <Typography
+                            noWrap
+                            sx={{
+                              fontSize: "0.62rem",
+                              fontWeight: 700,
+                              color: "#fff",
+                              lineHeight: 1,
+                              textShadow: "0 1px 2px rgba(0,0,0,0.55)",
+                            }}
+                          >
+                            {surname(occ.employeeName)}
+                          </Typography>
+                        </>
+                      )}
+                    </Box>
                   );
-                })()}
-              </Box>
+                })}
+                {/* Обед — красный вырез между отрезками смены (просьба заказчика
+                    02.09.2026). Сегмент бывает в пару пикселей шириной, поэтому
+                    здесь только заливка, без иконки. */}
+                {lunch && (
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      left: `${timeToLeftPct(lunch.startMin)}%`,
+                      width: `${Math.max(
+                        timeToLeftPct(lunch.endMin) - timeToLeftPct(lunch.startMin),
+                        1,
+                      )}%`,
+                      top: "1px",
+                      bottom: "1px",
+                      bgcolor: lunchFill(theme),
+                    }}
+                  />
+                )}
+              </React.Fragment>
             );
           })}
         </Box>
@@ -465,10 +542,12 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
               right: 4,
               zIndex: 3,
               display: "flex",
-              justifyContent: "flex-end",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
               pointerEvents: "none",
             }}
           >
+            <AbsenceBadge day={day} show={isCurrentMonth} />
             <DayCounter day={day} occs={occs} show={isCurrentMonth} />
           </Box>
 

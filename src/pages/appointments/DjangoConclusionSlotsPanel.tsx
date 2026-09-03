@@ -72,6 +72,8 @@ const STATE_COLOR: Record<
 
 type DjangoConclusionSlotsPanelProps = {
   appointmentId: number;
+  /** Филиал приёма — по нему подбирается и режется список бланков. */
+  branchId?: number | null;
   /** Закрыть колонку заключения (крестик в шапке). */
   onClose?: () => void;
 };
@@ -80,6 +82,7 @@ type DjangoConclusionSlotsPanelProps = {
 
 const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
   appointmentId,
+  branchId,
   onClose,
 }) => {
   const { t } = useT("appointments");
@@ -147,6 +150,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
         serviceId={onlySlot.service.id}
         doctorName={onlySlot.doctor?.fullName ?? "—"}
         appointmentId={appointmentId}
+        branchId={branchId}
         doctorId={onlySlot.doctor?.id ?? null}
         // По умолчанию просмотр; «Изменить заключение» включает редактирование.
         canEdit={onlySlot.canEdit && editingInline}
@@ -229,6 +233,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
           serviceId={drawerSlot.service.id}
           doctorName={drawerSlot.doctor?.fullName ?? "—"}
           appointmentId={appointmentId}
+          branchId={branchId}
           doctorId={drawerSlot.doctor?.id ?? null}
           canEdit={drawerSlot.canEdit}
           canPrint={drawerSlot.canPrint}

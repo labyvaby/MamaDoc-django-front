@@ -15,7 +15,7 @@ import {
   occurrenceNote,
   type DayOccurrence,
 } from "./occurrences";
-import { occMinutes, packIntoLanes } from "./monthTimeline";
+import { occMinutes, packIntoLanes, segmentLunch, segmentWorkSpans } from "./monthTimeline";
 import { computeWeekWindow, hourTicks, windowPct } from "./weekWindow";
 import { employeeColorHex, lunchFill } from "./employeeColors";
 import { namesFromOccurrences, occurrencesOf, useCollapsedGroups, useResourceGroups } from "./resourceRows";
@@ -64,6 +64,10 @@ const compactTime = (t: string): string => {
   const h = parseInt(hh, 10);
   return mm === "00" ? String(h) : `${h}:${mm}`;
 };
+
+/** Минуты шкалы → "HH:MM": отрезки смены считаются в минутах, а подпись — по времени. */
+const minutesToTime = (min: number): string =>
+  `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
 /** Виды отсутствия, которые показываем в сетке отдельной плиткой. */
 const ABSENCE_LABELS: Partial<Record<ScheduleException["kind"], string>> = {
   vacation: "Отпуск",
@@ -534,9 +538,8 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                                         key={li}
                                         sx={{ position: "relative", height: laneH, width: "100%" }}
                                       >
-                                        {lane.segments.map(({ occ, startMin, endMin }) => {
-                                          const left = pct(startMin);
-                                          const width = Math.max(pct(endMin) - left, 1.5);
+                                        {lane.segments.map((seg) => {
+                                          const { occ } = seg;
                                           // Смена вне окна 07:00–22:00 прижата к краю
                                           // (packIntoLanes), и без пометки 06:00–08:00
                                           // выглядела бы как обычная короткая смена.
@@ -548,144 +551,147 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                                               : occMinutes(occ.endTime);
                                           const cutStart = rawStart < timeWindow.startMin;
                                           const cutEnd = rawEnd > timeWindow.endMin;
-                                          // Обед считаем в тех же координатах шкалы и
-                                          // держим внутри границ смены.
-                                          const lunch = occ.lunch
-                                            ? (() => {
-                                                const lStart = Math.max(
-                                                  occMinutes(occ.lunch.start),
-                                                  startMin,
-                                                );
-                                                const lEnd = Math.min(
-                                                  occMinutes(occ.lunch.end),
-                                                  endMin,
-                                                );
-                                                if (lEnd <= lStart) return null;
-                                                const lLeft = pct(lStart);
-                                                return {
-                                                  // Проценты внутри сегмента, а не всей шкалы.
-                                                  left: ((lLeft - left) / width) * 100,
-                                                  width: ((pct(lEnd) - lLeft) / width) * 100,
-                                                };
-                                              })()
-                                            : null;
-                                          // Часы прямо в полоске — самое частое,
-                                          // ради чего наводили мышь. Рисуем их
-                                          // только когда есть место слева от
-                                          // обеда: иначе подпись налезала бы на
-                                          // красный вырез и терялась.
-                                          const label = `${compactTime(occ.startTime)}–${compactTime(occ.endTime)}`;
-                                          const barPx = (dayColWidth * width) / 100;
-                                          const freePx = lunch
-                                            ? (barPx * lunch.left) / 100
-                                            : barPx;
-                                          const showLabel =
-                                            freePx >=
-                                            label.length * labelCharPx(laneH, uiScale) +
-                                              BAR_LABEL_PADDING;
+                                          // Обед разрывает полосу: рисуем отрезки работы,
+                                          // а на месте перерыва оставляем пустоту.
+                                          const lunch = segmentLunch(seg);
+                                          const spans = segmentWorkSpans(seg);
                                           return (
-                                            <Tooltip
+                                            <React.Fragment
                                               key={`${occ.kind}_${occ.sourceId}_${occ.startTime}`}
-                                              title={occurrenceNote(occ)}
-                                              arrow
                                             >
-                                              <Box
-                                                sx={{
-                                                  position: "absolute",
-                                                  top: 0,
-                                                  bottom: 0,
-                                                  left: `${left}%`,
-                                                  width: `${width}%`,
-                                                  overflow: "hidden",
-                                                  borderRadius: "4px",
-                                                  // Обводка цветом фона отделяет полоску
-                                                  // от соседней смены впритык и от
-                                                  // направляющих часов под ней.
-                                                  outline: `1px solid ${theme.palette.background.paper}`,
-                                                  outlineOffset: "-1px",
-                                                  // Отклик на курсор: по полоске кликают,
-                                                  // чтобы открыть день, и без реакции она
-                                                  // выглядела нарисованной. Меняем яркость,
-                                                  // а не размер — сдвиг ломал бы привязку
-                                                  // отрезка ко времени.
-                                                  transition: "filter .12s ease",
-                                                  "&:hover": {
-                                                    filter:
-                                                      mode === "dark"
-                                                        ? "brightness(1.18)"
-                                                        : "brightness(0.92)",
-                                                  },
-                                                  // Сплошная заливка вместо полупрозрачной:
-                                                  // на тёмном фоне тинты жёлтого/оранжевого
-                                                  // выглядели грязно-бурыми и одинаковыми
-                                                  // (жалоба заказчика 14.07.2026).
-                                                  bgcolor: c,
-                                                  // (5) Точечная смена — диагональная
-                                                  // штриховка: пунктирная рамка в 1px на
-                                                  // дорожке высотой 13px была не видна.
-                                                  backgroundImage:
-                                                    occ.kind !== "rule"
-                                                      ? `repeating-linear-gradient(45deg, transparent 0 3px, ${alpha(
-                                                          theme.palette.background.paper,
-                                                          0.5,
-                                                        )} 3px 6px)`
-                                                      : undefined,
-                                                  // Скошенный край = «смена продолжается
-                                                  // за пределами окна».
-                                                  clipPath:
-                                                    cutStart && cutEnd
-                                                      ? "polygon(4px 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 4px 100%, 0 50%)"
-                                                      : cutStart
-                                                        ? "polygon(4px 0, 100% 0, 100% 100%, 4px 100%, 0 50%)"
-                                                        : cutEnd
-                                                          ? "polygon(0 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 0 100%)"
-                                                          : undefined,
-                                                }}
-                                              >
-                                                {/* Часы смены — слева, до выреза обеда.
-                                                    Позиция всегда одна и та же, поэтому
-                                                    строка не «скачет» между полосками. */}
-                                                {showLabel && (
-                                                  <Typography
-                                                    noWrap
-                                                    sx={{
-                                                      position: "absolute",
-                                                      left: "4px",
-                                                      top: 0,
-                                                      bottom: 0,
-                                                      display: "flex",
-                                                      alignItems: "center",
-                                                      fontSize: `${labelRem(laneH)}rem`,
-                                                      fontWeight: 600,
-                                                      lineHeight: 1,
-                                                      color: theme.palette.getContrastText(c),
-                                                      fontVariantNumeric: "tabular-nums",
-                                                      pointerEvents: "none",
-                                                    }}
+                                              {spans.map((span, si) => {
+                                                const left = pct(span.startMin);
+                                                const width = Math.max(pct(span.endMin) - left, 1.5);
+                                                const first = si === 0;
+                                                const last = si === spans.length - 1;
+                                                // Скошенный край рисуем только на внешних
+                                                // концах смены, а не на срезах обеда.
+                                                const clipStart = cutStart && first;
+                                                const clipEnd = cutEnd && last;
+                                                // Часы прямо в полоске — самое частое,
+                                                // ради чего наводили мышь. У каждого
+                                                // отрезка своё время: «9–13», «14–17».
+                                                const label = `${compactTime(minutesToTime(span.startMin))}–${compactTime(minutesToTime(span.endMin))}`;
+                                                const barPx = (dayColWidth * width) / 100;
+                                                const showLabel =
+                                                  barPx >=
+                                                  label.length * labelCharPx(laneH, uiScale) +
+                                                    BAR_LABEL_PADDING;
+                                                return (
+                                                  <Tooltip
+                                                    key={span.startMin}
+                                                    title={occurrenceNote(occ)}
+                                                    arrow
                                                   >
-                                                    {label}
-                                                  </Typography>
-                                                )}
-                                                {/* Обед — красный вырез в смене
-                                                    (просьба заказчика 02.09.2026). */}
-                                                {lunch && (
-                                                  <Box
-                                                    sx={{
-                                                      position: "absolute",
-                                                      top: 0,
-                                                      bottom: 0,
-                                                      left: `${lunch.left}%`,
-                                                      width: `${lunch.width}%`,
-                                                      bgcolor: lunchFill(theme),
-                                                      // Грани отделяют вырез от смены, если
-                                                      // сама смена оказалась красноватой.
-                                                      borderLeft: `1px solid ${theme.palette.background.paper}`,
-                                                      borderRight: `1px solid ${theme.palette.background.paper}`,
-                                                    }}
-                                                  />
-                                                )}
-                                              </Box>
-                                            </Tooltip>
+                                                    <Box
+                                                      sx={{
+                                                        position: "absolute",
+                                                        top: 0,
+                                                        bottom: 0,
+                                                        left: `${left}%`,
+                                                        width: `${width}%`,
+                                                        overflow: "hidden",
+                                                        // Внутренние края у выреза обеда
+                                                        // прямые — вместе с ним отрезки
+                                                        // читаются как одна смена.
+                                                        borderRadius: `${first ? "4px" : "0"} ${last ? "4px" : "0"} ${last ? "4px" : "0"} ${first ? "4px" : "0"}`,
+                                                        // Обводка цветом фона отделяет полоску
+                                                        // от соседней смены впритык и от
+                                                        // направляющих часов под ней.
+                                                        outline: `1px solid ${theme.palette.background.paper}`,
+                                                        outlineOffset: "-1px",
+                                                        // Отклик на курсор: по полоске кликают,
+                                                        // чтобы открыть день, и без реакции она
+                                                        // выглядела нарисованной. Меняем яркость,
+                                                        // а не размер — сдвиг ломал бы привязку
+                                                        // отрезка ко времени.
+                                                        transition: "filter .12s ease",
+                                                        "&:hover": {
+                                                          filter:
+                                                            mode === "dark"
+                                                              ? "brightness(1.18)"
+                                                              : "brightness(0.92)",
+                                                        },
+                                                        // Сплошная заливка вместо полупрозрачной:
+                                                        // на тёмном фоне тинты жёлтого/оранжевого
+                                                        // выглядели грязно-бурыми и одинаковыми
+                                                        // (жалоба заказчика 14.07.2026).
+                                                        bgcolor: c,
+                                                        // (5) Точечная смена — диагональная
+                                                        // штриховка: пунктирная рамка в 1px на
+                                                        // дорожке высотой 13px была не видна.
+                                                        backgroundImage:
+                                                          occ.kind !== "rule"
+                                                            ? `repeating-linear-gradient(45deg, transparent 0 3px, ${alpha(
+                                                                theme.palette.background.paper,
+                                                                0.5,
+                                                              )} 3px 6px)`
+                                                            : undefined,
+                                                        // Скошенный край = «смена продолжается
+                                                        // за пределами окна».
+                                                        clipPath:
+                                                          clipStart && clipEnd
+                                                            ? "polygon(4px 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 4px 100%, 0 50%)"
+                                                            : clipStart
+                                                              ? "polygon(4px 0, 100% 0, 100% 100%, 4px 100%, 0 50%)"
+                                                              : clipEnd
+                                                                ? "polygon(0 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 0 100%)"
+                                                                : undefined,
+                                                      }}
+                                                    >
+                                                      {/* Время отрезка жмётся к обеду: до
+                                                          перерыва — к правому краю полоски,
+                                                          после — к левому. */}
+                                                      {showLabel && (
+                                                        <Typography
+                                                          noWrap
+                                                          sx={{
+                                                            position: "absolute",
+                                                            ...(first && !last
+                                                              ? { right: "4px" }
+                                                              : { left: "4px" }),
+                                                            top: 0,
+                                                            bottom: 0,
+                                                            display: "flex",
+                                                            alignItems: "center",
+                                                            fontSize: `${labelRem(laneH)}rem`,
+                                                            fontWeight: 600,
+                                                            lineHeight: 1,
+                                                            color: theme.palette.getContrastText(c),
+                                                            fontVariantNumeric: "tabular-nums",
+                                                            pointerEvents: "none",
+                                                          }}
+                                                        >
+                                                          {label}
+                                                        </Typography>
+                                                      )}
+                                                    </Box>
+                                                  </Tooltip>
+                                                );
+                                              })}
+                                              {/* Обед — красный вырез между отрезками
+                                                  смены (просьба заказчика 02.09.2026). */}
+                                              {lunch && (
+                                                <Box
+                                                  sx={{
+                                                    position: "absolute",
+                                                    top: 0,
+                                                    bottom: 0,
+                                                    left: `${pct(lunch.startMin)}%`,
+                                                    width: `${Math.max(
+                                                      pct(lunch.endMin) - pct(lunch.startMin),
+                                                      1,
+                                                    )}%`,
+                                                    bgcolor: lunchFill(theme),
+                                                    // Грани отделяют вырез от смены, если
+                                                    // сама смена оказалась красноватой.
+                                                    borderLeft: `1px solid ${theme.palette.background.paper}`,
+                                                    borderRight: `1px solid ${theme.palette.background.paper}`,
+                                                    pointerEvents: "none",
+                                                  }}
+                                                />
+                                              )}
+                                            </React.Fragment>
                                           );
                                         })}
                                       </Box>

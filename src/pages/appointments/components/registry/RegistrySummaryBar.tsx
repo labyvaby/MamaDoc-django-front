@@ -18,15 +18,15 @@ import { useT } from "../../../../i18n/VerticalProvider";
 import { getStatusAccent } from "../../../../config/appointmentStatuses";
 import { formatAmount } from "./registryFormat";
 import type { PulseBucket } from "./registryStats";
-import type { PaymentFilter } from "./registryTypes";
+import type { RegistryTileKey } from "./registryTypes";
 
 /**
- * Плитка сводки. `key` задан — плитка работает фильтром по статусу оплаты;
- * null — просто показатель (набор плиток задаёт профиль модуля, см.
- * RegistryJournalView).
+ * Плитка сводки. `key` задан — плитка работает фильтром (статус оплаты или
+ * флаг оси цены); null — просто показатель (набор плиток задаёт профиль
+ * модуля, см. RegistryJournalView).
  */
 export interface SummaryTile {
-  key: PaymentFilter | null;
+  key: RegistryTileKey | null;
   label: string;
   value: string;
   unit?: string;
@@ -38,8 +38,12 @@ export interface SummaryTile {
 interface Props {
   tiles: SummaryTile[];
   pulse: PulseBucket[];
-  paymentFilter: PaymentFilter;
-  onPaymentFilterChange: (value: PaymentFilter) => void;
+  /**
+   * Активна ли плитка и что делает клик — решает журнал: ключ может быть
+   * статусом оплаты (одиночный выбор) или флагом цены (мультивыбор).
+   */
+  isTileActive: (key: RegistryTileKey) => boolean;
+  onToggleTile: (key: RegistryTileKey) => void;
   /** Выбранная корзина пульса: день месяца или месяц года. */
   selectedBucket: string | null;
   onSelectBucket: (key: string | null) => void;
@@ -51,8 +55,8 @@ interface Props {
 export const RegistrySummaryBar: React.FC<Props> = ({
   tiles,
   pulse,
-  paymentFilter,
-  onPaymentFilterChange,
+  isTileActive,
+  onToggleTile,
   selectedBucket,
   onSelectBucket,
   canViewFinance,
@@ -111,7 +115,7 @@ export const RegistrySummaryBar: React.FC<Props> = ({
           }}
         >
           {tiles.map((tile, index) => {
-            const active = tile.key != null && paymentFilter === tile.key;
+            const active = tile.key != null && isTileActive(tile.key);
             const accent = accentColor(tile.accent);
             return (
               <Box
@@ -119,11 +123,7 @@ export const RegistrySummaryBar: React.FC<Props> = ({
                 component={tile.key ? "button" : "div"}
                 type={tile.key ? "button" : undefined}
                 aria-pressed={tile.key ? active : undefined}
-                onClick={
-                  tile.key
-                    ? () => onPaymentFilterChange(active ? "all" : (tile.key as PaymentFilter))
-                    : undefined
-                }
+                onClick={tile.key ? () => onToggleTile(tile.key as RegistryTileKey) : undefined}
                 sx={{
                   position: "relative",
                   display: "flex",

@@ -30,7 +30,13 @@ import {
 } from "../theme";
 import { isPhoneLocalComplete } from "../../../utility/phone";
 import { PhoneField } from "./PhoneField";
-import { FIELD_SX, INPUT_SX, defaultPhoneCountry, phoneErrorText } from "./fieldStyles";
+import {
+  FIELD_SX,
+  INPUT_SX,
+  defaultPhoneCountry,
+  fieldSxWithError,
+  phoneErrorText,
+} from "./fieldStyles";
 
 /**
  * Вход пациента по SMS: телефон → код → выбор карты (или регистрация).
@@ -96,6 +102,14 @@ export const PatientAuthDialog: React.FC<{
   const [lastName, setLastName] = React.useState("");
   const [birthDate, setBirthDate] = React.useState("");
   const [gender, setGender] = React.useState<PatientGenderInput | "">("");
+  // Показываем незаполненные поля только после попытки отправить.
+  const [registerTouched, setRegisterTouched] = React.useState(false);
+
+  const phoneRef = React.useRef<HTMLInputElement>(null);
+  const codeRef = React.useRef<HTMLInputElement>(null);
+  const lastNameRef = React.useRef<HTMLInputElement>(null);
+  const firstNameRef = React.useRef<HTMLInputElement>(null);
+  const birthDateRef = React.useRef<HTMLInputElement>(null);
 
   const fullPhone = country.dialCode + phone.replace(/\D/g, "");
   const phoneOk = isPhoneLocalComplete(country.dialCode, phone);
@@ -108,6 +122,7 @@ export const PatientAuthDialog: React.FC<{
       setError(null);
       setBusy(false);
       setPhoneTouched(false);
+      setRegisterTouched(false);
       return;
     }
     // Уже вошли, но карта не выбрана (несколько карт на номер) — открываемся
@@ -139,7 +154,10 @@ export const PatientAuthDialog: React.FC<{
 
   const handleRequestCode = async () => {
     if (!phoneOk) {
+      // Подсвечиваем поле и возвращаем в него курсор — иначе непонятно, почему
+      // кнопка «ничего не сделала».
       setPhoneTouched(true);
+      phoneRef.current?.focus();
       return;
     }
     setBusy(true);
@@ -160,7 +178,11 @@ export const PatientAuthDialog: React.FC<{
   // момент state ещё без кода (setCode асинхронный).
   const handleVerify = async (codeOverride?: string) => {
     const value = (codeOverride ?? code).trim();
-    if (value.length < CODE_LENGTH || verifyingRef.current) return;
+    if (value.length < CODE_LENGTH) {
+      codeRef.current?.focus();
+      return;
+    }
+    if (verifyingRef.current) return;
     verifyingRef.current = true;
     setBusy(true);
     setError(null);
@@ -197,9 +219,16 @@ export const PatientAuthDialog: React.FC<{
   const handleRegister = async () => {
     if (!session?.token) return;
     if (!firstName.trim() || !lastName.trim() || !birthDate || !gender) {
+      setRegisterTouched(true);
       setError(t("auth.registerRequired"));
+      // Курсор — в первое незаполненное поле сверху вниз; пол выбирается
+      // кнопками, фокусировать там нечего.
+      if (!lastName.trim()) lastNameRef.current?.focus();
+      else if (!firstName.trim()) firstNameRef.current?.focus();
+      else if (!birthDate) birthDateRef.current?.focus();
       return;
     }
+    setRegisterTouched(false);
     setBusy(true);
     setError(null);
     try {
@@ -229,6 +258,7 @@ export const PatientAuthDialog: React.FC<{
           <PhoneField
             country={country}
             phone={phone}
+            inputRef={phoneRef}
             error={phoneTouched && !phoneOk}
             onCountryChange={setCountry}
             onPhoneChange={(v) => {
@@ -259,6 +289,7 @@ export const PatientAuthDialog: React.FC<{
             <Box
               component="input"
               autoFocus
+              ref={codeRef}
               inputMode="numeric"
               autoComplete="one-time-code"
               name="one-time-code"
@@ -277,10 +308,7 @@ export const PatientAuthDialog: React.FC<{
               sx={{ ...INPUT_SX, textAlign: "center", letterSpacing: 6, fontSize: 20 }}
             />
           </Box>
-          <PrimaryButton
-            onClick={() => void handleVerify()}
-            disabled={busy || code.length < CODE_LENGTH}
-          >
+          <PrimaryButton onClick={() => void handleVerify()} disabled={busy}>
             {busy ? t("auth.checking") : t("auth.signIn")}
           </PrimaryButton>
           <Button
@@ -345,27 +373,30 @@ export const PatientAuthDialog: React.FC<{
         <Typography sx={{ fontSize: 14, color: "#333", textAlign: "center" }}>
           {t("auth.registerHint")}
         </Typography>
-        <Box sx={FIELD_SX}>
+        <Box sx={fieldSxWithError(registerTouched && !lastName.trim())}>
           <Box
             component="input"
+            ref={lastNameRef}
             value={lastName}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLastName(e.target.value)}
             placeholder={t("auth.lastName")}
             sx={INPUT_SX}
           />
         </Box>
-        <Box sx={FIELD_SX}>
+        <Box sx={fieldSxWithError(registerTouched && !firstName.trim())}>
           <Box
             component="input"
+            ref={firstNameRef}
             value={firstName}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFirstName(e.target.value)}
             placeholder={t("auth.firstName")}
             sx={INPUT_SX}
           />
         </Box>
-        <Box sx={FIELD_SX}>
+        <Box sx={fieldSxWithError(registerTouched && !birthDate)}>
           <Box
             component="input"
+            ref={birthDateRef}
             type="date"
             value={birthDate}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBirthDate(e.target.value)}
@@ -383,6 +414,8 @@ export const PatientAuthDialog: React.FC<{
                 py: 1.25,
                 borderRadius: "8px",
                 border: `1px solid ${gender === g ? BOOKING_PRIMARY : BORDER}`,
+                // Пол выбирается кнопками — незаполненность показываем рамкой.
+                ...(registerTouched && !gender ? { borderColor: "error.main" } : null),
                 color: gender === g ? BOOKING_PRIMARY : "text.primary",
                 fontWeight: 500,
                 textTransform: "none",

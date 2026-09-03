@@ -30,6 +30,7 @@ import AddAPhotoOutlined from "@mui/icons-material/AddAPhotoOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import FormatListBulletedOutlined from "@mui/icons-material/FormatListBulletedOutlined";
@@ -37,6 +38,7 @@ import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useModuleGate } from "../../hooks/useModuleGate";
+import { usePermissions } from "../../hooks/usePermissions";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { useTheme } from "@mui/material/styles";
 import {
@@ -53,6 +55,7 @@ import { subtleBg } from "../../theme/uiHelpers";
 import { ApiError, getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import {
+  CLEANING_EDIT_ENABLED,
   CLEANING_USE_MOCKS,
   approveCleaningRecord,
   deleteCleaningRecord,
@@ -93,6 +96,10 @@ const CleaningPage: React.FC = () => {
   // как было раньше.
   const { organizationId: orgId, branchId } = useActiveScope();
   const { moduleGate } = useModuleGate();
+  // Своя запись или чужая: без cleaning.manage бэк даёт править только свои
+  // (чужая — 404). Сотрудника берём из активного профиля /auth/me.
+  const { activeEmployee } = usePermissions();
+  const ownEmployeeId = activeEmployee?.id ?? null;
 
   // Доступ к странице гейтит RequireModule (App.tsx); здесь — права на действия.
   // В демо-режиме открыты всем, после выключения CLEANING_USE_MOCKS начнут
@@ -238,8 +245,39 @@ const CleaningPage: React.FC = () => {
 
   // ── Диалоги ───────────────────────────────────────────────────────────────
   const [reportOpen, setReportOpen] = React.useState(false);
+  const [editTarget, setEditTarget] = React.useState<CleaningRecord | null>(null);
   const [viewer, setViewer] = React.useState<{ record: CleaningRecord; index: number } | null>(null);
   const [rejectTarget, setRejectTarget] = React.useState<CleaningRecord | null>(null);
+
+  /**
+   * Кому показываем «Изменить» — зеркалит матрицу прав бэка (ответ
+   * CLEANING_RECORD_EDIT_2026-09-03.md §6): с cleaning.manage правится любая
+   * запись организации в любом статусе, без него — только своя и только пока
+   * она не подтверждена (иначе 403/404).
+   */
+  const canEditRecord = React.useCallback(
+    (record: CleaningRecord) => {
+      if (!CLEANING_EDIT_ENABLED) return false;
+      if (canManage) return true;
+      if (!canReport) return false;
+      return (
+        record.status !== "approved" &&
+        ownEmployeeId != null &&
+        record.employeeId === ownEmployeeId
+      );
+    },
+    [canManage, canReport, ownEmployeeId],
+  );
+  // Нужна ли колонка действий уборщице: у неё кнопка есть не у каждой строки
+  // (подтверждённые записи правит только администратор).
+  const canEditAny = React.useMemo(() => rows.some(canEditRecord), [rows, canEditRecord]);
+
+  // Правка из просмотра фото: вьюер закрываем, иначе диалог правки открылся бы
+  // поверх него и после сохранения пользователь вернулся бы к старым снимкам.
+  const openEdit = React.useCallback((record: CleaningRecord) => {
+    setViewer(null);
+    setEditTarget(record);
+  }, []);
 
   // ── Подтверждение ─────────────────────────────────────────────────────────
   const [reviewBusyId, setReviewBusyId] = React.useState<number | null>(null);
@@ -436,12 +474,24 @@ const CleaningPage: React.FC = () => {
       {
         field: "actions",
         headerName: "",
-        width: canManage ? 132 : 20,
+        // Уборщице без cleaning.manage колонка нужна под одну кнопку «Изменить».
+        width: canManage ? 168 : canEditAny ? 56 : 20,
         sortable: false,
         align: "right",
         headerAlign: "right",
         renderCell: (p) => {
-          if (!canManage) return null;
+          const canEdit = canEditRecord(p.row);
+          if (!canManage) {
+            return canEdit ? (
+              <Stack direction="row" alignItems="center" sx={{ height: "100%" }}>
+                <Tooltip title="Изменить запись">
+                  <IconButton size="small" onClick={() => setEditTarget(p.row)}>
+                    <EditOutlined fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            ) : null;
+          }
           return (
             <Stack direction="row" gap={0.25} alignItems="center" sx={{ height: "100%" }}>
               {reviewBusyId === p.row.id ? (
@@ -470,6 +520,15 @@ const CleaningPage: React.FC = () => {
                       </Tooltip>
                     </>
                   )}
+                  {/* Правка — тип/исполнитель/дата/фото; статус после неё
+                      выставляет бэк сам (rejected → pending). */}
+                  {canEdit && (
+                    <Tooltip title="Изменить запись">
+                      <IconButton size="small" onClick={() => setEditTarget(p.row)}>
+                        <EditOutlined fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
                   {/* Удаление — для любого статуса: исправление ошибочных
                       подтверждений/дублей (тикет cleaning-record-cancel). */}
                   <Tooltip title="Удалить запись">
@@ -484,7 +543,7 @@ const CleaningPage: React.FC = () => {
         },
       },
     ],
-    [canManage, reviewBusyId, handleApprove],
+    [canManage, canEditAny, canEditRecord, reviewBusyId, handleApprove],
   );
 
   return (
@@ -630,10 +689,12 @@ const CleaningPage: React.FC = () => {
                       key={row.id}
                       record={row}
                       canManage={canManage}
+                      canEdit={canEditRecord(row)}
                       busy={reviewBusyId === row.id}
                       onOpenPhoto={(index) => setViewer({ record: row, index })}
                       onApprove={(r) => void handleApprove(r)}
                       onReject={setRejectTarget}
+                      onEdit={setEditTarget}
                       onDelete={setDeleteTarget}
                     />
                   ))}
@@ -717,13 +778,28 @@ const CleaningPage: React.FC = () => {
         onClose={() => setReportOpen(false)}
         onSuccess={invalidate}
       />
+      {/* Правка — тот же диалог поверх записи. Отдельный экземпляр, чтобы
+          «Отметить уборку» и «Изменить» не делили один сброс формы. */}
+      <ReportDialog
+        open={editTarget !== null}
+        activeTypes={activeTypes}
+        record={editTarget}
+        // Исполнителя и дату правит только cleaning.manage — уборщице бэк
+        // отвечает на эти поля 403.
+        canAssign={canManage}
+        canBackdate={canManage}
+        onClose={() => setEditTarget(null)}
+        onSuccess={invalidate}
+      />
       <PhotoViewerDialog
         record={viewer?.record ?? null}
         initialIndex={viewer?.index ?? 0}
         canManage={canManage}
+        canEdit={viewer ? canEditRecord(viewer.record) : false}
         onClose={() => setViewer(null)}
         onApprove={(record) => void handleApprove(record)}
         onReject={setRejectTarget}
+        onEdit={openEdit}
       />
       <RejectDialog
         record={rejectTarget}

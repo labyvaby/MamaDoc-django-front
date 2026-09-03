@@ -7,6 +7,8 @@ import {
   hourlyOccupancy,
   occMinutes,
   packIntoLanes,
+  segmentLunch,
+  segmentWorkSpans,
   timeToLeftPct,
 } from "./monthTimeline";
 
@@ -120,5 +122,49 @@ describe("hourlyOccupancy", () => {
     expect(slots[10 - 7]).toBe(1);
     expect(slots[13 - 7]).toBe(0); // обеденный час — никого
     expect(slots[15 - 7]).toBe(1);
+  });
+});
+
+describe("разрез смены обедом", () => {
+  const seg = (over: Partial<DayOccurrence> = {}, startMin = 9 * 60, endMin = 17 * 60) => ({
+    occ: occ(over),
+    startMin,
+    endMin,
+  });
+
+  it("без обеда — один кусок во всю смену", () => {
+    expect(segmentLunch(seg())).toBeNull();
+    expect(segmentWorkSpans(seg())).toEqual([{ startMin: 9 * 60, endMin: 17 * 60 }]);
+  });
+
+  it("обед посреди смены даёт «до» и «после»", () => {
+    const s = seg({ lunch: { start: "13:00", end: "14:00" } });
+    expect(segmentLunch(s)).toEqual({ startMin: 13 * 60, endMin: 14 * 60 });
+    expect(segmentWorkSpans(s)).toEqual([
+      { startMin: 9 * 60, endMin: 13 * 60 },
+      { startMin: 14 * 60, endMin: 17 * 60 },
+    ]);
+  });
+
+  it("обед у края смены оставляет один кусок", () => {
+    expect(segmentWorkSpans(seg({ lunch: { start: "09:00", end: "10:00" } }))).toEqual([
+      { startMin: 10 * 60, endMin: 17 * 60 },
+    ]);
+    expect(segmentWorkSpans(seg({ lunch: { start: "16:00", end: "17:00" } }))).toEqual([
+      { startMin: 9 * 60, endMin: 16 * 60 },
+    ]);
+  });
+
+  it("обед во всю смену не стирает её со шкалы", () => {
+    expect(segmentWorkSpans(seg({ lunch: { start: "09:00", end: "17:00" } }))).toEqual([
+      { startMin: 9 * 60, endMin: 17 * 60 },
+    ]);
+  });
+
+  it("обед вне нарисованного куска игнорируется", () => {
+    // Смена прижата к правому краю окна, обед остался снаружи.
+    const s = seg({ lunch: { start: "13:00", end: "14:00" } }, 21 * 60, 22 * 60);
+    expect(segmentLunch(s)).toBeNull();
+    expect(segmentWorkSpans(s)).toEqual([{ startMin: 21 * 60, endMin: 22 * 60 }]);
   });
 });

@@ -33,9 +33,13 @@ import {
   CLEANING_MAX_PHOTOS,
   CLEANING_PHOTO_MAX_SIZE_MB,
   CLEANING_PHOTO_TARGET_BYTES,
+  cleaningRecordDate,
   createCleaningRecord,
   getCleaningEmployees,
+  updateCleaningRecord,
   type CleaningEmployee,
+  type CleaningPhoto,
+  type CleaningRecord,
   type CleaningType,
 } from "../../api/cleaning";
 
@@ -48,8 +52,15 @@ interface ReportDialogProps {
   /** Активные типы уборки для выбора (уже отфильтрованы родителем). */
   activeTypes: CleaningType[];
   /**
+   * Запись, которую правим. null/undefined — обычный режим «Отметить уборку».
+   * В режиме правки диалог показывает уже приложенные снимки, а на бэк уходит
+   * PATCH только с изменёнными полями.
+   */
+  record?: CleaningRecord | null;
+  /**
    * Показывать выбор исполнителя (ручное назначение уборки на сотрудника).
-   * Только для cleaning.manage; без него запись создаётся на текущего юзера.
+   * Только для cleaning.manage; без него запись создаётся на текущего юзера,
+   * а при правке эти поля бэк отбивает 403.
    */
   canAssign?: boolean;
   /**
@@ -63,13 +74,17 @@ interface ReportDialogProps {
 }
 
 /**
- * Диалог «Отметить уборку»: выбор типа уборки + 1..5 фото (сжимаются
- * compressImage). Весь стейт фотоотчёта живёт здесь; blob-URL превью
- * освобождаются при открытии/закрытии, успешной отправке и размонтировании.
+ * Диалог уборки в двух режимах: «Отметить уборку» (тип + 1..15 фото, сжимаются
+ * compressImage) и «Изменить запись» — тот же набор полей поверх существующей
+ * записи, плюс удаление уже приложенных снимков.
+ *
+ * Весь стейт фотоотчёта живёт здесь; blob-URL превью освобождаются при
+ * открытии/закрытии, успешной отправке и размонтировании.
  */
 const ReportDialog: React.FC<ReportDialogProps> = ({
   open,
   activeTypes,
+  record = null,
   canAssign = false,
   canBackdate = false,
   onClose,
@@ -79,13 +94,36 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
   const { open: notify } = useNotification();
   const orgId = useApiOrgId();
 
+  const isEdit = record !== null;
+
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [typeId, setTypeId] = React.useState<number | "">("");
   const [employeeId, setEmployeeId] = React.useState<number | "">("");
   const [date, setDate] = React.useState<Dayjs | null>(dayjs());
   const [photos, setPhotos] = React.useState<{ file: File; url: string }[]>([]);
+  /** Снимки записи, помеченные к удалению (уходят в delete_photos). */
+  const [removedPhotoIds, setRemovedPhotoIds] = React.useState<number[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  // Тип записи мог быть выключен в справочнике уже после уборки. В выборе он
+  // нужен, иначе поле выглядело бы пустым и «сбрасывало» тип на глазах у
+  // пользователя; сменить на него нельзя — бэк принимает только активные.
+  const typeOptions: CleaningType[] = React.useMemo(() => {
+    if (!record || activeTypes.some((t) => t.id === record.typeId)) return activeTypes;
+    return [
+      ...activeTypes,
+      { id: record.typeId, name: `${record.typeName} (архивный)`, rate: "0", isActive: false },
+    ];
+  }, [activeTypes, record]);
+
+  // Уже приложенные снимки — то, что останется после правки. Лимит 1..15 бэк
+  // считает по результату (осталось + добавлено), так же считаем и здесь.
+  const keptPhotos: CleaningPhoto[] = React.useMemo(
+    () => (record?.photos ?? []).filter((p) => !removedPhotoIds.includes(p.id)),
+    [record, removedPhotoIds],
+  );
+  const totalPhotos = keptPhotos.length + photos.length;
 
   // Список уборщиц — грузим только когда селектор нужен (canAssign) и открыт.
   const employeesQuery = useQuery({
@@ -145,18 +183,19 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
     [],
   );
 
-  // Сброс формы при каждом открытии.
+  // Сброс формы при каждом открытии: в режиме правки — значениями записи.
   React.useEffect(() => {
     if (!open) return;
-    setTypeId(activeTypes.length === 1 ? activeTypes[0].id : "");
-    setEmployeeId("");
-    setDate(dayjs());
+    setTypeId(record ? record.typeId : activeTypes.length === 1 ? activeTypes[0].id : "");
+    setEmployeeId(record ? record.employeeId : "");
+    setDate(record ? dayjs(cleaningRecordDate(record)) : dayjs());
+    setRemovedPhotoIds([]);
     clearPhotos();
     v.reset();
     setError(null);
     // activeTypes меняются только при рефетче типов — пересброс формы не нужен.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, clearPhotos]);
+  }, [open, record, clearPhotos]);
 
   const handleClose = () => {
     if (busy) return;
@@ -168,7 +207,8 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
   const addFiles = async (files: File[]) => {
     if (files.length === 0 || busy) return;
     setError(null);
-    const room = CLEANING_MAX_PHOTOS - photos.length;
+    // Место считаем по итогу: в правке часть снимков уже лежит в записи.
+    const room = CLEANING_MAX_PHOTOS - totalPhotos;
     if (files.length > room) {
       setError(`Не больше ${CLEANING_MAX_PHOTOS} фото на одну уборку.`);
       return;
@@ -240,6 +280,32 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
     });
   };
 
+  /** Снимок записи — помечаем к удалению, файл уйдёт из хранилища после PATCH. */
+  const removeExistingPhoto = (photoId: number) => {
+    setError(null);
+    setRemovedPhotoIds((prev) => (prev.includes(photoId) ? prev : [...prev, photoId]));
+  };
+
+  // ── Что реально изменилось (в режиме правки) ──────────────────────────────
+  // Отправляем только изменённые поля: лишний `type` в PATCH переписал бы
+  // ставку записи без нужды, а пустой PATCH бэк отбивает 400.
+  const recordDay = record ? dayjs(cleaningRecordDate(record)) : null;
+  const typeChanged = Boolean(record) && typeId !== "" && typeId !== record?.typeId;
+  const employeeChanged =
+    canAssign && Boolean(record) && employeeId !== "" && employeeId !== record?.employeeId;
+  const dateChanged = Boolean(
+    canBackdate &&
+      CLEANING_BACKDATE_ENABLED &&
+      record &&
+      date?.isValid() &&
+      recordDay &&
+      !date.isSame(recordDay, "day"),
+  );
+  /** Правка меняет сумму в ЗП — бэк проверит заморозку месяца именно на этом. */
+  const affectsMoney = typeChanged || employeeChanged || dateChanged;
+  const hasChanges =
+    affectsMoney || photos.length > 0 || removedPhotoIds.length > 0;
+
   // При ручном назначении исполнитель обязателен: менеджер сам не уборщица,
   // писать «на себя» ему нечего — запись должна быть привязана к сотруднику.
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
@@ -254,14 +320,53 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
           ? "Дата не может быть в будущем"
           : null,
     typeId: typeId !== "" ? null : "Выберите тип уборки",
-    photos: photos.length > 0 ? null : "Приложите хотя бы одно фото",
+    photos:
+      totalPhotos > 0
+        ? null
+        : isEdit
+          ? "Оставьте хотя бы одно фото — без фотоотчёта уборку не проверить"
+          : "Приложите хотя бы одно фото",
   });
+
+  const handleEditSubmit = async () => {
+    if (!record) return;
+    await updateCleaningRecord(record.id, {
+      typeId: typeChanged ? (typeId as number) : undefined,
+      employeeId: employeeChanged ? (employeeId as number) : undefined,
+      // Дата уходит только когда её реально сдвинули. Бэк, как и в POST, кладёт
+      // в performedAt полдень выбранного дня и сравнивает с текущим моментом,
+      // поэтому перевод записи на сегодня до 12:00 он отобьёт как «дата в
+      // будущем» — показываем его текст, гадать за него не станем.
+      date: dateChanged ? date!.format("YYYY-MM-DD") : undefined,
+      photos: photos.length > 0 ? photos.map((p) => p.file) : undefined,
+      deletePhotoIds: removedPhotoIds.length > 0 ? removedPhotoIds : undefined,
+      organizationId: orgId,
+    });
+    notify?.({
+      type: "success",
+      message: "Запись изменена",
+      description:
+        record.status === "rejected"
+          ? "Запись вернулась на проверку администратором."
+          : record.status === "approved" && affectsMoney
+            ? "Сумма за месяц у сотрудника пересчитана."
+            : undefined,
+    });
+  };
 
   const handleSubmit = async () => {
     if (!v.validate()) return;
+    if (isEdit && !hasChanges) return;
     setBusy(true);
     setError(null);
     try {
+      if (isEdit) {
+        await handleEditSubmit();
+        clearPhotos();
+        onSuccess();
+        onClose();
+        return;
+      }
       await createCleaningRecord({
         // Тип выбран — гарантировано v.validate() выше.
         typeId: typeId as number,
@@ -288,12 +393,20 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
       onClose();
     } catch (err) {
       // 409 — месяц заморожен в ЗП. Проверяется по дате уборки, поэтому ловится
-      // именно при отметке задним числом: запись изменила бы уже посчитанную
+      // именно при отметке задним числом (а в правке — когда меняется сумма:
+      // тип, исполнитель или дата): запись изменила бы уже посчитанную
       // зарплату. Общий текст про «конфликт данных» тут бесполезен.
+      // 403 в правке — попытка тронуть чужое/подтверждённое без cleaning.manage;
+      // кнопку «Изменить» мы там и не показываем, но право могло измениться в
+      // соседней вкладке.
       setError(
         err instanceof ApiError && err.status === 409
-          ? "Месяц закрыт в зарплате — отметить уборку за эту дату нельзя, пока бухгалтер не разморозит период."
-          : getErrorMessage(err),
+          ? isEdit
+            ? "Месяц закрыт в зарплате — изменить подтверждённую уборку нельзя, пока бухгалтер не разморозит период."
+            : "Месяц закрыт в зарплате — отметить уборку за эту дату нельзя, пока бухгалтер не разморозит период."
+          : err instanceof ApiError && err.status === 403 && isEdit
+            ? "Недостаточно прав, чтобы изменить эту запись."
+            : getErrorMessage(err),
       );
     } finally {
       setBusy(false);
@@ -302,9 +415,23 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Отметить уборку</DialogTitle>
+      <DialogTitle>{isEdit ? "Изменить запись об уборке" : "Отметить уборку"}</DialogTitle>
       <DialogContent onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
+          {/* Что случится после сохранения — статус меняет бэк сам, кнопки
+              «отправить на повторную проверку» в контракте нет. */}
+          {isEdit && record?.status === "rejected" && (
+            <Alert severity="info">
+              После сохранения запись вернётся на проверку — причина отказа очистится.
+            </Alert>
+          )}
+          {isEdit && record?.status === "approved" && (
+            <Alert severity={affectsMoney ? "warning" : "info"}>
+              {affectsMoney
+                ? "Уборка подтверждена и учтена в зарплате — сумма за месяц у сотрудника пересчитается."
+                : "Уборка подтверждена: правка фото сумму в зарплате не меняет."}
+            </Alert>
+          )}
           {canAssign && (
             <TextField
               select
@@ -383,21 +510,54 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
             disabled={busy}
             {...v.field("typeId")}
           >
-            {activeTypes.map((t) => (
+            {typeOptions.map((t) => (
               <MenuItem key={t.id} value={String(t.id)}>
                 {t.name}
               </MenuItem>
             ))}
           </TextField>
 
-          {/* Фото */}
+          {/* Фото: сперва уже приложенные к записи, следом добавляемые */}
           <Stack ref={v.anchor("photos")} direction="row" gap={1} flexWrap="wrap">
+            {keptPhotos.map((photo, i) => (
+              <Box key={photo.id} sx={{ position: "relative" }}>
+                <Box
+                  component="img"
+                  src={photo.url}
+                  alt={`Фото ${i + 1}`}
+                  loading="lazy"
+                  sx={{
+                    width: 76,
+                    height: 76,
+                    objectFit: "cover",
+                    borderRadius: 1.5,
+                    border: `1px solid ${theme.palette.divider}`,
+                  }}
+                />
+                <IconButton
+                  size="small"
+                  onClick={() => removeExistingPhoto(photo.id)}
+                  disabled={busy}
+                  aria-label="Удалить фото"
+                  sx={{
+                    position: "absolute",
+                    top: -8,
+                    right: -8,
+                    bgcolor: "background.paper",
+                    border: `1px solid ${theme.palette.divider}`,
+                    "&:hover": { bgcolor: "background.paper" },
+                  }}
+                >
+                  <DeleteOutlineOutlined sx={{ fontSize: 14 }} />
+                </IconButton>
+              </Box>
+            ))}
             {photos.map((photo, i) => (
               <Box key={photo.url} sx={{ position: "relative" }}>
                 <Box
                   component="img"
                   src={photo.url}
-                  alt={`Фото ${i + 1}`}
+                  alt={`Фото ${keptPhotos.length + i + 1}`}
                   sx={{
                     width: 76,
                     height: 76,
@@ -423,7 +583,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
                 </IconButton>
               </Box>
             ))}
-            {photos.length < CLEANING_MAX_PHOTOS && (
+            {totalPhotos < CLEANING_MAX_PHOTOS && (
               <Button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={busy}
@@ -448,8 +608,12 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
             variant="caption"
             color={v.errorOf("photos") ? "error" : "text.secondary"}
           >
-            От 1 до {CLEANING_MAX_PHOTOS} фото — фотоотчёт обязателен, по нему администратор
-            подтверждает уборку. Можно перетащить файлы сюда или вставить из буфера (Ctrl+V).
+            {v.errorOf("photos") ?? (
+              <>
+                От 1 до {CLEANING_MAX_PHOTOS} фото — фотоотчёт обязателен, по нему администратор
+                подтверждает уборку. Можно перетащить файлы сюда или вставить из буфера (Ctrl+V).
+              </>
+            )}
           </Typography>
           <input
             ref={fileInputRef}
@@ -463,16 +627,23 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
         </Stack>
       </DialogContent>
       <DialogActions>
+        {/* Пустой PATCH бэк отбивает 400 — вместо непонятной ошибки просто
+            говорим, что сохранять нечего. */}
+        {isEdit && !hasChanges && (
+          <Typography variant="caption" color="text.secondary" sx={{ mr: "auto", pl: 1 }}>
+            Изменений нет
+          </Typography>
+        )}
         <Button onClick={handleClose} disabled={busy}>
           Отмена
         </Button>
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={busy}
+          disabled={busy || (isEdit && !hasChanges)}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
-          {busy ? "Отправка…" : "Отправить"}
+          {busy ? (isEdit ? "Сохранение…" : "Отправка…") : isEdit ? "Сохранить" : "Отправить"}
         </Button>
       </DialogActions>
     </Dialog>

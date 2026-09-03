@@ -47,6 +47,8 @@ import { StepIndicator, type BookingStep } from "./booking/StepIndicator";
 import { ScheduleCard } from "./booking/ScheduleCard";
 import { BranchesCard } from "./booking/BranchesCard";
 import {
+  bookableBranches,
+  calendarsReady,
   dayOffDates,
   nearestAvailableDate,
   pickBranchWithSlots,
@@ -247,6 +249,7 @@ const DoctorBookingPage: React.FC = () => {
    */
   const branchId = pickedBranchId ?? doctor?.branch?.id ?? null;
   const selectedBranch = scheduleBranches.find((b) => b.id === branchId) ?? null;
+  // NB: ищем среди всех филиалов, а не видимых: выбранный мог стать скрытым.
 
   // Карточка врача + отзывы + страны.
   React.useEffect(() => {
@@ -290,6 +293,17 @@ const DoctorBookingPage: React.FC = () => {
   }, [scheduleBranches, calendarByBranch]);
 
   /**
+   * Филиалы для пациента: где врач принимает. Филиал без графика и без окон
+   * скрываем — записаться туда нельзя, а «График не задан» читается как
+   * недоработка. Календари при этом грузим по всем филиалам: скрывать нечего,
+   * пока не знаем, есть ли где-то окна.
+   */
+  const visibleBranches = React.useMemo(
+    () => bookableBranches(scheduleBranches, nearestDayByBranch, doctor?.branch?.id ?? null),
+    [scheduleBranches, nearestDayByBranch, doctor?.branch?.id],
+  );
+
+  /**
    * Филиал по умолчанию — тот, где раньше всего есть свободное окно.
    *
    * Раньше выбирали по наличию правил в графике, и филиал с расписанием, но без
@@ -299,8 +313,11 @@ const DoctorBookingPage: React.FC = () => {
    */
   React.useEffect(() => {
     if (scheduleLoading || calendarLoading || pickedBranchId !== null) return;
+    // Пока календари не пришли, «окон нет» ни в одном филиале — решение по
+    // такой картине зафиксировало бы домашний филиал навсегда (guard выше).
+    if (!calendarsReady(scheduleBranches, calendarByBranch)) return;
     const next = pickDefaultBranchId(
-      scheduleBranches,
+      visibleBranches,
       nearestDayByBranch,
       doctor?.branch?.id ?? null,
     );
@@ -309,6 +326,8 @@ const DoctorBookingPage: React.FC = () => {
     scheduleLoading,
     calendarLoading,
     scheduleBranches,
+    visibleBranches,
+    calendarByBranch,
     pickedBranchId,
     doctor?.branch?.id,
     nearestDayByBranch,
@@ -432,8 +451,8 @@ const DoctorBookingPage: React.FC = () => {
     () =>
       hasAvailableDay || calendarLoading
         ? null
-        : pickBranchWithSlots(scheduleBranches, nearestDayByBranch, branchId),
-    [hasAvailableDay, calendarLoading, scheduleBranches, branchId, nearestDayByBranch],
+        : pickBranchWithSlots(visibleBranches, nearestDayByBranch, branchId),
+    [hasAvailableDay, calendarLoading, visibleBranches, branchId, nearestDayByBranch],
   );
 
   // Филиал обязателен всегда (без branch_id → 400), услуга — пока бэк не
@@ -821,7 +840,7 @@ const DoctorBookingPage: React.FC = () => {
                 </Typography>
               )}
             </Stack>
-            {scheduleBranches.length > 1 && selectedBranch && (
+            {visibleBranches.length > 1 && selectedBranch && (
               <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mt: -0.5 }}>
                 <PlaceOutlined sx={{ fontSize: 14, color: MUTED, flexShrink: 0 }} />
                 <Typography noWrap sx={{ fontSize: 12, color: MUTED }}>
@@ -850,12 +869,27 @@ const DoctorBookingPage: React.FC = () => {
           gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "550px minmax(0, 1fr)" },
         }}
       >
-        {/* Левая колонка: врач */}
-        <DoctorCard
-          doctor={doctor}
-          reviewsCount={doctor.ratingCount || reviews.length}
-          onOpenReviews={() => setReviewsOpen(true)}
-        />
+        {/* Левая колонка: врач и его филиалы — «кто и где» рядом, чтобы правая
+            колонка осталась чистой воронкой шагов (дата → время → услуги). */}
+        <Stack spacing={1.5}>
+          <DoctorCard
+            doctor={doctor}
+            reviewsCount={doctor.ratingCount || reviews.length}
+            onOpenReviews={() => setReviewsOpen(true)}
+          />
+
+          {/* Адрес и график — до выбора даты: пациенту важно знать, куда
+              ехать, а у врача филиалов может быть несколько. */}
+          {canBook && (
+            <BranchesCard
+              branches={visibleBranches}
+              loading={scheduleLoading}
+              selectedId={branchId}
+              onSelect={handleBranchChange}
+              nearestByBranch={calendarLoading ? undefined : nearestDayByBranch}
+            />
+          )}
+        </Stack>
 
         {/* Правая колонка: шаги, расписание, услуги, действие */}
         <Stack spacing={1.5}>
@@ -863,16 +897,6 @@ const DoctorBookingPage: React.FC = () => {
             <Alert severity="info">{t("bookingUnavailable")}</Alert>
           ) : (
             <>
-              {/* Адрес и график — до выбора даты: пациенту важно знать, куда
-                  ехать, а у врача филиалов может быть несколько. */}
-              <BranchesCard
-                branches={scheduleBranches}
-                loading={scheduleLoading}
-                selectedId={branchId}
-                onSelect={handleBranchChange}
-                nearestByBranch={calendarLoading ? undefined : nearestDayByBranch}
-              />
-
               <StepIndicator current={step} />
 
               {scheduleBlock}
@@ -948,7 +972,7 @@ const DoctorBookingPage: React.FC = () => {
                   <Stack direction="row" flexWrap="wrap" justifyContent="center" gap={1}>
                     {/* Филиал в сводке — только когда их несколько: иначе это
                         строка, которая ничего не уточняет. */}
-                    {scheduleBranches.length > 1 && selectedBranch && (
+                    {visibleBranches.length > 1 && selectedBranch && (
                       <SummaryChip>
                         <PlaceOutlined sx={{ fontSize: 13, color: MUTED }} />
                         {selectedBranch.name}

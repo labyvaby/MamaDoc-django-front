@@ -61,6 +61,7 @@ import {
 } from "../../config/appointmentStatuses";
 import { useT } from "../../i18n/VerticalProvider";
 import { formatKGS } from "../../utility/format";
+import { cancelReasonLabel } from "../../utility/cancelReasonLabel";
 import { getStatusChipState } from "./statusChipState";
 import type { AppointmentStatusSource } from "./statusChipState";
 
@@ -135,7 +136,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
 
   // Просроченный: пунктирный контур + часы вместо иконки статуса. Текст
   // остаётся в полном контрасте — гасим значимость, а не читаемость.
-  const statusChip = (
+  const statusChipEl = (
     <Chip
       label={statusCfg.label}
       icon={isOverdue ? <ScheduleOutlined fontSize="small" /> : statusCfg.icon}
@@ -144,6 +145,14 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
       deleteIcon={canUndoArrived ? <CloseOutlined /> : undefined}
       sx={chipSx(appt.status, isOverdue ? { borderStyle: "dashed" } : undefined)}
     />
+  );
+  // Причина видна только у отменённого приёма: у неявки её нет в контракте,
+  // а у остальных статусов поле бэк и не заполняет.
+  const cancelReason = appt.status === "canceled" ? cancelReasonLabel(appt.cancelReason) : null;
+  const statusChip = cancelReason ? (
+    <Tooltip title={t("chips.cancelReason", { reason: cancelReason })}>{statusChipEl}</Tooltip>
+  ) : (
+    statusChipEl
   );
 
   return (
