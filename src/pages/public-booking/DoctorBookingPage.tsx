@@ -869,12 +869,27 @@ const DoctorBookingPage: React.FC = () => {
           gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "550px minmax(0, 1fr)" },
         }}
       >
-        {/* Левая колонка: врач */}
-        <DoctorCard
-          doctor={doctor}
-          reviewsCount={doctor.ratingCount || reviews.length}
-          onOpenReviews={() => setReviewsOpen(true)}
-        />
+        {/* Левая колонка: врач и его филиалы — «кто и где» рядом, чтобы правая
+            колонка осталась чистой воронкой шагов (дата → время → услуги). */}
+        <Stack spacing={1.5}>
+          <DoctorCard
+            doctor={doctor}
+            reviewsCount={doctor.ratingCount || reviews.length}
+            onOpenReviews={() => setReviewsOpen(true)}
+          />
+
+          {/* Адрес и график — до выбора даты: пациенту важно знать, куда
+              ехать, а у врача филиалов может быть несколько. */}
+          {canBook && (
+            <BranchesCard
+              branches={visibleBranches}
+              loading={scheduleLoading}
+              selectedId={branchId}
+              onSelect={handleBranchChange}
+              nearestByBranch={calendarLoading ? undefined : nearestDayByBranch}
+            />
+          )}
+        </Stack>
 
         {/* Правая колонка: шаги, расписание, услуги, действие */}
         <Stack spacing={1.5}>
@@ -882,16 +897,6 @@ const DoctorBookingPage: React.FC = () => {
             <Alert severity="info">{t("bookingUnavailable")}</Alert>
           ) : (
             <>
-              {/* Адрес и график — до выбора даты: пациенту важно знать, куда
-                  ехать, а у врача филиалов может быть несколько. */}
-              <BranchesCard
-                branches={visibleBranches}
-                loading={scheduleLoading}
-                selectedId={branchId}
-                onSelect={handleBranchChange}
-                nearestByBranch={calendarLoading ? undefined : nearestDayByBranch}
-              />
-
               <StepIndicator current={step} />
 
               {scheduleBlock}
