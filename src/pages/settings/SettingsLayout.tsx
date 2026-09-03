@@ -4,7 +4,9 @@ import {
   Button,
   GlobalStyles,
   Paper,
+  InputAdornment,
   Stack,
+  TextField,
   Typography,
   alpha,
 } from "@mui/material";
@@ -24,6 +26,7 @@ import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import KeyboardArrowLeftOutlined from "@mui/icons-material/KeyboardArrowLeftOutlined";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOutlined";
 
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
@@ -424,6 +427,8 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
     return () => document.body.classList.remove("mamadoc-settings-mobile");
   }, [isMobile]);
 
+  const [railSearch, setRailSearch] = React.useState("");
+
   // Рельс разделов скроллится сам, поэтому открытый раздел может оказаться за
   // его нижним краем — подтягиваем активный пункт в видимую часть.
   const activeItemRef = React.useRef<HTMLElement | null>(null);
@@ -667,6 +672,15 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
   const isActiveTab = (to: string) =>
     location.pathname === to || location.pathname.startsWith(`${to}/`);
 
+  // Поиск по рельсу ищет и по названию раздела, и по названию группы:
+  // «доступ» приводит к «Роли» и «Сотрудники и доступы» одинаково ожидаемо.
+  const railQuery = railSearch.trim().toLowerCase();
+  const matchesQuery = (tab: TabDef) =>
+    !railQuery ||
+    t(`layout.tabs.${tab.key}`).toLowerCase().includes(railQuery) ||
+    t(`layout.groups.${tab.group}`).toLowerCase().includes(railQuery);
+  const foundTabs = visibleTabs.filter(matchesQuery);
+
 
   return (
     <Box sx={{ p: 2, height: "100%" }}>
@@ -705,8 +719,44 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
               overscrollBehavior: "contain",
             }}
           >
+            <Box
+              sx={{
+                position: "sticky",
+                top: 0,
+                zIndex: 1,
+                bgcolor: "background.paper",
+                pb: 1,
+              }}
+            >
+              <TextField
+                fullWidth
+                size="small"
+                value={railSearch}
+                onChange={(e) => setRailSearch(e.target.value)}
+                placeholder={t("layout.searchPlaceholder")}
+                inputProps={{ "aria-label": t("layout.searchPlaceholder") }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchOutlined fontSize="small" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Box>
+
+            {foundTabs.length === 0 && (
+              <Typography
+                variant="body2"
+                color="text.disabled"
+                sx={{ textAlign: "center", py: 3 }}
+              >
+                {t("layout.searchEmpty")}
+              </Typography>
+            )}
+
             {SETTINGS_GROUPS.map((group) => {
-              const groupTabs = visibleTabs.filter((tab) => tab.group === group);
+              const groupTabs = foundTabs.filter((tab) => tab.group === group);
               if (groupTabs.length === 0) return null;
               return (
                 <Box key={group} sx={{ "&:not(:first-of-type)": { mt: 1.5 } }}>
@@ -758,15 +808,27 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
                                   ? alpha(accent, theme.palette.mode === "dark" ? 0.24 : 0.14)
                                   : theme.palette.action.hover,
                               },
-                              "& .MuiSvgIcon-root": {
-                                fontSize: 19,
+                              // Плашка как на мобильном хабе, но только у
+                              // открытого раздела: 20 цветных квадратов подряд
+                              // в узкой колонке перетягивают на себя внимание.
+                              "& .settings-rail-icon": {
+                                width: 28,
+                                height: 28,
+                                borderRadius: "8px",
                                 flexShrink: 0,
-                                color: active ? accent : theme.palette.text.secondary,
+                                display: "grid",
+                                placeItems: "center",
+                                color: accent,
+                                bgcolor: active
+                                  ? alpha(accent, theme.palette.mode === "dark" ? 0.22 : 0.12)
+                                  : "transparent",
+                                transition: "background-color .15s ease",
                               },
+                              "& .MuiSvgIcon-root": { fontSize: 19 },
                             };
                           }}
                         >
-                          {tab.icon}
+                          <Box className="settings-rail-icon">{tab.icon}</Box>
                           <Typography
                             noWrap
                             sx={{

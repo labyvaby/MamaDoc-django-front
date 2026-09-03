@@ -1,6 +1,8 @@
 {
   "layout": {
     "title": "Настройки",
+    "searchPlaceholder": "Найти раздел…",
+    "searchEmpty": "Разделов по запросу не найдено",
     "tabsAriaLabel": "Разделы настроек",
     "noOrgSelected": "Организация не выбрана",
     "groups": {
