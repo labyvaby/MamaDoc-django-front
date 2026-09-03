@@ -34,9 +34,9 @@ import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
+import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 // import BlockOutlined from "@mui/icons-material/BlockOutlined";
-// import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
@@ -385,6 +385,9 @@ const SidebarSecondary: React.FC = () => {
     bookings: isSuper || can(PAGE_PERMISSIONS.bookings),
     doctorRoom: isSuper || can(PAGE_PERMISSIONS.doctorRoom),
     nurseRoom: isSuper || can(PAGE_PERMISSIONS.nurseRoom),
+    // `can` уже сверяется с картой префикс→модуль, поэтому право lab.view без
+    // включённого модуля `lab` пункт не покажет — отдельной проверки не нужно.
+    lab: isSuper || can(PAGE_PERMISSIONS.lab),
     schedule: isSuper || can(PAGE_PERMISSIONS.schedule),
     skud: isSuper || can(PAGE_PERMISSIONS.attendance),
     cleaning: moduleGate("cleaning"),
@@ -535,7 +538,7 @@ const SidebarSecondary: React.FC = () => {
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.bookings || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
+    "my-work": can_.registratura || can_.bookings || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
     "org": can_.employees || can_.patients || can_.vaccinations || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
     "storage": can_.products || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
@@ -672,6 +675,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Процедурный кабинет */}
         {show("my-work") && can_.nurseRoom && (
           <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
+        )}
+
+        {/* Лаборатория */}
+        {show("my-work") && can_.lab && (
+          <SidebarMenuItem to="/lab" icon={<ScienceOutlined />} label="Лаборатория" collapsed={siderCollapsed} />
         )}
 
         {/* Расписание */}
