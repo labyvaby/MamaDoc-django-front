@@ -16,6 +16,11 @@ export const FIELD_SX = {
   "&:focus-within": { borderColor: BOOKING_PRIMARY },
 } as const;
 
+/** Рамка поля с подсветкой ошибки — незаполненное поле должно быть видно. */
+export function fieldSxWithError(error: boolean) {
+  return error ? { ...FIELD_SX, borderColor: "error.main" } : FIELD_SX;
+}
+
 export const INPUT_SX = {
   width: "100%",
   border: 0,
