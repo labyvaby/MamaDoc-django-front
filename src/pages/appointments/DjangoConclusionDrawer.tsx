@@ -73,14 +73,16 @@ import { loadDjangoPrintData } from "../print/djangoPrintData";
 import {
   getConclusionForms,
   renderFilledForm,
+  resolveFormForScope,
   type ConclusionFormTemplate,
   type FormFieldSlot,
   type FormTarget,
 } from "../../api/conclusionForms";
 import {
-  readConclusionFormDefaults,
-  resolveDefaultFormId,
-} from "../../api/conclusionFormDefaults";
+  buildConclusionFormData,
+  fitConclusionFormData,
+  parseConclusionFormData,
+} from "../../api/conclusionFormData";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { usePermissions } from "../../hooks/usePermissions";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
@@ -121,6 +123,12 @@ export type DjangoConclusionDrawerProps = {
   doctorName: string;
   /** Приём, к которому относится строка услуги — нужен бланкам (шапка листа). */
   appointmentId?: number;
+  /**
+   * Филиал приёма. По нему бэк режет список бланков (бланки филиала + общие) и
+   * подбирается бланк по умолчанию. Не передан — берём филиал сессии: врач
+   * работает там, куда переключён, и печатает на его форме.
+   */
+  branchId?: number | null;
   /** Врач строки услуги: по его специализациям подбираются бланки. */
   doctorId?: number | null;
   canEdit: boolean;
@@ -158,22 +166,22 @@ type ConclusionDraftBody = {
   /**
    * Прикреплённый бланк и значения его полей.
    *
-   * ⚠ Живут только в локальном черновике: у заключения на бэке поля под них
-   * нет (`formData` запрошен тикетом backend_ticket_conclusion_form_data.md).
-   * Поэтому до сохранения врач может закрыть дровер и вернуться к своим полям,
-   * а после сохранения на сервере остаётся собранный текст — при повторном
-   * открытии бланк не прикреплён. Разбирать текст обратно в поля не пытаемся:
-   * на любой ручной правке такой разбор врёт.
+   * С 03.09.2026 то же самое едет и на сервер — в `formData` заключения
+   * (api/conclusionFormData), поэтому после сохранения бланк открывается
+   * заполненным, а не «простынёй» собранного текста. Локальная копия осталась
+   * черновиком: она переживает закрытие дровера до сохранения.
    *
-   * ⚠ Когда `formData` появится, привязки полей (`slot`) нужно читать из
-   * снапшота бланка внутри самого заключения, а не из текущего бланка:
-   * администратор мог переназначить слот позже, и тогда старое заключение
-   * записало бы значение в чужую колонку.
+   * ⚠ Шаблон для уже сохранённого заключения берётся из снапшота внутри
+   * `formData`, а не из настроек: администратор мог позже переставить поля или
+   * переназначить привязку к колонке (`slot`), и старое заключение записало бы
+   * значение в чужую колонку.
    */
   formId?: number | null;
   formValues?: Record<string, string>;
   /** Свободный хвост бланка (см. manualText в компоненте). */
   formManual?: string;
+  /** Снапшот бланка сохранённого заключения (см. formSnapshot в компоненте). */
+  formSnapshot?: ConclusionFormTemplate | null;
 };
 
 /** Поле формы, в которое бланк собирает свой текст. */
@@ -385,6 +393,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   serviceId,
   doctorName,
   appointmentId,
+  branchId,
   doctorId,
   canEdit,
   canPrint,
@@ -447,6 +456,16 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [formId, setFormId] = React.useState<number | null>(null);
   const [formValues, setFormValues] = React.useState<Record<string, string>>({});
   /**
+   * Шаблон, по которому заключение уже заполняли (снапшот из `formData`).
+   *
+   * Сохранённое заключение открывается именно по нему, а не по актуальному
+   * бланку из настроек: администратор мог переставить поля, переименовать
+   * строки или переназначить привязку к колонке — тогда значения легли бы не в
+   * свои строки. Врач выбрал другой бланк — снапшот сбрасывается.
+   */
+  const [formSnapshot, setFormSnapshot] =
+    React.useState<ConclusionFormTemplate | null>(null);
+  /**
    * Свободный хвост бланка: вывод и рекомендации, которых в строках нет.
    * Держим отдельно от собранного текста — иначе его пришлось бы вырезать из
    * проекции при каждой правке значений.
@@ -504,6 +523,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     setFormId(body.formId ?? null);
     setFormValues(body.formValues ?? {});
     setManualText(body.formManual ?? "");
+    setFormSnapshot(body.formSnapshot ?? null);
   };
 
   // Ключ гидратации. Пересобирать форму нужно при открытии, смене строки услуги,
@@ -579,6 +599,10 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       return;
     }
 
+    // Заполненный бланк сохранённого заключения: значения полей, ручной хвост
+    // и снапшот шаблона, по которому его и заполняли (api/conclusionFormData).
+    const savedForm = conclusion ? parseConclusionFormData(conclusion.formData) : null;
+
     // Restore selected diagnoses from saved diagnosisData (match against
     // catalog by code when possible; keep a synthetic item otherwise).
     const body: ConclusionDraftBody = conclusion
@@ -608,11 +632,12 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           temperature: trimDecimalInput(conclusion.temperature),
           internalComment: conclusion.internalComment ?? "",
           status: conclusion.status ?? "draft",
-          // Сохранённое заключение хранит только собранный текст: значений
-          // полей бланка на бэке пока негде держать (см. ConclusionDraftBody).
-          formId: null,
-          formValues: {},
-          formManual: "",
+          // Бланк заключения приходит с сервера в `formData`: врач видит те же
+          // строки протокола, что заполнял, а не собранный из них текст.
+          formId: savedForm?.formId ?? null,
+          formValues: savedForm?.values ?? {},
+          formManual: savedForm?.manual ?? "",
+          formSnapshot: savedForm?.snapshot ?? null,
         }
       : {
           // Жалобы, записанные при регистрации, переносим в поле сразу: врач
@@ -636,6 +661,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           formId: null,
           formValues: {},
           formManual: "",
+          formSnapshot: null,
         };
     applyDraftBody(body);
     baselineRef.current = JSON.stringify(body);
@@ -648,24 +674,23 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   // должен быть уже раскрыт: врач дописывает значения по строкам протокола, а
   // не начинает с пустого поля и не ищет нужный бланк в списке.
   //
-  // Какой именно бланк — решают правила «филиал × услуга» из настроек
-  // (api/conclusionFormDefaults): заключение привязано к строке услуги, и это
-  // единственный ключ, который на живых данных заполнен — специализацию
-  // сотруднику PATCH-ем не назначить. Филиал берём из сессии, а не из приёма:
-  // врач работает в филиале, куда переключён, и печатает на его форме.
+  // Какой именно бланк — решают привязки самого бланка (`serviceIds`,
+  // `branchIds`, `isDefault`, см. resolveFormForScope): заключение привязано к
+  // строке услуги, и это единственный ключ, который на живых данных заполнен —
+  // специализацию сотруднику PATCH-ем не назначить. Филиал берём у приёма,
+  // если он известен, иначе — из сессии: врач работает там, куда переключён.
   const defaultsOrgId = useApiOrgId();
   const { activeOrganization, activeBranch } = usePermissions();
-  const defaultRules = React.useMemo(
-    () => readConclusionFormDefaults(activeOrganization?.themeConfig),
-    [activeOrganization],
-  );
+  const scopeBranchId = branchId ?? activeBranch?.id ?? null;
   // Бланки нужны и для подстановки, и для селекта в секции полей, поэтому
   // грузим их всегда, пока дровер открыт на правку.
   const formsEnabled = open && !readOnly;
 
   const formsQuery = useQuery({
-    queryKey: djangoQueryKeys.conclusionForms.list(defaultsOrgId ?? null),
-    queryFn: ({ signal }) => getConclusionForms(defaultsOrgId, signal),
+    queryKey: djangoQueryKeys.conclusionForms.list(defaultsOrgId ?? null, scopeBranchId),
+    // Филиал режет выдачу на бэке: приходят бланки этого филиала и общие.
+    queryFn: ({ signal }) =>
+      getConclusionForms(defaultsOrgId, signal, { branchId: scopeBranchId }),
     enabled: formsEnabled,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     retry: false,
@@ -674,22 +699,40 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   // бы мемо ниже и дёргал эффекты секции бланка.
   const availableForms = React.useMemo(() => formsQuery.data ?? [], [formsQuery.data]);
 
-  /** Бланк, положенный правилами именно этому заключению. */
+  /** Бланк, положенный привязками именно этому заключению. */
   const defaultForm: ConclusionFormTemplate | null = React.useMemo(() => {
-    if (!formsEnabled || conclusion || defaultRules.length === 0) return null;
+    if (!formsEnabled || conclusion) return null;
     if (availableForms.length === 0) return null;
-    const id = resolveDefaultFormId(defaultRules, {
-      branchId: activeBranch?.id ?? null,
+    return resolveFormForScope(availableForms, {
+      branchId: scopeBranchId,
       serviceId: serviceId ?? null,
     });
-    // Бланк могли выключить или удалить после того, как правило записали:
-    // getConclusionForms без includeInactive неактивные уже не отдаёт.
-    return availableForms.find((form) => form.id === id) ?? null;
-  }, [formsEnabled, conclusion, defaultRules, availableForms, activeBranch, serviceId]);
+  }, [formsEnabled, conclusion, availableForms, scopeBranchId, serviceId]);
 
-  const attachedForm = React.useMemo(
-    () => availableForms.find((form) => form.id === formId) ?? null,
-    [availableForms, formId],
+  /**
+   * Бланк, по которому рисуются поля и печатный лист.
+   *
+   * Снапшот из `formData` важнее актуального шаблона: заключение заполняли по
+   * той версии бланка, и порядок полей, подписи и привязки к колонкам должны
+   * остаться теми же, даже если администратор с тех пор переделал бланк.
+   */
+  const attachedForm = React.useMemo(() => {
+    if (formSnapshot && formSnapshot.id === formId) return formSnapshot;
+    return availableForms.find((form) => form.id === formId) ?? null;
+  }, [availableForms, formId, formSnapshot]);
+
+  /**
+   * Список для селекта бланков. Прикреплённый бланк добавляем, даже если его
+   * нет в выдаче: заключение могли заполнить по бланку, который потом
+   * выключили, удалили или закрепили за другим филиалом, — селект без него
+   * показал бы пустое поле над заполненными строками.
+   */
+  const selectableForms = React.useMemo(
+    () =>
+      attachedForm && !availableForms.some((form) => form.id === attachedForm.id)
+        ? [attachedForm, ...availableForms]
+        : availableForms,
+    [attachedForm, availableForms],
   );
 
   /** Значения по умолчанию бланка — то, что уже стоит в его строках как норма. */
@@ -896,19 +939,29 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     </Stack>
   );
 
+  /**
+   * Штатное поле показываем на своём месте, только если бланк его не забрал.
+   *
+   * ⚠ Объявление обязано стоять ВЫШЕ freeVitals: `const` не поднимается, и
+   * вызов из freeVitals на строку раньше падал в TDZ («Cannot access 'slotFree'
+   * before initialization») — дровер заключения не открывался вовсе.
+   */
+  const slotFree = (slot: FormFieldSlot) => !attachedSlots.has(slot);
+
   /** Степперы, которые бланк не забрал, — остаются в своей карточке. */
   const freeVitals = (Object.keys(VITAL_PROPS) as VitalKind[]).filter((kind) =>
     slotFree(kind),
   );
 
-  /** Штатное поле показываем на своём месте, только если бланк его не забрал. */
-  const slotFree = (slot: FormFieldSlot) => !attachedSlots.has(slot);
-
   const handleSelectForm = (nextId: number) => {
-    const next = availableForms.find((form) => form.id === nextId);
+    const next = selectableForms.find((form) => form.id === nextId);
     if (!next) return;
     setFormId(next.id);
     setFormValues(formDefaults(next));
+    // Врач выбрал другой бланк — снапшот прежнего заполнения больше не при
+    // делах. Выбор того же бланка из снапшота его сохраняет: актуальной
+    // версии этого шаблона в выдаче может уже не быть.
+    setFormSnapshot(next === formSnapshot ? formSnapshot : null);
     // Хвост не сбрасываем: это вывод врача, а не часть протокола — он
     // остаётся при смене бланка и снова попадёт в конец проекции.
   };
@@ -926,6 +979,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     // Текст остаётся: врач дописывает уже собранное заключение руками.
     setFormId(null);
     setFormValues({});
+    setFormSnapshot(null);
   };
 
   /**
@@ -994,7 +1048,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const printDataQuery = useQuery({
     queryKey: ["django", "conclusion-forms", "print-data", appointmentId ?? null, serviceLineId] as const,
     queryFn: () => loadDjangoPrintData(appointmentId as number, serviceLineId),
-    enabled: formsEnabled && attachedForm != null && appointmentId != null,
+    // И в просмотре тоже: заполненный бланк приходит с сервера в `formData`,
+    // и распечатать фирменный лист врач должен, не входя в правку.
+    enabled: open && attachedForm != null && appointmentId != null,
     retry: false,
   });
 
@@ -1101,6 +1157,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       formId,
       formValues,
       formManual: manualText,
+      formSnapshot,
     };
     // Пока пользователь ничего не менял — фантомный черновик не создаём.
     if (JSON.stringify(body) === baselineRef.current) {
@@ -1134,6 +1191,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     status,
     formId,
     formValues,
+    formSnapshot,
     manualText,
   ]);
 
@@ -1292,6 +1350,19 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     setSaveError(null);
     setSaving(true);
 
+    // Заполненный бланк едет на сервер рядом с собранным текстом: текст
+    // печатают и читают, а `formData` возвращает врачу те же строки протокола
+    // при следующем открытии. Бланк откреплён — шлём явный null: PATCH без
+    // поля сохранил бы прежнее значение, и открепление не доехало бы.
+    const fitted = fitConclusionFormData(
+      buildConclusionFormData(attachedForm, formValues, manualText),
+    );
+    if (fitted.dropped) {
+      // Молча терять бланк нельзя: врач должен знать, что при следующем
+      // открытии он увидит собранный текст, а не строки.
+      notify?.({ type: "error", message: t("conclusion.formDataTooLarge") });
+    }
+
     const payload: MedicalConclusionPayload = {
       complaints: complaints.trim() || null,
       anamnesis: anamnesis.trim() || null,
@@ -1309,6 +1380,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       temperature: temperature.trim() || null,
       internalComment: internalComment.trim() || null,
       status: targetStatus,
+      formData: fitted.data,
     };
 
     try {
@@ -1464,6 +1536,20 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             )}
             {canPrint && conclusion && (
               <>
+                {/* Бланк печатается своим листом — с шапкой клиники, подложкой
+                    и строками протокола; штатная форма их не рисует. */}
+                {attachedForm && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<PrintOutlined />}
+                    disabled={formPrinting}
+                    onClick={handlePrintForm}
+                    sx={{ whiteSpace: "nowrap" }}
+                  >
+                    {t("conclusion.printForm")}
+                  </Button>
+                )}
                 <Button
                   size="small"
                   variant="outlined"
@@ -1755,7 +1841,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {!readOnly && (
           <Box ref={managedByForm("conclusion") ? completion.anchor("conclusionText") : undefined}>
             <ConclusionFormInline
-              forms={availableForms}
+              forms={selectableForms}
               loading={formsQuery.isLoading}
               form={attachedForm}
               values={formValues}
@@ -2034,6 +2120,18 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {/* ── print (в inline-режиме кнопки уже в шапке) ── */}
           {!inline && canPrint && conclusion && (
             <Stack direction="row" spacing={1}>
+              {/* Лист бланка: шапка клиники, подложка и строки протокола —
+                  штатная форма заключения их не печатает. */}
+              {attachedForm && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={formPrinting}
+                  onClick={handlePrintForm}
+                >
+                  {t("conclusion.printForm")}
+                </Button>
+              )}
               <Button
                 size="small"
                 variant="outlined"

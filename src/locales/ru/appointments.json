@@ -20,7 +20,14 @@
     "debt": "Долг {{amount}}",
     "debtOfTotal": "Долг {{amount}} из {{total}}",
     "discountPercent": "Скидка {{percent}}%",
-    "overdue": "Время {{visit.gen}} прошло — статус не обновляли"
+    "overdue": "Время {{visit.gen}} прошло — статус не обновляли",
+    "cancelReason": "Причина: {{reason}}"
+  },
+  "cancelReason": {
+    "doctor_absent": "врач не выйдет",
+    "patient_refused": "пациент отказался",
+    "duplicate": "дубль",
+    "other": "другое"
   },
   "paymentStatus": {
     "unpaid": "Не оплачен",
@@ -594,6 +601,8 @@
       "serviceLineGone": "Состав услуг {{visit.gen}} изменился, пока форма была открыта: услуги «{{service}}» в нём больше нет. Скопируйте текст, обновите карточку {{visit.gen}} и создайте {{conclusion.acc}} заново."
     },
     "draftRestored": "Восстановлен несохранённый черновик {{conclusion.gen}}",
+    "formDataTooLarge": "Бланк слишком объёмный — сохранён только текст. При следующем открытии поля бланка будут пустыми.",
+    "printForm": "Печать бланка",
     "templateApplied": "Шаблон применён",
     "templateSaved": "Шаблон сохранён",
     "completed": "{{conclusion.nom, capitalize}} {{finished}}",

@@ -45,15 +45,14 @@ import {
   type ConclusionFormTemplate,
 } from "../../api/conclusionForms";
 import { FormBuilderDialog } from "../../components/conclusion-forms/FormBuilderDialog";
-import { DefaultFormRules } from "../../components/conclusion-forms/DefaultFormRules";
+import {
+  StaleDefaultsNotice,
+  buildThemeConfigWithoutDefaults,
+  readStaleDefaults,
+} from "../../components/conclusion-forms/StaleDefaultsNotice";
 import { updateOrganization } from "../../api/organization";
 import { useCanChecker } from "../../hooks/useCan";
 import { retryAuth } from "../../hooks/usePermissions";
-import {
-  buildConclusionFormDefaultsThemeConfig,
-  readConclusionFormDefaults,
-  type ConclusionFormDefaultRule,
-} from "../../api/conclusionFormDefaults";
 
 /**
  * Настройки → Бланки заключений.
@@ -88,49 +87,39 @@ const ConclusionFormsSettingsPage: React.FC = () => {
   const [pendingDelete, setPendingDelete] = React.useState<ConclusionFormTemplate | null>(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
 
-  // ── Бланк по умолчанию ─────────────────────────────────────────────────────
-  // Правила лежат в themeConfig организации (см. api/conclusionFormDefaults):
-  // поля на модели бланка бэк не имеет, тикет отправлен. Локальная копия нужна,
-  // чтобы список не «прыгал» до перечитывания /auth/me/ после сохранения.
+  // ── Старые правила подстановки ─────────────────────────────────────────────
+  // До 03.09.2026 «бланк по умолчанию» задавался отдельным списком в
+  // themeConfig организации: полей под привязки на модели бланка не было.
+  // Теперь они есть, подстановка читает только их, а ключ остаётся в конфиге
+  // мёртвым грузом — показываем, что там записано, и даём убрать (см.
+  // StaleDefaultsNotice).
   const { can } = useCanChecker();
-  const canEditDefaults = can("organization.update");
-  const [rules, setRules] = React.useState<ConclusionFormDefaultRule[]>(() =>
-    readConclusionFormDefaults(activeOrganization?.themeConfig),
+  const canEditOrganization = can("organization.update");
+  const [staleCleared, setStaleCleared] = React.useState(false);
+  const [staleClearing, setStaleClearing] = React.useState(false);
+  const [staleError, setStaleError] = React.useState<string | null>(null);
+  const staleRules = React.useMemo(
+    () => (staleCleared ? [] : readStaleDefaults(activeOrganization?.themeConfig)),
+    [activeOrganization, staleCleared],
   );
-  const [rulesSaving, setRulesSaving] = React.useState(false);
-  const [rulesError, setRulesError] = React.useState<string | null>(null);
-  // Организация приходит асинхронно (и меняется при переключении контекста) —
-  // подхватываем её правила, пока пользователь их не правил.
-  const themeConfigKey = JSON.stringify(
-    readConclusionFormDefaults(activeOrganization?.themeConfig),
-  );
-  React.useEffect(() => {
-    setRules(JSON.parse(themeConfigKey) as ConclusionFormDefaultRule[]);
-  }, [themeConfigKey]);
 
-  const handleRulesChange = async (next: ConclusionFormDefaultRule[]) => {
+  const handleClearStale = async () => {
     if (!activeOrganization) return;
-    const previous = rules;
-    setRules(next); // оптимистично: правило добавляется одним кликом
-    setRulesSaving(true);
-    setRulesError(null);
+    setStaleClearing(true);
+    setStaleError(null);
     try {
       await updateOrganization(activeOrganization.id, {
         // ⚠ Патч строго поверх текущего themeConfig: там же палитра CRM,
         // лендинг `/site` и терминология организации.
-        themeConfig: buildConclusionFormDefaultsThemeConfig(
-          activeOrganization.themeConfig,
-          next,
-        ),
+        themeConfig: buildThemeConfigWithoutDefaults(activeOrganization.themeConfig),
       });
-      // /auth/me/ — источник themeConfig для всего приложения, включая дровер
-      // заключения, который и подставляет бланк.
+      setStaleCleared(true);
+      // /auth/me/ — источник themeConfig для всего приложения.
       retryAuth();
     } catch (e) {
-      setRules(previous);
-      setRulesError(parseBackendError(e));
+      setStaleError(parseBackendError(e));
     } finally {
-      setRulesSaving(false);
+      setStaleClearing(false);
     }
   };
 
@@ -170,7 +159,13 @@ const ConclusionFormsSettingsPage: React.FC = () => {
 
   const forms = formsQuery.data ?? [];
   const specializations: DjangoSpecialization[] = specsQuery.data ?? [];
+  const services = servicesQuery.data ?? [];
+  // Филиалы берём из membership: своего списка филиалов у страницы нет, а
+  // бланк закрепляют за теми, куда у администратора есть доступ.
+  const branches = activeMembership?.branches ?? (activeBranch ? [activeBranch] : []);
   const specName = (id: number) => specializations.find((s) => s.id === id)?.name ?? `#${id}`;
+  const serviceName = (id: number) => services.find((s) => s.id === id)?.name ?? `Услуга #${id}`;
+  const branchName = (id: number) => branches.find((b) => b.id === id)?.name ?? `Филиал #${id}`;
 
   const invalidate = () =>
     void queryClient.invalidateQueries({
@@ -258,20 +253,18 @@ const ConclusionFormsSettingsPage: React.FC = () => {
           <Alert severity="error">{parseBackendError(formsQuery.error)}</Alert>
         )}
 
-        {/* Правила подстановки — до таблицы: это то, что настраивают после
-            сборки бланков, и в конце длинного списка секция бы не нашлась. */}
-        {!formsQuery.isLoading && forms.length > 0 && (
-          <DefaultFormRules
-            forms={forms.filter((form) => form.isActive)}
-            services={servicesQuery.data ?? []}
-            branches={activeMembership?.branches ?? (activeBranch ? [activeBranch] : [])}
-            rules={rules}
-            canEdit={canEditDefaults}
-            saving={rulesSaving}
-            error={rulesError}
-            onChange={handleRulesChange}
-          />
-        )}
+        {/* Мёртвые правила из themeConfig — до таблицы: администратор должен
+            увидеть их раньше, чем начнёт гадать, почему бланк не подставился. */}
+        <StaleDefaultsNotice
+          rules={staleRules}
+          forms={forms}
+          services={servicesQuery.data ?? []}
+          branches={branches}
+          canClear={canEditOrganization}
+          clearing={staleClearing}
+          error={staleError}
+          onClear={handleClearStale}
+        />
 
         {formsQuery.isLoading ? (
           <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
@@ -288,6 +281,7 @@ const ConclusionFormsSettingsPage: React.FC = () => {
                 <TableRow>
                   <TableCell>Название</TableCell>
                   <TableCell>Лист</TableCell>
+                  <TableCell>Подстановка</TableCell>
                   <TableCell>Специализации</TableCell>
                   <TableCell align="right">Полей</TableCell>
                   <TableCell align="right" />
@@ -308,6 +302,37 @@ const ConclusionFormsSettingsPage: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       {PAGE_LABEL[`${form.pageSize}-${form.orientation}`] ?? form.pageSize}
+                    </TableCell>
+                    {/* Когда бланк раскроется врачу сам: услуги, филиалы и
+                        признак запасного — то же, что решает resolveFormForScope. */}
+                    <TableCell>
+                      <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                        {form.isDefault && (
+                          <Chip size="small" color="primary" variant="outlined" label="Запасной" />
+                        )}
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={
+                            form.serviceIds.length === 0
+                              ? "Любая услуга"
+                              : form.serviceIds.length === 1
+                                ? serviceName(form.serviceIds[0])
+                                : `Услуг: ${form.serviceIds.length}`
+                          }
+                        />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={
+                            form.branchIds.length === 0
+                              ? "Все филиалы"
+                              : form.branchIds.length === 1
+                                ? branchName(form.branchIds[0])
+                                : `Филиалов: ${form.branchIds.length}`
+                          }
+                        />
+                      </Stack>
                     </TableCell>
                     <TableCell>
                       {form.specializationIds.length === 0 ? (
@@ -358,6 +383,8 @@ const ConclusionFormsSettingsPage: React.FC = () => {
         }}
         template={editing}
         specializations={specializations}
+        services={services}
+        branches={branches}
         clinicName={activeOrganization?.name ?? ""}
         clinicLogoUrl={activeOrganization?.logoUrl}
         busy={saving}

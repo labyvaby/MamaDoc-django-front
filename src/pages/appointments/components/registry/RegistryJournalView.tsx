@@ -813,6 +813,7 @@ export const RegistryJournalView: React.FC<Props> = ({
         {conclusionTarget && (
           <DjangoConclusionSlotsPanel
             appointmentId={conclusionTarget.id}
+            branchId={conclusionTarget.branchId}
             onClose={() => setConclusionTarget(null)}
           />
         )}

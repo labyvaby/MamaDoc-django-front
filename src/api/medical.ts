@@ -50,6 +50,55 @@ export interface DiagnosisDataItem {
   displayName?: string;
 }
 
+// ── Заполненный бланк заключения ───────────────────────────────────────────────
+
+/**
+ * Заполненный бланк внутри заключения.
+ *
+ * Бэк хранит `formData` как свободный JSON (до 256 КБ) и ничего из него не
+ * собирает — структура целиком наша. Текст заключения по-прежнему лежит в
+ * своих колонках: `formData` нужен, чтобы при повторном открытии врач увидел
+ * не «простыню», а те же строки протокола, что заполнял.
+ *
+ * ⚠ `snapshot` — копия шаблона на момент заполнения, и открывать старое
+ * заключение нужно по ней, а не по актуальному бланку из настроек:
+ * администратор мог позже переставить поля, переименовать строки или
+ * переназначить привязку к колонке (`slot`) — тогда значения легли бы не в
+ * свои строки, а привязанное поле записало бы температуру в чужую колонку.
+ */
+export interface ConclusionFormDataEntry {
+  /** id шаблона (ConclusionFormTemplate.id); шаблон мог быть удалён позже. */
+  formId: number;
+  /** Значения полей бланка по id поля. */
+  values: Record<string, string>;
+  /** Шаблон на момент заполнения — по нему заключение и открывается заново. */
+  snapshot?: {
+    name?: string;
+    title?: string;
+    subtitle?: string;
+    footerNote?: string;
+    target?: string;
+    pageSize?: string;
+    orientation?: string;
+    showClinicHeader?: boolean;
+    headerContacts?: string;
+    background?: { imageUrl?: string | null; opacity?: number } | null;
+    fields?: unknown[];
+  } | null;
+}
+
+export interface ConclusionFormData {
+  /** Версия структуры: разбирать чужую версию вслепую нельзя. */
+  version: number;
+  forms: ConclusionFormDataEntry[];
+  /**
+   * Текст, дописанный врачом руками поверх бланка, по имени колонки. Хранится
+   * отдельно, иначе пересборка текста из полей затирала бы его на каждой
+   * правке значения.
+   */
+  manual?: Record<string, string>;
+}
+
 // ── Medical conclusion ─────────────────────────────────────────────────────────
 
 export type ConclusionStatus = "draft" | "completed";
@@ -72,6 +121,8 @@ export interface MedicalConclusion {
   temperature: string | null;
   internalComment: string | null;
   status: ConclusionStatus;
+  /** Заполненный бланк; null — заключение написано свободным текстом. */
+  formData: ConclusionFormData | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,6 +139,12 @@ export interface MedicalConclusionRevision {
   photoUrls: string[];
   internalComment: string | null;
   status: ConclusionStatus;
+  /**
+   * Бланк на момент этой ревизии. Откат должен восстанавливать текст и бланк
+   * вместе: восстановленный текст без значений полей врач не сможет править
+   * по строкам, а старые значения поверх нового текста разошлись бы с ним.
+   */
+  formData: ConclusionFormData | null;
   changedBy: string | null;
   changeReason: "create" | "update" | "complete";
   createdAt: string;
@@ -110,7 +167,16 @@ export interface MedicalConclusionPayload {
   temperature?: string | null;
   internalComment?: string | null;
   status?: ConclusionStatus;
+  /**
+   * Заполненный бланк. Явный `null` очищает его, пропущенное поле в PATCH
+   * оставляет прежнее значение — поэтому шлём его всегда, когда форма
+   * заключения открыта, и не полагаемся на «не передали = не меняли».
+   */
+  formData?: ConclusionFormData | null;
 }
+
+/** Предел бэка на размер `formData` — 256 КБ сериализованного JSON. */
+export const CONCLUSION_FORM_DATA_LIMIT_BYTES = 256 * 1024;
 
 // ── Diagnosis catalog ────────────────────────────────────────────────────────
 

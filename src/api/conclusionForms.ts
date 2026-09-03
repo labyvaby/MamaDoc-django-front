@@ -142,6 +142,57 @@ export const FORM_FIELD_SLOT_LABELS: Record<FormFieldSlot, string> = {
   temperature: "Температура, °C",
 };
 
+/**
+ * Подсказка привязки по подписи поля.
+ *
+ * Зачем. Бланки собирают, копируя бумажную форму: в них заводят «Жалобы»,
+ * «Анамнез заболевания», «Температура, °C» — то, что в заключении уже есть
+ * своей колонкой. Без привязки врач видит это дважды: строку бланка и штатное
+ * поле под ним (реальный случай с «Картой осмотра педиатра», 03.09.2026).
+ *
+ * ⚠ Подсказка, а не автопривязка. Проставлять слот самим по названию мы
+ * отказались сознательно: совпадение слова не значит совпадение смысла
+ * («Анамнез жизни» — не колонка «Анамнез», «Вес плода» — не вес пациента), а
+ * молчаливый промах уводит значение в чужую колонку. Поэтому конструктор
+ * только показывает предложение, а решает администратор.
+ */
+const SLOT_LABEL_HINTS: Record<FormFieldSlot, string[]> = {
+  complaints: ["жалобы", "жалоба"],
+  anamnesis: ["анамнез", "анамнез заболевания", "анамнез болезни"],
+  objective: ["объективно", "объективный осмотр", "объективные данные"],
+  conclusion: ["заключение", "вывод"],
+  weightKg: ["вес", "масса тела", "масса"],
+  heightCm: ["рост", "длина тела"],
+  temperature: ["температура", "температура тела", "t"],
+};
+
+/**
+ * Нормализация подписи: регистр, единицы измерения и знаки препинания в
+ * бланках пишут как придётся — «Температура, °C», «Вес (кг)», «Рост:».
+ */
+function normalizeFieldLabel(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[«»"'()]/g, " ")
+    // Хвост с единицами измерения: «, °c», «, кг», «, см», «:» и подобное.
+    .replace(/[,:;]\s*(°?[a-zа-я]{1,3}\.?)?\s*$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Колонка, которую поле бланка, судя по подписи, дублирует. `null` — совпадений
+ * нет либо привязка уже задана (тогда подсказывать нечего).
+ */
+export function suggestSlotForLabel(label: string): FormFieldSlot | null {
+  const normalized = normalizeFieldLabel(label);
+  if (!normalized) return null;
+  for (const slot of FORM_FIELD_SLOTS) {
+    if (SLOT_LABEL_HINTS[slot].includes(normalized)) return slot;
+  }
+  return null;
+}
+
 export interface FormField {
   /** Стабильный идентификатор: переживает переименование и сортировку. */
   id: string;
@@ -189,6 +240,15 @@ export interface ConclusionFormTemplate {
   orientation: FormOrientation;
   /** Пустой массив = бланк доступен врачам любой специализации. */
   specializationIds: number[];
+  /**
+   * Услуги, к которым привязан бланк. Пустой массив = подходит любой услуге.
+   * По ним бланк и подставляется врачу (см. resolveFormForScope).
+   */
+  serviceIds: number[];
+  /** Филиалы, где бланк доступен. Пустой массив = все филиалы организации. */
+  branchIds: number[];
+  /** Запасной бланк организации: берётся, когда точного совпадения нет. */
+  isDefault: boolean;
   /** Заголовок документа на листе («Протокол ультразвукового исследования»). */
   title: string;
   subtitle?: string;
@@ -215,6 +275,9 @@ export interface ConclusionFormPayload {
   pageSize: FormPageSize;
   orientation: FormOrientation;
   specializationIds: number[];
+  serviceIds: number[];
+  branchIds: number[];
+  isDefault: boolean;
   title: string;
   subtitle?: string;
   showClinicHeader: boolean;
@@ -233,6 +296,9 @@ export function emptyFormPayload(): ConclusionFormPayload {
     pageSize: "A4",
     orientation: "portrait",
     specializationIds: [],
+    serviceIds: [],
+    branchIds: [],
+    isDefault: false,
     title: "",
     subtitle: "",
     showClinicHeader: true,
@@ -352,23 +418,50 @@ const withOrg = (
   return `${path}${qs ? `?${qs}` : ""}`;
 };
 
+/**
+ * Массивы привязок бланка бэк отдаёт всегда, но собранные до 03.09.2026
+ * шаблоны приходят из старых записей без них — а весь подбор строится на
+ * `.length`, и `undefined.length` уронил бы дровер заключения.
+ */
+function normalizeForm(form: ConclusionFormTemplate): ConclusionFormTemplate {
+  return {
+    ...form,
+    specializationIds: form.specializationIds ?? [],
+    serviceIds: form.serviceIds ?? [],
+    branchIds: form.branchIds ?? [],
+    isDefault: form.isDefault ?? false,
+    fields: form.fields ?? [],
+  };
+}
+
 export async function getConclusionForms(
   organizationId: number | null | undefined,
   signal?: AbortSignal,
-  options?: { includeInactive?: boolean },
+  options?: { includeInactive?: boolean; branchId?: number | null },
 ): Promise<ConclusionFormTemplate[]> {
   if (!CONCLUSION_FORMS_BACKEND) {
-    const items = localDriver.list(organizationId);
-    return options?.includeInactive ? items : items.filter((item) => item.isActive);
+    const items = localDriver.list(organizationId).map(normalizeForm);
+    const visible = options?.includeInactive
+      ? items
+      : items.filter((item) => item.isActive);
+    // Тот же срез, что делает бэк по branchId: бланки филиала плюс общие.
+    return options?.branchId == null
+      ? visible
+      : visible.filter(
+          (item) =>
+            item.branchIds.length === 0 || item.branchIds.includes(options.branchId as number),
+        );
   }
-  return apiRequest<ConclusionFormTemplate[]>(
-    withOrg(
-      "/medical/conclusion-forms/",
-      organizationId,
-      options?.includeInactive ? { includeInactive: "1" } : undefined,
-    ),
+  const params: Record<string, string> = {};
+  if (options?.includeInactive) params.includeInactive = "1";
+  // Филиал режет выдачу на бэке: приходят бланки филиала и общие бланки
+  // организации. Чужой филиал — 400, поэтому передаём только известный.
+  if (options?.branchId != null) params.branchId = String(options.branchId);
+  const items = await apiRequest<ConclusionFormTemplate[]>(
+    withOrg("/medical/conclusion-forms/", organizationId, params),
     { signal },
   );
+  return (items ?? []).map(normalizeForm);
 }
 
 export async function createConclusionForm(
@@ -427,6 +520,55 @@ export async function uploadConclusionFormBackground(
       formData: form,
     }),
   );
+}
+
+// ── Автоподбор бланка ──────────────────────────────────────────────────────────
+
+/**
+ * Какой бланк раскрыть врачу, когда он открывает НОВОЕ заключение.
+ *
+ * Правила живут на самом бланке (`serviceIds`, `branchIds`, `isDefault`) — до
+ * 03.09.2026 они лежали отдельным списком в `themeConfig.conclusionFormDefaults`,
+ * потому что полей на модели не было. Бэк их добавил, и старый ключ больше не
+ * читается (см. StaleDefaultsNotice в настройках бланков).
+ *
+ * Приоритет — от точного совпадения к общему:
+ *   1. филиал + услуга,
+ *   2. все филиалы + услуга,
+ *   3. филиал + любая услуга,
+ *   4. все филиалы + любая услуга,
+ *   5. запасной бланк (`isDefault`).
+ *
+ * Услуга важнее филиала намеренно: она определяет, ЧТО за документ печатают
+ * («Протокол УЗИ ОБП»), а филиал — лишь где. Общий бланк филиала не должен
+ * подменять протокол конкретного исследования.
+ */
+export function resolveFormForScope(
+  forms: ConclusionFormTemplate[],
+  scope: { branchId?: number | null; serviceId?: number | null },
+): ConclusionFormTemplate | null {
+  const inBranch = (form: ConclusionFormTemplate) =>
+    scope.branchId != null && form.branchIds.includes(scope.branchId);
+  const anyBranch = (form: ConclusionFormTemplate) => form.branchIds.length === 0;
+  const forService = (form: ConclusionFormTemplate) =>
+    scope.serviceId != null && form.serviceIds.includes(scope.serviceId);
+  const anyService = (form: ConclusionFormTemplate) => form.serviceIds.length === 0;
+
+  const levels: ((form: ConclusionFormTemplate) => boolean)[] = [
+    (form) => inBranch(form) && forService(form),
+    (form) => anyBranch(form) && forService(form),
+    (form) => inBranch(form) && anyService(form),
+    (form) => anyBranch(form) && anyService(form),
+    // Запасной бланк — только доступный в этом филиале: бланк чужого филиала
+    // не должен всплывать по фолбэку там, где его печатать не на чем.
+    (form) => form.isDefault && (anyBranch(form) || inBranch(form)),
+  ];
+
+  for (const matches of levels) {
+    const found = forms.find(matches);
+    if (found) return found;
+  }
+  return null;
 }
 
 // ── Сборка текста из заполненного бланка ───────────────────────────────────────

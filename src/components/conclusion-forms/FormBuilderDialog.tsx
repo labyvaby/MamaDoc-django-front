@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -47,12 +48,15 @@ import {
   type ConclusionFormTemplate,
   FORM_FIELD_SLOTS,
   FORM_FIELD_SLOT_LABELS,
+  suggestSlotForLabel,
   usedSlots,
   type FormField,
   type FormFieldSlot,
   type FormFieldType,
 } from "../../api/conclusionForms";
 import type { DjangoSpecialization } from "../../api/staff";
+import type { Service } from "../../api/catalog";
+import type { RbacBranch } from "../../api/auth";
 import { FormSheet, PREVIEW_CONTEXT, type SheetContext } from "./FormSheet";
 
 /**
@@ -78,6 +82,10 @@ interface FormBuilderDialogProps {
   /** Редактируемый шаблон; null → создание нового. */
   template: ConclusionFormTemplate | null;
   specializations: DjangoSpecialization[];
+  /** Прайс организации — по услугам бланк подставляется врачу сам. */
+  services: Service[];
+  /** Филиалы организации: бланк можно закрепить за конкретными. */
+  branches: RbacBranch[];
   clinicName: string;
   clinicLogoUrl?: string | null;
   busy?: boolean;
@@ -90,6 +98,8 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
   onClose,
   template,
   specializations,
+  services,
+  branches,
   clinicName,
   clinicLogoUrl,
   busy = false,
@@ -117,6 +127,9 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
             pageSize: template.pageSize,
             orientation: template.orientation,
             specializationIds: template.specializationIds,
+            serviceIds: template.serviceIds,
+            branchIds: template.branchIds,
+            isDefault: template.isDefault,
             title: template.title,
             subtitle: template.subtitle ?? "",
             showClinicHeader: template.showClinicHeader,
@@ -161,6 +174,18 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
 
   /** Занятые колонки: одна колонка — максимум одно привязанное поле. */
   const slotTaken = usedSlots(draft.fields);
+
+  /**
+   * Колонка, которую поле дублирует по названию, — если её ещё можно занять.
+   * Молчим, когда привязка уже задана, колонку забрало другое поле или это
+   * адресат самого бланка (туда собирается текст, привязка запрещена).
+   */
+  const slotHint = (field: FormField): FormFieldSlot | null => {
+    if (field.slot) return null;
+    const slot = suggestSlotForLabel(field.label);
+    if (!slot || slot === draft.target) return null;
+    return (slotTaken.get(slot) ?? 0) > 0 ? null : slot;
+  };
 
   const patchField = (id: string, patchValue: Partial<FormField>) =>
     setDraft((prev) => ({
@@ -628,6 +653,36 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
                           )}
                         </Stack>
 
+                        {/* Подсказка о дубле: поле названо как колонка
+                            заключения, но не привязано к ней — врач увидит его
+                            дважды (строку бланка и штатное поле под ним).
+                            Привязку ставит администратор кнопкой: угадывать по
+                            названию молча нельзя, «Анамнез жизни» — не колонка
+                            «Анамнез». */}
+                        {slotHint(field) && (
+                          <Stack
+                            direction="row"
+                            spacing={1}
+                            alignItems="center"
+                            flexWrap="wrap"
+                            useFlexGap
+                          >
+                            <Typography variant="caption" color="warning.main">
+                              Дублирует поле заключения «
+                              {FORM_FIELD_SLOT_LABELS[slotHint(field) as FormFieldSlot]}» —
+                              врач увидит его дважды.
+                            </Typography>
+                            <Button
+                              size="small"
+                              onClick={() =>
+                                patchField(field.id, { slot: slotHint(field) })
+                              }
+                            >
+                              Привязать
+                            </Button>
+                          </Stack>
+                        )}
+
                         <TextField
                           label="Текст по умолчанию"
                           size="small"
@@ -658,6 +713,87 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
               onChange={(e) => patch("footerNote", e.target.value)}
               placeholder="УЗИ является методом клинической визуализации…"
             />
+
+            {/* ── когда подставлять ──
+                Правила подстановки живут на самом бланке: услуга определяет,
+                ЧТО за документ печатают, филиал — где он доступен, а «запасной»
+                закрывает случай, когда точного совпадения нет. Раньше это был
+                отдельный список правил в настройках организации — врач и
+                администратор смотрели в разные места, чтобы понять, откуда у
+                заключения взялся бланк. */}
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Когда подставлять
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Бланк раскроется врачу сам, когда он откроет новое заключение по
+                выбранной услуге. Услуга важнее филиала: свой бланк услуги
+                победит общий бланк филиала.
+              </Typography>
+              <Stack spacing={1.5} sx={{ mt: 1.5 }}>
+                <Autocomplete
+                  multiple
+                  size="small"
+                  options={services}
+                  value={services.filter((service) =>
+                    draft.serviceIds.includes(service.id),
+                  )}
+                  onChange={(_, next) =>
+                    patch("serviceIds", next.map((service) => service.id))
+                  }
+                  getOptionLabel={(option) => option.name}
+                  isOptionEqualToValue={(option, value) => option.id === value.id}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Услуги"
+                      placeholder={draft.serviceIds.length === 0 ? "Любая услуга" : ""}
+                    />
+                  )}
+                />
+
+                <Select
+                  multiple
+                  size="small"
+                  fullWidth
+                  displayEmpty
+                  value={draft.branchIds}
+                  onChange={(e) => patch("branchIds", e.target.value as number[])}
+                  renderValue={(selected) =>
+                    selected.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        Все филиалы
+                      </Typography>
+                    ) : (
+                      branches
+                        .filter((branch) => selected.includes(branch.id))
+                        .map((branch) => branch.name)
+                        .join(", ")
+                    )
+                  }
+                >
+                  {branches.map((branch) => (
+                    <MenuItem key={branch.id} value={branch.id}>
+                      <Checkbox size="small" checked={draft.branchIds.includes(branch.id)} />
+                      <ListItemText primary={branch.name} />
+                    </MenuItem>
+                  ))}
+                </Select>
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={draft.isDefault}
+                      onChange={(e) => patch("isDefault", e.target.checked)}
+                    />
+                  }
+                  label="Запасной бланк — подставлять, когда подходящего нет"
+                />
+              </Stack>
+            </Box>
+
+            <Divider />
 
             <Box>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
