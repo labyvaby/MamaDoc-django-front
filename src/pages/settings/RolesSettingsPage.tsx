@@ -26,6 +26,7 @@ import {
   EditOutlined,
   ContentCopyOutlined,
   GroupOutlined,
+  VisibilityOutlined,
   LockOutlined,
   SearchOutlined,
 } from "@mui/icons-material";
@@ -51,6 +52,9 @@ import { useFormValidation } from "../../hooks/useFormValidation";
 import { getModuleCodeForPermission } from "../../utils/moduleMapping";
 import { useT } from "../../i18n/VerticalProvider";
 import PermissionPicker, { type PermissionGroup } from "./roles/PermissionPicker";
+import { previewSectionsFor } from "./roles/rolePreview";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { useCloseGuard } from "../../hooks/useCloseGuard";
 
 // ── Category label mapping ──────────────────────────────────────────────────
 // Ключи CATEGORY_LABELS фиксированы бэкендом; отображаемые подписи берутся из
@@ -272,6 +276,35 @@ function RoleFormDrawer({
     }
   };
 
+  // Разделы меню, которые откроет роль: владелец мыслит пунктами меню, а не
+  // кодами прав. Модули организации и вертикаль здесь не учитываются — это
+  // предпросмотр прав, о выключенных модулях предупреждает сам пикер.
+  const previewSections = React.useMemo(
+    () => previewSectionsFor(selectedCodes),
+    [selectedCodes],
+  );
+
+  // Правки формы теряются молча, а diff прав делает потерю особенно обидной,
+  // поэтому закрытие с несохранёнными изменениями требует подтверждения.
+  const initialCodesKey = React.useMemo(
+    () => [...(initial?.permissions ?? [])].sort().join(","),
+    [initial?.permissions],
+  );
+  const isDirty =
+    !busy &&
+    (mode === "create"
+      ? name.trim() !== "" || code.trim() !== "" || description.trim() !== "" ||
+        selectedCodes.length > 0
+      : name !== (initial?.name ?? "") ||
+        description !== (initial?.description ?? "") ||
+        [...selectedCodes].sort().join(",") !== initialCodesKey);
+
+  const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({
+    isDirty,
+    isOpen: open,
+    onClose,
+  });
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
@@ -285,7 +318,7 @@ function RoleFormDrawer({
     <Drawer
       anchor="right"
       open={open}
-      onClose={busy ? undefined : onClose}
+      onClose={busy ? undefined : guardedClose}
       PaperProps={{
         onKeyDown: handleKeyDown,
         sx: {
@@ -306,7 +339,7 @@ function RoleFormDrawer({
         <Typography variant="h6" fontWeight={600}>
           {title}
         </Typography>
-        <IconButton onClick={busy ? undefined : onClose} aria-label={t("common:actions.close")}>
+        <IconButton onClick={busy ? undefined : guardedClose} aria-label={t("common:actions.close")}>
           <CloseOutlined />
         </IconButton>
       </Stack>
@@ -438,6 +471,45 @@ function RoleFormDrawer({
               initialSelectedCodes={initial?.permissions ?? []}
               autoFocusSearch={hasFinePointer && mode === "edit"}
             />
+
+            <Box
+              sx={(theme) => ({
+                mt: 2,
+                p: 1.5,
+                borderRadius: "12px",
+                border: `1px solid ${theme.palette.divider}`,
+              })}
+            >
+              <Stack direction="row" alignItems="center" gap={0.75} mb={1}>
+                <VisibilityOutlined fontSize="small" sx={{ color: "text.secondary" }} />
+                <Typography variant="subtitle2" fontWeight={600}>
+                  {t("roles.preview.title")}
+                </Typography>
+              </Stack>
+              {previewSections.length === 0 ? (
+                <Typography variant="caption" color="text.disabled">
+                  {t("roles.preview.empty")}
+                </Typography>
+              ) : (
+                <>
+                  <Stack direction="row" flexWrap="wrap" gap={0.5}>
+                    {previewSections.map((section) => (
+                      <Chip
+                        key={section.key}
+                        label={t(`roles.preview.sections.${section.key}`)}
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                        sx={{ height: 22, fontSize: "0.75rem" }}
+                      />
+                    ))}
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+                    {t("roles.preview.hint")}
+                  </Typography>
+                </>
+              )}
+            </Box>
           </Box>
         </Stack>
       </Box>
@@ -451,7 +523,7 @@ function RoleFormDrawer({
         justifyContent="flex-end"
         gap={1.5}
       >
-        <AppButton onClick={onClose} disabled={busy}>
+        <AppButton onClick={guardedClose} disabled={busy}>
           {t("common:actions.cancel")}
         </AppButton>
         <AppButton
@@ -463,6 +535,17 @@ function RoleFormDrawer({
           {busy ? t("common:state.saving") : mode === "create" ? t("common:actions.create") : t("common:actions.save")}
         </AppButton>
       </Box>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onClose={cancelClose}
+        onConfirm={confirmClose}
+        title={t("roles.form.discardTitle")}
+        message={t("roles.form.discardMessage")}
+        confirmText={t("roles.form.discardConfirm")}
+        cancelText={t("roles.form.discardCancel")}
+        variant="warning"
+      />
     </Drawer>
   );
 }

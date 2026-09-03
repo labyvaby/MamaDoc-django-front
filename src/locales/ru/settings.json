@@ -742,7 +742,7 @@
       "targets": "Планы и цели",
       "tasks": "Задачи",
       "tenancy": "Мультиарендность",
-      "vaccinations": "{{vaccination.nomPl, capitalize}}"
+      "vaccinations": "{{vaccine.nomPl, capitalize}}"
     },
     "row": {
       "memberCount_one": "{{count}} сотрудник",
@@ -773,12 +773,49 @@
       "descriptionLabel": "Описание",
       "descriptionPlaceholder": "Краткое описание роли (необязательно)",
       "permissionsTitle": "Права доступа",
+      "discardTitle": "Закрыть без сохранения?",
+      "discardMessage": "В форме есть изменения, которые ещё не сохранены. Если закрыть, они пропадут.",
+      "discardConfirm": "Закрыть без сохранения",
+      "discardCancel": "Остаться",
       "copyFromButton": "Скопировать права из роли",
       "copiedFrom": "Права скопированы из роли «{{role}}»",
       "affectsMembers_one": "Роль назначена {{count}} сотруднику — правка изменит его доступ",
       "affectsMembers_few": "Роль назначена {{count}} сотрудникам — правка изменит их доступ",
       "affectsMembers_many": "Роль назначена {{count}} сотрудникам — правка изменит их доступ",
       "permissionsHint": "Выберите разрешения, которые будут назначены этой роли. Права из отключённых модулей организации помечены и не действуют, пока модуль не включён. Пользователи с этой ролью увидят изменения после возврата на вкладку или перезагрузки страницы."
+    },
+    "preview": {
+      "title": "Роль откроет разделы",
+      "empty": "Пока ни одного раздела — выдайте права выше",
+      "hint": "Список зависит только от прав. Разделы выключенных модулей и скрытые для вашего типа бизнеса не появятся, даже если право выдано.",
+      "sections": {
+        "registratura": "Регистратура",
+        "doctorRoom": "Кабинет {{specialist.gen}}",
+        "nurseRoom": "Процедурный кабинет",
+        "schedule": "Расписание",
+        "bookings": "Брони",
+        "chats": "Чаты",
+        "tasks": "Задачи",
+        "waitlist": "Лист ожидания",
+        "deals": "Воронка продаж",
+        "expenses": "Расходы",
+        "achievements": "Достижения",
+        "employees": "{{employee.nomPl, capitalize}}",
+        "patients": "{{patient.nomPl, capitalize}}",
+        "vaccinations": "{{vaccine.nomPl, capitalize}}",
+        "services": "{{service.nomPl, capitalize}}",
+        "products": "Товары",
+        "sales": "Продажи товаров",
+        "warehouses": "Остатки",
+        "pos": "Касса и продажи",
+        "skud": "СКУД",
+        "cashbox": "Касса",
+        "payroll": "Отчёт по ЗП",
+        "reports": "Отчёты",
+        "reviews": "Отзывы",
+        "notifications": "Уведомления",
+        "settings": "Настройки"
+      }
     },
     "permissionPicker": {
       "selectedOfTotal": "выбрано из {{total}}",
