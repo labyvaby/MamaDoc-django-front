@@ -735,6 +735,11 @@
       "unpaid": "Не оплачено",
       "refunded": "Возврат"
     },
+    "moneyFilter": {
+      "discount": "Со скидкой",
+      "priceUp": "Цена повышена",
+      "priceDown": "Цена снижена"
+    },
     "period": {
       "prev": "Предыдущий период",
       "next": "Следующий период",
@@ -833,6 +838,11 @@
       "partial": "Долг",
       "unpaid": "Не оплачено",
       "refunded": "Возврат"
+    },
+    "moneyFilter": {
+      "discount": "Со скидкой",
+      "priceUp": "Цена повышена",
+      "priceDown": "Цена снижена"
     },
     "filters": {
       "title": "Фильтры",

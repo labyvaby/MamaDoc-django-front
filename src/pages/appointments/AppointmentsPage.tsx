@@ -316,6 +316,8 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setStatusFilter,
     paymentFilter,
     setPaymentFilter,
+    moneyFlagFilter,
+    setMoneyFlagFilter,
     resetChipFilters,
   } = useReceptionFilters();
 
@@ -1228,6 +1230,8 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               onStatusFilterChange={setStatusFilter}
               paymentFilter={paymentFilter}
               onPaymentFilterChange={setPaymentFilter}
+              moneyFlagFilter={moneyFlagFilter}
+              onMoneyFlagFilterChange={setMoneyFlagFilter}
               onResetChipFilters={resetChipFilters}
               showPaymentFilter
               showGroupTotals

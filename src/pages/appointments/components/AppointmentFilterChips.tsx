@@ -16,13 +16,29 @@
 import React from "react";
 import { Box, Chip, Divider, Stack, useTheme, alpha } from "@mui/material";
 import ClearIcon from "@mui/icons-material/CloseOutlined";
+import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
+import TrendingDownOutlined from "@mui/icons-material/TrendingDownOutlined";
+import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 
 import { getStatusAccent, getStatusLabel } from "../../../config/appointmentStatuses";
 import type { StatusCode } from "../../../config/appointmentStatuses";
 import type { PaymentStatus } from "../../../api/payments";
-import { PAYMENT_FILTER_OPTIONS, VISIT_FILTER_CODES } from "./listFilters";
+import {
+  MONEY_FLAG_LABEL_KEY,
+  MONEY_FLAG_OPTIONS,
+  PAYMENT_FILTER_OPTIONS,
+  VISIT_FILTER_CODES,
+  type AppointmentMoneyFlag,
+} from "./listFilters";
 import { useT } from "../../../i18n/VerticalProvider";
 import { subtleBg } from "../../../theme";
+
+/** Значок оси цены: скидка — ярлык, правки цены — стрелка направления. */
+const PRICE_FLAG_ICON: Record<AppointmentMoneyFlag, typeof LocalOfferOutlined> = {
+  discount: LocalOfferOutlined,
+  price_up: TrendingUpOutlined,
+  price_down: TrendingDownOutlined,
+};
 
 type Props = {
   /** Коды статусов визита, встречающиеся в текущей выборке, со счётчиками. */
@@ -33,6 +49,10 @@ type Props = {
   paymentCounts?: Map<PaymentStatus, number>;
   selectedPayments?: PaymentStatus[];
   onTogglePayment?: (value: PaymentStatus) => void;
+  /** Счётчики скидок и правок цены; ось скрыта целиком, если не передана. */
+  moneyCounts?: Map<AppointmentMoneyFlag, number>;
+  selectedMoneyFlags?: AppointmentMoneyFlag[];
+  onToggleMoneyFlag?: (value: AppointmentMoneyFlag) => void;
   onReset: () => void;
   /** Мобильный лист: кнопка сброса отдельной строкой, чтобы её было легко попасть пальцем. */
   wrap?: boolean;
@@ -45,6 +65,9 @@ const AppointmentFilterChips: React.FC<Props> = ({
   paymentCounts,
   selectedPayments = [],
   onTogglePayment,
+  moneyCounts,
+  selectedMoneyFlags = [],
+  onToggleMoneyFlag,
   onReset,
   wrap = false,
 }) => {
@@ -58,14 +81,20 @@ const AppointmentFilterChips: React.FC<Props> = ({
     paymentCounts && onTogglePayment
       ? PAYMENT_FILTER_OPTIONS.filter((o) => (paymentCounts.get(o.value) ?? 0) > 0)
       : [];
+  const priceChips =
+    moneyCounts && onToggleMoneyFlag
+      ? MONEY_FLAG_OPTIONS.filter((flag) => (moneyCounts.get(flag) ?? 0) > 0)
+      : [];
 
-  const hasActive = selectedStatuses.length > 0 || selectedPayments.length > 0;
+  const hasActive =
+    selectedStatuses.length > 0 || selectedPayments.length > 0 || selectedMoneyFlags.length > 0;
 
   // Ряд скрываем, только когда скрывать нечего И нечего сбрасывать: при
   // активном фильтре чипы могут исчезнуть все разом (например, у выбранного
   // специалиста в этот день нет ни одной записи) — и тогда снять фильтр было
   // бы нечем, список так и остался бы пустым без видимой причины.
-  if (visitChips.length === 0 && moneyChips.length === 0 && !hasActive) return null;
+  if (visitChips.length === 0 && moneyChips.length === 0 && priceChips.length === 0 && !hasActive)
+    return null;
 
   const chipSx = (accent: { main: string; text: string } | null, active: boolean) => ({
     height: 26,
@@ -107,20 +136,24 @@ const AppointmentFilterChips: React.FC<Props> = ({
     label: string,
     count: number,
     active: boolean,
+    /** Иконка вместо точки: ось цены различается значком, а не цветом (см. ниже). */
+    icon?: React.ReactNode,
   ) => (
     <Stack direction="row" alignItems="center" gap={0.75}>
-      <Box
-        sx={{
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          flexShrink: 0,
-          // Нейтральные статусы (возврат) точки-«светофора» не заслуживают:
-          // это не состояние дня, а редкий случай.
-          bgcolor: accent?.main ?? theme.palette.text.disabled,
-          opacity: active ? 1 : 0.75,
-        }}
-      />
+      {icon ?? (
+        <Box
+          sx={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            flexShrink: 0,
+            // Нейтральные статусы (возврат) точки-«светофора» не заслуживают:
+            // это не состояние дня, а редкий случай.
+            bgcolor: accent?.main ?? theme.palette.text.disabled,
+            opacity: active ? 1 : 0.75,
+          }}
+        />
+      )}
       <Box component="span">{label}</Box>
       <Box
         component="span"
@@ -173,7 +206,40 @@ const AppointmentFilterChips: React.FC<Props> = ({
         );
       })}
 
-      {visitChips.length > 0 && moneyChips.length > 0 && (
+      {/* Ось цены идёт следом за оплатой без разделителя: это тоже про деньги,
+          отдельная черта дробила бы ряд на три стайки. Различаются значком, а
+          не цветом — цвет в списке приёмов занят статусами (см. CLAUDE.md). */}
+      {priceChips.map((flag) => {
+        const active = selectedMoneyFlags.includes(flag);
+        // Скидка — единственный флаг со своим статусным цветом: он совпадает с
+        // чипом «Со скидкой» в строке приёма, и расхождение бросалось бы в глаза.
+        const accent = flag === "discount" ? getStatusAccent("discounted", theme) : null;
+        const Icon = PRICE_FLAG_ICON[flag];
+        return (
+          <Chip
+            key={flag}
+            size="small"
+            clickable
+            onClick={() => onToggleMoneyFlag?.(flag)}
+            label={chipContent(
+              accent,
+              t(`registry.moneyFilter.${MONEY_FLAG_LABEL_KEY[flag]}`),
+              moneyCounts?.get(flag) ?? 0,
+              active,
+              <Icon
+                sx={{
+                  fontSize: 14,
+                  flexShrink: 0,
+                  color: active ? "inherit" : "text.disabled",
+                }}
+              />,
+            )}
+            sx={chipSx(accent, active)}
+          />
+        );
+      })}
+
+      {visitChips.length > 0 && (moneyChips.length > 0 || priceChips.length > 0) && (
         <Divider orientation="vertical" flexItem sx={{ mx: 0.25, my: 0.25, flexShrink: 0 }} />
       )}
 

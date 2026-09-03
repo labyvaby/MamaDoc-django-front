@@ -48,12 +48,15 @@ import type { StatusCode } from "../../../config/appointmentStatuses";
 import type { PaymentStatus } from "../../../api/payments";
 import AppointmentFilterChips from "./AppointmentFilterChips";
 import {
+  appointmentMoneyFlags,
   appointmentPriceChangeSummary,
   employeeMoneyTotals,
   firstFreeSlotInSegment,
   firstFreeSlotInSegmentFor,
   firstFreeSlotAtOrAfter,
   matchesAppointmentSearch,
+  matchesMoneyFlags,
+  type AppointmentMoneyFlag,
 } from "./listFilters";
 import { AppBottomSheet } from "../../../components/ui";
 
@@ -110,6 +113,9 @@ interface AppointmentListPanelProps {
   onStatusFilterChange?: (codes: StatusCode[]) => void;
   paymentFilter?: PaymentStatus[];
   onPaymentFilterChange?: (values: PaymentStatus[]) => void;
+  /** Ось скидок и правок цены — так же управляемая страницей (URL) или своя. */
+  moneyFlagFilter?: AppointmentMoneyFlag[];
+  onMoneyFlagFilterChange?: (values: AppointmentMoneyFlag[]) => void;
   /**
    * Сброс обеих осей сразу. Отдельный колбэк, а не два вызова подряд: владелец
    * состояния может складывать их в одно обновление (страница пишет фильтры в
@@ -333,6 +339,8 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   onStatusFilterChange,
   paymentFilter,
   onPaymentFilterChange,
+  moneyFlagFilter,
+  onMoneyFlagFilterChange,
   onResetChipFilters,
   showPaymentFilter = false,
   showGroupTotals = false,
@@ -447,10 +455,22 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     [isPaymentControlled, onPaymentFilterChange],
   );
 
+  const isMoneyControlled = moneyFlagFilter !== undefined;
+  const [internalMoneyFlags, setInternalMoneyFlags] = React.useState<AppointmentMoneyFlag[]>([]);
+  const selectedMoneyFlags = isMoneyControlled ? moneyFlagFilter : internalMoneyFlags;
+  const setSelectedMoneyFlags = React.useCallback(
+    (values: AppointmentMoneyFlag[]) => {
+      if (!isMoneyControlled) setInternalMoneyFlags(values);
+      onMoneyFlagFilterChange?.(values);
+    },
+    [isMoneyControlled, onMoneyFlagFilterChange],
+  );
+
   React.useEffect(() => {
     if (!isStatusControlled) setInternalStatuses([]);
     if (!isPaymentControlled) setInternalPayments([]);
-  }, [titleDate, isStatusControlled, isPaymentControlled]);
+    if (!isMoneyControlled) setInternalMoneyFlags([]);
+  }, [titleDate, isStatusControlled, isPaymentControlled, isMoneyControlled]);
 
   // ── Отбор: поиск → исполнитель → чипы ─────────────────────────────────────
   // Порядок важен: счётчики чипов считаются на середине цепочки, поэтому при
@@ -494,6 +514,18 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     return counts;
   }, [doctorScopedItems]);
 
+  // Счётчики оси цены: приём попадает в несколько чипов сразу (скидка + правка
+  // цены — обычная пара), поэтому сумма счётчиков больше числа записей дня.
+  const moneyCounts = React.useMemo(() => {
+    const counts = new Map<AppointmentMoneyFlag, number>();
+    for (const appt of doctorScopedItems) {
+      for (const flag of appointmentMoneyFlags(appt)) {
+        counts.set(flag, (counts.get(flag) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [doctorScopedItems]);
+
   const filteredItems = React.useMemo(() => {
     let list = doctorScopedItems;
     if (selectedStatuses.length > 0) {
@@ -507,8 +539,13 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         (appt) => appt.paymentStatus != null && selectedPayments.includes(appt.paymentStatus),
       );
     }
+    // Оси между собой складываются через И: «Долг» + «Со скидкой» — это
+    // недоплаченные чеки со скидкой, а не их объединение.
+    if (selectedMoneyFlags.length > 0) {
+      list = list.filter((appt) => matchesMoneyFlags(appt, selectedMoneyFlags));
+    }
     return list;
-  }, [doctorScopedItems, selectedStatuses, selectedPayments]);
+  }, [doctorScopedItems, selectedStatuses, selectedPayments, selectedMoneyFlags]);
 
   const toggleStatus = React.useCallback(
     (code: StatusCode) =>
@@ -530,26 +567,41 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     [selectedPayments, setSelectedPayments],
   );
 
+  const toggleMoneyFlag = React.useCallback(
+    (value: AppointmentMoneyFlag) =>
+      setSelectedMoneyFlags(
+        selectedMoneyFlags.includes(value)
+          ? selectedMoneyFlags.filter((v) => v !== value)
+          : [...selectedMoneyFlags, value],
+      ),
+    [selectedMoneyFlags, setSelectedMoneyFlags],
+  );
+
   const resetChipFilters = React.useCallback(() => {
     if (onResetChipFilters) {
       if (!isStatusControlled) setInternalStatuses([]);
       if (!isPaymentControlled) setInternalPayments([]);
+      if (!isMoneyControlled) setInternalMoneyFlags([]);
       onResetChipFilters();
       return;
     }
     setSelectedStatuses([]);
     setSelectedPayments([]);
+    setSelectedMoneyFlags([]);
   }, [
     onResetChipFilters,
     isStatusControlled,
     isPaymentControlled,
+    isMoneyControlled,
     setSelectedStatuses,
     setSelectedPayments,
+    setSelectedMoneyFlags,
   ]);
 
   // Сколько записей дня скрыто фильтрами. Без этой строки отфильтрованный
   // список выглядит как «в этот день почти никого нет».
-  const activeChipCount = selectedStatuses.length + selectedPayments.length;
+  const activeChipCount =
+    selectedStatuses.length + selectedPayments.length + selectedMoneyFlags.length;
   const isFiltered = filteredItems.length !== items.length;
   // Отбор по существующим записям (чипы или поиск). Фильтр по специалисту сюда
   // не входит: выбрать свободного врача и увидеть его окна — нормальный сценарий.
@@ -885,6 +937,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       paymentCounts={showPaymentFilter ? paymentCounts : undefined}
       selectedPayments={selectedPayments}
       onTogglePayment={showPaymentFilter ? togglePayment : undefined}
+      moneyCounts={showPaymentFilter ? moneyCounts : undefined}
+      selectedMoneyFlags={selectedMoneyFlags}
+      onToggleMoneyFlag={showPaymentFilter ? toggleMoneyFlag : undefined}
       onReset={resetChipFilters}
     />
   );
@@ -1351,6 +1406,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
             paymentCounts={showPaymentFilter ? paymentCounts : undefined}
             selectedPayments={selectedPayments}
             onTogglePayment={showPaymentFilter ? togglePayment : undefined}
+            moneyCounts={showPaymentFilter ? moneyCounts : undefined}
+            selectedMoneyFlags={selectedMoneyFlags}
+            onToggleMoneyFlag={showPaymentFilter ? toggleMoneyFlag : undefined}
             onReset={resetChipFilters}
             wrap
           />
