@@ -97,6 +97,21 @@ describe("basketTotals", () => {
     expect(got.total).toBe(200);
   });
 
+  it("на ровной половине копейки округляет так же, как бэкенд", () => {
+    // 100.05 минус 50 % — это скидка ровно 50.025. Округляем СКИДКУ (→ 50.03)
+    // и вычитаем, получая 50.02. Округли мы вместо этого итог, вышло бы 50.03,
+    // и бэкенд с его ROUND_HALF_UP отверг бы оплату: он требует точного
+    // равенства, а регистратор платит ту сумму, что видит здесь.
+    const got = basketTotals({
+      lines: [test({ priceStandard: "100.05" })],
+      tubes: [],
+      discountPercent: 50,
+      chargeTubes: false,
+    });
+    expect(got.testsTotal).toBe(50.02);
+    expect(got.total).toBe(50.02);
+  });
+
   it("пустая корзина даёт нули, а не NaN", () => {
     const got = basketTotals({
       lines: [],

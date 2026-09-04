@@ -9,6 +9,13 @@
  *
  * Правила повторяют `server/apps/lab/basket.py`: скидка применяется только к
  * анализам, пробирки входят в сумму лишь при включённой плате за них.
+ *
+ * Округляется СКИДКА, а не итог, — как на экране продаж
+ * (`DjangoSaleFormDrawer`) и как в `basket.quote_basket`. Порядок здесь не
+ * косметика: бэкенд требует, чтобы оплата в точности равнялась его сумме, а
+ * регистратор платит ту, что видит здесь. Округли мы итог вместо скидки —
+ * разошлись бы на копейку на ровной половине (100.05 минус 50 %) и получили
+ * бы заблокированный приём.
  */
 
 export interface BasketLineInput {
@@ -60,7 +67,8 @@ export function basketTotals(input: BasketTotalsInput): BasketTotals {
     (sum, line) => sum + linePrice(line) * line.count,
     0,
   );
-  const testsTotal = round2(testsGross * (1 - input.discountPercent / 100));
+  const discount = round2((testsGross * input.discountPercent) / 100);
+  const testsTotal = round2(testsGross - discount);
   const tubesTotal = round2(
     input.tubes.reduce((sum, item) => sum + money(item.price) * item.count, 0),
   );
