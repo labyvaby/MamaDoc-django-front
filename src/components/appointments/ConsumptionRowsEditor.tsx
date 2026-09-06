@@ -67,21 +67,12 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   };
 
-  const summary =
+  // Название кнопки-заголовка: количество расходников, а не их перечисление —
+  // сам перечень уходит в список ниже, каждый пункт на своей строке.
+  const headerLabel =
     rows.length === 0
       ? t("consumptions.title")
-      : rows
-          .map(
-            (r) =>
-              `${r.name} ${t("consumptions.quantity", {
-                // Через парсер, а не напрямую: в поле ввода количество лежит как
-                // его набрали («2,5»), а formatQuantity ждёт точку — иначе в
-                // сводке вместо числа появлялся прочерк.
-                quantity: formatQuantity(parseRelatedQuantity(r.quantity)),
-                unit: r.unit ? ` ${r.unit}` : "",
-              })}`,
-          )
-          .join(", ");
+      : t("consumptions.count", { count: rows.length });
 
   // Доплата за платные расходники — видна и в свёрнутом виде: она меняет сумму
   // приёма, а свёрнутая сводка иначе про деньги не сказала бы ничего.
@@ -106,7 +97,7 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
           color="text.secondary"
           sx={{ flex: 1, minWidth: 0, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
         >
-          {summary}
+          {headerLabel}
         </Typography>
         {extraCharge > 0 && (
           <Typography
@@ -128,6 +119,32 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
           }}
         />
       </ButtonBase>
+
+      {/* Свёрнутый вид: каждый расходник своей строкой — раньше все склеивались
+          в одну строку через запятую и обрезались многоточием, из-за чего
+          состав было не разобрать без разворачивания редактора. */}
+      {!expanded && rows.length > 0 && (
+        <Stack spacing={0.25} sx={{ pl: 2.75, pr: 0.5, pt: 0.25 }}>
+          {rows.map((r) => (
+            <Typography
+              key={r.lineId ?? `new-${r.productId}`}
+              variant="caption"
+              color="text.secondary"
+              noWrap
+              sx={{ textOverflow: "ellipsis", overflow: "hidden" }}
+            >
+              {r.name}{" "}
+              {t("consumptions.quantity", {
+                // Через парсер, а не напрямую: в поле ввода количество лежит как
+                // его набрали («2,5»), а formatQuantity ждёт точку — иначе в
+                // сводке вместо числа появлялся прочерк.
+                quantity: formatQuantity(parseRelatedQuantity(r.quantity)),
+                unit: r.unit ? ` ${r.unit}` : "",
+              })}
+            </Typography>
+          ))}
+        </Stack>
+      )}
 
       <Collapse in={expanded} unmountOnExit>
         <Stack spacing={0.5} sx={{ pt: 0.5 }}>

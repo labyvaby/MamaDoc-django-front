@@ -208,6 +208,9 @@
   },
   "consumptions": {
     "title": "Расходники",
+    "count_one": "{{count}} расходник",
+    "count_few": "{{count}} расходника",
+    "count_many": "{{count}} расходников",
     "hint": "Списываются со склада при оплате или завершении; платные оплачиваются сверх цены {{service.gen}}",
     "quantity": "× {{quantity}}{{unit}}",
     "previewLabel": "Расходники:",
