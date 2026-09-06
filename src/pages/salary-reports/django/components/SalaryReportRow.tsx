@@ -295,20 +295,25 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
     setDetailLoading(true);
     setDailyData([]);
 
+    const monthPrefix = `${year}-${String(month).padStart(2, "0")}`;
+
     getEmployeeDailyDetails(row.employeeId, { year, month, organizationId, branchId })
       .then((data) => {
-        // Пустые дни (без часов, приёмов, начислений и выплат) не показываем.
+        // Бэк иногда отдаёт дни соседнего месяца (наблюдалось на проде,
+        // 07.09.2026) — отфильтровываем по выбранному месяцу на всякий случай.
+        // Пустые дни (без часов, приёмов, начислений и выплат) тоже не показываем.
         setDailyData(
           data.filter(
             (d) =>
-              parseFloat(d.dayHours || "0") > 0 ||
-              parseFloat(d.nightHours || "0") > 0 ||
-              d.appointmentsCount > 0 ||
-              d.createdByCount > 0 ||
-              parseFloat(d.distributedAppointments || "0") > 0 ||
-              parseFloat(d.percentSum || "0") > 0 ||
-              parseFloat(d.expensesSum || "0") > 0 ||
-              parseFloat(d.totalSalary || "0") > 0,
+              d.workDate?.startsWith(monthPrefix) &&
+              (parseFloat(d.dayHours || "0") > 0 ||
+                parseFloat(d.nightHours || "0") > 0 ||
+                d.appointmentsCount > 0 ||
+                d.createdByCount > 0 ||
+                parseFloat(d.distributedAppointments || "0") > 0 ||
+                parseFloat(d.percentSum || "0") > 0 ||
+                parseFloat(d.expensesSum || "0") > 0 ||
+                parseFloat(d.totalSalary || "0") > 0),
           ),
         );
       })
