@@ -673,25 +673,65 @@ const BookingsPage: React.FC = () => {
             </TextField>
 
             {prepaymentLive && (
-              <TextField
-                select
-                size="small"
-                label="Предоплата"
-                value={prepaymentStatus}
-                onChange={(e) =>
-                  setPrepaymentStatus(e.target.value as BookingPrepaymentStatus | "")
-                }
-                sx={{ minWidth: 180 }}
-              >
-                <MenuItem value="">Любая</MenuItem>
-                {(Object.keys(BOOKING_PREPAYMENT_META) as BookingPrepaymentStatus[]).map(
-                  (code) => (
-                    <MenuItem key={code} value={code}>
-                      {BOOKING_PREPAYMENT_META[code].label}
-                    </MenuItem>
-                  ),
-                )}
-              </TextField>
+              <>
+                {/* Быстрый доступ к самому частому разбору — «кто уже заплатил» —
+                    одним кликом, без похода в выпадающий список ниже. */}
+                <Chip
+                  clickable
+                  size="small"
+                  icon={<CheckOutlinedIcon fontSize="small" />}
+                  label="Оплачено"
+                  onClick={() =>
+                    setPrepaymentStatus((prev) => (prev === "paid" ? "" : "paid"))
+                  }
+                  sx={(t) => {
+                    const active = prepaymentStatus === "paid";
+                    return {
+                      height: 32,
+                      borderRadius: "8px",
+                      fontWeight: 500,
+                      border: 1,
+                      borderColor: active ? alpha(t.palette.success.main, 0.4) : "divider",
+                      color: active
+                        ? t.palette.mode === "dark"
+                          ? t.palette.success.light
+                          : t.palette.success.dark
+                        : "text.secondary",
+                      bgcolor: active
+                        ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.16 : 0.08)
+                        : "transparent",
+                      "& .MuiChip-icon": {
+                        color: active ? "inherit" : "text.disabled",
+                      },
+                      "&:hover": {
+                        bgcolor: active
+                          ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.22 : 0.12)
+                          : subtleBg(t, true),
+                      },
+                    };
+                  }}
+                />
+
+                <TextField
+                  select
+                  size="small"
+                  label="Предоплата"
+                  value={prepaymentStatus}
+                  onChange={(e) =>
+                    setPrepaymentStatus(e.target.value as BookingPrepaymentStatus | "")
+                  }
+                  sx={{ minWidth: 180 }}
+                >
+                  <MenuItem value="">Любая</MenuItem>
+                  {(Object.keys(BOOKING_PREPAYMENT_META) as BookingPrepaymentStatus[]).map(
+                    (code) => (
+                      <MenuItem key={code} value={code}>
+                        {BOOKING_PREPAYMENT_META[code].label}
+                      </MenuItem>
+                    ),
+                  )}
+                </TextField>
+              </>
             )}
 
             {hasActiveFilters && (
