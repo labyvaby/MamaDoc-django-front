@@ -298,6 +298,7 @@
     "durationSuffix": " · {{minutes}} мин",
     "service": "{{service.nom, capitalize}}",
     "servicePlaceholder": "Выберите {{service.acc}}",
+    "servicePickerSearch": "Поиск {{service.gen}}",
     "noProductsInStock": "Нет товаров в наличии",
     "product": "Товар",
     "quantity": "Кол-во",

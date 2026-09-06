@@ -614,8 +614,8 @@ const BookingsPage: React.FC = () => {
         width: 170,
         sortable: false,
         renderCell: ({ row }) => (
-          <Stack direction="row" alignItems="center" gap={0.75} sx={{ height: "100%" }}>
-            <Typography variant="body2">
+          <Stack sx={{ height: "100%" }} justifyContent="center">
+            <Typography variant="body2" noWrap>
               {dayjs(row.date).format("DD.MM.YYYY")} {row.time}
             </Typography>
             {row.date === todayStr && (
@@ -625,6 +625,7 @@ const BookingsPage: React.FC = () => {
                 sx={(t) => ({
                   height: 18,
                   fontSize: 11,
+                  alignSelf: "flex-start",
                   borderRadius: "6px",
                   color: "primary.onSurface",
                   bgcolor: alpha(

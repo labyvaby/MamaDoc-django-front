@@ -50,6 +50,7 @@ import {
 import { getBranches } from "../../../api/organization";
 import { getPublicFeatures } from "../../../api/publicBooking";
 import { getServices, type Service } from "../../../api/catalog";
+import ServiceMultiPickerField from "../../../components/services/ServiceMultiPickerField";
 import { orgWide } from "../../../api/scope";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { getProducts, type DjangoProduct } from "../../../api/warehouse";
@@ -1565,35 +1566,14 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
             <Stack spacing={2.5}>
               <SectionLabel title="Услуги" />
               <Field label="Услуги сотрудника">
-                <Autocomplete
-                  multiple
-                  size="small"
+                <ServiceMultiPickerField
                   limitTags={3}
                   loading={servicesLoading}
                   options={allServices}
                   value={selectedServices}
-                  disableCloseOnSelect
                   disabled={!canManageServices || busy}
-                  getOptionLabel={(s) =>
-                    s.basePrice ? `${s.name} (${Number(s.basePrice)} с)` : s.name
-                  }
-                  isOptionEqualToValue={(a, b) => a.id === b.id}
-                  onChange={(_, newVal) => setSelectedServices(newVal)}
-                  renderOption={(props, option, { selected }) => (
-                    <li {...props}>
-                      <Checkbox
-                        icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
-                        checkedIcon={<CheckBoxIcon fontSize="small" />}
-                        style={{ marginRight: 8 }}
-                        checked={selected}
-                      />
-                      {option.name}
-                      {option.basePrice ? ` (${Number(option.basePrice)} с)` : ""}
-                    </li>
-                  )}
-                  renderInput={(params) => (
-                    <TextField {...params} placeholder={canManageServices ? "Выберите услуги" : ""} />
-                  )}
+                  onChange={setSelectedServices}
+                  placeholder="Выберите услуги"
                 />
               </Field>
 
