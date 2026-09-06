@@ -80,6 +80,7 @@ import { groupServiceRowsByEmployee } from "../../components/appointments/servic
 import { buildEmployeeAccentMap } from "../../components/appointments/employeeAccent";
 import { attentionFieldSx } from "../../theme/uiHelpers";
 import ConsumptionRowsEditor from "../../components/appointments/ConsumptionRowsEditor";
+import ServicePickerField from "../../components/appointments/ServicePickerField";
 import {
   billableRowsTotal,
   hasInvalidConsumptionQuantity,
@@ -1538,8 +1539,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                       ) : undefined
                                     }
                                     field={
-                                <Autocomplete<DjangoCatalogServiceWithEmployees>
-                                  fullWidth
+                                <ServicePickerField
                                   // Смену услуги на строке с медзаключением бэк
                                   // отбивает 400-й, если строку пересоздавать
                                   // (проверено на живом API 16–17.07.2026);
@@ -1558,7 +1558,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                       ? t("serviceRow.noServiceForEmployee")
                                       : t("serviceRow.noServiceMatches")
                                   }
-                                  onChange={(_, v) =>
+                                  onChange={(v) =>
                                     updateRow(index, {
                                       serviceId: v?.id ?? null,
                                       employeeId:
@@ -1595,20 +1595,9 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                         : {}),
                                     })
                                   }
-                                  getOptionLabel={(s) =>
-                                    t("addDrawer.serviceOption", { name: s.name, price: Number(s.basePrice) })
-                                  }
-                                  isOptionEqualToValue={(a, b) => a.id === b.id}
-                                  renderInput={(params) => (
-                                    <TextField
-                                      {...params}
-                                      placeholder={t("addDrawer.service")}
-                                      size="small"
-                                      fullWidth
-                                      error={form.attempted && !row.serviceId}
-                                      helperText={form.attempted && !row.serviceId ? t("addDrawer.servicePlaceholder") : ""}
-                                    />
-                                  )}
+                                  placeholder={t("addDrawer.service")}
+                                  error={form.attempted && !row.serviceId}
+                                  helperText={form.attempted && !row.serviceId ? t("addDrawer.servicePlaceholder") : ""}
                                 />
                                     }
                                   >

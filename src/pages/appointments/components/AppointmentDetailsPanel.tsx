@@ -1325,6 +1325,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           serviceId={startedSlot.service.id}
           doctorName={startedSlot.doctor?.fullName ?? "—"}
           appointmentId={appt.id}
+          // Филиал приёма, а не сессии: бланки печатают на форме того филиала,
+          // где приём и состоялся.
+          branchId={appt.branchId}
           doctorId={startedSlot.doctor?.id ?? null}
           canEdit={startedSlot.canEdit}
           canPrint={startedSlot.canPrint}

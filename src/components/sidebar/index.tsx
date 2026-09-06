@@ -36,6 +36,8 @@ import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
+import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
+import PointOfSaleOutlined from "@mui/icons-material/PointOfSaleOutlined";
 // import BlockOutlined from "@mui/icons-material/BlockOutlined";
 // import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
@@ -420,9 +422,11 @@ const SidebarSecondary: React.FC = () => {
     services: !isRetail && can(PAGE_PERMISSIONS.services),
     documents: moduleGate("documents"),
     // СКЛАДЫ
+    pos: can(PAGE_PERMISSIONS.pos),
     products: can(PAGE_PERMISSIONS.products),
     sales: can(PAGE_PERMISSIONS.sales),
     storage: can(PAGE_PERMISSIONS.warehouses),
+    inventory: can(PAGE_PERMISSIONS.warehouses),
     // УПРАВЛЕНИЕ
     // payroll.view открывает общий отчёт; payroll.view_own + активная карточка
     // сотрудника — тот же экран в персональном режиме (только свои цифры).
@@ -590,7 +594,7 @@ const SidebarSecondary: React.FC = () => {
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
-    "storage": can_.products || can_.vaccinations || can_.sales || can_.storage,
+    "storage": can_.pos || can_.products || can_.vaccinations || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
 
@@ -849,6 +853,10 @@ const SidebarSecondary: React.FC = () => {
             ══════════════════════════════════════════ */}
 
         {/* Товары */}
+        {show("storage") && can_.pos && (
+          <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса магазина" collapsed={siderCollapsed} />
+        )}
+
         {show("storage") && can_.products && (
           <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
         )}
@@ -866,6 +874,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Остатки (объединённые «Движение товара» + «Склад») */}
         {show("storage") && can_.storage && (
           <SidebarMenuItem to="/warehouses" icon={<Inventory2Outlined />} label="Остатки" collapsed={siderCollapsed} />
+        )}
+
+        {/* Инвентаризация по штрихкодам */}
+        {show("storage") && can_.inventory && (
+          <SidebarMenuItem to="/inventory" icon={<FactCheckOutlined />} label="Инвентаризация" collapsed={siderCollapsed} />
         )}
 
         {/* ══════════════════════════════════════════
@@ -889,7 +902,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Касса */}
         {show("management") && can_.cashbox && (
-          <SidebarMenuItem to="/cashbox" icon={<AccountBalanceWalletOutlined />} label="Касса" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/cashbox" icon={<AccountBalanceWalletOutlined />} label="Касса / финансы" collapsed={siderCollapsed} />
         )}
 
         {/* Нагрузка */}

@@ -24,6 +24,7 @@ export type AppointmentStatusSource = Pick<DjangoAppointment, "status"> &
       | "debt"
       | "totalAmount"
       | "discountAmount"
+      | "cancelReason"
     >
   >;
 

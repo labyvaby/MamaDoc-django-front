@@ -81,9 +81,13 @@ export const Reviews: React.FC<{
                 )}
                 <Box sx={{ flexGrow: 1 }} />
                 <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{review.patientName}</Typography>
-                <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
-                  {t("reviews.about", { name: review.specialistName })}
-                </Typography>
+                {/* Специалиста может не быть: его удалили или отзыв к нему не
+                    привязан — строку «о ком» тогда не рисуем вовсе. */}
+                {review.specialistName && (
+                  <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
+                    {t("reviews.about", { name: review.specialistName })}
+                  </Typography>
+                )}
               </Stack>
             ))}
       </Box>

@@ -68,7 +68,7 @@ function minutesLeft(expiresAt: string | null): number | null {
  * Предоплата на карточке брони. Пока не оплачено — это главное на экране:
  * без оплаты бронь не подтвердится и время освободится через 15 минут.
  */
-const PaymentBlock: React.FC<{
+export const PaymentBlock: React.FC<{
   payment: PublicBookingPayment;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }> = ({ payment, t }) => {

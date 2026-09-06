@@ -71,6 +71,7 @@ const EmployeesPage = lazy(() => import("./pages/employes"));
 const ServicesPage = lazy(() => import("./pages/services/DjangoServicesPage"));
 const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
 const DjangoProductsPage = lazy(() => import("./pages/products/django"));
+const DjangoInventoryPage = lazy(() => import("./pages/inventory/django"));
 const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
 const DjangoSchedulePage = lazy(() => import("./pages/schedule/django"));
@@ -104,6 +105,7 @@ const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsP
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
 const PublicBookMyBookingsPage = lazy(() => import("./pages/public-booking/MyBookingsPage"));
 const PublicBookByCodePage = lazy(() => import("./pages/public-booking/BookingByCodePage"));
+const PublicBookPaymentResultPage = lazy(() => import("./pages/public-booking/PaymentResultPage"));
 const PublicLandingPage = lazy(() => import("./pages/public-site"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
@@ -118,6 +120,7 @@ const OrganizationSettingsPage = lazy(() => import("./pages/settings/Organizatio
 const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSettingsPage"));
 const SiteSettingsPage = lazy(() => import("./pages/settings/SiteSettingsPage"));
 const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"));
+const PosModuleSettingsPage = lazy(() => import("./pages/settings/PosModuleSettingsPage"));
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
 const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
@@ -133,6 +136,9 @@ const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
 const ProfilePage = lazy(() => import("./pages/profile"));
 const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPage"));
+// Касса (POS) — полноэкранный модуль: собственная шапка вместо общей, поэтому
+// живёт в отдельной ветке layout.
+const PosPage = lazy(() => import("./pages/pos"));
 
 
 // Вспомогательный компонент для защиты корневого редиректа
@@ -201,6 +207,8 @@ const DjangoContextRemount = ({ children }: { children: ReactNode }) => {
 // теряется позиция скролла (выбрасывает наверх при выборе пункта снизу).
 const renderHeader = () => <Header sticky />;
 const renderSider = () => <Sidebar />;
+// POS использует общую шапку приложения, включая стандартный блок профиля
+// справа. Своя шапка POS остаётся только для поиска товара и операций с чеком.
 
 function App() {
   const theme = useTheme();
@@ -320,6 +328,11 @@ function App() {
                         name: "warehouses",
                         list: "/warehouses",
                         meta: { label: "Склад" }
+                      },
+                      {
+                        name: "inventory",
+                        list: "/inventory",
+                        meta: { label: "Инвентаризация" }
                       },
                       {
                         name: "patients",
@@ -453,6 +466,44 @@ function App() {
                     }}
                   >
                     <Routes>
+                      {/* Касса (POS): та же авторизация и сайдбар, но без общей
+                          шапки и без отступов — модуль занимает всю рабочую
+                          область и держит свой каркас (макет Monogram). */}
+                      <Route
+                        element={
+                          <RequireAuth>
+                            <MobileSidebarProvider>
+                              <ThemedLayout
+                                Header={renderHeader}
+                                Sider={renderSider}
+                                childrenBoxProps={{
+                                  sx: {
+                                    p: 0,
+                                    height: { xs: "calc(100dvh - 56px)", md: "calc(100vh - 64px)" },
+                                    overflow: "hidden",
+                                    position: "relative",
+                                  },
+                                }}
+                              >
+                                <DjangoContextRemount>
+                                  <Outlet />
+                                </DjangoContextRemount>
+                              </ThemedLayout>
+                            </MobileSidebarProvider>
+                          </RequireAuth>
+                        }
+                      >
+                        <Route
+                          path="pos"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.pos}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <PosPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                      </Route>
                       <Route
                         element={
                           <RequireAuth>
@@ -595,6 +646,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.warehouses}>
                               <Suspense fallback={<LinearProgress />}>
                                 <DjangoWarehousesPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="inventory"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.warehouses}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoInventoryPage />
                               </Suspense>
                             </RequirePermission>
                           }
@@ -785,6 +846,7 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            <Route path="settings/pos-module" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.posModule}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
                             <Route
                               path="settings/branches"
                               element={
@@ -1203,6 +1265,17 @@ function App() {
                           element={
                             <Suspense fallback={<LinearProgress />}>
                               <PublicBookByCodePage />
+                            </Suspense>
+                          }
+                        />
+                        {/* Возврат с Paylink Бакай Банка — фиксированный адрес,
+                            заданный на бэке, своего экрана не имеет, сразу
+                            уводит на карточку брони по коду. */}
+                        <Route
+                          path="book/payment/result"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <PublicBookPaymentResultPage />
                             </Suspense>
                           }
                         />

@@ -1042,7 +1042,10 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
             ref={form.anchor("content")}
             onClick={() => editor?.chain().focus().run()}
             sx={{
-              flex: 1,
+              // basis auto и без сжатия: при flex:1 (basis 0) блок получал
+              // только свободную высоту формы и не рос под содержимое — высокая
+              // картинка вылезала за рамку вниз, обрывая её посреди фото.
+              flex: "1 0 auto",
               minHeight: 280,
               cursor: "text",
               borderRadius: 1.5,

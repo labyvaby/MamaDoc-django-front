@@ -1845,6 +1845,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             // прямо в пейджере, иначе «нет окон» выглядит как «всё занято».
                             const offSchedule =
                               Boolean(day) && (!day!.scheduled || day!.dayOff) && appts > 0;
+                            // Явный выходной/отпуск без приёмов раньше проваливался в тот же
+                            // «нет окон», что и обычный полностью занятый день — регистратор
+                            // не мог отличить «не пробуйте, врач отсутствует» от «всё занято,
+                            // но врач работает». Показываем отдельно, тем же тоном.
+                            const isDayOff = Boolean(day?.dayOff) && !offSchedule;
                             const specLabel =
                               specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
                             return (
@@ -1907,6 +1912,13 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                                         {t("slots.offSchedule")}
                                         {" · "}
                                         {t("slots.visitsCount", { count: appts })}
+                                      </Box>
+                                    ) : isDayOff ? (
+                                      <Box
+                                        component="span"
+                                        sx={{ color: "warning.main", fontWeight: 600 }}
+                                      >
+                                        {t("slots.dayOff")}
                                       </Box>
                                     ) : (
                                       <Box
@@ -2007,6 +2019,8 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           const dayAppts = day?.appointments?.length ?? 0;
                           const itemOffSchedule =
                             Boolean(day) && (!day!.scheduled || day!.dayOff) && dayAppts > 0;
+                          // Чистый выходной без приёмов — отдельная подпись, а не «нет окон».
+                          const itemDayOff = Boolean(day?.dayOff) && !itemOffSchedule;
                           const selected = idx === safeIdx;
                           const itemSpec = specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
                           return (
@@ -2045,19 +2059,22 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                                 secondary={
                                   itemOffSchedule
                                     ? `${itemSpec} · ${t("slots.offSchedule")} · ${t("slots.visitsCount", { count: dayAppts })}`
-                                    : free > 0
-                                      ? `${itemSpec} · ${t("slots.freeSlotsCount", { count: free })}`
-                                      : `${itemSpec} · ${t("slots.noFreeSlotsShort")}`
+                                    : itemDayOff
+                                      ? `${itemSpec} · ${t("slots.dayOff")}`
+                                      : free > 0
+                                        ? `${itemSpec} · ${t("slots.freeSlotsCount", { count: free })}`
+                                        : `${itemSpec} · ${t("slots.noFreeSlotsShort")}`
                                 }
                                 primaryTypographyProps={{ variant: "body2", fontWeight: 600, noWrap: true }}
                                 secondaryTypographyProps={{
                                   variant: "caption",
                                   sx: {
-                                    color: itemOffSchedule
-                                      ? "warning.main"
-                                      : free > 0
-                                        ? "success.main"
-                                        : "text.disabled",
+                                    color:
+                                      itemOffSchedule || itemDayOff
+                                        ? "warning.main"
+                                        : free > 0
+                                          ? "success.main"
+                                          : "text.disabled",
                                   },
                                 }}
                               />
@@ -2145,6 +2162,8 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                     Boolean(docDay) &&
                     (!docDay.scheduled || docDay.dayOff) &&
                     (docDay.appointments?.length ?? 0) > 0;
+                  // Чистый выходной без приёмов — та же шапка, но своя подпись.
+                  const docDayOff = Boolean(docDay?.dayOff) && !docOffSchedule;
 
                   return (
                     <Box
@@ -2235,6 +2254,12 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                                 <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>
                                   {" · "}
                                   {t("slots.offSchedule")}
+                                </Box>
+                              )}
+                              {docDayOff && (
+                                <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>
+                                  {" · "}
+                                  {t("slots.dayOff")}
                                 </Box>
                               )}
                             </Typography>

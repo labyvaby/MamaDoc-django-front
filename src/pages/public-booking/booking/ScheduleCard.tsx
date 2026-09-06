@@ -31,7 +31,9 @@ const DayTile: React.FC<{
   active: boolean;
   dayOff?: boolean;
   onClick: () => void;
-}> = ({ day, active, dayOff, onClick }) => {
+  /** Регистрирует DOM-узел плитки — нужен, чтобы прокрутить к ней ленту дат. */
+  tileRef?: (el: HTMLButtonElement | null) => void;
+}> = ({ day, active, dayOff, onClick, tileRef }) => {
   const { t } = useT("publicBooking");
   const value = new Date(`${day.date}T00:00:00`);
   const today = new Date();
@@ -55,6 +57,7 @@ const DayTile: React.FC<{
 
   return (
     <ButtonBase
+      ref={tileRef}
       disabled={!day.isAvailable}
       onClick={onClick}
       sx={{
@@ -182,6 +185,19 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
   const { t } = useT("publicBooking");
   const hasBusy = slots.some((slot) => slot.busy);
 
+  // Ближайшая доступная дата выбирается автоматически (см. DoctorBookingPage) и
+  // может оказаться вне экрана, если перед ней стоят «выходные» — прокручиваем
+  // ленту к ней, чтобы пользователь на телефоне не думал, что дату нужно искать вручную.
+  const tileRefs = React.useRef<Map<string, HTMLButtonElement>>(new Map());
+  React.useEffect(() => {
+    if (!selectedDate) return;
+    tileRefs.current.get(selectedDate)?.scrollIntoView({
+      behavior: "smooth",
+      inline: "center",
+      block: "nearest",
+    });
+  }, [selectedDate, calendar]);
+
   return (
     <Paper
       elevation={0}
@@ -253,6 +269,10 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
                 active={selectedDate === day.date}
                 dayOff={dayOffDates?.has(day.date)}
                 onClick={() => onDateChange(day.date)}
+                tileRef={(el) => {
+                  if (el) tileRefs.current.set(day.date, el);
+                  else tileRefs.current.delete(day.date);
+                }}
               />
             ))}
           </Box>

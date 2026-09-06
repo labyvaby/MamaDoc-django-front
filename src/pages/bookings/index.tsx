@@ -5,6 +5,7 @@ import {
   Button,
   ButtonBase,
   Chip,
+  CircularProgress,
   IconButton,
   MenuItem,
   Skeleton,
@@ -17,7 +18,8 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { alpha, useTheme } from "@mui/material/styles";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNotification } from "@refinedev/core";
 import dayjs, { type Dayjs } from "dayjs";
 import "dayjs/locale/ru";
 
@@ -29,7 +31,9 @@ import ChevronRightOutlinedIcon from "@mui/icons-material/ChevronRightOutlined";
 import StorefrontOutlinedIcon from "@mui/icons-material/StorefrontOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import CheckOutlinedIcon from "@mui/icons-material/CheckOutlined";
+import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
 
 import { DateRangeField, PageHeader, UserAvatar, type DateRangePreset } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -37,7 +41,9 @@ import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import {
+  getBooking,
   getBookings,
+  updateBookingStatus,
   bookingHasBranch,
   type BookingListItem,
   type BookingStatus,
@@ -53,12 +59,15 @@ import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
 import { bookingShowcaseUrl } from "../public-booking/format";
 import BookingDetailDrawer from "./BookingDetailDrawer";
+import BookingNotificationsBell from "./BookingNotificationsBell";
 import {
   BOOKING_PREPAYMENT_META,
   BOOKING_STATUS_OPTIONS,
   PrepaymentChip,
   StatusChip,
   hasPrepayment,
+  isBookingOverdue,
+  sortBookingsByPriority,
   statusTone,
 } from "./meta";
 import { useT } from "../../i18n/VerticalProvider";
@@ -70,52 +79,76 @@ const STATS_MAX_PAGES = 5;
 
 // ── Помощники стилей ──────────────────────────────────────────────────────────
 
-/** Компактная плитка сводки: иконка + подпись + значение. */
+/**
+ * Компактная плитка сводки: иконка + подпись + значение. С `onClick` — тёплый
+ * (warning) тон при `warn`, чтобы просроченные брони не терялись среди
+ * нейтральных цифр.
+ */
 const StatTile: React.FC<{
   icon: React.ReactNode;
   label: string;
   value: React.ReactNode;
-}> = ({ icon, label, value }) => (
-  <Stack
-    direction="row"
-    alignItems="center"
-    gap={1.25}
-    sx={(t) => ({
-      px: 1.5,
-      py: 1,
-      borderRadius: "10px",
-      border: 1,
-      borderColor: "divider",
-      bgcolor: subtleBg(t),
-      minWidth: 150,
-    })}
-  >
-    <Box
+  onClick?: () => void;
+  warn?: boolean;
+}> = ({ icon, label, value, onClick, warn }) => {
+  const content = (
+    <Stack
+      direction="row"
+      alignItems="center"
+      gap={1.25}
       sx={(t) => ({
-        width: 34,
-        height: 34,
-        borderRadius: "9px",
-        flexShrink: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "primary.onSurface",
-        bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1),
-        "& .MuiSvgIcon-root": { fontSize: 18 },
+        px: 1.5,
+        py: 1,
+        borderRadius: "10px",
+        border: 1,
+        borderColor: warn ? alpha(t.palette.warning.main, 0.4) : "divider",
+        bgcolor: warn
+          ? alpha(t.palette.warning.main, t.palette.mode === "dark" ? 0.14 : 0.08)
+          : subtleBg(t),
+        minWidth: 150,
       })}
     >
-      {icon}
-    </Box>
-    <Box sx={{ minWidth: 0 }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.2 }}>
-        {label}
-      </Typography>
-      <Typography variant="subtitle2" fontWeight={600} noWrap>
-        {value}
-      </Typography>
-    </Box>
-  </Stack>
-);
+      <Box
+        sx={(t) => ({
+          width: 34,
+          height: 34,
+          borderRadius: "9px",
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: warn
+            ? t.palette.mode === "dark"
+              ? t.palette.warning.light
+              : t.palette.warning.dark
+            : "primary.onSurface",
+          bgcolor: alpha(
+            warn ? t.palette.warning.main : t.palette.primary.main,
+            t.palette.mode === "dark" ? 0.16 : 0.1,
+          ),
+          "& .MuiSvgIcon-root": { fontSize: 18 },
+        })}
+      >
+        {icon}
+      </Box>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.2 }}>
+          {label}
+        </Typography>
+        <Typography variant="subtitle2" fontWeight={600} noWrap>
+          {value}
+        </Typography>
+      </Box>
+    </Stack>
+  );
+
+  if (!onClick) return content;
+  return (
+    <ButtonBase onClick={onClick} sx={{ borderRadius: "10px", display: "block", textAlign: "left" }}>
+      {content}
+    </ButtonBase>
+  );
+};
 
 /**
  * Ссылка на публичную витрину онлайн-записи: регистратуре её диктуют пациентам
@@ -237,6 +270,8 @@ const BookingsPage: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const canView = useCan("bookings.view");
   const canManage = useCan("bookings.manage");
+  const queryClient = useQueryClient();
+  const { open: notify } = useNotification();
   const {
     isSuperAdmin,
     activeOrganization,
@@ -276,6 +311,8 @@ const BookingsPage: React.FC = () => {
   const [search, setSearch] = React.useState("");
   const [page, setPage] = React.useState(0);
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
+  // Отмеченные для массового подтверждения — только «Ожидает» (isRowSelectable).
+  const [selectedIds, setSelectedIds] = React.useState<number[]>([]);
 
   // Debounce поиска.
   React.useEffect(() => {
@@ -283,10 +320,17 @@ const BookingsPage: React.FC = () => {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // Сброс на первую страницу при смене фильтров.
+  // Сброс на первую страницу при смене фильтров; выбор для массовых действий
+  // теряет смысл вместе со сменой выборки.
   React.useEffect(() => {
     setPage(0);
+    setSelectedIds([]);
   }, [dateFrom, dateTo, status, doctorId, prepaymentStatus, search, orgKey, branchKey]);
+
+  // И при листании страниц — отмеченные с прошлой страницы не видны здесь.
+  React.useEffect(() => {
+    setSelectedIds([]);
+  }, [page]);
 
   const fromStr = dateFrom.format("YYYY-MM-DD");
   const toStr = dateTo.format("YYYY-MM-DD");
@@ -443,6 +487,12 @@ const BookingsPage: React.FC = () => {
     return { count, lost, lostRate, truncated: data.truncated };
   }, [statsQuery.data, status]);
 
+  /** «Ожидает», время которых уже прошло — висят необработанными дольше всех. */
+  const overdueCount = React.useMemo(
+    () => (statsQuery.data?.all ?? []).filter(isBookingOverdue).length,
+    [statsQuery.data],
+  );
+
   const doctorsQuery = useQuery({
     queryKey: [...djangoQueryKeys.reference.employees, "doctors", orgKey],
     queryFn: ({ signal }) =>
@@ -454,6 +504,54 @@ const BookingsPage: React.FC = () => {
     () => (doctorsQuery.data?.results ?? []).filter((e) => e.clinicalRole === "doctor"),
     [doctorsQuery.data],
   );
+
+  /**
+   * Массовое подтверждение. Одним PATCH это не сделать безопасно: карточка
+   * требует привязать пациента и услуги (`ConfirmBookingDialog`), а в списке
+   * их нет — подтягиваем `getBooking` по каждой брони. Подтверждаем только
+   * однозначные (ровно одно совпадение по телефону) с готовым набором услуг;
+   * остальные оставляем для ручного разбора через карточку — так же, как при
+   * подтверждении по одной.
+   */
+  const bulkConfirm = useMutation({
+    mutationFn: async (ids: number[]) => {
+      const settled = await Promise.allSettled(
+        ids.map(async (id) => {
+          const detail = await getBooking(id);
+          const matches = detail.patientMatches ?? [];
+          if (matches.length !== 1) throw new Error("ambiguous-patient");
+          const serviceIds = (detail.services ?? [])
+            .map((s) => s.id)
+            .filter((sid): sid is number => sid != null);
+          await updateBookingStatus(id, "confirmed", {
+            patientId: matches[0].id,
+            serviceIds: serviceIds.length > 0 ? serviceIds : undefined,
+          });
+          return id;
+        }),
+      );
+      return settled
+        .filter((r): r is PromiseFulfilledResult<number> => r.status === "fulfilled")
+        .map((r) => r.value);
+    },
+    onSuccess: (confirmed, ids) => {
+      queryClient.invalidateQueries({ queryKey: djangoQueryKeys.bookings.all });
+      // Подтверждение материализует приём.
+      queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.all });
+      setSelectedIds([]);
+      const skipped = ids.filter((id) => !confirmed.includes(id));
+      notify?.({
+        type: confirmed.length > 0 ? "success" : "error",
+        message:
+          skipped.length > 0
+            ? `Подтверждено ${confirmed.length} из ${ids.length}. У ${skipped.length} — неоднозначная карта пациента, откройте вручную.`
+            : `Подтверждено: ${confirmed.length}`,
+      });
+      // Первую неоднозначную открываем сразу — не заставляем искать её в списке.
+      if (skipped.length > 0) setSelectedId(skipped[0]);
+    },
+    onError: () => notify?.({ type: "error", message: "Не удалось подтвердить брони" }),
+  });
 
   const columns = React.useMemo<GridColDef<BookingListItem>[]>(
     () => [
@@ -516,8 +614,8 @@ const BookingsPage: React.FC = () => {
         width: 170,
         sortable: false,
         renderCell: ({ row }) => (
-          <Stack direction="row" alignItems="center" gap={0.75} sx={{ height: "100%" }}>
-            <Typography variant="body2">
+          <Stack sx={{ height: "100%" }} justifyContent="center">
+            <Typography variant="body2" noWrap>
               {dayjs(row.date).format("DD.MM.YYYY")} {row.time}
             </Typography>
             {row.date === todayStr && (
@@ -527,6 +625,7 @@ const BookingsPage: React.FC = () => {
                 sx={(t) => ({
                   height: 18,
                   fontSize: 11,
+                  alignSelf: "flex-start",
                   borderRadius: "6px",
                   color: "primary.onSurface",
                   bgcolor: alpha(
@@ -593,7 +692,9 @@ const BookingsPage: React.FC = () => {
 
   if (!permLoading && !canView) return <AccessDenied />;
 
-  const rows = query.data?.results ?? [];
+  // Сортировка «то, что горит — наверх» в пределах текущей страницы (см.
+  // sortBookingsByPriority) — сервер отдаёт страницу в своём порядке.
+  const rows = sortBookingsByPriority(query.data?.results ?? []);
   const total = query.data?.count ?? 0;
 
   const NoRowsOverlay = () => (
@@ -624,7 +725,17 @@ const BookingsPage: React.FC = () => {
         onSearchChange={setSearchInput}
         searchPlaceholder="Имя, телефон или код"
         loading={query.isFetching}
-        actions={<ShowcaseLink orgSlug={activeOrganization?.slug ?? null} />}
+        actions={
+          <Stack direction="row" alignItems="center" gap={1}>
+            <BookingNotificationsBell
+              organizationId={organizationId}
+              branchId={branchId}
+              enabled={enabled}
+              onOpenBooking={setSelectedId}
+            />
+            <ShowcaseLink orgSlug={activeOrganization?.slug ?? null} />
+          </Stack>
+        }
       />
 
       {needsOrg ? (
@@ -673,25 +784,65 @@ const BookingsPage: React.FC = () => {
             </TextField>
 
             {prepaymentLive && (
-              <TextField
-                select
-                size="small"
-                label="Предоплата"
-                value={prepaymentStatus}
-                onChange={(e) =>
-                  setPrepaymentStatus(e.target.value as BookingPrepaymentStatus | "")
-                }
-                sx={{ minWidth: 180 }}
-              >
-                <MenuItem value="">Любая</MenuItem>
-                {(Object.keys(BOOKING_PREPAYMENT_META) as BookingPrepaymentStatus[]).map(
-                  (code) => (
-                    <MenuItem key={code} value={code}>
-                      {BOOKING_PREPAYMENT_META[code].label}
-                    </MenuItem>
-                  ),
-                )}
-              </TextField>
+              <>
+                {/* Быстрый доступ к самому частому разбору — «кто уже заплатил» —
+                    одним кликом, без похода в выпадающий список ниже. */}
+                <Chip
+                  clickable
+                  size="small"
+                  icon={<CheckOutlinedIcon fontSize="small" />}
+                  label="Оплачено"
+                  onClick={() =>
+                    setPrepaymentStatus((prev) => (prev === "paid" ? "" : "paid"))
+                  }
+                  sx={(t) => {
+                    const active = prepaymentStatus === "paid";
+                    return {
+                      height: 32,
+                      borderRadius: "8px",
+                      fontWeight: 500,
+                      border: 1,
+                      borderColor: active ? alpha(t.palette.success.main, 0.4) : "divider",
+                      color: active
+                        ? t.palette.mode === "dark"
+                          ? t.palette.success.light
+                          : t.palette.success.dark
+                        : "text.secondary",
+                      bgcolor: active
+                        ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.16 : 0.08)
+                        : "transparent",
+                      "& .MuiChip-icon": {
+                        color: active ? "inherit" : "text.disabled",
+                      },
+                      "&:hover": {
+                        bgcolor: active
+                          ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.22 : 0.12)
+                          : subtleBg(t, true),
+                      },
+                    };
+                  }}
+                />
+
+                <TextField
+                  select
+                  size="small"
+                  label="Предоплата"
+                  value={prepaymentStatus}
+                  onChange={(e) =>
+                    setPrepaymentStatus(e.target.value as BookingPrepaymentStatus | "")
+                  }
+                  sx={{ minWidth: 180 }}
+                >
+                  <MenuItem value="">Любая</MenuItem>
+                  {(Object.keys(BOOKING_PREPAYMENT_META) as BookingPrepaymentStatus[]).map(
+                    (code) => (
+                      <MenuItem key={code} value={code}>
+                        {BOOKING_PREPAYMENT_META[code].label}
+                      </MenuItem>
+                    ),
+                  )}
+                </TextField>
+              </>
             )}
 
             {hasActiveFilters && (
@@ -799,6 +950,16 @@ const BookingsPage: React.FC = () => {
             {/* ── Итоги за период ── */}
             {summary && (
               <Stack direction="row" gap={1} flexWrap="wrap">
+                {/* Просроченные «Ожидает» — самое горящее среди необработанных,
+                    поэтому на виду, а не только построчно в гриде. Клик —
+                    открывает вкладку «Ожидает» (там же они сортируются наверх). */}
+                <StatTile
+                  icon={<WarningAmberOutlinedIcon />}
+                  label="Просрочены"
+                  value={overdueCount}
+                  warn={overdueCount > 0}
+                  onClick={() => setStatus("pending")}
+                />
                 <StatTile
                   icon={<EventAvailableOutlinedIcon />}
                   label="Броней"
@@ -961,7 +1122,53 @@ const BookingsPage: React.FC = () => {
               )}
             </Box>
           ) : (
-            <Box sx={{ flex: 1, minHeight: 360 }}>
+            <Box sx={{ flex: 1, minHeight: 360, display: "flex", flexDirection: "column", gap: 1 }}>
+              {/* Массовое подтверждение — только «Ожидает» можно отметить
+                  (isRowSelectable), доступно только с правом bookings.manage. */}
+              {canManage && selectedIds.length > 0 && (
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  gap={1}
+                  sx={(t) => ({
+                    px: 1.5,
+                    py: 1,
+                    borderRadius: "10px",
+                    border: 1,
+                    borderColor: "divider",
+                    bgcolor: subtleBg(t),
+                  })}
+                >
+                  <Typography variant="body2" color="text.secondary">
+                    Выбрано: {selectedIds.length}
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="success"
+                    startIcon={
+                      bulkConfirm.isPending ? (
+                        <CircularProgress size={14} color="inherit" />
+                      ) : (
+                        <CheckCircleOutlinedIcon fontSize="small" />
+                      )
+                    }
+                    disabled={bulkConfirm.isPending}
+                    onClick={() => bulkConfirm.mutate(selectedIds)}
+                    sx={{ textTransform: "none" }}
+                  >
+                    Подтвердить выбранные
+                  </Button>
+                  <Button
+                    size="small"
+                    disabled={bulkConfirm.isPending}
+                    onClick={() => setSelectedIds([])}
+                    sx={{ textTransform: "none" }}
+                  >
+                    Снять выбор
+                  </Button>
+                </Stack>
+              )}
               <DataGrid<BookingListItem>
                 rows={rows}
                 columns={columns}
@@ -973,6 +1180,10 @@ const BookingsPage: React.FC = () => {
                 pageSizeOptions={[PAGE_SIZE]}
                 disableColumnMenu
                 disableRowSelectionOnClick
+                checkboxSelection={canManage}
+                isRowSelectable={(p) => p.row.status === "pending"}
+                rowSelectionModel={selectedIds}
+                onRowSelectionModelChange={(model) => setSelectedIds(model as number[])}
                 /* Не density="comfortable": тема зажимает .MuiDataGrid-columnHeaders
                    до headerRowHeight (52px), а comfortable раздувает ячейки шапки до
                    72px — они закрашивали верх первой строки. Высоты задаём явно. */
@@ -983,6 +1194,8 @@ const BookingsPage: React.FC = () => {
                 slots={{ noRowsOverlay: NoRowsOverlay }}
                 localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
                 sx={(t) => ({
+                  flex: 1,
+                  minHeight: 0,
                   bgcolor: "background.paper",
                   borderRadius: "14px",
                   "& .MuiDataGrid-row": { cursor: "pointer" },

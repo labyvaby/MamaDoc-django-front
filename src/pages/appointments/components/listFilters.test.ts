@@ -2,12 +2,15 @@ import { describe, it, expect } from "vitest";
 import dayjs from "dayjs";
 
 import {
+  appointmentMoneyFlags,
   appointmentPriceChangeSummary,
   employeeMoneyTotals,
   firstFreeSlotInSegment,
   firstFreeSlotInSegmentFor,
   firstFreeSlotAtOrAfter,
   matchesAppointmentSearch,
+  matchesMoneyFlags,
+  priceOverrideDelta,
 } from "./listFilters";
 import type { DjangoAppointment } from "../../../api/appointments";
 
@@ -111,6 +114,111 @@ describe("appointmentPriceChangeSummary", () => {
 
   it("не ставит метку без истории изменения цены", () => {
     expect(appointmentPriceChangeSummary(appt({ priceOverrides: [] }))).toBeNull();
+  });
+});
+
+describe("ось цены: скидки и правки прайса", () => {
+  it("считает подорожание от цены до первой правки, а не от предыдущей", () => {
+    // Цену подняли 900 → 1200, потом опустили до 1100: относительно прайса это
+    // всё ещё дороже, хотя последняя правка была вниз.
+    const target = appt({
+      services: [line({ id: 5, quantity: 2 })],
+      priceOverrides: [
+        {
+          id: 1,
+          serviceLineId: 5,
+          oldUnitPrice: "900.00",
+          newUnitPrice: "1200.00",
+          changedAt: "2026-09-01T10:00:00Z",
+        },
+        {
+          id: 2,
+          serviceLineId: 5,
+          oldUnitPrice: "1200.00",
+          newUnitPrice: "1100.00",
+          changedAt: "2026-09-01T11:00:00Z",
+        },
+      ],
+    });
+
+    expect(priceOverrideDelta(target)).toBe(400); // (1100 − 900) × 2
+    expect(appointmentMoneyFlags(target)).toEqual(["price_up"]);
+  });
+
+  it("не считает приём подорожавшим, когда цену вернули к прайсу", () => {
+    const target = appt({
+      services: [line({ id: 5 })],
+      priceOverrides: [
+        {
+          id: 1,
+          serviceLineId: 5,
+          oldUnitPrice: "900.00",
+          newUnitPrice: "1200.00",
+          changedAt: "2026-09-01T10:00:00Z",
+        },
+        {
+          id: 2,
+          serviceLineId: 5,
+          oldUnitPrice: "1200.00",
+          newUnitPrice: "900.00",
+          changedAt: "2026-09-01T11:00:00Z",
+        },
+      ],
+    });
+
+    expect(priceOverrideDelta(target)).toBe(0);
+    expect(appointmentMoneyFlags(target)).toEqual([]);
+  });
+
+  it("ловит скидку по сумме на чеке, а не по статусу оплаты", () => {
+    // Скидку дали, но чек ещё не закрыли: статуса `discounted` нет, а скидка есть.
+    const target = appt({
+      totalAmount: "1000.00",
+      discountAmount: "300.00",
+      paymentStatus: "partial",
+    });
+
+    expect(appointmentMoneyFlags(target)).toEqual(["discount"]);
+    expect(matchesMoneyFlags(target, ["discount"])).toBe(true);
+    expect(matchesMoneyFlags(target, ["price_up"])).toBe(false);
+    // Пустой набор фильтров ничего не отсекает.
+    expect(matchesMoneyFlags(target, [])).toBe(true);
+  });
+
+  it("ставит оба флага, когда цену снизили и вдобавок дали скидку", () => {
+    const target = appt({
+      totalAmount: "800.00",
+      discountAmount: "100.00",
+      services: [line({ id: 9 })],
+      priceOverrides: [
+        {
+          id: 1,
+          serviceLineId: 9,
+          oldUnitPrice: "1000.00",
+          newUnitPrice: "800.00",
+          changedAt: "2026-09-01T10:00:00Z",
+        },
+      ],
+    });
+
+    expect(appointmentMoneyFlags(target)).toEqual(["discount", "price_down"]);
+  });
+
+  it("пропускает правки удалённых строк — их количество восстановить не из чего", () => {
+    const target = appt({
+      services: [line({ id: 1 })],
+      priceOverrides: [
+        {
+          id: 1,
+          serviceLineId: 42,
+          oldUnitPrice: "500.00",
+          newUnitPrice: "900.00",
+          changedAt: "2026-09-01T10:00:00Z",
+        },
+      ],
+    });
+
+    expect(priceOverrideDelta(target)).toBe(0);
   });
 });
 
