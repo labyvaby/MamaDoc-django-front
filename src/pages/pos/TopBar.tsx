@@ -6,16 +6,19 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
-import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import ShoppingCartOutlined from "@mui/icons-material/ShoppingCartOutlined";
 
 import { POS_LAYOUT, POS_RADIUS, posColors } from "./layout";
 
 type Props = {
+  canSell?: boolean;
+  canHold?: boolean;
+  onScan?: () => void;
   search: string;
   onSearchChange: (value: string) => void;
-  cashierDesk: string;
-  cashierName: string;
+  /** Kept for compatibility with the legacy mock POS page. */
+  cashierDesk?: string;
+  cashierName?: string;
   onNewReceipt: () => void;
   onOpenHeldReceipts: () => void;
 };
@@ -46,8 +49,8 @@ const TopBarButton: React.FC<{ label: string; onClick: () => void }> = ({ label,
   );
 };
 
-/** Верхняя полоса кассы: корзина, поиск товара, действия с чеком, кассир. */
-export const PosTopBar: React.FC<Props> = ({ search, onSearchChange, cashierDesk, cashierName, onNewReceipt, onOpenHeldReceipts }) => {
+/** Верхняя полоса кассы: корзина, поиск товара и действия с чеком. */
+export const PosTopBar: React.FC<Props> = ({ search, onSearchChange, onNewReceipt, onOpenHeldReceipts, canSell = false, canHold = false, onScan }) => {
   const theme = useTheme();
   const c = posColors(theme);
 
@@ -80,7 +83,7 @@ export const PosTopBar: React.FC<Props> = ({ search, onSearchChange, cashierDesk
           >
             <ShoppingCartOutlined sx={{ fontSize: 16, color: c.accentText }} />
           </Box>
-          <Typography sx={{ fontSize: 18, fontWeight: 700, color: c.text }}>Касса</Typography>
+          <Typography sx={{ fontSize: 18, fontWeight: 700, color: c.text }}>Касса магазина</Typography>
         </Stack>
 
         <Box
@@ -101,6 +104,7 @@ export const PosTopBar: React.FC<Props> = ({ search, onSearchChange, cashierDesk
           <InputBase
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); onScan?.(); } }}
             placeholder="Поиск по названию, артикулу или штрихкоду"
             sx={{
               flex: 1,
@@ -128,16 +132,8 @@ export const PosTopBar: React.FC<Props> = ({ search, onSearchChange, cashierDesk
       </Stack>
 
       <Stack direction="row" alignItems="center" gap="16px" sx={{ flexShrink: 0 }}>
-        <TopBarButton label="Новый чек" onClick={onNewReceipt} />
-        <TopBarButton label="Отложенные чеки" onClick={onOpenHeldReceipts} />
-        <Box sx={{ width: "1px", height: 34, bgcolor: c.outline }} />
-        <Stack direction="row" alignItems="center" gap="10px">
-          <Stack gap="2px" alignItems="flex-end">
-            <Typography sx={{ fontSize: 12, lineHeight: 1.2, color: c.textDim }}>{cashierDesk}</Typography>
-            <Typography sx={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2, color: c.textSoft }}>{cashierName}</Typography>
-          </Stack>
-          <ChevronRightOutlined sx={{ fontSize: 18, color: c.textDim }} />
-        </Stack>
+        {canSell && <TopBarButton label="Новый чек" onClick={onNewReceipt} />}
+        {canHold && <TopBarButton label="Отложенные чеки" onClick={onOpenHeldReceipts} />}
       </Stack>
     </Box>
   );

@@ -20,6 +20,7 @@ import type { PosReceiptLine } from "./types";
 import { PosAmount, PosColorDot, PosThumb } from "./ui";
 
 type Props = {
+  readOnly?: boolean;
   line: PosReceiptLine;
   onChangeColor: (colorId: string) => void;
   onChangeSize: (sizeId: string) => void;
@@ -54,7 +55,7 @@ const RemovedBadge: React.FC = () => {
 };
 
 /** Строка чека: товар, варианты, количество, цена и сумма. */
-export const PosReceiptRow: React.FC<Props> = ({ line, onChangeColor, onChangeSize, onChangeQuantity, onRemove, onRestore }) => {
+export const PosReceiptRow: React.FC<Props> = ({ line, onChangeColor, onChangeSize, onChangeQuantity, onRemove, onRestore, readOnly = false }) => {
   const theme = useTheme();
   const c = posColors(theme);
   const [colorAnchor, setColorAnchor] = React.useState<HTMLElement | null>(null);
@@ -74,10 +75,11 @@ export const PosReceiptRow: React.FC<Props> = ({ line, onChangeColor, onChangeSi
         justifyContent: "space-between",
         borderBottom: `1px solid ${c.hairline}`,
         opacity: dimmed ? 0.55 : 1,
+        '& button': { pointerEvents: readOnly ? 'none' : undefined, opacity: readOnly ? 0.65 : 1 },
       }}
     >
       <Stack direction="row" alignItems="center" gap="12px" sx={{ minWidth: 0, flex: 1 }}>
-        <PosThumb />
+        <PosThumb src={line.imageUrl} />
         <Stack gap="4px" sx={{ minWidth: 0 }}>
           <Stack direction="row" alignItems="center" gap="6px">
             <Typography
@@ -173,7 +175,7 @@ export const PosReceiptRow: React.FC<Props> = ({ line, onChangeColor, onChangeSi
               textDecoration: dimmed ? "line-through" : "none",
             }}
           >
-            <PosAmount value={line.price * line.quantity} />
+            <PosAmount value={line.total ?? line.price * line.quantity} />
           </Typography>
         </PosColumn>
 

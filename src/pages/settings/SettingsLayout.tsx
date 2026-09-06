@@ -79,6 +79,7 @@ type TabDef = {
 
 /** Labels come from t(`layout.tabs.${key}`) — see useVisibleSettingsTabs. */
 const TAB_DEFS: TabDef[] = [
+  { key: "posModule", to: "/settings/pos-module", icon: <ReceiptLongOutlined fontSize="small" />, group: "operations" },
   {
     key: "productAttributes",
     to: "/settings/product-attributes",

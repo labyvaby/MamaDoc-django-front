@@ -16,6 +16,8 @@ export type PosSizeOption = {
 
 /** Строка чека. */
 export type PosReceiptLine = {
+  total?: number;
+  imageUrl?: string | null;
   id: string;
   name: string;
   /** Бренд — бейдж рядом с названием, есть не у всех позиций. */
@@ -34,6 +36,8 @@ export type PosReceiptLine = {
 
 /** Карточка товара в полосе выбранной категории. */
 export type PosCatalogItem = {
+  imageUrl?: string | null;
+  stock?: number;
   id: string;
   name: string;
   brand?: string;

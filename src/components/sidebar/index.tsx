@@ -854,7 +854,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Товары */}
         {show("storage") && can_.pos && (
-          <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса магазина" collapsed={siderCollapsed} />
         )}
 
         {show("storage") && can_.products && (
@@ -902,7 +902,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Касса */}
         {show("management") && can_.cashbox && (
-          <SidebarMenuItem to="/cashbox" icon={<AccountBalanceWalletOutlined />} label="Касса" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/cashbox" icon={<AccountBalanceWalletOutlined />} label="Касса / финансы" collapsed={siderCollapsed} />
         )}
 
         {/* Нагрузка */}

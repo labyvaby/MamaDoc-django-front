@@ -12,6 +12,7 @@
       "operations": "Операционные"
     },
     "tabs": {
+      "posModule": "Касса магазина",
       "organization": "Организация",
       "branches": "{{branch.nomPl, capitalize}}",
       "roles": "Роли",

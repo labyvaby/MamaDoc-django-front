@@ -6,4 +6,4 @@
  * чеке стоит знак «с» — как и на витрине (`src/pages/public-booking`).
  */
 export const formatPosAmount = (value: number): string =>
-  new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(value).replace(/\s/g, " ");
+  new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(value).replace(/\s/g, " ");

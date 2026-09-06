@@ -1,1 +1,1 @@
-export { default } from "./PosPage";
+export { default } from "./LivePosPage";

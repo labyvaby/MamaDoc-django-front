@@ -36,7 +36,8 @@ export const PosAmount: React.FC<{
  * Миниатюра товара. Фотографий у моков нет — на их месте плитка с иконкой
  * снимка: так пустое место читается как «фото не загружено», а не как контрол.
  */
-export const PosThumb: React.FC<{ size?: number; radius?: number; sx?: React.ComponentProps<typeof Box>["sx"] }> = ({
+export const PosThumb: React.FC<{ src?: string | null; size?: number; radius?: number; sx?: React.ComponentProps<typeof Box>["sx"] }> = ({
+  src,
   size = 35,
   radius = POS_RADIUS.chip,
   sx,
@@ -57,7 +58,7 @@ export const PosThumb: React.FC<{ size?: number; radius?: number; sx?: React.Com
         ...sx,
       }}
     >
-      <ImageOutlined sx={{ fontSize: Math.round(size * 0.5), color: c.textDim, opacity: 0.6 }} />
+      {src ? <Box component="img" src={src} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} /> : <ImageOutlined sx={{ fontSize: Math.round(size * 0.5), color: c.textDim, opacity: 0.6 }} />}
     </Box>
   );
 };

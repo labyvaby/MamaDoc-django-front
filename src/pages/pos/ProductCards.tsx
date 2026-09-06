@@ -13,6 +13,7 @@ import type { PosCatalogItem } from "./types";
 import { PosAmount, PosColorDot } from "./ui";
 
 type Props = {
+  disabled?: boolean;
   items: PosCatalogItem[];
   onAdd: (item: PosCatalogItem) => void;
 };
@@ -87,7 +88,7 @@ export const PosSizeChip: React.FC<{ label: string; selected?: boolean; availabl
 };
 
 /** Полоса карточек товаров выбранной категории — над чеком. */
-export const PosProductCards: React.FC<Props> = ({ items, onAdd }) => {
+export const PosProductCards: React.FC<Props> = ({ items, onAdd, disabled = false }) => {
   const theme = useTheme();
   const c = posColors(theme);
 
@@ -108,6 +109,7 @@ export const PosProductCards: React.FC<Props> = ({ items, onAdd }) => {
         <ButtonBase
           key={item.id}
           onClick={() => onAdd(item)}
+          disabled={disabled || item.stock === 0}
           sx={{
             width: POS_LAYOUT.productCardWidth,
             flexShrink: 0,
@@ -134,7 +136,7 @@ export const PosProductCards: React.FC<Props> = ({ items, onAdd }) => {
               placeItems: "center",
             }}
           >
-            <ImageOutlined sx={{ fontSize: 28, color: c.textDim, opacity: 0.6 }} />
+            {item.imageUrl ? <Box component="img" src={item.imageUrl} alt="" sx={{ width: 78, height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} /> : <ImageOutlined sx={{ fontSize: 28, color: c.textDim, opacity: 0.6 }} />}
           </Box>
 
           <Stack gap="8px" sx={{ flex: 1, minWidth: 0 }}>
@@ -145,6 +147,7 @@ export const PosProductCards: React.FC<Props> = ({ items, onAdd }) => {
               {item.brand ? <PosBrandBadge brand={item.brand} /> : null}
               <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: c.text }}>
                 <PosAmount value={item.price} />
+                {item.stock !== undefined && <Typography component="span" fontSize={11} color="text.secondary"> · {item.stock} шт.</Typography>}
               </Typography>
             </Stack>
 

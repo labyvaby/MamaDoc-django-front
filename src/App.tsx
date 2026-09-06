@@ -119,6 +119,7 @@ const OrganizationSettingsPage = lazy(() => import("./pages/settings/Organizatio
 const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSettingsPage"));
 const SiteSettingsPage = lazy(() => import("./pages/settings/SiteSettingsPage"));
 const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"));
+const PosModuleSettingsPage = lazy(() => import("./pages/settings/PosModuleSettingsPage"));
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
 const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
@@ -134,7 +135,7 @@ const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module =>
 const ProfilePage = lazy(() => import("./pages/profile"));
 const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPage"));
 // Касса (POS) — полноэкранный модуль: собственная шапка вместо общей, поэтому
-// живёт в отдельной ветке layout (см. ниже renderNoHeader).
+// живёт в отдельной ветке layout.
 const PosPage = lazy(() => import("./pages/pos"));
 
 
@@ -204,9 +205,8 @@ const DjangoContextRemount = ({ children }: { children: ReactNode }) => {
 // теряется позиция скролла (выбрасывает наверх при выборе пункта снизу).
 const renderHeader = () => <Header sticky />;
 const renderSider = () => <Sidebar />;
-// Касса рисует свою шапку (поиск товара, кассир, действия с чеком) — общая
-// шапка приложения там лишняя и съедала бы 64px рабочей области.
-const renderNoHeader = () => null;
+// POS использует общую шапку приложения, включая стандартный блок профиля
+// справа. Своя шапка POS остаётся только для поиска товара и операций с чеком.
 
 function App() {
   const theme = useTheme();
@@ -472,12 +472,12 @@ function App() {
                           <RequireAuth>
                             <MobileSidebarProvider>
                               <ThemedLayout
-                                Header={renderNoHeader}
+                                Header={renderHeader}
                                 Sider={renderSider}
                                 childrenBoxProps={{
                                   sx: {
                                     p: 0,
-                                    height: { xs: "100dvh", md: "100vh" },
+                                    height: { xs: "calc(100dvh - 56px)", md: "calc(100vh - 64px)" },
                                     overflow: "hidden",
                                     position: "relative",
                                   },
@@ -834,6 +834,7 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            <Route path="settings/pos-module" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.posModule}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
                             <Route
                               path="settings/branches"
                               element={

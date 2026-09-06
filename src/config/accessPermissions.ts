@@ -56,6 +56,7 @@ export const PAGE_PERMISSIONS = {
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {
+  posModule: "tenancy.modules.view",
   organization: "organization.view",
   branches: "branches.view",
   // Сайт-визитку настраивает тот же, кто правит организацию: конструктор

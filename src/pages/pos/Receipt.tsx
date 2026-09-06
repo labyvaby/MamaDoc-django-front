@@ -11,6 +11,8 @@ import { PosReceiptRow } from "./ReceiptRow";
 import type { PosReceiptLine } from "./types";
 
 type Props = {
+  canHold?: boolean;
+  readOnly?: boolean;
   number: string;
   lines: PosReceiptLine[];
   onChangeColor: (lineId: string, colorId: string) => void;
@@ -42,6 +44,8 @@ export const PosReceipt: React.FC<Props> = ({
   onRestoreLine,
   onHold,
   onCancel,
+  canHold = false,
+  readOnly = false,
 }) => {
   const theme = useTheme();
   const c = posColors(theme);
@@ -61,6 +65,7 @@ export const PosReceipt: React.FC<Props> = ({
           ) : null}
           <ButtonBase
             onClick={onHold}
+            disabled={!canHold}
             sx={{
               px: "12px",
               py: "8px",
@@ -114,6 +119,7 @@ export const PosReceipt: React.FC<Props> = ({
           <PosReceiptRow
             key={line.id}
             line={line}
+            readOnly={readOnly}
             onChangeColor={(colorId) => onChangeColor(line.id, colorId)}
             onChangeSize={(sizeId) => onChangeSize(line.id, sizeId)}
             onChangeQuantity={(quantity) => onChangeQuantity(line.id, quantity)}

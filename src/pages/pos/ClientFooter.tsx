@@ -11,6 +11,8 @@ import type { PosClient, PosClientSearchResult } from "./types";
 import { formatPosAmount } from "./format";
 
 type Props = {
+  canRegister?: boolean;
+  canHistory?: boolean;
   client: PosClient | null;
   query: string;
   onQueryChange: (value: string) => void;
@@ -201,6 +203,8 @@ export const PosClientFooter: React.FC<Props> = ({
   onRegister,
   onChangeClient,
   onOpenHistory,
+  canRegister = false,
+  canHistory = false,
 }) => {
   const theme = useTheme();
   const c = posColors(theme);
@@ -260,14 +264,14 @@ export const PosClientFooter: React.FC<Props> = ({
 
             <Box sx={{ height: "1px", bgcolor: c.outline }} />
 
-            <Stack direction="row" alignItems="center" gap="11px">
+            {client.nextTier && <Stack direction="row" alignItems="center" gap="11px">
               <Box sx={{ flex: 1, height: 4, borderRadius: `${POS_RADIUS.pill}px`, bgcolor: c.card, overflow: "hidden" }}>
                 <Box sx={{ width: `${Math.round(client.tierProgress * 100)}%`, height: "100%", bgcolor: c.accent }} />
               </Box>
               <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim, whiteSpace: "nowrap" }}>
                 до «{client.nextTier}» {formatPosAmount(client.nextTierAmount)} с
               </Typography>
-            </Stack>
+            </Stack>}
           </Stack>
 
           <Box sx={{ width: "1px", alignSelf: "stretch", bgcolor: c.outline }} />
@@ -275,12 +279,11 @@ export const PosClientFooter: React.FC<Props> = ({
           <Stack direction="row" alignItems="center" gap="24px">
             <ClientMetric label="Скидка" value={`${client.discountPercent}%`} />
             <ClientMetric label="Бонусы" value={`${formatPosAmount(client.bonuses)} сом`} />
-            <ClientMetric label="Кешбэк" value={`${formatPosAmount(client.cashback)} сом`} />
           </Stack>
         </Stack>
 
         <Stack direction="row" alignItems="center" gap="6px" sx={{ flexShrink: 0 }}>
-          <FooterButton label="История покупок" onClick={onOpenHistory} />
+          {canHistory && <FooterButton label="История покупок" onClick={onOpenHistory} />}
           <FooterButton label="Сменить клиента" onClick={onChangeClient} muted />
         </Stack>
       </Box>
@@ -326,7 +329,7 @@ export const PosClientFooter: React.FC<Props> = ({
 
       <Box sx={{ height: "1px", bgcolor: c.outline }} />
 
-      {notFound ? (
+      {notFound && canRegister ? (
         <RegisterClient phone={query} onRegister={onRegister} />
       ) : (
         <Stack gap="8px">
