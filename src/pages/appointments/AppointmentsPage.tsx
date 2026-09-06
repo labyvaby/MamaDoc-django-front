@@ -316,6 +316,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setStatusFilter,
     paymentFilter,
     setPaymentFilter,
+    moneyFlagFilter,
+    setMoneyFlagFilter,
+    reasonFilter,
+    setReasonFilter,
     resetChipFilters,
   } = useReceptionFilters();
 
@@ -1228,6 +1232,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               onStatusFilterChange={setStatusFilter}
               paymentFilter={paymentFilter}
               onPaymentFilterChange={setPaymentFilter}
+              moneyFlagFilter={moneyFlagFilter}
+              onMoneyFlagFilterChange={setMoneyFlagFilter}
+              reasonFilter={reasonFilter}
+              onReasonFilterChange={setReasonFilter}
               onResetChipFilters={resetChipFilters}
               showPaymentFilter
               showGroupTotals
@@ -1293,6 +1301,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               >
                 <DjangoConclusionSlotsPanel
                   appointmentId={selectedAppt.id}
+                  branchId={selectedAppt.branchId}
                   onClose={() => setConclusionOpen(false)}
                 />
               </Card>
@@ -1331,6 +1340,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               <Box sx={{ flex: "1 1 50%", minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                 <DjangoConclusionSlotsPanel
                   appointmentId={selectedAppt.id}
+                  branchId={selectedAppt.branchId}
                   onClose={() => setConclusionOpen(false)}
                 />
               </Box>
@@ -1397,6 +1407,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                 >
                   <DjangoConclusionSlotsPanel
                     appointmentId={slotAppt.id}
+                    branchId={slotAppt.branchId}
                     onClose={() => setConclusionOpen(false)}
                   />
                 </Box>

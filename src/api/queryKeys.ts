@@ -358,8 +358,13 @@ export const djangoQueryKeys = {
   },
 
   conclusionForms: {
-    list: (organizationId: number | null | undefined) =>
-      ["django", "conclusion-forms", organizationId ?? null] as const,
+    // Филиал — часть ключа: бэк режет выдачу по нему (бланки филиала + общие),
+    // и список филиала A не должен подставляться в филиале B.
+    list: (
+      organizationId: number | null | undefined,
+      branchId?: number | null,
+    ) =>
+      ["django", "conclusion-forms", organizationId ?? null, branchId ?? null] as const,
   },
 
   scheduling: {
@@ -367,6 +372,9 @@ export const djangoQueryKeys = {
       ["django", "scheduling", "rules", params] as const,
     exceptions: (params: Record<string, unknown>) =>
       ["django", "scheduling", "exceptions", params] as const,
+    /** Приёмы, попадающие под отсутствие сотрудника (exceptions/conflicts/). */
+    conflicts: (params: Record<string, unknown>) =>
+      ["django", "scheduling", "exceptions", "conflicts", params] as const,
     availability: (params: Record<string, unknown>) =>
       ["django", "scheduling", "availability", params] as const,
     availabilitySummary: (params: Record<string, unknown>) =>

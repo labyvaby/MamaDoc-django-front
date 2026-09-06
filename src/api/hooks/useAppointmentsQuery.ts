@@ -8,7 +8,8 @@ export function useAppointmentsList(
     dateFrom?: string;
     dateTo?: string;
     date?: string;
-    status?: string;
+    /** Список статусов уходит через запятую — см. getAppointments. */
+    status?: string | string[];
     search?: string;
     employeeId?: number | "me";
     patientId?: number;

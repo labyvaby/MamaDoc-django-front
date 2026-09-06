@@ -65,6 +65,11 @@ export interface ScheduleException {
   startTime: string | null;
   endTime: string | null;
   comment: string;
+  /**
+   * Общий идентификатор пачки, созданной одним `POST exceptions/period/`.
+   * У точечного исключения — `null`; на окружении без выкладки поля нет вовсе.
+   */
+  groupId?: string | null;
 }
 
 export interface ScheduleExceptionWrite {
@@ -338,6 +343,110 @@ export function updateScheduleException(
 
 export function deleteScheduleException(exceptionId: number): Promise<void> {
   return apiRequest<void>(`/scheduling/exceptions/${exceptionId}/`, { method: "DELETE" });
+}
+
+// ── Исключение графика периодом ──────────────────────────────────────────────
+
+/**
+ * Отпуск/больничный одним запросом. Бэк разворачивает период в N однодневных
+ * исключений с общим `groupUuid` — выборка доступности ищет по конкретной дате.
+ * Создание атомарное: либо все дни, либо ни одного. Потолок — 366 дней.
+ */
+export interface ScheduleExceptionPeriodWrite {
+  employeeId: number;
+  dateFrom: string; // YYYY-MM-DD
+  dateTo: string;
+  kind: ScheduleExceptionKind;
+  /** Не передан — исключение «в любом филиале». */
+  branchId?: number | null;
+  comment?: string;
+  organizationId?: number | null;
+}
+
+export interface ScheduleExceptionPeriodResult {
+  groupId: string;
+  count: number;
+  items: ScheduleException[];
+}
+
+export function createScheduleExceptionPeriod(
+  payload: ScheduleExceptionPeriodWrite,
+): Promise<ScheduleExceptionPeriodResult> {
+  return apiRequest<ScheduleExceptionPeriodResult>("/scheduling/exceptions/period/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+/** Снимает всю пачку целиком — по `groupId` из ответа создания или из GET. */
+export function deleteScheduleExceptionPeriod(groupId: string): Promise<void> {
+  return apiRequest<void>(`/scheduling/exceptions/period/${groupId}/`, {
+    method: "DELETE",
+  });
+}
+
+// ── Конфликты отсутствия ─────────────────────────────────────────────────────
+
+/**
+ * Приём, попадающий под отсутствие сотрудника.
+ *
+ * Это НЕ объект приёма из `/appointments/`: ручка отдаёт свою плоскую сводку
+ * (пациент строкой, услуги — массивом названий) — проверено живым запросом на
+ * test 03.09.2026. Всё, что нужно экрану разбора, здесь есть; за деталями
+ * приёма ходить в `/appointments/<id>/`.
+ */
+export interface ScheduleConflictAppointment {
+  id: number;
+  startsAt: string;
+  endsAt: string;
+  /** Только незакрытые: `scheduled` | `confirmed` | `arrived`. */
+  status: string;
+  branchId: number | null;
+  branchName: string | null;
+  patientId: number | null;
+  patientName: string;
+  patientPhone: string;
+  /** Названия услуг приёма, без цен и исполнителей. */
+  services: string[];
+  /** decimal-строка; > 0 — по приёму уже есть деньги (предоплата). */
+  paidTotal: string;
+  /** true — отсутствующий «врач приёма», false — исполнитель одной из строк. */
+  isPerformerPrimary: boolean;
+}
+
+/** Ответ ручки — объект-обёртка с эхом параметров запроса. */
+export interface ScheduleConflictsResponse {
+  employeeId: number;
+  dateFrom: string;
+  dateTo: string;
+  appointments: ScheduleConflictAppointment[];
+}
+
+/**
+ * Приёмы сотрудника за период в статусах `scheduled`, `confirmed`, `arrived`.
+ *
+ * Скоуп — все филиалы, доступные вызывающему, а не активный филиал сессии:
+ * исключение ставится на один филиал, а предупреждать надо пациентов всех
+ * (ответ бэка §8). Право — `appointments.view`.
+ */
+export function getScheduleConflicts(
+  params: {
+    employeeId: number;
+    dateFrom: string;
+    dateTo: string;
+    organizationId?: number | null;
+  },
+  signal?: AbortSignal,
+): Promise<ScheduleConflictAppointment[]> {
+  const q = new URLSearchParams();
+  q.set("employeeId", String(params.employeeId));
+  q.set("dateFrom", params.dateFrom);
+  q.set("dateTo", params.dateTo);
+  if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
+  return apiRequest<ScheduleConflictsResponse>(
+    `/scheduling/exceptions/conflicts/?${q.toString()}`,
+    { signal },
+  ).then((data) => (Array.isArray(data?.appointments) ? data.appointments : []));
 }
 
 export function getAvailability(

@@ -3,13 +3,14 @@ import React from "react";
 import {
   getOrganizationProfessionals,
   getOrganizationServices,
+  getOrganizationReviews,
   getProfessionalReviews,
   idOrSlugRef,
+  type OrganizationReview,
   type ProfessionalPreview,
-  type ProfessionalReview,
   type PublicService,
 } from "../../api/publicBooking";
-import { isAbortError } from "../../api/client";
+import { ApiError, isAbortError } from "../../api/client";
 import { useBookingOrgSlug } from "../public-booking/orgSlug";
 import { parseLandingConfig, readLandingPreview, type LandingConfig } from "./landingConfig";
 import { useBookingOrg, type BookingOrg } from "../public-booking/useBookingOrg";
@@ -24,16 +25,6 @@ import { useBookingOrg, type BookingOrg } from "../public-booking/useBookingOrg"
 export const SPECIALISTS_PREVIEW = 8;
 export const SERVICES_PREVIEW = 9;
 export const REVIEWS_PREVIEW = 6;
-
-/**
- * Сколько специалистов опрашиваем ради блока отзывов. Публичной ручки «отзывы
- * организации» в контракте нет — только `/professionals/<id>/reviews/`, поэтому
- * лента склеивается из отзывов первых специалистов списка (бэк сортирует его по
- * загруженности, то есть сверху те, к кому реально ходят). Ограничение — чтобы
- * первый экран не тянул за собой десяток запросов; агрегированная ручка
- * заказана тикетом `MamaDoc/backend_ticket_public_landing.md` §3.
- */
-const REVIEW_SOURCE_LIMIT = 5;
 
 export interface LandingData {
   org: BookingOrg;
@@ -85,61 +76,71 @@ export function useLandingData(): LandingData {
   return { org, services, specialists, loaded };
 }
 
-/** Отзыв в ленте лендинга: к тексту добавляем, к кому ходили. */
-export interface LandingReview extends ProfessionalReview {
+/**
+ * Отзыв в ленте лендинга: к тексту добавляем, к кому ходили.
+ *
+ * Специалиста бэк отдаёт объектом (или `null`, если его удалили) — в карточке
+ * же нужны готовые строки, поэтому раскладываем их здесь.
+ */
+export interface LandingReview extends OrganizationReview {
   specialistName: string;
   specialistSlug: string;
 }
 
 /**
- * Отзывы для блока «Отзывы». Грузятся отдельным хуком и только когда блок
- * действительно показывается (`enabled`): это несколько запросов, и вешать их
- * на первый экран, который пациент часто закрывает на кнопке «Записаться»,
- * незачем.
+ * Отзывы для блока «Отзывы» — одной организационной ручкой.
+ *
+ * Раньше лента склеивалась из отзывов первых специалистов списка: несколько
+ * запросов на первый экран и заведомо неполная выборка (отзыв о враче, не
+ * попавшем в топ, на сайт не приходил). С 03.09.2026 есть
+ * `/organizations/<slug>/reviews/` — она отдаёт опубликованные отзывы всей
+ * организации, свежие сверху.
+ *
+ * Грузим только когда блок действительно показывается (`enabled`): первый
+ * экран пациент часто закрывает кнопкой «Записаться», не долистав до отзывов.
  */
 export function useLandingReviews(
   specialists: ProfessionalPreview[],
   enabled: boolean,
 ): { reviews: LandingReview[]; loading: boolean } {
+  const orgSlug = useBookingOrgSlug();
   const [reviews, setReviews] = React.useState<LandingReview[]>([]);
   const [loading, setLoading] = React.useState(false);
 
-  // Ключ по составу источников: список специалистов пересоздаётся при каждом
-  // рендере родителя, и без него эффект зацикливался бы на самом себе.
+  // Ключ по составу источников фолбэка: список специалистов пересоздаётся при
+  // каждом рендере родителя, и без него эффект зацикливался бы на самом себе.
   const sources = specialists.slice(0, REVIEW_SOURCE_LIMIT);
   const sourcesKey = sources.map((s) => s.id).join(",");
 
   React.useEffect(() => {
-    if (!enabled || !sourcesKey) {
+    if (!enabled) {
       setReviews([]);
       return;
     }
     const controller = new AbortController();
     setLoading(true);
 
-    Promise.all(
-      sources.map((specialist) =>
-        getProfessionalReviews(idOrSlugRef(specialist), { limit: 5 }, controller.signal)
-          .then((r) =>
-            r.items.map<LandingReview>((review) => ({
-              ...review,
-              specialistName: specialist.fullName,
-              specialistSlug: String(idOrSlugRef(specialist)),
-            })),
-          )
-          .catch((e) => {
-            if (isAbortError(e)) throw e;
-            return [] as LandingReview[];
-          }),
-      ),
-    )
-      .then((lists) => {
-        const merged = lists
-          .flat()
-          // Свежие сверху: у разных специалистов отзывы приходят своими лентами.
-          .sort((a, b) => b.date.localeCompare(a.date))
-          .slice(0, REVIEWS_PREVIEW);
-        setReviews(merged);
+    getOrganizationReviews(orgSlug, { limit: REVIEWS_PREVIEW }, controller.signal)
+      .then((r) =>
+        r.items.map<LandingReview>((review) => ({
+          ...review,
+          specialistName: review.professional?.fullName ?? "",
+          specialistSlug: review.professional?.slug ?? "",
+        })),
+      )
+      .catch((e) => {
+        if (isAbortError(e)) throw e;
+        // Ручки ещё нет на этом стенде (на проде 404 на 03.09.2026) — берём
+        // отзывы по врачам, как делали до неё.
+        if (e instanceof ApiError && e.status === 404) {
+          return legacyReviewsByProfessionals(sources, controller.signal);
+        }
+        // Отзывы — украшение страницы: их отсутствие не повод показывать
+        // гостю ошибку, блок просто останется пустым.
+        return [] as LandingReview[];
+      })
+      .then((items) => {
+        setReviews(items);
         setLoading(false);
       })
       .catch(() => {
@@ -148,9 +149,52 @@ export function useLandingReviews(
 
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, sourcesKey]);
+  }, [enabled, orgSlug, sourcesKey]);
 
   return { reviews, loading };
+}
+
+/**
+ * Сколько специалистов опрашиваем в фолбэке. Полноценной заменой он не был
+ * никогда: отзыв о враче, не попавшем в первые строки списка, на сайт не
+ * приходил, — поэтому ограничение и стоит.
+ */
+const REVIEW_SOURCE_LIMIT = 5;
+
+/**
+ * Лента отзывов по первым специалистам — как собиралась до появления
+ * организационной ручки. ⚠ Временный код: удалить, когда
+ * `/organizations/<slug>/reviews/` будет на всех стендах (на тесте — с
+ * 03.09.2026, на проде ещё 404).
+ */
+function legacyReviewsByProfessionals(
+  sources: ProfessionalPreview[],
+  signal: AbortSignal,
+): Promise<LandingReview[]> {
+  if (sources.length === 0) return Promise.resolve([]);
+  return Promise.all(
+    sources.map((specialist) =>
+      getProfessionalReviews(idOrSlugRef(specialist), { limit: 5 }, signal)
+        .then((r) =>
+          r.items.map<LandingReview>((review) => ({
+            ...review,
+            professional: null,
+            specialistName: specialist.fullName,
+            specialistSlug: String(idOrSlugRef(specialist)),
+          })),
+        )
+        .catch((e) => {
+          if (isAbortError(e)) throw e;
+          return [] as LandingReview[];
+        }),
+    ),
+  ).then((lists) =>
+    lists
+      .flat()
+      // Свежие сверху: у разных специалистов отзывы приходят своими лентами.
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, REVIEWS_PREVIEW),
+  );
 }
 
 /**

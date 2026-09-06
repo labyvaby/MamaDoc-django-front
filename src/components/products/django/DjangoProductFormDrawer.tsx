@@ -37,10 +37,17 @@ const MotionStack = motion(Stack);
 const MotionBox = motion(Box);
 type Values = { name: string; barcode: string; unit: string; description: string; comment: string; isForSale: boolean; isInfusion: boolean; isVaccine: boolean; price: number };
 const blank: Values = { name: "", barcode: "", unit: "шт", description: "", comment: "", isForSale: true, isInfusion: false, isVaccine: false, price: 0 };
-type Props = { open: boolean; onClose: () => void; product: DjangoProduct | null; onSaved?: () => void };
+type Props = {
+    open: boolean;
+    onClose: () => void;
+    product: DjangoProduct | null;
+    onSaved?: () => void;
+    /** Штрихкод, пробитый сканером на инвентаризации — подставляем в новый товар. */
+    initialBarcode?: string;
+};
 
 /** A category owns the form schema. The product drawer only renders that schema. */
-export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, product, onSaved }) => {
+export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, product, onSaved, initialBarcode }) => {
     const { open: notify } = useNotification();
     const orgId = useApiOrgId();
     const { enabledModules, activeOrganization } = usePermissions();
@@ -82,12 +89,12 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
 
     React.useEffect(() => {
         if (!open) return;
-        setValues(product ? { name: product.name, barcode: product.barcode, unit: product.unit || "шт", description: product.description, comment: product.comment, isForSale: product.isForSale, isInfusion: product.isInfusion, isVaccine: canUseVaccines && product.isVaccine, price: product.price } : blank);
+        setValues(product ? { name: product.name, barcode: product.barcode, unit: product.unit || "шт", description: product.description, comment: product.comment, isForSale: product.isForSale, isInfusion: product.isInfusion, isVaccine: canUseVaccines && product.isVaccine, price: product.price } : { ...blank, barcode: initialBarcode?.trim() ?? "" });
         setCategoryId(product?.categoryId ?? null);
         setFieldValues(Object.fromEntries((product?.attributes ?? []).filter((item) => item.role === "generic").map((item) => [item.attributeId, item.valueId])));
         setColors([]); setSizes([]); setSkuPrefix(""); setPhoto(null); setPhotoUrl(null); setBusy(false); form.reset(); void loadSchema();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, product, canUseVaccines, loadSchema]);
+    }, [open, product, canUseVaccines, loadSchema, initialBarcode]);
     React.useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
 
     const set = (patch: Partial<Values>) => setValues((current) => ({ ...current, ...patch }));

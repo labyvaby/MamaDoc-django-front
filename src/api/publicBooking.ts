@@ -244,20 +244,18 @@ export interface OrganizationDetail extends OrganizationPreview {
   phones: string[];
   /**
    * Вертикаль бизнеса — от неё зависит терминология публичных страниц
-   * («врач» в клинике, «мастер» в салоне). В контракте §2 поля нет, тикет —
-   * `MamaDoc/backend_ticket_public_landing.md` §1. Пока не отдаётся, публичные
-   * страницы говорят терминами клиники (DEFAULT_VERTICAL).
+   * («врач» в клинике, «мастер» в салоне). Отдаётся с 03.09.2026; пустое или
+   * незнакомое значение читаем как клинику (DEFAULT_VERTICAL).
    */
   vertical?: string | null;
   /**
    * Оформление лендинга `/site`, которое владелец задал в CRM (слоган, «о нас»,
-   * соцсети, набор блоков). Хранится на бэке как есть — свободный JSON внутри
-   * `themeConfig.landing` организации, и сюда попадает без разбора полей.
+   * соцсети, набор блоков). Бэк отдаёт `themeConfig.landing` организации как
+   * есть, без разбора полей; остальной themeConfig публично не отдаётся.
    *
    * Форму значения проверяет фронт (`parseLandingConfig`): это пользовательский
-   * ввод из CRM, а не контракт. Поля бэк не отдаёт до тикета
-   * `MamaDoc/backend_ticket_public_landing.md` §2 — до тех пор гость видит
-   * лендинг, целиком собранный из данных CRM.
+   * ввод из CRM, а не контракт. Отсутствие или `null` — штатный случай:
+   * лендинг собирается целиком из данных CRM.
    */
   landing?: unknown;
 }
@@ -374,6 +372,15 @@ export interface ProfessionalReview {
   comment: string;
   /** ISO с таймзоной, напр. "2026-07-20T14:30:00+06:00". */
   date: string;
+}
+
+/**
+ * Отзыв в общей ленте организации. От отзыва о враче отличается только тем,
+ * что несёт самого специалиста: лента смешанная, и «к кому ходили» — часть
+ * содержания. `null` — специалист удалён или отзыв к нему не привязан.
+ */
+export interface OrganizationReview extends ProfessionalReview {
+  professional: { id: number; slug: string; fullName: string } | null;
 }
 
 // ── Доступность (§4) ──────────────────────────────────────────────────────────
@@ -578,6 +585,29 @@ export function getOrganizationServices(
   signal?: AbortSignal,
 ): Promise<PublicList<PublicService>> {
   return getList<PublicService>(`/organizations/${idOrSlug}/services/`, signal);
+}
+
+/**
+ * GET `/api/v1/organizations/<slug>/reviews/` — опубликованные отзывы всей
+ * организации, одной лентой и с пагинацией.
+ *
+ * До неё лендинг склеивал ленту из отзывов первых специалистов списка: это
+ * несколько запросов на первый экран и заведомо неполная выборка — отзыв о
+ * враче, который в тот день не попал в топ, на сайт не приходил.
+ *
+ * Контактные данные пациента и его юридическое имя бэк не отдаёт (только
+ * `patientName`), `professional` может быть `null` — специалиста удалили или
+ * отзыв к нему не привязан.
+ */
+export function getOrganizationReviews(
+  idOrSlug: IdOrSlug,
+  params: PublicPageParams = {},
+  signal?: AbortSignal,
+): Promise<PublicList<OrganizationReview>> {
+  return getList<OrganizationReview>(
+    `/organizations/${idOrSlug}/reviews/${buildQuery({ ...params })}`,
+    signal,
+  );
 }
 
 export function getOrganizationProfessionals(
