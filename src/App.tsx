@@ -105,6 +105,7 @@ const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsP
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
 const PublicBookMyBookingsPage = lazy(() => import("./pages/public-booking/MyBookingsPage"));
 const PublicBookByCodePage = lazy(() => import("./pages/public-booking/BookingByCodePage"));
+const PublicBookPaymentResultPage = lazy(() => import("./pages/public-booking/PaymentResultPage"));
 const PublicLandingPage = lazy(() => import("./pages/public-site"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
@@ -1253,6 +1254,17 @@ function App() {
                           element={
                             <Suspense fallback={<LinearProgress />}>
                               <PublicBookByCodePage />
+                            </Suspense>
+                          }
+                        />
+                        {/* Возврат с Paylink Бакай Банка — фиксированный адрес,
+                            заданный на бэке, своего экрана не имеет, сразу
+                            уводит на карточку брони по коду. */}
+                        <Route
+                          path="book/payment/result"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <PublicBookPaymentResultPage />
                             </Suspense>
                           }
                         />
