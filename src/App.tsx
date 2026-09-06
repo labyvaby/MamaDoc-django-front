@@ -112,6 +112,7 @@ const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSetti
 const ConclusionFormsSettingsPage = lazy(() => import("./pages/settings/ConclusionFormsSettingsPage"));
 const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
 const PatientsPage = lazy(() => import("./pages/patients"));
+const ClientsPage = lazy(() => import("./pages/clients"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
@@ -336,6 +337,11 @@ function App() {
                         name: "patients",
                         list: "/patients",
                         meta: { label: tt("patients:list.title") }
+                      },
+                      {
+                        name: "clients",
+                        list: "/clients",
+                        meta: { label: "Клиенты" }
                       },
                       {
                         name: "employees",
@@ -587,6 +593,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.patients}>
                               <Suspense fallback={<LinearProgress />}>
                                 <PatientsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="clients"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.clients}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <ClientsPage />
                               </Suspense>
                             </RequirePermission>
                           }

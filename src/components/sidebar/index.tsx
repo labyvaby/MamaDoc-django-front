@@ -415,6 +415,7 @@ const SidebarSecondary: React.FC = () => {
     // ОРГАНИЗАЦИЯ
     employees: can(PAGE_PERMISSIONS.employees),
     patients: !isRetail && can(PAGE_PERMISSIONS.patients),
+    clients: isRetail && can(PAGE_PERMISSIONS.clients),
     vaccinations: !isRetail && can(PAGE_PERMISSIONS.vaccinations),
     // Исторические реестры — только суперадмин (19.08.2026), права нет намеренно.
     allAppointments: !isRetail && isSuper && can(PAGE_PERMISSIONS.appointments),
@@ -824,6 +825,16 @@ const SidebarSecondary: React.FC = () => {
             to="/patients"
             icon={<SearchOutlined />}
             label={t("allPatients")}
+            collapsed={siderCollapsed}
+          />
+        )}
+
+        {/* Все клиенты retail-организации */}
+        {show("org") && can_.clients && (
+          <SidebarMenuItem
+            to="/clients"
+            icon={<SearchOutlined />}
+            label="Клиенты"
             collapsed={siderCollapsed}
           />
         )}
