@@ -3,7 +3,6 @@ import { Box, LinearProgress, Stack, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
-import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 
 import { AppButton, PageHeader } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -13,10 +12,7 @@ import {
   fetchChatwootSession,
 } from "../../api/chatwoot";
 import { ChatsUnavailable } from "./ChatsUnavailable";
-import {
-  useChatwootLoginFailed,
-  useChatwootTabLock,
-} from "./useChatwootSession";
+import { useChatwootLoginFailed } from "./useChatwootSession";
 
 /**
  * Раздел «Чаты» — дашборд Чат-центра внутри CRM.
@@ -31,11 +27,14 @@ import {
  * завершиться, одноразовый токен сгорает впустую и Chatwoot показывает форму
  * пароля (проверено на стенде 28.08.2026).
  *
- * Ссылку берём РОВНО ОДИН РАЗ на каждое открытие раздела. Chatwoot хранит
- * `sso_auth_token` по одному на пользователя, и каждая новая выдача затирает
- * предыдущую: если запросить ссылку второй раз, пока iframe грузится с первой,
- * та превращается в тыкву — `POST /auth/sign_in` отвечает 401, и вместо
- * дашборда появляется форма пароля.
+ * Ссылку берём РОВНО ОДИН РАЗ на каждое открытие раздела. Токен одноразовый:
+ * он гасится при использовании и живёт пять минут, поэтому повторно отправить
+ * уже потраченный — значит получить 401 и форму пароля вместо дашборда.
+ *
+ * (Токены одного пользователя при этом СОСУЩЕСТВУЮТ: ключ в Redis у Chatwoot
+ * составной, `user_id` плюс сам токен. Новая выдача предыдущую не гасит — это
+ * проверено опытом. Поэтому две вкладки друг другу не мешают, и замка на них
+ * нет.)
  *
  * Отсюда два предохранителя, и убирать их нельзя:
  *
@@ -45,12 +44,8 @@ import {
  * 2. первый успешный `url` замораживается в состоянии, поэтому никакой
  *    повторный рендер уже не подменит `src` у живого iframe.
  *
- * Ту же гонку умеют устраивать две вкладки CRM, и там предохранители не
- * помогают — токен один на пользователя, а вкладки друг о друге не знают. За
- * это отвечает `useChatwootTabLock`: раздел живёт ровно в одной вкладке,
- * остальные предлагают перехватить. Если вход всё-таки сорвался, Chatwoot
- * сообщает об этом сам (`useChatwootLoginFailed`), и мы показываем повтор
- * вместо чужой формы пароля.
+ * Если вход всё-таки сорвался, Chatwoot сообщает об этом сам
+ * (`useChatwootLoginFailed`), и мы показываем повтор вместо чужой формы пароля.
  *
  * ВХОД ЛЕНИВЫЙ. Сессия Чат-центра живёт в браузере сама, поэтому сначала ведём
  * iframe прямо на дашборд (`/chatwoot/session/` — ссылка без секретов). Токен
@@ -74,39 +69,12 @@ const ChatsRecovery: React.FC<{ onRetry: () => void }> = ({ onRetry }) => (
     <Typography
       sx={{ color: "text.secondary", textAlign: "center", maxWidth: 460 }}
     >
-      Так бывает, если раздел открывали в другой вкладке или на другом
-      устройстве — Чат-центр разрешает только один вход за раз. Нажмите
-      «Войти заново», и всё откроется.
+      Ссылка для входа действует пять минут и только один раз — если вкладка
+      висела открытой, она успевает устареть. Нажмите «Войти заново», и всё
+      откроется.
     </Typography>
     <AppButton variant="contained" startIcon={<RefreshOutlined />} onClick={onRetry}>
       Войти заново
-    </AppButton>
-  </Stack>
-);
-
-/** Раздел уже занят другой вкладкой — предлагаем перенести его сюда. */
-const ChatsInAnotherTab: React.FC<{ onTakeOver: () => void }> = ({
-  onTakeOver,
-}) => (
-  <Stack
-    spacing={2}
-    sx={{ height: "100%", alignItems: "center", justifyContent: "center", px: 2 }}
-  >
-    <Typography variant="h6" sx={{ fontWeight: 700, textAlign: "center" }}>
-      Чаты открыты в другой вкладке
-    </Typography>
-    <Typography
-      sx={{ color: "text.secondary", textAlign: "center", maxWidth: 460 }}
-    >
-      Чат-центр держит один вход на сотрудника, поэтому две вкладки мешали бы
-      друг другу. Продолжите там — или перенесите чаты сюда.
-    </Typography>
-    <AppButton
-      variant="outlined"
-      startIcon={<OpenInNewOutlined />}
-      onClick={onTakeOver}
-    >
-      Открыть здесь
     </AppButton>
   </Stack>
 );
@@ -115,9 +83,6 @@ const FRAME_HEIGHT = { xs: "80vh", md: "calc(100vh - 96px)" } as const;
 
 export const ChatsPage: React.FC = () => {
   usePageTitle("Чаты");
-
-  const { role, takeOver } = useChatwootTabLock();
-  const isOwner = role === "owner";
 
   // `attempt` меняется только при осознанном повторе: он и сбрасывает
   // замороженную ссылку, и пересоздаёт iframe (через key), чтобы Chatwoot начал
@@ -128,7 +93,6 @@ export const ChatsPage: React.FC = () => {
   const sessionQuery = useQuery({
     queryKey: ["chatwoot", "session", attempt],
     queryFn: fetchChatwootSession,
-    enabled: isOwner,
     staleTime: Infinity,
     gcTime: 0,
     retry: false,
@@ -144,7 +108,7 @@ export const ChatsPage: React.FC = () => {
   const { data, isPending, error } = useQuery({
     queryKey: ["chatwoot", "embed", attempt],
     queryFn: fetchChatwootEmbed,
-    enabled: isOwner && needsLogin,
+    enabled: needsLogin,
     // См. предохранитель №1 в шапке файла.
     staleTime: Infinity,
     gcTime: 0,
@@ -171,14 +135,6 @@ export const ChatsPage: React.FC = () => {
   const iframeUrl = frozenUrl ?? sessionQuery.data?.dashboardUrl ?? null;
 
   useChatwootLoginFailed(iframeUrl, () => setLoginFailed(true));
-
-  if (!isOwner) {
-    return (
-      <Box sx={{ height: FRAME_HEIGHT }}>
-        <ChatsInAnotherTab onTakeOver={takeOver} />
-      </Box>
-    );
-  }
 
   // Экран повтора нужен, только когда и ссылка входа не спасла: сам по себе
   // сорвавшийся вход мы сначала пробуем починить, выписав её.

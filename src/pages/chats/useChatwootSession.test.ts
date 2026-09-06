@@ -4,56 +4,12 @@ import {
   CHATWOOT_LOGIN_REQUIRED,
   chatwootOrigin,
   isLoginRequiredMessage,
-  reduceLock,
-  type LockMessage,
 } from "./useChatwootSession";
 
 /**
- * Обе защиты существуют ради одного: Чат-центр держит один токен входа на
- * сотрудника, поэтому вторая вкладка гасит первую.
+ * Сорвавшийся вход виден только по сообщению от самого Чат-центра: содержимое
+ * чужого iframe браузер читать не даёт.
  */
-
-const ME = "me";
-const OTHER = "other";
-
-describe("reduceLock — какая вкладка держит раздел", () => {
-  it("вторая вкладка уступает, получив «занято»", () => {
-    const next = reduceLock("owner", { type: "busy", id: OTHER }, ME);
-
-    expect(next.role).toBe("standby");
-  });
-
-  it("владелец отвечает «занято» на чужую заявку и остаётся владельцем", () => {
-    const next = reduceLock("owner", { type: "claim", id: OTHER }, ME);
-
-    expect(next.role).toBe("owner");
-    expect(next.reply).toEqual({ type: "busy", id: ME });
-  });
-
-  it("ожидающая вкладка на чужую заявку не отвечает — раздел не её", () => {
-    const next = reduceLock("standby", { type: "claim", id: OTHER }, ME);
-
-    expect(next).toEqual({ role: "standby" });
-  });
-
-  it("уход владельца отдаёт раздел ожидающему", () => {
-    const next = reduceLock("standby", { type: "release", id: OTHER }, ME);
-
-    expect(next.role).toBe("owner");
-  });
-
-  it("чужой release владельца не трогает", () => {
-    const next = reduceLock("owner", { type: "release", id: OTHER }, ME);
-
-    expect(next.role).toBe("owner");
-  });
-
-  it("собственное эхо игнорируется — иначе вкладка уступит сама себе", () => {
-    const own: LockMessage = { type: "busy", id: ME };
-
-    expect(reduceLock("owner", own, ME)).toEqual({ role: "owner" });
-  });
-});
 
 describe("isLoginRequiredMessage — сорвавшийся вход", () => {
   const CHAT = "https://chat.operator.kg";
