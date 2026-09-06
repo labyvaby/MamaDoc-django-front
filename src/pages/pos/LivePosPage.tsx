@@ -8,11 +8,9 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControlLabel,
   LinearProgress,
   MenuItem,
   Stack,
-  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -167,13 +165,6 @@ export default function LivePosPage() {
   const attempt = React.useRef({ fingerprint: "", key: "" });
   const [error, setError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState<PosSavedReceipt | null>(null);
-  const [rulesOpen, setRulesOpen] = React.useState(false);
-  const [ruleDraft, setRuleDraft] = React.useState<
-    Record<string, boolean | number>
-  >({});
-  const [ruleLabels, setRuleLabels] = React.useState<Record<string, string>>(
-    {}
-  );
   const [returnTarget, setReturnTarget] =
     React.useState<PosSavedReceipt | null>(null);
   const [reason, setReason] = React.useState("");
@@ -470,13 +461,13 @@ export default function LivePosPage() {
       }
       if (event.key === "F5") {
         event.preventDefault();
-        if (actions.sell && quote && !busy && !list && !rulesOpen)
+        if (actions.sell && quote && !busy && !list)
           setCheckoutOpen(true);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [actions.sell, quote, busy, list, rulesOpen]);
+  }, [actions.sell, quote, busy, list]);
 
   if (!ready)
     return (
@@ -603,24 +594,6 @@ export default function LivePosPage() {
             }}
           >
             История чеков
-          </Button>
-        )}
-        {auth.canAccess?.("pos.manage") && (
-          <Button
-            size="small"
-            onClick={() =>
-              void act(async () => {
-                const result = await posRequest<{
-                  rules: typeof ruleDraft;
-                  labels: typeof ruleLabels;
-                }>(scope, "rules/");
-                setRuleDraft(result.rules);
-                setRuleLabels(result.labels);
-                setRulesOpen(true);
-              })
-            }
-          >
-            Правила кассы
           </Button>
         )}
       </Stack>
@@ -1008,87 +981,6 @@ export default function LivePosPage() {
             <Button onClick={() => window.print()}>Печать</Button>
           )}
           <Button onClick={() => setSaved(null)}>Закрыть</Button>
-        </DialogActions>
-      </Dialog>
-      <Dialog
-        open={rulesOpen}
-        onClose={() => setRulesOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Правила кассы · {data.organization.name}</DialogTitle>
-        <DialogContent>
-          <Stack gap={1.5}>
-            <Alert severity="info">
-              Действие доступно сотруднику, только если включено здесь и
-              разрешено в его роли. Модуль POS включается отдельно для
-              организации.
-            </Alert>
-            {Object.entries(ruleDraft).map(([key, value]) =>
-              typeof value === "boolean" ? (
-                <FormControlLabel
-                  key={key}
-                  control={
-                    <Switch
-                      checked={value}
-                      onChange={(_, checked) =>
-                        setRuleDraft((previous) => ({
-                          ...previous,
-                          [key]: checked,
-                        }))
-                      }
-                    />
-                  }
-                  label={
-                    ruleLabels[key] ??
-                    (key === "require_shift" ? "Требовать открытую смену" : key)
-                  }
-                />
-              ) : (
-                <TextField
-                  key={key}
-                  type="number"
-                  label={
-                    key === "reservation_hours"
-                      ? "Срок резерва, часов"
-                      : "Максимальная ручная скидка, %"
-                  }
-                  value={value}
-                  onChange={(event) =>
-                    setRuleDraft((previous) => ({
-                      ...previous,
-                      [key]: Number(event.target.value),
-                    }))
-                  }
-                />
-              )
-            )}
-            {auth.canAccess?.("rbac.roles.view") && (
-              <Button component={Link} to="/settings/roles">
-                Настроить роли и права сотрудников
-              </Button>
-            )}
-            {error && <Alert severity="error">{error}</Alert>}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRulesOpen(false)}>Закрыть</Button>
-          <Button
-            variant="contained"
-            disabled={pending}
-            onClick={() =>
-              void act(async () => {
-                await posRequest(scope, "rules/", {
-                  method: "PATCH",
-                  body: { rules: ruleDraft },
-                });
-                setRulesOpen(false);
-                invalidate();
-              })
-            }
-          >
-            Сохранить
-          </Button>
         </DialogActions>
       </Dialog>
       <Dialog
