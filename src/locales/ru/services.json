@@ -56,7 +56,11 @@
     "sectionPerformersCount": "Кто оказывает · {{count}}",
     "hiddenOnline": "Не в онлайн-записи",
     "priceOverrideChip": "Цену можно менять",
-    "priceOverrideHint": "{{specialist.nom, capitalize}} может изменить цену этой {{service.gen}} — до принятия оплаты"
+    "priceOverrideHint": "{{specialist.nom, capitalize}} может изменить цену этой {{service.gen}} — до принятия оплаты",
+    "priceHistoryShow": "История изменения цены",
+    "priceHistoryHide": "Скрыть историю цен",
+    "priceHistoryLoading": "Загрузка…",
+    "priceHistoryEmpty": "История цен пуста."
   },
   "performers": {
     "noSpecialization": "Без специализации",

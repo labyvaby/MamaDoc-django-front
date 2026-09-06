@@ -94,6 +94,25 @@ export const SERVICE_RELATED_PRODUCTS_MULTI_ENABLED = true;
 /** Максимум товаров в составе услуги — лимит бэка (400 при превышении). */
 export const SERVICE_RELATED_PRODUCTS_MAX = 20;
 
+/**
+ * История изменения цены услуги (заказчик 07.09.2026, по аналогии с историей
+ * цены товара — `getProductPriceHistory` в `api/warehouse.ts`, эндпоинт
+ * `/warehouse/products/{id}/price-history/`). На каталоге услуг такого
+ * эндпоинта на бэке нет — тикет `MamaDoc/backend_ticket_service_price_history.md`.
+ *
+ * ⚠ Не включать до ответа бэка: `/catalog/services/{id}/price-history/` ниже —
+ * предположение фронта по аналогии с товаром, не подтверждённый контракт.
+ */
+export const SERVICE_PRICE_HISTORY_ENABLED = false;
+
+/** Запись истории изменения цены услуги. */
+export interface ServicePriceHistoryEntry {
+  /** Новая стоимость услуги, сом. */
+  price: number;
+  changedByName: string | null;
+  changedAt: string;
+}
+
 export interface RelatedProductRef {
   id: number;
   name: string;
@@ -433,4 +452,28 @@ export async function deleteServiceImage(id: number): Promise<void> {
   await apiRequest<void>(`/catalog/services/${id}/image/`, {
     method: "DELETE",
   });
+}
+
+// ── Price history ────────────────────────────────────────────────────────────
+
+type RawServicePriceHistoryEntry = Omit<ServicePriceHistoryEntry, "price"> & {
+  price: string;
+};
+
+/**
+ * История изменения цены услуги (самые новые сверху). См. флаг
+ * `SERVICE_PRICE_HISTORY_ENABLED` — включать только после ответа бэка.
+ */
+export async function getServicePriceHistory(
+  serviceId: number,
+  signal?: AbortSignal,
+): Promise<ServicePriceHistoryEntry[]> {
+  const rows = await apiRequest<RawServicePriceHistoryEntry[]>(
+    `/catalog/services/${serviceId}/price-history/`,
+    { signal },
+  );
+  return rows.map((r) => ({
+    ...r,
+    price: parseFloat(r.price) || 0,
+  }));
 }

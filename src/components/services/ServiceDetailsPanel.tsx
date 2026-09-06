@@ -12,8 +12,13 @@ import {
   CardContent,
   IconButton,
   Tooltip,
+  Paper,
+  Button,
+  Collapse,
 } from "@mui/material";
+import dayjs from "dayjs";
 import { alpha } from "@mui/material/styles";
+import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import MedicalServicesIcon from "@mui/icons-material/MedicalServicesOutlined";
 import PaymentsOutlinedIcon from "@mui/icons-material/PaymentsOutlined";
 import AccessTimeIcon from "@mui/icons-material/AccessTimeOutlined";
@@ -33,13 +38,15 @@ import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined
 import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
 import {
   getService,
+  getServicePriceHistory,
   SERVICE_CATEGORIES_ENABLED,
   SERVICE_CATEGORY_LABELS,
   SERVICE_ONLINE_VISIBILITY_ENABLED,
+  SERVICE_PRICE_HISTORY_ENABLED,
   SERVICE_RELATED_PRODUCT_ENABLED,
   SERVICE_RELATED_PRODUCTS_MULTI_ENABLED,
 } from "../../api/catalog";
-import type { Service } from "../../api/catalog";
+import type { Service, ServicePriceHistoryEntry } from "../../api/catalog";
 import { formatKGS, formatQuantity } from "../../utility/format";
 import { AppButton, InfoTile } from "../ui";
 import { subtleBg } from "../../theme/uiHelpers";
@@ -142,6 +149,34 @@ const ServiceDetailsPanel: React.FC<Props> = ({
       active = false;
     };
   }, [serviceId, refreshToken]);
+
+  // История изменения цены — ленивая подгрузка при раскрытии секции.
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [historyLoading, setHistoryLoading] = React.useState(false);
+  const [priceHistory, setPriceHistory] = React.useState<ServicePriceHistoryEntry[]>([]);
+
+  React.useEffect(() => {
+    setHistoryOpen(false);
+    setPriceHistory([]);
+  }, [serviceId]);
+
+  React.useEffect(() => {
+    if (!SERVICE_PRICE_HISTORY_ENABLED || !historyOpen || !service) return;
+    const controller = new AbortController();
+    setHistoryLoading(true);
+    getServicePriceHistory(service.id, controller.signal)
+      .then((rows) => {
+        if (!controller.signal.aborted) setPriceHistory(rows);
+      })
+      .catch((e) => {
+        if (controller.signal.aborted || e?.name === "AbortError") return;
+        console.error("Failed to load service price history:", e);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setHistoryLoading(false);
+      });
+    return () => controller.abort();
+  }, [historyOpen, service]);
 
   // Сколько платные позиции состава добавят к цене услуги в приёме.
   const billableExtra = React.useMemo(
@@ -475,6 +510,79 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                   </Typography>
                 </Stack>
               )}
+              {SERVICE_PRICE_HISTORY_ENABLED && (
+                <Box sx={{ mt: 1.25 }}>
+                  <Button
+                    size="small"
+                    startIcon={<HistoryOutlinedIcon fontSize="small" />}
+                    onClick={() => setHistoryOpen((v) => !v)}
+                    sx={{
+                      textTransform: "none",
+                      px: 0,
+                      "&:hover": { bgcolor: "transparent", textDecoration: "underline" },
+                    }}
+                    disableRipple
+                  >
+                    {historyOpen ? t("details.priceHistoryHide") : t("details.priceHistoryShow")}
+                  </Button>
+                  <Collapse in={historyOpen}>
+                    <Paper
+                      elevation={0}
+                      sx={(th) => ({
+                        mt: 1,
+                        p: 1.5,
+                        borderRadius: "10px",
+                        border: 1,
+                        borderColor: "divider",
+                        bgcolor: subtleBg(th),
+                      })}
+                    >
+                      {historyLoading ? (
+                        <Typography variant="body2" color="text.secondary">
+                          {t("details.priceHistoryLoading")}
+                        </Typography>
+                      ) : priceHistory.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          {t("details.priceHistoryEmpty")}
+                        </Typography>
+                      ) : (
+                        <Stack divider={<Divider sx={{ borderStyle: "dashed" }} />} spacing={1}>
+                          {priceHistory.map((h, i) => (
+                            <Stack
+                              key={`${h.changedAt}-${i}`}
+                              direction="row"
+                              alignItems="center"
+                              justifyContent="space-between"
+                              spacing={1}
+                            >
+                              <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="body2" fontWeight={600}>
+                                  {formatKGS(h.price)}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  noWrap
+                                  display="block"
+                                >
+                                  {h.changedByName || "—"}
+                                </Typography>
+                              </Box>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ flexShrink: 0 }}
+                              >
+                                {dayjs(h.changedAt).format("DD.MM.YYYY HH:mm")}
+                              </Typography>
+                            </Stack>
+                          ))}
+                        </Stack>
+                      )}
+                    </Paper>
+                  </Collapse>
+                </Box>
+              )}
             </Box>
 
             {/* Филиалы */}
@@ -543,39 +651,74 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                       : t("details.sectionCompositionSingle")
                   }
                 />
-                <Box
-                  sx={{
-                    display: "grid",
-                    gap: 1.25,
-                    gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
-                  }}
-                >
+                <Stack spacing={1}>
                   {service.relatedProducts.map((p) => (
-                    <InfoTile
+                    <Paper
                       key={p.id}
-                      icon={<Inventory2OutlinedIcon />}
-                      label={
-                        SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
-                          ? `${p.name} × ${formatQuantity(p.quantity)}${p.unit ? ` ${p.unit}` : ""}`
-                          : p.name
-                      }
-                      // Остаток здесь — по всей организации: в справочнике услуги
-                      // филиала нет, склад филиала считается в приёме.
-                      value={[
-                        `${formatKGS(p.price)} · ${t("details.stock", { stock: formatQuantity(p.stock) })}`,
-                        ...(SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
-                          ? [
-                              p.billable
-                                ? t("details.extraToPrice", { amount: formatKGS(p.price * p.quantity) })
-                                : t("details.included"),
-                              ...(p.autoWriteOff ? [] : [t("details.noWriteOff")]),
-                            ]
-                          : []),
-                      ].join(" · ")}
-                      active
-                    />
+                      variant="outlined"
+                      sx={{ p: 1.25, pl: 1.5, borderRadius: 1.5, bgcolor: "background.paper" }}
+                    >
+                      <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                        <Avatar
+                          variant="rounded"
+                          sx={{
+                            width: 32,
+                            height: 32,
+                            bgcolor: "action.selected",
+                            color: "text.secondary",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Inventory2OutlinedIcon sx={{ fontSize: 18 }} />
+                        </Avatar>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600}>
+                            {SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
+                              ? `${p.name} × ${formatQuantity(p.quantity)}${p.unit ? ` ${p.unit}` : ""}`
+                              : p.name}
+                          </Typography>
+                          {/* Остаток здесь — по всей организации: в справочнике услуги
+                              филиала нет, склад филиала считается в приёме. */}
+                          <Typography variant="caption" color="text.secondary">
+                            {formatKGS(p.price)} · {t("details.stock", { stock: formatQuantity(p.stock) })}
+                          </Typography>
+
+                          {SERVICE_RELATED_PRODUCTS_MULTI_ENABLED && (
+                            <Stack
+                              direction="row"
+                              spacing={0.75}
+                              flexWrap="wrap"
+                              useFlexGap
+                              sx={{ mt: 0.75 }}
+                            >
+                              <Chip
+                                label={
+                                  p.billable
+                                    ? t("details.extraToPrice", {
+                                        amount: formatKGS(p.price * p.quantity),
+                                      })
+                                    : t("details.included")
+                                }
+                                size="small"
+                                color={p.billable ? "primary" : "default"}
+                                variant={p.billable ? "filled" : "outlined"}
+                                sx={{ borderRadius: "7px" }}
+                              />
+                              {!p.autoWriteOff && (
+                                <Chip
+                                  label={t("details.noWriteOff")}
+                                  size="small"
+                                  variant="outlined"
+                                  sx={{ borderRadius: "7px" }}
+                                />
+                              )}
+                            </Stack>
+                          )}
+                        </Box>
+                      </Stack>
+                    </Paper>
                   ))}
-                </Box>
+                </Stack>
                 {billableExtra > 0 && (
                   <Stack
                     direction="row"
