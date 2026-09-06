@@ -75,6 +75,16 @@ export function busyIntervalsByEmployee(
       list.push(interval);
       byEmployee.set(id, list);
     }
+
+    // Старые приёмы могут хранить исполнителя только в legacy-поле самого
+    // приёма, без employee в строке услуги. Бэкенд учитывает оба варианта в
+    // режиме окон, поэтому список должен закрывать эту же занятость.
+    const legacyId = appt.employee?.id;
+    if (legacyId != null) {
+      const list = byEmployee.get(legacyId) ?? [];
+      list.push(interval);
+      byEmployee.set(legacyId, list);
+    }
   }
   return byEmployee;
 }

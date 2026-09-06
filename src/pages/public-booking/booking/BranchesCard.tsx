@@ -106,8 +106,10 @@ const BranchSchedule: React.FC<{ branch: ProfessionalScheduleBranch }> = ({ bran
     <Stack spacing={0.75} sx={{ mt: 0.75 }}>
       {branch.rules.map((rule) => (
         <Stack key={rule.id} direction="row" alignItems="center" spacing={0.75}>
-          <ScheduleOutlined sx={{ fontSize: 14, color: MUTED, flexShrink: 0 }} />
-          <Typography sx={{ fontSize: 12.5, lineHeight: 1.4 }}>
+          <ScheduleOutlined sx={{ fontSize: 14, color: "text.primary", flexShrink: 0 }} />
+          {/* График — не второстепенная подпись: пациент читает именно его,
+              решая, ехать ли. Приглушённым остаётся только перерыв. */}
+          <Typography sx={{ fontSize: 12.5, lineHeight: 1.4, color: "text.primary" }}>
             {ruleLabel(rule, t("branches.everyday"))}
             {lunchRange(rule) && (
               <Box component="span" sx={{ color: MUTED }}>

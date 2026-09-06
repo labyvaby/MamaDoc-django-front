@@ -6,6 +6,7 @@ import {
   employeeMoneyTotals,
   firstFreeSlotInSegment,
   firstFreeSlotInSegmentFor,
+  firstFreeSlotAtOrAfter,
   matchesAppointmentSearch,
 } from "./listFilters";
 import type { DjangoAppointment } from "../../../api/appointments";
@@ -338,9 +339,43 @@ describe("firstFreeSlotInSegmentFor", () => {
     expect(slot).toBeNull();
   });
 
+  it("не считает свободным слот, который пересекается с приёмом внутри", () => {
+    const slot = firstFreeSlotInSegmentFor(day, shift, [
+      { start: ms("09:15"), end: ms("09:45") },
+    ]);
+
+    expect(slot?.format("HH:mm")).toBe("10:00");
+  });
+
+  it("не отдаёт неполный получасовой слот в конце смены", () => {
+    expect(
+      firstFreeSlotInSegmentFor(day, { start: "09:00", end: "09:15" }, []),
+    ).toBeNull();
+  });
+
   it("без занятости ведёт себя как обычный поиск окна", () => {
     expect(firstFreeSlotInSegmentFor(day, shift, [])?.format("HH:mm")).toBe(
       firstFreeSlotInSegment(day, shift)?.format("HH:mm"),
     );
+  });
+});
+
+describe("firstFreeSlotAtOrAfter", () => {
+  const day = dayjs("2099-08-19T00:00:00");
+  const ms = (hhmm: string) => dayjs(`2099-08-19T${hhmm}:00`).valueOf();
+
+  it("привязывает разрыв к началу смены, а не к концу приёма", () => {
+    const slot = firstFreeSlotAtOrAfter(
+      day,
+      { start: "09:00", end: "13:00" },
+      [
+        { start: ms("09:00"), end: ms("09:40") },
+        { start: ms("10:20"), end: ms("10:50") },
+      ],
+      dayjs("2099-08-19T09:40"),
+      dayjs("2099-08-19T10:20"),
+    );
+
+    expect(slot).toBeNull();
   });
 });

@@ -182,13 +182,14 @@ interface DocRailListProps {
   /** Окна специальности ещё грузятся — показываем спиннер, а не пустоту. */
   loading: boolean;
   onSelect: (employeeId: number | null) => void;
+  onSearch?: (fullName: string) => void;
 }
 
 /**
  * Раскрывающийся список врачей группы в левом рельсе. Выбор врача — это фильтр
  * сетки, а не отдельный экран: клик по активному врачу снимает фильтр.
  */
-const DocRailList: React.FC<DocRailListProps> = ({ docs, selectedId, loading, onSelect }) => {
+const DocRailList: React.FC<DocRailListProps> = ({ docs, selectedId, loading, onSelect, onSearch }) => {
   const { t } = useT("appointments");
 
   return (
@@ -215,7 +216,11 @@ const DocRailList: React.FC<DocRailListProps> = ({ docs, selectedId, loading, on
               spacing={1}
               onClick={(e) => {
                 e.stopPropagation();
-                onSelect(isDocActive ? null : emp.employeeId);
+                if (onSearch) {
+                  onSearch(emp.fullName);
+                } else {
+                  onSelect(isDocActive ? null : emp.employeeId);
+                }
               }}
               sx={(tokens) => ({
                 py: 0.75,
@@ -599,6 +604,12 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const isFinePointer = useMediaQuery("(pointer: fine)");
   const [selDocId, setSelDocId] = React.useState<number | null>(null);
   const [selDay, setSelDay] = React.useState<string | null>(null);
+  const searchByDoctor = React.useCallback((fullName: string) => {
+    setSearch(fullName);
+    // Поиск — единственный способ сузить врача в режиме окон. Не оставляем
+    // параллельно старый rail-фильтр, чтобы очистка строки возвращала всех.
+    setSelDocId(null);
+  }, []);
   // Позволяет свернуть раскрытый список врачей под активной специальностью.
   // При первом открытии остаёмся на «Все специалисты», но список врачей свёрнут.
   const [collapsedGroup, setCollapsedGroup] = React.useState<number | "all" | null>("all");
@@ -612,6 +623,16 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
 
   // Перетаскивание мышкой для горизонтального скролла сетки врачей (drag-to-scroll)
   const matrixScrollRef = React.useRef<HTMLDivElement>(null);
+  // Запоминаем не индекс, а id врача: состав колонок меняется при выборе
+  // другой даты, поэтому индекс на новой дате уже может указывать на другого
+  // человека.
+  const activeEmployeeIdsRef = React.useRef<number[]>([]);
+  const focusedEmployeeIdRef = React.useRef<number | null>(null);
+  const matrixScrollLeftRef = React.useRef(0);
+  const focusContextRef = React.useRef<{ specId: number | null; search: string }>({
+    specId: null,
+    search: "",
+  });
   // Какая колонка врача сейчас перед глазами: на телефоне колонка занимает всю
   // ширину, поэтому индекс = позиция скролла / ширина контейнера. Нужен для
   // подсветки активного аватара в мобильной полосе врачей.
@@ -636,6 +657,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     const el = matrixScrollRef.current;
     if (!el || el.clientWidth === 0) return;
     const left = el.scrollLeft;
+    matrixScrollLeftRef.current = left;
     if (left === pagerLastLeftRef.current) {
       pagerStillFramesRef.current += 1;
       return;
@@ -648,6 +670,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     }
     const idx = Math.round(progress);
     setActiveDocIdx((prev) => (prev === idx ? prev : idx));
+
+    // На десктопе в окне видно несколько колонок, поэтому clientWidth — это
+    // не ширина врача. Берём ближайшую колонку по её реальной ширине.
+    const column = el.firstElementChild as HTMLElement | null;
+    const columnWidth = column?.getBoundingClientRect().width ?? 0;
+    const focusedIdx = columnWidth > 0 ? Math.round(left / columnWidth) : idx;
+    const focusedId = activeEmployeeIdsRef.current[focusedIdx] ?? null;
+    if (focusedId != null) focusedEmployeeIdRef.current = focusedId;
   }, []);
 
   // Событие scroll браузер отдаёт реже кадров (а на инерционном скролле ещё и с
@@ -682,8 +712,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const scrollToDoc = React.useCallback((idx: number) => {
     const el = matrixScrollRef.current;
     if (!el) return;
-    el.scrollTo({ left: idx * el.clientWidth, behavior: "smooth" });
-    setActiveDocIdx(idx);
+    const column = el.firstElementChild as HTMLElement | null;
+    const columnWidth = column?.getBoundingClientRect().width || el.clientWidth;
+    const safeIdx = Math.max(0, Math.min(idx, activeEmployeeIdsRef.current.length - 1));
+    focusedEmployeeIdRef.current = activeEmployeeIdsRef.current[safeIdx] ?? null;
+    const left = safeIdx * columnWidth;
+    matrixScrollLeftRef.current = left;
+    el.scrollTo({ left, behavior: "smooth" });
+    setActiveDocIdx(safeIdx);
   }, []);
 
   // Шапку можно тянуть пальцем так же, как сетку: карточка — вторая «ручка»
@@ -717,6 +753,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
       e.currentTarget.setPointerCapture(e.pointerId);
     }
     el.scrollLeft = drag.startLeft - dx;
+    matrixScrollLeftRef.current = el.scrollLeft;
   }, []);
 
   const handlePagerPointerUp = React.useCallback(() => {
@@ -754,6 +791,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
       isDragMovedRef.current = true;
     }
     container.scrollLeft = dragScrollLeft - walk;
+    matrixScrollLeftRef.current = container.scrollLeft;
   };
 
   const handleMouseUpOrLeave = () => {
@@ -1031,12 +1069,13 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
       }),
     [gridDocs, activeDayDate],
   );
+  activeEmployeeIdsRef.current = activeDocsOnDay.map(({ emp }) => emp.employeeId);
   /** Состав колонок дня — по нему сбрасываем пейджер, см. эффект ниже. */
   const activeDocsKey = activeDocsOnDay.map(({ emp }) => emp.employeeId).join(",");
 
-  // Смена дня, специальности или запроса пересобирает набор колонок —
-  // возвращаемся к первому врачу дня, а не остаёмся на прежней позиции: у
-  // другого дня и врачи другие, и «третий по счёту» — уже не тот человек.
+  // Смена дня пересобирает набор колонок. Возвращаемся к тому же врачу по id,
+  // если он есть на новой дате; если врача в этот день нет — к первому.
+  // Специальность и поиск начинают просмотр с первого совпадения.
   // Состав дня (activeDocsKey) в зависимостях нужен отдельно от selDay:
   // список может смениться и без смены дня (догрузился чанк, сняли фильтр),
   // а браузер сохраняет scrollLeft, и пейджер оставался на чужом индексе.
@@ -1045,10 +1084,34 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // старой позицией — шапка показывала первого врача, а под ней оставалась
   // колонка предыдущего.
   React.useLayoutEffect(() => {
-    setActiveDocIdx(0);
-    matrixScrollRef.current?.scrollTo({ left: 0 });
-    pagerLastLeftRef.current = 0;
-    if (pagerTrackRef.current) pagerTrackRef.current.style.transform = "translate3d(0, 0, 0)";
+    const contextChanged =
+      focusContextRef.current.specId !== specId || focusContextRef.current.search !== search;
+    const preferredId = contextChanged ? null : focusedEmployeeIdRef.current;
+    const preferredIdx = preferredId == null ? -1 : activeEmployeeIdsRef.current.indexOf(preferredId);
+    const nextIdx = preferredIdx >= 0 ? preferredIdx : 0;
+    const nextId = activeEmployeeIdsRef.current[nextIdx] ?? null;
+    focusedEmployeeIdRef.current = nextId;
+    focusContextRef.current = { specId, search };
+    setActiveDocIdx(nextIdx);
+
+    const el = matrixScrollRef.current;
+    const column = el?.firstElementChild as HTMLElement | null;
+    const columnWidth = column?.getBoundingClientRect().width ?? 0;
+    const maxLeft = el ? Math.max(0, el.scrollWidth - el.clientWidth) : 0;
+    const requestedLeft =
+      preferredIdx >= 0
+        ? nextIdx * columnWidth
+        : contextChanged
+          ? 0
+          : matrixScrollLeftRef.current;
+    const left = Math.min(Math.max(0, requestedLeft), maxLeft);
+    matrixScrollLeftRef.current = left;
+    el?.scrollTo({ left });
+    pagerLastLeftRef.current = left;
+    if (pagerTrackRef.current) {
+      const progress = el?.clientWidth ? left / el.clientWidth : 0;
+      pagerTrackRef.current.style.transform = `translate3d(${-progress * 100}%, 0, 0)`;
+    }
   }, [selDay, specId, search, activeDocsKey]);
 
   const selectedMonth = dayjs(selectedDay?.date ?? selectableDays[0]?.date ?? todayIso);
@@ -1467,6 +1530,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                         selectedId={selDocId}
                         loading={isAvailLoading}
                         onSelect={setSelDocId}
+                        onSearch={searchByDoctor}
                       />
                     </Collapse>
                   </React.Fragment>
@@ -1563,6 +1627,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           selectedId={selDocId}
                           loading={isAvailLoading}
                           onSelect={setSelDocId}
+                          onSearch={searchByDoctor}
                         />
                       </Collapse>
                     </React.Fragment>
@@ -1612,6 +1677,15 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                 startAdornment: (
                   <SearchOutlined sx={{ fontSize: 18, color: "text.disabled", mr: 0.75 }} />
                 ),
+                endAdornment: search ? (
+                  <IconButton
+                    size="small"
+                    aria-label={t("slots.searchClose")}
+                    onClick={() => setSearch("")}
+                  >
+                    <CloseOutlined sx={{ fontSize: 16 }} />
+                  </IconButton>
+                ) : undefined,
               }}
             />
             <Box>
@@ -1721,7 +1795,15 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       <Box
                         onClick={(e) => {
                           if (pagerDragMovedRef.current) return;
-                          setDocMenuAnchor(e.currentTarget);
+                          if (many) {
+                            setDocMenuAnchor(e.currentTarget);
+                          } else {
+                            const onlyDoc = activeDocsOnDay[0]?.emp;
+                            if (onlyDoc) {
+                              searchByDoctor(onlyDoc.fullName);
+                              setMobileSearchOpen(true);
+                            }
+                          }
                         }}
                         onPointerDown={handlePagerPointerDown}
                         onPointerMove={handlePagerPointerMove}
@@ -1932,7 +2014,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                               key={emp.employeeId}
                               selected={selected}
                               onClick={() => {
-                                scrollToDoc(idx);
+                                const doctor = activeDocsOnDay[idx]?.emp;
+                                if (doctor) {
+                                  searchByDoctor(doctor.fullName);
+                                  setMobileSearchOpen(true);
+                                }
                                 setDocMenuAnchor(null);
                               }}
                               sx={{ gap: 1.25, py: 1 }}
@@ -2102,7 +2188,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           borderBottom: "1px solid",
                           borderColor: "divider",
                           bgcolor: subtleBg(tokens),
+                          cursor: "pointer",
+                          "&:hover": { bgcolor: alpha(tokens.palette.primary.main, 0.08) },
                         })}
+                        onClick={() => searchByDoctor(emp.fullName)}
                       >
                         <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
                           <Box sx={{ position: "relative", flexShrink: 0 }}>

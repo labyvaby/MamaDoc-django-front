@@ -177,3 +177,45 @@ export function pickBranchWithSlots(
     .sort((a, b) => a.date.localeCompare(b.date));
   return candidates[0] ?? null;
 }
+
+/**
+ * Загружены ли календари всех филиалов врача.
+ *
+ * Без этой проверки выбор филиала по умолчанию превращался в гонку: эффект
+ * успевал отработать раньше загрузки календарей, у всех филиалов «окон нет», и
+ * дефолтом фиксировался домашний филиал — даже когда окна были в соседнем.
+ * Проявлялось через раз, зависело от того, чей ответ пришёл первым (прод,
+ * 02.09.2026: одна и та же карточка открывалась то на филиале с окнами, то на
+ * пустом).
+ */
+export function calendarsReady(
+  branches: ProfessionalScheduleBranch[],
+  calendarByBranch: Record<string, CalendarDay[]>,
+): boolean {
+  if (!branches.length) return false;
+  return branches.every((b) => calendarByBranch[String(b.id)] !== undefined);
+}
+
+/**
+ * Филиалы, которые показываем пациенту: где врач действительно принимает.
+ *
+ * Филиал без графика и без окон — шум: записаться туда нельзя, а строка
+ * «График не задан» выглядит как недоработка клиники. Филиал с графиком
+ * оставляем даже без свободных дней — там честно «нет свободного времени»
+ * (всё занято или период правила ещё не начался), это разные вещи.
+ *
+ * Если принимать негде вовсе, показываем один филиал — домашний: адрес и
+ * телефон пациенту всё равно нужны, а пустой блок выглядел бы сбоем.
+ */
+export function bookableBranches(
+  branches: ProfessionalScheduleBranch[],
+  nearestByBranch: Record<number, string | null>,
+  homeBranchId: number | null,
+): ProfessionalScheduleBranch[] {
+  const usable = branches.filter(
+    (b) => branchHasSchedule(b) || (nearestByBranch[b.id] ?? null) !== null,
+  );
+  if (usable.length) return usable;
+  const home = branches.find((b) => b.id === homeBranchId);
+  return home ? [home] : branches.slice(0, 1);
+}

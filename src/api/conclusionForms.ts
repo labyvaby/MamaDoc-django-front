@@ -49,6 +49,10 @@ export function sheetSizeMm(
  * Блоки, которые есть в любом бланке и которые нельзя удалить или
  * переименовать в конструкторе, — требование заказчика. Их значения
  * подставляются из приёма, врач их не вводит.
+ *
+ * Круга «Место для печати» здесь больше нет (убран 03.09.2026 по просьбе
+ * заказчика): печать ставят поверх подписи, и очерченное место под неё на
+ * листе только занимало нижнюю треть.
  */
 export const REQUIRED_BLOCK_KEYS = [
   "appointmentDateTime",
@@ -56,7 +60,6 @@ export const REQUIRED_BLOCK_KEYS = [
   "patientDob",
   "doctorFio",
   "signature",
-  "stamp",
 ] as const;
 
 export type RequiredBlockKey = (typeof REQUIRED_BLOCK_KEYS)[number];
@@ -74,7 +77,6 @@ export const REQUIRED_BLOCK_LABELS: Record<RequiredBlockKey, string> = {
   patientDob: "Дата рождения",
   doctorFio: "Врач",
   signature: "Подпись",
-  stamp: "Место для печати",
 };
 
 // ── Поля бланка ────────────────────────────────────────────────────────────────

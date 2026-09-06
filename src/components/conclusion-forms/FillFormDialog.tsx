@@ -24,6 +24,8 @@ import dayjs from "dayjs";
 import { useQuery } from "@tanstack/react-query";
 
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useCloseGuard } from "../../hooks/useCloseGuard";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { usePermissions } from "../../hooks/usePermissions";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { getDjangoEmployee } from "../../api/staff";
@@ -76,6 +78,9 @@ export const FillFormDialog: React.FC<FillFormDialogProps> = ({
   const [values, setValues] = React.useState<Record<string, string>>({});
   const [printing, setPrinting] = React.useState(false);
   const [printError, setPrintError] = React.useState<string | null>(null);
+  // Бланк, на который врач переключается: смена перезаписывает заполненные
+  // поля значениями по умолчанию, поэтому сначала спрашиваем.
+  const [pendingFormId, setPendingFormId] = React.useState<number | null>(null);
 
   const formsQuery = useQuery({
     queryKey: djangoQueryKeys.conclusionForms.list(orgId ?? null),
@@ -123,6 +128,9 @@ export const FillFormDialog: React.FC<FillFormDialogProps> = ({
   // (react-query обновляет его при возврате на вкладку) перезаписал бы уже
   // введённый врачом текст значениями по умолчанию.
   const hydratedForRef = React.useRef<number | null>(null);
+  // Снимок значений сразу после гидратации: с ним сравниваем ввод, чтобы
+  // отличить «врач ничего не трогал» от «есть что терять».
+  const baselineRef = React.useRef<Record<string, string>>({});
 
   React.useEffect(() => {
     if (!open) return;
@@ -131,9 +139,11 @@ export const FillFormDialog: React.FC<FillFormDialogProps> = ({
     if (next.id !== selectedId) setSelectedId(next.id);
     if (hydratedForRef.current === next.id) return;
     hydratedForRef.current = next.id;
-    setValues(
-      Object.fromEntries(next.fields.map((f) => [f.id, f.defaultValue ?? ""])),
+    const defaults = Object.fromEntries(
+      next.fields.map((f) => [f.id, f.defaultValue ?? ""]),
     );
+    baselineRef.current = defaults;
+    setValues(defaults);
   }, [open, forms, selectedId]);
 
   React.useEffect(() => {
@@ -142,8 +152,37 @@ export const FillFormDialog: React.FC<FillFormDialogProps> = ({
       setValues({});
       setPrintError(null);
       hydratedForRef.current = null;
+      baselineRef.current = {};
+      setPendingFormId(null);
     }
   }, [open]);
+
+  // Заполненный бланк нигде не хранится (черновика, в отличие от самого
+  // заключения, у него нет) — закрытие окна стирает работу врача насовсем.
+  const isDirty = React.useMemo(() => {
+    const base = baselineRef.current;
+    const keys = new Set([...Object.keys(base), ...Object.keys(values)]);
+    return [...keys].some((key) => (values[key] ?? "") !== (base[key] ?? ""));
+  }, [values]);
+
+  // Клик мимо окна, Esc, крестик, «Отмена», кнопки «назад»/«вперёд» (в том
+  // числе боковые кнопки мыши) и закрытие вкладки.
+  const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({
+    isDirty,
+    isOpen: open,
+    onClose,
+  });
+
+  const requestSelect = (id: number) => {
+    if (id === selectedId) return;
+    if (isDirty) setPendingFormId(id);
+    else setSelectedId(id);
+  };
+
+  const confirmSelect = () => {
+    if (pendingFormId != null) setSelectedId(pendingFormId);
+    setPendingFormId(null);
+  };
 
   const printData = printDataQuery.data;
   const context: SheetContext = {
@@ -160,6 +199,7 @@ export const FillFormDialog: React.FC<FillFormDialogProps> = ({
   const handleApply = () => {
     if (!selected) return;
     onApply(selected.target, renderFilledForm(selected, values));
+    // Текст уехал в заключение — терять нечего, закрываем без подтверждения.
     onClose();
   };
 
@@ -180,11 +220,17 @@ export const FillFormDialog: React.FC<FillFormDialogProps> = ({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xl" fullWidth fullScreen={isNarrow}>
+    <Dialog
+      open={open}
+      onClose={guardedClose}
+      maxWidth="xl"
+      fullWidth
+      fullScreen={isNarrow}
+    >
       <DialogTitle sx={{ pr: 6 }}>
         Заполнить по бланку
         <IconButton
-          onClick={onClose}
+          onClick={guardedClose}
           size="small"
           sx={{ position: "absolute", right: 12, top: 12 }}
         >
@@ -221,7 +267,7 @@ export const FillFormDialog: React.FC<FillFormDialogProps> = ({
                 size="small"
                 fullWidth
                 value={selected?.id ?? ""}
-                onChange={(e) => setSelectedId(Number(e.target.value))}
+                onChange={(e) => requestSelect(Number(e.target.value))}
               >
                 {forms.map((form) => (
                   <MenuItem key={form.id} value={form.id}>
@@ -278,7 +324,7 @@ export const FillFormDialog: React.FC<FillFormDialogProps> = ({
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={onClose}>Отмена</Button>
+        <Button onClick={guardedClose}>Отмена</Button>
         <Button
           startIcon={<PrintOutlined />}
           onClick={handlePrint}
@@ -290,6 +336,28 @@ export const FillFormDialog: React.FC<FillFormDialogProps> = ({
           Вставить в заключение
         </Button>
       </DialogActions>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onClose={cancelClose}
+        onConfirm={confirmClose}
+        title="Закрыть бланк?"
+        message="Бланк заполнен, но не вставлен в заключение. Если закрыть, введённый текст пропадёт."
+        confirmText="Закрыть без сохранения"
+        cancelText="Остаться"
+        variant="warning"
+      />
+
+      <ConfirmDialog
+        open={pendingFormId != null}
+        onClose={() => setPendingFormId(null)}
+        onConfirm={confirmSelect}
+        title="Сменить бланк?"
+        message="Поля текущего бланка заполнены. При переходе на другой бланк введённый текст пропадёт."
+        confirmText="Сменить бланк"
+        cancelText="Остаться"
+        variant="warning"
+      />
     </Dialog>
   );
 };

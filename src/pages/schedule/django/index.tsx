@@ -51,9 +51,11 @@ import {
   createScheduleException,
   updateScheduleException,
   deleteScheduleException,
+  parseShiftOverlapConflict,
   type ScheduleRule,
   type ScheduleException,
   type ScheduleExceptionKind,
+  type ShiftOverlapConflict,
 } from "../../../api/scheduling";
 import { parseBackendError } from "../../../api/appointments";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/queryKeys";
@@ -61,6 +63,7 @@ import ScheduleCalendar from "./ScheduleCalendar";
 import { useFormValidation } from "../../../hooks/useFormValidation";
 import ScheduleDayDrawer from "./ScheduleDayDrawer";
 import SchedulePointEditDialog, { type SchedulePointEditValues } from "./SchedulePointEditDialog";
+import ShiftOverlapDialog from "./ShiftOverlapDialog";
 import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
 import { useEmployeeColorMap } from "./employeeColors";
 
@@ -263,6 +266,9 @@ const RuleFormDrawer: React.FC<{
   const [comment, setComment] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // Пересечение смен одного сотрудника в режиме «warn»: бэк отвечает 409 со
+  // списком, сохранение повторяется с allowOverlap.
+  const [overlap, setOverlap] = React.useState<ShiftOverlapConflict | null>(null);
   // Филиал правила: null — «общее», такое правило видно во всех филиалах
   // (бэкенд отдаёт «правила филиала ИЛИ branchId=null»).
   const [ruleBranchId, setRuleBranchId] = React.useState<number | null>(branchId ?? null);
@@ -273,6 +279,7 @@ const RuleFormDrawer: React.FC<{
     if (!open) return;
     setError(null);
     setBusy(false);
+    setOverlap(null);
     if (rule) {
       setEmployee({ id: rule.employeeId, fullName: rule.employeeName } as DjangoEmployeeListItem);
       setDateFrom(dayjs(rule.dateFrom));
@@ -322,13 +329,14 @@ const RuleFormDrawer: React.FC<{
         : "Начало обеда должно быть раньше его конца",
   });
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (allowOverlap = false) => {
     if (!form.validate()) return;
     setError(null);
     setBusy(true);
     try {
       if (isEdit) {
         await updateScheduleRule(rule.id, {
+          ...(allowOverlap ? { allowOverlap: true } : {}),
           dateFrom: dateFrom.format("YYYY-MM-DD"),
           dateTo: dateTo.format("YYYY-MM-DD"),
           weekdays,
@@ -342,6 +350,7 @@ const RuleFormDrawer: React.FC<{
       } else {
         await createScheduleRule({
           employeeId: employee!.id,
+          ...(allowOverlap ? { allowOverlap: true } : {}),
           dateFrom: dateFrom.format("YYYY-MM-DD"),
           dateTo: dateTo.format("YYYY-MM-DD"),
           weekdays,
@@ -354,9 +363,17 @@ const RuleFormDrawer: React.FC<{
           branchId: ruleBranchId,
         });
       }
+      setOverlap(null);
       onSaved();
       onClose();
     } catch (e) {
+      // Режим «warn»: смена накладывается на другую смену того же сотрудника —
+      // показываем список и ждём подтверждения, а не сырую ошибку.
+      const conflict = parseShiftOverlapConflict(e);
+      if (conflict && !allowOverlap) {
+        setOverlap(conflict);
+        return;
+      }
       setError(parseBackendError(e));
     } finally {
       setBusy(false);
@@ -550,12 +567,19 @@ const RuleFormDrawer: React.FC<{
           variant="contained"
           size="large"
           disabled={busy}
-          onClick={handleSubmit}
+          onClick={() => void handleSubmit()}
           startIcon={busy ? <CircularProgress size={20} color="inherit" /> : undefined}
         >
           {busy ? "Сохранение…" : isEdit ? "Сохранить" : "Добавить правило"}
         </Button>
       </Box>
+
+      <ShiftOverlapDialog
+        conflict={overlap}
+        saving={busy}
+        onCancel={() => setOverlap(null)}
+        onConfirm={() => void handleSubmit(true)}
+      />
     </Drawer>
   );
 };
@@ -592,6 +616,9 @@ const ExceptionDrawer: React.FC<{
   const [comment, setComment] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // См. RuleFormDrawer: пересечение смен подтверждается тем же диалогом.
+  // Выходной и отпуск бэк не проверяет — они ничего не занимают.
+  const [overlap, setOverlap] = React.useState<ShiftOverlapConflict | null>(null);
   // Повтор: разовая смена уходит в исключения, «по дням недели» — в недельный
   // шаблон (/scheduling/rules/), чтобы не заводить смены по одной.
   const [repeat, setRepeat] = React.useState<"once" | "weekly">("once");
@@ -614,6 +641,7 @@ const ExceptionDrawer: React.FC<{
       setComment("");
       setError(null);
       setBusy(false);
+      setOverlap(null);
       setRepeat("once");
       // Предзаполняем днём недели выбранной даты: пользователь пришёл из
       // конкретного дня календаря, «повторять как сегодня» — ожидаемый сценарий.
@@ -659,7 +687,7 @@ const ExceptionDrawer: React.FC<{
         : "Начало обеда должно быть раньше его конца",
   });
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (allowOverlap = false) => {
     if (!form.validate()) return;
     setError(null);
     setBusy(true);
@@ -667,6 +695,7 @@ const ExceptionDrawer: React.FC<{
       if (isRule) {
         await createScheduleRule({
           employeeId: employee!.id,
+          ...(allowOverlap ? { allowOverlap: true } : {}),
           dateFrom: date.format("YYYY-MM-DD"),
           dateTo: dateTo.format("YYYY-MM-DD"),
           weekdays,
@@ -681,6 +710,7 @@ const ExceptionDrawer: React.FC<{
       } else {
         await createScheduleException({
           employeeId: employee!.id,
+          ...(allowOverlap ? { allowOverlap: true } : {}),
           date: date.format("YYYY-MM-DD"),
           kind,
           startTime: kind === "extra" ? startTime : undefined,
@@ -690,9 +720,15 @@ const ExceptionDrawer: React.FC<{
           branchId,
         });
       }
+      setOverlap(null);
       onSaved();
       onClose();
     } catch (e) {
+      const conflict = parseShiftOverlapConflict(e);
+      if (conflict && !allowOverlap) {
+        setOverlap(conflict);
+        return;
+      }
       setError(parseBackendError(e));
     } finally {
       setBusy(false);
@@ -934,13 +970,20 @@ const ExceptionDrawer: React.FC<{
           fullWidth
           variant="contained"
           size="large"
-          onClick={handleSubmit}
+          onClick={() => void handleSubmit()}
           disabled={busy}
           startIcon={busy ? <CircularProgress size={20} color="inherit" /> : undefined}
         >
           {busy ? "Сохранение…" : isRule ? "Добавить график" : "Добавить"}
         </Button>
       </Box>
+
+      <ShiftOverlapDialog
+        conflict={overlap}
+        saving={busy}
+        onCancel={() => setOverlap(null)}
+        onConfirm={() => void handleSubmit(true)}
+      />
     </Drawer>
   );
 };
@@ -988,6 +1031,13 @@ const DjangoSchedulePage: React.FC = () => {
     endTime: string;
     comment: string;
   } | null>(null);
+  // Пересечение смен при точечной правке: подтверждение показываем поверх дня,
+  // потому что диалог правки к этому моменту уже закрыт.
+  const [pointOverlap, setPointOverlap] = React.useState<{
+    conflict: ShiftOverlapConflict;
+    values: SchedulePointEditValues;
+  } | null>(null);
+  const [pointOverlapSaving, setPointOverlapSaving] = React.useState(false);
 
   // Правила/исключения скоупятся по активному филиалу на сервере (branchId =
   // этот филиал ИЛИ общие, branchId=null) — тикет
@@ -1163,12 +1213,16 @@ const DjangoSchedulePage: React.FC = () => {
     });
   };
 
-  const handleSavePointEdit = async (values: SchedulePointEditValues) => {
+  const handleSavePointEdit = async (
+    values: SchedulePointEditValues,
+    allowOverlap = false,
+  ) => {
     if (!selectedDay || !pointEdit) return;
     const date = selectedDay.format("YYYY-MM-DD");
     try {
       if (pointEdit.existing) {
         await updateScheduleException(pointEdit.existing.id, {
+          ...(allowOverlap ? { allowOverlap: true } : {}),
           date,
           kind: pointEdit.existing.kind,
           startTime: values.startTime,
@@ -1179,6 +1233,7 @@ const DjangoSchedulePage: React.FC = () => {
       } else {
         await createScheduleException({
           employeeId: pointEdit.occurrence.employeeId,
+          ...(allowOverlap ? { allowOverlap: true } : {}),
           date,
           kind: "override",
           startTime: values.startTime,
@@ -1188,11 +1243,33 @@ const DjangoSchedulePage: React.FC = () => {
           branchId,
         });
       }
+      setPointOverlap(null);
       invalidate();
       notify?.({ type: "success", message: "Точечное расписание сохранено" });
     } catch (e) {
+      // Пересечение смен в режиме «warn» — не ошибка, а вопрос: показываем
+      // список и повторяем сохранение с подтверждением.
+      const conflict = parseShiftOverlapConflict(e);
+      if (conflict && !allowOverlap) {
+        setPointOverlap({ conflict, values });
+        // Диалог правки закрывается сам — подтверждение идёт поверх дня.
+        return;
+      }
       notify?.({ type: "error", message: "Ошибка", description: parseBackendError(e) });
       throw e;
+    }
+  };
+
+  /** Повтор точечного сохранения после подтверждения пересечения. */
+  const confirmPointOverlap = async () => {
+    if (!pointOverlap) return;
+    setPointOverlapSaving(true);
+    try {
+      await handleSavePointEdit(pointOverlap.values, true);
+    } catch {
+      // Текст уже показан уведомлением внутри handleSavePointEdit.
+    } finally {
+      setPointOverlapSaving(false);
     }
   };
 
@@ -1556,6 +1633,13 @@ const DjangoSchedulePage: React.FC = () => {
         onEditOccurrence={handleEditOccurrence}
         onAddShift={handleAddShiftForSelectedDay}
       />
+      <ShiftOverlapDialog
+        conflict={pointOverlap?.conflict ?? null}
+        saving={pointOverlapSaving}
+        onCancel={() => setPointOverlap(null)}
+        onConfirm={() => void confirmPointOverlap()}
+      />
+
       <SchedulePointEditDialog
         open={pointEdit !== null}
         onClose={() => setPointEdit(null)}

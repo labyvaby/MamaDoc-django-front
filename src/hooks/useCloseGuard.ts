@@ -1,74 +1,101 @@
-import { useState, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * Хук для защиты закрытия drawer/modal с несохранёнными данными.
- * Перехватывает: клик на крестик, клик вне drawer, кнопки назад/вперёд браузера, закрытие вкладки.
+ * Защита формы в модалке/дровере от случайного закрытия с несохранёнными
+ * данными. Перехватывает все способы уйти:
+ *  - клик мимо окна (backdropClick) и Esc — через `guardedClose` в onClose;
+ *  - крестик и «Отмена» — тот же `guardedClose`;
+ *  - «назад»/«вперёд» браузера и боковые кнопки мыши — через popstate;
+ *  - закрытие вкладки, F5, уход по внешней ссылке — через beforeunload.
+ *
+ * Запись в истории ставится на всё время, пока окно открыто (а не только пока
+ * форма «грязная»): так push и back парные, лишние записи не накапливаются при
+ * наборе и стирании текста. Пока окно открыто, «назад» означает «закрыть окно»
+ * — с подтверждением, если что-то введено, и молча, если нет.
  */
+
+const GUARD_FLAG = "mamadocCloseGuard";
+
 export function useCloseGuard({
-    isDirty,
-    isOpen = true,
-    onClose,
+  isDirty,
+  isOpen = true,
+  onClose,
 }: {
-    isDirty: boolean;
-    isOpen?: boolean;
-    onClose: () => void;
+  isDirty: boolean;
+  isOpen?: boolean;
+  onClose: () => void;
 }) {
-    const [open, setOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-    // Предупреждение при закрытии вкладки / браузера
-    useEffect(() => {
-        if (!isOpen || !isDirty) return;
-        const handler = (e: BeforeUnloadEvent) => {
-            e.preventDefault();
-            e.returnValue = "";
-        };
-        window.addEventListener("beforeunload", handler);
-        return () => window.removeEventListener("beforeunload", handler);
-    }, [isOpen, isDirty]);
+  // Через ref, чтобы обработчики истории ставились один раз на открытие окна и
+  // не переподписывались на каждый введённый символ.
+  const isDirtyRef = useRef(isDirty);
+  isDirtyRef.current = isDirty;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
-    // Перехват кнопок назад/вперёд через popstate
-    useEffect(() => {
-        if (!isOpen || !isDirty) return;
+  // Вызывается, когда пользователь пытается закрыть окно.
+  const guardedClose = useCallback(() => {
+    if (isDirtyRef.current) {
+      setConfirmOpen(true);
+    } else {
+      onCloseRef.current();
+    }
+  }, []);
 
-        // Добавляем фиктивную запись в историю чтобы кнопка "назад" не уходила со страницы
-        window.history.pushState({ guardedDrawer: true }, "");
+  // Предупреждение браузера при закрытии вкладки / перезагрузке.
+  useEffect(() => {
+    if (!isOpen || !isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isOpen, isDirty]);
 
-        const handler = (_e: PopStateEvent) => {
-            // Показываем нашу модалку вместо перехода
-            setOpen(true);
-            // Снова добавляем запись чтобы следующее нажатие "назад" тоже перехватилось
-            window.history.pushState({ guardedDrawer: true }, "");
-        };
+  // Кнопки «назад»/«вперёд» — и на клавиатуре, и боковые кнопки мыши: браузер
+  // отдаёт их одинаково, событием popstate.
+  useEffect(() => {
+    if (!isOpen) return;
 
-        window.addEventListener("popstate", handler);
-        return () => {
-            window.removeEventListener("popstate", handler);
-            // Убираем фиктивную запись при размонтировании
-            if (window.history.state?.guardedDrawer) {
-                window.history.back();
-            }
-        };
-    }, [isOpen, isDirty]);
+    window.history.pushState({ ...window.history.state, [GUARD_FLAG]: true }, "");
+    let armed = true;
 
-    // Вызывается когда пользователь пытается закрыть через UI
-    const guardedClose = useCallback(() => {
-        if (isDirty) {
-            setOpen(true);
-        } else {
-            onClose();
-        }
-    }, [isDirty, onClose]);
+    const handler = () => {
+      if (!armed) return;
+      // Съеденную запись возвращаем: следующее «назад» тоже должно прийти сюда,
+      // а не увести со страницы приёма.
+      window.history.pushState({ ...window.history.state, [GUARD_FLAG]: true }, "");
+      guardedClose();
+    };
 
-    // Подтверждение — закрыть без сохранения
-    const confirmClose = useCallback(() => {
-        setOpen(false);
-        onClose();
-    }, [onClose]);
+    window.addEventListener("popstate", handler);
+    return () => {
+      armed = false;
+      window.removeEventListener("popstate", handler);
+      // Снимаем свою запись, чтобы после закрытия окна «назад» работало как обычно.
+      if (window.history.state?.[GUARD_FLAG]) window.history.back();
+    };
+  }, [isOpen, guardedClose]);
 
-    // Отмена — остаться
-    const cancelClose = useCallback(() => {
-        setOpen(false);
-    }, []);
+  // Окно закрылось (в том числе программно) — подтверждение больше не нужно.
+  useEffect(() => {
+    if (!isOpen) setConfirmOpen(false);
+  }, [isOpen]);
 
-    return { guardedClose, confirmOpen: open, confirmClose, cancelClose };
+  /** Подтверждение — закрыть без сохранения. */
+  const confirmClose = useCallback(() => {
+    setConfirmOpen(false);
+    onCloseRef.current();
+  }, []);
+
+  /** Отмена — остаться в форме. */
+  const cancelClose = useCallback(() => {
+    setConfirmOpen(false);
+  }, []);
+
+  return { guardedClose, confirmOpen, confirmClose, cancelClose };
 }
+
+export default useCloseGuard;

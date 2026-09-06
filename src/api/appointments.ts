@@ -98,7 +98,12 @@ export function parseBackendError(err: unknown): string {
 
 /** One existing appointment the requested slot runs into (mirrors backend). */
 export interface OverlapConflict {
-  appointmentId: number;
+  /**
+   * null для приёма ЧУЖОГО филиала: с 02.09.2026 бэк скрывает и идентификатор,
+   * не только имя пациента (ветка feature/multi-branch-schedule, §7). Ссылку на
+   * карточку приёма по такому конфликту строить нельзя.
+   */
+  appointmentId: number | null;
   startsAt: string;
   endsAt: string;
   employeeId: number | null;
@@ -556,6 +561,8 @@ export interface DjangoAppointment {
   /** Разложен из `branch.name`; null, если филиал не задан. */
   branchName: string | null;
   patient: AppointmentPatientShort | null;
+  /** Legacy performer field; new clients should use services[].employee. */
+  employee?: AppointmentEmployeeShort | null;
   scheduledAt: string;
   /** Конец приёма, посчитанный бэком как начало + сумма длительностей строк
    *  услуг. Не равен scheduledAt + 30 мин: приём с несколькими услугами длиннее,

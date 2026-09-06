@@ -120,6 +120,11 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
             background: template.background,
             fields: template.fields,
             footerNote: template.footerNote ?? "",
+            // Выбор «куда попадёт текст» убран из конструктора 03.09.2026:
+            // администратору это ничего не говорило, а врач и так вставляет
+            // бланк в заключение. Поле осталось в контракте и переносится
+            // как есть — у собранных ранее бланков адресат не меняется,
+            // новые собираются с «conclusion» из emptyFormPayload().
             target: template.target,
             isActive: template.isActive,
           }
@@ -638,21 +643,6 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
               </Select>
             </Box>
 
-            <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Куда попадёт заполненный текст
-              </Typography>
-              <Select
-                size="small"
-                fullWidth
-                value={draft.target}
-                onChange={(e) => patch("target", e.target.value as ConclusionFormPayload["target"])}
-              >
-                <MenuItem value="conclusion">Заключение / рекомендации</MenuItem>
-                <MenuItem value="anamnesis">Анамнез</MenuItem>
-                <MenuItem value="objective">Объективно</MenuItem>
-              </Select>
-            </Box>
           </Stack>
 
           {/* ── правая колонка: живой лист ── */}

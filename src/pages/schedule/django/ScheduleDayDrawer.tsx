@@ -11,7 +11,7 @@ import type { Dayjs } from "dayjs";
 
 import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
-import { lunchNote, type DayOccurrence } from "./occurrences";
+import { lunchNote, shiftTimeLabel, type DayOccurrence } from "./occurrences";
 import { employeeColorHex } from "./employeeColors";
 
 export interface ScheduleDayDrawerProps {
@@ -114,7 +114,7 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
                     </Typography>
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Typography variant="body2" color="text.secondary" noWrap>
-                        {occ.startTime}–{occ.endTime}
+                        {shiftTimeLabel(occ)}
                       </Typography>
                       {isExtra && (
                         <Chip

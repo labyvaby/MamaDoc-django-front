@@ -22,6 +22,7 @@ import {
   type PhoneCountryCode,
 } from "../../../utility/phone";
 import { BOOKING_PRIMARY, BOOKING_PRIMARY_HOVER, BOOKING_RADIUS, PILL_RADIUS } from "../theme";
+import { phoneErrorText } from "./fieldStyles";
 
 export interface WaitlistDialogProps {
   open: boolean;
@@ -46,21 +47,34 @@ export const WaitlistDialog: React.FC<WaitlistDialogProps> = ({
   onSubmit,
 }) => {
   const { t } = useT("waitlist");
+  // Тексты ошибок полей общие с гостевой записью — формы стоят рядом.
+  const { t: tBooking } = useT("publicBooking");
   const [name, setName] = React.useState("");
   const [country, setCountry] = React.useState<PhoneCountryCode>(DEFAULT_PHONE_COUNTRY_CODE);
   const [phone, setPhone] = React.useState("");
   const [comment, setComment] = React.useState("");
+  const [showNameError, setShowNameError] = React.useState(false);
   const [showPhoneError, setShowPhoneError] = React.useState(false);
+  const nameRef = React.useRef<HTMLInputElement>(null);
+  const phoneRef = React.useRef<HTMLInputElement>(null);
 
+  const nameOk = name.trim().length > 1;
   const phoneOk = isPhoneLocalComplete(country, phone);
-  const canSubmit = phoneOk && name.trim().length > 1 && !submitting;
 
   const handleSubmit = () => {
-    if (!phoneOk) {
-      setShowPhoneError(true);
+    // Незаполненное поле подсвечиваем и ставим в него курсор: гасить кнопку —
+    // тупик, гость не понимает, чего не хватает.
+    setShowNameError(!nameOk);
+    setShowPhoneError(!phoneOk);
+    if (!nameOk) {
+      nameRef.current?.focus();
       return;
     }
-    if (!canSubmit) return;
+    if (!phoneOk) {
+      phoneRef.current?.focus();
+      return;
+    }
+    if (submitting) return;
     onSubmit({
       name: name.trim(),
       phone: country + phone.replace(/\D/g, ""),
@@ -90,7 +104,13 @@ export const WaitlistDialog: React.FC<WaitlistDialogProps> = ({
           <TextField
             label={t("publicSite.name")}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (e.target.value.trim().length > 1) setShowNameError(false);
+            }}
+            error={showNameError && !nameOk}
+            helperText={showNameError && !nameOk ? tBooking("nameRequired") : undefined}
+            inputRef={nameRef}
             fullWidth
             size="small"
           />
@@ -100,9 +120,17 @@ export const WaitlistDialog: React.FC<WaitlistDialogProps> = ({
             <TextField
               label={t("publicSite.phone")}
               value={formatPhoneLocalDisplay(country, phone)}
-              onChange={(e) => setPhone(normalizePhoneLocal(country, e.target.value))}
+              onChange={(e) => {
+                const next = normalizePhoneLocal(country, e.target.value);
+                setPhone(next);
+                if (isPhoneLocalComplete(country, next)) setShowPhoneError(false);
+              }}
               placeholder={phonePlaceholder(country)}
               error={showPhoneError && !phoneOk}
+              helperText={
+                showPhoneError && !phoneOk ? phoneErrorText(country, tBooking) : undefined
+              }
+              inputRef={phoneRef}
               fullWidth
               size="small"
               inputMode="tel"
@@ -125,7 +153,7 @@ export const WaitlistDialog: React.FC<WaitlistDialogProps> = ({
           <Button
             fullWidth
             variant="contained"
-            disabled={!canSubmit}
+            disabled={submitting}
             onClick={handleSubmit}
             sx={{
               borderRadius: PILL_RADIUS,

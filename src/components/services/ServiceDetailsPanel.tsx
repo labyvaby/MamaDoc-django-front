@@ -45,6 +45,7 @@ import { AppButton, InfoTile } from "../ui";
 import { subtleBg } from "../../theme/uiHelpers";
 import { useNavigate } from "react-router";
 import { useCan } from "../../hooks/useCan";
+import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
 import { useServicesList } from "../../api/hooks/useServicesQuery";
 import { useT } from "../../i18n/VerticalProvider";
 import ServicePerformersSection from "./ServicePerformersSection";
@@ -108,7 +109,13 @@ const ServiceDetailsPanel: React.FC<Props> = ({
 }) => {
   const { t } = useT("services");
   const navigate = useNavigate();
+  // Кнопка уводит в Регистратуру (`/appointments?new=1&service=`), а та закрыта
+  // отдельным правом `appointments.registry.view`. Врачу обычно дают только
+  // кабинет (`appointments.doctor_room.view`), и с гейтом на одном
+  // `appointments.create` кнопка была видна, но по клику молча выбрасывала на
+  // домашнюю страницу (fallback роута в App.tsx).
   const canCreateAppointment = useCan("appointments.create");
+  const canOpenRegistry = useCan(PAGE_PERMISSIONS.appointmentsRegistry);
   // Каталог уже в кеше страницы — тем же ключом, без второго запроса.
   const { data: catalog = [] } = useServicesList();
   const [loading, setLoading] = React.useState(false);
@@ -498,7 +505,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
             )}
 
             {/* Быстрая запись на эту услугу */}
-            {canCreateAppointment && service.isActive && (
+            {canCreateAppointment && canOpenRegistry && service.isActive && (
               <AppButton
                 variant="contained"
                 startIcon={<EventAvailableOutlinedIcon fontSize="small" />}
