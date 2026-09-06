@@ -36,13 +36,15 @@ import { useChatwootLoginFailed } from "./useChatwootSession";
  * проверено опытом. Поэтому две вкладки друг другу не мешают, и замка на них
  * нет.)
  *
- * Отсюда два предохранителя, и убирать их нельзя:
+ * Отсюда запрет на самообновление запросов: `staleTime: Infinity`, без refetch
+ * на mount, фокус окна и переподключение. `gcTime: 0` при этом гарантирует, что
+ * следующее открытие раздела начнётся с чистого листа и получит свежую ссылку.
  *
- * 1. запрос не обновляется сам — `staleTime: Infinity`, без refetch на mount и
- *    на фокус окна; `gcTime: 0` при этом гарантирует, что следующее открытие
- *    раздела начнётся с чистого листа и получит свежую ссылку;
- * 2. первый успешный `url` замораживается в состоянии, поэтому никакой
- *    повторный рендер уже не подменит `src` у живого iframe.
+ * Порядок описан тремя состояниями — `session → sso → failed`. Флагами это уже
+ * пробовали, и вышла ошибка: «сигнал пришёл» и «ссылка получена» становились
+ * истинными одновременно, экран повтора закрывал собой попытку войти, и ссылку
+ * в iframe никто не подставлял. У кого сессия Чат-центра не была живой, раздел
+ * не открывался вовсе.
  *
  * Если вход всё-таки сорвался, Chatwoot сообщает об этом сам
  * (`useChatwootLoginFailed`), и мы показываем повтор вместо чужой формы пароля.
@@ -84,15 +86,21 @@ const FRAME_HEIGHT = { xs: "80vh", md: "calc(100vh - 96px)" } as const;
 export const ChatsPage: React.FC = () => {
   usePageTitle("Чаты");
 
-  // `attempt` меняется только при осознанном повторе: он и сбрасывает
-  // замороженную ссылку, и пересоздаёт iframe (через key), чтобы Chatwoot начал
-  // вход с чистого листа, а не досматривал мёртвую сессию.
+  // Явные состояния вместо связки флагов: раньше «сигнал пришёл» и «ссылка
+  // получена» сходились одновременно, и экран повтора показывался ВМЕСТО
+  // попытки войти — ссылку в iframe никто не подставлял. Теперь переход
+  // «сессия → вход → не вышло» виден в одном месте и перепутать его нельзя.
+  const [phase, setPhase] = React.useState<"session" | "sso" | "failed">(
+    "session",
+  );
   const [attempt, setAttempt] = React.useState(0);
-  const [loginFailed, setLoginFailed] = React.useState(false);
 
   const sessionQuery = useQuery({
     queryKey: ["chatwoot", "session", attempt],
     queryFn: fetchChatwootSession,
+    enabled: phase === "session",
+    // Ссылка на дашборд секретов не содержит, но перезапросы ни к чему:
+    // менять `src` живому iframe нельзя, он оборвёт вход.
     staleTime: Infinity,
     gcTime: 0,
     retry: false,
@@ -101,15 +109,18 @@ export const ChatsPage: React.FC = () => {
     refetchOnReconnect: false,
   });
 
-  // Ссылка входа нужна в двух случаях: Чат-центр сказал, что сессии нет, или
-  // адрес дашборда получить не удалось (старый бэкенд, выключенная интеграция).
-  const needsLogin = loginFailed || sessionQuery.isError;
+  // Адрес дашборда получить не удалось (выключенная интеграция, старый
+  // бэкенд) — идём за ссылкой входа, там разберём причину точнее.
+  React.useEffect(() => {
+    if (phase === "session" && sessionQuery.isError) setPhase("sso");
+  }, [phase, sessionQuery.isError]);
 
-  const { data, isPending, error } = useQuery({
+  const embedQuery = useQuery({
     queryKey: ["chatwoot", "embed", attempt],
     queryFn: fetchChatwootEmbed,
-    enabled: needsLogin,
-    // См. предохранитель №1 в шапке файла.
+    enabled: phase === "sso",
+    // Токен одноразовый и живёт пять минут: повторный запрос выписал бы новый,
+    // а тот, с которым iframe уже начал вход, оставил бы догорать.
     staleTime: Infinity,
     gcTime: 0,
     retry: false,
@@ -118,27 +129,24 @@ export const ChatsPage: React.FC = () => {
     refetchOnReconnect: false,
   });
 
-  // Предохранитель №2: адрес, с которым iframe начал вход, больше не меняется.
-  // Ссылка входа перекрывает дашборд — но только один раз за попытку.
-  const [frozenUrl, setFrozenUrl] = React.useState<string | null>(null);
-  React.useEffect(() => {
-    if (data?.url) setFrozenUrl(data.url);
-  }, [data?.url]);
+  const iframeUrl =
+    phase === "session"
+      ? sessionQuery.data?.dashboardUrl ?? null
+      : embedQuery.data?.url ?? null;
+
+  // Сигнал от Чат-центра: из «сессии» он означает «войди», из «входа» — что не
+  // помогла и ссылка, и вот тогда показываем повтор.
+  const onLoginRequired = React.useCallback(() => {
+    setPhase((current) => (current === "session" ? "sso" : "failed"));
+  }, []);
+  useChatwootLoginFailed(iframeUrl, onLoginRequired);
 
   const retry = React.useCallback(() => {
-    setLoginFailed(false);
-    setFrozenUrl(null);
     setAttempt((n) => n + 1);
+    setPhase("sso");
   }, []);
 
-  // Пока вход не понадобился — показываем дашборд; дальше его сменит ссылка.
-  const iframeUrl = frozenUrl ?? sessionQuery.data?.dashboardUrl ?? null;
-
-  useChatwootLoginFailed(iframeUrl, () => setLoginFailed(true));
-
-  // Экран повтора нужен, только когда и ссылка входа не спасла: сам по себе
-  // сорвавшийся вход мы сначала пробуем починить, выписав её.
-  if (loginFailed && frozenUrl) {
+  if (phase === "failed") {
     return (
       <Box sx={{ height: FRAME_HEIGHT }}>
         <ChatsRecovery onRetry={retry} />
@@ -146,8 +154,8 @@ export const ChatsPage: React.FC = () => {
     );
   }
 
-  const waiting = needsLogin ? isPending : sessionQuery.isPending;
-  if (waiting || (!error && !iframeUrl)) {
+  const query = phase === "session" ? sessionQuery : embedQuery;
+  if (query.isPending || (!query.isError && !iframeUrl)) {
     return (
       <Stack spacing={2}>
         <PageHeader title="Чаты" />
@@ -160,7 +168,7 @@ export const ChatsPage: React.FC = () => {
     return (
       <Box sx={{ height: FRAME_HEIGHT }}>
         <ChatsUnavailable
-          reason={chatwootUnavailableReason(error ?? sessionQuery.error)}
+          reason={chatwootUnavailableReason(embedQuery.error)}
           onRetry={retry}
         />
       </Box>
@@ -181,7 +189,7 @@ export const ChatsPage: React.FC = () => {
         }}
       >
         <Box
-          key={attempt}
+          key={`${phase}-${attempt}`}
           component="iframe"
           src={iframeUrl}
           title="Чаты"
