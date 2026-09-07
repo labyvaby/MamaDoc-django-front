@@ -73,6 +73,7 @@ import { CustomDatePicker, cascadeContainer, cascadeItem } from "../../../compon
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import SpecializationBlock from "./SpecializationBlock";
 import DocumentsBlock from "./DocumentsBlock";
+import { OdoctorEmployeeToggle } from "./OdoctorEmployeeToggle";
 import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader, StatusBadge } from "./drawerKit";
 import {
   parsePhone,
@@ -1437,6 +1438,18 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                   disabled={busy}
                 />
               </Paper>
+            )}
+
+            {/* Витрина odoctor.kg — рядом с онлайн-записью: обе решают, где
+                врача видно пациенту. Блок сам себя не покажет, если связи с
+                кабинетом нет (её заводит человек в админке), и появляется
+                только у существующего сотрудника: у несохранённого нет id, к
+                которому связь могла бы относиться. */}
+            {clinicalRole === "doctor" && record && (
+              <OdoctorEmployeeToggle
+                employeeId={Number(record.id)}
+                disabled={busy}
+              />
             )}
 
             {/* Онлайн-предоплата этого врача. Сумма своя у каждого врача, а не

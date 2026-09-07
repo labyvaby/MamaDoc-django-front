@@ -367,6 +367,33 @@ export const djangoQueryKeys = {
       ["django", "conclusion-forms", organizationId ?? null, branchId ?? null] as const,
   },
 
+  odoctor: {
+    // Строка настроек одна на организацию, списка нет — только объект в скоупе
+    // организации, поэтому и ключ один.
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "odoctor", "settings", organizationId ?? null] as const,
+    // Связи врачей — список в скоупе организации.
+    links: (organizationId: number | null | undefined) =>
+      ["django", "odoctor", "links", organizationId ?? null] as const,
+    // Связи одного врача — ключ карточки сотрудника.
+    employeeLinks: (employeeId: number) =>
+      ["django", "odoctor", "links", "employee", employeeId] as const,
+    // Предпросмотр спрашивается по одной связи и живёт до закрытия диалога:
+    // он ходит в кабинет odoctor, и кешировать его надолго значило бы
+    // показывать оператору вчерашнюю витрину как сегодняшнюю.
+    linkPreview: (linkId: number) =>
+      ["django", "odoctor", "link-preview", linkId] as const,
+    // Филиалы в разрезе кабинета — только своя база, кешируется как справочник.
+    branches: (organizationId: number | null | undefined) =>
+      ["django", "odoctor", "branches", organizationId ?? null] as const,
+    // Врачи филиала в кабинете. Ключ по филиалу CRM, а не по филиалу
+    // кабинета: наружу мы говорим о своих сущностях. Живёт недолго — запрос
+    // идёт в кабинет, и вчерашний список врачей под видом сегодняшнего
+    // отправил бы оператора сопоставлять то, чего там уже нет.
+    cabinetDoctors: (branchId: number) =>
+      ["django", "odoctor", "cabinet-doctors", branchId] as const,
+  },
+
   scheduling: {
     rules: (params: Record<string, unknown>) =>
       ["django", "scheduling", "rules", params] as const,
