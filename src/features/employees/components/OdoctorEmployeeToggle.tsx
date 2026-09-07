@@ -22,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getOdoctorLinkPreview,
   getOdoctorLinks,
+  odoctorEmployeeBlockState,
   odoctorLinkBlocker,
   odoctorSettingsErrorMessage,
   previewClearWarning,
@@ -89,16 +90,46 @@ export function OdoctorEmployeeToggle({
     onError: (err) => setError(odoctorSettingsErrorMessage(err)),
   });
 
-  // Пока не знаем — не мигаем блоком: у врача без связи его не будет вовсе.
+  // Пока не знаем — не мигаем блоком. На ошибке молчим: соврать оператору
+  // про состояние синхронизации хуже, чем не показать её вовсе.
   if (links.isPending || links.isError) {
     return null;
   }
-  const rows = links.data?.items ?? [];
-  if (rows.length === 0) {
+  const state = odoctorEmployeeBlockState(links.data);
+  // Клинике без кабинета этот блок — шум.
+  if (state === "hidden") {
     return null;
   }
-
+  const rows = links.data.items;
   const warning = preview.data ? previewClearWarning(preview.data) : null;
+
+  // Врач не сопоставлен с кабинетом. Блок всё равно показываем: иначе
+  // оператор не отличит «этого врача не выкладываем» от «такой настройки
+  // здесь нет». Тумблер выключен, потому что включать нечего — сопоставление
+  // заводит человек в админке, и это не придирка к процессу: кабинет отдаёт
+  // по сути одно имя врача, а ошибка отправит окна одного врача другому.
+  if (state === "unmapped") {
+    return (
+      <Paper elevation={0} variant="outlined" sx={{ p: 1 }}>
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          gap={1}
+        >
+          <Stack spacing={0.25}>
+            <Typography variant="body2">Витрина odoctor.kg</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Врач не сопоставлен с врачом в кабинете odoctor — выкладывать
+              нечего. Сопоставление заводит человек в админке: кабинет отдаёт
+              по сути одно имя, и ошибка отправит окна одного врача другому.
+            </Typography>
+          </Stack>
+          <Switch checked={false} disabled />
+        </Stack>
+      </Paper>
+    );
+  }
 
   return (
     <>

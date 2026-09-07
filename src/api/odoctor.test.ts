@@ -13,8 +13,10 @@ import {
   saveOdoctorSettingsForm,
   updateOdoctorSettings,
   ODOCTOR_HORIZON_MAX_DAYS,
+  type OdoctorLinksResponse,
   type OdoctorSettings,
   type OdoctorSettingsForm,
+  odoctorEmployeeBlockState,
   odoctorLinkBlocker,
   previewClearWarning,
 } from "./odoctor";
@@ -556,6 +558,45 @@ function link(over: Partial<Parameters<typeof odoctorLinkBlocker>[0]> = {}) {
     ...over,
   };
 }
+
+describe("odoctorEmployeeBlockState", () => {
+  function response(over: Partial<OdoctorLinksResponse> = {}) {
+    return {
+      organizationId: 1,
+      integrationConfigured: true,
+      items: [link()],
+      ...over,
+    };
+  }
+
+  it("показывает форму сопоставленному врачу", () => {
+    expect(odoctorEmployeeBlockState(response())).toBe("links");
+  });
+
+  it("показывает подпись несопоставленному: блок нужен всем врачам", () => {
+    // Скрывать его значило бы стирать разницу между «этого врача не
+    // выкладываем» и «такой настройки здесь нет».
+    expect(odoctorEmployeeBlockState(response({ items: [] }))).toBe(
+      "unmapped",
+    );
+  });
+
+  it("молчит у клиники без кабинета", () => {
+    expect(
+      odoctorEmployeeBlockState(
+        response({ integrationConfigured: false, items: [] }),
+      ),
+    ).toBe("hidden");
+  });
+
+  it("молчит даже со связями, если учётки кабинета нет", () => {
+    // Учётку могли убрать, оставив сопоставления. В витрину без неё ничего
+    // не уходит, и тумблер «включено» обещал бы работу, которой нет.
+    expect(
+      odoctorEmployeeBlockState(response({ integrationConfigured: false })),
+    ).toBe("hidden");
+  });
+});
 
 describe("odoctorLinkBlocker", () => {
   it("молчит, когда врачу ничего не мешает", () => {
