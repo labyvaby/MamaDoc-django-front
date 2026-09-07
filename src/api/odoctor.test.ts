@@ -13,10 +13,14 @@ import {
   saveOdoctorSettingsForm,
   updateOdoctorSettings,
   ODOCTOR_HORIZON_MAX_DAYS,
+  type OdoctorBranch,
+  type OdoctorCabinetDoctor,
   type OdoctorLinksResponse,
   type OdoctorSettings,
   type OdoctorSettingsForm,
   formatOdoctorDay,
+  odoctorCabinetRowState,
+  odoctorLinkedBranches,
   odoctorEmployeeBlockState,
   odoctorLinkBlocker,
   previewClearWarning,
@@ -559,6 +563,106 @@ function link(over: Partial<Parameters<typeof odoctorLinkBlocker>[0]> = {}) {
     ...over,
   };
 }
+
+describe("odoctorCabinetRowState", () => {
+  function cabinetRow(
+    over: Partial<OdoctorCabinetDoctor> = {},
+  ): OdoctorCabinetDoctor {
+    return {
+      odoctorDoctorId: 5418,
+      odoctorDoctorName: "Ыманбекова Даткайым Акылбековна",
+      isActive: true,
+      linkId: null,
+      linkedEmployeeId: null,
+      linkedEmployeeName: null,
+      candidates: [],
+      ...over,
+    };
+  }
+
+  it("сопоставленная строка предлагает отвязать, а не связать заново", () => {
+    expect(
+      odoctorCabinetRowState(
+        cabinetRow({ linkId: 7, linkedEmployeeId: 35, candidates: [] }),
+      ),
+    ).toBe("linked");
+  });
+
+  it("одна подсказка — можно предложить её сразу", () => {
+    expect(
+      odoctorCabinetRowState(
+        cabinetRow({ candidates: [{ employeeId: 35, fullName: "Врач" }] }),
+      ),
+    ).toBe("suggested");
+  });
+
+  it("однофамильцев не подставляем: выбирает человек", () => {
+    // Первая причина, по которой автоматического сопоставления здесь нет.
+    expect(
+      odoctorCabinetRowState(
+        cabinetRow({
+          candidates: [
+            { employeeId: 35, fullName: "Иванов Иван Иванович" },
+            { employeeId: 36, fullName: "Иванов Иван Иванович" },
+          ],
+        }),
+      ),
+    ).toBe("ambiguous");
+  });
+
+  it("без совпадений остаётся ручной выбор", () => {
+    // «Кулушова Адинай Канаатова» в кабинете против «Канаатовны» в CRM.
+    expect(odoctorCabinetRowState(cabinetRow())).toBe("manual");
+  });
+
+  it("связь важнее подсказок, даже если они пришли", () => {
+    expect(
+      odoctorCabinetRowState(
+        cabinetRow({
+          linkId: 7,
+          candidates: [{ employeeId: 36, fullName: "Однофамилец" }],
+        }),
+      ),
+    ).toBe("linked");
+  });
+});
+
+describe("odoctorLinkedBranches", () => {
+  const branch = (over: Partial<OdoctorBranch> = {}): OdoctorBranch => ({
+    branchId: 13,
+    branchName: "Мама Доктор Плюс",
+    odoctorBranchId: 1530,
+    isEnabled: true,
+    mappedDoctors: 1,
+    ...over,
+  });
+
+  it("оставляет только филиалы с кабинетом", () => {
+    const rows = odoctorLinkedBranches({
+      organizationId: 1,
+      items: [
+        branch(),
+        branch({ branchId: 14, odoctorBranchId: null, mappedDoctors: 0 }),
+      ],
+    });
+
+    expect(rows.map((row) => row.branchId)).toEqual([13]);
+  });
+
+  it("выключенный филиал остаётся: сопоставлять в нём можно", () => {
+    // Выключатель филиала останавливает выкладку, а не подготовку.
+    const rows = odoctorLinkedBranches({
+      organizationId: 1,
+      items: [branch({ isEnabled: false })],
+    });
+
+    expect(rows).toHaveLength(1);
+  });
+
+  it("без ответа отдаёт пустой список, а не падает", () => {
+    expect(odoctorLinkedBranches(undefined)).toEqual([]);
+  });
+});
 
 describe("formatOdoctorDay", () => {
   it("печатает день недели: врачу важен он, а не число", () => {

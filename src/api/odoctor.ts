@@ -465,6 +465,146 @@ export function updateOdoctorLink(
   });
 }
 
+/** Филиал клиники в разрезе кабинета odoctor. */
+export interface OdoctorBranch {
+  branchId: number;
+  branchName: string;
+  /** Пусто — филиал с кабинетом не связан, врачей выкладывать некуда. */
+  odoctorBranchId: number | null;
+  /** Выключатель самой связи филиала: связан, но выключен — тоже случай. */
+  isEnabled: boolean;
+  /** Сопоставленных врачей, а не включённых: «сколько здесь разобрано». */
+  mappedDoctors: number;
+}
+
+export interface OdoctorBranchesResponse {
+  organizationId: number;
+  items: OdoctorBranch[];
+}
+
+/** Сотрудник CRM, чьё ФИО свернулось в то же, что у врача кабинета. */
+export interface OdoctorCabinetCandidate {
+  employeeId: number;
+  fullName: string;
+}
+
+/** Врач филиала кабинета и то, что о нём знает CRM. */
+export interface OdoctorCabinetDoctor {
+  odoctorDoctorId: number;
+  odoctorDoctorName: string;
+  /** Признак кабинета: врача там могли снять с публикации. */
+  isActive: boolean;
+  linkId: number | null;
+  linkedEmployeeId: number | null;
+  linkedEmployeeName: string | null;
+  /** Подсказки по совпадению ФИО. Несколько — значит однофамильцы. */
+  candidates: OdoctorCabinetCandidate[];
+}
+
+export interface OdoctorCabinetResponse {
+  branchId: number;
+  branchName: string;
+  odoctorBranchId: number;
+  items: OdoctorCabinetDoctor[];
+}
+
+export function getOdoctorBranches(
+  signal?: AbortSignal,
+  options?: { organizationId?: number | null },
+): Promise<OdoctorBranchesResponse> {
+  const query = new URLSearchParams();
+  if (options?.organizationId != null) {
+    query.set("organizationId", String(options.organizationId));
+  }
+  const qs = query.toString();
+  return apiRequest<OdoctorBranchesResponse>(
+    `/odoctor/branches/${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+}
+
+/** Врачи филиала в кабинете. Ходит в кабинет — может ответить 502. */
+export function getOdoctorCabinetDoctors(
+  branchId: number,
+  signal?: AbortSignal,
+): Promise<OdoctorCabinetResponse> {
+  return apiRequest<OdoctorCabinetResponse>(
+    `/odoctor/branches/${branchId}/doctors/`,
+    { signal },
+  );
+}
+
+/**
+ * Сопоставить сотрудника CRM с врачом кабинета.
+ *
+ * Снимок ФИО не передаётся: его берёт сервер из ответа кабинета. На этом
+ * снимке стоит проверка переименования, и присланное устаревшим экраном имя
+ * либо запарковало бы свежую связь, либо поручилось за имя, которого в
+ * кабинете уже нет.
+ */
+export function createOdoctorLink(input: {
+  branchId: number;
+  employeeId: number;
+  odoctorDoctorId: number;
+}): Promise<OdoctorLink> {
+  return apiRequest<OdoctorLink>("/odoctor/links/", {
+    method: "POST",
+    body: input,
+  });
+}
+
+/**
+ * Снять связь. Сервер сначала вычищает выложенные дни в кабинете.
+ *
+ * Отвечает числом вычищенных дней: оператору надо видеть, что окна не
+ * остались висеть в витрине без хозяина.
+ */
+export function deleteOdoctorLink(
+  linkId: number,
+): Promise<{ linkId: number; daysCleared: number }> {
+  return apiRequest<{ linkId: number; daysCleared: number }>(
+    `/odoctor/links/${linkId}/`,
+    { method: "DELETE" },
+  );
+}
+
+/**
+ * Что предложить в строке врача кабинета.
+ *
+ * Порядок не произволен. `linked` первым: сопоставленная строка предлагает
+ * отвязать, а не связать заново. Дальше — ровно одна подсказка против
+ * нескольких: однофамильцы это первая причина, по которой автоматического
+ * сопоставления нет вовсе, и подставлять первого из двух нельзя. `manual`
+ * остаётся случаю, когда ФИО в кабинете и в CRM разошлись — «Канаатова»
+ * против «Канаатовны».
+ */
+export type OdoctorCabinetRowState =
+  | "linked"
+  | "suggested"
+  | "ambiguous"
+  | "manual";
+
+export function odoctorCabinetRowState(
+  row: OdoctorCabinetDoctor,
+): OdoctorCabinetRowState {
+  if (row.linkId !== null) {
+    return "linked";
+  }
+  if (row.candidates.length === 1) {
+    return "suggested";
+  }
+  return row.candidates.length > 1 ? "ambiguous" : "manual";
+}
+
+/** Филиалы, в которых вообще есть что сопоставлять. */
+export function odoctorLinkedBranches(
+  response: OdoctorBranchesResponse | undefined,
+): OdoctorBranch[] {
+  return (response?.items ?? []).filter(
+    (branch) => branch.odoctorBranchId !== null,
+  );
+}
+
 /**
  * Почему эта строка ничего не выкладывает, даже с поднятым тумблером.
  *

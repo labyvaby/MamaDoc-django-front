@@ -19,6 +19,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { SettingsLayout } from "./SettingsLayout";
+import { OdoctorCabinetSection } from "./OdoctorCabinetSection";
 import {
   applyClearPasswordToggle,
   findOdoctorSettingsProblem,
@@ -305,6 +306,15 @@ const OdoctorSettingsPage: React.FC = () => {
               </Button>
             </Box>
           </>
+        )}
+
+        {/*
+          Сопоставление показывается только при заведённой учётке: список
+          врачей приходит из самого кабинета, и без учётки экран мог бы
+          сказать лишь «нет доступа».
+        */}
+        {form && settings?.hasPassword && settings.odoctorLogin.trim() !== "" && (
+          <OdoctorCabinetSection organizationId={orgId} disabled={busy} />
         )}
       </Stack>
 
