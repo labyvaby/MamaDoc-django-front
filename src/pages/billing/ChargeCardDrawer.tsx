@@ -34,6 +34,7 @@ import dayjs from "dayjs";
 import { billingApi, type BillingCharge } from "../../api/billing";
 import { getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
+import { chargePeriodLabel } from "./chargePeriod";
 
 type Props = {
   charge: BillingCharge | null;
@@ -240,7 +241,7 @@ export function ChargeCardDrawer({
                     )}
                   </Stack>
                   <Typography variant="h5" fontWeight={820}>{charge.purpose || charge.offeringName}</Typography>
-                  <Typography color="text.secondary">{charge.clientName} · {charge.periodLabel || charge.periodKey}</Typography>
+                  <Typography color="text.secondary">{charge.clientName} · {chargePeriodLabel(charge)}</Typography>
                 </Box>
                 <IconButton aria-label="Закрыть карточку" onClick={onClose}><CloseOutlined /></IconButton>
               </Stack>
@@ -326,7 +327,7 @@ export function ChargeCardDrawer({
                     <Typography variant="h6" fontWeight={780}>Начисление</Typography>
                   </Stack>
                   <Divider sx={{ my: 1 }} />
-                  <Rule label="Период" value={charge.periodLabel || charge.periodKey} />
+                  <Rule label="Период" value={chargePeriodLabel(charge)} />
                   <Rule label="Объект продажи" value={charge.offeringName} />
                   <Rule label="Назначение" value={charge.purpose || "—"} />
                   <Rule label="Источник" value={sourceLabels[charge.source] ?? charge.source} />
