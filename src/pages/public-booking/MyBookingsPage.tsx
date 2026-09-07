@@ -14,6 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 import EventOutlined from "@mui/icons-material/EventOutlined";
+import EventRepeatOutlined from "@mui/icons-material/EventRepeatOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
@@ -27,6 +28,7 @@ import {
   splitBookingsByTime,
   type MyBooking,
 } from "../../api/publicPatient";
+import { idOrSlugRef } from "../../api/publicBooking";
 import { isAbortError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
 import { usePatientSession } from "./PatientSession";
@@ -76,8 +78,9 @@ const BookingCard: React.FC<{
   booking: MyBooking;
   onCancel: (b: MyBooking) => void;
   onOpen: (b: MyBooking) => void;
+  onBookAgain: (b: MyBooking) => void;
   cancelling: boolean;
-}> = ({ booking, onCancel, onOpen, cancelling }) => {
+}> = ({ booking, onCancel, onOpen, onBookAgain, cancelling }) => {
   const { t } = useT("publicBooking");
   const statusKey = STATUS_LABEL_KEYS[booking.status];
   const price = Number(booking.totalPrice ?? 0);
@@ -167,7 +170,7 @@ const BookingCard: React.FC<{
           >
             {t("my.openCard")}
           </Button>
-          {isBookingCancellable(booking) && (
+          {isBookingCancellable(booking) ? (
             <Button
               onClick={() => onCancel(booking)}
               disabled={cancelling}
@@ -183,6 +186,26 @@ const BookingCard: React.FC<{
             >
               {cancelling ? t("my.cancelling") : t("my.cancelAction")}
             </Button>
+          ) : (
+            // Записаться тем же врачом снова — только у записей с врачом:
+            // групповые/безврачебные брони формы для повтора не имеют.
+            booking.doctor && (
+              <Button
+                onClick={() => onBookAgain(booking)}
+                size="small"
+                startIcon={<EventRepeatOutlined sx={{ fontSize: 16 }} />}
+                sx={{
+                  borderRadius: 99,
+                  px: 2,
+                  border: `1px solid ${BORDER}`,
+                  color: "text.primary",
+                  textTransform: "none",
+                  fontWeight: 500,
+                }}
+              >
+                {t("my.bookAgain")}
+              </Button>
+            )
           )}
         </Stack>
       </Stack>
@@ -355,6 +378,7 @@ const MyBookingsPage: React.FC = () => {
                     booking={b}
                     onCancel={setConfirming}
                     onOpen={(b) => go(`/book/b/${b.confirmationCode}`)}
+                    onBookAgain={(b) => b.doctor && go(`/book/doctor/${idOrSlugRef(b.doctor)}`)}
                     cancelling={cancellingId === b.id}
                   />
                 ))}
@@ -372,6 +396,7 @@ const MyBookingsPage: React.FC = () => {
                     booking={b}
                     onCancel={setConfirming}
                     onOpen={(b) => go(`/book/b/${b.confirmationCode}`)}
+                    onBookAgain={(b) => b.doctor && go(`/book/doctor/${idOrSlugRef(b.doctor)}`)}
                     cancelling={cancellingId === b.id}
                   />
                 ))}

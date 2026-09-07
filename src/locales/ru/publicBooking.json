@@ -175,6 +175,7 @@
     "payHint": "Без оплаты {{record.nom}} не подтвердится и время освободится.",
     "payAmount": "К оплате: {{amount}}",
     "payButton": "Перейти к оплате",
+    "addToCalendar": "Добавить в календарь",
     "payExpiresIn": "Ссылка действует ещё {{minutes}} мин",
     "payChecking": "Проверяем оплату…",
     "payPaid": "Оплата получена — {{record.nom}} подтверждается клиникой.",
@@ -232,6 +233,7 @@
     "cancelQuestion": "{{record.nom, capitalize}} на {{date}}, {{time}} будет отменена. Время освободится для других пациентов.",
     "keep": "Оставить",
     "openCard": "Открыть {{record.acc}}",
+    "bookAgain": "Записаться снова",
     "cancelFailed": "Не удалось отменить. Попробуйте ещё раз или позвоните в {{org.acc}}.",
     "loadFailed": "Не удалось загрузить {{record.accPl}}. Обновите страницу.",
     "sessionExpired": "Сессия истекла — войдите заново."
