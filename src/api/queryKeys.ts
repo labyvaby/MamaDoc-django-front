@@ -375,6 +375,9 @@ export const djangoQueryKeys = {
     // Связи врачей — список в скоупе организации.
     links: (organizationId: number | null | undefined) =>
       ["django", "odoctor", "links", organizationId ?? null] as const,
+    // Связи одного врача — ключ карточки сотрудника.
+    employeeLinks: (employeeId: number) =>
+      ["django", "odoctor", "links", "employee", employeeId] as const,
     // Предпросмотр спрашивается по одной связи и живёт до закрытия диалога:
     // он ходит в кабинет odoctor, и кешировать его надолго значило бы
     // показывать оператору вчерашнюю витрину как сегодняшнюю.
