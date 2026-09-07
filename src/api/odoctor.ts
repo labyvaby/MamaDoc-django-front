@@ -414,11 +414,16 @@ export interface OdoctorPreview {
 
 export function getOdoctorLinks(
   signal?: AbortSignal,
-  options?: { organizationId?: number | null },
+  options?: { organizationId?: number | null; employeeId?: number | null },
 ): Promise<OdoctorLinksResponse> {
   const query = new URLSearchParams();
   if (options?.organizationId != null) {
     query.set("organizationId", String(options.organizationId));
+  }
+  // Карточка сотрудника спрашивает одного врача. Область видимости от этого
+  // не меняется: её задаёт организация, и бэк сужает в том же запросе.
+  if (options?.employeeId != null) {
+    query.set("employeeId", String(options.employeeId));
   }
   const qs = query.toString();
   return apiRequest<OdoctorLinksResponse>(

@@ -19,7 +19,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { SettingsLayout } from "./SettingsLayout";
-import { OdoctorLinksSection } from "./OdoctorLinksSection";
 import {
   applyClearPasswordToggle,
   findOdoctorSettingsProblem,
@@ -305,12 +304,6 @@ const OdoctorSettingsPage: React.FC = () => {
                 {busy ? t("common:state.saving") : t("odoctor.saveButton")}
               </Button>
             </Box>
-
-            <Divider />
-
-            {/* Врачи — ниже учётки нарочно: без учётки предпросмотр не
-                покажет, что в витрине, и включать врача нечем. */}
-            <OdoctorLinksSection organizationId={orgId ?? null} />
           </>
         )}
       </Stack>
