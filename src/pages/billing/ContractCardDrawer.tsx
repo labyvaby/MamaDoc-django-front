@@ -21,6 +21,7 @@ import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PauseCircleOutlineOutlined from "@mui/icons-material/PauseCircleOutlineOutlined";
 import PlayCircleOutlineOutlined from "@mui/icons-material/PlayCircleOutlineOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import StopCircleOutlined from "@mui/icons-material/StopCircleOutlined";
@@ -32,6 +33,13 @@ import dayjs from "dayjs";
 import { billingApi, type BillingContract } from "../../api/billing";
 import { getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
+import { ContractRulesFields } from "./ContractRulesFields";
+import {
+  rulesError,
+  rulesFromContract,
+  rulesToPayload,
+  type ContractRulesValues,
+} from "./contractRules";
 
 type Props = {
   contract: BillingContract | null;
@@ -87,6 +95,16 @@ function Rule({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+/** Что именно включено из трёх уведомлений — иначе «Включены» ничего не говорит. */
+function notificationsSummary(contract: BillingContract): string {
+  const parts = [
+    contract.notifyOnCharge ? "при начислении" : null,
+    contract.notifyDaysBeforeDue ? `за ${contract.notifyDaysBeforeDue} дн. до срока` : null,
+    contract.notifyOnOverdue ? "при просрочке" : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(", ") : "Выключены";
+}
+
 export function ContractCardDrawer({ contract, organizationId, canManage, onClose, onChanged }: Props) {
   const contractId = contract?.id;
   const scope = React.useMemo(() => ({ ...(organizationId ? { organizationId } : {}) }), [organizationId]);
@@ -98,6 +116,12 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
   const [reason, setReason] = React.useState("");
   const [endOpen, setEndOpen] = React.useState(false);
   const [endDate, setEndDate] = React.useState(dayjs().format("YYYY-MM-DD"));
+  const [rulesOpen, setRulesOpen] = React.useState(false);
+  const [name, setName] = React.useState("");
+  const [startsOn, setStartsOn] = React.useState("");
+  const [endsOn, setEndsOn] = React.useState("");
+  const [billingDay, setBillingDay] = React.useState("");
+  const [rules, setRules] = React.useState<ContractRulesValues | null>(null);
 
   const historyQuery = useQuery({
     queryKey: [...cardKey, "prices"],
@@ -137,6 +161,20 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
     },
     onError: (error) => notify?.({ type: "error", message: "Цена не изменена", description: getErrorMessage(error) }),
   });
+  const rulesMutation = useMutation({
+    mutationFn: () => billingApi.updateContract(contractId!, {
+      name,
+      startsOn,
+      endsOn: endsOn || null,
+      billingDay: billingDay === "" ? null : Number(billingDay),
+      ...rulesToPayload(rules!),
+    }, scope),
+    onSuccess: async (updated) => {
+      setRulesOpen(false);
+      await finishMutation(updated, "Правила контракта сохранены");
+    },
+    onError: (error) => notify?.({ type: "error", message: "Правила не сохранены", description: getErrorMessage(error) }),
+  });
   const endMutation = useMutation({
     mutationFn: () => billingApi.endContract(contractId!, endDate, scope),
     onSuccess: async (updated) => {
@@ -147,6 +185,7 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
   });
 
   React.useEffect(() => {
+    setRulesOpen(false);
     setPrice("");
     setReason("");
     setPriceDate(dayjs().format("YYYY-MM-DD"));
@@ -154,6 +193,20 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
     setEndOpen(false);
   }, [contractId]);
 
+  // Форму заполняем в момент открытия, а не в effect: карточка живёт всё
+  // время, пока открыт Drawer, и переинициализация на каждый refetch
+  // затирала бы то, что пользователь уже набрал.
+  const openRules = () => {
+    if (!contract) return;
+    setName(contract.name);
+    setStartsOn(contract.startsOn);
+    setEndsOn(contract.endsOn ?? "");
+    setBillingDay(contract.billingDay == null ? "" : String(contract.billingDay));
+    setRules(rulesFromContract(contract));
+    setRulesOpen(true);
+  };
+
+  const rulesValidation = rules ? rulesError(rules) : null;
   const charges = chargesQuery.data?.items ?? [];
   const openCharges = charges.filter((charge) => !["paid", "canceled"].includes(charge.status));
   const outstanding = openCharges.reduce((sum, charge) => sum + Math.max(0, Number(charge.amount) - Number(charge.paidAmount)), 0);
@@ -199,6 +252,7 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
                   {contract.status === "paused" && (
                     <Button size="small" variant="outlined" startIcon={<PlayCircleOutlineOutlined />} disabled={busy} onClick={() => statusMutation.mutate("resume")}>Возобновить</Button>
                   )}
+                  <Button size="small" variant="outlined" startIcon={<EditOutlined />} disabled={busy} onClick={openRules}>Изменить правила</Button>
                   <Button size="small" color="error" startIcon={<StopCircleOutlined />} disabled={busy} onClick={() => setEndOpen(true)}>Завершить</Button>
                 </Stack>
               )}
@@ -231,8 +285,9 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
                   <Rule label="День начисления" value={contract.billingDay ? `${contract.billingDay}-е число` : "По дате начала"} />
                   <Rule label="Срок оплаты" value={contract.paymentTermDays == null ? "По календарю" : `${contract.paymentTermDays} дн.`} />
                   <Rule label="Льготный период" value={`${contract.graceDays} дн.`} />
+                  <Rule label="Выставлять заранее" value={contract.chargeLeadDays ? `за ${contract.chargeLeadDays} дн.` : "В день периода"} />
                   <Rule label="Автоначисление" value={contract.autoCharge ? "Включено" : "Выключено"} />
-                  <Rule label="Уведомления" value={contract.notifyOnCharge || contract.notifyOnOverdue ? "Включены" : "Выключены"} />
+                  <Rule label="Уведомления" value={notificationsSummary(contract)} />
                 </Paper>
 
                 <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
@@ -295,6 +350,80 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
           </Box>
         )}
       </Drawer>
+
+      <Dialog
+        open={rulesOpen && rules != null}
+        onClose={() => !rulesMutation.isPending && setRulesOpen(false)}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle>Правила контракта</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2.5} sx={{ pt: 1 }}>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
+              <TextField
+                size="small"
+                label="Название контракта"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                disabled={rulesMutation.isPending}
+                helperText="Пусто — покажем название объекта продажи"
+                sx={{ gridColumn: { sm: "1 / -1" } }}
+              />
+              <TextField
+                size="small"
+                required
+                type="date"
+                label="Начало"
+                value={startsOn}
+                onChange={(event) => setStartsOn(event.target.value)}
+                disabled={rulesMutation.isPending}
+                InputLabelProps={{ shrink: true }}
+              />
+              <TextField
+                size="small"
+                type="date"
+                label="Окончание"
+                value={endsOn}
+                onChange={(event) => setEndsOn(event.target.value)}
+                disabled={rulesMutation.isPending}
+                InputLabelProps={{ shrink: true }}
+                helperText="Пусто — бессрочный"
+              />
+              <TextField
+                size="small"
+                type="number"
+                label="День начисления"
+                value={billingDay}
+                onChange={(event) => setBillingDay(event.target.value)}
+                disabled={rulesMutation.isPending}
+                inputProps={{ min: 1, max: 28, step: 1 }}
+                helperText="1–28, пусто — как у даты начала"
+              />
+            </Box>
+            <Divider />
+            {rules && (
+              <ContractRulesFields
+                values={rules}
+                onChange={setRules}
+                disabled={rulesMutation.isPending}
+              />
+            )}
+            {rulesValidation && <Alert severity="warning">{rulesValidation}</Alert>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRulesOpen(false)} disabled={rulesMutation.isPending}>Отмена</Button>
+          <Button
+            variant="contained"
+            onClick={() => rulesMutation.mutate()}
+            disabled={!startsOn || rulesValidation != null || rulesMutation.isPending}
+          >
+            {rulesMutation.isPending ? <CircularProgress size={20} /> : "Сохранить"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={endOpen} onClose={() => !endMutation.isPending && setEndOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>Завершить контракт?</DialogTitle>

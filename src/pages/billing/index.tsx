@@ -30,6 +30,7 @@ import LinkOutlined from "@mui/icons-material/LinkOutlined";
 import MoreHorizOutlined from "@mui/icons-material/MoreHorizOutlined";
 import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
+import RuleOutlined from "@mui/icons-material/RuleOutlined";
 import { useNotification } from "@refinedev/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -50,6 +51,13 @@ import { useCan } from "../../hooks/useCan";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { subtleBg } from "../../theme/uiHelpers";
 import { ChargeCardDrawer } from "./ChargeCardDrawer";
+import { ContractRulesFields } from "./ContractRulesFields";
+import {
+  rulesError,
+  rulesFromDefaults,
+  rulesToPayload,
+  type ContractRulesValues,
+} from "./contractRules";
 import { ContractCardDrawer } from "./ContractCardDrawer";
 
 type BillingTab = "overview" | "contracts" | "charges" | "payments" | "debtors" | "offerings";
@@ -177,6 +185,8 @@ export default function BillingPage() {
   const [selectedContract, setSelectedContract] = React.useState<BillingContract | null>(null);
   const [selectedCharge, setSelectedCharge] = React.useState<BillingCharge | null>(null);
   const [chargeStatus, setChargeStatus] = React.useState("");
+  const [defaultsOpen, setDefaultsOpen] = React.useState(false);
+  const [defaultsRules, setDefaultsRules] = React.useState<ContractRulesValues | null>(null);
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const scope = useActiveScope();
@@ -225,6 +235,17 @@ export default function BillingPage() {
     queryFn: () => billingApi.clients(scopeParams),
     enabled: enabled && (dialog === "contract" || dialog === "payment"),
   });
+  // Правила, которые получит каждый новый контракт организации. Тот же набор
+  // полей, что и в карточке контракта, — компонент общий.
+  const defaultsQuery = useQuery({
+    queryKey: djangoQueryKeys.billing.defaults(organizationId),
+    queryFn: () => billingApi.contractDefaults(scopeParams),
+    enabled: enabled && defaultsOpen,
+  });
+  React.useEffect(() => {
+    if (defaultsQuery.data) setDefaultsRules(rulesFromDefaults(defaultsQuery.data));
+  }, [defaultsQuery.data]);
+
   const chargeRows = React.useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("ru");
     const rows = chargesQuery.data?.items ?? [];
@@ -262,6 +283,18 @@ export default function BillingPage() {
     onSuccess: async () => { setDialog(null); setEditingOffering(null); setForm(initialForm()); await invalidate(); notify?.({ type: "success", message: "Сохранено" }); },
     onError: (error) => notify?.({ type: "error", message: "Не удалось сохранить", description: getErrorMessage(error) }),
   });
+
+  const defaultsMutation = useMutation({
+    mutationFn: () => billingApi.updateContractDefaults(rulesToPayload(defaultsRules!), scopeParams),
+    onSuccess: async (updated) => {
+      setDefaultsRules(rulesFromDefaults(updated));
+      setDefaultsOpen(false);
+      await invalidate();
+      notify?.({ type: "success", message: "Правила по умолчанию сохранены" });
+    },
+    onError: (error) => notify?.({ type: "error", message: "Не удалось сохранить правила", description: getErrorMessage(error) }),
+  });
+  const defaultsValidation = defaultsRules ? rulesError(defaultsRules) : null;
 
   const openDialog = (kind: Exclude<DialogKind, null>) => { setEditingOffering(null); setForm(initialForm()); setDialog(kind); };
   const openOfferingEdit = (offering: BillingOffering) => {
@@ -310,7 +343,12 @@ export default function BillingPage() {
         searchPlaceholder="Клиент, номер или объект"
         loading={isLoading}
         actions={
-          <Stack direction="row" spacing={0.5}>
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            {tab === "contracts" && canManage && (
+              <Button size="small" startIcon={<RuleOutlined />} onClick={() => setDefaultsOpen(true)}>
+                Правила по умолчанию
+              </Button>
+            )}
             <Tooltip title="Обновить"><IconButton onClick={() => void invalidate()}><RefreshOutlined /></IconButton></Tooltip>
           </Stack>
         }
@@ -408,6 +446,44 @@ export default function BillingPage() {
           {dialog === "offering" && <><TextField select required disabled={Boolean(editingOffering)} label="Тип" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })} helperText={editingOffering ? "Тип нельзя изменить после создания" : "Определяет дополнительные поля"}><MenuItem value="service">Услуга</MenuItem><MenuItem value="course">Курс</MenuItem><MenuItem value="rental">Аренда</MenuItem></TextField><TextField required label="Название" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /><TextField label="Категория" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /><TextField required label="Стоимость" type="number" value={form.priceAmount} onChange={(e) => setForm({ ...form, priceAmount: e.target.value })} /><TextField select required label="Периодичность" value={form.billingCycle} onChange={(e) => setForm({ ...form, billingCycle: e.target.value })}>{Object.entries(CYCLE_LABELS).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField>{form.kind === "course" && <><TextField required label="Количество мест" type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /><TextField required label="Количество занятий" type="number" value={form.sessionsTotal} onChange={(e) => setForm({ ...form, sessionsTotal: e.target.value })} /><TextField required label="Расписание" value={form.schedule} onChange={(e) => setForm({ ...form, schedule: e.target.value })} helperText="Например: пн/ср/пт 18:00" /><TextField required label="Начало курса" type="date" value={form.startsOn} onChange={(e) => setForm({ ...form, startsOn: e.target.value })} InputLabelProps={{ shrink: true }} /></>}{form.kind === "rental" && <><TextField select required label="Тип объекта" value={form.objectType} onChange={(e) => setForm({ ...form, objectType: e.target.value })}><MenuItem value="apartment">Квартира</MenuItem><MenuItem value="house">Дом</MenuItem><MenuItem value="floor">Этаж</MenuItem><MenuItem value="office">Офис</MenuItem><MenuItem value="land">Участок</MenuItem><MenuItem value="warehouse">Склад</MenuItem><MenuItem value="retail">Торговая площадь</MenuItem><MenuItem value="parking">Парковка</MenuItem><MenuItem value="other">Другое</MenuItem></TextField><TextField select required label="Единица площади" value={form.areaUnit} onChange={(e) => setForm({ ...form, areaUnit: e.target.value })}><MenuItem value="sqm">м²</MenuItem><MenuItem value="sotka">сотка</MenuItem></TextField><TextField select required label="Ставка за" value={form.ratePeriod} onChange={(e) => setForm({ ...form, ratePeriod: e.target.value })}><MenuItem value="day">Сутки</MenuItem><MenuItem value="month">Месяц</MenuItem><MenuItem value="year">Год</MenuItem></TextField><TextField label="Площадь" type="number" value={form.areaValue} onChange={(e) => setForm({ ...form, areaValue: e.target.value })} /><TextField label="Адрес" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} sx={{ gridColumn: "1 / -1" }} /><TextField label="Депозит" type="number" value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: e.target.value })} /></>}</>}
         </DialogContent>
         <DialogActions><Button onClick={() => setDialog(null)} disabled={submitMutation.isPending}>Отмена</Button><Button variant="contained" onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending || (dialog === "contract" && (!form.clientId || !form.offeringId)) || (dialog === "charge" && (!form.subscriptionId || !form.purpose || !form.amount)) || (dialog === "payment" && (!form.clientId || !form.amount)) || (dialog === "offering" && (!form.name || !form.priceAmount || (form.kind === "course" && (!form.capacity || !form.sessionsTotal || !form.schedule))))}>{submitMutation.isPending ? <CircularProgress size={20} /> : "Сохранить"}</Button></DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={defaultsOpen}
+        onClose={() => !defaultsMutation.isPending && setDefaultsOpen(false)}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle>Правила начислений по умолчанию</DialogTitle>
+        <DialogContent dividers>
+          <Typography color="text.secondary" sx={{ mb: 2 }}>
+            Их получит каждый новый контракт организации. Уже заключённые контракты
+            не меняются — их правила правятся в карточке контракта.
+          </Typography>
+          {defaultsQuery.isLoading && <LinearProgress sx={{ borderRadius: 2 }} />}
+          {defaultsQuery.error && (
+            <Alert severity="error">{getErrorMessage(defaultsQuery.error, "Не удалось загрузить правила")}</Alert>
+          )}
+          {defaultsRules && (
+            <ContractRulesFields
+              values={defaultsRules}
+              onChange={setDefaultsRules}
+              disabled={defaultsMutation.isPending}
+            />
+          )}
+          {defaultsValidation && <Alert severity="warning" sx={{ mt: 2 }}>{defaultsValidation}</Alert>}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDefaultsOpen(false)} disabled={defaultsMutation.isPending}>Отмена</Button>
+          <Button
+            variant="contained"
+            onClick={() => defaultsMutation.mutate()}
+            disabled={!defaultsRules || defaultsValidation != null || defaultsMutation.isPending}
+          >
+            {defaultsMutation.isPending ? <CircularProgress size={20} /> : "Сохранить"}
+          </Button>
+        </DialogActions>
       </Dialog>
 
       <ChargeCardDrawer

@@ -217,6 +217,8 @@ export const billingApi = {
     apiRequest<BillingPage<BillingContract>>(`/v2/billing/contracts/${query(params)}`),
   contract: (id: number, scope: Scope) =>
     apiRequest<BillingContract>(`/v2/billing/contracts/${id}/${query(scope)}`),
+  updateContract: (id: number, body: Record<string, unknown>, scope: Scope) =>
+    apiRequest<BillingContract>(`/v2/billing/contracts/${id}/${query(scope)}`, { method: "PATCH", body }),
   createContract: (body: Record<string, unknown>) =>
     apiRequest<BillingContract>("/v2/billing/contracts/", { method: "POST", headers: moneyHeaders(), body }),
   contractAction: (id: number, action: "pause" | "resume", scope: Scope) =>
