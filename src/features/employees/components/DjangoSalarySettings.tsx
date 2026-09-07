@@ -548,6 +548,12 @@ const DjangoSalarySettings: React.FC<Props> = ({
                     <MenuItem disabled sx={{ justifyContent: "center", py: 1 }}>
                       <CircularProgress size={18} />
                     </MenuItem>
+                  ) : services.length === 0 ? (
+                    <MenuItem disabled sx={{ py: 1 }}>
+                      <Typography variant="body2" color="text.disabled">
+                        Нет закреплённых услуг
+                      </Typography>
+                    </MenuItem>
                   ) : (
                     services.map((service) => (
                       <MenuItem key={service.id} value={service.id} sx={{ py: 0.5, minHeight: 0 }}>
