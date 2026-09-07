@@ -517,6 +517,30 @@ export function odoctorLinkBlocker(link: OdoctorLink): OdoctorLinkBlocker {
  * зеркало снесло бы. Такой был первый включённый врач — на неделю вперёд в
  * витрине у неё было пусто, и включение только добавляло окна.
  */
+/**
+ * День предпросмотра человеку: «ср, 9 сент.» вместо «2026-09-09».
+ *
+ * Собираем и печатаем в UTC нарочно. С сервера приходит календарная дата без
+ * времени; отдай её `new Date(iso)` — она станет полуночью UTC, и в западной
+ * зоне браузера «9 сентября» напечатается восьмым числом. Часовой пояс здесь
+ * не при чём вовсе: врач работает в тот день, который написан в строке.
+ *
+ * Нечитаемую строку возвращаем как есть: показать её сырой честнее, чем
+ * подставить сегодняшнее число.
+ */
+export function formatOdoctorDay(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) {
+    return iso;
+  }
+  return new Intl.DateTimeFormat("ru-RU", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
 export function previewClearWarning(
   preview: OdoctorPreview,
 ): { days: number; dates: string[] } | null {

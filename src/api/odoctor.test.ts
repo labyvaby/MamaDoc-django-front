@@ -16,6 +16,7 @@ import {
   type OdoctorLinksResponse,
   type OdoctorSettings,
   type OdoctorSettingsForm,
+  formatOdoctorDay,
   odoctorEmployeeBlockState,
   odoctorLinkBlocker,
   previewClearWarning,
@@ -558,6 +559,22 @@ function link(over: Partial<Parameters<typeof odoctorLinkBlocker>[0]> = {}) {
     ...over,
   };
 }
+
+describe("formatOdoctorDay", () => {
+  it("печатает день недели: врачу важен он, а не число", () => {
+    expect(formatOdoctorDay("2026-09-09")).toMatch(/^ср, 9 сент/);
+  });
+
+  it("не съезжает на сутки в западных зонах", () => {
+    // Дата приходит без времени. Через `new Date(iso)` она стала бы
+    // полуночью UTC, и в Нью-Йорке девятое напечаталось бы восьмым.
+    expect(formatOdoctorDay("2026-01-01")).toMatch(/^чт, 1 янв/);
+  });
+
+  it("нечитаемую строку отдаёт как есть", () => {
+    expect(formatOdoctorDay("завтра")).toBe("завтра");
+  });
+});
 
 describe("odoctorEmployeeBlockState", () => {
   function response(over: Partial<OdoctorLinksResponse> = {}) {

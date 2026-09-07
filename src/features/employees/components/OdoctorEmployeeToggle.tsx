@@ -13,6 +13,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableRow,
   Typography,
@@ -20,6 +21,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  formatOdoctorDay,
   getOdoctorLinkPreview,
   getOdoctorLinks,
   odoctorEmployeeBlockState,
@@ -28,8 +30,30 @@ import {
   previewClearWarning,
   updateOdoctorLink,
   type OdoctorLink,
+  type OdoctorPreviewDay,
 } from "../../../api/odoctor";
 import { djangoQueryKeys } from "../../../api/queryKeys";
+
+/**
+ * Каким цветом печатать «станет».
+ *
+ * Ноль сам по себе не событие: у нерабочего дня его и так ждут. Событие —
+ * ноль там, где в витрине что-то стоит: эти окна зеркало вычистит, и глаз
+ * должен цепляться именно за такую строку.
+ */
+function offerColor(day: OdoctorPreviewDay): string | undefined {
+  if (day.wouldOffer > 0) {
+    return undefined;
+  }
+  return day.inCabinet > 0 ? "warning.main" : "text.disabled";
+}
+
+function offerLabel(day: OdoctorPreviewDay): string {
+  if (day.wouldOffer > 0) {
+    return String(day.wouldOffer);
+  }
+  return day.inCabinet > 0 ? "0" : "—";
+}
 
 /**
  * Синхронизация окон этого врача с витриной odoctor.kg — в его же карточке.
@@ -102,6 +126,13 @@ export function OdoctorEmployeeToggle({
   }
   const rows = links.data.items;
   const warning = preview.data ? previewClearWarning(preview.data) : null;
+  const totals = (preview.data?.days ?? []).reduce(
+    (sum, day) => ({
+      inCabinet: sum.inCabinet + day.inCabinet,
+      wouldOffer: sum.wouldOffer + day.wouldOffer,
+    }),
+    { inCabinet: 0, wouldOffer: 0 },
+  );
 
   // Врач не сопоставлен с кабинетом. Блок всё равно показываем: иначе
   // оператор не отличит «этого врача не выкладываем» от «такой настройки
@@ -193,8 +224,10 @@ export function OdoctorEmployeeToggle({
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle>Что произойдёт при включении</DialogTitle>
-        <DialogContent>
+        <DialogTitle sx={{ pb: 1 }}>
+          Что произойдёт при включении
+        </DialogTitle>
+        <DialogContent dividers>
           {preview.isPending ? (
             <Stack alignItems="center" py={3} spacing={1}>
               <CircularProgress size={24} />
@@ -219,23 +252,69 @@ export function OdoctorEmployeeToggle({
                   окна.
                 </Alert>
               )}
-              <Table size="small">
+              <Table size="small" sx={{ "& td, & th": { px: 1 } }}>
                 <TableHead>
                   <TableRow>
                     <TableCell>День</TableCell>
-                    <TableCell align="right">Сейчас в витрине</TableCell>
-                    <TableCell align="right">Станет по расписанию</TableCell>
+                    {/* Полные подписи — «сейчас в витрине», «станет по
+                        расписанию» — в узком окне заворачивались в два
+                        этажа и съедали место у самих чисел. Что это за
+                        окна, уже сказано заголовком и сообщением выше. */}
+                    <TableCell align="right">Сейчас</TableCell>
+                    <TableCell align="right">Станет</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {preview.data?.days.map((day) => (
                     <TableRow key={day.date}>
-                      <TableCell>{day.date}</TableCell>
-                      <TableCell align="right">{day.inCabinet}</TableCell>
-                      <TableCell align="right">{day.wouldOffer}</TableCell>
+                      <TableCell
+                        sx={{
+                          whiteSpace: "nowrap",
+                          color:
+                            day.inCabinet || day.wouldOffer
+                              ? undefined
+                              : "text.disabled",
+                        }}
+                      >
+                        {formatOdoctorDay(day.date)}
+                      </TableCell>
+                      <TableCell
+                        align="right"
+                        sx={{
+                          color: day.inCabinet ? undefined : "text.disabled",
+                        }}
+                      >
+                        {day.inCabinet || "—"}
+                      </TableCell>
+                      <TableCell
+                        align="right"
+                        sx={{
+                          color: offerColor(day),
+                          fontWeight:
+                            day.wouldOffer === 0 && day.inCabinet > 0
+                              ? 500
+                              : undefined,
+                        }}
+                      >
+                        {offerLabel(day)}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell sx={{ border: 0 }}>Итого окон</TableCell>
+                    <TableCell align="right" sx={{ border: 0 }}>
+                      {totals.inCabinet}
+                    </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{ border: 0, fontWeight: 500 }}
+                    >
+                      {totals.wouldOffer}
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
               </Table>
             </Stack>
           )}
