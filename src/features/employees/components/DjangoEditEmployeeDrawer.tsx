@@ -97,6 +97,7 @@ import {
   validateBik,
   validatePrepaymentAmount,
 } from "../employeeValidation";
+import { buildSalaryServiceOptions } from "../salaryServiceOptions";
 
 export type DjangoEditEmployeeDrawerProps = {
   record: EmployesRow | null;
@@ -952,29 +953,29 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const isDoctor =
     record?._djangoRole?.code === "doctor" || clinicalRole === "doctor";
 
-  // Для врачей в правилах ЗП показываем только услуги, закреплённые за врачом
-  // (живой выбор из вкладки «Услуги»). Дополнительно оставляем услуги, уже
-  // упомянутые в правилах, — чтобы их имена/чипы отображались и правило можно
-  // было отредактировать, даже если услугу открепили. Ограничение применяем
-  // лишь когда привязки услуг реально загружены (есть право на их просмотр).
-  const salaryServices = React.useMemo(() => {
-    const restrictToAssigned =
-      isDoctor && (canViewServices || canManageServices);
-    if (!restrictToAssigned) return allServices;
-    const referencedIds = new Set(salary.rules.flatMap((r) => r.serviceIds));
-    const selectedIds = new Set(selectedServices.map((s) => s.id));
-    const extras = allServices.filter(
-      (s) => referencedIds.has(s.id) && !selectedIds.has(s.id),
-    );
-    return [...selectedServices, ...extras];
-  }, [isDoctor, canViewServices, canManageServices, allServices, selectedServices, salary.rules]);
+  // В правилах ЗП показываем только услуги, закреплённые за сотрудником (живой
+  // выбор из вкладки «Услуги») — ставка на непривязанную услугу всё равно не
+  // отработает, приём с такой парой услуга/исполнитель не собрать. Правило
+  // сужения и его исключения — в buildSalaryServiceOptions.
+  const assignmentsKnown = canViewServices || canManageServices;
+  const salaryServices = React.useMemo(
+    () =>
+      buildSalaryServiceOptions({
+        allServices,
+        assignedServices: selectedServices,
+        ruleServiceIds: salary.rules.flatMap((r) => r.serviceIds),
+        assignmentsKnown,
+      }),
+    [assignmentsKnown, allServices, selectedServices, salary.rules],
+  );
 
-  // Подсказка врачу без закреплённых услуг: правила ЗП по услугам применять не к чему.
+  // Подсказка сотруднику без закреплённых услуг: правила ЗП по услугам
+  // применять не к чему. Врачу — своим термином вертикали.
   const salaryServicesHint =
-    isDoctor &&
-    (canViewServices || canManageServices) &&
-    selectedServices.length === 0
-      ? t("clinicalRole.doctorNoServicesHint")
+    assignmentsKnown && selectedServices.length === 0
+      ? isDoctor
+        ? t("clinicalRole.doctorNoServicesHint")
+        : t("clinicalRole.employeeNoServicesHint")
       : undefined;
 
   return (
