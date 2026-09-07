@@ -354,3 +354,135 @@ export function odoctorSettingsErrorMessage(err: unknown): string {
   // сырой текст всё же лучше пустой красной плашки.
   return parts.length > 0 ? parts.join("; ") : raw;
 }
+
+
+// ── Связи врачей ──────────────────────────────────────────────────────────────
+
+/**
+ * Связь одного врача CRM с врачом в кабинете odoctor.
+ *
+ * `branchIsEnabled` повторён в каждой строке нарочно: синхронизации нужны все
+ * три выключателя — организация, филиал, врач. Строка с поднятым своим
+ * тумблером при выключенном филиале не выложит ничего, и оператор, который
+ * этого не видит, будет ждать окон, которые не появятся.
+ *
+ * `nameDrift` — запаркованное состояние: кабинет переименовал врача, и пока
+ * человек не подтвердит новое имя в админке, синхронизация связь пропускает.
+ * Правится только в админке: за снимком ФИО стоит решение «чьи окна куда
+ * уходят», и в этом кабинете уже встречались «Канаатова» против «Канаатовна».
+ */
+export interface OdoctorLink {
+  id: number;
+  employeeId: number;
+  employeeName: string;
+  branchId: number;
+  branchName: string;
+  branchIsEnabled: boolean;
+  odoctorBranchId: number;
+  odoctorDoctorId: number;
+  odoctorDoctorName: string;
+  seanceLengthSeconds: number;
+  isEnabled: boolean;
+  nameDrift: boolean;
+}
+
+export interface OdoctorLinksResponse {
+  organizationId: number;
+  items: OdoctorLink[];
+}
+
+/** Один день предпросмотра: сколько окон в кабинете сейчас и станет. */
+export interface OdoctorPreviewDay {
+  date: string;
+  inCabinet: number;
+  wouldOffer: number;
+}
+
+/**
+ * Что даст включение врача. Спрашивается до того, как тумблер щёлкнут.
+ *
+ * `wouldClearDays` — единственное число здесь, которое предупреждает, а не
+ * успокаивает: день, в который CRM говорит «не работает», зеркало в кабинете
+ * очищает. У врача, чьи окна кто-то ведёт руками, включение их снимет.
+ */
+export interface OdoctorPreview {
+  linkId: number;
+  odoctorDoctorName: string;
+  days: OdoctorPreviewDay[];
+  wouldClearDays: number;
+}
+
+export function getOdoctorLinks(
+  signal?: AbortSignal,
+  options?: { organizationId?: number | null },
+): Promise<OdoctorLinksResponse> {
+  const query = new URLSearchParams();
+  if (options?.organizationId != null) {
+    query.set("organizationId", String(options.organizationId));
+  }
+  const qs = query.toString();
+  return apiRequest<OdoctorLinksResponse>(
+    `/odoctor/links/${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+}
+
+export function getOdoctorLinkPreview(
+  linkId: number,
+  signal?: AbortSignal,
+): Promise<OdoctorPreview> {
+  return apiRequest<OdoctorPreview>(`/odoctor/links/${linkId}/preview/`, {
+    signal,
+  });
+}
+
+/** Переключить синхронизацию у одного врача. Больше ничего PATCH не примет. */
+export function updateOdoctorLink(
+  linkId: number,
+  isEnabled: boolean,
+): Promise<OdoctorLink> {
+  return apiRequest<OdoctorLink>(`/odoctor/links/${linkId}/`, {
+    method: "PATCH",
+    body: { isEnabled },
+  });
+}
+
+/**
+ * Почему эта строка ничего не выкладывает, даже с поднятым тумблером.
+ *
+ * Порядок не произволен. `drift` идёт первым, потому что он единственный
+ * требует решения человека о конкретном враче; выключенный филиал — общая
+ * настройка, и починить её проще. Выключенная организация здесь не
+ * проверяется: она видна тумблером выше на той же странице, и дублировать её
+ * в каждой строке значило бы утопить в шуме то, что касается именно врача.
+ */
+export type OdoctorLinkBlocker = "drift" | "branch-off" | null;
+
+export function odoctorLinkBlocker(link: OdoctorLink): OdoctorLinkBlocker {
+  if (link.nameDrift) {
+    return "drift";
+  }
+  if (!link.branchIsEnabled) {
+    return "branch-off";
+  }
+  return null;
+}
+
+/**
+ * Стоит ли предупредить перед включением — и о чём.
+ *
+ * `null` означает «включать безопасно»: в кабинете у врача нет ничего, что
+ * зеркало снесло бы. Такой был первый включённый врач — на неделю вперёд в
+ * витрине у неё было пусто, и включение только добавляло окна.
+ */
+export function previewClearWarning(
+  preview: OdoctorPreview,
+): { days: number; dates: string[] } | null {
+  const clearing = preview.days.filter(
+    (day) => day.inCabinet > 0 && day.wouldOffer === 0,
+  );
+  if (clearing.length === 0) {
+    return null;
+  }
+  return { days: clearing.length, dates: clearing.map((day) => day.date) };
+}

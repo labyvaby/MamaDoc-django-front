@@ -372,6 +372,14 @@ export const djangoQueryKeys = {
     // организации, поэтому и ключ один.
     settings: (organizationId: number | null | undefined) =>
       ["django", "odoctor", "settings", organizationId ?? null] as const,
+    // Связи врачей — список в скоупе организации.
+    links: (organizationId: number | null | undefined) =>
+      ["django", "odoctor", "links", organizationId ?? null] as const,
+    // Предпросмотр спрашивается по одной связи и живёт до закрытия диалога:
+    // он ходит в кабинет odoctor, и кешировать его надолго значило бы
+    // показывать оператору вчерашнюю витрину как сегодняшнюю.
+    linkPreview: (linkId: number) =>
+      ["django", "odoctor", "link-preview", linkId] as const,
   },
 
   scheduling: {

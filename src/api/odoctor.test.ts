@@ -15,6 +15,8 @@ import {
   ODOCTOR_HORIZON_MAX_DAYS,
   type OdoctorSettings,
   type OdoctorSettingsForm,
+  odoctorLinkBlocker,
+  previewClearWarning,
 } from "./odoctor";
 
 /** Ответ GET по контракту payloads.py: значения пароля в нём нет. */
@@ -531,5 +533,92 @@ describe("saveOdoctorSettingsForm", () => {
     expect(odoctorSettingsErrorMessage(err)).toBe(
       "Выберите одно: либо новый пароль, либо стирание.",
     );
+  });
+});
+
+
+// ── Связи врачей ──────────────────────────────────────────────────────────────
+
+function link(over: Partial<Parameters<typeof odoctorLinkBlocker>[0]> = {}) {
+  return {
+    id: 1,
+    employeeId: 35,
+    employeeName: "Ыманбекова Даткайым Акылбековна",
+    branchId: 13,
+    branchName: "Мама Доктор Плюс",
+    branchIsEnabled: true,
+    odoctorBranchId: 1530,
+    odoctorDoctorId: 5418,
+    odoctorDoctorName: "Ыманбекова Даткайым Акылбековна",
+    seanceLengthSeconds: 1800,
+    isEnabled: false,
+    nameDrift: false,
+    ...over,
+  };
+}
+
+describe("odoctorLinkBlocker", () => {
+  it("молчит, когда врачу ничего не мешает", () => {
+    expect(odoctorLinkBlocker(link())).toBeNull();
+  });
+
+  it("называет выключенный филиал: тумблер врача сам по себе бессилен", () => {
+    expect(odoctorLinkBlocker(link({ branchIsEnabled: false }))).toBe(
+      "branch-off",
+    );
+  });
+
+  it("расхождение ФИО важнее выключенного филиала", () => {
+    // Филиал — общая настройка, её видно и починить просто. Расхождение ФИО
+    // требует решения человека именно об этом враче, и показать надо его.
+    expect(
+      odoctorLinkBlocker(link({ nameDrift: true, branchIsEnabled: false })),
+    ).toBe("drift");
+  });
+});
+
+describe("previewClearWarning", () => {
+  it("молчит, когда в кабинете нечего терять", () => {
+    // Так выглядел первый включённый врач: в витрине пусто, включение только
+    // добавляет окна.
+    expect(
+      previewClearWarning({
+        linkId: 1,
+        odoctorDoctorName: "Врач",
+        wouldClearDays: 0,
+        days: [
+          { date: "2026-09-09", inCabinet: 0, wouldOffer: 15 },
+          { date: "2026-09-10", inCabinet: 0, wouldOffer: 0 },
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it("называет дни, которые включение вычистит", () => {
+    const warning = previewClearWarning({
+      linkId: 1,
+      odoctorDoctorName: "Врач",
+      wouldClearDays: 2,
+      days: [
+        { date: "2026-09-09", inCabinet: 15, wouldOffer: 15 },
+        { date: "2026-09-10", inCabinet: 9, wouldOffer: 0 },
+        { date: "2026-09-11", inCabinet: 4, wouldOffer: 0 },
+      ],
+    });
+
+    expect(warning).toEqual({ days: 2, dates: ["2026-09-10", "2026-09-11"] });
+  });
+
+  it("день с окнами по обе стороны предупреждением не считается", () => {
+    // Иначе предупреждение стояло бы над каждым рабочим врачом и перестало
+    // бы что-либо значить.
+    expect(
+      previewClearWarning({
+        linkId: 1,
+        odoctorDoctorName: "Врач",
+        wouldClearDays: 0,
+        days: [{ date: "2026-09-09", inCabinet: 7, wouldOffer: 15 }],
+      }),
+    ).toBeNull();
   });
 });
