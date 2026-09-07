@@ -281,7 +281,12 @@ export function OdoctorCabinetSection({
                       <Typography variant="body2">
                         {row.odoctorDoctorName}
                       </Typography>
-                      {!row.isActive && (
+                      {!row.inCabinet && (
+                        <Typography variant="caption" color="warning.main">
+                          {t("odoctor.cabinet.gone")}
+                        </Typography>
+                      )}
+                      {row.inCabinet && !row.isActive && (
                         <Typography variant="caption" color="text.secondary">
                           {t("odoctor.cabinet.unpublished")}
                         </Typography>

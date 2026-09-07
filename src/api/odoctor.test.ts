@@ -572,6 +572,7 @@ describe("odoctorCabinetRowState", () => {
       odoctorDoctorId: 5418,
       odoctorDoctorName: "Ыманбекова Даткайым Акылбековна",
       isActive: true,
+      inCabinet: true,
       linkId: null,
       linkedEmployeeId: null,
       linkedEmployeeName: null,

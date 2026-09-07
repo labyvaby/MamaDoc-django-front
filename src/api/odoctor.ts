@@ -494,6 +494,15 @@ export interface OdoctorCabinetDoctor {
   odoctorDoctorName: string;
   /** Признак кабинета: врача там могли снять с публикации. */
   isActive: boolean;
+  /**
+   * Есть ли эта строка в кабинете вообще.
+   *
+   * Пусто — врача там больше нет, а связь осталась. Такую строку список
+   * обязан показать: он идёт со стороны кабинета, и связь, о которой кабинет
+   * молчит, осталась бы без строки — а значит, и без кнопки «Отвязать».
+   * ФИО в ней — наш снимок, другого нет.
+   */
+  inCabinet: boolean;
   linkId: number | null;
   linkedEmployeeId: number | null;
   linkedEmployeeName: string | null;
