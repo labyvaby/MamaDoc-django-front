@@ -97,13 +97,11 @@ export const SERVICE_RELATED_PRODUCTS_MAX = 20;
 /**
  * История изменения цены услуги (заказчик 07.09.2026, по аналогии с историей
  * цены товара — `getProductPriceHistory` в `api/warehouse.ts`, эндпоинт
- * `/warehouse/products/{id}/price-history/`). На каталоге услуг такого
- * эндпоинта на бэке нет — тикет `MamaDoc/backend_ticket_service_price_history.md`.
- *
- * ⚠ Не включать до ответа бэка: `/catalog/services/{id}/price-history/` ниже —
- * предположение фронта по аналогии с товаром, не подтверждённый контракт.
+ * `/warehouse/products/{id}/price-history/`). Контракт: GET
+ * `/catalog/services/{id}/price-history/` возвращает цену, ФИО автора и время
+ * изменения; доступ ограничен видимыми пользователю услугами.
  */
-export const SERVICE_PRICE_HISTORY_ENABLED = false;
+export const SERVICE_PRICE_HISTORY_ENABLED = true;
 
 /** Запись истории изменения цены услуги. */
 export interface ServicePriceHistoryEntry {
@@ -461,8 +459,7 @@ type RawServicePriceHistoryEntry = Omit<ServicePriceHistoryEntry, "price"> & {
 };
 
 /**
- * История изменения цены услуги (самые новые сверху). См. флаг
- * `SERVICE_PRICE_HISTORY_ENABLED` — включать только после ответа бэка.
+ * История изменения цены услуги (самые новые сверху).
  */
 export async function getServicePriceHistory(
   serviceId: number,
