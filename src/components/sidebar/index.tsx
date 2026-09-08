@@ -593,9 +593,9 @@ const SidebarSecondary: React.FC = () => {
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements,
+    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
-    "storage": can_.pos || can_.products || can_.vaccinations || can_.sales || can_.storage,
+    "storage": can_.products || can_.vaccinations || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
 
@@ -810,6 +810,11 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Мои достижения" collapsed={siderCollapsed} />
         )}
 
+        {/* Касса магазина — рабочий инструмент продаж, в разделе «Моя работа» */}
+        {show("my-work") && can_.pos && (
+          <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса магазина" collapsed={siderCollapsed} />
+        )}
+
         {/* ══════════════════════════════════════════
             ОРГАНИЗАЦИЯ
             ══════════════════════════════════════════ */}
@@ -862,11 +867,6 @@ const SidebarSecondary: React.FC = () => {
         {/* ══════════════════════════════════════════
             СКЛАДЫ
             ══════════════════════════════════════════ */}
-
-        {/* Товары */}
-        {show("storage") && can_.pos && (
-          <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса магазина" collapsed={siderCollapsed} />
-        )}
 
         {show("storage") && can_.products && (
           <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
