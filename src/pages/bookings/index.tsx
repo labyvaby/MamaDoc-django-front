@@ -69,6 +69,7 @@ import {
   isBookingOverdue,
   sortBookingsByPriority,
   statusTone,
+  useTickingClock,
 } from "./meta";
 import { useT } from "../../i18n/VerticalProvider";
 
@@ -455,6 +456,11 @@ const BookingsPage: React.FC = () => {
     return sample.some(hasPrepayment);
   }, [statsQuery.data, query.data]);
 
+  // Тикающие часы для обратного отсчёта «Идёт оплата · N мин» — заводим таймер,
+  // только если в выборке вообще есть предоплата, иначе клинике без неё лишний
+  // повторный рендер раз в 15с не нужен.
+  const now = useTickingClock(15000, prepaymentLive);
+
   /** Пустой выборке предупреждать не о чем. */
   const hasAnyBooking =
     (query.data?.results?.length ?? 0) > 0 || (statsQuery.data?.all?.length ?? 0) > 0;
@@ -659,9 +665,11 @@ const BookingsPage: React.FC = () => {
       {
         field: "status",
         headerName: "Статус",
-        width: 150,
+        width: prepaymentLive ? 190 : 150,
         sortable: false,
-        renderCell: ({ row }) => <StatusChip status={row.status} />,
+        renderCell: ({ row }) => (
+          <StatusChip status={row.status} expiresAt={row.prepaymentExpiresAt} now={now} />
+        ),
       },
       // Колонка появляется, только когда предоплата в выборке вообще есть.
       ...(prepaymentLive
@@ -669,7 +677,7 @@ const BookingsPage: React.FC = () => {
             {
               field: "prepaymentStatus",
               headerName: "Оплата",
-              width: 190,
+              width: 210,
               sortable: false,
               renderCell: ({ row }: { row: BookingListItem }) =>
                 row.prepaymentStatus ? (
@@ -677,6 +685,9 @@ const BookingsPage: React.FC = () => {
                     status={row.prepaymentStatus}
                     amount={row.prepaymentAmount}
                     needsAttention={row.prepaymentNeedsAttention}
+                    awaitingConfirmation={
+                      row.prepaymentStatus === "paid" && row.status === "pending"
+                    }
                   />
                 ) : (
                   <Typography variant="caption" color="text.disabled">
@@ -687,7 +698,7 @@ const BookingsPage: React.FC = () => {
           ]
         : []),
     ],
-    [todayStr, t, branchScopingLive, prepaymentLive],
+    [todayStr, t, branchScopingLive, prepaymentLive, now],
   );
 
   if (!permLoading && !canView) return <AccessDenied />;
@@ -1078,12 +1089,19 @@ const BookingsPage: React.FC = () => {
                         <Typography variant="body2" fontWeight={600} whiteSpace="nowrap">
                           {formatKGS(b.totalPrice)}
                         </Typography>
-                        <StatusChip status={b.status} />
+                        <StatusChip
+                          status={b.status}
+                          expiresAt={b.prepaymentExpiresAt}
+                          now={now}
+                        />
                         {b.prepaymentStatus && (
                           <PrepaymentChip
                             status={b.prepaymentStatus}
                             amount={b.prepaymentAmount}
                             needsAttention={b.prepaymentNeedsAttention}
+                            awaitingConfirmation={
+                              b.prepaymentStatus === "paid" && b.status === "pending"
+                            }
                           />
                         )}
                       </Stack>
