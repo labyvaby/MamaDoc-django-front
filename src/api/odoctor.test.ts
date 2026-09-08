@@ -14,11 +14,14 @@ import {
   updateOdoctorSettings,
   ODOCTOR_HORIZON_MAX_DAYS,
   type OdoctorBranch,
+  type OdoctorCabinetBranch,
   type OdoctorCabinetDoctor,
   type OdoctorLinksResponse,
   type OdoctorSettings,
   type OdoctorSettingsForm,
   formatOdoctorDay,
+  odoctorCabinetBranchLabel,
+  odoctorCabinetBranchTaken,
   odoctorCabinetRowState,
   odoctorLinkedBranches,
   odoctorEmployeeBlockState,
@@ -563,6 +566,53 @@ function link(over: Partial<Parameters<typeof odoctorLinkBlocker>[0]> = {}) {
     ...over,
   };
 }
+
+describe("odoctorCabinetBranchLabel", () => {
+  const cabinetBranch = (
+    over: Partial<OdoctorCabinetBranch> = {},
+  ): OdoctorCabinetBranch => ({
+    odoctorBranchId: 1350,
+    name: "Мама Доктор",
+    address: "ул. Орозбекова, 112",
+    linkedBranchId: null,
+    ...over,
+  });
+
+  it("ставит номер первым: его же сверяют с кабинетом", () => {
+    expect(odoctorCabinetBranchLabel(cabinetBranch())).toBe(
+      "1350 — Мама Доктор, ул. Орозбекова, 112",
+    );
+  });
+
+  it("обходится без адреса, если кабинет его не дал", () => {
+    expect(
+      odoctorCabinetBranchLabel(cabinetBranch({ address: "" })),
+    ).toBe("1350 — Мама Доктор");
+  });
+
+  it("остаётся номером, когда больше нечего сказать", () => {
+    expect(
+      odoctorCabinetBranchLabel(
+        cabinetBranch({ name: "", address: "" }),
+      ),
+    ).toBe("1350");
+  });
+
+  it("свободный вариант доступен, занятый другим — нет", () => {
+    // Скрыть занятый нельзя: оператор не поймёт, куда делся филиал. Дать
+    // выбрать — свести два расписания в один календарь.
+    expect(odoctorCabinetBranchTaken(cabinetBranch(), 13)).toBe(false);
+    expect(
+      odoctorCabinetBranchTaken(cabinetBranch({ linkedBranchId: 14 }), 13),
+    ).toBe(true);
+  });
+
+  it("занятый этим же филиалом не считается занятым", () => {
+    expect(
+      odoctorCabinetBranchTaken(cabinetBranch({ linkedBranchId: 13 }), 13),
+    ).toBe(false);
+  });
+});
 
 describe("odoctorCabinetRowState", () => {
   function cabinetRow(

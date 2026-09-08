@@ -386,6 +386,11 @@ export const djangoQueryKeys = {
     // Филиалы в разрезе кабинета — только своя база, кешируется как справочник.
     branches: (organizationId: number | null | undefined) =>
       ["django", "odoctor", "branches", organizationId ?? null] as const,
+    // Филиалы самого кабинета — варианты выбора при связывании филиала.
+    // Живёт недолго: список идёт из кабинета, а связанный филиал должен
+    // сразу перестать предлагаться свободным.
+    cabinetBranches: (organizationId: number | null | undefined) =>
+      ["django", "odoctor", "cabinet-branches", organizationId ?? null] as const,
     // Врачи филиала в кабинете. Ключ по филиалу CRM, а не по филиалу
     // кабинета: наружу мы говорим о своих сущностях. Живёт недолго — запрос
     // идёт в кабинет, и вчерашний список врачей под видом сегодняшнего

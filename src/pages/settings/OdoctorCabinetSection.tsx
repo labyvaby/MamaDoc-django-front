@@ -184,7 +184,6 @@ export function OdoctorCabinetSection({
   return (
     <>
       <Divider />
-
       <Stack spacing={1}>
         <Typography variant="subtitle1" fontWeight={600}>
           {t("odoctor.cabinet.title")}

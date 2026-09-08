@@ -19,6 +19,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { SettingsLayout } from "./SettingsLayout";
+import { OdoctorBranchLinks } from "./OdoctorBranchLinks";
 import { OdoctorCabinetSection } from "./OdoctorCabinetSection";
 import {
   applyClearPasswordToggle,
@@ -314,7 +315,15 @@ const OdoctorSettingsPage: React.FC = () => {
           сказать лишь «нет доступа».
         */}
         {form && settings?.hasPassword && settings.odoctorLogin.trim() !== "" && (
-          <OdoctorCabinetSection organizationId={orgId} disabled={busy} />
+          <>
+            <Divider />
+            {/*
+              Филиалы идут первыми: без связи филиала сопоставлять врачей
+              некуда, и порядок на экране повторяет порядок работы.
+            */}
+            <OdoctorBranchLinks organizationId={orgId} disabled={busy} />
+            <OdoctorCabinetSection organizationId={orgId} disabled={busy} />
+          </>
         )}
       </Stack>
 
