@@ -83,7 +83,8 @@
     "doctor": "{{specialist.nom, capitalize}}",
     "nurse": "{{assistant.nom, capitalize}}",
     "other": "Другой",
-    "doctorNoServicesHint": "У {{specialist.gen}} нет закреплённых услуг — добавьте их во вкладке «Услуги», чтобы задать ставки по услугам."
+    "doctorNoServicesHint": "У {{specialist.gen}} нет закреплённых услуг — добавьте их во вкладке «Услуги», чтобы задать ставки по услугам.",
+    "employeeNoServicesHint": "У {{employee.gen}} нет закреплённых услуг — добавьте их во вкладке «Услуги», чтобы задать ставки по услугам."
   },
   "doctorQuickView": {
     "roleDoctor": "{{specialist.nom, capitalize}}",

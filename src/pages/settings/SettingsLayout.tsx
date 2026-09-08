@@ -39,6 +39,7 @@ import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
+import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
@@ -207,6 +208,12 @@ const TAB_DEFS: TabDef[] = [
     key: "automations",
     to: "/settings/automations",
     icon: <BoltOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "odoctor",
+    to: "/settings/odoctor",
+    icon: <StorefrontOutlined fontSize="small" />,
     group: "operations",
   },
 ];

@@ -80,6 +80,7 @@ import { groupServiceRowsByEmployee } from "../../components/appointments/servic
 import { buildEmployeeAccentMap } from "../../components/appointments/employeeAccent";
 import { attentionFieldSx } from "../../theme/uiHelpers";
 import ConsumptionRowsEditor from "../../components/appointments/ConsumptionRowsEditor";
+import ServicePickerField from "../../components/appointments/ServicePickerField";
 import {
   billableRowsTotal,
   hasInvalidConsumptionQuantity,
@@ -923,8 +924,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       void queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.appointments.payments(appointment.id),
       });
-      // Слоты заключений держат serviceLineId, а смена услуги пересоздаёт
-      // строку с новым id (строка уходит в PATCH без id). Без
+      // Слоты заключений держат serviceLineId, а смена услуги или исполнителя
+      // пересоздаёт строку с новым id (строка уходит в PATCH без id). Без
       // сброса кэша колонка заключения продолжила бы работать со старым id и
       // получила бы 404 «Service line not found» на первом же сохранении.
       void queryClient.invalidateQueries({
@@ -993,22 +994,18 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
           employee !== null &&
           (row.serviceId === null ||
             data.canEmployeeProvideService(employee.id, row.serviceId));
-        // Исполнителя меняем НА МЕСТЕ: строка сохраняет id, а с ним расходники,
-        // заметки и скидку. Цена от исполнителя не зависит вовсе — это снимок
-        // `service.base_price`, а `EmployeeService.price_override` в расчёт
-        // приёма пока не входит, поэтому пересоздание строки цену и не меняло,
-        // зато уносило её расходники (ответ бэка 03.09.2026 §5; бэк прямо
-        // просит от пересоздания отказаться). Длительность и признак «нужно
-        // заключение» бэк пересчитывает сам по новому исполнителю.
-        //
-        // Услугу строки сбрасываем, если новый исполнитель её не оказывает —
-        // это уже смена услуги, и там пересоздание остаётся: PATCH с id
-        // актуальную цену новой услуги не подставляет (см. onChange услуги).
         return {
           ...row,
           groupId: groupId ?? row.groupId,
           employeeId,
           serviceId: keepService ? row.serviceId : null,
+          // Цена строки зафиксирована для старой пары услуга/исполнитель, и
+          // PATCH с id её не пересчитывает — пересоздаём строку, чтобы бэк взял
+          // актуальную цену новой пары.
+          lineId: null,
+          unitPrice: "",
+          durationMinutes: "",
+          discountAmount: "",
         };
       });
     });
@@ -1542,8 +1539,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                       ) : undefined
                                     }
                                     field={
-                                <Autocomplete<DjangoCatalogServiceWithEmployees>
-                                  fullWidth
+                                <ServicePickerField
                                   // Смену услуги на строке с медзаключением бэк
                                   // отбивает 400-й, если строку пересоздавать
                                   // (проверено на живом API 16–17.07.2026);
@@ -1562,7 +1558,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                       ? t("serviceRow.noServiceForEmployee")
                                       : t("serviceRow.noServiceMatches")
                                   }
-                                  onChange={(_, v) =>
+                                  onChange={(v) =>
                                     updateRow(index, {
                                       serviceId: v?.id ?? null,
                                       employeeId:
@@ -1599,20 +1595,9 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                         : {}),
                                     })
                                   }
-                                  getOptionLabel={(s) =>
-                                    t("addDrawer.serviceOption", { name: s.name, price: Number(s.basePrice) })
-                                  }
-                                  isOptionEqualToValue={(a, b) => a.id === b.id}
-                                  renderInput={(params) => (
-                                    <TextField
-                                      {...params}
-                                      placeholder={t("addDrawer.service")}
-                                      size="small"
-                                      fullWidth
-                                      error={form.attempted && !row.serviceId}
-                                      helperText={form.attempted && !row.serviceId ? t("addDrawer.servicePlaceholder") : ""}
-                                    />
-                                  )}
+                                  placeholder={t("addDrawer.service")}
+                                  error={form.attempted && !row.serviceId}
+                                  helperText={form.attempted && !row.serviceId ? t("addDrawer.servicePlaceholder") : ""}
                                 />
                                     }
                                   >

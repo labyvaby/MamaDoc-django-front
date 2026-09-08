@@ -190,6 +190,58 @@ export function bookingStart(date: string, time: string) {
   return dayjs(`${date}T${(time || "00:00").slice(0, 5)}`);
 }
 
+/** «Ожидает», время которой уже прошло — висит необработанной. */
+export function isBookingOverdue(b: {
+  date: string;
+  time: string;
+  status: BookingStatus;
+}): boolean {
+  if (b.status !== "pending") return false;
+  const start = bookingStart(b.date, b.time);
+  return start.isValid() && start.isBefore(dayjs());
+}
+
+/**
+ * Приоритет разбора для сортировки списка: деньги пришли, а приёма не будет —
+ * самое горящее (`prepaymentNeedsAttention`); дальше — оплаченные (ждут
+ * подтверждения администратором) и просроченные «Ожидает»; остальное — как
+ * раньше, по времени начала.
+ */
+function bookingPriority(b: {
+  date: string;
+  time: string;
+  status: BookingStatus;
+  prepaymentStatus?: BookingPrepaymentStatus | null;
+  prepaymentNeedsAttention?: boolean;
+}): number {
+  if (b.prepaymentNeedsAttention) return 0;
+  if (b.prepaymentStatus === "paid") return 1;
+  if (isBookingOverdue(b)) return 2;
+  return 3;
+}
+
+/**
+ * Сортирует «то, что горит» наверх. Работает только в пределах уже
+ * загруженной страницы — сервер пагинирует по своему порядку, приоритетной
+ * сортировки на бэке нет.
+ */
+export function sortBookingsByPriority<
+  T extends {
+    date: string;
+    time: string;
+    status: BookingStatus;
+    prepaymentStatus?: BookingPrepaymentStatus | null;
+    prepaymentNeedsAttention?: boolean;
+  },
+>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const pa = bookingPriority(a);
+    const pb = bookingPriority(b);
+    if (pa !== pb) return pa - pb;
+    return bookingStart(a.date, a.time).valueOf() - bookingStart(b.date, b.time).valueOf();
+  });
+}
+
 /** «10:00 – 10:30» из времени начала и длительности; без длительности — начало. */
 export function bookingTimeRange(time: string, durationMin: number | null | undefined): string {
   const start = (time || "").slice(0, 5);

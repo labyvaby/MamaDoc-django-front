@@ -60,6 +60,7 @@ import {
 } from "../../api/appointments";
 import { parseRelatedQuantity } from "../../api/catalog";
 import ConsumptionRowsEditor from "../../components/appointments/ConsumptionRowsEditor";
+import ServicePickerField from "../../components/appointments/ServicePickerField";
 import {
   billableRowsTotal,
   hasInvalidConsumptionQuantity,
@@ -1400,8 +1401,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                     ) : undefined
                                   }
                                   field={
-                                    <Autocomplete<DjangoCatalogServiceWithEmployees>
-                                      fullWidth
+                                    <ServicePickerField
                                       options={
                                         row.employeeId !== null
                                           ? availableServices
@@ -1416,7 +1416,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                           ? t("serviceRow.noServiceForEmployee")
                                           : t("serviceRow.noServiceMatches")
                                       }
-                                      onChange={(_, v) => {
+                                      onChange={(v) => {
                                         updateRow(index, {
                                           serviceId: v?.id ?? null,
                                           employeeId:
@@ -1437,43 +1437,13 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                             : {}),
                                         });
                                       }}
-                                      getOptionLabel={(s) =>
-                                        t("addDrawer.serviceOption", {
-                                          name: s.name,
-                                          price: Number(s.basePrice),
-                                        })
+                                      placeholder={t("addDrawer.service")}
+                                      error={touched && !row.serviceId}
+                                      helperText={
+                                        touched && !row.serviceId
+                                          ? t("addDrawer.servicePlaceholder")
+                                          : ""
                                       }
-                                      isOptionEqualToValue={(a, b) => a.id === b.id}
-                                      renderOption={(props, s) => (
-                                        <li {...props} key={s.id}>
-                                          <Stack>
-                                            <Typography variant="body2">{s.name}</Typography>
-                                            <Typography
-                                              variant="caption"
-                                              color="text.secondary"
-                                            >
-                                              {t("addDrawer.priceAmount", { amount: Number(s.basePrice) })}
-                                              {s.durationMinutes
-                                                ? t("addDrawer.durationSuffix", { minutes: s.durationMinutes })
-                                                : ""}
-                                            </Typography>
-                                          </Stack>
-                                        </li>
-                                      )}
-                                      renderInput={(params) => (
-                                        <TextField
-                                          {...params}
-                                          placeholder={t("addDrawer.service")}
-                                          size="small"
-                                          fullWidth
-                                          error={touched && !row.serviceId}
-                                          helperText={
-                                            touched && !row.serviceId
-                                              ? t("addDrawer.servicePlaceholder")
-                                              : ""
-                                          }
-                                        />
-                                      )}
                                     />
                                   }
                                 >

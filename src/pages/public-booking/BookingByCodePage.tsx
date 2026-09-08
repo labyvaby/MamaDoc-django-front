@@ -1,5 +1,6 @@
 import React from "react";
 import { Alert, Box, Button, Chip, Paper, Skeleton, Stack, Typography } from "@mui/material";
+import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
 import MapOutlined from "@mui/icons-material/MapOutlined";
@@ -19,8 +20,13 @@ import { ApiError, isAbortError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
 import { PublicBookingShell, PAGE_GUTTER } from "./shell";
 import { bookingCodeUrl, formatPrice } from "./format";
+import { buildBookingIcs, downloadIcs } from "./ics";
 import { useBookingNav } from "./orgSlug";
+import { useBookingOrg } from "./useBookingOrg";
 import { BOOKING_PRIMARY, BOOKING_RADIUS, BOOKING_SHADOW, BORDER, MUTED } from "./theme";
+
+/** Статусы, при которых приём ещё состоится — только для них есть смысл в .ics. */
+const CALENDAR_ELIGIBLE_STATUSES = new Set(["pending", "confirmed", "awaiting_payment"]);
 
 /**
  * «Ваша запись» по коду подтверждения — то, куда ведёт QR из экрана успеха.
@@ -68,7 +74,7 @@ function minutesLeft(expiresAt: string | null): number | null {
  * Предоплата на карточке брони. Пока не оплачено — это главное на экране:
  * без оплаты бронь не подтвердится и время освободится через 15 минут.
  */
-const PaymentBlock: React.FC<{
+export const PaymentBlock: React.FC<{
   payment: PublicBookingPayment;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }> = ({ payment, t }) => {
@@ -137,6 +143,7 @@ const BookingByCodePage: React.FC = () => {
   const { t } = useT("publicBooking");
   const { code = "" } = useParams<{ code: string }>();
   const { orgSlug, go } = useBookingNav();
+  const { organization } = useBookingOrg();
 
   const [booking, setBooking] = React.useState<PublicBookingDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -194,6 +201,12 @@ const BookingByCodePage: React.FC = () => {
     } catch {
       // буфер недоступен (нет https / отказ) — код и так виден на экране
     }
+  };
+
+  const handleAddToCalendar = () => {
+    if (!booking) return;
+    const ics = buildBookingIcs(booking, organization?.name ?? "");
+    downloadIcs(ics, `booking-${booking.confirmationCode}.ics`);
   };
 
   const maps = booking?.branch
@@ -268,6 +281,25 @@ const BookingByCodePage: React.FC = () => {
                   </Box>
                 </Typography>
               </Row>
+
+              {CALENDAR_ELIGIBLE_STATUSES.has(booking.status) && (
+                <Button
+                  onClick={handleAddToCalendar}
+                  size="small"
+                  startIcon={<CalendarMonthOutlined sx={{ fontSize: 16 }} />}
+                  sx={{
+                    alignSelf: "flex-start",
+                    borderRadius: 99,
+                    px: 1.5,
+                    border: `1px solid ${BORDER}`,
+                    color: "text.primary",
+                    fontSize: 13,
+                    textTransform: "none",
+                  }}
+                >
+                  {t("byCode.addToCalendar")}
+                </Button>
+              )}
 
               {booking.doctor && (
                 <Row icon={<PersonOutlineOutlined sx={{ fontSize: 20 }} />}>

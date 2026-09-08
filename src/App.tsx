@@ -105,6 +105,7 @@ const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsP
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
 const PublicBookMyBookingsPage = lazy(() => import("./pages/public-booking/MyBookingsPage"));
 const PublicBookByCodePage = lazy(() => import("./pages/public-booking/BookingByCodePage"));
+const PublicBookPaymentResultPage = lazy(() => import("./pages/public-booking/PaymentResultPage"));
 const PublicLandingPage = lazy(() => import("./pages/public-site"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
@@ -126,6 +127,7 @@ const SpecializationsSettingsPage = lazy(() => import("./pages/settings/Speciali
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
+const OdoctorSettingsPage = lazy(() => import("./pages/settings/OdoctorSettingsPage"));
 const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const ClientsSettingsPage = lazy(() => import("./pages/settings/ClientsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
@@ -810,6 +812,16 @@ function App() {
                           }
                         />
                         <Route
+                          path="settings/odoctor"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.odoctor}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <OdoctorSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="admin/load"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.reports}>
@@ -1280,6 +1292,17 @@ function App() {
                           element={
                             <Suspense fallback={<LinearProgress />}>
                               <PublicBookByCodePage />
+                            </Suspense>
+                          }
+                        />
+                        {/* Возврат с Paylink Бакай Банка — фиксированный адрес,
+                            заданный на бэке, своего экрана не имеет, сразу
+                            уводит на карточку брони по коду. */}
+                        <Route
+                          path="book/payment/result"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <PublicBookPaymentResultPage />
                             </Suspense>
                           }
                         />
