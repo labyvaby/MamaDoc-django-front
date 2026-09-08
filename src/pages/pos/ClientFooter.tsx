@@ -19,7 +19,6 @@ type Props = {
   onSearch: () => void;
   /** null — поиск ещё не запускали; пустой массив — клиент не найден. */
   results: PosClientSearchResult[] | null;
-  recent: PosClientSearchResult[];
   onSelectClient: (client: PosClientSearchResult) => void;
   onRegister: (name: string, phone: string) => void;
   onChangeClient: () => void;
@@ -64,7 +63,7 @@ const FooterButton: React.FC<{ label: string; onClick: () => void; muted?: boole
   );
 };
 
-/** Карточка найденного или недавнего клиента. */
+/** Карточка найденного клиента. */
 const ClientCard: React.FC<{ client: PosClientSearchResult; onClick: () => void }> = ({ client, onClick }) => {
   const theme = useTheme();
   const c = posColors(theme);
@@ -198,7 +197,6 @@ export const PosClientFooter: React.FC<Props> = ({
   onQueryChange,
   onSearch,
   results,
-  recent,
   onSelectClient,
   onRegister,
   onChangeClient,
@@ -291,7 +289,7 @@ export const PosClientFooter: React.FC<Props> = ({
   }
 
   const notFound = results !== null && results.length === 0;
-  const cards = results ?? recent;
+  const cards = results ?? [];
 
   return (
     <Box sx={{ ...shell, display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -333,14 +331,22 @@ export const PosClientFooter: React.FC<Props> = ({
         <RegisterClient phone={query} onRegister={onRegister} />
       ) : (
         <Stack gap="8px">
-          <Typography sx={{ fontSize: 12, lineHeight: 1.2, textTransform: "uppercase", color: c.textDim }}>
-            {results ? `Найдено: ${results.length}` : "Недавние клиенты"}
-          </Typography>
-          <Stack direction="row" gap="10px" sx={{ overflowX: "auto" }}>
-            {cards.map((item) => (
-              <ClientCard key={item.id} client={item} onClick={() => onSelectClient(item)} />
-            ))}
-          </Stack>
+          {results === null ? (
+            <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>
+              Введите имя или телефон клиента и нажмите «Найти».
+            </Typography>
+          ) : (
+            <>
+              <Typography sx={{ fontSize: 12, lineHeight: 1.2, textTransform: "uppercase", color: c.textDim }}>
+                Найдено: {results.length}
+              </Typography>
+              <Stack direction="row" gap="10px" sx={{ overflowX: "auto" }}>
+                {cards.map((item) => (
+                  <ClientCard key={item.id} client={item} onClick={() => onSelectClient(item)} />
+                ))}
+              </Stack>
+            </>
+          )}
         </Stack>
       )}
     </Box>
