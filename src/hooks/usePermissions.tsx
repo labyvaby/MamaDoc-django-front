@@ -183,13 +183,15 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
   const isAdmin = useCallback(() => hasRole(["superadmin", "admin", "administrator"]), [hasRole]);
   const isRegistrator = useCallback(() => hasRole(["receptionist", "registrator"]), [hasRole]);
   const isDoctor = useCallback(() => hasRole("doctor"), [hasRole]);
-  const hasModule = useCallback((code: string) => state.role?.name === "superadmin" || state.enabledModules.includes(code), [state.enabledModules, state.role]);
+  // Даже платформенный администратор в контексте конкретной организации
+  // видит только её включённые модули. Иначе, открыв магазин одежды, он
+  // получает клиническое меню только из-за глобальной роли.
+  const hasModule = useCallback((code: string) => state.enabledModules.includes(code), [state.enabledModules]);
   const canAccess = useCallback((code: string) => {
-    if (state.role?.name === "superadmin") return true;
-    if (!hasPermission(code)) return false;
     const module = getModuleCodeForPermission(code);
-    return module === null || state.enabledModules.includes(module);
-  }, [hasPermission, state.enabledModules, state.role]);
+    if (module !== null && !state.enabledModules.includes(module)) return false;
+    return hasPermission(code);
+  }, [hasPermission, state.enabledModules]);
   const canManageEmployees = useCallback(() => canAccess("staff.update"), [canAccess]);
   const canManageExpenses = useCallback(() => canAccess("finance.expense.manage"), [canAccess]);
   return {

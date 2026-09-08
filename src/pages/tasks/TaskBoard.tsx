@@ -1,23 +1,32 @@
 import React from "react";
-import { Box, Skeleton, Stack, Tooltip, Typography } from "@mui/material";
-import { alpha } from "@mui/material/styles";
-import { useMutation, useQueries } from "@tanstack/react-query";
+import { Box, Skeleton, Stack, Tooltip, Typography, useTheme } from "@mui/material";
+import { type Theme } from "@mui/material/styles";
+import { keepPreviousData, useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 
+import { Board, type BoardCardSpec, type BoardColumnDef } from "../../components/board";
 import { UserAvatar } from "../../components/ui";
-import { subtleBg } from "../../theme/uiHelpers";
+import { ReasonDialog } from "../../components/ui";
 import {
   approveTask,
   completeTask,
   getTasks,
+  pauseTask,
   takeTask,
   type Task,
   type TaskStatus,
   type TasksFilters,
+  type TasksResponse,
 } from "../../api/tasks";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { useInvalidateTasks } from "../../hooks/useInvalidateTasks";
-import { TaskPriorityChip } from "../../components/tasks/TaskChips";
-import { dueInfo, relativeTime, TASK_STATUS_META, TASKS_REFRESH_MS } from "./meta";
+import {
+  dueInfo,
+  relativeTime,
+  TASK_PRIORITY_META,
+  TASK_STATUS_META,
+  TASKS_REFRESH_MS,
+  type ToneName,
+} from "./meta";
 
 /** Сколько задач тянем в колонку: доска — оперативный вид, не архив. */
 const COLUMN_SIZE = 50;
@@ -30,17 +39,25 @@ type Ctx = {
   meEmployeeId: number | null;
 };
 
+type Transition = {
+  fn: (id: number, orgId?: number, reason?: string) => Promise<Task>;
+  label: string;
+  /**
+   * Бэк не выполнит переход без причины (пауза) — спрашиваем её диалогом
+   * перед вызовом, и только потом двигаем карточку.
+   */
+  needsReason?: boolean;
+  /** Заголовок диалога причины. */
+  reasonTitle?: string;
+};
+
 /**
  * Перенос карточки = вызов соответствующего действия API, а не произвольная
  * смена статуса: у бэка нет PATCH status, переходы делают эндпоинты
- * take/complete/approve. Возвращает исполнителя перехода или null, если такой
- * перенос недопустим (или не хватает прав).
+ * take/complete/approve/pause. Возвращает исполнителя перехода или null, если
+ * такой перенос недопустим (или не хватает прав).
  */
-function transitionFor(
-  task: Task,
-  to: TaskStatus,
-  ctx: Ctx,
-): { fn: (id: number, orgId?: number) => Promise<Task>; label: string } | null {
+function transitionFor(task: Task, to: TaskStatus, ctx: Ctx): Transition | null {
   const { canManage, canUpdate, meEmployeeId } = ctx;
   const canWork = canUpdate || canManage;
   const mine = task.assigneeId != null && task.assigneeId === meEmployeeId;
@@ -51,94 +68,110 @@ function transitionFor(
     if (task.assigneeId != null && !mine && !canManage) return null;
     return { fn: takeTask, label: from === "paused" ? "Возобновить" : "Взять в работу" };
   }
-  if (to === "awaiting_approval" && from === "in_progress" && (mine || canManage)) {
-    return { fn: completeTask, label: "Исполнить" };
+  if (to === "awaiting_approval" && from === "in_progress") {
+    // Исполнителю без права приёмки complete/ сам уводит задачу в приёмку.
+    if (mine && !canManage) return { fn: (id, orgId) => completeTask(id, orgId), label: "Исполнить" };
+    // Обладателю tasks.manage тот же complete/ закрывает задачу сразу в done,
+    // поэтому приёмку он запрашивает явным флагом (контракт 31.08.2026).
+    if (canManage) {
+      return {
+        fn: (id, orgId) => completeTask(id, orgId, { requestApproval: true }),
+        label: "Отправить на проверку",
+      };
+    }
+    return null;
+  }
+  if (to === "paused" && from === "in_progress") {
+    // Пауза доступна тому же кругу, что и «Исполнить», но требует причины:
+    // она уходит в историю задачи и объясняет остановку.
+    if (!mine && !canManage) return null;
+    return {
+      fn: (id, orgId, reason) => pauseTask(id, { reason: reason ?? "" }, orgId),
+      label: "Поставить на паузу",
+      needsReason: true,
+      reasonTitle: "Поставить на паузу",
+    };
   }
   if (to === "done") {
     if (from === "awaiting_approval" && canManage) return { fn: approveTask, label: "Подтвердить" };
     // Обладателю tasks.manage бэк закрывает задачу сразу, минуя приёмку.
-    if (from === "in_progress" && canManage) return { fn: completeTask, label: "Исполнить и закрыть" };
+    if (from === "in_progress" && canManage) {
+      return { fn: (id, orgId) => completeTask(id, orgId), label: "Исполнить и закрыть" };
+    }
   }
   return null;
 }
 
-type BoardCardProps = {
-  task: Task;
-  onOpen: () => void;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  dragging: boolean;
-};
+/** Цвет тона статуса из палитры — точка в шапке колонки и чип в таблице совпадают. */
+const toneColor = (t: Theme, name: ToneName) =>
+  name ? t.palette[name].main : t.palette.text.disabled;
 
-const BoardCard: React.FC<BoardCardProps> = ({ task, onOpen, onDragStart, onDragEnd, dragging }) => {
+/** Содержимое карточки задачи; оболочку (drag, меню, анимацию) даёт ядро доски. */
+const TaskCardBody: React.FC<{ task: Task; hasActions: boolean }> = ({ task, hasActions }) => {
   const due = dueInfo(task.dueDate, task.status);
+
   return (
-    <Box
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = "move";
-        // Safari не начинает перетаскивание без полезной нагрузки.
-        e.dataTransfer.setData("text/plain", String(task.id));
-        onDragStart();
-      }}
-      onDragEnd={onDragEnd}
-      onClick={onOpen}
-      sx={(t) => ({
-        p: 1.25,
-        borderRadius: "12px",
-        border: 1,
-        borderColor: due?.overdue ? alpha(t.palette.error.main, 0.35) : "divider",
-        bgcolor: "background.paper",
-        cursor: "grab",
-        opacity: dragging ? 0.45 : 1,
-        transition: "border-color .15s ease, opacity .15s ease",
-        "&:hover": { borderColor: alpha(t.palette.primary.main, 0.35) },
-        "&:active": { cursor: "grabbing" },
-      })}
-    >
-      <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.3 }}>
+    <>
+      <Typography
+        variant="body2"
+        fontWeight={600}
+        sx={{
+          lineHeight: 1.3,
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+          // Место под кнопку действий, чтобы заголовок под неё не заезжал.
+          pr: hasActions ? 3 : 0,
+        }}
+      >
         {task.title}
       </Typography>
       <Typography variant="caption" color="text.secondary" noWrap display="block" sx={{ mt: 0.25 }}>
         {task.categoryName}
       </Typography>
 
-      {due && (
-        <Tooltip title={`Срок: ${due.exact}`}>
-          <Typography
-            variant="caption"
-            sx={{
-              display: "block",
-              mt: 0.5,
-              fontWeight: due.overdue || due.today || due.soon ? 600 : 400,
-              color: due.overdue ? "error.main" : due.today || due.soon ? "warning.main" : "text.secondary",
-            }}
-          >
-            {due.text}
-          </Typography>
-        </Tooltip>
-      )}
-
       <Stack direction="row" alignItems="center" gap={0.75} sx={{ mt: 1 }}>
         {task.assigneeName ? (
-          <Tooltip title={task.assigneeName}>
-            <Box sx={{ display: "flex" }}>
-              <UserAvatar name={task.assigneeName} size={22} sx={{ borderRadius: "7px" }} />
-            </Box>
-          </Tooltip>
+          <>
+            <UserAvatar name={task.assigneeName} size={22} sx={{ borderRadius: "7px", flexShrink: 0 }} />
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
+              {task.assigneeName}
+            </Typography>
+          </>
         ) : (
-          <Typography variant="caption" color="text.disabled">
+          <Typography variant="caption" color="text.disabled" noWrap>
             Не назначена
           </Typography>
         )}
-        <Box sx={{ flex: 1 }} />
-        <TaskPriorityChip priority={task.priority} />
-      </Stack>
 
-      <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 0.5 }}>
-        {relativeTime(task.createdAt)}
-      </Typography>
-    </Box>
+        <Box sx={{ flex: 1, minWidth: 8 }} />
+
+        {/* Одна временная метка на карточку: срок, если он есть, иначе возраст
+            задачи — чтобы низ карточки читался с одного взгляда. */}
+        {due ? (
+          <Tooltip title={`Срок: ${due.exact}`}>
+            <Typography
+              variant="caption"
+              noWrap
+              sx={{
+                flexShrink: 0,
+                fontWeight: due.overdue || due.today || due.soon ? 600 : 400,
+                color: due.overdue ? "error.main" : due.today || due.soon ? "warning.main" : "text.secondary",
+              }}
+            >
+              {due.text}
+            </Typography>
+          </Tooltip>
+        ) : (
+          <Tooltip title="Задача без срока">
+            <Typography variant="caption" color="text.disabled" noWrap sx={{ flexShrink: 0 }}>
+              {relativeTime(task.createdAt)}
+            </Typography>
+          </Tooltip>
+        )}
+      </Stack>
+    </>
   );
 };
 
@@ -152,6 +185,8 @@ type TaskBoardProps = {
   canUpdate: boolean;
   meEmployeeId: number | null;
   enabled: boolean;
+  /** Что показать, когда задач нет ни в одной колонке (общий для доски и списка). */
+  emptyState?: React.ReactNode;
 };
 
 const TaskBoard: React.FC<TaskBoardProps> = ({
@@ -163,21 +198,46 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
   canUpdate,
   meEmployeeId,
   enabled,
+  emptyState,
 }) => {
+  const theme = useTheme();
   const invalidateTasks = useInvalidateTasks();
-  const [dragged, setDragged] = React.useState<Task | null>(null);
-  const [hoverColumn, setHoverColumn] = React.useState<TaskStatus | null>(null);
+  const queryClient = useQueryClient();
+  /** Сколько задач тянем в каждой колонке — растёт по мере прокрутки. */
+  const [limits, setLimits] = React.useState<Partial<Record<TaskStatus, number>>>({});
+  /** Открытый диалог причины: перенос ждёт ответа пользователя. */
+  const [reasonPrompt, setReasonPrompt] = React.useState<{
+    task: Task;
+    to: TaskStatus;
+    title: string;
+  } | null>(null);
 
   const ctx: Ctx = { canManage, canUpdate, meEmployeeId };
 
+  const columnSize = React.useCallback(
+    (status: TaskStatus) => limits[status] ?? COLUMN_SIZE,
+    [limits],
+  );
+
+  /** Ключ кэша колонки — один и тот же для чтения, записи и оптимистичной правки. */
+  const columnKey = React.useCallback(
+    (status: TaskStatus, size: number) =>
+      djangoQueryKeys.tasks.list({ ...filters, status, page: 1, pageSize: size, board: true }),
+    [filters],
+  );
+
   const results = useQueries({
     queries: COLUMNS.map((status) => {
-      const columnFilters: TasksFilters = { ...filters, status, page: 1, pageSize: COLUMN_SIZE };
+      const pageSize = columnSize(status);
+      const columnFilters: TasksFilters = { ...filters, status, page: 1, pageSize };
       return {
-        queryKey: djangoQueryKeys.tasks.list({ ...columnFilters, board: true }),
+        queryKey: columnKey(status, pageSize),
         queryFn: ({ signal }: { signal?: AbortSignal }) => getTasks(columnFilters, signal),
         enabled,
         staleTime: DJANGO_LIST_STALE_TIME_MS,
+        // Смена фильтра или догрузка не должна схлопывать колонку в скелетоны:
+        // старые карточки остаются на месте, пока не придут новые.
+        placeholderData: keepPreviousData,
         // Доска общая: чужие переносы должны проявляться без ручного F5.
         refetchInterval: TASKS_REFRESH_MS,
       };
@@ -185,127 +245,163 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
   });
 
   const moveMutation = useMutation({
-    mutationFn: ({ task, to }: { task: Task; to: TaskStatus }) => {
+    mutationFn: ({ task, to, reason }: { task: Task; to: TaskStatus; reason?: string }) => {
       const move = transitionFor(task, to, ctx);
       if (!move) return Promise.reject(new Error("Такой перенос недоступен"));
-      return move.fn(task.id, orgId);
+      return move.fn(task.id, orgId, reason);
     },
-    onSuccess: invalidateTasks,
-    onError: (e) => {
+    // Карточка переезжает сразу, не дожидаясь ответа сервера: перенос — это
+    // жест, и пауза в полсекунды читается как «не сработало».
+    onMutate: async ({ task, to }) => {
+      await queryClient.cancelQueries({ queryKey: djangoQueryKeys.tasks.all });
+
+      const fromKey = columnKey(task.status, columnSize(task.status));
+      const toKey = columnKey(to, columnSize(to));
+      const prevFrom = queryClient.getQueryData<TasksResponse>(fromKey);
+      const prevTo = queryClient.getQueryData<TasksResponse>(toKey);
+
+      if (prevFrom) {
+        queryClient.setQueryData<TasksResponse>(fromKey, {
+          ...prevFrom,
+          results: prevFrom.results.filter((t) => t.id !== task.id),
+          count: Math.max(0, prevFrom.count - 1),
+        });
+      }
+      if (prevTo) {
+        queryClient.setQueryData<TasksResponse>(toKey, {
+          ...prevTo,
+          results: [{ ...task, status: to }, ...prevTo.results],
+          count: prevTo.count + 1,
+        });
+      }
+
+      return { fromKey, toKey, prevFrom, prevTo };
+    },
+    onError: (e, _vars, snapshot) => {
+      // Возвращаем обе колонки к состоянию до переноса — иначе карточка
+      // «зависнет» не там, где её на самом деле видит сервер.
+      if (snapshot?.prevFrom) queryClient.setQueryData(snapshot.fromKey, snapshot.prevFrom);
+      if (snapshot?.prevTo) queryClient.setQueryData(snapshot.toKey, snapshot.prevTo);
       onError(e instanceof Error ? e.message : "Не удалось перенести задачу");
-      invalidateTasks();
     },
+    onSettled: invalidateTasks,
   });
 
-  const handleDrop = (to: TaskStatus) => {
-    setHoverColumn(null);
-    const task = dragged;
-    setDragged(null);
-    if (!task || task.status === to) return;
-    if (!transitionFor(task, to, ctx)) {
+  /** Переходы, доступные задаче прямо сейчас — для меню на карточке. */
+  const availableActions = (task: Task) =>
+    COLUMNS.filter((to) => to !== task.status)
+      .map((to) => ({ to, move: transitionFor(task, to, ctx) }))
+      .filter((x): x is { to: TaskStatus; move: Transition } => x.move != null)
+      .map(({ to, move }) => ({ to, label: move.label }));
+
+  /**
+   * Единая точка перехода для жеста и для меню: переход, которому нужна
+   * причина, сперва открывает диалог — карточка поедет только после ответа.
+   */
+  const startMove = (task: Task, to: TaskStatus) => {
+    const move = transitionFor(task, to, ctx);
+    if (!move) {
       onError(
-        to === "paused"
-          ? "Поставить на паузу можно только из карточки задачи — нужна причина"
+        to === "awaiting_approval" && task.status === "in_progress" && canManage
+          ? "У вас есть право подтверждать, поэтому «Исполнить» закрывает задачу сразу — переносите в «Исполнена»"
           : `Нельзя перенести «${TASK_STATUS_META[task.status].label}» → «${TASK_STATUS_META[to].label}»`,
       );
+      return;
+    }
+    if (move.needsReason) {
+      setReasonPrompt({ task, to, title: move.reasonTitle ?? move.label });
       return;
     }
     moveMutation.mutate({ task, to });
   };
 
-  return (
-    <Box
-      sx={{
-        flex: 1,
-        minHeight: 0,
-        display: "flex",
-        gap: 1.25,
-        overflowX: "auto",
-        pb: 1,
-      }}
-    >
-      {COLUMNS.map((status, i) => {
-        const q = results[i];
-        const tasks = q.data?.results ?? [];
-        const count = q.data?.count ?? 0;
-        const droppable = dragged != null && transitionFor(dragged, status, ctx) != null;
-        const isHover = hoverColumn === status && droppable;
+  const tasksOf = (status: TaskStatus) => results[COLUMNS.indexOf(status)]?.data?.results ?? [];
 
-        return (
-          <Stack
-            key={status}
-            onDragOver={(e) => {
-              if (!droppable) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              if (hoverColumn !== status) setHoverColumn(status);
-            }}
-            onDragLeave={() => setHoverColumn((c) => (c === status ? null : c))}
-            onDrop={(e) => {
-              e.preventDefault();
-              handleDrop(status);
-            }}
-            sx={(t) => ({
-              width: 268,
-              flexShrink: 0,
-              minHeight: 0,
-              borderRadius: "14px",
-              border: 1,
-              borderColor: isHover ? alpha(t.palette.primary.main, 0.5) : "divider",
-              bgcolor: isHover ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.1 : 0.05) : subtleBg(t),
-              transition: "border-color .15s ease, background-color .15s ease",
-              // Колонка, куда перенос запрещён, гаснет — правило видно до drop.
-              opacity: dragged != null && !droppable && dragged.status !== status ? 0.5 : 1,
-            })}
-          >
-            <Stack
-              direction="row"
-              alignItems="center"
-              gap={0.75}
-              sx={{ px: 1.5, py: 1.25, borderBottom: 1, borderColor: "divider" }}
-            >
-              <Typography variant="subtitle2" fontWeight={600} noWrap>
-                {TASK_STATUS_META[status].label}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {count}
-              </Typography>
-            </Stack>
+  const columns: BoardColumnDef<TaskStatus>[] = COLUMNS.map((status, i) => {
+    const q = results[i];
+    const tasks = q.data?.results ?? [];
+    const count = q.data?.count ?? 0;
 
-            <Stack gap={1} sx={{ p: 1, overflowY: "auto", flex: 1, minHeight: 0 }}>
-              {q.isLoading ? (
-                Array.from({ length: 3 }).map((_, k) => <Skeleton key={k} variant="rounded" height={92} />)
-              ) : tasks.length === 0 ? (
-                <Typography variant="caption" color="text.disabled" sx={{ px: 0.5, py: 1 }}>
-                  Пусто
-                </Typography>
-              ) : (
-                <>
-                  {tasks.map((task) => (
-                    <BoardCard
-                      key={task.id}
-                      task={task}
-                      dragging={dragged?.id === task.id}
-                      onOpen={() => onOpenTask(task.id)}
-                      onDragStart={() => setDragged(task)}
-                      onDragEnd={() => {
-                        setDragged(null);
-                        setHoverColumn(null);
-                      }}
-                    />
-                  ))}
-                  {count > tasks.length && (
-                    <Typography variant="caption" color="text.disabled" sx={{ px: 0.5 }}>
-                      и ещё {count - tasks.length} — уточните фильтры
-                    </Typography>
-                  )}
-                </>
-              )}
-            </Stack>
+    return {
+      id: status,
+      title: TASK_STATUS_META[status].label,
+      dotColor: toneColor(theme, TASK_STATUS_META[status].color),
+      count,
+      loading: q.isLoading,
+      emptyHint: "Нет задач",
+      footer:
+        count > tasks.length ? (
+          <Stack alignItems="center" sx={{ py: 1 }}>
+            {q.isFetching ? (
+              <Skeleton variant="rounded" height={92} width="100%" />
+            ) : (
+              <Typography variant="caption" color="text.disabled">
+                Прокрутите, чтобы загрузить ещё {count - tasks.length}
+              </Typography>
+            )}
           </Stack>
-        );
-      })}
-    </Box>
+        ) : undefined,
+      onScrollEnd: () => {
+        if (count <= tasks.length) return;
+        setLimits((prev) => {
+          const current = prev[status] ?? COLUMN_SIZE;
+          if (current >= count || tasks.length < current) return prev;
+          return { ...prev, [status]: current + COLUMN_SIZE };
+        });
+      },
+    };
+  });
+
+  const card = (task: Task): BoardCardSpec => {
+    const actions = availableActions(task);
+    // Цветом отмечаем только то, что требует внимания: «низкий» и «обычный»
+    // приоритеты полоски не получают — иначе колонка превращается в радугу и
+    // срочное перестаёт выделяться.
+    const accent = task.priority === "urgent" ? "error" : task.priority === "high" ? "warning" : null;
+
+    return {
+      ariaLabel: `Задача: ${task.title}`,
+      accentColor: accent ? theme.palette[accent].main : null,
+      accentTooltip: `Приоритет: ${TASK_PRIORITY_META[task.priority].label}`,
+      alert: dueInfo(task.dueDate, task.status)?.overdue ?? false,
+      actions: actions.map((a) => ({
+        key: a.to,
+        label: a.label,
+        onSelect: () => startMove(task, a.to),
+      })),
+      actionsTooltip: "Действия по задаче",
+      onOpen: () => onOpenTask(task.id),
+      content: <TaskCardBody task={task} hasActions={actions.length > 0} />,
+    };
+  };
+
+  return (
+    <>
+      <Board<Task, TaskStatus>
+        columns={columns}
+        itemsOf={tasksOf}
+        getItemId={(task) => task.id}
+        columnOf={(task) => task.status}
+        canDrop={(task, to) => transitionFor(task, to, ctx) != null}
+        onDrop={startMove}
+        card={card}
+        isEmpty={results.every((q) => !q.isLoading && (q.data?.count ?? 0) === 0)}
+        emptyState={emptyState}
+      />
+
+      <ReasonDialog
+        open={reasonPrompt != null}
+        title={reasonPrompt?.title ?? ""}
+        description="Причина попадёт в историю задачи — коллеги увидят, почему работа остановлена."
+        onCancel={() => setReasonPrompt(null)}
+        onConfirm={(reason) => {
+          if (reasonPrompt) {
+            moveMutation.mutate({ task: reasonPrompt.task, to: reasonPrompt.to, reason });
+          }
+          setReasonPrompt(null);
+        }}
+      />
+    </>
   );
 };
 

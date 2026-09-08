@@ -60,6 +60,7 @@ import { useCashlessMethods } from "../../hooks/useCashlessMethods";
 import { useAuthUserNames } from "../../hooks/useAuthUserNames";
 import { usePermissions } from "../../hooks/usePermissions";
 import {
+  hasAcceptedPayment,
   printAppointmentInvoice,
   type InvoicePageSize,
 } from "../../components/appointments/appointmentInvoice";
@@ -867,6 +868,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   // на обычном A4.
   const [formatDialogOpen, setFormatDialogOpen] = React.useState(false);
 
+  // Пока оплату не приняли, печатать нечего: кнопку скрываем, чтобы на руках у
+  // пациента не оказался чек по неоплаченному приёму. Ориентируемся на сводку
+  // с бэка (в ней уже сохранённые платежи), с запасом на приём — сводка может
+  // ещё грузиться.
+  const receiptAvailable = hasAcceptedPayment(summary) || hasAcceptedPayment(appointment);
+
   const handlePrintInvoice = (pageSize: InvoicePageSize) => {
     setFormatDialogOpen(false);
     if (!appointment) return;
@@ -1659,20 +1666,22 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               ? t("payment.updatePayment")
               : t("payment.confirmPayment")}
           </Button>
-          <Tooltip title={t("invoice.print")}>
-            <span>
-              <Button
-                variant="outlined"
-                size="large"
-                onClick={() => setFormatDialogOpen(true)}
-                disabled={!appointment || paymentQuery.isLoading}
-                aria-label={t("invoice.print")}
-                sx={{ minWidth: 0, px: 2 }}
-              >
-                <PrintOutlined />
-              </Button>
-            </span>
-          </Tooltip>
+          {receiptAvailable && (
+            <Tooltip title={t("invoice.print")}>
+              <span>
+                <Button
+                  variant="outlined"
+                  size="large"
+                  onClick={() => setFormatDialogOpen(true)}
+                  disabled={!appointment || paymentQuery.isLoading}
+                  aria-label={t("invoice.print")}
+                  sx={{ minWidth: 0, px: 2 }}
+                >
+                  <PrintOutlined />
+                </Button>
+              </span>
+            </Tooltip>
+          )}
         </Stack>
       </Box>
 

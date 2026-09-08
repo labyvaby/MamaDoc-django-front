@@ -56,9 +56,11 @@ import {
   parseOverlapConflict,
   type AppointmentOverlapConflict,
   type AppointmentStockShortage,
+  type DjangoAppointment,
 } from "../../api/appointments";
 import { parseRelatedQuantity } from "../../api/catalog";
 import ConsumptionRowsEditor from "../../components/appointments/ConsumptionRowsEditor";
+import ServicePickerField from "../../components/appointments/ServicePickerField";
 import {
   billableRowsTotal,
   hasInvalidConsumptionQuantity,
@@ -68,6 +70,8 @@ import {
 import { orgWide } from "../../api/scope";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
+import WaitlistDrawer from "../../components/waitlist/WaitlistDrawer";
+import { WAITLIST_MODULE_ENABLED } from "../../api/waitlist";
 import { getPatientBalance } from "../../api/patientBalance";
 import {
   getProducts,
@@ -143,6 +147,8 @@ type ServiceRow = {
    * `appointments.price_override` (см. ServicePriceField).
    */
   unitPrice: string;
+  /** Индивидуальная длительность этой услуги только в создаваемом приёме. */
+  durationMinutes: string;
   /**
    * Расходники строки, когда их правили руками. Пока `null` — состав берётся из
    * справочника услуги (и следует количеству услуги), а `consumptions` в запрос
@@ -163,6 +169,7 @@ function newServiceRow(patch: Partial<ServiceRow> = {}): ServiceRow {
     employeeId: null,
     quantity: 1,
     unitPrice: "",
+    durationMinutes: "",
     consumptions: null,
     ...patch,
   };
@@ -208,7 +215,11 @@ const productFilter = createFilterOptions<DjangoProduct>({
 export type DjangoAddAppointmentDrawerProps = {
   open: boolean;
   onClose: () => void;
-  onCreated?: () => void;
+  /**
+   * Созданный приём отдаём вызывающей стороне: по нему закрывается запись
+   * листа ожидания («записали — человек больше не ждёт»).
+   */
+  onCreated?: (created?: DjangoAppointment) => void;
   initialDate?: string | null;
   /**
    * Использовать initialDate как точное время, без округления к шагу
@@ -250,10 +261,16 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   showAllFieldsInitially = false,
 }) => {
   const { t } = useT("appointments");
+  const { t: tWaitlist } = useT("waitlist");
   const theme = useTheme();
   const { open: notify } = useNotification();
   const canCreate = useCan("appointments.create");
   const canManageAppointments = useCan("appointments.update");
+  // Права проверяем всегда (хук нельзя звать под условием), а флаг гасит
+  // модуль: бэкенда ещё нет, и роль superadmin проходит любую проверку прав
+  // (см. WAITLIST_MODULE_ENABLED в api/waitlist.ts).
+  const hasWaitlistCreatePermission = useCan(["waitlist.create", "waitlist.manage"]);
+  const canWaitlistCreate = WAITLIST_MODULE_ENABLED && hasWaitlistCreatePermission;
   // Опечатку в телефоне видно уже при записи — правим карту, не теряя форму.
   const canUpdatePatient = useCan("patients.update");
   const [editPatientOpen, setEditPatientOpen] = React.useState(false);
@@ -283,6 +300,8 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const [selectedPatient, setSelectedPatient] = React.useState<DjangoPatient | null>(null);
   const [patientSearch, setPatientSearch] = React.useState("");
   const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([newServiceRow()]);
+  /** Открыт дровер листа ожидания («время занято — поставить в очередь»). */
+  const [waitlistOpen, setWaitlistOpen] = React.useState(false);
   const [productRows, setProductRows] = React.useState<ProductRow[]>([]);
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
   /** Каталог для расходников — без фильтров продажи и остатка. */
@@ -593,6 +612,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                 (r) => r.consumptions !== null && hasInvalidConsumptionQuantity(r.consumptions),
               )
             ? t("consumptions.quantityError")
+            : serviceRows.some(
+                (r) =>
+                  r.durationMinutes.trim() !== "" &&
+                  (!Number.isInteger(Number(r.durationMinutes)) || Number(r.durationMinutes) <= 0),
+              )
+              ? t("priceField.invalidDuration")
             : null,
     products:
       overstockedRows.length > 0 ? t("addDrawer.errors.overStock") : null,
@@ -637,7 +662,10 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     () =>
       validRows.reduce((sum, r) => {
         const svc = data.services.find((s) => s.id === r.serviceId);
-        return sum + (svc?.durationMinutes ?? 0) * (r.quantity > 0 ? r.quantity : 1);
+        const duration = r.durationMinutes.trim()
+          ? Number(r.durationMinutes)
+          : (svc?.durationMinutes ?? 0);
+        return sum + duration * (r.quantity > 0 ? r.quantity : 1);
       }, 0),
     [validRows, data.services],
   );
@@ -666,7 +694,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     setSaveError(null);
     setSaving(true);
     try {
-      await createAppointment({
+      const created = await createAppointment({
         patientId: selectedPatient?.id ?? null,
         branchId: effectiveBranch?.id ?? null,
         // Scope to the active org so branch/org never mismatch (multi-org users).
@@ -683,6 +711,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           // Пустое поле не отправляем вовсе: бэк снапшотит цену из прайса сам,
           // а присланная каталожная цена — лишний повод для проверки права.
           ...(r.unitPrice.trim() ? { unitPrice: r.unitPrice.trim() } : {}),
+          ...(r.durationMinutes.trim()
+            ? { durationMinutes: Number(r.durationMinutes) }
+            : {}),
           // Ключ уходит только когда расходники правили: его отсутствие значит
           // «развернуть состав услуги как есть», а `[]` — «без расходников»
           // (именно так убирается лишний товар из состава при записи).
@@ -705,7 +736,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       });
       setOverlapConflict(null);
       notify?.({ type: "success", message: t("addDrawer.created") });
-      onCreated?.();
+      onCreated?.(created);
       onClose();
     } catch (err: unknown) {
       // Org "warn" mode: the backend lists the conflicts and waits for
@@ -1370,8 +1401,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                     ) : undefined
                                   }
                                   field={
-                                    <Autocomplete<DjangoCatalogServiceWithEmployees>
-                                      fullWidth
+                                    <ServicePickerField
                                       options={
                                         row.employeeId !== null
                                           ? availableServices
@@ -1386,7 +1416,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                           ? t("serviceRow.noServiceForEmployee")
                                           : t("serviceRow.noServiceMatches")
                                       }
-                                      onChange={(_, v) => {
+                                      onChange={(v) => {
                                         updateRow(index, {
                                           serviceId: v?.id ?? null,
                                           employeeId:
@@ -1403,47 +1433,17 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                           // тоже сбрасываем: пересчёт на прайс новой
                                           // услуги бэк пропускает без права.
                                           ...((v?.id ?? null) !== row.serviceId
-                                            ? { consumptions: null, unitPrice: "" }
+                                            ? { consumptions: null, unitPrice: "", durationMinutes: "" }
                                             : {}),
                                         });
                                       }}
-                                      getOptionLabel={(s) =>
-                                        t("addDrawer.serviceOption", {
-                                          name: s.name,
-                                          price: Number(s.basePrice),
-                                        })
+                                      placeholder={t("addDrawer.service")}
+                                      error={touched && !row.serviceId}
+                                      helperText={
+                                        touched && !row.serviceId
+                                          ? t("addDrawer.servicePlaceholder")
+                                          : ""
                                       }
-                                      isOptionEqualToValue={(a, b) => a.id === b.id}
-                                      renderOption={(props, s) => (
-                                        <li {...props} key={s.id}>
-                                          <Stack>
-                                            <Typography variant="body2">{s.name}</Typography>
-                                            <Typography
-                                              variant="caption"
-                                              color="text.secondary"
-                                            >
-                                              {t("addDrawer.priceAmount", { amount: Number(s.basePrice) })}
-                                              {s.durationMinutes
-                                                ? t("addDrawer.durationSuffix", { minutes: s.durationMinutes })
-                                                : ""}
-                                            </Typography>
-                                          </Stack>
-                                        </li>
-                                      )}
-                                      renderInput={(params) => (
-                                        <TextField
-                                          {...params}
-                                          placeholder={t("addDrawer.service")}
-                                          size="small"
-                                          fullWidth
-                                          error={touched && !row.serviceId}
-                                          helperText={
-                                            touched && !row.serviceId
-                                              ? t("addDrawer.servicePlaceholder")
-                                              : ""
-                                          }
-                                        />
-                                      )}
                                     />
                                   }
                                 >
@@ -1451,14 +1451,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                     <ServicePriceField
                                       basePrice={selectedService.basePrice}
                                       value={row.unitPrice}
+                                      baseDurationMinutes={selectedService.durationMinutes}
+                                      durationValue={row.durationMinutes}
                                       disabled={saving}
                                       onChange={(next) => updateRow(index, { unitPrice: next })}
-                                      suffix={
-                                        selectedService.durationMinutes
-                                          ? t("addDrawer.durationSuffix", {
-                                              minutes: selectedService.durationMinutes,
-                                            })
-                                          : ""
+                                      onDurationChange={(next) =>
+                                        updateRow(index, { durationMinutes: next })
                                       }
                                     />
                                   )}
@@ -1919,6 +1917,34 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         saving={saving}
         onCancel={() => setOverlapConflict(null)}
         onConfirm={() => void performSave(true)}
+        // Время занято — чаще всего это и есть случай «запишите меня, когда
+        // освободится»: предлагаем очередь вместо записи вторым на тот же слот.
+        onWaitlist={
+          canWaitlistCreate
+            ? () => {
+                setOverlapConflict(null);
+                setWaitlistOpen(true);
+              }
+            : undefined
+        }
+        waitlistLabel={tWaitlist("add")}
+      />
+
+      {/* Лист ожидания: врач и услуги переносятся из наполовину заполненной формы */}
+      <WaitlistDrawer
+        open={waitlistOpen}
+        onClose={() => setWaitlistOpen(false)}
+        prefill={{
+          patientId: selectedPatient?.id ?? null,
+          patientName: selectedPatient?.fullName ?? null,
+          phone: selectedPatient?.phone ?? null,
+          employeeId: serviceRows.find((r) => r.employeeId != null)?.employeeId ?? null,
+          serviceIds: serviceRows
+            .map((r) => r.serviceId)
+            .filter((id): id is number => id != null),
+          desiredDateFrom: scheduledAt ? dayjs(scheduledAt).format("YYYY-MM-DD") : null,
+        }}
+        onSaved={() => onClose()}
       />
 
       {/* Подтверждение закрытия при несохранённых данных */}

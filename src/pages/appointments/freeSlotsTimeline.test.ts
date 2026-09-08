@@ -16,9 +16,11 @@ function slot(
     appointmentId = null as number | null,
     patientName = null as string | null,
     branchId = null as number | null,
+    branchName = null as string | null,
+    busyElsewhere = false,
   } = {},
 ): AvailabilitySlot {
-  return { start, end, free, appointmentId, patientName, branchId };
+  return { start, end, free, appointmentId, patientName, branchId, branchName, busyElsewhere };
 }
 
 /** Приём дня. Филиал в таймлайне не участвует — берём один и тот же. */
@@ -97,6 +99,60 @@ describe("buildTimeline", () => {
 
     expect(rows).toHaveLength(2);
     expect(rows[0].kind === "slot" && rows[0].slot.free).toBe(false);
+  });
+
+  it("различает слоты двух смен одного времени — ключ по паре (время, филиал)", () => {
+    // Org-wide выдача сотрудника со сменами в двух филиалах: один плоский
+    // список, время дублируется (ответ бэка 02.09.2026). Ключ по одному лишь
+    // времени схлопывал бы такие строки в одну.
+    const rows = buildTimeline(
+      day({
+        slots: [
+          slot("10:00", "10:30", { branchId: 1, branchName: "Мама Доктор" }),
+          slot("10:00", "10:30", { branchId: 13, branchName: "Мама Доктор Плюс" }),
+        ],
+      }),
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((r) => r.key)).size).toBe(2);
+  });
+
+  it("оставляет busyElsewhere отдельной строкой, а не считает его прошедшим окном", () => {
+    const rows = buildTimeline(
+      day({
+        slots: [
+          slot("09:00", "09:30", { free: false, busyElsewhere: true, branchId: 1 }),
+          slot("09:30", "10:00", { branchId: 1 }),
+        ],
+      }),
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0].kind === "slot" && rows[0].slot.busyElsewhere).toBe(true);
+  });
+
+  it("гасит busyElsewhere, если это же время уже показано приёмом", () => {
+    // В org-wide режиме чужой приём виден строкой сам по себе; слот второй
+    // смены, погашенный бэком тем же приёмом, дал бы вторую строку на то же
+    // время — глухую, без объяснения.
+    const rows = buildTimeline(
+      day({
+        slots: [
+          slot("10:00", "10:30", { free: false, appointmentId: 5, branchId: 13 }),
+          slot("10:00", "10:30", { free: false, busyElsewhere: true, branchId: 1 }),
+          slot("10:30", "11:00", { free: false, busyElsewhere: true, branchId: 1 }),
+        ],
+        appointments: [
+          appt({ id: 5, start: "10:00", end: "10:30", patientName: "А", status: "scheduled" }),
+        ],
+      }),
+    );
+
+    expect(rows.map((r) => [r.kind, r.start])).toEqual([
+      ["appt", "10:00"],
+      ["slot", "10:30"],
+    ]);
   });
 
   it("без поля appointments (старый бэкенд) рисует сетку как есть", () => {

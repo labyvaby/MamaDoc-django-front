@@ -45,6 +45,7 @@ import {
   MoneyWidget,
   ReviewsWidget,
   TasksWidget,
+  DealsWidget,
 } from "./widgets";
 import {
   AvailabilityWidget,
@@ -68,6 +69,7 @@ const WIDGET_COMPONENT: Record<WidgetId, React.FC<WidgetProps>> = {
   month: MonthWidget,
   staff: StaffWidget,
   tasks: TasksWidget,
+  deals: DealsWidget,
   reviews: ReviewsWidget,
 };
 
@@ -171,6 +173,8 @@ export const DashboardPage: React.FC = () => {
           appointments: can(PAGE_PERMISSIONS.appointments),
           reports: can(PAGE_PERMISSIONS.reports),
           tasks: can(PAGE_PERMISSIONS.tasks),
+          // Воронки в выгрузке нет: xlsx собирает деньги, записи и отчёты,
+          // а ретроспектива обращений живёт во вкладке аналитики.
           reviews: can(PAGE_PERMISSIONS.reviews),
           branches: can(PAGE_PERMISSIONS.cashbox) && (branchesQuery.data?.length ?? 0) > 1,
         },

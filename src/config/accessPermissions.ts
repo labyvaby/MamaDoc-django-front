@@ -35,14 +35,29 @@ export const PAGE_PERMISSIONS = {
   notifications: "notifications.manage",
   reviews: ["reviews.view", "reviews.manage"],
   bookings: ["bookings.view", "bookings.manage"],
+  // Раздел «Чаты» — встроенный Chatwoot. Право выдаётся ролям в редакторе
+  // ролей; сам аккаунт в Chatwoot заводит его администратор отдельно.
+  chats: "chatwoot.view",
   tasks: "tasks.list",
+  waitlist: ["waitlist.view", "waitlist.manage"],
+  // Воронка продаж: смотреть доску даёт deals.list, настраивать — deals.manage.
+  deals: ["deals.list", "deals.manage"],
   vaccinations: "vaccinations.view",
   achievements: "achievements.view",
   announcements: ["announcements.view", "announcements.manage"],
   conclusionPrint: "medical.conclusions.print",
+  clients: "clients.view",
+  pos: "pos.view",
+  // Просмотр истории и незавершённых пересчётов доступен вместе со складом;
+  // операции открытия/сканирования/завершения дополнительно проверяет API.
+  inventory: "warehouse.view",
+  ecommerce: "ecommerce.view",
+  targets: "targets.view",
+  messaging: "messaging.view",
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {
+  posModule: "tenancy.modules.view",
   organization: "organization.view",
   branches: "branches.view",
   // Сайт-визитку настраивает тот же, кто правит организацию: конструктор
@@ -64,10 +79,21 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // что доступ у существующих ролей не меняется.
   conclusionForms: "medical.conclusion_forms.manage",
   tasks: "tasks.manage",
+  deals: "deals.manage",
   cleaning: "cleaning.manage",
   skud: PAGE_PERMISSIONS.attendanceSettings,
   announcements: PAGE_PERMISSIONS.announcements,
   notifications: PAGE_PERMISSIONS.notifications,
+  // Конструктор автоматизаций отправляет SMS/WhatsApp и на бэке гейтится тем
+  // же notifications.manage, что и настройки уведомлений — своего кода прав
+  // у модуля нет (docs/automations-api.md §2).
+  automations: PAGE_PERMISSIONS.notifications,
+  productAttributes: "warehouse.manage",
+  // Витрина odoctor.kg. Право своё, а не общее с расписанием: за страницей
+  // лежит учётная запись внешнего кабинета — ключ от чужой системы. Читать и
+  // менять эти настройки бэк разрешает по одному и тому же коду, поэтому
+  // «смотреть, но не править» на странице нет.
+  odoctor: "odoctor.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

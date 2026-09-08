@@ -50,6 +50,7 @@ import {
 import { getBranches } from "../../../api/organization";
 import { getPublicFeatures } from "../../../api/publicBooking";
 import { getServices, type Service } from "../../../api/catalog";
+import ServiceMultiPickerField from "../../../components/services/ServiceMultiPickerField";
 import { orgWide } from "../../../api/scope";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { getProducts, type DjangoProduct } from "../../../api/warehouse";
@@ -72,6 +73,7 @@ import { CustomDatePicker, cascadeContainer, cascadeItem } from "../../../compon
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import SpecializationBlock from "./SpecializationBlock";
 import DocumentsBlock from "./DocumentsBlock";
+import { OdoctorEmployeeToggle } from "./OdoctorEmployeeToggle";
 import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader, StatusBadge } from "./drawerKit";
 import {
   parsePhone,
@@ -96,6 +98,7 @@ import {
   validateBik,
   validatePrepaymentAmount,
 } from "../employeeValidation";
+import { buildSalaryServiceOptions } from "../salaryServiceOptions";
 
 export type DjangoEditEmployeeDrawerProps = {
   record: EmployesRow | null;
@@ -951,29 +954,29 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const isDoctor =
     record?._djangoRole?.code === "doctor" || clinicalRole === "doctor";
 
-  // Для врачей в правилах ЗП показываем только услуги, закреплённые за врачом
-  // (живой выбор из вкладки «Услуги»). Дополнительно оставляем услуги, уже
-  // упомянутые в правилах, — чтобы их имена/чипы отображались и правило можно
-  // было отредактировать, даже если услугу открепили. Ограничение применяем
-  // лишь когда привязки услуг реально загружены (есть право на их просмотр).
-  const salaryServices = React.useMemo(() => {
-    const restrictToAssigned =
-      isDoctor && (canViewServices || canManageServices);
-    if (!restrictToAssigned) return allServices;
-    const referencedIds = new Set(salary.rules.flatMap((r) => r.serviceIds));
-    const selectedIds = new Set(selectedServices.map((s) => s.id));
-    const extras = allServices.filter(
-      (s) => referencedIds.has(s.id) && !selectedIds.has(s.id),
-    );
-    return [...selectedServices, ...extras];
-  }, [isDoctor, canViewServices, canManageServices, allServices, selectedServices, salary.rules]);
+  // В правилах ЗП показываем только услуги, закреплённые за сотрудником (живой
+  // выбор из вкладки «Услуги») — ставка на непривязанную услугу всё равно не
+  // отработает, приём с такой парой услуга/исполнитель не собрать. Правило
+  // сужения и его исключения — в buildSalaryServiceOptions.
+  const assignmentsKnown = canViewServices || canManageServices;
+  const salaryServices = React.useMemo(
+    () =>
+      buildSalaryServiceOptions({
+        allServices,
+        assignedServices: selectedServices,
+        ruleServiceIds: salary.rules.flatMap((r) => r.serviceIds),
+        assignmentsKnown,
+      }),
+    [assignmentsKnown, allServices, selectedServices, salary.rules],
+  );
 
-  // Подсказка врачу без закреплённых услуг: правила ЗП по услугам применять не к чему.
+  // Подсказка сотруднику без закреплённых услуг: правила ЗП по услугам
+  // применять не к чему. Врачу — своим термином вертикали.
   const salaryServicesHint =
-    isDoctor &&
-    (canViewServices || canManageServices) &&
-    selectedServices.length === 0
-      ? t("clinicalRole.doctorNoServicesHint")
+    assignmentsKnown && selectedServices.length === 0
+      ? isDoctor
+        ? t("clinicalRole.doctorNoServicesHint")
+        : t("clinicalRole.employeeNoServicesHint")
       : undefined;
 
   return (
@@ -1437,6 +1440,18 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
               </Paper>
             )}
 
+            {/* Витрина odoctor.kg — рядом с онлайн-записью: обе решают, где
+                врача видно пациенту. Блок сам себя не покажет, если связи с
+                кабинетом нет (её заводит человек в админке), и появляется
+                только у существующего сотрудника: у несохранённого нет id, к
+                которому связь могла бы относиться. */}
+            {clinicalRole === "doctor" && record && (
+              <OdoctorEmployeeToggle
+                employeeId={Number(record.id)}
+                disabled={busy}
+              />
+            )}
+
             {/* Онлайн-предоплата этого врача. Сумма своя у каждого врача, а не
                 общая на организацию (решение заказчика 23.08.2026), поэтому
                 настраивается здесь, а не в настройках клиники. Флаг без суммы
@@ -1565,35 +1580,14 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
             <Stack spacing={2.5}>
               <SectionLabel title="Услуги" />
               <Field label="Услуги сотрудника">
-                <Autocomplete
-                  multiple
-                  size="small"
+                <ServiceMultiPickerField
                   limitTags={3}
                   loading={servicesLoading}
                   options={allServices}
                   value={selectedServices}
-                  disableCloseOnSelect
                   disabled={!canManageServices || busy}
-                  getOptionLabel={(s) =>
-                    s.basePrice ? `${s.name} (${Number(s.basePrice)} с)` : s.name
-                  }
-                  isOptionEqualToValue={(a, b) => a.id === b.id}
-                  onChange={(_, newVal) => setSelectedServices(newVal)}
-                  renderOption={(props, option, { selected }) => (
-                    <li {...props}>
-                      <Checkbox
-                        icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
-                        checkedIcon={<CheckBoxIcon fontSize="small" />}
-                        style={{ marginRight: 8 }}
-                        checked={selected}
-                      />
-                      {option.name}
-                      {option.basePrice ? ` (${Number(option.basePrice)} с)` : ""}
-                    </li>
-                  )}
-                  renderInput={(params) => (
-                    <TextField {...params} placeholder={canManageServices ? "Выберите услуги" : ""} />
-                  )}
+                  onChange={setSelectedServices}
+                  placeholder="Выберите услуги"
                 />
               </Field>
 

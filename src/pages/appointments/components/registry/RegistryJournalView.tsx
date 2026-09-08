@@ -63,6 +63,13 @@ import RegistryFeed from "./RegistryFeed";
 import RegistryTable from "./RegistryTable";
 import RegistryInsights from "./RegistryInsights";
 import { applySearch, type RegistryToken } from "./registryFilters";
+import { useRegistryFilters } from "./useRegistryFilters";
+import {
+  MONEY_FLAG_LABEL_KEY,
+  MONEY_FLAG_OPTIONS,
+  appointmentMoneyFlags,
+  matchesMoneyFlags,
+} from "../listFilters";
 import { exportRegistry } from "./buildRegistryXlsx";
 import RegistryCourseFeed from "./RegistryCourseFeed";
 import type { SummaryTile } from "./RegistrySummaryBar";
@@ -80,9 +87,10 @@ import {
 import { formatCompactAmount, formatAmount } from "./registryFormat";
 import {
   PAYMENT_FILTERS,
+  isMoneyFlagKey,
   paymentAccent,
   type FeedGrouping,
-  type PaymentFilter,
+  type RegistryTileKey,
   type RegistryViewMode,
 } from "./registryTypes";
 
@@ -104,12 +112,6 @@ interface Props {
 }
 
 const defaultGetLines: LinesOf = (appt) => appt.services.filter((line) => line.employee);
-
-interface Period {
-  year: number;
-  /** 0–11 или null — весь год. */
-  month: number | null;
-}
 
 export const RegistryJournalView: React.FC<Props> = ({
   pageTitle,
@@ -134,14 +136,19 @@ export const RegistryJournalView: React.FC<Props> = ({
   const canManageFinance = can("finance.manage");
 
   // ── Состояние среза ────────────────────────────────────────────────────────
-  const [period, setPeriod] = React.useState<Period>(() => ({
-    year: dayjs().year(),
-    month: dayjs().month(),
-  }));
+  // Период и фильтры живут в URL (useRegistryFilters): срез журнала — это то,
+  // чем делятся ссылкой, а корзина пульса ниже — drill-down внутри него.
+  const {
+    period,
+    setPeriod,
+    paymentFilter,
+    setPaymentFilter,
+    moneyFlags,
+    toggleMoneyFlag,
+  } = useRegistryFilters();
   const [view, setView] = React.useState<RegistryViewMode>("feed");
   // Раскладка ленты: по дням (общая) или по пациентам и курсам (процедуры).
   const [grouping, setGrouping] = React.useState<FeedGrouping>("days");
-  const [paymentFilter, setPaymentFilter] = React.useState<PaymentFilter>("all");
   const [bucket, setBucket] = React.useState<string | null>(null);
   const [tokens, setTokens] = React.useState<RegistryToken[]>([]);
   const [query, setQuery] = React.useState("");
@@ -186,11 +193,15 @@ export const RegistryJournalView: React.FC<Props> = ({
   );
 
   const paymentCounts = React.useMemo(() => {
-    const counts = new Map<PaymentFilter, number>([["all", searched.length]]);
+    const counts = new Map<RegistryTileKey, number>([["all", searched.length]]);
     for (const appt of searched) {
       const status = appt.paymentStatus;
-      if (!status) continue;
-      counts.set(status, (counts.get(status) ?? 0) + 1);
+      if (status) counts.set(status, (counts.get(status) ?? 0) + 1);
+      // Флаги цены живут в той же карте: приём попадает и в «Оплачено», и в
+      // «Со скидкой», поэтому сумма счётчиков больше числа записей среза.
+      for (const flag of appointmentMoneyFlags(appt)) {
+        counts.set(flag, (counts.get(flag) ?? 0) + 1);
+      }
     }
     return counts;
   }, [searched]);
@@ -200,11 +211,14 @@ export const RegistryJournalView: React.FC<Props> = ({
     if (paymentFilter !== "all") {
       list = list.filter((appt) => appt.paymentStatus === paymentFilter);
     }
+    if (moneyFlags.length > 0) {
+      list = list.filter((appt) => matchesMoneyFlags(appt, moneyFlags));
+    }
     if (bucket && period.month != null) {
       list = list.filter((appt) => dayjs(appt.scheduledAt).format("YYYY-MM-DD") === bucket);
     }
     return list;
-  }, [searched, paymentFilter, bucket, period.month]);
+  }, [searched, paymentFilter, moneyFlags, bucket, period.month]);
 
   // Сводка и пульс считаются до фильтра по оплате и дню: иначе выбор «Долга»
   // обнулял бы «Выручку», по которой этот выбор и делают.
@@ -283,8 +297,8 @@ export const RegistryJournalView: React.FC<Props> = ({
           accent: "paid",
         },
         {
-          key: "discounted",
-          label: t("journal.payFilter.discounted"),
+          key: "discount",
+          label: t("journal.moneyFilter.discount"),
           value: String(summary.discounted),
           hint: t("journal.summary.ofTotal", { total: summary.visits }),
         },
@@ -373,6 +387,20 @@ export const RegistryJournalView: React.FC<Props> = ({
         ? { year: prev.year, month: dayjs().year() === prev.year ? dayjs().month() : 0 }
         : { year: prev.year, month: null },
     );
+  };
+
+  /**
+   * Плитка сводки и чип — один и тот же переключатель: оплата выбирается по
+   * одному значению, флаги цены складываются (мультивыбор). Единая точка,
+   * чтобы клик по плитке «Со скидкой» и по чипу «Со скидкой» делал одно и то же.
+   */
+  const isTileActive = (key: RegistryTileKey) =>
+    isMoneyFlagKey(key) ? moneyFlags.includes(key) : paymentFilter === key;
+
+  const handleToggleTile = (key: RegistryTileKey) => {
+    setOpenId(null);
+    if (isMoneyFlagKey(key)) toggleMoneyFlag(key);
+    else setPaymentFilter(paymentFilter === key ? "all" : key);
   };
 
   const handleSelectBucket = (key: string | null) => {
@@ -651,34 +679,34 @@ export const RegistryJournalView: React.FC<Props> = ({
           <RegistrySummaryBar
             tiles={tiles}
             pulse={pulse}
-            paymentFilter={paymentFilter}
-            onPaymentFilterChange={(value) => {
-              setPaymentFilter(value);
-              setOpenId(null);
-            }}
+            isTileActive={isTileActive}
+            onToggleTile={handleToggleTile}
             selectedBucket={bucket}
             onSelectBucket={handleSelectBucket}
             canViewFinance={canViewFinance}
             pulseTitle={period.month != null ? t("journal.pulse.month") : t("journal.pulse.year")}
           />
 
-          {/* Чипы статуса оплаты со счётчиками среза */}
+          {/* Чипы оплаты и цены со счётчиками среза. Оси идут одним рядом:
+              флаги цены («Со скидкой», «Цена повышена») — тоже про деньги, а
+              выбираются они независимо от статуса оплаты, поэтому скидка,
+              которую ещё не оплатили, из фильтра больше не выпадает. */}
           <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center">
-            {PAYMENT_FILTERS.map((value) => {
+            {[...PAYMENT_FILTERS, ...MONEY_FLAG_OPTIONS].map((value) => {
               const count = paymentCounts.get(value) ?? 0;
               if (count === 0 && value !== "all") return null;
-              const active = paymentFilter === value;
+              const active = isTileActive(value);
               const accent = paymentAccent(value, theme) ?? theme.palette.primary.main;
+              const labelKey = isMoneyFlagKey(value)
+                ? `journal.moneyFilter.${MONEY_FLAG_LABEL_KEY[value]}`
+                : `journal.payFilter.${value}`;
               return (
                 <Chip
                   key={value}
                   size="small"
                   clickable
-                  onClick={() => {
-                    setPaymentFilter(active ? "all" : value);
-                    setOpenId(null);
-                  }}
-                  label={`${t(`journal.payFilter.${value}`)} · ${count}`}
+                  onClick={() => handleToggleTile(value)}
+                  label={`${t(labelKey)} · ${count}`}
                   sx={(t) => ({
                     height: 26,
                     borderRadius: "7px",
@@ -785,6 +813,7 @@ export const RegistryJournalView: React.FC<Props> = ({
         {conclusionTarget && (
           <DjangoConclusionSlotsPanel
             appointmentId={conclusionTarget.id}
+            branchId={conclusionTarget.branchId}
             onClose={() => setConclusionTarget(null)}
           />
         )}

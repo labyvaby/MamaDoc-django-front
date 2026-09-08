@@ -17,6 +17,7 @@ import {
   type ProfessionalDetail,
   type PublicBookingDetail,
 } from "../../../api/publicBooking";
+import { PaymentBlock } from "../BookingByCodePage";
 import { useT } from "../../../i18n/VerticalProvider";
 import { capitalizeFullName } from "../../../utility/name";
 import {
@@ -100,6 +101,7 @@ export const GuestDialog: React.FC<{
   const [phone, setPhone] = React.useState("");
   const [name, setName] = React.useState("");
   const [menuAnchor, setMenuAnchor] = React.useState<HTMLElement | null>(null);
+  const [showNameError, setShowNameError] = React.useState(false);
   const [showPhoneError, setShowPhoneError] = React.useState(false);
   const nameRef = React.useRef<HTMLInputElement>(null);
   const phoneRef = React.useRef<HTMLInputElement>(null);
@@ -140,18 +142,28 @@ export const GuestDialog: React.FC<{
     );
   }, [list, primaryCountries, showAllCountries, countryQuery]);
 
+  const nameOk = name.trim().length > 1;
   const phoneOk = isPhoneLocalComplete(country.dialCode, phone);
-  const canSubmit = phoneOk && name.trim().length > 1 && !submitting;
   // Ошибку показываем только после попытки отправить — подсказывать на каждой
   // набранной цифре навязчиво, номер и так набирается не сразу.
+  const nameError = showNameError && !nameOk;
   const phoneError = showPhoneError && !phoneOk;
 
   const handleSubmit = () => {
-    if (!phoneOk) {
-      setShowPhoneError(true);
+    // Кнопка активна всегда: погашенная кнопка на незаполненной форме — тупик,
+    // гость жмёт и не понимает, чего не хватает. Вместо этого подсвечиваем
+    // первое незаполненное поле и ставим в него курсор.
+    setShowNameError(!nameOk);
+    setShowPhoneError(!phoneOk);
+    if (!nameOk) {
+      nameRef.current?.focus();
       return;
     }
-    if (!canSubmit) return;
+    if (!phoneOk) {
+      phoneRef.current?.focus();
+      return;
+    }
+    if (submitting) return;
     const fullPhone = country.dialCode + phone.replace(/\D/g, "");
     const cleanName = capitalizeFullName(name.trim());
     localStorage.setItem(SAVED_NAME_KEY, cleanName);
@@ -185,7 +197,7 @@ export const GuestDialog: React.FC<{
           {t("guestHintShort")}
         </Typography>
 
-        <Box sx={fieldSx}>
+        <Box sx={{ ...fieldSx, ...(nameError ? { borderColor: "error.main" } : null) }}>
           <Box
             component="input"
             ref={nameRef}
@@ -193,11 +205,23 @@ export const GuestDialog: React.FC<{
             name="name"
             autoComplete="name"
             value={name}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+              setName(e.target.value);
+              if (e.target.value.trim().length > 1) setShowNameError(false);
+            }}
+            onKeyDown={(e: React.KeyboardEvent) => {
+              if (e.key === "Enter") handleSubmit();
+            }}
             placeholder={t("nameLabel")}
             sx={inputSx}
           />
         </Box>
+
+        {nameError && (
+          <Typography sx={{ width: "100%", mt: -1, fontSize: 13, color: "error.main" }}>
+            {t("nameRequired")}
+          </Typography>
+        )}
 
         <Stack
           direction="row"
@@ -337,7 +361,7 @@ export const GuestDialog: React.FC<{
 
         <Button
           onClick={handleSubmit}
-          disabled={!canSubmit}
+          disabled={submitting}
           disableElevation
           sx={{
             mt: 1,
@@ -487,6 +511,30 @@ export const SuccessDialog: React.FC<{
     return () => ctrl.abort();
   }, [result.confirmationCode]);
 
+  /**
+   * Пока предоплата в статусе pending, опрашиваем ту же ручку, что и страница
+   * «Ваша запись» — кнопка банка «Я оплатил(а)» ничего не доказывает, признак
+   * оплаты один — status "paid".
+   */
+  const paymentStatus = detail?.payment?.status ?? null;
+  React.useEffect(() => {
+    if (paymentStatus !== "pending" || !result.confirmationCode) return;
+    const ctrl = new AbortController();
+    const id = window.setInterval(() => {
+      getBookingByCode(result.confirmationCode, ctrl.signal)
+        .then((d) => {
+          if (!ctrl.signal.aborted) setDetail(d);
+        })
+        .catch(() => {
+          /* сеть моргнула — повторим на следующем тике */
+        });
+    }, 5000);
+    return () => {
+      window.clearInterval(id);
+      ctrl.abort();
+    };
+  }, [paymentStatus, result.confirmationCode]);
+
   /** Ссылка на карточку записи — её и кодирует QR, и отправляет «Поделиться». */
   const bookingUrl = bookingCodeUrl(result.confirmationCode, orgSlug);
 
@@ -594,6 +642,11 @@ export const SuccessDialog: React.FC<{
           <Box sx={{ display: { lg: "none" } }}>
             <DoctorBadge doctor={doctor} specialty={specialty} />
           </Box>
+
+          {/* Онлайн-предоплата — если её не оплатить, время освободится через
+              15 минут, поэтому кнопка должна быть видна сразу, а не только на
+              странице «Ваша запись» по коду. */}
+          {detail?.payment && <PaymentBlock payment={detail.payment} t={t} />}
 
           <Box sx={{ borderTop: `1px solid ${BORDER}` }}>
             <Stack

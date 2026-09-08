@@ -24,6 +24,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme, alpha } from "@mui/material/styles";
 import OrganizationBrand from "../brand/OrganizationBrand";
 import { useAppVersion } from "../../api/appVersion";
+import { fetchChatwootCounts } from "../../api/chatwoot";
 import { useT } from "../../i18n/VerticalProvider";
 
 
@@ -36,6 +37,8 @@ import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
+import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
+import PointOfSaleOutlined from "@mui/icons-material/PointOfSaleOutlined";
 // import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
@@ -48,17 +51,22 @@ import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ReviewsOutlined from "@mui/icons-material/ReviewsOutlined";
 import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
+import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
+import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
+import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { logout as djangoLogout } from "../../api";
 import { getTasksSummary } from "../../api/tasks";
+import { getWaitlistSummary, WAITLIST_MODULE_ENABLED } from "../../api/waitlist";
+import { DEALS_MODULE_ENABLED } from "../../api/deals";
 import { getBookings } from "../../api/bookings";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import {
@@ -344,7 +352,13 @@ const SidebarSecondary: React.FC = () => {
   const { siderCollapsed } = useThemedLayoutContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const { isSuperAdmin, activeEmployee, activeBranch, loading: permissionsLoading } = usePermissions();
+  const {
+    isSuperAdmin,
+    activeEmployee,
+    activeBranch,
+    activeOrganization,
+    loading: permissionsLoading,
+  } = usePermissions();
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
   const hasVisibleSettingsTab = Object.entries(
@@ -356,6 +370,7 @@ const SidebarSecondary: React.FC = () => {
   );
   const orgId = useApiOrgId();
   const isSuper = isSuperAdmin();
+  const isRetail = activeOrganization?.vertical === "retail";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -381,44 +396,52 @@ const SidebarSecondary: React.FC = () => {
     // правами (appointments.*_room/registry.view): организация сама решает в
     // редакторе ролей, кому какой кабинет показывать. Данные внутри страниц
     // по-прежнему требуют appointments.view.
-    registratura: isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry),
-    bookings: isSuper || can(PAGE_PERMISSIONS.bookings),
-    doctorRoom: isSuper || can(PAGE_PERMISSIONS.doctorRoom),
-    nurseRoom: isSuper || can(PAGE_PERMISSIONS.nurseRoom),
-    // `can` уже сверяется с картой префикс→модуль, поэтому право lab.view без
-    // включённого модуля `lab` пункт не покажет — отдельной проверки не нужно.
-    lab: isSuper || can(PAGE_PERMISSIONS.lab),
-    schedule: isSuper || can(PAGE_PERMISSIONS.schedule),
+    registratura: !isRetail && (isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry)),
+    bookings: !isRetail && (isSuper || can(PAGE_PERMISSIONS.bookings)),
+    chats: !isRetail && (isSuper || can(PAGE_PERMISSIONS.chats)),
+    doctorRoom: !isRetail && (isSuper || can(PAGE_PERMISSIONS.doctorRoom)),
+    nurseRoom: !isRetail && (isSuper || can(PAGE_PERMISSIONS.nurseRoom)),
+    // Клинический раздел: ретейлу приём анализов не нужен, поэтому под тем
+    // же !isRetail, что и остальные медицинские пункты. Отдельной проверки
+    // модуля не нужно — `can` уже сверяется с картой префикс→модуль.
+    lab: !isRetail && (isSuper || can(PAGE_PERMISSIONS.lab)),
+    schedule: !isRetail && (isSuper || can(PAGE_PERMISSIONS.schedule)),
     skud: isSuper || can(PAGE_PERMISSIONS.attendance),
     cleaning: moduleGate("cleaning"),
-    tasks: isSuper || can(PAGE_PERMISSIONS.tasks),
-    expenses: isSuper || can(PAGE_PERMISSIONS.expenses),
+    tasks: can(PAGE_PERMISSIONS.tasks),
+    // Лист ожидания и воронка ждут бэкенда на проде — гейт по правам их не
+    // прикрывает: роль superadmin проходит любую проверку прав.
+    waitlist: WAITLIST_MODULE_ENABLED && can(PAGE_PERMISSIONS.waitlist),
+    deals: DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals),
+    expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
-    achievements: isSuper || can(PAGE_PERMISSIONS.achievements),
+    achievements: can(PAGE_PERMISSIONS.achievements),
     // ОРГАНИЗАЦИЯ
-    employees: isSuper || can(PAGE_PERMISSIONS.employees),
-    patients: isSuper || can(PAGE_PERMISSIONS.patients),
-    vaccinations: isSuper || can(PAGE_PERMISSIONS.vaccinations),
+    employees: can(PAGE_PERMISSIONS.employees),
+    patients: !isRetail && can(PAGE_PERMISSIONS.patients),
+    vaccinations: !isRetail && can(PAGE_PERMISSIONS.vaccinations),
     // Исторические реестры — только суперадмин (19.08.2026), права нет намеренно.
-    allAppointments: isSuper,
-    allProcedures: isSuper,
-    services: isSuper || can(PAGE_PERMISSIONS.services),
+    allAppointments: !isRetail && isSuper && can(PAGE_PERMISSIONS.appointments),
+    allProcedures: !isRetail && isSuper && can(PAGE_PERMISSIONS.appointments),
+    services: !isRetail && can(PAGE_PERMISSIONS.services),
     documents: moduleGate("documents"),
     // СКЛАДЫ
-    products: isSuper || can(PAGE_PERMISSIONS.products),
-    sales: isSuper || can(PAGE_PERMISSIONS.sales),
-    storage: isSuper || can(PAGE_PERMISSIONS.warehouses),
+    pos: can(PAGE_PERMISSIONS.pos),
+    products: can(PAGE_PERMISSIONS.products),
+    sales: can(PAGE_PERMISSIONS.sales),
+    storage: can(PAGE_PERMISSIONS.warehouses),
+    inventory: can(PAGE_PERMISSIONS.warehouses),
     // УПРАВЛЕНИЕ
     // payroll.view открывает общий отчёт; payroll.view_own + активная карточка
     // сотрудника — тот же экран в персональном режиме (только свои цифры).
-    salaryReports: isSuper || can("payroll.view") || (can("payroll.view_own") && activeEmployee != null),
+    salaryReports: can("payroll.view") || (can("payroll.view_own") && activeEmployee != null),
     // В Django-режиме гейтим правом, а не ролью: роль-гейт скрывал «Отчеты»
     // у всех, кому reports.view выдан (владелец, бухгалтер, главврач,
     // управляющий филиалом). Тот же принцип, что у соседнего пункта load.
-    reports: isSuper || can(PAGE_PERMISSIONS.reports),
-    cashbox: isSuper || can(PAGE_PERMISSIONS.cashbox),
-    load: isSuper || can(PAGE_PERMISSIONS.reports),
-    notifications: isSuper || can(PAGE_PERMISSIONS.notifications),
+    reports: can(PAGE_PERMISSIONS.reports),
+    cashbox: can(PAGE_PERMISSIONS.cashbox),
+    load: !isRetail && can(PAGE_PERMISSIONS.reports),
+    notifications: can(PAGE_PERMISSIONS.notifications),
     settings: hasVisibleSettingsTab,
   };
 
@@ -449,6 +472,20 @@ const SidebarSecondary: React.FC = () => {
     (tasksSummary?.inProgress ?? 0) +
     (tasksSummary?.awaitingApproval ?? 0);
   const tasksBadgeColor: "error" | "primary" = tasksOverdue > 0 ? "error" : "primary";
+
+  // Бейдж «Лист ожидания»: сколько человек стоит в очереди (waiting). Красный —
+  // когда среди них есть срочные: такой очередью надо заняться сегодня.
+  const waitlistSummaryQuery = useQuery({
+    queryKey: djangoQueryKeys.waitlist.summary(orgId),
+    queryFn: ({ signal }) => getWaitlistSummary(orgId, signal),
+    enabled: can_.waitlist && !permissionsLoading,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+  });
+  const waitlistBadgeCount = waitlistSummaryQuery.data?.waiting ?? 0;
+  const waitlistBadgeColor: "error" | "primary" =
+    (waitlistSummaryQuery.data?.urgent ?? 0) > 0 ? "error" : "primary";
 
   // Бейдж «Брони»: заявки, ждущие подтверждения персоналом (status=pending) —
   // и с гостевой формы /book, и из синка operator.kg. Отдельного счётчика на
@@ -532,15 +569,36 @@ const SidebarSecondary: React.FC = () => {
     refetchInterval: DJANGO_POLL_INTERVAL_MS,
     refetchOnWindowFocus: true,
   });
+  // Чаты: бейдж — открытые диалоги, которые сотрудник реально видит.
+  // Запрос включён только при праве на раздел; 403 (нет связи с Чат-центром)
+  // и 404 (интеграция выключена) — не ошибка, а «бейджа нет», поэтому retry
+  // выключен и ошибка молча превращается в ноль.
+  const chatsCountsQuery = useQuery({
+    queryKey: ["chatwoot", "counts"],
+    queryFn: fetchChatwootCounts,
+    enabled: can_.chats,
+    retry: false,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+  });
+  const chatsCounts = chatsCountsQuery.data;
+  const chatsBadgeCount = chatsCounts
+    ? chatsCounts.mine + chatsCounts.unassigned
+    : 0;
+  // Свои диалоги — личный долг, поэтому краснее; ничьи сами по себе спокойнее.
+  const chatsBadgeColor: "error" | "primary" =
+    (chatsCounts?.mine ?? 0) > 0 ? "error" : "primary";
+
   const bookingsBadgeCount = bookingsPendingQuery.data?.count ?? 0;
   const bookingsBadgeColor: "error" | "primary" =
     (bookingsOverdueQuery.data?.count ?? 0) > 0 ? "error" : "primary";
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.bookings || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
-    "org": can_.employees || can_.patients || can_.vaccinations || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
-    "storage": can_.products || can_.sales || can_.storage,
+    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements,
+    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
+    "storage": can_.pos || can_.products || can_.vaccinations || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
 
@@ -667,6 +725,37 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Брони" collapsed={siderCollapsed} badgeCount={bookingsBadgeCount} badgeColor={bookingsBadgeColor} />
         )}
 
+        {/* Чаты — встроенный дашборд Chatwoot (chat.operator.kg) со сквозной
+            авторизацией. Пункт виден по праву chatwoot.view; сотрудник без
+            учётки в Chatwoot увидит на странице заглушку «запросите доступ». */}
+        {show("my-work") && can_.chats && (
+          <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} badgeCount={chatsBadgeCount} badgeColor={chatsBadgeColor} />
+        )}
+
+        {/* Лист ожидания: кому не хватило свободного окна.
+            Бейдж — сколько человек сейчас в очереди. */}
+        {show("my-work") && can_.waitlist && (
+          <SidebarMenuItem
+            to="/waitlist"
+            icon={<HourglassEmptyOutlined />}
+            label="Лист ожидания"
+            collapsed={siderCollapsed}
+            badgeCount={waitlistBadgeCount}
+            badgeColor={waitlistBadgeColor}
+          />
+        )}
+
+        {/* Воронка продаж: обращения от первого звонка до оплаты.
+            Пункт виден по deals.list — права появляются вместе с модулем. */}
+        {show("my-work") && can_.deals && (
+          <SidebarMenuItem
+            to="/deals"
+            icon={<FilterAltOutlined />}
+            label="Воронка продаж"
+            collapsed={siderCollapsed}
+          />
+        )}
+
         {/* Кабинет врача */}
         {show("my-work") && can_.doctorRoom && (
           <SidebarMenuItem to="/doctor" icon={<LocalHospitalOutlined />} label={t("doctorRoom")} collapsed={siderCollapsed} />
@@ -748,11 +837,6 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
-        {/* Вакцины */}
-        {show("org") && can_.vaccinations && (
-          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Вакцины" collapsed={siderCollapsed} />
-        )}
-
         {/* Все приемы */}
         {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label={t("allAppointments")} collapsed={siderCollapsed} />
@@ -778,8 +862,17 @@ const SidebarSecondary: React.FC = () => {
             ══════════════════════════════════════════ */}
 
         {/* Товары */}
+        {show("storage") && can_.pos && (
+          <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса магазина" collapsed={siderCollapsed} />
+        )}
+
         {show("storage") && can_.products && (
           <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
+        )}
+
+        {/* Вакцины (карточки вакцин — товары склада с меткой «вакцина») */}
+        {show("storage") && can_.vaccinations && (
+          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Вакцины" collapsed={siderCollapsed} />
         )}
 
         {/* Продажи товаров */}
@@ -790,6 +883,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Остатки (объединённые «Движение товара» + «Склад») */}
         {show("storage") && can_.storage && (
           <SidebarMenuItem to="/warehouses" icon={<Inventory2Outlined />} label="Остатки" collapsed={siderCollapsed} />
+        )}
+
+        {/* Инвентаризация по штрихкодам */}
+        {show("storage") && can_.inventory && (
+          <SidebarMenuItem to="/inventory" icon={<FactCheckOutlined />} label="Инвентаризация" collapsed={siderCollapsed} />
         )}
 
         {/* ══════════════════════════════════════════
@@ -807,13 +905,13 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* Отзывы (Django-mode only) */}
-        {show("management") && (isSuper || can(PAGE_PERMISSIONS.reviews)) && (
+        {show("management") && !isRetail && can(PAGE_PERMISSIONS.reviews) && (
           <SidebarMenuItem to="/reviews" icon={<ReviewsOutlined />} label="Отзывы" collapsed={siderCollapsed} />
         )}
 
         {/* Касса */}
         {show("management") && can_.cashbox && (
-          <SidebarMenuItem to="/cashbox" icon={<AccountBalanceWalletOutlined />} label="Касса" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/cashbox" icon={<AccountBalanceWalletOutlined />} label="Касса / финансы" collapsed={siderCollapsed} />
         )}
 
         {/* Нагрузка */}

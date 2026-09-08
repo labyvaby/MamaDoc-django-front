@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 
-import { buildAppointmentInvoiceHtml, type InvoicePageSize } from "./appointmentInvoice";
+import {
+  buildAppointmentInvoiceHtml,
+  hasAcceptedPayment,
+  type InvoicePageSize,
+} from "./appointmentInvoice";
 import type { DjangoAppointment } from "../../api/appointments";
 import type { PaymentSummary } from "../../api/payments";
 
@@ -168,5 +172,23 @@ describe("чек (лист A5)", () => {
     // Базовый кегль бланка A5 — 9.5px, на A4 он умножается на 1.35.
     expect(out).toContain("font-size:12.83px");
     expect(out).not.toContain("font-size:9.5px");
+  });
+});
+
+describe("доступность чека", () => {
+  it("до оплаты чека нет", () => {
+    expect(hasAcceptedPayment(null)).toBe(false);
+    expect(hasAcceptedPayment({ paymentStatus: "unpaid", paidTotal: "0.00" })).toBe(false);
+    expect(hasAcceptedPayment({ paymentStatus: "unpaid", payments: [] })).toBe(false);
+  });
+
+  it("частичная оплата и предоплата уже дают чек", () => {
+    expect(hasAcceptedPayment({ paymentStatus: "partial", paidTotal: "500.00" })).toBe(true);
+    expect(hasAcceptedPayment({ payments: [{ amount: "300.00" }] })).toBe(true);
+  });
+
+  it("скидка 100 % — закрытый расчёт без внесённых сумм", () => {
+    expect(hasAcceptedPayment({ paymentStatus: "discounted", paidTotal: "0.00" })).toBe(true);
+    expect(hasAcceptedPayment({ paymentStatus: "paid", paidTotal: "0.00" })).toBe(true);
   });
 });

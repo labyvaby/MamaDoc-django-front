@@ -1,0 +1,162 @@
+{
+  "title": "Лист ожидания",
+  "subtitle": "{{patient.nomPl, capitalize}}, которым не хватило свободного окна",
+  "add": "В лист ожидания",
+  "addShort": "Добавить",
+  "empty": "Лист ожидания пуст",
+  "emptyHint": "Когда у специалиста всё занято, поставьте {{patient.acc}} в очередь — CRM подскажет, кому позвонить, как только окно освободится.",
+  "emptyFiltered": "Под выбранные фильтры никто не подходит",
+  "loadError": "Не удалось загрузить лист ожидания",
+  "mockNotice": "Демонстрационные данные: серверная часть модуля ещё не готова, записи живут только в этой вкладке.",
+
+  "status": {
+    "waiting": "Ждёт",
+    "offered": "Предложено окно",
+    "scheduled": "Записан",
+    "cancelled": "Снят",
+    "expired": "Просрочен"
+  },
+  "priority": {
+    "normal": "Обычный",
+    "urgent": "Срочный"
+  },
+  "source": {
+    "staff": "Из CRM",
+    "public": "С сайта"
+  },
+  "contactResult": {
+    "no_answer": "Не дозвонились",
+    "refused": "Отказался",
+    "agreed": "Согласен",
+    "callback_later": "Перезвонить позже"
+  },
+
+  "columns": {
+    "patient": "{{patient.nom, capitalize}}",
+    "waitingFor": "Ждёт",
+    "period": "Желаемый период",
+    "waitingDays": "В очереди",
+    "lastContact": "Последний контакт",
+    "status": "Статус"
+  },
+
+  "filters": {
+    "search": "Имя, телефон, комментарий",
+    "status": "Статус",
+    "employee": "{{specialist.nom, capitalize}}",
+    "specialization": "Специальность",
+    "priority": "Срочность",
+    "source": "Источник",
+    "all": "Все",
+    "active": "В очереди",
+    "closed": "Закрытые",
+    "reset": "Сбросить"
+  },
+
+  "form": {
+    "createTitle": "В лист ожидания",
+    "editTitle": "Запись листа ожидания",
+    "patientSection": "Кто ждёт",
+    "wishSection": "Чего ждёт",
+    "whenSection": "Когда удобно",
+    "existingPatient": "{{patient.nom, capitalize}} из базы",
+    "newContact": "Имя и телефон",
+    "contactName": "Имя",
+    "phone": "Телефон",
+    "employee": "{{specialist.nom, capitalize}}",
+    "employeeAny": "Любой {{specialist.nom}} специальности",
+    "specialization": "Специальность",
+    "services": "Услуги",
+    "branch": "Филиал",
+    "dateFrom": "Не раньше",
+    "dateTo": "Не позже",
+    "anyDate": "Когда угодно",
+    "timeFrom": "С",
+    "timeTo": "До",
+    "weekdays": "Дни недели",
+    "anyWeekday": "Любые дни",
+    "priority": "Срочный случай",
+    "priorityHint": "Срочные показываются первыми, когда окно освободилось",
+    "comment": "Комментарий",
+    "commentPlaceholder": "Например: удобно только после работы",
+    "activeUntil": "Ждать до",
+    "save": "Сохранить",
+    "create": "Поставить в очередь",
+    "created": "Запись добавлена в лист ожидания",
+    "updated": "Запись обновлена",
+    "duplicateHint": "Карта с таким номером уже есть — привязать?",
+    "duplicateLink": "Привязать карту",
+    "errorNoTarget": "Укажите {{specialist.acc}} или специальность — иначе непонятно, чьё окно ждать",
+    "errorNoName": "Укажите имя",
+    "errorPhone": "Укажите телефон для обратного звонка",
+    "errorDates": "Начало периода позже его конца",
+    "errorTimes": "Начало интервала позже его конца"
+  },
+
+  "actions": {
+    "call": "Позвонить",
+    "contact": "Отметить контакт",
+    "book": "Записать",
+    "cancel": "Снять с очереди",
+    "reopen": "Вернуть в очередь",
+    "edit": "Изменить",
+    "delete": "Удалить",
+    "cancelTitle": "Снять с листа ожидания",
+    "cancelReason": "Причина",
+    "cancelReasonPlaceholder": "Например: записался в другую клинику",
+    "cancelConfirm": "Снять",
+    "cancelled": "Запись снята с листа ожидания",
+    "reopened": "Запись вернулась в очередь",
+    "deleteTitle": "Удалить запись",
+    "deleteText": "Запись будет удалена без возможности восстановления.",
+    "deleted": "Запись удалена",
+    "contactTitle": "Отметить контакт",
+    "contactNote": "Заметка",
+    "contactSaved": "Контакт отмечен"
+  },
+
+  "waitingDays_one": "{{count}} день",
+  "waitingDays_few": "{{count}} дня",
+  "waitingDays_many": "{{count}} дней",
+  "waitingSince": "В очереди с {{date}}",
+  "neverContacted": "Ещё не звонили",
+  "anySpecialist": "Любой {{specialist.nom}}",
+  "anyPeriod": "Когда угодно",
+  "periodFrom": "с {{date}}",
+  "periodTo": "до {{date}}",
+  "timeRange": "с {{from}} до {{to}}",
+  "timeFrom": "после {{from}}",
+  "timeTo": "до {{to}}",
+
+  "candidates": {
+    "badge_one": "{{count}} ждёт",
+    "badge_few": "{{count}} ждут",
+    "badge_many": "{{count}} ждут",
+    "title": "Кто ждёт это время",
+    "slot": "{{date}}, {{time}} — {{employee}}",
+    "none": "На это время в листе ожидания никого нет",
+    "bookHere": "Записать сюда",
+    "notSuitable": "Не подошло",
+    "offered": "Окно предложено — ждём ответа",
+    "freedTitle": "Окно освободилось",
+    "freedText_one": "{{count}} человек в листе ожидания подходит на это время",
+    "freedText_few": "{{count}} человека в листе ожидания подходят на это время",
+    "freedText_many": "{{count}} человек в листе ожидания подходят на это время",
+    "freedAction": "Посмотреть"
+  },
+
+  "publicSite": {
+    "noSlotsTitle": "Все окна заняты",
+    "noSlotsText": "Оставьте номер — позвоним, как только время освободится.",
+    "cta": "Сообщить, когда освободится",
+    "name": "Ваше имя",
+    "phone": "Телефон",
+    "period": "Когда вам удобно",
+    "comment": "Комментарий",
+    "submit": "Оставить заявку",
+    "successTitle": "Заявка принята",
+    "successText": "Мы позвоним вам, как только появится свободное время.",
+    "errorGeneric": "Не удалось отправить заявку. Попробуйте позвонить в клинику.",
+    "errorTooMany": "Слишком много заявок с этого номера. Попробуйте позже или позвоните нам."
+  }
+}

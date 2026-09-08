@@ -1,4 +1,5 @@
 import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
+import { DEALS_MODULE_ENABLED } from "../../api/deals";
 import type { PeriodKey } from "./period";
 
 /**
@@ -18,6 +19,7 @@ export type WidgetId =
   | "month"
   | "staff"
   | "tasks"
+  | "deals"
   | "reviews";
 
 export type WidgetSpan = 4 | 6 | 12;
@@ -78,6 +80,7 @@ export const WIDGETS: WidgetMeta[] = [
     span: 6,
   },
   { id: "tasks", label: "Задачи", permission: PAGE_PERMISSIONS.tasks, span: 6 },
+  { id: "deals", label: "Воронка продаж", permission: PAGE_PERMISSIONS.deals, span: 6 },
   { id: "reviews", label: "Отзывы", permission: PAGE_PERMISSIONS.reviews, span: 6 },
 ];
 
@@ -215,6 +218,9 @@ export interface VisibilityContext {
  */
 export function availableWidgets(ctx: VisibilityContext): WidgetMeta[] {
   return WIDGETS.filter((w) => {
+    // Воронка продаж ждёт бэкенда на проде: блок убираем тем же флагом, что и
+    // страницу с пунктом меню — иначе сводка встречает ошибкой загрузки.
+    if (w.id === "deals" && !DEALS_MODULE_ENABLED) return false;
     if (!ctx.can(w.permission)) return false;
     if (w.onlyPeriod && w.onlyPeriod !== ctx.period) return false;
     if (w.needsManyBranches && ctx.branchCount < 2) return false;

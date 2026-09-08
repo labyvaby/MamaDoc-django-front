@@ -1,0 +1,221 @@
+import type {
+  CalendarDay,
+  ProfessionalScheduleBranch,
+  ProfessionalScheduleException,
+  ProfessionalScheduleRule,
+} from "../../../api/publicBooking";
+
+/**
+ * Разбор расписания из GET /professionals/<id>/schedule/ в строки для пациента.
+ *
+ * ⚠ Нумерация дней недели у бэка своя: 0 — понедельник, 6 — воскресенье
+ * (у JS Date 0 — воскресенье). Сверено с окнами на проде 28.08.2026.
+ */
+
+const WEEKDAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
+/** "09:00:00" и "09:00" → "09:00". Бэк отдаёт короткую форму, но не гарантирует. */
+export function hhmm(time: string): string {
+  return time.slice(0, 5);
+}
+
+/** Интервал времени: "09:00 – 18:00". */
+export function timeRange(from: string, to: string): string {
+  return `${hhmm(from)} – ${hhmm(to)}`;
+}
+
+/**
+ * Дни недели человеку: «Ежедневно», «Пн – Пт», «Пн, Ср, Пт».
+ * Три и больше подряд сворачиваются в диапазон, остальное перечисляется.
+ */
+export function weekdaysLabel(weekdays: number[], everydayLabel: string): string {
+  const days = [...new Set(weekdays)].filter((d) => d >= 0 && d <= 6).sort((a, b) => a - b);
+  if (!days.length) return "";
+  if (days.length === 7) return everydayLabel;
+
+  const groups: number[][] = [];
+  for (const day of days) {
+    const last = groups[groups.length - 1];
+    if (last && day === last[last.length - 1] + 1) last.push(day);
+    else groups.push([day]);
+  }
+  return groups
+    .map((g) =>
+      g.length >= 3
+        ? `${WEEKDAY_SHORT[g[0]]} – ${WEEKDAY_SHORT[g[g.length - 1]]}`
+        : g.map((d) => WEEKDAY_SHORT[d]).join(", "),
+    )
+    .join(", ");
+}
+
+/** Правило одной строкой: «Пн, Ср, Пт · 09:00 – 18:00». Перерыв — отдельно. */
+export function ruleLabel(rule: ProfessionalScheduleRule, everydayLabel: string): string {
+  const days = weekdaysLabel(rule.weekdays, everydayLabel);
+  const time = timeRange(rule.startTime, rule.endTime);
+  return days ? `${days} · ${time}` : time;
+}
+
+/** Перерыв правила или null, если его нет. */
+export function lunchRange(rule: ProfessionalScheduleRule): string | null {
+  return rule.lunchStart && rule.lunchEnd ? timeRange(rule.lunchStart, rule.lunchEnd) : null;
+}
+
+/**
+ * Исключения, которые ещё впереди, по возрастанию даты.
+ * `today` — YYYY-MM-DD; сравниваем строками, чтобы не ловить таймзону.
+ */
+export function upcomingExceptions(
+  exceptions: ProfessionalScheduleException[],
+  today: string,
+  limit = 3,
+): ProfessionalScheduleException[] {
+  return exceptions
+    .filter((e) => e.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, limit);
+}
+
+/** «5 сент» — короткая дата для чипа исключения. */
+export function shortDate(date: string): string {
+  return new Date(`${date}T00:00:00`)
+    .toLocaleDateString("ru-RU", { day: "numeric", month: "short" })
+    .replace(".", "");
+}
+
+/**
+ * Нерабочие по графику дни филиала среди дат календаря — их пациенту честнее
+ * подписать «выходной», а не «нет окон»: занятости там нет, врач просто не
+ * принимает. Без правил графика ничего не утверждаем — вернётся пустой набор.
+ */
+export function dayOffDates(
+  branch: ProfessionalScheduleBranch | null | undefined,
+  dates: string[],
+): Set<string> {
+  const off = new Set<string>();
+  if (!branch?.rules.length) return off;
+
+  for (const date of dates) {
+    const exception = branch.exceptions.find((e) => e.date === date);
+    if (exception) {
+      if (exception.kind === "day_off" || exception.kind === "vacation") off.add(date);
+      continue;
+    }
+    // У бэка неделя начинается с понедельника (0), у JS Date — с воскресенья.
+    const weekday = (new Date(`${date}T00:00:00`).getDay() + 6) % 7;
+    if (!branch.rules.some((rule) => rule.weekdays.includes(weekday))) off.add(date);
+  }
+  return off;
+}
+
+/**
+ * Есть ли в филиале хоть какое-то рабочее время. Филиал приходит и вовсе без
+ * графика — значит записать туда формально можно, но времени в нём не задано,
+ * и предлагать его первым нельзя.
+ */
+export function branchHasSchedule(branch: ProfessionalScheduleBranch): boolean {
+  return (
+    branch.rules.length > 0 ||
+    branch.exceptions.some((e) => e.kind === "extra" || e.kind === "override")
+  );
+}
+
+// ── Филиал по свободным окнам ────────────────────────────────────────────────
+
+/** Ближайший день календаря со свободным временем; null — окон нет. */
+export function nearestAvailableDate(days: CalendarDay[] | undefined): string | null {
+  return days?.find((d) => d.isAvailable)?.date ?? null;
+}
+
+/**
+ * Филиал, который карточка показывает по умолчанию, — тот, где раньше всего
+ * есть свободное окно.
+ *
+ * Выбирать по наличию правил в графике было нельзя: расписание в филиале может
+ * быть, а свободных дней в ближайшие две недели ноль (всё занято или период
+ * правила ещё не начался), и карточка открывалась на пустом расписании со
+ * словами «окон нет», умалчивая про соседний филиал.
+ *
+ * При равных датах впереди «домашний» филиал — не уводим пациента с привычного
+ * адреса. Если окон нет нигде, возвращаем домашний (а когда врача в нём нет —
+ * первый филиал с графиком), чтобы адрес и часы работы всё-таки показались.
+ */
+export function pickDefaultBranchId(
+  branches: ProfessionalScheduleBranch[],
+  nearestByBranch: Record<number, string | null>,
+  homeBranchId: number | null,
+): number | null {
+  if (!branches.length) return null;
+
+  const withSlots = branches
+    .map((b) => ({ id: b.id, date: nearestByBranch[b.id] ?? null }))
+    .filter((b): b is { id: number; date: string } => b.date !== null)
+    .sort(
+      (a, b) =>
+        a.date.localeCompare(b.date) ||
+        (a.id === homeBranchId ? -1 : b.id === homeBranchId ? 1 : 0),
+    );
+  if (withSlots.length) return withSlots[0].id;
+
+  if (homeBranchId !== null && branches.some((b) => b.id === homeBranchId)) return homeBranchId;
+  return (branches.find(branchHasSchedule) ?? branches[0]).id;
+}
+
+/**
+ * Филиал с ближайшим окном среди остальных — чем ответить, когда в выбранном
+ * филиале свободного времени нет. Без этого «нет свободного времени» читается
+ * как «врач не принимает вообще».
+ */
+export function pickBranchWithSlots(
+  branches: ProfessionalScheduleBranch[],
+  nearestByBranch: Record<number, string | null>,
+  excludeBranchId: number | null,
+): { branch: ProfessionalScheduleBranch; date: string } | null {
+  const candidates = branches
+    .filter((b) => b.id !== excludeBranchId)
+    .map((branch) => ({ branch, date: nearestByBranch[branch.id] ?? null }))
+    .filter((c): c is { branch: ProfessionalScheduleBranch; date: string } => c.date !== null)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return candidates[0] ?? null;
+}
+
+/**
+ * Загружены ли календари всех филиалов врача.
+ *
+ * Без этой проверки выбор филиала по умолчанию превращался в гонку: эффект
+ * успевал отработать раньше загрузки календарей, у всех филиалов «окон нет», и
+ * дефолтом фиксировался домашний филиал — даже когда окна были в соседнем.
+ * Проявлялось через раз, зависело от того, чей ответ пришёл первым (прод,
+ * 02.09.2026: одна и та же карточка открывалась то на филиале с окнами, то на
+ * пустом).
+ */
+export function calendarsReady(
+  branches: ProfessionalScheduleBranch[],
+  calendarByBranch: Record<string, CalendarDay[]>,
+): boolean {
+  if (!branches.length) return false;
+  return branches.every((b) => calendarByBranch[String(b.id)] !== undefined);
+}
+
+/**
+ * Филиалы, которые показываем пациенту: где врач действительно принимает.
+ *
+ * Филиал без графика и без окон — шум: записаться туда нельзя, а строка
+ * «График не задан» выглядит как недоработка клиники. Филиал с графиком
+ * оставляем даже без свободных дней — там честно «нет свободного времени»
+ * (всё занято или период правила ещё не начался), это разные вещи.
+ *
+ * Если принимать негде вовсе, показываем один филиал — домашний: адрес и
+ * телефон пациенту всё равно нужны, а пустой блок выглядел бы сбоем.
+ */
+export function bookableBranches(
+  branches: ProfessionalScheduleBranch[],
+  nearestByBranch: Record<number, string | null>,
+  homeBranchId: number | null,
+): ProfessionalScheduleBranch[] {
+  const usable = branches.filter(
+    (b) => branchHasSchedule(b) || (nearestByBranch[b.id] ?? null) !== null,
+  );
+  if (usable.length) return usable;
+  const home = branches.find((b) => b.id === homeBranchId);
+  return home ? [home] : branches.slice(0, 1);
+}

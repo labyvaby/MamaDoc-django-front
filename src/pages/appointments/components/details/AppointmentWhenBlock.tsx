@@ -33,6 +33,8 @@ export interface AppointmentWhenBlockProps {
    * финансам блока нет, чип остаётся единственным источником этого факта.
    */
   hidePaymentChip?: boolean;
+  /** Отменить ошибочную отметку «Пациент здесь». */
+  onUndoArrived?: () => void;
 }
 
 /**
@@ -55,6 +57,7 @@ const AppointmentWhenBlock: React.FC<AppointmentWhenBlockProps> = ({
   statusSource,
   paymentsLoading,
   hidePaymentChip,
+  onUndoArrived,
 }) => {
   const { t } = useT("appointments");
 
@@ -202,7 +205,11 @@ const AppointmentWhenBlock: React.FC<AppointmentWhenBlockProps> = ({
         useFlexGap
         sx={{ mt: 1 }}
       >
-        <AppointmentStatusChips appointment={statusSource} hidePayChip={hidePaymentChip} />
+        <AppointmentStatusChips
+          appointment={statusSource}
+          hidePayChip={hidePaymentChip}
+          onUndoArrived={onUndoArrived}
+        />
         {hasBankConfirmation && (
           <Tooltip title={t("details.paymentConfirmedByBank")}>
             <Chip

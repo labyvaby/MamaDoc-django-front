@@ -79,8 +79,8 @@ const LandingBody: React.FC<{
   const orgSlug = useBookingOrgSlug();
   const { org, specialists, loaded } = data;
 
-  // Отзывы — отдельные запросы по специалистам, поэтому только для включённого
-  // блока (см. useLandingReviews).
+  // Отзывы — отдельный запрос, поэтому только для включённого блока
+  // (см. useLandingReviews).
   const reviewsEnabled = config.blocks.reviews && loaded;
   const { reviews, loading: reviewsLoading } = useLandingReviews(specialists, reviewsEnabled);
 

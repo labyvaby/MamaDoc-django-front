@@ -4,7 +4,31 @@ import {
   applyGlossaryOverrides,
   type GlossaryOverrides,
 } from "./glossaryOverrides";
-import { DEFAULT_VERTICAL, type Glossary, type Vertical } from "./types";
+import { DEFAULT_VERTICAL, type Glossary, type TermForms, type Vertical } from "./types";
+
+const retailTerm = (
+  gender: TermForms["gender"],
+  nom: string,
+  gen: string,
+  dat: string,
+  acc: string,
+  ins: string,
+  pre: string,
+  nomPl: string,
+  genPl: string,
+  datPl: string,
+  accPl: string,
+  insPl: string,
+  prePl: string
+): TermForms => ({ gender, nom, gen, dat, acc, ins, pre, nomPl, genPl, datPl, accPl, insPl, prePl });
+
+const retailGlossary: Glossary = {
+  ...(beautyGlossary as Glossary),
+  specialist: retailTerm("m", "продавец", "продавца", "продавцу", "продавца", "продавцом", "продавце", "продавцы", "продавцов", "продавцам", "продавцов", "продавцами", "продавцах"),
+  assistant: retailTerm("m", "кассир", "кассира", "кассиру", "кассира", "кассиром", "кассире", "кассиры", "кассиров", "кассирам", "кассиров", "кассирами", "кассирах"),
+  org: retailTerm("m", "магазин", "магазина", "магазину", "магазин", "магазином", "магазине", "магазины", "магазинов", "магазинам", "магазины", "магазинами", "магазинах"),
+  room: retailTerm("m", "торговый зал", "торгового зала", "торговому залу", "торговый зал", "торговым залом", "торговом зале", "торговые залы", "торговых залов", "торговым залам", "торговые залы", "торговыми залами", "торговых залах"),
+};
 
 /**
  * Реестр терминологических профилей.
@@ -13,6 +37,7 @@ import { DEFAULT_VERTICAL, type Glossary, type Vertical } from "./types";
 const PROFILES: Record<Vertical, Glossary> = {
   clinic: clinicGlossary as Glossary,
   beauty: beautyGlossary as Glossary,
+  retail: retailGlossary,
 };
 
 /** Список поддерживаемых вертикалей — для настроек и валидации. */
@@ -22,6 +47,7 @@ export const SUPPORTED_VERTICALS = Object.keys(PROFILES) as Vertical[];
 export const VERTICAL_LABELS: Record<Vertical, string> = {
   clinic: "Медицинская клиника",
   beauty: "Салон красоты",
+  retail: "Магазин / ритейл",
 };
 
 /** Проверка, что строка с бэкенда — известная нам вертикаль. */

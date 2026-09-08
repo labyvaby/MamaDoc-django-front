@@ -65,8 +65,15 @@ export type DjangoProduct = {
     id: number;
     organizationId: number;
     name: string;
+    /** Артикул SKU; у вариантов одежды генерируется из префикса модели. */
+    sku?: string | null;
     category: string;
+    categoryId?: number | null;
     barcode: string;
+    barcodes?: string[];
+    /** Родительская модель одежды; null у обычного товара. */
+    modelId?: number | null;
+    attributes?: DjangoProductAttributeValue[];
     unit: string;
     /** Цена продажи, сом. */
     price: number;
@@ -96,6 +103,79 @@ export type DjangoProduct = {
     branchStock: number | null;
     createdAt: string;
     updatedAt: string;
+};
+
+export type DjangoProductAttributeValue = {
+    attributeId: number;
+    attributeName: string;
+    role: "generic" | "color" | "size";
+    valueId: number;
+    value: string;
+};
+
+export type DjangoProductAttributeValueOption = {
+    id: number;
+    attributeId: number;
+    value: string;
+    code: string;
+    position: number;
+    isActive: boolean;
+};
+
+export type DjangoProductAttribute = {
+    id: number;
+    organizationId: number;
+    name: string;
+    role: "generic" | "color" | "size";
+    isOrdered: boolean;
+    isActive: boolean;
+    values: DjangoProductAttributeValueOption[];
+};
+
+export type DjangoProductCategoryNode = {
+    id: number;
+    organizationId: number;
+    name: string;
+    parentId: number | null;
+    /** Поля, выбранные администратором для этой категории. */
+    attributeIds: number[];
+    isActive: boolean;
+    productCount: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type DjangoProductModel = {
+    id: number;
+    organizationId: number;
+    name: string;
+    skuPrefix: string;
+    categoryId: number | null;
+    categoryName: string | null;
+    description: string;
+    isActive: boolean;
+    productCount: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type DjangoProductMatrix = {
+    modelId: number;
+    modelName: string;
+    rows: Array<{ valueId: number; value: string; code: string; position: number }>;
+    columns: Array<{ valueId: number; value: string; code: string; position: number }>;
+    cells: Array<{
+        rowValueId: number | null;
+        columnValueId: number | null;
+        productId: number;
+        sku: string | null;
+        name: string;
+        price: string;
+        stock: string;
+    }>;
+    rowTotal: number;
+    columnTotal: number;
+    filled: number;
 };
 
 /** Перемещение товара между складами (GET источник — лента движений). */
@@ -291,6 +371,7 @@ export function getProductCategories(
 export type ProductWriteData = {
     name?: string;
     category?: string;
+    categoryId?: number;
     barcode?: string;
     unit?: string;
     description?: string;
@@ -356,6 +437,155 @@ export async function uploadProductImage(
 export function deleteProductImage(id: number): Promise<void> {
     return apiRequest<void>(`/warehouse/products/${id}/image/`, {
         method: "DELETE",
+    });
+}
+
+// ── Retail catalogue: attributes, categories and apparel matrices (v2) ─────
+
+export function getProductCategoryTree(
+    signal?: AbortSignal,
+    organizationId?: number,
+): Promise<DjangoProductCategoryNode[]> {
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoProductCategoryNode[]>(`/v2/warehouse/product-categories/${qs}`, { signal });
+}
+
+export function createProductCategory(data: {
+    name: string;
+    parentId?: number;
+    attributeIds?: number[];
+    organizationId?: number;
+}): Promise<DjangoProductCategoryNode> {
+    const { organizationId, ...body } = data;
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoProductCategoryNode>(`/v2/warehouse/product-categories/${qs}`, {
+        method: "POST",
+        body,
+    });
+}
+
+export function updateProductCategory(
+    id: number,
+    data: { name?: string; parentId?: number; clearParent?: boolean; attributeIds?: number[]; isActive?: boolean },
+): Promise<DjangoProductCategoryNode> {
+    return apiRequest<DjangoProductCategoryNode>(`/v2/warehouse/product-categories/${id}/`, {
+        method: "PATCH",
+        body: data,
+    });
+}
+
+export function getProductAttributes(
+    signal?: AbortSignal,
+    organizationId?: number,
+): Promise<DjangoProductAttribute[]> {
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoProductAttribute[]>(`/v2/warehouse/product-attributes/${qs}`, { signal });
+}
+
+export function createProductAttribute(data: {
+    name: string;
+    role: DjangoProductAttribute["role"];
+    isOrdered?: boolean;
+    organizationId?: number;
+}): Promise<DjangoProductAttribute> {
+    const { organizationId, ...body } = data;
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoProductAttribute>(`/v2/warehouse/product-attributes/${qs}`, {
+        method: "POST",
+        body,
+    });
+}
+
+export function createProductAttributeValue(
+    attributeId: number,
+    data: { value: string; code?: string; position?: number },
+): Promise<DjangoProductAttributeValueOption> {
+    return apiRequest<DjangoProductAttributeValueOption>(
+        `/v2/warehouse/product-attributes/${attributeId}/values/`,
+        { method: "POST", body: data },
+    );
+}
+
+export function updateProductAttribute(
+    id: number,
+    data: { name?: string; isOrdered?: boolean; isActive?: boolean },
+): Promise<DjangoProductAttribute> {
+    return apiRequest<DjangoProductAttribute>(`/v2/warehouse/product-attributes/${id}/`, {
+        method: "PATCH",
+        body: data,
+    });
+}
+
+export function deleteProductAttribute(id: number): Promise<void> {
+    return apiRequest<void>(`/v2/warehouse/product-attributes/${id}/`, {
+        method: "DELETE",
+    });
+}
+
+export function updateProductAttributeValue(
+    id: number,
+    data: { value?: string; code?: string; position?: number; isActive?: boolean },
+): Promise<DjangoProductAttributeValueOption> {
+    return apiRequest<DjangoProductAttributeValueOption>(`/v2/warehouse/attribute-values/${id}/`, {
+        method: "PATCH",
+        body: data,
+    });
+}
+
+export function deleteProductAttributeValue(id: number): Promise<void> {
+    return apiRequest<void>(`/v2/warehouse/attribute-values/${id}/`, {
+        method: "DELETE",
+    });
+}
+
+/** Сохраняет поля, заданные администратором (бренд, материал, сезон и т. п.). */
+export function replaceProductGenericAttributes(
+    productId: number,
+    attributeValueIds: number[],
+): Promise<DjangoProductAttributeValue[]> {
+    return apiRequest<DjangoProductAttributeValue[]>(
+        `/v2/warehouse/products/${productId}/attributes/`,
+        { method: "PUT", body: { attributeValueIds } },
+    );
+}
+
+export function getProductModels(
+    signal?: AbortSignal,
+    organizationId?: number,
+): Promise<DjangoProductModel[]> {
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoProductModel[]>(`/v2/warehouse/product-models/${qs}`, { signal });
+}
+
+export function createProductModel(data: {
+    name: string;
+    skuPrefix?: string;
+    categoryId?: number;
+    description?: string;
+    organizationId?: number;
+}): Promise<DjangoProductModel> {
+    const { organizationId, ...body } = data;
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoProductModel>(`/v2/warehouse/product-models/${qs}`, {
+        method: "POST",
+        body,
+    });
+}
+
+export function generateProductMatrix(data: {
+    modelId: number;
+    rowValueIds: number[];
+    columnValueIds: number[];
+    /** Бренд, сезон, состав и другие свойства, одинаковые для всей модели. */
+    attributeValueIds?: number[];
+    price: number;
+    unit?: string;
+    generateBarcodes?: boolean;
+}): Promise<DjangoProductMatrix> {
+    const { modelId, ...body } = data;
+    return apiRequest<DjangoProductMatrix>(`/v2/warehouse/product-models/${modelId}/matrix/`, {
+        method: "POST",
+        body,
     });
 }
 
@@ -549,4 +779,196 @@ export async function createTransfer(data: {
         body: data,
     });
     return { ...raw, quantity: parseFloat(raw.quantity) || 0 };
+}
+
+// ── Warehouse documents (v2) ────────────────────────────────────────────────
+
+export type WarehouseInventoryCount = {
+    id: number;
+    organizationId: number;
+    warehouseId: number;
+    warehouseName: string;
+    status: string;
+    comment: string;
+    lineTotal: number;
+    countedTotal: number;
+    startedByName: string | null;
+    completedByName: string | null;
+    createdAt: string;
+    completedAt: string | null;
+};
+
+export type WarehouseInventoryLine = {
+    id: number;
+    productId: number;
+    productName: string;
+    sku: string | null;
+    modelId: number | null;
+    attributes: Array<{ attributeId: number; attributeName: string; role: string; value: string; valueId: number }>;
+    expected: string | null;
+    counted: string | null;
+    difference: string | null;
+    countedAt: string | null;
+    scannedByName: string | null;
+};
+
+export type WarehouseInventoryDetail = {
+    document: WarehouseInventoryCount;
+    lines: WarehouseInventoryLine[];
+};
+
+export type WarehouseReprice = {
+    id: number;
+    organizationId: number;
+    branchId: number | null;
+    branchName: string | null;
+    mode: string;
+    status: string;
+    comment: string;
+    lineTotal: number;
+    skippedCount: number;
+    markupPercent: string | null;
+    exchangeRateId: number | null;
+    exchangeRateCurrency: string | null;
+    exchangeRateValue: string | null;
+    createdByName: string | null;
+    createdAt: string;
+    appliedAt: string | null;
+};
+
+export type WarehouseRepriceLine = {
+    id: number;
+    productId: number;
+    productName: string;
+    sku: string | null;
+    modelId: number | null;
+    attributes: Array<{ attributeId: number; attributeName: string; role: string; value: string; valueId: number }>;
+    oldPrice: string;
+    newPrice: string;
+    difference: string;
+};
+
+export type WarehouseRepriceDetail = {
+    document: WarehouseReprice;
+    lines: WarehouseRepriceLine[];
+    skippedProductIds: number[];
+};
+
+const withQuery = (path: string, params: Record<string, string | number | undefined>) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined) query.set(key, String(value));
+    }
+    return query.size ? `${path}?${query}` : path;
+};
+
+export function getInventoryCounts(
+    params: { warehouseId?: number; status?: string; organizationId?: number } = {},
+    signal?: AbortSignal,
+): Promise<WarehouseInventoryCount[]> {
+    return apiRequest<WarehouseInventoryCount[]>(
+        withQuery("/v2/warehouse/inventory-counts/", params),
+        { signal },
+    );
+}
+
+export function startWarehouseInventoryCount(data: {
+    warehouseId: number;
+    productIds?: number[];
+    comment?: string;
+    organizationId?: number;
+}): Promise<WarehouseInventoryDetail> {
+    const { organizationId, ...body } = data;
+    return apiRequest<WarehouseInventoryDetail>(withQuery("/v2/warehouse/inventory-counts/", { organizationId }), {
+        method: "POST",
+        body,
+    });
+}
+
+export function getInventoryCountDetail(
+    id: number,
+    organizationId?: number,
+    signal?: AbortSignal,
+): Promise<WarehouseInventoryDetail> {
+    return apiRequest<WarehouseInventoryDetail>(
+        withQuery(`/v2/warehouse/inventory-counts/${id}/`, { organizationId }),
+        { signal },
+    );
+}
+
+export function submitInventoryCountLines(
+    id: number,
+    lines: Array<{ productId: number; quantity: string }>,
+    organizationId?: number,
+): Promise<WarehouseInventoryDetail> {
+    return apiRequest<WarehouseInventoryDetail>(withQuery(`/v2/warehouse/inventory-counts/${id}/lines/`, { organizationId }), {
+        method: "POST",
+        body: { lines },
+    });
+}
+
+export function closeWarehouseInventoryCount(id: number, organizationId?: number): Promise<{
+    document: WarehouseInventoryCount;
+    lines: WarehouseInventoryLine[];
+    movements: DjangoStockMovement[];
+}> {
+    return apiRequest(withQuery(`/v2/warehouse/inventory-counts/${id}/close/`, { organizationId }), {
+        method: "POST",
+        body: {},
+    });
+}
+
+export function cancelWarehouseInventoryCount(id: number, organizationId?: number): Promise<WarehouseInventoryDetail> {
+    return apiRequest<WarehouseInventoryDetail>(withQuery(`/v2/warehouse/inventory-counts/${id}/cancel/`, { organizationId }), {
+        method: "POST",
+        body: {},
+    });
+}
+
+export function getRepriceDocuments(
+    params: { status?: string; branchId?: number; mode?: string; organizationId?: number } = {},
+    signal?: AbortSignal,
+): Promise<WarehouseReprice[]> {
+    return apiRequest<WarehouseReprice[]>(
+        withQuery("/v2/warehouse/reprices/", params),
+        { signal },
+    );
+}
+
+export function createRepriceDraft(data: {
+    branchId?: number;
+    mode: "fixed" | "markup" | "rate";
+    products: Array<{ productId: number; newPrice?: string }>;
+    markupPercent?: string;
+    exchangeRateId?: number;
+    attributeValueIds?: number[];
+    comment?: string;
+    organizationId?: number;
+}): Promise<WarehouseRepriceDetail> {
+    const { organizationId, ...body } = data;
+    return apiRequest<WarehouseRepriceDetail>(withQuery("/v2/warehouse/reprices/", { organizationId }), {
+        method: "POST",
+        body,
+    });
+}
+
+export function getRepriceDetail(id: number, organizationId?: number, signal?: AbortSignal) {
+    return apiRequest<WarehouseRepriceDetail>(
+        withQuery(`/v2/warehouse/reprices/${id}/`, { organizationId }),
+        { signal },
+    );
+}
+
+export function applyReprice(id: number, organizationId?: number): Promise<WarehouseRepriceDetail> {
+    return apiRequest<WarehouseRepriceDetail>(withQuery(`/v2/warehouse/reprices/${id}/apply/`, { organizationId }), {
+        method: "POST",
+        body: {},
+    });
+}
+
+export function cancelReprice(id: number, organizationId?: number): Promise<WarehouseRepriceDetail> {
+    return apiRequest<WarehouseRepriceDetail>(withQuery(`/v2/warehouse/reprices/${id}/cancel/`, { organizationId }), {
+        method: "POST",
+        body: {},
+    });
 }

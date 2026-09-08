@@ -15,7 +15,7 @@ import { apiRequest, ApiError, parseErrorEnvelope } from "./client";
 // Технические префиксы полей (startsAt:, service:, branch:, products: …) и
 // внутренние ссылки (приём #2) мешают читать ошибку обычному пользователю.
 // Чистим их, оставляя человеко-понятный текст.
-const _FIELD_PREFIX = /^\s*(starts_?at|ends_?at|service|services|serviceId|branch|branchId|employee|employeeId|products|product|patient|patientId|organization|organizationId|quantity|price|unitPrice|discountAmount|nonFieldErrors|__all__)\s*:\s*/i;
+const _FIELD_PREFIX = /^\s*(starts_?at|ends_?at|service|services|serviceId|branch|branchId|employee|employeeId|products|product|patient|patientId|organization|organizationId|quantity|price|unitPrice|durationMinutes|duration_minutes|discountAmount|nonFieldErrors|__all__)\s*:\s*/i;
 
 function humanizeBackendMessage(raw: string): string {
   // Валидатор бэкенда: branchId обязателен, а активный филиал не выбран
@@ -98,12 +98,26 @@ export function parseBackendError(err: unknown): string {
 
 /** One existing appointment the requested slot runs into (mirrors backend). */
 export interface OverlapConflict {
-  appointmentId: number;
+  /**
+   * null для приёма ЧУЖОГО филиала: с 02.09.2026 бэк скрывает и идентификатор,
+   * не только имя пациента (ветка feature/multi-branch-schedule, §7). Ссылку на
+   * карточку приёма по такому конфликту строить нельзя.
+   */
+  appointmentId: number | null;
   startsAt: string;
   endsAt: string;
   employeeId: number | null;
   employeeName: string;
   patientName: string;
+  /**
+   * Конфликт в ДРУГОМ филиале: сотрудник в это время принимает не здесь.
+   *
+   * С 02.09.2026 проверка пересечений идёт по сотруднику, а не по филиалу —
+   * один человек не может быть в двух адресах. Чужого пациента бэк при этом не
+   * раскрывает: `patientName` приходит пустой строкой (проверено на тесте
+   * 02.09.2026), поэтому подпись строки берём от этого флага, а не от имени.
+   */
+  otherBranch?: boolean;
 }
 
 /** Body of the HTTP 409 returned when the org "warn" mode blocks an overlap. */
@@ -406,6 +420,37 @@ export type DjangoAppointmentStatus =
   | "canceled"
   | "no_show";
 
+/**
+ * Код причины отмены приёма.
+ *
+ * ⚠ Поле `cancelReason` было в API и раньше — свободным текстом, который фронт
+ * не заполнял. С 03.09.2026 бэк валидирует его как код и отдаёт 400 на любую
+ * другую строку (ответ бэка §2). Исторические записи со старым текстом бэк не
+ * переписывал, поэтому на чтении может прийти что угодно: в `DjangoAppointment`
+ * поле объявлено как `string`, а писать разрешено только код.
+ */
+export type AppointmentCancelReason =
+  | "doctor_absent"
+  | "patient_refused"
+  | "duplicate"
+  | "other";
+
+export const APPOINTMENT_CANCEL_REASONS: readonly AppointmentCancelReason[] = [
+  "doctor_absent",
+  "patient_refused",
+  "duplicate",
+  "other",
+] as const;
+
+/** Известен ли код причины — иначе это исторический свободный текст. */
+export function isAppointmentCancelReason(
+  value: string | null | undefined,
+): value is AppointmentCancelReason {
+  return (
+    value != null && (APPOINTMENT_CANCEL_REASONS as readonly string[]).includes(value)
+  );
+}
+
 // Raw shape as the backend actually sends it (snake_case fields that differ from our type)
 interface RawAppointment {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -466,6 +511,7 @@ export function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
       ? raw.consumptionWarnings
       : [],
     priceOverrides: Array.isArray(raw.priceOverrides) ? raw.priceOverrides : [],
+    durationOverrides: Array.isArray(raw.durationOverrides) ? raw.durationOverrides : [],
   } as DjangoAppointment;
 }
 
@@ -528,6 +574,16 @@ export interface AppointmentPriceOverride {
   changedAt: string;
 }
 
+export interface AppointmentDurationOverride {
+  id: number;
+  serviceLineId: number | null;
+  oldDurationMinutes: number;
+  newDurationMinutes: number;
+  changedById?: number | null;
+  changedByName?: string | null;
+  changedAt: string;
+}
+
 export interface DjangoAppointment {
   id: number;
   organizationId: number;
@@ -536,6 +592,8 @@ export interface DjangoAppointment {
   /** Разложен из `branch.name`; null, если филиал не задан. */
   branchName: string | null;
   patient: AppointmentPatientShort | null;
+  /** Legacy performer field; new clients should use services[].employee. */
+  employee?: AppointmentEmployeeShort | null;
   scheduledAt: string;
   /** Конец приёма, посчитанный бэком как начало + сумма длительностей строк
    *  услуг. Не равен scheduledAt + 30 мин: приём с несколькими услугами длиннее,
@@ -546,6 +604,12 @@ export interface DjangoAppointment {
   complaints: string | null;
   doctorComplaints: string | null;
   adminComment: string | null;
+  /**
+   * Причина отмены: код `AppointmentCancelReason` у записей после 03.09.2026 и
+   * произвольный текст у исторических (бэк их не переписывал) — проверять через
+   * `isAppointmentCancelReason`, а не приводить к типу.
+   */
+  cancelReason?: string | null;
   services: AppointmentServiceLine[];
   /** Goods sold within this visit (deducted from the warehouse). */
   productLines: AppointmentProductLine[];
@@ -557,6 +621,7 @@ export interface DjangoAppointment {
    * выкладки поля нет вовсе.
    */
   priceOverrides: AppointmentPriceOverride[];
+  durationOverrides: AppointmentDurationOverride[];
   totalAmount: string;
   createdAt: string;
   updatedAt: string;
@@ -609,6 +674,8 @@ export interface AppointmentServiceLineCreate {
   employeeId: number | null;
   quantity?: number;
   unitPrice?: string;
+  /** Individual duration for this appointment only. */
+  durationMinutes?: number;
   discountAmount?: string;
   /**
    * Расходники строки. ⚠ Семантика бэка: **отсутствие ключа — не трогаем**,
@@ -663,6 +730,8 @@ export interface UpdateAppointmentPayload {
   complaints?: string | null;
   doctorComplaints?: string | null;
   adminComment?: string | null;
+  /** Только код: произвольная строка даёт 400 (см. AppointmentCancelReason). */
+  cancelReason?: AppointmentCancelReason;
   services?: AppointmentServiceLineCreate[];
   /** См. CreateAppointmentPayload.allowOverlap. */
   allowOverlap?: boolean;
@@ -692,6 +761,7 @@ interface BackendServiceLine {
   employeeId: number | null;
   quantity?: number;
   unitPrice?: string;
+  durationMinutes?: number;
   discountAmount?: string;
   consumptions?: BackendConsumption[];
 }
@@ -735,6 +805,7 @@ interface BackendUpdateBody {
   complaints?: string | null;
   doctorComplaints?: string | null;
   adminComment?: string | null;
+  cancelReason?: string;
   // Backend update payload also names this ``services`` (not ``serviceLines``).
   services?: BackendServiceLine[];
   products?: BackendProductLine[];
@@ -743,11 +814,12 @@ interface BackendUpdateBody {
 
 function toBackendServiceLines(services: AppointmentServiceLineCreate[]): BackendServiceLine[] {
   return services.map(
-    ({ id, serviceId, employeeId, quantity, unitPrice, discountAmount, consumptions }) => {
+    ({ id, serviceId, employeeId, quantity, unitPrice, durationMinutes, discountAmount, consumptions }) => {
       const line: BackendServiceLine = { serviceId, employeeId: employeeId ?? null };
       if (id != null) line.id = id;
       if (quantity !== undefined) line.quantity = quantity;
       if (unitPrice !== undefined && unitPrice !== "") line.unitPrice = unitPrice;
+      if (durationMinutes !== undefined) line.durationMinutes = durationMinutes;
       if (discountAmount !== undefined && discountAmount !== "") line.discountAmount = discountAmount;
       // Ключ доходит до бэка только когда он задан явно: undefined значит
       // «расходники не трогаем», а [] — «удалить все» (разная семантика).
@@ -827,6 +899,7 @@ function denormalizeUpdatePayload(payload: UpdateAppointmentPayload): BackendUpd
     body.products = toBackendProducts(payload.products);
   }
   if (payload.allowOverlap) body.allowOverlap = true;
+  if (payload.cancelReason !== undefined) body.cancelReason = payload.cancelReason;
   return body;
 }
 
@@ -860,8 +933,12 @@ export function getAppointments(
     dateFrom?: string;
     /** Filter by date range end YYYY-MM-DD. */
     dateTo?: string;
-    /** Filter by appointment status. */
-    status?: string;
+    /**
+     * Фильтр по статусу. Массив уходит списком через запятую —
+     * `status=scheduled,confirmed,arrived` (бэк принимает с 03.09.2026, одно
+     * значение работает как раньше).
+     */
+    status?: string | string[];
     /** Full-text search (patient name / phone). */
     search?: string;
     /** Filter by branch id. */
@@ -879,7 +956,10 @@ export function getAppointments(
   if (params?.date) query.set("date", params.date);
   if (params?.dateFrom) query.set("dateFrom", params.dateFrom);
   if (params?.dateTo) query.set("dateTo", params.dateTo);
-  if (params?.status) query.set("status", params.status);
+  if (params?.status) {
+    const status = Array.isArray(params.status) ? params.status.join(",") : params.status;
+    if (status) query.set("status", status);
+  }
   if (params?.search) query.set("search", params.search);
   if (params?.branchId) query.set("branchId", String(params.branchId));
   if (params?.employeeId) query.set("employeeId", String(params.employeeId));
@@ -1147,7 +1227,12 @@ export function updateAppointment(
  */
 export function overrideAppointmentServicePrice(
   appointmentId: number,
-  payload: { serviceLineId: number; unitPrice: string | number },
+  payload: {
+    serviceLineId: number;
+    unitPrice?: string | number;
+    durationMinutes?: number;
+    allowOverlap?: boolean;
+  },
 ): Promise<DjangoAppointment> {
   return apiRequest<RawAppointment>(
     `/appointments/${appointmentId}/price-override/`,
@@ -1174,4 +1259,102 @@ export function startAppointment(id: number): Promise<DjangoAppointment> {
 
 export function deleteAppointment(id: number): Promise<void> {
   return apiRequest<void>(`/appointments/${id}/`, { method: "DELETE" });
+}
+
+// ── Массовые действия (POST /api/appointments/bulk/) ─────────────────────────
+
+/**
+ * Потолок одной пачки на бэкенде — 51-й элемент даёт 400 на весь запрос
+ * (ответ бэка §1). `bulkAppointments` режет длинный список сама.
+ */
+export const APPOINTMENT_BULK_MAX_ITEMS = 50;
+
+export type AppointmentBulkAction = "cancel" | "reschedule" | "reassign";
+
+export interface AppointmentBulkItem {
+  id: number;
+  /**
+   * `action: "reschedule"` — новое время именно этого приёма.
+   *
+   * ⚠ Имя поля взято из ответа бэка (§1) буквально: `scheduledAt`, хотя
+   * create/update той же сущности ждут `startsAt`. Расхождение не подтверждено
+   * живым запросом — если bulk-перенос молча не сдвинет время, проверять здесь.
+   */
+  scheduledAt?: string;
+  /** `action: "reassign"` — новый исполнитель. */
+  employeeId?: number;
+  /**
+   * `action: "reassign"` — ограничить смену строками этого исполнителя.
+   * Без него бэк меняет исполнителя во ВСЕХ незакрытых строках приёма, то есть
+   * у приёма «врач + медсестра» отдаст замещающему врачу и строку медсестры.
+   * Передаём всегда, когда известно, кого именно заменяем.
+   */
+  fromEmployeeId?: number;
+}
+
+export interface AppointmentBulkPayload {
+  action: AppointmentBulkAction;
+  items: AppointmentBulkItem[];
+  /** Только для `cancel`; произвольная строка даёт 400. */
+  cancelReason?: AppointmentCancelReason;
+  /** Дописывается отдельной строкой в `adminComment` приёма. */
+  comment?: string;
+  /**
+   * По умолчанию бэк считает `true`. `false` — не отправлять пациенту новых
+   * сообщений; уже стоящее в очереди напоминание об отменённом или перенесённом
+   * приёме снимается всё равно.
+   */
+  notify?: boolean;
+  /** Суперпользователю обязателен — иначе 400 (ответ бэка §8). */
+  organizationId?: number | null;
+}
+
+export interface AppointmentBulkRowError {
+  /** `not_found` | `conclusion_exists` | `branch_forbidden` | `overlap` | `validation_error` */
+  code: string;
+  message: string;
+}
+
+export interface AppointmentBulkRow {
+  id: number;
+  ok: boolean;
+  error: AppointmentBulkRowError | null;
+}
+
+export interface AppointmentBulkResponse {
+  results: AppointmentBulkRow[];
+}
+
+/**
+ * Массовая отмена / перенос / передача приёмов другому исполнителю.
+ *
+ * Ответ построчный: `200 OK` приходит и тогда, когда часть элементов —
+ * ошибки, упавший элемент не откатывает уже применённые. `400` — только на
+ * запрос, неверный целиком (неизвестное `action`, пустой список, неизвестный
+ * `cancelReason`).
+ *
+ * Список длиннее `APPOINTMENT_BULK_MAX_ITEMS` уходит несколькими
+ * последовательными запросами (не параллельными: пачки правят один и тот же
+ * график, и бэк проверяет пересечения по времени), результаты склеиваются в
+ * исходном порядке.
+ */
+export async function bulkAppointments(
+  payload: AppointmentBulkPayload,
+  signal?: AbortSignal,
+): Promise<AppointmentBulkResponse> {
+  const { items, ...rest } = payload;
+  const chunks: AppointmentBulkItem[][] = [];
+  for (let i = 0; i < items.length; i += APPOINTMENT_BULK_MAX_ITEMS) {
+    chunks.push(items.slice(i, i + APPOINTMENT_BULK_MAX_ITEMS));
+  }
+  const results: AppointmentBulkRow[] = [];
+  for (const chunk of chunks) {
+    const response = await apiRequest<AppointmentBulkResponse>("/appointments/bulk/", {
+      method: "POST",
+      body: { ...rest, items: chunk },
+      signal,
+    });
+    results.push(...(Array.isArray(response?.results) ? response.results : []));
+  }
+  return { results };
 }

@@ -1,4 +1,5 @@
 import React from "react";
+import { alpha, type Theme } from "@mui/material/styles";
 
 /**
  * Категориальная палитра для различения сотрудников на полосах календаря.
@@ -39,6 +40,14 @@ export function useEmployeeColorMap(
     return new Map(ids.map((id, i) => [id, i % EMPLOYEE_PALETTE.length]));
   }, [employees, scheduledIds]);
 }
+
+/**
+ * Заливка обеда — красная, но чуть прозрачная: сквозь неё просвечивает цвет
+ * смены, поэтому перерыв читается как вырез внутри смены, а не как отдельная
+ * плашка поверх неё. Единый токен на все три вида расписания (день, неделя,
+ * месяц) — иначе оттенок разъезжается по экранам.
+ */
+export const lunchFill = (theme: Theme): string => alpha(theme.palette.error.main, 0.85);
 
 export function employeeColorHex(colorIndex: number, mode: "light" | "dark"): string {
   const slot = EMPLOYEE_PALETTE[colorIndex % EMPLOYEE_PALETTE.length];

@@ -12,8 +12,13 @@ import {
   CardContent,
   IconButton,
   Tooltip,
+  Paper,
+  Button,
+  Collapse,
 } from "@mui/material";
+import dayjs from "dayjs";
 import { alpha } from "@mui/material/styles";
+import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import MedicalServicesIcon from "@mui/icons-material/MedicalServicesOutlined";
 import PaymentsOutlinedIcon from "@mui/icons-material/PaymentsOutlined";
 import AccessTimeIcon from "@mui/icons-material/AccessTimeOutlined";
@@ -22,16 +27,36 @@ import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
+import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
+import TrendingUpOutlinedIcon from "@mui/icons-material/TrendingUpOutlined";
+import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
+import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
+import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
+import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
+import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
+import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
+import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
 import {
   getService,
+  getServicePriceHistory,
+  SERVICE_CATEGORIES_ENABLED,
+  SERVICE_CATEGORY_LABELS,
+  SERVICE_ONLINE_VISIBILITY_ENABLED,
+  SERVICE_PRICE_HISTORY_ENABLED,
   SERVICE_RELATED_PRODUCT_ENABLED,
   SERVICE_RELATED_PRODUCTS_MULTI_ENABLED,
 } from "../../api/catalog";
-import type { Service } from "../../api/catalog";
+import type { Service, ServicePriceHistoryEntry } from "../../api/catalog";
 import { formatKGS, formatQuantity } from "../../utility/format";
 import { AppButton, InfoTile } from "../ui";
 import { subtleBg } from "../../theme/uiHelpers";
+import { useNavigate } from "react-router";
+import { useCan } from "../../hooks/useCan";
+import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
+import { useServicesList } from "../../api/hooks/useServicesQuery";
 import { useT } from "../../i18n/VerticalProvider";
+import ServicePerformersSection from "./ServicePerformersSection";
+import { computeServiceEconomics } from "./serviceEconomics";
 import { tt } from "../../i18n/t";
 
 type Props = {
@@ -40,6 +65,10 @@ type Props = {
   refreshToken?: number;
   onEdit?: (s: Service) => void;
   onDelete?: (s: Service) => void;
+  /** Создать копию услуги (кнопка «Дублировать»); без колбэка кнопки нет. */
+  onDuplicate?: (s: Service) => void;
+  /** Переключить панель на другую услугу — блок «Похожие». */
+  onSelectService?: (serviceId: number) => void;
 };
 
 /** Форматирует длительность из минут в вид «45 мин» / «1 ч 15 мин». */
@@ -82,8 +111,20 @@ const ServiceDetailsPanel: React.FC<Props> = ({
   refreshToken = 0,
   onEdit,
   onDelete,
+  onDuplicate,
+  onSelectService,
 }) => {
   const { t } = useT("services");
+  const navigate = useNavigate();
+  // Кнопка уводит в Регистратуру (`/appointments?new=1&service=`), а та закрыта
+  // отдельным правом `appointments.registry.view`. Врачу обычно дают только
+  // кабинет (`appointments.doctor_room.view`), и с гейтом на одном
+  // `appointments.create` кнопка была видна, но по клику молча выбрасывала на
+  // домашнюю страницу (fallback роута в App.tsx).
+  const canCreateAppointment = useCan("appointments.create");
+  const canOpenRegistry = useCan(PAGE_PERMISSIONS.appointmentsRegistry);
+  // Каталог уже в кеше страницы — тем же ключом, без второго запроса.
+  const { data: catalog = [] } = useServicesList();
   const [loading, setLoading] = React.useState(false);
   const [service, setService] = React.useState<Service | null>(null);
 
@@ -109,6 +150,34 @@ const ServiceDetailsPanel: React.FC<Props> = ({
     };
   }, [serviceId, refreshToken]);
 
+  // История изменения цены — ленивая подгрузка при раскрытии секции.
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [historyLoading, setHistoryLoading] = React.useState(false);
+  const [priceHistory, setPriceHistory] = React.useState<ServicePriceHistoryEntry[]>([]);
+
+  React.useEffect(() => {
+    setHistoryOpen(false);
+    setPriceHistory([]);
+  }, [serviceId]);
+
+  React.useEffect(() => {
+    if (!SERVICE_PRICE_HISTORY_ENABLED || !historyOpen || !service) return;
+    const controller = new AbortController();
+    setHistoryLoading(true);
+    getServicePriceHistory(service.id, controller.signal)
+      .then((rows) => {
+        if (!controller.signal.aborted) setPriceHistory(rows);
+      })
+      .catch((e) => {
+        if (controller.signal.aborted || e?.name === "AbortError") return;
+        console.error("Failed to load service price history:", e);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setHistoryLoading(false);
+      });
+    return () => controller.abort();
+  }, [historyOpen, service]);
+
   // Сколько платные позиции состава добавят к цене услуги в приёме.
   const billableExtra = React.useMemo(
     () =>
@@ -118,6 +187,20 @@ const ServiceDetailsPanel: React.FC<Props> = ({
       ),
     [service],
   );
+
+  const economics = React.useMemo(() => computeServiceEconomics(service), [service]);
+
+  /**
+   * Похожие услуги — активные из той же категории. Без категории список был бы
+   * «все услуги подряд», поэтому там блок не показываем.
+   */
+  const similar = React.useMemo(() => {
+    if (!service?.category) return [];
+    return catalog
+      .filter((s) => s.id !== service.id && s.isActive && s.category === service.category)
+      .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+      .slice(0, 5);
+  }, [catalog, service]);
 
   return (
     <Card
@@ -151,6 +234,13 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                 >
                   {t("details.editButton")}
                 </AppButton>
+              )}
+              {onDuplicate && (
+                <Tooltip title={t("details.duplicateTooltip")}>
+                  <IconButton size="small" onClick={() => onDuplicate(service)}>
+                    <ContentCopyOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
               )}
               {onDelete && (
                 <Tooltip title={t("details.deleteTooltip")}>
@@ -298,6 +388,37 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                       };
                     }}
                   />
+                  {SERVICE_CATEGORIES_ENABLED && service.category && (
+                    <Chip
+                      size="small"
+                      icon={<CategoryOutlinedIcon />}
+                      label={SERVICE_CATEGORY_LABELS[service.category]}
+                      variant="outlined"
+                      sx={{ height: 24, borderRadius: "7px", fontWeight: 500 }}
+                    />
+                  )}
+                  {/* Видима на витрине по умолчанию — отмечаем только исключение. */}
+                  {SERVICE_ONLINE_VISIBILITY_ENABLED && !service.onlineBookingVisible && (
+                    <Chip
+                      size="small"
+                      icon={<VisibilityOffOutlinedIcon />}
+                      label={t("details.hiddenOnline")}
+                      variant="outlined"
+                      color="warning"
+                      sx={{ height: 24, borderRadius: "7px", fontWeight: 500 }}
+                    />
+                  )}
+                  {service.allowPriceOverride && (
+                    <Tooltip title={t("details.priceOverrideHint")}>
+                      <Chip
+                        size="small"
+                        icon={<EditNoteOutlinedIcon />}
+                        label={t("details.priceOverrideChip")}
+                        variant="outlined"
+                        sx={{ height: 24, borderRadius: "7px", fontWeight: 500 }}
+                      />
+                    </Tooltip>
+                  )}
                 </Stack>
               </Box>
             </Stack>
@@ -332,7 +453,136 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                   }
                   active={service.durationMinutes > 0}
                 />
+                {/* Экономика — только когда есть из чего считать: без состава
+                    себестоимость нулевая, а «маржа = цена» ничего не говорит. */}
+                {SERVICE_RELATED_PRODUCT_ENABLED && economics.cost > 0 && (
+                  <>
+                    <InfoTile
+                      icon={<Inventory2OutlinedIcon />}
+                      label={t("details.cost")}
+                      value={formatKGS(economics.cost)}
+                      active
+                    />
+                    <InfoTile
+                      icon={<TrendingUpOutlinedIcon />}
+                      label={
+                        economics.marginPercent != null
+                          ? t("details.marginWithPercent", {
+                              percent: Math.round(economics.marginPercent),
+                            })
+                          : t("details.margin")
+                      }
+                      value={
+                        <Box
+                          component="span"
+                          sx={{ color: economics.margin < 0 ? "error.main" : undefined }}
+                        >
+                          {formatKGS(economics.margin)}
+                        </Box>
+                      }
+                      active
+                    />
+                  </>
+                )}
               </Box>
+              {economics.outOfStock.length > 0 && (
+                <Stack
+                  direction="row"
+                  alignItems="flex-start"
+                  gap={1}
+                  sx={(th) => ({
+                    mt: 1.25,
+                    p: 1.25,
+                    borderRadius: "10px",
+                    border: 1,
+                    borderColor: alpha(th.palette.warning.main, 0.4),
+                    bgcolor: alpha(th.palette.warning.main, th.palette.mode === "dark" ? 0.14 : 0.08),
+                  })}
+                >
+                  <WarningAmberOutlinedIcon
+                    fontSize="small"
+                    sx={{ color: "warning.main", mt: 0.25 }}
+                  />
+                  <Typography variant="body2" color="text.secondary">
+                    {t("details.stockWarning", {
+                      products: economics.outOfStock.map((p) => p.name).join(", "),
+                    })}
+                  </Typography>
+                </Stack>
+              )}
+              {SERVICE_PRICE_HISTORY_ENABLED && (
+                <Box sx={{ mt: 1.25 }}>
+                  <Button
+                    size="small"
+                    startIcon={<HistoryOutlinedIcon fontSize="small" />}
+                    onClick={() => setHistoryOpen((v) => !v)}
+                    sx={{
+                      textTransform: "none",
+                      px: 0,
+                      "&:hover": { bgcolor: "transparent", textDecoration: "underline" },
+                    }}
+                    disableRipple
+                  >
+                    {historyOpen ? t("details.priceHistoryHide") : t("details.priceHistoryShow")}
+                  </Button>
+                  <Collapse in={historyOpen}>
+                    <Paper
+                      elevation={0}
+                      sx={(th) => ({
+                        mt: 1,
+                        p: 1.5,
+                        borderRadius: "10px",
+                        border: 1,
+                        borderColor: "divider",
+                        bgcolor: subtleBg(th),
+                      })}
+                    >
+                      {historyLoading ? (
+                        <Typography variant="body2" color="text.secondary">
+                          {t("details.priceHistoryLoading")}
+                        </Typography>
+                      ) : priceHistory.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          {t("details.priceHistoryEmpty")}
+                        </Typography>
+                      ) : (
+                        <Stack divider={<Divider sx={{ borderStyle: "dashed" }} />} spacing={1}>
+                          {priceHistory.map((h, i) => (
+                            <Stack
+                              key={`${h.changedAt}-${i}`}
+                              direction="row"
+                              alignItems="center"
+                              justifyContent="space-between"
+                              spacing={1}
+                            >
+                              <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="body2" fontWeight={600}>
+                                  {formatKGS(h.price)}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  noWrap
+                                  display="block"
+                                >
+                                  {h.changedByName || "—"}
+                                </Typography>
+                              </Box>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ flexShrink: 0 }}
+                              >
+                                {dayjs(h.changedAt).format("DD.MM.YYYY HH:mm")}
+                              </Typography>
+                            </Stack>
+                          ))}
+                        </Stack>
+                      )}
+                    </Paper>
+                  </Collapse>
+                </Box>
+              )}
             </Box>
 
             {/* Филиалы */}
@@ -362,6 +612,34 @@ const ServiceDetailsPanel: React.FC<Props> = ({
               </Box>
             )}
 
+            {/* Быстрая запись на эту услугу */}
+            {canCreateAppointment && canOpenRegistry && service.isActive && (
+              <AppButton
+                variant="contained"
+                startIcon={<EventAvailableOutlinedIcon fontSize="small" />}
+                onClick={() => navigate("/appointments?new=1&service=" + service.id)}
+                sx={{ alignSelf: "flex-start" }}
+              >
+                {t("details.bookButton")}
+              </AppButton>
+            )}
+
+            {/* Кто оказывает услугу */}
+            <ServicePerformersSection
+              serviceId={service.id}
+              serviceName={service.name}
+              renderHeader={(count) => (
+                <SectionHeader
+                  icon={<GroupsOutlinedIcon />}
+                  title={
+                    count == null
+                      ? t("details.sectionPerformers")
+                      : t("details.sectionPerformersCount", { count })
+                  }
+                />
+              )}
+            />
+
             {/* Состав расходников услуги */}
             {SERVICE_RELATED_PRODUCT_ENABLED && service.relatedProducts.length > 0 && (
               <Box>
@@ -373,39 +651,74 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                       : t("details.sectionCompositionSingle")
                   }
                 />
-                <Box
-                  sx={{
-                    display: "grid",
-                    gap: 1.25,
-                    gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
-                  }}
-                >
+                <Stack spacing={1}>
                   {service.relatedProducts.map((p) => (
-                    <InfoTile
+                    <Paper
                       key={p.id}
-                      icon={<Inventory2OutlinedIcon />}
-                      label={
-                        SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
-                          ? `${p.name} × ${formatQuantity(p.quantity)}${p.unit ? ` ${p.unit}` : ""}`
-                          : p.name
-                      }
-                      // Остаток здесь — по всей организации: в справочнике услуги
-                      // филиала нет, склад филиала считается в приёме.
-                      value={[
-                        `${formatKGS(p.price)} · ${t("details.stock", { stock: formatQuantity(p.stock) })}`,
-                        ...(SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
-                          ? [
-                              p.billable
-                                ? t("details.extraToPrice", { amount: formatKGS(p.price * p.quantity) })
-                                : t("details.included"),
-                              ...(p.autoWriteOff ? [] : [t("details.noWriteOff")]),
-                            ]
-                          : []),
-                      ].join(" · ")}
-                      active
-                    />
+                      variant="outlined"
+                      sx={{ p: 1.25, pl: 1.5, borderRadius: 1.5, bgcolor: "background.paper" }}
+                    >
+                      <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                        <Avatar
+                          variant="rounded"
+                          sx={{
+                            width: 32,
+                            height: 32,
+                            bgcolor: "action.selected",
+                            color: "text.secondary",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Inventory2OutlinedIcon sx={{ fontSize: 18 }} />
+                        </Avatar>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600}>
+                            {SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
+                              ? `${p.name} × ${formatQuantity(p.quantity)}${p.unit ? ` ${p.unit}` : ""}`
+                              : p.name}
+                          </Typography>
+                          {/* Остаток здесь — по всей организации: в справочнике услуги
+                              филиала нет, склад филиала считается в приёме. */}
+                          <Typography variant="caption" color="text.secondary">
+                            {formatKGS(p.price)} · {t("details.stock", { stock: formatQuantity(p.stock) })}
+                          </Typography>
+
+                          {SERVICE_RELATED_PRODUCTS_MULTI_ENABLED && (
+                            <Stack
+                              direction="row"
+                              spacing={0.75}
+                              flexWrap="wrap"
+                              useFlexGap
+                              sx={{ mt: 0.75 }}
+                            >
+                              <Chip
+                                label={
+                                  p.billable
+                                    ? t("details.extraToPrice", {
+                                        amount: formatKGS(p.price * p.quantity),
+                                      })
+                                    : t("details.included")
+                                }
+                                size="small"
+                                color={p.billable ? "primary" : "default"}
+                                variant={p.billable ? "filled" : "outlined"}
+                                sx={{ borderRadius: "7px" }}
+                              />
+                              {!p.autoWriteOff && (
+                                <Chip
+                                  label={t("details.noWriteOff")}
+                                  size="small"
+                                  variant="outlined"
+                                  sx={{ borderRadius: "7px" }}
+                                />
+                              )}
+                            </Stack>
+                          )}
+                        </Box>
+                      </Stack>
+                    </Paper>
                   ))}
-                </Box>
+                </Stack>
                 {billableExtra > 0 && (
                   <Stack
                     direction="row"
@@ -421,6 +734,28 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                     </Typography>
                   </Stack>
                 )}
+              </Box>
+            )}
+
+            {/* Похожие услуги той же категории */}
+            {similar.length > 0 && onSelectService && (
+              <Box>
+                <SectionHeader
+                  icon={<LayersOutlinedIcon />}
+                  title={t("details.sectionSimilar")}
+                />
+                <Stack direction="row" flexWrap="wrap" gap={1}>
+                  {similar.map((s) => (
+                    <Chip
+                      key={s.id}
+                      label={s.name + " · " + formatKGS(Number(s.basePrice))}
+                      size="small"
+                      variant="outlined"
+                      onClick={() => onSelectService(s.id)}
+                      sx={{ borderRadius: "7px", height: 30, maxWidth: "100%" }}
+                    />
+                  ))}
+                </Stack>
               </Box>
             )}
 

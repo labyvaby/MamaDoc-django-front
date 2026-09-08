@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Avatar,
+  Alert,
   Badge,
   Box,
   Button,
@@ -19,6 +20,7 @@ import { useTheme, alpha } from "@mui/material/styles";
 import FilterListOutlined from "@mui/icons-material/FilterListOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
+import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
 import AddCircleOutline from "@mui/icons-material/AddCircleOutline";
 // Иконки SMS-уведомлений — те же импорты, что в старом фронте (home/AppointmentsList).
 import SmsOutlined from "@mui/icons-material/SmsOutlined";
@@ -46,11 +48,18 @@ import type { StatusCode } from "../../../config/appointmentStatuses";
 import type { PaymentStatus } from "../../../api/payments";
 import AppointmentFilterChips from "./AppointmentFilterChips";
 import {
+  appointmentMoneyFlags,
+  appointmentPriceChangeSummary,
   employeeMoneyTotals,
   firstFreeSlotInSegment,
   firstFreeSlotInSegmentFor,
+  firstFreeSlotAtOrAfter,
   matchesAppointmentSearch,
+  matchesCancelReasons,
+  matchesMoneyFlags,
+  type AppointmentMoneyFlag,
 } from "./listFilters";
+import { isAppointmentCancelReason, type AppointmentCancelReason } from "../../../api/appointments";
 import { AppBottomSheet } from "../../../components/ui";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -106,6 +115,15 @@ interface AppointmentListPanelProps {
   onStatusFilterChange?: (codes: StatusCode[]) => void;
   paymentFilter?: PaymentStatus[];
   onPaymentFilterChange?: (values: PaymentStatus[]) => void;
+  /** Ось скидок и правок цены — так же управляемая страницей (URL) или своя. */
+  moneyFlagFilter?: AppointmentMoneyFlag[];
+  onMoneyFlagFilterChange?: (values: AppointmentMoneyFlag[]) => void;
+  /**
+   * Ось причины отмены — видна только у отменённых приёмов; та же управляемая
+   * схема, что у остальных осей. См. matchesCancelReasons.
+   */
+  reasonFilter?: AppointmentCancelReason[];
+  onReasonFilterChange?: (values: AppointmentCancelReason[]) => void;
   /**
    * Сброс обеих осей сразу. Отдельный колбэк, а не два вызова подряд: владелец
    * состояния может складывать их в одно обновление (страница пишет фильтры в
@@ -329,6 +347,10 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   onStatusFilterChange,
   paymentFilter,
   onPaymentFilterChange,
+  moneyFlagFilter,
+  onMoneyFlagFilterChange,
+  reasonFilter,
+  onReasonFilterChange,
   onResetChipFilters,
   showPaymentFilter = false,
   showGroupTotals = false,
@@ -397,8 +419,25 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         map.set(id, { id, name, photoUrl: null, nickname: null, apptCount: 0 });
       }
     }
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    return Array.from(map.values()).sort((a, b) => {
+      // В регистратуре сначала показываем врачей, у которых уже есть приёмы
+      // на выбранную дату; остальные остаются в быстром фильтре ниже.
+      const aHasAppointments = a.apptCount > 0 ? 1 : 0;
+      const bHasAppointments = b.apptCount > 0 ? 1 : 0;
+      return (
+        bHasAppointments - aHasAppointments ||
+        a.name.localeCompare(b.name, "ru")
+      );
+    });
   }, [items, groupEmployeeIds, dayShifts]);
+
+  // После смены даты выбранный врач может исчезнуть из списка: на новом дне
+  // у него нет ни приёмов, ни смены. Сохраняем последнее известное ФИО, чтобы
+  // предупреждение всё равно было конкретным, а не «у кого-то нет смены».
+  const doctorNamesRef = React.useRef(new Map<number, string>());
+  React.useEffect(() => {
+    for (const doctor of availableDoctors) doctorNamesRef.current.set(doctor.id, doctor.name);
+  }, [availableDoctors]);
 
   // ── Фильтры статуса визита и оплаты ───────────────────────────────────────
   // Главные вопросы стойки — «кто уже в холле» и «с кого ещё не взяли деньги»:
@@ -426,10 +465,34 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     [isPaymentControlled, onPaymentFilterChange],
   );
 
+  const isMoneyControlled = moneyFlagFilter !== undefined;
+  const [internalMoneyFlags, setInternalMoneyFlags] = React.useState<AppointmentMoneyFlag[]>([]);
+  const selectedMoneyFlags = isMoneyControlled ? moneyFlagFilter : internalMoneyFlags;
+  const setSelectedMoneyFlags = React.useCallback(
+    (values: AppointmentMoneyFlag[]) => {
+      if (!isMoneyControlled) setInternalMoneyFlags(values);
+      onMoneyFlagFilterChange?.(values);
+    },
+    [isMoneyControlled, onMoneyFlagFilterChange],
+  );
+
+  const isReasonControlled = reasonFilter !== undefined;
+  const [internalReasons, setInternalReasons] = React.useState<AppointmentCancelReason[]>([]);
+  const selectedReasons = isReasonControlled ? reasonFilter : internalReasons;
+  const setSelectedReasons = React.useCallback(
+    (values: AppointmentCancelReason[]) => {
+      if (!isReasonControlled) setInternalReasons(values);
+      onReasonFilterChange?.(values);
+    },
+    [isReasonControlled, onReasonFilterChange],
+  );
+
   React.useEffect(() => {
     if (!isStatusControlled) setInternalStatuses([]);
     if (!isPaymentControlled) setInternalPayments([]);
-  }, [titleDate, isStatusControlled, isPaymentControlled]);
+    if (!isMoneyControlled) setInternalMoneyFlags([]);
+    if (!isReasonControlled) setInternalReasons([]);
+  }, [titleDate, isStatusControlled, isPaymentControlled, isMoneyControlled, isReasonControlled]);
 
   // ── Отбор: поиск → исполнитель → чипы ─────────────────────────────────────
   // Порядок важен: счётчики чипов считаются на середине цепочки, поэтому при
@@ -473,6 +536,27 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     return counts;
   }, [doctorScopedItems]);
 
+  // Счётчики оси цены: приём попадает в несколько чипов сразу (скидка + правка
+  // цены — обычная пара), поэтому сумма счётчиков больше числа записей дня.
+  const moneyCounts = React.useMemo(() => {
+    const counts = new Map<AppointmentMoneyFlag, number>();
+    for (const appt of doctorScopedItems) {
+      for (const flag of appointmentMoneyFlags(appt)) {
+        counts.set(flag, (counts.get(flag) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [doctorScopedItems]);
+
+  const reasonCounts = React.useMemo(() => {
+    const counts = new Map<AppointmentCancelReason, number>();
+    for (const appt of doctorScopedItems) {
+      if (appt.status !== "canceled" || !isAppointmentCancelReason(appt.cancelReason)) continue;
+      counts.set(appt.cancelReason, (counts.get(appt.cancelReason) ?? 0) + 1);
+    }
+    return counts;
+  }, [doctorScopedItems]);
+
   const filteredItems = React.useMemo(() => {
     let list = doctorScopedItems;
     if (selectedStatuses.length > 0) {
@@ -486,8 +570,22 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         (appt) => appt.paymentStatus != null && selectedPayments.includes(appt.paymentStatus),
       );
     }
+    // Оси между собой складываются через И: «Долг» + «Со скидкой» — это
+    // недоплаченные чеки со скидкой, а не их объединение.
+    if (selectedMoneyFlags.length > 0) {
+      list = list.filter((appt) => matchesMoneyFlags(appt, selectedMoneyFlags));
+    }
+    if (selectedReasons.length > 0) {
+      list = list.filter((appt) => matchesCancelReasons(appt, selectedReasons));
+    }
     return list;
-  }, [doctorScopedItems, selectedStatuses, selectedPayments]);
+  }, [
+    doctorScopedItems,
+    selectedStatuses,
+    selectedPayments,
+    selectedMoneyFlags,
+    selectedReasons,
+  ]);
 
   const toggleStatus = React.useCallback(
     (code: StatusCode) =>
@@ -509,26 +607,58 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     [selectedPayments, setSelectedPayments],
   );
 
+  const toggleMoneyFlag = React.useCallback(
+    (value: AppointmentMoneyFlag) =>
+      setSelectedMoneyFlags(
+        selectedMoneyFlags.includes(value)
+          ? selectedMoneyFlags.filter((v) => v !== value)
+          : [...selectedMoneyFlags, value],
+      ),
+    [selectedMoneyFlags, setSelectedMoneyFlags],
+  );
+
+  const toggleReason = React.useCallback(
+    (value: AppointmentCancelReason) =>
+      setSelectedReasons(
+        selectedReasons.includes(value)
+          ? selectedReasons.filter((v) => v !== value)
+          : [...selectedReasons, value],
+      ),
+    [selectedReasons, setSelectedReasons],
+  );
+
   const resetChipFilters = React.useCallback(() => {
     if (onResetChipFilters) {
       if (!isStatusControlled) setInternalStatuses([]);
       if (!isPaymentControlled) setInternalPayments([]);
+      if (!isMoneyControlled) setInternalMoneyFlags([]);
+      if (!isReasonControlled) setInternalReasons([]);
       onResetChipFilters();
       return;
     }
     setSelectedStatuses([]);
     setSelectedPayments([]);
+    setSelectedMoneyFlags([]);
+    setSelectedReasons([]);
   }, [
     onResetChipFilters,
     isStatusControlled,
     isPaymentControlled,
+    isMoneyControlled,
+    isReasonControlled,
     setSelectedStatuses,
     setSelectedPayments,
+    setSelectedMoneyFlags,
+    setSelectedReasons,
   ]);
 
   // Сколько записей дня скрыто фильтрами. Без этой строки отфильтрованный
   // список выглядит как «в этот день почти никого нет».
-  const activeChipCount = selectedStatuses.length + selectedPayments.length;
+  const activeChipCount =
+    selectedStatuses.length +
+    selectedPayments.length +
+    selectedMoneyFlags.length +
+    selectedReasons.length;
   const isFiltered = filteredItems.length !== items.length;
   // Отбор по существующим записям (чипы или поиск). Фильтр по специалисту сюда
   // не входит: выбрать свободного врача и увидеть его окна — нормальный сценарий.
@@ -536,11 +666,19 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
   const [filterSheetOpen, setFilterSheetOpen] = React.useState(false);
 
-  // Выбранного специалиста нет среди тех, кто работает в этот день (фильтр
-  // пережил смену даты) — ни одна аватарка не подсвечена, и пустой список
-  // выглядел бы как «сегодня никого».
-  const orphanDoctorFilter =
-    selectedDoctorId != null && !availableDoctors.some((d) => d.id === selectedDoctorId);
+  // Фильтр пережил смену даты, но у выбранного специалиста нет фактической
+  // смены на выбранный день. `segments` уже учитывает weekday и исключения,
+  // поэтому одного попадания правила в диапазон недостаточно.
+  const selectedDoctor =
+    selectedDoctorId == null
+      ? null
+      : availableDoctors.find((doctor) => doctor.id === selectedDoctorId) ?? null;
+  const selectedDoctorName =
+    selectedDoctor?.name ??
+    (selectedDoctorId == null ? null : doctorNamesRef.current.get(selectedDoctorId)) ??
+    null;
+  const doctorHasNoShift =
+    selectedDoctorId != null && dayShifts != null && !dayShifts.segments.has(selectedDoctorId);
 
   // ── Group by employee → list of appointments ──────────────────────────────
   // Mirrors оригинал: каждый приём попадает в группу каждого участвующего
@@ -643,8 +781,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           for (const seg of shiftSegments ?? []) {
             if (seg.start >= firstStart.format("HH:mm")) continue;
             const clippedEnd = seg.end < firstStart.format("HH:mm") ? seg.end : firstStart.format("HH:mm");
-            const slot = firstFreeSlotInSegment(date ?? firstStart, { start: seg.start, end: clippedEnd });
-            if (slot && slot.isBefore(firstStart) && !isCoveredByActive(slot.valueOf())) {
+            const slot = firstFreeSlotInSegmentFor(
+              date ?? firstStart,
+              { start: seg.start, end: clippedEnd },
+              activeIntervals,
+            );
+            if (slot && slot.isBefore(firstStart)) {
               renderItems.push({
                 isGap: true,
                 id: `gap-before-${first.id}-${slot.format("HH:mm")}`,
@@ -685,27 +827,67 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           if (!isCancelledStatus(next.status)) {
             const currentEnd = appointmentEnd(current);
             const gapMs = dayjs(next.scheduledAt).valueOf() - currentEnd.valueOf();
-            if (gapMs >= GAP_THRESHOLD_MS && currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)
-                && !isCoveredByActive(currentEnd.valueOf())) {
+            if (gapMs >= GAP_THRESHOLD_MS && currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
+              const nextStart = dayjs(next.scheduledAt);
+              const shiftSegment = shiftSegments?.find((s) => {
+                const currentHm = currentEnd.format("HH:mm");
+                return currentHm >= s.start && currentHm < s.end;
+              });
+              const gapSlot = shiftSegment
+                ? firstFreeSlotAtOrAfter(
+                    date ?? currentEnd,
+                    shiftSegment,
+                    activeIntervals,
+                    currentEnd,
+                    nextStart,
+                  )
+                : firstFreeSlotAtOrAfter(
+                    date ?? currentEnd,
+                    { start: currentEnd.format("HH:mm"), end: nextStart.format("HH:mm") },
+                    activeIntervals,
+                    currentEnd,
+                    nextStart,
+                  );
+              if (!gapSlot) continue;
               const key = `gap-${current.id}-${next.id}`;
               renderItems.push({
                 isGap: true,
                 id: key,
-                timeStr: currentEnd.format("HH:mm"),
-                dateIso: currentEnd.format("YYYY-MM-DDTHH:mm"),
+                timeStr: gapSlot.format("HH:mm"),
+                dateIso: gapSlot.format("YYYY-MM-DDTHH:mm"),
                 employeeId: groupEmployeeId,
               });
             }
           }
         } else if (!isCancelled && i === sorted.length - 1) {
           const currentEnd = appointmentEnd(current);
-          if (currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)
-              && !isCoveredByActive(currentEnd.valueOf())) {
+          if (currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
+            const shiftSegment = shiftSegments?.find((s) => {
+              const currentHm = currentEnd.format("HH:mm");
+              return currentHm >= s.start && currentHm < s.end;
+            });
+            const gapSlot = shiftSegment
+              ? firstFreeSlotAtOrAfter(
+                  date ?? currentEnd,
+                  shiftSegment,
+                  activeIntervals,
+                  currentEnd,
+                )
+              : firstFreeSlotAtOrAfter(
+                  date ?? currentEnd,
+                  {
+                    start: currentEnd.format("HH:mm"),
+                    end: currentEnd.add(30, "minute").format("HH:mm"),
+                  },
+                  activeIntervals,
+                  currentEnd,
+                );
+            if (!gapSlot) continue;
             renderItems.push({
               isGap: true,
               id: `gap-after-${current.id}`,
-              timeStr: currentEnd.format("HH:mm"),
-              dateIso: currentEnd.format("YYYY-MM-DDTHH:mm"),
+              timeStr: gapSlot.format("HH:mm"),
+              dateIso: gapSlot.format("YYYY-MM-DDTHH:mm"),
               employeeId: groupEmployeeId,
             });
           }
@@ -812,6 +994,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       paymentCounts={showPaymentFilter ? paymentCounts : undefined}
       selectedPayments={selectedPayments}
       onTogglePayment={showPaymentFilter ? togglePayment : undefined}
+      moneyCounts={showPaymentFilter ? moneyCounts : undefined}
+      selectedMoneyFlags={selectedMoneyFlags}
+      onToggleMoneyFlag={showPaymentFilter ? toggleMoneyFlag : undefined}
+      reasonCounts={reasonCounts}
+      selectedReasons={selectedReasons}
+      onToggleReason={toggleReason}
       onReset={resetChipFilters}
     />
   );
@@ -919,17 +1107,30 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
             {/* Фильтр специалиста переживает смену даты (он в URL), поэтому в
                 другом дне он может указывать на того, кто в этот день не
                 работает: без подсказки это выглядит как пустой день. */}
-            {!hideDoctorStrip && orphanDoctorFilter && (
-              <Box sx={{ mt: -1 }}>
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  color="warning"
-                  label={t("list.doctorNotInDay")}
-                  onDelete={() => setSelectedDoctorId(null)}
-                  sx={{ height: 24, fontWeight: 500 }}
-                />
-              </Box>
+            {!hideDoctorStrip && doctorHasNoShift && (
+              <Alert
+                severity="warning"
+                sx={{
+                  mt: -1,
+                  py: 0,
+                  alignItems: "center",
+                  "& .MuiAlert-message": { py: 0.75 },
+                }}
+                action={
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={() => setSelectedDoctorId(null)}
+                    sx={{ whiteSpace: "nowrap", textTransform: "none" }}
+                  >
+                    {t("list.chooseAnotherDoctor")}
+                  </Button>
+                }
+              >
+                {t("list.doctorNotInDay", {
+                  doctorName: selectedDoctorName ?? t("list.selectedDoctor"),
+                })}
+              </Alert>
             )}
 
             {/* Фильтры «ход визита | деньги». На телефоне ряд чипов не влезает
@@ -1061,6 +1262,10 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       const discountAmount = Number(a.discountAmount ?? 0);
                       const discountPercent = discountPercentOf(totalAmount, discountAmount);
                       const payableAmount = Math.max(0, totalAmount - discountAmount);
+                      const priceChange = appointmentPriceChangeSummary(a);
+                      const previousPayableAmount = priceChange
+                        ? Math.max(0, priceChange.previousTotal - discountAmount)
+                        : null;
                       // Бэк не отдаёт hasMedicalConclusion — выводим наличие
                       // заключения из строк услуг (conclusionState/conclusionId).
                       const hasConclusion = (a.services ?? []).some(
@@ -1181,14 +1386,36 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   })}
                               </Stack>
 
+                              {priceChange && (
+                                <Tooltip
+                                  title={t("list.priceChangedTooltip", {
+                                    service: priceChange.serviceName ?? t("details.service"),
+                                    oldPrice: formatKGS(priceChange.oldUnitPrice),
+                                    newPrice: formatKGS(priceChange.newUnitPrice),
+                                  })}
+                                >
+                                  <Stack
+                                    direction="row"
+                                    alignItems="center"
+                                    gap={0.4}
+                                    sx={{ mt: 0.5, color: "warning.dark" }}
+                                  >
+                                    <PriceChangeOutlined sx={{ fontSize: 15 }} />
+                                    <Typography variant="caption" fontWeight={700}>
+                                      {t("list.priceChanged")}
+                                    </Typography>
+                                  </Stack>
+                                </Tooltip>
+                              )}
+
                               {/* Итого — стоимость услуг, не финансовая операция,
                                   поэтому видна всем (в т.ч. врачу без прав на
                                   финансы), как в оригинале. */}
-                              {totalAmount > 0 && (
+                              {(totalAmount > 0 || previousPayableAmount != null) && (
                                 <Typography
                                   variant="body2"
                                   color="text.secondary"
-                                  sx={{ mt: 0.5 }}
+                                  sx={{ mt: priceChange ? 0.125 : 0.5 }}
                                 >
                                   {t("list.total")}{" "}
                                   {/* При скидке «Итого» — это то, что человек
@@ -1198,12 +1425,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                       оплаченного приёма чипа скидки нет (там
                                       «Оплачено»), и эта строка — единственное
                                       место, где дисконт виден. */}
-                                  {discountPercent != null && (
+                                  {(previousPayableAmount != null || discountPercent != null) && (
                                     <Box
                                       component="span"
                                       sx={{ textDecoration: "line-through", opacity: 0.6, mr: 0.5 }}
                                     >
-                                      {formatKGS(totalAmount)}
+                                      {formatKGS(previousPayableAmount ?? totalAmount)}
                                     </Box>
                                   )}
                                   {formatKGS(discountPercent != null ? payableAmount : totalAmount)}
@@ -1239,6 +1466,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
             paymentCounts={showPaymentFilter ? paymentCounts : undefined}
             selectedPayments={selectedPayments}
             onTogglePayment={showPaymentFilter ? togglePayment : undefined}
+            moneyCounts={showPaymentFilter ? moneyCounts : undefined}
+            selectedMoneyFlags={selectedMoneyFlags}
+            onToggleMoneyFlag={showPaymentFilter ? toggleMoneyFlag : undefined}
+            reasonCounts={reasonCounts}
+            selectedReasons={selectedReasons}
+            onToggleReason={toggleReason}
             onReset={resetChipFilters}
             wrap
           />

@@ -8,7 +8,7 @@ import { useT } from "../../i18n/VerticalProvider";
 import { formatKGS } from "../../utility/format";
 
 /**
- * Цена строки услуги в формах записи и редактирования приёма.
+ * Цена и длительность строки услуги в формах приёма.
  *
  * Правка цены закрыта правом `appointments.price_override`: с 19.08.2026 бэк
  * отвечает 403 на любую цену, ушедшую от каталожной, — и на выделенной ручке,
@@ -28,6 +28,9 @@ export interface ServicePriceFieldProps {
   /** Цена строки; пустая строка — «как в прайсе». */
   value: string;
   onChange: (next: string) => void;
+  baseDurationMinutes: number;
+  durationValue: string;
+  onDurationChange: (next: string) => void;
   /** Форма сохраняется или строка заблокирована по другой причине. */
   disabled?: boolean;
   /** Хвост подписи (в дровере записи там длительность услуги). */
@@ -43,10 +46,18 @@ export function isPriceOverridden(value: string, basePrice: string | number): bo
   return num(trimmed) !== num(basePrice);
 }
 
+export function isDurationOverridden(value: string, baseDurationMinutes: number): boolean {
+  const trimmed = value.trim();
+  return trimmed !== "" && Number(trimmed) !== baseDurationMinutes;
+}
+
 const ServicePriceField: React.FC<ServicePriceFieldProps> = ({
   basePrice,
   value,
   onChange,
+  baseDurationMinutes,
+  durationValue,
+  onDurationChange,
   disabled,
   suffix,
 }) => {
@@ -54,22 +65,30 @@ const ServicePriceField: React.FC<ServicePriceFieldProps> = ({
   const canOverride = useCan("appointments.price_override");
 
   const overridden = isPriceOverridden(value, basePrice);
+  const durationOverridden = isDurationOverridden(durationValue, baseDurationMinutes);
   // Поле раскрыто, пока цена отличается от каталожной: свернуть его обратно в
   // подпись значило бы спрятать причину, по которой сумма приёма не сходится
   // с прайсом.
-  const [editing, setEditing] = React.useState(overridden);
+  const [editing, setEditing] = React.useState(overridden || durationOverridden);
   React.useEffect(() => {
-    if (overridden) setEditing(true);
-  }, [overridden]);
+    if (overridden || durationOverridden) setEditing(true);
+  }, [overridden, durationOverridden]);
 
   const effective = value.trim() ? value : String(basePrice);
   const invalid = value.trim() !== "" && (isNaN(Number(value)) || Number(value) < 0);
+  const effectiveDuration = durationValue.trim()
+    ? Number(durationValue)
+    : baseDurationMinutes;
+  const invalidDuration =
+    durationValue.trim() !== "" &&
+    (!Number.isInteger(Number(durationValue)) || Number(durationValue) <= 0);
 
   if (!canOverride || !editing) {
     return (
       <Stack direction="row" spacing={0.5} alignItems="center">
         <Typography variant="caption" color="text.secondary">
           {t("addDrawer.priceLabel")} <strong>{formatKGS(effective)}</strong>
+          {` · ${effectiveDuration} ${t("priceField.minutesShort")}`}
           {suffix}
         </Typography>
         {canOverride && (
@@ -92,7 +111,7 @@ const ServicePriceField: React.FC<ServicePriceFieldProps> = ({
   }
 
   return (
-    <Stack direction="row" spacing={0.75} alignItems="flex-start">
+    <Stack direction="row" spacing={0.75} alignItems="flex-start" flexWrap="wrap" useFlexGap>
       <TextField
         size="small"
         type="number"
@@ -112,7 +131,20 @@ const ServicePriceField: React.FC<ServicePriceFieldProps> = ({
         inputProps={{ min: 0, step: "0.01" }}
         sx={{ maxWidth: 160 }}
       />
-      {overridden && (
+      <TextField
+        size="small"
+        type="number"
+        label={t("priceField.durationLabel")}
+        value={durationValue}
+        disabled={disabled}
+        onChange={(e) => onDurationChange(e.target.value)}
+        placeholder={String(baseDurationMinutes)}
+        error={invalidDuration}
+        helperText={invalidDuration ? t("priceField.invalidDuration") : ""}
+        inputProps={{ min: 1, step: 1 }}
+        sx={{ maxWidth: 160 }}
+      />
+      {(overridden || durationOverridden) && (
         <Tooltip title={t("priceField.reset")}>
           <span>
             <IconButton
@@ -120,6 +152,7 @@ const ServicePriceField: React.FC<ServicePriceFieldProps> = ({
               disabled={disabled}
               onClick={() => {
                 onChange("");
+                onDurationChange("");
                 setEditing(false);
               }}
               aria-label={t("priceField.reset")}

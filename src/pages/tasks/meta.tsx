@@ -1,5 +1,7 @@
 import dayjs, { type Dayjs } from "dayjs";
 
+import { ApiError } from "../../api/client";
+
 import type {
   TaskCategory,
   TaskPriority,
@@ -27,14 +29,35 @@ export const TASKS_DUE_TIME_ENABLED = false;
 /**
  * Удаление задачи из архива (право `tasks.manage`).
  *
- * ⚠ Выключено: бэк метод не реализовал — `DELETE /api/tasks/{id}/` отвечает 405
- * «Метод 'DELETE' не разрешён, разрешённые: ['GET', 'PATCH']» (проверено на
- * тестовом контуре 07.08.2026). Эндпоинтов `archive`/`restore` и флага
- * `isArchived` в модели тоже нет — поэтому «Архив» на фронте собран из закрытых
- * статусов (done + cancelled), а не из отдельного признака.
- * Включить, когда бэк закроет тикет `MamaDoc/backend_ticket_tasks_delete.md`.
+ * Включено 31.08.2026: бэк реализовал `DELETE /api/tasks/{id}/` — 204 для
+ * закрытых задач, 400 для открытых (проверено на тестовом контуре). Эндпоинтов
+ * `archive`/`restore` и флага `isArchived` в модели по-прежнему нет — «Архив»
+ * на фронте собран из закрытых статусов (done + cancelled), закрытые задачи
+ * лежат в нём до удаления руками.
+ *
+ * ⚠ На проде проверить не удалось: у учётки нет прав `tasks.*` (нужен
+ * sync_permissions + выдача прав ролям). DELETE отвечает 403 `tasks.manage`,
+ * а не 405, — то есть маршрут на проде уже есть.
  */
-export const TASKS_DELETE_ENABLED = false;
+export const TASKS_DELETE_ENABLED = true;
+
+/**
+ * Человеческий текст ошибки действия над задачей.
+ *
+ * В 400 бэк присылает готовое объяснение («Удалять можно только выполненные или
+ * отменённые задачи», «Завершить можно только задачу в работе») — его и
+ * показываем. 403/404/405 переводим сами: технический текст пользователю
+ * ничего не говорит.
+ */
+export function taskErrorMessage(e: unknown, fallback: string): string {
+  if (e instanceof ApiError) {
+    if (e.status === 403) return "Недостаточно прав для этого действия";
+    if (e.status === 404) return "Задача не найдена — возможно, её уже удалили";
+    if (e.status === 405) return "Сервер пока не поддерживает это действие";
+    if (e.status === 400 && e.message) return e.message;
+  }
+  return (e instanceof Error && e.message) || fallback;
+}
 
 /** Статусы, попадающие в «Архив»: задача закрыта и в работу не вернётся. */
 export const TASK_ARCHIVE_STATUSES = ["done", "cancelled"] as const satisfies readonly TaskStatus[];

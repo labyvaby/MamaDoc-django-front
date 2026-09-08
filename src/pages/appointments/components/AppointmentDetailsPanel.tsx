@@ -118,6 +118,8 @@ interface AppointmentDetailsPanelProps {
   /** Пациент подтвердил визит по телефону: scheduled → confirmed. */
   onConfirmVisit?: (a: DjangoAppointment) => void;
   onArrived?: (a: DjangoAppointment) => void;
+  /** Убрать ошибочную отметку «Пациент здесь». */
+  onUndoArrived?: (a: DjangoAppointment) => void;
   /** Врач начинает приём: перевести в in_progress (если ещё не завершён). */
   onStartAppointment?: (a: DjangoAppointment) => void;
   /**
@@ -160,6 +162,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   onPay,
   onConfirmVisit,
   onArrived,
+  onUndoArrived,
   onStartAppointment,
   onRecordVaccination,
   onRecordVaccinationMulti,
@@ -521,12 +524,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         name: sl.service?.name ?? "—",
         imageUrl: sl.service?.imageUrl ?? null,
         quantity: sl.quantity,
+        durationMinutes: sl.durationMinutes,
         amount: som(lineAmount),
         conclusionState: sl.conclusionState,
         action:
           canOverridePrice &&
           !appt.priceOverrideLocked &&
-          sl.allowPriceOverride !== false &&
           !isPaymentAccepted &&
           !isCancelled &&
           activeEmployeeId != null &&
@@ -1008,6 +1011,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               updatedByName={updatedByName}
               hasBankConfirmation={hasBankConfirmation}
               statusSource={statusChipsSource}
+              onUndoArrived={
+                canUpdate && appt.status === "arrived" && !isPaymentAccepted && onUndoArrived
+                  ? () => onUndoArrived(appt)
+                  : undefined
+              }
               paymentsLoading={payQuery.isLoading}
               hidePaymentChip={financeBlockVisible}
             />
@@ -1131,11 +1139,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             {/* Правки цены — после состава визита и до жалоб: это про деньги
                 приёма, а не про его медицинскую часть. Блок сам скрывается,
                 пока цены не трогали. */}
-            {appt.priceOverrides.length > 0 && (
+            {(appt.priceOverrides.length > 0 || appt.durationOverrides.length > 0) && (
               <>
                 <Divider />
                 <AppointmentPriceHistory
                   overrides={appt.priceOverrides}
+                  durationOverrides={appt.durationOverrides}
                   services={appt.services}
                 />
               </>
@@ -1316,6 +1325,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           serviceId={startedSlot.service.id}
           doctorName={startedSlot.doctor?.fullName ?? "—"}
           appointmentId={appt.id}
+          // Филиал приёма, а не сессии: бланки печатают на форме того филиала,
+          // где приём и состоялся.
+          branchId={appt.branchId}
           doctorId={startedSlot.doctor?.id ?? null}
           canEdit={startedSlot.canEdit}
           canPrint={startedSlot.canPrint}

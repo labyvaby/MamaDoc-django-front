@@ -49,6 +49,10 @@ export function sheetSizeMm(
  * Блоки, которые есть в любом бланке и которые нельзя удалить или
  * переименовать в конструкторе, — требование заказчика. Их значения
  * подставляются из приёма, врач их не вводит.
+ *
+ * Круга «Место для печати» здесь больше нет (убран 03.09.2026 по просьбе
+ * заказчика): печать ставят поверх подписи, и очерченное место под неё на
+ * листе только занимало нижнюю треть.
  */
 export const REQUIRED_BLOCK_KEYS = [
   "appointmentDateTime",
@@ -56,7 +60,6 @@ export const REQUIRED_BLOCK_KEYS = [
   "patientDob",
   "doctorFio",
   "signature",
-  "stamp",
 ] as const;
 
 export type RequiredBlockKey = (typeof REQUIRED_BLOCK_KEYS)[number];
@@ -74,7 +77,6 @@ export const REQUIRED_BLOCK_LABELS: Record<RequiredBlockKey, string> = {
   patientDob: "Дата рождения",
   doctorFio: "Врач",
   signature: "Подпись",
-  stamp: "Место для печати",
 };
 
 // ── Поля бланка ────────────────────────────────────────────────────────────────
@@ -94,6 +96,103 @@ export type FormFieldType = "text" | "multiline";
 /** Доля ширины строки, которую занимает поле. */
 export type FormFieldWidth = "full" | "half";
 
+/**
+ * Поле заключения, в которое пишет поле бланка.
+ *
+ * Зачем. Администраторы заводят полями бланка то, что в заключении уже есть
+ * отдельной колонкой: «Карта осмотра педиатра» содержит «Температура, °C»,
+ * «Вес, кг», «Рост, см», «Жалобы», «Анамнез заболевания». Без привязки врач
+ * видит их дважды (в бланке и в штатном поле), а температура уезжает в текст
+ * — колонка остаётся пустой, и динамика по ней не считается.
+ *
+ * Привязка необязательна: поле без неё работает как раньше — свободная строка
+ * протокола, попадающая в собираемый текст. Привязанное поле в текст НЕ идёт:
+ * его значение уже лежит в своей колонке, и в тексте оно бы задвоилось.
+ *
+ * ⚠ Одна колонка — максимум одно привязанное поле в бланке (проверяется в
+ * конструкторе): иначе два контрола писали бы в одно значение.
+ */
+export type FormFieldSlot =
+  | "complaints"
+  | "anamnesis"
+  | "objective"
+  | "conclusion"
+  | "weightKg"
+  | "heightCm"
+  | "temperature";
+
+export const FORM_FIELD_SLOTS: FormFieldSlot[] = [
+  "complaints",
+  "anamnesis",
+  "objective",
+  "conclusion",
+  "weightKg",
+  "heightCm",
+  "temperature",
+];
+
+/** Подписи слотов в конструкторе — те же слова, что видит врач в заключении. */
+export const FORM_FIELD_SLOT_LABELS: Record<FormFieldSlot, string> = {
+  complaints: "Жалобы",
+  anamnesis: "Анамнез",
+  objective: "Объективно",
+  conclusion: "Заключение",
+  weightKg: "Вес, кг",
+  heightCm: "Рост, см",
+  temperature: "Температура, °C",
+};
+
+/**
+ * Подсказка привязки по подписи поля.
+ *
+ * Зачем. Бланки собирают, копируя бумажную форму: в них заводят «Жалобы»,
+ * «Анамнез заболевания», «Температура, °C» — то, что в заключении уже есть
+ * своей колонкой. Без привязки врач видит это дважды: строку бланка и штатное
+ * поле под ним (реальный случай с «Картой осмотра педиатра», 03.09.2026).
+ *
+ * ⚠ Подсказка, а не автопривязка. Проставлять слот самим по названию мы
+ * отказались сознательно: совпадение слова не значит совпадение смысла
+ * («Анамнез жизни» — не колонка «Анамнез», «Вес плода» — не вес пациента), а
+ * молчаливый промах уводит значение в чужую колонку. Поэтому конструктор
+ * только показывает предложение, а решает администратор.
+ */
+const SLOT_LABEL_HINTS: Record<FormFieldSlot, string[]> = {
+  complaints: ["жалобы", "жалоба"],
+  anamnesis: ["анамнез", "анамнез заболевания", "анамнез болезни"],
+  objective: ["объективно", "объективный осмотр", "объективные данные"],
+  conclusion: ["заключение", "вывод"],
+  weightKg: ["вес", "масса тела", "масса"],
+  heightCm: ["рост", "длина тела"],
+  temperature: ["температура", "температура тела", "t"],
+};
+
+/**
+ * Нормализация подписи: регистр, единицы измерения и знаки препинания в
+ * бланках пишут как придётся — «Температура, °C», «Вес (кг)», «Рост:».
+ */
+function normalizeFieldLabel(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[«»"'()]/g, " ")
+    // Хвост с единицами измерения: «, °c», «, кг», «, см», «:» и подобное.
+    .replace(/[,:;]\s*(°?[a-zа-я]{1,3}\.?)?\s*$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Колонка, которую поле бланка, судя по подписи, дублирует. `null` — совпадений
+ * нет либо привязка уже задана (тогда подсказывать нечего).
+ */
+export function suggestSlotForLabel(label: string): FormFieldSlot | null {
+  const normalized = normalizeFieldLabel(label);
+  if (!normalized) return null;
+  for (const slot of FORM_FIELD_SLOTS) {
+    if (SLOT_LABEL_HINTS[slot].includes(normalized)) return slot;
+  }
+  return null;
+}
+
 export interface FormField {
   /** Стабильный идентификатор: переживает переименование и сортировку. */
   id: string;
@@ -105,6 +204,21 @@ export interface FormField {
   width?: FormFieldWidth;
   /** Высота многострочного поля в строках. */
   rows?: number;
+  /**
+   * Куда поле пишет в самом заключении. Не задано — свободная строка
+   * протокола (см. FormFieldSlot).
+   */
+  slot?: FormFieldSlot | null;
+}
+
+/** Занятые слоты бланка: для проверки «одна колонка — одно поле». */
+export function usedSlots(fields: FormField[]): Map<FormFieldSlot, number> {
+  const used = new Map<FormFieldSlot, number>();
+  for (const field of fields) {
+    if (!field.slot) continue;
+    used.set(field.slot, (used.get(field.slot) ?? 0) + 1);
+  }
+  return used;
 }
 
 // ── Шаблон ─────────────────────────────────────────────────────────────────────
@@ -126,6 +240,15 @@ export interface ConclusionFormTemplate {
   orientation: FormOrientation;
   /** Пустой массив = бланк доступен врачам любой специализации. */
   specializationIds: number[];
+  /**
+   * Услуги, к которым привязан бланк. Пустой массив = подходит любой услуге.
+   * По ним бланк и подставляется врачу (см. resolveFormForScope).
+   */
+  serviceIds: number[];
+  /** Филиалы, где бланк доступен. Пустой массив = все филиалы организации. */
+  branchIds: number[];
+  /** Запасной бланк организации: берётся, когда точного совпадения нет. */
+  isDefault: boolean;
   /** Заголовок документа на листе («Протокол ультразвукового исследования»). */
   title: string;
   subtitle?: string;
@@ -152,6 +275,9 @@ export interface ConclusionFormPayload {
   pageSize: FormPageSize;
   orientation: FormOrientation;
   specializationIds: number[];
+  serviceIds: number[];
+  branchIds: number[];
+  isDefault: boolean;
   title: string;
   subtitle?: string;
   showClinicHeader: boolean;
@@ -170,6 +296,9 @@ export function emptyFormPayload(): ConclusionFormPayload {
     pageSize: "A4",
     orientation: "portrait",
     specializationIds: [],
+    serviceIds: [],
+    branchIds: [],
+    isDefault: false,
     title: "",
     subtitle: "",
     showClinicHeader: true,
@@ -289,23 +418,50 @@ const withOrg = (
   return `${path}${qs ? `?${qs}` : ""}`;
 };
 
+/**
+ * Массивы привязок бланка бэк отдаёт всегда, но собранные до 03.09.2026
+ * шаблоны приходят из старых записей без них — а весь подбор строится на
+ * `.length`, и `undefined.length` уронил бы дровер заключения.
+ */
+function normalizeForm(form: ConclusionFormTemplate): ConclusionFormTemplate {
+  return {
+    ...form,
+    specializationIds: form.specializationIds ?? [],
+    serviceIds: form.serviceIds ?? [],
+    branchIds: form.branchIds ?? [],
+    isDefault: form.isDefault ?? false,
+    fields: form.fields ?? [],
+  };
+}
+
 export async function getConclusionForms(
   organizationId: number | null | undefined,
   signal?: AbortSignal,
-  options?: { includeInactive?: boolean },
+  options?: { includeInactive?: boolean; branchId?: number | null },
 ): Promise<ConclusionFormTemplate[]> {
   if (!CONCLUSION_FORMS_BACKEND) {
-    const items = localDriver.list(organizationId);
-    return options?.includeInactive ? items : items.filter((item) => item.isActive);
+    const items = localDriver.list(organizationId).map(normalizeForm);
+    const visible = options?.includeInactive
+      ? items
+      : items.filter((item) => item.isActive);
+    // Тот же срез, что делает бэк по branchId: бланки филиала плюс общие.
+    return options?.branchId == null
+      ? visible
+      : visible.filter(
+          (item) =>
+            item.branchIds.length === 0 || item.branchIds.includes(options.branchId as number),
+        );
   }
-  return apiRequest<ConclusionFormTemplate[]>(
-    withOrg(
-      "/medical/conclusion-forms/",
-      organizationId,
-      options?.includeInactive ? { includeInactive: "1" } : undefined,
-    ),
+  const params: Record<string, string> = {};
+  if (options?.includeInactive) params.includeInactive = "1";
+  // Филиал режет выдачу на бэке: приходят бланки филиала и общие бланки
+  // организации. Чужой филиал — 400, поэтому передаём только известный.
+  if (options?.branchId != null) params.branchId = String(options.branchId);
+  const items = await apiRequest<ConclusionFormTemplate[]>(
+    withOrg("/medical/conclusion-forms/", organizationId, params),
     { signal },
   );
+  return (items ?? []).map(normalizeForm);
 }
 
 export async function createConclusionForm(
@@ -366,6 +522,55 @@ export async function uploadConclusionFormBackground(
   );
 }
 
+// ── Автоподбор бланка ──────────────────────────────────────────────────────────
+
+/**
+ * Какой бланк раскрыть врачу, когда он открывает НОВОЕ заключение.
+ *
+ * Правила живут на самом бланке (`serviceIds`, `branchIds`, `isDefault`) — до
+ * 03.09.2026 они лежали отдельным списком в `themeConfig.conclusionFormDefaults`,
+ * потому что полей на модели не было. Бэк их добавил, и старый ключ больше не
+ * читается (см. StaleDefaultsNotice в настройках бланков).
+ *
+ * Приоритет — от точного совпадения к общему:
+ *   1. филиал + услуга,
+ *   2. все филиалы + услуга,
+ *   3. филиал + любая услуга,
+ *   4. все филиалы + любая услуга,
+ *   5. запасной бланк (`isDefault`).
+ *
+ * Услуга важнее филиала намеренно: она определяет, ЧТО за документ печатают
+ * («Протокол УЗИ ОБП»), а филиал — лишь где. Общий бланк филиала не должен
+ * подменять протокол конкретного исследования.
+ */
+export function resolveFormForScope(
+  forms: ConclusionFormTemplate[],
+  scope: { branchId?: number | null; serviceId?: number | null },
+): ConclusionFormTemplate | null {
+  const inBranch = (form: ConclusionFormTemplate) =>
+    scope.branchId != null && form.branchIds.includes(scope.branchId);
+  const anyBranch = (form: ConclusionFormTemplate) => form.branchIds.length === 0;
+  const forService = (form: ConclusionFormTemplate) =>
+    scope.serviceId != null && form.serviceIds.includes(scope.serviceId);
+  const anyService = (form: ConclusionFormTemplate) => form.serviceIds.length === 0;
+
+  const levels: ((form: ConclusionFormTemplate) => boolean)[] = [
+    (form) => inBranch(form) && forService(form),
+    (form) => anyBranch(form) && forService(form),
+    (form) => inBranch(form) && anyService(form),
+    (form) => anyBranch(form) && anyService(form),
+    // Запасной бланк — только доступный в этом филиале: бланк чужого филиала
+    // не должен всплывать по фолбэку там, где его печатать не на чем.
+    (form) => form.isDefault && (anyBranch(form) || inBranch(form)),
+  ];
+
+  for (const matches of levels) {
+    const found = forms.find(matches);
+    if (found) return found;
+  }
+  return null;
+}
+
 // ── Сборка текста из заполненного бланка ───────────────────────────────────────
 
 /**
@@ -375,6 +580,11 @@ export async function uploadConclusionFormBackground(
  * «Шевеление:» без значения выглядит как недоделанная работа врача, а не как
  * «признак не оценивался». Многострочные значения переносятся на строку ниже
  * подписи — так они читаются в PDF, где ширина листа фиксирована.
+ *
+ * Привязанные к колонкам заключения поля (`slot`) пропускаются: их значение
+ * уже лежит в своей колонке, и в тексте жалобы или температура задвоились бы.
+ * На печатном ЛИСТЕ они, наоборот, нужны — там значения слотов подмешиваются
+ * в `values`, и лист рисует их как обычные строки (см. FormSheet).
  */
 export function renderFilledForm(
   template: Pick<ConclusionFormTemplate, "title" | "fields" | "footerNote">,
@@ -386,6 +596,7 @@ export function renderFilledForm(
   if (title) lines.push(title, "");
 
   for (const field of template.fields) {
+    if (field.slot) continue; // значение живёт в своей колонке заключения
     const value = (values[field.id] ?? "").trim();
     if (!value) continue;
     const label = field.label.trim();

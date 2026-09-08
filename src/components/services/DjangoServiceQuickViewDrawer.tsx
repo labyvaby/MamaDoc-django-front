@@ -15,10 +15,16 @@ import MedicalServicesIcon from "@mui/icons-material/MedicalServicesOutlined";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoneyOutlined";
 import AccessTimeIcon from "@mui/icons-material/AccessTimeOutlined";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
-import { getService, SERVICE_ONLINE_VISIBILITY_ENABLED } from "../../api/catalog";
+import {
+  getService,
+  SERVICE_CATEGORIES_ENABLED,
+  SERVICE_CATEGORY_LABELS,
+  SERVICE_ONLINE_VISIBILITY_ENABLED,
+} from "../../api/catalog";
 import type { Service } from "../../api/catalog";
 import { formatKGS } from "../../utility/format";
 import { useT } from "../../i18n/VerticalProvider";
+import ServicePerformersSection from "./ServicePerformersSection";
 
 type Props = {
   open: boolean;
@@ -126,6 +132,13 @@ const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceI
                       color={service.isActive ? "success" : "default"}
                       variant="filled"
                     />
+                    {SERVICE_CATEGORIES_ENABLED && service.category && (
+                      <Chip
+                        label={SERVICE_CATEGORY_LABELS[service.category]}
+                        size="small"
+                        variant="outlined"
+                      />
+                    )}
                     {/* Видима на витрине по умолчанию — отмечаем только исключение. */}
                     {SERVICE_ONLINE_VISIBILITY_ENABLED && !service.onlineBookingVisible && (
                       <Chip
@@ -181,6 +194,21 @@ const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceI
                   </Stack>
                 )}
               </Stack>
+
+              <Divider sx={{ my: 2 }} />
+
+              <ServicePerformersSection
+                serviceId={service.id}
+                serviceName={service.name}
+                enabled={open}
+                renderHeader={(count) => (
+                  <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                    {count == null
+                      ? t("details.sectionPerformers")
+                      : t("details.sectionPerformersCount", { count })}
+                  </Typography>
+                )}
+              />
 
               {service.description && (
                 <>

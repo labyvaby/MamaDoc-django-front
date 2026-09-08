@@ -26,6 +26,7 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AccessTimeOutlinedIcon from "@mui/icons-material/AccessTimeOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
+import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import MedicalServicesIcon from "@mui/icons-material/MedicalServicesOutlined";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
@@ -35,6 +36,8 @@ import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useNotification } from "@refinedev/core";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useT } from "../../i18n/VerticalProvider";
+import { useServiceAssignmentCounts } from "../../hooks/useServiceAssignmentCounts";
 import { useServicesList } from "../../api/hooks/useServicesQuery";
 import {
   getServices,
@@ -51,6 +54,8 @@ import DjangoServiceQuickViewDrawer from "../../components/services/DjangoServic
 import ServiceDetailsPanel from "../../components/services/ServiceDetailsPanel";
 
 type StatusFilter = "all" | "active" | "inactive";
+/** «none» — услуги, которые некому оказывать: записать на них нельзя. */
+type PerformersFilter = "all" | "none";
 type SortKey = "name" | "priceAsc" | "priceDesc" | "duration";
 /** «none» — услуги без категории. */
 type CategoryFilter = "all" | "none" | ServiceCategory;
@@ -71,6 +76,7 @@ const DjangoServicesPage: React.FC = () => {
   usePageTitle("Услуги");
   const { open: notify } = useNotification();
   const { hasPermission, activeOrganization, activeMembership, activeBranch } = usePermissions();
+  const { t } = useT("services");
 
   const canView = hasPermission("catalog.view");
   const canCreate = hasPermission("catalog.create");
@@ -90,6 +96,9 @@ const DjangoServicesPage: React.FC = () => {
     error,
     refetch: loadAll,
   } = useServicesList();
+
+  // Сколько сотрудников оказывает каждую услугу — одна матрица на весь список.
+  const { countByService, isReady: countsReady } = useServiceAssignmentCounts();
 
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   React.useEffect(() => {
@@ -111,6 +120,7 @@ const DjangoServicesPage: React.FC = () => {
   const [detailsOpen, setDetailsOpen] = React.useState(false);
   const [selectedServiceId, setSelectedServiceId] = React.useState<number | null>(null);
   const [editingRec, setEditingRec] = React.useState<Service | null>(null);
+  const [duplicateSource, setDuplicateSource] = React.useState<Service | null>(null);
 
   // Подтверждение удаления
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -121,6 +131,7 @@ const DjangoServicesPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
   const [branchFilter, setBranchFilter] = React.useState<number | "all">("all");
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
+  const [performersFilter, setPerformersFilter] = React.useState<PerformersFilter>("all");
   const [sortKey, setSortKey] = React.useState<SortKey>("name");
 
   // Reset UI state
@@ -136,6 +147,7 @@ const DjangoServicesPage: React.FC = () => {
     setStatusFilter("all");
     setBranchFilter("all");
     setCategoryFilter("all");
+    setPerformersFilter("all");
     setSortKey("name");
   }, []);
 
@@ -170,9 +182,22 @@ const DjangoServicesPage: React.FC = () => {
       if (categoryFilter === "none" && s.category !== null) return false;
       if (categoryFilter !== "all" && categoryFilter !== "none" && s.category !== categoryFilter)
         return false;
+      // Пока матрица не пришла, «нет исполнителей» неотличимо от «ещё не
+      // знаем» — фильтр не применяем, иначе список мигал бы пустым.
+      if (performersFilter === "none" && countsReady && (countByService.get(s.id) ?? 0) > 0)
+        return false;
       return true;
     });
-  }, [allServices, searchQuery, statusFilter, branchFilter, categoryFilter]);
+  }, [
+    allServices,
+    searchQuery,
+    statusFilter,
+    branchFilter,
+    categoryFilter,
+    performersFilter,
+    countByService,
+    countsReady,
+  ]);
 
   // Сортировка
   const sorted = React.useMemo(() => {
@@ -204,19 +229,21 @@ const DjangoServicesPage: React.FC = () => {
     searchQuery.trim() !== "" ||
     statusFilter !== "all" ||
     branchFilter !== "all" ||
-    categoryFilter !== "all";
+    categoryFilter !== "all" ||
+    performersFilter !== "all";
 
   const handleResetFilters = () => {
     setSearchQuery("");
     setStatusFilter("all");
     setBranchFilter("all");
     setCategoryFilter("all");
+    setPerformersFilter("all");
   };
 
   // Reset visible count when filters/sort/search change
   React.useEffect(() => {
     setVisibleCount(BATCH_SIZE);
-  }, [searchQuery, statusFilter, branchFilter, categoryFilter, sortKey]);
+  }, [searchQuery, statusFilter, branchFilter, categoryFilter, performersFilter, sortKey]);
 
   // IntersectionObserver — подгрузка при скролле
   React.useEffect(() => {
@@ -239,6 +266,12 @@ const DjangoServicesPage: React.FC = () => {
   const handleEdit = (row: Service) => {
     setEditingRec(row);
     setEditOpen(true);
+  };
+
+  // Дублирование: тот же дровер создания, но с предзаполнением из образца.
+  const handleDuplicate = (row: Service) => {
+    setDuplicateSource(row);
+    setAddOpen(true);
   };
 
   const handleDeleteConfirm = async () => {
@@ -264,6 +297,7 @@ const DjangoServicesPage: React.FC = () => {
     const canEditThis = canUpdate && !s.hasHiddenBranches;
     const canDeleteThis = canDelete && !s.hasHiddenBranches;
     const branchNames = s.branches.map((b) => b.name).join(", ");
+    const performerCount = countByService.get(s.id) ?? 0;
 
     return (
       <Box
@@ -340,6 +374,27 @@ const DjangoServicesPage: React.FC = () => {
                 </>
               )}
             </Stack>
+
+            {/* Исполнители: счётчик, а у услуги без них — предупреждение:
+                записать на такую услугу нельзя. */}
+            {countsReady && (
+              <Stack direction="row" alignItems="center" gap={0.5} sx={{ mt: 0.25 }}>
+                <GroupsOutlinedIcon
+                  sx={{
+                    fontSize: 15,
+                    color: performerCount > 0 ? "text.secondary" : "warning.main",
+                  }}
+                />
+                <Typography
+                  variant="caption"
+                  color={performerCount > 0 ? "text.secondary" : "warning.main"}
+                >
+                  {performerCount > 0
+                    ? t("list.performerCount", { count: performerCount })
+                    : t("list.noPerformers")}
+                </Typography>
+              </Stack>
+            )}
 
             {s.description && (
               <Tooltip title={s.description}>
@@ -437,7 +492,10 @@ const DjangoServicesPage: React.FC = () => {
             <AppButton
               variant="contained"
               startIcon={<AddOutlinedIcon />}
-              onClick={() => setAddOpen(true)}
+              onClick={() => {
+                setDuplicateSource(null);
+                setAddOpen(true);
+              }}
               sx={(theme) => ({
                 whiteSpace: "nowrap",
                 minHeight: theme.appLayout.controls.buttonHeight,
@@ -514,6 +572,18 @@ const DjangoServicesPage: React.FC = () => {
               <MenuItem value="none">Без категории</MenuItem>
             </TextField>
           )}
+
+          <TextField
+            select
+            size="small"
+            label={t("list.performersFilterLabel")}
+            value={performersFilter}
+            onChange={(e) => setPerformersFilter(e.target.value as PerformersFilter)}
+            sx={{ flexShrink: 0, minWidth: 200 }}
+          >
+            <MenuItem value="all">{t("list.performersFilterAll")}</MenuItem>
+            <MenuItem value="none">{t("list.performersFilterNone")}</MenuItem>
+          </TextField>
 
           <TextField
             select
@@ -619,6 +689,8 @@ const DjangoServicesPage: React.FC = () => {
                 serviceId={selectedServiceId}
                 refreshToken={detailsRefreshToken}
                 onEdit={canUpdate ? handleEdit : undefined}
+                onDuplicate={canCreate ? handleDuplicate : undefined}
+                onSelectService={setSelectedServiceId}
                 onDelete={
                   canDelete
                     ? (s) => {
@@ -636,9 +708,14 @@ const DjangoServicesPage: React.FC = () => {
       {/* Добавление */}
       <DjangoAddServiceDrawer
         open={addOpen}
-        onClose={() => setAddOpen(false)}
+        duplicateFrom={duplicateSource}
+        onClose={() => {
+          setAddOpen(false);
+          setDuplicateSource(null);
+        }}
         onCreated={() => {
           setAddOpen(false);
+          setDuplicateSource(null);
           void loadAll();
         }}
       />

@@ -6,7 +6,7 @@ import type {
   AppointmentConsumption,
 } from "../../api/appointments";
 import { consumptionLineTotal } from "../../api/appointments";
-import type { PaymentSummary } from "../../api/payments";
+import type { PaymentStatus, PaymentSummary } from "../../api/payments";
 import type { DjangoPatient } from "../../api/patients";
 import { paymentMethodLabel } from "../../utility/paymentMethodLabel";
 import { amountInWordsKgs } from "../../utility/amountInWords";
@@ -28,6 +28,31 @@ function money(value: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+/**
+ * Чек печатаем только по факту принятых денег: до оплаты бланк с нулями на
+ * руках у пациента читается как уже оплаченный документ. Смотрим на деньги, а
+ * не на статус приёма — бэк оставляет его `scheduled`/`confirmed` и после
+ * оплаты; `discounted` без внесённых сумм — скидка 100 %, расчёт закрыт.
+ *
+ * Принимает и приём (`paidTotal`/`paymentStatus` есть и в списке, и в детали),
+ * и сводку оплат — что под рукой на экране.
+ */
+export function hasAcceptedPayment(
+  source:
+    | {
+        paymentStatus?: PaymentStatus | null;
+        paidTotal?: string | null;
+        payments?: { amount: string }[];
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!source) return false;
+  if (num(source.paidTotal) > 0) return true;
+  if ((source.payments ?? []).some((p) => num(p.amount) > 0)) return true;
+  return source.paymentStatus === "paid" || source.paymentStatus === "discounted";
 }
 
 /**

@@ -16,10 +16,18 @@
     "insurance": "Страховка"
   },
   "chips": {
+    "undoArrived": "Отменить отметку «{{patient.nom, capitalize}} здесь»",
     "debt": "Долг {{amount}}",
     "debtOfTotal": "Долг {{amount}} из {{total}}",
     "discountPercent": "Скидка {{percent}}%",
-    "overdue": "Время {{visit.gen}} прошло — статус не обновляли"
+    "overdue": "Время {{visit.gen}} прошло — статус не обновляли",
+    "cancelReason": "Причина: {{reason}}"
+  },
+  "cancelReason": {
+    "doctor_absent": "врач не выйдет",
+    "patient_refused": "пациент отказался",
+    "duplicate": "дубль",
+    "other": "другое"
   },
   "paymentStatus": {
     "unpaid": "Не оплачен",
@@ -85,7 +93,9 @@
     "count_few": "{{count}} {{visit.gen}}",
     "count_many": "{{count}} {{visit.genPl}}",
     "noSpecialistGroup": "Без {{specialist.gen}}",
-    "doctorNotInDay": "{{specialist.nom, capitalize}} не ведёт приём в этот день",
+    "doctorNotInDay": "У {{specialist.gen}} {{doctorName}} нет смены в этот день. Выберите другого {{specialist.gen}}.",
+    "chooseAnotherDoctor": "Выбрать другого",
+    "selectedDoctor": "выбранного врача",
     "onShiftNoBookings": "Нет записей",
     "searchPlaceholder": "{{patient.nom, capitalize}}, телефон, {{service.nom}}",
     "night": "Ночной",
@@ -93,6 +103,8 @@
     "discounted": "Со скидкой",
     "discountSuffix": " · скидка {{amount}}",
     "discountPercentSuffix": " · скидка {{percent}}%",
+    "priceChanged": "Цена изменена",
+    "priceChangedTooltip": "{{service}}: {{oldPrice}} → {{newPrice}}",
     "total": "Итого:",
     "insurance": "Страховка",
     "insurancePayment": "Оплата страховкой",
@@ -171,16 +183,19 @@
     "cancelSubmit": "Подтвердить отмену"
   },
   "priceOverride": {
-    "action": "Изменить цену",
-    "title": "Изменение цены услуги",
+    "action": "Изменить цену и длительность",
+    "title": "Цена и длительность услуги",
     "service": "Услуга: {{service}}",
-    "current": "Текущая цена: {{price}} сом",
-    "hint": "Цену можно менять сколько угодно раз до принятия оплаты. После оплаты изменение станет недоступно.",
+    "current": "Сейчас: {{price}} сом · {{minutes}} мин",
+    "hint": "Изменения действуют только для этого приёма. Длительность сразу влияет на занятое время и свободные окна.",
     "newPrice": "Новая цена, сом",
+    "newDuration": "Длительность, мин",
     "invalid": "Введите корректную неотрицательную цену.",
-    "save": "Сохранить цену",
+    "invalidDuration": "Введите длительность целым числом больше нуля.",
+    "noChanges": "Измените цену или длительность.",
+    "save": "Сохранить изменения",
     "saving": "Сохранение…",
-    "success": "Цена услуги изменена"
+    "success": "Цена и длительность услуги изменены"
   },
   "productQuickView": {
     "title": "Товар",
@@ -193,6 +208,9 @@
   },
   "consumptions": {
     "title": "Расходники",
+    "count_one": "{{count}} расходник",
+    "count_few": "{{count}} расходника",
+    "count_many": "{{count}} расходников",
     "hint": "Списываются со склада при оплате или завершении; платные оплачиваются сверх цены {{service.gen}}",
     "quantity": "× {{quantity}}{{unit}}",
     "previewLabel": "Расходники:",
@@ -280,6 +298,7 @@
     "durationSuffix": " · {{minutes}} мин",
     "service": "{{service.nom, capitalize}}",
     "servicePlaceholder": "Выберите {{service.acc}}",
+    "servicePickerSearch": "Поиск {{service.gen}}",
     "noProductsInStock": "Нет товаров в наличии",
     "product": "Товар",
     "quantity": "Кол-во",
@@ -356,6 +375,7 @@
     "newVisit": "Новый {{visit.nom}}:",
     "employee": "{{employee.nom, capitalize}}: {{name}}",
     "patient": "{{patient.nom, capitalize}}: {{name}}",
+    "otherBranch": "{{employee.nom, capitalize}} в это время принимает в другом филиале",
     "cancel": "Нет, вернуться",
     "confirm": "Да, сохранить"
   },
@@ -585,6 +605,8 @@
       "serviceLineGone": "Состав услуг {{visit.gen}} изменился, пока форма была открыта: услуги «{{service}}» в нём больше нет. Скопируйте текст, обновите карточку {{visit.gen}} и создайте {{conclusion.acc}} заново."
     },
     "draftRestored": "Восстановлен несохранённый черновик {{conclusion.gen}}",
+    "formDataTooLarge": "Бланк слишком объёмный — сохранён только текст. При следующем открытии поля бланка будут пустыми.",
+    "printForm": "Печать бланка",
     "templateApplied": "Шаблон применён",
     "templateSaved": "Шаблон сохранён",
     "completed": "{{conclusion.nom, capitalize}} {{finished}}",
@@ -626,6 +648,7 @@
     "free": "Свободно",
     "book": "Записать",
     "timePassed": "Время прошло",
+    "busyElsewhere": "Занят в другом филиале",
     "backToGrid": "К сетке {{specialist.genPl}}",
     "todayNearest": "Сегодня, ближайшее {{time}}",
     "tomorrow": "завтра",
@@ -724,6 +747,11 @@
       "partial": "Долг",
       "unpaid": "Не оплачено",
       "refunded": "Возврат"
+    },
+    "moneyFilter": {
+      "discount": "Со скидкой",
+      "priceUp": "Цена повышена",
+      "priceDown": "Цена снижена"
     },
     "period": {
       "prev": "Предыдущий период",
@@ -824,6 +852,11 @@
       "unpaid": "Не оплачено",
       "refunded": "Возврат"
     },
+    "moneyFilter": {
+      "discount": "Со скидкой",
+      "priceUp": "Цена повышена",
+      "priceDown": "Цена снижена"
+    },
     "filters": {
       "title": "Фильтры",
       "year": "Год",
@@ -867,15 +900,19 @@
     "amount": "{{amount}} сом"
   },
   "priceField": {
-    "action": "Изменить цену",
+    "action": "Изменить цену и длительность",
     "label": "Цена, сом",
+    "durationLabel": "Длительность, мин",
+    "minutesShort": "мин",
     "invalid": "Цена не может быть отрицательной.",
+    "invalidDuration": "Длительность должна быть целым числом больше нуля.",
     "catalog": "По прайсу {{price}}",
-    "reset": "Вернуть цену по прайсу"
+    "reset": "Вернуть цену и длительность по умолчанию"
   },
   "priceHistory": {
-    "title": "Правки цены",
+    "title": "Правки цены и длительности",
     "entry": "{{old}} → {{new}}",
+    "durationEntry": "{{old}} мин → {{new}} мин",
     "by": "{{name}}",
     "deletedLine": "Строка удалена"
   }

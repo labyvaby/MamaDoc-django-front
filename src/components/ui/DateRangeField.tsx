@@ -44,6 +44,11 @@ export interface DateRangeFieldProps {
   fullWidth?: boolean;
   minWidth?: number;
   disabled?: boolean;
+  /**
+   * Компактная высота (30px вместо 40px) — чтобы поле встраивалось в ряд
+   * чипов-фильтров и весь ряд читался как одна линия одинаковых пилюль.
+   */
+  dense?: boolean;
 }
 
 // ── Default presets ──────────────────────────────────────────────────────────────
@@ -151,6 +156,7 @@ export const DateRangeField: React.FC<DateRangeFieldProps> = ({
   fullWidth = false,
   minWidth,
   disabled = false,
+  dense = false,
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -210,12 +216,12 @@ export const DateRangeField: React.FC<DateRangeFieldProps> = ({
         sx={{
           display: "inline-flex",
           alignItems: "center",
-          gap: 1,
-          height: 40,
-          px: 1.5,
+          gap: dense ? 0.75 : 1,
+          height: dense ? 30 : 40,
+          px: dense ? 1 : 1.5,
           width: fullWidth ? "100%" : "auto",
           minWidth,
-          borderRadius: "10px",
+          borderRadius: dense ? "9px" : "10px",
           border: "1px solid",
           borderColor: open ? "primary.main" : "divider",
           boxShadow: open ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.16)}` : "none",
@@ -226,13 +232,20 @@ export const DateRangeField: React.FC<DateRangeFieldProps> = ({
           "&:hover": { borderColor: disabled ? "divider" : alpha(theme.palette.primary.main, 0.4) },
         }}
       >
-        <CalendarMonthOutlined sx={{ fontSize: 20, color: "primary.onSurface", flexShrink: 0 }} />
-        <Typography variant="body2" fontWeight={500} noWrap sx={{ flex: 1 }}>
+        <CalendarMonthOutlined
+          sx={{ fontSize: dense ? 16 : 20, color: "primary.onSurface", flexShrink: 0 }}
+        />
+        <Typography
+          variant="body2"
+          fontWeight={500}
+          noWrap
+          sx={{ flex: 1, ...(dense ? { fontSize: "0.8125rem" } : null) }}
+        >
           {label}
         </Typography>
         <ExpandMoreOutlined
           sx={{
-            fontSize: 20,
+            fontSize: dense ? 16 : 20,
             color: "text.secondary",
             flexShrink: 0,
             transition: "transform .15s ease",

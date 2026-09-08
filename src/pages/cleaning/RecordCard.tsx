@@ -3,6 +3,7 @@ import { Box, Button, CircularProgress, IconButton, Stack, Tooltip, Typography }
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
 
@@ -15,10 +16,13 @@ import PhotoStrip from "./PhotoStrip";
 export interface RecordCardProps {
   record: CleaningRecord;
   canManage: boolean;
+  /** Доступна ли правка именно этой записи (см. canEditRecord на странице). */
+  canEdit: boolean;
   busy: boolean;
   onOpenPhoto: (index: number) => void;
   onApprove: (record: CleaningRecord) => void;
   onReject: (record: CleaningRecord) => void;
+  onEdit: (record: CleaningRecord) => void;
   onDelete: (record: CleaningRecord) => void;
 }
 
@@ -31,10 +35,12 @@ export interface RecordCardProps {
 export const RecordCard: React.FC<RecordCardProps> = ({
   record,
   canManage,
+  canEdit,
   busy,
   onOpenPhoto,
   onApprove,
   onReject,
+  onEdit,
   onDelete,
 }) => (
   <Stack
@@ -92,13 +98,13 @@ export const RecordCard: React.FC<RecordCardProps> = ({
 
     <PhotoStrip photos={record.photos} onOpen={onOpenPhoto} size={56} scrollable />
 
-    {canManage && (
+    {(canManage || canEdit) && (
       <Stack direction="row" alignItems="center" gap={1}>
         {busy ? (
           <CircularProgress size={20} />
         ) : (
           <>
-            {record.status === "pending" && (
+            {canManage && record.status === "pending" && (
               <>
                 <Button
                   size="small"
@@ -121,11 +127,35 @@ export const RecordCard: React.FC<RecordCardProps> = ({
                 </Button>
               </>
             )}
-            <Tooltip title="Удалить запись">
-              <IconButton size="small" onClick={() => onDelete(record)} sx={{ ml: "auto" }}>
-                <DeleteOutlineOutlined fontSize="small" />
-              </IconButton>
-            </Tooltip>
+            {/* Уборщица правит свою запись с телефона — ей нужна заметная
+                кнопка, а не иконка в углу карточки. */}
+            {canEdit && !canManage && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<EditOutlined />}
+                onClick={() => onEdit(record)}
+                sx={{ flex: 1 }}
+              >
+                {record.status === "rejected" ? "Исправить и отправить" : "Изменить"}
+              </Button>
+            )}
+            {canManage && (
+              <Stack direction="row" gap={0.25} sx={{ ml: "auto" }}>
+                {canEdit && (
+                  <Tooltip title="Изменить запись">
+                    <IconButton size="small" onClick={() => onEdit(record)}>
+                      <EditOutlined fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+                <Tooltip title="Удалить запись">
+                  <IconButton size="small" onClick={() => onDelete(record)}>
+                    <DeleteOutlineOutlined fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            )}
           </>
         )}
       </Stack>

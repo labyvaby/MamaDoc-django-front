@@ -1,4 +1,5 @@
 import { useCanChecker } from "./useCan";
+import { usePermissions } from "./usePermissions";
 import { DOCUMENTS_USE_MOCKS } from "../api/documents";
 import { CLEANING_USE_MOCKS } from "../api/cleaning";
 import { KNOWLEDGE_USE_MOCKS } from "../api/knowledge";
@@ -40,11 +41,12 @@ export type MockedModule = keyof typeof MOCKED_MODULE_GATES;
  */
 export function useModuleGate() {
   const { can, loading } = useCanChecker();
+  const { hasModule } = usePermissions();
   return {
     loading,
     moduleGate: (module: MockedModule, permissions?: readonly string[]): boolean => {
       const gate = MOCKED_MODULE_GATES[module];
-      return gate.mocksEnabled || can([...(permissions ?? gate.permissions)]);
+      return hasModule(module) && (gate.mocksEnabled || can([...(permissions ?? gate.permissions)]));
     },
   };
 }

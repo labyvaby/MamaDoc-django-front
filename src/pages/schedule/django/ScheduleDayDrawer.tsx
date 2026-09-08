@@ -1,16 +1,17 @@
 import React from "react";
-import { Box, Button, Chip, CircularProgress, Divider, Drawer, IconButton, Stack, Typography } from "@mui/material";
+import { Box, Button, Chip, CircularProgress, Divider, Drawer, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 import type { Dayjs } from "dayjs";
 
 import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
-import type { DayOccurrence } from "./occurrences";
+import { lunchNote, shiftTimeLabel, type DayOccurrence } from "./occurrences";
 import { employeeColorHex } from "./employeeColors";
 
 export interface ScheduleDayDrawerProps {
@@ -112,8 +113,8 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
                       {occ.employeeName}
                     </Typography>
                     <Stack direction="row" spacing={1} alignItems="center">
-                      <Typography variant="body2" color="text.secondary">
-                        {occ.startTime}–{occ.endTime}
+                      <Typography variant="body2" color="text.secondary" noWrap>
+                        {shiftTimeLabel(occ)}
                       </Typography>
                       {isExtra && (
                         <Chip
@@ -124,6 +125,27 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
                         />
                       )}
                     </Stack>
+                    {/* Обед — отдельной строкой: в строку со временем и чипом
+                        он не влезал и наезжал на кнопки действий. */}
+                    {occ.lunch && (
+                      <Tooltip title={lunchNote(occ)} arrow placement="bottom-start">
+                        <Stack
+                          direction="row"
+                          spacing={0.25}
+                          alignItems="center"
+                          sx={{ width: "fit-content" }}
+                        >
+                          <RestaurantOutlined sx={{ fontSize: 13, color: "error.onSurface" }} />
+                          <Typography
+                            variant="caption"
+                            noWrap
+                            sx={{ color: "error.onSurface", fontWeight: 600 }}
+                          >
+                            {occ.lunch.start}–{occ.lunch.end}
+                          </Typography>
+                        </Stack>
+                      </Tooltip>
+                    )}
                   </Box>
                   {canManage && (
                     <Stack direction="row" spacing={0.25} alignItems="center">

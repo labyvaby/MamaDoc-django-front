@@ -16,7 +16,6 @@ import {
   serviceTone,
 } from "../theme";
 import { formatDuration, formatPrice, formatServicesCount } from "../format";
-import { BOOKING_NO_SERVICE_ENABLED } from "../shell";
 import { useT } from "../../../i18n/VerticalProvider";
 
 /** Услуга в выборе: и из карточки врача, и из available-services одна форма. */
@@ -194,14 +193,6 @@ export const ServicesCard: React.FC<{
           </Typography>
         )}
       </Stack>
-      {/* Услуга необязательна: без неё бэк резервирует стандартное окно 30 минут.
-          Пока бэк пустой service_ids не принимает, подсказку не показываем. */}
-      {BOOKING_NO_SERVICE_ENABLED && (
-        <Typography sx={{ fontSize: 12, color: MUTED, mb: 1 }}>
-          {t("servicesOptionalHint")}
-        </Typography>
-      )}
-
       <Stack
         sx={{
           maxHeight: 320,
@@ -239,7 +230,9 @@ export const ServicesCard: React.FC<{
         )}
       </Stack>
 
-      {chosen.length > 0 && (
+      {/* Итог нужен, когда услуг несколько: при одной он лишь повторяет её
+          строку — цена и длительность уже стоят справа от названия. */}
+      {chosen.length > 1 && (
         <Stack
           direction="row"
           alignItems="center"

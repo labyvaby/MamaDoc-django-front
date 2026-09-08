@@ -24,6 +24,7 @@ import { useT } from "../../../../i18n/VerticalProvider";
 import { serviceLineTotal } from "../listFilters";
 import { formatSom } from "./registryFormat";
 import { moneyOf } from "./registryStats";
+import { hasAcceptedPayment } from "../../../../components/appointments/appointmentInvoice";
 
 export interface RegistryRowActions {
   onPay: (appt: DjangoAppointment) => void;
@@ -278,7 +279,8 @@ export const RegistryRowDetails: React.FC<Props> = ({
                 {t("journal.actions.edit")}
               </Button>
             )}
-            {canViewFinance && (
+            {/* Чек — по факту принятых денег: до оплаты печатать нечего. */}
+            {canViewFinance && hasAcceptedPayment(appt) && (
               <Button
                 variant="outlined"
                 size="small"

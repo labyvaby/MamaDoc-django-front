@@ -119,7 +119,10 @@ const SheetField: React.FC<{
     >
       {multiline ? (
         <>
-          {field.label.trim() && <Label>{field.label}:</Label>}
+          {/* Пробел после двоеточия — иначе текст врача прилипает к подписи
+              («Семейный анамнез:без особенностей»), и администратору
+              приходилось дописывать пробел в саму подпись поля. */}
+          {field.label.trim() && <Label>{field.label}: </Label>}
           <FieldValue value={value} multiline rows={field.rows ?? 3} />
         </>
       ) : (
@@ -290,41 +293,18 @@ export const FormSheet: React.FC<FormSheetProps> = ({
             </Box>
           )}
 
-          {/* Подпись и печать — всегда внизу листа. */}
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-end",
-              gap: "4mm",
-              mt: "5mm",
-              pt: "3mm",
-            }}
-          >
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Box>
-                <Label>{REQUIRED_BLOCK_LABELS.doctorFio}:</Label> {context.doctorFio}
-              </Box>
-              <Box sx={{ display: "flex", alignItems: "baseline", gap: "2mm", mt: "4mm" }}>
-                <Label>{REQUIRED_BLOCK_LABELS.signature}:</Label>
-                <Box sx={{ flex: 1, borderBottom: "0.3mm solid #000", height: "4mm" }} />
-              </Box>
+          {/* Подпись — всегда внизу листа. Линейка короткая и фиксированной
+              длины: во всю ширину листа она читалась как пустая графа для
+              текста, а росписи хватает пары сантиметров. */}
+          <Box sx={{ mt: "5mm", pt: "3mm" }}>
+            <Box>
+              <Label>{REQUIRED_BLOCK_LABELS.doctorFio}:</Label> {context.doctorFio}
             </Box>
-            <Box
-              sx={{
-                flexShrink: 0,
-                width: "34mm",
-                height: "34mm",
-                display: "grid",
-                placeItems: "center",
-                textAlign: "center",
-                fontSize: "0.75em",
-                color: "#666",
-                border: "0.3mm dashed #999",
-                borderRadius: "50%",
-              }}
-            >
-              {REQUIRED_BLOCK_LABELS.stamp}
+            <Box sx={{ display: "flex", alignItems: "baseline", gap: "2mm", mt: "4mm" }}>
+              <Label>{REQUIRED_BLOCK_LABELS.signature}:</Label>
+              <Box
+                sx={{ width: "40mm", flexShrink: 0, borderBottom: "0.3mm solid #000", height: "4mm" }}
+              />
             </Box>
           </Box>
         </Box>

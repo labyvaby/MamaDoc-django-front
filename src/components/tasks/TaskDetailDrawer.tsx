@@ -33,6 +33,7 @@ import EventOutlined from "@mui/icons-material/EventOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import ThumbUpOutlined from "@mui/icons-material/ThumbUpOutlined";
+import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import dayjs from "dayjs";
 import { Controller, useForm } from "react-hook-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -70,6 +71,7 @@ import {
   parseDue,
   relativeTime,
   serializeDue,
+  taskErrorMessage,
   TASK_PRIORITY_OPTIONS,
   TASK_SOURCE_META,
   TASK_STATUS_META,
@@ -409,7 +411,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
   const actionMutation = useMutation({
     mutationFn: (fn: () => Promise<Task>) => fn(),
     onSuccess: invalidate,
-    onError: (e) => setError(e instanceof Error ? e.message : "Не удалось выполнить действие"),
+    onError: (e) => setError(taskErrorMessage(e, "Не удалось выполнить действие")),
   });
 
   const saveMutation = useMutation({
@@ -448,7 +450,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
     },
     onError: (e) => {
       setConfirmDelete(false);
-      setError(e instanceof Error ? e.message : "Не удалось удалить задачу");
+      setError(taskErrorMessage(e, "Не удалось удалить задачу"));
     },
   });
 
@@ -517,11 +519,23 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
     if (status === "in_progress" && (isMine || canManage)) {
       actions.push({
         key: "complete",
-        label: "Исполнить",
+        // Обладателю tasks.manage complete/ закрывает задачу сразу, минуя приёмку.
+        label: canManage ? "Исполнить и закрыть" : "Исполнить",
         icon: <CheckOutlined />,
         primary: true,
         onClick: () => actionMutation.mutate(() => completeTask(id, orgId)),
       });
+      // Ответственный за задачи может отдать её на проверку вместо закрытия:
+      // явный requestApproval уводит задачу в приёмку (контракт 31.08.2026).
+      if (canManage) {
+        actions.push({
+          key: "request-approval",
+          label: "Отправить на проверку",
+          icon: <FactCheckOutlined />,
+          onClick: () =>
+            actionMutation.mutate(() => completeTask(id, orgId, { requestApproval: true })),
+        });
+      }
       actions.push({
         key: "pause",
         label: "Пауза",
@@ -814,6 +828,14 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
                 <Tooltip title={formatDateTime(task.updatedAt)}>
                   <Typography variant="caption" color="text.secondary">
                     · изменена {relativeTime(task.updatedAt)}
+                  </Typography>
+                </Tooltip>
+              )}
+              {/* closedAt приходит только у done/cancelled — приёмка не закрывает задачу. */}
+              {task.closedAt && (
+                <Tooltip title={formatDateTime(task.closedAt)}>
+                  <Typography variant="caption" color="text.secondary">
+                    · закрыта {relativeTime(task.closedAt)}
                   </Typography>
                 </Tooltip>
               )}

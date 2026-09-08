@@ -86,6 +86,23 @@ interface PublicRequestOptions {
 }
 
 /**
+ * Тело ответа. `response.json()` при обрыве запроса (AbortController) бросает
+ * AbortError — глушить его в `.catch(() => null)` нельзя: прерванный запрос
+ * иначе выглядит как успешный ответ с пустым телом и падает у вызывающего кода
+ * на `raw.data` («Cannot read properties of null»), то есть страница показывает
+ * обрыв как ошибку загрузки. Остальное (пустое тело, HTML от прокси) — null:
+ * ветки статусов ниже разбирают его сами.
+ */
+async function readJsonBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    return null;
+  }
+}
+
+/**
  * GET/POST к публичному API. Без credentials (публичный AllowAny). Ошибки бэка
  * приходят как `{ error, message, details }` — extractErrorMessage их разбирает.
  * Возвращает СЫРОЙ (snake_case) payload; распаковка/camelize — в обёртках ниже.
@@ -114,11 +131,24 @@ export async function publicRawRequest<T>(
   if (response.status === 204) return undefined as T;
   if (response.status === 429) notifyRateLimited();
 
-  const payload = await response.json().catch(() => null);
+  const payload = await readJsonBody(response);
   if (!response.ok) {
     throw new ApiError(extractErrorMessage(payload, response.status), response.status, payload);
   }
   return payload as T;
+}
+
+/**
+ * Конверт обязателен: публичные ручки отвечают `{ data }` / `{ data, pagination }`.
+ * null здесь — 200 без JSON (заглушка прокси, обрезанное тело); без проверки это
+ * падало у вызывающего кода как «Cannot read properties of null».
+ */
+function requireEnvelope<T>(raw: T | null | undefined, path: string): T {
+  if (raw == null) {
+    if (import.meta.env.DEV) console.error("[publicBooking] пустой ответ:", path);
+    throw new ApiError(NETWORK_ERROR_MESSAGE, 0, null);
+  }
+  return raw;
 }
 
 /** GET одиночного ресурса: `{ data }` → camelCase T. */
@@ -127,8 +157,8 @@ export async function getItem<T>(
   signal?: AbortSignal,
   headers?: Record<string, string>,
 ): Promise<T> {
-  const raw = await publicRawRequest<ItemEnvelope<unknown>>(path, { signal, headers });
-  return camelizeDeep(raw.data) as T;
+  const raw = await publicRawRequest<ItemEnvelope<unknown> | null>(path, { signal, headers });
+  return camelizeDeep(requireEnvelope(raw, path).data) as T;
 }
 
 /**
@@ -141,7 +171,10 @@ export async function getList<T>(
   signal?: AbortSignal,
   headers?: Record<string, string>,
 ): Promise<PublicList<T>> {
-  const raw = await publicRawRequest<ListEnvelope<unknown>>(path, { signal, headers });
+  const raw = requireEnvelope(
+    await publicRawRequest<ListEnvelope<unknown> | null>(path, { signal, headers }),
+    path,
+  );
   const items = (raw.data ?? []).map((x) => camelizeDeep(x) as T);
   return {
     items,
@@ -211,20 +244,18 @@ export interface OrganizationDetail extends OrganizationPreview {
   phones: string[];
   /**
    * Вертикаль бизнеса — от неё зависит терминология публичных страниц
-   * («врач» в клинике, «мастер» в салоне). В контракте §2 поля нет, тикет —
-   * `MamaDoc/backend_ticket_public_landing.md` §1. Пока не отдаётся, публичные
-   * страницы говорят терминами клиники (DEFAULT_VERTICAL).
+   * («врач» в клинике, «мастер» в салоне). Отдаётся с 03.09.2026; пустое или
+   * незнакомое значение читаем как клинику (DEFAULT_VERTICAL).
    */
   vertical?: string | null;
   /**
    * Оформление лендинга `/site`, которое владелец задал в CRM (слоган, «о нас»,
-   * соцсети, набор блоков). Хранится на бэке как есть — свободный JSON внутри
-   * `themeConfig.landing` организации, и сюда попадает без разбора полей.
+   * соцсети, набор блоков). Бэк отдаёт `themeConfig.landing` организации как
+   * есть, без разбора полей; остальной themeConfig публично не отдаётся.
    *
    * Форму значения проверяет фронт (`parseLandingConfig`): это пользовательский
-   * ввод из CRM, а не контракт. Поля бэк не отдаёт до тикета
-   * `MamaDoc/backend_ticket_public_landing.md` §2 — до тех пор гость видит
-   * лендинг, целиком собранный из данных CRM.
+   * ввод из CRM, а не контракт. Отсутствие или `null` — штатный случай:
+   * лендинг собирается целиком из данных CRM.
    */
   landing?: unknown;
 }
@@ -343,6 +374,15 @@ export interface ProfessionalReview {
   date: string;
 }
 
+/**
+ * Отзыв в общей ленте организации. От отзыва о враче отличается только тем,
+ * что несёт самого специалиста: лента смешанная, и «к кому ходили» — часть
+ * содержания. `null` — специалист удалён или отзыв к нему не привязан.
+ */
+export interface OrganizationReview extends ProfessionalReview {
+  professional: { id: number; slug: string; fullName: string } | null;
+}
+
 // ── Доступность (§4) ──────────────────────────────────────────────────────────
 
 /** День календаря врача (§4). */
@@ -370,6 +410,83 @@ export interface AvailableTimes {
   durationMin: number;
   slotDurationMin: number;
   times: AvailableTimeSlot[];
+}
+
+// ── Расписание специалиста по филиалам ───────────────────────────────────────
+//
+// GET /api/v1/professionals/<id>/schedule/ (алиас /doctors/<id>/schedule/),
+// дока «frontend_professional_schedule_api.md», выложено на прод 28.08.2026
+// (на test.crm.operator.kg ещё 404 — проверено curl-ом).
+//
+// Единственный источник, из которого витрина узнаёт про второй филиал врача:
+// в ProfessionalDetail филиал один (branch, «домашний»).
+//
+// ⚠ Расписание — это рабочее время, а не свободные окна: занятость по-прежнему
+// только в available-times/. И ⚠ available-times/ строит окна по расписанию
+// врача независимо от branch_id (проверено на проде 28.08.2026, врач 23: смена
+// в филиале 13, окна те же и при branch_id=1) — филиал приёма определяется
+// выбором пациента, а не ответом бэка (тикет schedule_multi_branch_employee).
+
+/** Область действия правила/исключения: общий график организации или филиал. */
+export type ScheduleScope = "organization" | "branch";
+
+/** Тип исключения: выходной, отпуск, дополнительная смена, замена графика. */
+export type ScheduleExceptionKind = "day_off" | "vacation" | "extra" | "override";
+
+/** Правило графика: повторяющиеся дни недели внутри периода. */
+export interface ProfessionalScheduleRule {
+  id: number;
+  scope: ScheduleScope;
+  /** YYYY-MM-DD; null — период не ограничен. */
+  dateFrom: string | null;
+  dateTo: string | null;
+  /** 0 — понедельник … 6 — воскресенье (сверено с окнами на проде 28.08.2026). */
+  weekdays: number[];
+  /** HH:MM. */
+  startTime: string;
+  endTime: string;
+  /** Перерыв; null — без перерыва. */
+  lunchStart: string | null;
+  lunchEnd: string | null;
+  comment: string;
+}
+
+/** Исключение на конкретную дату — перебивает правило. */
+export interface ProfessionalScheduleException {
+  id: number;
+  scope: ScheduleScope;
+  /** YYYY-MM-DD. */
+  date: string;
+  kind: ScheduleExceptionKind;
+  /** HH:MM; у day_off/vacation — null. */
+  startTime: string | null;
+  endTime: string | null;
+  comment: string;
+}
+
+/**
+ * Филиал, где специалиста можно записать. Приходит и без графика (пустые
+ * rules/exceptions) — значит филиал доступен, но время в нём не задано.
+ */
+export interface ProfessionalScheduleBranch {
+  id: number;
+  slug: string;
+  name: string;
+  address: string;
+  /** Напр. "Asia/Bishkek". */
+  timezone: string;
+  rules: ProfessionalScheduleRule[];
+  exceptions: ProfessionalScheduleException[];
+}
+
+/** Ответ ручки расписания. */
+export interface ProfessionalSchedule {
+  professionalId: number;
+  professionalName: string;
+  organizationId: number;
+  dateFrom: string;
+  dateTo: string;
+  branches: ProfessionalScheduleBranch[];
 }
 
 // ── Мета (§5) ─────────────────────────────────────────────────────────────────
@@ -468,6 +585,29 @@ export function getOrganizationServices(
   signal?: AbortSignal,
 ): Promise<PublicList<PublicService>> {
   return getList<PublicService>(`/organizations/${idOrSlug}/services/`, signal);
+}
+
+/**
+ * GET `/api/v1/organizations/<slug>/reviews/` — опубликованные отзывы всей
+ * организации, одной лентой и с пагинацией.
+ *
+ * До неё лендинг склеивал ленту из отзывов первых специалистов списка: это
+ * несколько запросов на первый экран и заведомо неполная выборка — отзыв о
+ * враче, который в тот день не попал в топ, на сайт не приходил.
+ *
+ * Контактные данные пациента и его юридическое имя бэк не отдаёт (только
+ * `patientName`), `professional` может быть `null` — специалиста удалили или
+ * отзыв к нему не привязан.
+ */
+export function getOrganizationReviews(
+  idOrSlug: IdOrSlug,
+  params: PublicPageParams = {},
+  signal?: AbortSignal,
+): Promise<PublicList<OrganizationReview>> {
+  return getList<OrganizationReview>(
+    `/organizations/${idOrSlug}/reviews/${buildQuery({ ...params })}`,
+    signal,
+  );
 }
 
 export function getOrganizationProfessionals(
@@ -621,6 +761,19 @@ export function getProfessionalAvailableServices(
     `/professionals/${idOrSlug}/available-services/${buildQuery({ date, time, branch_id: branchId })}`,
     signal,
   );
+}
+
+/**
+ * Расписание специалиста по филиалам. Без параметров — от сегодня на 180 дней;
+ * максимальный период — 366 дней (иначе 400), неизвестный специалист — 404.
+ */
+export function getProfessionalSchedule(
+  idOrSlug: IdOrSlug,
+  params: { dateFrom?: string; dateTo?: string } = {},
+  signal?: AbortSignal,
+): Promise<ProfessionalSchedule> {
+  const query = buildQuery({ date_from: params.dateFrom, date_to: params.dateTo });
+  return getItem<ProfessionalSchedule>(`/professionals/${idOrSlug}/schedule/${query}`, signal);
 }
 
 // ── Мета: функции (§5) ────────────────────────────────────────────────────────
@@ -798,7 +951,7 @@ export async function createGuestBooking(
   req: CreateGuestBookingRequest,
   signal?: AbortSignal,
 ): Promise<GuestBookingResult> {
-  const raw = await publicRawRequest<ItemEnvelope<unknown>>(`/bookings/`, {
+  const raw = await publicRawRequest<ItemEnvelope<unknown> | null>(`/bookings/`, {
     method: "POST",
     signal,
     headers: req.patientToken ? { "X-Patient-Token": req.patientToken } : undefined,
@@ -814,5 +967,57 @@ export async function createGuestBooking(
       ...(req.patientId != null ? { patient_id: req.patientId } : {}),
     },
   });
-  return camelizeDeep(raw.data) as GuestBookingResult;
+  return camelizeDeep(requireEnvelope(raw, "/bookings/").data) as GuestBookingResult;
+}
+
+// ── Лист ожидания (гость) ────────────────────────────────────────────────────
+
+export interface CreateWaitlistRequest {
+  professionalId: number;
+  branchId: number;
+  serviceIds: number[];
+  /** Желаемый период, YYYY-MM-DD. Оба поля опциональны: «когда угодно». */
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  patientName: string;
+  /** В международном формате, напр. "+996700123456". */
+  patientPhone: string;
+  comment?: string;
+}
+
+export interface CreateWaitlistResult {
+  id: number;
+  status: string;
+}
+
+/**
+ * `POST /api/v1/waitlist/` — «сообщите, когда освободится»: у врача нет
+ * свободных окон, гость оставляет телефон, регистратор звонит, как только
+ * время появилось.
+ *
+ * ⚠ Бэком НЕ реализован (тикет `backend_ticket_waitlist_module.md` §5) — на
+ * фронте закрыт флагом `WAITLIST_PUBLIC_CHANNEL_ENABLED`. Заявка не
+ * материализуется в `Patient` и не занимает слот; ответ на анти-спам (429 или
+ * свой код) — открытый вопрос §9.7 тикета, поэтому здесь ошибка пробрасывается
+ * как есть и разбирается на стороне UI.
+ */
+export async function createWaitlistRequest(
+  req: CreateWaitlistRequest,
+  signal?: AbortSignal,
+): Promise<CreateWaitlistResult> {
+  const raw = await publicRawRequest<ItemEnvelope<unknown> | null>(`/waitlist/`, {
+    method: "POST",
+    signal,
+    body: {
+      professional_id: req.professionalId,
+      branch_id: req.branchId,
+      service_ids: req.serviceIds,
+      patient_name: req.patientName,
+      patient_phone: req.patientPhone,
+      comment: req.comment ?? "",
+      ...(req.dateFrom ? { date_from: req.dateFrom } : {}),
+      ...(req.dateTo ? { date_to: req.dateTo } : {}),
+    },
+  });
+  return camelizeDeep(requireEnvelope(raw, "/waitlist/").data) as CreateWaitlistResult;
 }

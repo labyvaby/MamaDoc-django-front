@@ -69,7 +69,10 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
   const [priceById, setPriceById] = React.useState<Map<number, string>>(new Map());
   const [appointments, setAppointments] = React.useState<DjangoAppointment[]>([]);
   const orgId = useApiOrgId();
-  const canSeeServices = useCan("staff.services.view");
+  // Кода staff.services.view на бэке нет (сверка с /api/rbac/permissions/
+  // 29.07.2026) — гейт на нём прятал услуги от всех, кроме суперюзера.
+  // Реальное право на чтение каталога — catalog.view.
+  const canSeeServices = useCan("catalog.view");
 
   React.useEffect(() => {
     if (!doctorId || !open) {
@@ -86,7 +89,7 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
     // never ends up empty.
     Promise.all([
       getDjangoEmployee(doctorId, ctrl.signal).catch(() => null),
-      // Чужие услуги — только по staff.services.view. Без права не ходим
+      // Чужие услуги — только по catalog.view. Без права не ходим
       // вовсе: запрос всё равно вернёт 403, а секция скрывается сама.
       canSeeServices
         ? getEmployeeServices(doctorId, ctrl.signal).catch(

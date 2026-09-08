@@ -127,6 +127,22 @@ export function isModuleDisabled(err: unknown): boolean {
   return getErrorCode(err) === "MODULE_DISABLED";
 }
 
+/**
+ * Тело ответа. `response.json()` при обрыве запроса (AbortController) бросает
+ * AbortError — глушить его нельзя: прерванный запрос иначе выглядит как успешный
+ * ответ с пустым телом, вызывающий код падает на чтении полей («Cannot read
+ * properties of null»), и страница показывает обрыв как ошибку загрузки.
+ * Остальное (пустое тело, HTML от прокси) — null, ветки статусов разбирают сами.
+ */
+async function readJsonBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    return null;
+  }
+}
+
 /** Сообщение при обрыве связи (offline, DNS, CORS-preflight, сервер недоступен). */
 export const NETWORK_ERROR_MESSAGE =
   "Нет связи с сервером. Проверьте подключение к интернету и попробуйте снова.";
@@ -426,7 +442,7 @@ export async function apiRequest<T>(
 
   // Тело читаем до статусных событий: по нему 403 «прав нет» отличается от
   // 403 «модуль выключен» (код MODULE_DISABLED), а это разные реакции.
-  const payload = await response.json().catch(() => null);
+  const payload = await readJsonBody(response);
 
   // Сессия протухла посреди работы: уведомляем приложение глобально,
   // usePermissions переведёт authStatus в unauthenticated и RequireAuth
@@ -489,7 +505,7 @@ export async function apiRequestWithHeaders<T>(
     return { data: undefined as T, headers: response.headers };
   }
 
-  const payload = await response.json().catch(() => null);
+  const payload = await readJsonBody(response);
 
   if (response.status === 401) {
     window.dispatchEvent(new Event("mamadoc:api-unauthorized"));

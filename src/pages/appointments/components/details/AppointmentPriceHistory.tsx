@@ -4,6 +4,7 @@ import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 
 import type {
   AppointmentPriceOverride,
+  AppointmentDurationOverride,
   AppointmentServiceLine,
 } from "../../../../api/appointments";
 import { formatKGS } from "../../../../utility/format";
@@ -12,6 +13,7 @@ import { useT } from "../../../../i18n/VerticalProvider";
 
 export interface AppointmentPriceHistoryProps {
   overrides: AppointmentPriceOverride[];
+  durationOverrides: AppointmentDurationOverride[];
   /** Строки приёма — из них берём название услуги для записи истории. */
   services: AppointmentServiceLine[];
 }
@@ -29,11 +31,17 @@ export interface AppointmentPriceHistoryProps {
  */
 const AppointmentPriceHistory: React.FC<AppointmentPriceHistoryProps> = ({
   overrides,
+  durationOverrides,
   services,
 }) => {
   const { t } = useT("appointments");
 
-  if (overrides.length === 0) return null;
+  if (overrides.length === 0 && durationOverrides.length === 0) return null;
+
+  const entries = [
+    ...overrides.map((item) => ({ kind: "price" as const, item })),
+    ...durationOverrides.map((item) => ({ kind: "duration" as const, item })),
+  ].sort((a, b) => b.item.changedAt.localeCompare(a.item.changedAt));
 
   // Строку могли удалить после правки — тогда serviceLineId приходит null и
   // название взять неоткуда.
@@ -53,11 +61,11 @@ const AppointmentPriceHistory: React.FC<AppointmentPriceHistoryProps> = ({
       </Stack>
 
       <Stack spacing={0.5}>
-        {overrides.map((o) => {
+        {entries.map(({ kind, item: o }) => {
           const name = serviceName(o.serviceLineId);
           return (
             <Stack
-              key={o.id}
+              key={`${kind}-${o.id}`}
               direction="row"
               spacing={1}
               alignItems="baseline"
@@ -68,10 +76,15 @@ const AppointmentPriceHistory: React.FC<AppointmentPriceHistoryProps> = ({
                 {name ?? t("priceHistory.deletedLine")}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {t("priceHistory.entry", {
-                  old: formatKGS(o.oldUnitPrice),
-                  new: formatKGS(o.newUnitPrice),
-                })}
+                {kind === "price"
+                  ? t("priceHistory.entry", {
+                      old: formatKGS(o.oldUnitPrice),
+                      new: formatKGS(o.newUnitPrice),
+                    })
+                  : t("priceHistory.durationEntry", {
+                      old: o.oldDurationMinutes,
+                      new: o.newDurationMinutes,
+                    })}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 {[o.changedByName, formatDateRu(o.changedAt)].filter(Boolean).join(" · ")}

@@ -39,6 +39,26 @@ export const djangoQueryKeys = {
       ["django", "appointments", "notifications", ids] as const,
     serviceProviders: () =>
       ["django", "appointments", "service-providers"] as const,
+    /** Матрица пар «услуга ↔ сотрудник» — счётчик исполнителей в списке услуг. */
+    serviceAssignments: (branchId: number | null) =>
+      ["django", "appointments", "service-assignments", branchId] as const,
+    /**
+     * Исполнители одной услуги (секция «Кто оказывает» в карточке услуги).
+     * Филиал в ключе: ручка сужает выдачу по нему.
+     */
+    servicePerformers: (
+      organizationId: number | null,
+      branchId: number | null,
+      serviceId: number | null,
+    ) =>
+      [
+        "django",
+        "appointments",
+        "service-providers",
+        organizationId,
+        branchId,
+        serviceId,
+      ] as const,
     formData: (context: { orgId?: number | null; branchId?: number | null; membershipId?: number | null } = {}) =>
       ["django", "appointments", "form-data", context] as const,
     payments: (appointmentId: number) =>
@@ -80,6 +100,25 @@ export const djangoQueryKeys = {
         ["django", "notifications", "settings", organizationId ?? null, branchId ?? null] as const,
     history: (filters: Record<string, unknown>) =>
       ["django", "notifications", "history", filters] as const,
+  },
+
+  automations: {
+    all: ["django", "automations"] as const,
+    // Всё, что меняется при сохранении правила. Каталог сюда НЕ входит: он
+    // справочник, а его рефетч посреди открытого редактора лишний.
+    mutable: ["django", "automations", "list"] as const,
+    catalog: (organizationId: number | null | undefined) =>
+      ["django", "automations", "catalog", organizationId ?? null] as const,
+    list: (organizationId: number | null | undefined) =>
+      ["django", "automations", "list", organizationId ?? null] as const,
+    runs: (automationId: number, organizationId: number | null | undefined) =>
+      ["django", "automations", automationId, "runs", organizationId ?? null] as const,
+    // Общая история организации — отдельный ключ: фильтры вкладки не должны
+    // сбрасывать кэш истории конкретного правила и наоборот.
+    history: (
+      organizationId: number | null | undefined,
+      filters: Record<string, unknown>,
+    ) => ["django", "automations", "history", organizationId ?? null, filters] as const,
   },
 
   announcements: {
@@ -164,6 +203,39 @@ export const djangoQueryKeys = {
       ["django", "tasks", "summary", orgId ?? null] as const,
     myStats: (orgId?: number) =>
       ["django", "tasks", "my-stats", orgId ?? null] as const,
+  },
+
+  deals: {
+    all: ["django", "deals"] as const,
+    list: (params: Record<string, unknown>) => ["django", "deals", "list", params] as const,
+    detail: (id: number) => ["django", "deals", id] as const,
+    /** Доска приходит одним агрегатом — ключ на набор фильтров, а не на колонку. */
+    board: (params: Record<string, unknown>) => ["django", "deals", "board", params] as const,
+    summary: (params: Record<string, unknown>) => ["django", "deals", "summary", params] as const,
+    pipelines: (orgId?: number) => ["django", "deals", "pipelines", orgId ?? null] as const,
+    stages: (pipelineId?: number, orgId?: number) =>
+      ["django", "deals", "stages", pipelineId ?? null, orgId ?? null] as const,
+    sources: (orgId?: number) => ["django", "deals", "sources", orgId ?? null] as const,
+    lostReasons: (orgId?: number) => ["django", "deals", "lost-reasons", orgId ?? null] as const,
+    duplicates: (phone: string, orgId?: number) =>
+      ["django", "deals", "duplicates", phone, orgId ?? null] as const,
+    funnel: (params: Record<string, unknown>) => ["django", "deals", "funnel", params] as const,
+    /** Пикер услуг в карточке сделки: прайс общий по организации. */
+    servicePicker: (search: string, orgId?: number) =>
+      ["django", "deals", "service-picker", search, orgId ?? null] as const,
+  },
+
+  waitlist: {
+    all: ["django", "waitlist"] as const,
+    list: (params: Record<string, unknown>) =>
+      ["django", "waitlist", "list", params] as const,
+    detail: (id: number) => ["django", "waitlist", id] as const,
+    /** Кандидаты на конкретное освободившееся окно. */
+    matches: (params: Record<string, unknown>) =>
+      ["django", "waitlist", "matches", params] as const,
+    matchCounts: (params: Record<string, unknown>) =>
+      ["django", "waitlist", "match-counts", params] as const,
+    summary: (orgId?: number) => ["django", "waitlist", "summary", orgId ?? null] as const,
   },
 
   achievements: {
@@ -253,6 +325,9 @@ export const djangoQueryKeys = {
      */
     activeEmployees: (organizationId: number | null | undefined) =>
       ["django", "staff", "activeEmployees", organizationId ?? null] as const,
+    /** Услуги одного сотрудника — персональные цена и длительность. */
+    employeeServices: (organizationId: number | null, employeeId: number) =>
+      ["django", "staff", "employeeServices", organizationId, employeeId] as const,
     specializations: (organizationId: number | null | undefined) =>
       ["django", "staff", "specializations", organizationId ?? null] as const,
     banks: (organizationId: number | null | undefined) =>
@@ -283,8 +358,40 @@ export const djangoQueryKeys = {
   },
 
   conclusionForms: {
-    list: (organizationId: number | null | undefined) =>
-      ["django", "conclusion-forms", organizationId ?? null] as const,
+    // Филиал — часть ключа: бэк режет выдачу по нему (бланки филиала + общие),
+    // и список филиала A не должен подставляться в филиале B.
+    list: (
+      organizationId: number | null | undefined,
+      branchId?: number | null,
+    ) =>
+      ["django", "conclusion-forms", organizationId ?? null, branchId ?? null] as const,
+  },
+
+  odoctor: {
+    // Строка настроек одна на организацию, списка нет — только объект в скоупе
+    // организации, поэтому и ключ один.
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "odoctor", "settings", organizationId ?? null] as const,
+    // Связи врачей — список в скоупе организации.
+    links: (organizationId: number | null | undefined) =>
+      ["django", "odoctor", "links", organizationId ?? null] as const,
+    // Связи одного врача — ключ карточки сотрудника.
+    employeeLinks: (employeeId: number) =>
+      ["django", "odoctor", "links", "employee", employeeId] as const,
+    // Предпросмотр спрашивается по одной связи и живёт до закрытия диалога:
+    // он ходит в кабинет odoctor, и кешировать его надолго значило бы
+    // показывать оператору вчерашнюю витрину как сегодняшнюю.
+    linkPreview: (linkId: number) =>
+      ["django", "odoctor", "link-preview", linkId] as const,
+    // Филиалы в разрезе кабинета — только своя база, кешируется как справочник.
+    branches: (organizationId: number | null | undefined) =>
+      ["django", "odoctor", "branches", organizationId ?? null] as const,
+    // Врачи филиала в кабинете. Ключ по филиалу CRM, а не по филиалу
+    // кабинета: наружу мы говорим о своих сущностях. Живёт недолго — запрос
+    // идёт в кабинет, и вчерашний список врачей под видом сегодняшнего
+    // отправил бы оператора сопоставлять то, чего там уже нет.
+    cabinetDoctors: (branchId: number) =>
+      ["django", "odoctor", "cabinet-doctors", branchId] as const,
   },
 
   scheduling: {
@@ -292,6 +399,9 @@ export const djangoQueryKeys = {
       ["django", "scheduling", "rules", params] as const,
     exceptions: (params: Record<string, unknown>) =>
       ["django", "scheduling", "exceptions", params] as const,
+    /** Приёмы, попадающие под отсутствие сотрудника (exceptions/conflicts/). */
+    conflicts: (params: Record<string, unknown>) =>
+      ["django", "scheduling", "exceptions", "conflicts", params] as const,
     availability: (params: Record<string, unknown>) =>
       ["django", "scheduling", "availability", params] as const,
     availabilitySummary: (params: Record<string, unknown>) =>

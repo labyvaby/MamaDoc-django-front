@@ -94,6 +94,23 @@ export const SERVICE_RELATED_PRODUCTS_MULTI_ENABLED = true;
 /** Максимум товаров в составе услуги — лимит бэка (400 при превышении). */
 export const SERVICE_RELATED_PRODUCTS_MAX = 20;
 
+/**
+ * История изменения цены услуги (заказчик 07.09.2026, по аналогии с историей
+ * цены товара — `getProductPriceHistory` в `api/warehouse.ts`, эндпоинт
+ * `/warehouse/products/{id}/price-history/`). Контракт: GET
+ * `/catalog/services/{id}/price-history/` возвращает цену, ФИО автора и время
+ * изменения; доступ ограничен видимыми пользователю услугами.
+ */
+export const SERVICE_PRICE_HISTORY_ENABLED = true;
+
+/** Запись истории изменения цены услуги. */
+export interface ServicePriceHistoryEntry {
+  /** Новая стоимость услуги, сом. */
+  price: number;
+  changedByName: string | null;
+  changedAt: string;
+}
+
 export interface RelatedProductRef {
   id: number;
   name: string;
@@ -433,4 +450,27 @@ export async function deleteServiceImage(id: number): Promise<void> {
   await apiRequest<void>(`/catalog/services/${id}/image/`, {
     method: "DELETE",
   });
+}
+
+// ── Price history ────────────────────────────────────────────────────────────
+
+type RawServicePriceHistoryEntry = Omit<ServicePriceHistoryEntry, "price"> & {
+  price: string;
+};
+
+/**
+ * История изменения цены услуги (самые новые сверху).
+ */
+export async function getServicePriceHistory(
+  serviceId: number,
+  signal?: AbortSignal,
+): Promise<ServicePriceHistoryEntry[]> {
+  const rows = await apiRequest<RawServicePriceHistoryEntry[]>(
+    `/catalog/services/${serviceId}/price-history/`,
+    { signal },
+  );
+  return rows.map((r) => ({
+    ...r,
+    price: parseFloat(r.price) || 0,
+  }));
 }

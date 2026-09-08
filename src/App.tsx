@@ -58,6 +58,8 @@ import { Fragment, lazy, Suspense, useEffect, useState, type ReactNode } from "r
 import { djangoQueryKeys } from "./api/queryKeys";
 import { ApiError } from "./api/client";
 import { CASHLESS_METHODS_ENABLED } from "./api/cashlessMethods";
+import { DEALS_MODULE_ENABLED } from "./api/deals";
+import { WAITLIST_MODULE_ENABLED } from "./api/waitlist";
 import { djangoDataProvider } from "./config/djangoDataProvider";
 
 // ОПТИМИЗАЦИЯ: Все страницы загружаются через lazy() для code splitting
@@ -69,6 +71,7 @@ const EmployeesPage = lazy(() => import("./pages/employes"));
 const ServicesPage = lazy(() => import("./pages/services/DjangoServicesPage"));
 const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
 const DjangoProductsPage = lazy(() => import("./pages/products/django"));
+const DjangoInventoryPage = lazy(() => import("./pages/inventory/django"));
 const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
 const DjangoLabPage = lazy(() => import("./pages/lab/django"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
@@ -83,7 +86,11 @@ const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPag
 const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
 const ReviewsPage = lazy(() => import("./pages/reviews"));
 const BookingsPage = lazy(() => import("./pages/bookings"));
+const ChatsPage = lazy(() => import("./pages/chats"));
 const TasksPage = lazy(() => import("./pages/tasks"));
+const WaitlistPage = lazy(() => import("./pages/waitlist"));
+const DealsPage = lazy(() => import("./pages/deals"));
+const DealsSettingsPage = lazy(() => import("./pages/settings/DealsSettingsPage"));
 const VaccinationsPage = lazy(() => import("./pages/vaccinations"));
 const AchievementsPage = lazy(() => import("./pages/achievements"));
 const DocumentsPage = lazy(() => import("./pages/documents"));
@@ -99,6 +106,7 @@ const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsP
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
 const PublicBookMyBookingsPage = lazy(() => import("./pages/public-booking/MyBookingsPage"));
 const PublicBookByCodePage = lazy(() => import("./pages/public-booking/BookingByCodePage"));
+const PublicBookPaymentResultPage = lazy(() => import("./pages/public-booking/PaymentResultPage"));
 const PublicLandingPage = lazy(() => import("./pages/public-site"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
@@ -107,16 +115,20 @@ const ConclusionFormsSettingsPage = lazy(() => import("./pages/settings/Conclusi
 const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
 const PatientsPage = lazy(() => import("./pages/patients"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
+const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
 const OrganizationSettingsPage = lazy(() => import("./pages/settings/OrganizationSettingsPage"));
 const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSettingsPage"));
 const SiteSettingsPage = lazy(() => import("./pages/settings/SiteSettingsPage"));
 const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"));
+const PosModuleSettingsPage = lazy(() => import("./pages/settings/PosModuleSettingsPage"));
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
 const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
+const OdoctorSettingsPage = lazy(() => import("./pages/settings/OdoctorSettingsPage"));
+const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 // Реестры «Все приёмы» / «Все процедуры» — исторический список за период
 // (registry/RegistryJournalView), а не рабочий кабинет с навигацией по дням.
@@ -124,6 +136,10 @@ const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
 const ProfilePage = lazy(() => import("./pages/profile"));
+const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPage"));
+// Касса (POS) — полноэкранный модуль: собственная шапка вместо общей, поэтому
+// живёт в отдельной ветке layout.
+const PosPage = lazy(() => import("./pages/pos"));
 
 
 // Вспомогательный компонент для защиты корневого редиректа
@@ -192,6 +208,8 @@ const DjangoContextRemount = ({ children }: { children: ReactNode }) => {
 // теряется позиция скролла (выбрасывает наверх при выборе пункта снизу).
 const renderHeader = () => <Header sticky />;
 const renderSider = () => <Sidebar />;
+// POS использует общую шапку приложения, включая стандартный блок профиля
+// справа. Своя шапка POS остаётся только для поиска товара и операций с чеком.
 
 function App() {
   const theme = useTheme();
@@ -318,6 +336,11 @@ function App() {
                         meta: { label: "Склад" }
                       },
                       {
+                        name: "inventory",
+                        list: "/inventory",
+                        meta: { label: "Инвентаризация" }
+                      },
+                      {
                         name: "patients",
                         list: "/patients",
                         meta: { label: tt("patients:list.title") }
@@ -384,10 +407,29 @@ function App() {
                         meta: { label: "Брони" }
                       },
                       {
+                        name: "chats",
+                        list: "/chats",
+                        meta: { label: "Чаты" }
+                      },
+                      {
                         name: "tasks",
                         list: "/tasks",
                         meta: { label: "Задачи" }
                       },
+                      ...(WAITLIST_MODULE_ENABLED
+                        ? [{
+                            name: "waitlist",
+                            list: "/waitlist",
+                            meta: { label: "Лист ожидания" }
+                          }]
+                        : []),
+                      ...(DEALS_MODULE_ENABLED
+                        ? [{
+                            name: "deals",
+                            list: "/deals",
+                            meta: { label: "Воронка продаж" }
+                          }]
+                        : []),
                       {
                         name: "vaccinations",
                         list: "/vaccinations",
@@ -430,6 +472,44 @@ function App() {
                     }}
                   >
                     <Routes>
+                      {/* Касса (POS): та же авторизация и сайдбар, но без общей
+                          шапки и без отступов — модуль занимает всю рабочую
+                          область и держит свой каркас (макет Monogram). */}
+                      <Route
+                        element={
+                          <RequireAuth>
+                            <MobileSidebarProvider>
+                              <ThemedLayout
+                                Header={renderHeader}
+                                Sider={renderSider}
+                                childrenBoxProps={{
+                                  sx: {
+                                    p: 0,
+                                    height: { xs: "calc(100dvh - 56px)", md: "calc(100vh - 64px)" },
+                                    overflow: "hidden",
+                                    position: "relative",
+                                  },
+                                }}
+                              >
+                                <DjangoContextRemount>
+                                  <Outlet />
+                                </DjangoContextRemount>
+                              </ThemedLayout>
+                            </MobileSidebarProvider>
+                          </RequireAuth>
+                        }
+                      >
+                        <Route
+                          path="pos"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.pos}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <PosPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                      </Route>
                       <Route
                         element={
                           <RequireAuth>
@@ -577,6 +657,26 @@ function App() {
                           }
                         />
                         <Route
+                          path="inventory"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.warehouses}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoInventoryPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="retail"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.pos}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <RetailDashboardPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="schedule"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.schedule}>
@@ -701,6 +801,26 @@ function App() {
                           }
                         />
                         <Route
+                          path="settings/automations"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.automations}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <AutomationsSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="settings/odoctor"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.odoctor}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <OdoctorSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="admin/load"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.reports}>
@@ -742,6 +862,7 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            <Route path="settings/pos-module" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.posModule}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
                             <Route
                               path="settings/branches"
                               element={
@@ -827,6 +948,16 @@ function App() {
                               />
                             )}
                             <Route
+                              path="settings/product-attributes"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.productAttributes}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ProductAttributesSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
                               path="settings/expense-categories"
                               element={
                                 <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.expenseCategories}>
@@ -846,6 +977,18 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            {DEALS_MODULE_ENABLED && (
+                              <Route
+                                path="settings/deals"
+                                element={
+                                  <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.deals}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <DealsSettingsPage />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            )}
                             <Route
                               path="reviews"
                               element={
@@ -867,6 +1010,16 @@ function App() {
                               }
                             />
                             <Route
+                              path="chats"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.chats}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ChatsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
                               path="tasks"
                               element={
                                 <RequirePermission permission={PAGE_PERMISSIONS.tasks}>
@@ -876,6 +1029,34 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            {/* Лист ожидания — вместе с флагом
+                                WAITLIST_MODULE_ENABLED (бэка на проде нет). */}
+                            {WAITLIST_MODULE_ENABLED && (
+                              <Route
+                                path="waitlist"
+                                element={
+                                  <RequirePermission permission={PAGE_PERMISSIONS.waitlist}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <WaitlistPage />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            )}
+                            {/* Воронка продаж — вместе с флагом
+                                DEALS_MODULE_ENABLED (на проде 404). */}
+                            {DEALS_MODULE_ENABLED && (
+                              <Route
+                                path="deals"
+                                element={
+                                  <RequirePermission permission={PAGE_PERMISSIONS.deals}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <DealsPage />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            )}
                             <Route
                               path="vaccinations"
                               element={
@@ -1100,6 +1281,17 @@ function App() {
                           element={
                             <Suspense fallback={<LinearProgress />}>
                               <PublicBookByCodePage />
+                            </Suspense>
+                          }
+                        />
+                        {/* Возврат с Paylink Бакай Банка — фиксированный адрес,
+                            заданный на бэке, своего экрана не имеет, сразу
+                            уводит на карточку брони по коду. */}
+                        <Route
+                          path="book/payment/result"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <PublicBookPaymentResultPage />
                             </Suspense>
                           }
                         />

@@ -19,7 +19,7 @@ import type {
 } from "../../../../api/appointments";
 import type { PaymentStatus } from "../../../../api/payments";
 import { isCancelledStatus } from "../slotAvailability";
-import { discountFactor, paidShare, serviceLineTotal } from "../listFilters";
+import { discountFactor, hasDiscount, paidShare, serviceLineTotal } from "../listFilters";
 
 /** Строки приёма, попадающие в срез (для процедур — только медсестринские). */
 export type LinesOf = (appt: DjangoAppointment) => AppointmentServiceLine[];
@@ -113,7 +113,11 @@ export function summarize(items: DjangoAppointment[], linesOf: LinesOf): Registr
     addMoney(total, money);
     if (money.debt > 0) total.debtors += 1;
     if (money.paid > 0) paidVisits += 1;
-    if (appt.paymentStatus === "discounted") total.discounted += 1;
+    // Скидку считаем по сумме на чеке, а не по статусу `discounted`: статус
+    // бэк ставит только при закрытии чека, и скидка, за которую ещё не
+    // заплатили, в сводку не попадала. Теперь плитка и чип «Со скидкой»
+    // показывают одно и то же число (см. hasDiscount в listFilters).
+    if (hasDiscount(appt)) total.discounted += 1;
     if (appt.paymentStatus === "paid" || appt.paymentStatus === "discounted") total.closed += 1;
   }
 

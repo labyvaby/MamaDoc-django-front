@@ -5,6 +5,10 @@ import {
   RefreshOutlined as RefreshIcon,
   HomeOutlined as HomeIcon,
 } from "@mui/icons-material";
+import {
+  isStaleBuildError,
+  reloadForStaleBuild,
+} from "../pwa/staleBuildRecovery";
 
 interface Props {
   children: ReactNode;
@@ -26,6 +30,9 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("[ErrorBoundary]", error, errorInfo);
+    if (isStaleBuildError(error)) {
+      reloadForStaleBuild();
+    }
   }
 
   handleReload = () => {

@@ -15,6 +15,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import ZoomInOutlined from "@mui/icons-material/ZoomInOutlined";
 import ZoomOutOutlined from "@mui/icons-material/ZoomOutOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
@@ -28,9 +29,13 @@ interface PhotoViewerDialogProps {
   record: CleaningRecord | null;
   initialIndex: number;
   canManage: boolean;
+  /** Доступна ли правка этой записи — тогда в шапке появляется «Изменить». */
+  canEdit?: boolean;
   onClose: () => void;
   onApprove: (record: CleaningRecord) => void;
   onReject: (record: CleaningRecord) => void;
+  /** Открыть правку записи (родитель сам закрывает просмотр). */
+  onEdit?: (record: CleaningRecord) => void;
 }
 
 /** Масштабы по кругу: клик по фото / кнопка зума переключают между ними. */
@@ -54,9 +59,11 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   record,
   initialIndex,
   canManage,
+  canEdit = false,
   onClose,
   onApprove,
   onReject,
+  onEdit,
 }) => {
   const theme = useTheme();
   // Граница по md: телефон попадает в брейкпоинт sm (360px), поэтому «мобильный»
@@ -278,6 +285,15 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
                 {isCleaningBackdated(record) && ` · запись создана ${formatCleaningCreatedAt(record)}`}
               </Typography>
             </Box>
+            {/* Правка прямо из просмотра: чаще всего фотоотчёт и смотрят,
+                чтобы переснять неудачный кадр или поправить тип уборки. */}
+            {canEdit && onEdit && (
+              <Tooltip title="Изменить запись">
+                <IconButton size="small" onClick={() => onEdit(record)}>
+                  <EditOutlined />
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip title={zoom > 1 ? "Уменьшить" : "Увеличить"}>
               <IconButton size="small" onClick={cycleZoom}>
                 {zoom > 1 ? <ZoomOutOutlined /> : <ZoomInOutlined />}

@@ -27,15 +27,38 @@ export const CLEANING_USE_MOCKS = false;
  * Контракт (ответ CLEANING_BACKDATE_2026-08-20.md): вход — поле `date`
  * (YYYY-MM-DD, multipart, только cleaning.manage, иначе 403), дата уборки
  * приезжает новым полем `performedAt`, `createdAt` остаётся моментом создания
- * записи. Замороженный месяц ЗП — 409 (проверяется по `performedAt`). Правка
- * даты у существующей записи (PATCH) не поддерживается.
+ * записи. Замороженный месяц ЗП — 409 (проверяется по `performedAt`).
  * Включено 20.08.2026 после выкладки на newcrm.pediatr.kg: GET
  * /cleaning/records/ отдаёт `performedAt` (старым записям миграция проставила
  * = `createdAt`), POST с `date` доходит до валидации формата. ⚠ На
  * test.crm.operator.kg выкладки в тот момент ещё не было — там поле молча
  * игнорируется, дата уборки = момент создания (фолбэк cleaningRecordDate).
+ * UPD 03.09.2026: правка даты у существующей записи появилась — PATCH
+ * принимает то же поле `date` (см. CLEANING_EDIT_ENABLED).
  */
 export const CLEANING_BACKDATE_ENABLED = true;
+
+/**
+ * Правка записи об уборке — PATCH /cleaning/records/{id}/.
+ * Контракт (ответ CLEANING_RECORD_EDIT_2026-09-03.md): multipart, как POST, все
+ * поля необязательные, приезжают только изменённые; пустой PATCH — 400. Ответ —
+ * 200 с полным объектом записи, той же формы, что отдаёт GET /cleaning/records/.
+ *
+ * Что из контракта видно в UI:
+ *   • смена `type` переписывает ставку записи (rate_snapshot) — ради этого
+ *     правка и нужна: ежедневная и генеральная уборка стоят по-разному;
+ *   • правка `rejected`-записи сама возвращает её в `pending` и чистит причину
+ *     отказа — отдельной кнопки «отправить на повторную проверку» не нужно;
+ *   • `approved` остаётся `approved`, черновой период ЗП бэк пересчитывает сам
+ *     (как при DELETE), повторного подтверждения не требуется;
+ *   • филиал записи правка не меняет;
+ *   • 409 — approved-запись в замороженном месяце ЗП, но только когда правка
+ *     меняет сумму (тип/исполнитель/дата); правка одних фото проходит и в
+ *     закрытом месяце, а pending/rejected на заморозку не проверяются вовсе;
+ *   • без cleaning.manage: только свои записи в статусе pending/rejected и
+ *     только тип и фото (employee/date → 403, approved → 403, чужая → 404).
+ */
+export const CLEANING_EDIT_ENABLED = true;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,7 +88,7 @@ export interface CleaningRecord {
   employeeId: number;
   employeeName: string;
   status: CleaningRecordStatus;
-  /** 1..5 фото; фронт сжимает через compressImage перед отправкой. */
+  /** 1..15 фото; фронт сжимает через compressImage перед отправкой. */
   photos: CleaningPhoto[];
   rejectReason: string;
   reviewedByName: string | null;
@@ -318,6 +341,9 @@ export function deleteCleaningType(typeId: number, organizationId?: number): Pro
 
 // ── Записи ────────────────────────────────────────────────────────────────────
 
+/** Размер страницы при выгрузке месяца целиком (бэк отдаёт до 200 за раз). */
+const FETCH_PAGE_SIZE = 200;
+
 export function getCleaningRecords(
   filters: CleaningRecordsFilters = {},
   signal?: AbortSignal,
@@ -347,9 +373,49 @@ export function getCleaningRecords(
   return apiRequest<CleaningRecordsResponse>(`/cleaning/records/?${q.toString()}`, { signal });
 }
 
+/**
+ * Свежие сверху: по дате уборки, при равной дате — по моменту создания
+ * (у записей задним числом время внутри дня служебное, полдень).
+ */
+export function sortCleaningRecords(records: CleaningRecord[]): CleaningRecord[] {
+  return [...records].sort(
+    (a, b) =>
+      cleaningRecordDate(b).slice(0, 10).localeCompare(cleaningRecordDate(a).slice(0, 10)) ||
+      b.createdAt.localeCompare(a.createdAt) ||
+      b.id - a.id,
+  );
+}
+
+/**
+ * Записи месяца одним списком, отсортированные по дате уборки.
+ *
+ * Зачем не серверная пагинация: `GET /cleaning/records/` сортирует по моменту
+ * создания и молча игнорирует `ordering` (проверено на проде 02.09.2026:
+ * `ordering=id`, `ordering=performed_at` порядок ответа не меняют). Из-за этого
+ * уборка, отмеченная задним числом, всплывала выше сегодняшних — её `createdAt`
+ * свежее. Отсортировать одну страницу мало: «поздно созданная, но старая»
+ * запись сидит на первой странице сервера и всё равно окажется не на своём
+ * месте. Поэтому страница берёт месяц целиком (десятки записей) и пагинирует
+ * у себя. Когда бэк научится `ordering`, здесь останется один запрос с ним.
+ */
+export async function getCleaningRecordsSorted(
+  filters: Omit<CleaningRecordsFilters, "page" | "pageSize"> = {},
+  signal?: AbortSignal,
+): Promise<CleaningRecord[]> {
+  const all: CleaningRecord[] = [];
+  // Страховка от бесконечного цикла, если бэк перестанет отдавать `next`/`count`
+  // честно: 10 страниц по 200 — заведомо больше, чем уборок в месяце.
+  for (let page = 1; page <= 10; page += 1) {
+    const chunk = await getCleaningRecords({ ...filters, page, pageSize: FETCH_PAGE_SIZE }, signal);
+    all.push(...chunk.results);
+    if (!chunk.next || chunk.results.length === 0 || all.length >= chunk.count) break;
+  }
+  return sortCleaningRecords(all);
+}
+
 export interface CreateCleaningRecordPayload {
   typeId: number;
-  /** 1..5 фото, уже сжатых через compressImage. */
+  /** 1..15 фото, уже сжатых через compressImage. */
   photos: File[];
   /**
    * Ручное назначение исполнителя (только cleaning.manage). Без него бэк
@@ -416,6 +482,89 @@ export async function createCleaningRecord(
       method: "POST",
       formData,
     }),
+  );
+}
+
+export interface UpdateCleaningRecordPayload {
+  /** Новый тип уборки — переписывает ставку записи (rate_snapshot) на бэке. */
+  typeId?: number;
+  /** Смена исполнителя — только cleaning.manage, иначе 403. */
+  employeeId?: number;
+  /** Новая дата уборки (YYYY-MM-DD) — только cleaning.manage, иначе 403. */
+  date?: string;
+  /** Добавляемые снимки (поверх оставшихся). */
+  photos?: File[];
+  /** Удаляемые снимки записи — id из record.photos. */
+  deletePhotoIds?: number[];
+  organizationId?: number;
+}
+
+/**
+ * Правка записи об уборке. Отправляем только изменённые поля: пустой PATCH бэк
+ * отбивает 400 (иначе «правка» rejected-записи молча вернула бы её в pending).
+ *
+ * Итог по фото считает бэк: осталось + добавлено должно укладываться в 1..15,
+ * иначе 400 — фронт проверяет то же самое до отправки (см. ReportDialog).
+ * Статус после правки бэк ставит сам: rejected → pending с очисткой причины,
+ * approved и pending остаются как были.
+ */
+export async function updateCleaningRecord(
+  recordId: number,
+  payload: UpdateCleaningRecordPayload,
+): Promise<CleaningRecord> {
+  if (CLEANING_USE_MOCKS) {
+    const record = mockRecords.find((r) => r.id === recordId);
+    if (!record) return Promise.reject(new Error("Запись не найдена (мок)"));
+    if (payload.typeId != null) {
+      record.typeId = payload.typeId;
+      record.typeName =
+        mockTypes.find((t) => t.id === payload.typeId)?.name ?? `Тип #${payload.typeId}`;
+    }
+    if (payload.employeeId != null) {
+      const assignee = mockCleaners.find((c) => c.id === payload.employeeId);
+      record.employeeId = payload.employeeId;
+      record.employeeName = assignee?.fullName ?? record.employeeName;
+    }
+    if (payload.date) record.performedAt = `${payload.date}T12:00:00Z`;
+    if (payload.deletePhotoIds?.length) {
+      const removed = new Set(payload.deletePhotoIds);
+      record.photos = record.photos.filter((p) => !removed.has(p.id));
+    }
+    if (payload.photos?.length) {
+      record.photos = [
+        ...record.photos,
+        ...payload.photos.map((f) => ({ id: ++mockSeq, url: URL.createObjectURL(f) })),
+      ];
+    }
+    // Как на бэке: правка отклонённой записи возвращает её в очередь.
+    if (record.status === "rejected") {
+      record.status = "pending";
+      record.rejectReason = "";
+      record.reviewedByName = null;
+      record.reviewedAt = null;
+    }
+    return mockDelay({ ...record });
+  }
+  const formData = new FormData();
+  if (payload.typeId != null) formData.append("type", String(payload.typeId));
+  if (payload.employeeId != null) formData.append("employee", String(payload.employeeId));
+  if (payload.date) formData.append("date", payload.date);
+  // Повторяющийся ключ — бэк принимает и его, и строку через запятую.
+  for (const photoId of payload.deletePhotoIds ?? []) {
+    formData.append("delete_photos", String(photoId));
+  }
+  // Ужимаем так же плотно, как при создании: лимит на весь запрос тот же.
+  for (const photo of payload.photos ?? []) {
+    formData.append(
+      "photos",
+      await preparePhotoOrThrow(photo, { maxBytes: CLEANING_PHOTO_TARGET_BYTES }),
+    );
+  }
+  return withUploadErrors(() =>
+    apiRequest<CleaningRecord>(
+      withOrg(`/cleaning/records/${recordId}/`, payload.organizationId),
+      { method: "PATCH", formData },
+    ),
   );
 }
 
@@ -505,12 +654,10 @@ export function getCleaningActiveMonths(
   }
   const q = new URLSearchParams();
   if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
-  // ⚠ `branch` здесь бэк ИГНОРИРУЕТ — проверено на проде 27.08.2026 (org 1):
-  // ?branch=1, ?branch=13 и даже ?branch=999 отдают один и тот же набор
-  // месяцев. Параметр оставлен намеренно: он безвреден (200, лишний query) и
-  // заработает сам, когда бэк поддержит фильтр. До этого лента месяцев шире
-  // списка — месяц, где уборки были только в чужом филиале, кликается и даёт
-  // пустую таблицу. Тикет: backend_ticket_cleaning_branch_scoping.md §3.
+  // Фильтр по филиалу бэк включил 27.08.2026 (ветка `codex/cleaning-branch-scoping`
+  // на проде): ?branch=999 → 400 «Филиал не найден или не принадлежит
+  // организации», ?branch= недоступного филиала → 404 — как в /cleaning/records/.
+  // Тикет backend_ticket_cleaning_branch_scoping.md §3 закрыт.
   if (params.branch != null) q.set("branch", String(params.branch));
   const qs = q.toString();
   return apiRequest<{ months: string[] }>(
