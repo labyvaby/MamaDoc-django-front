@@ -482,6 +482,112 @@ export interface OdoctorBranchesResponse {
   items: OdoctorBranch[];
 }
 
+/**
+ * Филиал самого кабинета — вариант выбора при связывании филиала.
+ *
+ * Адрес здесь не украшение: номер человеку не говорит ничего, а у клиники в
+ * кабинете «Мама Доктор» на Орозбекова и «Мама Доктор Плюс» на Сейтек.
+ * Ошибка отправит окна целого филиала в календарь другого.
+ */
+export interface OdoctorCabinetBranch {
+  odoctorBranchId: number;
+  name: string;
+  address: string;
+  /** Филиал CRM, который этот вариант уже занял. */
+  linkedBranchId: number | null;
+}
+
+export interface OdoctorCabinetBranchesResponse {
+  organizationId: number;
+  items: OdoctorCabinetBranch[];
+}
+
+/** Филиалы кабинета. Ходит в кабинет — может ответить 502. */
+export function getOdoctorCabinetBranches(
+  signal?: AbortSignal,
+  options?: { organizationId?: number | null },
+): Promise<OdoctorCabinetBranchesResponse> {
+  const query = new URLSearchParams();
+  if (options?.organizationId != null) {
+    query.set("organizationId", String(options.organizationId));
+  }
+  const qs = query.toString();
+  return apiRequest<OdoctorCabinetBranchesResponse>(
+    `/odoctor/cabinet-branches/${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+}
+
+/**
+ * Связать филиал клиники с филиалом кабинета. Связь создаётся выключенной.
+ *
+ * Номер сверяет сервер со списком самого кабинета: присланный устаревшим
+ * экраном он может оказаться вторым филиалом этой же клиники.
+ */
+export function linkOdoctorBranch(
+  branchId: number,
+  odoctorBranchId: number,
+): Promise<OdoctorBranch> {
+  return apiRequest<OdoctorBranch>(`/odoctor/branches/${branchId}/link/`, {
+    method: "POST",
+    body: { odoctorBranchId },
+  });
+}
+
+/** Выключатель филиала. Тумблеры врачей он не трогает. */
+export function setOdoctorBranchEnabled(
+  branchId: number,
+  isEnabled: boolean,
+): Promise<OdoctorBranch> {
+  return apiRequest<OdoctorBranch>(`/odoctor/branches/${branchId}/link/`, {
+    method: "PATCH",
+    body: { isEnabled },
+  });
+}
+
+/**
+ * Снять связь филиала. Сервер откажет, пока на филиале висят врачи: номер
+ * врача без номера филиала — не адрес, и выложенные окна стали бы
+ * недостижимыми.
+ */
+export function unlinkOdoctorBranch(
+  branchId: number,
+): Promise<OdoctorBranch> {
+  return apiRequest<OdoctorBranch>(`/odoctor/branches/${branchId}/link/`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * Подпись варианта в выборе: «1350 — Мама Доктор, ул. Орозбекова, 112».
+ *
+ * Номер остаётся первым: он же стоит в админке и в логах, и оператору,
+ * который сверяется с кабинетом, искать глазами именно его.
+ */
+export function odoctorCabinetBranchLabel(
+  branch: OdoctorCabinetBranch,
+): string {
+  const tail = [branch.name, branch.address].filter(Boolean).join(", ");
+  return tail ? `${branch.odoctorBranchId} — ${tail}` : String(
+    branch.odoctorBranchId,
+  );
+}
+
+/**
+ * Можно ли выбрать этот вариант для филиала `branchId`.
+ *
+ * Занятый другим филиалом остаётся видимым, но недоступным: скрыть его
+ * значило бы оставить оператора искать филиал, который «пропал», а
+ * позволить выбрать — свести два расписания в один календарь.
+ */
+export function odoctorCabinetBranchTaken(
+  branch: OdoctorCabinetBranch,
+  branchId: number,
+): boolean {
+  return branch.linkedBranchId !== null
+    && branch.linkedBranchId !== branchId;
+}
+
 /** Сотрудник CRM, чьё ФИО свернулось в то же, что у врача кабинета. */
 export interface OdoctorCabinetCandidate {
   employeeId: number;
