@@ -25,6 +25,8 @@ import {
   odoctorCabinetRowState,
   odoctorLinkedBranches,
   odoctorEmployeeBlockState,
+  odoctorEmployeeSync,
+  odoctorPreviewTotals,
   odoctorLinkBlocker,
   previewClearWarning,
 } from "./odoctor";
@@ -728,6 +730,82 @@ describe("formatOdoctorDay", () => {
 
   it("нечитаемую строку отдаёт как есть", () => {
     expect(formatOdoctorDay("завтра")).toBe("завтра");
+  });
+});
+
+describe("odoctorEmployeeSync", () => {
+  it("включён, когда включена хотя бы одна связь", () => {
+    // Считать по «все включены» значило бы показать выключенный вид у
+    // врача, чьи окна в витрину уже уходят.
+    const sync = odoctorEmployeeSync([
+      link({ id: 1, isEnabled: true }),
+      link({ id: 2, isEnabled: false, branchName: "Второй" }),
+    ]);
+
+    expect(sync.checked).toBe(true);
+    expect(sync.partial).toBe(true);
+  });
+
+  it("полная включённость неполнотой не считается", () => {
+    const sync = odoctorEmployeeSync([
+      link({ id: 1, isEnabled: true }),
+      link({ id: 2, isEnabled: true, branchName: "Второй" }),
+    ]);
+
+    expect(sync.checked).toBe(true);
+    expect(sync.partial).toBe(false);
+  });
+
+  it("выключен, когда выключены все", () => {
+    const sync = odoctorEmployeeSync([link({ isEnabled: false })]);
+
+    expect(sync.checked).toBe(false);
+    expect(sync.partial).toBe(false);
+  });
+
+  it("называет филиал в каждой помехе: их может быть несколько", () => {
+    const sync = odoctorEmployeeSync([
+      link({ id: 1, branchName: "Орозбекова", nameDrift: true }),
+      link({ id: 2, branchName: "Сейтек", branchIsEnabled: false }),
+    ]);
+
+    expect(sync.blockers).toEqual([
+      { branchName: "Орозбекова", reason: "drift" },
+      { branchName: "Сейтек", reason: "branch-off" },
+    ]);
+  });
+
+  it("перечисляет филиалы для подписи под переключателем", () => {
+    const sync = odoctorEmployeeSync([
+      link({ id: 1, branchName: "Орозбекова" }),
+      link({ id: 2, branchName: "Сейтек" }),
+    ]);
+
+    expect(sync.branchNames).toEqual(["Орозбекова", "Сейтек"]);
+    expect(sync.blockers).toEqual([]);
+  });
+});
+
+describe("odoctorPreviewTotals", () => {
+  it("складывает столбцы, чтобы не считать глазами", () => {
+    const totals = odoctorPreviewTotals({
+      linkId: 7,
+      odoctorDoctorName: "Врач",
+      wouldClearDays: 1,
+      days: [
+        { date: "2026-09-09", inCabinet: 15, wouldOffer: 15 },
+        { date: "2026-09-10", inCabinet: 3, wouldOffer: 0 },
+      ],
+    });
+
+    expect(totals).toEqual({ inCabinet: 18, wouldOffer: 15 });
+  });
+
+  it("без ответа отдаёт нули, а не падает", () => {
+    expect(odoctorPreviewTotals(undefined)).toEqual({
+      inCabinet: 0,
+      wouldOffer: 0,
+    });
   });
 });
 

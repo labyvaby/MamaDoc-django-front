@@ -383,6 +383,12 @@ export const djangoQueryKeys = {
     // показывать оператору вчерашнюю витрину как сегодняшнюю.
     linkPreview: (linkId: number) =>
       ["django", "odoctor", "link-preview", linkId] as const,
+    // Предпросмотр всех связей одного врача: переключатель в карточке один
+    // на врача, значит и картинка «что произойдёт» — на врача целиком.
+    employeePreview: (employeeId: number, linkIds: readonly number[]) =>
+      [
+        "django", "odoctor", "employee-preview", employeeId, [...linkIds],
+      ] as const,
     // Филиалы в разрезе кабинета — только своя база, кешируется как справочник.
     branches: (organizationId: number | null | undefined) =>
       ["django", "odoctor", "branches", organizationId ?? null] as const,
