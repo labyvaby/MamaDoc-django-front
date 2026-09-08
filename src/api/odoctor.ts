@@ -730,6 +730,60 @@ export function odoctorLinkedBranches(
  * в каждой строке значило бы утопить в шуме то, что касается именно врача.
  */
 /**
+ * Состояние синхронизации **врача целиком**, а не отдельной связи.
+ *
+ * В карточке врача переключатель один. Связей у него может быть несколько —
+ * по одной на филиал, — но оператор включает не связь, а врача: «выкладываем
+ * его окна». Блок на каждый филиал повторял одно и то же описание дважды и
+ * заставлял щёлкать два раза там, где решение одно.
+ *
+ * `checked` считается по «хоть одна включена», а не «все»: если из двух
+ * филиалов работает один, окна в витрину **уходят**, и выключенный вид
+ * переключателя это бы скрыл. Неполноту несёт `partial` — её видно подписью,
+ * а не молчанием.
+ */
+export interface OdoctorEmployeeSync {
+  checked: boolean;
+  /** Включено не во всех филиалах — состояние, которое надо назвать. */
+  partial: boolean;
+  /** Филиалы, где связь есть, но выкладывать ей мешает. */
+  blockers: { branchName: string; reason: "drift" | "branch-off" }[];
+  branchNames: string[];
+}
+
+export function odoctorEmployeeSync(
+  links: OdoctorLink[],
+): OdoctorEmployeeSync {
+  const enabled = links.filter((link) => link.isEnabled);
+  const blockers: OdoctorEmployeeSync["blockers"] = [];
+  for (const link of links) {
+    const reason = odoctorLinkBlocker(link);
+    if (reason !== null) {
+      blockers.push({ branchName: link.branchName, reason });
+    }
+  }
+  return {
+    checked: enabled.length > 0,
+    partial: enabled.length > 0 && enabled.length < links.length,
+    blockers,
+    branchNames: links.map((link) => link.branchName),
+  };
+}
+
+/** Итог предпросмотра по столбцам: сколько окон сейчас и сколько станет. */
+export function odoctorPreviewTotals(
+  preview: OdoctorPreview | undefined,
+): { inCabinet: number; wouldOffer: number } {
+  return (preview?.days ?? []).reduce(
+    (sum, day) => ({
+      inCabinet: sum.inCabinet + day.inCabinet,
+      wouldOffer: sum.wouldOffer + day.wouldOffer,
+    }),
+    { inCabinet: 0, wouldOffer: 0 },
+  );
+}
+
+/**
  * Что карточка врача показывает в блоке витрины: форму, подпись или ничего.
  *
  * Блок виден **каждому** врачу клиники с кабинетом, а не только
