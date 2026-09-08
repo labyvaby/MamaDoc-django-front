@@ -45,9 +45,15 @@ export function buildBookingIcs(b: IcsBookingInput, orgLabel: string): string {
   const start = localStamp(b.date, b.time);
   const end = localStamp(b.date, b.time, b.totalDurationMin || 30);
   const summary = b.doctor ? `Приём: ${b.doctor.fullName}` : `Приём — ${orgLabel}`;
+  // Ссылку на карты и телефон кладём в описание: `LOCATION` — просто текст, и
+  // из календаря на телефоне до маршрута иначе не добраться.
+  const mapUrl = b.branch?.twoGisUrl || b.branch?.yandexMapsUrl || b.branch?.googleMapsUrl || null;
+  const phone = b.branch?.phones?.[0] ?? null;
   const descriptionParts = [
     b.services.length ? `Услуги: ${b.services.map((s) => s.name).join(", ")}` : null,
     `Код подтверждения: ${b.confirmationCode}`,
+    phone ? `Телефон: ${phone}` : null,
+    mapUrl ? `Как доехать: ${mapUrl}` : null,
   ].filter((s): s is string => Boolean(s));
   const location = b.branch ? [b.branch.name, b.branch.address].filter(Boolean).join(", ") : "";
 

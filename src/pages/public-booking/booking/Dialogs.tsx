@@ -576,6 +576,12 @@ export const SuccessDialog: React.FC<{
   const totalPrice = Number(detail?.totalPrice ?? 0);
   const address = detail?.branch?.address ?? doctor.branch?.address ?? "";
   const branchName = detail?.branch?.name ?? doctor.branch?.name ?? "";
+  /**
+   * Телефон филиала. Клиника сама перезванивает, чтобы подтвердить бронь, —
+   * но если пациенту нужно перенести или уточнить, звонить ему было некуда:
+   * `branch.phones` приходил в ответе и не показывался ни на одном экране.
+   */
+  const branchPhone = detail?.branch?.phones?.[0] ?? "";
 
   /**
    * Ссылки на карты филиала — те же, что на странице брони по коду.
@@ -607,19 +613,86 @@ export const SuccessDialog: React.FC<{
    */
   const confirmed = (detail?.status ?? result.status) === "confirmed";
 
+  /**
+   * Куда ехать и куда звонить — один блок на все состояния экрана.
+   *
+   * Тот же набор нужен и когда бронь принята, и когда ждём оплату: человек уже
+   * заплатил и ему всё равно надо доехать. Раньше на экране оплаты адрес лежал
+   * одной строкой в свёрнутых деталях, а карт и телефона не было вовсе.
+   */
+  const placeBlock =
+    branchName || address || branchPhone || mapLinks.length > 0 ? (
+      <>
+        {/* Филиал отдельной строкой: у клиники их несколько, и по одной улице
+            пациент не понимает, куда именно ехать. */}
+        {branchName && (
+          <Typography sx={{ fontSize: { xs: 13, lg: 15 }, fontWeight: 600 }}>
+            {branchName}
+          </Typography>
+        )}
+        {address && (
+          <Typography sx={{ fontSize: { xs: 12, lg: 14 }, fontWeight: 500 }}>{address}</Typography>
+        )}
+        {branchPhone && (
+          <Typography
+            component="a"
+            href={`tel:${branchPhone.replace(/[^\d+]/g, "")}`}
+            sx={{
+              display: "inline-block",
+              mt: 0.5,
+              fontSize: { xs: 12, lg: 14 },
+              fontWeight: 500,
+              color: BOOKING_PRIMARY,
+              textDecoration: "none",
+            }}
+          >
+            {branchPhone}
+          </Typography>
+        )}
+        {mapLinks.length > 0 && (
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
+            {mapLinks.map((m) => (
+              <Button
+                key={m.label}
+                href={m.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                size="small"
+                startIcon={<MapOutlined sx={{ fontSize: 16 }} />}
+                sx={{
+                  borderRadius: PILL_RADIUS,
+                  px: 1.5,
+                  border: `1px solid ${BORDER}`,
+                  color: "text.primary",
+                  fontSize: 13,
+                  textTransform: "none",
+                }}
+              >
+                {m.label}
+              </Button>
+            ))}
+          </Stack>
+        )}
+      </>
+    ) : null;
+
   const handleShare = async () => {
+    // Заголовок тот же, что на экране: пересылать «Запись принята», когда на
+    // экране «Запись подтверждена», нельзя — это одна и та же бронь.
+    const title = confirmed ? t("successTitleConfirmed") : t("successTitle");
     const text = [
-      t("successTitle"),
+      title,
       `${doctor.fullName}${specialty ? ` · ${specialty}` : ""}`,
       `${formatConfirmDate(result.date)} ${result.time}`,
-      address,
+      [branchName, address].filter(Boolean).join(", "),
+      branchPhone,
       `${t("confirmationCode")}: ${result.confirmationCode}`,
       bookingUrl,
     ]
       .filter(Boolean)
       .join("\n");
     try {
-      if (navigator.share) await navigator.share({ title: t("successTitle"), text });
+      if (navigator.share) await navigator.share({ title, text });
       else {
         await navigator.clipboard.writeText(text);
         setShareLabel(t("copied"));
@@ -778,12 +851,18 @@ export const SuccessDialog: React.FC<{
                   value={formatPrice(totalPrice)}
                 />
               )}
-              {(address || branchName) && (
-                <FactRow
-                  icon={<PlaceOutlined sx={{ fontSize: 20 }} />}
-                  label={t("successAddress")}
-                  value={[branchName, address].filter(Boolean).join(" · ")}
-                />
+              {/* Полный блок с картами и телефоном, а не строка: на экране
+                  оплаты доехать нужно ровно так же. */}
+              {placeBlock && (
+                <Stack direction="row" spacing={1} alignItems="flex-start">
+                  <PlaceOutlined sx={{ fontSize: 20, mt: "2px" }} />
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 13, color: MUTED, mb: 0.25 }}>
+                      {t("successAddress")}
+                    </Typography>
+                    {placeBlock}
+                  </Box>
+                </Stack>
               )}
             </Stack>
           </Collapse>
@@ -923,7 +1002,7 @@ export const SuccessDialog: React.FC<{
               )}
             </Stack>
 
-            {(address || branchName) && (
+            {placeBlock && (
               <Stack
                 direction="row"
                 alignItems="flex-start"
@@ -935,42 +1014,7 @@ export const SuccessDialog: React.FC<{
                   <Typography sx={{ fontSize: { xs: 12, lg: 14 }, mb: 0.5 }}>
                     {t("successAddress")}
                   </Typography>
-                  {/* Филиал отдельной строкой: у клиники их несколько, и по
-                      одной улице пациент не понимает, куда именно ехать. */}
-                  {branchName && (
-                    <Typography sx={{ fontSize: { xs: 13, lg: 15 }, fontWeight: 600 }}>
-                      {branchName}
-                    </Typography>
-                  )}
-                  {address && (
-                    <Typography sx={{ fontSize: { xs: 12, lg: 14 }, fontWeight: 500 }}>
-                      {address}
-                    </Typography>
-                  )}
-                  {mapLinks.length > 0 && (
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
-                      {mapLinks.map((m) => (
-                        <Button
-                          key={m.label}
-                          href={m.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          size="small"
-                          startIcon={<MapOutlined sx={{ fontSize: 16 }} />}
-                          sx={{
-                            borderRadius: PILL_RADIUS,
-                            px: 1.5,
-                            border: `1px solid ${BORDER}`,
-                            color: "text.primary",
-                            fontSize: 13,
-                            textTransform: "none",
-                          }}
-                        >
-                          {m.label}
-                        </Button>
-                      ))}
-                    </Stack>
-                  )}
+                  {placeBlock}
                 </Box>
               </Stack>
             )}
