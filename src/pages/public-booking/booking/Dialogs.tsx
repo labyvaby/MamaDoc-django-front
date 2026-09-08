@@ -1,10 +1,14 @@
 import React from "react";
-import { Box, Button, Dialog, IconButton, Menu, MenuItem, Stack, Typography } from "@mui/material";
+import { Box, Button, Collapse, Dialog, IconButton, Menu, MenuItem, Stack, Typography } from "@mui/material";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import KeyboardArrowDownOutlined from "@mui/icons-material/KeyboardArrowDownOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
+import PendingOutlined from "@mui/icons-material/PendingOutlined";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
 import PublicOutlined from "@mui/icons-material/PublicOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
@@ -489,11 +493,14 @@ export const SuccessDialog: React.FC<{
   doctor: ProfessionalDetail;
   services: PickableService[];
   onClose: () => void;
-}> = ({ result, doctor, services, onClose }) => {
+  /** Оплата не прошла (истекла/отклонена) — «Записаться на другое время». */
+  onRetry?: () => void;
+}> = ({ result, doctor, services, onClose, onRetry }) => {
   const { t } = useT("publicBooking");
   // Ссылка уходит наружу (QR, «Поделиться») — клинику в ней теряем.
   const orgSlug = useBookingOrgSlug();
   const [shareLabel, setShareLabel] = React.useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = React.useState(false);
   const specialty = doctor.specialties[0] ?? "";
 
   // POST отдаёт только код, статус, дату и время — состав, сумму и адрес
@@ -517,6 +524,30 @@ export const SuccessDialog: React.FC<{
    * оплаты один — status "paid".
    */
   const paymentStatus = detail?.payment?.status ?? null;
+
+  /**
+   * Пока предоплата не пришла, заголовок не должен обещать «Запись принята!» —
+   * без оплаты бронь снимется через 15 минут, и зелёная галочка была ложной
+   * (жалоба заказчика 08.09.2026: гость видел успех даже без оплаты).
+   *
+   * До ответа `getBookingByCode` (`detail` ещё `null`) уже известно из самого
+   * POST, нужна ли оплата — `result.status === "awaiting_payment"`. Без этого
+   * запасного варианта первый рендер показывал старое «Запись принята!», а
+   * через долю секунды подменялся на «Ждём оплату» — заметная перерисовка
+   * (жалоба заказчика 08.09.2026: «сначала прогружается прошлая версия, а
+   * потом новая»). «Не получилось» же можно узнать только из `detail` —
+   * до его ответа считаем брони поступившей.
+   */
+  const headerTone: "accepted" | "pending" | "issue" = detail?.payment
+    ? detail.payment.status === "pending"
+      ? "pending"
+      : detail.payment.status === "expired" || detail.payment.status === "failed"
+        ? "issue"
+        : "accepted"
+    : result.status === "awaiting_payment"
+      ? "pending"
+      : "accepted";
+
   React.useEffect(() => {
     if (paymentStatus !== "pending" || !result.confirmationCode) return;
     const ctrl = new AbortController();
@@ -600,6 +631,135 @@ export const SuccessDialog: React.FC<{
     </Box>
   ) : null;
 
+  /**
+   * Пока бронь не подтверждена (ждём оплату / оплата не прошла) — отдельный,
+   * узкий экран-чекаут: главное действие (оплатить / записаться заново) и
+   * ничего лишнего вокруг. Фото врача, QR и «Поделиться» тут неуместны (см.
+   * `qrBlock` выше) — карточка записи с фактами спрятана под «Детали записи»
+   * и открывается по желанию. Экран-витрину с фото и QR показываем только
+   * когда бронь реально принята — см. return ниже.
+   */
+  if (headerTone !== "accepted") {
+    const pending = headerTone === "pending";
+    const issueHint = paymentStatus === "failed" ? t("byCode.payFailed") : t("byCode.payExpired");
+
+    return (
+      <ModalPaper open onClose={onClose} maxWidth={420}>
+        <IconButton
+          onClick={onClose}
+          aria-label="Закрыть"
+          sx={{ position: "absolute", top: 8, right: 8, color: MUTED }}
+        >
+          <CloseOutlined />
+        </IconButton>
+
+        <Stack alignItems="center" spacing={1.5} sx={{ p: { xs: 3, lg: 4 }, textAlign: "center" }}>
+          {pending ? (
+            <PendingOutlined sx={{ fontSize: 40, color: "warning.main" }} />
+          ) : (
+            <ErrorOutlineOutlined sx={{ fontSize: 40, color: "error.main" }} />
+          )}
+          <Typography
+            sx={{ fontSize: 20, fontWeight: 700, color: pending ? "warning.main" : "error.main" }}
+          >
+            {pending ? t("successTitlePending") : t("successTitleIssue")}
+          </Typography>
+          {!pending && (
+            <Typography sx={{ fontSize: 13, color: MUTED }}>{issueHint}</Typography>
+          )}
+
+          {pending &&
+            (detail?.payment ? (
+              <Box sx={{ width: "100%" }}>
+                <PaymentBlock payment={detail.payment} t={t} compact />
+              </Box>
+            ) : (
+              // Строка результата POST уже подтверждает статус — само тело
+              // оплаты (сумма/ссылка) досылается следующим ответом по коду.
+              <Typography sx={{ fontSize: 13, color: MUTED }}>{t("sending")}</Typography>
+            ))}
+
+          {!pending && onRetry && (
+            <Button
+              onClick={onRetry}
+              sx={{
+                width: "100%",
+                py: 1.5,
+                borderRadius: PILL_RADIUS,
+                fontSize: 15,
+                fontWeight: 600,
+                color: "#FFFFFF",
+                bgcolor: BOOKING_PRIMARY,
+                textTransform: "none",
+                "&:hover": { bgcolor: BOOKING_PRIMARY_HOVER },
+              }}
+            >
+              {t("successRetry")}
+            </Button>
+          )}
+
+          <Button
+            onClick={() => setDetailsOpen((v) => !v)}
+            endIcon={
+              <ExpandMoreOutlined
+                sx={{
+                  fontSize: 18,
+                  transform: detailsOpen ? "rotate(180deg)" : "none",
+                  transition: "transform .2s",
+                }}
+              />
+            }
+            sx={{ textTransform: "none", color: MUTED, fontSize: 13 }}
+          >
+            {t("successDetailsToggle")}
+          </Button>
+
+          <Collapse in={detailsOpen} sx={{ width: "100%" }}>
+            <Stack
+              spacing={1.25}
+              sx={{ pt: 1.5, mt: -0.5, borderTop: `1px solid ${BORDER}`, textAlign: "left" }}
+            >
+              <FactRow
+                icon={<PersonOutlineOutlined sx={{ fontSize: 20 }} />}
+                label={t("successDoctor")}
+                value={`${doctor.fullName}${specialty ? ` · ${specialty}` : ""}`}
+              />
+              <FactRow
+                icon={<ScheduleOutlined sx={{ fontSize: 20 }} />}
+                label={t("successTime")}
+                value={result.time}
+              />
+              <FactRow
+                icon={<EventOutlined sx={{ fontSize: 20 }} />}
+                label={t("successDate")}
+                value={formatConfirmDate(result.date)}
+              />
+              <FactRow
+                icon={<MedicalServicesOutlined sx={{ fontSize: 20 }} />}
+                label={t("successService")}
+                value={serviceNames || "—"}
+              />
+              {totalPrice > 0 && (
+                <FactRow
+                  icon={<Box sx={{ width: 20 }} />}
+                  label={t("successTotal")}
+                  value={formatPrice(totalPrice)}
+                />
+              )}
+              {address && (
+                <FactRow
+                  icon={<PlaceOutlined sx={{ fontSize: 20 }} />}
+                  label={t("successAddress")}
+                  value={address}
+                />
+              )}
+            </Stack>
+          </Collapse>
+        </Stack>
+      </ModalPaper>
+    );
+  }
+
   return (
     <ModalPaper open onClose={onClose} maxWidth={828}>
       <IconButton
@@ -625,10 +785,12 @@ export const SuccessDialog: React.FC<{
             spacing={1}
             sx={{ pb: { xs: 1, lg: 0 }, borderBottom: { xs: `1px solid ${BORDER}`, lg: "none" } }}
           >
+            {/* Бронь создаётся в статусе pending: подтверждает её персонал,
+                поэтому «принята», а не «подтверждена» — этот экран рисуется
+                только когда предоплаты нет или она уже пришла (см. ранний
+                return выше для «ждём оплату» / «не получилось»). */}
             <CheckCircleOutlined sx={{ fontSize: { xs: 24, lg: 34 }, color: "#34C759" }} />
             <Box>
-              {/* Бронь создаётся в статусе pending: подтверждает её персонал,
-                  поэтому «принята», а не «подтверждена». */}
               <Typography sx={{ fontSize: { xs: 16, lg: 22 }, fontWeight: 600, color: "#34C759" }}>
                 {t("successTitle")}
               </Typography>
@@ -643,9 +805,8 @@ export const SuccessDialog: React.FC<{
             <DoctorBadge doctor={doctor} specialty={specialty} />
           </Box>
 
-          {/* Онлайн-предоплата — если её не оплатить, время освободится через
-              15 минут, поэтому кнопка должна быть видна сразу, а не только на
-              странице «Ваша запись» по коду. */}
+          {/* Оплата уже пришла (после prepayment) — компактное подтверждение
+              «Оплата получена» рядом с остальными фактами, не заголовком. */}
           {detail?.payment && <PaymentBlock payment={detail.payment} t={t} />}
 
           <Box sx={{ borderTop: `1px solid ${BORDER}` }}>

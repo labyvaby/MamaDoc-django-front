@@ -60,6 +60,7 @@ import {
   prepaymentExpiryText,
   PrepaymentChip,
   StatusChip,
+  useTickingClock,
 } from "./meta";
 import ConfirmBookingDialog from "./ConfirmBookingDialog";
 import { useT } from "../../i18n/VerticalProvider";
@@ -160,6 +161,9 @@ const BookingDetailDrawer: React.FC<Props> = ({
 
   const b = query.data;
   const busy = mutation.isPending;
+  // Тикающий отсчёт «Идёт оплата · N мин» в шапке — только пока карточка
+  // реально ждёт оплату, чтобы не заводить лишний таймер на остальных броней.
+  const now = useTickingClock(15000, b?.status === "awaiting_payment");
 
   // ── Навигация по списку ──
   const ids = siblingIds ?? [];
@@ -358,7 +362,12 @@ const BookingDetailDrawer: React.FC<Props> = ({
                   </Stack>
                 )}
               </Box>
-              <StatusChip status={b.status} size="medium" />
+              <StatusChip
+                status={b.status}
+                size="medium"
+                expiresAt={b.prepaymentExpiresAt}
+                now={now}
+              />
             </Stack>
 
             {/* Код брони — та же карточка записи, что видит пациент по QR. */}
@@ -483,6 +492,9 @@ const BookingDetailDrawer: React.FC<Props> = ({
                       status={b.prepaymentStatus}
                       amount={b.prepaymentAmount}
                       needsAttention={b.prepaymentNeedsAttention}
+                      awaitingConfirmation={
+                        b.prepaymentStatus === "paid" && b.status === "pending"
+                      }
                     />
                     {b.prepaymentNeedsAttention && (
                       <Alert severity="warning" sx={{ width: "100%" }}>

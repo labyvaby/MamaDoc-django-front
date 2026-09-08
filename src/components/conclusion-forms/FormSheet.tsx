@@ -3,7 +3,9 @@ import { Box } from "@mui/material";
 
 import {
   REQUIRED_BLOCK_LABELS,
+  resolveMargins,
   sheetSizeMm,
+  sheetTypography,
   type ConclusionFormTemplate,
   type ConclusionFormPayload,
   type FormField,
@@ -54,6 +56,30 @@ interface FormSheetProps {
   scale?: number;
   /** Подсветить поле в превью (при фокусе на нём в конструкторе). */
   highlightFieldId?: string | null;
+  /**
+   * Блок под полями листа — колонки заключения, которых бланк не печатает
+   * (`ConclusionTrailer`). Стоит внутри листа и ВЫШЕ подписи: подпись врача
+   * должна заверять то, что напечатано над ней. Раньше этот блок приклеивался
+   * следом за всем листом, и диагноз с заключением оказывались под подписью.
+   */
+  trailer?: React.ReactNode;
+  /** Пунктиром показать границу рабочей области (конструктор бланка). */
+  showContentBounds?: boolean;
+  /**
+   * Режим печати: высота листа остаётся ровно физической страницей (letterhead
+   * и подложка занимают её целиком, подпись стоит у низа, как на бумаге), но
+   * `overflow: hidden` меняется на `visible` — контент, который на лист не
+   * поместился, не обрезается, а продолжается ниже границы листа в обычном
+   * потоке документа. html2pdf сам режет получившийся поток (лист + довесок,
+   * если он был, + хвост заключения следом, см. printFormSheet.tsx) на
+   * страницы нужного формата. До этого прежний `overflow: hidden` молча терял
+   * контент, не поместившийся на один лист (бланк с длинными полями печатался
+   * без диагноза/заключения — реальная жалоба клиники, 08.09.2026); попытка
+   * чинить это авто-высотой листа заодно сломала порядок — короткий бланк
+   * заканчивался у верха, а хвост заключения печатался далеко под подписью,
+   * с пустым разрывом (родитель auto-высоты не тянет flex-контент вниз).
+   */
+  printMode?: boolean;
 }
 
 /** Подпись значения обязательного блока или поля. */
@@ -141,13 +167,40 @@ export const FormSheet: React.FC<FormSheetProps> = ({
   values = {},
   scale = 1,
   highlightFieldId = null,
+  printMode = false,
+  trailer = null,
+  showContentBounds = false,
 }) => {
-  const { width, height } = sheetSizeMm(template.pageSize, template.orientation);
+  const { width, height: pageHeight } = sheetSizeMm(template.pageSize, template.orientation);
+  const margins = resolveMargins(template.pageSize, template.margins);
 
   // A5 печатается тем же кеглем, что A4, — иначе текст на половинном листе
   // выглядит крупнее оригинала. Уменьшаем пропорционально ширине листа.
-  const fontPt = template.pageSize === "A5" ? 9 : 11;
-  const padX = template.pageSize === "A5" ? 10 : 15;
+  const { fontPt } = sheetTypography(template.pageSize);
+
+  // В печати лист на волос ниже физической страницы. html2pdf растеризует
+  // разметку и режет получившуюся картинку на страницы: при листе ростом
+  // ровно в страницу округление пикселей выплёскивало миллиметр пустоты на
+  // следующую страницу, и каждая печать выходила с лишним чистым листом.
+  // На бумаге этот миллиметр не виден, а настоящий перенос (когда контент
+  // правда не влез) работает как прежде.
+  const height = printMode ? pageHeight - 1 : pageHeight;
+
+  /**
+   * В печать идут только заполненные строки.
+   *
+   * На экране пустое поле — это линейка под ручку, и она нужна: конструктор
+   * списан с бумажных бланков, которые дозаполняют от руки. Но в готовом
+   * документе незаполненные строки давали пустые провалы на пол-листа, и
+   * заключение выглядело недоделанным (решение заказчика 08.09.2026 — пустые
+   * не печатать). Превью в конструкторе при этом обязано показывать лист
+   * целиком: администратор верстает бланк, а не смотрит на конкретный приём.
+   */
+  const printedFields = printMode
+    ? template.fields.filter((field) =>
+        (values[field.id] ?? field.defaultValue ?? "").trim() !== "",
+      )
+    : template.fields;
 
   return (
     <Box
@@ -163,7 +216,19 @@ export const FormSheet: React.FC<FormSheetProps> = ({
         sx={{
           boxSizing: "border-box",
           position: "relative",
-          overflow: "hidden",
+          // В печати — видимый оверфлоу, а не обрезка: высота листа остаётся
+          // ровно физической страницей (letterhead/подложка должны занимать
+          // её целиком, а подпись — стоять у низа листа, как на бумаге), но
+          // контент, который в неё не влез, не пропадает — просто продолжается
+          // ниже границы коробки в обычном потоке документа. html2pdf режет
+          // весь получившийся поток (лист + случившийся довесок + хвост
+          // заключения следом) на страницы нужного формата сам. Раньше здесь
+          // была авто-высота с min-height — «резервировала» физическую
+          // страницу пустым местом, только когда бланк короче листа контент
+          // не дотягивался до низа (flex внутри auto-родителя не тянется), и
+          // хвост заключения печатался куда ниже подписи, с большим разрывом
+          // (баг найден в проде 08.09.2026).
+          overflow: printMode ? "visible" : "hidden",
           width: `${width}mm`,
           height: `${height}mm`,
           transform: `scale(${scale})`,
@@ -173,11 +238,14 @@ export const FormSheet: React.FC<FormSheetProps> = ({
           fontFamily: "Arial, sans-serif",
           fontSize: `${fontPt}pt`,
           lineHeight: 1.35,
-          px: `${padX}mm`,
-          py: "12mm",
+          pt: `${margins.top}mm`,
+          pr: `${margins.right}mm`,
+          pb: `${margins.bottom}mm`,
+          pl: `${margins.left}mm`,
           display: "flex",
           flexDirection: "column",
-          boxShadow: "0 0 0 1px rgba(0,0,0,.12)",
+          // Рамка — ориентир страницы на экране; на бумаге ей делать нечего.
+          boxShadow: printMode ? "none" : "0 0 0 1px rgba(0,0,0,.12)",
         }}
       >
         {/* Подложка — фирменный бланк под текстом. */}
@@ -198,8 +266,33 @@ export const FormSheet: React.FC<FormSheetProps> = ({
           />
         )}
 
+        {/* Граница рабочей области — только в конструкторе. Отступы подгоняют
+            под напечатанную шапку фирменной бумаги, и без видимой рамки это
+            делается распечатыванием пробников. В печать рамка не идёт. */}
+        {showContentBounds && (
+          <Box
+            sx={{
+              position: "absolute",
+              top: `${margins.top}mm`,
+              right: `${margins.right}mm`,
+              bottom: `${margins.bottom}mm`,
+              left: `${margins.left}mm`,
+              border: "0.3mm dashed #1976d2",
+              opacity: 0.5,
+              pointerEvents: "none",
+            }}
+          />
+        )}
+
         {/* Содержимое поверх подложки. */}
-        <Box sx={{ position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
+        <Box
+          sx={{
+            position: "relative",
+            display: "flex",
+            flexDirection: "column",
+            height: "100%",
+          }}
+        >
           {template.showClinicHeader && (
             <Box
               sx={{
@@ -266,25 +359,27 @@ export const FormSheet: React.FC<FormSheetProps> = ({
             </Box>
           </Box>
 
-          {/* Поля шаблона. */}
-          <Box
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              columnGap: "4mm",
-              alignContent: "start",
-            }}
-          >
-            {template.fields.map((field) => (
-              <SheetField
-                key={field.id}
-                field={field}
-                value={values[field.id] ?? field.defaultValue ?? ""}
-                highlighted={highlightFieldId === field.id}
-              />
-            ))}
+          {/* Поля шаблона и хвост заключения — вместе занимают остаток листа,
+              чтобы подпись осталась прижатой к низу страницы. */}
+          <Box sx={{ flex: 1, minHeight: 0 }}>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                columnGap: "4mm",
+                alignContent: "start",
+              }}
+            >
+              {printedFields.map((field) => (
+                <SheetField
+                  key={field.id}
+                  field={field}
+                  value={values[field.id] ?? field.defaultValue ?? ""}
+                  highlighted={highlightFieldId === field.id}
+                />
+              ))}
+            </Box>
+            {trailer}
           </Box>
 
           {template.footerNote?.trim() && (
