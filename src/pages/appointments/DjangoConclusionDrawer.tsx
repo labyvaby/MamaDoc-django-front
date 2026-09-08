@@ -67,6 +67,7 @@ import { useT } from "../../i18n/VerticalProvider";
 import { tt } from "../../i18n/t";
 import { agree } from "../../i18n/formatters";
 import { ConclusionFormInline } from "../../components/conclusion-forms/ConclusionFormInline";
+import { ConclusionHistory } from "../../components/conclusion-forms/ConclusionHistory";
 import {
   getConclusionForms,
   renderFilledForm,
@@ -1844,6 +1845,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 </Box>
               )}
 
+              {/* Кто и когда правил заключение — грузится по требованию. */}
+              <ConclusionHistory conclusionId={conclusion.id} />
             </Stack>
           )}
 

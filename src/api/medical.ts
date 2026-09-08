@@ -147,7 +147,18 @@ export interface MedicalConclusionRevision {
    * по строкам, а старые значения поверх нового текста разошлись бы с ним.
    */
   formData: ConclusionFormData | null;
-  changedBy: string | null;
+  /**
+   * Пользователь, сделавший правку, — именно id, не имя.
+   *
+   * ⚠ Раньше здесь стояло `changedBy: string`, которого в ответе нет вовсе:
+   * бэк отдаёт `changedById` (проверено на живых данных 08.09.2026, ревизии
+   * заключения 6428). Поле молча приходило `undefined`, и история правок
+   * показывала «когда», но не «кто». ФИО подставляем матчингом
+   * `changedById` ↔ `employee.authUserId`; отдать имя сразу попросили тикетом
+   * `MamaDoc/backend_ticket_conclusion_revisions.md` — в истории цены приёма
+   * бэк уже отдаёт `changedByName`.
+   */
+  changedById: number | null;
   changeReason: "create" | "update" | "complete";
   createdAt: string;
 }
@@ -435,8 +446,10 @@ export function updateConclusion(
  */
 export function getConclusionRevisions(
   id: number,
+  signal?: AbortSignal,
 ): Promise<MedicalConclusionRevision[]> {
   return apiRequest<MedicalConclusionRevision[]>(
     `/medical/conclusions/${id}/revisions/`,
+    { signal },
   );
 }
