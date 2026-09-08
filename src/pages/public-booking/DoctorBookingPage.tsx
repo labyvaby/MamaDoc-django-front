@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Box, Button, Skeleton, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, Paper, Skeleton, Stack, Typography } from "@mui/material";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
@@ -38,6 +38,7 @@ import {
   CTA_SHADOW_MOBILE,
   MUTED,
   PILL_RADIUS,
+  TILE_RADIUS,
   accentChip,
 } from "./theme";
 import { formatDayLong, formatPhone, formatPrice, formatServicesCount, telHref } from "./format";
@@ -188,6 +189,12 @@ const DoctorBookingPage: React.FC = () => {
    */
   const [calendarByBranch, setCalendarByBranch] = React.useState<Record<string, CalendarDay[]>>({});
   const [calendarLoading, setCalendarLoading] = React.useState(false);
+  /**
+   * Бампается при «Записаться на другое время» после неудачной оплаты —
+   * форсирует перезагрузку календаря, иначе гость снова увидит устаревший
+   * список (в т.ч. слот, который уже освободился после сгоревшей брони).
+   */
+  const [calendarReloadKey, setCalendarReloadKey] = React.useState(0);
 
   const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
   const [selectedTime, setSelectedTime] = React.useState<string | null>(null);
@@ -375,7 +382,7 @@ const DoctorBookingPage: React.FC = () => {
         if (!controller.signal.aborted) setCalendarLoading(false);
       });
     return () => controller.abort();
-  }, [doctor, idOrSlug, scheduleBranches, scheduleLoading]);
+  }, [doctor, idOrSlug, scheduleBranches, scheduleLoading, calendarReloadKey]);
 
   // Первое раскрытие блока услуг: он теперь ниже расписания и на телефоне
   // остаётся за краем экрана — иначе гость не заметит, что появился шаг 3.
@@ -422,6 +429,11 @@ const DoctorBookingPage: React.FC = () => {
     if (!firstAvailable) return;
     setSelectedDate(firstAvailable.date);
     setStep(2);
+    // Автовыбор даты — не клик гостя, handleDateChange не вызывается, а без
+    // этого занятость дня не подгружалась вовсе (тот самый первый экран,
+    // который видит каждый гость).
+    void reloadTimes(firstAvailable.date, selectedServices);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calendar, selectedDate]);
 
   /** Нерабочие дни филиала: в календаре их подписываем «выходной». */
@@ -435,7 +447,10 @@ const DoctorBookingPage: React.FC = () => {
   );
 
   const selectedDay = calendar.find((d) => d.date === selectedDate) ?? null;
-  /** Слоты дня: с выбранными услугами приходят с флагом busy, иначе — только свободные. */
+  /**
+   * Слоты дня — с флагом занятости; фолбэк на `calendar.times` (без busy)
+   * нужен только на миг до первого ответа `reloadTimes` при смене даты.
+   */
   const slots: AvailableTimeSlot[] =
     filteredTimes ?? (selectedDay?.times ?? []).map((time) => ({ time, busy: false }));
   const hasAvailableDay = calendar.some((d) => d.isAvailable);
@@ -461,16 +476,26 @@ const DoctorBookingPage: React.FC = () => {
     !doctor ||
     ((BOOKING_NO_SERVICE_ENABLED || doctor.services.length > 0) && branchId !== null);
 
-  /** Свободные времена под выбранные услуги (их суммарная длительность). */
+  /**
+   * Свободные и занятые времена дня. Без выбранных услуг бэк сам считает
+   * занятость по дефолтной длительности слота (проверено на живом API
+   * 08.09.2026: `available-times` без `service_ids` уже возвращает `busy`
+   * per-слот) — раньше фронт в этом случае вообще не звал ручку и показывал
+   * список из `calendar.times`, где занятые слоты просто отсутствуют, без
+   * пометки: гость видел время дня как будто оно всегда свободно (жалоба
+   * заказчика 08.09.2026). Как только услуги выбраны, перезапрашиваем уже под
+   * их суммарную длительность — она может отличаться от дефолтной.
+   */
   const reloadTimes = React.useCallback(
     async (date: string, serviceIds: number[]) => {
-      if (!serviceIds.length) {
-        setFilteredTimes(null);
-        return null;
-      }
       setTimesLoading(true);
       try {
-        const res = await getProfessionalAvailableTimes(idOrSlug, date, serviceIds, branchId);
+        const res = await getProfessionalAvailableTimes(
+          idOrSlug,
+          date,
+          serviceIds.length ? serviceIds : undefined,
+          branchId,
+        );
         setFilteredTimes(res.times);
         return res.times;
       } catch {
@@ -637,6 +662,21 @@ const DoctorBookingPage: React.FC = () => {
     submitBooking(name, phone, comment);
 
   /**
+   * «Записаться на другое время» — оплата не пришла, слот сгорел. Закрываем
+   * модалку, не уходя со страницы врача, сбрасываем выбранное время (дата
+   * остаётся — обычно гость хочет тот же день) и форсируем свежий календарь
+   * и список слотов: без этого можно было бы записаться на тот же сгоревший
+   * слот с устаревшими данными.
+   */
+  const handleRetry = () => {
+    setResult(null);
+    setSelectedTime(null);
+    setStep(2);
+    setCalendarReloadKey((k) => k + 1);
+    if (selectedDate) void reloadTimes(selectedDate, selectedServices);
+  };
+
+  /**
    * «Сообщите, когда освободится»: у врача нет ни одного свободного дня.
    * Заявка не занимает слот и не создаёт карту — регистратор перезвонит,
    * когда время появится (авто-SMS в v1 нет, и обещать её гостю нельзя).
@@ -670,17 +710,64 @@ const DoctorBookingPage: React.FC = () => {
   // ── Состояния загрузки и ошибок ────────────────────────────────────────────
 
   if (loading) {
+    // Скелетон повторяет структуру реальной вёрстки (те же Paper-карточки и та
+    // же сетка календаря, что рисует ScheduleCard при calendarLoading) — иначе
+    // при появлении данных высота блоков резко меняется и экран «скачет».
     return (
       <PublicBookingShell heading={t("headingBooking")} backTo="/book/doctors">
         <Box
           sx={{
             display: "grid",
             gap: 2,
+            alignItems: "start",
             gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "550px minmax(0, 1fr)" },
           }}
         >
-          <Skeleton variant="rounded" height={220} sx={{ borderRadius: BOOKING_RADIUS }} />
-          <Skeleton variant="rounded" height={460} sx={{ borderRadius: BOOKING_RADIUS }} />
+          <Stack spacing={1.5}>
+            <Paper
+              elevation={0}
+              sx={{ p: { xs: 2, md: 2.5 }, borderRadius: BOOKING_RADIUS, boxShadow: BOOKING_SHADOW }}
+            >
+              <Stack direction="row" alignItems="flex-start" spacing={2}>
+                <Skeleton
+                  variant="rounded"
+                  sx={{
+                    width: { xs: 104, md: 120 },
+                    height: { xs: 124, md: 144 },
+                    flexShrink: 0,
+                    borderRadius: TILE_RADIUS,
+                  }}
+                />
+                <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                  <Skeleton width="70%" height={26} />
+                  <Skeleton width="45%" height={22} sx={{ mt: 1 }} />
+                  <Skeleton width="55%" height={18} sx={{ mt: 1.5 }} />
+                </Box>
+              </Stack>
+            </Paper>
+            <Skeleton variant="rounded" height={120} sx={{ borderRadius: BOOKING_RADIUS }} />
+          </Stack>
+
+          <Stack spacing={1.5}>
+            <Skeleton variant="rounded" height={44} sx={{ borderRadius: TILE_RADIUS }} />
+            <Paper
+              elevation={0}
+              sx={{ p: { xs: 2, md: 2.5 }, borderRadius: BOOKING_RADIUS, boxShadow: BOOKING_SHADOW }}
+            >
+              <Skeleton width="30%" height={22} sx={{ mb: 1.5 }} />
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 1,
+                  gridTemplateColumns: { xs: "repeat(4, 1fr)", md: "repeat(6, 1fr)", xl: "repeat(7, 1fr)" },
+                }}
+              >
+                {Array.from({ length: 14 }).map((_, i) => (
+                  <Skeleton key={i} variant="rounded" height={88} sx={{ borderRadius: TILE_RADIUS }} />
+                ))}
+              </Box>
+            </Paper>
+          </Stack>
         </Box>
       </PublicBookingShell>
     );
@@ -786,6 +873,10 @@ const DoctorBookingPage: React.FC = () => {
       pageTitle={doctor.fullName}
       heading={t("headingBooking")}
       backTo="/book/doctors"
+      // Резерв места стабилен (не зависит от calendarLoading/hasAvailableDay,
+      // которые меняются при смене филиала/даты) — иначе нижний отступ
+      // страницы прыгал бы вместе с панелью на каждое такое переключение.
+      reserveStickyBar={canBook}
       stickyBar={
         canBook && showBookButton ? (
           // Мобильная панель эталона: полупрозрачный фон с размытием,
@@ -1051,6 +1142,7 @@ const DoctorBookingPage: React.FC = () => {
           doctor={doctor}
           services={chosenServices}
           onClose={() => go("/book/doctors")}
+          onRetry={handleRetry}
         />
       )}
     </PublicBookingShell>

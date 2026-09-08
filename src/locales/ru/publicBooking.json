@@ -134,6 +134,11 @@
 
   "successTitle": "{{record.nom, capitalize}} принята!",
   "successHint": "Мы перезвоним, чтобы подтвердить {{visit.acc}}.",
+  "successTitlePending": "Ждём оплату",
+  "successTitleIssue": "Не получилось",
+  "successRetry": "Записаться на другое время",
+  "successDetailsToggle": "Детали записи",
+  "successDoctor": "Специалист",
   "confirmationCode": "Код подтверждения",
   "successDate": "Дата",
   "successTime": "Время",
