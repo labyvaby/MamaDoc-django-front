@@ -255,6 +255,21 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.all });
   }, [appt.patient?.id, queryClient]);
 
+  /**
+   * Заключение сохранено — обновляем приёмы.
+   *
+   * Состояние заключения (`conclusionState`, `conclusionId`) приходит внутри
+   * строк услуг приёма, и по нему рисуется кнопка «Заключение». Без сброса
+   * кэша врач, только что завершивший заключение, видел на его месте прежнее
+   * «Начать приём» и не мог ни открыть документ, ни распечатать его — до
+   * перезагрузки страницы (проверено под учёткой врача 08.09.2026).
+   */
+  const handleConclusionSaved = React.useCallback(() => {
+    setStartedSlot(null);
+    // Ключ-префикс: сбрасывает и список дня, и счётчики, и домашний агрегат.
+    void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.all });
+  }, [queryClient]);
+
   // Прогноз календаря пациента: положенные (planned/overdue) дозы — чтобы ввести
   // вакцину в 1–2 клика прямо из приёма (вакцина/доза предзаполнятся).
   const patientId = appt.patient?.id ?? null;
@@ -1332,7 +1347,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           canEdit={startedSlot.canEdit}
           canPrint={startedSlot.canPrint}
           patientComplaints={appt.complaints}
-          onSaved={() => setStartedSlot(null)}
+          onSaved={handleConclusionSaved}
         />
       )}
 
