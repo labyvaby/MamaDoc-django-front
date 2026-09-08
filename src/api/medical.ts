@@ -83,6 +83,8 @@ export interface ConclusionFormDataEntry {
     showClinicHeader?: boolean;
     headerContacts?: string;
     background?: { imageUrl?: string | null; opacity?: number } | null;
+    /** Отступы листа, мм. Печать берёт актуальные — эти нужны, если шаблон удалён. */
+    margins?: { top?: number; right?: number; bottom?: number; left?: number } | null;
     fields?: unknown[];
   } | null;
 }

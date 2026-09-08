@@ -1,6 +1,7 @@
 import html2pdf from "html2pdf.js";
 import { tt } from "../i18n/t";
 import { A4_WIDTH_MM, pdfFileName } from "./pdfLayout";
+import { CONCLUSION_FIELD_LABELS, CONCLUSION_FIELD_UNITS } from "./conclusionFields";
 
 export { pdfFileName } from "./pdfLayout";
 
@@ -16,7 +17,7 @@ export type ConclusionPDFData = {
   diagnosis: string;
   anamnesis: string;
   objective: string;
-  recommendations: string;
+  conclusion: string;
   doctorFio: string;
 };
 
@@ -112,9 +113,11 @@ export const buildConclusionHtml = (data: ConclusionPDFData): string => {
     diagnosis,
     anamnesis,
     objective,
-    recommendations,
+    conclusion,
     doctorFio,
   } = data;
+  const L = CONCLUSION_FIELD_LABELS;
+  const U = CONCLUSION_FIELD_UNITS;
 
   // Очищаем значения от прочерков для корректного отображения единиц измерения
   const heightDisplay = height && height !== "—" ? height : "";
@@ -140,34 +143,34 @@ export const buildConclusionHtml = (data: ConclusionPDFData): string => {
       <div style="margin-bottom: 5mm;"><b>${escapeHtml(tt("print:visitDateTimeLabel"))}</b> ${escapeHtml(appointmentDate)}</div>
 
       <div style="margin-bottom: 5mm; display: flex; gap: 4mm;">
-        <div style="flex: 0 0 45mm;"><b>Рост:</b> ${heightDisplay ? `${escapeHtml(heightDisplay)} см` : ""}</div>
-        <div style="flex: 0 0 45mm;"><b>Вес:</b> ${weightDisplay ? `${escapeHtml(weightDisplay)} кг` : ""}</div>
-        <div style="flex: 1; min-width: 0;"><b>Температура:</b> ${tempDisplay ? `${escapeHtml(tempDisplay)} C°` : ""}</div>
+        <div style="flex: 0 0 45mm;"><b>${L.heightCm}:</b> ${heightDisplay ? `${escapeHtml(heightDisplay)} ${U.heightCm}` : ""}</div>
+        <div style="flex: 0 0 45mm;"><b>${L.weightKg}:</b> ${weightDisplay ? `${escapeHtml(weightDisplay)} ${U.weightKg}` : ""}</div>
+        <div style="flex: 1; min-width: 0;"><b>${L.temperature}:</b> ${tempDisplay ? `${escapeHtml(tempDisplay)} ${U.temperature}` : ""}</div>
       </div>
 
       <div style="margin-bottom: 2mm;">
-        <b>Жалобы:</b>
+        <b>${L.complaints}:</b>
         ${renderPrintableBlock(doctorComplaints || complaints || "—")}
       </div>
 
       <div style="margin-top: 4mm; margin-bottom: 2mm;">
-        <b>Диагноз:</b>
+        <b>${L.diagnosis}:</b>
         ${renderPrintableBlock(diagnosis || "—")}
       </div>
 
       <div style="margin-top: 4mm; margin-bottom: 2mm;">
-        <b>Анамнез:</b>
+        <b>${L.anamnesis}:</b>
         ${renderPrintableBlock(anamnesis)}
       </div>
 
       <div style="margin-top: 4mm; margin-bottom: 2mm;">
-        <b>Объективно:</b>
+        <b>${L.objective}:</b>
         ${renderPrintableBlock(objective)}
       </div>
 
       <div style="margin-top: 4mm; margin-bottom: 2mm;">
-        <b>Рекомендации:</b>
-        <div style="margin-top: 1.5mm;">${renderPrintableBlock(recommendations)}</div>
+        <b>${L.conclusion}:</b>
+        <div style="margin-top: 1.5mm;">${renderPrintableBlock(conclusion)}</div>
       </div>
 
       <div style="margin-top: 8mm; display: flex; justify-content: space-between; align-items: flex-start; gap: 4mm;">

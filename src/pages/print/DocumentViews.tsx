@@ -3,6 +3,10 @@ import { Box, Divider, Stack, Typography } from "@mui/material";
 
 import { tt } from "../../i18n/t";
 import type { CertificatePDFData, ConclusionPDFData } from "../../utility/pdfGenerator";
+import {
+  CONCLUSION_FIELD_LABELS,
+  CONCLUSION_FIELD_UNITS,
+} from "../../utility/conclusionFields";
 
 /**
  * Экранный вид документов — АДАПТИВНЫЙ, в отличие от PDF-шаблона.
@@ -60,11 +64,20 @@ const Section: React.FC<{ title: string; text?: string }> = ({ title, text }) =>
 
 export const ConclusionDocumentView: React.FC<{ data: ConclusionPDFData }> = ({ data }) => {
   const measurements = [
-    { label: "Рост:", value: data.height && data.height !== "—" ? `${data.height} см` : "" },
-    { label: "Вес:", value: data.weight && data.weight !== "—" ? `${data.weight} кг` : "" },
     {
-      label: "Температура:",
-      value: data.temperature && data.temperature !== "—" ? `${data.temperature} C°` : "",
+      label: `${CONCLUSION_FIELD_LABELS.heightCm}:`,
+      value: data.height && data.height !== "—" ? `${data.height} ${CONCLUSION_FIELD_UNITS.heightCm}` : "",
+    },
+    {
+      label: `${CONCLUSION_FIELD_LABELS.weightKg}:`,
+      value: data.weight && data.weight !== "—" ? `${data.weight} ${CONCLUSION_FIELD_UNITS.weightKg}` : "",
+    },
+    {
+      label: `${CONCLUSION_FIELD_LABELS.temperature}:`,
+      value:
+        data.temperature && data.temperature !== "—"
+          ? `${data.temperature} ${CONCLUSION_FIELD_UNITS.temperature}`
+          : "",
     },
   ];
 
@@ -89,11 +102,14 @@ export const ConclusionDocumentView: React.FC<{ data: ConclusionPDFData }> = ({ 
         ))}
       </Box>
 
-      <Section title="Жалобы:" text={data.doctorComplaints || data.complaints} />
-      <Section title="Диагноз:" text={data.diagnosis} />
-      <Section title="Анамнез:" text={data.anamnesis} />
-      <Section title="Объективно:" text={data.objective} />
-      <Section title="Рекомендации:" text={data.recommendations} />
+      <Section
+        title={`${CONCLUSION_FIELD_LABELS.complaints}:`}
+        text={data.doctorComplaints || data.complaints}
+      />
+      <Section title={`${CONCLUSION_FIELD_LABELS.diagnosis}:`} text={data.diagnosis} />
+      <Section title={`${CONCLUSION_FIELD_LABELS.anamnesis}:`} text={data.anamnesis} />
+      <Section title={`${CONCLUSION_FIELD_LABELS.objective}:`} text={data.objective} />
+      <Section title={`${CONCLUSION_FIELD_LABELS.conclusion}:`} text={data.conclusion} />
 
       <Divider sx={{ my: 2, borderColor: "rgba(0,0,0,.12)" }} />
 

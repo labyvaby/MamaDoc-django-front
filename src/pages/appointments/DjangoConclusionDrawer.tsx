@@ -67,9 +67,6 @@ import { useT } from "../../i18n/VerticalProvider";
 import { tt } from "../../i18n/t";
 import { agree } from "../../i18n/formatters";
 import { ConclusionFormInline } from "../../components/conclusion-forms/ConclusionFormInline";
-import type { SheetContext } from "../../components/conclusion-forms/FormSheet";
-import { generateFormSheetPdf } from "../../components/conclusion-forms/printFormSheet";
-import { loadDjangoPrintData } from "../print/djangoPrintData";
 import {
   getConclusionForms,
   renderFilledForm,
@@ -473,8 +470,6 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [manualText, setManualText] = React.useState("");
   /** Итог, собранный бланком, по умолчанию свёрнут: он дублирует поля выше. */
   const [projectionOpen, setProjectionOpen] = React.useState(false);
-  const [formPrinting, setFormPrinting] = React.useState(false);
-  const [formPrintError, setFormPrintError] = React.useState<string | null>(null);
   /** Черновик принёс свой выбор бланка — дефолт его не перебивает. */
   const restoredWithFormRef = React.useRef(false);
   const [weightKg, setWeightKg] = React.useState("");
@@ -680,7 +675,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   // специализацию сотруднику PATCH-ем не назначить. Филиал берём у приёма,
   // если он известен, иначе — из сессии: врач работает там, куда переключён.
   const defaultsOrgId = useApiOrgId();
-  const { activeOrganization, activeBranch } = usePermissions();
+  const { activeBranch } = usePermissions();
   const scopeBranchId = branchId ?? activeBranch?.id ?? null;
   // Бланки нужны и для подстановки, и для селекта в секции полей, поэтому
   // грузим их всегда, пока дровер открыт на правку.
@@ -871,6 +866,75 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     );
   };
 
+  /** Куда вести врача из вопроса «завершить без диагноза?». */
+  const diagnosisAnchorRef = React.useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Диагноз (МКБ) — тот же каталожный picker, что и в своей карточке.
+   * Занявшему слот полю бланка нужен не текстовый ввод, а живой автокомплит:
+   * диагноз выбирают кодом, а не печатают руками (см. FormFieldSlot выше).
+   */
+  const diagnosisNode = () => (
+    <Stack spacing={0.5} ref={diagnosisAnchorRef}>
+      <Typography variant="body2" color="text.secondary" fontWeight={600}>
+        {t("conclusion.diagnosisIcd")}
+      </Typography>
+      <Autocomplete
+        multiple
+        freeSolo
+        disableCloseOnSelect
+        options={catalog}
+        value={selectedDiagnoses}
+        loading={catalogLoading}
+        disabled={readOnly}
+        filterOptions={(opts) => opts}
+        onInputChange={(_, val, reason) => {
+          if (reason === "input") setDiagInput(val);
+        }}
+        noOptionsText={
+          diagInput.trim() ? t("conclusion.nothingFound") : t("conclusion.startTypingCode")
+        }
+        getOptionLabel={(o) =>
+          typeof o === "string" ? o : [o.code, o.title].filter(Boolean).join(" — ")
+        }
+        isOptionEqualToValue={(o, v) => o.id === v.id || (o.code === v.code && o.code !== "")}
+        onChange={(_, value) =>
+          setSelectedDiagnoses(
+            value
+              .map((item) =>
+                typeof item === "string"
+                  ? { id: -1, code: "", title: item.trim(), displayName: "", isActive: true, sortOrder: 0 }
+                  : item,
+              )
+              .filter((item) => item.title !== ""),
+          )
+        }
+        filterSelectedOptions
+        size="small"
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            placeholder={readOnly ? "—" : t("conclusion.diagnosisPlaceholder")}
+          />
+        )}
+      />
+      {catalogError && (
+        <Alert severity="warning" sx={{ py: 0 }}>
+          {t("conclusion.catalogLoadFailed")}
+        </Alert>
+      )}
+      <Paper variant="outlined" sx={{ p: 1.5, mt: 0.5, minHeight: 44, bgcolor: "background.default" }}>
+        <Typography variant="body2" color={selectedDiagnoses.length ? "text.primary" : "text.disabled"}>
+          {selectedDiagnoses.length
+            ? selectedDiagnoses.map((d) => [d.code, d.title].filter(Boolean).join(" ")).join(". ")
+            : t("conclusion.noDiagnosis", {
+                selected: agree(term.diagnosis.gender, ["выбран", "выбрана", "выбрано"]),
+              })}
+        </Typography>
+      </Paper>
+    </Stack>
+  );
+
   /** Подписи целевых полей — те же слова, что видит врач в форме. */
   const TARGET_LABELS: Record<FormTarget, string> = {
     conclusion: t("conclusion.conclusionRequired"),
@@ -1007,6 +1071,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             minRows: 3,
           });
           break;
+        case "diagnosis":
+          nodes.diagnosis = diagnosisNode();
+          break;
         case "conclusion":
           nodes.conclusion = textFieldNode(
             t("conclusion.conclusionRequired"),
@@ -1039,79 +1106,72 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     heightCm,
     weightKg,
     temperature,
+    selectedDiagnoses,
+    catalog,
+    catalogLoading,
+    catalogError,
+    diagInput,
     readOnly,
   ]);
 
-  // ── печать листа бланка ────────────────────────────────────────────────────
-  // Данные шапки (ФИО, ДР, дата приёма, врач) те же, что у штатной печати
-  // заключения, поэтому берём их тем же загрузчиком.
-  const printDataQuery = useQuery({
-    queryKey: ["django", "conclusion-forms", "print-data", appointmentId ?? null, serviceLineId] as const,
-    queryFn: () => loadDjangoPrintData(appointmentId as number, serviceLineId),
-    // И в просмотре тоже: заполненный бланк приходит с сервера в `formData`,
-    // и распечатать фирменный лист врач должен, не входя в правку.
-    enabled: open && attachedForm != null && appointmentId != null,
-    retry: false,
-  });
+  /**
+   * Печать: одна кнопка, один документ, собирается не здесь.
+   *
+   * Дровер только открывает страницу печати — она берёт заключение с сервера
+   * и сама решает, печатать лист бланка с хвостом или штатный документ (см.
+   * pages/print/ConclusionPrintPage). Собирать документ здесь, из состояния
+   * формы, нельзя: на бумагу уходили бы несохранённые правки — в карте одно, у
+   * пациента на руках другое.
+   */
+  const openPrint = () => {
+    if (!conclusion) return;
+    window.open(
+      `/print/conclusion/${conclusion.appointmentId}?lineId=${serviceLineId}`,
+      "_blank",
+      "noopener",
+    );
+  };
+
+  const runSave = async (targetStatus: ConclusionStatus, print: boolean) => {
+    const saved = await handleSave(targetStatus);
+    if (saved && print) openPrint();
+  };
 
   /**
-   * Значения для печатного листа: свободные поля плюс значения привязанных
-   * колонок. В тексте заключения слоты не дублируются, а на листе они —
-   * обычные строки протокола, и без них лист вышел бы с пустыми линейками.
+   * Завершение без диагноза — осознанное действие, а не оплошность.
+   *
+   * Завершить заключение без диагноза до 08.09.2026 можно было молча: проверка
+   * требовала только непустой текст. Врач забывал выбрать код МКБ, и в карте
+   * оставалась запись, по которой нельзя ни собрать историю диагнозов, ни
+   * посчитать заболеваемость.
+   *
+   * ⚠ Жёсткий запрет здесь не годится: у диагностических услуг диагноза и не
+   * должно быть — протокол УЗИ прямо заканчивается строкой «не является
+   * диагнозом и оценивается лечащим врачом». Отличить приём врача от
+   * исследования дровер пока не может: категория услуги (doctor/lab/hardware)
+   * сюда не передаётся. Поэтому спрашиваем один раз, а не запрещаем; когда
+   * категория появится в пропсах, для приёмов врача это станет запретом.
    */
-  const sheetValues = React.useMemo(() => {
-    const slotValue: Record<FormFieldSlot, string> = {
-      complaints,
-      anamnesis,
-      objective,
-      conclusion: conclusionText,
-      weightKg,
-      heightCm,
-      temperature,
-    };
-    const values: Record<string, string> = { ...formValues };
-    for (const field of attachedForm?.fields ?? []) {
-      if (field.slot) values[field.id] = slotValue[field.slot] ?? "";
-    }
-    return values;
-  }, [
-    attachedForm,
-    formValues,
-    complaints,
-    anamnesis,
-    objective,
-    conclusionText,
-    weightKg,
-    heightCm,
-    temperature,
-  ]);
+  const [confirmNoDiagnosis, setConfirmNoDiagnosis] = React.useState<{ print: boolean } | null>(
+    null,
+  );
 
-  const handlePrintForm = async () => {
-    if (!attachedForm) return;
-    setFormPrinting(true);
-    setFormPrintError(null);
-    try {
-      const printData = printDataQuery.data;
-      const context: SheetContext = {
-        patientFio: printData?.patientFio ?? "—",
-        patientDob: printData?.patientDob ?? "—",
-        appointmentDateTime: printData?.appt.scheduledAt
-          ? dayjs(printData.appt.scheduledAt).format("DD.MM.YYYY HH:mm")
-          : "—",
-        doctorFio: printData?.doctorFio ?? doctorName,
-        clinicName: activeOrganization?.name ?? "",
-        clinicLogoUrl: activeOrganization?.logoUrl,
-      };
-      const blob = await generateFormSheetPdf(attachedForm, context, sheetValues);
-      // Открываем во вкладке, а не скачиваем: врачу нужен диалог печати, а не
-      // файл в загрузках.
-      window.open(URL.createObjectURL(blob), "_blank", "noopener");
-    } catch {
-      setFormPrintError("Не удалось сформировать PDF бланка.");
-    } finally {
-      setFormPrinting(false);
+  const requestSave = (targetStatus: ConclusionStatus, print: boolean) => {
+    if (targetStatus === "completed" && selectedDiagnoses.length === 0) {
+      // Остальные проверки — до вопроса: незачем спрашивать про диагноз, если
+      // форма всё равно не пройдёт валидацию.
+      if (!vitals.validate() || !completion.validate()) return;
+      setConfirmNoDiagnosis({ print });
+      return;
     }
+    void runSave(targetStatus, print);
   };
+
+  /**
+   * В правке печатаем только после сохранения — печатается ровно то, что легло
+   * в карту. Не прошла валидация — не печатаем, ошибку показывает форма.
+   */
+  const handleSaveAndPrint = () => requestSave(status, true);
 
   // Каталог МКБ-10 приходит уже после гидратации: дозаполняем выбранные
   // диагнозы настоящими записями каталога, не трогая остальные поля формы.
@@ -1343,9 +1403,12 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     }
   };
 
-  const handleSave = async (targetStatus: ConclusionStatus) => {
-    if (!vitals.validate()) return;
-    if (targetStatus === "completed" && !completion.validate()) return;
+  /** Возвращает сохранённое заключение либо null — «сохранить и печать» ждёт его. */
+  const handleSave = async (
+    targetStatus: ConclusionStatus,
+  ): Promise<MedicalConclusion | null> => {
+    if (!vitals.validate()) return null;
+    if (targetStatus === "completed" && !completion.validate()) return null;
 
     setSaveError(null);
     setSaving(true);
@@ -1405,6 +1468,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       });
       onSaved?.(saved);
       onClose();
+      return saved;
     } catch (err: unknown) {
       // Сырое «Service line not found» ничего не объясняет врачу: строку
       // услуги удалили правкой приёма, а перепривязать заключение не к чему.
@@ -1413,6 +1477,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           ? t("conclusion.errors.serviceLineGone", { service: serviceName })
           : parseBackendError(err),
       );
+      return null;
     } finally {
       setSaving(false);
     }
@@ -1536,31 +1601,13 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             )}
             {canPrint && conclusion && (
               <>
-                {/* Бланк печатается своим листом — с шапкой клиники, подложкой
-                    и строками протокола; штатная форма их не рисует. */}
-                {attachedForm && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<PrintOutlined />}
-                    disabled={formPrinting}
-                    onClick={handlePrintForm}
-                    sx={{ whiteSpace: "nowrap" }}
-                  >
-                    {t("conclusion.printForm")}
-                  </Button>
-                )}
+                {/* Одна кнопка на весь документ — страница печати сама решает,
+                    печатать лист бланка с хвостом или штатное заключение. */}
                 <Button
                   size="small"
                   variant="outlined"
                   startIcon={<PrintOutlined />}
-                  onClick={() =>
-                    window.open(
-                      `/print/conclusion/${conclusion.appointmentId}?lineId=${serviceLineId}`,
-                      "_blank",
-                      "noopener",
-                    )
-                  }
+                  onClick={openPrint}
                   sx={{ whiteSpace: "nowrap" }}
                 >
                   {t("conclusion.print")}
@@ -1796,6 +1843,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   </Grid>
                 </Box>
               )}
+
             </Stack>
           )}
 
@@ -1861,7 +1909,6 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           </Box>
           )}
 
-          {formPrintError && <Alert severity="error">{formPrintError}</Alert>}
 
           {/* ── doctor complaints ── */}
           {/* Поле, забранное бланком, здесь не рисуем: оно стоит в потоке его
@@ -1886,82 +1933,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 }))}
 
           {/* ── diagnosis (catalog multi-select + free text) ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              {t("conclusion.diagnosisIcd")}
-            </Typography>
-            <Autocomplete
-              multiple
-              freeSolo
-              disableCloseOnSelect
-              options={catalog}
-              value={selectedDiagnoses}
-              loading={catalogLoading}
-              disabled={readOnly}
-              // Поиск идёт на сервере (см. эффект загрузки каталога), поэтому
-              // клиентскую фильтрацию отключаем — иначе список схлопнулся бы до
-              // уже загруженной страницы.
-              filterOptions={(opts) => opts}
-              onInputChange={(_, val, reason) => {
-                if (reason === "input") setDiagInput(val);
-              }}
-              noOptionsText={
-                diagInput.trim()
-                  ? t("conclusion.nothingFound")
-                  : t("conclusion.startTypingCode")
-              }
-              getOptionLabel={(o) =>
-                typeof o === "string" ? o : [o.code, o.title].filter(Boolean).join(" — ")
-              }
-              isOptionEqualToValue={(o, v) =>
-                o.id === v.id || (o.code === v.code && o.code !== "")
-              }
-              onChange={(_, value) =>
-                setSelectedDiagnoses(
-                  value.map((item) =>
-                    typeof item === "string"
-                      ? { id: -1, code: "", title: item.trim(), displayName: "", isActive: true, sortOrder: 0 }
-                      : item,
-                  ).filter((item) => item.title !== ""),
-                )
-              }
-              filterSelectedOptions
-              size="small"
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder={
-                    readOnly
-                      ? "—"
-                      : t("conclusion.diagnosisPlaceholder")
-                  }
-                />
-              )}
-            />
-            {catalogError && (
-              <Alert severity="warning" sx={{ py: 0 }}>
-                {t("conclusion.catalogLoadFailed")}
-              </Alert>
-            )}
-            {/* сводка выбранных диагнозов (как в оригинале) */}
-            <Paper
-              variant="outlined"
-              sx={{ p: 1.5, mt: 0.5, minHeight: 44, bgcolor: "background.default" }}
-            >
-              <Typography
-                variant="body2"
-                color={selectedDiagnoses.length ? "text.primary" : "text.disabled"}
-              >
-                {selectedDiagnoses.length
-                  ? selectedDiagnoses
-                      .map((d) => [d.code, d.title].filter(Boolean).join(" "))
-                      .join(". ")
-                  : t("conclusion.noDiagnosis", {
-                      selected: agree(term.diagnosis.gender, ["выбран", "выбрана", "выбрано"]),
-                    })}
-              </Typography>
-            </Paper>
-          </Stack>
+          {/* Поле, забранное бланком, здесь не рисуем: оно стоит в потоке его
+              полей (slotNodes) — иначе врач выбирал бы диагноз дважды. */}
+          {slotFree("diagnosis") && diagnosisNode()}
 
           {/* ── conclusion (main) ── */}
           {/* Забрать заключение в поток бланка можно (slot "conclusion"), но
@@ -2120,30 +2094,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {/* ── print (в inline-режиме кнопки уже в шапке) ── */}
           {!inline && canPrint && conclusion && (
             <Stack direction="row" spacing={1}>
-              {/* Лист бланка: шапка клиники, подложка и строки протокола —
-                  штатная форма заключения их не печатает. */}
-              {attachedForm && (
-                <Button
-                  size="small"
-                  variant="outlined"
-                  disabled={formPrinting}
-                  onClick={handlePrintForm}
-                >
-                  {t("conclusion.printForm")}
-                </Button>
-              )}
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() =>
-                  window.open(
-                    `/print/conclusion/${conclusion.appointmentId}?lineId=${serviceLineId}`,
-                    "_blank",
-                    "noopener",
-                  )
-                }
-              >
-                {t("conclusion.printConclusion")}
+              {/* Одна кнопка на весь документ — см. openPrint. */}
+              <Button size="small" variant="outlined" onClick={openPrint}>
+                {t("conclusion.print")}
               </Button>
               <Button
                 size="small"
@@ -2185,17 +2138,16 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           </Button>
           {!readOnly && (
             <>
-              {/* Печать одна: прикреплён бланк — печатаем его лист (шапка
-                  клиники, подложка, значения полей), иначе документ печатается
-                  штатной формой заключения из кнопок выше. */}
-              {attachedForm && canPrint && (
+              {/* В правке печать идёт через сохранение: на бумагу должно уйти
+                  ровно то, что легло в карту (см. handleSaveAndPrint). */}
+              {canPrint && conclusion && (
                 <Button
                   variant="outlined"
                   startIcon={<PrintOutlined />}
-                  disabled={formPrinting}
-                  onClick={handlePrintForm}
+                  disabled={saving}
+                  onClick={handleSaveAndPrint}
                 >
-                  {t("conclusion.print")}
+                  {t("conclusion.saveAndPrint")}
                 </Button>
               )}
               <Button
@@ -2214,7 +2166,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 variant="contained"
                 color="success"
                 disabled={saving}
-                onClick={() => handleSave("completed")}
+                onClick={() => requestSave("completed", false)}
                 startIcon={
                   saving ? (
                     <CircularProgress size={16} color="inherit" />
@@ -2231,6 +2183,45 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       </Box>
       </>
       )}
+
+      {/* ── завершение без диагноза ── */}
+      <Dialog
+        open={confirmNoDiagnosis != null}
+        onClose={() => setConfirmNoDiagnosis(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>{t("conclusion.noDiagnosisTitle")}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            {t("conclusion.noDiagnosisText", {
+              selected: agree(term.diagnosis.gender, ["выбран", "выбрана", "выбрано"]),
+            })}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            variant="contained"
+            onClick={() => {
+              setConfirmNoDiagnosis(null);
+              diagnosisAnchorRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+            }}
+          >
+            {t("conclusion.noDiagnosisAdd")}
+          </Button>
+          <Button
+            color="inherit"
+            disabled={saving}
+            onClick={() => {
+              const pending = confirmNoDiagnosis;
+              setConfirmNoDiagnosis(null);
+              if (pending) void runSave("completed", pending.print);
+            }}
+          >
+            {t("conclusion.noDiagnosisSkip")}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ── save-as-template dialog ── */}
       <Dialog
