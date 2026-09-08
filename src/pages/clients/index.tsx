@@ -1,529 +1,114 @@
 import React from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  Grid,
-  IconButton,
-  InputLabel,
-  LinearProgress,
-  MenuItem,
-  Select,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
-  Typography,
-} from "@mui/material";
-import PersonAddOutlined from "@mui/icons-material/PersonAddOutlined";
-import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
-import EditOutlined from "@mui/icons-material/EditOutlined";
-import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Stack, Switch, TextField, Typography, useMediaQuery, useTheme } from "@mui/material";
+import AddOutlined from "@mui/icons-material/AddOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router";
 
+import { PageHeader, SegmentedTabs } from "../../components/ui";
+import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { usePermissions } from "../../hooks/usePermissions";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useVertical } from "../../i18n/VerticalProvider";
-import { AccessDenied } from "../../components/rbac/AccessDenied";
-import { PageHeader } from "../../components/ui";
-import {
-  createClient,
-  getClients,
-  updateClient,
-  type ClientStatus,
-  type ClientType,
-  type DjangoClient,
-} from "../../api/clients";
+import { createClientContact, getClientContacts, getClients, updateClientContact, type DjangoClient, type DjangoClientContact } from "../../api/clients";
+import { getClientPurchases } from "../../api/retail";
+import ClientCard from "./ClientCard";
+import ClientEditorDrawer from "./ClientEditorDrawer";
+import ClientListPanel from "./ClientListPanel";
+import ClientTabs from "./ClientTabs";
+import { defaultClientLayoutSettings, readClientLayoutSettings, type ClientLayoutSettings, type ClientTabKey } from "./clientLayout";
 
-type ClientFormState = {
-  fullName: string;
-  phone: string;
-  email: string;
-  clientType: ClientType;
-  status: ClientStatus;
-  note: string;
-  legalName: string;
-  inn: string;
-  okpo: string;
-  legalAddress: string;
-  bankName: string;
-  bankAccount: string;
-  bankBik: string;
-};
-
-const emptyForm: ClientFormState = {
-  fullName: "",
-  phone: "",
-  email: "",
-  clientType: "individual",
-  status: "new",
-  note: "",
-  legalName: "",
-  inn: "",
-  okpo: "",
-  legalAddress: "",
-  bankName: "",
-  bankAccount: "",
-  bankBik: "",
-};
-
-const statusLabels: Record<ClientStatus, string> = {
-  new: "Новый",
-  active: "Активен",
-  inactive: "Неактивен",
-  no_offering: "Без объекта продажи",
-};
-
-const typeLabels: Record<ClientType, string> = {
-  individual: "Физическое лицо",
-  company: "Юридическое лицо",
-};
-
-const statusColor = (status: ClientStatus): "default" | "success" | "warning" | "error" => {
-  if (status === "active") return "success";
-  if (status === "inactive") return "warning";
-  if (status === "no_offering") return "error";
-  return "default";
-};
-
-const money = (value: string) =>
-  `${Number(value || 0).toLocaleString("ru-RU", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  })} сом`;
-
-const toForm = (client?: DjangoClient | null): ClientFormState =>
-  client
-    ? {
-        fullName: client.fullName,
-        phone: client.phone,
-        email: client.email,
-        clientType: client.clientType,
-        status: client.status,
-        note: client.note,
-        legalName: client.legalName,
-        inn: client.inn,
-        okpo: client.okpo,
-        legalAddress: client.legalAddress,
-        bankName: client.bankName,
-        bankAccount: client.bankAccount,
-        bankBik: client.bankBik,
-      }
-    : { ...emptyForm };
+const tabLabels: Record<ClientTabKey, string> = { purchases: "История покупок", contacts: "Контактные лица" };
+type ContactDraft = { fullName: string; position: string; phone: string; email: string; isPrimary: boolean; note: string };
+const emptyContact: ContactDraft = { fullName: "", position: "", phone: "", email: "", isPrimary: false, note: "" };
 
 export default function ClientsPage() {
   const auth = usePermissions();
   const { vertical } = useVertical();
   const queryClient = useQueryClient();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
   const organizationId = auth.activeOrganization?.id ?? null;
   const canView = auth.isSuperAdmin() || auth.hasPermission("clients.view");
   const canManage = auth.isSuperAdmin() || auth.hasPermission("clients.manage");
+  const canViewPurchases = auth.isSuperAdmin() || auth.hasPermission("pos.view") || auth.hasPermission("pos.sell");
   const isRetail = vertical === "retail";
 
-  usePageTitle(isRetail ? "Клиенты" : "Клиенты организации");
-
+  usePageTitle("Все клиенты");
   const [search, setSearch] = React.useState("");
   const [debouncedSearch, setDebouncedSearch] = React.useState("");
-  const [status, setStatus] = React.useState("");
-  const [clientType, setClientType] = React.useState("");
   const [selected, setSelected] = React.useState<DjangoClient | null>(null);
   const [editorClient, setEditorClient] = React.useState<DjangoClient | null>(null);
-  const [draft, setDraft] = React.useState<ClientFormState>(emptyForm);
   const [editorOpen, setEditorOpen] = React.useState(false);
-  const [saveError, setSaveError] = React.useState("");
-  const [saving, setSaving] = React.useState(false);
+  const [layout, setLayout] = React.useState<ClientLayoutSettings>(defaultClientLayoutSettings);
+  const [activeTab, setActiveTab] = React.useState<ClientTabKey>("purchases");
+  const [contactOpen, setContactOpen] = React.useState(false);
+  const [contact, setContact] = React.useState<DjangoClientContact | null>(null);
+  const [contactDraft, setContactDraft] = React.useState<ContactDraft>(emptyContact);
+  const [contactBusy, setContactBusy] = React.useState(false);
+  const [contactError, setContactError] = React.useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedSearch(search), 250);
-    return () => window.clearTimeout(timer);
-  }, [search]);
+  React.useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search), 250); return () => window.clearTimeout(timer); }, [search]);
+  React.useEffect(() => { const next = readClientLayoutSettings(organizationId); setLayout(next); setActiveTab(next.tabs[0] ?? "purchases"); }, [organizationId]);
 
   const clients = useQuery({
-    queryKey: ["clients", organizationId, debouncedSearch, status, clientType],
-    queryFn: ({ signal }) =>
-      getClients(
-        organizationId as number,
-        { query: debouncedSearch, status, clientType },
-        signal,
-      ),
+    queryKey: ["clients", organizationId, debouncedSearch],
+    queryFn: ({ signal }) => getClients(organizationId as number, { query: debouncedSearch }, signal),
     enabled: Boolean(organizationId && canView && isRetail),
   });
 
-  const openCreate = () => {
-    setEditorClient(null);
-    setDraft({ ...emptyForm });
-    setSaveError("");
-    setEditorOpen(true);
-  };
+  React.useEffect(() => { if (!selected) return; const fresh = clients.data?.find((row) => row.id === selected.id); if (fresh) setSelected(fresh); }, [clients.data, selected?.id]);
+  React.useEffect(() => {
+    const raw = Number(searchParams.get("client"));
+    if (!raw || !clients.data) return;
+    const found = clients.data.find((row) => row.id === raw);
+    if (found) setSelected(found);
+    setSearchParams((previous) => { const next = new URLSearchParams(previous); next.delete("client"); return next; }, { replace: true });
+  }, [clients.data, searchParams, setSearchParams]);
 
-  const openEdit = (client: DjangoClient) => {
-    setEditorClient(client);
-    setDraft(toForm(client));
-    setSaveError("");
-    setSelected(null);
-    setEditorOpen(true);
-  };
+  const purchases = useQuery({ queryKey: ["client-purchases", organizationId, selected?.id], queryFn: ({ signal }) => getClientPurchases(selected!.id, signal), enabled: Boolean(selected && canViewPurchases && layout.tabs.includes("purchases")) });
+  const contacts = useQuery({ queryKey: ["client-contacts", organizationId, selected?.id], queryFn: ({ signal }) => getClientContacts(selected!.id, organizationId!, signal), enabled: Boolean(organizationId && selected && canView && layout.tabs.includes("contacts")) });
 
-  const save = async () => {
-    if (!organizationId || !draft.fullName.trim()) {
-      setSaveError("Укажите название или ФИО клиента.");
-      return;
-    }
-    if (!editorClient && !draft.phone.trim()) {
-      setSaveError("Укажите номер телефона клиента.");
-      return;
-    }
-    setSaving(true);
-    setSaveError("");
+  const openCreate = () => { setEditorClient(null); setEditorOpen(true); };
+  const openEdit = () => { if (selected) { setEditorClient(selected); setEditorOpen(true); } };
+  const onClientSaved = (saved: DjangoClient) => { setSelected(saved); void queryClient.invalidateQueries({ queryKey: ["clients", organizationId] }); };
+
+  const openContact = (value: DjangoClientContact | null) => {
+    setContact(value); setContactDraft(value ? { fullName: value.fullName, position: value.position, phone: value.phone, email: value.email, isPrimary: value.isPrimary, note: value.note } : { ...emptyContact }); setContactError(""); setContactOpen(true);
+  };
+  const saveContact = async () => {
+    if (!organizationId || !selected || !contactDraft.fullName.trim()) { setContactError("Укажите имя контактного лица."); return; }
+    setContactBusy(true); setContactError("");
     try {
-      const common = {
-        fullName: draft.fullName.trim(),
-        email: draft.email.trim(),
-        clientType: draft.clientType,
-        status: draft.status,
-        note: draft.note.trim(),
-        legalName: draft.legalName.trim(),
-        inn: draft.inn.trim(),
-        okpo: draft.okpo.trim(),
-        legalAddress: draft.legalAddress.trim(),
-        bankName: draft.bankName.trim(),
-        bankAccount: draft.bankAccount.trim(),
-        bankBik: draft.bankBik.trim(),
-      };
-      const saved = editorClient
-        ? await updateClient(editorClient.id, organizationId, common)
-        : await createClient({
-            organizationId,
-            phone: draft.phone.trim(),
-            ...common,
-          });
-      await queryClient.invalidateQueries({ queryKey: ["clients", organizationId] });
-      setEditorOpen(false);
-      setSelected(saved);
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Не удалось сохранить клиента.");
-    } finally {
-      setSaving(false);
-    }
+      const payload = { ...contactDraft, fullName: contactDraft.fullName.trim() };
+      if (contact?.id) await updateClientContact(selected.id, contact.id, organizationId, payload); else await createClientContact(selected.id, organizationId, payload);
+      await queryClient.invalidateQueries({ queryKey: ["client-contacts", organizationId, selected.id] }); setContactOpen(false);
+    } catch (e) { setContactError(e instanceof Error ? e.message : "Не удалось сохранить контакт."); } finally { setContactBusy(false); }
   };
 
-  if (!isRetail) {
-    return (
-      <Stack p={3} gap={2}>
-        <Alert severity="info">
-          Для медицинской организации используется раздел «Пациенты». Раздел
-          «Клиенты» доступен для retail-организаций.
-        </Alert>
-      </Stack>
-    );
-  }
+  if (!isRetail) return <Alert sx={{ m: 3 }} severity="info">Для медицинской организации используется раздел «Пациенты».</Alert>;
+  if (auth.loading) return <Box sx={{ display: "grid", placeItems: "center", minHeight: "60vh" }}><CircularProgress /></Box>;
+  if (!canView) return <AccessDenied />;
 
-  if (!auth.loading && !canView) return <AccessDenied />;
+  const selectedTab: ClientTabKey = layout.tabs.includes(activeTab) ? activeTab : layout.tabs[0] ?? "purchases";
+  const detailLoading = purchases.isLoading || contacts.isLoading;
+  const detailError = [purchases.error, contacts.error].find(Boolean);
+  const cardSettings = { ...layout, sections: { ...layout.sections, finance: layout.sections.finance && canViewPurchases } };
 
-  return (
-    <Stack sx={{ minHeight: "100%" }}>
-      <PageHeader
-        title="Клиенты"
-        onAdd={canManage ? openCreate : undefined}
-        addButtonText="Добавить клиента"
-        addButtonIcon={<PersonAddOutlined />}
-        showSearch
-        searchVal={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="Поиск по имени или телефону"
-        loading={clients.isFetching}
-        actions={
-          <>
-            <FormControl size="small" sx={{ minWidth: 145 }}>
-              <InputLabel>Тип</InputLabel>
-              <Select
-                value={clientType}
-                label="Тип"
-                onChange={(event) => setClientType(event.target.value)}
-              >
-                <MenuItem value="">Все</MenuItem>
-                <MenuItem value="individual">Физлица</MenuItem>
-                <MenuItem value="company">Компании</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl size="small" sx={{ minWidth: 145 }}>
-              <InputLabel>Статус</InputLabel>
-              <Select
-                value={status}
-                label="Статус"
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                <MenuItem value="">Все</MenuItem>
-                {Object.entries(statusLabels).map(([value, label]) => (
-                  <MenuItem key={value} value={value}>
-                    {label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <IconButton
-              aria-label="Обновить список клиентов"
-              onClick={() => void clients.refetch()}
-              disabled={clients.isFetching}
-            >
-              <RefreshOutlined />
-            </IconButton>
-          </>
-        }
-      />
-
-      {clients.isFetching && <LinearProgress />}
-      {clients.isError && (
-        <Alert severity="error" sx={{ mx: 2, mb: 2 }}>
-          {clients.error instanceof Error
-            ? clients.error.message
-            : "Не удалось загрузить клиентов."}
-        </Alert>
-      )}
-      <Card sx={{ mx: { xs: 1, md: 2 }, mb: 2, overflow: "hidden" }}>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Клиент</TableCell>
-                <TableCell>Тип</TableCell>
-                <TableCell>Телефон</TableCell>
-                <TableCell>Статус</TableCell>
-                <TableCell align="right">Баланс</TableCell>
-                <TableCell align="right">Долг</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {clients.data?.map((client) => (
-                <TableRow
-                  key={client.id}
-                  hover
-                  selected={selected?.id === client.id}
-                  onClick={() => setSelected(client)}
-                  sx={{ cursor: "pointer" }}
-                >
-                  <TableCell>
-                    <Typography fontWeight={600}>{client.fullName}</Typography>
-                    {client.groups.length > 0 && (
-                      <Stack direction="row" gap={0.5} mt={0.5} flexWrap="wrap">
-                        {client.groups.map((group) => (
-                          <Chip
-                            key={group.id}
-                            label={group.name}
-                            size="small"
-                            sx={group.color ? { backgroundColor: group.color } : undefined}
-                          />
-                        ))}
-                      </Stack>
-                    )}
-                  </TableCell>
-                  <TableCell>{typeLabels[client.clientType]}</TableCell>
-                  <TableCell>{client.phone || "—"}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={statusLabels[client.status] ?? client.status}
-                      color={statusColor(client.status)}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell align="right">{money(client.balance)}</TableCell>
-                  <TableCell align="right">{money(client.debt)}</TableCell>
-                </TableRow>
-              ))}
-              {!clients.isFetching && clients.data?.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6}>
-                    <Typography color="text.secondary" textAlign="center" py={5}>
-                      Клиенты не найдены.
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Card>
-
-      <Dialog open={!!selected} onClose={() => setSelected(null)} maxWidth="sm" fullWidth>
-        {selected && (
-          <>
-            <DialogTitle>{selected.fullName}</DialogTitle>
-            <DialogContent>
-              <Grid container spacing={2} pt={1}>
-                <Grid item xs={12} sm={6}>
-                  <Typography color="text.secondary" variant="caption">Тип</Typography>
-                  <Typography>{typeLabels[selected.clientType]}</Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography color="text.secondary" variant="caption">Статус</Typography>
-                  <Box><Chip label={statusLabels[selected.status] ?? selected.status} color={statusColor(selected.status)} size="small" /></Box>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography color="text.secondary" variant="caption">Телефон</Typography>
-                  <Typography>{selected.phone || "—"}</Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography color="text.secondary" variant="caption">Email</Typography>
-                  <Typography>{selected.email || "—"}</Typography>
-                </Grid>
-                {selected.clientType === "company" && (
-                  <Grid item xs={12}>
-                    <Typography color="text.secondary" variant="caption">Реквизиты</Typography>
-                    <Typography>{selected.legalName || "Название не указано"}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      ИНН: {selected.inn || "—"} · ОКПО: {selected.okpo || "—"}
-                    </Typography>
-                  </Grid>
-                )}
-                <Grid item xs={12}>
-                  <Typography color="text.secondary" variant="caption">Финансы</Typography>
-                  <Typography>Баланс: {money(selected.balance)} · Долг: {money(selected.debt)}</Typography>
-                </Grid>
-                {selected.note && (
-                  <Grid item xs={12}>
-                    <Typography color="text.secondary" variant="caption">Комментарий</Typography>
-                    <Typography>{selected.note}</Typography>
-                  </Grid>
-                )}
-              </Grid>
-            </DialogContent>
-            <DialogActions>
-              {canManage && (
-                <Button startIcon={<EditOutlined />} onClick={() => openEdit(selected)}>
-                  Изменить
-                </Button>
-              )}
-              <Button onClick={() => setSelected(null)}>Закрыть</Button>
-            </DialogActions>
-          </>
-        )}
-      </Dialog>
-
-      <Dialog open={editorOpen} onClose={() => !saving && setEditorOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>{editorClient ? "Изменить клиента" : "Новый клиент"}</DialogTitle>
-        <DialogContent>
-          <Stack gap={2} pt={1}>
-            {saveError && <Alert severity="error">{saveError}</Alert>}
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={8}>
-                <TextField
-                  label="Имя / название"
-                  value={draft.fullName}
-                  onChange={(event) => setDraft((v) => ({ ...v, fullName: event.target.value }))}
-                  required
-                  fullWidth
-                />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <FormControl fullWidth>
-                  <InputLabel>Тип клиента</InputLabel>
-                  <Select
-                    value={draft.clientType}
-                    label="Тип клиента"
-                    onChange={(event) => setDraft((v) => ({ ...v, clientType: event.target.value as ClientType }))}
-                  >
-                    <MenuItem value="individual">Физическое лицо</MenuItem>
-                    <MenuItem value="company">Юридическое лицо</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  label="Телефон"
-                  value={draft.phone}
-                  onChange={(event) => setDraft((v) => ({ ...v, phone: event.target.value }))}
-                  disabled={!!editorClient}
-                  required={!editorClient}
-                  fullWidth
-                  helperText={editorClient ? "Телефон нельзя изменить в этой форме" : undefined}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  label="Email"
-                  value={draft.email}
-                  onChange={(event) => setDraft((v) => ({ ...v, email: event.target.value }))}
-                  fullWidth
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth>
-                  <InputLabel>Статус</InputLabel>
-                  <Select
-                    value={draft.status}
-                    label="Статус"
-                    onChange={(event) => setDraft((v) => ({ ...v, status: event.target.value as ClientStatus }))}
-                  >
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <MenuItem key={value} value={value}>{label}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  label="Комментарий"
-                  value={draft.note}
-                  onChange={(event) => setDraft((v) => ({ ...v, note: event.target.value }))}
-                  fullWidth
-                  multiline
-                  minRows={2}
-                />
-              </Grid>
-              {draft.clientType === "company" && (
-                <>
-                  <Grid item xs={12}>
-                    <Stack direction="row" gap={1} alignItems="center">
-                      <BusinessOutlined color="action" />
-                      <Typography fontWeight={600}>Реквизиты компании</Typography>
-                    </Stack>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField label="Юридическое название" value={draft.legalName} onChange={(event) => setDraft((v) => ({ ...v, legalName: event.target.value }))} fullWidth />
-                  </Grid>
-                  <Grid item xs={12} sm={3}>
-                    <TextField label="ИНН" value={draft.inn} onChange={(event) => setDraft((v) => ({ ...v, inn: event.target.value }))} fullWidth />
-                  </Grid>
-                  <Grid item xs={12} sm={3}>
-                    <TextField label="ОКПО" value={draft.okpo} onChange={(event) => setDraft((v) => ({ ...v, okpo: event.target.value }))} fullWidth />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField label="Юридический адрес" value={draft.legalAddress} onChange={(event) => setDraft((v) => ({ ...v, legalAddress: event.target.value }))} fullWidth />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField label="Банк" value={draft.bankName} onChange={(event) => setDraft((v) => ({ ...v, bankName: event.target.value }))} fullWidth />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField label="Расчётный счёт" value={draft.bankAccount} onChange={(event) => setDraft((v) => ({ ...v, bankAccount: event.target.value }))} fullWidth />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField label="БИК" value={draft.bankBik} onChange={(event) => setDraft((v) => ({ ...v, bankBik: event.target.value }))} fullWidth />
-                  </Grid>
-                </>
-              )}
-            </Grid>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditorOpen(false)} disabled={saving}>Отмена</Button>
-          <Button variant="contained" onClick={() => void save()} disabled={saving}>
-            {saving ? <CircularProgress size={20} /> : "Сохранить"}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Stack>
-  );
+  return <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <PageHeader title="Клиенты" showTitle={false} onAdd={canManage ? openCreate : undefined} addButtonText="Добавить клиента" addButtonIcon={<AddOutlined />} showSearch searchVal={search} onSearchChange={setSearch} searchPlaceholder="Поиск..." loading={clients.isFetching} />
+    <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: isMobile ? "column" : "row", gap: 1.5, px: { xs: 1, md: 2 }, pb: 1.5, overflow: "hidden" }}>
+      <Box sx={{ flex: isMobile ? "0 0 42%" : isTablet ? "5 1 0" : "3 1 0", minWidth: 0, minHeight: 0 }}><ClientListPanel clients={clients.data ?? []} selectedId={selected?.id ?? null} loading={clients.isLoading} error={clients.error instanceof Error ? clients.error.message : null} onSelect={setSelected} /></Box>
+      {!isMobile && !isTablet && selected && <Box sx={{ flex: "3.5 1 0", minWidth: 0, minHeight: 0 }}><ClientCard client={selected} settings={cardSettings} canManage={canManage} onEdit={openEdit} /></Box>}
+      <Box sx={{ flex: isMobile ? "1 1 auto" : isTablet ? "5 1 0" : selected ? "5.5 1 0" : "7 1 0", minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+        {(isMobile || isTablet) && selected && <Box sx={{ flex: isTablet ? "0 0 46%" : "0 0 auto", minHeight: 0 }}><ClientCard client={selected} settings={cardSettings} canManage={canManage} onEdit={openEdit} /></Box>}
+        {selected && layout.tabs.length > 0 && <SegmentedTabs tabs={layout.tabs.map((tab) => ({ key: tab, label: tabLabels[tab] }))} value={selectedTab} onChange={setActiveTab} layoutId="clients-tabs" />}
+        {selected && layout.tabs.length > 0 && <Box sx={{ flex: 1, minHeight: 0 }}><ClientTabs tab={selectedTab} purchases={purchases.data} contacts={contacts.data} loading={detailLoading} error={detailError instanceof Error ? detailError.message : null} canManage={canManage} canViewPurchases={canViewPurchases} onAddContact={() => openContact(null)} onEditContact={openContact} /></Box>}
+        {!selected && <Box sx={{ flex: 1, display: "grid", placeItems: "center", border: 1, borderStyle: "dashed", borderColor: "divider", borderRadius: 1 }}><Typography color="text.secondary">Карточка клиента</Typography></Box>}
+      </Box>
+    </Box>
+    <ClientEditorDrawer open={editorOpen} organizationId={organizationId} client={editorClient} onClose={() => setEditorOpen(false)} onSaved={onClientSaved} />
+    <Dialog open={contactOpen} onClose={() => !contactBusy && setContactOpen(false)} fullWidth maxWidth="sm"><DialogTitle>{contact ? "Изменить контактное лицо" : "Добавить контактное лицо"}</DialogTitle><DialogContent><Stack gap={2} pt={1}>{contactError && <Alert severity="error">{contactError}</Alert>}<TextField label="ФИО" value={contactDraft.fullName} onChange={(e) => setContactDraft((v) => ({ ...v, fullName: e.target.value }))} required fullWidth /><TextField label="Должность" value={contactDraft.position} onChange={(e) => setContactDraft((v) => ({ ...v, position: e.target.value }))} fullWidth /><TextField label="Телефон" value={contactDraft.phone} onChange={(e) => setContactDraft((v) => ({ ...v, phone: e.target.value }))} fullWidth /><TextField label="Email" value={contactDraft.email} onChange={(e) => setContactDraft((v) => ({ ...v, email: e.target.value }))} fullWidth /><FormControlLabel control={<Switch checked={contactDraft.isPrimary} onChange={(_, checked) => setContactDraft((v) => ({ ...v, isPrimary: checked }))} />} label="Основной контакт" /><TextField label="Комментарий" value={contactDraft.note} onChange={(e) => setContactDraft((v) => ({ ...v, note: e.target.value }))} multiline minRows={2} fullWidth /></Stack></DialogContent><DialogActions><Button onClick={() => setContactOpen(false)} disabled={contactBusy}>Отмена</Button><Button variant="contained" onClick={() => void saveContact()} disabled={contactBusy}>{contactBusy ? <CircularProgress size={20} /> : "Сохранить"}</Button></DialogActions></Dialog>
+  </Box>;
 }

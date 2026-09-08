@@ -18,6 +18,20 @@ export type RetailReceipt = {
   createdAt: string;
 };
 
+export type ClientPurchase = {
+  id: number;
+  number: string;
+  status: string;
+  totalAmount: string;
+  createdAt: string;
+  completedAt: string | null;
+  lines: Array<{ id: number; productName: string; quantity: string; total: string }>;
+};
+
+export function getClientPurchases(clientId: number, signal?: AbortSignal) {
+  return apiRequest<ClientPurchase[]>(`/pos/receipts/?clientId=${clientId}&limit=100`, { signal });
+}
+
 export type RetailReceiptLine = {
   productId: number;
   quantity: number;

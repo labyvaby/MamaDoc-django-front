@@ -88,6 +88,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // у модуля нет (docs/automations-api.md §2).
   automations: PAGE_PERMISSIONS.notifications,
   productAttributes: "warehouse.manage",
+  clients: "clients.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;
