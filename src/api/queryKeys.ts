@@ -383,9 +383,20 @@ export const djangoQueryKeys = {
     // показывать оператору вчерашнюю витрину как сегодняшнюю.
     linkPreview: (linkId: number) =>
       ["django", "odoctor", "link-preview", linkId] as const,
+    // Предпросмотр всех связей одного врача: переключатель в карточке один
+    // на врача, значит и картинка «что произойдёт» — на врача целиком.
+    employeePreview: (employeeId: number, linkIds: readonly number[]) =>
+      [
+        "django", "odoctor", "employee-preview", employeeId, [...linkIds],
+      ] as const,
     // Филиалы в разрезе кабинета — только своя база, кешируется как справочник.
     branches: (organizationId: number | null | undefined) =>
       ["django", "odoctor", "branches", organizationId ?? null] as const,
+    // Филиалы самого кабинета — варианты выбора при связывании филиала.
+    // Живёт недолго: список идёт из кабинета, а связанный филиал должен
+    // сразу перестать предлагаться свободным.
+    cabinetBranches: (organizationId: number | null | undefined) =>
+      ["django", "odoctor", "cabinet-branches", organizationId ?? null] as const,
     // Врачи филиала в кабинете. Ключ по филиалу CRM, а не по филиалу
     // кабинета: наружу мы говорим о своих сущностях. Живёт недолго — запрос
     // идёт в кабинет, и вчерашний список врачей под видом сегодняшнего

@@ -37,12 +37,24 @@ import ImageOutlined from "@mui/icons-material/ImageOutlined";
 import LockOutlined from "@mui/icons-material/LockOutlined";
 
 import { compressImage } from "../../utility/imageCompression";
+
+/** Стороны отступов в порядке, в котором их привычно читать. */
+const MARGIN_SIDES = [
+  { key: "top", label: "Сверху" },
+  { key: "bottom", label: "Снизу" },
+  { key: "left", label: "Слева" },
+  { key: "right", label: "Справа" },
+] as const;
+
 import {
   CONCLUSION_FORMS_BACKEND,
   REQUIRED_BLOCK_KEYS,
   REQUIRED_BLOCK_LABELS,
+  defaultMargins,
   emptyFormPayload,
+  marginsError,
   newFieldId,
+  resolveMargins,
   uploadConclusionFormBackground,
   type ConclusionFormPayload,
   type ConclusionFormTemplate,
@@ -159,6 +171,12 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
     setDraft((prev) => ({ ...prev, [key]: value }));
   };
 
+  // ── отступы листа ─────────────────────────────────────────────────────────
+  // Дефолт зависит от формата, поэтому пустое значение подставляем на чтении,
+  // а не «фиксируем» в черновике: сменил A4 на A5 — поехали и отступы.
+  const margins = resolveMargins(draft.pageSize, draft.margins);
+  const marginsMessage = marginsError(draft.pageSize, draft.orientation, margins);
+
   // ── поля ──────────────────────────────────────────────────────────────────
   const addField = (type: FormFieldType) => {
     const field: FormField = {
@@ -260,6 +278,10 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
     }
     if (draft.fields.some((f) => !f.label.trim())) {
       setLocalError("У каждого поля должна быть подпись.");
+      return;
+    }
+    if (marginsMessage) {
+      setLocalError(marginsMessage);
       return;
     }
     // Инварианты привязки проверяем и здесь, а не только выпадающим списком:
@@ -476,6 +498,48 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
                     valueLabelFormat={(v) => `${Math.round(v * 100)}%`}
                   />
                 </Box>
+              )}
+            </Box>
+
+            <Divider />
+
+            {/* Отступы листа */}
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Отступы от края бумаги
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Миллиметры. Нужны фирменной бумаге: если у неё напечатана шапка
+                сверху или контакты снизу, увеличьте отступ, чтобы текст не лёг
+                поверх. Рабочая область показана пунктиром в превью справа.
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>
+                {MARGIN_SIDES.map(({ key, label }) => (
+                  <TextField
+                    key={key}
+                    label={label}
+                    type="number"
+                    size="small"
+                    value={margins[key]}
+                    onChange={(e) =>
+                      patch("margins", { ...margins, [key]: Number(e.target.value) })
+                    }
+                    inputProps={{ min: 0, max: 100, step: 1 }}
+                    sx={{ width: 110 }}
+                  />
+                ))}
+                <Button
+                  size="small"
+                  onClick={() => patch("margins", defaultMargins(draft.pageSize))}
+                  sx={{ alignSelf: "center" }}
+                >
+                  По умолчанию
+                </Button>
+              </Stack>
+              {marginsMessage && (
+                <Alert severity="error" sx={{ mt: 1.5 }}>
+                  {marginsMessage}
+                </Alert>
               )}
             </Box>
 
@@ -851,6 +915,7 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
               context={previewContext}
               scale={previewScale}
               highlightFieldId={focusedFieldId}
+              showContentBounds
             />
           </Box>
         </Box>

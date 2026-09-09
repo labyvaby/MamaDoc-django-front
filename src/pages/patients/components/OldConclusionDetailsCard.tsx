@@ -62,7 +62,7 @@ const OldConclusionDetailsCard: React.FC<Props> = ({ item, patientFio, patientDo
                 // Заключение печатаем вместе с рекомендациями: у записей старого
                 // MamaDoc основной текст лежит в conclusion, у до-Supabase базы
                 // его нет вовсе, там есть только рекомендации.
-                recommendations:
+                conclusion:
                     [item.conclusion, item.recommendations].filter(Boolean).join("\n\n") || "—",
                 doctorFio: item.changed_by || "Врач клиники",
             };

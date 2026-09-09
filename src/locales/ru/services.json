@@ -60,7 +60,8 @@
     "priceHistoryShow": "История изменения цены",
     "priceHistoryHide": "Скрыть историю цен",
     "priceHistoryLoading": "Загрузка…",
-    "priceHistoryEmpty": "История цен пуста."
+    "priceHistoryEmpty": "История цен пуста.",
+    "priceHistoryUnknownAuthor": "Не указано"
   },
   "performers": {
     "noSpecialization": "Без специализации",
