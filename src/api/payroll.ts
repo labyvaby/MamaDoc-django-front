@@ -261,6 +261,8 @@ export interface PayrollBonus {
   id: number;
   employeeId: number;
   employeeFullName: string;
+  branchId: number | null;
+  branchName: string | null;
   year: number;
   month: number;
   /** Decimal string, e.g. "10000.00". */
@@ -272,6 +274,7 @@ export interface PayrollBonus {
 
 export interface BonusWriteData {
   employeeId: number;
+  branchId: number;
   year: number;
   month: number;
   amount: string | number;
@@ -285,6 +288,7 @@ export function getBonuses(
     month: number;
     employeeId?: number;
     organizationId?: number;
+    branchId?: number;
   },
   signal?: AbortSignal,
 ): Promise<PayrollBonus[]> {
@@ -292,6 +296,7 @@ export function getBonuses(
   q.set("year", String(params.year));
   q.set("month", String(params.month));
   if (params.employeeId != null) q.set("employeeId", String(params.employeeId));
+  if (params.branchId != null) q.set("branchId", String(params.branchId));
   if (params.organizationId != null) {
     q.set("organizationId", String(params.organizationId));
   }
