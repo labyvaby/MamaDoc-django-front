@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  marginsError,
+  normalizeForm,
   renderFilledForm,
   resolveFormForScope,
+  resolveMargins,
   sheetSizeMm,
   suggestSlotForLabel,
   usedSlots,
@@ -219,5 +222,99 @@ describe("suggestSlotForLabel", () => {
     expect(suggestSlotForLabel("Жалобы со слов матери")).toBeNull();
     expect(suggestSlotForLabel("")).toBeNull();
     expect(suggestSlotForLabel("Зев")).toBeNull();
+  });
+});
+
+describe("resolveMargins", () => {
+  it("не задано — прежняя геометрия, а не нули", () => {
+    // Бланки, собранные до появления настройки, должны печататься как раньше.
+    expect(resolveMargins("A4", null)).toEqual({ top: 12, right: 15, bottom: 12, left: 15 });
+    expect(resolveMargins("A5", undefined)).toEqual({ top: 12, right: 10, bottom: 12, left: 10 });
+  });
+
+  it("ноль — осознанный выбор, а не пропуск", () => {
+    // Печать в край нужна бумаге с картинкой на всю страницу.
+    expect(resolveMargins("A4", { top: 0, right: 0, bottom: 0, left: 0 })).toEqual({
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+    });
+  });
+
+  it("мусор в одной стороне не роняет остальные", () => {
+    // Значения приходят и из снапшота, который писала прошлая версия фронта.
+    const margins = resolveMargins("A4", {
+      top: 40,
+      right: Number.NaN,
+      bottom: -5,
+      left: undefined,
+    } as never);
+    expect(margins).toEqual({ top: 40, right: 15, bottom: 12, left: 15 });
+  });
+});
+
+describe("marginsError", () => {
+  it("нормальные отступы под фирменную шапку проходят", () => {
+    expect(marginsError("A4", "portrait", { top: 45, right: 15, bottom: 25, left: 15 })).toBeNull();
+  });
+
+  it("боковые отступы, съевшие лист, не сохранить", () => {
+    const message = marginsError("A4", "portrait", { top: 12, right: 90, bottom: 12, left: 90 });
+    expect(message).toContain("Боковые отступы");
+  });
+
+  it("вертикальные отступы, съевшие лист, не сохранить", () => {
+    const message = marginsError("A4", "portrait", { top: 130, right: 15, bottom: 130, left: 15 });
+    expect(message).toContain("сверху и снизу");
+  });
+
+  it("ориентация учитывается: у альбомного листа мало высоты", () => {
+    const margins = { top: 90, right: 15, bottom: 90, left: 15 };
+    // Портретный A4 — 297 мм высоты, влезает; альбомный — 210 мм, уже нет.
+    expect(marginsError("A4", "portrait", margins)).toBeNull();
+    expect(marginsError("A4", "landscape", margins)).toContain("сверху и снизу");
+  });
+});
+
+describe("отступы: транспорт внутри background", () => {
+  // Бэк молча отбрасывает неизвестные поля верхнего уровня, но хранит
+  // `background` свободным JSON (проверено на test 08.09.2026). Компоненты про
+  // это не знают — они читают `template.margins`, и вот эта распаковка обязана
+  // работать, иначе настройка отступов молча теряется при перезагрузке.
+  const base = {
+    id: 6,
+    name: "Протокол",
+    pageSize: "A4",
+    orientation: "portrait",
+    title: "",
+    showClinicHeader: true,
+    fields: [{ id: "f1", label: "Поле", type: "text" }],
+    target: "conclusion",
+    isActive: true,
+    createdAt: "",
+    updatedAt: "",
+  } as unknown as ConclusionFormTemplate;
+
+  it("читает отступы, сохранённые внутри background", () => {
+    const form = normalizeForm({
+      ...base,
+      background: { imageUrl: null, opacity: 1, margins: { top: 44, right: 16, bottom: 21, left: 17 } },
+    });
+    expect(form.margins).toEqual({ top: 44, right: 16, bottom: 21, left: 17 });
+  });
+
+  it("поле верхнего уровня важнее — на случай, когда бэк его заведёт", () => {
+    const form = normalizeForm({
+      ...base,
+      margins: { top: 30, right: 30, bottom: 30, left: 30 },
+      background: { imageUrl: null, opacity: 1, margins: { top: 44, right: 16, bottom: 21, left: 17 } },
+    });
+    expect(form.margins).toEqual({ top: 30, right: 30, bottom: 30, left: 30 });
+  });
+
+  it("бланк без отступов открывается с прежней геометрией", () => {
+    const form = normalizeForm({ ...base, background: { imageUrl: null, opacity: 1 } });
+    expect(form.margins).toEqual({ top: 12, right: 15, bottom: 12, left: 15 });
   });
 });

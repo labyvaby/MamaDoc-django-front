@@ -1,5 +1,7 @@
 import React from "react";
 import { Alert, Box, Button, Chip, Paper, Skeleton, Stack, Typography } from "@mui/material";
+import { alpha } from "@mui/material/styles";
+import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
 import MapOutlined from "@mui/icons-material/MapOutlined";
@@ -19,8 +21,13 @@ import { ApiError, isAbortError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
 import { PublicBookingShell, PAGE_GUTTER } from "./shell";
 import { bookingCodeUrl, formatPrice } from "./format";
+import { buildBookingIcs, downloadIcs } from "./ics";
 import { useBookingNav } from "./orgSlug";
-import { BOOKING_PRIMARY, BOOKING_RADIUS, BOOKING_SHADOW, BORDER, MUTED } from "./theme";
+import { useBookingOrg } from "./useBookingOrg";
+import { BOOKING_PRIMARY, BOOKING_RADIUS, BOOKING_SHADOW, BORDER, CTA_SHADOW, MUTED } from "./theme";
+
+/** Статусы, при которых приём ещё состоится — только для них есть смысл в .ics. */
+const CALENDAR_ELIGIBLE_STATUSES = new Set(["pending", "confirmed", "awaiting_payment"]);
 
 /**
  * «Ваша запись» по коду подтверждения — то, куда ведёт QR из экрана успеха.
@@ -71,7 +78,13 @@ function minutesLeft(expiresAt: string | null): number | null {
 export const PaymentBlock: React.FC<{
   payment: PublicBookingPayment;
   t: (key: string, opts?: Record<string, unknown>) => string;
-}> = ({ payment, t }) => {
+  /**
+   * Без заголовка/пояснения — когда снаружи уже есть свой (см. `SuccessDialog`,
+   * где оплата стала шапкой модалки и повторять «Оплатите предоплату» под
+   * своим же заголовком незачем).
+   */
+  compact?: boolean;
+}> = ({ payment, t, compact }) => {
   if (payment.status === "paid") {
     return <Alert severity="success">{t("byCode.payPaid")}</Alert>;
   }
@@ -84,13 +97,25 @@ export const PaymentBlock: React.FC<{
 
   const left = minutesLeft(payment.expiresAt);
   return (
+    // Пока не оплачено, это единственное действие, которое имеет значение —
+    // тёплый (warning) тон и заметная рамка отличают блок от рядовых фактов
+    // записи ниже, чтобы кнопка не терялась (жалоба заказчика 08.09.2026).
     <Paper
       elevation={0}
-      sx={{ p: 2, borderRadius: BOOKING_RADIUS, border: `1px solid ${BORDER}` }}
+      sx={(t) => ({
+        p: 2,
+        borderRadius: BOOKING_RADIUS,
+        border: `1px solid ${alpha(t.palette.warning.main, 0.4)}`,
+        bgcolor: alpha(t.palette.warning.main, 0.06),
+      })}
     >
       <Stack spacing={1.25}>
-        <Typography sx={{ fontSize: 16, fontWeight: 700 }}>{t("byCode.payTitle")}</Typography>
-        <Typography sx={{ fontSize: 13, color: MUTED }}>{t("byCode.payHint")}</Typography>
+        {!compact && (
+          <>
+            <Typography sx={{ fontSize: 16, fontWeight: 700 }}>{t("byCode.payTitle")}</Typography>
+            <Typography sx={{ fontSize: 13, color: MUTED }}>{t("byCode.payHint")}</Typography>
+          </>
+        )}
         <Typography sx={{ fontSize: 15, fontWeight: 600 }}>
           {t("byCode.payAmount", { amount: formatPrice(Number(payment.amount)) })}
         </Typography>
@@ -100,14 +125,15 @@ export const PaymentBlock: React.FC<{
             target="_blank"
             rel="noopener noreferrer"
             sx={{
-              alignSelf: "flex-start",
-              px: 3,
-              py: 1.25,
+              width: "100%",
+              py: 1.5,
               borderRadius: 99,
               bgcolor: BOOKING_PRIMARY,
               color: "#FFFFFF",
-              fontWeight: 600,
+              fontWeight: 700,
+              fontSize: 16,
               textTransform: "none",
+              boxShadow: CTA_SHADOW,
               "&:hover": { bgcolor: BOOKING_PRIMARY },
             }}
           >
@@ -115,12 +141,14 @@ export const PaymentBlock: React.FC<{
           </Button>
         )}
         {left != null && (
-          <Typography sx={{ fontSize: 12, color: MUTED }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 600, color: "warning.dark", textAlign: "center" }}>
             {t("byCode.payExpiresIn", { minutes: left })}
           </Typography>
         )}
         {/* Оплату подтверждает только бэк — страница опрашивает его сама. */}
-        <Typography sx={{ fontSize: 12, color: MUTED }}>{t("byCode.payChecking")}</Typography>
+        <Typography sx={{ fontSize: 12, color: MUTED, textAlign: "center" }}>
+          {t("byCode.payChecking")}
+        </Typography>
       </Stack>
     </Paper>
   );
@@ -137,6 +165,7 @@ const BookingByCodePage: React.FC = () => {
   const { t } = useT("publicBooking");
   const { code = "" } = useParams<{ code: string }>();
   const { orgSlug, go } = useBookingNav();
+  const { organization } = useBookingOrg();
 
   const [booking, setBooking] = React.useState<PublicBookingDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -194,6 +223,12 @@ const BookingByCodePage: React.FC = () => {
     } catch {
       // буфер недоступен (нет https / отказ) — код и так виден на экране
     }
+  };
+
+  const handleAddToCalendar = () => {
+    if (!booking) return;
+    const ics = buildBookingIcs(booking, organization?.name ?? "");
+    downloadIcs(ics, `booking-${booking.confirmationCode}.ics`);
   };
 
   const maps = booking?.branch
@@ -269,6 +304,25 @@ const BookingByCodePage: React.FC = () => {
                 </Typography>
               </Row>
 
+              {CALENDAR_ELIGIBLE_STATUSES.has(booking.status) && (
+                <Button
+                  onClick={handleAddToCalendar}
+                  size="small"
+                  startIcon={<CalendarMonthOutlined sx={{ fontSize: 16 }} />}
+                  sx={{
+                    alignSelf: "flex-start",
+                    borderRadius: 99,
+                    px: 1.5,
+                    border: `1px solid ${BORDER}`,
+                    color: "text.primary",
+                    fontSize: 13,
+                    textTransform: "none",
+                  }}
+                >
+                  {t("byCode.addToCalendar")}
+                </Button>
+              )}
+
               {booking.doctor && (
                 <Row icon={<PersonOutlineOutlined sx={{ fontSize: 20 }} />}>
                   <Typography sx={{ fontSize: 15 }}>{booking.doctor.fullName}</Typography>
@@ -297,6 +351,23 @@ const BookingByCodePage: React.FC = () => {
                   {booking.branch.address && (
                     <Typography sx={{ fontSize: 13, color: MUTED }}>
                       {booking.branch.address}
+                    </Typography>
+                  )}
+                  {/* Телефон филиала: по нему переносят и уточняют запись —
+                      он приходил в ответе, но не показывался. */}
+                  {booking.branch.phones?.[0] && (
+                    <Typography
+                      component="a"
+                      href={`tel:${booking.branch.phones[0].replace(/[^\d+]/g, "")}`}
+                      sx={{
+                        display: "inline-block",
+                        mt: 0.5,
+                        fontSize: 13,
+                        color: BOOKING_PRIMARY,
+                        textDecoration: "none",
+                      }}
+                    >
+                      {booking.branch.phones[0]}
                     </Typography>
                   )}
                   {maps.length > 0 && (

@@ -43,6 +43,92 @@ export function sheetSizeMm(
     : { ...base };
 }
 
+/**
+ * Кегль листа по размеру страницы — то же число, что рисует `FormSheet`.
+ * Здесь, а не в компоненте: печать заключения продолжает лист визуально и
+ * должна совпадать по типографике.
+ */
+export function sheetTypography(pageSize: FormPageSize): { fontPt: number } {
+  return pageSize === "A5" ? { fontPt: 9 } : { fontPt: 11 };
+}
+
+// ── Отступы листа ──────────────────────────────────────────────────────────────
+
+/**
+ * Отступы от края бумаги, мм.
+ *
+ * Зачем настраивать. Фирменный бланк клиники — это напечатанная бумага: полоса
+ * с логотипом сверху (обычно 30–50 мм) и контакты снизу (15–25 мм). Пока
+ * отступы были жёстко зашиты (12 мм сверху), текст ложился прямо на печатную
+ * шапку, и подложка становилась бесполезной (вопрос владельца 08.09.2026).
+ * Выключатель `showClinicHeader` тут не помогает: он убирает НАШУ шапку, а не
+ * отодвигает текст от края.
+ */
+export interface FormMargins {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/** Минимальная рабочая область: лист, в который ничего не влезает, бесполезен. */
+export const MIN_CONTENT_MM = 60;
+
+/** Отступы по умолчанию — те, с которыми бланки печатались до настройки. */
+export function defaultMargins(pageSize: FormPageSize): FormMargins {
+  const side = pageSize === "A5" ? 10 : 15;
+  return { top: 12, right: side, bottom: 12, left: side };
+}
+
+const isFiniteMm = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+/**
+ * Отступы бланка к отрисовке: дефолты вместо пропусков и мусора.
+ *
+ * Не бросает и не режет заведомо кривые значения к нулю: лист должен
+ * напечататься при любом содержимом настроек (они приходят и из снапшота
+ * заключения, который писала прошлая версия фронта). Проверку «влезает ли
+ * вообще» делает `marginsError` в конструкторе — там её видит администратор.
+ */
+export function resolveMargins(
+  pageSize: FormPageSize,
+  margins?: Partial<FormMargins> | null,
+): FormMargins {
+  const fallback = defaultMargins(pageSize);
+  if (!margins) return fallback;
+  return {
+    top: isFiniteMm(margins.top) ? margins.top : fallback.top,
+    right: isFiniteMm(margins.right) ? margins.right : fallback.right,
+    bottom: isFiniteMm(margins.bottom) ? margins.bottom : fallback.bottom,
+    left: isFiniteMm(margins.left) ? margins.left : fallback.left,
+  };
+}
+
+/**
+ * Почему такие отступы нельзя сохранить. `null` — можно.
+ *
+ * Считаем по фактическому листу с учётом ориентации: у альбомного A4 по
+ * вертикали всего 210 мм, и отступы, безопасные для портрета, там уже съедают
+ * страницу.
+ */
+export function marginsError(
+  pageSize: FormPageSize,
+  orientation: FormOrientation,
+  margins: FormMargins,
+): string | null {
+  const { width, height } = sheetSizeMm(pageSize, orientation);
+  const contentWidth = width - margins.left - margins.right;
+  const contentHeight = height - margins.top - margins.bottom;
+  if (contentWidth < MIN_CONTENT_MM) {
+    return `Боковые отступы не оставляют места: под текст остаётся ${Math.round(contentWidth)} мм из ${width}, нужно хотя бы ${MIN_CONTENT_MM}.`;
+  }
+  if (contentHeight < MIN_CONTENT_MM) {
+    return `Отступы сверху и снизу не оставляют места: под текст остаётся ${Math.round(contentHeight)} мм из ${height}, нужно хотя бы ${MIN_CONTENT_MM}.`;
+  }
+  return null;
+}
+
 // ── Обязательные блоки ─────────────────────────────────────────────────────────
 
 /**
@@ -116,6 +202,7 @@ export type FormFieldSlot =
   | "complaints"
   | "anamnesis"
   | "objective"
+  | "diagnosis"
   | "conclusion"
   | "weightKg"
   | "heightCm"
@@ -125,6 +212,7 @@ export const FORM_FIELD_SLOTS: FormFieldSlot[] = [
   "complaints",
   "anamnesis",
   "objective",
+  "diagnosis",
   "conclusion",
   "weightKg",
   "heightCm",
@@ -136,6 +224,7 @@ export const FORM_FIELD_SLOT_LABELS: Record<FormFieldSlot, string> = {
   complaints: "Жалобы",
   anamnesis: "Анамнез",
   objective: "Объективно",
+  diagnosis: "Диагноз (МКБ)",
   conclusion: "Заключение",
   weightKg: "Вес, кг",
   heightCm: "Рост, см",
@@ -160,6 +249,7 @@ const SLOT_LABEL_HINTS: Record<FormFieldSlot, string[]> = {
   complaints: ["жалобы", "жалоба"],
   anamnesis: ["анамнез", "анамнез заболевания", "анамнез болезни"],
   objective: ["объективно", "объективный осмотр", "объективные данные"],
+  diagnosis: ["диагноз", "диагноз мкб", "диагноз (мкб)"],
   conclusion: ["заключение", "вывод"],
   weightKg: ["вес", "масса тела", "масса"],
   heightCm: ["рост", "длина тела"],
@@ -231,6 +321,21 @@ export interface FormBackground {
   imageUrl: string | null;
   /** Прозрачность подложки, 0..1 — чтобы текст поверх оставался читаемым. */
   opacity: number;
+  /**
+   * ⚠ Транспорт, а не свойство подложки.
+   *
+   * Отступы листа — геометрия страницы, и по смыслу им место рядом с
+   * `pageSize`. Но бэк молча отбрасывает неизвестные поля верхнего уровня
+   * (PATCH с `margins` отвечает 200, а поле не сохраняется — проверено на
+   * test 08.09.2026), тогда как `background` хранится свободным JSON и лишние
+   * ключи внутри него переживают запись. Поэтому отступы едут здесь.
+   *
+   * Остальной код про это знать не должен и работает с `template.margins` —
+   * упаковку и распаковку делает только этот модуль (`normalizeForm` и
+   * `toApiPayload`). Когда бэк заведёт поле верхнего уровня, меняются они, а
+   * не компоненты.
+   */
+  margins?: FormMargins | null;
 }
 
 export interface ConclusionFormTemplate {
@@ -261,6 +366,11 @@ export interface ConclusionFormTemplate {
    */
   headerContacts?: string;
   background: FormBackground;
+  /**
+   * Отступы от края бумаги. Не задано — `defaultMargins(pageSize)`: так
+   * печатались все бланки до появления настройки, и молча сдвигать их нельзя.
+   */
+  margins?: FormMargins | null;
   fields: FormField[];
   /** Дисклеймер внизу листа — в присланных протоколах УЗИ он есть везде. */
   footerNote?: string;
@@ -283,6 +393,7 @@ export interface ConclusionFormPayload {
   showClinicHeader: boolean;
   headerContacts?: string;
   background: FormBackground;
+  margins?: FormMargins | null;
   fields: FormField[];
   footerNote?: string;
   target: FormTarget;
@@ -304,6 +415,7 @@ export function emptyFormPayload(): ConclusionFormPayload {
     showClinicHeader: true,
     headerContacts: "",
     background: { imageUrl: null, opacity: 1 },
+    margins: defaultMargins("A4"),
     fields: [],
     footerNote: "",
     target: "conclusion",
@@ -423,15 +535,29 @@ const withOrg = (
  * шаблоны приходят из старых записей без них — а весь подбор строится на
  * `.length`, и `undefined.length` уронил бы дровер заключения.
  */
-function normalizeForm(form: ConclusionFormTemplate): ConclusionFormTemplate {
+export function normalizeForm(form: ConclusionFormTemplate): ConclusionFormTemplate {
   return {
     ...form,
     specializationIds: form.specializationIds ?? [],
     serviceIds: form.serviceIds ?? [],
     branchIds: form.branchIds ?? [],
     isDefault: form.isDefault ?? false,
+    // Бланки, собранные до появления настройки, отступов не имеют — печатаем
+    // их прежней геометрией, а не нулями. `form.margins` читаем на случай,
+    // когда бэк заведёт поле верхнего уровня: тогда оно и станет источником.
+    margins: resolveMargins(form.pageSize, form.margins ?? form.background?.margins),
     fields: form.fields ?? [],
   };
+}
+
+/**
+ * Payload к отправке: отступы уезжают внутрь `background` (см. FormBackground).
+ */
+function toApiPayload<T extends Partial<ConclusionFormPayload>>(payload: T): T {
+  if (!("margins" in payload)) return payload;
+  const { margins, ...rest } = payload;
+  const background = rest.background ?? { imageUrl: null, opacity: 1 };
+  return { ...rest, background: { ...background, margins: margins ?? null } } as T;
 }
 
 export async function getConclusionForms(
@@ -471,8 +597,8 @@ export async function createConclusionForm(
   if (!CONCLUSION_FORMS_BACKEND) return localDriver.create(organizationId, payload);
   return apiRequest<ConclusionFormTemplate>(
     withOrg("/medical/conclusion-forms/", organizationId),
-    { method: "POST", body: payload },
-  );
+    { method: "POST", body: toApiPayload(payload) },
+  ).then(normalizeForm);
 }
 
 export async function updateConclusionForm(
@@ -483,8 +609,8 @@ export async function updateConclusionForm(
   if (!CONCLUSION_FORMS_BACKEND) return localDriver.update(organizationId, id, payload);
   return apiRequest<ConclusionFormTemplate>(
     withOrg(`/medical/conclusion-forms/${id}/`, organizationId),
-    { method: "PATCH", body: payload },
-  );
+    { method: "PATCH", body: toApiPayload(payload) },
+  ).then(normalizeForm);
 }
 
 export async function deleteConclusionForm(

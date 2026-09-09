@@ -14,6 +14,8 @@ import {
   Typography,
 } from "@mui/material";
 import EventOutlined from "@mui/icons-material/EventOutlined";
+import EventRepeatOutlined from "@mui/icons-material/EventRepeatOutlined";
+import MapOutlined from "@mui/icons-material/MapOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
@@ -27,6 +29,7 @@ import {
   splitBookingsByTime,
   type MyBooking,
 } from "../../api/publicPatient";
+import { idOrSlugRef } from "../../api/publicBooking";
 import { isAbortError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
 import { usePatientSession } from "./PatientSession";
@@ -72,12 +75,29 @@ function formatDate(date: string): string {
   return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", weekday: "short" });
 }
 
+/** Первый телефон филиала — по нему пациент переносит и уточняет запись. */
+const branchPhone = (b: MyBooking): string => b.branch?.phones?.[0] ?? "";
+
+/**
+ * Ссылки на карты филиала — те же три, что на карточке брони. Заводятся в
+ * настройках филиала; пустые не показываем.
+ */
+const bookingMaps = (b: MyBooking): { url: string; label: string }[] =>
+  b.branch
+    ? [
+        { url: b.branch.twoGisUrl, label: "2ГИС" },
+        { url: b.branch.yandexMapsUrl, label: "Яндекс" },
+        { url: b.branch.googleMapsUrl, label: "Google" },
+      ].filter((m): m is { url: string; label: string } => Boolean(m.url))
+    : [];
+
 const BookingCard: React.FC<{
   booking: MyBooking;
   onCancel: (b: MyBooking) => void;
   onOpen: (b: MyBooking) => void;
+  onBookAgain: (b: MyBooking) => void;
   cancelling: boolean;
-}> = ({ booking, onCancel, onOpen, cancelling }) => {
+}> = ({ booking, onCancel, onOpen, onBookAgain, cancelling }) => {
   const { t } = useT("publicBooking");
   const statusKey = STATUS_LABEL_KEYS[booking.status];
   const price = Number(booking.totalPrice ?? 0);
@@ -141,13 +161,51 @@ const BookingCard: React.FC<{
           </Box>
         </Stack>
 
-        {booking.branch?.address && (
+        {/* Условие по названию, а не по адресу: филиал без заполненного адреса
+            скрывал и своё имя — пациент не видел, куда его записали. */}
+        {(booking.branch?.name || booking.branch?.address) && (
           <Stack direction="row" alignItems="flex-start" spacing={0.75}>
             <PlaceOutlined sx={{ fontSize: 18, color: MUTED, mt: "2px" }} />
-            <Typography sx={{ fontSize: 14 }}>
-              {booking.branch.name}
-              {booking.branch.address ? ` · ${booking.branch.address}` : ""}
-            </Typography>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontSize: 14 }}>
+                {[booking.branch.name, booking.branch.address].filter(Boolean).join(" · ")}
+              </Typography>
+              {branchPhone(booking) && (
+                <Typography
+                  component="a"
+                  href={`tel:${branchPhone(booking).replace(/[^\d+]/g, "")}`}
+                  sx={{ fontSize: 13, color: BOOKING_PRIMARY, textDecoration: "none" }}
+                >
+                  {branchPhone(booking)}
+                </Typography>
+              )}
+              {/* Кнопки карт и в списке: доехать нужно чаще, чем открывать
+                  карточку брони ради одной ссылки. */}
+              {bookingMaps(booking).length > 0 && (
+                <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 0.75 }}>
+                  {bookingMaps(booking).map((m) => (
+                    <Button
+                      key={m.label}
+                      href={m.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      size="small"
+                      startIcon={<MapOutlined sx={{ fontSize: 15 }} />}
+                      sx={{
+                        borderRadius: 99,
+                        px: 1.25,
+                        border: `1px solid ${BORDER}`,
+                        color: "text.primary",
+                        fontSize: 12,
+                        textTransform: "none",
+                      }}
+                    >
+                      {m.label}
+                    </Button>
+                  ))}
+                </Stack>
+              )}
+            </Box>
           </Stack>
         )}
 
@@ -167,7 +225,7 @@ const BookingCard: React.FC<{
           >
             {t("my.openCard")}
           </Button>
-          {isBookingCancellable(booking) && (
+          {isBookingCancellable(booking) ? (
             <Button
               onClick={() => onCancel(booking)}
               disabled={cancelling}
@@ -183,6 +241,26 @@ const BookingCard: React.FC<{
             >
               {cancelling ? t("my.cancelling") : t("my.cancelAction")}
             </Button>
+          ) : (
+            // Записаться тем же врачом снова — только у записей с врачом:
+            // групповые/безврачебные брони формы для повтора не имеют.
+            booking.doctor && (
+              <Button
+                onClick={() => onBookAgain(booking)}
+                size="small"
+                startIcon={<EventRepeatOutlined sx={{ fontSize: 16 }} />}
+                sx={{
+                  borderRadius: 99,
+                  px: 2,
+                  border: `1px solid ${BORDER}`,
+                  color: "text.primary",
+                  textTransform: "none",
+                  fontWeight: 500,
+                }}
+              >
+                {t("my.bookAgain")}
+              </Button>
+            )
           )}
         </Stack>
       </Stack>
@@ -355,6 +433,7 @@ const MyBookingsPage: React.FC = () => {
                     booking={b}
                     onCancel={setConfirming}
                     onOpen={(b) => go(`/book/b/${b.confirmationCode}`)}
+                    onBookAgain={(b) => b.doctor && go(`/book/doctor/${idOrSlugRef(b.doctor)}`)}
                     cancelling={cancellingId === b.id}
                   />
                 ))}
@@ -372,6 +451,7 @@ const MyBookingsPage: React.FC = () => {
                     booking={b}
                     onCancel={setConfirming}
                     onOpen={(b) => go(`/book/b/${b.confirmationCode}`)}
+                    onBookAgain={(b) => b.doctor && go(`/book/doctor/${idOrSlugRef(b.doctor)}`)}
                     cancelling={cancellingId === b.id}
                   />
                 ))}

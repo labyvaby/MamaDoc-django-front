@@ -48,6 +48,7 @@ import {
 } from "../../api/catalog";
 import type { Service, ServicePriceHistoryEntry } from "../../api/catalog";
 import { formatKGS, formatQuantity } from "../../utility/format";
+import { parseBackendError } from "../../api/appointments";
 import { AppButton, InfoTile } from "../ui";
 import { subtleBg } from "../../theme/uiHelpers";
 import { useNavigate } from "react-router";
@@ -154,23 +155,28 @@ const ServiceDetailsPanel: React.FC<Props> = ({
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [historyLoading, setHistoryLoading] = React.useState(false);
   const [priceHistory, setPriceHistory] = React.useState<ServicePriceHistoryEntry[]>([]);
+  const [historyError, setHistoryError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setHistoryOpen(false);
     setPriceHistory([]);
+    setHistoryError(null);
   }, [serviceId]);
 
   React.useEffect(() => {
     if (!SERVICE_PRICE_HISTORY_ENABLED || !historyOpen || !service) return;
     const controller = new AbortController();
     setHistoryLoading(true);
+    setHistoryError(null);
     getServicePriceHistory(service.id, controller.signal)
       .then((rows) => {
         if (!controller.signal.aborted) setPriceHistory(rows);
       })
       .catch((e) => {
         if (controller.signal.aborted || e?.name === "AbortError") return;
-        console.error("Failed to load service price history:", e);
+        // 401/403/404 — не пустая история, а сбой доступа/эндпоинта: подмена
+        // молчаливым «истории нет» скрыла бы от оператора реальную причину.
+        setHistoryError(parseBackendError(e));
       })
       .finally(() => {
         if (!controller.signal.aborted) setHistoryLoading(false);
@@ -541,6 +547,10 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                         <Typography variant="body2" color="text.secondary">
                           {t("details.priceHistoryLoading")}
                         </Typography>
+                      ) : historyError ? (
+                        <Typography variant="body2" color="error">
+                          {historyError}
+                        </Typography>
                       ) : priceHistory.length === 0 ? (
                         <Typography variant="body2" color="text.secondary">
                           {t("details.priceHistoryEmpty")}
@@ -565,7 +575,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                                   noWrap
                                   display="block"
                                 >
-                                  {h.changedByName || "—"}
+                                  {h.changedByName || t("details.priceHistoryUnknownAuthor")}
                                 </Typography>
                               </Box>
                               <Typography

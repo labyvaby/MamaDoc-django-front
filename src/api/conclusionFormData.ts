@@ -19,9 +19,11 @@ import {
   CONCLUSION_FORM_DATA_LIMIT_BYTES,
   type ConclusionFormData,
 } from "./medical";
+import { resolveMargins } from "./conclusionForms";
 import type {
   ConclusionFormTemplate,
   FormField,
+  FormMargins,
   FormOrientation,
   FormPageSize,
   FormTarget,
@@ -66,6 +68,7 @@ export function buildConclusionFormData(
           showClinicHeader: form.showClinicHeader,
           headerContacts: form.headerContacts ?? "",
           background: form.background,
+          margins: form.margins ?? null,
           fields: form.fields,
         },
       },
@@ -201,13 +204,14 @@ function parseSnapshot(
   const str = (value: unknown, fallback = "") =>
     typeof value === "string" ? value : fallback;
   const background = isRecord(snapshot.background) ? snapshot.background : null;
+  const pageSize: FormPageSize = PAGE_SIZES.includes(snapshot.pageSize as FormPageSize)
+    ? (snapshot.pageSize as FormPageSize)
+    : "A4";
 
   return {
     id: formId,
     name: str(snapshot.name),
-    pageSize: PAGE_SIZES.includes(snapshot.pageSize as FormPageSize)
-      ? (snapshot.pageSize as FormPageSize)
-      : "A4",
+    pageSize,
     orientation: ORIENTATIONS.includes(snapshot.orientation as FormOrientation)
       ? (snapshot.orientation as FormOrientation)
       : "portrait",
@@ -223,6 +227,12 @@ function parseSnapshot(
       imageUrl: typeof background?.imageUrl === "string" ? background.imageUrl : null,
       opacity: typeof background?.opacity === "number" ? background.opacity : 1,
     },
+    // Печать всё равно берёт отступы из актуального шаблона (см.
+    // ConclusionPrintPage): бумага — не часть медицинской записи. В снимке они
+    // нужны на случай, когда шаблон уже удалён.
+    margins: isRecord(snapshot.margins)
+      ? resolveMargins(pageSize, snapshot.margins as Partial<FormMargins>)
+      : null,
     fields,
     footerNote: str(snapshot.footerNote),
     target: TARGETS.includes(snapshot.target as FormTarget)
