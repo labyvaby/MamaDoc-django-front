@@ -61,6 +61,12 @@ export interface LabQuestion {
   defaultValue: string;
 }
 
+/**
+ * Конверт списка — его отдают ТОЛЬКО ленты заказов (`/lab/orders/` и
+ * `/lab/patients/<id>/orders/`). Каталожные ручки раздела отвечают голым
+ * массивом, читать у них `results` нельзя: получится `undefined`, а экран
+ * покажет пустой каталог, ничем не отличимый от настоящей пустоты.
+ */
 interface Listed<T> {
   results: T[];
   count: number;
@@ -78,15 +84,11 @@ export function testIdsQuery(ids: number[]): string {
 }
 
 export function getLabTests(signal?: AbortSignal): Promise<LabTest[]> {
-  return apiRequest<Listed<LabTest>>("/lab/tests/", { signal }).then(
-    (data) => data.results,
-  );
+  return apiRequest<LabTest[]>("/lab/tests/", { signal });
 }
 
 export function getLabProfiles(signal?: AbortSignal): Promise<LabProfile[]> {
-  return apiRequest<Listed<LabProfile>>("/lab/profiles/", { signal }).then(
-    (data) => data.results,
-  );
+  return apiRequest<LabProfile[]>("/lab/profiles/", { signal });
 }
 
 export function getLabInstruments(
@@ -95,10 +97,10 @@ export function getLabInstruments(
 ): Promise<LabInstrument[]> {
   const query = testIdsQuery(testIds);
   if (!query) return Promise.resolve([]);
-  return apiRequest<Listed<LabInstrument>>(
+  return apiRequest<LabInstrument[]>(
     `/lab/tests/instruments/?tests=${query}`,
     { signal },
-  ).then((data) => data.results);
+  );
 }
 
 export function getLabQuestions(
@@ -107,10 +109,10 @@ export function getLabQuestions(
 ): Promise<LabQuestion[]> {
   const query = testIdsQuery(testIds);
   if (!query) return Promise.resolve([]);
-  return apiRequest<Listed<LabQuestion>>(
+  return apiRequest<LabQuestion[]>(
     `/lab/tests/questions/?tests=${query}`,
     { signal },
-  ).then((data) => data.results);
+  );
 }
 
 export function getLabPreparation(
@@ -119,9 +121,9 @@ export function getLabPreparation(
 ): Promise<string[]> {
   const query = testIdsQuery(testIds);
   if (!query) return Promise.resolve([]);
-  return apiRequest<Listed<string>>(`/lab/tests/preparation/?tests=${query}`, {
+  return apiRequest<string[]>(`/lab/tests/preparation/?tests=${query}`, {
     signal,
-  }).then((data) => data.results);
+  });
 }
 
 // ── Настройки ──────────────────────────────────────────────────────────────
