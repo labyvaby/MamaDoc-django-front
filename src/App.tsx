@@ -29,7 +29,6 @@ import { Sidebar } from "./components/sidebar";
 import { PatientSessionProvider } from "./pages/public-booking/PatientSession";
 import { AchievementToast } from "./components/achievements/AchievementToast";
 import { NewBookingToast } from "./components/bookings/NewBookingToast";
-import { BookingsTitleBadge } from "./components/bookings/BookingsTitleBadge";
 import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
 import { FloatingTopBanners } from "./components/layout/FloatingTopBanners";
 import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
@@ -542,9 +541,8 @@ function App() {
                                      <FloatingTopBanners />
                                   </>
                                 </DjangoContextRemount>
-                                {/* Новая заявка онлайн-записи: тост из любого экрана + счётчик во вкладке */}
+                                {/* Новая заявка онлайн-записи: тост из любого экрана */}
                                 <NewBookingToast />
-                                <BookingsTitleBadge />
                                 {/* Поздравление с новыми достижениями (mark-seen при закрытии) */}
                                 <AchievementToast />
                                 {/* Выбор филиала после логина (флаг ставит login.tsx) */}
