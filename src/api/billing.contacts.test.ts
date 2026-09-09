@@ -52,6 +52,18 @@ describe("complete billing API flows", () => {
     expect(apiRequest).toHaveBeenCalledWith("/v2/billing/reports/refunds/?organizationId=4&dateFrom=2026-09-01&dateTo=2026-09-30");
   });
 
+  it("passes supported operational filters to billing registers", async () => {
+    apiRequest.mockResolvedValue({ items: [], nextCursor: null });
+
+    await billingApi.allCharges({ organizationId: 4, status: "overdue", dateFrom: "2026-09-01", dateTo: "2026-09-30" });
+    await billingApi.allPayments({ organizationId: 4, status: "succeeded", method: "cash" });
+    await billingApi.allContracts({ organizationId: 4, status: "active" });
+
+    expect(apiRequest).toHaveBeenNthCalledWith(1, "/v2/billing/charges/?organizationId=4&status=overdue&dateFrom=2026-09-01&dateTo=2026-09-30&pageSize=200");
+    expect(apiRequest).toHaveBeenNthCalledWith(2, "/v2/billing/payments/?organizationId=4&status=succeeded&method=cash&pageSize=200");
+    expect(apiRequest).toHaveBeenNthCalledWith(3, "/v2/billing/contracts/?organizationId=4&status=active&pageSize=200");
+  });
+
   it("resolves the rental deposit independently from ending the contract", async () => {
     await billingApi.resolveContractDeposit(31, "returned", { organizationId: 4 });
     expect(apiRequest).toHaveBeenCalledWith("/v2/billing/contracts/31/deposit/?organizationId=4", {

@@ -98,6 +98,8 @@ const STATUS_META: Record<string, { label: string; color: "default" | "success" 
   partial: { label: "Частично", color: "warning" },
   paid: { label: "Оплачено", color: "success" },
   succeeded: { label: "Успешно", color: "success" },
+  pending: { label: "Ожидает", color: "warning" },
+  failed: { label: "Ошибка", color: "error" },
   refunded: { label: "Возвращено", color: "default" },
   overdue: { label: "Просрочено", color: "error" },
   canceled: { label: "Отменено", color: "default" },
@@ -112,6 +114,31 @@ const CHARGE_FILTERS: Array<{ value: string; label: string }> = [
   { value: "paid", label: "Оплаченные" },
   { value: "canceled", label: "Отменённые" },
 ];
+
+const CONTRACT_FILTERS = [
+  { value: "", label: "Все контракты" },
+  { value: "active", label: "Активные" },
+  { value: "paused", label: "На паузе" },
+  { value: "ended", label: "Завершённые" },
+];
+const PAYMENT_STATUS_FILTERS = [
+  { value: "", label: "Все статусы" },
+  { value: "succeeded", label: "Успешные" },
+  { value: "pending", label: "Ожидают" },
+  { value: "failed", label: "С ошибкой" },
+  { value: "refunded", label: "Возвращённые" },
+];
+const PAYMENT_METHOD_FILTERS = [
+  { value: "", label: "Все способы" },
+  { value: "cash", label: "Наличные" },
+  { value: "transfer", label: "Банковский перевод" },
+  { value: "bakai", label: "Bakai Pay" },
+];
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  cash: "Наличные",
+  transfer: "Банковский перевод",
+  bakai: "Bakai Pay",
+};
 
 const KIND_LABELS: Record<string, string> = { service: "Услуга", course: "Курс", rental: "Аренда" };
 const CYCLE_LABELS: Record<string, string> = {
@@ -200,7 +227,14 @@ export default function BillingPage() {
   const [selectedCharge, setSelectedCharge] = React.useState<BillingCharge | null>(null);
   const [selectedPayment, setSelectedPayment] = React.useState<BillingPayment | null>(null);
   const [selectedOffering, setSelectedOffering] = React.useState<BillingOffering | null>(null);
+  const [contractStatus, setContractStatus] = React.useState("");
   const [chargeStatus, setChargeStatus] = React.useState("");
+  const [chargeDateFrom, setChargeDateFrom] = React.useState("");
+  const [chargeDateTo, setChargeDateTo] = React.useState("");
+  const [paymentStatus, setPaymentStatus] = React.useState("");
+  const [paymentMethod, setPaymentMethod] = React.useState("");
+  const [overviewDateFrom, setOverviewDateFrom] = React.useState(dayjs().startOf("month").format("YYYY-MM-DD"));
+  const [overviewDateTo, setOverviewDateTo] = React.useState(dayjs().format("YYYY-MM-DD"));
   const [defaultsOpen, setDefaultsOpen] = React.useState(false);
   const [defaultsRules, setDefaultsRules] = React.useState<ContractRulesValues | null>(null);
   const { open: notify } = useNotification();
@@ -212,28 +246,30 @@ export default function BillingPage() {
   const canManageOfferings = useCan("offerings.manage");
   const organizationId = scope.organizationId;
   const scopeParams = React.useMemo(() => ({ ...(organizationId ? { organizationId } : {}) }), [organizationId]);
-  const dateFrom = dayjs().startOf("month").format("YYYY-MM-DD");
-  const dateTo = dayjs().format("YYYY-MM-DD");
+  const dateFrom = overviewDateFrom;
+  const dateTo = overviewDateTo;
+  const overviewPeriodValid = Boolean(dateFrom && dateTo && !dayjs(dateFrom).isAfter(dayjs(dateTo)));
+  const chargePeriodValid = !chargeDateFrom || !chargeDateTo || !dayjs(chargeDateFrom).isAfter(dayjs(chargeDateTo));
   const enabled = scope.isReady && scope.orgReady;
 
   const dashboardQuery = useQuery({
     queryKey: djangoQueryKeys.billing.dashboard({ organizationId, dateFrom, dateTo }),
     queryFn: () => billingApi.dashboard({ ...scopeParams, dateFrom, dateTo }),
-    enabled: enabled && tab === "overview",
+    enabled: enabled && tab === "overview" && overviewPeriodValid,
   });
   const contractsQuery = useQuery({
-    queryKey: djangoQueryKeys.billing.contracts({ organizationId, q: search }),
-    queryFn: () => billingApi.allContracts({ ...scopeParams, q: search }),
+    queryKey: djangoQueryKeys.billing.contracts({ organizationId, q: search, status: contractStatus }),
+    queryFn: () => billingApi.allContracts({ ...scopeParams, q: search, ...(contractStatus ? { status: contractStatus } : {}) }),
     enabled: enabled && (tab === "contracts" || dialog === "charge"),
   });
   const chargesQuery = useQuery({
-    queryKey: djangoQueryKeys.billing.charges({ organizationId, q: search, status: chargeStatus }),
-    queryFn: () => billingApi.allCharges({ ...scopeParams, q: search, ...(chargeStatus ? { status: chargeStatus } : {}) }),
-    enabled: enabled && (tab === "charges" || dialog === "payment"),
+    queryKey: djangoQueryKeys.billing.charges({ organizationId, q: search, status: chargeStatus, dateFrom: chargeDateFrom, dateTo: chargeDateTo }),
+    queryFn: () => billingApi.allCharges({ ...scopeParams, q: search, ...(chargeStatus ? { status: chargeStatus } : {}), ...(chargeDateFrom ? { dateFrom: chargeDateFrom } : {}), ...(chargeDateTo ? { dateTo: chargeDateTo } : {}) }),
+    enabled: enabled && chargePeriodValid && (tab === "charges" || dialog === "payment"),
   });
   const paymentsQuery = useQuery({
-    queryKey: djangoQueryKeys.billing.payments({ organizationId, q: search }),
-    queryFn: () => billingApi.allPayments({ ...scopeParams, q: search }),
+    queryKey: djangoQueryKeys.billing.payments({ organizationId, q: search, status: paymentStatus, method: paymentMethod }),
+    queryFn: () => billingApi.allPayments({ ...scopeParams, q: search, ...(paymentStatus ? { status: paymentStatus } : {}), ...(paymentMethod ? { method: paymentMethod } : {}) }),
     enabled: enabled && tab === "payments",
   });
   const debtorsQuery = useQuery({
@@ -290,7 +326,7 @@ export default function BillingPage() {
       if (dialog === "bulkCharge") return billingApi.createChargesBulk({ offeringId: Number(form.offeringId), purpose: form.purpose, amount: form.amount, dueDate: form.dueDate, periodKey: form.periodKey, periodLabel: form.periodKey, clientIds: [], ...scopeParams });
       if (dialog === "payment") return billingApi.createPayment({ clientId: Number(form.clientId), ...(form.chargeId ? { chargeId: Number(form.chargeId) } : {}), amount: form.amount, method: form.method, ...scopeParams });
       if (dialog === "offering") {
-        const body = { ...(!editingOffering ? { kind: form.kind } : {}), name: form.name, billingCycle: form.billingCycle, priceAmount: form.priceAmount, category: form.category, capacity: form.capacity ? Number(form.capacity) : null, profile: form.kind === "course" ? { sessions_total: Number(form.sessionsTotal), schedule: form.schedule, starts_on: form.startsOn, ...(form.courseEndsOn ? { ends_on: form.courseEndsOn } : {}) } : form.kind === "rental" ? { object_type: form.objectType, area_unit: form.areaUnit, rate_period: form.ratePeriod, ...(form.address ? { address: form.address } : {}), ...(form.areaValue ? { area_value: Number(form.areaValue) } : {}), ...(form.depositAmount ? { deposit_amount: form.depositAmount } : {}) } : { ...(form.sessionsIncluded ? { sessionsIncluded: Number(form.sessionsIncluded) } : {}), ...(form.validityDays ? { validityDays: Number(form.validityDays) } : {}) } };
+        const body = { ...(!editingOffering ? { kind: form.kind } : {}), name: form.name, billingCycle: form.billingCycle, priceAmount: form.priceAmount, category: form.category, capacity: form.capacity ? Number(form.capacity) : null, profile: form.kind === "course" ? { sessions_total: Number(form.sessionsTotal), schedule: form.schedule, starts_on: form.startsOn, ...(form.courseEndsOn ? { ends_on: form.courseEndsOn } : {}) } : form.kind === "rental" ? { object_type: form.objectType, area_unit: form.areaUnit, rate_period: form.ratePeriod, ...(form.address ? { address: form.address } : {}), ...(form.areaValue ? { area_value: Number(form.areaValue) } : {}), ...(form.depositAmount ? { deposit_amount: form.depositAmount } : {}) } : { ...(form.sessionsIncluded ? { sessions_included: Number(form.sessionsIncluded) } : {}), ...(form.validityDays ? { validity_days: Number(form.validityDays) } : {}) } };
         return editingOffering
           ? billingApi.updateOffering(editingOffering.id, body, scopeParams)
           : billingApi.createOffering({ ...body, ...scopeParams });
@@ -342,8 +378,8 @@ export default function BillingPage() {
       sessionsTotal: value("sessions_total"),
       schedule: value("schedule"),
       courseEndsOn: value("ends_on"),
-      sessionsIncluded: value("sessionsIncluded"),
-      validityDays: value("validityDays"),
+      sessionsIncluded: value("sessions_included"),
+      validityDays: value("validity_days"),
       startsOn: value("starts_on") || dayjs().format("YYYY-MM-DD"),
       objectType: value("object_type") || "office",
       areaUnit: value("area_unit") || "sqm",
@@ -375,6 +411,23 @@ export default function BillingPage() {
         loading={isLoading}
         actions={
           <Stack direction="row" spacing={0.5} alignItems="center">
+            {tab === "overview" && <>
+              <TextField size="small" label="С" type="date" value={overviewDateFrom} onChange={(event) => setOverviewDateFrom(event.target.value)} InputLabelProps={{ shrink: true }} error={!overviewPeriodValid} />
+              <TextField size="small" label="По" type="date" value={overviewDateTo} onChange={(event) => setOverviewDateTo(event.target.value)} InputLabelProps={{ shrink: true }} error={!overviewPeriodValid} />
+            </>}
+            {tab === "contracts" && (
+              <TextField select size="small" label="Статус" value={contractStatus} onChange={(event) => setContractStatus(event.target.value)} sx={{ minWidth: 150 }}>
+                {CONTRACT_FILTERS.map((item) => <MenuItem key={item.value || "all"} value={item.value}>{item.label}</MenuItem>)}
+              </TextField>
+            )}
+            {tab === "payments" && <>
+              <TextField select size="small" label="Статус" value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)} sx={{ minWidth: 145 }}>
+                {PAYMENT_STATUS_FILTERS.map((item) => <MenuItem key={item.value || "all"} value={item.value}>{item.label}</MenuItem>)}
+              </TextField>
+              <TextField select size="small" label="Способ" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} sx={{ minWidth: 170 }}>
+                {PAYMENT_METHOD_FILTERS.map((item) => <MenuItem key={item.value || "all"} value={item.value}>{item.label}</MenuItem>)}
+              </TextField>
+            </>}
             {tab === "contracts" && canManage && (
               <Button size="small" startIcon={<RuleOutlined />} onClick={() => setDefaultsOpen(true)}>
                 Правила по умолчанию
@@ -391,11 +444,12 @@ export default function BillingPage() {
       <Box sx={(theme) => ({ px: theme.appLayout.page.paddingX })}>
         {isLoading && <LinearProgress sx={{ mb: 1, borderRadius: 2 }} />}
         {error && <Alert severity="error" sx={{ mb: 2 }}>{getErrorMessage(error, "Не удалось загрузить биллинг")}</Alert>}
+        {!overviewPeriodValid && tab === "overview" && <Alert severity="warning" sx={{ mb: 2 }}>Дата начала периода не может быть позже даты окончания.</Alert>}
 
         {tab === "overview" && dashboardQuery.data && (
           <Stack spacing={2}>
             <Stack direction="row" gap={1.5} flexWrap="wrap">
-              <KpiCard label="Поступило" value={formatMoney(dashboardQuery.data.revenueTotal)} hint="с начала месяца" tone="success" />
+              <KpiCard label="Поступило" value={formatMoney(dashboardQuery.data.revenueTotal)} hint={`${formatDate(dateFrom)} — ${formatDate(dateTo)}`} tone="success" />
               <KpiCard label="К оплате" value={formatMoney(dashboardQuery.data.outstandingTotal)} hint="по открытым начислениям" tone="warning" />
               <KpiCard label="Активные контракты" value={dashboardQuery.data.activeSubscriptionsCount} hint="создают выручку" />
               <KpiCard label="Должники" value={dashboardQuery.data.debtorsCount} hint={`${dashboardQuery.data.debtorsCriticalCount} критических`} tone={dashboardQuery.data.debtorsCriticalCount ? "error" : "primary"} />
@@ -416,7 +470,7 @@ export default function BillingPage() {
 
         {tab === "charges" && (
           <Stack spacing={1.5}>
-            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap alignItems="center">
               {CHARGE_FILTERS.map((filter) => (
                 <Chip
                   key={filter.value || "all"}
@@ -427,7 +481,10 @@ export default function BillingPage() {
                   onClick={() => setChargeStatus(filter.value)}
                 />
               ))}
+              <TextField size="small" label="Срок с" type="date" value={chargeDateFrom} onChange={(event) => setChargeDateFrom(event.target.value)} InputLabelProps={{ shrink: true }} error={!chargePeriodValid} sx={{ ml: { md: "auto" } }} />
+              <TextField size="small" label="Срок по" type="date" value={chargeDateTo} onChange={(event) => setChargeDateTo(event.target.value)} InputLabelProps={{ shrink: true }} error={!chargePeriodValid} />
             </Stack>
+            {!chargePeriodValid && <Alert severity="warning">Дата начала периода не может быть позже даты окончания.</Alert>}
             <TableContainer component={Paper} variant="outlined">
             <Table size="small"><TableHead><TableRow><TableCell>Начисление</TableCell><TableCell>Клиент</TableCell><TableCell>Назначение</TableCell><TableCell>Срок</TableCell><TableCell align="right">Сумма</TableCell><TableCell align="right">Оплачено</TableCell><TableCell>Статус</TableCell><TableCell /></TableRow></TableHead>
               <TableBody>{chargeRows.map((row) => { const progress = Math.min(100, Number(row.amount) ? Number(row.paidAmount) / Number(row.amount) * 100 : 0); return <TableRow key={row.id} hover tabIndex={0} onClick={() => setSelectedCharge(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedCharge(row); }} sx={{ cursor: "pointer", "&:focus-visible": { outline: 2, outlineColor: "primary.main", outlineOffset: -2 } }}><TableCell><Typography fontWeight={650}>№ {row.number}</Typography><Typography variant="caption" color="text.secondary">{chargePeriodLabel(row)}</Typography></TableCell><TableCell>{row.clientName}</TableCell><TableCell sx={{ maxWidth: 300 }}>{row.purpose}<Typography variant="caption" color="text.secondary" display="block">{row.offeringName}</Typography></TableCell><TableCell sx={{ color: row.status === "overdue" ? "error.main" : undefined }}>{formatDate(row.dueDate)}</TableCell><TableCell align="right">{formatMoney(row.amount)}</TableCell><TableCell align="right"><Typography variant="body2">{formatMoney(row.paidAmount)}</Typography><LinearProgress variant="determinate" value={progress} color={progress === 100 ? "success" : "primary"} sx={{ mt: 0.5, minWidth: 80, borderRadius: 3 }} /></TableCell><TableCell><StatusChip status={row.status} /></TableCell><TableCell align="right"><IconButton size="small" onClick={(e) => { e.stopPropagation(); openMenu(e, row); }}><MoreHorizOutlined /></IconButton></TableCell></TableRow>; })}{!chargesQuery.isLoading && !chargeRows.length && <EmptyRow colSpan={8} text="Начислений пока нет." />}</TableBody>
@@ -439,7 +496,7 @@ export default function BillingPage() {
         {tab === "payments" && (
           <TableContainer component={Paper} variant="outlined">
             <Table size="small"><TableHead><TableRow><TableCell>Платёж</TableCell><TableCell>Клиент</TableCell><TableCell>Начисление</TableCell><TableCell>Метод</TableCell><TableCell>Дата</TableCell><TableCell align="right">Сумма</TableCell><TableCell>Статус</TableCell><TableCell /></TableRow></TableHead>
-              <TableBody>{paymentRows.map((row) => <TableRow key={row.id} hover tabIndex={0} onClick={() => setSelectedPayment(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedPayment(row); }} sx={{ cursor: "pointer", "&:focus-visible": { outline: 2, outlineColor: "primary.main", outlineOffset: -2 } }}><TableCell>#{row.id}{row.refundOfId && <Typography variant="caption" color="text.secondary" display="block">Возврат #{row.refundOfId}</Typography>}</TableCell><TableCell>{row.clientName}</TableCell><TableCell>{row.chargeId ? `№ ${row.chargeId}` : "На баланс"}</TableCell><TableCell>{row.method}</TableCell><TableCell>{formatDate(row.paidAt ?? row.createdAt)}</TableCell><TableCell align="right" sx={{ fontWeight: 700, color: row.refundOfId ? "error.main" : "success.main" }}>{row.refundOfId ? "−" : "+"}{formatMoney(row.amount)}</TableCell><TableCell><StatusChip status={row.status} /></TableCell><TableCell align="right">{canManagePayments && !row.refundOfId && row.status === "succeeded" && <IconButton size="small" aria-label={`Действия платежа #${row.id}`} onClick={(e) => { e.stopPropagation(); openMenu(e, row); }}><MoreHorizOutlined /></IconButton>}</TableCell></TableRow>)}{!paymentsQuery.isLoading && !paymentRows.length && <EmptyRow colSpan={8} text="Оплат ещё нет." />}</TableBody>
+              <TableBody>{paymentRows.map((row) => <TableRow key={row.id} hover tabIndex={0} onClick={() => setSelectedPayment(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedPayment(row); }} sx={{ cursor: "pointer", "&:focus-visible": { outline: 2, outlineColor: "primary.main", outlineOffset: -2 } }}><TableCell>#{row.id}{row.refundOfId && <Typography variant="caption" color="text.secondary" display="block">Возврат #{row.refundOfId}</Typography>}</TableCell><TableCell>{row.clientName}</TableCell><TableCell>{row.chargeId ? `№ ${row.chargeId}` : "На баланс"}</TableCell><TableCell>{PAYMENT_METHOD_LABELS[row.method] ?? row.method}</TableCell><TableCell>{formatDate(row.paidAt ?? row.createdAt)}</TableCell><TableCell align="right" sx={{ fontWeight: 700, color: row.refundOfId ? "error.main" : "success.main" }}>{row.refundOfId ? "−" : "+"}{formatMoney(row.amount)}</TableCell><TableCell><StatusChip status={row.status} /></TableCell><TableCell align="right">{canManagePayments && !row.refundOfId && row.status === "succeeded" && <IconButton size="small" aria-label={`Действия платежа #${row.id}`} onClick={(e) => { e.stopPropagation(); openMenu(e, row); }}><MoreHorizOutlined /></IconButton>}</TableCell></TableRow>)}{!paymentsQuery.isLoading && !paymentRows.length && <EmptyRow colSpan={8} text="Оплат ещё нет." />}</TableBody>
             </Table>
           </TableContainer>
         )}

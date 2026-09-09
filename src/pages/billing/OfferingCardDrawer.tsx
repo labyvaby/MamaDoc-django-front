@@ -40,8 +40,8 @@ function profileRows(offering: BillingOffering): Array<[string, string]> {
     ["Ставка", String(p.rate_period ?? "—")], ["Депозит", p.deposit_amount ? money(p.deposit_amount) : "Нет"],
   ];
   return [
-    ["Занятий в пакете", String(p.sessionsIncluded ?? "—")],
-    ["Срок действия", p.validityDays ? `${p.validityDays} дн.` : "—"],
+    ["Занятий в пакете", String(p.sessions_included ?? "—")],
+    ["Срок действия", p.validity_days ? `${p.validity_days} дн.` : "—"],
   ];
 }
 

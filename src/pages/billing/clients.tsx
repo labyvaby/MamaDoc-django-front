@@ -38,6 +38,7 @@ type FormState = {
   fullName: string;
   phone: string;
   email: string;
+  dob: string;
   legalName: string;
   inn: string;
   okpo: string;
@@ -54,6 +55,7 @@ const emptyForm = (): FormState => ({
   fullName: "",
   phone: "",
   email: "",
+  dob: "",
   legalName: "",
   inn: "",
   okpo: "",
@@ -93,6 +95,7 @@ export default function BillingClientsPage() {
         clientType: form.clientType,
         fullName: form.fullName.trim(),
         email: form.email.trim(),
+        dob: form.dob || null,
         status: form.status,
         legalName: form.clientType === "company" ? form.legalName.trim() : "",
         inn: form.clientType === "company" ? form.inn.trim() : "",
@@ -130,6 +133,7 @@ export default function BillingClientsPage() {
       fullName: client.fullName,
       phone: client.phone,
       email: client.email,
+      dob: client.dob ?? "",
       legalName: client.legalName,
       inn: client.inn,
       okpo: client.okpo ?? "",
@@ -225,6 +229,7 @@ export default function BillingClientsPage() {
             <TextField required label={form.clientType === "company" ? "Контактное лицо" : "ФИО"} value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} />
             <TextField required={!editing} disabled={Boolean(editing)} fullWidth label="Телефон" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} helperText={editing ? "Телефон меняется через контактные данные" : undefined} />
             <TextField fullWidth label="Email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+            {form.clientType === "individual" && <TextField fullWidth label="Дата рождения" type="date" value={form.dob} onChange={(event) => setForm({ ...form, dob: event.target.value })} InputLabelProps={{ shrink: true }} />}
             {form.clientType === "company" && <><TextField fullWidth label="Юридическое название" value={form.legalName} onChange={(event) => setForm({ ...form, legalName: event.target.value })} /><TextField label="ИНН" value={form.inn} onChange={(event) => setForm({ ...form, inn: event.target.value })} /><TextField label="ОКПО" value={form.okpo} onChange={(event) => setForm({ ...form, okpo: event.target.value })} /><TextField label="Юридический адрес" value={form.legalAddress} onChange={(event) => setForm({ ...form, legalAddress: event.target.value })} sx={{ gridColumn: { md: "1 / -1" } }} /><TextField label="Банк" value={form.bankName} onChange={(event) => setForm({ ...form, bankName: event.target.value })} /><TextField label="БИК" value={form.bankBik} onChange={(event) => setForm({ ...form, bankBik: event.target.value })} /><TextField label="Расчётный счёт" value={form.bankAccount} onChange={(event) => setForm({ ...form, bankAccount: event.target.value })} sx={{ gridColumn: { md: "1 / -1" } }} /></>}
             <TextField select label="Статус" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><MenuItem value="new">Новый</MenuItem><MenuItem value="active">Активный</MenuItem><MenuItem value="inactive">Неактивный</MenuItem></TextField>
             <TextField label="Заметка" multiline minRows={3} value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} sx={{ gridColumn: "1 / -1" }} />

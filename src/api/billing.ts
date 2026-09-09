@@ -179,7 +179,10 @@ export interface BillingClient {
   fullName: string;
   phone: string;
   email: string;
+  dob: string | null;
   status: string;
+  managerId: number | null;
+  familyGroupId: number | null;
   balance: Money;
   debt: Money;
   legalName: string;
@@ -301,9 +304,9 @@ export const billingApi = {
   changeContractPrice: (id: number, body: { price: string; effectiveFrom?: string; reason?: string }, scope: Scope) =>
     apiRequest<BillingContract>(`/v2/billing/contracts/${id}/price/${query(scope)}`, { method: "POST", body }),
 
-  charges: (params: ListFilters & { clientId?: number; contractId?: number; offeringId?: number }) =>
+  charges: (params: ListFilters & { clientId?: number; contractId?: number; offeringId?: number; dateFrom?: string; dateTo?: string }) =>
     apiRequest<BillingPage<BillingCharge>>(`/v2/billing/charges/${query(params)}`),
-  allCharges: (params: Omit<ListFilters, "cursor" | "pageSize"> & { clientId?: number; contractId?: number; offeringId?: number }) =>
+  allCharges: (params: Omit<ListFilters, "cursor" | "pageSize"> & { clientId?: number; contractId?: number; offeringId?: number; dateFrom?: string; dateTo?: string }) =>
     fetchAllBillingPages<BillingCharge>("/v2/billing/charges/", params),
   charge: (id: number, scope: Scope) =>
     apiRequest<BillingCharge>(`/v2/billing/charges/${id}/${query(scope)}`),

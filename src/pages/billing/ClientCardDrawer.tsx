@@ -241,6 +241,7 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                   {[client.phone, client.email].filter(Boolean).join(" · ") || "Контакты не заполнены"}
                 </Typography>
+                {client.dob && <Typography variant="caption" color="text.secondary">Дата рождения: {shortDate(client.dob)}</Typography>}
               </Box>
               {canManageContacts && <Tooltip title="Изменить клиента"><IconButton onClick={() => onEdit(client)}><EditOutlined /></IconButton></Tooltip>}
               <IconButton aria-label="Закрыть карточку" onClick={onClose}><CloseOutlined /></IconButton>
