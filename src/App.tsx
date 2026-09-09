@@ -85,7 +85,6 @@ const CertificatePrintPage = lazy(() => import("./pages/print/CertificatePrintPa
 const DjangoCashboxPage = lazy(() => import("./pages/cashbox/django"));
 const BillingPage = lazy(() => import("./pages/billing"));
 const BillingClientsPage = lazy(() => import("./pages/billing/clients"));
-const BillingPlanPage = lazy(() => import("./pages/billing/BillingPlanPage"));
 const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPage"));
 const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
 const ReviewsPage = lazy(() => import("./pages/reviews"));
@@ -857,16 +856,6 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.billing}>
                               <Suspense fallback={<LinearProgress />}>
                                 <BillingPage />
-                              </Suspense>
-                            </RequirePermission>
-                          }
-                        />
-                        <Route
-                          path="billing-plan"
-                          element={
-                            <RequirePermission permission="tenancy.modules.view">
-                              <Suspense fallback={<LinearProgress />}>
-                                <BillingPlanPage />
                               </Suspense>
                             </RequirePermission>
                           }
