@@ -37,10 +37,12 @@ import {
   getLabInstruments,
   getLabPreparation,
   getLabQuestions,
+  getLabSettings,
   getLabTests,
   testIdsQuery,
   type LabQuestion,
   type LabReceipt,
+  type LabSettings,
   type LabTest,
 } from "../../api/lab";
 import { getPatient, searchPatients, updatePatient, type DjangoPatient } from "../../api/patients";
@@ -62,16 +64,6 @@ import {
 import { describeLabIntakeOrderError } from "../../utility/labIntakeErrors";
 import { buildLabIntakePrintouts } from "../../utility/labIntakePrint";
 import { formatKGS } from "../../utility/format";
-
-/**
- * Берёт ли организация отдельную плату за пробирки —
- * `OrganizationLabConfig.charge_instruments` на бэкенде, по умолчанию
- * `False` (`server/apps/lab/models.py`). Ни один эндпоинт сегодня это
- * значение фронту не отдаёт (`server/apps/lab/api/urls.py` не содержит
- * ручки настроек лаборатории) — до её появления дровер использует тот же
- * безопасный дефолт, что и бэкенд, а не гадает. См. отчёт по Task 10.
- */
-const CHARGE_TUBES = false;
 
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // черновик старше суток считаем неактуальным
 
@@ -321,6 +313,29 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
   // src/pages/lab/django/index.tsx для orders).
   const tests = React.useMemo(() => testsQuery.data ?? [], [testsQuery.data]);
 
+  // ── Настройки раздела: платит ли клиника за пробирки и заведена ли у неё
+  // конфигурация раздела вообще (`OrganizationLabConfig`) — грузятся тем же
+  // способом и в тот же момент, что и каталог. Раньше плата была хардкодом
+  // `CHARGE_TUBES = false` (см. отчёт по Task 10), и у клиник с включённой
+  // платой приём не проходил вовсе: сумма на экране не совпадала с суммой
+  // бэкенда (422 «Оплата не совпадает с суммой заказа»). Эндпоинт настроек
+  // добавлен на бэкенде в 9138b2c.
+  const settingsQuery = useQuery<LabSettings>({
+    queryKey: djangoQueryKeys.lab.settings,
+    queryFn: ({ signal }) => getLabSettings(signal),
+    enabled: open,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+  // Пока запрос не завершился успехом, доверять chargeInstruments нельзя:
+  // `false` по умолчанию совпадает с бэкендом только у части клиник, и
+  // именно эта подмена ломала приём у остальных. Кнопку блокируем на время
+  // загрузки и при ошибке (intakeBlockReason), вместо того чтобы на миг
+  // показать возможно неверную сумму.
+  const settingsLoading = settingsQuery.isLoading;
+  const settingsFailed = settingsQuery.isError;
+  const sectionConfigured = settingsQuery.data?.configured ?? false;
+  const chargeTubes = settingsQuery.data?.chargeInstruments ?? false;
+
   // ── Пробирки/вопросы/подготовка: перезагружаются при изменении корзины,
   // с debounce — без него каждый чекбокс давал бы три запроса.
   const idsKey = React.useMemo(
@@ -382,9 +397,9 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
         }),
         tubes: instruments.map((i) => ({ instrumentId: i.id, price: i.price, count: i.count })),
         discountPercent: payment.discountPercent,
-        chargeTubes: CHARGE_TUBES,
+        chargeTubes,
       }),
-    [lines, tests, instruments, payment.discountPercent],
+    [lines, tests, instruments, payment.discountPercent, chargeTubes],
   );
 
   const requiredQuestionIds = React.useMemo(() => questions.map((q) => q.id), [questions]);
@@ -402,6 +417,9 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
     paidCard: toAmount(payment.card),
     cashlessMethodId: payment.cashlessMethodId,
     cashlessMethodRequired,
+    settingsLoading,
+    settingsFailed,
+    sectionConfigured,
   };
   const branchReason = branchId == null ? "Выберите филиал" : null;
   const blockReason = branchReason ?? intakeBlockReason(guardState);
@@ -545,6 +563,18 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       {/* Содержимое */}
       <Box sx={{ p: 2.5, flex: 1, overflowY: "auto" }}>
         <Stack spacing={2.5}>
+          {/* Раздел не настроен у организации — регистратор должен узнать
+              об этом до того, как соберёт корзину и введёт оплату, а не из
+              загадочного отказа на кнопке приёма (см. отчёт по задаче
+              «дровер + настройки раздела»). Показываем плашкой сразу при
+              открытии, а не только текстом блокировки в подвале. */}
+          {editing && !settingsLoading && !settingsFailed && !sectionConfigured && (
+            <Alert severity="error">
+              Раздел лаборатории не настроен для вашей организации — приём анализов
+              недоступен. Обратитесь к администратору.
+            </Alert>
+          )}
+
           {phase === "done" && receipt && (
             <Alert severity="success">
               <Stack spacing={1}>
@@ -654,7 +684,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
             onAnswerChange={(questionId, value) => setAnswers((prev) => ({ ...prev, [questionId]: value }))}
           />
 
-          <InstrumentsSection instruments={instruments} loading={instrumentsQuery.isLoading} chargeTubes={CHARGE_TUBES} />
+          <InstrumentsSection instruments={instruments} loading={instrumentsQuery.isLoading} chargeTubes={chargeTubes} />
 
           <PreparationSection texts={preparationTexts} loading={preparationQuery.isLoading} />
 

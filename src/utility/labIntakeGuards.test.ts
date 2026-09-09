@@ -15,12 +15,50 @@ const ready = (over: Partial<IntakeState> = {}): IntakeState => ({
   paidCard: 0,
   cashlessMethodId: null,
   cashlessMethodRequired: false,
+  settingsLoading: false,
+  settingsFailed: false,
+  sectionConfigured: true,
   ...over,
 });
 
 describe("intakeBlockReason", () => {
   it("полный набор данных не блокирует", () => {
     expect(intakeBlockReason(ready())).toBeNull();
+  });
+
+  it("настройки раздела ещё грузятся — блокирует", () => {
+    expect(intakeBlockReason(ready({ settingsLoading: true }))).toBe(
+      "Загружаем настройки раздела…",
+    );
+  });
+
+  it("запрос настроек не удался — блокирует другим текстом", () => {
+    expect(intakeBlockReason(ready({ settingsFailed: true }))).toBe(
+      "Не удалось загрузить настройки раздела — обновите страницу",
+    );
+  });
+
+  it("раздел лаборатории не настроен у организации", () => {
+    expect(intakeBlockReason(ready({ sectionConfigured: false }))).toBe(
+      "Раздел лаборатории не настроен — обратитесь к администратору",
+    );
+  });
+
+  it("порядок причин: не настроенный раздел важнее отсутствующего пациента", () => {
+    // Регистратор может выбрать пациента сам, а завести организации
+    // конфигурацию раздела — нет; причина, которую он не может закрыть сам,
+    // обязана называться первой.
+    expect(
+      intakeBlockReason(ready({ sectionConfigured: false, patientId: null })),
+    ).toBe("Раздел лаборатории не настроен — обратитесь к администратору");
+  });
+
+  it("порядок причин: загрузка настроек важнее их отсутствия", () => {
+    expect(
+      intakeBlockReason(
+        ready({ settingsLoading: true, sectionConfigured: false }),
+      ),
+    ).toBe("Загружаем настройки раздела…");
   });
 
   it("без пациента", () => {
