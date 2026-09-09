@@ -38,7 +38,7 @@ import { RefreshProvider } from "./contexts/refresh-context";
 import { TitleProvider } from "./contexts/title-context";
 import { PageCacheProvider } from "./contexts/page-cache-context";
 import "./i18n";
-import { VerticalProvider } from "./i18n/VerticalProvider";
+import { useVertical, VerticalProvider } from "./i18n/VerticalProvider";
 import { tt } from "./i18n/t";
 import { RequireAuth } from "./components/auth/RequireAuth";
 import { RequirePermission } from "./components/rbac/RequirePermission";
@@ -117,7 +117,7 @@ const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSetti
 const ConclusionFormsSettingsPage = lazy(() => import("./pages/settings/ConclusionFormsSettingsPage"));
 const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
 const PatientsPage = lazy(() => import("./pages/patients"));
-const ClientsPage = lazy(() => import("./pages/clients"));
+const RetailClientsPage = lazy(() => import("./pages/clients"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
@@ -145,6 +145,11 @@ const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPag
 // Касса (POS) — полноэкранный модуль: собственная шапка вместо общей, поэтому
 // живёт в отдельной ветке layout.
 const PosPage = lazy(() => import("./pages/pos"));
+
+const ClientsRoutePage = () => {
+  const { vertical } = useVertical();
+  return vertical === "retail" ? <RetailClientsPage /> : <BillingClientsPage />;
+};
 
 
 // Вспомогательный компонент для защиты корневого редиректа
@@ -624,7 +629,7 @@ function App() {
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.clients}>
                               <Suspense fallback={<LinearProgress />}>
-                                <ClientsPage />
+                                <ClientsRoutePage />
                               </Suspense>
                             </RequirePermission>
                           }
@@ -856,16 +861,6 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.billing}>
                               <Suspense fallback={<LinearProgress />}>
                                 <BillingPage />
-                              </Suspense>
-                            </RequirePermission>
-                          }
-                        />
-                        <Route
-                          path="clients"
-                          element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.clients}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <BillingClientsPage />
                               </Suspense>
                             </RequirePermission>
                           }
