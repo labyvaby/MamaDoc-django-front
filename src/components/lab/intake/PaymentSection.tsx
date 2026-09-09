@@ -1,0 +1,210 @@
+import React from "react";
+import { Box, InputAdornment, Paper, Stack, TextField, Typography } from "@mui/material";
+import { alpha } from "@mui/material/styles";
+
+import { CashlessMethodSelect, DiscountInput } from "../../ui";
+import type { DjangoCashlessMethod } from "../../../api/cashlessMethods";
+import { formatKGS } from "../../../utility/format";
+
+type Props = {
+  total: number;
+  paidCash: string;
+  paidCard: string;
+  cashlessMethodId: number | null;
+  discountPercent: number;
+  disabled: boolean;
+  onCashChange: (value: string) => void;
+  onCardChange: (value: string) => void;
+  onCashlessMethodChange: (id: number | null) => void;
+  onDiscountChange: (percent: number) => void;
+  /**
+   * План задачи (Task 8) не включал эти три поля в пропсы секции, но без
+   * готового списка `CashlessMethodSelect` (тот же план требует использовать
+   * именно его) нечем заполнить — а `useCashlessMethods` сам ходит в API и по
+   * правилу «секции не знают про API» обязан жить в дровере (Task 10),
+   * который и передаёт сюда уже готовый результат хука.
+   */
+  cashlessMethods: DjangoCashlessMethod[];
+  cashlessMethodsLoading: boolean;
+  cashlessMethodsFailed: boolean;
+};
+
+// Скрываем спиннеры у type=number — тот же приём, что в DiscountInput и
+// соседних дроверах (DjangoAddExpenseDrawer, DjangoSaleFormDrawer).
+const noSpinnersSx = {
+  "& input[type=number]": { MozAppearance: "textfield" },
+  "& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button": {
+    WebkitAppearance: "none",
+    margin: 0,
+  },
+} as const;
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** Строка оплаты в поле — деньги парсим терпимо к запятой, как в остальных формах. */
+function toAmount(raw: string): number {
+  const n = Number(raw.replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Оплата: наличные, карта, способ безнала, скидка и сверка «к оплате / внесено».
+ *
+ * `total` — уже посчитанная бэкендозеркальной `basketTotals` итоговая сумма
+ * (тесты за вычетом скидки плюс пробирки, если клиника берёт за них плату).
+ * Секция её не пересчитывает, только показывает и использует как базу для
+ * `DiscountInput`: в процентном режиме база сокращается при обратной
+ * конвертации, поэтому её выбор не влияет на итоговый процент. В режиме
+ * ввода скидки в сомах это лишь приближение (`total` уже включает пробирки
+ * и скидку берёт не с них) — но точная база (сумма анализов до скидки)
+ * секции не передаётся, а процентный режим, который эта форма выставляет по
+ * умолчанию, точен всегда.
+ *
+ * Разницу («К оплате / Внесено / Разница») показываем всегда, а не только
+ * когда она не ноль, — регистратор должен увидеть цифры раньше, чем текст
+ * причины блокировки кнопки (`intakeBlockReason`). Сама блокировка — не
+ * забота секции, только показ того, из чего она складывается.
+ */
+const PaymentSection: React.FC<Props> = ({
+  total,
+  paidCash,
+  paidCard,
+  cashlessMethodId,
+  discountPercent,
+  disabled,
+  onCashChange,
+  onCardChange,
+  onCashlessMethodChange,
+  onDiscountChange,
+  cashlessMethods,
+  cashlessMethodsLoading,
+  cashlessMethodsFailed,
+}) => {
+  const cash = toAmount(paidCash);
+  const card = toAmount(paidCard);
+  const paid = round2(cash + card);
+  const diff = round2(total - paid);
+
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        p: 2.5,
+        bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
+        borderColor: "divider",
+        borderRadius: "14px",
+      }}
+    >
+      <Stack spacing={2}>
+        <Typography variant="subtitle1" fontWeight={600}>
+          Оплата
+        </Typography>
+
+        <Stack direction="row" spacing={2}>
+          <Stack flex={1} spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
+              Наличные
+            </Typography>
+            <TextField
+              size="small"
+              fullWidth
+              type="number"
+              value={paidCash}
+              onChange={(e) => onCashChange(e.target.value)}
+              disabled={disabled}
+              placeholder="0"
+              inputProps={{ min: 0, step: "any" }}
+              InputProps={{
+                endAdornment: <InputAdornment position="end">сом</InputAdornment>,
+              }}
+              sx={noSpinnersSx}
+            />
+          </Stack>
+          <Stack flex={1} spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
+              Карта
+            </Typography>
+            <TextField
+              size="small"
+              fullWidth
+              type="number"
+              value={paidCard}
+              onChange={(e) => onCardChange(e.target.value)}
+              disabled={disabled}
+              placeholder="0"
+              inputProps={{ min: 0, step: "any" }}
+              InputProps={{
+                endAdornment: <InputAdornment position="end">сом</InputAdornment>,
+              }}
+              sx={noSpinnersSx}
+            />
+          </Stack>
+        </Stack>
+
+        {/* Способ безнала нужен только когда есть сумма картой — как в оплате
+            продаж и расходов. */}
+        {card > 0 && (
+          <CashlessMethodSelect
+            methods={cashlessMethods}
+            value={cashlessMethodId ?? ""}
+            onChange={(v) => onCashlessMethodChange(v === "" ? null : v)}
+            loading={cashlessMethodsLoading}
+            loadFailed={cashlessMethodsFailed}
+            disabled={disabled}
+          />
+        )}
+
+        <Box>
+          <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+            Скидка
+          </Typography>
+          <DiscountInput
+            total={total}
+            amount={round2((total * discountPercent) / 100)}
+            defaultType="percent"
+            disabled={disabled}
+            onAmountChange={(amount) => {
+              const percent = total > 0 ? round2((amount / total) * 100) : 0;
+              onDiscountChange(Math.min(100, Math.max(0, percent)));
+            }}
+          />
+        </Box>
+
+        <Stack spacing={0.5} sx={{ pt: 1, borderTop: "1px dashed", borderColor: "divider" }}>
+          <Stack direction="row" justifyContent="space-between">
+            <Typography variant="body2" color="text.secondary">
+              К оплате
+            </Typography>
+            <Typography variant="body2" fontWeight={600}>
+              {formatKGS(total)}
+            </Typography>
+          </Stack>
+          <Stack direction="row" justifyContent="space-between">
+            <Typography variant="body2" color="text.secondary">
+              Внесено
+            </Typography>
+            <Typography variant="body2" fontWeight={600}>
+              {formatKGS(paid)}
+            </Typography>
+          </Stack>
+          <Stack direction="row" justifyContent="space-between">
+            <Typography variant="body2" color="text.secondary">
+              Разница
+            </Typography>
+            <Typography
+              variant="body2"
+              fontWeight={700}
+              color={diff === 0 ? "success.main" : "error.main"}
+            >
+              {formatKGS(diff)}
+            </Typography>
+          </Stack>
+        </Stack>
+      </Stack>
+    </Paper>
+  );
+};
+
+export default PaymentSection;
