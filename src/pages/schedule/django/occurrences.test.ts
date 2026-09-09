@@ -168,6 +168,73 @@ describe("computeDayOccurrences", () => {
       expect(occs[0]).toMatchObject({ startTime: "00:00", endTime: "23:59" });
     });
 
+    it("day_off с интервалом режет смену на два отрезка, а не отменяет день", () => {
+      const exc = exception({ startTime: "14:00", endTime: "16:00" });
+      const occs = computeDayOccurrences(THU, [rule()], [exc]);
+      expect(occs).toEqual([
+        expect.objectContaining({ kind: "rule", startTime: "09:00", endTime: "14:00" }),
+        expect.objectContaining({ kind: "rule", startTime: "16:00", endTime: "17:00" }),
+      ]);
+    });
+
+    it("интервал с края смены оставляет один отрезок", () => {
+      const exc = exception({ kind: "vacation", startTime: "09:00", endTime: "13:00" });
+      const occs = computeDayOccurrences(THU, [rule()], [exc]);
+      expect(occs).toEqual([
+        expect.objectContaining({ startTime: "13:00", endTime: "17:00" }),
+      ]);
+    });
+
+    it("интервал шире смены закрывает день целиком", () => {
+      const exc = exception({ startTime: "08:00", endTime: "18:00" });
+      expect(computeDayOccurrences(THU, [rule()], [exc])).toEqual([]);
+    });
+
+    it("интервал вне смены её не трогает", () => {
+      const exc = exception({ startTime: "18:00", endTime: "20:00" });
+      const occs = computeDayOccurrences(THU, [rule()], [exc]);
+      expect(occs).toEqual([
+        expect.objectContaining({ startTime: "09:00", endTime: "17:00" }),
+      ]);
+    });
+
+    it("обед достаётся тому отрезку, в который попал", () => {
+      const r = rule({ lunchStart: "13:00", lunchEnd: "14:00" });
+      const exc = exception({ startTime: "15:00", endTime: "16:00" });
+      const occs = computeDayOccurrences(THU, [r], [exc]);
+      expect(occs).toHaveLength(2);
+      expect(occs[0]).toMatchObject({
+        startTime: "09:00",
+        endTime: "15:00",
+        lunch: { start: "13:00", end: "14:00" },
+      });
+      expect(occs[1]).toMatchObject({ startTime: "16:00", endTime: "17:00", lunch: null });
+    });
+
+    it("неполный интервал (только начало) считается целодневным отсутствием", () => {
+      const exc = exception({ startTime: "14:00", endTime: null });
+      expect(computeDayOccurrences(THU, [rule()], [exc])).toEqual([]);
+    });
+
+    it("два частичных отсутствия вырезаются оба", () => {
+      const morning = exception({ id: 1, startTime: "09:00", endTime: "10:00" });
+      const evening = exception({ id: 2, startTime: "16:00", endTime: "17:00" });
+      const occs = computeDayOccurrences(THU, [rule()], [morning, evening]);
+      expect(occs).toEqual([
+        expect.objectContaining({ startTime: "10:00", endTime: "16:00" }),
+      ]);
+    });
+
+    it("частичное отсутствие режет и точечную смену того же сотрудника", () => {
+      const dayOff = exception({ id: 1, startTime: "12:00", endTime: "13:00" });
+      const extra = exception({ id: 2, kind: "extra", startTime: "11:00", endTime: "15:00" });
+      const occs = computeDayOccurrences(THU, [], [dayOff, extra]);
+      expect(occs).toEqual([
+        expect.objectContaining({ kind: "extra", startTime: "11:00", endTime: "12:00" }),
+        expect.objectContaining({ kind: "extra", startTime: "13:00", endTime: "15:00" }),
+      ]);
+    });
+
     it("override заменяет правило только на выбранную дату", () => {
       const exc = exception({
         id: 300,

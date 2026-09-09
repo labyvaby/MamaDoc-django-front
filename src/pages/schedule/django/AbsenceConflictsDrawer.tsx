@@ -62,6 +62,7 @@ import { useCan } from "../../../hooks/useCan";
 import { getStatusChipSx, getStatusLabel } from "../../../config/appointmentStatuses";
 import { formatKGS } from "../../../utility/format";
 import { subtleBg } from "../../../theme/uiHelpers";
+import { appointmentHitsAbsence } from "./useAbsenceConflicts";
 
 /** Отсутствие, из-за которого поднялся разбор. */
 export interface AbsenceSpan {
@@ -71,6 +72,13 @@ export interface AbsenceSpan {
   dateFrom: string;
   dateTo: string;
   kind: ScheduleExceptionKind;
+  /**
+   * Часы частичного отсутствия — те же в каждый день периода. Пусто = весь
+   * день. Ручка `exceptions/conflicts/` фильтрует только по датам, поэтому
+   * приёмы вне интервала отбрасываем на фронте.
+   */
+  startTime?: string | null;
+  endTime?: string | null;
 }
 
 type Mode = "cancel" | "reassign";
@@ -147,7 +155,16 @@ export const AbsenceConflictsDrawer: React.FC<{
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
-  const conflicts = React.useMemo(() => conflictsQuery.data ?? [], [conflictsQuery.data]);
+  const conflicts = React.useMemo(() => {
+    const all = conflictsQuery.data ?? [];
+    if (!absence?.startTime || !absence?.endTime) return all;
+    return all.filter((appt) =>
+      appointmentHitsAbsence(appt, {
+        startTime: absence.startTime ?? null,
+        endTime: absence.endTime ?? null,
+      }),
+    );
+  }, [conflictsQuery.data, absence?.startTime, absence?.endTime]);
   const categories = React.useMemo(
     () => (categoriesQuery.data ?? []).filter((c) => c.isActive),
     [categoriesQuery.data],

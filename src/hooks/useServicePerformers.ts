@@ -8,10 +8,13 @@ import { getEmployeeServices } from "../api/staff";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../api/queryKeys";
 import { useAllActiveEmployees } from "./useAllActiveEmployees";
 import { useServiceAssignmentCounts } from "./useServiceAssignmentCounts";
+import { useActiveScope } from "./useActiveScope";
 import { usePermissions } from "./usePermissions";
 import { useCan } from "./useCan";
 
 const EMPTY: ServicePerformer[] = [];
+const EMPTY_IDS: number[] = [];
+const EMPTY_PROVIDERS: ServiceProvider[] = [];
 
 /** Строка секции «Кто оказывает»: исполнитель услуги + фото, если оно доступно. */
 export interface ServicePerformer extends ServiceProvider {
@@ -40,17 +43,20 @@ export interface ServicePerformersResult {
 /**
  * Кто оказывает услугу.
  *
- * Два запроса вместо одного, и оба без `serviceId`:
- * `/api/appointments/service-providers/?branchId=` даёт ФИО, специализации и
- * филиал, а состав исполнителей именно этой услуги — матрица
- * `/api/appointments/service-assignments/?branchId=` (тот же кеш, что у
- * счётчика в списке услуг, поэтому счётчик и карточка не могут разойтись).
+ * Основной источник — один запрос `/api/appointments/service-providers/
+ * ?serviceId=&branchId=`: с 09.09.2026 он считает состав по той же матрице
+ * назначений, что и `service-assignments`, включая разбор старых общих
+ * привязок (`branch: null`) — правила филиала знает только бэк, повторить их
+ * на фронте нельзя.
  *
- * ⚠ Почему не одним запросом: `service-providers/?serviceId=` на проде отдаёт
- * `200 []` для любой услуги и любого филиала — проверено 09.09.2026 (услуги 8,
- * 10, 18, 84 при 11–13 парах в матрице), хотя 27.08.2026 работал. Тикет —
- * `MamaDoc/backend_ticket_service_providers_service_filter_2026-09-09.md`;
- * после починки можно вернуться к одному запросу, но нужды в этом нет.
+ * ⚠ Фолбэк: на проде (`newcrm.pediatr.kg`) этот режим всё ещё отдаёт `200 []`
+ * для любой услуги — выложена версия без правки (перепроверено 09.09.2026;
+ * на test состав совпал с матрицей на 10 услугах из 10). Поэтому пустой ответ
+ * при непустой матрице считаем не «нет исполнителей», а признаком старого
+ * бэка и собираем секцию как раньше: bulk `service-providers/?branchId=` ∩
+ * `service-assignments/?branchId=` (тот же кеш, что у счётчика в списке услуг,
+ * поэтому счётчик и карточка не расходятся). Фолбэк и `serviceProvidersInBranch`
+ * удалить после выкладки на прод.
  *
  * Право — `appointments.view` (не `staff.view`), так что секцию видят и врачи
  * с регистраторами.
@@ -61,51 +67,73 @@ export function useServicePerformers(
 ): ServicePerformersResult {
   const canView = useCan("appointments.view");
   const canViewStaff = useCan("staff.view");
-  const { activeOrganization, activeBranch } = usePermissions();
-  const active = enabled && canView && serviceId != null;
+  const { organizationId, branchId, orgReady } = useActiveScope();
+  const active = enabled && canView && orgReady && serviceId != null;
 
   // Фото — побочное украшение: справочник тянем только если он и так доступен.
   const { employees } = useAllActiveEmployees(active && canViewStaff);
 
   const query = useQuery({
-    queryKey: djangoQueryKeys.appointments.serviceProvidersInBranch(
-      activeOrganization?.id ?? null,
-      activeBranch?.id ?? null,
+    queryKey: djangoQueryKeys.appointments.serviceProvidersForService(
+      organizationId ?? null,
+      branchId ?? null,
+      serviceId,
     ),
     queryFn: ({ signal }) =>
-      getServiceProviders({ branchId: activeBranch?.id ?? undefined }, signal),
+      getServiceProviders({ serviceId: serviceId!, branchId, organizationId }, signal),
     enabled: active,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
-  const {
-    employeeIdsByService,
-    isLoading: matrixLoading,
-    isError: matrixError,
-  } = useServiceAssignmentCounts(active);
+  // Матрица нужна и как источник фолбэка, и как признак, что услуга вообще
+  // кому-то назначена: это тот же запрос, что уже держит счётчик в списке.
+  const { employeeIdsByService, isLoading: matrixLoading } = useServiceAssignmentCounts(active);
+
+  const assignedIds = React.useMemo(
+    () => (serviceId == null ? EMPTY_IDS : employeeIdsByService.get(serviceId) ?? EMPTY_IDS),
+    [employeeIdsByService, serviceId],
+  );
+  const emptyForService = active && query.data != null && query.data.length === 0;
+  const needsFallback = emptyForService && assignedIds.length > 0;
+
+  const fallbackQuery = useQuery({
+    queryKey: djangoQueryKeys.appointments.serviceProvidersInBranch(
+      organizationId ?? null,
+      branchId ?? null,
+    ),
+    queryFn: ({ signal }) => getServiceProviders({ branchId, organizationId }, signal),
+    enabled: needsFallback,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
 
   const performers = React.useMemo(() => {
-    if (!query.data || serviceId == null) return EMPTY;
-    const assigned = employeeIdsByService.get(serviceId);
-    if (!assigned || assigned.length === 0) return EMPTY;
-    const assignedIds = new Set(assigned);
+    const source = needsFallback
+      ? (fallbackQuery.data ?? EMPTY_PROVIDERS).filter((provider) =>
+          assignedIds.includes(provider.id),
+        )
+      : query.data;
+    if (!source || source.length === 0) return EMPTY;
     const photoById = new Map(employees.map((e) => [e.id, e.photoUrl]));
-    return query.data
-      .filter((provider) => assignedIds.has(provider.id))
-      .map((provider) => ({
-        ...provider,
-        photoUrl: photoById.get(provider.id) ?? null,
-        branchIsForeign:
-          provider.branch != null &&
-          activeBranch?.id != null &&
-          provider.branch.id !== activeBranch.id,
-      }));
-  }, [query.data, employeeIdsByService, serviceId, employees, activeBranch?.id]);
+    return source.map((provider) => ({
+      ...provider,
+      photoUrl: photoById.get(provider.id) ?? null,
+      branchIsForeign:
+        provider.branch != null && branchId != null && provider.branch.id !== branchId,
+    }));
+  }, [needsFallback, fallbackQuery.data, query.data, assignedIds, employees, branchId]);
 
   return {
     performers,
-    isLoading: active && (query.isLoading || matrixLoading),
-    isError: query.isError || matrixError,
+    // Матрицу ждём только когда основной запрос вернул пусто: иначе ещё не
+    // известно, «некому оказывать» это или старый бэк, и секция мигнула бы
+    // пустотой. Ошибка матрицы сама по себе секцию не ломает — она нужна лишь
+    // для решения о фолбэке.
+    isLoading:
+      active &&
+      (query.isLoading ||
+        (emptyForService && matrixLoading) ||
+        (needsFallback && fallbackQuery.isLoading)),
+    isError: query.isError || (needsFallback && fallbackQuery.isError),
     canView,
   };
 }
