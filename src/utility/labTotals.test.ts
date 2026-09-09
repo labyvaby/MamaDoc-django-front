@@ -119,6 +119,24 @@ describe("basketTotals", () => {
       discountPercent: 0,
       chargeTubes: false,
     });
-    expect(got).toEqual({ testsTotal: 0, tubesTotal: 0, total: 0 });
+    expect(got).toEqual({ testsGross: 0, testsTotal: 0, tubesTotal: 0, total: 0 });
+  });
+
+  it("testsGross — сумма анализов до скидки, отдельно от итога и пробирок", () => {
+    // База для DiscountInput в режиме «сомы» (закрытие пробела Task 9):
+    // total уже уменьшен на скидку и при chargeTubes включает пробирки, а
+    // скидка в сомах обязана считаться от суммы анализов ДО скидки — иначе
+    // она обсчитывается от неверной величины, и бэкенд отклонит оплату 422-м
+    // «сумма не совпадает» (server/apps/lab/basket.py: discount берётся от
+    // tests_gross, а не от total). Числа подобраны так, чтобы testsGross,
+    // testsTotal, tubesTotal и total были попарно различны — иначе тест не
+    // заметил бы, если testsGross случайно перепутают с одним из них.
+    const got = basketTotals({
+      lines: [test({ priceStandard: "300.00" })],
+      tubes: [tube({ price: "50.00", count: 1 })],
+      discountPercent: 10,
+      chargeTubes: true,
+    });
+    expect(got).toEqual({ testsGross: 300, testsTotal: 270, tubesTotal: 50, total: 320 });
   });
 });

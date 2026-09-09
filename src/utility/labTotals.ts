@@ -41,6 +41,15 @@ export interface BasketTotalsInput {
 }
 
 export interface BasketTotals {
+  /**
+   * Сумма анализов ДО скидки. Нужна как база для `DiscountInput` в режиме
+   * ввода скидки в сомах: `testsTotal` и `total` уже уменьшены на скидку (а
+   * `total` ещё и увеличен на пробирки при `chargeTubes`), и если считать
+   * скидку в сомах от любого из них, она обсчитается от неверной величины.
+   * В процентном режиме база роли не играет — процент восстанавливается тем
+   * же числом, от которого был посчитан (см. `PaymentSection`).
+   */
+  testsGross: number;
   testsTotal: number;
   tubesTotal: number;
   total: number;
@@ -73,5 +82,5 @@ export function basketTotals(input: BasketTotalsInput): BasketTotals {
     input.tubes.reduce((sum, item) => sum + money(item.price) * item.count, 0),
   );
   const total = round2(testsTotal + (input.chargeTubes ? tubesTotal : 0));
-  return { testsTotal, tubesTotal, total };
+  return { testsGross: round2(testsGross), testsTotal, tubesTotal, total };
 }

@@ -8,6 +8,15 @@ import { formatKGS } from "../../../utility/format";
 
 type Props = {
   total: number;
+  /**
+   * Сумма анализов ДО скидки (`basketTotals().testsGross`) — база для
+   * `DiscountInput` в режиме ввода скидки в сомах. Раньше (Task 8) базой
+   * служил `total`, но он уже уменьшен на скидку и при `chargeTubes` включает
+   * пробирки: скидка в сомах считалась бы от неверной величины и разошлась
+   * бы с бэкендом (422 «сумма не совпадает»). См. закрытие пробела в
+   * `labTotals.ts`.
+   */
+  testsGross: number;
   paidCash: string;
   paidCard: string;
   cashlessMethodId: number | null;
@@ -53,14 +62,14 @@ function toAmount(raw: string): number {
  * Оплата: наличные, карта, способ безнала, скидка и сверка «к оплате / внесено».
  *
  * `total` — уже посчитанная бэкендозеркальной `basketTotals` итоговая сумма
- * (тесты за вычетом скидки плюс пробирки, если клиника берёт за них плату).
- * Секция её не пересчитывает, только показывает и использует как базу для
- * `DiscountInput`: в процентном режиме база сокращается при обратной
- * конвертации, поэтому её выбор не влияет на итоговый процент. В режиме
- * ввода скидки в сомах это лишь приближение (`total` уже включает пробирки
- * и скидку берёт не с них) — но точная база (сумма анализов до скидки)
- * секции не передаётся, а процентный режим, который эта форма выставляет по
- * умолчанию, точен всегда.
+ * (тесты за вычетом скидки плюс пробирки, если клиника берёт за них плату) —
+ * используется только для строки «К оплате». Базой для `DiscountInput`
+ * служит отдельный `testsGross` (сумма анализов до скидки, без пробирок): в
+ * процентном режиме база сокращается при обратной конвертации и её выбор не
+ * влияет на итоговый процент, а в режиме ввода скидки в сомах база обязана
+ * быть именно `testsGross` — иначе скидка считается от суммы, уже
+ * уменьшенной на неё же (и увеличенной на пробирки), и расходится с
+ * бэкендом (`server/apps/lab/basket.py`).
  *
  * Разницу («К оплате / Внесено / Разница») показываем всегда, а не только
  * когда она не ноль, — регистратор должен увидеть цифры раньше, чем текст
@@ -69,6 +78,7 @@ function toAmount(raw: string): number {
  */
 const PaymentSection: React.FC<Props> = ({
   total,
+  testsGross,
   paidCash,
   paidCard,
   cashlessMethodId,
@@ -161,12 +171,12 @@ const PaymentSection: React.FC<Props> = ({
             Скидка
           </Typography>
           <DiscountInput
-            total={total}
-            amount={round2((total * discountPercent) / 100)}
+            total={testsGross}
+            amount={round2((testsGross * discountPercent) / 100)}
             defaultType="percent"
             disabled={disabled}
             onAmountChange={(amount) => {
-              const percent = total > 0 ? round2((amount / total) * 100) : 0;
+              const percent = testsGross > 0 ? round2((amount / testsGross) * 100) : 0;
               onDiscountChange(Math.min(100, Math.max(0, percent)));
             }}
           />

@@ -13,6 +13,8 @@ const ready = (over: Partial<IntakeState> = {}): IntakeState => ({
   total: 250,
   paidCash: 250,
   paidCard: 0,
+  cashlessMethodId: null,
+  cashlessMethodRequired: false,
   ...over,
 });
 
@@ -99,6 +101,78 @@ describe("intakeBlockReason", () => {
     expect(
       intakeBlockReason(ready({ paidCash: 150, paidCard: 100 })),
     ).toBeNull();
+  });
+
+  it("оплата картой без выбранного способа безнала блокирует, когда способ обязателен", () => {
+    // Прецедент — warehouse.services._resolve_sale_cashless_method и
+    // соседние денежные формы (DjangoAddExpenseDrawer): оплата картой без
+    // способа — дыра в кассовом учёте, хотя сам бэкенд приёма анализов это
+    // пропустит (ensure_cashless_method_valid при None ничего не проверяет).
+    expect(
+      intakeBlockReason(
+        ready({
+          paidCash: 0,
+          paidCard: 250,
+          cashlessMethodId: null,
+          cashlessMethodRequired: true,
+        }),
+      ),
+    ).toBe("Выберите способ безналичной оплаты");
+  });
+
+  it("оплата картой с выбранным способом не блокирует", () => {
+    expect(
+      intakeBlockReason(
+        ready({
+          paidCash: 0,
+          paidCard: 250,
+          cashlessMethodId: 7,
+          cashlessMethodRequired: true,
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("справочник способов пуст — оплата картой без способа не блокируется", () => {
+    // Организации нечего предложить (справочник загружен и пуст, либо
+    // способ безнала как класс отключён) — требовать выбор было бы тупиком,
+    // как и в DjangoAddExpenseDrawer (cashlessMethodRequired = isRequired).
+    expect(
+      intakeBlockReason(
+        ready({
+          paidCash: 0,
+          paidCard: 250,
+          cashlessMethodId: null,
+          cashlessMethodRequired: false,
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("оплата наличными не требует способа безнала", () => {
+    expect(
+      intakeBlockReason(
+        ready({
+          paidCash: 250,
+          paidCard: 0,
+          cashlessMethodId: null,
+          cashlessMethodRequired: true,
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("порядок причин: несовпадение суммы важнее невыбранного способа безнала", () => {
+    expect(
+      intakeBlockReason(
+        ready({
+          paidCash: 100,
+          paidCard: 50,
+          cashlessMethodId: null,
+          cashlessMethodRequired: true,
+        }),
+      ),
+    ).toBe("Оплата не совпадает с суммой заказа");
   });
 
   it("копеечная погрешность не блокирует", () => {
