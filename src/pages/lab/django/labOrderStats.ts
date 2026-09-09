@@ -30,3 +30,18 @@ export function labOrderStats(orders: LabOrder[]): LabOrderStats {
   );
   return { ...raw, amount: round2(raw.amount) };
 }
+
+/**
+ * Заказы, которые лента показывает под выбранной плиткой.
+ *
+ * «Не отправлены» проверяется тем же флагом `isDispatched`, что и
+ * `labOrderStats` — иначе счётчик на плитке и список под ней могли бы
+ * разойтись, если бы кто-то однажды сузил фильтр по сырой строке `status`.
+ */
+export function filterLabOrders(
+  orders: LabOrder[],
+  filter: "all" | "pending",
+): LabOrder[] {
+  if (filter === "all") return orders;
+  return orders.filter((item) => !item.isDispatched);
+}

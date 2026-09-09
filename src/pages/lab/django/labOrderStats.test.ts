@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { labOrderStats } from "./labOrderStats";
+import { filterLabOrders, labOrderStats } from "./labOrderStats";
 import type { LabOrder } from "../../../api/lab";
 
 const order = (over: Partial<LabOrder> = {}): LabOrder => ({
@@ -46,5 +46,28 @@ describe("labOrderStats", () => {
       order({ id: 2, totalAmount: 0.2 }),
     ]);
     expect(got.amount).toBe(0.3);
+  });
+});
+
+describe("filterLabOrders", () => {
+  // Плитка «Всего заказов» и лента должны видеть один и тот же список без
+  // фильтра — иначе счётчик и таблица под ним разойдутся в числах.
+  it("«all» возвращает список без изменений", () => {
+    const orders = [order(), order({ id: 2, isDispatched: false, status: "pending_dispatch" })];
+    expect(filterLabOrders(orders, "all")).toEqual(orders);
+  });
+
+  it("«pending» оставляет только неотправленные, порядок не трогает", () => {
+    const dispatched = order({ id: 1 });
+    const pendingA = order({ id: 2, isDispatched: false, status: "pending_dispatch" });
+    const dispatched2 = order({ id: 3 });
+    const pendingB = order({ id: 4, isDispatched: false, status: "pending_dispatch" });
+    const got = filterLabOrders([dispatched, pendingA, dispatched2, pendingB], "pending");
+    expect(got).toEqual([pendingA, pendingB]);
+  });
+
+  it("пустой список остаётся пустым при любом фильтре", () => {
+    expect(filterLabOrders([], "all")).toEqual([]);
+    expect(filterLabOrders([], "pending")).toEqual([]);
   });
 });
