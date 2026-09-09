@@ -29,6 +29,7 @@ import { getLabOrders, type LabOrder } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
 import LabOrdersSummaryBar, { type LabOrdersFilter } from "../../../components/lab/LabOrdersSummaryBar";
+import LabIntakeDrawer from "../../../components/lab/LabIntakeDrawer";
 import { filterLabOrders, labOrderStats } from "./labOrderStats";
 
 const headCellSx = { fontWeight: 700, bgcolor: "background.paper" };
@@ -50,15 +51,19 @@ const DjangoLabPage: React.FC = () => {
   const { loading: permLoading } = usePermissions();
   const canView = useCan("lab.view");
   const canViewFinance = useCan("finance.view");
+  const canAccept = useCan("lab.accept");
 
   const [searchParams] = useSearchParams();
-  // LabIntakeDrawer появится в Task 10 и примет этот id, чтобы открыться сразу
-  // на нужном пациенте. Сейчас дровера нет, поэтому пока только читаем
-  // параметр и объясняем это в подсказке у кнопки — открывать пока нечего.
+  // Из истории пациента кнопка «Принять анализы» ведёт сюда с этим
+  // параметром — LabIntakeDrawer (Task 10) принимает его и открывается сразу
+  // на нужном пациенте.
   const intakePatientId = useMemo(
     () => parsePatientId(searchParams.get("patientId")),
     [searchParams],
   );
+  // Ленивая инициализация — открыт сразу, если пришли по ссылке с
+  // ?patientId=; повторный рендер с тем же параметром дровер уже не закроет.
+  const [drawerOpen, setDrawerOpen] = useState(() => intakePatientId != null);
 
   const [filter, setFilter] = useState<LabOrdersFilter>("all");
 
@@ -86,10 +91,7 @@ const DjangoLabPage: React.FC = () => {
 
   if (!permLoading && !canView) return <AccessDenied />;
 
-  const intakeHint =
-    intakePatientId != null
-      ? "Форма приёма для этого пациента появится здесь в следующей задаче"
-      : "Форма приёма анализов появится в следующей задаче";
+  const intakeHint = canAccept ? "" : "Недостаточно прав для приёма анализов";
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -101,7 +103,13 @@ const DjangoLabPage: React.FC = () => {
             {/* disabled-кнопка не получает события мыши, Tooltip требует
                 обёртку, которая их получает — иначе подсказка не всплывёт. */}
             <span>
-              <AppButton variant="contained" size="large" startIcon={<AddOutlined />} disabled>
+              <AppButton
+                variant="contained"
+                size="large"
+                startIcon={<AddOutlined />}
+                disabled={!canAccept}
+                onClick={() => setDrawerOpen(true)}
+              >
                 Принять анализы
               </AppButton>
             </span>
@@ -215,6 +223,12 @@ const DjangoLabPage: React.FC = () => {
           </Paper>
         )}
       </Box>
+
+      <LabIntakeDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        initialPatientId={intakePatientId}
+      />
     </Box>
   );
 };

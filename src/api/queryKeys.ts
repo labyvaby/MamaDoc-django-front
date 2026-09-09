@@ -435,5 +435,17 @@ export const djangoQueryKeys = {
      */
     orders: (params: Record<string, unknown>) =>
       ["django", "lab", "orders", params] as const,
+    /** Каталог анализов — грузится один раз при открытии дровера приёма. */
+    tests: ["django", "lab", "tests"] as const,
+    /**
+     * Пробирки/вопросы/подготовка зависят от состава корзины (`?tests=`) и
+     * перезагружаются при её изменении, с debounce — ключ по строке
+     * идентификаторов (`testIdsQuery`), а не по самому массиву: одинаковая
+     * корзина обязана давать одинаковый ключ независимо от порядка добавления
+     * строк.
+     */
+    instruments: (testIds: string) => ["django", "lab", "instruments", testIds] as const,
+    questions: (testIds: string) => ["django", "lab", "questions", testIds] as const,
+    preparation: (testIds: string) => ["django", "lab", "preparation", testIds] as const,
   },
 };
