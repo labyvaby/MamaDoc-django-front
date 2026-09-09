@@ -386,8 +386,8 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
         open={rulesOpen && rules != null}
         onClose={() => !rulesMutation.isPending && setRulesOpen(false)}
         fullWidth
-        maxWidth="sm"
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        maxWidth="md"
+        PaperProps={{ sx: { borderRadius: 3, width: { sm: "min(900px, calc(100% - 32px))" } } }}
       >
         <DialogTitle>Правила контракта</DialogTitle>
         <DialogContent dividers>
