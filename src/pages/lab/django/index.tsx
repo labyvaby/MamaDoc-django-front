@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Box,
   Chip,
@@ -15,7 +15,7 @@ import {
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
-import { useNotification } from "@refinedev/core";
+import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 import dayjs from "dayjs";
 
@@ -24,9 +24,10 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
-import { ApiError, isAbortError } from "../../../api/client";
+import { getErrorMessage } from "../../../api/client";
 import { getLabOrders, type LabOrder } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
+import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
 import LabOrdersSummaryBar, { type LabOrdersFilter } from "../../../components/lab/LabOrdersSummaryBar";
 import { filterLabOrders, labOrderStats } from "./labOrderStats";
 
@@ -46,7 +47,6 @@ function parsePatientId(raw: string | null): number | null {
 
 const DjangoLabPage: React.FC = () => {
   usePageTitle("Лаборатория");
-  const { open: notify } = useNotification();
   const { loading: permLoading } = usePermissions();
   const canView = useCan("lab.view");
   const canViewFinance = useCan("finance.view");
@@ -61,36 +61,23 @@ const DjangoLabPage: React.FC = () => {
   );
 
   const [filter, setFilter] = useState<LabOrdersFilter>("all");
-  const [orders, setOrders] = useState<LabOrder[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
-  const fetchOrders = useCallback(async () => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getLabOrders({}, controller.signal);
-      setOrders(data);
-    } catch (e) {
-      if (isAbortError(e)) return;
-      console.error(e);
-      const message = e instanceof ApiError ? e.message : "Не удалось загрузить заказы";
-      setError(message);
-      notify?.({ type: "error", message });
-    } finally {
-      if (abortRef.current === controller) setLoading(false);
-    }
-  }, [notify]);
-
-  useEffect(() => {
-    if (permLoading || !canView) return;
-    fetchOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [permLoading, canView]);
+  // Лента всегда шлёт на сервер пустые params — плитки ниже режут уже
+  // загруженный список на клиенте (см. комментарий у visibleOrders), сеть
+  // им не нужна. Ключ всё равно параметризован по образцу соседних list():
+  // дровер приёма (Task 10) инвалидирует ленту через djangoQueryKeys.lab.all
+  // и должен пережить появление серверных фильтров, если они понадобятся.
+  const ordersQuery = useQuery<LabOrder[]>({
+    queryKey: djangoQueryKeys.lab.orders({}),
+    queryFn: ({ signal }) => getLabOrders({}, signal),
+    enabled: !permLoading && canView,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+  // useMemo, а не голое `?? []`: иначе на каждом рендере до первых данных
+  // рождался бы новый пустой массив, и useMemo ниже (stats/visibleOrders)
+  // пересчитывались бы вхолостую — тот же приём, что в AchievementsPage
+  // для feedItems.
+  const orders = useMemo(() => ordersQuery.data ?? [], [ordersQuery.data]);
 
   // Плитки и фильтр — над одним и тем же снимком ленты: переключение плитки
   // не бьёт по сети, только меняет срез уже загруженного списка.
@@ -141,18 +128,18 @@ const DjangoLabPage: React.FC = () => {
           canViewFinance={canViewFinance}
         />
 
-        {loading ? (
+        {ordersQuery.isLoading ? (
           <Paper variant="outlined" elevation={0} sx={{ overflow: "hidden" }}>
             <ListLoadingSkeleton rows={8} />
           </Paper>
-        ) : error ? (
+        ) : ordersQuery.isError ? (
           <Paper variant="outlined" elevation={0} sx={{ minHeight: 240, display: "flex" }}>
             <ListEmptyState
               icon={<ErrorOutlineOutlined />}
               title="Не удалось загрузить заказы"
-              description={error}
+              description={getErrorMessage(ordersQuery.error, "Не удалось загрузить заказы")}
               action={
-                <AppButton variant="outlined" size="small" onClick={() => void fetchOrders()}>
+                <AppButton variant="outlined" size="small" onClick={() => ordersQuery.refetch()}>
                   Повторить
                 </AppButton>
               }

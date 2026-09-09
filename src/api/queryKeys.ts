@@ -422,4 +422,18 @@ export const djangoQueryKeys = {
     services: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
       ["django", "reference", "services", context] as const,
   },
+
+  lab: {
+    all: ["django", "lab"] as const,
+    /**
+     * Лента заказов лаборатории. Сегодня страница всегда шлёт пустые params —
+     * плитки-фильтры над лентой (LabOrdersSummaryBar) режут уже загруженный
+     * список на клиенте (см. filterLabOrders) и в сеть не ходят. Ключ всё
+     * равно параметризован по образцу соседних list(): дровер приёма должен
+     * уметь инвалидировать ленту после создания заказа, не зная её текущих
+     * фильтров.
+     */
+    orders: (params: Record<string, unknown>) =>
+      ["django", "lab", "orders", params] as const,
+  },
 };
