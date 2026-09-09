@@ -34,6 +34,8 @@ import CheckOutlinedIcon from "@mui/icons-material/CheckOutlined";
 import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
+import FiberNewOutlinedIcon from "@mui/icons-material/FiberNewOutlined";
+import { useSearchParams } from "react-router";
 
 import { DateRangeField, PageHeader, UserAvatar, type DateRangePreset } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -66,17 +68,30 @@ import {
   PrepaymentChip,
   StatusChip,
   hasPrepayment,
+  isBookingClosed,
   isBookingOverdue,
   sortBookingsByPriority,
   statusTone,
   useTickingClock,
 } from "./meta";
 import { useT } from "../../i18n/VerticalProvider";
+import { useNewBookings } from "../../hooks/useNewBookings";
 
 const PAGE_SIZE = 20;
 /** Лимит выборки для сводки/счётчиков: 5 страниц по 100. */
 const STATS_PAGE_SIZE = 100;
 const STATS_MAX_PAGES = 5;
+
+/**
+ * Режим списка. `active` и `new` — срезы, которых нет на сервере (он умеет
+ * фильтровать только по одному статусу), поэтому считаются по сводной выборке
+ * и пагинируются на клиенте. `all` и код статуса уходят в запрос.
+ */
+type BookingView = "active" | "new" | "all" | BookingStatus;
+
+/** Срезы, которые собираются на клиенте из сводной выборки. */
+const isClientView = (v: BookingView): v is "active" | "new" =>
+  v === "active" || v === "new";
 
 // ── Помощники стилей ──────────────────────────────────────────────────────────
 
@@ -302,7 +317,11 @@ const BookingsPage: React.FC = () => {
   // ── Filters ──
   const [dateFrom, setDateFrom] = React.useState(() => dayjs().startOf("month"));
   const [dateTo, setDateTo] = React.useState(() => dayjs().endOf("month"));
-  const [status, setStatus] = React.useState<BookingStatus | "">("");
+  // Что показывает список. `active` — дефолт: всё, кроме закрытого
+  // (отменённые, неявки и просроченные оплаты — см. isBookingClosed). `new` —
+  // непросмотренные заявки. `all` — полная выдача. Код статуса — конкретный
+  // срез вкладкой.
+  const [view, setView] = React.useState<BookingView>("active");
   const [doctorId, setDoctorId] = React.useState<number | "">("");
   // Фильтр по состоянию онлайн-предоплаты — ортогонален статусу брони:
   // администратор сначала разбирает оплаченные.
@@ -315,6 +334,32 @@ const BookingsPage: React.FC = () => {
   // Отмеченные для массового подтверждения — только «Ожидает» (isRowSelectable).
   const [selectedIds, setSelectedIds] = React.useState<number[]>([]);
 
+  // Непрочитанное — общее с колокольчиком, глобальным тостом и заголовком
+  // вкладки: открыли карточку здесь — погасло везде.
+  const { isNew, markSeen } = useNewBookings();
+
+  /** Открытие карточки = разбор заявки: снимаем с неё пометку «новая». */
+  const openBooking = React.useCallback(
+    (id: number) => {
+      markSeen([id]);
+      setSelectedId(id);
+    },
+    [markSeen],
+  );
+
+  // Ссылка из тоста «Новая заявка» ведёт сюда с ?open=<id> — открываем карточку
+  // и убираем параметр, чтобы он не всплыл повторно при возврате назад.
+  const [searchParams, setSearchParams] = useSearchParams();
+  React.useEffect(() => {
+    const raw = searchParams.get("open");
+    if (!raw) return;
+    const id = Number(raw);
+    if (Number.isFinite(id)) openBooking(id);
+    const next = new URLSearchParams(searchParams);
+    next.delete("open");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, openBooking]);
+
   // Debounce поиска.
   React.useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 400);
@@ -326,7 +371,7 @@ const BookingsPage: React.FC = () => {
   React.useEffect(() => {
     setPage(0);
     setSelectedIds([]);
-  }, [dateFrom, dateTo, status, doctorId, prepaymentStatus, search, orgKey, branchKey]);
+  }, [dateFrom, dateTo, view, doctorId, prepaymentStatus, search, orgKey, branchKey]);
 
   // И при листании страниц — отмеченные с прошлой страницы не видны здесь.
   React.useEffect(() => {
@@ -346,14 +391,14 @@ const BookingsPage: React.FC = () => {
   }, [dateFrom, dateTo]);
 
   const hasActiveFilters =
-    status !== "" ||
+    view !== "active" ||
     doctorId !== "" ||
     prepaymentStatus !== "" ||
     search !== "" ||
     activePresetKey !== "month";
 
   const handleResetFilters = () => {
-    setStatus("");
+    setView("active");
     setDoctorId("");
     setPrepaymentStatus("");
     setSearchInput("");
@@ -364,7 +409,9 @@ const BookingsPage: React.FC = () => {
   const filters = {
     dateFrom: fromStr,
     dateTo: toStr,
-    status: status === "" ? undefined : status,
+    // Срезы «в работе» и «новые» на сервере не выразить (он фильтрует по
+    // одному статусу) — они собираются из сводной выборки ниже.
+    status: isClientView(view) || view === "all" ? undefined : view,
     doctorId: doctorId === "" ? undefined : doctorId,
     prepaymentStatus: prepaymentStatus === "" ? undefined : prepaymentStatus,
     search: search || undefined,
@@ -483,7 +530,9 @@ const BookingsPage: React.FC = () => {
     const data = statsQuery.data;
     if (!data) return null;
     const count =
-      status === "" ? data.count : data.all.filter((b) => b.status === status).length;
+      view === "all" || view === "active" || view === "new"
+        ? data.count
+        : data.all.filter((b) => b.status === view).length;
     // Доля отмен считается по всей выборке периода, а не по выбранной вкладке:
     // иначе на вкладке «Отменена» она была бы всегда 100%.
     const lost = data.all.filter(
@@ -491,13 +540,81 @@ const BookingsPage: React.FC = () => {
     ).length;
     const lostRate = data.all.length > 0 ? (lost / data.all.length) * 100 : 0;
     return { count, lost, lostRate, truncated: data.truncated };
-  }, [statsQuery.data, status]);
+  }, [statsQuery.data, view]);
 
   /** «Ожидает», время которых уже прошло — висят необработанными дольше всех. */
   const overdueCount = React.useMemo(
     () => (statsQuery.data?.all ?? []).filter(isBookingOverdue).length,
     [statsQuery.data],
   );
+
+  /**
+   * Новые заявки в пределах выбранного периода — счётчик пилюли «Новые» и её же
+   * выборка. Считаем по данным сводки, а не по поллеру `useNewBookings`: у того
+   * своё окно дат (−30…+90), и число рядом с фильтром не сходилось бы со
+   * списком под ним. Потолок сводки (STATS_MAX_PAGES) здесь тоже действует.
+   */
+  const newRows = React.useMemo(
+    () => sortBookingsByPriority((statsQuery.data?.all ?? []).filter(isNew)),
+    [statsQuery.data, isNew],
+  );
+
+  /**
+   * «В работе» — дефолтный срез: всё, кроме закрытого (отменённые, неявки и
+   * брони с просроченной оплатой — см. `isBookingClosed`). Просроченная оплата
+   * держится в выдаче до прихода поллера бэка и забивает список записями,
+   * которые приёмами уже не станут.
+   *
+   * Как и «Новые», собирается из сводной выборки: серверный фильтр умеет
+   * только один статус, «всё кроме трёх» им не выразить.
+   */
+  const closedRows = React.useMemo(
+    () => (statsQuery.data?.all ?? []).filter((b) => isBookingClosed(b, now)),
+    [statsQuery.data, now],
+  );
+  const activeRows = React.useMemo(
+    () =>
+      sortBookingsByPriority(
+        (statsQuery.data?.all ?? []).filter((b) => !isBookingClosed(b, now)),
+      ),
+    [statsQuery.data, now],
+  );
+
+  /**
+   * Только что приехавшие поллингом строки — подсвечиваем на несколько секунд,
+   * иначе заявка бесшумно вклинивается в середину списка и её легко пропустить.
+   * Знакомство с выборкой начинается заново при смене фильтров и страницы:
+   * иначе «новой» мигала бы вся страница целиком.
+   */
+  const knownRowIdsRef = React.useRef<Set<number> | null>(null);
+  const [arrivedIds, setArrivedIds] = React.useState<ReadonlySet<number>>(() => new Set());
+  React.useEffect(() => {
+    knownRowIdsRef.current = null;
+    setArrivedIds(new Set());
+  }, [fromStr, toStr, view, doctorId, prepaymentStatus, search, orgKey, branchKey, page]);
+  React.useEffect(() => {
+    // Источник тот же, из которого построены строки: у клиентских срезов это
+    // сводная выборка, у остальных — страница с сервера.
+    const source = isClientView(view) ? statsQuery.data?.all : query.data?.results;
+    if (!source) return;
+    const ids = source.map((r) => r.id);
+    if (knownRowIdsRef.current === null) {
+      knownRowIdsRef.current = new Set(ids);
+      return;
+    }
+    const fresh = ids.filter((id) => !knownRowIdsRef.current!.has(id));
+    ids.forEach((id) => knownRowIdsRef.current!.add(id));
+    if (fresh.length === 0) return;
+    setArrivedIds((prev) => new Set([...prev, ...fresh]));
+    const timer = window.setTimeout(() => {
+      setArrivedIds((prev) => {
+        const next = new Set(prev);
+        fresh.forEach((id) => next.delete(id));
+        return next;
+      });
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [query.data, statsQuery.data, view]);
 
   const doctorsQuery = useQuery({
     queryKey: [...djangoQueryKeys.reference.employees, "doctors", orgKey],
@@ -554,7 +671,7 @@ const BookingsPage: React.FC = () => {
             : `Подтверждено: ${confirmed.length}`,
       });
       // Первую неоднозначную открываем сразу — не заставляем искать её в списке.
-      if (skipped.length > 0) setSelectedId(skipped[0]);
+      if (skipped.length > 0) openBooking(skipped[0]);
     },
     onError: () => notify?.({ type: "error", message: "Не удалось подтвердить брони" }),
   });
@@ -564,14 +681,33 @@ const BookingsPage: React.FC = () => {
       {
         field: "confirmationCode",
         headerName: "Код",
-        width: 90,
+        width: 104,
         renderCell: ({ row }) => (
-          <Typography
-            variant="caption"
-            sx={{ fontFamily: "monospace", fontWeight: 600, letterSpacing: 0.4 }}
-          >
-            {row.confirmationCode}
-          </Typography>
+          <Stack sx={{ height: "100%" }} justifyContent="center" gap={0.25}>
+            <Typography
+              variant="caption"
+              sx={{ fontFamily: "monospace", fontWeight: 600, letterSpacing: 0.4 }}
+            >
+              {row.confirmationCode}
+            </Typography>
+            {/* «Новая» = заявку ещё не открывали. Гаснет, как только карточку
+                разобрали, — своя у каждого устройства (см. useNewBookings). */}
+            {isNew(row) && (
+              <Chip
+                label="новая"
+                size="small"
+                sx={(t) => ({
+                  height: 16,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  alignSelf: "flex-start",
+                  borderRadius: "5px",
+                  color: "primary.onSurface",
+                  bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.26 : 0.16),
+                })}
+              />
+            )}
+          </Stack>
         ),
       },
       {
@@ -584,7 +720,8 @@ const BookingsPage: React.FC = () => {
           <Stack direction="row" alignItems="center" gap={1.25} sx={{ height: "100%", minWidth: 0 }}>
             <UserAvatar name={row.patientName} size={32} sx={{ borderRadius: "9px", flexShrink: 0 }} />
             <Box sx={{ lineHeight: 1.2, minWidth: 0 }}>
-              <Typography variant="body2" fontWeight={500} noWrap>
+              {/* Непрочитанная заявка набрана жирнее — как непрочитанное письмо. */}
+              <Typography variant="body2" fontWeight={isNew(row) ? 700 : 500} noWrap>
                 {row.patientName}
               </Typography>
               {row.patientPhone && (
@@ -698,15 +835,29 @@ const BookingsPage: React.FC = () => {
           ]
         : []),
     ],
-    [todayStr, t, branchScopingLive, prepaymentLive, now],
+    [todayStr, t, branchScopingLive, prepaymentLive, now, isNew],
   );
 
   if (!permLoading && !canView) return <AccessDenied />;
 
   // Сортировка «то, что горит — наверх» в пределах текущей страницы (см.
   // sortBookingsByPriority) — сервер отдаёт страницу в своём порядке.
-  const rows = sortBookingsByPriority(query.data?.results ?? []);
-  const total = query.data?.count ?? 0;
+  // У клиентских срезов («в работе», «новые») список и пагинация клиентские:
+  // сервер такие выборки отдать не умеет.
+  const clientRows = view === "new" ? newRows : activeRows;
+  const rows = isClientView(view)
+    ? clientRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+    : sortBookingsByPriority(query.data?.results ?? []);
+  const total = isClientView(view) ? clientRows.length : query.data?.count ?? 0;
+  const listLoading = isClientView(view) ? statsQuery.isLoading : query.isLoading;
+
+  /** Пустой список объясняем в терминах выбранного среза, а не вообще. */
+  const emptyListText =
+    view === "new"
+      ? "Новых заявок за выбранный период нет"
+      : view === "active"
+        ? "Незакрытых броней за выбранный период нет"
+        : "Броней за выбранный период не найдено";
 
   const NoRowsOverlay = () => (
     <Stack
@@ -716,7 +867,7 @@ const BookingsPage: React.FC = () => {
     >
       <EventBusyOutlinedIcon sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }} />
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        Броней за выбранный период не найдено
+        {emptyListText}
       </Typography>
       {hasActiveFilters && (
         <Button size="small" onClick={handleResetFilters} sx={{ textTransform: "none" }}>
@@ -738,12 +889,7 @@ const BookingsPage: React.FC = () => {
         loading={query.isFetching}
         actions={
           <Stack direction="row" alignItems="center" gap={1}>
-            <BookingNotificationsBell
-              organizationId={organizationId}
-              branchId={branchId}
-              enabled={enabled}
-              onOpenBooking={setSelectedId}
-            />
+            <BookingNotificationsBell onOpenBooking={openBooking} />
             <ShowcaseLink orgSlug={activeOrganization?.slug ?? null} />
           </Stack>
         }
@@ -893,17 +1039,40 @@ const BookingsPage: React.FC = () => {
 
           {/* ── Статусы-вкладки со счётчиками ── */}
           <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center" sx={{ mb: 1.5 }}>
-            {[
-              { value: "" as const, label: "Все", count: statsQuery.data?.count },
-              ...BOOKING_STATUS_OPTIONS.map((o) => ({
-                value: o.value,
-                label: o.label,
-                count: statusCounts[o.value] ?? 0,
-              })),
-            ].map((o) => {
-              const active = status === o.value;
-              const tone =
-                o.value === "" ? null : statusTone(theme, o.value as BookingStatus);
+            {/* «Новые» и «В работе» — не статусы, а срезы: непросмотренное и
+                всё, кроме закрытого. Стоят перед вкладками статусов, потому что
+                разбор начинается с них; «Все» открывает полную выдачу. */}
+            {(
+              [
+                {
+                  value: "new",
+                  label: "Новые",
+                  count: statsQuery.data ? newRows.length : undefined,
+                  icon: <FiberNewOutlinedIcon fontSize="small" />,
+                },
+                {
+                  value: "active",
+                  label: "В работе",
+                  count: statsQuery.data ? activeRows.length : undefined,
+                },
+                { value: "all", label: "Все", count: statsQuery.data?.count },
+                ...BOOKING_STATUS_OPTIONS.map((o) => ({
+                  value: o.value,
+                  label: o.label,
+                  count: statusCounts[o.value] ?? 0,
+                })),
+              ] as {
+                value: BookingView;
+                label: string;
+                count?: number;
+                /** Chip принимает только элемент, не любой ReactNode. */
+                icon?: React.ReactElement;
+              }[]
+            ).map((o) => {
+              const active = view === o.value;
+              const tone = isClientView(o.value) || o.value === "all"
+                ? null
+                : statusTone(theme, o.value);
               const accent = tone ? tone.main : theme.palette.primary.main;
               const accentText = tone
                 ? theme.palette.mode === "dark"
@@ -912,9 +1081,10 @@ const BookingsPage: React.FC = () => {
                 : theme.palette.primary.main;
               return (
                 <Chip
-                  key={o.value || "all"}
+                  key={o.value}
                   clickable
-                  onClick={() => setStatus(o.value)}
+                  icon={o.icon}
+                  onClick={() => setView(o.value)}
                   label={
                     <Stack direction="row" alignItems="center" gap={0.75}>
                       <span>{o.label}</span>
@@ -946,6 +1116,7 @@ const BookingsPage: React.FC = () => {
                     bgcolor: active
                       ? alpha(accent, t.palette.mode === "dark" ? 0.16 : 0.08)
                       : "transparent",
+                    "& .MuiChip-icon": { color: active ? "inherit" : "text.disabled" },
                     "&:hover": {
                       bgcolor: active
                         ? alpha(accent, t.palette.mode === "dark" ? 0.22 : 0.12)
@@ -961,6 +1132,14 @@ const BookingsPage: React.FC = () => {
             {/* ── Итоги за период ── */}
             {summary && (
               <Stack direction="row" gap={1} flexWrap="wrap">
+                {/* Непрочитанные заявки периода — тот же срез, что у пилюли
+                    «Новые»; клик включает его. */}
+                <StatTile
+                  icon={<FiberNewOutlinedIcon />}
+                  label="Новые"
+                  value={newRows.length}
+                  onClick={() => setView("new")}
+                />
                 {/* Просроченные «Ожидает» — самое горящее среди необработанных,
                     поэтому на виду, а не только построчно в гриде. Клик —
                     открывает вкладку «Ожидает» (там же они сортируются наверх). */}
@@ -969,7 +1148,7 @@ const BookingsPage: React.FC = () => {
                   label="Просрочены"
                   value={overdueCount}
                   warn={overdueCount > 0}
-                  onClick={() => setStatus("pending")}
+                  onClick={() => setView("pending")}
                 />
                 <StatTile
                   icon={<EventAvailableOutlinedIcon />}
@@ -985,6 +1164,30 @@ const BookingsPage: React.FC = () => {
             )}
           </Stack>
 
+          {/* Дефолтный вид прячет закрытое — говорим это прямо и даём выход к
+              полному списку. Иначе «броней меньше, чем в прошлый раз» читается
+              как потеря данных. */}
+          {view === "active" && closedRows.length > 0 && (
+            <Stack
+              direction="row"
+              alignItems="center"
+              gap={0.75}
+              sx={{ mb: 1.5, mt: -0.5 }}
+            >
+              <InfoOutlinedIcon sx={{ fontSize: 16, color: "text.disabled" }} />
+              <Typography variant="caption" color="text.secondary">
+                Закрытые скрыты: {closedRows.length} — отменённые, неявки и с истёкшей оплатой
+              </Typography>
+              <Button
+                size="small"
+                onClick={() => setView("all")}
+                sx={{ textTransform: "none", minWidth: 0, py: 0 }}
+              >
+                Показать
+              </Button>
+            </Stack>
+          )}
+
           {query.error ? (
             <Alert severity="error">
               {query.error instanceof Error ? query.error.message : "Ошибка загрузки"}
@@ -992,7 +1195,7 @@ const BookingsPage: React.FC = () => {
           ) : isMobile ? (
             /* ── Мобильный карточный список ── */
             <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", pb: 1 }}>
-              {query.isLoading ? (
+              {listLoading ? (
                 <Stack spacing={1}>
                   {Array.from({ length: 6 }).map((_, i) => (
                     <Skeleton key={i} variant="rounded" height={72} />
@@ -1004,7 +1207,7 @@ const BookingsPage: React.FC = () => {
                     sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }}
                   />
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    Броней за выбранный период не найдено
+                    {emptyListText}
                   </Typography>
                   {hasActiveFilters && (
                     <Button
@@ -1022,7 +1225,7 @@ const BookingsPage: React.FC = () => {
                     <ButtonBase
                       key={b.id}
                       focusRipple
-                      onClick={() => setSelectedId(b.id)}
+                      onClick={() => openBooking(b.id)}
                       sx={(t) => ({
                         display: "flex",
                         alignItems: "center",
@@ -1032,7 +1235,11 @@ const BookingsPage: React.FC = () => {
                         p: 1.25,
                         borderRadius: "14px",
                         border: 1,
-                        borderColor: "divider",
+                        // Непрочитанная заявка — акцентная рамка и полоса слева,
+                        // тот же язык, что у строки в гриде.
+                        borderColor: isNew(b) ? alpha(t.palette.primary.main, 0.45) : "divider",
+                        borderLeft: isNew(b) ? 3 : 1,
+                        borderLeftColor: isNew(b) ? t.palette.primary.main : "divider",
                         bgcolor:
                           b.date === todayStr
                             ? alpha(
@@ -1043,6 +1250,20 @@ const BookingsPage: React.FC = () => {
                         "&:hover": {
                           borderColor: alpha(t.palette.primary.main, 0.28),
                         },
+                        ...(arrivedIds.has(b.id)
+                          ? {
+                              animation: "bookingArrivedCard 3.5s ease-out",
+                              "@keyframes bookingArrivedCard": {
+                                "0%": {
+                                  backgroundColor: alpha(
+                                    t.palette.primary.main,
+                                    t.palette.mode === "dark" ? 0.32 : 0.22,
+                                  ),
+                                },
+                                "100%": { backgroundColor: "transparent" },
+                              },
+                            }
+                          : null),
                       })}
                     >
                       <UserAvatar
@@ -1067,6 +1288,23 @@ const BookingsPage: React.FC = () => {
                           <Typography variant="caption" color="text.secondary">
                             {dayjs(b.date).format("DD.MM.YYYY")} {b.time}
                           </Typography>
+                          {isNew(b) && (
+                            <Chip
+                              label="новая"
+                              size="small"
+                              sx={(t) => ({
+                                height: 16,
+                                fontSize: 10,
+                                fontWeight: 600,
+                                borderRadius: "5px",
+                                color: "primary.onSurface",
+                                bgcolor: alpha(
+                                  t.palette.primary.main,
+                                  t.palette.mode === "dark" ? 0.26 : 0.16,
+                                ),
+                              })}
+                            />
+                          )}
                           {b.date === todayStr && (
                             <Chip
                               label="сегодня"
@@ -1190,7 +1428,7 @@ const BookingsPage: React.FC = () => {
               <DataGrid<BookingListItem>
                 rows={rows}
                 columns={columns}
-                loading={query.isLoading}
+                loading={listLoading}
                 rowCount={total}
                 paginationMode="server"
                 paginationModel={{ page, pageSize: PAGE_SIZE }}
@@ -1207,8 +1445,16 @@ const BookingsPage: React.FC = () => {
                    72px — они закрашивали верх первой строки. Высоты задаём явно. */
                 rowHeight={64}
                 columnHeaderHeight={theme.appLayout.table.headerRowHeight}
-                onRowClick={(p) => setSelectedId(p.row.id)}
-                getRowClassName={(p) => (p.row.date === todayStr ? "row-today" : "")}
+                onRowClick={(p) => openBooking(p.row.id)}
+                getRowClassName={(p) =>
+                  [
+                    p.row.date === todayStr ? "row-today" : "",
+                    isNew(p.row) ? "row-new" : "",
+                    arrivedIds.has(p.row.id) ? "row-arrived" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")
+                }
                 slots={{ noRowsOverlay: NoRowsOverlay }}
                 localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
                 sx={(t) => ({
@@ -1233,6 +1479,27 @@ const BookingsPage: React.FC = () => {
                       ),
                     },
                   },
+                  // Непрочитанная заявка — акцентная полоса слева. Рисуем тенью
+                  // внутрь самой строки: не сдвигает содержимое и не спорит с
+                  // границами ячеек (у чекбокс-ячейки :first-of-type не
+                  // срабатывает — DataGrid держит перед ней служебный элемент).
+                  "& .row-new": {
+                    boxShadow: `inset 3px 0 0 ${t.palette.primary.main}`,
+                  },
+                  // Строка, приехавшая поллингом при нас: короткая вспышка, чтобы
+                  // не вклинилась в список незаметно.
+                  "@keyframes bookingArrived": {
+                    "0%": {
+                      backgroundColor: alpha(
+                        t.palette.primary.main,
+                        t.palette.mode === "dark" ? 0.32 : 0.22,
+                      ),
+                    },
+                    "100%": { backgroundColor: "transparent" },
+                  },
+                  "& .row-arrived": {
+                    animation: "bookingArrived 3.5s ease-out",
+                  },
                 })}
               />
             </Box>
@@ -1245,7 +1512,7 @@ const BookingsPage: React.FC = () => {
         canManage={canManage}
         onClose={() => setSelectedId(null)}
         siblingIds={rows.map((r) => r.id)}
-        onNavigate={setSelectedId}
+        onNavigate={openBooking}
       />
     </Box>
   );

@@ -12,11 +12,10 @@ import {
   Typography,
 } from "@mui/material";
 import NotificationsNoneOutlined from "@mui/icons-material/NotificationsNoneOutlined";
-import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
-import { getBookings, type BookingListItem } from "../../api/bookings";
-import { djangoQueryKeys } from "../../api/queryKeys";
+import type { BookingListItem } from "../../api/bookings";
+import { useNewBookings } from "../../hooks/useNewBookings";
 import { UserAvatar } from "../../components/ui";
 import { subtleBg } from "../../theme/uiHelpers";
 import { formatKGS } from "../../utility/format";
@@ -27,106 +26,21 @@ import { formatKGS } from "../../utility/format";
  * Живого канала (websocket/SSE) у бэка нет и не планируется (plain WSGI, см.
  * [[appointments-realtime-2026-07-08]]), выделенной ручки уведомлений под
  * брони тоже нет — в отличие от задач (`TaskNotificationsBell`), где бэк сам
- * хранит непрочитанное. Поэтому «живое» здесь — тот же приём, что и везде в
- * проекте: мягкий поллинг `/bookings/` (раз в 45с) и сравнение с тем, что уже
- * видели — список id хранится в localStorage браузера. Значит непрочитанное
- * не синхронизируется между устройствами/сотрудниками — это ограничение
- * подхода, не бага.
+ * хранит непрочитанное. Поллинг и отметка о просмотре живут в
+ * `useNewBookings`: тот же поток питает подсветку строк в списке, глобальный
+ * тост и счётчик в заголовке вкладки, поэтому «Прочитать все» здесь гасит
+ * «новое» сразу везде.
  */
 
-const SEEN_KEY_PREFIX = "mamadoc:bookings:notifSeen";
-/** Сколько id держим в localStorage — не даём ключу расти бесконечно. */
-const SEEN_CAP = 300;
-
-function seenKey(organizationId?: number, branchId?: number): string {
-  return `${SEEN_KEY_PREFIX}:${organizationId ?? "x"}:${branchId ?? "x"}`;
-}
-
-function loadSeen(key: string): Set<number> {
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw);
-    return new Set(Array.isArray(arr) ? arr : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveSeen(key: string, ids: Set<number>): void {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(Array.from(ids).slice(-SEEN_CAP)));
-  } catch {
-    /* приватный режим / отказ доступа — просто не запомним между сессиями */
-  }
-}
-
 export interface BookingNotificationsBellProps {
-  organizationId?: number;
-  branchId?: number;
-  enabled: boolean;
   onOpenBooking: (id: number) => void;
 }
 
 const BookingNotificationsBell: React.FC<BookingNotificationsBellProps> = ({
-  organizationId,
-  branchId,
-  enabled,
   onOpenBooking,
 }) => {
   const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
-  const key = seenKey(organizationId, branchId);
-  const [seen, setSeen] = React.useState<Set<number>>(() => loadSeen(key));
-
-  // Ключ меняется при смене организации/филиала — перечитываем свою копию.
-  React.useEffect(() => {
-    setSeen(loadSeen(key));
-  }, [key]);
-
-  const todayStr = dayjs().format("YYYY-MM-DD");
-  // Бронь фильтруется по дате приёма, а не по дате создания — горизонт в 90
-  // дней покрывает почти весь практический диапазон онлайн-записи.
-  const horizonStr = dayjs().add(90, "day").format("YYYY-MM-DD");
-
-  const query = useQuery({
-    queryKey: [
-      ...djangoQueryKeys.bookings.all,
-      "notifyPending",
-      organizationId ?? null,
-      branchId ?? null,
-    ],
-    queryFn: ({ signal }) =>
-      getBookings(
-        {
-          dateFrom: todayStr,
-          dateTo: horizonStr,
-          status: "pending",
-          organizationId,
-          branchId,
-          page: 1,
-          pageSize: 50,
-        },
-        signal,
-      ),
-    enabled,
-    refetchInterval: 45_000,
-    staleTime: 20_000,
-  });
-
-  const items = React.useMemo(
-    () => (query.data?.results ?? []).filter((b) => !seen.has(b.id)),
-    [query.data, seen],
-  );
-  const count = items.length;
-
-  const markSeen = (ids: number[]) => {
-    setSeen((prev) => {
-      const next = new Set(prev);
-      ids.forEach((id) => next.add(id));
-      saveSeen(key, next);
-      return next;
-    });
-  };
+  const { items, count, markSeen, isLoading, isError } = useNewBookings();
 
   const handleItemClick = (b: BookingListItem) => {
     markSeen([b.id]);
@@ -176,11 +90,11 @@ const BookingNotificationsBell: React.FC<BookingNotificationsBellProps> = ({
           )}
         </Stack>
 
-        {query.isLoading ? (
+        {isLoading ? (
           <Stack alignItems="center" py={4}>
             <CircularProgress size={22} />
           </Stack>
-        ) : query.isError ? (
+        ) : isError ? (
           <Typography variant="body2" color="text.secondary" sx={{ px: 2, py: 3, textAlign: "center" }}>
             Не удалось загрузить заявки
           </Typography>
