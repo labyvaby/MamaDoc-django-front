@@ -17,7 +17,9 @@ const receipt = (over: Partial<LabReceipt["order"]> = {}): LabReceipt => ({
     ...over,
   },
   barcodeBase64: "QkFSQ09ERQ==",
-  ticketBase64: "VElDS0VU",
+  // Префикс настоящей PNG: печать регистрационного листа возможна только
+  // для картинки, а ЛИС сегодня присылает под этим полем JasperPrint.
+  ticketBase64: "iVBORw0KGgoTICKET",
 });
 
 describe("buildLabIntakePrintouts", () => {
@@ -32,8 +34,24 @@ describe("buildLabIntakePrintouts", () => {
     expect(printouts.labels).toContain("Иванова Мария Петровна");
     expect(printouts.labels).toContain("17.05.1990");
     expect(printouts.labels).toContain("777");
-    expect(printouts.ticket).toContain("data:image/png;base64,VElDS0VU");
+    expect(printouts.ticket).toContain("data:image/png;base64,iVBORw0KGgoTICKET");
     expect(printouts.preparation).toContain("Натощак 8 часов");
+  });
+
+  it("не картинка под регистрационным листом — печатать нечего", () => {
+    // Ровно то, что живая ЛИС присылает сегодня: сериализованный
+    // Java-объект JasperPrint вместо PNG (находка 17). Вставить его в
+    // data:image нельзя, и лист напечатался бы битым — поэтому вместо
+    // готового HTML возвращается null, а кнопка печати гаснет.
+    const printouts = buildLabIntakePrintouts({
+      receipt: { ...receipt(), ticketBase64: "rO0ABXNyACduZXQuc2Yu" },
+      patientName: "Петров Иван",
+      patientBirthDate: "1990-05-17",
+      preparationTexts: [],
+    });
+    expect(printouts.ticket).toBeNull();
+    // Этикетки и памятка от этого не страдают — они не про ЛИС-картинку.
+    expect(printouts.labels).toContain("data:image/png;base64,QkFSQ09ERQ==");
   });
 
   it("дата рождения приходит в формате ISO из карты, а печатается по-русски", () => {

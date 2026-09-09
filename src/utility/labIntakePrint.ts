@@ -9,7 +9,7 @@
  * проверить без него — собранный HTML.
  */
 
-import { buildLabelsHtml, buildPreparationHtml, buildTicketHtml, type LabelData } from "./labLabels";
+import { buildLabelsHtml, buildPreparationHtml, buildTicketHtml, looksLikePngBase64, type LabelData } from "./labLabels";
 import { formatDateRu } from "./format";
 import type { LabReceipt } from "../api/lab";
 
@@ -23,7 +23,16 @@ export interface LabIntakePrintoutsInput {
 
 export interface LabIntakePrintouts {
   labels: string;
-  ticket: string;
+  /**
+   * `null`, когда ЛИС прислала под регистрационным листом не картинку.
+   * Сегодня это единственный возможный исход: `ticket` отдаёт
+   * сериализованный Java-объект JasperPrint, а не PNG (находка 17 в
+   * `MamaDoc-backend/docs/lab-intake-live-findings.md`) — вставить такое в
+   * `data:image/png;base64` нельзя, и печать дала бы битый лист. Проверяем
+   * формат, а не статус заказа: если бэкенд однажды начнёт отдавать
+   * настоящую картинку, печать заработает сама, без правок здесь.
+   */
+  ticket: string | null;
   preparation: string;
 }
 
@@ -36,7 +45,9 @@ export function buildLabIntakePrintouts(input: LabIntakePrintoutsInput): LabInta
   };
   return {
     labels: buildLabelsHtml(data),
-    ticket: buildTicketHtml({ ...data, ticketBase64: input.receipt.ticketBase64 }),
+    ticket: looksLikePngBase64(input.receipt.ticketBase64)
+      ? buildTicketHtml({ ...data, ticketBase64: input.receipt.ticketBase64 })
+      : null,
     preparation: buildPreparationHtml(data, input.preparationTexts),
   };
 }

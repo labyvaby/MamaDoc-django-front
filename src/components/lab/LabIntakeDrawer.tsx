@@ -586,9 +586,24 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
                   <AppButton size="small" variant="outlined" onClick={() => printouts && handlePrint(printouts.labels)}>
                     Этикетки
                   </AppButton>
-                  <AppButton size="small" variant="outlined" onClick={() => printouts && handlePrint(printouts.ticket)}>
-                    Регистрационный лист
-                  </AppButton>
+                  <Tooltip
+                    title={
+                      printouts && printouts.ticket === null
+                        ? "ЛИС присылает регистрационный лист не картинкой — распечатать его пока нельзя"
+                        : ""
+                    }
+                  >
+                    <span>
+                      <AppButton
+                        size="small"
+                        variant="outlined"
+                        disabled={!printouts || printouts.ticket === null}
+                        onClick={() => printouts?.ticket && handlePrint(printouts.ticket)}
+                      >
+                        Регистрационный лист
+                      </AppButton>
+                    </span>
+                  </Tooltip>
                   <AppButton
                     size="small"
                     variant="outlined"
