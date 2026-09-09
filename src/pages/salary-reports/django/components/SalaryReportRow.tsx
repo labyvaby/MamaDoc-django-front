@@ -333,17 +333,23 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
   const bonusesFetchedRef = useRef<string>("");
   useEffect(() => {
     if (!open || !hasBonus) return;
-    const cacheKey = `${row.employeeId}-${year}-${month}`;
+    const cacheKey = `${row.employeeId}-${year}-${month}-${branchId ?? "all"}`;
     if (bonusesFetchedRef.current === cacheKey) return;
     bonusesFetchedRef.current = cacheKey;
 
-    getBonuses({ year, month, employeeId: row.employeeId, organizationId })
+    getBonuses({
+      year,
+      month,
+      employeeId: row.employeeId,
+      organizationId,
+      branchId,
+    })
       .then(setBonuses)
       .catch((err) => {
         // Не критично: сумма надбавки и без журнала показана в сводке.
         console.warn("Failed to load bonuses:", err);
       });
-  }, [open, hasBonus, row.employeeId, year, month, organizationId]);
+  }, [open, hasBonus, row.employeeId, year, month, organizationId, branchId]);
 
   // Итоги дневной таблицы. Сверяются с месячными: Σ hoursSum = hourlyPay,
   // Σ percentSum = процент + фикс по услугам, Σ expensesSum = авансы.
