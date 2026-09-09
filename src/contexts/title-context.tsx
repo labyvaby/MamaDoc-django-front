@@ -10,6 +10,12 @@ const TitleContext = createContext<TitleContextType | undefined>(undefined);
 export const TitleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [title, setTitle] = useState("Aximo");
 
+    // Единственное место, где пишется document.title: заголовок собирается
+    // здесь из состояния, а usePageTitle только это состояние задаёт.
+    React.useEffect(() => {
+        document.title = title === "Aximo" ? "Aximo" : `${title} | Aximo`;
+    }, [title]);
+
     return (
         <TitleContext.Provider value={{ title, setTitle }}>
             {children}

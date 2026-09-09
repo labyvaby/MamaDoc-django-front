@@ -100,6 +100,13 @@ export interface ExpensesFilters {
   dateFrom?: string;
   dateTo?: string;
   isVoided?: boolean;
+  /**
+   * Бэк по умолчанию исключает isVoided:true из выдачи независимо от
+   * параметра `isVoided` — единственный рабочий способ получить
+   * аннулированные вместе с обычными расходами. Найдено эмпирически,
+   * в гайдах бэка не задокументировано.
+   */
+  includeVoided?: boolean;
   page?: number;
   pageSize?: number;
 }
@@ -121,6 +128,7 @@ function buildExpenseParams(filters: ExpensesFilters): URLSearchParams {
   if (filters.dateFrom) q.set("dateFrom", filters.dateFrom);
   if (filters.dateTo) q.set("dateTo", filters.dateTo);
   if (filters.isVoided != null) q.set("isVoided", String(filters.isVoided));
+  if (filters.includeVoided) q.set("includeVoided", "true");
   if (filters.page != null) q.set("page", String(filters.page));
   if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
   return q;

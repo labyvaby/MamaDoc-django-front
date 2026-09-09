@@ -69,6 +69,40 @@ export const BOOKING_STATUS_OPTIONS: { value: BookingStatus; label: string }[] =
 export const isTerminalBookingStatus = (status: BookingStatus): boolean =>
   status === "completed" || status === "cancelled" || status === "no_show";
 
+/**
+ * «Закрытая» бронь — та, по которой персоналу делать нечего: отменённая,
+ * неявка и **просроченная оплата**.
+ *
+ * Просроченная `awaiting_payment` формально ещё «в процессе», но фактически
+ * мертва: ссылка банка живёт 15 минут, слот такая бронь уже не держит,
+ * заплатить по ней нельзя, а подтвердить её нельзя тем более (бэк отвечает
+ * 400). Её должен снять поллер бэка — но делает он это с задержкой (Celery
+ * нет, это management-команда по расписанию), и всё это время список забит
+ * записями, которые никогда не станут приёмами.
+ *
+ * ⚠ Судим по времени, а не по `prepaymentStatus`: у просроченных броней он
+ * остаётся `pending` (проверено на тесте 09.09.2026 — брони от 6 сентября всё
+ * ещё «Ждём оплату»), то есть в `expired` бэк их не переводит.
+ *
+ * `awaiting_payment` без `prepaymentExpiresAt` закрытой не считаем: срок
+ * неизвестен, а скрывать то, о чём нечего утверждать, нельзя.
+ *
+ * `completed` сюда не входит: выполненная бронь — законная история приёма.
+ */
+export function isBookingClosed(
+  b: {
+    status: BookingStatus;
+    prepaymentExpiresAt?: string | null;
+  },
+  now: Dayjs = dayjs(),
+): boolean {
+  if (b.status === "cancelled" || b.status === "no_show") return true;
+  if (b.status !== "awaiting_payment") return false;
+  if (!b.prepaymentExpiresAt) return false;
+  const end = dayjs(b.prepaymentExpiresAt);
+  return end.isValid() && end.isBefore(now);
+}
+
 // ── Цвета ─────────────────────────────────────────────────────────────────────
 
 /** Палитра-тон для статуса брони (null — нейтральный). */

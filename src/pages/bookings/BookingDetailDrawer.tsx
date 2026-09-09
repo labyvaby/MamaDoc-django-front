@@ -45,6 +45,7 @@ import {
   type BookingManageStatus,
   type BookingStatusExtras,
 } from "../../api/bookings";
+import { getAppointment } from "../../api/appointments";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { formatPhoneDisplay } from "../../utility/phone";
@@ -53,6 +54,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
 import { subtleBg } from "../../theme/uiHelpers";
 import { ConfirmDialog, UserAvatar } from "../../components/ui";
+import AppointmentStatusChips from "../../components/appointments/AppointmentStatusChips";
 import {
   bookingTimeHint,
   bookingTimeRange,
@@ -135,6 +137,22 @@ const BookingDetailDrawer: React.FC<Props> = ({
     queryKey: bookingId != null ? djangoQueryKeys.bookings.detail(bookingId) : ["bookings", "none"],
     queryFn: ({ signal }) => getBooking(bookingId as number, signal),
     enabled: open,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  });
+
+  /**
+   * Приём, который создала подтверждённая бронь. Тянем его, потому что после
+   * подтверждения состояние живёт там: оплачен ли, состоялся, отменён. Статус
+   * самой брони этого не знает (бэк его не двигает — см. комментарий у
+   * `actions`), поэтому показываем факт, а не ручную отметку.
+   */
+  const appointmentId = query.data?.appointmentId ?? null;
+  const appointmentQuery = useQuery({
+    queryKey: appointmentId != null
+      ? djangoQueryKeys.appointments.detail(appointmentId)
+      : ["appointments", "none"],
+    queryFn: () => getAppointment(appointmentId as number),
+    enabled: open && appointmentId != null && canOpenAppointments,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
   });
 
@@ -230,8 +248,39 @@ const BookingDetailDrawer: React.FC<Props> = ({
           ]
         : b.status === "confirmed"
           ? [
-              { status: "completed", label: "Завершена", icon: <EventAvailableOutlined />, color: "primary" },
-              { status: "no_show", label: "Неявка", icon: <PersonOffOutlined />, color: "inherit" },
+              /**
+               * «Завершена» и «Неявка» здесь больше не предлагаем.
+               *
+               * Подтверждённая бронь свою работу сделала — она материализовала
+               * приём, и дальше правда только в приёме: там оплата, завершение
+               * и своя неявка (`no_show` есть у статуса приёма). Ручное
+               * дублирование состояния в двух местах не бывает согласованным:
+               * на тесте нашлись бронь «Завершена» с неоплаченным приёмом и
+               * бронь «Подтверждена» с уже отменённым (проверено 09.09.2026),
+               * а сам статус нажали 2 раза из 42 броней. Состояние приёма
+               * показываем ниже, в секции «Связь с CRM», а перевод статуса
+               * брони по оплате приёма просим у бэка — тикет
+               * `backend_ticket_bookings_complete_on_appointment_2026-09-09.md`.
+               *
+               * Исключение — бронь без приёма: закрыть её больше нечем,
+               * поэтому там ручные статусы остаются.
+               */
+              ...(b.appointmentId == null
+                ? [
+                    {
+                      status: "completed" as const,
+                      label: "Завершена",
+                      icon: <EventAvailableOutlined />,
+                      color: "primary" as const,
+                    },
+                    {
+                      status: "no_show" as const,
+                      label: "Неявка",
+                      icon: <PersonOffOutlined />,
+                      color: "inherit" as const,
+                    },
+                  ]
+                : []),
               { status: "cancelled", label: "Отменить", icon: <CancelOutlined />, color: "error" },
             ]
           : []; // terminal: completed / cancelled / no_show
@@ -557,6 +606,19 @@ const BookingDetailDrawer: React.FC<Props> = ({
                     value={b.syncedAt ? dayjs(b.syncedAt).format("DD.MM.YYYY HH:mm") : "—"}
                   />
                 </Stack>
+                {/* Состояние приёма — то, чем на самом деле закрывается бронь:
+                    оплачен ли, состоялся, отменён. Ручных статусов «Завершена»
+                    и «Неявка» у брони с приёмом больше нет, поэтому здесь
+                    показываем факт теми же чипами, что и в регистратуре. */}
+                {appointmentQuery.data && (
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                    <AppointmentStatusChips
+                      appointment={appointmentQuery.data}
+                      chipHeight={24}
+                      showPaymentMethodIcons={false}
+                    />
+                  </Stack>
+                )}
                 {b.appointmentId != null && canOpenAppointments && (
                   <Button
                     size="small"

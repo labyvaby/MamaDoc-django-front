@@ -122,10 +122,55 @@ export function occurrenceNote(occ: DayOccurrence): string {
   return parts.join(" · ");
 }
 
+/** Отсутствие = выходной или отпуск; `extra`/`override` — рабочие смены. */
+export function isAbsenceKind(kind: ScheduleException["kind"]): boolean {
+  return kind === "day_off" || kind === "vacation";
+}
+
+/**
+ * Частичное отсутствие — выходной/отпуск на интервал, а не на весь день
+ * («уйдёт с 14:00 до 16:00», гайд бэка §1). Без обоих времён отсутствие
+ * целодневное, как и раньше.
+ */
+function absenceGap(exc: ScheduleException): { start: string; end: string } | null {
+  if (!isAbsenceKind(exc.kind)) return null;
+  if (!exc.startTime || !exc.endTime || exc.startTime >= exc.endTime) return null;
+  return { start: exc.startTime, end: exc.endTime };
+}
+
+/**
+ * Остаток смены после вырезания интервалов отсутствия.
+ *
+ * Здесь смену как раз режем на куски, в отличие от обеда (см. lunchWithin):
+ * человек ушёл и вернулся — это два рабочих отрезка, а не перерыв внутри
+ * одного. Полностью съеденная смена даёт пустой список — день без работы.
+ */
+function cutOut(
+  start: string,
+  end: string,
+  gaps: { start: string; end: string }[],
+): { start: string; end: string }[] {
+  let pieces = [{ start, end }];
+  for (const gap of gaps) {
+    const next: { start: string; end: string }[] = [];
+    for (const piece of pieces) {
+      if (gap.end <= piece.start || gap.start >= piece.end) {
+        next.push(piece);
+        continue;
+      }
+      if (piece.start < gap.start) next.push({ start: piece.start, end: gap.start });
+      if (gap.end < piece.end) next.push({ start: gap.end, end: piece.end });
+    }
+    pieces = next;
+  }
+  return pieces;
+}
+
 /**
  * Вычисляет фактические смены на конкретный день из недельных правил
- * с учётом исключений (day_off/vacation отменяют смену по правилу,
- * extra добавляет отдельную смену, override заменяет правило на дату). Правил и исключений на бэке нет
+ * с учётом исключений (day_off/vacation отменяют смену по правилу — целиком
+ * либо только своим интервалом, extra добавляет отдельную смену, override
+ * заменяет правило на дату). Правил и исключений на бэке нет
  * как готового "расписания на день" — материализуем на фронте.
  * Обеденный перерыв остаётся полем смены (`lunch`), а не разрывает её.
  */
@@ -140,11 +185,36 @@ export function computeDayOccurrences(
   const exceptionsToday = exceptions.filter((e) => e.date === dateStr);
   const cancelledEmployeeIds = new Set(
     exceptionsToday
-      .filter((e) => e.kind === "day_off" || e.kind === "vacation" || e.kind === "override")
+      .filter((e) => e.kind === "override" || (isAbsenceKind(e.kind) && absenceGap(e) === null))
       .map((e) => e.employeeId),
   );
+  // Интервалы частичного отсутствия по сотруднику — вырезаем их из смен дня.
+  const gapsByEmployee = new Map<number, { start: string; end: string }[]>();
+  for (const exc of exceptionsToday) {
+    const gap = absenceGap(exc);
+    if (!gap) continue;
+    const list = gapsByEmployee.get(exc.employeeId) ?? [];
+    list.push(gap);
+    gapsByEmployee.set(exc.employeeId, list);
+  }
 
   const occurrences: DayOccurrence[] = [];
+
+  /** Кладёт смену в результат, вырезав из неё отсутствия сотрудника. */
+  const push = (
+    base: Omit<DayOccurrence, "lunch">,
+    lunch: { start: string | null; end: string | null },
+  ) => {
+    const gaps = gapsByEmployee.get(base.employeeId) ?? [];
+    for (const piece of cutOut(base.startTime, base.endTime, gaps)) {
+      occurrences.push({
+        ...base,
+        startTime: piece.start,
+        endTime: piece.end,
+        lunch: lunchWithin(piece.start, piece.end, lunch.start, lunch.end),
+      });
+    }
+  };
 
   for (const rule of rules) {
     if (!rule.isActive) continue;
@@ -152,28 +222,32 @@ export function computeDayOccurrences(
     if (day.isBefore(rule.dateFrom, "day") || day.isAfter(rule.dateTo, "day")) continue;
     if (!rule.weekdays.includes(weekday)) continue;
 
-    occurrences.push({
-      employeeId: rule.employeeId,
-      employeeName: rule.employeeName,
-      startTime: rule.startTime,
-      endTime: rule.endTime,
-      kind: "rule",
-      sourceId: rule.id,
-      lunch: lunchWithin(rule.startTime, rule.endTime, rule.lunchStart, rule.lunchEnd),
-    });
+    push(
+      {
+        employeeId: rule.employeeId,
+        employeeName: rule.employeeName,
+        startTime: rule.startTime,
+        endTime: rule.endTime,
+        kind: "rule",
+        sourceId: rule.id,
+      },
+      { start: rule.lunchStart, end: rule.lunchEnd },
+    );
   }
 
   for (const exc of exceptionsToday) {
     if (exc.kind !== "extra" && exc.kind !== "override") continue;
-    occurrences.push({
-      employeeId: exc.employeeId,
-      employeeName: exc.employeeName,
-      startTime: exc.startTime ?? "00:00",
-      endTime: exc.endTime ?? "23:59",
-      kind: exc.kind,
-      sourceId: exc.id,
-      lunch: null,
-    });
+    push(
+      {
+        employeeId: exc.employeeId,
+        employeeName: exc.employeeName,
+        startTime: exc.startTime ?? "00:00",
+        endTime: exc.endTime ?? "23:59",
+        kind: exc.kind,
+        sourceId: exc.id,
+      },
+      { start: null, end: null },
+    );
   }
 
   return occurrences;

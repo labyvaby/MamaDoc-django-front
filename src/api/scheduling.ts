@@ -72,12 +72,33 @@ export interface ScheduleException {
   groupId?: string | null;
 }
 
+/**
+ * Частичное отсутствие: выходной/отпуск не на весь день, а на интервал
+ * (`startTime`+`endTime` при `kind: "day_off" | "vacation"`).
+ *
+ * ⚠ Выключено: бэк отклоняет такой POST — `400 VALIDATION_ERROR`,
+ * `start_time: «Интервал указывается только для рабочей смены.»` (перепроверено
+ * на test 09.09.2026, на проде правки тем более нет). Гайд «расписание и
+ * исполнители услуг» §1 контракт описывает, но код не выложен ни на одно
+ * окружение — включить, когда `POST /scheduling/exceptions/` перестанет ругаться.
+ *
+ * Показ от флага не зависит: как только в ответе у отсутствия появятся часы,
+ * календарь и таблица начнут резать смену интервалом сами
+ * (см. computeDayOccurrences).
+ */
+export const PARTIAL_ABSENCE_ENABLED = false;
+
 export interface ScheduleExceptionWrite {
   employeeId: number;
   /** Подтверждение пересечения смен после 409 — см. ShiftOverlapConflict. */
   allowOverlap?: boolean;
   date: string;
   kind: ScheduleExceptionKind;
+  /**
+   * Интервал. У рабочей смены (`extra`/`override`) обязателен, у отсутствия —
+   * частичное отсутствие (см. PARTIAL_ABSENCE_ENABLED): либо оба поля, либо ни
+   * одного, конец позже начала.
+   */
   startTime?: string | null;
   endTime?: string | null;
   comment?: string;
@@ -92,6 +113,11 @@ export interface ScheduleExceptionPatch {
   kind?: ScheduleExceptionKind;
   startTime?: string;
   endTime?: string;
+  /**
+   * Убрать интервал — частичное отсутствие становится целодневным. Как и в
+   * задачах, `null` в поле ничего не очищает: нужен явный флаг.
+   */
+  clearTimes?: boolean;
   comment?: string;
   branchId?: number;
 }
@@ -357,6 +383,12 @@ export interface ScheduleExceptionPeriodWrite {
   dateFrom: string; // YYYY-MM-DD
   dateTo: string;
   kind: ScheduleExceptionKind;
+  /**
+   * Один и тот же интервал на каждый день периода (см.
+   * PARTIAL_ABSENCE_ENABLED). Без времён каждый день закрывается целиком.
+   */
+  startTime?: string | null;
+  endTime?: string | null;
   /** Не передан — исключение «в любом филиале». */
   branchId?: number | null;
   comment?: string;

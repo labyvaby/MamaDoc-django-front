@@ -244,7 +244,6 @@ export default function PosPage() {
             onQueryChange={setClientQuery}
             onSearch={handleSearchClient}
             results={clientResults}
-            recent={POS_CLIENT_SEARCH_RESULTS}
             onSelectClient={(selected) => {
               setClient(selected);
               setClientResults(null);

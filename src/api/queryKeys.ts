@@ -65,14 +65,12 @@ export const djangoQueryKeys = {
       ["django", "appointments", "notifications", ids] as const,
     serviceProviders: () =>
       ["django", "appointments", "service-providers"] as const,
-    /** Матрица пар «услуга ↔ сотрудник» — счётчик исполнителей в списке услуг. */
-    serviceAssignments: (branchId: number | null) =>
-      ["django", "appointments", "service-assignments", branchId] as const,
     /**
-     * Исполнители одной услуги (секция «Кто оказывает» в карточке услуги).
-     * Филиал в ключе: ручка сужает выдачу по нему.
+     * Исполнители одной услуги — секция «Кто оказывает» в карточке услуги.
+     * Один запрос `service-providers/?serviceId=`; фолбэк на пересечение с
+     * матрицей живёт под ключом `serviceProvidersInBranch` (см. хук).
      */
-    servicePerformers: (
+    serviceProvidersForService: (
       organizationId: number | null,
       branchId: number | null,
       serviceId: number | null,
@@ -81,10 +79,34 @@ export const djangoQueryKeys = {
         "django",
         "appointments",
         "service-providers",
+        "for-service",
         organizationId,
         branchId,
         serviceId,
       ] as const,
+    /**
+     * Все сотрудники филиала с хотя бы одной привязкой — справочник ФИО и
+     * специализаций. Нужен как фолбэк секции «Кто оказывает» на окружениях,
+     * где `service-providers/?serviceId=` ещё отдаёт пустой список.
+     */
+    serviceProvidersInBranch: (
+      organizationId: number | null,
+      branchId: number | null,
+    ) =>
+      [
+        "django",
+        "appointments",
+        "service-providers",
+        "in-branch",
+        organizationId,
+        branchId,
+      ] as const,
+    /**
+     * Матрица пар «услуга ↔ сотрудник» — счётчик исполнителей в списке услуг
+     * и состав секции «Кто оказывает» в карточке.
+     */
+    serviceAssignments: (branchId: number | null) =>
+      ["django", "appointments", "service-assignments", branchId] as const,
     formData: (context: { orgId?: number | null; branchId?: number | null; membershipId?: number | null } = {}) =>
       ["django", "appointments", "form-data", context] as const,
     payments: (appointmentId: number) =>

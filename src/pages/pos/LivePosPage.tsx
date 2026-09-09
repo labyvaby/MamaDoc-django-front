@@ -8,16 +8,12 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControlLabel,
   LinearProgress,
-  MenuItem,
   Stack,
-  Switch,
   TextField,
   Typography,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import { Link } from "react-router";
 import { apiRequest } from "../../api/client";
 import {
   checkoutPosCart,
@@ -149,7 +145,6 @@ export default function LivePosPage() {
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
   const [category, setCategory] = React.useState<string | null>(null);
-  const [offset, setOffset] = React.useState(0);
   const [rows, setRows] = React.useState<CartRow[]>([]);
   const [variants, setVariants] = React.useState<PosProduct[]>([]);
   const [client, setClient] = React.useState<PosClient | null>(null);
@@ -167,13 +162,6 @@ export default function LivePosPage() {
   const attempt = React.useRef({ fingerprint: "", key: "" });
   const [error, setError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState<PosSavedReceipt | null>(null);
-  const [rulesOpen, setRulesOpen] = React.useState(false);
-  const [ruleDraft, setRuleDraft] = React.useState<
-    Record<string, boolean | number>
-  >({});
-  const [ruleLabels, setRuleLabels] = React.useState<Record<string, string>>(
-    {}
-  );
   const [returnTarget, setReturnTarget] =
     React.useState<PosSavedReceipt | null>(null);
   const [reason, setReason] = React.useState("");
@@ -181,7 +169,6 @@ export default function LivePosPage() {
   React.useEffect(() => {
     const id = window.setTimeout(() => {
       setDebounced(search);
-      setOffset(0);
     }, 250);
     return () => window.clearTimeout(id);
   }, [search]);
@@ -195,7 +182,6 @@ export default function LivePosPage() {
       warehouseId,
       debounced,
       categoryId,
-      offset,
     ],
     queryFn: ({ signal }) =>
       getPosProducts(
@@ -203,7 +189,7 @@ export default function LivePosPage() {
         {
           warehouseId,
           search: debounced,
-          offset,
+          limit: 200,
           ...(categoryId ? { categoryId } : {}),
         },
         signal
@@ -470,13 +456,13 @@ export default function LivePosPage() {
       }
       if (event.key === "F5") {
         event.preventDefault();
-        if (actions.sell && quote && !busy && !list && !rulesOpen)
+        if (actions.sell && quote && !busy && !list)
           setCheckoutOpen(true);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [actions.sell, quote, busy, list, rulesOpen]);
+  }, [actions.sell, quote, busy, list]);
 
   if (!ready)
     return (
@@ -549,81 +535,6 @@ export default function LivePosPage() {
             .catch((e) => setError(message(e)));
         }}
       />
-      <Stack
-        direction="row"
-        alignItems="center"
-        gap={1}
-        px={2}
-        py={0.7}
-        flexWrap="wrap"
-      >
-        <Typography fontSize={12} color="text.secondary">
-          {data.organization.name} · Касса магазина (POS)
-        </Typography>
-        <TextField
-          select
-          size="small"
-          value={warehouseId}
-          onChange={(event) => {
-            if (
-              !rows.length ||
-              window.confirm("Сменить склад и очистить корзину?")
-            ) {
-              reset();
-              setWarehouseChoice(Number(event.target.value));
-            }
-          }}
-          disabled={pending || !!held}
-          sx={{
-            minWidth: 140,
-            "& .MuiInputBase-input": { py: 0.6, fontSize: 12 },
-          }}
-        >
-          {data.warehouses.map((item) => (
-            <MenuItem key={item.id} value={item.id}>
-              {item.name}
-            </MenuItem>
-          ))}
-        </TextField>
-        <Typography fontSize={12} color="text.secondary">
-          {data.shiftId ? `Смена №${data.shiftId} открыта` : "Смена не открыта"}
-        </Typography>
-        {auth.canAccess?.("finance.view") && (
-          <Button size="small" component={Link} to="/cashbox">
-            Кассовые смены
-          </Button>
-        )}
-        {actions.history && (
-          <Button
-            size="small"
-            onClick={() => {
-              setListOffset(0);
-              setHistoryClient(null);
-              setList("history");
-            }}
-          >
-            История чеков
-          </Button>
-        )}
-        {auth.canAccess?.("pos.manage") && (
-          <Button
-            size="small"
-            onClick={() =>
-              void act(async () => {
-                const result = await posRequest<{
-                  rules: typeof ruleDraft;
-                  labels: typeof ruleLabels;
-                }>(scope, "rules/");
-                setRuleDraft(result.rules);
-                setRuleLabels(result.labels);
-                setRulesOpen(true);
-              })
-            }
-          >
-            Правила кассы
-          </Button>
-        )}
-      </Stack>
       {visibleError && (
         <Alert severity="error" onClose={() => setError(null)}>
           {visibleError}
@@ -647,10 +558,9 @@ export default function LivePosPage() {
         active={category}
         onSelect={(value) => {
           setCategory(value);
-          setOffset(0);
         }}
       />
-      {!held && ((products.data?.count ?? 0) > 0 || !!search) && (
+      {!held && category && ((products.data?.count ?? 0) > 0 || !!search) && (
         <>
           {products.isFetching && <LinearProgress />}
           <PosProductCards
@@ -667,25 +577,6 @@ export default function LivePosPage() {
             }}
             disabled={!actions.sell || pending}
           />
-          <Stack direction="row" alignItems="center" gap={1} px={2}>
-            <Typography fontSize={12} color="text.secondary">
-              Найдено: {products.data?.count ?? 0}
-            </Typography>
-            <Button
-              size="small"
-              disabled={!offset}
-              onClick={() => setOffset(Math.max(0, offset - 30))}
-            >
-              Назад
-            </Button>
-            <Button
-              size="small"
-              disabled={offset + 30 >= (products.data?.count ?? 0)}
-              onClick={() => setOffset(offset + 30)}
-            >
-              Далее
-            </Button>
-          </Stack>
         </>
       )}
       <Box
@@ -770,7 +661,6 @@ export default function LivePosPage() {
                 onQueryChange={setClientQuery}
                 onSearch={() => setClientSearch(clientQuery)}
                 results={clientSearch ? clients.data ?? [] : null}
-                recent={clients.data ?? []}
                 onSelectClient={(value) => {
                   setClient(value);
                   setBenefits(emptyBenefits);
@@ -1011,87 +901,6 @@ export default function LivePosPage() {
         </DialogActions>
       </Dialog>
       <Dialog
-        open={rulesOpen}
-        onClose={() => setRulesOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Правила кассы · {data.organization.name}</DialogTitle>
-        <DialogContent>
-          <Stack gap={1.5}>
-            <Alert severity="info">
-              Действие доступно сотруднику, только если включено здесь и
-              разрешено в его роли. Модуль POS включается отдельно для
-              организации.
-            </Alert>
-            {Object.entries(ruleDraft).map(([key, value]) =>
-              typeof value === "boolean" ? (
-                <FormControlLabel
-                  key={key}
-                  control={
-                    <Switch
-                      checked={value}
-                      onChange={(_, checked) =>
-                        setRuleDraft((previous) => ({
-                          ...previous,
-                          [key]: checked,
-                        }))
-                      }
-                    />
-                  }
-                  label={
-                    ruleLabels[key] ??
-                    (key === "require_shift" ? "Требовать открытую смену" : key)
-                  }
-                />
-              ) : (
-                <TextField
-                  key={key}
-                  type="number"
-                  label={
-                    key === "reservation_hours"
-                      ? "Срок резерва, часов"
-                      : "Максимальная ручная скидка, %"
-                  }
-                  value={value}
-                  onChange={(event) =>
-                    setRuleDraft((previous) => ({
-                      ...previous,
-                      [key]: Number(event.target.value),
-                    }))
-                  }
-                />
-              )
-            )}
-            {auth.canAccess?.("rbac.roles.view") && (
-              <Button component={Link} to="/settings/roles">
-                Настроить роли и права сотрудников
-              </Button>
-            )}
-            {error && <Alert severity="error">{error}</Alert>}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRulesOpen(false)}>Закрыть</Button>
-          <Button
-            variant="contained"
-            disabled={pending}
-            onClick={() =>
-              void act(async () => {
-                await posRequest(scope, "rules/", {
-                  method: "PATCH",
-                  body: { rules: ruleDraft },
-                });
-                setRulesOpen(false);
-                invalidate();
-              })
-            }
-          >
-            Сохранить
-          </Button>
-        </DialogActions>
-      </Dialog>
-      <Dialog
         open={!!returnTarget}
         onClose={() => setReturnTarget(null)}
         maxWidth="sm"
@@ -1102,6 +911,8 @@ export default function LivePosPage() {
           <Stack gap={2}>
             <Alert severity="info">
               Будет создан документ возврата и восстановлен остаток товара.
+              Можно вернуть только товары из этого чека — сумма и количество
+              возврата не могут превышать проданные.
               Возврат банковского платежа выполняется отдельно в терминале.
             </Alert>
             <TextField

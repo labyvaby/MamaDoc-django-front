@@ -28,6 +28,7 @@ import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
 import { PatientSessionProvider } from "./pages/public-booking/PatientSession";
 import { AchievementToast } from "./components/achievements/AchievementToast";
+import { NewBookingToast } from "./components/bookings/NewBookingToast";
 import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
 import { FloatingTopBanners } from "./components/layout/FloatingTopBanners";
 import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
@@ -117,6 +118,7 @@ const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSetti
 const ConclusionFormsSettingsPage = lazy(() => import("./pages/settings/ConclusionFormsSettingsPage"));
 const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
 const PatientsPage = lazy(() => import("./pages/patients"));
+const ClientsPage = lazy(() => import("./pages/clients"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
@@ -132,6 +134,7 @@ const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSetting
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
 const OdoctorSettingsPage = lazy(() => import("./pages/settings/OdoctorSettingsPage"));
 const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
+const ClientsSettingsPage = lazy(() => import("./pages/settings/ClientsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 // Реестры «Все приёмы» / «Все процедуры» — исторический список за период
 // (registry/RegistryJournalView), а не рабочий кабинет с навигацией по дням.
@@ -352,6 +355,11 @@ function App() {
                         meta: { label: tt("patients:list.title") }
                       },
                       {
+                        name: "clients",
+                        list: "/clients",
+                        meta: { label: "Клиенты" }
+                      },
+                      {
                         name: "employees",
                         list: "/employees",
                         meta: { label: "Сотрудники" }
@@ -550,6 +558,8 @@ function App() {
                                      <FloatingTopBanners />
                                   </>
                                 </DjangoContextRemount>
+                                {/* Новая заявка онлайн-записи: тост из любого экрана */}
+                                <NewBookingToast />
                                 {/* Поздравление с новыми достижениями (mark-seen при закрытии) */}
                                 <AchievementToast />
                                 {/* Выбор филиала после логина (флаг ставит login.tsx) */}
@@ -606,6 +616,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.patients}>
                               <Suspense fallback={<LinearProgress />}>
                                 <PatientsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="clients"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.clients}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <ClientsPage />
                               </Suspense>
                             </RequirePermission>
                           }
@@ -1061,6 +1081,16 @@ function App() {
                                 <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.productAttributes}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <ProductAttributesSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/clients"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.clients}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ClientsSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

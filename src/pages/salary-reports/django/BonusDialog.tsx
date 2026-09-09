@@ -39,6 +39,7 @@ interface Props {
   year: number;
   month: number;
   organizationId?: number;
+  branchId?: number;
   /** When true (period locked or no manage right) the dialog is read-only. */
   readOnly: boolean;
 }
@@ -53,6 +54,7 @@ const BonusDialog: React.FC<Props> = ({
   year,
   month,
   organizationId,
+  branchId,
   readOnly,
 }) => {
   const { t } = useT("salaryReports");
@@ -61,12 +63,18 @@ const BonusDialog: React.FC<Props> = ({
   const [reason, setReason] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
 
-  const listParams = { year, month, employeeId, orgId: organizationId ?? null };
+  const listParams = {
+    year,
+    month,
+    employeeId,
+    orgId: organizationId ?? null,
+    branchId: branchId ?? null,
+  };
 
   const query = useQuery({
     queryKey: djangoQueryKeys.payroll.bonuses(listParams),
     queryFn: ({ signal }) =>
-      getBonuses({ year, month, employeeId, organizationId }, signal),
+      getBonuses({ year, month, employeeId, organizationId, branchId }, signal),
     enabled: open,
   });
 
@@ -85,7 +93,14 @@ const BonusDialog: React.FC<Props> = ({
 
   const createMutation = useMutation({
     mutationFn: () =>
-      createBonus({ employeeId, year, month, amount: amount.trim(), reason: reason.trim() }),
+      createBonus({
+        employeeId,
+        branchId: branchId as number,
+        year,
+        month,
+        amount: amount.trim(),
+        reason: reason.trim(),
+      }),
     onSuccess: () => {
       invalidate();
       setAmount("");
@@ -121,6 +136,10 @@ const BonusDialog: React.FC<Props> = ({
   });
 
   const handleAdd = () => {
+    if (branchId == null) {
+      setError("Сначала выберите филиал для начисления надбавки.");
+      return;
+    }
     if (!form.validate()) return;
     setError(null);
     createMutation.mutate();

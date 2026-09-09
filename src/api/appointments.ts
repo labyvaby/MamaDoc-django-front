@@ -1057,14 +1057,28 @@ export function getHomeDashboard(scope: Scope = {}, params: {
  * with at least one active assignment (bulk source for the appointment form's
  * performer picker: requires appointments.view, NOT staff.view, so clinicians
  * without staff access can load it).
+ *
+ * Режим `serviceId` считает состав по той же матрице, что и
+ * `service-assignments` (гайд бэка «расписание и исполнители услуг», §2):
+ * только активные сотрудники и активные назначения, `branchId` сужает до
+ * пригодных в филиале, а старое общее назначение (`branch: null`) учитывается
+ * лишь при доступе сотрудника к филиалу и доступности услуги в нём. Проверено
+ * на test 09.09.2026: состав совпал с матрицей на 10 услугах из 10.
+ *
+ * `organizationId` нужен суперадмину — обычный пользователь работает в
+ * организации своей сессии.
  */
 export function getServiceProviders(params?: {
   serviceId?: number;
   branchId?: number;
+  organizationId?: number;
 }, signal?: AbortSignal): Promise<ServiceProvider[]> {
   const query = new URLSearchParams();
   if (params?.serviceId) query.set("serviceId", String(params.serviceId));
   if (params?.branchId) query.set("branchId", String(params.branchId));
+  if (params?.organizationId != null) {
+    query.set("organizationId", String(params.organizationId));
+  }
   const qs = query.toString();
   return apiRequest<ServiceProvider[]>(
     `/appointments/service-providers/${qs ? `?${qs}` : ""}`,
