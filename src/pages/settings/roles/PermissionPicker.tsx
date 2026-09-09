@@ -30,7 +30,7 @@ export interface PermissionGroup {
   items: RbacPermission[];
 }
 
-type FilterKey = "all" | "selected" | "changed" | "blocked";
+type FilterKey = "all" | "selected" | "changed";
 
 interface PermissionPickerProps {
   grouped: PermissionGroup[];
@@ -38,7 +38,8 @@ interface PermissionPickerProps {
   allPermissions: RbacPermission[];
   selectedCodes: string[];
   onChange: (codes: string[]) => void;
-  isModuleOff: (code: string) => boolean;
+  /** Права отключённых модулей: сохраняем их при очистке, но не показываем. */
+  preservedCodes: string[];
   disabled?: boolean;
   totalCount: number;
   /** Права роли на момент открытия: база для diff и для раскрытых категорий. */
@@ -58,7 +59,7 @@ export default function PermissionPicker({
   allPermissions,
   selectedCodes,
   onChange,
-  isModuleOff,
+  preservedCodes,
   disabled,
   totalCount,
   initialSelectedCodes,
@@ -89,13 +90,24 @@ export default function PermissionPicker({
     () => new Set([...initial].filter((c) => !selected.has(c))),
     [selected, initial],
   );
-  const changedCount = added.size + removed.size;
-
-  // Права выключенных модулей среди выбранных: выданы, но не действуют.
-  const blockedCodes = React.useMemo(
-    () => new Set([...selected].filter((c) => isModuleOff(c))),
-    [selected, isModuleOff],
+  const preservedCodeSet = React.useMemo(() => new Set(preservedCodes), [preservedCodes]);
+  const visibleCodes = React.useMemo(
+    () => new Set(grouped.flatMap((g) => g.items.map((p) => p.code))),
+    [grouped],
   );
+  const visibleSelectedCount = React.useMemo(
+    () => [...selected].filter((code) => visibleCodes.has(code)).length,
+    [selected, visibleCodes],
+  );
+  const visibleAdded = React.useMemo(
+    () => new Set([...added].filter((code) => visibleCodes.has(code))),
+    [added, visibleCodes],
+  );
+  const visibleRemoved = React.useMemo(
+    () => new Set([...removed].filter((code) => visibleCodes.has(code))),
+    [removed, visibleCodes],
+  );
+  const changedCount = visibleAdded.size + visibleRemoved.size;
 
   // Выбранные действия, у которых не выбран просмотр своего домена.
   const danglingCodes = React.useMemo(
@@ -161,14 +173,12 @@ export default function PermissionPicker({
         case "selected":
           return selected.has(p.code);
         case "changed":
-          return added.has(p.code) || removed.has(p.code);
-        case "blocked":
-          return blockedCodes.has(p.code);
+          return visibleAdded.has(p.code) || visibleRemoved.has(p.code);
         default:
           return true;
       }
     },
-    [filter, selected, added, removed, blockedCodes],
+    [filter, selected, visibleAdded, visibleRemoved],
   );
 
   const visibleGroups = grouped
@@ -195,9 +205,12 @@ export default function PermissionPicker({
 
   const filterOptions = ([
     { key: "all", label: t("roles.permissionPicker.filters.all"), count: totalCount },
-    { key: "selected", label: t("roles.permissionPicker.filters.selected"), count: selected.size },
+    {
+      key: "selected",
+      label: t("roles.permissionPicker.filters.selected"),
+      count: visibleSelectedCount,
+    },
     { key: "changed", label: t("roles.permissionPicker.filters.changed"), count: changedCount },
-    { key: "blocked", label: t("roles.permissionPicker.filters.blocked"), count: blockedCodes.size },
   ] as { key: FilterKey; label: string; count: number }[]).filter(
     (o) => o.key === "all" || o.count > 0 || o.key === filter,
   );
@@ -227,23 +240,23 @@ export default function PermissionPicker({
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {selected.size}
+            {visibleSelectedCount}
           </Typography>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="caption" color="text.secondary" display="block">
               {t("roles.permissionPicker.selectedOfTotal", { total: totalCount })}
-              {selected.size ? "" : t("roles.permissionPicker.noPermissionsHint")}
+              {visibleSelectedCount ? "" : t("roles.permissionPicker.noPermissionsHint")}
             </Typography>
             {changedCount > 0 && (
               <Stack direction="row" alignItems="center" gap={0.75} mt={0.25} flexWrap="wrap">
-                {added.size > 0 && (
+                {visibleAdded.size > 0 && (
                   <Typography variant="caption" sx={{ color: "success.main", fontWeight: 600 }}>
-                    +{added.size}
+                    +{visibleAdded.size}
                   </Typography>
                 )}
-                {removed.size > 0 && (
+                {visibleRemoved.size > 0 && (
                   <Typography variant="caption" sx={{ color: "error.main", fontWeight: 600 }}>
-                    −{removed.size}
+                    −{visibleRemoved.size}
                   </Typography>
                 )}
                 <Typography variant="caption" color="text.secondary">
@@ -261,11 +274,11 @@ export default function PermissionPicker({
               {t("roles.permissionPicker.revertButton")}
             </Button>
           )}
-          {selected.size > 0 && !disabled && (
+          {visibleSelectedCount > 0 && !disabled && (
             <Button
               size="small"
               color="inherit"
-              onClick={() => onChange([])}
+              onClick={() => onChange([...selected].filter((code) => preservedCodeSet.has(code)))}
               sx={{ textTransform: "none", minWidth: 0, px: 1, color: "text.secondary" }}
             >
               {t("roles.permissionPicker.clearButton")}
@@ -399,7 +412,6 @@ export default function PermissionPicker({
                 {open && (
                   <Box sx={{ borderTop: "1px solid", borderColor: "divider" }}>
                     {g.matched.map((p, i) => {
-                      const off = isModuleOff(p.code);
                       const isOn = selected.has(p.code);
                       const state = added.has(p.code)
                         ? "added"
@@ -453,14 +465,6 @@ export default function PermissionPicker({
                             >
                               {p.code}
                             </Typography>
-                            {off && (
-                              <Typography
-                                variant="caption"
-                                sx={{ display: "block", color: "warning.main", fontWeight: 600, mt: 0.25 }}
-                              >
-                                {t("roles.permissionPicker.moduleOffHint")}
-                              </Typography>
-                            )}
                             {needsBase && (
                               <Typography
                                 variant="caption"
