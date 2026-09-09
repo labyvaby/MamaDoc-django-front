@@ -76,6 +76,11 @@ export interface BillingCharge {
   updatedAt: string;
 }
 
+export interface BulkChargeResult {
+  created: BillingCharge[];
+  skippedCount: number;
+}
+
 export interface BillingPayment {
   id: number;
   organizationId: number;
@@ -147,6 +152,26 @@ export interface BillingOffering {
   updatedAt: string;
 }
 
+export interface OfferingClient {
+  id: number;
+  clientId: number;
+  clientName: string;
+  clientPhone: string;
+  status: string;
+  joinedAt: string;
+  balance: Money;
+  debt: Money;
+}
+
+export interface OfferingHistoryEvent {
+  id: string;
+  offeringId: number;
+  type: "client_joined" | "client_left" | string;
+  message: string;
+  actor: string;
+  createdAt: string;
+}
+
 export interface BillingClient {
   id: number;
   organizationId: number;
@@ -159,6 +184,11 @@ export interface BillingClient {
   debt: Money;
   legalName: string;
   inn: string;
+  okpo: string;
+  legalAddress: string;
+  bankName: string;
+  bankAccount: string;
+  bankBik: string;
   note: string;
   joinedAt: string;
 }
@@ -205,6 +235,15 @@ export interface PayLinkResult {
   providerPayUrl: string;
 }
 
+export type BillingReportKey = "revenue" | "charges" | "payments" | "debtors" | "clients" | "refunds";
+
+export interface BillingReport {
+  key: BillingReportKey;
+  dateFrom: string;
+  dateTo: string;
+  rows: Array<Record<string, unknown>>;
+}
+
 type Scope = { organizationId?: number };
 type ListFilters = Scope & { q?: string; status?: string; cursor?: string; pageSize?: number };
 
@@ -221,12 +260,30 @@ function moneyHeaders(): HeadersInit {
   return { "Idempotency-Key": crypto.randomUUID() };
 }
 
+async function fetchAllBillingPages<T>(path: string, params: Record<string, unknown>): Promise<BillingPage<T>> {
+  const items: T[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+
+  do {
+    const page = await apiRequest<BillingPage<T>>(`${path}${query({ ...params, cursor, pageSize: 200 })}`);
+    items.push(...page.items);
+    if (!page.nextCursor || seenCursors.has(page.nextCursor)) break;
+    seenCursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  } while (cursor);
+
+  return { items, nextCursor: null };
+}
+
 export const billingApi = {
   dashboard: (params: Scope & { dateFrom: string; dateTo: string }) =>
     apiRequest<BillingDashboard>(`/v2/billing/dashboard/${query(params)}`),
 
   contracts: (params: ListFilters & { clientId?: number; offeringId?: number; offeringKind?: string }) =>
     apiRequest<BillingPage<BillingContract>>(`/v2/billing/contracts/${query(params)}`),
+  allContracts: (params: Omit<ListFilters, "cursor" | "pageSize"> & { clientId?: number; offeringId?: number; offeringKind?: string }) =>
+    fetchAllBillingPages<BillingContract>("/v2/billing/contracts/", params),
   contract: (id: number, scope: Scope) =>
     apiRequest<BillingContract>(`/v2/billing/contracts/${id}/${query(scope)}`),
   updateContract: (id: number, body: Record<string, unknown>, scope: Scope) =>
@@ -237,6 +294,8 @@ export const billingApi = {
     apiRequest<BillingContract>(`/v2/billing/contracts/${id}/${action}/${query(scope)}`, { method: "POST" }),
   endContract: (id: number, endsOn: string, scope: Scope) =>
     apiRequest<BillingContract>(`/v2/billing/contracts/${id}/end/${query(scope)}`, { method: "POST", body: { endsOn } }),
+  resolveContractDeposit: (id: number, state: "returned" | "withheld", scope: Scope) =>
+    apiRequest<BillingContract>(`/v2/billing/contracts/${id}/deposit/${query(scope)}`, { method: "POST", body: { state } }),
   contractPriceHistory: (id: number, scope: Scope) =>
     apiRequest<ContractPriceChange[]>(`/v2/billing/contracts/${id}/price/${query(scope)}`),
   changeContractPrice: (id: number, body: { price: string; effectiveFrom?: string; reason?: string }, scope: Scope) =>
@@ -244,12 +303,16 @@ export const billingApi = {
 
   charges: (params: ListFilters & { clientId?: number; contractId?: number; offeringId?: number }) =>
     apiRequest<BillingPage<BillingCharge>>(`/v2/billing/charges/${query(params)}`),
+  allCharges: (params: Omit<ListFilters, "cursor" | "pageSize"> & { clientId?: number; contractId?: number; offeringId?: number }) =>
+    fetchAllBillingPages<BillingCharge>("/v2/billing/charges/", params),
   charge: (id: number, scope: Scope) =>
     apiRequest<BillingCharge>(`/v2/billing/charges/${id}/${query(scope)}`),
   chargeAllocations: (id: number, params: Scope & { cursor?: string; pageSize?: number }) =>
     apiRequest<BillingPage<PaymentAllocation>>(`/v2/billing/charges/${id}/allocations/${query(params)}`),
   createCharge: (body: Record<string, unknown>) =>
     apiRequest<BillingCharge>("/v2/billing/charges/", { method: "POST", headers: moneyHeaders(), body }),
+  createChargesBulk: (body: Record<string, unknown>) =>
+    apiRequest<BulkChargeResult>("/v2/billing/charges/bulk/", { method: "POST", headers: moneyHeaders(), body }),
   chargeAction: (id: number, action: "issue" | "cancel", scope: Scope) =>
     apiRequest<BillingCharge>(`/v2/billing/charges/${id}/${action}/${query(scope)}`, { method: "POST" }),
   createPayLink: (chargeId: number, organizationId?: number) =>
@@ -260,6 +323,8 @@ export const billingApi = {
 
   payments: (params: ListFilters & { clientId?: number; method?: string }) =>
     apiRequest<BillingPage<BillingPayment>>(`/v2/billing/payments/${query(params)}`),
+  allPayments: (params: Omit<ListFilters, "cursor" | "pageSize"> & { clientId?: number; method?: string }) =>
+    fetchAllBillingPages<BillingPayment>("/v2/billing/payments/", params),
   createPayment: (body: Record<string, unknown>) =>
     apiRequest<BillingPayment>("/v2/billing/payments/", { method: "POST", headers: moneyHeaders(), body }),
   paymentAllocations: (id: number, params: Scope & { cursor?: string; pageSize?: number }) =>
@@ -286,6 +351,12 @@ export const billingApi = {
     apiRequest<BillingOffering>(`/offerings/${id}/${query(scope)}`, { method: "PATCH", body }),
   archiveOffering: (id: number, scope: Scope) =>
     apiRequest<void>(`/offerings/${id}/${query(scope)}`, { method: "DELETE" }),
+  offeringClients: (id: number, scope: Scope) =>
+    apiRequest<OfferingClient[]>(`/offerings/${id}/clients/${query(scope)}`),
+  offeringCharges: (id: number, scope: Scope) =>
+    apiRequest<BillingCharge[]>(`/offerings/${id}/charges/${query(scope)}`),
+  offeringHistory: (id: number, scope: Scope) =>
+    apiRequest<OfferingHistoryEvent[]>(`/offerings/${id}/history/${query(scope)}`),
 
   clients: (params: Scope & { q?: string }) =>
     apiRequest<BillingClient[]>(`/clients/${query(params)}`),
@@ -313,4 +384,7 @@ export const billingApi = {
     apiRequest<ContractDefaults>(`/v2/billing/contract-defaults/${query(scope)}`),
   updateContractDefaults: (body: Partial<ContractDefaults>, scope: Scope) =>
     apiRequest<ContractDefaults>(`/v2/billing/contract-defaults/${query(scope)}`, { method: "PATCH", body }),
+
+  report: (key: BillingReportKey, params: Scope & { dateFrom: string; dateTo: string }) =>
+    apiRequest<BillingReport>(`/v2/billing/reports/${key}/${query(params)}`),
 };

@@ -80,6 +80,7 @@ const CertificatePrintPage = lazy(() => import("./pages/print/CertificatePrintPa
 const DjangoCashboxPage = lazy(() => import("./pages/cashbox/django"));
 const BillingPage = lazy(() => import("./pages/billing"));
 const BillingClientsPage = lazy(() => import("./pages/billing/clients"));
+const BillingPlanPage = lazy(() => import("./pages/billing/BillingPlanPage"));
 const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPage"));
 const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
 const ReviewsPage = lazy(() => import("./pages/reviews"));
@@ -734,6 +735,26 @@ function App() {
                           }
                         />
                         <Route
+                          path="billing-reports"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.billing}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="billing-plan"
+                          element={
+                            <RequirePermission permission="tenancy.modules.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPlanPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="clients"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.clients}>
@@ -748,6 +769,7 @@ function App() {
                         <Route path="billing/charges" element={<Navigate to="/charges" replace />} />
                         <Route path="billing/payments" element={<Navigate to="/payments" replace />} />
                         <Route path="billing/debtors" element={<Navigate to="/debtors" replace />} />
+                        <Route path="billing/reports" element={<Navigate to="/billing-reports" replace />} />
                         <Route path="billing/clients" element={<Navigate to="/clients" replace />} />
                         <Route
                           path="reports"

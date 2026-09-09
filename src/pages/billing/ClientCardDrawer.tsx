@@ -123,17 +123,17 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
   });
   const contractsQuery = useQuery({
     queryKey: [...cardKey, "contracts"],
-    queryFn: () => billingApi.contracts({ organizationId, clientId, pageSize: 200 }),
+    queryFn: () => billingApi.allContracts({ organizationId, clientId }),
     enabled: open,
   });
   const chargesQuery = useQuery({
     queryKey: [...cardKey, "charges"],
-    queryFn: () => billingApi.charges({ organizationId, clientId, pageSize: 200 }),
+    queryFn: () => billingApi.allCharges({ organizationId, clientId }),
     enabled: open,
   });
   const paymentsQuery = useQuery({
     queryKey: [...cardKey, "payments"],
-    queryFn: () => billingApi.payments({ organizationId, clientId, pageSize: 200 }),
+    queryFn: () => billingApi.allPayments({ organizationId, clientId }),
     enabled: open,
   });
   const contactsQuery = useQuery({

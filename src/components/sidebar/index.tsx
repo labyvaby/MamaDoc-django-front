@@ -618,6 +618,7 @@ const SidebarSecondary: React.FC = () => {
           canOfferings={can_.offerings}
           canPayments={can("billing.payments.view")}
           canDebtors={can("billing.debtors.view")}
+          canTenancy={can("tenancy.modules.view")}
         />
       </List>
     );
@@ -891,6 +892,7 @@ const SidebarSecondary: React.FC = () => {
             canBilling={can_.billing}
             canPayments={can("billing.payments.view")}
             canDebtors={can("billing.debtors.view")}
+            canTenancy={can("tenancy.modules.view")}
           />
         )}
 
@@ -1087,6 +1089,7 @@ type BillingSidebarNavigationProps = {
   canOfferings?: boolean;
   canPayments: boolean;
   canDebtors: boolean;
+  canTenancy?: boolean;
 };
 
 const BILLING_SECTION_PATHS = [
@@ -1094,6 +1097,8 @@ const BILLING_SECTION_PATHS = [
   "/charges",
   "/payments",
   "/debtors",
+  "/billing-reports",
+  "/billing-plan",
 ];
 
 const BillingSidebarNavigation: React.FC<BillingSidebarNavigationProps> = ({
@@ -1105,13 +1110,14 @@ const BillingSidebarNavigation: React.FC<BillingSidebarNavigationProps> = ({
   canOfferings = false,
   canPayments,
   canDebtors,
+  canTenancy = false,
 }) => {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { setSiderCollapsed } = useThemedLayoutContext();
   const collapsedFinal = collapsed && !isMobile;
-  const financeActive = ["/charges", "/payments", "/debtors"].includes(location.pathname);
+  const financeActive = ["/charges", "/payments", "/debtors", "/billing-reports"].includes(location.pathname);
   const [financeOpen, setFinanceOpen] = React.useState(financeActive);
 
   React.useEffect(() => {
@@ -1137,6 +1143,7 @@ const BillingSidebarNavigation: React.FC<BillingSidebarNavigationProps> = ({
       {canClients && <SidebarMenuItem to="/clients" icon={<SearchOutlined />} label="Клиенты" collapsed={collapsedFinal} />}
       {canBilling && <SidebarMenuItem to="/contracts" icon={<DescriptionOutlined />} label="Контракты" collapsed={collapsedFinal} />}
       {canOfferings && <SidebarMenuItem to="/offerings" icon={<MedicalServicesOutlined />} label="Услуги и объекты" collapsed={collapsedFinal} />}
+      {canTenancy && <SidebarMenuItem to="/billing-plan" icon={<TuneOutlined />} label="Тариф и модули" collapsed={collapsedFinal} />}
       {canBilling && (
         <>
           <ListItem disablePadding>
@@ -1173,6 +1180,7 @@ const BillingSidebarNavigation: React.FC<BillingSidebarNavigationProps> = ({
               <SidebarMenuItem to="/charges" icon={<ReceiptLongOutlined />} label="Начисления" />
               {canPayments && <SidebarMenuItem to="/payments" icon={<CreditCardOutlined />} label="Оплаты" />}
               {canDebtors && <SidebarMenuItem to="/debtors" icon={<WarningAmberOutlined />} label="Должники" />}
+              <SidebarMenuItem to="/billing-reports" icon={<AssessmentOutlined />} label="Отчёты" />
             </Box>
           </Collapse>
         </>

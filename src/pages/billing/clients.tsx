@@ -40,6 +40,11 @@ type FormState = {
   email: string;
   legalName: string;
   inn: string;
+  okpo: string;
+  legalAddress: string;
+  bankName: string;
+  bankAccount: string;
+  bankBik: string;
   note: string;
   status: string;
 };
@@ -51,6 +56,11 @@ const emptyForm = (): FormState => ({
   email: "",
   legalName: "",
   inn: "",
+  okpo: "",
+  legalAddress: "",
+  bankName: "",
+  bankAccount: "",
+  bankBik: "",
   note: "",
   status: "active",
 });
@@ -86,6 +96,11 @@ export default function BillingClientsPage() {
         status: form.status,
         legalName: form.clientType === "company" ? form.legalName.trim() : "",
         inn: form.clientType === "company" ? form.inn.trim() : "",
+        okpo: form.clientType === "company" ? form.okpo.trim() : "",
+        legalAddress: form.clientType === "company" ? form.legalAddress.trim() : "",
+        bankName: form.clientType === "company" ? form.bankName.trim() : "",
+        bankAccount: form.clientType === "company" ? form.bankAccount.trim() : "",
+        bankBik: form.clientType === "company" ? form.bankBik.trim() : "",
         note: form.note.trim(),
         ...(editing ? {} : { phone: form.phone.trim(), organizationId }),
       };
@@ -117,6 +132,11 @@ export default function BillingClientsPage() {
       email: client.email,
       legalName: client.legalName,
       inn: client.inn,
+      okpo: client.okpo ?? "",
+      legalAddress: client.legalAddress ?? "",
+      bankName: client.bankName ?? "",
+      bankAccount: client.bankAccount ?? "",
+      bankBik: client.bankBik ?? "",
       note: client.note,
       status: client.status,
     });
@@ -205,7 +225,7 @@ export default function BillingClientsPage() {
             <TextField required label={form.clientType === "company" ? "Контактное лицо" : "ФИО"} value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} />
             <TextField required={!editing} disabled={Boolean(editing)} fullWidth label="Телефон" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} helperText={editing ? "Телефон меняется через контактные данные" : undefined} />
             <TextField fullWidth label="Email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-            {form.clientType === "company" && <><TextField fullWidth label="Юридическое название" value={form.legalName} onChange={(event) => setForm({ ...form, legalName: event.target.value })} /><TextField label="ИНН" value={form.inn} onChange={(event) => setForm({ ...form, inn: event.target.value })} /></>}
+            {form.clientType === "company" && <><TextField fullWidth label="Юридическое название" value={form.legalName} onChange={(event) => setForm({ ...form, legalName: event.target.value })} /><TextField label="ИНН" value={form.inn} onChange={(event) => setForm({ ...form, inn: event.target.value })} /><TextField label="ОКПО" value={form.okpo} onChange={(event) => setForm({ ...form, okpo: event.target.value })} /><TextField label="Юридический адрес" value={form.legalAddress} onChange={(event) => setForm({ ...form, legalAddress: event.target.value })} sx={{ gridColumn: { md: "1 / -1" } }} /><TextField label="Банк" value={form.bankName} onChange={(event) => setForm({ ...form, bankName: event.target.value })} /><TextField label="БИК" value={form.bankBik} onChange={(event) => setForm({ ...form, bankBik: event.target.value })} /><TextField label="Расчётный счёт" value={form.bankAccount} onChange={(event) => setForm({ ...form, bankAccount: event.target.value })} sx={{ gridColumn: { md: "1 / -1" } }} /></>}
             <TextField select label="Статус" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><MenuItem value="new">Новый</MenuItem><MenuItem value="active">Активный</MenuItem><MenuItem value="inactive">Неактивный</MenuItem></TextField>
             <TextField label="Заметка" multiline minRows={3} value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} sx={{ gridColumn: "1 / -1" }} />
           </Box>

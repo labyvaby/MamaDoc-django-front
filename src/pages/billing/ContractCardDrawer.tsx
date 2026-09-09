@@ -18,6 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
+import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PauseCircleOutlineOutlined from "@mui/icons-material/PauseCircleOutlineOutlined";
 import PlayCircleOutlineOutlined from "@mui/icons-material/PlayCircleOutlineOutlined";
@@ -122,6 +123,7 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
   const [endsOn, setEndsOn] = React.useState("");
   const [billingDay, setBillingDay] = React.useState("");
   const [rules, setRules] = React.useState<ContractRulesValues | null>(null);
+  const [depositChoice, setDepositChoice] = React.useState<"returned" | "withheld" | null>(null);
 
   const historyQuery = useQuery({
     queryKey: [...cardKey, "prices"],
@@ -130,7 +132,7 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
   });
   const chargesQuery = useQuery({
     queryKey: [...cardKey, "charges"],
-    queryFn: () => billingApi.charges({ ...scope, contractId, pageSize: 200 }),
+    queryFn: () => billingApi.allCharges({ ...scope, contractId }),
     enabled: contract != null,
   });
 
@@ -183,6 +185,14 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
     },
     onError: (error) => notify?.({ type: "error", message: "Контракт не завершён", description: getErrorMessage(error) }),
   });
+  const depositMutation = useMutation({
+    mutationFn: (state: "returned" | "withheld") => billingApi.resolveContractDeposit(contractId!, state, scope),
+    onSuccess: async (updated, state) => {
+      setDepositChoice(null);
+      await finishMutation(updated, state === "returned" ? "Депозит отмечен как возвращённый" : "Депозит удержан за ущерб");
+    },
+    onError: (error) => notify?.({ type: "error", message: "Депозит не закрыт", description: getErrorMessage(error) }),
+  });
 
   React.useEffect(() => {
     setRulesOpen(false);
@@ -191,6 +201,7 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
     setPriceDate(dayjs().format("YYYY-MM-DD"));
     setEndDate(dayjs().format("YYYY-MM-DD"));
     setEndOpen(false);
+    setDepositChoice(null);
   }, [contractId]);
 
   // Форму заполняем в момент открытия, а не в effect: карточка живёт всё
@@ -210,7 +221,7 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
   const charges = chargesQuery.data?.items ?? [];
   const openCharges = charges.filter((charge) => !["paid", "canceled"].includes(charge.status));
   const outstanding = openCharges.reduce((sum, charge) => sum + Math.max(0, Number(charge.amount) - Number(charge.paidAmount)), 0);
-  const busy = statusMutation.isPending || endMutation.isPending;
+  const busy = statusMutation.isPending || endMutation.isPending || depositMutation.isPending;
 
   return (
     <>
@@ -276,6 +287,26 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
                 <Fact label="Следующее начисление" value={date(contract.nextChargeOn)} />
                 <Fact label="Периодичность" value={cycleLabels[contract.effectiveBillingCycle] ?? contract.effectiveBillingCycle} />
               </Paper>
+
+              {contract.offeringKind === "rental" && contract.depositState && (
+                <Paper variant="outlined" sx={{ p: 2, mt: 2, borderRadius: 3 }}>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
+                    <AccountBalanceWalletOutlined color="action" />
+                    <Box sx={{ flex: 1 }}>
+                      <Typography fontWeight={760}>Депозит по аренде</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {contract.depositState === "held" ? "Депозит получен и ожидает решения после возврата объекта." : contract.depositState === "returned" ? "Депозит возвращён клиенту." : "Депозит удержан за ущерб."}
+                      </Typography>
+                    </Box>
+                    {canManage && contract.depositState === "held" && (
+                      <Stack direction="row" spacing={1}>
+                        <Button size="small" variant="outlined" color="success" onClick={() => setDepositChoice("returned")}>Вернуть</Button>
+                        <Button size="small" variant="outlined" color="error" onClick={() => setDepositChoice("withheld")}>Удержать</Button>
+                      </Stack>
+                    )}
+                  </Stack>
+                </Paper>
+              )}
 
               <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) minmax(0, 1fr)" }, gap: 2, mt: 3 }}>
                 <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
@@ -434,6 +465,28 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
         <DialogActions>
           <Button onClick={() => setEndOpen(false)} disabled={endMutation.isPending}>Отмена</Button>
           <Button color="error" variant="contained" onClick={() => endMutation.mutate()} disabled={!endDate || endMutation.isPending}>Завершить контракт</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={depositChoice != null} onClose={() => !depositMutation.isPending && setDepositChoice(null)} fullWidth maxWidth="xs">
+        <DialogTitle>{depositChoice === "returned" ? "Вернуть депозит клиенту?" : "Удержать депозит?"}</DialogTitle>
+        <DialogContent>
+          <Alert severity={depositChoice === "returned" ? "info" : "warning"}>
+            {depositChoice === "returned"
+              ? "В контракте будет зафиксировано, что депозит возвращён клиенту."
+              : "В контракте будет зафиксировано удержание депозита за ущерб."}
+          </Alert>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDepositChoice(null)} disabled={depositMutation.isPending}>Отмена</Button>
+          <Button
+            variant="contained"
+            color={depositChoice === "returned" ? "success" : "error"}
+            onClick={() => depositChoice && depositMutation.mutate(depositChoice)}
+            disabled={depositMutation.isPending}
+          >
+            {depositMutation.isPending ? <CircularProgress size={20} /> : depositChoice === "returned" ? "Подтвердить возврат" : "Подтвердить удержание"}
+          </Button>
         </DialogActions>
       </Dialog>
     </>
