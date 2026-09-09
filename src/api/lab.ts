@@ -44,12 +44,21 @@ export interface LabInstrument {
 }
 
 export interface LabQuestion {
+  /** Локальный ключ строки зеркала. Годится как ключ списка в React. */
   id: number;
+  /**
+   * Идентификатор вопроса в самой ЛИС — именно его приём обязан вернуть
+   * в `LabOrderAnswerInput.lisQuestionId`: ответы ищутся по нему, а не по
+   * нашему `id`. Отправить `id` вместо него значит уехать в лабораторию с
+   * ответами, которые она не сопоставит ни с одним своим вопросом.
+   */
+  lisQuestionId: number;
+  /** К какому анализу относится вопрос: при двух анализах с вопросами без
+   * этого не различить, чей вопрос перед регистратором. */
   testId: number;
   title: string;
   fieldType: string;
   defaultValue: string;
-  position: number;
 }
 
 interface Listed<T> {

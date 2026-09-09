@@ -5,11 +5,11 @@ import type { LabQuestion } from "../../../api/lab";
 
 const question = (over: Partial<LabQuestion> = {}): LabQuestion => ({
   id: 1,
+  lisQuestionId: 90210,
   testId: 10,
   title: "Срок беременности (недель)",
   fieldType: "INTEGER",
   defaultValue: "",
-  position: 0,
   ...over,
 });
 
@@ -47,31 +47,39 @@ describe("labQuestionFieldKind", () => {
 });
 
 describe("assembleLabAnswers", () => {
-  it("собирает ответ по каждому вопросу", () => {
-    const questions = [question({ id: 1, title: "Вопрос 1", fieldType: "STRING" })];
+  it("отправляет идентификатор ЛИС, а ответы ищет по локальному", () => {
+    // Числа нарочно разные: форма ключует ответы своим `id`, а в
+    // лабораторию обязан уехать `lisQuestionId`. При совпадающих числах
+    // подмена одного другим прошла бы мимо теста — ровно та ошибка,
+    // которая до этого пряталась в бэкенде.
+    const questions = [
+      question({ id: 1, lisQuestionId: 501, title: "Вопрос 1", fieldType: "STRING" }),
+    ];
     const got = assembleLabAnswers(questions, { 1: "ответ" });
     expect(got).toEqual([
-      { lisQuestionId: 1, title: "Вопрос 1", fieldType: "STRING", value: "ответ" },
+      { lisQuestionId: 501, title: "Вопрос 1", fieldType: "STRING", value: "ответ" },
     ]);
   });
 
   it("отсутствующий ответ становится пустой строкой, а не undefined", () => {
-    const questions = [question({ id: 2, title: "Вопрос без ответа", fieldType: "DATE" })];
+    const questions = [
+      question({ id: 2, lisQuestionId: 502, title: "Вопрос без ответа", fieldType: "DATE" }),
+    ];
     const got = assembleLabAnswers(questions, {});
     expect(got).toEqual([
-      { lisQuestionId: 2, title: "Вопрос без ответа", fieldType: "DATE", value: "" },
+      { lisQuestionId: 502, title: "Вопрос без ответа", fieldType: "DATE", value: "" },
     ]);
   });
 
   it("несколько вопросов — независимая сборка каждого", () => {
     const questions = [
-      question({ id: 1, title: "A", fieldType: "STRING" }),
-      question({ id: 2, title: "B", fieldType: "BOOLEAN" }),
+      question({ id: 1, lisQuestionId: 501, title: "A", fieldType: "STRING" }),
+      question({ id: 2, lisQuestionId: 502, title: "B", fieldType: "BOOLEAN" }),
     ];
     const got = assembleLabAnswers(questions, { 1: "x", 2: "true" });
     expect(got).toEqual([
-      { lisQuestionId: 1, title: "A", fieldType: "STRING", value: "x" },
-      { lisQuestionId: 2, title: "B", fieldType: "BOOLEAN", value: "true" },
+      { lisQuestionId: 501, title: "A", fieldType: "STRING", value: "x" },
+      { lisQuestionId: 502, title: "B", fieldType: "BOOLEAN", value: "true" },
     ]);
   });
 

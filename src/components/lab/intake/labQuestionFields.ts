@@ -62,7 +62,7 @@ export function assembleLabAnswers(
   answers: Record<number, string>,
 ): LabOrderAnswerInput[] {
   return questions.map((question) => ({
-    lisQuestionId: question.id,
+    lisQuestionId: question.lisQuestionId,
     title: question.title,
     fieldType: question.fieldType,
     value: answers[question.id] ?? "",
