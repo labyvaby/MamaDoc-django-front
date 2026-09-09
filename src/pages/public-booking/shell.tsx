@@ -513,7 +513,11 @@ const PageHeading: React.FC<{ heading: React.ReactNode; backTo?: string }> = ({
  * `pageTitle` — что стоит в заголовке вкладки перед названием клиники (имя
  * врача на его странице, «Онлайн-запись» на списке). `heading` — подпись экрана
  * под шапкой, `backTo` — куда ведёт стрелка возврата, `stickyBar` — липкая
- * панель действия внизу (мобильный футер записи).
+ * панель действия внизу (мобильный футер записи). `reserveStickyBar` держит
+ * нижний отступ контейнера расширенным, пока панель ещё МОЖЕТ появиться, даже
+ * если сейчас `stickyBar` не передан — иначе отступ прыгает вместе с каждым
+ * пересчётом видимости панели (например, при смене филиала/даты меняется
+ * `calendarLoading`/`hasAvailableDay`, и экран заметно скачет на телефоне).
  */
 export const PublicBookingShell: React.FC<
   React.PropsWithChildren<{
@@ -521,8 +525,9 @@ export const PublicBookingShell: React.FC<
     heading?: React.ReactNode;
     backTo?: string;
     stickyBar?: React.ReactNode;
+    reserveStickyBar?: boolean;
   }>
-> = ({ children, pageTitle, heading, backTo, stickyBar }) => {
+> = ({ children, pageTitle, heading, backTo, stickyBar, reserveStickyBar }) => {
   const { t } = useT("publicBooking");
   const theme = useBookingTheme();
   const { organization } = useBookingOrg();
@@ -571,7 +576,7 @@ export const PublicBookingShell: React.FC<
             pb: { xs: 3, md: 4 },
             flexGrow: 1,
             // Место под липкую панель, иначе она перекрывает последний блок.
-            ...(stickyBar ? { pb: { xs: 18, lg: 4 } } : null),
+            ...(reserveStickyBar ?? Boolean(stickyBar) ? { pb: { xs: 18, lg: 4 } } : null),
           }}
         >
           {heading && <PageHeading heading={heading} backTo={backTo} />}

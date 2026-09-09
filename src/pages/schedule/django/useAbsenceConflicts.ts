@@ -21,14 +21,43 @@ import {
 } from "../../../api/scheduling";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
 
-/** Отсутствие = выходной или отпуск; `extra`/`override` — рабочие смены. */
-export function isAbsenceKind(kind: ScheduleException["kind"]): boolean {
-  return kind === "day_off" || kind === "vacation";
-}
+// Предикат отсутствия живёт в occurrences.ts (там же разбор частичных
+// интервалов); реэкспорт — чтобы не менять импорты страницы.
+import { isAbsenceKind } from "./occurrences";
+
+export { isAbsenceKind };
 
 export interface AbsenceDayEntry {
   employeeId: number;
   count: number;
+}
+
+/** Интервал отсутствия; оба поля пустые — отсутствие на весь день. */
+export interface AbsenceInterval {
+  startTime: string | null;
+  endTime: string | null;
+}
+
+/**
+ * Мешает ли отсутствие этому приёму.
+ *
+ * Целодневное забирает весь день; частичное (гайд бэка §1) — только приёмы,
+ * пересекающие интервал: если врач уходит с 14:00, утренние записи разбирать
+ * не нужно. Времена сравниваем как "HH:MM" (лексикографически = хронологически),
+ * приём без длительности считаем точкой.
+ */
+export function appointmentHitsAbsence(
+  appt: ScheduleConflictAppointment,
+  interval: AbsenceInterval,
+): boolean {
+  const { startTime, endTime } = interval;
+  if (!startTime || !endTime || startTime >= endTime) return true;
+  const start = dayjs(appt.startsAt);
+  if (!start.isValid()) return true;
+  const end = dayjs(appt.endsAt);
+  const from = start.format("HH:mm");
+  const to = end.isValid() && end.isAfter(start) ? end.format("HH:mm") : from;
+  return to === from ? from >= startTime && from < endTime : from < endTime && to > startTime;
 }
 
 export interface AbsenceConflictsResult {
@@ -96,6 +125,22 @@ export function useAbsenceConflicts(
     })),
   });
 
+  // Дни отсутствия сотрудника с их интервалами: `employeeId:date` →
+  // интервалы (пустые времена = весь день). Нужны, потому что запрос идёт
+  // одним диапазоном на сотрудника: между двумя выходными попадают рабочие
+  // дни, и без этой карты календарь пометил бы их «записи без разбора».
+  const absenceDays = React.useMemo(() => {
+    const map = new Map<string, AbsenceInterval[]>();
+    for (const exc of exceptions) {
+      if (!isAbsenceKind(exc.kind)) continue;
+      const key = `${exc.employeeId}:${exc.date}`;
+      const list = map.get(key) ?? [];
+      list.push({ startTime: exc.startTime, endTime: exc.endTime });
+      map.set(key, list);
+    }
+    return map;
+  }, [exceptions]);
+
   const stamp = queries.map((q) => q.dataUpdatedAt).join(",");
   const byEmployeeDay = React.useMemo(() => {
     const map = new Map<string, ScheduleConflictAppointment[]>();
@@ -103,6 +148,9 @@ export function useAbsenceConflicts(
       for (const appt of queries[index]?.data ?? []) {
         const date = dayjs(appt.startsAt).format("YYYY-MM-DD");
         const key = `${range.employeeId}:${date}`;
+        const intervals = absenceDays.get(key);
+        if (!intervals) continue;
+        if (!intervals.some((interval) => appointmentHitsAbsence(appt, interval))) continue;
         const list = map.get(key) ?? [];
         list.push(appt);
         map.set(key, list);
@@ -110,7 +158,7 @@ export function useAbsenceConflicts(
     });
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- queries пересоздаётся каждый рендер; штамп dataUpdatedAt отражает реальные изменения
-  }, [stamp, ranges]);
+  }, [stamp, ranges, absenceDays]);
 
   const { dayTotals, dayEmployees } = React.useMemo(() => {
     const totals = new Map<string, number>();

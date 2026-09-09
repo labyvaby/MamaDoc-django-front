@@ -56,6 +56,7 @@ import {
   updateScheduleException,
   deleteScheduleException,
   parseShiftOverlapConflict,
+  PARTIAL_ABSENCE_ENABLED,
   type ScheduleRule,
   type ScheduleException,
   type ScheduleExceptionKind,
@@ -650,6 +651,9 @@ const ExceptionDrawer: React.FC<{
   // атомарно и возвращает groupId для снятия одним запросом.
   const [span, setSpan] = React.useState<"single" | "period">("single");
   const [absenceDateTo, setAbsenceDateTo] = React.useState<Dayjs>(dayjs());
+  // Отсутствие не на весь день: «уйдёт с 14 до 16». Интервал уходит теми же
+  // полями startTime/endTime, что и у смены (см. PARTIAL_ABSENCE_ENABLED).
+  const [absenceHours, setAbsenceHours] = React.useState(false);
   const [hasLunch, setHasLunch] = React.useState(true);
   const [lunchStart, setLunchStart] = React.useState("13:00");
   const [lunchEnd, setLunchEnd] = React.useState("14:00");
@@ -657,6 +661,8 @@ const ExceptionDrawer: React.FC<{
   const isRule = kind === "extra" && repeat === "weekly";
   const isAbsence = kind === "day_off" || kind === "vacation";
   const isAbsencePeriod = isAbsence && span === "period";
+  /** Отсутствие интервалом, а не целым днём. */
+  const isPartialAbsence = PARTIAL_ABSENCE_ENABLED && isAbsence && absenceHours;
   // Потолок периода на бэке — 366 дней; проверяем до запроса, чтобы вместо
   // 400-го показать понятную подсказку под полем.
   const absenceDays = isAbsencePeriod ? absenceDateTo.diff(date, "day") + 1 : 1;
@@ -680,6 +686,7 @@ const ExceptionDrawer: React.FC<{
       setDateTo(start.add(1, "year"));
       setSpan("single");
       setAbsenceDateTo(start);
+      setAbsenceHours(false);
       setHasLunch(true);
       setLunchStart("13:00");
       setLunchEnd("14:00");
@@ -720,9 +727,11 @@ const ExceptionDrawer: React.FC<{
             ? "Период длиннее года — разбейте на части"
             : null,
     hours:
-      (kind !== "extra" && !isRule) || startTime < endTime
+      (kind !== "extra" && !isRule && !isPartialAbsence) || startTime < endTime
         ? null
-        : "Начало смены должно быть раньше конца",
+        : isPartialAbsence
+          ? "Начало отсутствия должно быть раньше его конца"
+          : "Начало смены должно быть раньше конца",
     lunch:
       !isRule || !hasLunch || lunchStart < lunchEnd
         ? null
@@ -755,6 +764,8 @@ const ExceptionDrawer: React.FC<{
           dateFrom: date.format("YYYY-MM-DD"),
           dateTo: absenceDateTo.format("YYYY-MM-DD"),
           kind,
+          // Тот же интервал применяется к каждому дню периода.
+          ...(isPartialAbsence ? { startTime, endTime } : {}),
           comment: comment.trim(),
           organizationId,
           branchId,
@@ -765,8 +776,8 @@ const ExceptionDrawer: React.FC<{
           ...(allowOverlap ? { allowOverlap: true } : {}),
           date: date.format("YYYY-MM-DD"),
           kind,
-          startTime: kind === "extra" ? startTime : undefined,
-          endTime: kind === "extra" ? endTime : undefined,
+          startTime: kind === "extra" || isPartialAbsence ? startTime : undefined,
+          endTime: kind === "extra" || isPartialAbsence ? endTime : undefined,
           comment: comment.trim(),
           organizationId,
           branchId,
@@ -783,6 +794,8 @@ const ExceptionDrawer: React.FC<{
               dateFrom: date.format("YYYY-MM-DD"),
               dateTo: (isAbsencePeriod ? absenceDateTo : date).format("YYYY-MM-DD"),
               kind,
+              // Разбирать нужно только приёмы внутри интервала отсутствия.
+              ...(isPartialAbsence ? { startTime, endTime } : {}),
             }
           : undefined,
       );
@@ -981,6 +994,62 @@ const ExceptionDrawer: React.FC<{
                   },
                 }}
               />
+            </Stack>
+          )}
+
+          {PARTIAL_ABSENCE_ENABLED && isAbsence && (
+            <Stack spacing={0.75}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center">
+                <FieldLabel>Часы отсутствия</FieldLabel>
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={() => setAbsenceHours((v) => !v)}
+                  sx={{ textTransform: "none", fontSize: "0.75rem" }}
+                  disabled={busy}
+                >
+                  {absenceHours ? "Весь день" : "Указать часы"}
+                </Button>
+              </Stack>
+              {absenceHours ? (
+                <>
+                  <Stack ref={form.anchor("hours")} direction="row" spacing={1} alignItems="center">
+                    <TextField
+                      type="time"
+                      size="small"
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                      sx={{ flex: 1 }}
+                      disabled={busy}
+                      error={Boolean(form.errorOf("hours"))}
+                    />
+                    <Typography color="text.secondary">—</Typography>
+                    <TextField
+                      type="time"
+                      size="small"
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                      sx={{ flex: 1 }}
+                      disabled={busy}
+                      error={Boolean(form.errorOf("hours"))}
+                    />
+                  </Stack>
+                  {form.errorOf("hours") && (
+                    <Typography variant="caption" color="error">
+                      {form.errorOf("hours")}
+                    </Typography>
+                  )}
+                  <Typography variant="caption" color="text.disabled">
+                    {isAbsencePeriod
+                      ? "Интервал закрывается в каждый день периода, остальное время сотрудник работает."
+                      : "Закрыт только этот интервал, остальное время дня остаётся рабочим."}
+                  </Typography>
+                </>
+              ) : (
+                <Typography variant="caption" color="text.disabled">
+                  {isAbsencePeriod ? "Каждый день периода закрыт целиком." : "День закрыт целиком."}
+                </Typography>
+              )}
             </Stack>
           )}
 
@@ -1295,6 +1364,9 @@ const DjangoSchedulePage: React.FC = () => {
       dateFrom: sorted[0],
       dateTo: sorted[sorted.length - 1],
       kind: exc.kind,
+      // У пачки периода интервал одинаков во все дни — берём со строки.
+      startTime: exc.startTime,
+      endTime: exc.endTime,
     });
   };
   // Пул цветов — сотрудники со сменами в отображаемом периоде (месяц + 2
@@ -1807,8 +1879,16 @@ const DjangoSchedulePage: React.FC = () => {
                             })()}
                         </Stack>
                       </TableCell>
-                      <TableCell sx={{ fontFamily: "monospace" }}>
-                        {exc.startTime ? `${exc.startTime}–${exc.endTime}` : "—"}
+                      <TableCell>
+                        {exc.startTime ? (
+                          <Box component="span" sx={{ fontFamily: "monospace" }}>
+                            {exc.startTime}–{exc.endTime}
+                          </Box>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            {isAbsenceKind(exc.kind) ? "весь день" : "—"}
+                          </Typography>
+                        )}
                       </TableCell>
                       <TableCell>{exc.comment || "—"}</TableCell>
                       {canManage && (

@@ -40,6 +40,7 @@ interface BonusDrawerProps {
   year: number;
   month: number;
   organizationId?: number;
+  branchId?: number;
 }
 
 const errMsg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
@@ -58,6 +59,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
   year,
   month,
   organizationId,
+  branchId,
 }) => {
   const { t } = useT("salaryReports");
   const queryClient = useQueryClient();
@@ -110,12 +112,19 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
     month,
     employeeId: employee?.id ?? null,
     orgId: organizationId ?? null,
+    branchId: branchId ?? null,
   };
   const bonusesQuery = useQuery({
     queryKey: djangoQueryKeys.payroll.bonuses(listParams),
     queryFn: ({ signal }) =>
       getBonuses(
-        { year, month, employeeId: employee!.id, organizationId },
+        {
+          year,
+          month,
+          employeeId: employee!.id,
+          organizationId,
+          branchId,
+        },
         signal,
       ),
     enabled: open && employee != null,
@@ -140,6 +149,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
     mutationFn: () =>
       createBonus({
         employeeId: employee!.id,
+        branchId: branchId as number,
         year,
         month,
         amount: parseFloat(amount.replace(",", ".")).toFixed(2),
@@ -174,6 +184,10 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
 
   const handleSubmit = () => {
     setError(null);
+    if (branchId == null) {
+      setError("Сначала выберите филиал для начисления надбавки.");
+      return;
+    }
     if (!form.validate()) return;
     createMutation.mutate();
   };

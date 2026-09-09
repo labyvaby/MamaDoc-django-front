@@ -593,7 +593,7 @@ const DjangoExpensesPage: React.FC = () => {
       f.dateFrom = `${selectedYear}-01-01`;
       f.dateTo = `${selectedYear}-12-31`;
     }
-    f.isVoided = false;
+    f.includeVoided = true;
     f.pageSize = PAGE_SIZE;
     return f;
   }, [orgId, branchId, selectedCategoryId, selectedYear, selectedMonth]);
@@ -607,7 +607,7 @@ const DjangoExpensesPage: React.FC = () => {
         categoryId: selectedCategoryId ?? undefined,
         dateFrom: expFilters.dateFrom as string | undefined,
         dateTo: expFilters.dateTo as string | undefined,
-        isVoided: false,
+        includeVoided: true,
         pageSize: PAGE_SIZE,
       },
       signal,
@@ -621,6 +621,10 @@ const DjangoExpensesPage: React.FC = () => {
   });
 
   const allExpenses = expensesQuery.data?.results ?? [];
+  // Аннулированные не должны искажать суммы (итого за месяц, разбивка по
+  // получателям) — используем этот массив только для денежных расчётов,
+  // список слева по-прежнему показывает все записи (зачёркнутыми).
+  const payableExpenses = React.useMemo(() => allExpenses.filter((e) => !e.isVoided), [allExpenses]);
 
   // Локальная фильтрация по поиску и дате
   const filteredExpenses = React.useMemo(() => {
@@ -669,9 +673,9 @@ const DjangoExpensesPage: React.FC = () => {
 
   // Группировка по employeeName (получателю) для выбранного месяца
   const monthExpenses = React.useMemo(() => {
-    if (!selectedMonth) return allExpenses;
-    return allExpenses.filter((e) => e.expenseDate.startsWith(selectedMonth));
-  }, [allExpenses, selectedMonth]);
+    if (!selectedMonth) return payableExpenses;
+    return payableExpenses.filter((e) => e.expenseDate.startsWith(selectedMonth));
+  }, [payableExpenses, selectedMonth]);
 
   const groupedByEmployee = React.useMemo(() => {
     const map = new Map<string, { total: number; days: Map<string, number> }>();
@@ -940,14 +944,17 @@ const DjangoExpensesPage: React.FC = () => {
                                   </Box>
                                 )}
                                 <ListItemButton
-                                  sx={{
+                                  sx={(t) => ({
                                     px: 2, py: 1.5,
-                                    bgcolor: selectedExpense?.id === exp.id ? "action.selected" : "transparent",
-                                    "&:hover": { bgcolor: "action.hover" },
+                                    bgcolor: selectedExpense?.id === exp.id
+                                      ? "action.selected"
+                                      : exp.isVoided
+                                        ? alpha(t.palette.error.main, t.palette.mode === "dark" ? 0.06 : 0.04)
+                                        : "transparent",
+                                    "&:hover": { bgcolor: exp.isVoided ? alpha(t.palette.error.main, t.palette.mode === "dark" ? 0.1 : 0.07) : "action.hover" },
                                     borderBottom: 1,
                                     borderColor: "divider",
-                                    opacity: exp.isVoided ? 0.5 : 1,
-                                  }}
+                                  })}
                                   onClick={() => setSelectedExpense(exp)}
                                 >
                                   {exp.photoUrl ? (
@@ -955,39 +962,68 @@ const DjangoExpensesPage: React.FC = () => {
                                       component="img"
                                       src={exp.photoUrl}
                                       alt=""
-                                      sx={{ mr: 2, width: 40, height: 40, borderRadius: 1, objectFit: "cover", flexShrink: 0 }}
+                                      sx={{ mr: 2, width: 40, height: 40, borderRadius: 1, objectFit: "cover", flexShrink: 0, opacity: exp.isVoided ? 0.5 : 1 }}
                                     />
                                   ) : (
-                                    <Avatar variant="rounded" sx={{ mr: 2, width: 40, height: 40, bgcolor: "action.selected", color: "text.secondary" }}>
+                                    <Avatar variant="rounded" sx={{ mr: 2, width: 40, height: 40, bgcolor: "action.selected", color: "text.secondary", opacity: exp.isVoided ? 0.5 : 1 }}>
                                       <ReceiptLongOutlined />
                                     </Avatar>
                                   )}
                                   <Box sx={{ flex: 1, minWidth: 0 }}>
-                                    <Typography variant="body1" sx={{ fontWeight: 500 }} noWrap>
+                                    <Typography
+                                      variant="body1"
+                                      sx={{
+                                        fontWeight: 500,
+                                        color: exp.isVoided ? "text.disabled" : "text.primary",
+                                      }}
+                                      noWrap
+                                    >
                                       {exp.name || exp.categoryName || "Расход"}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary" noWrap>
                                       {exp.employeeName ?? exp.categoryName ?? ""}
                                     </Typography>
                                   </Box>
-                                  <Stack direction="row" spacing={0.5} alignItems="center">
-                                    {isMixed ? (
-                                      <>
-                                        <AccountBalanceWalletOutlined sx={{ fontSize: 14, color: "success.main" }} />
-                                        <CreditCardOutlined sx={{ fontSize: 14, color: "info.main" }} />
-                                      </>
-                                    ) : isCash ? (
-                                      <Tooltip title="Наличные">
-                                        <AccountBalanceWalletOutlined sx={{ fontSize: 16, color: "success.main" }} />
-                                      </Tooltip>
-                                    ) : (
-                                      <Tooltip title="Карта">
-                                        <CreditCardOutlined sx={{ fontSize: 16, color: "info.main" }} />
-                                      </Tooltip>
+                                  <Stack alignItems="flex-end" spacing={0.5}>
+                                    {exp.isVoided && (
+                                      <Box
+                                        sx={(t) => ({
+                                          display: "flex", alignItems: "center", gap: 0.4,
+                                          px: 0.75, height: 18, borderRadius: "7px",
+                                          bgcolor: alpha(t.palette.error.main, t.palette.mode === "dark" ? 0.2 : 0.14),
+                                          color: t.palette.mode === "dark" ? t.palette.error.light : t.palette.error.dark,
+                                        })}
+                                      >
+                                        <BlockOutlined sx={{ fontSize: 11 }} />
+                                        <Typography sx={{ fontSize: 10.5, fontWeight: 600, lineHeight: 1 }}>Аннулирован</Typography>
+                                      </Box>
                                     )}
-                                    <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                                      {formatKGS(parseFloat(exp.amount))}
-                                    </Typography>
+                                    <Stack direction="row" spacing={0.5} alignItems="center">
+                                      {isMixed ? (
+                                        <>
+                                          <AccountBalanceWalletOutlined sx={{ fontSize: 14, color: exp.isVoided ? "text.disabled" : "success.main" }} />
+                                          <CreditCardOutlined sx={{ fontSize: 14, color: exp.isVoided ? "text.disabled" : "info.main" }} />
+                                        </>
+                                      ) : isCash ? (
+                                        <Tooltip title="Наличные">
+                                          <AccountBalanceWalletOutlined sx={{ fontSize: 16, color: exp.isVoided ? "text.disabled" : "success.main" }} />
+                                        </Tooltip>
+                                      ) : (
+                                        <Tooltip title="Карта">
+                                          <CreditCardOutlined sx={{ fontSize: 16, color: exp.isVoided ? "text.disabled" : "info.main" }} />
+                                        </Tooltip>
+                                      )}
+                                      <Typography
+                                        variant="body1"
+                                        sx={{
+                                          fontWeight: 600,
+                                          textDecoration: exp.isVoided ? "line-through" : "none",
+                                          color: exp.isVoided ? "text.disabled" : "text.primary",
+                                        }}
+                                      >
+                                        {formatKGS(parseFloat(exp.amount))}
+                                      </Typography>
+                                    </Stack>
                                   </Stack>
                                 </ListItemButton>
                               </React.Fragment>

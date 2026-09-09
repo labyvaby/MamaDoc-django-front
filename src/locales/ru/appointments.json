@@ -519,6 +519,7 @@
     "showHistory": "История возвратов ({{count}})",
     "errors": {
       "amountRange": "Укажите сумму от 0.01 до {{max}} с",
+      "amountExceedsAvailable": "Сумма возврата не может быть больше доступной суммы: {{max}} с",
       "reasonRequired": "Укажите причину возврата"
     }
   },
@@ -587,7 +588,6 @@
     "status": "Статус",
     "statusDraft": "Черновик",
     "statusCompleted": "Завершено",
-    "printConclusion": "Печать {{conclusion.gen}}",
     "certificate": "Справка",
     "receipt": "Чек",
     "receiptError": "Не удалось загрузить данные для чека",
@@ -606,7 +606,11 @@
     },
     "draftRestored": "Восстановлен несохранённый черновик {{conclusion.gen}}",
     "formDataTooLarge": "Бланк слишком объёмный — сохранён только текст. При следующем открытии поля бланка будут пустыми.",
-    "printForm": "Печать бланка",
+    "saveAndPrint": "Сохранить и печать",
+    "noDiagnosisTitle": "Завершить без {{diagnosis.gen}}?",
+    "noDiagnosisText": "{{diagnosis.nom, capitalize}} не {{selected}}. По нему собирается история {{patient.gen}} и статистика клиники — но если это исследование, а не приём врача, завершайте как есть.",
+    "noDiagnosisAdd": "Указать {{diagnosis.acc}}",
+    "noDiagnosisSkip": "Завершить без {{diagnosis.gen}}",
     "templateApplied": "Шаблон применён",
     "templateSaved": "Шаблон сохранён",
     "completed": "{{conclusion.nom, capitalize}} {{finished}}",

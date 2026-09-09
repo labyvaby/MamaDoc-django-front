@@ -284,11 +284,18 @@ const DjangoSalaryReportsPage: React.FC = () => {
               </Tooltip>
             )}
             {canManage && report?.status === "draft" && (
-              <Tooltip title={t("tooltips.bonusPerEmployee")}>
+              <Tooltip
+                title={
+                  branchFilterId == null
+                    ? t("tooltips.bonusRequiresBranch")
+                    : t("tooltips.bonusPerEmployee")
+                }
+              >
                 <Button
                   size="small"
                   variant="outlined"
                   color="success"
+                  disabled={branchFilterId == null}
                   onClick={() => setBonusDrawerOpen(true)}
                   startIcon={compactHeader ? undefined : <PaidOutlinedIcon />}
                   sx={compactHeader ? { minWidth: "auto", px: 1 } : undefined}
@@ -737,7 +744,12 @@ const DjangoSalaryReportsPage: React.FC = () => {
           year={year}
           month={month}
           organizationId={report?.organizationId}
-          readOnly={!canManage || report?.status === "locked"}
+          branchId={branchFilterId}
+          readOnly={
+            !canManage
+            || report?.status === "locked"
+            || branchFilterId == null
+          }
         />
       )}
 
@@ -770,6 +782,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
         year={year}
         month={month}
         organizationId={report?.organizationId}
+        branchId={branchFilterId}
       />
 
 

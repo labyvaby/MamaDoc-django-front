@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Chip } from "@mui/material";
 import { alpha, type Theme } from "@mui/material/styles";
-import dayjs from "dayjs";
+import dayjs, { type Dayjs } from "dayjs";
 
 import type { BookingPrepaymentStatus, BookingStatus } from "../../api/bookings";
 import { subtleBg } from "../../theme/uiHelpers";
@@ -14,8 +14,9 @@ export const BOOKING_STATUS_META: Record<
   { label: string; color: ChipColor }
 > = {
   // Ещё не заявка: бронь держит слот и ждёт подтверждения оплаты банком,
-  // администратору с ней делать нечего — потому нейтральный тон.
-  awaiting_payment: { label: "Ждёт оплаты", color: "default" },
+  // администратору с ней делать нечего — тёплый тон, потому что слот занят и
+  // висит на таймере (см. StatusChip: рядом тикает обратный отсчёт 15 минут).
+  awaiting_payment: { label: "Идёт оплата", color: "warning" },
   pending: { label: "Ожидает", color: "warning" },
   confirmed: { label: "Подтверждена", color: "info" },
   completed: { label: "Завершена", color: "success" },
@@ -23,8 +24,40 @@ export const BOOKING_STATUS_META: Record<
   no_show: { label: "Неявка", color: "default" },
 };
 
+/**
+ * Тикающее «сейчас» — держит обратный отсчёт оплаты живым без опроса бэка.
+ * `active=false` (например, в выборке вообще нет предоплаты) — таймер не
+ * заводим, `now` останется одним и тем же значением на весь рендер страницы.
+ */
+export function useTickingClock(intervalMs = 15000, active = true): Dayjs {
+  const [now, setNow] = React.useState(() => dayjs());
+  React.useEffect(() => {
+    if (!active) return;
+    const id = window.setInterval(() => setNow(dayjs()), intervalMs);
+    return () => window.clearInterval(id);
+  }, [intervalMs, active]);
+  return now;
+}
+
+/**
+ * Обратный отсчёт до истечения ссылки на оплату (15 минут от создания брони).
+ * `urgent` — последние 2 минуты: чип на грани истечения красим тревожнее.
+ */
+function awaitingPaymentCountdown(
+  expiresAt: string | null | undefined,
+  now: Dayjs,
+): { text: string; urgent: boolean } | null {
+  if (!expiresAt) return null;
+  const end = dayjs(expiresAt);
+  if (!end.isValid()) return null;
+  const totalSeconds = end.diff(now, "second");
+  if (totalSeconds <= 0) return { text: "истекает", urgent: true };
+  const minutes = Math.ceil(totalSeconds / 60);
+  return { text: `${minutes} мин`, urgent: minutes <= 2 };
+}
+
 export const BOOKING_STATUS_OPTIONS: { value: BookingStatus; label: string }[] = [
-  { value: "awaiting_payment", label: "Ждёт оплаты" },
+  { value: "awaiting_payment", label: "Идёт оплата" },
   { value: "pending", label: "Ожидает" },
   { value: "confirmed", label: "Подтверждена" },
   { value: "completed", label: "Завершена" },
@@ -35,6 +68,40 @@ export const BOOKING_STATUS_OPTIONS: { value: BookingStatus; label: string }[] =
 /** Статусы, из которых бронь уже никуда не переходит. */
 export const isTerminalBookingStatus = (status: BookingStatus): boolean =>
   status === "completed" || status === "cancelled" || status === "no_show";
+
+/**
+ * «Закрытая» бронь — та, по которой персоналу делать нечего: отменённая,
+ * неявка и **просроченная оплата**.
+ *
+ * Просроченная `awaiting_payment` формально ещё «в процессе», но фактически
+ * мертва: ссылка банка живёт 15 минут, слот такая бронь уже не держит,
+ * заплатить по ней нельзя, а подтвердить её нельзя тем более (бэк отвечает
+ * 400). Её должен снять поллер бэка — но делает он это с задержкой (Celery
+ * нет, это management-команда по расписанию), и всё это время список забит
+ * записями, которые никогда не станут приёмами.
+ *
+ * ⚠ Судим по времени, а не по `prepaymentStatus`: у просроченных броней он
+ * остаётся `pending` (проверено на тесте 09.09.2026 — брони от 6 сентября всё
+ * ещё «Ждём оплату»), то есть в `expired` бэк их не переводит.
+ *
+ * `awaiting_payment` без `prepaymentExpiresAt` закрытой не считаем: срок
+ * неизвестен, а скрывать то, о чём нечего утверждать, нельзя.
+ *
+ * `completed` сюда не входит: выполненная бронь — законная история приёма.
+ */
+export function isBookingClosed(
+  b: {
+    status: BookingStatus;
+    prepaymentExpiresAt?: string | null;
+  },
+  now: Dayjs = dayjs(),
+): boolean {
+  if (b.status === "cancelled" || b.status === "no_show") return true;
+  if (b.status !== "awaiting_payment") return false;
+  if (!b.prepaymentExpiresAt) return false;
+  const end = dayjs(b.prepaymentExpiresAt);
+  return end.isValid() && end.isBefore(now);
+}
 
 // ── Цвета ─────────────────────────────────────────────────────────────────────
 
@@ -54,22 +121,37 @@ export function statusTone(t: Theme, status: BookingStatus) {
   }
 }
 
-/** Тонированный статус-чип в стиле карточек проекта (список + карточка брони). */
-export const StatusChip: React.FC<{ status: BookingStatus; size?: "small" | "medium" }> = ({
-  status,
-  size = "small",
-}) => {
+/**
+ * Тонированный статус-чип в стиле карточек проекта (список + карточка брони).
+ *
+ * `expiresAt`/`now` — только для `awaiting_payment`: рядом с меткой тикает
+ * обратный отсчёт («Идёт оплата · 12 мин»), последние 2 минуты — тревожным
+ * (error) тоном вместо обычного warning. Без `now` (вызовы, которым таймер не
+ * нужен) статус просто показывается без отсчёта — как раньше.
+ */
+export const StatusChip: React.FC<{
+  status: BookingStatus;
+  size?: "small" | "medium";
+  expiresAt?: string | null;
+  now?: Dayjs;
+}> = ({ status, size = "small", expiresAt, now }) => {
   const m = BOOKING_STATUS_META[status];
   if (!m) return <>{status}</>;
+
+  const countdown =
+    status === "awaiting_payment" && now ? awaitingPaymentCountdown(expiresAt, now) : null;
+  const label = countdown ? `${m.label} · ${countdown.text}` : m.label;
+  const urgentTone = countdown?.urgent ?? false;
+
   return (
     <Chip
       size="small"
-      label={m.label}
+      label={label}
       icon={
         <Box
           component="span"
           sx={(t) => {
-            const tone = statusTone(t, status);
+            const tone = urgentTone ? t.palette.error : statusTone(t, status);
             return {
               width: 7,
               height: 7,
@@ -81,7 +163,7 @@ export const StatusChip: React.FC<{ status: BookingStatus; size?: "small" | "med
         />
       }
       sx={(t) => {
-        const tone = statusTone(t, status);
+        const tone = urgentTone ? t.palette.error : statusTone(t, status);
         return {
           fontWeight: 500,
           height: size === "medium" ? 28 : 24,
@@ -139,15 +221,23 @@ export function hasPrepayment(b: {
  * неоплаченной — её администратор подтверждает в первую очередь.
  * `prepaymentNeedsAttention` (деньги есть, приёма не будет) выделяем отдельно:
  * такие брони обязаны быть на виду.
+ *
+ * `awaitingConfirmation` — деньги пришли (`paid`), а бронь ещё висит
+ * `pending`: администратор её не подтвердил. Без этого «Оплачена» читалась
+ * одинаково и для уже подтверждённой, и для висящей брони — а это ровно тот
+ * случай, который положено видеть в первую очередь.
  */
 export const PrepaymentChip: React.FC<{
   status: BookingPrepaymentStatus;
   amount?: string | null;
   needsAttention?: boolean;
-}> = ({ status, amount, needsAttention }) => {
+  awaitingConfirmation?: boolean;
+}> = ({ status, amount, needsAttention, awaitingConfirmation }) => {
   const m = BOOKING_PREPAYMENT_META[status];
   if (!m) return <>{status}</>;
-  const label = amount ? `${m.label} · ${formatKGS(amount)}` : m.label;
+  const baseLabel =
+    status === "paid" && awaitingConfirmation ? "Оплачено, не подтверждено" : m.label;
+  const label = amount ? `${baseLabel} · ${formatKGS(amount)}` : baseLabel;
   return (
     <Chip
       size="small"

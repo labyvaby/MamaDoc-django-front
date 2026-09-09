@@ -196,11 +196,6 @@ function RoleFormDrawer({
   }, [open, mode, initial]);
 
   const isSystemRole = mode === "edit" && !!initial?.isSystem;
-  const grouped = React.useMemo(() => groupPermissions(permissions, t), [permissions, t]);
-
-  // Право работает только при включённом модуле организации: canAccess
-  // проверяет и право, и модуль. Помечаем права выключенных модулей,
-  // чтобы «выдал, а оно не действует» не выглядело поломкой.
   const { enabledModules } = usePermissions();
   const isModuleOff = React.useCallback(
     (permissionCode: string) => {
@@ -208,6 +203,21 @@ function RoleFormDrawer({
       return moduleCode !== null && !(enabledModules ?? []).includes(moduleCode);
     },
     [enabledModules],
+  );
+  // В редакторе показываем только права включённых модулей текущей организации.
+  // Полный список и выбранные коды остаются в состоянии, чтобы отключение
+  // модуля не удаляло ранее выданные права из роли.
+  const visiblePermissions = React.useMemo(
+    () => permissions.filter((permission) => !isModuleOff(permission.code)),
+    [permissions, isModuleOff],
+  );
+  const hiddenPermissionCodes = React.useMemo(
+    () => permissions.filter((permission) => isModuleOff(permission.code)).map((p) => p.code),
+    [permissions, isModuleOff],
+  );
+  const grouped = React.useMemo(
+    () => groupPermissions(visiblePermissions, t),
+    [visiblePermissions, t],
   );
 
   // Роли-доноры для «Скопировать права»: сама редактируемая роль и роли без
@@ -465,9 +475,9 @@ function RoleFormDrawer({
               allPermissions={permissions}
               selectedCodes={selectedCodes}
               onChange={setSelectedCodes}
-              isModuleOff={isModuleOff}
+              preservedCodes={hiddenPermissionCodes}
               disabled={busy}
-              totalCount={permissions.length}
+              totalCount={visiblePermissions.length}
               initialSelectedCodes={initial?.permissions ?? []}
               autoFocusSearch={hasFinePointer && mode === "edit"}
             />

@@ -38,6 +38,7 @@ import RouterOutlined from "@mui/icons-material/RouterOutlined";
 import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
+import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
@@ -86,6 +87,12 @@ const TAB_DEFS: TabDef[] = [
     to: "/settings/product-attributes",
     icon: <Inventory2Outlined fontSize="small" />,
     group: "catalogs",
+  },
+  {
+    key: "clients",
+    to: "/settings/clients",
+    icon: <PeopleAltOutlined fontSize="small" />,
+    group: "operations",
   },
   {
     key: "organization",
@@ -234,6 +241,7 @@ export function useVisibleSettingsTabs(): TabDef[] {
       return false;
     }
     if (tab.key === "productAttributes" && activeOrganization?.vertical !== "retail") return false;
+    if (tab.key === "clients" && activeOrganization?.vertical !== "retail") return false;
     // Справочник способов безнала: на бэке эндпоинта ещё нет — вкладку
     // показываем только вместе с остальным UI, по флагу (api/cashlessMethods.ts).
     if (tab.key === "cashlessMethods" && !CASHLESS_METHODS_ENABLED) return false;

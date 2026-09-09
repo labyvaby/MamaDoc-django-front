@@ -79,6 +79,7 @@
   },
   "tooltips": {
     "bonusPerEmployee": "Единоразовая надбавка {{employee.dat}}",
+    "bonusRequiresBranch": "Сначала выберите филиал — надбавка относится к конкретному филиалу",
     "monthSettings": "Настройки месяца: ночные часы, коэффициент, ставки по ролям",
     "bonuses": "Надбавки",
     "createExpensePayout": "Создать расход: выплата {{amount}} — {{name}}"
