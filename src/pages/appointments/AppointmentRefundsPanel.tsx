@@ -143,11 +143,16 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
 
   const amountValue = parseDecimal(amountStr);
   const remaining = state?.remaining ?? 0;
+  // Compare in kopecks/tiyins so a floating-point representation cannot let a
+  // value larger than the available remainder through the UI.
+  const amountCents = Math.round(amountValue * 100);
+  const remainingCents = Math.max(0, Math.round(remaining * 100));
+  const amountWithinLimit = amountValue > 0 && amountCents <= remainingCents;
+  const amountExceedsRemaining = amountValue > 0 && amountCents > remainingCents;
   const v = useFormValidation({
-    amount:
-      amountValue > 0 && amountValue <= remaining + 0.001
-        ? null
-        : t("refunds.errors.amountRange", { max: fmt(remaining) }),
+    amount: amountWithinLimit
+      ? null
+      : t("refunds.errors.amountRange", { max: fmt(remaining) }),
     reason: reason.trim() ? null : t("refunds.errors.reasonRequired"),
   });
 
@@ -225,6 +230,11 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
                 fullWidth
                 disabled={refundMutation.isPending}
               />
+              {amountExceedsRemaining && (
+                <Alert severity="warning" sx={{ py: 0.5 }}>
+                  {t("refunds.errors.amountExceedsAvailable", { max: fmt(remaining) })}
+                </Alert>
+              )}
               <Button
                 size="small"
                 variant="text"
@@ -266,7 +276,7 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
             variant="contained"
             color="error"
             onClick={handleRequestConfirm}
-            disabled={refundMutation.isPending}
+            disabled={refundMutation.isPending || !amountWithinLimit || !reason.trim()}
             startIcon={refundMutation.isPending ? <CircularProgress size={14} /> : undefined}
           >
             {t("refunds.submit")}
@@ -297,7 +307,7 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
             variant="contained"
             color="error"
             onClick={handleConfirm}
-            disabled={refundMutation.isPending}
+            disabled={refundMutation.isPending || !amountWithinLimit || !reason.trim()}
             startIcon={refundMutation.isPending ? <CircularProgress size={14} /> : undefined}
           >
             {t("refunds.confirm")}

@@ -519,6 +519,7 @@
     "showHistory": "История возвратов ({{count}})",
     "errors": {
       "amountRange": "Укажите сумму от 0.01 до {{max}} с",
+      "amountExceedsAvailable": "Сумма возврата не может быть больше доступной суммы: {{max}} с",
       "reasonRequired": "Укажите причину возврата"
     }
   },
