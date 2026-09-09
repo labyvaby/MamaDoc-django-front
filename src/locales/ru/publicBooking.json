@@ -132,8 +132,10 @@
   "share": "Поделиться",
   "copied": "Скопировано!",
 
-  "successTitle": "{{record.nom, capitalize}} принята!",
-  "successHint": "Мы перезвоним, чтобы подтвердить {{visit.acc}}.",
+  "successTitle": "{{record.nom, capitalize}} принята",
+  "successHint": "Это ещё не подтверждение: мы перезвоним, чтобы подтвердить {{visit.acc}}.",
+  "successTitleConfirmed": "{{record.nom, capitalize}} подтверждена",
+  "successHintConfirmed": "Ждём вас в назначенное время.",
   "successTitlePending": "Ждём оплату",
   "successTitleIssue": "Не получилось",
   "successRetry": "Записаться на другое время",

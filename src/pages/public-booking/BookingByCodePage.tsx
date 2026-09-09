@@ -353,6 +353,23 @@ const BookingByCodePage: React.FC = () => {
                       {booking.branch.address}
                     </Typography>
                   )}
+                  {/* Телефон филиала: по нему переносят и уточняют запись —
+                      он приходил в ответе, но не показывался. */}
+                  {booking.branch.phones?.[0] && (
+                    <Typography
+                      component="a"
+                      href={`tel:${booking.branch.phones[0].replace(/[^\d+]/g, "")}`}
+                      sx={{
+                        display: "inline-block",
+                        mt: 0.5,
+                        fontSize: 13,
+                        color: BOOKING_PRIMARY,
+                        textDecoration: "none",
+                      }}
+                    >
+                      {booking.branch.phones[0]}
+                    </Typography>
+                  )}
                   {maps.length > 0 && (
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
                       {maps.map((m) => (

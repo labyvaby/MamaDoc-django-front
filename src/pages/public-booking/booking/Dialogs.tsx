@@ -6,6 +6,7 @@ import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import KeyboardArrowDownOutlined from "@mui/icons-material/KeyboardArrowDownOutlined";
+import MapOutlined from "@mui/icons-material/MapOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import PendingOutlined from "@mui/icons-material/PendingOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
@@ -574,20 +575,124 @@ export const SuccessDialog: React.FC<{
   ).join(", ");
   const totalPrice = Number(detail?.totalPrice ?? 0);
   const address = detail?.branch?.address ?? doctor.branch?.address ?? "";
+  const branchName = detail?.branch?.name ?? doctor.branch?.name ?? "";
+  /**
+   * Телефон филиала. Клиника сама перезванивает, чтобы подтвердить бронь, —
+   * но если пациенту нужно перенести или уточнить, звонить ему было некуда:
+   * `branch.phones` приходил в ответе и не показывался ни на одном экране.
+   */
+  const branchPhone = detail?.branch?.phones?.[0] ?? "";
+
+  /**
+   * Ссылки на карты филиала — те же, что на странице брони по коду.
+   *
+   * Адрес строкой пациент всё равно копирует в карты руками, а на телефоне это
+   * ещё и неудобно. Ссылки заводит клиника в настройках филиала, и они уже
+   * приходят в ответе брони — здесь их просто не выводили.
+   */
+  const mapLinks = detail?.branch
+    ? (
+        [
+          { url: detail.branch.twoGisUrl, label: "2ГИС" },
+          { url: detail.branch.yandexMapsUrl, label: t("byCode.yandexMaps") },
+          { url: detail.branch.googleMapsUrl, label: t("byCode.googleMaps") },
+        ] as const
+      ).filter((m): m is { url: string; label: string } => Boolean(m.url))
+    : [];
+
+  /**
+   * Бронь принята ≠ подтверждена: её создают в статусе `pending`, и
+   * подтверждает персонал звонком. Страница брони по коду это показывала
+   * честным чипом «Ожидает подтверждения», а здесь стояла зелёная галочка и
+   * «Запись принята!» — два экрана про одну бронь говорили разное, и пациент
+   * не понимал, что нужно дождаться звонка (жалоба заказчика 08.09.2026).
+   *
+   * Читаем реальный статус, а не предполагаем: если клиника включит
+   * автоподтверждение, экран станет верным сам. Начальное значение берём из
+   * ответа POST — до `getBookingByCode` заголовок не мигает.
+   */
+  const confirmed = (detail?.status ?? result.status) === "confirmed";
+
+  /**
+   * Куда ехать и куда звонить — один блок на все состояния экрана.
+   *
+   * Тот же набор нужен и когда бронь принята, и когда ждём оплату: человек уже
+   * заплатил и ему всё равно надо доехать. Раньше на экране оплаты адрес лежал
+   * одной строкой в свёрнутых деталях, а карт и телефона не было вовсе.
+   */
+  const placeBlock =
+    branchName || address || branchPhone || mapLinks.length > 0 ? (
+      <>
+        {/* Филиал отдельной строкой: у клиники их несколько, и по одной улице
+            пациент не понимает, куда именно ехать. */}
+        {branchName && (
+          <Typography sx={{ fontSize: { xs: 13, lg: 15 }, fontWeight: 600 }}>
+            {branchName}
+          </Typography>
+        )}
+        {address && (
+          <Typography sx={{ fontSize: { xs: 12, lg: 14 }, fontWeight: 500 }}>{address}</Typography>
+        )}
+        {branchPhone && (
+          <Typography
+            component="a"
+            href={`tel:${branchPhone.replace(/[^\d+]/g, "")}`}
+            sx={{
+              display: "inline-block",
+              mt: 0.5,
+              fontSize: { xs: 12, lg: 14 },
+              fontWeight: 500,
+              color: BOOKING_PRIMARY,
+              textDecoration: "none",
+            }}
+          >
+            {branchPhone}
+          </Typography>
+        )}
+        {mapLinks.length > 0 && (
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
+            {mapLinks.map((m) => (
+              <Button
+                key={m.label}
+                href={m.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                size="small"
+                startIcon={<MapOutlined sx={{ fontSize: 16 }} />}
+                sx={{
+                  borderRadius: PILL_RADIUS,
+                  px: 1.5,
+                  border: `1px solid ${BORDER}`,
+                  color: "text.primary",
+                  fontSize: 13,
+                  textTransform: "none",
+                }}
+              >
+                {m.label}
+              </Button>
+            ))}
+          </Stack>
+        )}
+      </>
+    ) : null;
 
   const handleShare = async () => {
+    // Заголовок тот же, что на экране: пересылать «Запись принята», когда на
+    // экране «Запись подтверждена», нельзя — это одна и та же бронь.
+    const title = confirmed ? t("successTitleConfirmed") : t("successTitle");
     const text = [
-      t("successTitle"),
+      title,
       `${doctor.fullName}${specialty ? ` · ${specialty}` : ""}`,
       `${formatConfirmDate(result.date)} ${result.time}`,
-      address,
+      [branchName, address].filter(Boolean).join(", "),
+      branchPhone,
       `${t("confirmationCode")}: ${result.confirmationCode}`,
       bookingUrl,
     ]
       .filter(Boolean)
       .join("\n");
     try {
-      if (navigator.share) await navigator.share({ title: t("successTitle"), text });
+      if (navigator.share) await navigator.share({ title, text });
       else {
         await navigator.clipboard.writeText(text);
         setShareLabel(t("copied"));
@@ -746,12 +851,18 @@ export const SuccessDialog: React.FC<{
                   value={formatPrice(totalPrice)}
                 />
               )}
-              {address && (
-                <FactRow
-                  icon={<PlaceOutlined sx={{ fontSize: 20 }} />}
-                  label={t("successAddress")}
-                  value={address}
-                />
+              {/* Полный блок с картами и телефоном, а не строка: на экране
+                  оплаты доехать нужно ровно так же. */}
+              {placeBlock && (
+                <Stack direction="row" spacing={1} alignItems="flex-start">
+                  <PlaceOutlined sx={{ fontSize: 20, mt: "2px" }} />
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 13, color: MUTED, mb: 0.25 }}>
+                      {t("successAddress")}
+                    </Typography>
+                    {placeBlock}
+                  </Box>
+                </Stack>
               )}
             </Stack>
           </Collapse>
@@ -785,20 +896,50 @@ export const SuccessDialog: React.FC<{
             spacing={1}
             sx={{ pb: { xs: 1, lg: 0 }, borderBottom: { xs: `1px solid ${BORDER}`, lg: "none" } }}
           >
-            {/* Бронь создаётся в статусе pending: подтверждает её персонал,
-                поэтому «принята», а не «подтверждена» — этот экран рисуется
-                только когда предоплаты нет или она уже пришла (см. ранний
-                return выше для «ждём оплату» / «не получилось»). */}
-            <CheckCircleOutlined sx={{ fontSize: { xs: 24, lg: 34 }, color: "#34C759" }} />
+            {/* Экран рисуется, когда предоплаты нет или она уже пришла (см.
+                ранний return выше). Тон — по статусу самой брони: зелёная
+                галочка только для подтверждённой, иначе часы и явное
+                ожидание. */}
+            {confirmed ? (
+              <CheckCircleOutlined sx={{ fontSize: { xs: 24, lg: 34 }, color: "#34C759" }} />
+            ) : (
+              <PendingOutlined sx={{ fontSize: { xs: 24, lg: 34 }, color: "warning.main" }} />
+            )}
             <Box>
-              <Typography sx={{ fontSize: { xs: 16, lg: 22 }, fontWeight: 600, color: "#34C759" }}>
-                {t("successTitle")}
+              <Typography
+                sx={{
+                  fontSize: { xs: 16, lg: 22 },
+                  fontWeight: 600,
+                  color: confirmed ? "#34C759" : "warning.main",
+                }}
+              >
+                {confirmed ? t("successTitleConfirmed") : t("successTitle")}
               </Typography>
               <Typography sx={{ fontSize: { xs: 12, lg: 14 }, color: MUTED }}>
-                {t("successHint")}
+                {confirmed ? t("successHintConfirmed") : t("successHint")}
               </Typography>
             </Box>
           </Stack>
+
+          {/* Ожидание подтверждения — не мелкой подписью, а тем же чипом, что
+              и на странице брони: пациент должен понять, что запись ещё не
+              окончательная, не вчитываясь. */}
+          {!confirmed && (
+            <Box
+              sx={{
+                alignSelf: "flex-start",
+                px: 1.25,
+                py: 0.5,
+                borderRadius: 99,
+                bgcolor: "warning.main",
+                color: "#FFFFFF",
+                fontSize: { xs: 12, lg: 13 },
+                fontWeight: 600,
+              }}
+            >
+              {t("my.statusPending")}
+            </Box>
+          )}
 
           {/* На мобильном врач и QR идут сразу под заголовком. */}
           <Box sx={{ display: { lg: "none" } }}>
@@ -861,21 +1002,19 @@ export const SuccessDialog: React.FC<{
               )}
             </Stack>
 
-            {address && (
+            {placeBlock && (
               <Stack
                 direction="row"
                 alignItems="flex-start"
                 spacing={1}
                 sx={{ py: { xs: 1, lg: 2 }, borderTop: `1px solid ${BORDER}` }}
               >
-                <PlaceOutlined sx={{ fontSize: { xs: 16, lg: 22 } }} />
-                <Box>
+                <PlaceOutlined sx={{ fontSize: { xs: 16, lg: 22 }, mt: "2px" }} />
+                <Box sx={{ minWidth: 0 }}>
                   <Typography sx={{ fontSize: { xs: 12, lg: 14 }, mb: 0.5 }}>
                     {t("successAddress")}
                   </Typography>
-                  <Typography sx={{ fontSize: { xs: 12, lg: 14 }, fontWeight: 500 }}>
-                    {address}
-                  </Typography>
+                  {placeBlock}
                 </Box>
               </Stack>
             )}
