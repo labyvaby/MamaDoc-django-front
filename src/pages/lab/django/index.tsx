@@ -30,6 +30,8 @@ import { formatKGS } from "../../../utility/format";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
 import LabOrdersSummaryBar, { type LabOrdersFilter } from "../../../components/lab/LabOrdersSummaryBar";
 import LabIntakeDrawer from "../../../components/lab/LabIntakeDrawer";
+import LabOrderCard from "../../../components/lab/LabOrderCard";
+import { labOrderDispatchStatus } from "../../../utility/labOrderStatus";
 import { filterLabOrders, labOrderStats } from "./labOrderStats";
 
 const headCellSx = { fontWeight: 700, bgcolor: "background.paper" };
@@ -66,6 +68,10 @@ const DjangoLabPage: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(() => intakePatientId != null);
 
   const [filter, setFilter] = useState<LabOrdersFilter>("all");
+  // Карточка заказа (Task 11) — открывается кликом по строке ленты; id, а не
+  // сам объект строки, чтобы карточка сама перечитала актуальные данные
+  // заказа (лента отдаёт только срез для таблицы, без состава и оплаты).
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
 
   // Лента всегда шлёт на сервер пустые params — плитки ниже режут уже
   // загруженный список на клиенте (см. комментарий у visibleOrders), сеть
@@ -187,8 +193,14 @@ const DjangoLabPage: React.FC = () => {
                 <TableBody>
                   {visibleOrders.map((order) => {
                     const composition = order.titles.join(", ") || "—";
+                    const status = labOrderDispatchStatus(order.isDispatched);
                     return (
-                      <TableRow key={order.id} hover>
+                      <TableRow
+                        key={order.id}
+                        hover
+                        onClick={() => setSelectedOrderId(order.id)}
+                        sx={{ cursor: "pointer" }}
+                      >
                         <TableCell sx={{ whiteSpace: "nowrap" }}>
                           {dayjs(order.createdAt).format("DD.MM.YYYY HH:mm")}
                         </TableCell>
@@ -208,11 +220,7 @@ const DjangoLabPage: React.FC = () => {
                         )}
                         <TableCell>{order.lisOrderCode ?? "—"}</TableCell>
                         <TableCell>
-                          <Chip
-                            size="small"
-                            label={order.isDispatched ? "Отправлен" : "Оплачен, не отправлен"}
-                            color={order.isDispatched ? "success" : "warning"}
-                          />
+                          <Chip size="small" label={status.label} color={status.color} />
                         </TableCell>
                       </TableRow>
                     );
@@ -228,6 +236,14 @@ const DjangoLabPage: React.FC = () => {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         initialPatientId={intakePatientId}
+      />
+
+      <LabOrderCard
+        orderId={selectedOrderId}
+        open={selectedOrderId != null}
+        onClose={() => setSelectedOrderId(null)}
+        canViewFinance={canViewFinance}
+        canRetryDispatch={canAccept}
       />
     </Box>
   );

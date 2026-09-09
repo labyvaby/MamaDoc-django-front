@@ -250,6 +250,113 @@ export interface LabReceipt extends LabLabels {
   order: LabOrderRaw;
 }
 
+// ── Карточка заказа (детальная выдача) ──────────────────────────────────────
+
+export interface LabOrderLineDetail {
+  id: number;
+  testId: number;
+  /** Снимок названия на момент продажи — не текущее название из каталога. */
+  titleSnapshot: string;
+  price: string;
+  countItem: number;
+  isExpress: boolean;
+}
+
+export interface LabOrderInstrumentDetail {
+  id: number;
+  instrumentId: number;
+  titleSnapshot: string;
+  price: string;
+  count: number;
+}
+
+export interface LabOrderDetailRaw {
+  id: number;
+  patientId: number;
+  patientName: string;
+  branchName: string;
+  status: string;
+  diagnosis: string;
+  comment: string;
+  discountPercent: number;
+  totalAmount: string;
+  paidCash: string;
+  paidCard: string;
+  lisOrderId: number | null;
+  lisOrderCode: number | null;
+  dispatchedAt: string | null;
+  dispatchError: string;
+  createdAt: string;
+  lines: LabOrderLineDetail[];
+  instruments: LabOrderInstrumentDetail[];
+  /**
+   * Ответы на вопросы ЛИС. Карточка их не показывает (план задачи 11 не
+   * просит) — тип оставлен нестрогим, чтобы не выдумывать поля контракта,
+   * которые нигде не читаются.
+   */
+  answers: unknown[];
+}
+
+export interface LabOrderDetail {
+  id: number;
+  patientId: number;
+  patientName: string;
+  branchName: string;
+  /** См. normalizeLabOrder — тот же приём: сравнивать флаг, а не строку статуса. */
+  isDispatched: boolean;
+  diagnosis: string;
+  comment: string;
+  discountPercent: number;
+  totalAmount: number;
+  paidCash: number;
+  paidCard: number;
+  lisOrderId: number | null;
+  lisOrderCode: number | null;
+  dispatchedAt: string | null;
+  dispatchError: string;
+  createdAt: string;
+  lines: LabOrderLineDetail[];
+  instruments: LabOrderInstrumentDetail[];
+}
+
+/** Decimal-строка бэка → число; мусор (NaN, Infinity) считаем нулём, не даём ему течь в formatKGS. */
+function parseMoney(raw: string): number {
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Привести детальный ответ `GET /lab/orders/<id>/` к виду карточки заказа.
+ *
+ * `lisOrderId` и `dispatchError` не трогаем (передаём как есть) — на них
+ * держится главный сценарий раздела сегодня: пока ЛИС недоступна с сервера,
+ * каждый приём даёт неотправленный заказ, и карточка обязана честно
+ * показать причину и разрешить печать только того, что реально есть
+ * (см. labOrderStatus.ts).
+ */
+export function normalizeLabOrderDetail(raw: LabOrderDetailRaw): LabOrderDetail {
+  return {
+    id: raw.id,
+    patientId: raw.patientId,
+    patientName: raw.patientName,
+    branchName: raw.branchName,
+    isDispatched: raw.status === "dispatched",
+    diagnosis: raw.diagnosis,
+    comment: raw.comment,
+    discountPercent: raw.discountPercent,
+    totalAmount: parseMoney(raw.totalAmount),
+    paidCash: parseMoney(raw.paidCash),
+    paidCard: parseMoney(raw.paidCard),
+    lisOrderId: raw.lisOrderId,
+    lisOrderCode: raw.lisOrderCode,
+    dispatchedAt: raw.dispatchedAt,
+    dispatchError: raw.dispatchError,
+    createdAt: raw.createdAt,
+    lines: raw.lines,
+    instruments: raw.instruments,
+  };
+}
+
 export function createLabOrder(body: LabIntakeInput): Promise<LabReceipt> {
   return apiRequest<LabReceipt>("/lab/orders/", {
     method: "POST",
@@ -281,6 +388,16 @@ export function getLabOrders(
     `/lab/orders/${query ? `?${query}` : ""}`,
     { signal },
   ).then((data) => data.results.map(normalizeLabOrder));
+}
+
+/** Карточка одного заказа — GET по внутреннему id, не по номеру в ЛИС. */
+export function getLabOrder(
+  orderId: number,
+  signal?: AbortSignal,
+): Promise<LabOrderDetail> {
+  return apiRequest<LabOrderDetailRaw>(`/lab/orders/${orderId}/`, {
+    signal,
+  }).then(normalizeLabOrderDetail);
 }
 
 export function getPatientLabOrders(

@@ -435,6 +435,13 @@ export const djangoQueryKeys = {
      */
     orders: (params: Record<string, unknown>) =>
       ["django", "lab", "orders", params] as const,
+    /**
+     * Карточка одного заказа (Task 11). Ключ вложен под тот же префикс
+     * `["django", "lab"]`, что и `all` — инвалидация ленты после приёма или
+     * повтора отправки (`djangoQueryKeys.lab.all`) рефетчит и открытую
+     * карточку тоже, без отдельного вызова.
+     */
+    order: (orderId: number) => ["django", "lab", "orders", orderId] as const,
     /** Каталог анализов — грузится один раз при открытии дровера приёма. */
     tests: ["django", "lab", "tests"] as const,
     /**
