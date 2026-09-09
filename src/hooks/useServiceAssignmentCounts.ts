@@ -6,11 +6,18 @@ import { usePermissions } from "./usePermissions";
 import { useCan } from "./useCan";
 
 const EMPTY = new Map<number, number>();
+const EMPTY_IDS = new Map<number, number[]>();
 
 export interface ServiceAssignmentCounts {
   /** serviceId → сколько сотрудников её оказывают; услуги без пар в карте нет. */
   countByService: Map<number, number>;
+  /**
+   * serviceId → id сотрудников, оказывающих услугу. Тот же источник, что и
+   * счётчик, поэтому список в карточке услуги не может с ним разойтись.
+   */
+  employeeIdsByService: Map<number, number[]>;
   isLoading: boolean;
+  isError: boolean;
   /** Данные загружены — до этого «0 исполнителей» ещё ничего не значит. */
   isReady: boolean;
 }
@@ -36,18 +43,36 @@ export function useServiceAssignmentCounts(enabled: boolean = true): ServiceAssi
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
-  const countByService = React.useMemo(() => {
-    if (!query.data) return EMPTY;
-    const counts = new Map<number, number>();
+  const employeeIdsByService = React.useMemo(() => {
+    if (!query.data) return EMPTY_IDS;
+    // Считаем сотрудников, а не пары: один сотрудник может прийти дважды
+    // (проверено на проде 09.09.2026 — в выдаче без филиала сотрудник 20
+    // встречается у услуги 10 два раза), иначе счётчик завышен.
+    const seen = new Map<number, Set<number>>();
     for (const pair of query.data) {
-      counts.set(pair.serviceId, (counts.get(pair.serviceId) ?? 0) + 1);
+      const set = seen.get(pair.serviceId) ?? new Set<number>();
+      set.add(pair.employeeId);
+      seen.set(pair.serviceId, set);
+    }
+    const byService = new Map<number, number[]>();
+    for (const [serviceId, set] of seen) byService.set(serviceId, [...set]);
+    return byService;
+  }, [query.data]);
+
+  const countByService = React.useMemo(() => {
+    if (employeeIdsByService === EMPTY_IDS) return EMPTY;
+    const counts = new Map<number, number>();
+    for (const [serviceId, ids] of employeeIdsByService) {
+      counts.set(serviceId, ids.length);
     }
     return counts;
-  }, [query.data]);
+  }, [employeeIdsByService]);
 
   return {
     countByService,
+    employeeIdsByService,
     isLoading: active && query.isLoading,
+    isError: query.isError,
     isReady: active && query.data != null,
   };
 }

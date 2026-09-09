@@ -7,6 +7,7 @@ import {
 import { getEmployeeServices } from "../api/staff";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../api/queryKeys";
 import { useAllActiveEmployees } from "./useAllActiveEmployees";
+import { useServiceAssignmentCounts } from "./useServiceAssignmentCounts";
 import { usePermissions } from "./usePermissions";
 import { useCan } from "./useCan";
 
@@ -39,11 +40,20 @@ export interface ServicePerformersResult {
 /**
  * Кто оказывает услугу.
  *
- * Источник — `/api/appointments/service-providers/?serviceId=`: один запрос,
- * право `appointments.view` (не `staff.view`), так что секцию видят и врачи с
- * регистраторами. Филиал сужает выдачу до исполнителей этого филиала —
- * проверено на проде 27.08.2026: услуга 8 даёт 11 без филиала, 10 в филиале 1
- * и 9 в филиале 12.
+ * Два запроса вместо одного, и оба без `serviceId`:
+ * `/api/appointments/service-providers/?branchId=` даёт ФИО, специализации и
+ * филиал, а состав исполнителей именно этой услуги — матрица
+ * `/api/appointments/service-assignments/?branchId=` (тот же кеш, что у
+ * счётчика в списке услуг, поэтому счётчик и карточка не могут разойтись).
+ *
+ * ⚠ Почему не одним запросом: `service-providers/?serviceId=` на проде отдаёт
+ * `200 []` для любой услуги и любого филиала — проверено 09.09.2026 (услуги 8,
+ * 10, 18, 84 при 11–13 парах в матрице), хотя 27.08.2026 работал. Тикет —
+ * `MamaDoc/backend_ticket_service_providers_service_filter_2026-09-09.md`;
+ * после починки можно вернуться к одному запросу, но нужды в этом нет.
+ *
+ * Право — `appointments.view` (не `staff.view`), так что секцию видят и врачи
+ * с регистраторами.
  */
 export function useServicePerformers(
   serviceId: number | null,
@@ -58,37 +68,44 @@ export function useServicePerformers(
   const { employees } = useAllActiveEmployees(active && canViewStaff);
 
   const query = useQuery({
-    queryKey: djangoQueryKeys.appointments.servicePerformers(
+    queryKey: djangoQueryKeys.appointments.serviceProvidersInBranch(
       activeOrganization?.id ?? null,
       activeBranch?.id ?? null,
-      serviceId,
     ),
     queryFn: ({ signal }) =>
-      getServiceProviders(
-        { serviceId: serviceId ?? undefined, branchId: activeBranch?.id ?? undefined },
-        signal,
-      ),
+      getServiceProviders({ branchId: activeBranch?.id ?? undefined }, signal),
     enabled: active,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
+  const {
+    employeeIdsByService,
+    isLoading: matrixLoading,
+    isError: matrixError,
+  } = useServiceAssignmentCounts(active);
+
   const performers = React.useMemo(() => {
-    if (!query.data) return EMPTY;
+    if (!query.data || serviceId == null) return EMPTY;
+    const assigned = employeeIdsByService.get(serviceId);
+    if (!assigned || assigned.length === 0) return EMPTY;
+    const assignedIds = new Set(assigned);
     const photoById = new Map(employees.map((e) => [e.id, e.photoUrl]));
-    return query.data.map((provider) => ({
-      ...provider,
-      photoUrl: photoById.get(provider.id) ?? null,
-      branchIsForeign:
-        provider.branch != null &&
-        activeBranch?.id != null &&
-        provider.branch.id !== activeBranch.id,
-    }));
-  }, [query.data, employees, activeBranch?.id]);
+    return query.data
+      .filter((provider) => assignedIds.has(provider.id))
+      .map((provider) => ({
+        ...provider,
+        photoUrl: photoById.get(provider.id) ?? null,
+        branchIsForeign:
+          provider.branch != null &&
+          activeBranch?.id != null &&
+          provider.branch.id !== activeBranch.id,
+      }));
+  }, [query.data, employeeIdsByService, serviceId, employees, activeBranch?.id]);
 
   return {
     performers,
-    isLoading: active && query.isLoading,
-    isError: query.isError,
+    isLoading: active && (query.isLoading || matrixLoading),
+    isError: query.isError || matrixError,
     canView,
   };
 }

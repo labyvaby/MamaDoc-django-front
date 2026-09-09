@@ -39,26 +39,29 @@ export const djangoQueryKeys = {
       ["django", "appointments", "notifications", ids] as const,
     serviceProviders: () =>
       ["django", "appointments", "service-providers"] as const,
-    /** Матрица пар «услуга ↔ сотрудник» — счётчик исполнителей в списке услуг. */
-    serviceAssignments: (branchId: number | null) =>
-      ["django", "appointments", "service-assignments", branchId] as const,
     /**
-     * Исполнители одной услуги (секция «Кто оказывает» в карточке услуги).
-     * Филиал в ключе: ручка сужает выдачу по нему.
+     * Все сотрудники филиала с хотя бы одной привязкой — справочник ФИО и
+     * специализаций для секции «Кто оказывает» (кто оказывает конкретную
+     * услугу, берём из матрицы `serviceAssignments`).
      */
-    servicePerformers: (
+    serviceProvidersInBranch: (
       organizationId: number | null,
       branchId: number | null,
-      serviceId: number | null,
     ) =>
       [
         "django",
         "appointments",
         "service-providers",
+        "in-branch",
         organizationId,
         branchId,
-        serviceId,
       ] as const,
+    /**
+     * Матрица пар «услуга ↔ сотрудник» — счётчик исполнителей в списке услуг
+     * и состав секции «Кто оказывает» в карточке.
+     */
+    serviceAssignments: (branchId: number | null) =>
+      ["django", "appointments", "service-assignments", branchId] as const,
     formData: (context: { orgId?: number | null; branchId?: number | null; membershipId?: number | null } = {}) =>
       ["django", "appointments", "form-data", context] as const,
     payments: (appointmentId: number) =>
