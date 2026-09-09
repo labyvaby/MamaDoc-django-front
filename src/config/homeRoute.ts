@@ -51,6 +51,7 @@ export function resolveHomeRoute({
     [PAGE_PERMISSIONS.expenses, "/expenses"],
     [PAGE_PERMISSIONS.achievements, "/achievements"],
     [PAGE_PERMISSIONS.patients, "/patients"],
+    [PAGE_PERMISSIONS.clients, "/clients"],
     [PAGE_PERMISSIONS.employees, "/employees"],
     [PAGE_PERMISSIONS.vaccinations, "/vaccinations"],
     [PAGE_PERMISSIONS.services, "/services"],
