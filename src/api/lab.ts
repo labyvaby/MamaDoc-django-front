@@ -181,7 +181,15 @@ export interface LabOrderAnswerInput {
 
 export interface LabIntakeInput {
   patientId: number;
-  branchId?: number;
+  /**
+   * Филиал приёма обязателен, хотя в схеме бэкенда объявлен как
+   * `int | None`: контроллер требует его явно и отвечает 422 при
+   * отсутствии — филиал определяет точку регистрации в ЛИС
+   * (`lis_registry_id`), и выводить его молча из сессии там сознательно
+   * отказались, как и в записи на приём. Сверено с фактическим
+   * `LabOrderCreateInput` и `_resolve_branch` 2026-09-09.
+   */
+  branchId: number;
   lines: LabOrderLineInput[];
   answers: LabOrderAnswerInput[];
   paidCash: string;
