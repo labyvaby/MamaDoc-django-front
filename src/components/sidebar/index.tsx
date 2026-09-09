@@ -18,6 +18,7 @@ import {
   DialogContentText,
   DialogActions,
   Button,
+  Collapse,
 } from "@mui/material";
 import Backdrop from "@mui/material/Backdrop";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -94,6 +95,11 @@ import WarehouseOutlined from "@mui/icons-material/WarehouseOutlined";
 import ManageAccountsOutlined from "@mui/icons-material/ManageAccountsOutlined";
 import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
 import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
+import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 
 type NavGroup = "all" | "my-work" | "org" | "storage" | "management";
 
@@ -371,6 +377,7 @@ const SidebarSecondary: React.FC = () => {
   const orgId = useApiOrgId();
   const isSuper = isSuperAdmin();
   const isRetail = activeOrganization?.vertical === "retail";
+  const isBillingVertical = activeOrganization?.vertical === "billing";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -418,6 +425,8 @@ const SidebarSecondary: React.FC = () => {
     achievements: can(PAGE_PERMISSIONS.achievements),
     // ОРГАНИЗАЦИЯ
     employees: can(PAGE_PERMISSIONS.employees),
+    clients: can(PAGE_PERMISSIONS.clients),
+    offerings: can("offerings.view"),
     patients: !isRetail && can(PAGE_PERMISSIONS.patients),
     vaccinations: !isRetail && can(PAGE_PERMISSIONS.vaccinations),
     // Исторические реестры — только суперадмин (19.08.2026), права нет намеренно.
@@ -440,6 +449,7 @@ const SidebarSecondary: React.FC = () => {
     // управляющий филиалом). Тот же принцип, что у соседнего пункта load.
     reports: can(PAGE_PERMISSIONS.reports),
     cashbox: can(PAGE_PERMISSIONS.cashbox),
+    billing: can(PAGE_PERMISSIONS.billing),
     load: !isRetail && can(PAGE_PERMISSIONS.reports),
     notifications: can(PAGE_PERMISSIONS.notifications),
     settings: hasVisibleSettingsTab,
@@ -597,9 +607,9 @@ const SidebarSecondary: React.FC = () => {
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements,
-    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
+    "org": can_.employees || can_.clients || can_.offerings || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
     "storage": can_.pos || can_.products || can_.vaccinations || can_.sales || can_.storage,
-    "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
+    "management": can_.salaryReports || can_.reports || can_.cashbox || can_.billing || can_.load || can_.notifications || can_.settings,
   };
 
   // Если активная группа стала недоступной — сбросить на "all"
@@ -618,6 +628,28 @@ const SidebarSecondary: React.FC = () => {
         <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
         <SidebarSkudItem collapsed={siderCollapsed} />
+      </List>
+    );
+  }
+
+  // У биллинговой организации один рабочий контур: клиенты, договоры и
+  // деньги. Общая CRM-навигация (брони, чаты, кабинеты и групповые фильтры)
+  // здесь только создаёт ложные точки входа. Сам модуль billing при этом
+  // остаётся доступен и в других вертикалях через общую навигацию ниже.
+  if (isBillingVertical) {
+    return (
+      <List sx={{ py: 0.5 }}>
+        <BillingSidebarNavigation
+          collapsed={siderCollapsed}
+          canBilling={can_.billing}
+          canClients={can_.clients}
+          canEmployees={can_.employees}
+          canSettings={can_.settings}
+          canOfferings={can_.offerings}
+          canPayments={can("billing.payments.view")}
+          canDebtors={can("billing.debtors.view")}
+          canTenancy={can("tenancy.modules.view")}
+        />
       </List>
     );
   }
@@ -827,6 +859,14 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
         )}
 
+        {show("org") && can_.clients && (
+          <SidebarMenuItem to="/clients" icon={<SearchOutlined />} label="Клиенты" collapsed={siderCollapsed} />
+        )}
+
+        {show("org") && can_.offerings && (
+          <SidebarMenuItem to="/offerings" icon={<MedicalServicesOutlined />} label="Услуги и объекты" collapsed={siderCollapsed} />
+        )}
+
         {/* Все пациенты */}
         {show("org") && can_.patients && (
           <SidebarMenuItem
@@ -912,6 +952,16 @@ const SidebarSecondary: React.FC = () => {
         {/* Касса */}
         {show("management") && can_.cashbox && (
           <SidebarMenuItem to="/cashbox" icon={<AccountBalanceWalletOutlined />} label="Касса / финансы" collapsed={siderCollapsed} />
+        )}
+
+        {show("management") && can_.billing && (
+          <BillingSidebarNavigation
+            collapsed={siderCollapsed}
+            canBilling={can_.billing}
+            canPayments={can("billing.payments.view")}
+            canDebtors={can("billing.debtors.view")}
+            canTenancy={can("tenancy.modules.view")}
+          />
         )}
 
         {/* Нагрузка */}
@@ -1096,6 +1146,117 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   }
 
   return button;
+};
+
+type BillingSidebarNavigationProps = {
+  collapsed: boolean;
+  canBilling: boolean;
+  canClients?: boolean;
+  canEmployees?: boolean;
+  canSettings?: boolean;
+  canOfferings?: boolean;
+  canPayments: boolean;
+  canDebtors: boolean;
+  canTenancy?: boolean;
+};
+
+const BILLING_SECTION_PATHS = [
+  "/contracts",
+  "/charges",
+  "/payments",
+  "/debtors",
+  "/billing-reports",
+  "/billing-plan",
+];
+
+const BillingSidebarNavigation: React.FC<BillingSidebarNavigationProps> = ({
+  collapsed,
+  canBilling,
+  canClients = false,
+  canEmployees = false,
+  canSettings = false,
+  canOfferings = false,
+  canPayments,
+  canDebtors,
+  canTenancy = false,
+}) => {
+  const location = useLocation();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const { setSiderCollapsed } = useThemedLayoutContext();
+  const collapsedFinal = collapsed && !isMobile;
+  const financeActive = ["/charges", "/payments", "/debtors", "/billing-reports"].includes(location.pathname);
+  const [financeOpen, setFinanceOpen] = React.useState(financeActive);
+
+  React.useEffect(() => {
+    if (financeActive) setFinanceOpen(true);
+  }, [financeActive]);
+
+  const toggleFinance = () => {
+    if (collapsedFinal) setSiderCollapsed?.(false);
+    setFinanceOpen((open) => !open || collapsedFinal);
+  };
+
+  return (
+    <>
+      {canBilling && (
+        <SidebarMenuItem
+          to="/billing"
+          icon={<PaymentsOutlined />}
+          label="Обзор биллинга"
+          collapsed={collapsedFinal}
+          excludePaths={BILLING_SECTION_PATHS}
+        />
+      )}
+      {canClients && <SidebarMenuItem to="/clients" icon={<SearchOutlined />} label="Клиенты" collapsed={collapsedFinal} />}
+      {canBilling && <SidebarMenuItem to="/contracts" icon={<DescriptionOutlined />} label="Контракты" collapsed={collapsedFinal} />}
+      {canOfferings && <SidebarMenuItem to="/offerings" icon={<MedicalServicesOutlined />} label="Услуги и объекты" collapsed={collapsedFinal} />}
+      {canTenancy && <SidebarMenuItem to="/billing-plan" icon={<TuneOutlined />} label="Тариф и модули" collapsed={collapsedFinal} />}
+      {canBilling && (
+        <>
+          <ListItem disablePadding>
+            <Tooltip title={collapsedFinal ? "Финансы" : ""} placement="right">
+              <ListItemButton
+                selected={financeActive}
+                onClick={toggleFinance}
+                aria-expanded={financeOpen}
+                sx={(theme) => ({
+                  borderRadius: "10px",
+                  my: theme.appLayout.sidebar.itemGap,
+                  py: theme.appLayout.sidebar.itemPaddingY,
+                  px: 1.4,
+                  color: financeActive ? theme.palette.primary.onSurface : undefined,
+                  bgcolor: financeActive
+                    ? alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.22 : 0.08)
+                    : "transparent",
+                })}
+              >
+                <ListItemIcon sx={{ minWidth: 36, color: financeActive ? "primary.onSurface" : undefined }}>
+                  <AccountBalanceWalletOutlined />
+                </ListItemIcon>
+                {!collapsedFinal && <ListItemText primary="Финансы" sx={{ my: 0 }} />}
+                {!collapsedFinal && (
+                  <ExpandMoreOutlined
+                    sx={{ transform: financeOpen ? "rotate(180deg)" : "none", transition: "transform 160ms ease" }}
+                  />
+                )}
+              </ListItemButton>
+            </Tooltip>
+          </ListItem>
+          <Collapse in={financeOpen && !collapsedFinal} timeout="auto" unmountOnExit>
+            <Box sx={{ pl: 2.25 }}>
+              <SidebarMenuItem to="/charges" icon={<ReceiptLongOutlined />} label="Начисления" />
+              {canPayments && <SidebarMenuItem to="/payments" icon={<CreditCardOutlined />} label="Оплаты" />}
+              {canDebtors && <SidebarMenuItem to="/debtors" icon={<WarningAmberOutlined />} label="Должники" />}
+              <SidebarMenuItem to="/billing-reports" icon={<AssessmentOutlined />} label="Отчёты" />
+            </Box>
+          </Collapse>
+        </>
+      )}
+      {canEmployees && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={collapsedFinal} />}
+      {canSettings && <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={collapsedFinal} />}
+    </>
+  );
 };
 
 // Custom SKUD item with quick actions

@@ -82,6 +82,9 @@ const DjangoSkudSettingsPage = lazy(() => import("./pages/settings/django/SkudSe
 const ConclusionPrintPage = lazy(() => import("./pages/print/ConclusionPrintPage").then(module => ({ default: module.ConclusionPrintPage }))); // New Print Page
 const CertificatePrintPage = lazy(() => import("./pages/print/CertificatePrintPage").then(module => ({ default: module.CertificatePrintPage }))); // New Certificate Page
 const DjangoCashboxPage = lazy(() => import("./pages/cashbox/django"));
+const BillingPage = lazy(() => import("./pages/billing"));
+const BillingClientsPage = lazy(() => import("./pages/billing/clients"));
+const BillingPlanPage = lazy(() => import("./pages/billing/BillingPlanPage"));
 const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPage"));
 const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
 const ReviewsPage = lazy(() => import("./pages/reviews"));
@@ -148,10 +151,13 @@ const RootRedirect = () => {
   // был хардкод /appointments, и вход без права appointments.registry.view
   // заканчивался экраном «Нет доступа».
   const { loading, can } = useCanChecker();
-  const { role, activeEmployee } = usePermissions();
+  const { role, activeEmployee, activeOrganization } = usePermissions();
   const { loading: moduleLoading, moduleGate } = useModuleGate();
   if (loading || moduleLoading) {
     return <LinearProgress />;
+  }
+  if (activeOrganization?.vertical === "billing" && can(PAGE_PERMISSIONS.billing)) {
+    return <Navigate to="/billing" replace />;
   }
   const path = resolveHomeRoute({
     roleCode: role?.name,
@@ -374,6 +380,11 @@ function App() {
                         name: "cashbox",
                         list: "/cashbox",
                         meta: { label: "Касса" }
+                      },
+                      {
+                        name: "billing",
+                        list: "/billing",
+                        meta: { label: "Биллинг" }
                       },
                       {
                         name: "reports",
@@ -760,6 +771,103 @@ function App() {
                             </RequirePermission>
                           }
                         />
+                        <Route
+                          path="billing"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.billing}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="contracts"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.billing}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="offerings"
+                          element={
+                            <RequirePermission permission="offerings.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="charges"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.billing}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="payments"
+                          element={
+                            <RequirePermission permission="billing.payments.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="debtors"
+                          element={
+                            <RequirePermission permission="billing.debtors.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="billing-reports"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.billing}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="billing-plan"
+                          element={
+                            <RequirePermission permission="tenancy.modules.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPlanPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="clients"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.clients}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingClientsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route path="billing/contracts" element={<Navigate to="/contracts" replace />} />
+                        <Route path="billing/offerings" element={<Navigate to="/offerings" replace />} />
+                        <Route path="billing/charges" element={<Navigate to="/charges" replace />} />
+                        <Route path="billing/payments" element={<Navigate to="/payments" replace />} />
+                        <Route path="billing/debtors" element={<Navigate to="/debtors" replace />} />
+                        <Route path="billing/reports" element={<Navigate to="/billing-reports" replace />} />
+                        <Route path="billing/clients" element={<Navigate to="/clients" replace />} />
                         <Route
                           path="reports"
                           element={

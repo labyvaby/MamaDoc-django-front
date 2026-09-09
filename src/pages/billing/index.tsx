@@ -1,0 +1,615 @@
+import React from "react";
+import {
+  Alert,
+  Box,
+  Button,
+  Checkbox,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  LinearProgress,
+  Menu,
+  MenuItem,
+  Paper,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import LinkOutlined from "@mui/icons-material/LinkOutlined";
+import MoreHorizOutlined from "@mui/icons-material/MoreHorizOutlined";
+import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
+import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
+import RuleOutlined from "@mui/icons-material/RuleOutlined";
+import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
+import { useNotification } from "@refinedev/core";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import dayjs from "dayjs";
+import { useLocation } from "react-router";
+
+import {
+  billingApi,
+  type BillingCharge,
+  type BillingContract,
+  type BillingOffering,
+  type BillingPayment,
+  type BulkChargeResult,
+} from "../../api/billing";
+import { getErrorMessage } from "../../api/client";
+import { djangoQueryKeys } from "../../api/queryKeys";
+import { AppCard, PageHeader } from "../../components/ui";
+import { useActiveScope } from "../../hooks/useActiveScope";
+import { useCan } from "../../hooks/useCan";
+import { usePageTitle } from "../../hooks/usePageTitle";
+import { subtleBg } from "../../theme/uiHelpers";
+import { ChargeCardDrawer } from "./ChargeCardDrawer";
+import { PaymentCardDrawer } from "./PaymentCardDrawer";
+import { BillingReports } from "./BillingReports";
+import { OfferingCardDrawer } from "./OfferingCardDrawer";
+import { chargePeriodLabel } from "./chargePeriod";
+import { ContractRulesFields } from "./ContractRulesFields";
+import {
+  rulesError,
+  rulesFromDefaults,
+  rulesToPayload,
+  type ContractRulesValues,
+} from "./contractRules";
+import { ContractCardDrawer } from "./ContractCardDrawer";
+
+type BillingTab = "overview" | "contracts" | "charges" | "payments" | "debtors" | "offerings" | "reports";
+type DialogKind = "contract" | "charge" | "bulkCharge" | "payment" | "offering" | null;
+
+const TAB_LABELS: Record<BillingTab, string> = {
+  overview: "Обзор",
+  contracts: "Контракты",
+  charges: "Начисления",
+  payments: "Оплаты",
+  debtors: "Должники",
+  offerings: "Услуги",
+  reports: "Отчёты биллинга",
+};
+
+const PATH_TABS: Record<string, BillingTab> = {
+  "/billing": "overview",
+  "/contracts": "contracts",
+  "/charges": "charges",
+  "/payments": "payments",
+  "/debtors": "debtors",
+  "/offerings": "offerings",
+  "/billing-reports": "reports",
+};
+
+const STATUS_META: Record<string, { label: string; color: "default" | "success" | "warning" | "error" | "info" }> = {
+  active: { label: "Активен", color: "success" },
+  paused: { label: "На паузе", color: "warning" },
+  ended: { label: "Завершён", color: "default" },
+  draft: { label: "Черновик", color: "default" },
+  issued: { label: "Выставлено", color: "info" },
+  partial: { label: "Частично", color: "warning" },
+  paid: { label: "Оплачено", color: "success" },
+  succeeded: { label: "Успешно", color: "success" },
+  pending: { label: "Ожидает", color: "warning" },
+  failed: { label: "Ошибка", color: "error" },
+  refunded: { label: "Возвращено", color: "default" },
+  overdue: { label: "Просрочено", color: "error" },
+  canceled: { label: "Отменено", color: "default" },
+};
+
+const CHARGE_FILTERS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Все" },
+  { value: "overdue", label: "Просроченные" },
+  { value: "issued", label: "Выставленные" },
+  { value: "partial", label: "Частично оплаченные" },
+  { value: "draft", label: "Черновики" },
+  { value: "paid", label: "Оплаченные" },
+  { value: "canceled", label: "Отменённые" },
+];
+
+const CONTRACT_FILTERS = [
+  { value: "", label: "Все контракты" },
+  { value: "active", label: "Активные" },
+  { value: "paused", label: "На паузе" },
+  { value: "ended", label: "Завершённые" },
+];
+const PAYMENT_STATUS_FILTERS = [
+  { value: "", label: "Все статусы" },
+  { value: "succeeded", label: "Успешные" },
+  { value: "pending", label: "Ожидают" },
+  { value: "failed", label: "С ошибкой" },
+  { value: "refunded", label: "Возвращённые" },
+];
+const PAYMENT_METHOD_FILTERS = [
+  { value: "", label: "Все способы" },
+  { value: "cash", label: "Наличные" },
+  { value: "transfer", label: "Банковский перевод" },
+  { value: "bakai", label: "Bakai Pay" },
+];
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  cash: "Наличные",
+  transfer: "Банковский перевод",
+  bakai: "Bakai Pay",
+};
+
+const KIND_LABELS: Record<string, string> = { service: "Услуга", course: "Курс", rental: "Аренда" };
+const CYCLE_LABELS: Record<string, string> = {
+  one_time: "Разово",
+  package: "Пакет",
+  monthly: "Ежемесячно",
+  quarterly: "Ежеквартально",
+  yearly: "Ежегодно",
+  per_course: "За курс",
+  per_session: "За занятие",
+};
+const CYCLES_BY_KIND: Record<string, string[]> = {
+  service: ["one_time", "package", "monthly", "quarterly", "yearly"],
+  course: ["per_course", "per_session", "monthly", "quarterly", "yearly"],
+  rental: ["monthly", "quarterly", "yearly"],
+};
+const DEFAULT_CYCLE_BY_KIND: Record<string, string> = { service: "monthly", course: "per_course", rental: "monthly" };
+
+const formatMoney = (value: string | number | null | undefined) =>
+  `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(value ?? 0))} сом`;
+const formatDate = (value: string | null | undefined) => (value ? dayjs(value).format("DD.MM.YYYY") : "—");
+
+function StatusChip({ status }: { status: string }) {
+  const meta = STATUS_META[status] ?? { label: status, color: "default" as const };
+  return <Chip size="small" label={meta.label} color={meta.color} variant={meta.color === "default" ? "outlined" : "filled"} />;
+}
+
+function EmptyRow({ colSpan, text = "Пока нет данных" }: { colSpan: number; text?: string }) {
+  return (
+    <TableRow>
+      <TableCell colSpan={colSpan} align="center" sx={{ py: 7, color: "text.secondary" }}>{text}</TableCell>
+    </TableRow>
+  );
+}
+
+function KpiCard({ label, value, hint, tone = "primary" }: { label: string; value: React.ReactNode; hint: string; tone?: "primary" | "warning" | "error" | "success" }) {
+  return (
+    <AppCard sx={{ minWidth: 180, flex: "1 1 210px", overflow: "hidden", position: "relative" }}>
+      <Box sx={{ position: "absolute", inset: "0 auto 0 0", width: 4, bgcolor: `${tone}.main` }} />
+      <Typography variant="caption" color="text.secondary">{label}</Typography>
+      <Typography variant="h5" fontWeight={750} sx={{ mt: 0.5, letterSpacing: -0.6 }}>{value}</Typography>
+      <Typography variant="caption" color="text.disabled">{hint}</Typography>
+    </AppCard>
+  );
+}
+
+function MoneyTimeline({ rows }: { rows: Array<{ date: string; total: string }> }) {
+  const max = Math.max(...rows.map((row) => Number(row.total)), 1);
+  return (
+    <Stack direction="row" spacing={0.75} alignItems="flex-end" sx={{ height: 190, pt: 2, overflowX: "auto" }}>
+      {rows.length === 0 && <Typography color="text.secondary">За выбранный период оплат ещё нет.</Typography>}
+      {rows.map((row) => {
+        const height = Math.max(8, (Number(row.total) / max) * 150);
+        return (
+          <Tooltip key={row.date} title={`${formatDate(row.date)} · ${formatMoney(row.total)}`} arrow>
+            <Box sx={{ minWidth: 12, flex: 1, maxWidth: 30, height, borderRadius: "5px 5px 2px 2px", bgcolor: "success.main", opacity: 0.78, transition: "height .2s ease", "@media (prefers-reduced-motion: reduce)": { transition: "none" }, "&:hover": { opacity: 1 } }} />
+          </Tooltip>
+        );
+      })}
+    </Stack>
+  );
+}
+
+const initialForm = () => ({
+  clientId: "", offeringId: "", startsOn: dayjs().format("YYYY-MM-DD"), endsOn: "", name: "",
+  billingDay: String(dayjs().date()), priceOverride: "", subscriptionId: "", purpose: "",
+  amount: "", dueDate: dayjs().format("YYYY-MM-DD"), periodKey: dayjs().format("YYYY-MM"),
+  method: "cash", chargeId: "", kind: "service", billingCycle: "monthly", category: "", capacity: "",
+  priceAmount: "",
+  sessionsIncluded: "", validityDays: "", sessionsTotal: "", schedule: "", courseEndsOn: "", objectType: "office", areaUnit: "sqm", ratePeriod: "month",
+  address: "", areaValue: "", depositAmount: "",
+});
+
+export default function BillingPage() {
+  const location = useLocation();
+  const tab = PATH_TABS[location.pathname] ?? "overview";
+  usePageTitle(TAB_LABELS[tab]);
+  const [search, setSearch] = React.useState("");
+  const [dialog, setDialog] = React.useState<DialogKind>(null);
+  const [form, setForm] = React.useState(initialForm);
+  const [menuAnchor, setMenuAnchor] = React.useState<HTMLElement | null>(null);
+  const [menuItem, setMenuItem] = React.useState<BillingContract | BillingCharge | BillingPayment | BillingOffering | null>(null);
+  const [editingOffering, setEditingOffering] = React.useState<BillingOffering | null>(null);
+  const [selectedDebtors, setSelectedDebtors] = React.useState<number[]>([]);
+  const [selectedContract, setSelectedContract] = React.useState<BillingContract | null>(null);
+  const [selectedCharge, setSelectedCharge] = React.useState<BillingCharge | null>(null);
+  const [selectedPayment, setSelectedPayment] = React.useState<BillingPayment | null>(null);
+  const [selectedOffering, setSelectedOffering] = React.useState<BillingOffering | null>(null);
+  const [contractStatus, setContractStatus] = React.useState("");
+  const [chargeStatus, setChargeStatus] = React.useState("");
+  const [chargeDateFrom, setChargeDateFrom] = React.useState("");
+  const [chargeDateTo, setChargeDateTo] = React.useState("");
+  const [paymentStatus, setPaymentStatus] = React.useState("");
+  const [paymentMethod, setPaymentMethod] = React.useState("");
+  const [overviewDateFrom, setOverviewDateFrom] = React.useState(dayjs().startOf("month").format("YYYY-MM-DD"));
+  const [overviewDateTo, setOverviewDateTo] = React.useState(dayjs().format("YYYY-MM-DD"));
+  const [defaultsOpen, setDefaultsOpen] = React.useState(false);
+  const [defaultsRules, setDefaultsRules] = React.useState<ContractRulesValues | null>(null);
+  const { open: notify } = useNotification();
+  const queryClient = useQueryClient();
+  const scope = useActiveScope();
+  const canManage = useCan("billing.manage");
+  const canManagePayments = useCan("billing.payments.manage");
+  const canRemind = useCan("billing.debtors.remind");
+  const canManageOfferings = useCan("offerings.manage");
+  const organizationId = scope.organizationId;
+  const scopeParams = React.useMemo(() => ({ ...(organizationId ? { organizationId } : {}) }), [organizationId]);
+  const dateFrom = overviewDateFrom;
+  const dateTo = overviewDateTo;
+  const overviewPeriodValid = Boolean(dateFrom && dateTo && !dayjs(dateFrom).isAfter(dayjs(dateTo)));
+  const chargePeriodValid = !chargeDateFrom || !chargeDateTo || !dayjs(chargeDateFrom).isAfter(dayjs(chargeDateTo));
+  const enabled = scope.isReady && scope.orgReady;
+
+  const dashboardQuery = useQuery({
+    queryKey: djangoQueryKeys.billing.dashboard({ organizationId, dateFrom, dateTo }),
+    queryFn: () => billingApi.dashboard({ ...scopeParams, dateFrom, dateTo }),
+    enabled: enabled && tab === "overview" && overviewPeriodValid,
+  });
+  const contractsQuery = useQuery({
+    queryKey: djangoQueryKeys.billing.contracts({ organizationId, q: search, status: contractStatus }),
+    queryFn: () => billingApi.allContracts({ ...scopeParams, q: search, ...(contractStatus ? { status: contractStatus } : {}) }),
+    enabled: enabled && (tab === "contracts" || dialog === "charge"),
+  });
+  const chargesQuery = useQuery({
+    queryKey: djangoQueryKeys.billing.charges({ organizationId, q: search, status: chargeStatus, dateFrom: chargeDateFrom, dateTo: chargeDateTo }),
+    queryFn: () => billingApi.allCharges({ ...scopeParams, q: search, ...(chargeStatus ? { status: chargeStatus } : {}), ...(chargeDateFrom ? { dateFrom: chargeDateFrom } : {}), ...(chargeDateTo ? { dateTo: chargeDateTo } : {}) }),
+    enabled: enabled && chargePeriodValid && (tab === "charges" || dialog === "payment"),
+  });
+  const paymentsQuery = useQuery({
+    queryKey: djangoQueryKeys.billing.payments({ organizationId, q: search, status: paymentStatus, method: paymentMethod }),
+    queryFn: () => billingApi.allPayments({ ...scopeParams, q: search, ...(paymentStatus ? { status: paymentStatus } : {}), ...(paymentMethod ? { method: paymentMethod } : {}) }),
+    enabled: enabled && tab === "payments",
+  });
+  const debtorsQuery = useQuery({
+    queryKey: djangoQueryKeys.billing.debtors(organizationId),
+    queryFn: () => billingApi.debtors(scopeParams),
+    enabled: enabled && tab === "debtors",
+  });
+  const offeringsQuery = useQuery({
+    queryKey: djangoQueryKeys.billing.offerings({ organizationId, q: search }),
+    queryFn: () => billingApi.offerings({ ...scopeParams, q: search }),
+    enabled: enabled && (tab === "offerings" || dialog === "contract" || dialog === "bulkCharge"),
+  });
+  const clientsQuery = useQuery({
+    queryKey: djangoQueryKeys.billing.clients(organizationId),
+    queryFn: () => billingApi.clients(scopeParams),
+    enabled: enabled && (dialog === "contract" || dialog === "payment"),
+  });
+  // Правила, которые получит каждый новый контракт организации. Тот же набор
+  // полей, что и в карточке контракта, — компонент общий.
+  const defaultsQuery = useQuery({
+    queryKey: djangoQueryKeys.billing.defaults(organizationId),
+    queryFn: () => billingApi.contractDefaults(scopeParams),
+    enabled: enabled && defaultsOpen,
+  });
+  React.useEffect(() => {
+    if (defaultsQuery.data) setDefaultsRules(rulesFromDefaults(defaultsQuery.data));
+  }, [defaultsQuery.data]);
+
+  const chargeRows = React.useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase("ru");
+    const rows = chargesQuery.data?.items ?? [];
+    return needle ? rows.filter((row) => `${row.number} ${row.clientName} ${row.purpose} ${row.offeringName}`.toLocaleLowerCase("ru").includes(needle)) : rows;
+  }, [chargesQuery.data?.items, search]);
+  const paymentRows = React.useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase("ru");
+    const rows = paymentsQuery.data?.items ?? [];
+    return needle ? rows.filter((row) => `${row.id} ${row.clientName} ${row.chargeId ?? ""} ${row.method}`.toLocaleLowerCase("ru").includes(needle)) : rows;
+  }, [paymentsQuery.data?.items, search]);
+
+  const invalidate = React.useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: djangoQueryKeys.billing.all });
+  }, [queryClient]);
+
+  const actionMutation = useMutation({
+    mutationFn: async (job: () => Promise<unknown>) => job(),
+    onSuccess: async () => { setMenuAnchor(null); setMenuItem(null); await invalidate(); notify?.({ type: "success", message: "Готово" }); },
+    onError: (error) => notify?.({ type: "error", message: "Операция не выполнена", description: getErrorMessage(error) }),
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: async () => {
+      if (dialog === "contract") return billingApi.createContract({ clientId: Number(form.clientId), offeringId: Number(form.offeringId), startsOn: form.startsOn, ...(form.endsOn ? { endsOn: form.endsOn } : {}), ...(form.name ? { name: form.name } : {}), ...(form.priceOverride ? { priceOverride: form.priceOverride } : {}), ...(form.billingDay ? { billingDay: Number(form.billingDay) } : {}), ...scopeParams });
+      if (dialog === "charge") return billingApi.createCharge({ clientId: Number(form.clientId), subscriptionId: Number(form.subscriptionId), purpose: form.purpose, amount: form.amount, dueDate: form.dueDate, periodKey: form.periodKey, periodLabel: form.periodKey, ...scopeParams });
+      if (dialog === "bulkCharge") return billingApi.createChargesBulk({ offeringId: Number(form.offeringId), purpose: form.purpose, amount: form.amount, dueDate: form.dueDate, periodKey: form.periodKey, periodLabel: form.periodKey, clientIds: [], ...scopeParams });
+      if (dialog === "payment") return billingApi.createPayment({ clientId: Number(form.clientId), ...(form.chargeId ? { chargeId: Number(form.chargeId) } : {}), amount: form.amount, method: form.method, ...scopeParams });
+      if (dialog === "offering") {
+        const body = { ...(!editingOffering ? { kind: form.kind } : {}), name: form.name, billingCycle: form.billingCycle, priceAmount: form.priceAmount, category: form.category, capacity: form.capacity ? Number(form.capacity) : null, profile: form.kind === "course" ? { sessions_total: Number(form.sessionsTotal), schedule: form.schedule, starts_on: form.startsOn, ...(form.courseEndsOn ? { ends_on: form.courseEndsOn } : {}) } : form.kind === "rental" ? { object_type: form.objectType, area_unit: form.areaUnit, rate_period: form.ratePeriod, ...(form.address ? { address: form.address } : {}), ...(form.areaValue ? { area_value: Number(form.areaValue) } : {}), ...(form.depositAmount ? { deposit_amount: form.depositAmount } : {}) } : { ...(form.sessionsIncluded ? { sessions_included: Number(form.sessionsIncluded) } : {}), ...(form.validityDays ? { validity_days: Number(form.validityDays) } : {}) } };
+        return editingOffering
+          ? billingApi.updateOffering(editingOffering.id, body, scopeParams)
+          : billingApi.createOffering({ ...body, ...scopeParams });
+      }
+      throw new Error("Не выбрано действие");
+    },
+    onSuccess: async (result) => {
+      const bulkResult = dialog === "bulkCharge" ? result as BulkChargeResult : null;
+      setDialog(null);
+      setEditingOffering(null);
+      setForm(initialForm());
+      await invalidate();
+      notify?.({
+        type: "success",
+        message: bulkResult ? `Создано начислений: ${bulkResult.created.length}` : "Сохранено",
+        ...(bulkResult?.skippedCount ? { description: `Пропущено контрактов: ${bulkResult.skippedCount}` } : {}),
+      });
+    },
+    onError: (error) => notify?.({ type: "error", message: "Не удалось сохранить", description: getErrorMessage(error) }),
+  });
+
+  const defaultsMutation = useMutation({
+    mutationFn: () => billingApi.updateContractDefaults(rulesToPayload(defaultsRules!), scopeParams),
+    onSuccess: async (updated) => {
+      setDefaultsRules(rulesFromDefaults(updated));
+      setDefaultsOpen(false);
+      await invalidate();
+      notify?.({ type: "success", message: "Правила по умолчанию сохранены" });
+    },
+    onError: (error) => notify?.({ type: "error", message: "Не удалось сохранить правила", description: getErrorMessage(error) }),
+  });
+  const defaultsValidation = defaultsRules ? rulesError(defaultsRules) : null;
+
+  const openDialog = (kind: Exclude<DialogKind, null>) => { setEditingOffering(null); setForm(initialForm()); setDialog(kind); };
+  const openOfferingEdit = (offering: BillingOffering) => {
+    const profile = offering.profile ?? {};
+    const value = (key: string) => String(profile[key] ?? "");
+    setMenuAnchor(null);
+    setMenuItem(null);
+    setEditingOffering(offering);
+    setForm({
+      ...initialForm(),
+      kind: offering.kind,
+      name: offering.name,
+      category: offering.category,
+      priceAmount: offering.priceAmount,
+      billingCycle: offering.billingCycle,
+      capacity: offering.capacity == null ? "" : String(offering.capacity),
+      sessionsTotal: value("sessions_total"),
+      schedule: value("schedule"),
+      courseEndsOn: value("ends_on"),
+      sessionsIncluded: value("sessions_included"),
+      validityDays: value("validity_days"),
+      startsOn: value("starts_on") || dayjs().format("YYYY-MM-DD"),
+      objectType: value("object_type") || "office",
+      areaUnit: value("area_unit") || "sqm",
+      ratePeriod: value("rate_period") || "month",
+      address: value("address"),
+      areaValue: value("area_value"),
+      depositAmount: value("deposit_amount"),
+    });
+    setDialog("offering");
+  };
+  const openMenu = (event: React.MouseEvent<HTMLElement>, item: typeof menuItem) => { setMenuAnchor(event.currentTarget); setMenuItem(item); };
+  const isLoading = dashboardQuery.isLoading || contractsQuery.isLoading || chargesQuery.isLoading || paymentsQuery.isLoading || debtorsQuery.isLoading || offeringsQuery.isLoading;
+  const error = dashboardQuery.error || contractsQuery.error || chargesQuery.error || paymentsQuery.error || debtorsQuery.error || offeringsQuery.error;
+
+  const primaryAction = tab === "contracts" ? () => openDialog("contract") : tab === "charges" ? () => openDialog("charge") : tab === "payments" ? () => openDialog("payment") : tab === "offerings" ? () => openDialog("offering") : undefined;
+  const primaryAllowed = tab === "payments" ? canManagePayments : tab === "offerings" ? canManageOfferings : canManage;
+
+  return (
+    <Box sx={{ pb: 4 }}>
+      <PageHeader
+        title={TAB_LABELS[tab]}
+        showTitle={false}
+        onAdd={primaryAction && primaryAllowed ? primaryAction : undefined}
+        addButtonText={tab === "contracts" ? "Новый контракт" : tab === "charges" ? "Выставить начисление" : tab === "payments" ? "Принять оплату" : "Новая услуга"}
+        showSearch={tab !== "overview" && tab !== "debtors" && tab !== "reports"}
+        searchVal={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Клиент, номер или объект"
+        loading={isLoading}
+        actions={
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            {tab === "overview" && <>
+              <TextField size="small" label="С" type="date" value={overviewDateFrom} onChange={(event) => setOverviewDateFrom(event.target.value)} InputLabelProps={{ shrink: true }} error={!overviewPeriodValid} />
+              <TextField size="small" label="По" type="date" value={overviewDateTo} onChange={(event) => setOverviewDateTo(event.target.value)} InputLabelProps={{ shrink: true }} error={!overviewPeriodValid} />
+            </>}
+            {tab === "contracts" && (
+              <TextField select size="small" label="Статус" value={contractStatus} onChange={(event) => setContractStatus(event.target.value)} sx={{ minWidth: 150 }}>
+                {CONTRACT_FILTERS.map((item) => <MenuItem key={item.value || "all"} value={item.value}>{item.label}</MenuItem>)}
+              </TextField>
+            )}
+            {tab === "payments" && <>
+              <TextField select size="small" label="Статус" value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)} sx={{ minWidth: 145 }}>
+                {PAYMENT_STATUS_FILTERS.map((item) => <MenuItem key={item.value || "all"} value={item.value}>{item.label}</MenuItem>)}
+              </TextField>
+              <TextField select size="small" label="Способ" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} sx={{ minWidth: 170 }}>
+                {PAYMENT_METHOD_FILTERS.map((item) => <MenuItem key={item.value || "all"} value={item.value}>{item.label}</MenuItem>)}
+              </TextField>
+            </>}
+            {tab === "contracts" && canManage && (
+              <Button size="small" startIcon={<RuleOutlined />} onClick={() => setDefaultsOpen(true)}>
+                Правила по умолчанию
+              </Button>
+            )}
+            {tab === "charges" && canManage && (
+              <Button size="small" startIcon={<GroupsOutlined />} onClick={() => openDialog("bulkCharge")}>Массовое начисление</Button>
+            )}
+            <Tooltip title="Обновить"><IconButton onClick={() => void invalidate()}><RefreshOutlined /></IconButton></Tooltip>
+          </Stack>
+        }
+      />
+
+      <Box sx={(theme) => ({ px: theme.appLayout.page.paddingX })}>
+        {isLoading && <LinearProgress sx={{ mb: 1, borderRadius: 2 }} />}
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{getErrorMessage(error, "Не удалось загрузить биллинг")}</Alert>}
+        {!overviewPeriodValid && tab === "overview" && <Alert severity="warning" sx={{ mb: 2 }}>Дата начала периода не может быть позже даты окончания.</Alert>}
+
+        {tab === "overview" && dashboardQuery.data && (
+          <Stack spacing={2}>
+            <Stack direction="row" gap={1.5} flexWrap="wrap">
+              <KpiCard label="Поступило" value={formatMoney(dashboardQuery.data.revenueTotal)} hint={`${formatDate(dateFrom)} — ${formatDate(dateTo)}`} tone="success" />
+              <KpiCard label="К оплате" value={formatMoney(dashboardQuery.data.outstandingTotal)} hint="по открытым начислениям" tone="warning" />
+              <KpiCard label="Активные контракты" value={dashboardQuery.data.activeSubscriptionsCount} hint="создают выручку" />
+              <KpiCard label="Должники" value={dashboardQuery.data.debtorsCount} hint={`${dashboardQuery.data.debtorsCriticalCount} критических`} tone={dashboardQuery.data.debtorsCriticalCount ? "error" : "primary"} />
+            </Stack>
+            <AppCard title="Денежная лента" subheader={`${formatDate(dateFrom)} — ${formatDate(dateTo)}`}>
+              <MoneyTimeline rows={dashboardQuery.data.dailyRevenue} />
+            </AppCard>
+          </Stack>
+        )}
+
+        {tab === "contracts" && (
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small"><TableHead><TableRow><TableCell>Контракт</TableCell><TableCell>Клиент</TableCell><TableCell>Объект</TableCell><TableCell>Период</TableCell><TableCell align="right">Стоимость</TableCell><TableCell align="right">Долг</TableCell><TableCell>Статус</TableCell><TableCell /></TableRow></TableHead>
+              <TableBody>{(contractsQuery.data?.items ?? []).map((row) => <TableRow key={row.id} hover tabIndex={0} onClick={() => setSelectedContract(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedContract(row); }} sx={{ cursor: "pointer", "&:focus-visible": { outline: 2, outlineColor: "primary.main", outlineOffset: -2 } }}><TableCell><Typography fontWeight={650}>№ {row.number ?? row.id}</Typography><Typography variant="caption" color="text.secondary">{row.name || row.offeringName}</Typography></TableCell><TableCell>{row.clientName}</TableCell><TableCell>{row.offeringName}<Typography variant="caption" color="text.secondary" display="block">{KIND_LABELS[row.offeringKind] ?? row.offeringKind}</Typography></TableCell><TableCell>{formatDate(row.startsOn)} — {formatDate(row.endsOn)}</TableCell><TableCell align="right">{formatMoney(row.effectivePrice)}<Typography variant="caption" color="text.secondary" display="block">{CYCLE_LABELS[row.effectiveBillingCycle] ?? row.effectiveBillingCycle}</Typography></TableCell><TableCell align="right" sx={{ color: Number(row.debt) > 0 ? "error.main" : undefined, fontWeight: 650 }}>{formatMoney(row.debt)}</TableCell><TableCell><StatusChip status={row.status} /></TableCell><TableCell align="right"><IconButton size="small" aria-label={`Действия контракта № ${row.number ?? row.id}`} onClick={(e) => { e.stopPropagation(); openMenu(e, row); }}><MoreHorizOutlined /></IconButton></TableCell></TableRow>)}{!contractsQuery.isLoading && !(contractsQuery.data?.items.length) && <EmptyRow colSpan={8} text="Создайте первый контракт — начисления появятся автоматически." />}</TableBody>
+            </Table>
+          </TableContainer>
+        )}
+
+        {tab === "charges" && (
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap alignItems="center">
+              {CHARGE_FILTERS.map((filter) => (
+                <Chip
+                  key={filter.value || "all"}
+                  label={filter.label}
+                  size="small"
+                  color={chargeStatus === filter.value ? "primary" : "default"}
+                  variant={chargeStatus === filter.value ? "filled" : "outlined"}
+                  onClick={() => setChargeStatus(filter.value)}
+                />
+              ))}
+              <TextField size="small" label="Срок с" type="date" value={chargeDateFrom} onChange={(event) => setChargeDateFrom(event.target.value)} InputLabelProps={{ shrink: true }} error={!chargePeriodValid} sx={{ ml: { md: "auto" } }} />
+              <TextField size="small" label="Срок по" type="date" value={chargeDateTo} onChange={(event) => setChargeDateTo(event.target.value)} InputLabelProps={{ shrink: true }} error={!chargePeriodValid} />
+            </Stack>
+            {!chargePeriodValid && <Alert severity="warning">Дата начала периода не может быть позже даты окончания.</Alert>}
+            <TableContainer component={Paper} variant="outlined">
+            <Table size="small"><TableHead><TableRow><TableCell>Начисление</TableCell><TableCell>Клиент</TableCell><TableCell>Назначение</TableCell><TableCell>Срок</TableCell><TableCell align="right">Сумма</TableCell><TableCell align="right">Оплачено</TableCell><TableCell>Статус</TableCell><TableCell /></TableRow></TableHead>
+              <TableBody>{chargeRows.map((row) => { const progress = Math.min(100, Number(row.amount) ? Number(row.paidAmount) / Number(row.amount) * 100 : 0); return <TableRow key={row.id} hover tabIndex={0} onClick={() => setSelectedCharge(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedCharge(row); }} sx={{ cursor: "pointer", "&:focus-visible": { outline: 2, outlineColor: "primary.main", outlineOffset: -2 } }}><TableCell><Typography fontWeight={650}>№ {row.number}</Typography><Typography variant="caption" color="text.secondary">{chargePeriodLabel(row)}</Typography></TableCell><TableCell>{row.clientName}</TableCell><TableCell sx={{ maxWidth: 300 }}>{row.purpose}<Typography variant="caption" color="text.secondary" display="block">{row.offeringName}</Typography></TableCell><TableCell sx={{ color: row.status === "overdue" ? "error.main" : undefined }}>{formatDate(row.dueDate)}</TableCell><TableCell align="right">{formatMoney(row.amount)}</TableCell><TableCell align="right"><Typography variant="body2">{formatMoney(row.paidAmount)}</Typography><LinearProgress variant="determinate" value={progress} color={progress === 100 ? "success" : "primary"} sx={{ mt: 0.5, minWidth: 80, borderRadius: 3 }} /></TableCell><TableCell><StatusChip status={row.status} /></TableCell><TableCell align="right"><IconButton size="small" onClick={(e) => { e.stopPropagation(); openMenu(e, row); }}><MoreHorizOutlined /></IconButton></TableCell></TableRow>; })}{!chargesQuery.isLoading && !chargeRows.length && <EmptyRow colSpan={8} text="Начислений пока нет." />}</TableBody>
+              </Table>
+            </TableContainer>
+          </Stack>
+        )}
+
+        {tab === "payments" && (
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small"><TableHead><TableRow><TableCell>Платёж</TableCell><TableCell>Клиент</TableCell><TableCell>Начисление</TableCell><TableCell>Метод</TableCell><TableCell>Дата</TableCell><TableCell align="right">Сумма</TableCell><TableCell>Статус</TableCell><TableCell /></TableRow></TableHead>
+              <TableBody>{paymentRows.map((row) => <TableRow key={row.id} hover tabIndex={0} onClick={() => setSelectedPayment(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedPayment(row); }} sx={{ cursor: "pointer", "&:focus-visible": { outline: 2, outlineColor: "primary.main", outlineOffset: -2 } }}><TableCell>#{row.id}{row.refundOfId && <Typography variant="caption" color="text.secondary" display="block">Возврат #{row.refundOfId}</Typography>}</TableCell><TableCell>{row.clientName}</TableCell><TableCell>{row.chargeId ? `№ ${row.chargeId}` : "На баланс"}</TableCell><TableCell>{PAYMENT_METHOD_LABELS[row.method] ?? row.method}</TableCell><TableCell>{formatDate(row.paidAt ?? row.createdAt)}</TableCell><TableCell align="right" sx={{ fontWeight: 700, color: row.refundOfId ? "error.main" : "success.main" }}>{row.refundOfId ? "−" : "+"}{formatMoney(row.amount)}</TableCell><TableCell><StatusChip status={row.status} /></TableCell><TableCell align="right">{canManagePayments && !row.refundOfId && row.status === "succeeded" && <IconButton size="small" aria-label={`Действия платежа #${row.id}`} onClick={(e) => { e.stopPropagation(); openMenu(e, row); }}><MoreHorizOutlined /></IconButton>}</TableCell></TableRow>)}{!paymentsQuery.isLoading && !paymentRows.length && <EmptyRow colSpan={8} text="Оплат ещё нет." />}</TableBody>
+            </Table>
+          </TableContainer>
+        )}
+
+        {tab === "debtors" && (
+          <Stack spacing={1.5}>
+            {canRemind && <Box><Button variant="contained" startIcon={<NotificationsActiveOutlined />} disabled={!selectedDebtors.length || actionMutation.isPending} onClick={() => actionMutation.mutate(() => billingApi.remindDebtors(selectedDebtors, organizationId))}>Напомнить выбранным ({selectedDebtors.length})</Button></Box>}
+            <TableContainer component={Paper} variant="outlined"><Table size="small"><TableHead><TableRow><TableCell padding="checkbox"><Checkbox checked={!!debtorsQuery.data?.length && selectedDebtors.length === debtorsQuery.data.length} indeterminate={selectedDebtors.length > 0 && selectedDebtors.length !== debtorsQuery.data?.length} onChange={(_, checked) => setSelectedDebtors(checked ? (debtorsQuery.data ?? []).map((d) => d.clientId) : [])} /></TableCell><TableCell>Клиент</TableCell><TableCell>Телефон</TableCell><TableCell>Просрочка</TableCell><TableCell>Начислений</TableCell><TableCell align="right">К оплате</TableCell><TableCell>Риск</TableCell></TableRow></TableHead><TableBody>{(debtorsQuery.data ?? []).map((row) => <TableRow key={row.clientId} hover><TableCell padding="checkbox"><Checkbox checked={selectedDebtors.includes(row.clientId)} onChange={(_, checked) => setSelectedDebtors((ids) => checked ? [...ids, row.clientId] : ids.filter((id) => id !== row.clientId))} /></TableCell><TableCell sx={{ fontWeight: 650 }}>{row.clientName}</TableCell><TableCell>{row.clientPhone || "—"}</TableCell><TableCell>{row.daysOverdue} дн.</TableCell><TableCell>{row.unpaidCount}</TableCell><TableCell align="right" sx={{ fontWeight: 750, color: "error.main" }}>{formatMoney(row.amountOverdue)}</TableCell><TableCell><Chip size="small" color={row.severity === "critical" ? "error" : row.severity === "medium" ? "warning" : "default"} label={row.severity === "critical" ? "Критический" : row.severity === "medium" ? "Средний" : "Низкий"} /></TableCell></TableRow>)}{!debtorsQuery.isLoading && !(debtorsQuery.data?.length) && <EmptyRow colSpan={7} text="Просроченной задолженности нет." />}</TableBody></Table></TableContainer>
+          </Stack>
+        )}
+
+        {tab === "offerings" && (
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(270px, 1fr))", gap: 1.5 }}>
+            {(offeringsQuery.data ?? []).map((row) => <AppCard key={row.id} role="button" tabIndex={0} sx={{ position: "relative", cursor: "pointer", "&:focus-visible": { outline: 2, outlineColor: "primary.main", outlineOffset: 2 } }} onClick={() => setSelectedOffering(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedOffering(row); }} headerActions={<IconButton size="small" aria-label={`Действия: ${row.name}`} onClick={(e) => { e.stopPropagation(); openMenu(e, row); }}><MoreHorizOutlined /></IconButton>} title={row.name} subheader={`${KIND_LABELS[row.kind] ?? row.kind} · ${CYCLE_LABELS[row.billingCycle] ?? row.billingCycle}`}><Stack spacing={1.5}><Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Стоимость</Typography><Typography fontWeight={700}>{formatMoney(row.priceAmount)}</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Клиентов</Typography><Typography fontWeight={700}>{row.clientsCount}</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Выручка</Typography><Typography fontWeight={700}>{formatMoney(row.revenueTotal)}</Typography></Stack>{row.occupancy && <Chip size="small" label={`Занятость: ${row.occupancy}`} />}</Stack></AppCard>)}
+            {!offeringsQuery.isLoading && !(offeringsQuery.data?.length) && <Alert severity="info">Создайте услугу, курс или объект аренды, чтобы заключать контракты.</Alert>}
+          </Box>
+        )}
+
+        {tab === "reports" && <BillingReports organizationId={organizationId} enabled={enabled} />}
+      </Box>
+
+      <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
+        {menuItem && "effectivePrice" in menuItem && menuItem.status === "active" && <MenuItem onClick={() => actionMutation.mutate(() => billingApi.contractAction(menuItem.id, "pause", scopeParams))}>Поставить на паузу</MenuItem>}
+        {menuItem && "effectivePrice" in menuItem && menuItem.status === "paused" && <MenuItem onClick={() => actionMutation.mutate(() => billingApi.contractAction(menuItem.id, "resume", scopeParams))}>Возобновить</MenuItem>}
+        {menuItem && "effectivePrice" in menuItem && menuItem.status !== "ended" && <MenuItem onClick={() => actionMutation.mutate(() => billingApi.endContract(menuItem.id, dayjs().format("YYYY-MM-DD"), scopeParams))}>Завершить сегодня</MenuItem>}
+        {menuItem && "paidAmount" in menuItem && menuItem.status === "draft" && <MenuItem onClick={() => actionMutation.mutate(() => billingApi.chargeAction(menuItem.id, "issue", scopeParams))}>Выставить</MenuItem>}
+        {menuItem && "paidAmount" in menuItem && ["draft", "issued"].includes(menuItem.status) && <MenuItem onClick={() => actionMutation.mutate(() => billingApi.chargeAction(menuItem.id, "cancel", scopeParams))}>Отменить</MenuItem>}
+        {menuItem && "paidAmount" in menuItem && !["paid", "canceled"].includes(menuItem.status) && <MenuItem onClick={() => actionMutation.mutate(async () => { const result = await billingApi.createPayLink(menuItem.id, organizationId); await navigator.clipboard.writeText(result.providerPayUrl || result.url); notify?.({ type: "success", message: "Ссылка скопирована" }); return result; })}><LinkOutlined fontSize="small" sx={{ mr: 1 }} />Создать ссылку на оплату</MenuItem>}
+        {menuItem && "refundOfId" in menuItem && !menuItem.refundOfId && <MenuItem onClick={() => actionMutation.mutate(() => billingApi.refundPayment(menuItem.id, undefined, scopeParams))}>Полный возврат</MenuItem>}
+        {menuItem && "clientsCount" in menuItem && canManageOfferings && <MenuItem onClick={() => openOfferingEdit(menuItem)}>Изменить</MenuItem>}
+        {menuItem && "clientsCount" in menuItem && canManageOfferings && <MenuItem onClick={() => actionMutation.mutate(() => billingApi.archiveOffering(menuItem.id, scopeParams))}>Архивировать</MenuItem>}
+      </Menu>
+
+      <Dialog open={dialog !== null} onClose={() => !submitMutation.isPending && setDialog(null)} fullWidth maxWidth="md" PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle>{dialog === "contract" ? "Новый контракт" : dialog === "charge" ? "Новое начисление" : dialog === "bulkCharge" ? "Массовое начисление" : dialog === "payment" ? "Принять оплату" : editingOffering ? "Изменить услугу" : "Новая услуга"}</DialogTitle>
+        <DialogContent dividers sx={{ bgcolor: (theme) => subtleBg(theme), display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) minmax(0, 1fr)" }, gap: 2.25, px: { xs: 2, sm: 3 }, py: 3 }}>
+          {dialog === "contract" && <><TextField select required label="Клиент" value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} fullWidth>{(clientsQuery.data ?? []).map((client) => <MenuItem key={client.id} value={client.id}>{client.fullName}</MenuItem>)}</TextField><TextField select required label="Объект продажи" value={form.offeringId} onChange={(e) => setForm({ ...form, offeringId: e.target.value })} fullWidth>{(offeringsQuery.data ?? []).filter((o) => o.status === "active").map((offering) => <MenuItem key={offering.id} value={offering.id}>{offering.name}</MenuItem>)}</TextField><TextField label="Название контракта" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} fullWidth /><TextField label="Особая цена" type="number" value={form.priceOverride} onChange={(e) => setForm({ ...form, priceOverride: e.target.value })} fullWidth /><TextField required label="Начало" type="date" value={form.startsOn} onChange={(e) => setForm({ ...form, startsOn: e.target.value })} InputLabelProps={{ shrink: true }} /><TextField label="Окончание" type="date" value={form.endsOn} onChange={(e) => setForm({ ...form, endsOn: e.target.value })} InputLabelProps={{ shrink: true }} /><TextField label="День начисления" type="number" inputProps={{ min: 1, max: 31 }} value={form.billingDay} onChange={(e) => setForm({ ...form, billingDay: e.target.value })} /></>}
+          {dialog === "charge" && <><TextField select required label="Контракт" value={form.subscriptionId} onChange={(e) => { const c = contractsQuery.data?.items.find((row) => row.id === Number(e.target.value)); setForm({ ...form, subscriptionId: e.target.value, clientId: c ? String(c.clientId) : "" }); }} fullWidth sx={{ gridColumn: "1 / -1" }}>{(contractsQuery.data?.items ?? []).filter((c) => c.status === "active").map((contract) => <MenuItem key={contract.id} value={contract.id}>№ {contract.number ?? contract.id} · {contract.clientName} · {contract.offeringName}</MenuItem>)}</TextField><TextField required label="Назначение" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} fullWidth sx={{ gridColumn: "1 / -1" }} /><TextField required label="Сумма" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /><TextField required label="Срок оплаты" type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} InputLabelProps={{ shrink: true }} /><TextField required label="Период" value={form.periodKey} onChange={(e) => setForm({ ...form, periodKey: e.target.value })} helperText="Например, 2026-09" /></>}
+          {dialog === "bulkCharge" && <><Alert severity="info" sx={{ gridColumn: "1 / -1" }}>Начисление будет создано для каждого активного контракта выбранной услуги или объекта.</Alert><TextField select required label="Услуга или объект" value={form.offeringId} onChange={(e) => setForm({ ...form, offeringId: e.target.value })} fullWidth sx={{ gridColumn: "1 / -1" }}>{(offeringsQuery.data ?? []).filter((offering) => offering.status === "active").map((offering) => <MenuItem key={offering.id} value={offering.id}>{offering.name} · {offering.clientsCount} клиентов</MenuItem>)}</TextField><TextField required label="Назначение" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} fullWidth sx={{ gridColumn: "1 / -1" }} /><TextField required label="Сумма каждому клиенту" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} inputProps={{ min: 0.01, step: "0.01" }} /><TextField required label="Срок оплаты" type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} InputLabelProps={{ shrink: true }} /><TextField required label="Период" value={form.periodKey} onChange={(e) => setForm({ ...form, periodKey: e.target.value })} helperText="Например, 2026-09" /></>}
+          {dialog === "payment" && <><TextField select required label="Клиент" value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value, chargeId: "" })} fullWidth>{(clientsQuery.data ?? []).map((client) => <MenuItem key={client.id} value={client.id}>{client.fullName}</MenuItem>)}</TextField><TextField select label="Начисление" value={form.chargeId} onChange={(e) => { const charge = chargesQuery.data?.items.find((row) => row.id === Number(e.target.value)); setForm({ ...form, chargeId: e.target.value, clientId: charge ? String(charge.clientId) : form.clientId, amount: charge ? String(Math.max(0, Number(charge.amount) - Number(charge.paidAmount))) : form.amount }); }} fullWidth><MenuItem value="">Без начисления — на баланс</MenuItem>{(chargesQuery.data?.items ?? []).filter((c) => !["paid", "canceled"].includes(c.status)).map((charge) => <MenuItem key={charge.id} value={charge.id}>№ {charge.number} · {charge.clientName} · {formatMoney(Number(charge.amount) - Number(charge.paidAmount))}</MenuItem>)}</TextField><TextField required label="Сумма" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /><TextField select required label="Способ" value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}><MenuItem value="cash">Наличные</MenuItem><MenuItem value="transfer">Банковский перевод</MenuItem><MenuItem value="bakai">Bakai Pay</MenuItem></TextField></>}
+          {dialog === "offering" && <><TextField select required disabled={Boolean(editingOffering)} label="Тип" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value, billingCycle: DEFAULT_CYCLE_BY_KIND[e.target.value] ?? "monthly" })} helperText={editingOffering ? "Тип нельзя изменить после создания" : "Определяет дополнительные поля"}><MenuItem value="service">Услуга</MenuItem><MenuItem value="course">Курс</MenuItem><MenuItem value="rental">Аренда</MenuItem></TextField><TextField required label="Название" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /><TextField label="Категория" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /><TextField required label="Стоимость" type="number" value={form.priceAmount} onChange={(e) => setForm({ ...form, priceAmount: e.target.value })} /><TextField select required label="Периодичность" value={form.billingCycle} onChange={(e) => setForm({ ...form, billingCycle: e.target.value })}>{Object.entries(CYCLE_LABELS).filter(([value]) => (CYCLES_BY_KIND[form.kind] ?? []).includes(value)).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField>{form.kind === "service" && <><TextField label="Занятий в пакете" type="number" value={form.sessionsIncluded} onChange={(e) => setForm({ ...form, sessionsIncluded: e.target.value })} inputProps={{ min: 1 }} /><TextField label="Срок действия, дней" type="number" value={form.validityDays} onChange={(e) => setForm({ ...form, validityDays: e.target.value })} inputProps={{ min: 1 }} /></>}{form.kind === "course" && <><TextField required label="Количество мест" type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /><TextField required label="Количество занятий" type="number" value={form.sessionsTotal} onChange={(e) => setForm({ ...form, sessionsTotal: e.target.value })} /><TextField required label="Расписание" value={form.schedule} onChange={(e) => setForm({ ...form, schedule: e.target.value })} helperText="Например: пн/ср/пт 18:00" /><TextField required label="Начало курса" type="date" value={form.startsOn} onChange={(e) => setForm({ ...form, startsOn: e.target.value })} InputLabelProps={{ shrink: true }} /><TextField label="Окончание курса" type="date" value={form.courseEndsOn} onChange={(e) => setForm({ ...form, courseEndsOn: e.target.value })} InputLabelProps={{ shrink: true }} /></>}{form.kind === "rental" && <><TextField select required label="Тип объекта" value={form.objectType} onChange={(e) => setForm({ ...form, objectType: e.target.value })}><MenuItem value="apartment">Квартира</MenuItem><MenuItem value="house">Дом</MenuItem><MenuItem value="floor">Этаж</MenuItem><MenuItem value="office">Офис</MenuItem><MenuItem value="land">Участок</MenuItem><MenuItem value="warehouse">Склад</MenuItem><MenuItem value="retail">Торговая площадь</MenuItem><MenuItem value="parking">Парковка</MenuItem><MenuItem value="other">Другое</MenuItem></TextField><TextField select required label="Единица площади" value={form.areaUnit} onChange={(e) => setForm({ ...form, areaUnit: e.target.value })}><MenuItem value="sqm">м²</MenuItem><MenuItem value="sotka">сотка</MenuItem></TextField><TextField select required label="Ставка за" value={form.ratePeriod} onChange={(e) => setForm({ ...form, ratePeriod: e.target.value })}><MenuItem value="day">Сутки</MenuItem><MenuItem value="month">Месяц</MenuItem><MenuItem value="year">Год</MenuItem></TextField><TextField label="Площадь" type="number" value={form.areaValue} onChange={(e) => setForm({ ...form, areaValue: e.target.value })} /><TextField label="Адрес" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} sx={{ gridColumn: "1 / -1" }} /><TextField label="Депозит" type="number" value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: e.target.value })} /></>}</>}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setDialog(null)} disabled={submitMutation.isPending}>Отмена</Button><Button variant="contained" onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending || (dialog === "contract" && (!form.clientId || !form.offeringId)) || (dialog === "charge" && (!form.subscriptionId || !form.purpose || !form.amount)) || (dialog === "bulkCharge" && (!form.offeringId || !form.purpose || Number(form.amount) <= 0 || !form.dueDate || !form.periodKey)) || (dialog === "payment" && (!form.clientId || !form.amount)) || (dialog === "offering" && (!form.name || !form.priceAmount || (form.kind === "course" && (!form.capacity || !form.sessionsTotal || !form.schedule))))}>{submitMutation.isPending ? <CircularProgress size={20} /> : dialog === "bulkCharge" ? "Создать начисления" : "Сохранить"}</Button></DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={defaultsOpen}
+        onClose={() => !defaultsMutation.isPending && setDefaultsOpen(false)}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle>Правила начислений по умолчанию</DialogTitle>
+        <DialogContent dividers>
+          <Typography color="text.secondary" sx={{ mb: 2 }}>
+            Их получит каждый новый контракт организации. Уже заключённые контракты
+            не меняются — их правила правятся в карточке контракта.
+          </Typography>
+          {defaultsQuery.isLoading && <LinearProgress sx={{ borderRadius: 2 }} />}
+          {defaultsQuery.error && (
+            <Alert severity="error">{getErrorMessage(defaultsQuery.error, "Не удалось загрузить правила")}</Alert>
+          )}
+          {defaultsRules && (
+            <ContractRulesFields
+              values={defaultsRules}
+              onChange={setDefaultsRules}
+              disabled={defaultsMutation.isPending}
+            />
+          )}
+          {defaultsValidation && <Alert severity="warning" sx={{ mt: 2 }}>{defaultsValidation}</Alert>}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDefaultsOpen(false)} disabled={defaultsMutation.isPending}>Отмена</Button>
+          <Button
+            variant="contained"
+            onClick={() => defaultsMutation.mutate()}
+            disabled={!defaultsRules || defaultsValidation != null || defaultsMutation.isPending}
+          >
+            {defaultsMutation.isPending ? <CircularProgress size={20} /> : "Сохранить"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <ChargeCardDrawer
+        charge={selectedCharge}
+        organizationId={organizationId}
+        canManage={canManage}
+        canManagePayments={canManagePayments}
+        onClose={() => setSelectedCharge(null)}
+        onChanged={setSelectedCharge}
+      />
+      <PaymentCardDrawer
+        payment={selectedPayment}
+        organizationId={organizationId}
+        canManagePayments={canManagePayments}
+        onClose={() => setSelectedPayment(null)}
+        onChanged={() => setSelectedPayment(null)}
+      />
+      <OfferingCardDrawer
+        offering={selectedOffering}
+        organizationId={organizationId}
+        canManage={canManageOfferings}
+        onClose={() => setSelectedOffering(null)}
+        onEdit={(offering) => { setSelectedOffering(null); openOfferingEdit(offering); }}
+      />
+
+      <ContractCardDrawer
+        contract={selectedContract}
+        organizationId={organizationId}
+        canManage={canManage}
+        onClose={() => setSelectedContract(null)}
+        onChanged={setSelectedContract}
+      />
+    </Box>
+  );
+}

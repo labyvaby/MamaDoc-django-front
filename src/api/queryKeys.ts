@@ -22,6 +22,32 @@ export const DJANGO_REALTIME_FALLBACK_INTERVAL_MS = 60_000;
 export const djangoQueryKeys = {
   all: ["django"] as const,
 
+  billing: {
+    all: ["django", "billing"] as const,
+    dashboard: (params: Record<string, unknown>) =>
+      ["django", "billing", "dashboard", params] as const,
+    contracts: (params: Record<string, unknown>) =>
+      ["django", "billing", "contracts", params] as const,
+    contractCard: (organizationId: number | undefined, contractId: number | undefined) =>
+      ["django", "billing", "contract-card", organizationId ?? null, contractId ?? null] as const,
+    charges: (params: Record<string, unknown>) =>
+      ["django", "billing", "charges", params] as const,
+    chargeCard: (organizationId: number | undefined, chargeId: number | undefined) =>
+      ["django", "billing", "charge-card", organizationId ?? null, chargeId ?? null] as const,
+    payments: (params: Record<string, unknown>) =>
+      ["django", "billing", "payments", params] as const,
+    debtors: (organizationId?: number) =>
+      ["django", "billing", "debtors", organizationId ?? null] as const,
+    offerings: (params: Record<string, unknown>) =>
+      ["django", "billing", "offerings", params] as const,
+    clients: (organizationId?: number) =>
+      ["django", "billing", "clients", organizationId ?? null] as const,
+    clientCard: (organizationId: number | undefined, clientId: number | undefined) =>
+      ["django", "billing", "client-card", organizationId ?? null, clientId ?? null] as const,
+    defaults: (organizationId?: number) =>
+      ["django", "billing", "defaults", organizationId ?? null] as const,
+  },
+
   appointments: {
     all: ["django", "appointments"] as const,
     list: (params: Record<string, unknown>) =>
