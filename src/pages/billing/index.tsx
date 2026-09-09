@@ -51,6 +51,7 @@ import { useCan } from "../../hooks/useCan";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { subtleBg } from "../../theme/uiHelpers";
 import { ChargeCardDrawer } from "./ChargeCardDrawer";
+import { PaymentCardDrawer } from "./PaymentCardDrawer";
 import { chargePeriodLabel } from "./chargePeriod";
 import { ContractRulesFields } from "./ContractRulesFields";
 import {
@@ -185,6 +186,7 @@ export default function BillingPage() {
   const [selectedDebtors, setSelectedDebtors] = React.useState<number[]>([]);
   const [selectedContract, setSelectedContract] = React.useState<BillingContract | null>(null);
   const [selectedCharge, setSelectedCharge] = React.useState<BillingCharge | null>(null);
+  const [selectedPayment, setSelectedPayment] = React.useState<BillingPayment | null>(null);
   const [chargeStatus, setChargeStatus] = React.useState("");
   const [defaultsOpen, setDefaultsOpen] = React.useState(false);
   const [defaultsRules, setDefaultsRules] = React.useState<ContractRulesValues | null>(null);
@@ -406,7 +408,7 @@ export default function BillingPage() {
         {tab === "payments" && (
           <TableContainer component={Paper} variant="outlined">
             <Table size="small"><TableHead><TableRow><TableCell>Платёж</TableCell><TableCell>Клиент</TableCell><TableCell>Начисление</TableCell><TableCell>Метод</TableCell><TableCell>Дата</TableCell><TableCell align="right">Сумма</TableCell><TableCell>Статус</TableCell><TableCell /></TableRow></TableHead>
-              <TableBody>{paymentRows.map((row) => <TableRow key={row.id} hover><TableCell>#{row.id}{row.refundOfId && <Typography variant="caption" color="text.secondary" display="block">Возврат #{row.refundOfId}</Typography>}</TableCell><TableCell>{row.clientName}</TableCell><TableCell>{row.chargeId ? `№ ${row.chargeId}` : "На баланс"}</TableCell><TableCell>{row.method}</TableCell><TableCell>{formatDate(row.paidAt ?? row.createdAt)}</TableCell><TableCell align="right" sx={{ fontWeight: 700, color: row.refundOfId ? "error.main" : "success.main" }}>{row.refundOfId ? "−" : "+"}{formatMoney(row.amount)}</TableCell><TableCell><StatusChip status={row.status} /></TableCell><TableCell align="right">{canManagePayments && !row.refundOfId && row.status === "succeeded" && <IconButton size="small" onClick={(e) => openMenu(e, row)}><MoreHorizOutlined /></IconButton>}</TableCell></TableRow>)}{!paymentsQuery.isLoading && !paymentRows.length && <EmptyRow colSpan={8} text="Оплат ещё нет." />}</TableBody>
+              <TableBody>{paymentRows.map((row) => <TableRow key={row.id} hover tabIndex={0} onClick={() => setSelectedPayment(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedPayment(row); }} sx={{ cursor: "pointer", "&:focus-visible": { outline: 2, outlineColor: "primary.main", outlineOffset: -2 } }}><TableCell>#{row.id}{row.refundOfId && <Typography variant="caption" color="text.secondary" display="block">Возврат #{row.refundOfId}</Typography>}</TableCell><TableCell>{row.clientName}</TableCell><TableCell>{row.chargeId ? `№ ${row.chargeId}` : "На баланс"}</TableCell><TableCell>{row.method}</TableCell><TableCell>{formatDate(row.paidAt ?? row.createdAt)}</TableCell><TableCell align="right" sx={{ fontWeight: 700, color: row.refundOfId ? "error.main" : "success.main" }}>{row.refundOfId ? "−" : "+"}{formatMoney(row.amount)}</TableCell><TableCell><StatusChip status={row.status} /></TableCell><TableCell align="right">{canManagePayments && !row.refundOfId && row.status === "succeeded" && <IconButton size="small" aria-label={`Действия платежа #${row.id}`} onClick={(e) => { e.stopPropagation(); openMenu(e, row); }}><MoreHorizOutlined /></IconButton>}</TableCell></TableRow>)}{!paymentsQuery.isLoading && !paymentRows.length && <EmptyRow colSpan={8} text="Оплат ещё нет." />}</TableBody>
             </Table>
           </TableContainer>
         )}
@@ -494,6 +496,13 @@ export default function BillingPage() {
         canManagePayments={canManagePayments}
         onClose={() => setSelectedCharge(null)}
         onChanged={setSelectedCharge}
+      />
+      <PaymentCardDrawer
+        payment={selectedPayment}
+        organizationId={organizationId}
+        canManagePayments={canManagePayments}
+        onClose={() => setSelectedPayment(null)}
+        onChanged={() => setSelectedPayment(null)}
       />
 
       <ContractCardDrawer

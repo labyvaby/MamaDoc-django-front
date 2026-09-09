@@ -173,6 +173,18 @@ export interface ClientNote {
   createdAt: string;
 }
 
+export interface ClientContact {
+  id: number | null;
+  clientId: number;
+  fullName: string;
+  position: string;
+  phone: string;
+  email: string;
+  isPrimary: boolean;
+  note: string;
+  isSelf: boolean;
+}
+
 export interface ContractDefaults {
   organizationId: number;
   billingCycle: string;
@@ -281,6 +293,14 @@ export const billingApi = {
     apiRequest<BillingClient>("/clients/", { method: "POST", body }),
   updateClient: (id: number, body: Record<string, unknown>, scope: Scope) =>
     apiRequest<BillingClient>(`/clients/${id}/${query(scope)}`, { method: "PATCH", body }),
+  clientContacts: (id: number, scope: Scope) =>
+    apiRequest<ClientContact[]>(`/clients/${id}/contacts/${query(scope)}`),
+  addClientContact: (id: number, body: Record<string, unknown>, scope: Scope) =>
+    apiRequest<ClientContact>(`/clients/${id}/contacts/${query(scope)}`, { method: "POST", body }),
+  updateClientContact: (clientId: number, contactId: number, body: Record<string, unknown>, scope: Scope) =>
+    apiRequest<ClientContact>(`/clients/${clientId}/contacts/${contactId}/${query(scope)}`, { method: "PATCH", body }),
+  deleteClientContact: (clientId: number, contactId: number, scope: Scope) =>
+    apiRequest<void>(`/clients/${clientId}/contacts/${contactId}/${query(scope)}`, { method: "DELETE" }),
 
   clientNotes: (id: number) =>
     apiRequest<ClientNote[]>(`/v2/clients/${id}/notes/`),

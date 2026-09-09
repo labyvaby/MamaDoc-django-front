@@ -8,6 +8,10 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Drawer,
   FormControlLabel,
   IconButton,
@@ -18,7 +22,10 @@ import {
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import AddOutlined from "@mui/icons-material/AddOutlined";
+import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PushPinOutlined from "@mui/icons-material/PushPinOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { alpha } from "@mui/material/styles";
@@ -30,6 +37,7 @@ import {
   billingApi,
   type BillingClient,
   type BillingContract,
+  type ClientContact,
 } from "../../api/billing";
 import { getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
@@ -97,11 +105,16 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
   const open = client != null;
   const canViewCrm = useCan("clients.crm.view");
   const canManageCrm = useCan("clients.crm.manage");
+  const canManageContacts = useCan("clients.manage");
   const queryClient = useQueryClient();
   const { open: notify } = useNotification();
   const [note, setNote] = React.useState("");
   const [important, setImportant] = React.useState(false);
+  const [contactDialogOpen, setContactDialogOpen] = React.useState(false);
+  const [editingContact, setEditingContact] = React.useState<ClientContact | null>(null);
+  const [contactForm, setContactForm] = React.useState({ fullName: "", position: "", phone: "", email: "", isPrimary: false, note: "" });
   const cardKey = djangoQueryKeys.billing.clientCard(organizationId, clientId);
+  const scope = React.useMemo(() => ({ ...(organizationId ? { organizationId } : {}) }), [organizationId]);
 
   const notesQuery = useQuery({
     queryKey: [...cardKey, "notes"],
@@ -121,6 +134,11 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
   const paymentsQuery = useQuery({
     queryKey: [...cardKey, "payments"],
     queryFn: () => billingApi.payments({ organizationId, clientId, pageSize: 200 }),
+    enabled: open,
+  });
+  const contactsQuery = useQuery({
+    queryKey: [...cardKey, "contacts"],
+    queryFn: () => billingApi.clientContacts(clientId!, scope),
     enabled: open,
   });
 
@@ -143,10 +161,44 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
     onSuccess: invalidateCard,
     onError: (error) => notify?.({ type: "error", message: "Заметка не обновлена", description: getErrorMessage(error) }),
   });
+  const contactMutation = useMutation({
+    mutationFn: () => editingContact?.id
+      ? billingApi.updateClientContact(clientId!, editingContact.id, contactForm, scope)
+      : billingApi.addClientContact(clientId!, contactForm, scope),
+    onSuccess: async () => {
+      setContactDialogOpen(false);
+      await invalidateCard();
+      notify?.({ type: "success", message: editingContact ? "Контакт обновлён" : "Контакт добавлен" });
+    },
+    onError: (error) => notify?.({ type: "error", message: "Контакт не сохранён", description: getErrorMessage(error) }),
+  });
+  const deleteContactMutation = useMutation({
+    mutationFn: (contactId: number) => billingApi.deleteClientContact(clientId!, contactId, scope),
+    onSuccess: async () => {
+      await invalidateCard();
+      notify?.({ type: "success", message: "Контакт удалён" });
+    },
+    onError: (error) => notify?.({ type: "error", message: "Контакт не удалён", description: getErrorMessage(error) }),
+  });
+
+  const openContact = (contact?: ClientContact) => {
+    setEditingContact(contact ?? null);
+    setContactForm(contact ? {
+      fullName: contact.fullName,
+      position: contact.position,
+      phone: contact.phone,
+      email: contact.email,
+      isPrimary: contact.isPrimary,
+      note: contact.note,
+    } : { fullName: "", position: "", phone: "", email: "", isPrimary: false, note: "" });
+    setContactDialogOpen(true);
+  };
 
   React.useEffect(() => {
     setNote("");
     setImportant(false);
+    setContactDialogOpen(false);
+    setEditingContact(null);
   }, [clientId]);
 
   const contracts = contractsQuery.data?.items ?? [];
@@ -158,8 +210,9 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
   const paidTotal = payments
     .filter((payment) => payment.status === "succeeded")
     .reduce((sum, payment) => sum + Number(payment.amount), 0);
-  const loading = contractsQuery.isLoading || chargesQuery.isLoading || paymentsQuery.isLoading;
-  const failed = contractsQuery.isError || chargesQuery.isError || paymentsQuery.isError;
+  const contacts = contactsQuery.data ?? [];
+  const loading = contractsQuery.isLoading || chargesQuery.isLoading || paymentsQuery.isLoading || contactsQuery.isLoading;
+  const failed = contractsQuery.isError || chargesQuery.isError || paymentsQuery.isError || contactsQuery.isError;
 
   return (
     <Drawer
@@ -189,7 +242,7 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
                   {[client.phone, client.email].filter(Boolean).join(" · ") || "Контакты не заполнены"}
                 </Typography>
               </Box>
-              <Tooltip title="Изменить клиента"><IconButton onClick={() => onEdit(client)}><EditOutlined /></IconButton></Tooltip>
+              {canManageContacts && <Tooltip title="Изменить клиента"><IconButton onClick={() => onEdit(client)}><EditOutlined /></IconButton></Tooltip>}
               <IconButton aria-label="Закрыть карточку" onClick={onClose}><CloseOutlined /></IconButton>
             </Stack>
           </Box>
@@ -215,6 +268,50 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
               <Fact label="Начислено" value={money(issuedTotal)} />
               <Fact label="Оплачено" value={money(paidTotal)} />
             </Paper>
+
+            <Divider sx={{ my: 3 }} />
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
+              <PersonOutlineOutlined color="action" />
+              <Typography variant="h6" fontWeight={800}>Контактные лица</Typography>
+              <Chip size="small" label={contacts.length || (client.clientType === "individual" ? 1 : 0)} />
+              <Box sx={{ flex: 1 }} />
+              {canManageContacts && client.clientType === "company" && (
+                <Button size="small" startIcon={<AddOutlined />} onClick={() => openContact()}>Добавить</Button>
+              )}
+            </Stack>
+            <Stack spacing={1}>
+              {contacts.map((contact) => (
+                <Paper key={contact.id ?? "self"} variant="outlined" sx={{ p: 1.5, borderRadius: 2.5 }}>
+                  <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                    <Avatar sx={{ width: 36, height: 36, fontSize: 13 }}>{initials(contact.fullName)}</Avatar>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                        <Typography fontWeight={700}>{contact.fullName}</Typography>
+                        {contact.isPrimary && <Chip size="small" color="primary" variant="outlined" label="Основной" />}
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary">
+                        {[contact.position, contact.phone, contact.email].filter(Boolean).join(" · ") || "Контактные данные не заполнены"}
+                      </Typography>
+                    </Box>
+                    {canManageContacts && contact.id != null && !contact.isSelf && (
+                      <>
+                        <IconButton size="small" aria-label={`Изменить контакт ${contact.fullName}`} onClick={() => openContact(contact)}><EditOutlined fontSize="small" /></IconButton>
+                        <IconButton size="small" color="error" aria-label={`Удалить контакт ${contact.fullName}`} onClick={() => { if (window.confirm(`Удалить контакт «${contact.fullName}»?`)) deleteContactMutation.mutate(contact.id!); }}><DeleteOutlineOutlined fontSize="small" /></IconButton>
+                      </>
+                    )}
+                  </Stack>
+                </Paper>
+              ))}
+              {!contactsQuery.isLoading && contacts.length === 0 && client.clientType === "individual" && (
+                <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5 }}>
+                  <Typography fontWeight={700}>{client.fullName}</Typography>
+                  <Typography variant="body2" color="text.secondary">Сам клиент · {[client.phone, client.email].filter(Boolean).join(" · ") || "контакты не заполнены"}</Typography>
+                </Paper>
+              )}
+              {!contactsQuery.isLoading && contacts.length === 0 && client.clientType === "company" && (
+                <Typography color="text.secondary">Добавьте человека, с которым можно связаться по контрактам компании.</Typography>
+              )}
+            </Stack>
 
             <Divider sx={{ my: 3 }} />
             <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
@@ -277,6 +374,25 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
           </Box>
         </Box>
       )}
+      <Dialog open={contactDialogOpen} onClose={() => !contactMutation.isPending && setContactDialogOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>{editingContact ? "Изменить контакт" : "Новое контактное лицо"}</DialogTitle>
+        <DialogContent dividers>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
+            <TextField required label="Имя" value={contactForm.fullName} onChange={(event) => setContactForm({ ...contactForm, fullName: event.target.value })} />
+            <TextField label="Должность" value={contactForm.position} onChange={(event) => setContactForm({ ...contactForm, position: event.target.value })} />
+            <TextField label="Телефон" value={contactForm.phone} onChange={(event) => setContactForm({ ...contactForm, phone: event.target.value })} />
+            <TextField type="email" label="Email" value={contactForm.email} onChange={(event) => setContactForm({ ...contactForm, email: event.target.value })} />
+            <TextField multiline minRows={2} label="Заметка" value={contactForm.note} onChange={(event) => setContactForm({ ...contactForm, note: event.target.value })} sx={{ gridColumn: "1 / -1" }} />
+            <FormControlLabel control={<Checkbox checked={contactForm.isPrimary} onChange={(event) => setContactForm({ ...contactForm, isPrimary: event.target.checked })} />} label="Основное контактное лицо" sx={{ gridColumn: "1 / -1" }} />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setContactDialogOpen(false)} disabled={contactMutation.isPending}>Отмена</Button>
+          <Button variant="contained" onClick={() => contactMutation.mutate()} disabled={!contactForm.fullName.trim() || contactMutation.isPending}>
+            {contactMutation.isPending ? <CircularProgress size={20} /> : "Сохранить"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Drawer>
   );
 }
