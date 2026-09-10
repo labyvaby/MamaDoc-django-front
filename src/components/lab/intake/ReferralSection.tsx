@@ -1,11 +1,11 @@
 import React from "react";
 import { Autocomplete, TextField, Typography } from "@mui/material";
 
-import type { DjangoEmployeeListItem } from "../../../api/staff";
+import type { LabDoctor } from "../../../api/lab";
 import IntakeSection from "./IntakeSection";
 
 type Props = {
-  doctors: DjangoEmployeeListItem[];
+  doctors: LabDoctor[];
   value: number | null;
   loading: boolean;
   disabled: boolean;
@@ -17,10 +17,11 @@ type Props = {
 /**
  * Направивший врач заказа.
  *
- * Кому это нужно. Лаборатории — чтобы знать, кому возвращать результат:
- * отдельного поля под направившего врача в `orderDTO` ЛИС нет, и он уезжает
- * свободным текстом `other_information`. Клинике — чтобы видеть, кто
- * направляет на анализы, ФИО сохраняется снимком в самом заказе.
+ * Список — из справочника самой ЛИС (`GET /lab/doctors/`), а не из наших
+ * сотрудников: заказ уезжает с её идентификатором врача, и именно этих людей
+ * ЛИС показывает в колонке «Нап. врач» своего интерфейса. ФИО дополнительно
+ * сохраняется снимком в заказе, чтобы карточка не зависела от переименований
+ * в справочнике.
  *
  * Обязателен не всегда. Каталог ЛИС помечает часть анализов признаком
  * «нужно направление» (`requiresDoctor`): пока в корзине нет ни одного
@@ -45,10 +46,14 @@ const ReferralSection: React.FC<Props> = ({
         options={doctors}
         value={selected}
         onChange={(_event, next) => onChange(next?.id ?? null)}
-        getOptionLabel={(option) => option.fullName}
+        getOptionLabel={(option) =>
+          option.qualification
+            ? `${option.fullName} — ${option.qualification}`
+            : option.fullName
+        }
         isOptionEqualToValue={(option, current) => option.id === current.id}
         disabled={disabled}
-        noOptionsText="Сотрудники не найдены"
+        noOptionsText="Справочник врачей ЛИС пуст — синхронизируйте каталог"
         renderInput={(params) => (
           <TextField
             {...params}

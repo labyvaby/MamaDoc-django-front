@@ -66,6 +66,20 @@ export interface LabTestCard {
   questions: LabQuestion[];
 }
 
+/**
+ * Врач из справочника ЛИС (`GET /lab/doctors/`).
+ *
+ * Именно этих людей ЛИС показывает в колонке «Нап. врач» своего интерфейса.
+ * Наш справочник сотрудников для поля не годится: заказ уезжает с
+ * идентификатором врача самой ЛИС, и наш внутренний id ей ничего не говорит.
+ */
+export interface LabDoctor {
+  id: number;
+  lisId: number;
+  fullName: string;
+  qualification: string;
+}
+
 export interface LabProfile {
   id: number;
   lisId: number;
@@ -137,6 +151,10 @@ export function getLabTestCard(
   signal?: AbortSignal,
 ): Promise<LabTestCard> {
   return apiRequest<LabTestCard>(`/lab/tests/${testId}/`, { signal });
+}
+
+export function getLabDoctors(signal?: AbortSignal): Promise<LabDoctor[]> {
+  return apiRequest<LabDoctor[]>("/lab/doctors/", { signal });
 }
 
 export function getLabProfiles(signal?: AbortSignal): Promise<LabProfile[]> {

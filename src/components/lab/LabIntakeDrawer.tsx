@@ -32,17 +32,18 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useCashlessMethods } from "../../hooks/useCashlessMethods";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
-import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 
 import {
   createLabOrder,
   dispatchLabOrder,
+  getLabDoctors,
   getLabInstruments,
   getLabPreparation,
   getLabQuestions,
   getLabSettings,
   getLabTests,
   testIdsQuery,
+  type LabDoctor,
   type LabQuestion,
   type LabReceipt,
   type LabSettings,
@@ -411,10 +412,19 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
     [lines, tests, instruments, payment.discountPercent, chargeTubes],
   );
 
-  // Направивший врач выбирается из активных сотрудников организации — тем
-  // же справочником, что и исполнитель услуги в форме приёма.
-  const { employees: doctors, isLoading: doctorsLoading } =
-    useAllActiveEmployees(open);
+  // Направивший врач — из справочника ЛИС, а не из наших сотрудников:
+  // заказ уезжает с её идентификатором врача.
+  const doctorsQuery = useQuery<LabDoctor[]>({
+    queryKey: djangoQueryKeys.lab.doctors,
+    queryFn: ({ signal }) => getLabDoctors(signal),
+    enabled: open,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+  const doctors = React.useMemo(
+    () => doctorsQuery.data ?? [],
+    [doctorsQuery.data],
+  );
+  const doctorsLoading = doctorsQuery.isLoading;
 
   const requiredQuestionIds = React.useMemo(() => questions.map((q) => q.id), [questions]);
 
