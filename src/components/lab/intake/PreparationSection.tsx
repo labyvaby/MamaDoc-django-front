@@ -1,6 +1,8 @@
 import React from "react";
 import { Skeleton, Stack, Typography } from "@mui/material";
 
+import IntakeSection from "./IntakeSection";
+
 type Props = {
   texts: string[];
   loading: boolean;
@@ -15,11 +17,7 @@ type Props = {
  */
 const PreparationSection: React.FC<Props> = ({ texts, loading }) => {
   return (
-    <Stack spacing={1}>
-      <Typography variant="subtitle1" fontWeight={600}>
-        Подготовка к анализам
-      </Typography>
-
+    <IntakeSection title="Подготовка к анализам" loading={loading}>
       {loading ? (
         <Stack spacing={0.75}>
           <Skeleton variant="text" />
@@ -38,7 +36,7 @@ const PreparationSection: React.FC<Props> = ({ texts, loading }) => {
           ))}
         </Stack>
       )}
-    </Stack>
+    </IntakeSection>
   );
 };
 

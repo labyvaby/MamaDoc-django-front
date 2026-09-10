@@ -3,6 +3,7 @@ import { Box, Skeleton, Stack, Switch, TextField, Typography } from "@mui/materi
 import dayjs from "dayjs";
 
 import { CustomDatePicker } from "../../ui";
+import IntakeSection from "./IntakeSection";
 import { labQuestionFieldKind } from "./labQuestionFields";
 import type { LabQuestion } from "../../../api/lab";
 
@@ -46,11 +47,7 @@ function QuestionLabel({ title }: { title: string }) {
  */
 const QuestionsSection: React.FC<Props> = ({ questions, answers, loading, disabled, onAnswerChange }) => {
   return (
-    <Stack spacing={1.5}>
-      <Typography variant="subtitle1" fontWeight={600}>
-        Дополнительные вопросы
-      </Typography>
-
+    <IntakeSection title="Дополнительные вопросы" loading={loading}>
       {loading ? (
         <Stack spacing={1}>
           <Skeleton variant="rounded" height={56} />
@@ -132,7 +129,7 @@ const QuestionsSection: React.FC<Props> = ({ questions, answers, loading, disabl
           })}
         </Stack>
       )}
-    </Stack>
+    </IntakeSection>
   );
 };
 

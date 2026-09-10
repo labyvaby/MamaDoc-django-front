@@ -2,7 +2,6 @@ import React from "react";
 import {
   Box,
   IconButton,
-  Paper,
   Skeleton,
   Stack,
   Switch,
@@ -11,11 +10,11 @@ import {
 } from "@mui/material";
 import AddCircleOutline from "@mui/icons-material/AddCircleOutline";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
-import { alpha } from "@mui/material/styles";
 
 import { filterAvailableTests, resolveSelectedLines, type BasketLine } from "./basketCatalog";
 import type { LabTest } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
+import IntakeSection from "./IntakeSection";
 
 type Props = {
   tests: LabTest[];
@@ -71,19 +70,7 @@ const BasketSection: React.FC<Props> = ({
   const selectedLines = React.useMemo(() => resolveSelectedLines(tests, selected), [tests, selected]);
 
   return (
-    <Paper
-      variant="outlined"
-      sx={{
-        p: 2.5,
-        bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
-        borderColor: "divider",
-        borderRadius: "14px",
-      }}
-    >
-      <Stack spacing={2}>
-        <Typography variant="subtitle1" fontWeight={600}>
-          Анализы
-        </Typography>
+    <IntakeSection title="Анализы">
 
         <TextField
           size="small"
@@ -199,8 +186,7 @@ const BasketSection: React.FC<Props> = ({
             </Stack>
           )}
         </Stack>
-      </Stack>
-    </Paper>
+    </IntakeSection>
   );
 };
 

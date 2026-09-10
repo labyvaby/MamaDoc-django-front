@@ -1,10 +1,10 @@
 import React from "react";
-import { Box, InputAdornment, Paper, Stack, TextField, Typography } from "@mui/material";
-import { alpha } from "@mui/material/styles";
+import { Box, InputAdornment, Stack, TextField, Typography } from "@mui/material";
 
 import { CashlessMethodSelect, DiscountInput } from "../../ui";
 import type { DjangoCashlessMethod } from "../../../api/cashlessMethods";
 import { formatKGS } from "../../../utility/format";
+import IntakeSection from "./IntakeSection";
 
 type Props = {
   total: number;
@@ -98,19 +98,7 @@ const PaymentSection: React.FC<Props> = ({
   const diff = round2(total - paid);
 
   return (
-    <Paper
-      variant="outlined"
-      sx={{
-        p: 2.5,
-        bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
-        borderColor: "divider",
-        borderRadius: "14px",
-      }}
-    >
-      <Stack spacing={2}>
-        <Typography variant="subtitle1" fontWeight={600}>
-          Оплата
-        </Typography>
+    <IntakeSection title="Оплата">
 
         <Stack direction="row" spacing={2}>
           <Stack flex={1} spacing={0.5}>
@@ -212,8 +200,7 @@ const PaymentSection: React.FC<Props> = ({
             </Typography>
           </Stack>
         </Stack>
-      </Stack>
-    </Paper>
+    </IntakeSection>
   );
 };
 

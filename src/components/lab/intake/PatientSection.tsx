@@ -1,7 +1,6 @@
 import React from "react";
 import {
   Autocomplete,
-  Paper,
   Stack,
   TextField,
   ToggleButton,
@@ -10,11 +9,11 @@ import {
 } from "@mui/material";
 import BoyOutlined from "@mui/icons-material/BoyOutlined";
 import GirlOutlined from "@mui/icons-material/GirlOutlined";
-import { alpha } from "@mui/material/styles";
 import dayjs from "dayjs";
 
 import { CustomDatePicker } from "../../ui";
 import type { DjangoPatient } from "../../../api/patients";
+import IntakeSection from "./IntakeSection";
 
 type Props = {
   patient: DjangoPatient | null;
@@ -83,19 +82,7 @@ const PatientSection: React.FC<Props> = ({
   const needsAnything = needsInn || needsBirthDate || needsGender;
 
   return (
-    <Paper
-      variant="outlined"
-      sx={{
-        p: 2.5,
-        bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
-        borderColor: "divider",
-        borderRadius: "14px",
-      }}
-    >
-      <Stack spacing={2}>
-        <Typography variant="subtitle1" fontWeight={600}>
-          Пациент
-        </Typography>
+    <IntakeSection title="Пациент">
 
         <Autocomplete
           options={options}
@@ -193,8 +180,7 @@ const PatientSection: React.FC<Props> = ({
             )}
           </Stack>
         )}
-      </Stack>
-    </Paper>
+    </IntakeSection>
   );
 };
 

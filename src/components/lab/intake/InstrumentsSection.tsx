@@ -4,6 +4,7 @@ import {
   Chip,
   Collapse,
   Divider,
+  Paper,
   Skeleton,
   Stack,
   Typography,
@@ -13,6 +14,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import type { LabInstrument } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
 import { tubeAppearance, type TubeAppearance } from "../../../utility/labTubes";
+import IntakeSection from "./IntakeSection";
 
 type Props = {
   instruments: LabInstrument[];
@@ -81,18 +83,35 @@ const TubeCard: React.FC<{ item: LabInstrument; chargeTubes: boolean }> = ({
   const tests = item.tests ?? [];
 
   return (
-    <Box
+    <Paper
+      variant="outlined"
       sx={{
-        p: 1.5,
-        borderRadius: 1.5,
-        border: 1,
+        position: "relative",
+        overflow: "hidden",
+        borderRadius: "12px",
         borderColor: "divider",
-        borderLeft: 4,
-        borderLeftColor: look.cap,
         bgcolor: "background.paper",
       }}
     >
-      <Stack direction="row" spacing={1.5} alignItems="flex-start">
+      {/* Цветная ось пробирки — тот же приём, что у оси специалиста в форме
+          приёма (`ServiceGroupShell`): цвет ведёт взгляд по карточке. */}
+      <Box
+        sx={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 3,
+          bgcolor: look.cap,
+        }}
+      />
+
+      <Stack
+        direction="row"
+        spacing={1.5}
+        alignItems="flex-start"
+        sx={{ pl: 2, pr: 1.5, py: 1.25 }}
+      >
         <TubeGlyph look={look} />
 
         <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -187,7 +206,7 @@ const TubeCard: React.FC<{ item: LabInstrument; chargeTubes: boolean }> = ({
           )}
         </Box>
       </Stack>
-    </Box>
+    </Paper>
   );
 };
 
@@ -208,23 +227,17 @@ const InstrumentsSection: React.FC<Props> = ({
   const total = instruments.reduce((sum, item) => sum + item.count, 0);
 
   return (
-    <Stack spacing={1}>
-      <Stack
-        direction="row"
-        alignItems="baseline"
-        justifyContent="space-between"
-        gap={1}
-      >
-        <Typography variant="subtitle1" fontWeight={600}>
-          Пробирки
-        </Typography>
-        {!loading && instruments.length > 0 && (
+    <IntakeSection
+      title="Пробирки"
+      loading={loading}
+      action={
+        instruments.length > 0 ? (
           <Typography variant="caption" color="text.secondary">
             всего {total} шт
           </Typography>
-        )}
-      </Stack>
-
+        ) : null
+      }
+    >
       {loading ? (
         <Stack spacing={1}>
           <Skeleton variant="rounded" height={72} />
@@ -241,7 +254,7 @@ const InstrumentsSection: React.FC<Props> = ({
           ))}
         </Stack>
       )}
-    </Stack>
+    </IntakeSection>
   );
 };
 
