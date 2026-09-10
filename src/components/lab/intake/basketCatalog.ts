@@ -133,3 +133,93 @@ export function stepCount(current: number, delta: number): number {
   if (!Number.isFinite(current) || current < 1) return 1;
   return Math.max(1, Math.trunc(current + delta));
 }
+
+export interface CatalogGroup {
+  /** Ключ группы — id ближайшей категории или `other`. */
+  key: string;
+  /** Путь категорий от корня: «Гематология › Общий анализ». */
+  title: string;
+  /** Группа из ветеринарного раздела каталога. */
+  veterinary: boolean;
+  tests: LabTest[];
+}
+
+const OTHER_GROUP = "Прочее";
+const VETERINARY_ROOT = /ветеринар/i;
+
+/**
+ * Каталог, разложенный по категориям дерева ЛИС.
+ *
+ * Дерево приходит плоским списком с `parentId`, и категория в нём — такая
+ * же строка, как анализ. В плоской выдаче «Аллергологические исследования»
+ * выглядели анализом за ноль сомов, и их можно было положить в корзину.
+ * Здесь позицией считается только лист (узел без детей), а узлы с детьми
+ * дают заголовки групп; путь склеивается от корня, чтобы вложенные
+ * категории были различимы.
+ *
+ * Поиск ищет и по названию позиции, и по пути категорий: набравший «аллерг»
+ * ждёт весь раздел, а в названиях самих анализов этого слова нет. Внутри
+ * группы порядок — как в `filterAvailableTests`: сначала совпадения в начале
+ * названия.
+ *
+ * Ветеринария помечается флагом по корню дерева: в каталоге ЛИС она вся
+ * живёт под одним «ВЕТЕРИНАРНЫЕ ИССЛЕДОВАНИЯ», и в детской клинике её место
+ * не в общей выдаче.
+ */
+export function groupCatalog(
+  tests: LabTest[],
+  patientGender: string,
+  query: string,
+): CatalogGroup[] {
+  const byId = new Map(tests.map((test) => [test.id, test]));
+  const hasChildren = new Set<number>();
+  for (const test of tests) {
+    if (test.parentId != null) hasChildren.add(test.parentId);
+  }
+  const q = query.trim().toLowerCase();
+
+  const ancestorsOf = (test: LabTest): LabTest[] => {
+    const chain: LabTest[] = [];
+    let cursor = test.parentId != null ? byId.get(test.parentId) : undefined;
+    while (cursor) {
+      chain.unshift(cursor);
+      cursor = cursor.parentId != null ? byId.get(cursor.parentId) : undefined;
+    }
+    return chain;
+  };
+
+  const groups = new Map<string, CatalogGroup>();
+  const rows: { key: string; test: LabTest; rank: number; index: number }[] = [];
+
+  tests.forEach((test, index) => {
+    if (hasChildren.has(test.id)) return;
+    if (!isTestVisibleForGender(test.lisGender, patientGender)) return;
+    const ancestors = ancestorsOf(test);
+    const path = ancestors.map((node) => node.title.trim()).join(" › ");
+    const inTitle = !q || test.title.toLowerCase().includes(q);
+    const inPath = !!q && path.toLowerCase().includes(q);
+    if (!inTitle && !inPath) return;
+
+    const key = ancestors.length ? String(ancestors[ancestors.length - 1].id) : "other";
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        title: path || OTHER_GROUP,
+        veterinary: ancestors.length > 0 && VETERINARY_ROOT.test(ancestors[0].title),
+        tests: [],
+      });
+    }
+    rows.push({
+      key,
+      test,
+      rank: inTitle && q ? matchRank(test.title, q) : 0,
+      index,
+    });
+  });
+
+  rows.sort((left, right) =>
+    left.rank === right.rank ? left.index - right.index : left.rank - right.rank,
+  );
+  for (const row of rows) groups.get(row.key)!.tests.push(row.test);
+  return [...groups.values()];
+}
