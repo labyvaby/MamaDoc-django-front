@@ -1296,7 +1296,20 @@ export function deleteAppointment(id: number): Promise<void> {
  */
 export const APPOINTMENT_BULK_MAX_ITEMS = 50;
 
-export type AppointmentBulkAction = "cancel" | "reschedule" | "reassign";
+/**
+ * Действия bulk-ручки.
+ *
+ * `ack_absence` / `unack_absence` — отметка «разобрано» для приёма, попавшего
+ * под отсутствие врача: сам приём не меняется (ни статус, ни время, ни
+ * исполнитель, ни платежи), пациенту ничего не уходит. Права — те же
+ * `appointments.update`.
+ */
+export type AppointmentBulkAction =
+  | "cancel"
+  | "reschedule"
+  | "reassign"
+  | "ack_absence"
+  | "unack_absence";
 
 export interface AppointmentBulkItem {
   id: number;

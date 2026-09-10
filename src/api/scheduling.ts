@@ -452,6 +452,23 @@ export interface ScheduleConflictAppointment {
   paidTotal: string;
   /** true — отсутствующий «врач приёма», false — исполнитель одной из строк. */
   isPerformerPrimary: boolean;
+  /**
+   * Когда приём отметили разобранным (bulk-действие `ack_absence`); `null` — ещё нет.
+   *
+   * «Разобран» не значит «изменён»: чаще всего это как раз решение оставить
+   * приём как есть — пациент предупреждён и согласен ждать. Отметка серверная,
+   * потому что разбор — командная работа: у второго регистратора счётчик
+   * должен погаснуть тоже.
+   */
+  absenceReviewedAt: string | null;
+  /** Кто отметил; `null` вместе с `absenceReviewedAt`. */
+  absenceReviewedBy: AbsenceReviewer | null;
+}
+
+/** Автор отметки разбора. */
+export interface AbsenceReviewer {
+  id: number;
+  fullName: string;
 }
 
 /** Ответ ручки — объект-обёртка с эхом параметров запроса. */
@@ -460,6 +477,16 @@ export interface ScheduleConflictsResponse {
   dateFrom: string;
   dateTo: string;
   appointments: ScheduleConflictAppointment[];
+  /**
+   * Сколько приёмов периода без отметки разбора (считается до применения
+   * фильтра `reviewed`).
+   *
+   * Фронт им не пользуется и `reviewed` не шлёт: счётчик бэка — на весь период
+   * сотрудника, а расписанию нужны числа по дням и только по приёмам,
+   * попадающим в часы частичного отсутствия (`appointmentHitsAbsence`). Одной
+   * выдачи хватает и на счётчики, и на список, где разобранные видно.
+   */
+  unreviewedCount?: number;
 }
 
 /**

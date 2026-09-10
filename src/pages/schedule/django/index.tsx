@@ -1311,7 +1311,8 @@ const DjangoSchedulePage: React.FC = () => {
   });
   const [periodToDelete, setPeriodToDelete] = React.useState<ScheduleException | null>(null);
   // Отсутствие поставлено — но записанные пациенты об этом не знают: сразу
-  // поднимаем разбор их приёмов (отменить / передать коллеге / перенести).
+  // поднимаем разбор их приёмов (отменить / передать коллеге / перенести /
+  // оставить как есть, отметив разобранными).
   const [absenceReview, setAbsenceReview] = React.useState<AbsenceSpan | null>(null);
 
   const employees = React.useMemo(() => employeesQuery.data?.results ?? [], [employeesQuery.data]);
@@ -1895,7 +1896,7 @@ const DjangoSchedulePage: React.FC = () => {
                         <TableCell align="right">
                           <Stack direction="row" spacing={0.25} justifyContent="flex-end">
                             {isAbsenceKind(exc.kind) && canViewAppointments && (
-                              <Tooltip title="Разобрать записи: отменить, передать коллеге или перенести">
+                              <Tooltip title="Разобрать записи: отменить, передать коллеге, перенести или оставить как есть">
                                 <IconButton size="small" onClick={() => openAbsenceReview(exc)}>
                                   <GroupsOutlined fontSize="small" />
                                 </IconButton>
