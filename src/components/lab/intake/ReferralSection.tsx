@@ -12,6 +12,9 @@ type Props = {
   /** Анализы корзины, которые лаборатория делает только по направлению. */
   requiredFor: string[];
   onChange: (employeeId: number | null) => void;
+  /** Текст поиска врача — уходит на сервер, а не фильтрует локально. */
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
 };
 
 /**
@@ -22,6 +25,11 @@ type Props = {
  * ЛИС показывает в колонке «Нап. врач» своего интерфейса. ФИО дополнительно
  * сохраняется снимком в заказе, чтобы карточка не зависела от переименований
  * в справочнике.
+ *
+ * Поиск серверный. В справочнике ЛИС двадцать тысяч человек по всем её
+ * клиникам, поэтому список не загружается целиком: пустой запрос отдаёт уже
+ * известных (врачи-получатели организации и те, кого находили раньше), а с
+ * трёх букв фамилии идёт живой поиск.
  *
  * Обязателен не всегда. Каталог ЛИС помечает часть анализов признаком
  * «нужно направление» (`requiresDoctor`): пока в корзине нет ни одного
@@ -36,6 +44,8 @@ const ReferralSection: React.FC<Props> = ({
   disabled,
   requiredFor,
   onChange,
+  searchQuery,
+  onSearchChange,
 }) => {
   const selected = doctors.find((doctor) => doctor.id === value) ?? null;
   const required = requiredFor.length > 0;
@@ -43,9 +53,20 @@ const ReferralSection: React.FC<Props> = ({
   return (
     <IntakeSection title="Направление" loading={loading}>
       <Autocomplete
-        options={doctors}
+        options={selected && !doctors.some((d) => d.id === selected.id)
+          ? [selected, ...doctors]
+          : doctors}
         value={selected}
         onChange={(_event, next) => onChange(next?.id ?? null)}
+        // Фильтрация на сервере: список уже и есть результат поиска, а
+        // локальный фильтр Autocomplete отрезал бы часть найденного —
+        // ЛИС ищет и по отчеству, и по коду врача.
+        filterOptions={(options) => options}
+        inputValue={searchQuery}
+        onInputChange={(_event, value, reason) => {
+          if (reason !== "reset") onSearchChange(value);
+        }}
+        loading={loading}
         getOptionLabel={(option) =>
           option.qualification
             ? `${option.fullName} — ${option.qualification}`
@@ -53,7 +74,11 @@ const ReferralSection: React.FC<Props> = ({
         }
         isOptionEqualToValue={(option, current) => option.id === current.id}
         disabled={disabled}
-        noOptionsText="Справочник врачей ЛИС пуст — синхронизируйте каталог"
+        noOptionsText={
+          searchQuery.trim().length < 3
+            ? "Введите три буквы фамилии"
+            : "Врач не найден в справочнике ЛИС"
+        }
         renderInput={(params) => (
           <TextField
             {...params}

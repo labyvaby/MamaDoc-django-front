@@ -103,7 +103,7 @@ describe("справочник врачей ЛИС", () => {
     mocked.mockReset();
   });
 
-  it("getLabDoctors читает массив с ручки /lab/doctors/", async () => {
+  it("без запроса идёт на /lab/doctors/ без параметров", async () => {
     mocked.mockResolvedValue([
       { id: 3, lisId: 7759, fullName: "Тулегенова Нургуль", qualification: "" },
     ]);
@@ -112,5 +112,17 @@ describe("справочник врачей ЛИС", () => {
 
     expect(mocked.mock.calls[0][0]).toBe("/lab/doctors/");
     expect(doctors[0].lisId).toBe(7759);
+  });
+
+  it("запрос уходит в ?q= с экранированием", async () => {
+    // Фамилии кириллицей и с пробелами: без encodeURIComponent запрос
+    // ломался бы на первом же «Жолдошова Шахрибану».
+    mocked.mockResolvedValue([]);
+
+    await getLabDoctors(" Жолдошова Ш ");
+
+    expect(mocked.mock.calls[0][0]).toBe(
+      `/lab/doctors/?q=${encodeURIComponent("Жолдошова Ш")}`,
+    );
   });
 });

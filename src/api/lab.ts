@@ -153,8 +153,22 @@ export function getLabTestCard(
   return apiRequest<LabTestCard>(`/lab/tests/${testId}/`, { signal });
 }
 
-export function getLabDoctors(signal?: AbortSignal): Promise<LabDoctor[]> {
-  return apiRequest<LabDoctor[]>("/lab/doctors/", { signal });
+/**
+ * Врачи для поля «направивший врач».
+ *
+ * Без `query` — уже известные: врачи-получатели организации, которых приносит
+ * синк каталога, и все, кого раньше находили поиском. С `query` — живой поиск
+ * по справочнику самой ЛИС: там двадцать тысяч человек по всем её клиникам,
+ * и заранее зеркалить их целиком незачем. Найденное бэкенд осаждает в
+ * зеркале, поэтому у результата уже есть наш `id`, которым и ссылается заказ.
+ */
+export function getLabDoctors(
+  query?: string,
+  signal?: AbortSignal,
+): Promise<LabDoctor[]> {
+  const text = (query ?? "").trim();
+  const suffix = text ? `?q=${encodeURIComponent(text)}` : "";
+  return apiRequest<LabDoctor[]>(`/lab/doctors/${suffix}`, { signal });
 }
 
 export function getLabProfiles(signal?: AbortSignal): Promise<LabProfile[]> {
