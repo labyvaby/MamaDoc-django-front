@@ -1,5 +1,11 @@
 import React from "react";
-import { Box, LinearProgress, Stack, Typography } from "@mui/material";
+import {
+  Box,
+  CircularProgress,
+  LinearProgress,
+  Stack,
+  Typography,
+} from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
@@ -82,6 +88,101 @@ const ChatsRecovery: React.FC<{ onRetry: () => void }> = ({ onRetry }) => (
 );
 
 const FRAME_HEIGHT = { xs: "80vh", md: "calc(100vh - 96px)" } as const;
+
+/**
+ * Сколько ждать после `load`, прежде чем показывать саму рамку.
+ *
+ * `load` приходит на HTML, а рисует себя Chatwoot уже своим скриптом — снять
+ * подложку прямо на этом событии значит показать ровно тот кадр, ради которого
+ * она и заведена. Полсекунды хватает приложению встать на ноги, и на фоне самой
+ * загрузки раздела они не заметны.
+ */
+const FRAME_REVEAL_DELAY_MS = 500;
+
+/**
+ * Рамка Чат-центра с подложкой цвета CRM.
+ *
+ * Пока Chatwoot не нарисовал себя, рамка светится белым во весь экран, и на
+ * тёмной теме это вспышка. Причин у неё две, и обе закрываются одним приёмом:
+ * у пустой страницы Chatwoot фон прозрачный — сквозь рамку видно то, что под
+ * ней, — а поднявшееся приложение заливает её своим фоном, светлым, если
+ * браузер сотрудника просит светлую тему (Chatwoot смотрит на
+ * `prefers-color-scheme`, а тема CRM выбирается отдельно, в самой CRM).
+ *
+ * Поэтому под рамку кладём поверхность CRM (`background.paper`) и ею же
+ * накрываем сверху, пока Чат-центр не встал: сначала сотрудник видит обычную
+ * пустую карточку CRM, а не чужой белый лист. Дальше подложка не исчезает
+ * рывком, а растворяется — так и переход к светлому Chatwoot читается мягче.
+ *
+ * Внутрь рамки заглянуть нельзя, это чужой origin, поэтому единственный
+ * доступный признак готовности — `load` плюс пауза (`FRAME_REVEAL_DELAY_MS`).
+ *
+ * Компонент монтируется заново на каждую попытку входа (ключ снаружи), так что
+ * подложка сама возвращается на место — сбрасывать её руками не нужно.
+ */
+const ChatsFrame: React.FC<{ src: string }> = ({ src }) => {
+  const [revealed, setRevealed] = React.useState(false);
+  const timerRef = React.useRef<number | undefined>(undefined);
+
+  React.useEffect(() => () => window.clearTimeout(timerRef.current), []);
+
+  const handleLoad = React.useCallback(() => {
+    window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(
+      () => setRevealed(true),
+      FRAME_REVEAL_DELAY_MS,
+    );
+  }, []);
+
+  return (
+    <Box
+      sx={{
+        position: "relative",
+        height: "100%",
+        // Прозрачные кадры Chatwoot показывают то, что под рамкой: пусть это
+        // будет поверхность CRM, а не страница со своим градиентом.
+        bgcolor: "background.paper",
+      }}
+    >
+      <Box
+        component="iframe"
+        src={src}
+        title="Чаты"
+        onLoad={handleLoad}
+        // Chatwoot грузит вложения и уведомления; sandbox не ставим, иначе
+        // ломается его собственная авторизация и WebSocket.
+        allow="clipboard-write; microphone; camera; autoplay"
+        sx={{
+          width: "100%",
+          height: "100%",
+          border: 0,
+          display: "block",
+          // Прячем прозрачностью, а не `display: none`: рамка нулевого размера
+          // мешала бы Chatwoot считать вёрстку, а вход он ведёт сам.
+          opacity: revealed ? 1 : 0,
+          transition: (theme) =>
+            theme.transitions.create("opacity", { duration: 400 }),
+        }}
+      />
+      <Stack
+        aria-hidden
+        sx={{
+          position: "absolute",
+          inset: 0,
+          alignItems: "center",
+          justifyContent: "center",
+          bgcolor: "background.paper",
+          opacity: revealed ? 0 : 1,
+          pointerEvents: "none",
+          transition: (theme) =>
+            theme.transitions.create("opacity", { duration: 400 }),
+        }}
+      >
+        <CircularProgress size={28} />
+      </Stack>
+    </Box>
+  );
+};
 
 export const ChatsPage: React.FC = () => {
   usePageTitle("Чаты");
@@ -188,16 +289,7 @@ export const ChatsPage: React.FC = () => {
           border: (theme) => `1px solid ${theme.palette.divider}`,
         }}
       >
-        <Box
-          key={`${phase}-${attempt}`}
-          component="iframe"
-          src={iframeUrl}
-          title="Чаты"
-          // Chatwoot грузит вложения и уведомления; sandbox не ставим, иначе
-          // ломается его собственная авторизация и WebSocket.
-          allow="clipboard-write; microphone; camera; autoplay"
-          sx={{ width: "100%", height: "100%", border: 0, display: "block" }}
-        />
+        <ChatsFrame key={`${phase}-${attempt}`} src={iframeUrl} />
       </Box>
     </Box>
   );
