@@ -254,7 +254,7 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
       anchor="right"
       open={open}
       onClose={retrying ? undefined : onClose}
-      PaperProps={{ sx: { width: { xs: "100%", sm: 480, md: 560 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
+      PaperProps={{ sx: { width: { xs: "100%", sm: 560, md: 720, lg: 820 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
     >
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5, flexShrink: 0 }}>
         <Typography variant="h6" fontWeight={600}>
