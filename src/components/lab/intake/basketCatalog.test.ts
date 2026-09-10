@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   isTestVisibleForGender,
   filterAvailableTests,
+  groupCatalog,
   resolveSelectedLines,
   stepCount,
   type BasketLine,
@@ -179,5 +180,75 @@ describe("stepCount", () => {
   it("испорченное значение из поля ввода даёт единицу", () => {
     expect(stepCount(Number.NaN, +1)).toBe(1);
     expect(stepCount(0, -1)).toBe(1);
+  });
+});
+
+describe("groupCatalog", () => {
+  const allergy = labTest({ id: 100, parentId: null, title: "Аллергологические исследования" });
+  const ige = labTest({ id: 101, parentId: 100, title: "ИФА IgE Общий (кровь)" });
+  const cat = labTest({ id: 102, parentId: 100, title: "ИФА Спец. IgE эпидермис кошки" });
+  const hema = labTest({ id: 200, parentId: null, title: "Гематология" });
+  const sub = labTest({ id: 201, parentId: 200, title: "Общий анализ" });
+  const cbc = labTest({ id: 202, parentId: 201, title: "ОАК + тромбоцит" });
+  const orphan = labTest({ id: 300, parentId: null, title: "Консультация" });
+
+  it("узлы с детьми становятся группами, а не позициями", () => {
+    // В дереве ЛИС «Аллергологические исследования» — такая же строка
+    // каталога, как и анализ под ней. В плоском списке она выглядела как
+    // анализ за ноль сомов, и её можно было положить в корзину.
+    const groups = groupCatalog([allergy, ige, cat], "", "");
+
+    expect(groups.map((g) => g.title)).toEqual(["Аллергологические исследования"]);
+    expect(groups[0].tests.map((t) => t.id)).toEqual([101, 102]);
+  });
+
+  it("вложенные категории дают путь через разделитель", () => {
+    const groups = groupCatalog([hema, sub, cbc], "", "");
+
+    expect(groups[0].title).toBe("Гематология › Общий анализ");
+    expect(groups[0].tests.map((t) => t.id)).toEqual([202]);
+  });
+
+  it("позиция без категории попадает в «Прочее»", () => {
+    const groups = groupCatalog([orphan], "", "");
+
+    expect(groups[0].title).toBe("Прочее");
+    expect(groups[0].tests.map((t) => t.id)).toEqual([300]);
+  });
+
+  it("поиск оставляет только группы с совпадениями", () => {
+    const groups = groupCatalog([allergy, ige, cat, hema, sub, cbc], "", "кошк");
+
+    expect(groups.map((g) => g.title)).toEqual(["Аллергологические исследования"]);
+    expect(groups[0].tests.map((t) => t.id)).toEqual([102]);
+  });
+
+  it("поиск по названию категории раскрывает всю группу", () => {
+    // Регистратор ищет «аллерг» и ждёт весь раздел, а не пустоту: в
+    // названиях самих анализов слова «аллергологические» нет.
+    const groups = groupCatalog([allergy, ige, cat], "", "аллерг");
+
+    expect(groups[0].tests.map((t) => t.id)).toEqual([101, 102]);
+  });
+
+  it("ветеринарный раздел помечается флагом по корню дерева", () => {
+    // В каталоге ЛИС вся ветеринария живёт под одним корнем
+    // «ВЕТЕРИНАРНЫЕ ИССЛЕДОВАНИЯ» (проверено по зеркалу: 79 позиций, все
+    // там). Отделяем по категории, а не по словам в названии: «/кошка» и
+    // «/собака» есть не у всех.
+    const vetRoot = labTest({ id: 400, parentId: null, title: "ВЕТЕРИНАРНЫЕ ИССЛЕДОВАНИЯ" });
+    const vetSub = labTest({ id: 401, parentId: 400, title: "ВЕТ КЛИНИКА" });
+    const vetCbc = labTest({ id: 402, parentId: 401, title: "Общий анализ крови /кошка" });
+    const groups = groupCatalog([allergy, ige, vetRoot, vetSub, vetCbc], "", "");
+
+    expect(groups.find((g) => g.tests.some((t) => t.id === 402))?.veterinary).toBe(true);
+    expect(groups.find((g) => g.tests.some((t) => t.id === 101))?.veterinary).toBe(false);
+  });
+
+  it("пол пациента отсекает позиции внутри групп", () => {
+    const male = labTest({ id: 103, parentId: 100, title: "ПСА", lisGender: "1" });
+    const groups = groupCatalog([allergy, ige, male], "female", "");
+
+    expect(groups[0].tests.map((t) => t.id)).toEqual([101]);
   });
 });
