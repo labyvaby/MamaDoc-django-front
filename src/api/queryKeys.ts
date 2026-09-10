@@ -41,8 +41,8 @@ export const djangoQueryKeys = {
       ["django", "appointments", "service-providers"] as const,
     /**
      * Исполнители одной услуги — секция «Кто оказывает» в карточке услуги.
-     * Один запрос `service-providers/?serviceId=`; фолбэк на пересечение с
-     * матрицей живёт под ключом `serviceProvidersInBranch` (см. хук).
+     * Один запрос `service-providers/?serviceId=`; филиал и организация в
+     * ключе, потому что ручка сужает выдачу по ним.
      */
     serviceProvidersForService: (
       organizationId: number | null,
@@ -58,27 +58,7 @@ export const djangoQueryKeys = {
         branchId,
         serviceId,
       ] as const,
-    /**
-     * Все сотрудники филиала с хотя бы одной привязкой — справочник ФИО и
-     * специализаций. Нужен как фолбэк секции «Кто оказывает» на окружениях,
-     * где `service-providers/?serviceId=` ещё отдаёт пустой список.
-     */
-    serviceProvidersInBranch: (
-      organizationId: number | null,
-      branchId: number | null,
-    ) =>
-      [
-        "django",
-        "appointments",
-        "service-providers",
-        "in-branch",
-        organizationId,
-        branchId,
-      ] as const,
-    /**
-     * Матрица пар «услуга ↔ сотрудник» — счётчик исполнителей в списке услуг
-     * и состав секции «Кто оказывает» в карточке.
-     */
+    /** Матрица пар «услуга ↔ сотрудник» — счётчик исполнителей в списке услуг. */
     serviceAssignments: (branchId: number | null) =>
       ["django", "appointments", "service-assignments", branchId] as const,
     formData: (context: { orgId?: number | null; branchId?: number | null; membershipId?: number | null } = {}) =>

@@ -22,9 +22,9 @@ export const WAITLIST_USE_MOCKS = false;
  * Включён 09.09.2026 вместе с `WAITLIST_USE_MOCKS = false` — врозь эти два
  * флага не трогать: с моками регистратор увидел бы выдуманную очередь и стал
  * бы звонить людям, которых в ней нет. На проде проверены `GET /api/waitlist/`,
- * `summary/` и `match-counts/`; публичный канал витрины остаётся закрыт флагом
- * `WAITLIST_PUBLIC_CHANNEL_ENABLED` (ручка `POST /api/v1/waitlist/` не
- * проверена).
+ * `summary/` и `match-counts/`, а 10.09.2026 — и публичный канал витрины
+ * (`WAITLIST_PUBLIC_CHANNEL_ENABLED`): `POST /api/v1/waitlist/` создаёт запись
+ * с `source: "public"`, `patientId: null` и именем гостя в `contactName`.
  */
 export const WAITLIST_MODULE_ENABLED = true;
 
