@@ -49,10 +49,6 @@ import {
 } from "../../../api/staff";
 import { getBranches } from "../../../api/organization";
 import { SLOT_DURATION_OPTIONS, DEFAULT_SLOT_MINUTES } from "../../../pages/appointments/slotGrid";
-import {
-  getLocalSlotMinutes,
-  setLocalSlotMinutes,
-} from "../../../utility/employeeSlotDuration";
 import { getPublicFeatures } from "../../../api/publicBooking";
 import { getServices, type Service } from "../../../api/catalog";
 import ServiceMultiPickerField from "../../../components/services/ServiceMultiPickerField";
@@ -290,9 +286,11 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   // отклоняет весь запрос, и карточка перестала бы сохраняться.
   const [prepaymentSupported, setPrepaymentSupported] = React.useState(false);
   // Свой шаг сетки окон: «» — общий шаг организации (30 минут), иначе минуты
-  // строкой (значение MenuItem). Пока поля нет на бэке, шаг держится в
-  // браузере — см. utility/employeeSlotDuration.ts.
+  // строкой (значение MenuItem).
   const [slotMinutes, setSlotMinutes] = React.useState("");
+  // Как с онлайн-записью: на стенде, где поля ещё нет, его нельзя слать в PATCH
+  // (неизвестное поле бэк отклоняет вместе со всем запросом) — поле показываем,
+  // но заблокированным, чтобы настройка не выглядела сохранившейся.
   const [slotDurationSupported, setSlotDurationSupported] = React.useState(false);
   const [telegramId, setTelegramId] = React.useState("");
   const [instagram, setInstagram] = React.useState("");
@@ -515,15 +513,10 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         setPrepaymentRequired(full.prepaymentRequired === true);
         setPrepaymentAmount(decimalToInput(full.prepaymentAmount));
         setPrepaymentSupported(full.prepaymentRequired != null);
-        // Поле отсутствует (`undefined`) — бэк его ещё не выложил: значение
-        // берём из локального фолбэка и туда же сохраняем.
+        // Поле отсутствует (`undefined`) — бэк его на этом стенде ещё не выложил.
         const slotSupported = full.slotDurationMinutes !== undefined;
         setSlotDurationSupported(slotSupported);
-        setSlotMinutes(
-          slotSupported
-            ? String(full.slotDurationMinutes ?? "")
-            : String(getLocalSlotMinutes(empId) ?? ""),
-        );
+        setSlotMinutes(String(full.slotDurationMinutes ?? ""));
         setSpecializations(full.specializations ?? []);
         setOperationalBranches(full.operationalBranches ?? []);
         initialBranchIdsRef.current = serializeBranchIds(full.operationalBranches ?? []);
@@ -545,9 +538,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           onlineBookingEnabled: full.onlineBookingEnabled !== false,
           prepaymentRequired: full.prepaymentRequired === true,
           prepaymentAmount: decimalToInput(full.prepaymentAmount),
-          slotMinutes: slotSupported
-            ? String(full.slotDurationMinutes ?? "")
-            : String(getLocalSlotMinutes(empId) ?? ""),
+          slotMinutes: String(full.slotDurationMinutes ?? ""),
           telegramId: full.telegramId || "",
           instagram: full.instagram || "",
           birthDate: full.birthDate || "",
@@ -831,12 +822,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           employeeBranchIds: operationalBranches.map((b) => b.id),
         }),
       });
-
-      // Бэк поля ещё не знает — шаг остаётся в браузере (временный фолбэк,
-      // см. utility/employeeSlotDuration.ts).
-      if (!slotDurationSupported) {
-        setLocalSlotMinutes(empId, slotMinutes ? Number(slotMinutes) : null);
-      }
 
       // 2. Photo
       if (photoFile) {
@@ -1570,11 +1555,11 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                 onChange={(e) => setSlotMinutes(e.target.value)}
                 fullWidth
                 size="small"
-                disabled={busy}
+                disabled={busy || !slotDurationSupported}
                 helperText={
                   slotDurationSupported
-                    ? undefined
-                    : "Пока сохраняется только в этом браузере: поля ещё нет на сервере"
+                    ? "Если в записи выбрана услуга, её длительность важнее этого шага"
+                    : "Появится после обновления сервера"
                 }
               >
                 <MenuItem value="">
