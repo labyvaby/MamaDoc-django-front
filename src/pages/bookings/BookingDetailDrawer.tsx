@@ -179,6 +179,7 @@ const BookingDetailDrawer: React.FC<Props> = ({
 
   const b = query.data;
   const busy = mutation.isPending;
+
   // Тикающий отсчёт «Идёт оплата · N мин» в шапке — только пока карточка
   // реально ждёт оплату, чтобы не заводить лишний таймер на остальных броней.
   const now = useTickingClock(15000, b?.status === "awaiting_payment");
@@ -264,6 +265,14 @@ const BookingDetailDrawer: React.FC<Props> = ({
                *
                * Исключение — бронь без приёма: закрыть её больше нечем,
                * поэтому там ручные статусы остаются.
+               *
+               * «Отменить» у брони с приёмом убрана по решению заказчика
+               * (10.09.2026): материализованный приём модуль броней не трогает
+               * вовсе. Бэк отменяет приём каскадом от брони, и 10.09 так
+               * погас оплаченный приём 19812 — администратор закрывала
+               * отработанную бронь, а вместе с ней ушёл приём с 1600 сом без
+               * возврата. Отмена теперь живёт там, где деньги: в приёме
+               * (кнопка «Открыть приём» ниже, в секции «Связь с CRM»).
                */
               ...(b.appointmentId == null
                 ? [
@@ -279,9 +288,14 @@ const BookingDetailDrawer: React.FC<Props> = ({
                       icon: <PersonOffOutlined />,
                       color: "inherit" as const,
                     },
+                    {
+                      status: "cancelled" as const,
+                      label: "Отменить",
+                      icon: <CancelOutlined />,
+                      color: "error" as const,
+                    },
                   ]
                 : []),
-              { status: "cancelled", label: "Отменить", icon: <CancelOutlined />, color: "error" },
             ]
           : []; // terminal: completed / cancelled / no_show
 
@@ -618,6 +632,13 @@ const BookingDetailDrawer: React.FC<Props> = ({
                       showPaymentMethodIcons={false}
                     />
                   </Stack>
+                )}
+                {/* Кнопки «Отменить» у такой брони больше нет — объясняем
+                    сразу здесь, иначе регистратура ищет её в футере. */}
+                {b.appointmentId != null && !terminal && canManage && (
+                  <Typography variant="caption" color="text.secondary">
+                    {t("detail.cancelInVisitHint")}
+                  </Typography>
                 )}
                 {b.appointmentId != null && canOpenAppointments && (
                   <Button
