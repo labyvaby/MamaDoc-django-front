@@ -37,8 +37,6 @@ import {
   type PhoneCountryCode,
 } from "../../utility/phone";
 import { searchPatients, type DjangoPatient } from "../../api/patients";
-import { getSpecializations } from "../../api/staff";
-import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import {
   createWaitlistEntry,
   updateWaitlistEntry,
@@ -53,7 +51,6 @@ export interface WaitlistPrefill {
   patientName?: string | null;
   phone?: string | null;
   employeeId?: number | null;
-  specializationId?: number | null;
   serviceIds?: number[];
   desiredDateFrom?: string | null;
   desiredDateTo?: string | null;
@@ -90,7 +87,6 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
   );
   const [phoneLocal, setPhoneLocal] = React.useState("");
   const [employeeId, setEmployeeId] = React.useState<number | "">("");
-  const [specializationId, setSpecializationId] = React.useState<number | "">("");
   const [dateFrom, setDateFrom] = React.useState<Dayjs | null>(null);
   const [dateTo, setDateTo] = React.useState<Dayjs | null>(null);
   const [timeFrom, setTimeFrom] = React.useState("");
@@ -113,7 +109,6 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
     setCountryCode(parsed.countryCode);
     setPhoneLocal(parsed.local);
     setEmployeeId(src?.employeeId ?? prefill?.employeeId ?? "");
-    setSpecializationId(src?.specializationId ?? prefill?.specializationId ?? "");
     setDateFrom(
       src?.desiredDateFrom
         ? dayjs(src.desiredDateFrom)
@@ -138,13 +133,6 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
 
   // ── Справочники ──
   const { employees } = useAllActiveEmployees(open);
-  const specializationsQuery = useQuery({
-    queryKey: djangoQueryKeys.staff.specializations(orgId),
-    queryFn: ({ signal }) => getSpecializations(signal),
-    enabled: open,
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-  });
-  const specializations = specializationsQuery.data ?? [];
 
   // ── Поиск пациента в базе ──
   const [patientSearch, setPatientSearch] = React.useState("");
@@ -173,8 +161,6 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
     return rows.find((p) => p.phone.replace(/\D/g, "").endsWith(phoneTail)) ?? null;
   }, [duplicateQuery.data, phoneTail]);
 
-  const selectedEmployee = employees.find((e) => e.id === employeeId) ?? null;
-
   const applyPatient = (value: DjangoPatient | null) => {
     setPatient(value);
     if (value) {
@@ -198,7 +184,6 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
         contactName: contactName.trim(),
         phone: composePhone(countryCode, phoneLocal) ?? "",
         employeeId: employeeId === "" ? null : employeeId,
-        specializationId: specializationId === "" ? null : specializationId,
         branchId: entry?.branchId ?? scope.branchId ?? null,
         desiredDateFrom: dateFrom ? dateFrom.format("YYYY-MM-DD") : null,
         desiredDateTo: dateTo ? dateTo.format("YYYY-MM-DD") : null,
@@ -216,8 +201,11 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
           {
             ...payload,
             clearEmployee: payload.employeeId == null && entry.employeeId != null,
-            clearSpecialization:
-              payload.specializationId == null && entry.specializationId != null,
+            // Специальность из формы убрана: ориентир записи — всегда конкретный
+            // специалист. Старые записи «жду любого педиатра» при первой правке
+            // переводятся на него же, иначе в данных остаётся условие, которым
+            // больше нечем управлять.
+            clearSpecialization: entry.specializationId != null,
             clearDesiredDates:
               payload.desiredDateFrom == null &&
               payload.desiredDateTo == null &&
@@ -243,9 +231,9 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
     setError(null);
     if (!contactName.trim()) return setError(t("form.errorNoName"));
     if (phoneLocal.replace(/\D/g, "").length < 9) return setError(t("form.errorPhone"));
-    // Без врача и без специальности запись не с чем сопоставить: подсказка
-    // «окно освободилось» никогда её не найдёт.
-    if (employeeId === "" && specializationId === "") return setError(t("form.errorNoTarget"));
+    // Без специалиста запись не с чем сопоставить: matchesSlot ищет по
+    // employeeId, и подсказка «окно освободилось» её никогда не найдёт.
+    if (employeeId === "") return setError(t("form.errorNoTarget"));
     if (dateFrom && dateTo && dateFrom.isAfter(dateTo)) return setError(t("form.errorDates"));
     if (timeFrom && timeTo && timeFrom > timeTo) return setError(t("form.errorTimes"));
     saveMutation.mutate();
@@ -353,45 +341,14 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
               size="small"
               label={t("form.employee")}
               value={employeeId}
-              onChange={(e) => {
-                const value = e.target.value === "" ? "" : Number(e.target.value);
-                setEmployeeId(value);
-                // Специальность подставляем от выбранного специалиста — на неё
-                // матчатся окна его коллег, если человек согласен на любого.
-                const emp = employees.find((x) => x.id === value);
-                if (emp?.specializations?.[0] && specializationId === "") {
-                  setSpecializationId(emp.specializations[0].id);
-                }
-              }}
+              onChange={(e) =>
+                setEmployeeId(e.target.value === "" ? "" : Number(e.target.value))
+              }
               fullWidth
             >
-              <MenuItem value="">{t("form.employeeAny")}</MenuItem>
               {employees.map((emp) => (
                 <MenuItem key={emp.id} value={emp.id}>
                   {emp.fullName}
-                </MenuItem>
-              ))}
-            </TextField>
-
-            <TextField
-              select
-              size="small"
-              label={t("form.specialization")}
-              value={specializationId}
-              onChange={(e) =>
-                setSpecializationId(e.target.value === "" ? "" : Number(e.target.value))
-              }
-              helperText={
-                selectedEmployee && specializationId !== ""
-                  ? "Подойдут и окна коллег этой специальности"
-                  : undefined
-              }
-              fullWidth
-            >
-              <MenuItem value="">—</MenuItem>
-              {specializations.map((spec) => (
-                <MenuItem key={spec.id} value={spec.id}>
-                  {spec.name}
                 </MenuItem>
               ))}
             </TextField>
