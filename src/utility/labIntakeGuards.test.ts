@@ -18,6 +18,8 @@ const ready = (over: Partial<IntakeState> = {}): IntakeState => ({
   settingsLoading: false,
   settingsFailed: false,
   sectionConfigured: true,
+  referralRequiredFor: [],
+  referringDoctorId: null,
   ...over,
 });
 
@@ -225,5 +227,30 @@ describe("intakeBlockReason", () => {
     expect(intakeBlockReason(ready({ patientId: null, lineCount: 0 }))).toBe(
       "Выберите пациента",
     );
+  });
+});
+
+describe("направивший врач", () => {
+  it("анализ с требованием направления блокирует приём без врача", () => {
+    // Признак приходит из каталога ЛИС (`requiresDoctor`): такой анализ
+    // лаборатория делает только по направлению. Без имени в тексте
+    // регистратор не поймёт, какую строку корзины убрать, если врача нет.
+    expect(
+      intakeBlockReason(
+        ready({ referralRequiredFor: ["Гормоны Т4", "Кортизол"] }),
+      ),
+    ).toBe("Укажите направившего врача — его требуют: Гормоны Т4, Кортизол");
+  });
+
+  it("выбранный врач снимает блокировку", () => {
+    expect(
+      intakeBlockReason(
+        ready({ referralRequiredFor: ["Гормоны Т4"], referringDoctorId: 12 }),
+      ),
+    ).toBeNull();
+  });
+
+  it("обычной корзине врач не нужен", () => {
+    expect(intakeBlockReason(ready({ referringDoctorId: null }))).toBeNull();
   });
 });

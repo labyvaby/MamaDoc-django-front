@@ -18,6 +18,7 @@ import { useSnackbar } from "notistack";
 
 import { AppButton } from "../ui";
 import PatientSection from "./intake/PatientSection";
+import ReferralSection from "./intake/ReferralSection";
 import BasketSection from "./intake/BasketSection";
 import QuestionsSection from "./intake/QuestionsSection";
 import InstrumentsSection from "./intake/InstrumentsSection";
@@ -30,6 +31,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useCashlessMethods } from "../../hooks/useCashlessMethods";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 
 import {
   createLabOrder,
@@ -139,6 +141,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
   const [patient, setPatient] = React.useState<DjangoPatient | null>(null);
   const [patientEdits, setPatientEdits] = React.useState<PatientEdits>(BLANK_EDITS);
   const [lines, setLines] = React.useState<BasketLine[]>([]);
+  const [referringDoctorId, setReferringDoctorId] = React.useState<number | null>(null);
   const [answers, setAnswers] = React.useState<Record<number, string>>({});
   const [payment, setPayment] = React.useState<PaymentState>(DEFAULT_PAYMENT);
   const [phase, setPhase] = React.useState<Phase>("editing");
@@ -205,6 +208,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
           setPatient(null);
           setPatientEdits(BLANK_EDITS);
           setLines([]);
+          setReferringDoctorId(null);
           setPayment(DEFAULT_PAYMENT);
           setDraftRestored(false);
         });
@@ -212,6 +216,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       setPatient(null);
       setPatientEdits(BLANK_EDITS);
       setLines([]);
+      setReferringDoctorId(null);
       setPayment(DEFAULT_PAYMENT);
       setDraftRestored(false);
     }
@@ -402,7 +407,24 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
     [lines, tests, instruments, payment.discountPercent, chargeTubes],
   );
 
+  // Направивший врач выбирается из активных сотрудников организации — тем
+  // же справочником, что и исполнитель услуги в форме приёма.
+  const { employees: doctors, isLoading: doctorsLoading } =
+    useAllActiveEmployees(open);
+
   const requiredQuestionIds = React.useMemo(() => questions.map((q) => q.id), [questions]);
+
+  // Анализы корзины, которые лаборатория делает только по направлению
+  // (`requiresDoctor`, признак `@required_doctor` каталога ЛИС). Имена, а
+  // не счётчик: если направления нет, регистратору надо знать, какую
+  // строку убрать.
+  const referralRequiredFor = React.useMemo(() => {
+    const byId = new Map(tests.map((test) => [test.id, test]));
+    return lines
+      .map((line) => byId.get(line.testId))
+      .filter((test) => test?.requiresDoctor)
+      .map((test) => test!.title);
+  }, [lines, tests]);
 
   const guardState: IntakeState = {
     patientId: patient?.id ?? null,
@@ -420,6 +442,8 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
     settingsLoading,
     settingsFailed,
     sectionConfigured,
+    referralRequiredFor,
+    referringDoctorId,
   };
   const branchReason = branchId == null ? "Выберите филиал" : null;
   const blockReason = branchReason ?? intakeBlockReason(guardState);
@@ -484,6 +508,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       paidCard: payment.card,
       cashlessMethodId: payment.cashlessMethodId,
       discountPercent: payment.discountPercent,
+      referringDoctorId,
     });
 
     try {
@@ -673,6 +698,15 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
             searchResults={patientResults}
             searchLoading={patientSearchLoading}
             onSearchChange={setPatientQuery}
+          />
+
+          <ReferralSection
+            doctors={doctors}
+            value={referringDoctorId}
+            loading={doctorsLoading}
+            disabled={!editing}
+            requiredFor={referralRequiredFor}
+            onChange={setReferringDoctorId}
           />
 
           <BasketSection

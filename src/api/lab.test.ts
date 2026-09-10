@@ -60,6 +60,7 @@ const rawDetail = (over: Partial<LabOrderDetailRaw> = {}): LabOrderDetailRaw => 
   status: "dispatched",
   diagnosis: "Плановое обследование",
   comment: "Натощак",
+  referringDoctorName: "",
   discountPercent: 10,
   totalAmount: "450.00",
   paidCash: "450.00",
@@ -84,6 +85,7 @@ describe("normalizeLabOrderDetail", () => {
     expect(normalizeLabOrderDetail(rawDetail())).toEqual({
       id: 41,
       patientId: 9622,
+      referringDoctorName: "",
       patientName: "Иванова А.",
       branchName: "Центральный",
       isDispatched: true,
