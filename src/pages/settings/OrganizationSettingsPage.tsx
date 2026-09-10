@@ -11,6 +11,7 @@ import {
   RadioGroup,
   Skeleton,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -21,6 +22,7 @@ import TranslateOutlined from "@mui/icons-material/TranslateOutlined";
 import SpellcheckOutlined from "@mui/icons-material/SpellcheckOutlined";
 import FileUploadOutlined from "@mui/icons-material/FileUploadOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 
 import SettingsLayout from "./SettingsLayout";
 import { AppButton } from "../../components/ui/AppButton";
@@ -110,8 +112,9 @@ const OrganizationSettingsPage: React.FC = () => {
       hint: t(`organization.vertical.${value}.hint`),
     }));
 
-  const { activeOrganization, isSuperAdmin, hasPermission } = usePermissions();
+  const { activeOrganization, isSuperAdmin, hasPermission, hasModule } = usePermissions();
   const canUpdate = isSuperAdmin() || hasPermission("organization.update");
+  const hasBillingModule = hasModule("billing");
 
   const orgId = activeOrganization?.id ?? null;
 
@@ -121,6 +124,8 @@ const OrganizationSettingsPage: React.FC = () => {
   const [overlapMode, setOverlapMode] =
     React.useState<AppointmentOverlapMode>("forbid");
   const [vertical, setVertical] = React.useState<Vertical>("clinic");
+  const [onlinePaymentEnabled, setOnlinePaymentEnabled] = React.useState(false);
+  const [bakaiToken, setBakaiToken] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -153,6 +158,8 @@ const OrganizationSettingsPage: React.FC = () => {
       setScope(data.patientScope);
       setOverlapMode(data.appointmentOverlapMode);
       setVertical(data.vertical);
+      setOnlinePaymentEnabled(data.onlinePaymentEnabled);
+      setBakaiToken("");
       setOverrides(readGlossaryOverrides(data.themeConfig));
     } catch (err) {
       setLoadError(extractErrorMessage(err));
@@ -170,11 +177,15 @@ const OrganizationSettingsPage: React.FC = () => {
   const scopeDirty = !!org && scope !== org.patientScope;
   const overlapDirty = !!org && overlapMode !== org.appointmentOverlapMode;
   const verticalDirty = !!org && vertical !== org.vertical;
+  const paymentDirty = !!org && hasBillingModule && (
+    onlinePaymentEnabled !== org.onlinePaymentEnabled || bakaiToken.trim() !== ""
+  );
   // Основа терминологии — СОХРАНЁННАЯ вертикаль: несохранённое переключение
   // радиокнопки не должно менять эталон, от которого считаются оверрайды.
   const termBase = getGlossary(org?.vertical);
   const changedCount = changedTermKeys(termBase, overrides).length;
-  const dirty = nameDirty || scopeDirty || overlapDirty || verticalDirty;
+  const dirty = nameDirty || scopeDirty || overlapDirty || verticalDirty || paymentDirty;
+  const paymentReady = !onlinePaymentEnabled || Boolean(org?.bakaiTokenSet || bakaiToken.trim());
 
   // Название обязательно: пустое поле блокирует сохранение и получает фокус.
   const form = useFormValidation({
@@ -193,12 +204,18 @@ const OrganizationSettingsPage: React.FC = () => {
         ...(scopeDirty ? { patientScope: scope } : {}),
         ...(overlapDirty ? { appointmentOverlapMode: overlapMode } : {}),
         ...(verticalDirty ? { vertical } : {}),
+        ...(paymentDirty ? {
+          onlinePaymentEnabled,
+          ...(bakaiToken.trim() ? { bakaiOpenbankingToken: bakaiToken.trim() } : {}),
+        } : {}),
       });
       setOrg(updated);
       setName(updated.name);
       setScope(updated.patientScope);
       setOverlapMode(updated.appointmentOverlapMode);
       setVertical(updated.vertical);
+      setOnlinePaymentEnabled(updated.onlinePaymentEnabled);
+      setBakaiToken("");
       setSaved(true);
       // Название организации показывается в переключателе контекста в сайдбаре,
       // а вертикаль меняет глоссарий по всему приложению — перечитываем
@@ -411,6 +428,50 @@ const OrganizationSettingsPage: React.FC = () => {
               }
             />
 
+            {hasBillingModule && (
+              <FormControl disabled={!canUpdate || busy}>
+                <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
+                  <CreditCardOutlined fontSize="small" color="action" />
+                  <FormLabel sx={{ fontWeight: 600 }}>Онлайн-оплата</FormLabel>
+                </Stack>
+                <Typography variant="caption" color="text.secondary" mb={1.5}>
+                  Включает создание ссылок Bakai Pay для начислений. Токен хранится на сервере и обратно не показывается.
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={onlinePaymentEnabled}
+                      onChange={(_, checked) => {
+                        setOnlinePaymentEnabled(checked);
+                        setSaved(false);
+                      }}
+                    />
+                  }
+                  label={onlinePaymentEnabled ? "Онлайн-оплата включена" : "Онлайн-оплата выключена"}
+                  sx={{ mb: 1 }}
+                />
+                <TextField
+                  label="Токен Bakai OpenBanking"
+                  type="password"
+                  value={bakaiToken}
+                  onChange={(event) => {
+                    setBakaiToken(event.target.value);
+                    setSaved(false);
+                  }}
+                  placeholder={org.bakaiTokenSet ? "Оставьте пустым, чтобы не менять" : "Вставьте токен"}
+                  error={!paymentReady}
+                  helperText={
+                    !paymentReady
+                      ? "Для включения онлайн-оплаты укажите токен Bakai."
+                      : org.bakaiTokenSet
+                        ? `Токен уже сохранён: ${org.bakaiTokenMasked || "••••"}`
+                        : "Токен ещё не сохранён."
+                  }
+                  fullWidth
+                />
+              </FormControl>
+            )}
+
             {/* Patient registry scope */}
             <FormControl disabled={!canUpdate || busy}>
               <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
@@ -587,7 +648,7 @@ const OrganizationSettingsPage: React.FC = () => {
                 <AppButton
                   variant="contained"
                   onClick={handleSave}
-                  disabled={!dirty}
+                  disabled={!dirty || !paymentReady}
                   loading={busy}
                   sx={{ width: { xs: "100%", sm: "auto" }, minHeight: { xs: 48, sm: 36 } }}
                 >

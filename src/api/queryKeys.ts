@@ -22,6 +22,32 @@ export const DJANGO_REALTIME_FALLBACK_INTERVAL_MS = 60_000;
 export const djangoQueryKeys = {
   all: ["django"] as const,
 
+  billing: {
+    all: ["django", "billing"] as const,
+    dashboard: (params: Record<string, unknown>) =>
+      ["django", "billing", "dashboard", params] as const,
+    contracts: (params: Record<string, unknown>) =>
+      ["django", "billing", "contracts", params] as const,
+    contractCard: (organizationId: number | undefined, contractId: number | undefined) =>
+      ["django", "billing", "contract-card", organizationId ?? null, contractId ?? null] as const,
+    charges: (params: Record<string, unknown>) =>
+      ["django", "billing", "charges", params] as const,
+    chargeCard: (organizationId: number | undefined, chargeId: number | undefined) =>
+      ["django", "billing", "charge-card", organizationId ?? null, chargeId ?? null] as const,
+    payments: (params: Record<string, unknown>) =>
+      ["django", "billing", "payments", params] as const,
+    debtors: (organizationId?: number) =>
+      ["django", "billing", "debtors", organizationId ?? null] as const,
+    offerings: (params: Record<string, unknown>) =>
+      ["django", "billing", "offerings", params] as const,
+    clients: (organizationId?: number) =>
+      ["django", "billing", "clients", organizationId ?? null] as const,
+    clientCard: (organizationId: number | undefined, clientId: number | undefined) =>
+      ["django", "billing", "client-card", organizationId ?? null, clientId ?? null] as const,
+    defaults: (organizationId?: number) =>
+      ["django", "billing", "defaults", organizationId ?? null] as const,
+  },
+
   appointments: {
     all: ["django", "appointments"] as const,
     list: (params: Record<string, unknown>) =>
@@ -454,5 +480,52 @@ export const djangoQueryKeys = {
     employees: ["django", "reference", "employees"] as const,
     services: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
       ["django", "reference", "services", context] as const,
+  },
+
+  lab: {
+    all: ["django", "lab"] as const,
+    /**
+     * Врачи для поля «направивший врач». Ключ параметризован запросом:
+     * пустой — уже известные, непустой — живой поиск по справочнику ЛИС,
+     * и кэшировать их под одним ключом нельзя.
+     */
+    doctors: (query: string) =>
+      ["django", "lab", "doctors", query] as const,
+    /**
+     * Лента заказов лаборатории. Сегодня страница всегда шлёт пустые params —
+     * плитки-фильтры над лентой (LabOrdersSummaryBar) режут уже загруженный
+     * список на клиенте (см. filterLabOrders) и в сеть не ходят. Ключ всё
+     * равно параметризован по образцу соседних list(): дровер приёма должен
+     * уметь инвалидировать ленту после создания заказа, не зная её текущих
+     * фильтров.
+     */
+    orders: (params: Record<string, unknown>) =>
+      ["django", "lab", "orders", params] as const,
+    /**
+     * Карточка одного заказа (Task 11). Ключ вложен под тот же префикс
+     * `["django", "lab"]`, что и `all` — инвалидация ленты после приёма или
+     * повтора отправки (`djangoQueryKeys.lab.all`) рефетчит и открытую
+     * карточку тоже, без отдельного вызова.
+     */
+    order: (orderId: number) => ["django", "lab", "orders", orderId] as const,
+    /** Каталог анализов — грузится один раз при открытии дровера приёма. */
+    tests: ["django", "lab", "tests"] as const,
+    /**
+     * Настройки раздела — плата за пробирки и «настроен ли раздел вообще»
+     * (`GET /lab/settings/`). Грузятся один раз при открытии дровера приёма,
+     * тем же моментом, что и каталог; параметров нет — организация, как и у
+     * каталога, берётся из контекста пользователя, а не передаётся явно.
+     */
+    settings: ["django", "lab", "settings"] as const,
+    /**
+     * Пробирки/вопросы/подготовка зависят от состава корзины (`?tests=`) и
+     * перезагружаются при её изменении, с debounce — ключ по строке
+     * идентификаторов (`testIdsQuery`), а не по самому массиву: одинаковая
+     * корзина обязана давать одинаковый ключ независимо от порядка добавления
+     * строк.
+     */
+    instruments: (testIds: string) => ["django", "lab", "instruments", testIds] as const,
+    questions: (testIds: string) => ["django", "lab", "questions", testIds] as const,
+    preparation: (testIds: string) => ["django", "lab", "preparation", testIds] as const,
   },
 };

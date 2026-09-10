@@ -23,6 +23,7 @@ import {
   DialogActions,
   DialogContentText,
   Alert,
+  Autocomplete,
   alpha,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -63,6 +64,8 @@ import {
   unassignedShifts,
   type ShiftBranchFilter,
 } from "./branchFilter";
+import { buildMonthOptions, monthKeyForRange, rangeForMonth } from "./monthFilter";
+import { filterEmployeesByQuery } from "./employeeSearch";
 
 dayjs.extend(duration);
 
@@ -92,6 +95,17 @@ const DjangoWorkShiftsPage: React.FC = () => {
   const [branchFilter, setBranchFilter] = React.useState<ShiftBranchFilter>("all");
   const [startDate, setStartDate] = React.useState(dayjs().startOf("month").format("YYYY-MM-DD"));
   const [endDate, setEndDate] = React.useState(dayjs().endOf("month").format("YYYY-MM-DD"));
+
+  // Месяц — производное от «От»/«До», а не отдельное состояние: иначе ручная
+  // правка дат и селектор разъезжаются. Подробности — в monthFilter.ts.
+  const selectedMonth = monthKeyForRange(startDate, endDate);
+  const monthOptions = React.useMemo(() => buildMonthOptions(selectedMonth), [selectedMonth]);
+
+  const applyMonth = (month: string) => {
+    const range = rangeForMonth(month);
+    setStartDate(range.startDate);
+    setEndDate(range.endDate);
+  };
 
   const {
     shifts,
@@ -227,22 +241,15 @@ const DjangoWorkShiftsPage: React.FC = () => {
   }) => {
     try {
       if (editId != null) {
-        // Ручная смена должна быть привязана к текущему филиалу: payroll в
-        // филиальном срезе намеренно не включает общеклинические (branch=null)
-        // записи. При «Все филиалы» не передаём поле, чтобы не менять старую
-        // привязку неожиданно.
-        const row = activeBranch
-          ? { ...rows[0], branchId: activeBranch.id }
-          : rows[0];
-        await updateShift(editId, row, { organizationId: orgId });
+        // branchId приходит из формы: филиал выбирается в дровере (по умолчанию
+        // активный), поэтому здесь его не подменяем — иначе выбор пользователя
+        // молча терялся бы. Смена без филиала в филиальный расчёт ЗП не входит.
+        await updateShift(editId, rows[0], { organizationId: orgId });
         notify?.({ type: "success", message: "Смена обновлена" });
       } else {
         // Weekday bulk-create persists each generated shift (one POST per day).
         for (const row of rows) {
-          await createShift(
-            activeBranch ? { ...row, branchId: activeBranch.id } : row,
-            { organizationId: orgId },
-          );
+          await createShift(row, { organizationId: orgId });
         }
         notify?.({
           type: "success",
@@ -317,21 +324,26 @@ const DjangoWorkShiftsPage: React.FC = () => {
       sx={{ width: "100%" }}
     >
       {canManage && (
-        <TextField
-          select
+        // Autocomplete вместо select: в штате бывает под сотню человек, и
+        // мотать список мышью дольше, чем набрать три буквы фамилии.
+        // Правила поиска — в employeeSearch.ts.
+        <Autocomplete
+          options={employees}
+          value={employees.find((emp) => emp.id === selectedEmployeeId) ?? null}
+          onChange={(_, next) => setSelectedEmployeeId(next?.id ?? null)}
+          getOptionLabel={(emp) => emp.fullName}
+          isOptionEqualToValue={(option, value) => option.id === value.id}
+          filterOptions={filterEmployeesByQuery}
+          autoHighlight
           size="small"
-          label="Сотрудник"
-          value={selectedEmployeeId ?? ""}
-          onChange={(e) => setSelectedEmployeeId(e.target.value ? Number(e.target.value) : null)}
+          loading={employeesQuery.isLoading}
+          noOptionsText="Никого не нашли"
+          loadingText="Загружаем…"
           sx={{ flex: "1 1 220px", minWidth: 200 }}
-        >
-          <MenuItem value="">Все сотрудники</MenuItem>
-          {employees.map((emp) => (
-            <MenuItem key={emp.id} value={emp.id}>
-              {emp.fullName}
-            </MenuItem>
-          ))}
-        </TextField>
+          renderInput={(params) => (
+            <TextField {...params} label="Сотрудник" placeholder="Все сотрудники" size="small" />
+          )}
+        />
       )}
       {branchOptions.length > 1 && (
         <TextField
@@ -354,6 +366,29 @@ const DjangoWorkShiftsPage: React.FC = () => {
           <MenuItem value="none">Без филиала{withoutBranch.length ? ` (${withoutBranch.length})` : ""}</MenuItem>
         </TextField>
       )}
+      <TextField
+        select
+        size="small"
+        label="Месяц"
+        value={selectedMonth ?? ""}
+        onChange={(e) => {
+          if (e.target.value) applyMonth(e.target.value);
+        }}
+        sx={{ flex: "1 1 190px", minWidth: 175 }}
+      >
+        {/* Период, набранный руками в «От»/«До», не равен месяцу — показываем
+            это вместо пустого поля, но выбрать «свой период» из списка нельзя. */}
+        {selectedMonth === null && (
+          <MenuItem value="" disabled>
+            Свой период
+          </MenuItem>
+        )}
+        {monthOptions.map((option) => (
+          <MenuItem key={option.value} value={option.value}>
+            {option.label}
+          </MenuItem>
+        ))}
+      </TextField>
       <CustomDatePicker
         label="От"
         value={dayjs(startDate)}
@@ -790,6 +825,8 @@ const DjangoWorkShiftsPage: React.FC = () => {
         shiftToEdit={editTarget}
         employees={employees}
         onClose={() => setFormOpen(false)}
+        branches={branchOptions}
+        defaultBranchId={activeBranch?.id ?? null}
         onSubmit={handleFormSubmit}
         onDelete={
           editTarget

@@ -28,7 +28,7 @@ export type RbacOrganization = {
   themeConfig?: Record<string, any> | null;
   /** Вертикаль бизнеса — определяет терминологию интерфейса
    *  («пациент» для клиники, «клиент» для салона красоты).
-   *  Отдаётся бэком с 28.07.2026 (choices "clinic" | "beauty");
+   *  Вертикаль организации: clinic | beauty | fitness | retail | billing.
    *  опционально на типе для старых организаций без миграции —
    *  отсутствующее или незнакомое значение фронт трактует как clinic. */
   vertical?: string | null;
