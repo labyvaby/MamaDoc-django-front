@@ -82,6 +82,8 @@ export interface AbsenceSpan {
 }
 
 type Mode = "cancel" | "reassign";
+/** Пока действие не выбрано — пустая строка: разбор не предлагает отмену сам. */
+type ModeChoice = Mode | "";
 
 const KIND_WORD: Partial<Record<ScheduleExceptionKind, string>> = {
   day_off: "выходной",
@@ -114,7 +116,7 @@ export const AbsenceConflictsDrawer: React.FC<{
   const canCreateTask = useCan("tasks.create");
 
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
-  const [mode, setMode] = React.useState<Mode>("cancel");
+  const [mode, setMode] = React.useState<ModeChoice>("");
   const [comment, setComment] = React.useState("");
   const [notifyPatients, setNotifyPatients] = React.useState(true);
   const [replacementId, setReplacementId] = React.useState<number | null>(null);
@@ -170,11 +172,13 @@ export const AbsenceConflictsDrawer: React.FC<{
     [categoriesQuery.data],
   );
 
-  // Открытие — чистый лист: приёмы выбраны все (регистратор пришёл разобрать
-  // весь список, а не по одному), режим — отмена.
+  // Открытие — чистый лист: ни один приём не выбран, действие не задано.
+  // Выходной врача сам по себе ничего не отменяет (решение заказчика
+  // 10.09.2026): часть записей передают коллеге, часть переносят, часть
+  // пациентов согласны ждать, а отменённый приём обратно не открывается.
   React.useEffect(() => {
     if (!open) return;
-    setMode("cancel");
+    setMode("");
     setComment(absence ? `${absence.employeeName}: ${KIND_WORD[absence.kind] ?? "отсутствие"}` : "");
     setNotifyPatients(true);
     setReplacementId(null);
@@ -183,8 +187,10 @@ export const AbsenceConflictsDrawer: React.FC<{
     setError(null);
   }, [open, absence]);
 
+  // Смена списка (другое отсутствие, свежая выдача) — снимаем выбор, а не
+  // отмечаем всё: галочка означает «этот приём я трогаю осознанно».
   React.useEffect(() => {
-    setSelected(new Set(conflicts.map((appt) => appt.id)));
+    setSelected(new Set());
   }, [conflicts]);
 
   React.useEffect(() => {
@@ -301,7 +307,10 @@ export const AbsenceConflictsDrawer: React.FC<{
   };
 
   const canApply =
-    selectedList.length > 0 && !busy && (mode === "cancel" || replacementId !== null);
+    mode !== "" &&
+    selectedList.length > 0 &&
+    !busy &&
+    (mode === "cancel" || replacementId !== null);
 
   const period =
     absence === null
@@ -497,9 +506,28 @@ export const AbsenceConflictsDrawer: React.FC<{
                 select
                 size="small"
                 value={mode}
-                onChange={(e) => setMode(e.target.value as Mode)}
+                onChange={(e) => setMode(e.target.value as ModeChoice)}
                 disabled={busy}
+                SelectProps={{
+                  displayEmpty: true,
+                  // Без renderValue закрытое поле выглядит пустым: подпись
+                  // выбранного пункта берётся из MenuItem, а пункт-плейсхолдер
+                  // отключён.
+                  renderValue: (value) =>
+                    value === "cancel" ? (
+                      "Отменить — пациенту SMS «врач не выйдет»"
+                    ) : value === "reassign" ? (
+                      "Передать коллеге"
+                    ) : (
+                      <Box component="span" sx={{ color: "text.disabled" }}>
+                        Выберите действие
+                      </Box>
+                    ),
+                }}
               >
+                <MenuItem value="" disabled>
+                  Выберите действие
+                </MenuItem>
                 <MenuItem value="cancel">Отменить — пациенту SMS «врач не выйдет»</MenuItem>
                 <MenuItem value="reassign">Передать коллеге</MenuItem>
               </TextField>
@@ -532,6 +560,10 @@ export const AbsenceConflictsDrawer: React.FC<{
               </Stack>
             )}
 
+            {/* Всё, что настраивает действие, появляется после его выбора:
+                до этого дровер только показывает, кто записан. */}
+            {mode !== "" && (
+              <>
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
                 Комментарий в приём
@@ -619,6 +651,8 @@ export const AbsenceConflictsDrawer: React.FC<{
                 отмена деньги не возвращает, возврат оформляется отдельно.
               </Alert>
             )}
+              </>
+            )}
             {error && <Alert severity="error">{error}</Alert>}
           </Stack>
         )}
@@ -643,7 +677,9 @@ export const AbsenceConflictsDrawer: React.FC<{
                 ? "Применяем…"
                 : mode === "cancel"
                   ? `Отменить (${selectedList.length})`
-                  : `Передать (${selectedList.length})`}
+                  : mode === "reassign"
+                    ? `Передать (${selectedList.length})`
+                    : "Выберите действие"}
             </Button>
           </Stack>
         </Box>
