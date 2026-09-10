@@ -670,11 +670,26 @@ export function getProfessionals(
   return getList<ProfessionalPreview>(`/professionals/${query}`, signal);
 }
 
+/**
+ * Карточка специалиста. `branchId` фильтрует `services` по филиалу (контракт
+ * `frontend-ticket-2026-09-10-branch-scope-and-sales-filter` §1.1): остаются
+ * услуги, доступные в этом филиале и назначенные врачу глобально либо именно
+ * там. Без параметра — весь набор врача, как раньше.
+ *
+ * ⚠ На 10.09.2026 бэк параметр ещё не применяет (мусорный `branch_id` отдаёт
+ * 200 вместо 400 и на проде, и на тесте) — шлём заранее, поведение до выкладки
+ * прежнее. Тот же скоуп обещан `available-services`, поэтому наборы услуг в
+ * карточке и в свободном окне обязаны совпадать.
+ */
 export function getProfessional(
   idOrSlug: IdOrSlug,
+  params: { branchId?: number | null } = {},
   signal?: AbortSignal,
 ): Promise<ProfessionalDetail> {
-  return getItem<ProfessionalDetail>(`/professionals/${idOrSlug}/`, signal);
+  return getItem<ProfessionalDetail>(
+    `/professionals/${idOrSlug}/${buildQuery({ branch_id: params.branchId })}`,
+    signal,
+  );
 }
 
 export function getProfessionalReviews(

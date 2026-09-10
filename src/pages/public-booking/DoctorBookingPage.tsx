@@ -264,7 +264,7 @@ const DoctorBookingPage: React.FC = () => {
     setLoading(true);
     setNotFound(false);
     setError(null);
-    getProfessional(idOrSlug, controller.signal)
+    getProfessional(idOrSlug, {}, controller.signal)
       .then(setDoctor)
       .catch((e) => {
         if (isAbortError(e)) return;
@@ -352,6 +352,33 @@ const DoctorBookingPage: React.FC = () => {
     autoPickedKeyRef.current = null;
     setStep(1);
   };
+
+  /**
+   * Услуги врача в выбранном филиале (§1.1 контракта от 10.09.2026).
+   *
+   * Карточка грузится до того, как филиал известен (он берётся из неё же —
+   * `doctor.branch.id`), поэтому набор услуг обновляем вторым запросом, как
+   * только `branchId` определился или сменился. Иначе витрина показывала бы
+   * услугу чужого филиала: записаться на неё нельзя (POST даёт 400), а видно
+   * её было.
+   *
+   * Пишем только `services` — `branch` из ответа не трогаем, иначе пересчёт
+   * `branchId` зациклил бы эффект.
+   */
+  React.useEffect(() => {
+    if (!doctor || branchId == null) return;
+    const controller = new AbortController();
+    getProfessional(idOrSlug, { branchId }, controller.signal)
+      .then((fresh) =>
+        setDoctor((prev) => (prev ? { ...prev, services: fresh.services } : prev)),
+      )
+      // Не ответило — оставляем набор из карточки: показать больше услуг лучше,
+      // чем ни одной. Неверный выбор упрётся в 400 при создании брони.
+      .catch(() => {});
+    return () => controller.abort();
+    // doctor?.id — чтобы эффект не перезапускался от собственного setDoctor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idOrSlug, branchId, doctor?.id]);
 
   // Календари врача — по одному на филиал. Грузим без услуги: как только услуги
   // выбраны, времена пересчитываются через available-times.
