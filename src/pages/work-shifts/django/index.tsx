@@ -23,6 +23,7 @@ import {
   DialogActions,
   DialogContentText,
   Alert,
+  Autocomplete,
   alpha,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -64,6 +65,7 @@ import {
   type ShiftBranchFilter,
 } from "./branchFilter";
 import { buildMonthOptions, monthKeyForRange, rangeForMonth } from "./monthFilter";
+import { filterEmployeesByQuery } from "./employeeSearch";
 
 dayjs.extend(duration);
 
@@ -329,21 +331,26 @@ const DjangoWorkShiftsPage: React.FC = () => {
       sx={{ width: "100%" }}
     >
       {canManage && (
-        <TextField
-          select
+        // Autocomplete вместо select: в штате бывает под сотню человек, и
+        // мотать список мышью дольше, чем набрать три буквы фамилии.
+        // Правила поиска — в employeeSearch.ts.
+        <Autocomplete
+          options={employees}
+          value={employees.find((emp) => emp.id === selectedEmployeeId) ?? null}
+          onChange={(_, next) => setSelectedEmployeeId(next?.id ?? null)}
+          getOptionLabel={(emp) => emp.fullName}
+          isOptionEqualToValue={(option, value) => option.id === value.id}
+          filterOptions={filterEmployeesByQuery}
+          autoHighlight
           size="small"
-          label="Сотрудник"
-          value={selectedEmployeeId ?? ""}
-          onChange={(e) => setSelectedEmployeeId(e.target.value ? Number(e.target.value) : null)}
+          loading={employeesQuery.isLoading}
+          noOptionsText="Никого не нашли"
+          loadingText="Загружаем…"
           sx={{ flex: "1 1 220px", minWidth: 200 }}
-        >
-          <MenuItem value="">Все сотрудники</MenuItem>
-          {employees.map((emp) => (
-            <MenuItem key={emp.id} value={emp.id}>
-              {emp.fullName}
-            </MenuItem>
-          ))}
-        </TextField>
+          renderInput={(params) => (
+            <TextField {...params} label="Сотрудник" placeholder="Все сотрудники" size="small" />
+          )}
+        />
       )}
       {branchOptions.length > 1 && (
         <TextField
