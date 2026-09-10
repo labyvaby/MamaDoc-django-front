@@ -63,6 +63,7 @@ import {
   unassignedShifts,
   type ShiftBranchFilter,
 } from "./branchFilter";
+import { buildMonthOptions, monthKeyForRange, rangeForMonth } from "./monthFilter";
 
 dayjs.extend(duration);
 
@@ -92,6 +93,17 @@ const DjangoWorkShiftsPage: React.FC = () => {
   const [branchFilter, setBranchFilter] = React.useState<ShiftBranchFilter>("all");
   const [startDate, setStartDate] = React.useState(dayjs().startOf("month").format("YYYY-MM-DD"));
   const [endDate, setEndDate] = React.useState(dayjs().endOf("month").format("YYYY-MM-DD"));
+
+  // Месяц — производное от «От»/«До», а не отдельное состояние: иначе ручная
+  // правка дат и селектор разъезжаются. Подробности — в monthFilter.ts.
+  const selectedMonth = monthKeyForRange(startDate, endDate);
+  const monthOptions = React.useMemo(() => buildMonthOptions(selectedMonth), [selectedMonth]);
+
+  const applyMonth = (month: string) => {
+    const range = rangeForMonth(month);
+    setStartDate(range.startDate);
+    setEndDate(range.endDate);
+  };
 
   const {
     shifts,
@@ -354,6 +366,29 @@ const DjangoWorkShiftsPage: React.FC = () => {
           <MenuItem value="none">Без филиала{withoutBranch.length ? ` (${withoutBranch.length})` : ""}</MenuItem>
         </TextField>
       )}
+      <TextField
+        select
+        size="small"
+        label="Месяц"
+        value={selectedMonth ?? ""}
+        onChange={(e) => {
+          if (e.target.value) applyMonth(e.target.value);
+        }}
+        sx={{ flex: "1 1 190px", minWidth: 175 }}
+      >
+        {/* Период, набранный руками в «От»/«До», не равен месяцу — показываем
+            это вместо пустого поля, но выбрать «свой период» из списка нельзя. */}
+        {selectedMonth === null && (
+          <MenuItem value="" disabled>
+            Свой период
+          </MenuItem>
+        )}
+        {monthOptions.map((option) => (
+          <MenuItem key={option.value} value={option.value}>
+            {option.label}
+          </MenuItem>
+        ))}
+      </TextField>
       <CustomDatePicker
         label="От"
         value={dayjs(startDate)}
