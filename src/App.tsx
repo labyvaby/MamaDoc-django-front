@@ -589,9 +589,11 @@ function App() {
                           path="dashboard"
                           element={
                             <RequireSuperAdmin>
-                              <Suspense fallback={<LinearProgress />}>
-                                <DashboardPage />
-                              </Suspense>
+                              <RequirePermission permission={PAGE_PERMISSIONS.reports}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DashboardPage />
+                                </Suspense>
+                              </RequirePermission>
                             </RequireSuperAdmin>
                           }
                         />
