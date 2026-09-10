@@ -152,10 +152,6 @@ const BasketSection: React.FC<Props> = ({
                       Тест не найден в каталоге
                     </Typography>
                   )}
-                  <Typography variant="caption" color="text.secondary">
-                    {formatKGS(price)}
-                    {line.count > 1 ? ` × ${line.count}` : ""}
-                  </Typography>
                 </Box>
 
                 <Stack
