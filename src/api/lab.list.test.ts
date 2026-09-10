@@ -7,6 +7,7 @@ vi.mock("./client", async (importOriginal) => {
 
 import { apiRequest } from "./client";
 import {
+  getLabClientTypes,
   getLabDoctors,
   getLabTestCard,
   getLabInstruments,
@@ -124,5 +125,22 @@ describe("справочник врачей ЛИС", () => {
     expect(mocked.mock.calls[0][0]).toBe(
       `/lab/doctors/?q=${encodeURIComponent("Жолдошова Ш")}`,
     );
+  });
+});
+
+describe("типы клиента ЛИС", () => {
+  beforeEach(() => {
+    mocked.mockReset();
+  });
+
+  it("getLabClientTypes читает массив с /lab/client-types/", async () => {
+    mocked.mockResolvedValue([
+      { id: 1, lisId: 16, title: "СТАНДАРТ", discountPercent: 0 },
+    ]);
+
+    const types = await getLabClientTypes();
+
+    expect(mocked.mock.calls[0][0]).toBe("/lab/client-types/");
+    expect(types[0].discountPercent).toBe(0);
   });
 });

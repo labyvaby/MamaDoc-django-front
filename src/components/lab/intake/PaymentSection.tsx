@@ -9,6 +9,7 @@ import {
 
 import { CashlessMethodSelect } from "../../ui";
 import type { DjangoCashlessMethod } from "../../../api/cashlessMethods";
+import type { LabClientType } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
 import IntakeSection from "./IntakeSection";
 
@@ -27,11 +28,18 @@ type Props = {
   paidCard: string;
   cashlessMethodId: number | null;
   discountPercent: number;
+  /**
+   * Типы клиента ЛИС — готовый список скидок. Выбор типа задаёт и скидку:
+   * в ЛИС это один справочник, и бэкенд отвергает пару, где они разошлись.
+   */
+  clientTypes: LabClientType[];
+  clientTypeId: number | null;
   disabled: boolean;
   onCashChange: (value: string) => void;
   onCardChange: (value: string) => void;
   onCashlessMethodChange: (id: number | null) => void;
   onDiscountChange: (percent: number) => void;
+  onClientTypeChange: (id: number | null) => void;
   /**
    * План задачи (Task 8) не включал эти три поля в пропсы секции, но без
    * готового списка `CashlessMethodSelect` (тот же план требует использовать
@@ -53,18 +61,6 @@ const noSpinnersSx = {
     margin: 0,
   },
 } as const;
-
-/**
- * Готовый набор скидок вместо свободного ввода.
- *
- * Скидка в лаборатории — не торг у прилавка, а известный набор договорённостей
- * клиники (сотрудникам, по акции, партнёрам). Свободное поле давало опечатки
- * вроде 41% и требовало от регистратора помнить, что вообще можно дать; список
- * закрывает и то, и другое. Проценты, а не сомы: бэкенд приёма принимает
- * именно `discountPercent`, и обратный пересчёт из сомов уже расходился с ним
- * на копейку.
- */
-const DISCOUNT_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 50] as const;
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
@@ -101,11 +97,14 @@ const PaymentSection: React.FC<Props> = ({
   paidCard,
   cashlessMethodId,
   discountPercent,
+  clientTypes,
+  clientTypeId,
   disabled,
   onCashChange,
   onCardChange,
   onCashlessMethodChange,
   onDiscountChange,
+  onClientTypeChange,
   cashlessMethods,
   cashlessMethodsLoading,
   cashlessMethodsFailed,
@@ -176,19 +175,29 @@ const PaymentSection: React.FC<Props> = ({
           select
           size="small"
           fullWidth
-          label="Скидка"
-          value={String(discountPercent)}
-          onChange={(event) => onDiscountChange(Number(event.target.value))}
-          disabled={disabled}
+          label="Тип клиента и скидка"
+          value={clientTypeId == null ? "" : String(clientTypeId)}
+          onChange={(event) => {
+            const next = clientTypes.find(
+              (row) => String(row.id) === event.target.value,
+            );
+            onClientTypeChange(next?.id ?? null);
+            onDiscountChange(next?.discountPercent ?? 0);
+          }}
+          disabled={disabled || clientTypes.length === 0}
           helperText={
-            discountPercent > 0
-              ? `Минус ${formatKGS(round2((testsGross * discountPercent) / 100))} от анализов`
-              : ' '
+            clientTypes.length === 0
+              ? "Справочник типов клиента ещё не синхронизирован — скидки нет"
+              : discountPercent > 0
+                ? `Минус ${formatKGS(round2((testsGross * discountPercent) / 100))} от анализов`
+                : " "
           }
         >
-          {DISCOUNT_OPTIONS.map((percent) => (
-            <MenuItem key={percent} value={String(percent)}>
-              {percent === 0 ? 'Без скидки' : `${percent}%`}
+          {clientTypes.map((row) => (
+            <MenuItem key={row.id} value={String(row.id)}>
+              {row.discountPercent > 0
+                ? `${row.title} — ${row.discountPercent}%`
+                : row.title}
             </MenuItem>
           ))}
         </TextField>

@@ -36,6 +36,7 @@ import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import {
   createLabOrder,
   dispatchLabOrder,
+  getLabClientTypes,
   getLabDoctors,
   getLabInstruments,
   getLabPreparation,
@@ -43,6 +44,7 @@ import {
   getLabSettings,
   getLabTests,
   testIdsQuery,
+  type LabClientType,
   type LabDoctor,
   type LabQuestion,
   type LabReceipt,
@@ -146,6 +148,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
   const [referringDoctorId, setReferringDoctorId] = React.useState<number | null>(null);
   const [doctorQuery, setDoctorQuery] = React.useState("");
   const [comment, setComment] = React.useState("");
+  const [clientTypeId, setClientTypeId] = React.useState<number | null>(null);
   const [answers, setAnswers] = React.useState<Record<number, string>>({});
   const [payment, setPayment] = React.useState<PaymentState>(DEFAULT_PAYMENT);
   const [phase, setPhase] = React.useState<Phase>("editing");
@@ -225,6 +228,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       setReferringDoctorId(null);
       setDoctorQuery("");
       setComment("");
+      setClientTypeId(null);
       setPayment(DEFAULT_PAYMENT);
       setDraftRestored(false);
     }
@@ -432,6 +436,20 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
   );
   const doctorsLoading = doctorsQuery.isLoading || doctorsQuery.isFetching;
 
+  // Типы клиента ЛИС — готовый список скидок. Выбор типа задаёт скидку
+  // заказа: в ЛИС это один справочник, и бэкенд отвергает пару, где они
+  // разошлись.
+  const clientTypesQuery = useQuery<LabClientType[]>({
+    queryKey: djangoQueryKeys.lab.clientTypes,
+    queryFn: ({ signal }) => getLabClientTypes(signal),
+    enabled: open,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+  const clientTypes = React.useMemo(
+    () => clientTypesQuery.data ?? [],
+    [clientTypesQuery.data],
+  );
+
   const requiredQuestionIds = React.useMemo(() => questions.map((q) => q.id), [questions]);
 
   // Анализы корзины, которые лаборатория делает только по направлению
@@ -530,6 +548,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       discountPercent: payment.discountPercent,
       referringDoctorId,
       comment,
+      clientTypeId,
     });
 
     try {
@@ -799,11 +818,14 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
             paidCard={payment.card}
             cashlessMethodId={payment.cashlessMethodId}
             discountPercent={payment.discountPercent}
+            clientTypes={clientTypes}
+            clientTypeId={clientTypeId}
             disabled={!editing}
             onCashChange={(value) => setPayment((prev) => ({ ...prev, cash: value }))}
             onCardChange={(value) => setPayment((prev) => ({ ...prev, card: value }))}
             onCashlessMethodChange={(id) => setPayment((prev) => ({ ...prev, cashlessMethodId: id }))}
             onDiscountChange={(percent) => setPayment((prev) => ({ ...prev, discountPercent: percent }))}
+            onClientTypeChange={setClientTypeId}
             cashlessMethods={cashlessMethods}
             cashlessMethodsLoading={cashlessMethodsLoading}
             cashlessMethodsFailed={cashlessMethodsFailed}

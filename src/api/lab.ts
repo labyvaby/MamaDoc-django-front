@@ -80,6 +80,20 @@ export interface LabDoctor {
   qualification: string;
 }
 
+/**
+ * Тип клиента из справочника ЛИС (`GET /lab/client-types/`).
+ *
+ * Это готовый список скидок клиники, который живёт в ЛИС: «СТАНДАРТ 0%»,
+ * «Пенсионеры 10%», врачебные, дисконтные карты, страховки. Заказ обязан
+ * уезжать с одним из них, а его скидка обязана совпадать со скидкой типа.
+ */
+export interface LabClientType {
+  id: number;
+  lisId: number;
+  title: string;
+  discountPercent: number;
+}
+
 export interface LabProfile {
   id: number;
   lisId: number;
@@ -169,6 +183,12 @@ export function getLabDoctors(
   const text = (query ?? "").trim();
   const suffix = text ? `?q=${encodeURIComponent(text)}` : "";
   return apiRequest<LabDoctor[]>(`/lab/doctors/${suffix}`, { signal });
+}
+
+export function getLabClientTypes(
+  signal?: AbortSignal,
+): Promise<LabClientType[]> {
+  return apiRequest<LabClientType[]>("/lab/client-types/", { signal });
 }
 
 export function getLabProfiles(signal?: AbortSignal): Promise<LabProfile[]> {
@@ -331,6 +351,12 @@ export interface LabIntakeInput {
    * по направлению.
    */
   referringDoctorId?: number;
+  /**
+   * Тип клиента из справочника ЛИС — источник скидки. Его процент обязан
+   * совпадать с `discountPercent`, иначе бэкенд ответит отказом. Пусто —
+   * тип с нулевой скидкой.
+   */
+  clientTypeId?: number;
 }
 
 export interface LabLabels {
