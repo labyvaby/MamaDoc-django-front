@@ -4,6 +4,9 @@
  */
 const PREFIX_TO_MODULE: Record<string, string> = {
   patients: 'patients',
+  // Клиенты — retail-представление общей карточки человека; отдельного
+  // PlatformModule нет, поэтому организационный гейт общий с пациентами.
+  clients: 'patients',
   appointments: 'appointments',
   medical: 'appointments',
   staff: 'staff',

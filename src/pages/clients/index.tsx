@@ -15,7 +15,7 @@ import ClientCard from "./ClientCard";
 import ClientEditorDrawer from "./ClientEditorDrawer";
 import ClientListPanel from "./ClientListPanel";
 import ClientTabs from "./ClientTabs";
-import { defaultClientLayoutSettings, readClientLayoutSettings, type ClientLayoutSettings, type ClientTabKey } from "./clientLayout";
+import { defaultClientLayoutSettings, getClientLayoutSettings, type ClientLayoutSettings, type ClientTabKey } from "./clientLayout";
 
 const tabLabels: Record<ClientTabKey, string> = { purchases: "История покупок", contacts: "Контактные лица" };
 type ContactDraft = { fullName: string; position: string; phone: string; email: string; isPrimary: boolean; note: string };
@@ -49,8 +49,18 @@ export default function ClientsPage() {
   const [contactError, setContactError] = React.useState("");
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const layoutQuery = useQuery({
+    queryKey: ["client-layout-settings", organizationId],
+    queryFn: ({ signal }) => getClientLayoutSettings(organizationId as number, signal),
+    enabled: Boolean(organizationId && canView && isRetail),
+  });
+
   React.useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search), 250); return () => window.clearTimeout(timer); }, [search]);
-  React.useEffect(() => { const next = readClientLayoutSettings(organizationId); setLayout(next); setActiveTab(next.tabs[0] ?? "purchases"); }, [organizationId]);
+  React.useEffect(() => {
+    const next = layoutQuery.data ?? defaultClientLayoutSettings;
+    setLayout(next);
+    setActiveTab((current) => next.tabs.includes(current) ? current : next.tabs[0] ?? "purchases");
+  }, [layoutQuery.data]);
 
   const clients = useQuery({
     queryKey: ["clients", organizationId, debouncedSearch],
