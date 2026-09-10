@@ -82,6 +82,12 @@ export interface IntakeState {
   referralRequiredFor: string[];
   /** Выбранный направивший врач; `null` — не выбран. */
   referringDoctorId: number | null;
+  /**
+   * Пациент дал согласие на обработку персональных данных. Заказ уезжает в
+   * стороннюю лабораторию с ФИО, ИНН и датой рождения — без согласия
+   * передавать их нельзя, и бэкенд это тоже проверяет.
+   */
+  personalDataConsent: boolean;
 }
 
 export function intakeBlockReason(state: IntakeState): string | null {
@@ -97,6 +103,9 @@ export function intakeBlockReason(state: IntakeState): string | null {
   if (!state.patientBirthDate) return "Заполните дату рождения пациента";
   if (state.patientGender !== "male" && state.patientGender !== "female") {
     return "Укажите пол пациента";
+  }
+  if (!state.personalDataConsent) {
+    return "Отметьте согласие пациента на обработку персональных данных";
   }
   if (state.lineCount < 1) return "Добавьте хотя бы один анализ";
 

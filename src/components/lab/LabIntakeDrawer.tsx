@@ -24,7 +24,6 @@ import BarcodePreview from "./BarcodePreview";
 import BasketSection from "./intake/BasketSection";
 import QuestionsSection from "./intake/QuestionsSection";
 import InstrumentsSection from "./intake/InstrumentsSection";
-import PreparationSection from "./intake/PreparationSection";
 import PaymentSection from "./intake/PaymentSection";
 import type { BasketLine } from "./intake/basketCatalog";
 import { assembleLabAnswers } from "./intake/labQuestionFields";
@@ -150,6 +149,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
   const [doctorQuery, setDoctorQuery] = React.useState("");
   const [comment, setComment] = React.useState("");
   const [clientTypeId, setClientTypeId] = React.useState<number | null>(null);
+  const [personalDataConsent, setPersonalDataConsent] = React.useState(false);
   const [answers, setAnswers] = React.useState<Record<number, string>>({});
   const [payment, setPayment] = React.useState<PaymentState>(DEFAULT_PAYMENT);
   const [phase, setPhase] = React.useState<Phase>("editing");
@@ -230,6 +230,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       setDoctorQuery("");
       setComment("");
       setClientTypeId(null);
+      setPersonalDataConsent(false);
       setPayment(DEFAULT_PAYMENT);
       setDraftRestored(false);
     }
@@ -483,6 +484,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
     sectionConfigured,
     referralRequiredFor,
     referringDoctorId,
+    personalDataConsent,
   };
   const branchReason = branchId == null ? "Выберите филиал" : null;
   const blockReason = branchReason ?? intakeBlockReason(guardState);
@@ -550,6 +552,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       referringDoctorId,
       comment,
       clientTypeId,
+      personalDataConsent,
     });
 
     try {
@@ -765,6 +768,8 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
             onInnChange={(value) => setPatientEdits((prev) => ({ ...prev, inn: value }))}
             onBirthDateChange={(value) => setPatientEdits((prev) => ({ ...prev, birthDate: value }))}
             onGenderChange={(value) => setPatientEdits((prev) => ({ ...prev, gender: value }))}
+            consent={personalDataConsent}
+            onConsentChange={setPersonalDataConsent}
             searchQuery={patientQuery}
             searchResults={patientResults}
             searchLoading={patientSearchLoading}
@@ -808,7 +813,6 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
 
           <InstrumentsSection instruments={instruments} loading={instrumentsQuery.isLoading} chargeTubes={chargeTubes} />
 
-          <PreparationSection texts={preparationTexts} loading={preparationQuery.isLoading} />
 
           <CommentSection
             value={comment}

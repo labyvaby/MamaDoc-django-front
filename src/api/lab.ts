@@ -25,6 +25,8 @@ export interface LabTest {
   lisGender: string;
   requiresDoctor: boolean;
   hasQuestions: boolean;
+  /** У анализа есть памятка подготовки — в строке корзины появится значок. */
+  hasPreparation: boolean;
 }
 
 /** Строка памятки из карточки анализа. */
@@ -357,6 +359,11 @@ export interface LabIntakeInput {
    * тип с нулевой скидкой.
    */
   clientTypeId?: number;
+  /**
+   * Согласие пациента на обработку персональных данных. Без него бэкенд
+   * отвергает приём: заказ уезжает в стороннюю лабораторию с ФИО и ИНН.
+   */
+  personalDataConsent: boolean;
 }
 
 export interface LabLabels {
@@ -398,6 +405,8 @@ export interface LabOrderDetailRaw {
   comment: string;
   /** ФИО направившего врача на момент приёма; пустая строка — без него. */
   referringDoctorName: string;
+  /** Когда отмечено согласие на обработку ПДн; null у старых заказов. */
+  personalDataConsentAt: string | null;
   discountPercent: number;
   totalAmount: string;
   paidCash: string;
@@ -428,6 +437,8 @@ export interface LabOrderDetail {
   comment: string;
   /** ФИО направившего врача на момент приёма; пустая строка — без него. */
   referringDoctorName: string;
+  /** Когда отмечено согласие на обработку ПДн; null у старых заказов. */
+  personalDataConsentAt: string | null;
   discountPercent: number;
   totalAmount: number;
   paidCash: number;
@@ -466,6 +477,7 @@ export function normalizeLabOrderDetail(raw: LabOrderDetailRaw): LabOrderDetail 
     diagnosis: raw.diagnosis,
     comment: raw.comment,
     referringDoctorName: raw.referringDoctorName ?? "",
+    personalDataConsentAt: raw.personalDataConsentAt ?? null,
     discountPercent: raw.discountPercent,
     totalAmount: parseMoney(raw.totalAmount),
     paidCash: parseMoney(raw.paidCash),

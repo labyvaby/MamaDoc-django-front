@@ -22,6 +22,7 @@ const labTest = (over: Partial<LabTest> = {}): LabTest => ({
   lisGender: "",
   requiresDoctor: false,
   hasQuestions: false,
+  hasPreparation: false,
   ...over,
 });
 
