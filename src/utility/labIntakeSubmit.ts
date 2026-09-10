@@ -96,6 +96,8 @@ export interface LabIntakeFormValues {
   comment?: string;
   /** Тип клиента ЛИС, источник скидки; `null` — нулевой тип на бэкенде. */
   clientTypeId: number | null;
+  /** Согласие на обработку ПДн — в тело попадает всегда, явно. */
+  personalDataConsent: boolean;
 }
 
 /**
@@ -133,6 +135,7 @@ export function buildLabIntakeBody(values: LabIntakeFormValues): LabIntakeInput 
     answers: values.answers,
     paidCash: toMoneyString(values.paidCash),
     paidCard: toMoneyString(values.paidCard),
+    personalDataConsent: values.personalDataConsent,
   };
   if (values.cashlessMethodId != null) body.cashlessMethodId = values.cashlessMethodId;
   if (values.discountPercent > 0) body.discountPercent = values.discountPercent;

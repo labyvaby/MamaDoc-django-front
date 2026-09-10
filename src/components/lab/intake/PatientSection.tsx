@@ -1,6 +1,8 @@
 import React from "react";
 import {
   Autocomplete,
+  Checkbox,
+  FormControlLabel,
   Stack,
   TextField,
   ToggleButton,
@@ -25,6 +27,9 @@ type Props = {
   onInnChange: (value: string) => void;
   onBirthDateChange: (value: string | null) => void;
   onGenderChange: (value: string) => void;
+  /** Согласие пациента на обработку персональных данных. */
+  consent: boolean;
+  onConsentChange: (value: boolean) => void;
   /**
    * План (Task 9) не включал эти четыре поля в пропсы секции: автокомплит
    * ищет через `searchPatients`, а по правилу проекта (см. `PaymentSection`,
@@ -62,6 +67,8 @@ const PatientSection: React.FC<Props> = ({
   onInnChange,
   onBirthDateChange,
   onGenderChange,
+  consent,
+  onConsentChange,
   searchQuery,
   searchResults,
   searchLoading,
@@ -180,6 +187,25 @@ const PatientSection: React.FC<Props> = ({
             )}
           </Stack>
         )}
+
+      <FormControlLabel
+        sx={{ alignItems: "flex-start", ml: 0 }}
+        control={
+          <Checkbox
+            size="small"
+            checked={consent}
+            onChange={(event) => onConsentChange(event.target.checked)}
+            disabled={disabled}
+            sx={{ pt: 0.25 }}
+          />
+        }
+        label={
+          <Typography variant="body2">
+            Пациент дал согласие на обработку персональных данных и передачу
+            их в лабораторию
+          </Typography>
+        }
+      />
     </IntakeSection>
   );
 };

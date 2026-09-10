@@ -21,6 +21,7 @@ import { resolveSelectedLines, stepCount, type BasketLine } from "./basketCatalo
 import type { LabTest } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
 import IntakeSection from "./IntakeSection";
+import PreparationPopover from "./PreparationPopover";
 import TestDetailsDialog from "./TestDetailsDialog";
 import TestPickerDialog from "./TestPickerDialog";
 
@@ -153,6 +154,10 @@ const BasketSection: React.FC<Props> = ({
                     </Typography>
                   )}
                 </Box>
+
+                {line.test?.hasPreparation && (
+                  <PreparationPopover testId={line.testId} title={line.test.title} />
+                )}
 
                 <Stack
                   direction="row"

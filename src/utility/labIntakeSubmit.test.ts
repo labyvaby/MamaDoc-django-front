@@ -173,6 +173,7 @@ describe("buildLabIntakeBody", () => {
         discountPercent: 10,
         referringDoctorId: null,
         clientTypeId: null,
+        personalDataConsent: true,
       }),
     ).toEqual({
       patientId: 9622,
@@ -181,6 +182,7 @@ describe("buildLabIntakeBody", () => {
       answers,
       paidCash: "50.00",
       paidCard: "200.00",
+      personalDataConsent: true,
       cashlessMethodId: 7,
       discountPercent: 10,
     });
@@ -198,8 +200,10 @@ describe("buildLabIntakeBody", () => {
       discountPercent: 0,
       referringDoctorId: null,
       clientTypeId: null,
+      personalDataConsent: true,
     });
     expect(body).toEqual({
+      personalDataConsent: true,
       patientId: 1,
       branchId: 1,
       lines: [],
@@ -223,6 +227,7 @@ describe("buildLabIntakeBody", () => {
       discountPercent: 0,
       referringDoctorId: null,
       clientTypeId: null,
+      personalDataConsent: true,
     });
     expect("discountPercent" in body).toBe(false);
   });
@@ -239,6 +244,7 @@ describe("buildLabIntakeBody", () => {
       discountPercent: 15,
       referringDoctorId: null,
       clientTypeId: null,
+      personalDataConsent: true,
     });
     expect(body.discountPercent).toBe(15);
   });
@@ -255,6 +261,7 @@ describe("buildLabIntakeBody", () => {
       discountPercent: 0,
       referringDoctorId: null,
       clientTypeId: null,
+      personalDataConsent: true,
     });
     expect(body.paidCash).toBe("150.50");
   });
@@ -271,6 +278,7 @@ describe("buildLabIntakeBody", () => {
       discountPercent: 0,
       referringDoctorId: null,
       clientTypeId: null,
+      personalDataConsent: true,
     });
     expect(body.paidCash).toBe("0.00");
     expect(body.paidCard).toBe("0.00");
@@ -288,6 +296,7 @@ describe("buildLabIntakeBody", () => {
       discountPercent: 0,
       referringDoctorId: null,
       clientTypeId: null,
+      personalDataConsent: true,
     });
     expect(body.paidCash).toBe("0.00");
   });
@@ -304,6 +313,7 @@ describe("buildLabIntakeBody", () => {
       discountPercent: 0,
       referringDoctorId: null,
       clientTypeId: null,
+      personalDataConsent: true,
     });
     expect(body.paidCash).toBe("0.00");
   });
@@ -320,6 +330,7 @@ describe("buildLabIntakeBody", () => {
       discountPercent: 0,
       referringDoctorId: null,
       clientTypeId: null,
+      personalDataConsent: true,
     });
     expect(body.lines).toEqual(lines);
     expect(body.answers).toEqual(answers);
@@ -338,6 +349,7 @@ describe("направивший врач в теле приёма", () => {
     discountPercent: 0,
     referringDoctorId: null,
     clientTypeId: null,
+    personalDataConsent: true,
   };
 
   it("выбранный врач уходит в тело запроса", () => {
@@ -367,6 +379,7 @@ describe("комментарий в теле приёма", () => {
     discountPercent: 0,
     referringDoctorId: null,
     clientTypeId: null,
+    personalDataConsent: true,
   };
 
   it("непустой комментарий уходит без лишних пробелов", () => {
@@ -393,6 +406,7 @@ describe("тип клиента в теле приёма", () => {
     cashlessMethodId: null,
     referringDoctorId: null,
     clientTypeId: null,
+    personalDataConsent: true,
   };
 
   it("выбранный тип уходит вместе со своей скидкой", () => {
@@ -402,6 +416,7 @@ describe("тип клиента в теле приёма", () => {
       ...base,
       discountPercent: 10,
       clientTypeId: 7,
+      personalDataConsent: true,
     });
 
     expect(body.clientTypeId).toBe(7);
@@ -413,8 +428,31 @@ describe("тип клиента в теле приёма", () => {
       ...base,
       discountPercent: 0,
       clientTypeId: null,
+      personalDataConsent: true,
     });
 
     expect("clientTypeId" in body).toBe(false);
+  });
+});
+
+describe("согласие в теле приёма", () => {
+  it("флаг согласия уходит явно, даже когда он true", () => {
+    // Бэкенд отказывает без согласия; ключ должен присутствовать всегда,
+    // чтобы отказ был про согласие, а не про отсутствующее поле.
+    const body = buildLabIntakeBody({
+      patientId: 1,
+      branchId: 1,
+      lines: [],
+      answers: [],
+      paidCash: "0",
+      paidCard: "0",
+      cashlessMethodId: null,
+      discountPercent: 0,
+      referringDoctorId: null,
+      clientTypeId: null,
+      personalDataConsent: true,
+    });
+
+    expect(body.personalDataConsent).toBe(true);
   });
 });

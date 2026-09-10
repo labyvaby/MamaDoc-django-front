@@ -20,6 +20,7 @@ const ready = (over: Partial<IntakeState> = {}): IntakeState => ({
   sectionConfigured: true,
   referralRequiredFor: [],
   referringDoctorId: null,
+  personalDataConsent: true,
   ...over,
 });
 
@@ -252,5 +253,23 @@ describe("направивший врач", () => {
 
   it("обычной корзине врач не нужен", () => {
     expect(intakeBlockReason(ready({ referringDoctorId: null }))).toBeNull();
+  });
+});
+
+describe("согласие на обработку персональных данных", () => {
+  it("без согласия приём заблокирован с понятной причиной", () => {
+    // Заказ уезжает в стороннюю лабораторию вместе с ФИО, ИНН и датой
+    // рождения — без зафиксированного согласия делать это нельзя.
+    expect(intakeBlockReason(ready({ personalDataConsent: false }))).toBe(
+      "Отметьте согласие пациента на обработку персональных данных",
+    );
+  });
+
+  it("согласие проверяется после данных пациента, но до корзины", () => {
+    // Порядок причин — от общего к частному: сначала кто пациент, потом его
+    // согласие, потом что заказываем.
+    expect(
+      intakeBlockReason(ready({ personalDataConsent: false, lineCount: 0 })),
+    ).toBe("Отметьте согласие пациента на обработку персональных данных");
   });
 });

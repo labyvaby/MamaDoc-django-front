@@ -328,6 +328,14 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
               <InfoRow label="Пациент" value={order.patientName} />
               <InfoRow label="Филиал" value={order.branchName} />
               <InfoRow label="Дата приёма" value={dayjs(order.createdAt).format("DD.MM.YYYY HH:mm")} />
+              <InfoRow
+                label="Согласие на обработку ПДн"
+                value={
+                  order.personalDataConsentAt
+                    ? `получено ${formatDateRu(order.personalDataConsentAt)}`
+                    : "не отмечено"
+                }
+              />
               {order.referringDoctorName && (
                 <InfoRow
                   label="Направивший врач"
