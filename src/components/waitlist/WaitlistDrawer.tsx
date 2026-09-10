@@ -25,7 +25,7 @@ import { AppButton, CustomDatePicker, PhoneCountryCodeSelect } from "../ui";
 import { useT } from "../../i18n/VerticalProvider";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useActiveScope } from "../../hooks/useActiveScope";
-import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
+import { doctorEmployeesOnly, useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import { usePhoneLocalInput } from "../../hooks/usePhoneLocalInput";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import {
@@ -37,6 +37,8 @@ import {
   type PhoneCountryCode,
 } from "../../utility/phone";
 import { searchPatients, type DjangoPatient } from "../../api/patients";
+import { getSpecializations } from "../../api/staff";
+import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import {
   createWaitlistEntry,
   updateWaitlistEntry,
@@ -51,6 +53,7 @@ export interface WaitlistPrefill {
   patientName?: string | null;
   phone?: string | null;
   employeeId?: number | null;
+  specializationId?: number | null;
   serviceIds?: number[];
   desiredDateFrom?: string | null;
   desiredDateTo?: string | null;
@@ -87,6 +90,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
   );
   const [phoneLocal, setPhoneLocal] = React.useState("");
   const [employeeId, setEmployeeId] = React.useState<number | "">("");
+  const [specializationId, setSpecializationId] = React.useState<number | "">("");
   const [dateFrom, setDateFrom] = React.useState<Dayjs | null>(null);
   const [dateTo, setDateTo] = React.useState<Dayjs | null>(null);
   const [timeFrom, setTimeFrom] = React.useState("");
@@ -109,6 +113,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
     setCountryCode(parsed.countryCode);
     setPhoneLocal(parsed.local);
     setEmployeeId(src?.employeeId ?? prefill?.employeeId ?? "");
+    setSpecializationId(src?.specializationId ?? prefill?.specializationId ?? "");
     setDateFrom(
       src?.desiredDateFrom
         ? dayjs(src.desiredDateFrom)
@@ -133,6 +138,34 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
 
   // ── Справочники ──
   const { employees } = useAllActiveEmployees(open);
+  const specializationsQuery = useQuery({
+    queryKey: djangoQueryKeys.staff.specializations(orgId),
+    queryFn: ({ signal }) => getSpecializations(signal),
+    enabled: open,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+  const specializations = specializationsQuery.data ?? [];
+
+  /**
+   * В пикер попадают только врачи, и при выбранной специальности — лишь те, у
+   * кого она есть. Раньше селект отдавал весь штат: регистраторы и уборщицы
+   * стояли вперемешку с врачами, а окон у них не бывает.
+   */
+  const employeeOptions = React.useMemo(() => {
+    const doctors = doctorEmployeesOnly(employees);
+    const list =
+      specializationId === ""
+        ? doctors
+        : doctors.filter((e) => e.specializations.some((s) => s.id === specializationId));
+    // Уже сохранённого специалиста из списка не выкидываем, даже если он под
+    // фильтр не подходит: иначе при правке старой записи селект показал бы
+    // пустоту и молча подменил ориентир.
+    if (employeeId !== "" && !list.some((e) => e.id === employeeId)) {
+      const current = employees.find((e) => e.id === employeeId);
+      if (current) return [current, ...list];
+    }
+    return list;
+  }, [employees, specializationId, employeeId]);
 
   // ── Поиск пациента в базе ──
   const [patientSearch, setPatientSearch] = React.useState("");
@@ -184,6 +217,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
         contactName: contactName.trim(),
         phone: composePhone(countryCode, phoneLocal) ?? "",
         employeeId: employeeId === "" ? null : employeeId,
+        specializationId: specializationId === "" ? null : specializationId,
         branchId: entry?.branchId ?? scope.branchId ?? null,
         desiredDateFrom: dateFrom ? dateFrom.format("YYYY-MM-DD") : null,
         desiredDateTo: dateTo ? dateTo.format("YYYY-MM-DD") : null,
@@ -201,11 +235,8 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
           {
             ...payload,
             clearEmployee: payload.employeeId == null && entry.employeeId != null,
-            // Специальность из формы убрана: ориентир записи — всегда конкретный
-            // специалист. Старые записи «жду любого педиатра» при первой правке
-            // переводятся на него же, иначе в данных остаётся условие, которым
-            // больше нечем управлять.
-            clearSpecialization: entry.specializationId != null,
+            clearSpecialization:
+              payload.specializationId == null && entry.specializationId != null,
             clearDesiredDates:
               payload.desiredDateFrom == null &&
               payload.desiredDateTo == null &&
@@ -231,9 +262,10 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
     setError(null);
     if (!contactName.trim()) return setError(t("form.errorNoName"));
     if (phoneLocal.replace(/\D/g, "").length < 9) return setError(t("form.errorPhone"));
-    // Без специалиста запись не с чем сопоставить: matchesSlot ищет по
-    // employeeId, и подсказка «окно освободилось» её никогда не найдёт.
-    if (employeeId === "") return setError(t("form.errorNoTarget"));
+    // Без врача и без специальности запись не с чем сопоставить: matchesSlot
+    // ищет по employeeId либо по специальности врача слота, и подсказка «окно
+    // освободилось» такую запись никогда не найдёт.
+    if (employeeId === "" && specializationId === "") return setError(t("form.errorNoTarget"));
     if (dateFrom && dateTo && dateFrom.isAfter(dateTo)) return setError(t("form.errorDates"));
     if (timeFrom && timeTo && timeFrom > timeTo) return setError(t("form.errorTimes"));
     saveMutation.mutate();
@@ -339,14 +371,50 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
             <TextField
               select
               size="small"
+              label={t("form.specialization")}
+              value={specializationId}
+              onChange={(e) => {
+                const value = e.target.value === "" ? "" : Number(e.target.value);
+                setSpecializationId(value);
+                // Выбранный врач другой специальности перестал бы совпадать с
+                // фильтром — снимаем его, чтобы в записи не остался ориентир,
+                // которого больше нет в списке.
+                if (value !== "" && employeeId !== "") {
+                  const emp = employees.find((x) => x.id === employeeId);
+                  if (!emp?.specializations.some((s) => s.id === value)) setEmployeeId("");
+                }
+              }}
+              fullWidth
+            >
+              <MenuItem value="">{t("form.specializationAny")}</MenuItem>
+              {specializations.map((spec) => (
+                <MenuItem key={spec.id} value={spec.id}>
+                  {spec.name}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              select
+              size="small"
               label={t("form.employee")}
               value={employeeId}
               onChange={(e) =>
                 setEmployeeId(e.target.value === "" ? "" : Number(e.target.value))
               }
+              helperText={
+                employeeId === "" && specializationId !== ""
+                  ? t("form.employeeAnyHint")
+                  : undefined
+              }
               fullWidth
             >
-              {employees.map((emp) => (
+              {/* «Любой» имеет смысл только при выбранной специальности: без
+                  обоих ориентиров запись не сматчится ни с одним окном. */}
+              {specializationId !== "" && (
+                <MenuItem value="">{t("form.employeeAny")}</MenuItem>
+              )}
+              {employeeOptions.map((emp) => (
                 <MenuItem key={emp.id} value={emp.id}>
                   {emp.fullName}
                 </MenuItem>

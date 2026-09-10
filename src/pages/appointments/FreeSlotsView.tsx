@@ -40,7 +40,6 @@ import {
 } from "../../api/scheduling";
 import { buildTimeline } from "./freeSlotsTimeline";
 import { resampleEmployeeDays } from "./slotGrid";
-import { resolveSlotMinutes } from "../../utility/employeeSlotDuration";
 import {
   absenceForDay,
   buildDayAbsences,
@@ -900,7 +899,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const slotMinutesByEmployee = React.useMemo(() => {
     const map = new Map<number, number>();
     allEmployees.forEach((emp) => {
-      const minutes = resolveSlotMinutes(emp);
+      const minutes = emp.slotDurationMinutes;
       if (minutes) map.set(emp.id, minutes);
     });
     return map;

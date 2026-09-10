@@ -15,6 +15,8 @@ const appt = (start: string, end: string): ScheduleConflictAppointment => ({
   services: ["Приём педиатра"],
   paidTotal: "0.00",
   isPerformerPrimary: true,
+  absenceReviewedAt: null,
+  absenceReviewedBy: null,
 });
 
 const FROM_14_TO_16 = { startTime: "14:00", endTime: "16:00" };

@@ -38,7 +38,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCanChecker } from "../../hooks/useCan";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
-import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
+import { doctorEmployeesOnly, useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatPhoneDisplay } from "../../utility/phone";
 import {
@@ -120,7 +120,9 @@ const WaitlistPage: React.FC = () => {
     setSearchParams(next, { replace: true });
   }, [tab, debouncedSearch, employeeId, onlyUrgent, setSearchParams]);
 
-  const { employees } = useAllActiveEmployees(true);
+  const { employees: allEmployees } = useAllActiveEmployees(true);
+  // Фильтр очереди — по тем же людям, что и в форме: только врачи.
+  const employees = React.useMemo(() => doctorEmployeesOnly(allEmployees), [allEmployees]);
 
   // Филиал режем сами: бэк по филиалу сессии не скоупит (проверено на проде
   // 10.09.2026), но параметр branchId поддерживает. Без него регистратор видел

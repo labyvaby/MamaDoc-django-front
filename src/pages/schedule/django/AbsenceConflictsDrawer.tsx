@@ -11,7 +11,11 @@
  *     а не сухое «приём отменён» (тип уведомления бэк выбирает по этой причине);
  *   • передать коллеге — исполнитель меняется на месте, строки не пересоздаются;
  *   • перенести — по одному, из карточки приёма (массовый перенос требует
- *     времени для каждого приёма отдельно, экраном это не собрать).
+ *     времени для каждого приёма отдельно, экраном это не собрать);
+ *   • оставить как есть — отметить разобранными: приём не меняется вообще,
+ *     гаснет только счётчик неразобранных. Пациент предупреждён и согласен
+ *     ждать — это тоже решение, и до появления отметки погасить счётчик можно
+ *     было только отменой, то есть действием, которого делать не собирались.
  *
  * Плюс задача регистратуре на обзвон: SMS не заменяет звонка тем, кто уже в
  * пути или пришёл.
@@ -47,6 +51,7 @@ import dayjs from "dayjs";
 import {
   bulkAppointments,
   parseBackendError,
+  type AppointmentBulkAction,
   type AppointmentBulkItem,
   type AppointmentBulkRow,
 } from "../../../api/appointments";
@@ -62,7 +67,7 @@ import { useCan } from "../../../hooks/useCan";
 import { getStatusChipSx, getStatusLabel } from "../../../config/appointmentStatuses";
 import { formatKGS } from "../../../utility/format";
 import { subtleBg } from "../../../theme/uiHelpers";
-import { appointmentHitsAbsence } from "./useAbsenceConflicts";
+import { appointmentHitsAbsence, isUnreviewed } from "./useAbsenceConflicts";
 
 /** Отсутствие, из-за которого поднялся разбор. */
 export interface AbsenceSpan {
@@ -81,9 +86,52 @@ export interface AbsenceSpan {
   endTime?: string | null;
 }
 
-type Mode = "cancel" | "reassign";
+type Mode = "cancel" | "reassign" | "ack" | "unack";
 /** Пока действие не выбрано — пустая строка: разбор не предлагает отмену сам. */
 type ModeChoice = Mode | "";
+
+/** Меняет ли действие сам приём (а не только серверную отметку разбора). */
+function changesAppointment(mode: ModeChoice): boolean {
+  return mode === "cancel" || mode === "reassign";
+}
+
+const MODE_LABEL: Record<Mode, string> = {
+  cancel: "Отменить — пациенту SMS «врач не выйдет»",
+  reassign: "Передать коллеге",
+  ack: "Оставить как есть — отметить разобранными",
+  unack: "Снять отметку разбора",
+};
+
+const BULK_ACTION: Record<Mode, AppointmentBulkAction> = {
+  cancel: "cancel",
+  reassign: "reassign",
+  ack: "ack_absence",
+  unack: "unack_absence",
+};
+
+/** Подпись кнопки применения. */
+const MODE_BUTTON: Record<Mode, string> = {
+  cancel: "Отменить",
+  reassign: "Передать",
+  ack: "Отметить разобранными",
+  unack: "Снять отметку",
+};
+
+/** Итог по всей пачке — в уведомление. */
+const MODE_DONE: Record<Mode, string> = {
+  cancel: "Приёмы отменены",
+  reassign: "Приёмы переданы коллеге",
+  ack: "Записи отмечены разобранными",
+  unack: "Отметка разбора снята",
+};
+
+/** Итог по строке — под приёмом в списке. */
+const MODE_ROW_DONE: Record<Mode, string> = {
+  cancel: "Отменён",
+  reassign: "Передан коллеге",
+  ack: "Отмечен разобранным",
+  unack: "Отметка снята",
+};
 
 const KIND_WORD: Partial<Record<ScheduleExceptionKind, string>> = {
   day_off: "выходной",
@@ -100,6 +148,14 @@ function needsCall(appt: ScheduleConflictAppointment): boolean {
 function paidAmount(appt: ScheduleConflictAppointment): number {
   const paid = Number(appt.paidTotal ?? 0);
   return Number.isFinite(paid) ? paid : 0;
+}
+
+/** «Разобрано · Иванова · 10.09.2026 12:30» — кто снял запись со счётчика. */
+function reviewedTitle(appt: ScheduleConflictAppointment): string {
+  const when = dayjs(appt.absenceReviewedAt ?? "");
+  return ["Разобрано", appt.absenceReviewedBy?.fullName, when.isValid() ? when.format("DD.MM.YYYY HH:mm") : ""]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export const AbsenceConflictsDrawer: React.FC<{
@@ -213,33 +269,51 @@ export const AbsenceConflictsDrawer: React.FC<{
   );
   const prepaidSelected = selectedList.filter((appt) => paidAmount(appt) > 0);
   const callSelected = selectedList.filter(needsCall);
+  // Разобранные из списка не убираем: иначе непонятно, почему в расписании
+  // чипа уже нет, а пациенты на это время всё ещё записаны. Из счётчика —
+  // убираем, он и есть то самое «сколько ещё не решено».
+  const unreviewedCount = React.useMemo(() => conflicts.filter(isUnreviewed).length, [conflicts]);
+  const hasReviewed = unreviewedCount < conflicts.length;
+  // Отметку разбора бэк выкладывает отдельно от самой ручки конфликтов: где
+  // поля в выдаче нет, `ack_absence` вернул бы 400 — там и пункта не предлагаем.
+  const ackSupported = conflicts.some((appt) => "absenceReviewedAt" in appt);
 
   const applyMutation = useMutation({
     mutationFn: async () => {
+      // Кнопка без выбранного действия недоступна; проверка сужает тип.
+      if (mode === "") return { results: [] };
       const items: AppointmentBulkItem[] = selectedList.map((appt) =>
-        mode === "cancel"
-          ? { id: appt.id }
-          : {
+        mode === "reassign"
+          ? {
               id: appt.id,
               employeeId: replacementId!,
               // Только строки отсутствующего: без этого замещающему достанется
               // и строка медсестры того же приёма.
               fromEmployeeId: absence!.employeeId,
-            },
+            }
+          : { id: appt.id },
       );
       const response = await bulkAppointments({
-        action: mode === "cancel" ? "cancel" : "reassign",
+        action: BULK_ACTION[mode],
         items,
         ...(mode === "cancel" ? { cancelReason: "doctor_absent" as const } : {}),
         ...(comment.trim() ? { comment: comment.trim() } : {}),
-        notify: notifyPatients,
+        // Отметка разбора пациенту ничего не шлёт — флаг уведомления к ней
+        // отношения не имеет.
+        ...(changesAppointment(mode) ? { notify: notifyPatients } : {}),
         organizationId: orgId,
       });
       // Задачу ставим только на то, что действительно применилось: обзванивать
       // пациента, у которого приём остался на месте, незачем.
       const okIds = new Set(response.results.filter((r) => r.ok).map((r) => r.id));
       const toCall = selectedList.filter((appt) => okIds.has(appt.id));
-      if (withCallTask && canCreateTask && taskCategoryId !== null && toCall.length > 0) {
+      if (
+        withCallTask &&
+        changesAppointment(mode) &&
+        canCreateTask &&
+        taskCategoryId !== null &&
+        toCall.length > 0
+      ) {
         await createTask(
           {
             title:
@@ -277,10 +351,12 @@ export const AbsenceConflictsDrawer: React.FC<{
       void queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.scheduling.availabilityAll,
       });
-      if (failed.length === 0) {
+      if (response.results.length === 0) {
+        // Действие не выбрано — применять нечего.
+      } else if (failed.length === 0) {
         notify?.({
           type: "success",
-          message: mode === "cancel" ? "Приёмы отменены" : "Приёмы переданы коллеге",
+          message: mode === "" ? "Готово" : MODE_DONE[mode],
         });
       } else {
         notify?.({
@@ -314,7 +390,9 @@ export const AbsenceConflictsDrawer: React.FC<{
     !busy &&
     (mode === "cancel"
       ? canCancelAppointments && canUpdateAppointments
-      : canUpdateAppointments && replacementId !== null);
+      : mode === "reassign"
+        ? canUpdateAppointments && replacementId !== null
+        : canUpdateAppointments);
 
   const period =
     absence === null
@@ -381,6 +459,7 @@ export const AbsenceConflictsDrawer: React.FC<{
             <Stack direction="row" alignItems="center" justifyContent="space-between">
               <Typography variant="body2" color="text.secondary">
                 Выбрано {selectedList.length} из {conflicts.length}
+                {hasReviewed ? ` · без разбора ${unreviewedCount}` : ""}
               </Typography>
               <Button
                 size="small"
@@ -466,6 +545,17 @@ export const AbsenceConflictsDrawer: React.FC<{
                         {needsCall(appt) && (
                           <Chip size="small" color="error" variant="outlined" label="Только звонок" />
                         )}
+                        {appt.absenceReviewedAt != null && (
+                          <Tooltip title={reviewedTitle(appt)}>
+                            <Chip
+                              size="small"
+                              color="success"
+                              variant="outlined"
+                              icon={<CheckCircleOutlined sx={{ fontSize: 14 }} />}
+                              label="Разобрано"
+                            />
+                          </Tooltip>
+                        )}
                       </Stack>
                       {row && !row.ok && (
                         <Stack direction="row" spacing={0.5} alignItems="center">
@@ -479,7 +569,7 @@ export const AbsenceConflictsDrawer: React.FC<{
                         <Stack direction="row" spacing={0.5} alignItems="center">
                           <CheckCircleOutlined color="success" sx={{ fontSize: 16 }} />
                           <Typography variant="caption" color="success.main">
-                            {mode === "cancel" ? "Отменён" : "Передан коллеге"}
+                            {mode === "" ? "Готово" : MODE_ROW_DONE[mode]}
                           </Typography>
                         </Stack>
                       )}
@@ -518,14 +608,12 @@ export const AbsenceConflictsDrawer: React.FC<{
                   // выбранного пункта берётся из MenuItem, а пункт-плейсхолдер
                   // отключён.
                   renderValue: (value) =>
-                    value === "cancel" ? (
-                      "Отменить — пациенту SMS «врач не выйдет»"
-                    ) : value === "reassign" ? (
-                      "Передать коллеге"
-                    ) : (
+                    value === "" ? (
                       <Box component="span" sx={{ color: "text.disabled" }}>
                         Выберите действие
                       </Box>
+                    ) : (
+                      MODE_LABEL[value as Mode]
                     ),
                 }}
               >
@@ -533,11 +621,22 @@ export const AbsenceConflictsDrawer: React.FC<{
                   Выберите действие
                 </MenuItem>
                 <MenuItem value="cancel" disabled={!canCancelAppointments}>
-                  Отменить — пациенту SMS «врач не выйдет»
+                  {MODE_LABEL.cancel}
                 </MenuItem>
                 <MenuItem value="reassign" disabled={!canUpdateAppointments}>
-                  Передать коллеге
+                  {MODE_LABEL.reassign}
                 </MenuItem>
+                {ackSupported && (
+                  <MenuItem value="ack" disabled={!canUpdateAppointments}>
+                    {MODE_LABEL.ack}
+                  </MenuItem>
+                )}
+                {/* Снятие показываем только когда есть что снимать. */}
+                {hasReviewed && (
+                  <MenuItem value="unack" disabled={!canUpdateAppointments}>
+                    {MODE_LABEL.unack}
+                  </MenuItem>
+                )}
               </TextField>
               {!canUpdateAppointments && (
                 <Typography variant="caption" color="error.main">
@@ -586,12 +685,27 @@ export const AbsenceConflictsDrawer: React.FC<{
                 fullWidth
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                placeholder="Необязательно"
+                placeholder={
+                  mode === "ack" ? "Например: пациент предупреждён" : "Необязательно"
+                }
                 disabled={busy}
                 inputProps={{ maxLength: 255 }}
               />
             </Stack>
 
+            {mode === "ack" && (
+              <Alert severity="info">
+                Приёмы останутся как есть — время, врач и оплата не меняются, пациенту
+                ничего не уходит. Снимется только пометка «без разбора» в расписании.
+              </Alert>
+            )}
+            {mode === "unack" && (
+              <Alert severity="info">
+                Записи вернутся в счётчик неразобранных. Сам приём не меняется.
+              </Alert>
+            )}
+
+            {changesAppointment(mode) && (
             <Stack spacing={0.5}>
               <Stack direction="row" alignItems="center" spacing={1}>
                 <Checkbox
@@ -613,8 +727,9 @@ export const AbsenceConflictsDrawer: React.FC<{
                     : "Новых сообщений не будет: пациент узнает о замене только от вас."}
               </Typography>
             </Stack>
+            )}
 
-            {canCreateTask && categories.length > 0 && (
+            {changesAppointment(mode) && canCreateTask && categories.length > 0 && (
               <Stack spacing={0.5}>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <Checkbox
@@ -648,7 +763,7 @@ export const AbsenceConflictsDrawer: React.FC<{
               </Stack>
             )}
 
-            {callSelected.length > 0 && (
+            {changesAppointment(mode) && callSelected.length > 0 && (
               <Alert severity="warning">
                 {callSelected.length}{" "}
                 {callSelected.length === 1 ? "пациент" : "пациентов"} уже в пути или на месте —
@@ -688,11 +803,9 @@ export const AbsenceConflictsDrawer: React.FC<{
             >
               {busy
                 ? "Применяем…"
-                : mode === "cancel"
-                  ? `Отменить (${selectedList.length})`
-                  : mode === "reassign"
-                    ? `Передать (${selectedList.length})`
-                    : "Выберите действие"}
+                : mode === ""
+                  ? "Выберите действие"
+                  : `${MODE_BUTTON[mode]} (${selectedList.length})`}
             </Button>
           </Stack>
         </Box>
