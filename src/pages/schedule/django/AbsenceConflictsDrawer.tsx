@@ -112,6 +112,8 @@ export const AbsenceConflictsDrawer: React.FC<{
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const canCreateTask = useCan("tasks.create");
+  const canCancelAppointments = useCan("appointments.cancel");
+  const canUpdateAppointments = useCan("appointments.update");
 
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [mode, setMode] = React.useState<Mode>("cancel");
@@ -301,7 +303,11 @@ export const AbsenceConflictsDrawer: React.FC<{
   };
 
   const canApply =
-    selectedList.length > 0 && !busy && (mode === "cancel" || replacementId !== null);
+    selectedList.length > 0 &&
+    !busy &&
+    (mode === "cancel"
+      ? canCancelAppointments && canUpdateAppointments
+      : canUpdateAppointments && replacementId !== null);
 
   const period =
     absence === null
@@ -500,9 +506,18 @@ export const AbsenceConflictsDrawer: React.FC<{
                 onChange={(e) => setMode(e.target.value as Mode)}
                 disabled={busy}
               >
-                <MenuItem value="cancel">Отменить — пациенту SMS «врач не выйдет»</MenuItem>
-                <MenuItem value="reassign">Передать коллеге</MenuItem>
+                <MenuItem value="cancel" disabled={!canCancelAppointments}>
+                  Отменить — пациенту SMS «врач не выйдет»
+                </MenuItem>
+                <MenuItem value="reassign" disabled={!canUpdateAppointments}>
+                  Передать коллеге
+                </MenuItem>
               </TextField>
+              {!canUpdateAppointments && (
+                <Typography variant="caption" color="error.main">
+                  Для массового действия нужно право редактирования приёмов.
+                </Typography>
+              )}
             </Stack>
 
             {mode === "reassign" && (
