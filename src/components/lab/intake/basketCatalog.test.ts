@@ -127,3 +127,38 @@ describe("resolveSelectedLines", () => {
     expect(got.map((l) => l.testId)).toEqual([2, 1]);
   });
 });
+
+describe("порядок выдачи поиска", () => {
+  const drugs = labTest({
+    id: 1,
+    title: "Т06.1 Выявление психоактивных веществ в волосах",
+  });
+  const cbcShort = labTest({ id: 2, title: "ОАК без лейкоформулы и СОЭ" });
+  const cbcFull = labTest({ id: 3, title: "Расширенный ОАК с тромбоцитами" });
+
+  it("совпадение в начале названия идёт раньше совпадения в середине слова", () => {
+    // «психоАКтивных» содержит «оак» внутри слова — по подстроке это
+    // совпадение, но пользователь, набравший «оак», ищет не его. Такая
+    // строка первой в выдаче выглядит как поломанный поиск.
+    const found = filterAvailableTests(
+      [drugs, cbcShort, cbcFull],
+      [],
+      "",
+      "оак",
+    );
+
+    expect(found.map((test) => test.id)).toEqual([2, 3, 1]);
+  });
+
+  it("совпадение в начале слова идёт раньше совпадения внутри слова", () => {
+    const found = filterAvailableTests([drugs, cbcFull], [], "", "оак");
+
+    expect(found[0].id).toBe(3);
+  });
+
+  it("без запроса порядок каталога не трогается", () => {
+    const found = filterAvailableTests([drugs, cbcShort], [], "", "");
+
+    expect(found.map((test) => test.id)).toEqual([1, 2]);
+  });
+});

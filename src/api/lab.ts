@@ -27,6 +27,45 @@ export interface LabTest {
   hasQuestions: boolean;
 }
 
+/** Строка памятки из карточки анализа. */
+export interface LabKnowledgeItem {
+  id: number;
+  title: string;
+  isPrintable: boolean;
+}
+
+/** Инструкция подготовки, приложенная к анализу. */
+export interface LabPreparationInfo {
+  id: number;
+  kind: string;
+  text: string;
+}
+
+/**
+ * Полная карточка анализа (`GET /lab/tests/<id>/`).
+ *
+ * Список каталога намеренно короче: в нём нет ни показаний, ни подготовки, ни
+ * вопросов — иначе первый же запрос тянул бы мегабайты на шесть тысяч позиций.
+ * Всё это живёт здесь и грузится по одному анализу, когда его открывают.
+ */
+export interface LabTestCard {
+  id: number;
+  parentId: number | null;
+  title: string;
+  biomaterial: string;
+  notice: string;
+  indications: string;
+  medicalReport: string;
+  requiredDay: number;
+  priceStandard: string;
+  priceExpress: string;
+  requiresDoctor: boolean;
+  requiresNurseCheck: boolean;
+  preparation: LabPreparationInfo | null;
+  knowledgeItems: LabKnowledgeItem[];
+  questions: LabQuestion[];
+}
+
 export interface LabProfile {
   id: number;
   lisId: number;
@@ -91,6 +130,13 @@ export function testIdsQuery(ids: number[]): string {
 
 export function getLabTests(signal?: AbortSignal): Promise<LabTest[]> {
   return apiRequest<LabTest[]>("/lab/tests/", { signal });
+}
+
+export function getLabTestCard(
+  testId: number,
+  signal?: AbortSignal,
+): Promise<LabTestCard> {
+  return apiRequest<LabTestCard>(`/lab/tests/${testId}/`, { signal });
 }
 
 export function getLabProfiles(signal?: AbortSignal): Promise<LabProfile[]> {
