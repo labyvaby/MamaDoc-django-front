@@ -41,6 +41,12 @@ export interface LabInstrument {
   count: number;
   price: string;
   instruction: string;
+  /**
+   * Названия анализов набора, которым нужна эта пробирка, в порядке
+   * появления в наборе. Суммарный `count` без них не отвечает на вопрос у
+   * стола забора: какую пробирку под какой анализ брать.
+   */
+  tests: string[];
 }
 
 export interface LabQuestion {
