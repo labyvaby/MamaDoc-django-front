@@ -25,6 +25,7 @@ export const PAGE_PERMISSIONS = {
   products: ["warehouse.view", "warehouse.sales.view"],
   warehouses: "warehouse.view",
   sales: ["warehouse.sales.view", "warehouse.view"],
+  lab: "lab.view",
   schedule: "schedule.view",
   attendance: "attendance.view",
   attendanceSettings: "attendance.manage",
