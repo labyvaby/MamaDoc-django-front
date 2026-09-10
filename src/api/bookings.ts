@@ -104,6 +104,19 @@ export interface BookingListItem {
   prepaymentExpiresAt?: string | null;
   /** Деньги есть, а приёма не будет: бронь отменена или неявка. */
   prepaymentNeedsAttention?: boolean;
+  /**
+   * Когда заявка появилась **в CRM** (контракт броней §8.1). Оригинала создания
+   * внешние каналы не присылают: у operator.kg и odoctor.kg есть только
+   * `updated_at`, он лежит в `externalUpdatedAt` карточки, у публичных броней —
+   * `null`.
+   *
+   * ⚠ `?:` — на 10.09.2026 поле есть на тесте, но не на проде. Код, который на
+   * него опирается, обязан работать и без него (см. `useNewBookings`).
+   */
+  createdAt?: string;
+  /** Кто взял заявку в работу и когда (§8.3); оба `null` — никто не брал. */
+  claimedAt?: string | null;
+  claimedBy?: { id: number; fullName: string } | null;
 }
 
 /**
@@ -163,6 +176,16 @@ export interface BookingsFilters {
   branchId?: number;
   page?: number;
   pageSize?: number;
+  /**
+   * Окно по времени появления заявки в CRM (§8.2), включительные границы.
+   * Принимают полное ISO-время и одну дату (`2026-09-09` = начало суток в
+   * Asia/Bishkek). ⚠ `+` в незакодированном query читается как пробел —
+   * URLSearchParams кодирует сам, руками строку не склеивать.
+   */
+  createdFrom?: string;
+  createdTo?: string;
+  /** `createdAt` | `-createdAt` | `date` | `-date`; по умолчанию у бэка `-date`. */
+  ordering?: "createdAt" | "-createdAt" | "date" | "-date";
 }
 
 // ── API functions ─────────────────────────────────────────────────────────────
@@ -185,6 +208,9 @@ export function getBookings(
   if (filters.branchId != null) {
     q.set("branchId", String(filters.branchId));
   }
+  if (filters.createdFrom) q.set("createdFrom", filters.createdFrom);
+  if (filters.createdTo) q.set("createdTo", filters.createdTo);
+  if (filters.ordering) q.set("ordering", filters.ordering);
   if (filters.page != null) q.set("page", String(filters.page));
   if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
   return apiRequest<BookingsResponse>(`/bookings/?${q.toString()}`, { signal });
