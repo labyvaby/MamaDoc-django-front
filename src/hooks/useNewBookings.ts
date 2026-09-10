@@ -14,21 +14,23 @@ import { usePermissions } from "./usePermissions";
  * «новое» показывается: колокольчик и список на `/bookings`, глобальный тост и
  * счётчик в заголовке вкладки браузера.
  *
- * ⚠ Что такое «новая», и почему это не идеально. В списке броней нет
- * `createdAt` (см. `BookingListItem`), поэтому отличить только что пришедшую
- * заявку от висящей неделю по данным сервера нельзя. «Новая» здесь = `pending`,
- * карточку которой на этом устройстве ещё не открывали: список просмотренных id
- * лежит в localStorage. Следствия, с которыми живём осознанно:
+ * «Новая» = `pending`, которую никто не взял в работу (`claimedAt: null`),
+ * пришедшая не слишком давно (`createdAt` свежее NEW_MAX_AGE_DAYS) и не
+ * просмотренная на этом устройстве.
  *
- * - «прочитанность» не общая для сотрудников и не переезжает между
- *   устройствами (у задач иначе — там бэк хранит непрочитанное сам);
- * - при первом заходе после релиза все висящие `pending` покажутся новыми. Это
- *   выбрано намеренно: потерять необработанную заявку хуже, чем разово увидеть
- *   лишнюю подсветку.
+ * `claimedAt` и `createdAt` появились в контракте броней §8 (10.09.2026) и
+ * сняли два худших свойства прежней схемы: подсветку висяков как новинок и
+ * «после релиза всё новое». `claimedAt` вдобавок общий для сотрудников — взял
+ * коллега, погасло у всех.
  *
- * Правильное решение — `createdAt` (и серверная отметка «взято в работу»),
- * тикет бэку; после него хранилище ниже заменяется на один timestamp, а весь
- * UI поверх хука остаётся прежним.
+ * ⚠ Локальный список просмотренных id остаётся, и убрать его пока нечем:
+ * серверной отметки «прочитано» у броней нет (`claim` — это «взято в работу»,
+ * явное действие, а не факт открытия карточки). Поэтому «прочитанность» всё
+ * ещё не переезжает между устройствами.
+ *
+ * ⚠ На 10.09.2026 §8 выложен только на тест: на проде ни `createdAt`, ни
+ * `claimedAt` нет. Обе проверки написаны так, что без полей ведут себя как
+ * раньше — фильтрация просто не срабатывает.
  */
 
 // ── Хранилище «просмотрено» ───────────────────────────────────────────────────
@@ -140,6 +142,12 @@ export function useSeenBookings(): SeenBookings {
 
 /** Как часто опрашиваем заявки. Чаще общего поллинга: заявка ждёт звонка. */
 const NEW_BOOKINGS_POLL_MS = 45_000;
+/**
+ * Сколько заявка считается новинкой. Дольше висящий `pending` — это висяк: он
+ * виден в списке и в счётчике «Ожидает», но подсвечивать его как новое
+ * поступление и звенеть о нём в колокольчике незачем.
+ */
+const NEW_MAX_AGE_DAYS = 7;
 /** Размер выборки поллера — окно ниже редко даёт больше сотни `pending`. */
 const NEW_BOOKINGS_PAGE_SIZE = 100;
 
@@ -147,8 +155,13 @@ export interface NewBookings extends SeenBookings {
   /** Непросмотренные заявки, «то, что горит» — сверху. */
   items: BookingListItem[];
   count: number;
-  /** `pending`, карточку которой ещё не открывали. */
-  isNew: (b: { id: number; status: BookingStatus }) => boolean;
+  /** `pending`, никем не взятая, свежая и не открытая на этом устройстве. */
+  isNew: (b: {
+    id: number;
+    status: BookingStatus;
+    createdAt?: string;
+    claimedAt?: string | null;
+  }) => boolean;
   enabled: boolean;
   isLoading: boolean;
   isError: boolean;
@@ -203,6 +216,9 @@ export function useNewBookings(): NewBookings {
           status: "pending",
           organizationId,
           branchId,
+          // Свежие сверху: при упоре в pageSize обрежется хвост из висяков, а
+          // не сегодняшние заявки. До §8 на бэке параметр игнорируется.
+          ordering: "-createdAt",
           page: 1,
           pageSize: NEW_BOOKINGS_PAGE_SIZE,
         },
@@ -214,14 +230,44 @@ export function useNewBookings(): NewBookings {
     refetchOnWindowFocus: true,
   });
 
+  /**
+   * Границу «свежести» считаем один раз за монтирование: пересчёт на каждом
+   * рендере менял бы ссылку и обесценивал мемоизацию, а секунды тут не важны —
+   * речь о днях.
+   */
+  const freshSince = React.useMemo(
+    () => dayjs().subtract(NEW_MAX_AGE_DAYS, "day").valueOf(),
+    [],
+  );
+
+  /** Заявка ещё ждёт своего часа: никто не взял и пришла недавно. */
+  const isUnhandled = React.useCallback(
+    (b: { createdAt?: string; claimedAt?: string | null }) => {
+      if (b.claimedAt) return false;
+      // Поля нет (прод до §8) — возраст не проверяем, ведём себя как раньше.
+      if (!b.createdAt) return true;
+      const ms = Date.parse(b.createdAt);
+      return !Number.isFinite(ms) || ms >= freshSince;
+    },
+    [freshSince],
+  );
+
   const items = React.useMemo(
-    () => sortBookingsByPriority((query.data?.results ?? []).filter((b) => !seen.has(b.id))),
-    [query.data, seen],
+    () =>
+      sortBookingsByPriority(
+        (query.data?.results ?? []).filter((b) => !seen.has(b.id) && isUnhandled(b)),
+      ),
+    [query.data, seen, isUnhandled],
   );
 
   const isNew = React.useCallback(
-    (b: { id: number; status: BookingStatus }) => b.status === "pending" && !seen.has(b.id),
-    [seen],
+    (b: {
+      id: number;
+      status: BookingStatus;
+      createdAt?: string;
+      claimedAt?: string | null;
+    }) => b.status === "pending" && !seen.has(b.id) && isUnhandled(b),
+    [seen, isUnhandled],
   );
 
   return {

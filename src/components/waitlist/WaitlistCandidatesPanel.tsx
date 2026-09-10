@@ -22,7 +22,7 @@ import dayjs from "dayjs";
 import { AppButton } from "../ui";
 import { subtleBg } from "../../theme/uiHelpers";
 import { useT } from "../../i18n/VerticalProvider";
-import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useActiveScope } from "../../hooks/useActiveScope";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import {
   contactWaitlistEntry,
@@ -77,7 +77,8 @@ const WaitlistCandidatesPanel: React.FC<WaitlistCandidatesPanelProps> = ({
   onBook,
 }) => {
   const { t } = useT("waitlist");
-  const orgId = useApiOrgId();
+  const scope = useActiveScope();
+  const orgId = scope.organizationId;
   const queryClient = useQueryClient();
   const [error, setError] = React.useState<string | null>(null);
 
@@ -88,6 +89,10 @@ const WaitlistCandidatesPanel: React.FC<WaitlistCandidatesPanelProps> = ({
         matchDate: slot.date,
         matchTime: slot.time,
         matchBranchId: slot.branchId ?? undefined,
+        // Скоуп филиала держит фронт: бэк по филиалу сессии не режет, а
+        // matchBranchId сам по себе пропускает записи чужих филиалов, если у
+        // слота филиал не известен.
+        branchId: slot.branchId ?? scope.branchId,
         organizationId: orgId,
       }
     : null;

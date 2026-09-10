@@ -25,6 +25,7 @@ import {
   filterBookingsForPatient,
   getMyBookings,
   isBookingCancellable,
+  isCancellableByClinicOnly,
   isPatientTokenInvalid,
   splitBookingsByTime,
   type MyBooking,
@@ -241,6 +242,14 @@ const BookingCard: React.FC<{
             >
               {cancelling ? t("my.cancelling") : t("my.cancelAction")}
             </Button>
+          ) : isCancellableByClinicOnly(booking) ? (
+            // Подтверждённую запись пациент не снимает сам (см.
+            // isBookingCancellable): вместо кнопки — куда звонить.
+            <Typography sx={{ fontSize: 13, color: MUTED, alignSelf: "center" }}>
+              {branchPhone(booking)
+                ? t("my.cancelByPhone", { phone: branchPhone(booking) })
+                : t("my.cancelByClinic")}
+            </Typography>
           ) : (
             // Записаться тем же врачом снова — только у записей с врачом:
             // групповые/безврачебные брони формы для повтора не имеют.

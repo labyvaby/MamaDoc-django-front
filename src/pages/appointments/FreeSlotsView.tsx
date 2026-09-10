@@ -34,10 +34,19 @@ import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import {
   getAvailability,
   getAvailabilitySummary,
+  getScheduleExceptions,
   type EmployeeAvailability,
   type AvailabilityDay,
 } from "../../api/scheduling";
 import { buildTimeline } from "./freeSlotsTimeline";
+import { resampleEmployeeDays } from "./slotGrid";
+import { resolveSlotMinutes } from "../../utility/employeeSlotDuration";
+import {
+  absenceForDay,
+  buildDayAbsences,
+  formatAbsenceRanges,
+  type DayAbsence,
+} from "./absenceHours";
 import {
   getStatusAccent,
   getStatusChipSx,
@@ -280,6 +289,8 @@ interface DayTimelineProps {
    * права на очередь или модуль выключен).
    */
   onWaitlist?: (employeeId: number, date: string) => void;
+  /** Отсутствие врача в этот день: весь день или часы (см. absenceHours.ts). */
+  absence?: DayAbsence;
 }
 
 /** Окна и приёмы одного дня одного врача — общий рендер сетки и панели врача. */
@@ -291,11 +302,12 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
   onOpenAppointment,
   dragMovedRef,
   onWaitlist,
+  absence,
 }) => {
   const { t } = useT("appointments");
   const { t: tWaitlist } = useT("waitlist");
   const theme = useTheme();
-  const rows = React.useMemo(() => buildTimeline(day), [day]);
+  const rows = React.useMemo(() => buildTimeline(day, absence), [day, absence]);
 
   /** Кнопка «в лист ожидания» под заглушкой «окон нет». */
   const waitlistAction = onWaitlist ? (
@@ -304,15 +316,22 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
     </Button>
   ) : undefined;
 
+  // Целодневное отсутствие: `availability` знает про него флагом, а вид и часы
+  // приходят из исключений графика (absence). Флаг и исключение могут разойтись
+  // во времени (кэш availability живёт дольше), поэтому доверяем любому из них.
+  const fullDayAbsence = day.dayOff || absence?.fullDay === true;
+  const absenceLabel =
+    absence?.kind === "vacation" ? t("slots.vacation") : t("slots.dayOff");
+
   // Приём есть, а смены в этот день нет (или это выходной): раньше здесь стояла
   // заглушка «нет графика» и приёмы не показывались вообще — врач выглядел
   // пустой колонкой. Показываем приёмы, но помечаем: окон для записи тут нет.
-  const offSchedule = (!day.scheduled || day.dayOff) && rows.some((r) => r.kind === "appt");
+  const offSchedule = (!day.scheduled || fullDayAbsence) && rows.some((r) => r.kind === "appt");
 
-  if (day.dayOff && !offSchedule) {
+  if (fullDayAbsence && !offSchedule) {
     return (
       <Alert severity="info" icon={false} action={waitlistAction}>
-        {t("slots.dayOff")}
+        {absenceLabel}
       </Alert>
     );
   }
@@ -353,10 +372,53 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
             },
           }}
         >
-          {t("slots.offScheduleAppointments")}
+          {fullDayAbsence
+            ? t("slots.absenceAppointments", { absence: absenceLabel.toLowerCase() })
+            : t("slots.offScheduleAppointments")}
         </Alert>
       )}
       {rows.map((row) => {
+        if (row.kind === "absence") {
+          // Часы отсутствия внутри рабочего дня: слотов здесь нет, и без явной
+          // полосы это время выглядит как «всё занято».
+          return (
+            <Stack
+              key={row.key}
+              direction="row"
+              alignItems="center"
+              spacing={1}
+              sx={{
+                px: 1,
+                py: 0.5,
+                borderRadius: "8px",
+                border: "1px dashed",
+                borderColor: "divider",
+                color: "text.secondary",
+                backgroundImage: `repeating-linear-gradient(45deg, transparent 0 4px, ${alpha(
+                  theme.palette.text.primary,
+                  0.06,
+                )} 4px 8px)`,
+              }}
+            >
+              <Typography
+                sx={{
+                  fontSize: timeFontSize,
+                  fontWeight: 600,
+                  fontVariantNumeric: "tabular-nums",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {row.start}–{row.end}
+              </Typography>
+              <Typography
+                noWrap
+                sx={{ fontSize: dense ? "0.6875rem" : "0.75rem", minWidth: 0 }}
+              >
+                {t("slots.absent")}
+              </Typography>
+            </Stack>
+          );
+        }
         if (row.kind === "appt") {
           const { appt } = row;
           const accent = getStatusAccent(appt.status, theme);
@@ -830,6 +892,20 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     return map;
   }, [allEmployees]);
 
+  /**
+   * Свой шаг сетки окон у сотрудника: терапевт по 20 минут, УЗИ по 40.
+   * Справочник может быть недоступен (403) — тогда карта пуста и сетка
+   * остаётся такой, какой её прислал бэк.
+   */
+  const slotMinutesByEmployee = React.useMemo(() => {
+    const map = new Map<number, number>();
+    allEmployees.forEach((emp) => {
+      const minutes = resolveSlotMinutes(emp);
+      if (minutes) map.set(emp.id, minutes);
+    });
+    return map;
+  }, [allEmployees]);
+
   // Справочник специализаций — левый рельс.
   const specsQuery = useQuery({
     queryKey: ["django", "scheduling", "specs", organizationId ?? null],
@@ -905,6 +981,63 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     })),
   });
 
+  /**
+   * Отсутствия врачей на весь загруженный диапазон — одним запросом.
+   *
+   * `availability` отдаёт только флаг `dayOff` на день; часы отсутствия
+   * («ушёл с 14:00») в ней никак не выражены — слоты интервала просто не
+   * приходят. Права на `/scheduling/` есть не у всех ролей: при отказе
+   * деградируем к прежнему поведению, поэтому `retry: false`.
+   */
+  const absenceRange = React.useMemo(
+    () => ({
+      dateFrom: chunks[0]?.from ?? todayIso,
+      dateTo: chunks[chunks.length - 1]?.to ?? todayIso,
+    }),
+    [chunks, todayIso],
+  );
+  const absencesQuery = useQuery({
+    queryKey: djangoQueryKeys.scheduling.exceptions({
+      dateFrom: absenceRange.dateFrom,
+      dateTo: absenceRange.dateTo,
+      orgId: organizationId ?? null,
+      branchId: branchId ?? null,
+    }),
+    queryFn: ({ signal }) =>
+      getScheduleExceptions(
+        { ...absenceRange, branchId, organizationId },
+        signal,
+      ),
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    retry: false,
+  });
+  const absencesByDay = React.useMemo(
+    () => buildDayAbsences(absencesQuery.data),
+    [absencesQuery.data],
+  );
+  /**
+   * Подпись отсутствия для списков врачей: «Выходной день» / «Отпуск» на весь
+   * день, «Не работает 14:00–18:00» — на часы. Нужна в трёх местах (пейджер
+   * телефона, меню выбора врача, шапка колонки), поэтому считается один раз.
+   */
+  const absenceNote = React.useCallback(
+    (employeeId: number, date: string | null | undefined) => {
+      if (!date) return null;
+      const absence = absenceForDay(absencesByDay, employeeId, date);
+      if (!absence) return null;
+      const fullDayLabel =
+        absence.kind === "vacation" ? t("slots.vacation") : t("slots.dayOff");
+      return {
+        absence,
+        fullDay: absence.fullDay,
+        label: absence.fullDay
+          ? fullDayLabel
+          : t("slots.absentHours", { range: formatAbsenceRanges(absence.ranges) }),
+      };
+    },
+    [absencesByDay, t],
+  );
+
   // Догрузка к краям не должна дёргаться, пока крайний чанк ещё в полёте.
   const pastEdgeLoading = chunkQueries[0]?.isLoading ?? false;
   const futureEdgeLoading = chunkQueries[chunkQueries.length - 1]?.isLoading ?? false;
@@ -977,8 +1110,21 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // ищет конкретного врача по фамилии, а его место в списке съезжало от
   // загруженности дня, и глазами приходилось искать заново. Свободность
   // никуда не делась — она видна на самой карточке врача и в сетке.
+  /**
+   * Сетка окон под шаг сотрудника — до всего остального, что считает окна:
+   * счётчики в ленте дат, карточки врачей и колонки дня должны говорить об
+   * одних и тех же окнах. Шага нет — день остаётся тем, что прислал бэк.
+   */
+  const employeesWithGrid = React.useMemo(
+    () =>
+      mergedEmployees.map((emp) =>
+        resampleEmployeeDays(emp, slotMinutesByEmployee.get(emp.employeeId)),
+      ),
+    [mergedEmployees, slotMinutesByEmployee],
+  );
+
   const docs = React.useMemo(() => {
-    const list = mergedEmployees
+    const list = employeesWithGrid
       .map((emp) => ({
         emp,
         sum: summarize(emp, todayIso),
@@ -986,7 +1132,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     const q = search.trim().toLowerCase();
     const filtered = q ? list.filter((x) => x.emp.fullName.toLowerCase().includes(q)) : list;
     return filtered.sort((a, b) => a.emp.fullName.localeCompare(b.emp.fullName, "ru"));
-  }, [mergedEmployees, search, todayIso]);
+  }, [employeesWithGrid, search, todayIso]);
 
   // Сбрасываем выбор врача только если выбранного врача больше нет в отфильтрованном списке.
   React.useEffect(() => {
@@ -1849,7 +1995,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             // «нет окон», что и обычный полностью занятый день — регистратор
                             // не мог отличить «не пробуйте, врач отсутствует» от «всё занято,
                             // но врач работает». Показываем отдельно, тем же тоном.
-                            const isDayOff = Boolean(day?.dayOff) && !offSchedule;
+                            const note = absenceNote(emp.employeeId, activeDayDate);
+                            const isDayOff =
+                              (Boolean(day?.dayOff) || note?.fullDay === true) && !offSchedule;
                             const specLabel =
                               specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
                             return (
@@ -1918,20 +2066,33 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                                         component="span"
                                         sx={{ color: "warning.main", fontWeight: 600 }}
                                       >
-                                        {t("slots.dayOff")}
+                                        {note?.label ?? t("slots.dayOff")}
                                       </Box>
                                     ) : (
-                                      <Box
-                                        component="span"
-                                        sx={{
-                                          color: free > 0 ? "success.main" : "text.disabled",
-                                          fontWeight: free > 0 ? 600 : 400,
-                                        }}
-                                      >
-                                        {free > 0
-                                          ? t("slots.freeSlotsCountShort", { count: free })
-                                          : t("slots.noSlotsShort")}
-                                      </Box>
+                                      <>
+                                        <Box
+                                          component="span"
+                                          sx={{
+                                            color: free > 0 ? "success.main" : "text.disabled",
+                                            fontWeight: free > 0 ? 600 : 400,
+                                          }}
+                                        >
+                                          {free > 0
+                                            ? t("slots.freeSlotsCountShort", { count: free })
+                                            : t("slots.noSlotsShort")}
+                                        </Box>
+                                        {/* Часы отсутствия: врач работает, но
+                                            часть дня его не будет. */}
+                                        {note && !note.fullDay && (
+                                          <Box
+                                            component="span"
+                                            sx={{ color: "warning.main", fontWeight: 600 }}
+                                          >
+                                            {" · "}
+                                            {note.label}
+                                          </Box>
+                                        )}
+                                      </>
                                     )}
                                   </Typography>
                                 </Box>
@@ -2019,8 +2180,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           const dayAppts = day?.appointments?.length ?? 0;
                           const itemOffSchedule =
                             Boolean(day) && (!day!.scheduled || day!.dayOff) && dayAppts > 0;
+                          const itemNote = absenceNote(emp.employeeId, activeDayDate);
                           // Чистый выходной без приёмов — отдельная подпись, а не «нет окон».
-                          const itemDayOff = Boolean(day?.dayOff) && !itemOffSchedule;
+                          const itemDayOff =
+                            (Boolean(day?.dayOff) || itemNote?.fullDay === true) &&
+                            !itemOffSchedule;
                           const selected = idx === safeIdx;
                           const itemSpec = specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
                           return (
@@ -2060,10 +2224,16 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                                   itemOffSchedule
                                     ? `${itemSpec} · ${t("slots.offSchedule")} · ${t("slots.visitsCount", { count: dayAppts })}`
                                     : itemDayOff
-                                      ? `${itemSpec} · ${t("slots.dayOff")}`
-                                      : free > 0
-                                        ? `${itemSpec} · ${t("slots.freeSlotsCount", { count: free })}`
-                                        : `${itemSpec} · ${t("slots.noFreeSlotsShort")}`
+                                      ? `${itemSpec} · ${itemNote?.label ?? t("slots.dayOff")}`
+                                      : [
+                                          itemSpec,
+                                          free > 0
+                                            ? t("slots.freeSlotsCount", { count: free })
+                                            : t("slots.noFreeSlotsShort"),
+                                          // Часы отсутствия дописываются к обычной
+                                          // подписи: врач в этот день работает.
+                                          ...(itemNote && !itemNote.fullDay ? [itemNote.label] : []),
+                                        ].join(" · ")
                                 }
                                 primaryTypographyProps={{ variant: "body2", fontWeight: 600, noWrap: true }}
                                 secondaryTypographyProps={{
@@ -2162,8 +2332,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                     Boolean(docDay) &&
                     (!docDay.scheduled || docDay.dayOff) &&
                     (docDay.appointments?.length ?? 0) > 0;
+                  const docNote = absenceNote(emp.employeeId, activeDayDate);
                   // Чистый выходной без приёмов — та же шапка, но своя подпись.
-                  const docDayOff = Boolean(docDay?.dayOff) && !docOffSchedule;
+                  const docDayOff =
+                    (Boolean(docDay?.dayOff) || docNote?.fullDay === true) && !docOffSchedule;
 
                   return (
                     <Box
@@ -2259,7 +2431,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                               {docDayOff && (
                                 <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>
                                   {" · "}
-                                  {t("slots.dayOff")}
+                                  {docNote?.label ?? t("slots.dayOff")}
+                                </Box>
+                              )}
+                              {/* Врач работает, но часть дня его не будет. */}
+                              {docNote && !docNote.fullDay && !docDayOff && (
+                                <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>
+                                  {" · "}
+                                  {docNote.label}
                                 </Box>
                               )}
                             </Typography>
@@ -2280,6 +2459,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             onOpenAppointment={onOpenAppointment}
                             dragMovedRef={isDragMovedRef}
                             onWaitlist={onWaitlist}
+                            absence={docNote?.absence}
                           />
                         )}
                       </Box>

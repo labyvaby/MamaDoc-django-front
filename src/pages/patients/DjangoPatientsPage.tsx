@@ -20,6 +20,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
+import { useSheetBackClose } from "../../hooks/useSheetBackClose";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { useT } from "../../i18n/VerticalProvider";
 import {
@@ -347,6 +348,11 @@ const DjangoPatientsPage: React.FC = () => {
     setConclusionOpen(false);
   };
 
+  // «Назад» на телефоне закрывает лист: сначала заключение, потом карточку
+  // приёма из истории пациента.
+  useSheetBackClose(!!historyDetail, closeHistoryDetail, isMobile);
+  useSheetBackClose(conclusionOpen, () => setConclusionOpen(false), isMobile);
+
   const handleAdd = () => setAddOpen(true);
   const handleEdit = () => { if (selected) setEditOpen(true); };
 
@@ -664,12 +670,15 @@ const DjangoPatientsPage: React.FC = () => {
               overflow: "hidden",
             }}
           >
+            {/* На мобиле заключение забирает экран целиком: половины листа
+                под клавиатурой хватало на одну строку ввода. */}
             <Box
               sx={{
-                flex: isMobile && conclusionOpen ? "0 0 50%" : 1,
+                flex: 1,
                 minWidth: 0,
                 minHeight: 0,
                 overflow: "hidden",
+                display: isMobile && conclusionOpen ? "none" : "block",
               }}
             >
               <AppointmentDetailsPanel
@@ -686,10 +695,10 @@ const DjangoPatientsPage: React.FC = () => {
             </Box>
             {conclusionOpen && (
               <>
-                <Divider orientation={isMobile ? "horizontal" : "vertical"} flexItem />
+                {!isMobile && <Divider orientation="vertical" flexItem />}
                 <Box
                   sx={{
-                    flex: isMobile ? "1 1 50%" : "1 1 0",
+                    flex: "1 1 0",
                     minWidth: 0,
                     minHeight: 0,
                     display: "flex",

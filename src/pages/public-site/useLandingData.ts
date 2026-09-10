@@ -4,13 +4,11 @@ import {
   getOrganizationProfessionals,
   getOrganizationServices,
   getOrganizationReviews,
-  getProfessionalReviews,
-  idOrSlugRef,
   type OrganizationReview,
   type ProfessionalPreview,
   type PublicService,
 } from "../../api/publicBooking";
-import { ApiError, isAbortError } from "../../api/client";
+import { isAbortError } from "../../api/client";
 import { useBookingOrgSlug } from "../public-booking/orgSlug";
 import { parseLandingConfig, readLandingPreview, type LandingConfig } from "./landingConfig";
 import { useBookingOrg, type BookingOrg } from "../public-booking/useBookingOrg";
@@ -92,25 +90,19 @@ export interface LandingReview extends OrganizationReview {
  *
  * Раньше лента склеивалась из отзывов первых специалистов списка: несколько
  * запросов на первый экран и заведомо неполная выборка (отзыв о враче, не
- * попавшем в топ, на сайт не приходил). С 03.09.2026 есть
- * `/organizations/<slug>/reviews/` — она отдаёт опубликованные отзывы всей
- * организации, свежие сверху.
+ * попавшем в топ, на сайт не приходил). `/organizations/<slug>/reviews/`
+ * отдаёт опубликованные отзывы всей организации, свежие сверху; на тесте она
+ * с 03.09.2026, на проде проверена 10.09.2026 — фолбэк по врачам удалён.
  *
  * Грузим только когда блок действительно показывается (`enabled`): первый
  * экран пациент часто закрывает кнопкой «Записаться», не долистав до отзывов.
  */
 export function useLandingReviews(
-  specialists: ProfessionalPreview[],
   enabled: boolean,
 ): { reviews: LandingReview[]; loading: boolean } {
   const orgSlug = useBookingOrgSlug();
   const [reviews, setReviews] = React.useState<LandingReview[]>([]);
   const [loading, setLoading] = React.useState(false);
-
-  // Ключ по составу источников фолбэка: список специалистов пересоздаётся при
-  // каждом рендере родителя, и без него эффект зацикливался бы на самом себе.
-  const sources = specialists.slice(0, REVIEW_SOURCE_LIMIT);
-  const sourcesKey = sources.map((s) => s.id).join(",");
 
   React.useEffect(() => {
     if (!enabled) {
@@ -130,11 +122,6 @@ export function useLandingReviews(
       )
       .catch((e) => {
         if (isAbortError(e)) throw e;
-        // Ручки ещё нет на этом стенде (на проде 404 на 03.09.2026) — берём
-        // отзывы по врачам, как делали до неё.
-        if (e instanceof ApiError && e.status === 404) {
-          return legacyReviewsByProfessionals(sources, controller.signal);
-        }
         // Отзывы — украшение страницы: их отсутствие не повод показывать
         // гостю ошибку, блок просто останется пустым.
         return [] as LandingReview[];
@@ -148,53 +135,9 @@ export function useLandingReviews(
       });
 
     return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, orgSlug, sourcesKey]);
+  }, [enabled, orgSlug]);
 
   return { reviews, loading };
-}
-
-/**
- * Сколько специалистов опрашиваем в фолбэке. Полноценной заменой он не был
- * никогда: отзыв о враче, не попавшем в первые строки списка, на сайт не
- * приходил, — поэтому ограничение и стоит.
- */
-const REVIEW_SOURCE_LIMIT = 5;
-
-/**
- * Лента отзывов по первым специалистам — как собиралась до появления
- * организационной ручки. ⚠ Временный код: удалить, когда
- * `/organizations/<slug>/reviews/` будет на всех стендах (на тесте — с
- * 03.09.2026, на проде ещё 404).
- */
-function legacyReviewsByProfessionals(
-  sources: ProfessionalPreview[],
-  signal: AbortSignal,
-): Promise<LandingReview[]> {
-  if (sources.length === 0) return Promise.resolve([]);
-  return Promise.all(
-    sources.map((specialist) =>
-      getProfessionalReviews(idOrSlugRef(specialist), { limit: 5 }, signal)
-        .then((r) =>
-          r.items.map<LandingReview>((review) => ({
-            ...review,
-            professional: null,
-            specialistName: specialist.fullName,
-            specialistSlug: String(idOrSlugRef(specialist)),
-          })),
-        )
-        .catch((e) => {
-          if (isAbortError(e)) throw e;
-          return [] as LandingReview[];
-        }),
-    ),
-  ).then((lists) =>
-    lists
-      .flat()
-      // Свежие сверху: у разных специалистов отзывы приходят своими лентами.
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, REVIEWS_PREVIEW),
-  );
 }
 
 /**

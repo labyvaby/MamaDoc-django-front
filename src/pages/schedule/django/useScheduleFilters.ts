@@ -53,5 +53,27 @@ export function useScheduleFilters(
     [filters, currentEmployeeId, employeesById],
   );
 
-  return { filters, set, reset, apply };
+  /**
+   * Тот же фильтр, но по сотруднику, а не по смене: строке отсутствия смены
+   * не с чем сопоставить, а прятать её при активном фильтре всё равно нужно.
+   * Имя передаётся отдельно — сотрудника может не быть в справочнике филиала.
+   */
+  const matchesEmployee = React.useCallback(
+    (employeeId: number, employeeName?: string): boolean => {
+      if (filters.mine && currentEmployeeId != null && employeeId !== currentEmployeeId) {
+        return false;
+      }
+      const employee = employeesById.get(employeeId);
+      if (filters.role !== "all" && employee?.clinicalRole !== filters.role) return false;
+      if (filters.spec && !employee?.specializations.some((s) => s.name === filters.spec)) {
+        return false;
+      }
+      const q = filters.name.trim().toLowerCase();
+      if (q && !(employeeName ?? employee?.fullName ?? "").toLowerCase().includes(q)) return false;
+      return true;
+    },
+    [filters, currentEmployeeId, employeesById],
+  );
+
+  return { filters, set, reset, apply, matchesEmployee };
 }

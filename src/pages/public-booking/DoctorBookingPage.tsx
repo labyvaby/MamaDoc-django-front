@@ -308,7 +308,10 @@ const DoctorBookingPage: React.FC = () => {
         setServicesBranchId(branchId);
       })
       .catch((e) => {
-        if (!isAbortError(e)) return;
+        if (isAbortError(e)) return;
+        // Не ответило — оставляем набор из карточки: список услуг лучше пустого
+        // экрана, а неверный выбор упрётся в 400 при создании брони.
+        setServicesBranchId(branchId);
       });
     return () => controller.abort();
   }, [idOrSlug, branchId]);
