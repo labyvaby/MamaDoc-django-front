@@ -46,6 +46,7 @@ import {
   getAppointmentNotifications,
   updateAppointment,
   startAppointment,
+  cancelAppointment,
   deleteAppointment,
   parseBackendError,
   type DjangoAppointment,
@@ -430,7 +431,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   // В кабинете врача создание приёмов скрыто — это рабочий список своих приёмов.
   const canCreate = !isDoctorCabinet && can("appointments.create");
   const canUpdate = can("appointments.update");
-  const canDelete = isSuperAdmin() || can("appointments.delete");
+  // Physical deletion is a protected superadmin-only operation. The legacy
+  // appointments.delete permission must not expose a destructive UI action.
+  const canDelete = isSuperAdmin();
+  const canCancelAny = can("appointments.cancel");
+  const canCancelOwn = can("appointments.cancel_own");
   const canViewFinance = can("finance.view");
   const canManageFinance = can("finance.manage");
   // Регистратор может ввести вакцину прямо из карточки приёма — если бэк выдал
@@ -956,11 +961,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setConfirmBusy(true);
     try {
       if (confirm.mode === "cancel") {
-        // status-only PATCH: бэк не проверяет overlap, отмена дубля проходит.
-        // Отмена завершённого приёма возвращает расходники на склад — возврат
-        // тоже приходит с предупреждениями (например, склада у филиала нет).
+        // Dedicated cancellation endpoint keeps the appointment and its
+        // history. A canceled completed appointment still returns consumables.
         notifyConsumptionWarnings(
-          await updateAppointment(confirm.appt.id, { status: "canceled" }),
+          await cancelAppointment(confirm.appt.id),
         );
         void checkWaitlistForFreedSlot(confirm.appt);
       } else {
@@ -1032,6 +1036,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     <AppointmentDetailsPanel
       appointment={appt}
       canUpdate={canUpdate}
+      canCancel={
+        canCancelAny ||
+        (canCancelOwn &&
+          activeEmployee?.id != null &&
+          appt.services.some((line) => line.employee?.id === activeEmployee.id))
+      }
       canManageFinance={canManageFinance}
       canViewFinance={canViewFinance}
       canDelete={canDelete}

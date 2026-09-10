@@ -172,6 +172,10 @@ const DoctorBookingPage: React.FC = () => {
   const { session, selectedPatient } = usePatientSession();
 
   const [doctor, setDoctor] = React.useState<ProfessionalDetail | null>(null);
+  // Какой филиал подтверждён ответом карточки; до этого услуги не показываем.
+  const [servicesBranchId, setServicesBranchId] = React.useState<number | null | undefined>(
+    undefined,
+  );
   const [reviews, setReviews] = React.useState<ProfessionalReview[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [notFound, setNotFound] = React.useState(false);
@@ -265,7 +269,10 @@ const DoctorBookingPage: React.FC = () => {
     setNotFound(false);
     setError(null);
     getProfessional(idOrSlug, {}, controller.signal)
-      .then(setDoctor)
+      .then((nextDoctor) => {
+        setDoctor(nextDoctor);
+        setServicesBranchId(null);
+      })
       .catch((e) => {
         if (isAbortError(e)) return;
         if (e instanceof ApiError && e.status === 404) setNotFound(true);
@@ -289,6 +296,25 @@ const DoctorBookingPage: React.FC = () => {
       .finally(() => setScheduleLoading(false));
     return () => controller.abort();
   }, [idOrSlug]);
+
+  // После определения филиала перезагружаем карточку: backend фильтрует
+  // doctor.services по этому же филиалу, который уйдёт в бронь.
+  React.useEffect(() => {
+    if (!doctor || branchId === null) return;
+    const controller = new AbortController();
+    getProfessional(idOrSlug, { branchId }, controller.signal)
+      .then((nextDoctor) => {
+        setDoctor(nextDoctor);
+        setServicesBranchId(branchId);
+      })
+      .catch((e) => {
+        if (isAbortError(e)) return;
+        // Не ответило — оставляем набор из карточки: список услуг лучше пустого
+        // экрана, а неверный выбор упрётся в 400 при создании брони.
+        setServicesBranchId(branchId);
+      });
+    return () => controller.abort();
+  }, [idOrSlug, branchId]);
 
   /** Ближайший свободный день филиала (или null) — по загруженным календарям. */
   const nearestDayByBranch = React.useMemo(() => {
@@ -353,33 +379,6 @@ const DoctorBookingPage: React.FC = () => {
     setStep(1);
   };
 
-  /**
-   * Услуги врача в выбранном филиале (§1.1 контракта от 10.09.2026).
-   *
-   * Карточка грузится до того, как филиал известен (он берётся из неё же —
-   * `doctor.branch.id`), поэтому набор услуг обновляем вторым запросом, как
-   * только `branchId` определился или сменился. Иначе витрина показывала бы
-   * услугу чужого филиала: записаться на неё нельзя (POST даёт 400), а видно
-   * её было.
-   *
-   * Пишем только `services` — `branch` из ответа не трогаем, иначе пересчёт
-   * `branchId` зациклил бы эффект.
-   */
-  React.useEffect(() => {
-    if (!doctor || branchId == null) return;
-    const controller = new AbortController();
-    getProfessional(idOrSlug, { branchId }, controller.signal)
-      .then((fresh) =>
-        setDoctor((prev) => (prev ? { ...prev, services: fresh.services } : prev)),
-      )
-      // Не ответило — оставляем набор из карточки: показать больше услуг лучше,
-      // чем ни одной. Неверный выбор упрётся в 400 при создании брони.
-      .catch(() => {});
-    return () => controller.abort();
-    // doctor?.id — чтобы эффект не перезапускался от собственного setDoctor.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idOrSlug, branchId, doctor?.id]);
-
   // Календари врача — по одному на филиал. Грузим без услуги: как только услуги
   // выбраны, времена пересчитываются через available-times.
   React.useEffect(() => {
@@ -419,14 +418,17 @@ const DoctorBookingPage: React.FC = () => {
   }, [servicesUnlocked]);
 
   const allServices: PickableService[] = React.useMemo(
-    () =>
-      (doctor?.services ?? []).map((s) => ({
+    () => {
+      const source =
+        branchId !== null && servicesBranchId !== branchId ? [] : doctor?.services ?? [];
+      return source.map((s) => ({
         id: s.id,
         name: s.name,
         durationMinutes: s.durationMinutes,
         basePrice: s.basePrice,
-      })),
-    [doctor],
+      }));
+    },
+    [doctor, branchId, servicesBranchId],
   );
   const visibleServices = filteredServices ?? allServices;
   const chosenServices = React.useMemo(

@@ -417,7 +417,7 @@ const SidebarSecondary: React.FC = () => {
     // ОРГАНИЗАЦИЯ
     employees: can(PAGE_PERMISSIONS.employees),
     patients: !isRetail && can(PAGE_PERMISSIONS.patients),
-    clients: isRetail && can(PAGE_PERMISSIONS.clients),
+    clients: can(PAGE_PERMISSIONS.clients),
     vaccinations: !isRetail && can(PAGE_PERMISSIONS.vaccinations),
     // Исторические реестры — только суперадмин (19.08.2026), права нет намеренно.
     allAppointments: !isRetail && isSuper && can(PAGE_PERMISSIONS.appointments),

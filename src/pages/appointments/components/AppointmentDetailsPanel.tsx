@@ -106,6 +106,8 @@ interface AppointmentDetailsPanelProps {
   canUpdate: boolean;
   canManageFinance: boolean;
   canViewFinance: boolean;
+  /** appointments.cancel or appointments.cancel_own for this appointment. */
+  canCancel?: boolean;
   canDelete?: boolean;
   /** vaccinations.record — показывать «Ввести вакцину» в карточке приёма. */
   canRecordVaccination?: boolean;
@@ -154,6 +156,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   canUpdate,
   canManageFinance,
   canViewFinance,
+  canCancel = false,
   canDelete,
   canRecordVaccination,
   isConclusionVisible = false,
@@ -747,10 +750,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     });
   }
 
-  // Отмена — заметная отдельная кнопка: это частое действие регистратуры.
-  // Удаление остаётся в меню, чтобы их нельзя было перепутать.
+  // Отмена — заметная отдельная кнопка. Она имеет отдельное право и не
+  // зависит от appointments.update.
   let cancelAction: HeaderAction | null = null;
-  if (canUpdate && onCancelAppt && !isCancelled) {
+  if (canCancel && onCancelAppt && !isCancelled) {
     cancelAction = {
       key: "cancel",
       label: t("details.cancelRecord"),

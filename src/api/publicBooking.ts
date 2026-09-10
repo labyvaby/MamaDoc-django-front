@@ -670,6 +670,11 @@ export function getProfessionals(
   return getList<ProfessionalPreview>(`/professionals/${query}`, signal);
 }
 
+export interface ProfessionalDetailParams {
+  /** Филиал, для которого нужно вернуть услуги врача. */
+  branchId?: number | null;
+}
+
 /**
  * Карточка специалиста. `branchId` фильтрует `services` по филиалу (контракт
  * `frontend-ticket-2026-09-10-branch-scope-and-sales-filter` §1.1): остаются
@@ -683,7 +688,7 @@ export function getProfessionals(
  */
 export function getProfessional(
   idOrSlug: IdOrSlug,
-  params: { branchId?: number | null } = {},
+  params: ProfessionalDetailParams = {},
   signal?: AbortSignal,
 ): Promise<ProfessionalDetail> {
   return getItem<ProfessionalDetail>(
