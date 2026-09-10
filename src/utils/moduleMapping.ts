@@ -21,6 +21,13 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   tenancy: 'rbac',
   tasks: 'tasks',
   achievements: 'achievements',
+  waitlist: 'waitlist',
+  deals: 'deals',
+  reviews: 'reviews',
+  chatwoot: 'chatwoot',
+  // Брони не имеют отдельной записи PlatformModule: это клинический
+  // рабочий процесс и он доступен только вместе с модулем приёмов.
+  bookings: 'appointments',
   documents: 'documents',
   cleaning: 'cleaning',
   knowledge: 'knowledge',
@@ -33,7 +40,6 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   printforms: 'printforms',
   targets: 'targets',
   ecommerce: 'ecommerce',
-  reviews: 'reviews',
   notifications: 'announcements',
   telegram_bot: 'telegram_bot',
 };

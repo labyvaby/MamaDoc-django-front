@@ -695,9 +695,9 @@ const SidebarSecondary: React.FC = () => {
             Остальные → placeholder (видны в меню, не скрыты)
             ══════════════════════════════════════════ */}
 
-        {/* Сводка — пока только суперадминистратору (решение заказчика
-            27.08.2026). Роут закрыт RequireSuperAdmin в App.tsx. */}
-        {show("my-work") && isSuper && (
+        {/* Сводка доступна суперадминистратору только при включённом модуле
+            reports. Роут дополнительно закрыт RequirePermission в App.tsx. */}
+        {show("my-work") && isSuper && can_.reports && (
           <SidebarMenuItem
             to="/dashboard"
             icon={<InsightsOutlined />}

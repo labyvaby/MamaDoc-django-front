@@ -1185,37 +1185,41 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
             <SectionLabel title="Контакты" />
 
             <Field label="Телефон">
-              <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-                <PhoneCountryCodeSelect
-                  value={phoneCountry}
-                  onChange={(code) => { setPhoneCountry(code); setPhoneLocal(""); }}
-                  disabled={busy}
-                />
-                <TextField
-                  value={formatPhoneLocalDisplay(phoneCountry, phoneLocal)}
-                  inputRef={phoneInput.inputRef}
-                  onChange={phoneInput.onChange}
-                  onPaste={(e) =>
-                    handlePhonePaste(e, phoneCountry, (code, local) => {
-                      setPhoneCountry(code);
-                      setPhoneLocal(local);
-                      setServerError(null);
-                    })
-                  }
-                  onBlur={() => touch("phone")}
-                  onKeyDown={(e) => {
-                    phoneInput.onKeyDown(e);
-                    submitOnEnter(e);
-                  }}
-                  fullWidth
-                  size="small"
-                  placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
-                  disabled={busy}
-                  inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
-                  error={Boolean(showError("phone"))}
-                  helperText={showError("phone")}
-                />
-              </Box>
+              <TextField
+                value={formatPhoneLocalDisplay(phoneCountry, phoneLocal)}
+                inputRef={phoneInput.inputRef}
+                onChange={phoneInput.onChange}
+                onPaste={(e) =>
+                  handlePhonePaste(e, phoneCountry, (code, local) => {
+                    setPhoneCountry(code);
+                    setPhoneLocal(local);
+                    setServerError(null);
+                  })
+                }
+                onBlur={() => touch("phone")}
+                onKeyDown={(e) => {
+                  phoneInput.onKeyDown(e);
+                  submitOnEnter(e);
+                }}
+                fullWidth
+                size="small"
+                placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
+                disabled={busy}
+                inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
+                error={Boolean(showError("phone"))}
+                helperText={showError("phone")}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start" sx={{ mr: 1, ml: "-14px" }}>
+                      <PhoneCountryCodeSelect
+                        value={phoneCountry}
+                        onChange={setPhoneCountry}
+                        disabled={busy}
+                      />
+                    </InputAdornment>
+                  ),
+                }}
+              />
             </Field>
 
             <Field label="Email">
