@@ -933,6 +933,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
           matchDate: slot.date,
           matchTime: slot.time,
           matchBranchId: slot.branchId ?? undefined,
+          // Филиал режем явно: бэк по филиалу сессии не скоупит, и без этого
+          // «N ждут» посчитало бы очередь соседнего филиала.
+          branchId: slot.branchId ?? activeScope.branchId,
           organizationId: orgId,
           pageSize: 1,
         });
@@ -945,7 +948,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         // бэке (403/404). Отмена приёма от этого не должна выглядеть неудачной.
       }
     },
-    [canWaitlist, orgId],
+    [canWaitlist, orgId, activeScope.branchId],
   );
 
   const handleConfirm = React.useCallback(async () => {

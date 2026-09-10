@@ -82,6 +82,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { useCanChecker } from "../../hooks/useCan";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useActiveScope } from "../../hooks/useActiveScope";
 import {
   PAGE_PERMISSIONS,
   SETTINGS_TAB_PERMISSIONS,
@@ -369,6 +370,7 @@ const SidebarSecondary: React.FC = () => {
       : can(permission),
   );
   const orgId = useApiOrgId();
+  const activeBranchId = useActiveScope().branchId;
   const isSuper = isSuperAdmin();
   const isRetail = activeOrganization?.vertical === "retail";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
@@ -473,8 +475,8 @@ const SidebarSecondary: React.FC = () => {
   // Бейдж «Лист ожидания»: сколько человек стоит в очереди (waiting). Красный —
   // когда среди них есть срочные: такой очередью надо заняться сегодня.
   const waitlistSummaryQuery = useQuery({
-    queryKey: djangoQueryKeys.waitlist.summary(orgId),
-    queryFn: ({ signal }) => getWaitlistSummary(orgId, signal),
+    queryKey: djangoQueryKeys.waitlist.summary(orgId, activeBranchId),
+    queryFn: ({ signal }) => getWaitlistSummary(orgId, activeBranchId, signal),
     enabled: can_.waitlist && !permissionsLoading,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     refetchInterval: DJANGO_POLL_INTERVAL_MS,

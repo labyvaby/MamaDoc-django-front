@@ -237,7 +237,8 @@ export const djangoQueryKeys = {
       ["django", "waitlist", "matches", params] as const,
     matchCounts: (params: Record<string, unknown>) =>
       ["django", "waitlist", "match-counts", params] as const,
-    summary: (orgId?: number) => ["django", "waitlist", "summary", orgId ?? null] as const,
+    summary: (orgId?: number, branchId?: number) =>
+      ["django", "waitlist", "summary", orgId ?? null, branchId ?? null] as const,
   },
 
   achievements: {

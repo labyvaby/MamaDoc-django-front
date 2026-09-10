@@ -124,6 +124,11 @@ export interface WaitlistFilters {
   status?: WaitlistStatus | readonly WaitlistStatus[];
   employeeId?: number;
   specializationId?: number;
+  /**
+   * Филиал записи. Бэк сам по филиалу сессии НЕ режет (проверено на проде
+   * 10.09.2026: запись филиала 13 видна из сессии филиала 1), но параметр
+   * поддерживает — скоуп держит фронт, подставляя активный филиал.
+   */
   branchId?: number;
   priority?: WaitlistPriority;
   source?: WaitlistSource;
@@ -523,12 +528,19 @@ export function getWaitlistEntry(
   });
 }
 
+/**
+ * Счётчики очереди для бейджа в сайдбаре. `branchId` — активный филиал сессии:
+ * бэк по филиалу не режет, поэтому без него бейдж считал бы чужие филиалы.
+ */
 export function getWaitlistSummary(
   organizationId?: number,
+  branchId?: number,
   signal?: AbortSignal,
 ): Promise<WaitlistSummary> {
   if (WAITLIST_USE_MOCKS) {
-    const active = mockEntries.filter((e) => WAITLIST_ACTIVE_STATUSES.includes(e.status));
+    const active = mockEntries
+      .filter((e) => WAITLIST_ACTIVE_STATUSES.includes(e.status))
+      .filter((e) => branchId == null || e.branchId === branchId);
     const soon = isoDay(7);
     return mockDelay({
       waiting: active.filter((e) => e.status === "waiting").length,
@@ -537,7 +549,11 @@ export function getWaitlistSummary(
       expiringSoon: active.filter((e) => e.activeUntil != null && e.activeUntil <= soon).length,
     });
   }
-  return apiRequest<WaitlistSummary>(withOrg("/waitlist/summary/", organizationId), { signal });
+  const q = new URLSearchParams();
+  if (organizationId != null) q.set("organizationId", String(organizationId));
+  if (branchId != null) q.set("branchId", String(branchId));
+  const query = q.toString();
+  return apiRequest<WaitlistSummary>(`/waitlist/summary/${query ? `?${query}` : ""}`, { signal });
 }
 
 /**
