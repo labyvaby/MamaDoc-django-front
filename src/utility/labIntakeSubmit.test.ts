@@ -172,6 +172,7 @@ describe("buildLabIntakeBody", () => {
         cashlessMethodId: 7,
         discountPercent: 10,
         referringDoctorId: null,
+        clientTypeId: null,
       }),
     ).toEqual({
       patientId: 9622,
@@ -196,6 +197,7 @@ describe("buildLabIntakeBody", () => {
       cashlessMethodId: null,
       discountPercent: 0,
       referringDoctorId: null,
+      clientTypeId: null,
     });
     expect(body).toEqual({
       patientId: 1,
@@ -220,6 +222,7 @@ describe("buildLabIntakeBody", () => {
       cashlessMethodId: null,
       discountPercent: 0,
       referringDoctorId: null,
+      clientTypeId: null,
     });
     expect("discountPercent" in body).toBe(false);
   });
@@ -235,6 +238,7 @@ describe("buildLabIntakeBody", () => {
       cashlessMethodId: null,
       discountPercent: 15,
       referringDoctorId: null,
+      clientTypeId: null,
     });
     expect(body.discountPercent).toBe(15);
   });
@@ -250,6 +254,7 @@ describe("buildLabIntakeBody", () => {
       cashlessMethodId: null,
       discountPercent: 0,
       referringDoctorId: null,
+      clientTypeId: null,
     });
     expect(body.paidCash).toBe("150.50");
   });
@@ -265,6 +270,7 @@ describe("buildLabIntakeBody", () => {
       cashlessMethodId: null,
       discountPercent: 0,
       referringDoctorId: null,
+      clientTypeId: null,
     });
     expect(body.paidCash).toBe("0.00");
     expect(body.paidCard).toBe("0.00");
@@ -281,6 +287,7 @@ describe("buildLabIntakeBody", () => {
       cashlessMethodId: null,
       discountPercent: 0,
       referringDoctorId: null,
+      clientTypeId: null,
     });
     expect(body.paidCash).toBe("0.00");
   });
@@ -296,6 +303,7 @@ describe("buildLabIntakeBody", () => {
       cashlessMethodId: null,
       discountPercent: 0,
       referringDoctorId: null,
+      clientTypeId: null,
     });
     expect(body.paidCash).toBe("0.00");
   });
@@ -311,6 +319,7 @@ describe("buildLabIntakeBody", () => {
       cashlessMethodId: null,
       discountPercent: 0,
       referringDoctorId: null,
+      clientTypeId: null,
     });
     expect(body.lines).toEqual(lines);
     expect(body.answers).toEqual(answers);
@@ -328,6 +337,7 @@ describe("направивший врач в теле приёма", () => {
     cashlessMethodId: null,
     discountPercent: 0,
     referringDoctorId: null,
+    clientTypeId: null,
   };
 
   it("выбранный врач уходит в тело запроса", () => {
@@ -356,6 +366,7 @@ describe("комментарий в теле приёма", () => {
     cashlessMethodId: null,
     discountPercent: 0,
     referringDoctorId: null,
+    clientTypeId: null,
   };
 
   it("непустой комментарий уходит без лишних пробелов", () => {
@@ -368,5 +379,42 @@ describe("комментарий в теле приёма", () => {
     const body = buildLabIntakeBody({ ...base, comment: "   " });
 
     expect("comment" in body).toBe(false);
+  });
+});
+
+describe("тип клиента в теле приёма", () => {
+  const base = {
+    patientId: 9622,
+    branchId: 3,
+    lines: [],
+    answers: [],
+    paidCash: "0",
+    paidCard: "0",
+    cashlessMethodId: null,
+    referringDoctorId: null,
+    clientTypeId: null,
+  };
+
+  it("выбранный тип уходит вместе со своей скидкой", () => {
+    // Скидка и тип — один справочник ЛИС: бэкенд отвергнет пару, где они
+    // разошлись, поэтому тело собирается из одного источника.
+    const body = buildLabIntakeBody({
+      ...base,
+      discountPercent: 10,
+      clientTypeId: 7,
+    });
+
+    expect(body.clientTypeId).toBe(7);
+    expect(body.discountPercent).toBe(10);
+  });
+
+  it("без типа ключа нет — бэкенд подставит нулевой", () => {
+    const body = buildLabIntakeBody({
+      ...base,
+      discountPercent: 0,
+      clientTypeId: null,
+    });
+
+    expect("clientTypeId" in body).toBe(false);
   });
 });

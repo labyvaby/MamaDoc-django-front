@@ -472,6 +472,8 @@ export const djangoQueryKeys = {
      */
     doctors: (query: string) =>
       ["django", "lab", "doctors", query] as const,
+    /** Типы клиента ЛИС — готовый список скидок, зеркало синка. */
+    clientTypes: ["django", "lab", "clientTypes"] as const,
     /**
      * Лента заказов лаборатории. Сегодня страница всегда шлёт пустые params —
      * плитки-фильтры над лентой (LabOrdersSummaryBar) режут уже загруженный

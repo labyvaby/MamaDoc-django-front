@@ -94,6 +94,8 @@ export interface LabIntakeFormValues {
   referringDoctorId: number | null;
   /** Свободный комментарий к заказу; пустой ключа не создаёт. */
   comment?: string;
+  /** Тип клиента ЛИС, источник скидки; `null` — нулевой тип на бэкенде. */
+  clientTypeId: number | null;
 }
 
 /**
@@ -139,5 +141,6 @@ export function buildLabIntakeBody(values: LabIntakeFormValues): LabIntakeInput 
   }
   const comment = (values.comment ?? '').trim();
   if (comment) body.comment = comment;
+  if (values.clientTypeId != null) body.clientTypeId = values.clientTypeId;
   return body;
 }
