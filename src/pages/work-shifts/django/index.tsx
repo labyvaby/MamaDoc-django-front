@@ -241,22 +241,15 @@ const DjangoWorkShiftsPage: React.FC = () => {
   }) => {
     try {
       if (editId != null) {
-        // Ручная смена должна быть привязана к текущему филиалу: payroll в
-        // филиальном срезе намеренно не включает общеклинические (branch=null)
-        // записи. При «Все филиалы» не передаём поле, чтобы не менять старую
-        // привязку неожиданно.
-        const row = activeBranch
-          ? { ...rows[0], branchId: activeBranch.id }
-          : rows[0];
-        await updateShift(editId, row, { organizationId: orgId });
+        // branchId приходит из формы: филиал выбирается в дровере (по умолчанию
+        // активный), поэтому здесь его не подменяем — иначе выбор пользователя
+        // молча терялся бы. Смена без филиала в филиальный расчёт ЗП не входит.
+        await updateShift(editId, rows[0], { organizationId: orgId });
         notify?.({ type: "success", message: "Смена обновлена" });
       } else {
         // Weekday bulk-create persists each generated shift (one POST per day).
         for (const row of rows) {
-          await createShift(
-            activeBranch ? { ...row, branchId: activeBranch.id } : row,
-            { organizationId: orgId },
-          );
+          await createShift(row, { organizationId: orgId });
         }
         notify?.({
           type: "success",
@@ -832,6 +825,8 @@ const DjangoWorkShiftsPage: React.FC = () => {
         shiftToEdit={editTarget}
         employees={employees}
         onClose={() => setFormOpen(false)}
+        branches={branchOptions}
+        defaultBranchId={activeBranch?.id ?? null}
         onSubmit={handleFormSubmit}
         onDelete={
           editTarget
