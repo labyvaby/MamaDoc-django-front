@@ -7,10 +7,12 @@ import {
   Divider,
   Drawer,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Select,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -36,6 +38,7 @@ import {
   updateClient,
   uploadClientPhoto,
   type ClientStatus,
+  type DjangoClientStatus,
   type ClientType,
   type DjangoClient,
 } from "../../api/clients";
@@ -48,6 +51,7 @@ type Props = {
   client: DjangoClient | null;
   onClose: () => void;
   onSaved: (client: DjangoClient) => void;
+  statuses: DjangoClientStatus[];
 };
 
 type Draft = {
@@ -67,6 +71,9 @@ type Draft = {
   bankName: string;
   bankAccount: string;
   bankBik: string;
+  customerStatusId: number | null;
+  isBlacklisted: boolean;
+  blacklistReason: string;
 };
 
 const emptyDraft: Draft = {
@@ -86,6 +93,9 @@ const emptyDraft: Draft = {
   bankName: "",
   bankAccount: "",
   bankBik: "",
+  customerStatusId: null,
+  isBlacklisted: false,
+  blacklistReason: "",
 };
 
 function toDraft(client: DjangoClient | null): Draft {
@@ -108,10 +118,13 @@ function toDraft(client: DjangoClient | null): Draft {
     bankName: client.bankName,
     bankAccount: client.bankAccount,
     bankBik: client.bankBik,
+    customerStatusId: client.customerStatus?.id ?? null,
+    isBlacklisted: client.isBlacklisted,
+    blacklistReason: client.blacklistReason,
   };
 }
 
-export default function ClientEditorDrawer({ open, organizationId, client, onClose, onSaved }: Props) {
+export default function ClientEditorDrawer({ open, organizationId, client, onClose, onSaved, statuses }: Props) {
   const [draft, setDraft] = React.useState<Draft>(() => toDraft(client));
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -137,7 +150,10 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
     setPhotoFile(null);
     setPhotoPreview(client?.photoUrl ?? null);
     setPhotoRemoved(false);
-  }, [open, client]);
+    if (!client && statuses.length > 0) {
+      setDraft((current) => ({ ...current, customerStatusId: statuses.find((item) => item.code === "regular")?.id ?? statuses[0].id }));
+    }
+  }, [open, client, statuses]);
 
   const handlePickPhoto = React.useCallback((file: File | null) => {
     setPhotoRemoved(false);
@@ -173,6 +189,9 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
         address: draft.address.trim(),
         clientType: draft.clientType,
         status: draft.status,
+        customerStatusId: draft.customerStatusId,
+        isBlacklisted: draft.isBlacklisted,
+        blacklistReason: draft.blacklistReason.trim(),
         note: draft.note.trim(),
         legalName: draft.legalName.trim(),
         inn: draft.inn.trim(),
@@ -307,6 +326,17 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
                 <MenuItem value="no_offering">Без покупок</MenuItem>
               </Select>
             </FormControl>
+            <FormControl fullWidth>
+              <InputLabel>Статус клиента</InputLabel>
+              <Select value={draft.customerStatusId ?? ""} label="Статус клиента" onChange={(event) => set("customerStatusId", event.target.value ? Number(event.target.value) : null)}>
+                {statuses.map((status) => <MenuItem key={status.id} value={status.id}>{status.name}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControlLabel
+              control={<Switch checked={draft.isBlacklisted} onChange={(_, checked) => set("isBlacklisted", checked)} />}
+              label="Чёрный список клиентов"
+            />
+            {draft.isBlacklisted && <TextField label="Причина добавления в ЧС *" value={draft.blacklistReason} onChange={(event) => set("blacklistReason", event.target.value)} multiline minRows={2} fullWidth required />}
             <TextField label="Примечание" placeholder="Дополнительная информация" value={draft.note} onChange={(event) => set("note", event.target.value)} multiline minRows={3} fullWidth />
           </Stack>
         </Box>

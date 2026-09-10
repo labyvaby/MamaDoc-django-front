@@ -8,14 +8,13 @@ import { PageHeader, SegmentedTabs } from "../../components/ui";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { usePermissions } from "../../hooks/usePermissions";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { useVertical } from "../../i18n/VerticalProvider";
-import { createClientContact, getClientContacts, getClients, updateClientContact, type DjangoClient, type DjangoClientContact } from "../../api/clients";
+import { createClientContact, getClientContacts, getClients, getClientStatuses, updateClientContact, type DjangoClient, type DjangoClientContact } from "../../api/clients";
 import { getClientPurchases } from "../../api/retail";
 import ClientCard from "./ClientCard";
 import ClientEditorDrawer from "./ClientEditorDrawer";
 import ClientListPanel from "./ClientListPanel";
 import ClientTabs from "./ClientTabs";
-import { defaultClientLayoutSettings, readClientLayoutSettings, type ClientLayoutSettings, type ClientTabKey } from "./clientLayout";
+import { defaultClientLayoutSettings, getClientLayoutSettings, type ClientLayoutSettings, type ClientTabKey } from "./clientLayout";
 
 const tabLabels: Record<ClientTabKey, string> = { purchases: "История покупок", contacts: "Контактные лица" };
 type ContactDraft = { fullName: string; position: string; phone: string; email: string; isPrimary: boolean; note: string };
@@ -23,7 +22,6 @@ const emptyContact: ContactDraft = { fullName: "", position: "", phone: "", emai
 
 export default function ClientsPage() {
   const auth = usePermissions();
-  const { vertical } = useVertical();
   const queryClient = useQueryClient();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -32,7 +30,6 @@ export default function ClientsPage() {
   const canView = auth.isSuperAdmin() || auth.hasPermission("clients.view");
   const canManage = auth.isSuperAdmin() || auth.hasPermission("clients.manage");
   const canViewPurchases = auth.isSuperAdmin() || auth.hasPermission("pos.view") || auth.hasPermission("pos.sell");
-  const isRetail = vertical === "retail";
 
   usePageTitle("Все клиенты");
   const [search, setSearch] = React.useState("");
@@ -49,13 +46,29 @@ export default function ClientsPage() {
   const [contactError, setContactError] = React.useState("");
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const layoutQuery = useQuery({
+    queryKey: ["client-layout-settings", organizationId],
+    queryFn: ({ signal }) => getClientLayoutSettings(organizationId as number, signal),
+    enabled: Boolean(organizationId && canView),
+  });
+
   React.useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search), 250); return () => window.clearTimeout(timer); }, [search]);
-  React.useEffect(() => { const next = readClientLayoutSettings(organizationId); setLayout(next); setActiveTab(next.tabs[0] ?? "purchases"); }, [organizationId]);
+  React.useEffect(() => {
+    const next = layoutQuery.data ?? defaultClientLayoutSettings;
+    setLayout(next);
+    setActiveTab((current) => next.tabs.includes(current) ? current : next.tabs[0] ?? "purchases");
+  }, [layoutQuery.data]);
 
   const clients = useQuery({
     queryKey: ["clients", organizationId, debouncedSearch],
     queryFn: ({ signal }) => getClients(organizationId as number, { query: debouncedSearch }, signal),
-    enabled: Boolean(organizationId && canView && isRetail),
+    enabled: Boolean(organizationId && canView),
+  });
+  const statuses = useQuery({
+    queryKey: ["client-statuses", organizationId],
+    queryFn: ({ signal }) => getClientStatuses(organizationId as number, signal),
+    enabled: Boolean(organizationId && canView),
+    staleTime: 5 * 60 * 1000,
   });
 
   React.useEffect(() => { if (!selected) return; const fresh = clients.data?.find((row) => row.id === selected.id); if (fresh) setSelected(fresh); }, [clients.data, selected?.id]);
@@ -87,7 +100,6 @@ export default function ClientsPage() {
     } catch (e) { setContactError(e instanceof Error ? e.message : "Не удалось сохранить контакт."); } finally { setContactBusy(false); }
   };
 
-  if (!isRetail) return <Alert sx={{ m: 3 }} severity="info">Для медицинской организации используется раздел «Пациенты».</Alert>;
   if (auth.loading) return <Box sx={{ display: "grid", placeItems: "center", minHeight: "60vh" }}><CircularProgress /></Box>;
   if (!canView) return <AccessDenied />;
 
@@ -108,7 +120,7 @@ export default function ClientsPage() {
         {!selected && <Box sx={{ flex: 1, display: "grid", placeItems: "center", border: 1, borderStyle: "dashed", borderColor: "divider", borderRadius: 1 }}><Typography color="text.secondary">Карточка клиента</Typography></Box>}
       </Box>
     </Box>
-    <ClientEditorDrawer open={editorOpen} organizationId={organizationId} client={editorClient} onClose={() => setEditorOpen(false)} onSaved={onClientSaved} />
+    <ClientEditorDrawer open={editorOpen} organizationId={organizationId} client={editorClient} statuses={statuses.data ?? []} onClose={() => setEditorOpen(false)} onSaved={onClientSaved} />
     <Dialog open={contactOpen} onClose={() => !contactBusy && setContactOpen(false)} fullWidth maxWidth="sm"><DialogTitle>{contact ? "Изменить контактное лицо" : "Добавить контактное лицо"}</DialogTitle><DialogContent><Stack gap={2} pt={1}>{contactError && <Alert severity="error">{contactError}</Alert>}<TextField label="ФИО" value={contactDraft.fullName} onChange={(e) => setContactDraft((v) => ({ ...v, fullName: e.target.value }))} required fullWidth /><TextField label="Должность" value={contactDraft.position} onChange={(e) => setContactDraft((v) => ({ ...v, position: e.target.value }))} fullWidth /><TextField label="Телефон" value={contactDraft.phone} onChange={(e) => setContactDraft((v) => ({ ...v, phone: e.target.value }))} fullWidth /><TextField label="Email" value={contactDraft.email} onChange={(e) => setContactDraft((v) => ({ ...v, email: e.target.value }))} fullWidth /><FormControlLabel control={<Switch checked={contactDraft.isPrimary} onChange={(_, checked) => setContactDraft((v) => ({ ...v, isPrimary: checked }))} />} label="Основной контакт" /><TextField label="Комментарий" value={contactDraft.note} onChange={(e) => setContactDraft((v) => ({ ...v, note: e.target.value }))} multiline minRows={2} fullWidth /></Stack></DialogContent><DialogActions><Button onClick={() => setContactOpen(false)} disabled={contactBusy}>Отмена</Button><Button variant="contained" onClick={() => void saveContact()} disabled={contactBusy}>{contactBusy ? <CircularProgress size={20} /> : "Сохранить"}</Button></DialogActions></Dialog>
   </Box>;
 }

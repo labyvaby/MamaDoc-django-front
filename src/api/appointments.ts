@@ -1271,6 +1271,17 @@ export function startAppointment(id: number): Promise<DjangoAppointment> {
   }).then(normalizeAppointment);
 }
 
+/** Cancel an appointment without deleting its history or financial records. */
+export function cancelAppointment(
+  id: number,
+  cancelReason: AppointmentCancelReason = "other",
+): Promise<DjangoAppointment> {
+  return apiRequest<RawAppointment>(`/appointments/${id}/cancel/`, {
+    method: "POST",
+    body: { cancelReason },
+  }).then(normalizeAppointment);
+}
+
 export function deleteAppointment(id: number): Promise<void> {
   return apiRequest<void>(`/appointments/${id}/`, { method: "DELETE" });
 }
