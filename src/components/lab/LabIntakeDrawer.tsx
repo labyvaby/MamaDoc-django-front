@@ -144,6 +144,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
   const [patientEdits, setPatientEdits] = React.useState<PatientEdits>(BLANK_EDITS);
   const [lines, setLines] = React.useState<BasketLine[]>([]);
   const [referringDoctorId, setReferringDoctorId] = React.useState<number | null>(null);
+  const [doctorQuery, setDoctorQuery] = React.useState("");
   const [comment, setComment] = React.useState("");
   const [answers, setAnswers] = React.useState<Record<number, string>>({});
   const [payment, setPayment] = React.useState<PaymentState>(DEFAULT_PAYMENT);
@@ -212,6 +213,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
           setPatientEdits(BLANK_EDITS);
           setLines([]);
           setReferringDoctorId(null);
+          setDoctorQuery("");
           setComment("");
           setPayment(DEFAULT_PAYMENT);
           setDraftRestored(false);
@@ -221,6 +223,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       setPatientEdits(BLANK_EDITS);
       setLines([]);
       setReferringDoctorId(null);
+      setDoctorQuery("");
       setComment("");
       setPayment(DEFAULT_PAYMENT);
       setDraftRestored(false);
@@ -413,10 +416,13 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
   );
 
   // Направивший врач — из справочника ЛИС, а не из наших сотрудников:
-  // заказ уезжает с её идентификатором врача.
+  // заказ уезжает с её идентификатором врача. Справочник большой (двадцать
+  // тысяч человек по всем клиникам ЛИС), поэтому ищем на сервере с
+  // задержкой, как пациента: пустой запрос отдаёт уже известных.
+  const debouncedDoctorQuery = useDebouncedValue(doctorQuery.trim());
   const doctorsQuery = useQuery<LabDoctor[]>({
-    queryKey: djangoQueryKeys.lab.doctors,
-    queryFn: ({ signal }) => getLabDoctors(signal),
+    queryKey: djangoQueryKeys.lab.doctors(debouncedDoctorQuery),
+    queryFn: ({ signal }) => getLabDoctors(debouncedDoctorQuery, signal),
     enabled: open,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
@@ -424,7 +430,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
     () => doctorsQuery.data ?? [],
     [doctorsQuery.data],
   );
-  const doctorsLoading = doctorsQuery.isLoading;
+  const doctorsLoading = doctorsQuery.isLoading || doctorsQuery.isFetching;
 
   const requiredQuestionIds = React.useMemo(() => questions.map((q) => q.id), [questions]);
 
@@ -748,6 +754,8 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
             disabled={!editing}
             requiredFor={referralRequiredFor}
             onChange={setReferringDoctorId}
+            searchQuery={doctorQuery}
+            onSearchChange={setDoctorQuery}
           />
 
           <BasketSection
