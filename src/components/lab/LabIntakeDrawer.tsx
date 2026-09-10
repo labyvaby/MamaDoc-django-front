@@ -19,6 +19,7 @@ import { useSnackbar } from "notistack";
 import { AppButton } from "../ui";
 import PatientSection from "./intake/PatientSection";
 import ReferralSection from "./intake/ReferralSection";
+import CommentSection from "./intake/CommentSection";
 import BasketSection from "./intake/BasketSection";
 import QuestionsSection from "./intake/QuestionsSection";
 import InstrumentsSection from "./intake/InstrumentsSection";
@@ -604,7 +605,33 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
             </Alert>
           )}
 
-          {phase === "done" && receipt && (
+          {phase === "done" && receipt && receipt.order.status !== "dispatched" && (
+            <Alert severity="info">
+              <Stack spacing={1}>
+                <Typography fontWeight={600}>
+                  Заказ №{receipt.order.id} принят и оплачен на{" "}
+                  {formatKGS(receipt.order.totalAmount)}
+                </Typography>
+                <Typography variant="body2">
+                  Отправка в лабораторию отложена настройкой — заказ ждёт
+                  отправки. Этикетки и регистрационный лист рисует сама ЛИС по
+                  номеру заказа, поэтому появятся после отправки.
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <AppButton
+                    size="small"
+                    variant="outlined"
+                    onClick={() => printouts && handlePrint(printouts.preparation)}
+                  >
+                    Памятка подготовки
+                  </AppButton>
+                </Stack>
+                {printError && <Alert severity="warning">{printError}</Alert>}
+              </Stack>
+            </Alert>
+          )}
+
+          {phase === "done" && receipt && receipt.order.status === "dispatched" && (
             <Alert severity="success">
               <Stack spacing={1}>
                 <Typography fontWeight={600}>
@@ -711,8 +738,6 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
             disabled={!editing}
             requiredFor={referralRequiredFor}
             onChange={setReferringDoctorId}
-            comment={comment}
-            onCommentChange={setComment}
           />
 
           <BasketSection
@@ -742,6 +767,12 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
           <InstrumentsSection instruments={instruments} loading={instrumentsQuery.isLoading} chargeTubes={chargeTubes} />
 
           <PreparationSection texts={preparationTexts} loading={preparationQuery.isLoading} />
+
+          <CommentSection
+            value={comment}
+            disabled={!editing}
+            onChange={setComment}
+          />
 
           <PaymentSection
             total={totals.total}

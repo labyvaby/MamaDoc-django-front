@@ -12,8 +12,6 @@ type Props = {
   /** Анализы корзины, которые лаборатория делает только по направлению. */
   requiredFor: string[];
   onChange: (employeeId: number | null) => void;
-  comment: string;
-  onCommentChange: (value: string) => void;
 };
 
 /**
@@ -29,10 +27,6 @@ type Props = {
  * такого, поле остаётся подсказкой, а не преградой. Как только такой анализ
  * появился, его название показывается прямо здесь — блокировка кнопки
  * назовёт ту же причину, но искать её глазами внизу дровера не придётся.
- *
- * Комментарий стоит рядом с врачом, а не в оплате: и то, и другое —
- * сопровождение заказа, а не деньги. Он свободный и ни на что не влияет:
- * хранится в самом заказе и виден в его карточке.
  */
 const ReferralSection: React.FC<Props> = ({
   doctors,
@@ -41,8 +35,6 @@ const ReferralSection: React.FC<Props> = ({
   disabled,
   requiredFor,
   onChange,
-  comment,
-  onCommentChange,
 }) => {
   const selected = doctors.find((doctor) => doctor.id === value) ?? null;
   const required = requiredFor.length > 0;
@@ -78,18 +70,6 @@ const ReferralSection: React.FC<Props> = ({
           {requiredFor.join(", ")}
         </Typography>
       )}
-
-      <TextField
-        size="small"
-        fullWidth
-        multiline
-        minRows={2}
-        label="Комментарий"
-        placeholder="Необязательно"
-        value={comment}
-        onChange={(event) => onCommentChange(event.target.value)}
-        disabled={disabled}
-      />
     </IntakeSection>
   );
 };
