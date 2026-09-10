@@ -293,6 +293,12 @@ export interface LabIntakeInput {
   discountPercent?: number;
   diagnosis?: string;
   comment?: string;
+  /**
+   * Направивший врач — сотрудник той же организации. Обязателен, когда в
+   * корзине есть анализ с `requiresDoctor`: такие лаборатория делает только
+   * по направлению.
+   */
+  referringDoctorId?: number;
 }
 
 export interface LabLabels {
@@ -332,6 +338,8 @@ export interface LabOrderDetailRaw {
   status: string;
   diagnosis: string;
   comment: string;
+  /** ФИО направившего врача на момент приёма; пустая строка — без него. */
+  referringDoctorName: string;
   discountPercent: number;
   totalAmount: string;
   paidCash: string;
@@ -360,6 +368,8 @@ export interface LabOrderDetail {
   isDispatched: boolean;
   diagnosis: string;
   comment: string;
+  /** ФИО направившего врача на момент приёма; пустая строка — без него. */
+  referringDoctorName: string;
   discountPercent: number;
   totalAmount: number;
   paidCash: number;
@@ -397,6 +407,7 @@ export function normalizeLabOrderDetail(raw: LabOrderDetailRaw): LabOrderDetail 
     isDispatched: raw.status === "dispatched",
     diagnosis: raw.diagnosis,
     comment: raw.comment,
+    referringDoctorName: raw.referringDoctorName ?? "",
     discountPercent: raw.discountPercent,
     totalAmount: parseMoney(raw.totalAmount),
     paidCash: parseMoney(raw.paidCash),

@@ -73,6 +73,15 @@ export interface IntakeState {
    * когда `settingsLoading` и `settingsFailed` оба `false`.
    */
   sectionConfigured: boolean;
+  /**
+   * Названия анализов корзины, которые лаборатория делает только по
+   * направлению (`LabTest.requiresDoctor`, признак `@required_doctor`
+   * каталога ЛИС). Не число и не флаг: без имён регистратор не поймёт,
+   * какую строку убрать, если направления нет и врача не назвать.
+   */
+  referralRequiredFor: string[];
+  /** Выбранный направивший врач; `null` — не выбран. */
+  referringDoctorId: number | null;
 }
 
 export function intakeBlockReason(state: IntakeState): string | null {
@@ -90,6 +99,13 @@ export function intakeBlockReason(state: IntakeState): string | null {
     return "Укажите пол пациента";
   }
   if (state.lineCount < 1) return "Добавьте хотя бы один анализ";
+
+  if (state.referralRequiredFor.length > 0 && state.referringDoctorId === null) {
+    return (
+      'Укажите направившего врача — его требуют: ' +
+      state.referralRequiredFor.join(", ")
+    );
+  }
 
   const unanswered = state.requiredQuestionIds.some(
     (id) => !(state.answers[id] ?? "").trim(),

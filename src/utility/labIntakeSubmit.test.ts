@@ -171,6 +171,7 @@ describe("buildLabIntakeBody", () => {
         paidCard: "200",
         cashlessMethodId: 7,
         discountPercent: 10,
+        referringDoctorId: null,
       }),
     ).toEqual({
       patientId: 9622,
@@ -194,6 +195,7 @@ describe("buildLabIntakeBody", () => {
       paidCard: "0",
       cashlessMethodId: null,
       discountPercent: 0,
+      referringDoctorId: null,
     });
     expect(body).toEqual({
       patientId: 1,
@@ -217,6 +219,7 @@ describe("buildLabIntakeBody", () => {
       paidCard: "0",
       cashlessMethodId: null,
       discountPercent: 0,
+      referringDoctorId: null,
     });
     expect("discountPercent" in body).toBe(false);
   });
@@ -231,6 +234,7 @@ describe("buildLabIntakeBody", () => {
       paidCard: "0",
       cashlessMethodId: null,
       discountPercent: 15,
+      referringDoctorId: null,
     });
     expect(body.discountPercent).toBe(15);
   });
@@ -245,6 +249,7 @@ describe("buildLabIntakeBody", () => {
       paidCard: "0",
       cashlessMethodId: null,
       discountPercent: 0,
+      referringDoctorId: null,
     });
     expect(body.paidCash).toBe("150.50");
   });
@@ -259,6 +264,7 @@ describe("buildLabIntakeBody", () => {
       paidCard: "",
       cashlessMethodId: null,
       discountPercent: 0,
+      referringDoctorId: null,
     });
     expect(body.paidCash).toBe("0.00");
     expect(body.paidCard).toBe("0.00");
@@ -274,6 +280,7 @@ describe("buildLabIntakeBody", () => {
       paidCard: "0",
       cashlessMethodId: null,
       discountPercent: 0,
+      referringDoctorId: null,
     });
     expect(body.paidCash).toBe("0.00");
   });
@@ -288,6 +295,7 @@ describe("buildLabIntakeBody", () => {
       paidCard: "0",
       cashlessMethodId: null,
       discountPercent: 0,
+      referringDoctorId: null,
     });
     expect(body.paidCash).toBe("0.00");
   });
@@ -302,8 +310,37 @@ describe("buildLabIntakeBody", () => {
       paidCard: "0",
       cashlessMethodId: null,
       discountPercent: 0,
+      referringDoctorId: null,
     });
     expect(body.lines).toEqual(lines);
     expect(body.answers).toEqual(answers);
+  });
+});
+
+describe("направивший врач в теле приёма", () => {
+  const base = {
+    patientId: 9622,
+    branchId: 3,
+    lines: [{ testId: 1, count: 1, express: false }],
+    answers: [],
+    paidCash: "250",
+    paidCard: "0",
+    cashlessMethodId: null,
+    discountPercent: 0,
+    referringDoctorId: null,
+  };
+
+  it("выбранный врач уходит в тело запроса", () => {
+    const body = buildLabIntakeBody({ ...base, referringDoctorId: 12 });
+
+    expect(body.referringDoctorId).toBe(12);
+  });
+
+  it("без врача ключа в теле нет вовсе", () => {
+    // Явный null вместо отсутствия ключа — знакомые грабли msgspec-схем
+    // этого проекта, ровно как с cashlessMethodId выше.
+    const body = buildLabIntakeBody({ ...base, referringDoctorId: null });
+
+    expect("referringDoctorId" in body).toBe(false);
   });
 });

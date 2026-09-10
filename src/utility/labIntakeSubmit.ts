@@ -90,6 +90,8 @@ export interface LabIntakeFormValues {
   paidCard: string;
   cashlessMethodId: number | null;
   discountPercent: number;
+  /** Направивший врач; `null` — не выбран, ключ в тело не попадёт. */
+  referringDoctorId: number | null;
 }
 
 /**
@@ -130,5 +132,8 @@ export function buildLabIntakeBody(values: LabIntakeFormValues): LabIntakeInput 
   };
   if (values.cashlessMethodId != null) body.cashlessMethodId = values.cashlessMethodId;
   if (values.discountPercent > 0) body.discountPercent = values.discountPercent;
+  if (values.referringDoctorId != null) {
+    body.referringDoctorId = values.referringDoctorId;
+  }
   return body;
 }

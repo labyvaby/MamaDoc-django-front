@@ -316,6 +316,12 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
               <InfoRow label="Пациент" value={order.patientName} />
               <InfoRow label="Филиал" value={order.branchName} />
               <InfoRow label="Дата приёма" value={dayjs(order.createdAt).format("DD.MM.YYYY HH:mm")} />
+              {order.referringDoctorName && (
+                <InfoRow
+                  label="Направивший врач"
+                  value={order.referringDoctorName}
+                />
+              )}
               {order.diagnosis && <InfoRow label="Диагноз" value={order.diagnosis} />}
               {order.comment && <InfoRow label="Комментарий" value={order.comment} />}
             </Stack>
