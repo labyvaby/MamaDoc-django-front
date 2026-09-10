@@ -6,15 +6,18 @@ import {
   Link,
   Skeleton,
   Stack,
-  Switch,
   TextField,
+  ToggleButton,
   Tooltip,
   Typography,
 } from "@mui/material";
+import AddOutlined from "@mui/icons-material/AddOutlined";
+import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
+import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 
-import { resolveSelectedLines, type BasketLine } from "./basketCatalog";
+import { resolveSelectedLines, stepCount, type BasketLine } from "./basketCatalog";
 import type { LabTest } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
 import IntakeSection from "./IntakeSection";
@@ -37,15 +40,6 @@ function money(value: string): number {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
-
-// Скрываем спиннеры у type=number — тот же приём, что в PaymentSection.
-const noSpinnersSx = {
-  "& input[type=number]": { MozAppearance: "textfield" },
-  "& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button": {
-    WebkitAppearance: "none",
-    margin: 0,
-  },
-} as const;
 
 /**
  * Корзина анализов: строка-приглашение открывает выбор из каталога, ниже —
@@ -164,32 +158,68 @@ const BasketSection: React.FC<Props> = ({
                   </Typography>
                 </Box>
 
-                <TextField
-                  size="small"
-                  type="number"
-                  value={line.count}
-                  onChange={(event) => {
-                    const next = Number(event.target.value);
-                    onCountChange(
-                      line.testId,
-                      Number.isFinite(next) && next > 0 ? next : 1,
-                    );
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  sx={{
+                    flexShrink: 0,
+                    border: 1,
+                    borderColor: "divider",
+                    borderRadius: 1,
+                    overflow: "hidden",
                   }}
-                  disabled={disabled}
-                  inputProps={{ min: 1, style: { width: 36, textAlign: "center" } }}
-                  sx={{ ...noSpinnersSx, flexShrink: 0 }}
-                />
-
-                <Tooltip title="Экспресс — срочное исполнение по повышенной цене">
-                  <Switch
+                >
+                  <IconButton
                     size="small"
-                    checked={line.express}
-                    onChange={(event) =>
-                      onExpressChange(line.testId, event.target.checked)
+                    disabled={disabled || line.count <= 1}
+                    onClick={() =>
+                      onCountChange(line.testId, stepCount(line.count, -1))
                     }
+                    aria-label="Меньше на один"
+                    sx={{ borderRadius: 0 }}
+                  >
+                    <RemoveOutlined fontSize="small" />
+                  </IconButton>
+                  <Typography
+                    variant="body2"
+                    sx={{ width: 28, textAlign: "center", userSelect: "none" }}
+                  >
+                    {line.count}
+                  </Typography>
+                  <IconButton
+                    size="small"
                     disabled={disabled}
-                    inputProps={{ "aria-label": "Экспресс" }}
-                  />
+                    onClick={() =>
+                      onCountChange(line.testId, stepCount(line.count, +1))
+                    }
+                    aria-label="Больше на один"
+                    sx={{ borderRadius: 0 }}
+                  >
+                    <AddOutlined fontSize="small" />
+                  </IconButton>
+                </Stack>
+
+                <Tooltip title="Срочное исполнение по повышенной цене">
+                  <ToggleButton
+                    value="express"
+                    size="small"
+                    selected={line.express}
+                    disabled={disabled}
+                    onChange={() => onExpressChange(line.testId, !line.express)}
+                    sx={{
+                      flexShrink: 0,
+                      px: 1,
+                      py: 0.25,
+                      gap: 0.5,
+                      textTransform: "none",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    <BoltOutlined sx={{ fontSize: 16 }} />
+                    <Typography variant="caption" fontWeight={600}>
+                      Экспресс
+                    </Typography>
+                  </ToggleButton>
                 </Tooltip>
 
                 <Typography

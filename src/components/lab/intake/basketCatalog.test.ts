@@ -4,6 +4,7 @@ import {
   isTestVisibleForGender,
   filterAvailableTests,
   resolveSelectedLines,
+  stepCount,
   type BasketLine,
 } from "./basketCatalog";
 import type { LabTest } from "../../../api/lab";
@@ -160,5 +161,23 @@ describe("порядок выдачи поиска", () => {
     const found = filterAvailableTests([drugs, cbcShort], [], "", "");
 
     expect(found.map((test) => test.id)).toEqual([1, 2]);
+  });
+});
+
+describe("stepCount", () => {
+  it("плюс увеличивает, минус уменьшает", () => {
+    expect(stepCount(2, +1)).toBe(3);
+    expect(stepCount(2, -1)).toBe(1);
+  });
+
+  it("ниже одного не опускается", () => {
+    // Ноль пробирок и ноль денег за строку — это не заказ, а мусор в ЛИС;
+    // убрать позицию можно только корзиной, а не досчётом до нуля.
+    expect(stepCount(1, -1)).toBe(1);
+  });
+
+  it("испорченное значение из поля ввода даёт единицу", () => {
+    expect(stepCount(Number.NaN, +1)).toBe(1);
+    expect(stepCount(0, -1)).toBe(1);
   });
 });

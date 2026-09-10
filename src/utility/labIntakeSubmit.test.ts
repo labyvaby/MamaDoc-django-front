@@ -344,3 +344,29 @@ describe("направивший врач в теле приёма", () => {
     expect("referringDoctorId" in body).toBe(false);
   });
 });
+
+describe("комментарий в теле приёма", () => {
+  const base = {
+    patientId: 9622,
+    branchId: 3,
+    lines: [],
+    answers: [],
+    paidCash: "0",
+    paidCard: "0",
+    cashlessMethodId: null,
+    discountPercent: 0,
+    referringDoctorId: null,
+  };
+
+  it("непустой комментарий уходит без лишних пробелов", () => {
+    const body = buildLabIntakeBody({ ...base, comment: "  срочно  " });
+
+    expect(body.comment).toBe("срочно");
+  });
+
+  it("пустой комментарий ключа не создаёт", () => {
+    const body = buildLabIntakeBody({ ...base, comment: "   " });
+
+    expect("comment" in body).toBe(false);
+  });
+});

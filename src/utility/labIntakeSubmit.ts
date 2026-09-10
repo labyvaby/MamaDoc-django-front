@@ -92,6 +92,8 @@ export interface LabIntakeFormValues {
   discountPercent: number;
   /** Направивший врач; `null` — не выбран, ключ в тело не попадёт. */
   referringDoctorId: number | null;
+  /** Свободный комментарий к заказу; пустой ключа не создаёт. */
+  comment?: string;
 }
 
 /**
@@ -135,5 +137,7 @@ export function buildLabIntakeBody(values: LabIntakeFormValues): LabIntakeInput 
   if (values.referringDoctorId != null) {
     body.referringDoctorId = values.referringDoctorId;
   }
+  const comment = (values.comment ?? '').trim();
+  if (comment) body.comment = comment;
   return body;
 }

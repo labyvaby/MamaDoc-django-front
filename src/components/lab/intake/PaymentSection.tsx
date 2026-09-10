@@ -1,7 +1,13 @@
 import React from "react";
-import { Box, InputAdornment, Stack, TextField, Typography } from "@mui/material";
+import {
+  InputAdornment,
+  MenuItem,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
 
-import { CashlessMethodSelect, DiscountInput } from "../../ui";
+import { CashlessMethodSelect } from "../../ui";
 import type { DjangoCashlessMethod } from "../../../api/cashlessMethods";
 import { formatKGS } from "../../../utility/format";
 import IntakeSection from "./IntakeSection";
@@ -47,6 +53,18 @@ const noSpinnersSx = {
     margin: 0,
   },
 } as const;
+
+/**
+ * Готовый набор скидок вместо свободного ввода.
+ *
+ * Скидка в лаборатории — не торг у прилавка, а известный набор договорённостей
+ * клиники (сотрудникам, по акции, партнёрам). Свободное поле давало опечатки
+ * вроде 41% и требовало от регистратора помнить, что вообще можно дать; список
+ * закрывает и то, и другое. Проценты, а не сомы: бэкенд приёма принимает
+ * именно `discountPercent`, и обратный пересчёт из сомов уже расходился с ним
+ * на копейку.
+ */
+const DISCOUNT_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 50] as const;
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
@@ -154,21 +172,26 @@ const PaymentSection: React.FC<Props> = ({
           />
         )}
 
-        <Box>
-          <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-            Скидка
-          </Typography>
-          <DiscountInput
-            total={testsGross}
-            amount={round2((testsGross * discountPercent) / 100)}
-            defaultType="percent"
-            disabled={disabled}
-            onAmountChange={(amount) => {
-              const percent = testsGross > 0 ? round2((amount / testsGross) * 100) : 0;
-              onDiscountChange(Math.min(100, Math.max(0, percent)));
-            }}
-          />
-        </Box>
+        <TextField
+          select
+          size="small"
+          fullWidth
+          label="Скидка"
+          value={String(discountPercent)}
+          onChange={(event) => onDiscountChange(Number(event.target.value))}
+          disabled={disabled}
+          helperText={
+            discountPercent > 0
+              ? `Минус ${formatKGS(round2((testsGross * discountPercent) / 100))} от анализов`
+              : ' '
+          }
+        >
+          {DISCOUNT_OPTIONS.map((percent) => (
+            <MenuItem key={percent} value={String(percent)}>
+              {percent === 0 ? 'Без скидки' : `${percent}%`}
+            </MenuItem>
+          ))}
+        </TextField>
 
         <Stack spacing={0.5} sx={{ pt: 1, borderTop: "1px dashed", borderColor: "divider" }}>
           <Stack direction="row" justifyContent="space-between">
