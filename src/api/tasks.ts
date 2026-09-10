@@ -136,6 +136,13 @@ export interface TasksFilters {
   pageSize?: number;
   /** Обязателен для суперпользователя/мультиорг (см. withOrg). */
   organizationId?: number;
+  /**
+   * Филиал: выдача = задачи этого филиала плюс общие (`branchId: null`). Без
+   * параметра бэк оставляет скоуп активного филиала/организации сессии. Чужой
+   * или недоступный филиал → 400 (контракт от 10.09.2026 §4; проверено на
+   * проде: свой филиал 200, `branchId=999999` — 400).
+   */
+  branchId?: number;
 }
 
 export interface CreateTaskPayload {
@@ -365,6 +372,7 @@ function buildTaskParams(filters: TasksFilters): URLSearchParams {
   if (filters.page != null) q.set("page", String(filters.page));
   if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
   if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
+  if (filters.branchId != null) q.set("branchId", String(filters.branchId));
   return q;
 }
 

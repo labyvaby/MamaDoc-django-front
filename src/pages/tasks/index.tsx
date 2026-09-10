@@ -69,6 +69,7 @@ import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { useCanChecker } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useActiveScope } from "../../hooks/useActiveScope";
 import { useInvalidateTasks } from "../../hooks/useInvalidateTasks";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { subtleBg } from "../../theme/uiHelpers";
@@ -573,6 +574,12 @@ const TasksPage: React.FC = () => {
   const { can, loading: permLoading } = useCanChecker();
   const { activeEmployee } = usePermissions();
   const orgId = useApiOrgId();
+  /**
+   * Филиал сессии: с 10.09.2026 бэк режет выдачу по нему — задачи филиала плюс
+   * общие (`branchId: null`). До этого задача была видна из всех филиалов
+   * (тикет `backend_ticket_tasks_branch_scoping.md`).
+   */
+  const { branchId } = useActiveScope();
   const invalidateTasks = useInvalidateTasks();
 
   const canList = can("tasks.list");
@@ -719,6 +726,7 @@ const TasksPage: React.FC = () => {
     // закрытые задачи листают по свежести.
     ordering: isArchive ? "created" : ordering,
     organizationId: orgId,
+    branchId,
   };
 
   /** Канбан сам грузит колонки по статусам — общий список ему не нужен. */
