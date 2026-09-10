@@ -7,6 +7,7 @@ vi.mock("./client", async (importOriginal) => {
 
 import { apiRequest } from "./client";
 import {
+  getLabTestCard,
   getLabInstruments,
   getLabPreparation,
   getLabProfiles,
@@ -67,5 +68,31 @@ describe("списочные ручки лаборатории читают ма
     await expect(getLabPreparation([1])).resolves.toEqual([
       "Натощак 8 часов",
     ]);
+  });
+});
+
+describe("карточка анализа", () => {
+  beforeEach(() => {
+    mocked.mockReset();
+  });
+
+  it("getLabTestCard ходит по id и отдаёт карточку как есть", async () => {
+    mocked.mockResolvedValue({
+      id: 7,
+      title: "Глюкоза",
+      biomaterial: "Кровь",
+      priceStandard: "250.00",
+      priceExpress: "400.00",
+      requiredDay: 1,
+      requiresDoctor: false,
+      preparation: null,
+      questions: [],
+      knowledgeItems: [],
+    });
+
+    const card = await getLabTestCard(7);
+
+    expect(mocked.mock.calls[0][0]).toBe("/lab/tests/7/");
+    expect(card.title).toBe("Глюкоза");
   });
 });

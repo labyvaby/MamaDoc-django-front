@@ -60,12 +60,46 @@ export function filterAvailableTests(
 ): LabTest[] {
   const selectedIds = new Set(selected.map((line) => line.testId));
   const q = query.trim().toLowerCase();
-  return tests.filter((test) => {
+  const found = tests.filter((test) => {
     if (selectedIds.has(test.id)) return false;
     if (!isTestVisibleForGender(test.lisGender, patientGender)) return false;
     if (q && !test.title.toLowerCase().includes(q)) return false;
     return true;
   });
+  if (!q) return found;
+  return found
+    .map((test, index) => ({ test, index, rank: matchRank(test.title, q) }))
+    .sort((left, right) =>
+      left.rank === right.rank
+        ? left.index - right.index
+        : left.rank - right.rank,
+    )
+    .map((row) => row.test);
+}
+
+/**
+ * Насколько удачно название совпало с запросом: 0 — начало названия, 1 —
+ * начало слова внутри названия, 2 — середина слова.
+ *
+ * Поиск по подстроке находит и середину слова: «оак» совпадает с
+ * «психоАКтивных», и такая строка, оказавшись первой, выглядит как поломанный
+ * поиск — набравший «оак» ищет общий анализ крови, а не наркотические
+ * вещества в волосах. Совпадения не отбрасываются (иногда середина слова —
+ * единственное, что нашлось), а опускаются в конец выдачи.
+ */
+function matchRank(title: string, query: string): number {
+  const haystack = title.toLowerCase();
+  if (haystack.startsWith(query)) return 0;
+  const wordStart = new RegExp(
+    `(^|[^\\p{L}\\p{N}])${escapeForRegExp(query)}`,
+    "u",
+  );
+  return wordStart.test(haystack) ? 1 : 2;
+}
+
+/** Экранирование запроса: в названиях ЛИС хватает скобок, плюсов и точек. */
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export interface SelectedTestLine extends BasketLine {
