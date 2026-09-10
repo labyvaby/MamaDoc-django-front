@@ -7,6 +7,7 @@ vi.mock("./client", async (importOriginal) => {
 
 import { apiRequest } from "./client";
 import {
+  getLabDoctors,
   getLabTestCard,
   getLabInstruments,
   getLabPreparation,
@@ -94,5 +95,22 @@ describe("карточка анализа", () => {
 
     expect(mocked.mock.calls[0][0]).toBe("/lab/tests/7/");
     expect(card.title).toBe("Глюкоза");
+  });
+});
+
+describe("справочник врачей ЛИС", () => {
+  beforeEach(() => {
+    mocked.mockReset();
+  });
+
+  it("getLabDoctors читает массив с ручки /lab/doctors/", async () => {
+    mocked.mockResolvedValue([
+      { id: 3, lisId: 7759, fullName: "Тулегенова Нургуль", qualification: "" },
+    ]);
+
+    const doctors = await getLabDoctors();
+
+    expect(mocked.mock.calls[0][0]).toBe("/lab/doctors/");
+    expect(doctors[0].lisId).toBe(7759);
   });
 });
