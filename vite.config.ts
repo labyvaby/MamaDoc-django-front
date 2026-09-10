@@ -49,6 +49,11 @@ const rewriteDevCookie = (cookie: string): string =>
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiProxyTarget = env.VITE_API_PROXY_TARGET;
+  const apiProxyPath = env.VITE_API_PROXY_PATH || "/api";
+  const apiProxyRewrite =
+    apiProxyPath === "/api"
+      ? undefined
+      : (path: string) => path.replace(new RegExp(`^${apiProxyPath}`), "/api");
 
   return {
     plugins: [react(), bookingMeta(env)],
@@ -66,10 +71,11 @@ export default defineConfig(({ mode }) => {
       host: true,
       proxy: apiProxyTarget
         ? {
-            "/api": {
+            [apiProxyPath]: {
               target: apiProxyTarget,
               changeOrigin: true,
               secure: false,
+              rewrite: apiProxyRewrite,
               configure: (proxy) => {
                 proxy.on("proxyRes", (proxyRes) => {
                   const setCookie = proxyRes.headers["set-cookie"];
