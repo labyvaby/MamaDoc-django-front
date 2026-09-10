@@ -29,9 +29,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import TrendingUpOutlinedIcon from "@mui/icons-material/TrendingUpOutlined";
-import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
-import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
 import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
@@ -51,10 +49,6 @@ import { formatKGS, formatQuantity } from "../../utility/format";
 import { parseBackendError } from "../../api/appointments";
 import { AppButton, InfoTile } from "../ui";
 import { subtleBg } from "../../theme/uiHelpers";
-import { useNavigate } from "react-router";
-import { useCan } from "../../hooks/useCan";
-import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
-import { useServicesList } from "../../api/hooks/useServicesQuery";
 import { useT } from "../../i18n/VerticalProvider";
 import ServicePerformersSection from "./ServicePerformersSection";
 import { computeServiceEconomics } from "./serviceEconomics";
@@ -68,8 +62,6 @@ type Props = {
   onDelete?: (s: Service) => void;
   /** Создать копию услуги (кнопка «Дублировать»); без колбэка кнопки нет. */
   onDuplicate?: (s: Service) => void;
-  /** Переключить панель на другую услугу — блок «Похожие». */
-  onSelectService?: (serviceId: number) => void;
 };
 
 /** Форматирует длительность из минут в вид «45 мин» / «1 ч 15 мин». */
@@ -113,19 +105,8 @@ const ServiceDetailsPanel: React.FC<Props> = ({
   onEdit,
   onDelete,
   onDuplicate,
-  onSelectService,
 }) => {
   const { t } = useT("services");
-  const navigate = useNavigate();
-  // Кнопка уводит в Регистратуру (`/appointments?new=1&service=`), а та закрыта
-  // отдельным правом `appointments.registry.view`. Врачу обычно дают только
-  // кабинет (`appointments.doctor_room.view`), и с гейтом на одном
-  // `appointments.create` кнопка была видна, но по клику молча выбрасывала на
-  // домашнюю страницу (fallback роута в App.tsx).
-  const canCreateAppointment = useCan("appointments.create");
-  const canOpenRegistry = useCan(PAGE_PERMISSIONS.appointmentsRegistry);
-  // Каталог уже в кеше страницы — тем же ключом, без второго запроса.
-  const { data: catalog = [] } = useServicesList();
   const [loading, setLoading] = React.useState(false);
   const [service, setService] = React.useState<Service | null>(null);
 
@@ -622,18 +603,6 @@ const ServiceDetailsPanel: React.FC<Props> = ({
               </Box>
             )}
 
-            {/* Быстрая запись на эту услугу */}
-            {canCreateAppointment && canOpenRegistry && service.isActive && (
-              <AppButton
-                variant="contained"
-                startIcon={<EventAvailableOutlinedIcon fontSize="small" />}
-                onClick={() => navigate("/appointments?new=1&service=" + service.id)}
-                sx={{ alignSelf: "flex-start" }}
-              >
-                {t("details.bookButton")}
-              </AppButton>
-            )}
-
             {/* Кто оказывает услугу */}
             <ServicePerformersSection
               serviceId={service.id}
@@ -661,74 +630,77 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                       : t("details.sectionCompositionSingle")
                   }
                 />
-                <Stack spacing={1}>
-                  {service.relatedProducts.map((p) => (
-                    <Paper
+                {/* Компактный список: одна строка на расходник, разделители
+                    вместо отдельных карточек — состав обычно из 1–3 позиций и
+                    не должен занимать пол-панели. */}
+                <Paper variant="outlined" sx={{ borderRadius: 1.5, overflow: "hidden" }}>
+                  {service.relatedProducts.map((p, i) => (
+                    <Stack
                       key={p.id}
-                      variant="outlined"
-                      sx={{ p: 1.25, pl: 1.5, borderRadius: 1.5, bgcolor: "background.paper" }}
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                      sx={{
+                        px: 1.25,
+                        py: 0.75,
+                        borderTop: i === 0 ? 0 : 1,
+                        borderColor: "divider",
+                      }}
                     >
-                      <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                        <Avatar
-                          variant="rounded"
-                          sx={{
-                            width: 32,
-                            height: 32,
-                            bgcolor: "action.selected",
-                            color: "text.secondary",
-                            flexShrink: 0,
-                          }}
+                      <Inventory2OutlinedIcon
+                        sx={{ fontSize: 16, color: "text.disabled", flexShrink: 0 }}
+                      />
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={600} noWrap>
+                          {SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
+                            ? `${p.name} × ${formatQuantity(p.quantity)}${p.unit ? ` ${p.unit}` : ""}`
+                            : p.name}
+                        </Typography>
+                        {/* Остаток здесь — по всей организации: в справочнике услуги
+                            филиала нет, склад филиала считается в приёме. */}
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          component="div"
+                          noWrap
                         >
-                          <Inventory2OutlinedIcon sx={{ fontSize: 18 }} />
-                        </Avatar>
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography variant="body2" fontWeight={600}>
-                            {SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
-                              ? `${p.name} × ${formatQuantity(p.quantity)}${p.unit ? ` ${p.unit}` : ""}`
-                              : p.name}
-                          </Typography>
-                          {/* Остаток здесь — по всей организации: в справочнике услуги
-                              филиала нет, склад филиала считается в приёме. */}
-                          <Typography variant="caption" color="text.secondary">
-                            {formatKGS(p.price)} · {t("details.stock", { stock: formatQuantity(p.stock) })}
-                          </Typography>
+                          {formatKGS(p.price)} · {t("details.stock", { stock: formatQuantity(p.stock) })}
+                        </Typography>
+                      </Box>
 
-                          {SERVICE_RELATED_PRODUCTS_MULTI_ENABLED && (
-                            <Stack
-                              direction="row"
-                              spacing={0.75}
-                              flexWrap="wrap"
-                              useFlexGap
-                              sx={{ mt: 0.75 }}
-                            >
-                              <Chip
-                                label={
-                                  p.billable
-                                    ? t("details.extraToPrice", {
-                                        amount: formatKGS(p.price * p.quantity),
-                                      })
-                                    : t("details.included")
-                                }
-                                size="small"
-                                color={p.billable ? "primary" : "default"}
-                                variant={p.billable ? "filled" : "outlined"}
-                                sx={{ borderRadius: "7px" }}
-                              />
-                              {!p.autoWriteOff && (
-                                <Chip
-                                  label={t("details.noWriteOff")}
-                                  size="small"
-                                  variant="outlined"
-                                  sx={{ borderRadius: "7px" }}
-                                />
-                              )}
-                            </Stack>
+                      {SERVICE_RELATED_PRODUCTS_MULTI_ENABLED && (
+                        <Stack
+                          direction="row"
+                          spacing={0.5}
+                          alignItems="center"
+                          sx={{ flexShrink: 0 }}
+                        >
+                          {!p.autoWriteOff && (
+                            <Chip
+                              label={t("details.noWriteOff")}
+                              size="small"
+                              variant="outlined"
+                              sx={{ borderRadius: "7px", height: 22, fontSize: "0.7rem" }}
+                            />
                           )}
-                        </Box>
-                      </Stack>
-                    </Paper>
+                          <Chip
+                            label={
+                              p.billable
+                                ? t("details.extraToPrice", {
+                                    amount: formatKGS(p.price * p.quantity),
+                                  })
+                                : t("details.included")
+                            }
+                            size="small"
+                            color={p.billable ? "primary" : "default"}
+                            variant={p.billable ? "filled" : "outlined"}
+                            sx={{ borderRadius: "7px", height: 22, fontSize: "0.7rem" }}
+                          />
+                        </Stack>
+                      )}
+                    </Stack>
                   ))}
-                </Stack>
+                </Paper>
                 {billableExtra > 0 && (
                   <Stack
                     direction="row"

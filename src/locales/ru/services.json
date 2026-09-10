@@ -46,7 +46,6 @@
     "billableFooter": "Оплачивается сверх {{service.gen}}",
     "sectionDescription": "Описание",
     "sectionSimilar": "Похожие {{service.nomPl}}",
-    "bookButton": "Записать на {{service.acc}}",
     "duplicateTooltip": "Создать копию {{service.gen}}",
     "cost": "Себестоимость",
     "margin": "Маржа",
