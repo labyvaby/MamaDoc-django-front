@@ -16,6 +16,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
 import { AppButton } from "../ui";
+import BarcodePreview from "./BarcodePreview";
 import {
   dispatchLabOrder,
   getLabOrder,
@@ -174,6 +175,17 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
   const [retryError, setRetryError] = React.useState<string | null>(null);
   const [printBusy, setPrintBusy] = React.useState<"labels" | "ticket" | null>(null);
   const [printMessage, setPrintMessage] = React.useState<string | null>(null);
+
+  // Штрихкод на экране — тот же живой вызов ЛИС, что и печать этикеток, но
+  // один раз на открытие карточки и только для отправленного заказа: у
+  // неотправленного номера ещё нет, и ЛИС ответила бы отказом.
+  const barcodeQuery = useQuery({
+    queryKey: [...djangoQueryKeys.lab.all, "labels", orderId],
+    queryFn: () => getLabOrderLabels(orderId as number),
+    enabled: open && orderId != null && order?.isDispatched === true,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+    retry: false,
+  });
 
   // Сообщения предыдущего заказа не должны пережить переключение на другой —
   // иначе чужая ошибка печати повиснет над только что открытым заказом.
@@ -372,7 +384,26 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
             <Divider />
 
             <Box>
-              <SectionTitle>Печать</SectionTitle>
+              <SectionTitle>Штрихкод и печать</SectionTitle>
+              {order.isDispatched && (
+                <Box sx={{ mt: 1 }}>
+                  {barcodeQuery.data ? (
+                    <BarcodePreview
+                      barcodeBase64={barcodeQuery.data.barcodeBase64}
+                      orderCode={order.lisOrderCode}
+                    />
+                  ) : barcodeQuery.isError ? (
+                    <Typography variant="caption" color="text.secondary">
+                      Штрихкод сейчас не получить: ЛИС не ответила. Печать
+                      попробует ещё раз.
+                    </Typography>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">
+                      Запрашиваем штрихкод в ЛИС…
+                    </Typography>
+                  )}
+                </Box>
+              )}
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
                 <Tooltip title={printBlockReason ?? ""}>
                   <span>

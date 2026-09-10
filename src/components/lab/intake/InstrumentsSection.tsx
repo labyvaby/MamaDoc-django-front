@@ -1,15 +1,13 @@
 import React from "react";
 import {
   Box,
-  Chip,
-  Collapse,
-  Divider,
-  Paper,
+  IconButton,
   Skeleton,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import InfoOutlined from "@mui/icons-material/InfoOutlined";
 
 import type { LabInstrument } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
@@ -28,192 +26,103 @@ function money(value: string): number {
 }
 
 /**
- * Значок пробирки: крышка сверху, стекло снизу, оба в цвете каталога.
+ * Значок пробирки: крышка в её цвете, стекло чуть тонированное.
  *
- * Рисуется разметкой, а не иконочным шрифтом: нужен ровно один силуэт, зато
- * в произвольном цвете, а цветов у крышек десяток.
+ * Рисуется разметкой, а не иконкой: нужен один силуэт, зато в любом из
+ * десятка цветов крышек. Мелкий — он опознавательный знак строки, а не
+ * иллюстрация.
  */
 const TubeGlyph: React.FC<{ look: TubeAppearance }> = ({ look }) => (
-  <Box
-    aria-hidden
-    sx={{
-      width: 22,
-      flexShrink: 0,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "stretch",
-    }}
-  >
+  <Box aria-hidden sx={{ width: 12, flexShrink: 0 }}>
+    <Box sx={{ height: 5, borderRadius: "2px 2px 0 0", bgcolor: look.cap }} />
     <Box
       sx={{
-        height: 10,
-        borderRadius: "3px 3px 1px 1px",
-        bgcolor: look.cap,
-      }}
-    />
-    <Box
-      sx={{
-        height: 26,
-        borderRadius: "1px 1px 10px 10px",
+        height: 17,
+        borderRadius: "0 0 6px 6px",
         bgcolor: look.body,
         border: 1,
-        borderColor: look.cap,
         borderTop: 0,
-        opacity: 0.9,
+        borderColor: look.cap,
       }}
     />
   </Box>
 );
 
 /**
- * Одна пробирка набора.
+ * Одна пробирка — одна строка.
  *
- * Порядок чтения выстроен под стол забора: сначала цвет крышки и сколько
- * штук, потом под какие анализы, и только потом — длинная инструкция ЛИС.
- * Инструкция свёрнута не для красоты: у трёх пробирок это три абзаца
- * сплошного текста, из-за которых состав набора уезжает за экран, а именно
- * состав нужен каждый раз, тогда как инструкция — когда пробирка незнакомая.
+ * Слева цвет крышки (значок и слово), потом название, под ним — под какие
+ * анализы; справа количество. Инструкция ЛИС по пробирке — за значком
+ * «i»: это три абзаца на каждую пробирку, и раскрытыми они уносили состав
+ * набора за экран, а нужны только когда пробирка незнакомая.
  */
-const TubeCard: React.FC<{ item: LabInstrument; chargeTubes: boolean }> = ({
+const TubeRow: React.FC<{ item: LabInstrument; chargeTubes: boolean }> = ({
   item,
   chargeTubes,
 }) => {
-  const [open, setOpen] = React.useState(false);
   const look = tubeAppearance(item.title, item.instruction);
   const tests = item.tests ?? [];
-
   return (
-    <Paper
-      variant="outlined"
-      sx={{
-        position: "relative",
-        overflow: "hidden",
-        borderRadius: "12px",
-        borderColor: "divider",
-        bgcolor: "background.paper",
-      }}
-    >
-      {/* Цветная ось пробирки — тот же приём, что у оси специалиста в форме
-          приёма (`ServiceGroupShell`): цвет ведёт взгляд по карточке. */}
-      <Box
-        sx={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 3,
-          bgcolor: look.cap,
-        }}
-      />
+    <Stack direction="row" alignItems="center" gap={1.25} sx={{ py: 1 }}>
+      <TubeGlyph look={look} />
 
-      <Stack
-        direction="row"
-        spacing={1.5}
-        alignItems="flex-start"
-        sx={{ pl: 2, pr: 1.5, py: 1.25 }}
-      >
-        <TubeGlyph look={look} />
-
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Stack
-            direction="row"
-            justifyContent="space-between"
-            alignItems="baseline"
-            gap={1}
-          >
-            <Typography variant="body2" fontWeight={600}>
-              {item.title}
-            </Typography>
-            <Typography
-              variant="body2"
-              fontWeight={600}
-              sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
-            >
-              {item.count} шт
-              {chargeTubes
-                ? ` · ${formatKGS(money(item.price) * item.count)}`
-                : null}
-            </Typography>
-          </Stack>
-
-          <Typography variant="caption" sx={{ color: look.cap, fontWeight: 600 }}>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="body2" fontWeight={500} noWrap>
+          {item.title}
+        </Typography>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{
+            display: "block",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Box component="span" sx={{ color: look.cap, fontWeight: 600 }}>
             {look.label}
-          </Typography>
+          </Box>
+          {tests.length > 0 && ` · ${tests.join(", ")}`}
+        </Typography>
+      </Box>
 
-          {tests.length > 0 && (
-            <Stack
-              direction="row"
-              flexWrap="wrap"
-              gap={0.5}
-              alignItems="center"
-              sx={{ mt: 1 }}
-            >
-              <Typography variant="caption" color="text.secondary">
-                Под анализы:
-              </Typography>
-              {tests.map((title) => (
-                <Chip
-                  key={title}
-                  label={title}
-                  size="small"
-                  variant="outlined"
-                  sx={{ maxWidth: "100%", height: 22 }}
-                />
-              ))}
-            </Stack>
-          )}
+      <Typography
+        variant="body2"
+        fontWeight={600}
+        sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+      >
+        {item.count} шт
+        {chargeTubes ? ` · ${formatKGS(money(item.price) * item.count)}` : null}
+      </Typography>
 
-          {item.instruction && (
-            <>
-              <Divider sx={{ my: 1 }} />
-              <Stack
-                direction="row"
-                alignItems="center"
-                gap={0.5}
-                onClick={() => setOpen((was) => !was)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setOpen((was) => !was);
-                  }
-                }}
-                sx={{ cursor: "pointer", userSelect: "none", width: "fit-content" }}
-              >
-                <Typography variant="caption" color="primary" fontWeight={600}>
-                  {open ? "Свернуть инструкцию" : "Инструкция по пробирке"}
-                </Typography>
-                <ExpandMoreIcon
-                  fontSize="small"
-                  color="primary"
-                  sx={{
-                    transition: "transform .2s",
-                    transform: open ? "rotate(180deg)" : "none",
-                  }}
-                />
-              </Stack>
-              <Collapse in={open} unmountOnExit>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ display: "block", mt: 0.75 }}
-                >
-                  {item.instruction}
-                </Typography>
-              </Collapse>
-            </>
-          )}
-        </Box>
-      </Stack>
-    </Paper>
+      {item.instruction ? (
+        <Tooltip
+          arrow
+          placement="left"
+          title={
+            <Typography variant="caption" sx={{ display: "block", maxWidth: 360 }}>
+              {item.instruction}
+            </Typography>
+          }
+        >
+          <IconButton size="small" aria-label="Инструкция по пробирке">
+            <InfoOutlined fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      ) : (
+        <Box sx={{ width: 34, flexShrink: 0 }} />
+      )}
+    </Stack>
   );
 };
 
 /**
- * Read-only список пробирок для медсестры: что взять, сколько, под какие
- * анализы и по какой инструкции — именно медсестра, а не регистратор,
- * отвечает на вопрос «какую пробирку брать».
+ * Пробирки набора для медсестры: что взять, сколько, под какие анализы.
+ *
+ * Список строками с разделителями, а не карточками: пробирок в наборе две
+ * или три, и карточка на каждую занимала пол-экрана, хотя нужного в ней —
+ * цвет крышки, название и число.
  *
  * Цена — только когда клиника берёт с пациента отдельную плату за пробирки
  * (`chargeTubes`): иначе строка с ценой намекала бы на доплату, которой на
@@ -240,17 +149,17 @@ const InstrumentsSection: React.FC<Props> = ({
     >
       {loading ? (
         <Stack spacing={1}>
-          <Skeleton variant="rounded" height={72} />
-          <Skeleton variant="rounded" height={72} />
+          <Skeleton variant="rounded" height={40} />
+          <Skeleton variant="rounded" height={40} />
         </Stack>
       ) : instruments.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
           Пробирки не требуются
         </Typography>
       ) : (
-        <Stack spacing={1}>
+        <Stack divider={<Box sx={{ borderTop: 1, borderColor: "divider" }} />}>
           {instruments.map((item) => (
-            <TubeCard key={item.id} item={item} chargeTubes={chargeTubes} />
+            <TubeRow key={item.id} item={item} chargeTubes={chargeTubes} />
           ))}
         </Stack>
       )}
