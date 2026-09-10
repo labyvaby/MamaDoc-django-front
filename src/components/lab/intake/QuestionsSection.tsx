@@ -46,6 +46,11 @@ function QuestionLabel({ title }: { title: string }) {
  * заполнить (см. `lab-frontend-design.md`, план Task 9).
  */
 const QuestionsSection: React.FC<Props> = ({ questions, answers, loading, disabled, onAnswerChange }) => {
+  // Вопросы есть лишь у части анализов (в зеркале — у ~170 из 2 400), и
+  // пустая секция с надписью «вопросов нет» на каждом приёме только занимала
+  // место и заставляла гадать, когда она вообще работает. Пока грузим —
+  // показываем скелет, чтобы дровер не прыгал; нет вопросов — нет секции.
+  if (!loading && questions.length === 0) return null;
   return (
     <IntakeSection title="Дополнительные вопросы" loading={loading}>
       {loading ? (

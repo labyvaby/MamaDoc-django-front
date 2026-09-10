@@ -20,6 +20,7 @@ import { AppButton } from "../ui";
 import PatientSection from "./intake/PatientSection";
 import ReferralSection from "./intake/ReferralSection";
 import CommentSection from "./intake/CommentSection";
+import BarcodePreview from "./BarcodePreview";
 import BasketSection from "./intake/BasketSection";
 import QuestionsSection from "./intake/QuestionsSection";
 import InstrumentsSection from "./intake/InstrumentsSection";
@@ -673,6 +674,10 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
                   Заказ №{receipt.order.lisOrderCode ?? receipt.order.id} принят и оплачен на{" "}
                   {formatKGS(receipt.order.totalAmount)}
                 </Typography>
+                <BarcodePreview
+                  barcodeBase64={receipt.barcodeBase64}
+                  orderCode={receipt.order.lisOrderCode}
+                />
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                   <AppButton size="small" variant="outlined" onClick={() => printouts && handlePrint(printouts.labels)}>
                     Этикетки
