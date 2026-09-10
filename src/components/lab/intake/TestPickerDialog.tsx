@@ -1,19 +1,23 @@
 import React from "react";
 import {
   Box,
+  Button,
+  Chip,
   Dialog,
+  Divider,
   IconButton,
   InputAdornment,
   List,
   ListItemButton,
-  ListItemText,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { useTheme } from "@mui/material/styles";
-import CheckOutlined from "@mui/icons-material/CheckOutlined";
+import { alpha, useTheme } from "@mui/material/styles";
+import AddCircleOutline from "@mui/icons-material/AddCircleOutline";
+import CheckCircle from "@mui/icons-material/CheckCircle";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
@@ -41,9 +45,16 @@ function money(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/** Срок и биоматериал одной строкой — вторичная строка названия. */
+function subtitle(test: LabTest): string {
+  const parts = [test.biomaterial.trim()].filter(Boolean);
+  if (test.requiredDay > 0) parts.push(`${test.requiredDay} дн.`);
+  return parts.join(" · ");
+}
+
 /**
  * Выбор анализов из каталога — отдельным диалогом, как выбор услуги в форме
- * приёма (`ServicePickerField`).
+ * записи (`ServicePickerField`).
  *
  * Раньше найденное вываливалось прямо в дровер списком карточек: четыре
  * позиции занимали пол-экрана, корзину и оплату уносило вниз, а в каталоге
@@ -51,8 +62,14 @@ function money(value: string): number {
  * разводит два занятия: сначала набрать корзину, потом работать с ней.
  *
  * Диалог не закрывается по выбору: анализы почти всегда набирают пачкой, и
- * закрытие после каждого заставляло бы открывать его заново. Уже набранное
- * помечено галочкой, повторный клик убирает позицию из корзины.
+ * закрытие после каждого заставляло бы открывать его заново. Взятое помечено
+ * галочкой, повторный клик убирает позицию; закончив, регистратор нажимает
+ * «Готово» в подвале — единственную кнопку диалога, поэтому она и заметна.
+ *
+ * Названия в каталоге ЛИС длинные, с кодом и уточнениями в скобках, поэтому
+ * им отданы две строки с обрезкой, а цена стоит в колонке фиксированной
+ * ширины: иначе она гуляла бы по строкам и её нельзя было бы сравнивать
+ * взглядом сверху вниз.
  */
 const TestPickerDialog: React.FC<Props> = ({
   open,
@@ -88,15 +105,25 @@ const TestPickerDialog: React.FC<Props> = ({
     [tests, patientGender, search],
   );
 
+  const hint = loading
+    ? "Загружаем каталог…"
+    : tests.length === 0
+      ? "Каталог анализов пуст"
+      : found.length === 0
+        ? "Ничего не найдено"
+        : null;
+
   return (
     <Dialog
       open={open}
       onClose={onClose}
       fullScreen={fullScreen}
       fullWidth
-      maxWidth="sm"
+      maxWidth="md"
       PaperProps={{
-        sx: fullScreen ? {} : { height: "min(72vh, 640px)", borderRadius: "12px" },
+        sx: fullScreen
+          ? {}
+          : { height: "min(78vh, 720px)", borderRadius: "14px" },
       }}
     >
       <Stack sx={{ height: "100%", minHeight: 0 }}>
@@ -104,99 +131,169 @@ const TestPickerDialog: React.FC<Props> = ({
           direction="row"
           alignItems="center"
           spacing={1}
-          sx={{ pl: 2, pr: 1, py: 1 }}
+          sx={{ pl: 2.5, pr: 1.5, py: 1.5 }}
         >
           <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }}>
-            Анализы
+            Каталог анализов
           </Typography>
-          <Typography variant="caption" color="text.secondary">
-            выбрано {selected.length}
-          </Typography>
+          {selected.length > 0 && (
+            <Chip
+              size="small"
+              color="primary"
+              variant="outlined"
+              label={`в заказе ${selected.length}`}
+            />
+          )}
           <IconButton size="small" onClick={onClose} aria-label="Закрыть">
             <CloseOutlined fontSize="small" />
           </IconButton>
         </Stack>
 
-        <Box sx={{ px: 2, pb: 1 }}>
+        <Box sx={{ px: 2.5, pb: 1.5 }}>
           <TextField
             autoFocus
             fullWidth
             size="small"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Поиск по названию"
+            placeholder="Название анализа или его код"
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
                   <SearchOutlined fontSize="small" color="disabled" />
                 </InputAdornment>
               ),
+              sx: { borderRadius: "10px" },
             }}
           />
         </Box>
 
-        <List sx={{ flex: 1, overflowY: "auto", py: 0, minHeight: 0 }}>
-          {loading && (
-            <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
-              Загружаем каталог…
-            </Typography>
-          )}
-          {!loading && tests.length === 0 && (
-            <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
-              Каталог анализов пуст
-            </Typography>
-          )}
-          {!loading && tests.length > 0 && found.length === 0 && (
-            <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
-              Ничего не найдено
-            </Typography>
-          )}
-          {!loading &&
-            found.map((test) => {
+        <Divider />
+
+        {hint ? (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ p: 2.5, flex: 1 }}
+          >
+            {hint}
+          </Typography>
+        ) : (
+          <List
+            sx={{
+              flex: 1,
+              overflowY: "auto",
+              py: 0,
+              minHeight: 0,
+              "& .MuiListItemButton-root + .MuiListItemButton-root": {
+                borderTop: 1,
+                borderColor: "divider",
+              },
+            }}
+          >
+            {found.map((test) => {
               const picked = chosen.has(test.id);
+              const express = money(test.priceExpress);
+              const standard = money(test.priceStandard);
+              const secondary = subtitle(test);
               return (
                 <ListItemButton
                   key={test.id}
-                  selected={picked}
                   onClick={() => (picked ? onRemove(test.id) : onAdd(test.id))}
-                  sx={{ py: 1.25, px: 2, alignItems: "flex-start", gap: 1 }}
+                  sx={{
+                    py: 1.25,
+                    px: 2.5,
+                    gap: 1.5,
+                    alignItems: "center",
+                    bgcolor: picked
+                      ? alpha(theme.palette.primary.main, 0.06)
+                      : "transparent",
+                  }}
                 >
-                  <ListItemText
-                    primary={test.title}
-                    secondary={
-                      test.biomaterial ||
-                      (test.requiredDay > 0 ? `${test.requiredDay} дн.` : undefined)
-                    }
-                    sx={{ my: 0 }}
-                  />
-                  <Typography
-                    variant="body2"
-                    fontWeight={600}
-                    noWrap
-                    sx={{ flexShrink: 0, pt: 0.25 }}
+                  {picked ? (
+                    <CheckCircle
+                      fontSize="small"
+                      color="primary"
+                      sx={{ flexShrink: 0 }}
+                    />
+                  ) : (
+                    <AddCircleOutline
+                      fontSize="small"
+                      sx={{ flexShrink: 0, color: "action.active" }}
+                    />
+                  )}
+
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography
+                      variant="body2"
+                      fontWeight={picked ? 600 : 500}
+                      sx={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {test.title}
+                    </Typography>
+                    {secondary && (
+                      <Typography variant="caption" color="text.secondary">
+                        {secondary}
+                      </Typography>
+                    )}
+                  </Box>
+
+                  <Stack
+                    alignItems="flex-end"
+                    sx={{ flexShrink: 0, minWidth: 104 }}
                   >
-                    {formatKGS(money(test.priceStandard))}
-                  </Typography>
-                  <IconButton
-                    size="small"
-                    aria-label="Подробнее об анализе"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onOpenDetails(test.id);
-                    }}
-                    sx={{ flexShrink: 0 }}
-                  >
-                    <InfoOutlined fontSize="small" />
-                  </IconButton>
-                  <CheckOutlined
-                    fontSize="small"
-                    color="primary"
-                    sx={{ flexShrink: 0, mt: 0.5, opacity: picked ? 1 : 0 }}
-                  />
+                    <Typography variant="body2" fontWeight={600} noWrap>
+                      {formatKGS(standard)}
+                    </Typography>
+                    {express > 0 && express !== standard && (
+                      <Typography variant="caption" color="text.secondary" noWrap>
+                        экспресс {formatKGS(express)}
+                      </Typography>
+                    )}
+                  </Stack>
+
+                  <Tooltip title="Подробнее об анализе">
+                    <IconButton
+                      size="small"
+                      aria-label="Подробнее об анализе"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenDetails(test.id);
+                      }}
+                      sx={{ flexShrink: 0 }}
+                    >
+                      <InfoOutlined fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 </ListItemButton>
               );
             })}
-        </List>
+          </List>
+        )}
+
+        <Divider />
+
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          gap={1}
+          sx={{ px: 2.5, py: 1.5 }}
+        >
+          <Typography variant="caption" color="text.secondary">
+            {selected.length === 0
+              ? "Ничего не выбрано"
+              : `Выбрано анализов: ${selected.length}`}
+          </Typography>
+          <Button variant="contained" size="small" onClick={onClose}>
+            Готово
+          </Button>
+        </Stack>
       </Stack>
     </Dialog>
   );

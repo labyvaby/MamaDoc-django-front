@@ -119,3 +119,17 @@ export function resolveSelectedLines(tests: LabTest[], selected: BasketLine[]): 
   const byId = new Map(tests.map((test) => [test.id, test]));
   return selected.map((line) => ({ ...line, test: byId.get(line.testId) ?? null }));
 }
+
+
+/**
+ * Количество после нажатия «плюс» или «минус».
+ *
+ * Ниже одного не опускается: строка с нулевым количеством — это ноль
+ * пробирок и ноль денег, то есть мусор в заказе ЛИС, а убрать позицию
+ * можно кнопкой удаления. Испорченное значение (поле ввода отдаёт `NaN` на
+ * пустой строке) считается единицей, а не превращает сумму заказа в `NaN`.
+ */
+export function stepCount(current: number, delta: number): number {
+  if (!Number.isFinite(current) || current < 1) return 1;
+  return Math.max(1, Math.trunc(current + delta));
+}

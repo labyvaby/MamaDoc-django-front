@@ -142,6 +142,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
   const [patientEdits, setPatientEdits] = React.useState<PatientEdits>(BLANK_EDITS);
   const [lines, setLines] = React.useState<BasketLine[]>([]);
   const [referringDoctorId, setReferringDoctorId] = React.useState<number | null>(null);
+  const [comment, setComment] = React.useState("");
   const [answers, setAnswers] = React.useState<Record<number, string>>({});
   const [payment, setPayment] = React.useState<PaymentState>(DEFAULT_PAYMENT);
   const [phase, setPhase] = React.useState<Phase>("editing");
@@ -209,6 +210,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
           setPatientEdits(BLANK_EDITS);
           setLines([]);
           setReferringDoctorId(null);
+          setComment("");
           setPayment(DEFAULT_PAYMENT);
           setDraftRestored(false);
         });
@@ -217,6 +219,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       setPatientEdits(BLANK_EDITS);
       setLines([]);
       setReferringDoctorId(null);
+      setComment("");
       setPayment(DEFAULT_PAYMENT);
       setDraftRestored(false);
     }
@@ -509,6 +512,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       cashlessMethodId: payment.cashlessMethodId,
       discountPercent: payment.discountPercent,
       referringDoctorId,
+      comment,
     });
 
     try {
@@ -707,6 +711,8 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
             disabled={!editing}
             requiredFor={referralRequiredFor}
             onChange={setReferringDoctorId}
+            comment={comment}
+            onCommentChange={setComment}
           />
 
           <BasketSection
