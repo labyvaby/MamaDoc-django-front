@@ -172,6 +172,10 @@ const DoctorBookingPage: React.FC = () => {
   const { session, selectedPatient } = usePatientSession();
 
   const [doctor, setDoctor] = React.useState<ProfessionalDetail | null>(null);
+  // Какой филиал подтверждён ответом карточки; до этого услуги не показываем.
+  const [servicesBranchId, setServicesBranchId] = React.useState<number | null | undefined>(
+    undefined,
+  );
   const [reviews, setReviews] = React.useState<ProfessionalReview[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [notFound, setNotFound] = React.useState(false);
@@ -264,8 +268,11 @@ const DoctorBookingPage: React.FC = () => {
     setLoading(true);
     setNotFound(false);
     setError(null);
-    getProfessional(idOrSlug, controller.signal)
-      .then(setDoctor)
+    getProfessional(idOrSlug, {}, controller.signal)
+      .then((nextDoctor) => {
+        setDoctor(nextDoctor);
+        setServicesBranchId(null);
+      })
       .catch((e) => {
         if (isAbortError(e)) return;
         if (e instanceof ApiError && e.status === 404) setNotFound(true);
@@ -289,6 +296,22 @@ const DoctorBookingPage: React.FC = () => {
       .finally(() => setScheduleLoading(false));
     return () => controller.abort();
   }, [idOrSlug]);
+
+  // После определения филиала перезагружаем карточку: backend фильтрует
+  // doctor.services по этому же филиалу, который уйдёт в бронь.
+  React.useEffect(() => {
+    if (!doctor || branchId === null) return;
+    const controller = new AbortController();
+    getProfessional(idOrSlug, { branchId }, controller.signal)
+      .then((nextDoctor) => {
+        setDoctor(nextDoctor);
+        setServicesBranchId(branchId);
+      })
+      .catch((e) => {
+        if (!isAbortError(e)) return;
+      });
+    return () => controller.abort();
+  }, [idOrSlug, branchId]);
 
   /** Ближайший свободный день филиала (или null) — по загруженным календарям. */
   const nearestDayByBranch = React.useMemo(() => {
@@ -392,14 +415,17 @@ const DoctorBookingPage: React.FC = () => {
   }, [servicesUnlocked]);
 
   const allServices: PickableService[] = React.useMemo(
-    () =>
-      (doctor?.services ?? []).map((s) => ({
+    () => {
+      const source =
+        branchId !== null && servicesBranchId !== branchId ? [] : doctor?.services ?? [];
+      return source.map((s) => ({
         id: s.id,
         name: s.name,
         durationMinutes: s.durationMinutes,
         basePrice: s.basePrice,
-      })),
-    [doctor],
+      }));
+    },
+    [doctor, branchId, servicesBranchId],
   );
   const visibleServices = filteredServices ?? allServices;
   const chosenServices = React.useMemo(

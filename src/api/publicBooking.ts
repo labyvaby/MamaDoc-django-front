@@ -670,11 +670,20 @@ export function getProfessionals(
   return getList<ProfessionalPreview>(`/professionals/${query}`, signal);
 }
 
+export interface ProfessionalDetailParams {
+  /** Филиал, для которого нужно вернуть услуги врача. */
+  branchId?: number | null;
+}
+
 export function getProfessional(
   idOrSlug: IdOrSlug,
+  params: ProfessionalDetailParams = {},
   signal?: AbortSignal,
 ): Promise<ProfessionalDetail> {
-  return getItem<ProfessionalDetail>(`/professionals/${idOrSlug}/`, signal);
+  return getItem<ProfessionalDetail>(
+    `/professionals/${idOrSlug}/${buildQuery({ branch_id: params.branchId })}`,
+    signal,
+  );
 }
 
 export function getProfessionalReviews(
