@@ -23,11 +23,14 @@ import {
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import LinkRounded from "@mui/icons-material/LinkRounded";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PushPinOutlined from "@mui/icons-material/PushPinOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import SendRounded from "@mui/icons-material/SendRounded";
 import { alpha } from "@mui/material/styles";
 import { useNotification } from "@refinedev/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -42,6 +45,7 @@ import {
 import { getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { useCan } from "../../hooks/useCan";
+import { usePermissions } from "../../hooks/usePermissions";
 
 type Props = {
   client: BillingClient | null;
@@ -106,6 +110,7 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
   const canViewCrm = useCan("clients.crm.view");
   const canManageCrm = useCan("clients.crm.manage");
   const canManageContacts = useCan("clients.manage");
+  const { activeOrganization } = usePermissions();
   const queryClient = useQueryClient();
   const { open: notify } = useNotification();
   const [note, setNote] = React.useState("");
@@ -115,6 +120,36 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
   const [contactForm, setContactForm] = React.useState({ fullName: "", position: "", phone: "", email: "", isPrimary: false, note: "" });
   const cardKey = djangoQueryKeys.billing.clientCard(organizationId, clientId);
   const scope = React.useMemo(() => ({ ...(organizationId ? { organizationId } : {}) }), [organizationId]);
+  const portalUrl = React.useMemo(() => {
+    const slug = activeOrganization?.slug;
+    return slug ? `${window.location.origin}/lk/${encodeURIComponent(slug)}` : "";
+  }, [activeOrganization?.slug]);
+
+  const copyPortalLink = React.useCallback(async () => {
+    if (!portalUrl) return;
+    try {
+      await navigator.clipboard.writeText(portalUrl);
+      notify?.({ type: "success", message: "Ссылка на кабинет скопирована" });
+    } catch {
+      notify?.({ type: "error", message: "Не удалось скопировать ссылку" });
+    }
+  }, [notify, portalUrl]);
+
+  const sharePortalLink = React.useCallback(async () => {
+    if (!portalUrl || !client) return;
+    const text = `${client.fullName}, ваш личный кабинет: ${portalUrl}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Личный кабинет", text, url: portalUrl });
+      } else {
+        await navigator.clipboard.writeText(text);
+        notify?.({ type: "success", message: "Сообщение со ссылкой скопировано" });
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      notify?.({ type: "error", message: "Не удалось отправить ссылку" });
+    }
+  }, [client, notify, portalUrl]);
 
   const notesQuery = useQuery({
     queryKey: [...cardKey, "notes"],
@@ -252,6 +287,28 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
           {failed && <Alert severity="error" sx={{ m: 3 }}>Часть данных карточки не загрузилась. Обновите страницу или откройте карточку снова.</Alert>}
 
           <Box sx={{ p: { xs: 2, sm: 3 } }}>
+            {portalUrl && (
+              <Paper
+                variant="outlined"
+                sx={(theme) => ({
+                  mb: 2.5, p: 2, borderRadius: 3,
+                  borderColor: alpha(theme.palette.primary.main, 0.3),
+                  bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.1 : 0.035),
+                })}
+              >
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
+                  <Avatar variant="rounded" sx={{ bgcolor: "primary.main" }}><LinkRounded /></Avatar>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography fontWeight={800}>Личный кабинет клиента</Typography>
+                    <Typography variant="body2" color="text.secondary" noWrap>{portalUrl}</Typography>
+                  </Box>
+                  <Stack direction="row" spacing={1}>
+                    <Button variant="outlined" startIcon={<ContentCopyOutlined />} onClick={copyPortalLink}>Копировать</Button>
+                    <Button variant="contained" startIcon={<SendRounded />} onClick={sharePortalLink}>Отправить</Button>
+                  </Stack>
+                </Stack>
+              </Paper>
+            )}
             <Paper
               variant="outlined"
               sx={{

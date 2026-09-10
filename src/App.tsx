@@ -27,6 +27,7 @@ import { Outlet, Route, Routes, Navigate } from "react-router";
 import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
 import { PatientSessionProvider } from "./pages/public-booking/PatientSession";
+import { ClientPortalSessionProvider } from "./pages/client-portal/session";
 import { AchievementToast } from "./components/achievements/AchievementToast";
 import { NewBookingToast } from "./components/bookings/NewBookingToast";
 import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
@@ -111,6 +112,7 @@ const PublicBookMyBookingsPage = lazy(() => import("./pages/public-booking/MyBoo
 const PublicBookByCodePage = lazy(() => import("./pages/public-booking/BookingByCodePage"));
 const PublicBookPaymentResultPage = lazy(() => import("./pages/public-booking/PaymentResultPage"));
 const PublicLandingPage = lazy(() => import("./pages/public-site"));
+const ClientPortalPage = lazy(() => import("./pages/client-portal/ClientPortalPage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
 const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
@@ -1437,6 +1439,37 @@ function App() {
                           element={
                             <Suspense fallback={<LinearProgress />}>
                               <PublicLandingPage />
+                            </Suspense>
+                          }
+                        />
+                      </Route>
+                      {/* Клиентский кабинет биллинга (/lk/*) — вне RequireAuth,
+                          питается `/api/client-portal/*` (см. src/api/clientPortal.ts).
+                          Своя сессия: токен клиента лежит в localStorage и не
+                          пересекается ни с кукой сотрудника, ни с токеном
+                          пациента витрины записи. Два адреса, как у лендинга:
+                          `/lk/<slug>` для ссылок клиентам и `/lk` для `?org=`
+                          либо организации из VITE_PORTAL_ORG_SLUG. */}
+                      <Route
+                        element={
+                          <ClientPortalSessionProvider>
+                            <Outlet />
+                          </ClientPortalSessionProvider>
+                        }
+                      >
+                        <Route
+                          path="lk"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <ClientPortalPage />
+                            </Suspense>
+                          }
+                        />
+                        <Route
+                          path="lk/:orgSlug"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <ClientPortalPage />
                             </Suspense>
                           }
                         />
