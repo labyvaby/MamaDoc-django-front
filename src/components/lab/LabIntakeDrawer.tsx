@@ -584,7 +584,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       anchor="right"
       open={open}
       onClose={busy ? undefined : handleClose}
-      PaperProps={{ sx: { width: { xs: "100%", sm: 560, md: 720, lg: 820 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
+      PaperProps={{ sx: { width: { xs: "100%", sm: 520, md: 620, lg: 680 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
     >
       {/* Шапка */}
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5, flexShrink: 0 }}>
