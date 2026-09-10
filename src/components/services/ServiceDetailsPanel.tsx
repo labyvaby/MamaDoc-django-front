@@ -177,18 +177,6 @@ const ServiceDetailsPanel: React.FC<Props> = ({
 
   const economics = React.useMemo(() => computeServiceEconomics(service), [service]);
 
-  /**
-   * Похожие услуги — активные из той же категории. Без категории список был бы
-   * «все услуги подряд», поэтому там блок не показываем.
-   */
-  const similar = React.useMemo(() => {
-    if (!service?.category) return [];
-    return catalog
-      .filter((s) => s.id !== service.id && s.isActive && s.category === service.category)
-      .sort((a, b) => a.name.localeCompare(b.name, "ru"))
-      .slice(0, 5);
-  }, [catalog, service]);
-
   return (
     <Card
       variant="outlined"
@@ -716,28 +704,6 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                     </Typography>
                   </Stack>
                 )}
-              </Box>
-            )}
-
-            {/* Похожие услуги той же категории */}
-            {similar.length > 0 && onSelectService && (
-              <Box>
-                <SectionHeader
-                  icon={<LayersOutlinedIcon />}
-                  title={t("details.sectionSimilar")}
-                />
-                <Stack direction="row" flexWrap="wrap" gap={1}>
-                  {similar.map((s) => (
-                    <Chip
-                      key={s.id}
-                      label={s.name + " · " + formatKGS(Number(s.basePrice))}
-                      size="small"
-                      variant="outlined"
-                      onClick={() => onSelectService(s.id)}
-                      sx={{ borderRadius: "7px", height: 30, maxWidth: "100%" }}
-                    />
-                  ))}
-                </Stack>
               </Box>
             )}
 
