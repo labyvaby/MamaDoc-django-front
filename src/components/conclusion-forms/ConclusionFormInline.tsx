@@ -143,7 +143,10 @@ export const ConclusionFormInline: React.FC<Props> = ({
               display: "grid",
               // Половинные поля встают парами только на широком экране: в
               // дровере на ноутбуке две колонки по 200px нечитаемы.
-              gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+              // minmax(0, …) и на одной колонке: у «1fr» минимум равен
+              // min-content содержимого, и длинный чип диагноза растягивал
+              // колонку до 490px — форма выезжала за край телефона.
+              gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(2, minmax(0, 1fr))" },
               gap: 1.5,
             }}
           >
@@ -155,7 +158,7 @@ export const ConclusionFormInline: React.FC<Props> = ({
               if (field.slot) {
                 const node = slotNodes[field.slot];
                 return node ? (
-                  <Box key={field.id} sx={{ gridColumn: { xs: "span 1", md: "span 2" } }}>
+                  <Box key={field.id} sx={{ gridColumn: { xs: "span 1", md: "span 2" }, minWidth: 0 }}>
                     {node}
                   </Box>
                 ) : null;

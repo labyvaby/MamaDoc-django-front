@@ -592,6 +592,7 @@
     "receipt": "Чек",
     "receiptError": "Не удалось загрузить данные для чека",
     "saveDraft": "Сохранить черновик",
+    "saveDraftShort": "Черновик",
     "weightWithUnit": "{{value}} кг",
     "heightWithUnit": "{{value}} см",
     "errors": {

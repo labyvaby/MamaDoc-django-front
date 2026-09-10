@@ -37,6 +37,8 @@ import {
   Stack,
   TextField,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import ExpandLessOutlined from "@mui/icons-material/ExpandLessOutlined";
@@ -55,6 +57,7 @@ import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
 import { useFormValidation } from "../../hooks/useFormValidation";
+import { useKeyboardViewportHeight } from "../../hooks/useKeyboardViewportHeight";
 import {
   useAppointmentReceipt,
   useReceiptAvailable,
@@ -286,6 +289,13 @@ type VitalStepperProps = {
   disabled?: boolean;
 };
 
+/** Кнопки ± дотягивают до 44px по обеим осям — минимум для пальца. */
+const TAP_TARGET_SX = {
+  minWidth: { xs: 44, md: 32 },
+  minHeight: { xs: 44, md: 34 },
+  px: 0.5,
+} as const;
+
 const VitalStepper: React.FC<VitalStepperProps> = ({
   label,
   suffix,
@@ -332,7 +342,8 @@ const VitalStepper: React.FC<VitalStepperProps> = ({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          height: 40,
+          // 48px — чтобы кнопки ± дотягивали до 44px, минимума для пальца.
+          height: { xs: 48, md: 40 },
           opacity: disabled ? 0.6 : 1,
         }}
       >
@@ -340,7 +351,7 @@ const VitalStepper: React.FC<VitalStepperProps> = ({
           size="small"
           onClick={dec}
           disabled={disabled}
-          sx={{ minWidth: 32, px: 0.5, minHeight: 34 }}
+          sx={TAP_TARGET_SX}
         >
           −
         </Button>
@@ -353,6 +364,9 @@ const VitalStepper: React.FC<VitalStepperProps> = ({
           placeholder="0"
           inputProps={{
             style: { textAlign: "center", padding: "8px 4px" },
+            // Телефон открывает цифровую клавиатуру с разделителем: без этого
+            // iOS даёт обычную буквенную раскладку под type="number".
+            inputMode: "decimal",
             min,
             // HTML-step = минимальная единица хранения бэка (0.001 кг и т.п.):
             // любое допустимое для бэка значение — её кратное, поэтому ручной
@@ -371,7 +385,7 @@ const VitalStepper: React.FC<VitalStepperProps> = ({
           size="small"
           onClick={inc}
           disabled={disabled}
-          sx={{ minWidth: 32, px: 0.5, minHeight: 34 }}
+          sx={TAP_TARGET_SX}
         >
           +
         </Button>
@@ -402,6 +416,22 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
 }) => {
   const { t, term } = useT("appointments");
   const { open: notify } = useNotification();
+  const theme = useTheme();
+  // Телефон: шапка и кнопки формы ужимаются, иначе на ввод остаётся полоска.
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  // Выпадающие списки рисуются в портале и о клавиатуре не знают: список
+  // диагнозов открывался вниз на 338px и наполовину уходил под неё. Отсюда
+  // берём и границу для popper, и потолок высоты списка.
+  const keyboard = useKeyboardViewportHeight(isMobile);
+  // Отступ, ниже которого popper заезжает под клавиатуру.
+  const popperPadding = keyboard.keyboardOpen
+    ? { bottom: keyboard.keyboardInset + 8 }
+    : undefined;
+  // Список короче экрана над клавиатурой — иначе он не «влезет вверх» и
+  // popper всё равно откроется вниз.
+  const listboxMaxHeight = keyboard.keyboardOpen
+    ? Math.max(132, Math.round(keyboard.availableHeight * 0.45))
+    : undefined;
 
   // ── чек (лист A5) ─────────────────────────────────────────────────────────
   // Печатается по всему приёму, а не по строке услуги: касса принимает оплату
@@ -876,7 +906,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
    * диагноз выбирают кодом, а не печатают руками (см. FormFieldSlot выше).
    */
   const diagnosisNode = () => (
-    <Stack spacing={0.5} ref={diagnosisAnchorRef}>
+    // minWidth: 0 — чипы выбранных диагнозов длинные («Z00.1 — Рутинное общее
+    // медицинское обследование»), и без этого блок распирает контейнер вширь.
+    <Stack spacing={0.5} ref={diagnosisAnchorRef} sx={{ minWidth: 0 }}>
       <Typography variant="body2" color="text.secondary" fontWeight={600}>
         {t("conclusion.diagnosisIcd")}
       </Typography>
@@ -912,6 +944,19 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         }
         filterSelectedOptions
         size="small"
+        slotProps={{
+          // С открытой клавиатурой список переворачивается вверх, а не прячется
+          // под неё: padding снизу — её высота.
+          popper: popperPadding
+            ? {
+                modifiers: [
+                  { name: "flip", options: { padding: popperPadding } },
+                  { name: "preventOverflow", options: { padding: popperPadding } },
+                ],
+              }
+            : undefined,
+          listbox: listboxMaxHeight ? { sx: { maxHeight: listboxMaxHeight } } : undefined,
+        }}
         renderInput={(params) => (
           <TextField
             {...params}
@@ -1523,11 +1568,11 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         alignItems="flex-start"
         justifyContent="space-between"
         px={2}
-        py={1.5}
+        py={isMobile ? 1 : 1.5}
         sx={{ flexShrink: 0 }}
       >
-        <Stack spacing={0.25}>
-          <Typography variant="h6" lineHeight={1.3}>
+        <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+          <Typography variant={isMobile ? "subtitle1" : "h6"} lineHeight={1.3} fontWeight={600}>
             {readOnly
               ? t("conclusion.title")
               : conclusion
@@ -1549,9 +1594,20 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             </>
           )}
         </Stack>
-        <Stack direction="row" spacing={0.5} alignItems="center">
+        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
           {!readOnly && (
             <>
+              {/* На телефоне текст кнопки ломал заголовок на две строки. */}
+              {isMobile ? (
+                <IconButton
+                  size="small"
+                  color="primary"
+                  title={t("conclusion.templates")}
+                  onClick={(e) => setTplAnchor(e.currentTarget)}
+                >
+                  <ContentCopyOutlined fontSize="small" />
+                </IconButton>
+              ) : (
               <Button
                 size="small"
                 variant="outlined"
@@ -1560,6 +1616,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               >
                 {t("conclusion.templates")}
               </Button>
+              )}
               <IconButton
                 size="small"
                 color="primary"
@@ -1859,7 +1916,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               хоть один степпер или пока есть что сказать об ошибке. */}
           {(freeVitals.length > 0 || Boolean(vitals.errorOf("vitals"))) && (
             <Paper ref={vitals.anchor("vitals")} variant="outlined" sx={{ p: 1.5 }}>
-              <Stack direction="row" spacing={1.5}>
+              {/* Три степпера в ряд на узком экране упираются в свою minWidth:
+                  разрешаем перенос, иначе карточка выезжает вбок. */}
+              <Stack direction="row" gap={1.5} flexWrap="wrap">
                 {freeVitals.map((kind) => (
                   <React.Fragment key={kind}>{vitalNode(kind)}</React.Fragment>
                 ))}
@@ -2134,9 +2193,25 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       {!(inline && readOnly) && (
       <>
       <Divider />
-      <Box sx={{ p: 2, flexShrink: 0 }}>
-        <Stack direction="row" spacing={1} justifyContent="flex-end">
-          <Button onClick={saving ? undefined : onClose} disabled={saving}>
+      {/* На телефоне ряд кнопок переносился в две-три строки и съедал место у
+          поля ввода: метки короче, «Сохранить и печать» — иконкой. */}
+      <Box
+        sx={{
+          px: 2,
+          py: isMobile ? 1 : 2,
+          pb: isMobile ? "calc(8px + env(safe-area-inset-bottom))" : 2,
+          flexShrink: 0,
+        }}
+      >
+        {/* flexWrap — страховка для крупного масштаба интерфейса: ряд с
+            nowrap-метками иначе выехал бы за край узкого экрана. */}
+        <Stack direction="row" gap={1} flexWrap="wrap" justifyContent="flex-end">
+          <Button
+            onClick={saving ? undefined : onClose}
+            disabled={saving}
+            size={isMobile ? "small" : "medium"}
+            sx={{ whiteSpace: "nowrap" }}
+          >
             {readOnly ? t("conclusion.close") : t("conclusion.cancel")}
           </Button>
           {!readOnly && (
@@ -2144,6 +2219,17 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               {/* В правке печать идёт через сохранение: на бумагу должно уйти
                   ровно то, что легло в карту (см. handleSaveAndPrint). */}
               {canPrint && conclusion && (
+                isMobile ? (
+                  <IconButton
+                    color="primary"
+                    disabled={saving}
+                    onClick={handleSaveAndPrint}
+                    title={t("conclusion.saveAndPrint")}
+                    size="small"
+                  >
+                    <PrintOutlined fontSize="small" />
+                  </IconButton>
+                ) : (
                 <Button
                   variant="outlined"
                   startIcon={<PrintOutlined />}
@@ -2152,23 +2238,27 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 >
                   {t("conclusion.saveAndPrint")}
                 </Button>
+                )
               )}
               <Button
                 variant="outlined"
                 disabled={saving}
+                size={isMobile ? "small" : "medium"}
                 onClick={() => handleSave("draft")}
                 startIcon={
                   saving ? (
                     <CircularProgress size={16} color="inherit" />
                   ) : undefined
                 }
+                sx={{ whiteSpace: "nowrap" }}
               >
-                {t("conclusion.saveDraft")}
+                {isMobile ? t("conclusion.saveDraftShort") : t("conclusion.saveDraft")}
               </Button>
               <Button
                 variant="contained"
                 color="success"
                 disabled={saving}
+                size={isMobile ? "small" : "medium"}
                 onClick={() => requestSave("completed", false)}
                 startIcon={
                   saving ? (
@@ -2177,6 +2267,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                     <SaveOutlined />
                   )
                 }
+                sx={{ whiteSpace: "nowrap" }}
               >
                 {t("conclusion.complete")}
               </Button>

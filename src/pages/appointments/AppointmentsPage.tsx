@@ -84,6 +84,8 @@ import { appointmentPatientToStub } from "./patientStub";
 import { PageHeader, DateNavigation } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useAppointmentsAutoSync } from "../../hooks/useAppointmentsAutoSync";
+import { useKeyboardViewportHeight } from "../../hooks/useKeyboardViewportHeight";
+import { useSheetBackClose } from "../../hooks/useSheetBackClose";
 import { useT } from "../../i18n/VerticalProvider";
 import { useReceptionFilters } from "./useReceptionFilters";
 
@@ -421,6 +423,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   );
   // Заключение открывается отдельной (третьей) колонкой — как в оригинале.
   const [conclusionOpen, setConclusionOpen] = React.useState(false);
+  // Лист заключения на телефоне сжимаем до области над клавиатурой: иначе её
+  // нижняя треть накрывает и поле ввода, и кнопки сохранения.
+  const sheetViewport = useKeyboardViewportHeight(isMobile && conclusionOpen);
 
   // В кабинете врача создание приёмов скрыто — это рабочий список своих приёмов.
   const canCreate = !isDoctorCabinet && can("appointments.create");
@@ -1007,6 +1012,14 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
 
   const showDetails = selectedAppt !== null;
 
+  // Кнопка «назад» на телефоне закрывает верхний лист, а не уносит со
+  // страницы. Порядок вызовов — снизу вверх: если карточка и заключение
+  // открываются одним рендером, запись заключения ляжет в историю последней,
+  // и «назад» закроет сначала его.
+  useSheetBackClose(showDetails, () => setSelectedAppt(null), isMobile);
+  useSheetBackClose(slotApptId != null, closeSlotAppt, isMobile);
+  useSheetBackClose(conclusionOpen, () => setConclusionOpen(false), isMobile);
+
   /**
    * Карточка приёма: в виде «Список» — колонка/дровер выбранного приёма,
    * в виде «Окна» — дровер поверх сетки. Действия одни и те же, поэтому
@@ -1321,30 +1334,38 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             sx: (theme) => ({
               // Единая высота мобильных листов — токен темы, а не хардкод:
               // список, «Окна» и реестр открывали одну карточку на разную высоту.
-              height: theme.appLayout.drawer.bottomSheet.height,
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
+              // Заключение — исключение: с клавиатурой от половины листа
+              // остаётся полторы строки, поэтому оно занимает весь экран.
+              height: conclusionOpen ? sheetViewport.height : theme.appLayout.drawer.bottomSheet.height,
+              bottom: conclusionOpen ? sheetViewport.bottom : 0,
+              borderTopLeftRadius: conclusionOpen ? 0 : 16,
+              borderTopRightRadius: conclusionOpen ? 0 : 16,
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",
             }),
           }}
         >
-          <Box sx={{ flex: conclusionOpen ? "0 0 50%" : 1, minHeight: 0, overflow: "hidden" }}>
+          {/* Карточку приёма прячем, а не ужимаем: делёж экрана пополам
+              оставлял заключению ~150px. Крестик заключения возвращает её. */}
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              overflow: "hidden",
+              display: conclusionOpen ? "none" : "block",
+            }}
+          >
             {detailsPanel}
           </Box>
-          {/* На мобиле заключение показывается снизу под деталями. */}
           {conclusionOpen && selectedAppt && (
-            <>
-              <Divider />
-              <Box sx={{ flex: "1 1 50%", minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                <DjangoConclusionSlotsPanel
-                  appointmentId={selectedAppt.id}
-                  branchId={selectedAppt.branchId}
-                  onClose={() => setConclusionOpen(false)}
-                />
-              </Box>
-            </>
+            <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              <DjangoConclusionSlotsPanel
+                appointmentId={selectedAppt.id}
+                branchId={selectedAppt.branchId}
+                onClose={() => setConclusionOpen(false)}
+              />
+            </Box>
           )}
         </Drawer>
       )}
@@ -1360,9 +1381,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
           sx: (theme) => ({
             ...(isMobile
               ? {
-                  height: theme.appLayout.drawer.bottomSheet.height,
-                  borderTopLeftRadius: 16,
-                  borderTopRightRadius: 16,
+                  // С открытым заключением лист во весь экран — иначе под
+                  // клавиатурой на поле остаётся одна строка.
+                  height: conclusionOpen ? sheetViewport.height : theme.appLayout.drawer.bottomSheet.height,
+                  bottom: conclusionOpen ? sheetViewport.bottom : 0,
+                  borderTopLeftRadius: conclusionOpen ? 0 : 16,
+                  borderTopRightRadius: conclusionOpen ? 0 : 16,
                 }
               : {
                   // 760px — чтобы весь ряд действий шапки («Подтвердить»,
@@ -1380,13 +1404,14 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       >
         {slotAppt ? (
           <>
+            {/* На мобиле карточка уступает заключению весь экран целиком. */}
             <Box
               sx={{
-                flex: conclusionOpen && isMobile ? "0 0 50%" : 1,
+                flex: 1,
                 minWidth: 0,
                 minHeight: 0,
                 overflow: "hidden",
-                display: "flex",
+                display: conclusionOpen && isMobile ? "none" : "flex",
                 flexDirection: "column",
               }}
             >
@@ -1394,7 +1419,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             </Box>
             {conclusionOpen && (
               <>
-                <Divider orientation={isMobile ? "horizontal" : "vertical"} flexItem />
+                {!isMobile && <Divider orientation="vertical" flexItem />}
                 <Box
                   sx={{
                     flex: 1,
