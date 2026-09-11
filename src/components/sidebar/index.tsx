@@ -61,6 +61,7 @@ import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
 import ExtensionOutlined from "@mui/icons-material/ExtensionOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
@@ -875,6 +876,16 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
+        {/* Кухня (меню/закупка) — только Viva, тот же принцип, что «Интеграции». */}
+        {show("org") && isVivaActive() && (
+          <SidebarMenuItem
+            to="/kitchen"
+            icon={<RestaurantOutlined />}
+            label="Кухня"
+            collapsed={siderCollapsed}
+          />
+        )}
+
         {/* Все приемы */}
         {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label={t("allAppointments")} collapsed={siderCollapsed} />
@@ -998,11 +1009,12 @@ type SidebarMenuItemProps = {
  * На Viva в навигации остаются только страницы, реально переделанные под
  * отель (см. src/dev/*.tsx): «Расписание» — шахматка броней
  * (RoomBookingGrid), «Все гости» — HotelGuestsPage, «Интеграции» —
- * HotelIntegrationsPage, «Отчёты» — HotelReportsPage. Остальные ~30 пунктов
- * (Вакцины, СКУД, Кабинет врача и т.п.) ведут либо на несуществующие для
- * синтетической организации данные, либо просто не имеют отношения к отелю.
+ * HotelIntegrationsPage, «Отчёты» — HotelReportsPage, «Кухня» —
+ * HotelKitchenPage. Остальные ~30 пунктов (Вакцины, СКУД, Кабинет врача и
+ * т.п.) ведут либо на несуществующие для синтетической организации данные,
+ * либо просто не имеют отношения к отелю.
  */
-const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/integrations", "/reports"];
+const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/integrations", "/reports", "/kitchen"];
 
 const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   to,

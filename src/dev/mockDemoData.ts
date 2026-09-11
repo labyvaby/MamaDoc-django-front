@@ -546,6 +546,238 @@ export function getHotelDailyReport(date: string): HotelDailyReport {
   };
 }
 
+// ── Кухня — для HotelKitchenPage.tsx ────────────────────────────────────────
+//
+// Два слоя данных: (1) меню — во сколько какое блюдо готовить и на сколько
+// порций (порции считаются от занятых на дату номеров getHotelDailyReport —
+// та же «реальная» связка с бронями, что у выручки выше, а не оторванные
+// случайные числа); (2) закупка — сколько продукта нужно по рецептам
+// — план, и что реально купили — факт. План пересчитывается каждый раз
+// заново (производный от меню), а факт — то единственное, что реально
+// «отправляют» на этой странице, поэтому только он живёт в сторе с
+// localStorage, тем же приёмом, что customBookings/интеграции: сотрудник
+// мог купить 10 сосисок вместо 5 — план не редактируется (это норма
+// расхода), а факт редактируется всегда, в том числе после того, как уже
+// был один раз сохранён.
+
+export type MealType = "breakfast" | "lunch" | "dinner";
+
+export const MEAL_LABELS: Record<MealType, string> = {
+  breakfast: "Завтрак",
+  lunch: "Обед",
+  dinner: "Ужин",
+};
+
+export interface KitchenDishDef {
+  id: string;
+  meal: MealType;
+  /** Время начала готовки, "HH:mm". */
+  time: string;
+  name: string;
+  /** Порций на один занятый номер — дробное: не каждое блюдо берут все гости. */
+  portionsPerRoom: number;
+}
+
+/** Условное меню отеля на день — три приёма пищи, без привязки к дате (повторяется каждый день демо). */
+export const KITCHEN_MENU: KitchenDishDef[] = [
+  { id: "b1", meal: "breakfast", time: "07:00", name: "Омлет с зеленью", portionsPerRoom: 0.9 },
+  { id: "b2", meal: "breakfast", time: "07:00", name: "Каша овсяная", portionsPerRoom: 0.6 },
+  { id: "b3", meal: "breakfast", time: "07:30", name: "Сосиски с гарниром", portionsPerRoom: 0.7 },
+  { id: "l1", meal: "lunch", time: "13:00", name: "Борщ", portionsPerRoom: 0.8 },
+  { id: "l2", meal: "lunch", time: "13:00", name: "Плов", portionsPerRoom: 0.7 },
+  { id: "l3", meal: "lunch", time: "13:30", name: "Салат Оливье", portionsPerRoom: 0.6 },
+  { id: "d1", meal: "dinner", time: "19:00", name: "Шашлык из курицы", portionsPerRoom: 0.7 },
+  { id: "d2", meal: "dinner", time: "19:00", name: "Манты", portionsPerRoom: 0.6 },
+  { id: "d3", meal: "dinner", time: "19:30", name: "Овощи на гриле", portionsPerRoom: 0.5 },
+];
+
+export interface KitchenDish extends KitchenDishDef {
+  /** Порций на выбранную дату = round(занятых номеров × portionsPerRoom), минимум 1. */
+  portions: number;
+}
+
+interface KitchenIngredientUse {
+  dishId: string;
+  ingredient: string;
+  unit: "шт" | "кг" | "г" | "л";
+  qtyPerPortion: number;
+}
+
+const KITCHEN_RECIPE_INGREDIENTS: KitchenIngredientUse[] = [
+  { dishId: "b1", ingredient: "Яйца", unit: "шт", qtyPerPortion: 2 },
+  { dishId: "b1", ingredient: "Зелень", unit: "г", qtyPerPortion: 15 },
+  { dishId: "b2", ingredient: "Овсяные хлопья", unit: "г", qtyPerPortion: 60 },
+  { dishId: "b2", ingredient: "Молоко", unit: "л", qtyPerPortion: 0.2 },
+  { dishId: "b3", ingredient: "Сосиски", unit: "шт", qtyPerPortion: 2 },
+  { dishId: "b3", ingredient: "Картофель", unit: "кг", qtyPerPortion: 0.2 },
+  { dishId: "l1", ingredient: "Свёкла", unit: "шт", qtyPerPortion: 0.3 },
+  { dishId: "l1", ingredient: "Говядина", unit: "кг", qtyPerPortion: 0.12 },
+  { dishId: "l2", ingredient: "Рис", unit: "кг", qtyPerPortion: 0.15 },
+  { dishId: "l2", ingredient: "Баранина", unit: "кг", qtyPerPortion: 0.13 },
+  { dishId: "l2", ingredient: "Морковь", unit: "шт", qtyPerPortion: 0.4 },
+  { dishId: "l3", ingredient: "Картофель", unit: "кг", qtyPerPortion: 0.15 },
+  { dishId: "l3", ingredient: "Колбаса варёная", unit: "кг", qtyPerPortion: 0.06 },
+  { dishId: "d1", ingredient: "Курица (бедро)", unit: "кг", qtyPerPortion: 0.2 },
+  { dishId: "d2", ingredient: "Тесто для мантов", unit: "кг", qtyPerPortion: 0.1 },
+  { dishId: "d2", ingredient: "Баранина", unit: "кг", qtyPerPortion: 0.14 },
+  { dishId: "d3", ingredient: "Овощи ассорти", unit: "кг", qtyPerPortion: 0.18 },
+];
+
+/** Ориентировочная цена за единицу измерения (сом) — для плановой суммы закупки. */
+const INGREDIENT_PRICE_PER_UNIT: Record<string, number> = {
+  "Яйца": 8,
+  "Зелень": 4,
+  "Овсяные хлопья": 3,
+  "Молоко": 90,
+  "Сосиски": 45,
+  "Картофель": 45,
+  "Свёкла": 20,
+  "Говядина": 550,
+  "Рис": 130,
+  "Баранина": 650,
+  "Морковь": 15,
+  "Колбаса варёная": 480,
+  "Курица (бедро)": 320,
+  "Тесто для мантов": 180,
+  "Овощи ассорти": 90,
+};
+
+export interface KitchenShoppingItem {
+  ingredient: string;
+  unit: KitchenIngredientUse["unit"];
+  /** Сколько нужно по рецептам на порции этой даты. */
+  neededQty: number;
+  pricePerUnit: number;
+  /** Плановая сумма = neededQty × pricePerUnit. */
+  plannedAmount: number;
+}
+
+export interface KitchenDayPlan {
+  date: string;
+  occupiedRooms: number;
+  dishes: KitchenDish[];
+  shoppingList: KitchenShoppingItem[];
+}
+
+function roundQty(qty: number, unit: KitchenIngredientUse["unit"]): number {
+  if (unit === "шт") return Math.ceil(qty);
+  return Math.round(qty * 10) / 10;
+}
+
+/** Меню и закупка на дату — порции от занятых номеров (getHotelDailyReport), не случайные числа. */
+export function getKitchenDayPlan(date: string): KitchenDayPlan {
+  const occupiedRooms = getHotelDailyReport(date).occupiedRooms;
+
+  const dishes: KitchenDish[] = KITCHEN_MENU.map((def) => ({
+    ...def,
+    portions: Math.max(1, Math.round(occupiedRooms * def.portionsPerRoom)),
+  }));
+
+  const needed = new Map<string, { unit: KitchenIngredientUse["unit"]; qty: number }>();
+  for (const dish of dishes) {
+    for (const use of KITCHEN_RECIPE_INGREDIENTS) {
+      if (use.dishId !== dish.id) continue;
+      const qty = use.qtyPerPortion * dish.portions;
+      const existing = needed.get(use.ingredient);
+      if (existing) existing.qty += qty;
+      else needed.set(use.ingredient, { unit: use.unit, qty });
+    }
+  }
+
+  const shoppingList: KitchenShoppingItem[] = [...needed.entries()]
+    .map(([ingredient, { unit, qty }]) => {
+      const neededQty = roundQty(qty, unit);
+      const pricePerUnit = INGREDIENT_PRICE_PER_UNIT[ingredient] ?? 0;
+      return { ingredient, unit, neededQty, pricePerUnit, plannedAmount: Math.round(neededQty * pricePerUnit) };
+    })
+    .sort((a, b) => a.ingredient.localeCompare(b.ingredient, "ru"));
+
+  return { date, occupiedRooms, dishes, shoppingList };
+}
+
+// ── Факт закупки — редактируемый ввод сотрудника (HotelKitchenPage.tsx) ─────
+//
+// План (выше) — чистая функция от даты, ничего не хранит. Факт — то, что
+// реально ввёл сотрудник («купили 10 сосисок»), и именно его нужно уметь
+// поправить, если он оказался неверным («на деле нужно было 5»), поэтому
+// это единственная часть кухни, которая живёт в сторе — тот же приём
+// localStorage + useSyncExternalStore, что customBookings/интеграции выше.
+
+export interface KitchenPurchaseRecord {
+  purchasedQty: number;
+  actualPricePerUnit: number;
+  purchasedBy?: string;
+  /** ISO-дата и время последнего сохранения — «когда отметили купленным / поправили». */
+  updatedAt: string;
+}
+
+const KITCHEN_PURCHASES_KEY = "mamadoc:mockKitchenPurchases";
+const kitchenPurchaseListeners = new Set<() => void>();
+
+/** Ключ записи в сторе — закупка привязана к дате отчёта и продукту. */
+function purchaseKey(date: string, ingredient: string): string {
+  return `${date}__${ingredient}`;
+}
+
+function readKitchenPurchasesFromStorage(): Record<string, KitchenPurchaseRecord> {
+  try {
+    const raw = window.localStorage.getItem(KITCHEN_PURCHASES_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, KitchenPurchaseRecord>;
+  } catch {
+    return {};
+  }
+}
+
+let kitchenPurchasesCache: Record<string, KitchenPurchaseRecord> = readKitchenPurchasesFromStorage();
+
+function persistKitchenPurchases(next: Record<string, KitchenPurchaseRecord>): void {
+  kitchenPurchasesCache = next;
+  try {
+    window.localStorage.setItem(KITCHEN_PURCHASES_KEY, JSON.stringify(next));
+  } catch {
+    // приватный режим/запрет на localStorage — доживёт до конца вкладки в памяти
+  }
+  kitchenPurchaseListeners.forEach((fn) => fn());
+}
+
+/** Сохраняет/перезаписывает факт закупки — тот же вызов и для первой отметки, и для правки. */
+export function setKitchenPurchase(
+  date: string,
+  ingredient: string,
+  input: { purchasedQty: number; actualPricePerUnit: number; purchasedBy?: string },
+): void {
+  const key = purchaseKey(date, ingredient);
+  persistKitchenPurchases({
+    ...kitchenPurchasesCache,
+    [key]: { ...input, updatedAt: dayjs().toISOString() },
+  });
+}
+
+/** Убирает отметку «куплено» — строка возвращается к плановому состоянию. */
+export function clearKitchenPurchase(date: string, ingredient: string): void {
+  const key = purchaseKey(date, ingredient);
+  if (!(key in kitchenPurchasesCache)) return;
+  const next = { ...kitchenPurchasesCache };
+  delete next[key];
+  persistKitchenPurchases(next);
+}
+
+export function getKitchenPurchase(date: string, ingredient: string): KitchenPurchaseRecord | undefined {
+  return kitchenPurchasesCache[purchaseKey(date, ingredient)];
+}
+
+export function subscribeKitchenPurchases(onChange: () => void): () => void {
+  kitchenPurchaseListeners.add(onChange);
+  return () => kitchenPurchaseListeners.delete(onChange);
+}
+
+export function getKitchenPurchasesSnapshot(): Record<string, KitchenPurchaseRecord> {
+  return kitchenPurchasesCache;
+}
+
 // ── Гости — для HotelGuestsPage.tsx и GuestDetailsDialog.tsx ────────────────
 //
 // Отдельной картотеки гостей в API нет — гость существует только как строка

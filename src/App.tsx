@@ -116,6 +116,7 @@ const DjangoReportsPage = lazy(() => import("./pages/reports/django/ReportsRoute
 const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
 const HotelIntegrationsPage = lazy(() => import("./dev/HotelIntegrationsPage"));
+const HotelKitchenPage = lazy(() => import("./dev/HotelKitchenPage"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
@@ -624,6 +625,16 @@ function App() {
                           element={
                             <Suspense fallback={<LinearProgress />}>
                               <HotelIntegrationsPage />
+                            </Suspense>
+                          }
+                        />
+                        {/* Кухня (меню/закупка) — пока только Viva, тот же
+                            принцип, что и «Интеграции» выше. */}
+                        <Route
+                          path="kitchen"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <HotelKitchenPage />
                             </Suspense>
                           }
                         />
