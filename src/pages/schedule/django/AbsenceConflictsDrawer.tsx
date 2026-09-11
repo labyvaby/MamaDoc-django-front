@@ -51,6 +51,7 @@ import dayjs from "dayjs";
 import {
   bulkAppointments,
   parseBackendError,
+  APPOINTMENTS_CANCEL_BACKEND_LIVE,
   type AppointmentBulkAction,
   type AppointmentBulkItem,
   type AppointmentBulkRow,
@@ -170,8 +171,12 @@ export const AbsenceConflictsDrawer: React.FC<{
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const canCreateTask = useCan("tasks.create");
-  const canCancelAppointments = useCan("appointments.cancel");
   const canUpdateAppointments = useCan("appointments.update");
+  // Пока право appointments.cancel не выехало на прод — отменяет тот, кто
+  // редактирует (см. APPOINTMENTS_CANCEL_BACKEND_LIVE в api/appointments.ts).
+  const canCancelAppointments =
+    useCan("appointments.cancel") ||
+    (!APPOINTMENTS_CANCEL_BACKEND_LIVE && canUpdateAppointments);
 
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [mode, setMode] = React.useState<ModeChoice>("");
