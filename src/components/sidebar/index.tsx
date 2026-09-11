@@ -863,6 +863,18 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
+        {/* Отчёты — только Viva; у реальных организаций тот же путь /reports
+            ведёт на DjangoReportsPage из группы "management" (см. ниже), она
+            для отеля целиком спрятана (!hotelOnly), поэтому здесь свой пункт. */}
+        {show("org") && isVivaActive() && (
+          <SidebarMenuItem
+            to="/reports"
+            icon={<AssessmentOutlined />}
+            label="Отчёты"
+            collapsed={siderCollapsed}
+          />
+        )}
+
         {/* Все приемы */}
         {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label={t("allAppointments")} collapsed={siderCollapsed} />
@@ -986,11 +998,11 @@ type SidebarMenuItemProps = {
  * На Viva в навигации остаются только страницы, реально переделанные под
  * отель (см. src/dev/*.tsx): «Расписание» — шахматка броней
  * (RoomBookingGrid), «Все гости» — HotelGuestsPage, «Интеграции» —
- * HotelIntegrationsPage. Остальные ~30 пунктов (Вакцины, СКУД, Кабинет врача
- * и т.п.) ведут либо на несуществующие для синтетической организации данные,
- * либо просто не имеют отношения к отелю.
+ * HotelIntegrationsPage, «Отчёты» — HotelReportsPage. Остальные ~30 пунктов
+ * (Вакцины, СКУД, Кабинет врача и т.п.) ведут либо на несуществующие для
+ * синтетической организации данные, либо просто не имеют отношения к отелю.
  */
-const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/integrations"];
+const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/integrations", "/reports"];
 
 const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   to,

@@ -112,7 +112,7 @@ const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/Expens
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
 const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
 const ConclusionFormsSettingsPage = lazy(() => import("./pages/settings/ConclusionFormsSettingsPage"));
-const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
+const DjangoReportsPage = lazy(() => import("./pages/reports/django/ReportsRouter"));
 const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
 const HotelIntegrationsPage = lazy(() => import("./dev/HotelIntegrationsPage"));

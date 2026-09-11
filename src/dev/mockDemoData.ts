@@ -473,6 +473,79 @@ export function getRoomAvailability(
   return { bookings: all, freeRanges };
 }
 
+// ── Отчёт за день — для HotelReportsPage.tsx ────────────────────────────────
+//
+// Кто заселён, на сколько ночей, сколько заплатит по тарифу номера и сколько
+// номеров свободно на конкретную дату — та же смесь сгенерированных
+// (getHotelBookings) и ручных (customBookingsCache) броней, что у
+// getRoomAvailability/getHotelGuests выше, но по каждому номеру на один день,
+// а не по одному номеру на диапазон. «Выручка» — тариф занятых на эту дату
+// номеров за ночь, а не сумма броней целиком (иначе многодневная бронь
+// задваивалась бы в отчётах за каждый день своего проживания).
+
+export interface HotelDailyReportRow {
+  room: string;
+  categoryName: string;
+  luxury: boolean;
+  /** Тариф категории номера, сом/ночь. */
+  pricePerNight: number;
+  /** undefined — номер свободен на эту дату. */
+  booking?: HotelBooking;
+}
+
+export interface HotelDailyReport {
+  date: string;
+  totalRooms: number;
+  occupiedRooms: number;
+  freeRooms: number;
+  occupancyPercent: number;
+  /** Брони с заездом/выездом именно в эту дату (не «проживающие», а конкретно заехавшие/выехавшие). */
+  arrivals: number;
+  departures: number;
+  /** Сумма тарифов занятых на эту дату номеров — выручка за ночь. */
+  revenue: number;
+  rows: HotelDailyReportRow[];
+}
+
+/**
+ * Отчёт по одной дате: по каждому номеру — свободен он или кем занят
+ * (checkOut не включительно — тот же контракт, что у остальной шахматки),
+ * плюс агрегаты (загрузка/выручка/заезды/выезды).
+ */
+export function getHotelDailyReport(date: string): HotelDailyReport {
+  const windowTo = dayjs(date).add(1, "day").format("YYYY-MM-DD");
+  const all = [...getHotelBookings(date, windowTo), ...customBookingsCache];
+
+  const rows: HotelDailyReportRow[] = HOTEL_ROOMS.map((room) => {
+    const category = getRoomCategory(room)!;
+    const booking = all.find(
+      (b) => b.roomNumber === room && !dayjs(date).isBefore(b.checkIn) && dayjs(date).isBefore(b.checkOut),
+    );
+    return {
+      room,
+      categoryName: category.name,
+      luxury: !!category.luxury,
+      pricePerNight: category.pricePerNight,
+      booking,
+    };
+  });
+
+  const occupied = rows.filter((r) => r.booking);
+  const totalRooms = HOTEL_ROOMS.length;
+
+  return {
+    date,
+    totalRooms,
+    occupiedRooms: occupied.length,
+    freeRooms: totalRooms - occupied.length,
+    occupancyPercent: Math.round((occupied.length / totalRooms) * 100),
+    arrivals: all.filter((b) => b.checkIn === date).length,
+    departures: all.filter((b) => b.checkOut === date).length,
+    revenue: occupied.reduce((sum, r) => sum + r.pricePerNight, 0),
+    rows,
+  };
+}
+
 // ── Гости — для HotelGuestsPage.tsx и GuestDetailsDialog.tsx ────────────────
 //
 // Отдельной картотеки гостей в API нет — гость существует только как строка
