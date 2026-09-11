@@ -1273,36 +1273,15 @@ export function startAppointment(id: number): Promise<DjangoAppointment> {
   }).then(normalizeAppointment);
 }
 
-/**
- * Временный фолбэк: на проде (бэк 740) ещё нет права `appointments.cancel`
- * и ручки `POST /appointments/<id>/cancel/` — они есть только на test (850).
- * Пока флаг выключен, отменять может тот, кто может редактировать
- * (`appointments.update`), а на 404 ручки отмена идёт старым PATCH статуса.
- * После выкладки бэка на прод (и раздачи права ролям) — переключить в `true`,
- * затем удалить флаг и фолбэки: grep APPOINTMENTS_CANCEL_BACKEND_LIVE.
- */
-export const APPOINTMENTS_CANCEL_BACKEND_LIVE = false;
-
 /** Cancel an appointment without deleting its history or financial records. */
-export async function cancelAppointment(
+export function cancelAppointment(
   id: number,
   cancelReason: AppointmentCancelReason = "other",
 ): Promise<DjangoAppointment> {
-  try {
-    const raw = await apiRequest<RawAppointment>(`/appointments/${id}/cancel/`, {
-      method: "POST",
-      body: { cancelReason },
-    });
-    return normalizeAppointment(raw);
-  } catch (err) {
-    // 404 здесь — «ручки нет на этом стенде», а не «приём не найден»: PATCH
-    // несуществующего приёма вернёт тот же 404, ошибка не потеряется.
-    // Причину в PATCH не шлём — старый бэк её не знает.
-    if (!APPOINTMENTS_CANCEL_BACKEND_LIVE && err instanceof ApiError && err.status === 404) {
-      return updateAppointment(id, { status: "canceled" });
-    }
-    throw err;
-  }
+  return apiRequest<RawAppointment>(`/appointments/${id}/cancel/`, {
+    method: "POST",
+    body: { cancelReason },
+  }).then(normalizeAppointment);
 }
 
 export function deleteAppointment(id: number): Promise<void> {

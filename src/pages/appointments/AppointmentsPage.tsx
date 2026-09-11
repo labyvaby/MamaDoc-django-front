@@ -49,7 +49,6 @@ import {
   cancelAppointment,
   deleteAppointment,
   parseBackendError,
-  APPOINTMENTS_CANCEL_BACKEND_LIVE,
   type DjangoAppointment,
   type HomeDashboard,
 } from "../../api/appointments";
@@ -435,11 +434,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   // Physical deletion is a protected superadmin-only operation. The legacy
   // appointments.delete permission must not expose a destructive UI action.
   const canDelete = isSuperAdmin();
-  // Пока право appointments.cancel не выехало на прод — отменяет тот, кто
-  // редактирует (см. APPOINTMENTS_CANCEL_BACKEND_LIVE в api/appointments.ts).
-  const canCancelAny =
-    can("appointments.cancel") ||
-    (!APPOINTMENTS_CANCEL_BACKEND_LIVE && canUpdate);
+  const canCancelAny = can("appointments.cancel");
   const canCancelOwn = can("appointments.cancel_own");
   const canViewFinance = can("finance.view");
   const canManageFinance = can("finance.manage");
