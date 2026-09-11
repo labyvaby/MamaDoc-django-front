@@ -864,18 +864,6 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
-        {/* Отчёты — только Viva; у реальных организаций тот же путь /reports
-            ведёт на DjangoReportsPage из группы "management" (см. ниже), она
-            для отеля целиком спрятана (!hotelOnly), поэтому здесь свой пункт. */}
-        {show("org") && isVivaActive() && (
-          <SidebarMenuItem
-            to="/reports"
-            icon={<AssessmentOutlined />}
-            label="Отчёты"
-            collapsed={siderCollapsed}
-          />
-        )}
-
         {/* Кухня (меню/закупка) — только Viva, тот же принцип, что «Интеграции». */}
         {show("org") && isVivaActive() && (
           <SidebarMenuItem
@@ -943,8 +931,12 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/salary-reports" icon={<AccountBalanceWalletOutlined />} label="Отчет по ЗП" collapsed={siderCollapsed} />
         )}
 
-        {/* Отчеты */}
-        {show("management") && can_.reports && (
+        {/* Отчеты — единственный пункт на /reports, а не пара «реальный +
+            отдельный для Viva»: у отеля "management" целиком спрятан
+            (!hotelOnly, groupVisible выше), поэтому для Viva показываем тот
+            же пункт через "org". ReportsRouter.tsx на самом /reports сам
+            решает, что рендерить — DjangoReportsPage или HotelReportsPage. */}
+        {((hotelOnly && show("org")) || (!hotelOnly && show("management") && can_.reports)) && (
           <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчеты" collapsed={siderCollapsed} />
         )}
 
