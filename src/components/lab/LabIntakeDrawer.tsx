@@ -454,6 +454,22 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
 
   const requiredQuestionIds = React.useMemo(() => questions.map((q) => q.id), [questions]);
 
+  // Строки детализации расходников: только платные и только когда клиника
+  // берёт за них плату — иначе в итоге они не участвуют и показывать нечего.
+  const paidTubes = React.useMemo(
+    () =>
+      chargeTubes
+        ? instruments
+            .map((item) => ({
+              title: item.title,
+              count: item.count,
+              amount: Number.parseFloat(item.price) * item.count,
+            }))
+            .filter((tube) => Number.isFinite(tube.amount) && tube.amount > 0)
+        : [],
+    [instruments, chargeTubes],
+  );
+
   // Анализы корзины, которые лаборатория делает только по направлению
   // (`requiresDoctor`, признак `@required_doctor` каталога ЛИС). Имена, а
   // не счётчик: если направления нет, регистратору надо знать, какую
@@ -823,6 +839,9 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
           <PaymentSection
             total={totals.total}
             testsGross={totals.testsGross}
+            testsTotal={totals.testsTotal}
+            tubesTotal={totals.tubesTotal}
+            tubes={paidTubes}
             paidCash={payment.cash}
             paidCard={payment.card}
             cashlessMethodId={payment.cashlessMethodId}
