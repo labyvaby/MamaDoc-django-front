@@ -642,13 +642,92 @@ const INGREDIENT_PRICE_PER_UNIT: Record<string, number> = {
   "Овощи ассорти": 90,
 };
 
+/** Единица измерения продукта — берётся с первого рецепта, где он встречается (везде одна и та же). */
+const KITCHEN_INGREDIENT_UNITS: Record<string, KitchenIngredientUse["unit"]> = {};
+for (const use of KITCHEN_RECIPE_INGREDIENTS) {
+  KITCHEN_INGREDIENT_UNITS[use.ingredient] ??= use.unit;
+}
+
+function roundQty(qty: number, unit: KitchenIngredientUse["unit"]): number {
+  if (unit === "шт") return Math.ceil(qty);
+  return Math.round(qty * 10) / 10;
+}
+
+// ── Остаток на складе — для HotelKitchenPage.tsx ────────────────────────────
+//
+// «Нужно по рецепту» — это весь расход, но часть продукта может уже лежать
+// на кухне с прошлой закупки, и докупать нужно только разницу. В отличие от
+// плана и факта закупки выше, остаток не привязан к дате — это состояние
+// склада прямо сейчас, поэтому у него нет ключа даты, только продукт;
+// стартовые значения детерминированы (сид по названию продукта), а любая
+// правка сотрудником замещает их насовсем, тем же приёмом localStorage +
+// useSyncExternalStore, что у факта закупки.
+
+const KITCHEN_STOCK_KEY = "mamadoc:mockKitchenStock";
+const kitchenStockListeners = new Set<() => void>();
+
+function seededDefaultStock(ingredient: string, unit: KitchenIngredientUse["unit"]): number {
+  const rnd = rngFor(`stock:${ingredient}`);
+  const base =
+    unit === "шт" ? 2 + Math.floor(rnd() * 6) : unit === "л" ? 1 + rnd() * 3 : unit === "кг" ? 0.5 + rnd() * 2.5 : 80 + rnd() * 250;
+  return roundQty(base, unit);
+}
+
+function readKitchenStockFromStorage(): Record<string, number> {
+  try {
+    const raw = window.localStorage.getItem(KITCHEN_STOCK_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+/** Только правки сотрудника — продукты без записи здесь показывают детерминированный дефолт (seededDefaultStock). */
+let kitchenStockOverrides: Record<string, number> = readKitchenStockFromStorage();
+
+function persistKitchenStock(next: Record<string, number>): void {
+  kitchenStockOverrides = next;
+  try {
+    window.localStorage.setItem(KITCHEN_STOCK_KEY, JSON.stringify(next));
+  } catch {
+    // приватный режим/запрет на localStorage — доживёт до конца вкладки в памяти
+  }
+  kitchenStockListeners.forEach((fn) => fn());
+}
+
+/** Текущий остаток продукта на складе — правка сотрудника, если есть, иначе детерминированный дефолт. */
+export function getKitchenStock(ingredient: string): number {
+  if (ingredient in kitchenStockOverrides) return kitchenStockOverrides[ingredient];
+  return seededDefaultStock(ingredient, KITCHEN_INGREDIENT_UNITS[ingredient] ?? "шт");
+}
+
+export function setKitchenStock(ingredient: string, qty: number): void {
+  persistKitchenStock({ ...kitchenStockOverrides, [ingredient]: qty });
+}
+
+export function subscribeKitchenStock(onChange: () => void): () => void {
+  kitchenStockListeners.add(onChange);
+  return () => kitchenStockListeners.delete(onChange);
+}
+
+export function getKitchenStockSnapshot(): Record<string, number> {
+  return kitchenStockOverrides;
+}
+
 export interface KitchenShoppingItem {
   ingredient: string;
   unit: KitchenIngredientUse["unit"];
-  /** Сколько нужно по рецептам на порции этой даты. */
+  /** Сколько нужно по рецептам на порции этой даты — весь расход, без поправки на остаток. */
   neededQty: number;
+  /** Сколько уже есть на складе прямо сейчас (getKitchenStock). */
+  inStockQty: number;
+  /** Сколько реально докупить = max(0, neededQty − inStockQty). */
+  toBuyQty: number;
   pricePerUnit: number;
-  /** Плановая сумма = neededQty × pricePerUnit. */
+  /** Плановая сумма закупки = toBuyQty × pricePerUnit — то, что реально придётся потратить. */
   plannedAmount: number;
 }
 
@@ -657,11 +736,6 @@ export interface KitchenDayPlan {
   occupiedRooms: number;
   dishes: KitchenDish[];
   shoppingList: KitchenShoppingItem[];
-}
-
-function roundQty(qty: number, unit: KitchenIngredientUse["unit"]): number {
-  if (unit === "шт") return Math.ceil(qty);
-  return Math.round(qty * 10) / 10;
 }
 
 /** Меню и закупка на дату — порции от занятых номеров (getHotelDailyReport), не случайные числа. */
@@ -687,8 +761,18 @@ export function getKitchenDayPlan(date: string): KitchenDayPlan {
   const shoppingList: KitchenShoppingItem[] = [...needed.entries()]
     .map(([ingredient, { unit, qty }]) => {
       const neededQty = roundQty(qty, unit);
+      const inStockQty = getKitchenStock(ingredient);
+      const toBuyQty = Math.max(0, roundQty(neededQty - inStockQty, unit));
       const pricePerUnit = INGREDIENT_PRICE_PER_UNIT[ingredient] ?? 0;
-      return { ingredient, unit, neededQty, pricePerUnit, plannedAmount: Math.round(neededQty * pricePerUnit) };
+      return {
+        ingredient,
+        unit,
+        neededQty,
+        inStockQty,
+        toBuyQty,
+        pricePerUnit,
+        plannedAmount: Math.round(toBuyQty * pricePerUnit),
+      };
     })
     .sort((a, b) => a.ingredient.localeCompare(b.ingredient, "ru"));
 

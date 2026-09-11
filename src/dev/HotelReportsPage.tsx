@@ -63,15 +63,17 @@ const StatCard: React.FC<{ label: string; value: React.ReactNode; hint?: string 
 export const HotelReportsPage: React.FC = () => {
   usePageTitle("Отчёты");
   const theme = useTheme();
-  // Отчёт зависит от ручных броней (CreateBookingButton) — подписка гарантирует
-  // пересчёт таблицы сразу, если бронь на просматриваемую дату добавили только что.
-  React.useSyncExternalStore(subscribeCustomBookings, getCustomBookingsSnapshot);
+  // Отчёт зависит от ручных броней (CreateBookingButton) — снимок в зависимостях
+  // useMemo гарантирует пересчёт таблицы сразу, если бронь на просматриваемую
+  // дату добавили только что (одной подписки без снимка в deps недостаточно:
+  // компонент перерисуется, но useMemo вернёт кэш, пока dateStr не изменился).
+  const customBookingsSnapshot = React.useSyncExternalStore(subscribeCustomBookings, getCustomBookingsSnapshot);
 
   const [date, setDate] = React.useState<Dayjs>(dayjs());
   const [exporting, setExporting] = React.useState(false);
 
   const dateStr = date.format("YYYY-MM-DD");
-  const report = React.useMemo(() => getHotelDailyReport(dateStr), [dateStr]);
+  const report = React.useMemo(() => getHotelDailyReport(dateStr), [dateStr, customBookingsSnapshot]);
   const isToday = dateStr === dayjs().format("YYYY-MM-DD");
 
   const statusColor = (status: HotelBooking["status"]) => getHotelBookingStatusColor(status, theme);

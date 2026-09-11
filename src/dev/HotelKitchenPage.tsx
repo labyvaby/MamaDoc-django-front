@@ -4,9 +4,12 @@
  * на дату номеров — та же «реальная» связка с бронями, что у выручки на
  * странице «Отчёты», а не оторванные случайные числа.
  *
- * Плановое количество продукта не редактируется (это норма расхода по
- * рецепту), а факт закупки — редактируется всегда, в том числе повторно:
- * если сотрудник купил 10 сосисок вместо 5, нужный по плану, запись можно
+ * Три числа на продукт, не два: «Нужно по рецепту» (весь расход) — норма,
+ * не редактируется; «Есть на складе» — то, что уже лежит на кухне с прошлой
+ * закупки, редактируется отдельно (это переучёт, а не сегодняшняя покупка);
+ * «Докупить» = нужно − остаток — сколько реально идти покупать. Факт
+ * закупки (сколько купили и почём) — тоже редактируется всегда, в том числе
+ * повторно: если сотрудник купил 10 сосисок вместо нужных 5, запись можно
  * открыть и поправить в любой момент (setKitchenPurchase перезаписывает, а
  * не только создаёт).
  */
@@ -35,6 +38,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import InventoryOutlined from "@mui/icons-material/InventoryOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { Navigate } from "react-router";
@@ -48,6 +52,9 @@ import {
   clearKitchenPurchase,
   subscribeKitchenPurchases,
   getKitchenPurchasesSnapshot,
+  setKitchenStock,
+  subscribeKitchenStock,
+  getKitchenStockSnapshot,
   isVivaActive,
   MEAL_LABELS,
   type MealType,
@@ -56,50 +63,69 @@ import {
 
 const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner"];
 
-interface EditTarget {
+interface PurchaseEditTarget {
   item: KitchenShoppingItem;
   purchasedQty: string;
   actualPricePerUnit: string;
   purchasedBy: string;
 }
 
+interface StockEditTarget {
+  ingredient: string;
+  unit: string;
+  qty: string;
+}
+
 export const HotelKitchenPage: React.FC = () => {
   usePageTitle("Кухня");
   const theme = useTheme();
   React.useSyncExternalStore(subscribeKitchenPurchases, getKitchenPurchasesSnapshot);
+  // Снимок в зависимостях useMemo ниже — без него правка остатка на складе не
+  // пересчитает «Докупить» сразу же (подписка вызывает перерисовку, но
+  // useMemo без этого снимка в deps вернул бы старый план, пока не сменится дата).
+  const stockSnapshot = React.useSyncExternalStore(subscribeKitchenStock, getKitchenStockSnapshot);
 
   const [date, setDate] = React.useState<Dayjs>(dayjs());
-  const [edit, setEdit] = React.useState<EditTarget | null>(null);
+  const [purchaseEdit, setPurchaseEdit] = React.useState<PurchaseEditTarget | null>(null);
+  const [stockEdit, setStockEdit] = React.useState<StockEditTarget | null>(null);
 
   // После хуков (Rules of Hooks) — страница доступна только Viva, у
   // остальных организаций такой кухни нет.
   if (!isVivaActive()) return <Navigate to="/" replace />;
 
   const dateStr = date.format("YYYY-MM-DD");
-  const plan = React.useMemo(() => getKitchenDayPlan(dateStr), [dateStr]);
+  const plan = React.useMemo(() => getKitchenDayPlan(dateStr), [dateStr, stockSnapshot]);
   const isToday = dateStr === dayjs().format("YYYY-MM-DD");
 
-  const openEdit = (item: KitchenShoppingItem) => {
+  const openPurchaseEdit = (item: KitchenShoppingItem) => {
     const existing = getKitchenPurchase(dateStr, item.ingredient);
-    setEdit({
+    setPurchaseEdit({
       item,
-      purchasedQty: String(existing?.purchasedQty ?? item.neededQty),
+      purchasedQty: String(existing?.purchasedQty ?? item.toBuyQty),
       actualPricePerUnit: String(existing?.actualPricePerUnit ?? item.pricePerUnit),
       purchasedBy: existing?.purchasedBy ?? "",
     });
   };
 
-  const saveEdit = () => {
-    if (!edit) return;
-    const qty = Number(edit.purchasedQty);
-    const price = Number(edit.actualPricePerUnit);
+  const savePurchaseEdit = () => {
+    if (!purchaseEdit) return;
+    const qty = Number(purchaseEdit.purchasedQty);
+    const price = Number(purchaseEdit.actualPricePerUnit);
     if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price) || price < 0) return;
-    setKitchenPurchase(dateStr, edit.item.ingredient, {
+    setKitchenPurchase(dateStr, purchaseEdit.item.ingredient, {
       purchasedQty: qty,
       actualPricePerUnit: price,
-      purchasedBy: edit.purchasedBy.trim() || undefined,
+      purchasedBy: purchaseEdit.purchasedBy.trim() || undefined,
     });
-    setEdit(null);
+    setPurchaseEdit(null);
+  };
+
+  const saveStockEdit = () => {
+    if (!stockEdit) return;
+    const qty = Number(stockEdit.qty);
+    if (!Number.isFinite(qty) || qty < 0) return;
+    setKitchenStock(stockEdit.ingredient, qty);
+    setStockEdit(null);
   };
 
   const totalPlanned = plan.shoppingList.reduce((sum, i) => sum + i.plannedAmount, 0);
@@ -135,9 +161,9 @@ export const HotelKitchenPage: React.FC = () => {
       </Stack>
 
       <Alert severity="info" variant="outlined" sx={{ mb: 2.5, fontSize: "0.8rem" }}>
-        Порции и норма продуктов посчитаны от {plan.occupiedRooms} занятых на эту дату номеров. Плановое
-        количество — норма расхода по рецепту, не редактируется. «Куплено» — то, что реально ввёл
-        сотрудник, и его всегда можно поправить.
+        Порции и норма продуктов посчитаны от {plan.occupiedRooms} занятых на эту дату номеров. «Нужно по
+        рецепту» и «Докупить» не редактируются напрямую — «Докупить» = нужно минус то, что уже есть на
+        складе. И «Есть на складе», и «Куплено» — реальный ввод сотрудника, оба всегда можно поправить.
       </Alert>
 
       <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
@@ -187,7 +213,7 @@ export const HotelKitchenPage: React.FC = () => {
           Закупка продуктов
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Куплено: {purchasedCount} из {plan.shoppingList.length} · План на сумму:{" "}
+          Куплено: {purchasedCount} из {plan.shoppingList.length} · Докупить на сумму:{" "}
           {totalPlanned.toLocaleString("ru-RU")} сом
         </Typography>
       </Stack>
@@ -197,7 +223,9 @@ export const HotelKitchenPage: React.FC = () => {
             <TableHead>
               <TableRow>
                 <TableCell>Продукт</TableCell>
-                <TableCell align="right">Нужно</TableCell>
+                <TableCell align="right">Нужно по рецепту</TableCell>
+                <TableCell align="right">Есть на складе</TableCell>
+                <TableCell align="right">Докупить</TableCell>
                 <TableCell align="right">Цена/ед план</TableCell>
                 <TableCell align="right">Куплено</TableCell>
                 <TableCell align="right">Цена/ед факт</TableCell>
@@ -209,8 +237,9 @@ export const HotelKitchenPage: React.FC = () => {
             <TableBody>
               {plan.shoppingList.map((item) => {
                 const purchase = getKitchenPurchase(dateStr, item.ingredient);
-                const deviationQty = purchase ? purchase.purchasedQty - item.neededQty : 0;
-                const deviationPercent = purchase ? Math.round((deviationQty / item.neededQty) * 100) : 0;
+                const deviationQty = purchase ? purchase.purchasedQty - item.toBuyQty : 0;
+                const deviationBase = item.toBuyQty || 1;
+                const deviationPercent = purchase ? Math.round((deviationQty / deviationBase) * 100) : 0;
                 const deviationColor =
                   !purchase || Math.abs(deviationPercent) <= 10
                     ? theme.palette.text.secondary
@@ -222,6 +251,28 @@ export const HotelKitchenPage: React.FC = () => {
                     <TableCell sx={{ fontWeight: 600 }}>{item.ingredient}</TableCell>
                     <TableCell align="right">
                       {item.neededQty} {item.unit}
+                    </TableCell>
+                    <TableCell align="right">
+                      <Button
+                        size="small"
+                        color="inherit"
+                        startIcon={<InventoryOutlined fontSize="small" />}
+                        onClick={() =>
+                          setStockEdit({ ingredient: item.ingredient, unit: item.unit, qty: String(item.inStockQty) })
+                        }
+                        sx={{ fontWeight: 600, minWidth: 0 }}
+                      >
+                        {item.inStockQty} {item.unit}
+                      </Button>
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>
+                      {item.toBuyQty > 0 ? (
+                        `${item.toBuyQty} ${item.unit}`
+                      ) : (
+                        <Typography variant="body2" color="success.main" fontWeight={600}>
+                          Хватает
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell align="right">{item.pricePerUnit.toLocaleString("ru-RU")}</TableCell>
                     <TableCell align="right">
@@ -251,7 +302,12 @@ export const HotelKitchenPage: React.FC = () => {
                     <TableCell>{purchase?.purchasedBy || "—"}</TableCell>
                     <TableCell align="right">
                       <Stack direction="row" gap={0.5} justifyContent="flex-end">
-                        <Button size="small" variant={purchase ? "outlined" : "contained"} startIcon={<EditOutlined fontSize="small" />} onClick={() => openEdit(item)}>
+                        <Button
+                          size="small"
+                          variant={purchase ? "outlined" : "contained"}
+                          startIcon={<EditOutlined fontSize="small" />}
+                          onClick={() => openPurchaseEdit(item)}
+                        >
                           {purchase ? "Изменить" : "Отметить купленным"}
                         </Button>
                       </Stack>
@@ -264,21 +320,22 @@ export const HotelKitchenPage: React.FC = () => {
         </Box>
       </Paper>
 
-      <Dialog open={edit != null} onClose={() => setEdit(null)} maxWidth="xs" fullWidth>
-        {edit && (
+      <Dialog open={purchaseEdit != null} onClose={() => setPurchaseEdit(null)} maxWidth="xs" fullWidth>
+        {purchaseEdit && (
           <>
-            <DialogTitle>{edit.item.ingredient}</DialogTitle>
+            <DialogTitle>{purchaseEdit.item.ingredient}</DialogTitle>
             <DialogContent>
               <Stack gap={2} sx={{ mt: 0.5 }}>
                 <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-                  По плану нужно {edit.item.neededQty} {edit.item.unit} по {edit.item.pricePerUnit.toLocaleString("ru-RU")} сом.
+                  Докупить: {purchaseEdit.item.toBuyQty} {purchaseEdit.item.unit} (нужно {purchaseEdit.item.neededQty}
+                  , на складе {purchaseEdit.item.inStockQty}) по {purchaseEdit.item.pricePerUnit.toLocaleString("ru-RU")} сом.
                   Ниже — сколько купили на самом деле; запись всегда можно открыть и поправить.
                 </Alert>
                 <TextField
-                  label={`Куплено, ${edit.item.unit}`}
+                  label={`Куплено, ${purchaseEdit.item.unit}`}
                   type="number"
-                  value={edit.purchasedQty}
-                  onChange={(e) => setEdit({ ...edit, purchasedQty: e.target.value })}
+                  value={purchaseEdit.purchasedQty}
+                  onChange={(e) => setPurchaseEdit({ ...purchaseEdit, purchasedQty: e.target.value })}
                   slotProps={{ htmlInput: { min: 0, step: "0.1" } }}
                   autoFocus
                   fullWidth
@@ -286,35 +343,66 @@ export const HotelKitchenPage: React.FC = () => {
                 <TextField
                   label="Цена за единицу, сом (факт)"
                   type="number"
-                  value={edit.actualPricePerUnit}
-                  onChange={(e) => setEdit({ ...edit, actualPricePerUnit: e.target.value })}
+                  value={purchaseEdit.actualPricePerUnit}
+                  onChange={(e) => setPurchaseEdit({ ...purchaseEdit, actualPricePerUnit: e.target.value })}
                   slotProps={{ htmlInput: { min: 0 } }}
                   fullWidth
                 />
                 <TextField
                   label="Кто купил"
                   placeholder="Необязательно"
-                  value={edit.purchasedBy}
-                  onChange={(e) => setEdit({ ...edit, purchasedBy: e.target.value })}
+                  value={purchaseEdit.purchasedBy}
+                  onChange={(e) => setPurchaseEdit({ ...purchaseEdit, purchasedBy: e.target.value })}
                   fullWidth
                 />
               </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-              {getKitchenPurchase(dateStr, edit.item.ingredient) && (
+              {getKitchenPurchase(dateStr, purchaseEdit.item.ingredient) && (
                 <Button
                   color="error"
                   sx={{ mr: "auto" }}
                   onClick={() => {
-                    clearKitchenPurchase(dateStr, edit.item.ingredient);
-                    setEdit(null);
+                    clearKitchenPurchase(dateStr, purchaseEdit.item.ingredient);
+                    setPurchaseEdit(null);
                   }}
                 >
                   Убрать отметку
                 </Button>
               )}
-              <Button onClick={() => setEdit(null)}>Отмена</Button>
-              <Button variant="contained" onClick={saveEdit}>
+              <Button onClick={() => setPurchaseEdit(null)}>Отмена</Button>
+              <Button variant="contained" onClick={savePurchaseEdit}>
+                Сохранить
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
+
+      <Dialog open={stockEdit != null} onClose={() => setStockEdit(null)} maxWidth="xs" fullWidth>
+        {stockEdit && (
+          <>
+            <DialogTitle>Остаток на складе — {stockEdit.ingredient}</DialogTitle>
+            <DialogContent>
+              <Stack gap={2} sx={{ mt: 0.5 }}>
+                <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
+                  Сколько продукта физически есть на кухне прямо сейчас — общий остаток, не привязан к
+                  конкретному дню. Поправьте после переучёта или получения новой партии.
+                </Alert>
+                <TextField
+                  label={`Остаток, ${stockEdit.unit}`}
+                  type="number"
+                  value={stockEdit.qty}
+                  onChange={(e) => setStockEdit({ ...stockEdit, qty: e.target.value })}
+                  slotProps={{ htmlInput: { min: 0, step: "0.1" } }}
+                  autoFocus
+                  fullWidth
+                />
+              </Stack>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+              <Button onClick={() => setStockEdit(null)}>Отмена</Button>
+              <Button variant="contained" onClick={saveStockEdit}>
                 Сохранить
               </Button>
             </DialogActions>
