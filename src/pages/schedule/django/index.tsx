@@ -39,6 +39,10 @@ import { useNotification } from "@refinedev/core";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { HotelOccupancyBanner } from "../../../dev/HotelOccupancyBanner";
+import { CreateBookingButton } from "../../../dev/CreateBookingButton";
+import { RoomBookingGrid } from "../../../dev/RoomBookingGrid";
+import { isVivaActive } from "../../../dev/mockDemoData";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { ConfirmDialog, CustomDatePicker } from "../../../components/ui";
@@ -1185,7 +1189,9 @@ const SCHEDULE_TABS: { id: ScheduleTab; label: string; icon: React.ElementType }
 // ── Страница ──────────────────────────────────────────────────────────────────
 
 const DjangoSchedulePage: React.FC = () => {
-  usePageTitle("Расписание");
+  // "Шахматка броней" на Viva — тот же экран, что и обычное расписание, просто
+  // с другим заголовком для демонстрации отельного применения (см. isVivaActive).
+  usePageTitle(isVivaActive() ? "Шахматка броней" : "Расписание");
   const theme = useTheme();
   const canManage = useCan("schedule.manage");
   const { isSuperAdmin, activeOrganization, activeBranch, activeEmployee } = usePermissions();
@@ -1569,7 +1575,10 @@ const DjangoSchedulePage: React.FC = () => {
               </Button>
             </Stack>
           )}
-          {canManage && tab === "calendar" && (
+          {/* На Viva это шахматка броней — «Добавить смену» не имеет смысла,
+              вместо неё создание брони номера (см. src/dev/CreateBookingButton.tsx). */}
+          {canManage && tab === "calendar" && isVivaActive() && <CreateBookingButton />}
+          {canManage && tab === "calendar" && !isVivaActive() && (
             <Button
               size="small"
               variant="contained"
@@ -1638,8 +1647,10 @@ const DjangoSchedulePage: React.FC = () => {
           flex: 1,
           minHeight: 0,
           // Календарь скроллится внутри себя; на вкладке «Настройка» скроллим
-          // содержимое (таблицы правил/исключений).
-          overflowY: tab === "calendar" ? "hidden" : "auto",
+          // содержимое (таблицы правил/исключений). RoomBookingGrid (Viva) так
+          // не умеет — банер + грид + легенда легко не влезают в фиксированную
+          // высоту, а обрезать нечем: скроллим контейнер как на «Настройке».
+          overflowY: tab === "calendar" && !isVivaActive() ? "hidden" : "auto",
           px: theme.appLayout.page.paddingX,
           pb: 2,
           display: "flex",
@@ -1649,9 +1660,16 @@ const DjangoSchedulePage: React.FC = () => {
       >
         {tab === "calendar" && (
           <>
+            {/* Демо-сводка «шахматки броней» для Viva — см. src/dev/HotelOccupancyBanner.tsx. */}
+            <HotelOccupancyBanner />
             {monthExceptionsQuery.isError && (
               <Alert severity="error">{parseBackendError(monthExceptionsQuery.error)}</Alert>
             )}
+            {/* На Viva ось грида другая: номера × даты, а не сотрудники × часы —
+                обычная шахматка смен здесь не подходит (см. RoomBookingGrid.tsx). */}
+            {isVivaActive() ? (
+              <RoomBookingGrid />
+            ) : (
             <ScheduleCalendar
               employees={employees}
               rules={rules}
@@ -1678,6 +1696,7 @@ const DjangoSchedulePage: React.FC = () => {
                 })
               }
             />
+            )}
           </>
         )}
 

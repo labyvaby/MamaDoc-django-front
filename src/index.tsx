@@ -12,10 +12,15 @@ import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { initInstallPrompt, registerServiceWorker } from "./pwa";
 import { installStaleBuildRecovery } from "./pwa/staleBuildRecovery";
+import { installMockDemoData } from "./dev/mockDemoData";
 
 // A tab that survived a frontend deploy can briefly request an obsolete Vite
 // chunk. Reload once to obtain the current index.html and its asset manifest.
 installStaleBuildRecovery();
+
+// Демо-данные приёмов/расписания на пустой тестовой базе — см. файл. No-op,
+// если VITE_MOCK_DEMO_DATA не выставлен в .env.local.
+installMockDemoData();
 
 import { BrowserRouter } from "react-router";
 

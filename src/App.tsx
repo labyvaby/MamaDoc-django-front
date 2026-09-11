@@ -115,6 +115,7 @@ const ConclusionFormsSettingsPage = lazy(() => import("./pages/settings/Conclusi
 const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
 const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
+const HotelIntegrationsPage = lazy(() => import("./dev/HotelIntegrationsPage"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
@@ -613,6 +614,17 @@ function App() {
                                 <ClientsPage />
                               </Suspense>
                             </RequirePermission>
+                          }
+                        />
+                        {/* Интеграции (каналы продаж) — пока только Viva, своего
+                            права в PAGE_PERMISSIONS нет: страница сама
+                            редиректит на "/", если открыта не из Viva. */}
+                        <Route
+                          path="integrations"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <HotelIntegrationsPage />
+                            </Suspense>
                           }
                         />
                         <Route

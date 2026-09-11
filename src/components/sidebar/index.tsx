@@ -26,6 +26,7 @@ import OrganizationBrand from "../brand/OrganizationBrand";
 import { useAppVersion } from "../../api/appVersion";
 import { fetchChatwootCounts } from "../../api/chatwoot";
 import { useT } from "../../i18n/VerticalProvider";
+import { isVivaActive } from "../../dev/mockDemoData";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
@@ -59,6 +60,7 @@ import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlin
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
+import ExtensionOutlined from "@mui/icons-material/ExtensionOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
@@ -592,11 +594,16 @@ const SidebarSecondary: React.FC = () => {
     (bookingsOverdueQuery.data?.count ?? 0) > 0 ? "error" : "primary";
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
+  // На Viva SidebarMenuItem сам прячет все пункты кроме /schedule и /patients
+  // (см. HOTEL_ONLY_NAV_PATHS) — "storage" и "management" целиком состоят из
+  // скрытых пунктов и превратились бы в пустую вкладку; "my-work" и "org"
+  // остаются видимыми, в них по одному отельному пункту (Расписание, Гости).
+  const hotelOnly = isVivaActive();
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
-    "storage": can_.products || can_.vaccinations || can_.sales || can_.storage,
-    "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
+    "storage": !hotelOnly && (can_.products || can_.vaccinations || can_.sales || can_.storage),
+    "management": !hotelOnly && (can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings),
   };
 
   // Если активная группа стала недоступной — сбросить на "all"
@@ -844,6 +851,18 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
+        {/* Интеграции (каналы продаж) — только Viva, у медицинской вертикали
+            своего права на это нет, поэтому гейт прямо по isVivaActive(), а
+            не через can_. */}
+        {show("org") && isVivaActive() && (
+          <SidebarMenuItem
+            to="/integrations"
+            icon={<ExtensionOutlined />}
+            label="Интеграции"
+            collapsed={siderCollapsed}
+          />
+        )}
+
         {/* Все приемы */}
         {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label={t("allAppointments")} collapsed={siderCollapsed} />
@@ -963,6 +982,16 @@ type SidebarMenuItemProps = {
   excludePaths?: string[];
 };
 
+/**
+ * На Viva в навигации остаются только страницы, реально переделанные под
+ * отель (см. src/dev/*.tsx): «Расписание» — шахматка броней
+ * (RoomBookingGrid), «Все гости» — HotelGuestsPage, «Интеграции» —
+ * HotelIntegrationsPage. Остальные ~30 пунктов (Вакцины, СКУД, Кабинет врача
+ * и т.п.) ведут либо на несуществующие для синтетической организации данные,
+ * либо просто не имеют отношения к отелю.
+ */
+const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/integrations"];
+
 const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   to,
   icon,
@@ -976,6 +1005,13 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
+  // После хуков (Rules of Hooks): сайдбар не перемонтируется при смене
+  // организации (DjangoContextRemount оборачивает только <Outlet/>), поэтому
+  // isVivaActive() может поменяться между рендерами ОДНОГО и того же
+  // смонтированного экземпляра — ранний return обязан идти после всех хуков.
+  if (isVivaActive() && !HOTEL_ONLY_NAV_PATHS.includes(to)) return null;
+
   const collapsedFinal = (collapsed ?? false) && !isMobile;
   const hasBadge = badgeCount > 0;
   const badgeLabel = badgeCount > 99 ? "99+" : String(badgeCount);
