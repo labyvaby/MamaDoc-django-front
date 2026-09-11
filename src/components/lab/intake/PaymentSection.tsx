@@ -13,6 +13,12 @@ import type { LabClientType } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
 import IntakeSection from "./IntakeSection";
 
+export interface PaidTube {
+  title: string;
+  count: number;
+  amount: number;
+}
+
 type Props = {
   total: number;
   /**
@@ -24,6 +30,15 @@ type Props = {
    * `labTotals.ts`.
    */
   testsGross: number;
+  /** Сумма анализов после скидки. */
+  testsTotal: number;
+  /** Сумма расходников; ноль, если клиника за них не берёт. */
+  tubesTotal: number;
+  /**
+   * Платные расходники набора — строки детализации. Бесплатные (цена ноль)
+   * сюда не попадают: «вакутейнер · 0» в итоге только шумит.
+   */
+  tubes: PaidTube[];
   paidCash: string;
   paidCard: string;
   cashlessMethodId: number | null;
@@ -93,6 +108,9 @@ function toAmount(raw: string): number {
 const PaymentSection: React.FC<Props> = ({
   total,
   testsGross,
+  testsTotal,
+  tubesTotal,
+  tubes,
   paidCash,
   paidCard,
   cashlessMethodId,
@@ -203,7 +221,54 @@ const PaymentSection: React.FC<Props> = ({
         </TextField>
 
         <Stack spacing={0.5} sx={{ pt: 1, borderTop: "1px dashed", borderColor: "divider" }}>
+          {/* Из чего складывается сумма: регистратор объясняет её пациенту
+              вслух, и «1 030» без разбивки вызывает вопрос «а почему не 880»
+              — ответ «плюс забор крови 150» должен быть на экране, а не в
+              голове. Скидка и расходники показываются только когда они есть. */}
           <Stack direction="row" justifyContent="space-between">
+            <Typography variant="body2" color="text.secondary">
+              Анализы
+            </Typography>
+            <Typography variant="body2">{formatKGS(testsGross)}</Typography>
+          </Stack>
+          {discountPercent > 0 && (
+            <Stack direction="row" justifyContent="space-between">
+              <Typography variant="body2" color="text.secondary">
+                Скидка {discountPercent}%
+              </Typography>
+              <Typography variant="body2">
+                − {formatKGS(round2(testsGross - testsTotal))}
+              </Typography>
+            </Stack>
+          )}
+          {tubesTotal > 0 && (
+            <>
+              <Stack direction="row" justifyContent="space-between">
+                <Typography variant="body2" color="text.secondary">
+                  Расходники
+                </Typography>
+                <Typography variant="body2">{formatKGS(tubesTotal)}</Typography>
+              </Stack>
+              {tubes.map((tube) => (
+                <Stack
+                  key={tube.title}
+                  direction="row"
+                  justifyContent="space-between"
+                  gap={2}
+                  sx={{ pl: 2 }}
+                >
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    {tube.title}
+                    {tube.count > 1 ? ` × ${tube.count}` : ""}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                    {formatKGS(tube.amount)}
+                  </Typography>
+                </Stack>
+              ))}
+            </>
+          )}
+          <Stack direction="row" justifyContent="space-between" sx={{ pt: 0.5 }}>
             <Typography variant="body2" color="text.secondary">
               К оплате
             </Typography>
