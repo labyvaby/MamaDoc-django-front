@@ -13,11 +13,12 @@ export const PAGE_PERMISSIONS = {
   appointmentsRegistry: "appointments.registry.view",
   doctorRoom: "appointments.doctor_room.view",
   nurseRoom: "appointments.nurse_room.view",
-  // Исторические реестры «Все приёмы» / «Все процедуры» permission-кода не
-  // имеют: с 19.08.2026 они скрыты от всех, кроме суперадминистратора, и
-  // гейтятся ролью (RequireSuperAdmin в App.tsx + isSuper в сайдбаре). Право
-  // выдать нельзя — иначе организация вернула бы себе доступ через редактор
-  // ролей.
+  // Исторические реестры «Все приёмы» / «Все процедуры» — такие же
+  // page-visibility права. По умолчанию не выдаются ни одной роли (ни в
+  // шаблонах, ни бэкфиллом): после деплоя разделы по-прежнему видит только
+  // суперадминистратор, пока он сам не включит право нужной роли в редакторе.
+  allAppointments: "appointments.all_appointments.view",
+  allProcedures: "appointments.all_procedures.view",
   patients: "patients.view",
   employees: "staff.view",
   services: "catalog.view",

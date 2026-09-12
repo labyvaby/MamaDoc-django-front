@@ -579,27 +579,29 @@ function App() {
                         <Route path="home" element={<RootRedirect />} />
                         <Route path="patient-search" element={<Navigate to="/patients" replace />} />
                         {/* Исторические реестры «Все приёмы» / «Все процедуры» —
-                            только суперадминистратор (пожелание заказчика
-                            19.08.2026). Гейт ролевой, а не по праву: организация
-                            не должна открыть их себе через редактор ролей. */}
+                            по page-visibility праву, как три рабочих
+                            пространства приёмов. С 19.08.2026 были закрыты
+                            ролью superadmin; теперь право выдаёт сам
+                            суперадминистратор в редакторе ролей (по умолчанию
+                            его нет ни у кого). */}
                         <Route
                           path="all-appointments"
                           element={
-                            <RequireSuperAdmin>
+                            <RequirePermission permission={PAGE_PERMISSIONS.allAppointments}>
                               <Suspense fallback={<LinearProgress />}>
                                 <AllAppointmentsPage />
                               </Suspense>
-                            </RequireSuperAdmin>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="all-procedures"
                           element={
-                            <RequireSuperAdmin>
+                            <RequirePermission permission={PAGE_PERMISSIONS.allProcedures}>
                               <Suspense fallback={<LinearProgress />}>
                                 <AllProceduresPage />
                               </Suspense>
-                            </RequireSuperAdmin>
+                            </RequirePermission>
                           }
                         />
                         {/* Сводка — пока только суперадминистратору (решение

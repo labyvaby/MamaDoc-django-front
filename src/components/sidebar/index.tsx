@@ -431,9 +431,10 @@ const SidebarSecondary: React.FC = () => {
     offerings: can("offerings.view"),
     patients: !isRetail && can(PAGE_PERMISSIONS.patients),
     vaccinations: !isRetail && can(PAGE_PERMISSIONS.vaccinations),
-    // Исторические реестры — только суперадмин (19.08.2026), права нет намеренно.
-    allAppointments: !isRetail && isSuper && can(PAGE_PERMISSIONS.appointments),
-    allProcedures: !isRetail && isSuper && can(PAGE_PERMISSIONS.appointments),
+    // Исторические реестры — по page-visibility праву, как Регистратура;
+    // по умолчанию право ни у кого, поэтому без явной выдачи видит только суперадмин.
+    allAppointments: !isRetail && (isSuper || can(PAGE_PERMISSIONS.allAppointments)),
+    allProcedures: !isRetail && (isSuper || can(PAGE_PERMISSIONS.allProcedures)),
     services: !isRetail && can(PAGE_PERMISSIONS.services),
     documents: moduleGate("documents"),
     // СКЛАДЫ
