@@ -795,6 +795,8 @@
         "registratura": "Регистратура",
         "doctorRoom": "Кабинет {{specialist.gen}}",
         "nurseRoom": "Процедурный кабинет",
+        "allAppointments": "Все {{visit.nomPl}}",
+        "allProcedures": "Все процедуры",
         "schedule": "Расписание",
         "bookings": "Брони",
         "chats": "Чаты",
