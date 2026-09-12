@@ -13,8 +13,8 @@ import {
  * ⚠ Предпросмотр отвечает только за права. За кадром остаётся то, что от роли
  * не зависит: включённые модули организации (пикер помечает такие права
  * отдельно), вертикаль бизнеса (в рознице часть разделов скрыта), роль
- * superadmin (исторические реестры «Все приёмы»/«Все процедуры» правом не
- * выдаются вовсе) и фича-флаги незавершённых модулей.
+ * superadmin («Сводка» правом не выдаётся вовсе) и фича-флаги незавершённых
+ * модулей.
  */
 export interface PreviewSection {
   /** Ключ подписи: t(`roles.preview.sections.${key}`). */
@@ -31,6 +31,8 @@ export const PREVIEW_SECTIONS: PreviewSection[] = [
   { key: "registratura", permissions: asList(PAGE_PERMISSIONS.appointmentsRegistry) },
   { key: "doctorRoom", permissions: asList(PAGE_PERMISSIONS.doctorRoom) },
   { key: "nurseRoom", permissions: asList(PAGE_PERMISSIONS.nurseRoom) },
+  { key: "allAppointments", permissions: asList(PAGE_PERMISSIONS.allAppointments) },
+  { key: "allProcedures", permissions: asList(PAGE_PERMISSIONS.allProcedures) },
   { key: "schedule", permissions: asList(PAGE_PERMISSIONS.schedule) },
   { key: "bookings", permissions: asList(PAGE_PERMISSIONS.bookings) },
   { key: "chats", permissions: asList(PAGE_PERMISSIONS.chats) },
