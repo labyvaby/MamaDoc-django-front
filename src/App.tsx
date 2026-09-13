@@ -150,7 +150,7 @@ const RootRedirect = () => {
   // был хардкод /appointments, и вход без права appointments.registry.view
   // заканчивался экраном «Нет доступа».
   const { loading, can } = useCanChecker();
-  const { role, activeEmployee } = usePermissions();
+  const { role, activeEmployee, activeOrganization } = usePermissions();
   const { loading: moduleLoading, moduleGate } = useModuleGate();
   if (loading || moduleLoading) {
     return <LinearProgress />;
@@ -160,6 +160,7 @@ const RootRedirect = () => {
     can,
     canOpenModule: moduleGate,
     hasActiveEmployee: activeEmployee != null,
+    defaultHomeRoute: activeOrganization?.themeConfig?.defaultHomeRoute,
   });
   return <Navigate to={path} replace />;
 };
