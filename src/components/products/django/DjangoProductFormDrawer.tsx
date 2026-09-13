@@ -1,7 +1,7 @@
 import React from "react";
 import {
     Alert, Autocomplete, Avatar, Box, Button, CardContent, Chip,
-    Drawer, IconButton, InputAdornment, MenuItem, Paper, Stack, Switch, TextField,
+    Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, InputAdornment, MenuItem, Paper, Stack, Switch, TextField,
     ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from "@mui/material";
 import { Link as RouterLink } from "react-router";
@@ -20,10 +20,11 @@ import { useNotification } from "@refinedev/core";
 
 import { ApiError } from "../../../api/client";
 import {
-    createProduct, createProductModel, generateProductMatrix, getProductAttributes,
+    createProduct, createProductModel, createUnitOfMeasure, generateProductMatrix, getProductAttributes,
     getProductCategoryTree, replaceProductGenericAttributes, type DjangoProduct,
     type DjangoProductAttribute, type DjangoProductAttributeValueOption,
-    type DjangoProductCategoryNode, updateProduct, uploadProductImage,
+    type DjangoProductCategoryNode, getUnitsOfMeasure, type DjangoUnitOfMeasure,
+    updateProduct, uploadProductImage,
 } from "../../../api/warehouse";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { useFormValidation } from "../../../hooks/useFormValidation";
@@ -32,11 +33,10 @@ import { cascadeContainer, cascadeItem } from "../../ui";
 import { DjangoProductGallery } from "./DjangoProductGallery";
 import { PHOTO_ACCEPT } from "../../../utility/imageCompression";
 
-const UNITS = ["шт", "упак", "мл", "л", "г", "кг", "амп", "фл", "таб", "доза", "шприц", "набор"];
 const MotionStack = motion(Stack);
 const MotionBox = motion(Box);
-type Values = { name: string; barcode: string; unit: string; description: string; comment: string; isForSale: boolean; isInfusion: boolean; isVaccine: boolean; price: number };
-const blank: Values = { name: "", barcode: "", unit: "шт", description: "", comment: "", isForSale: true, isInfusion: false, isVaccine: false, price: 0 };
+type Values = { name: string; barcode: string; unit: string; unitId: number | null; description: string; comment: string; isForSale: boolean; isInfusion: boolean; isVaccine: boolean; price: number };
+const blank: Values = { name: "", barcode: "", unit: "", unitId: null, description: "", comment: "", isForSale: true, isInfusion: false, isVaccine: false, price: 0 };
 type Props = {
     open: boolean;
     onClose: () => void;
@@ -59,13 +59,18 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
     const [photoUrl, setPhotoUrl] = React.useState<string | null>(null);
     const [attributes, setAttributes] = React.useState<DjangoProductAttribute[]>([]);
     const [categories, setCategories] = React.useState<DjangoProductCategoryNode[]>([]);
+    const [units, setUnits] = React.useState<DjangoUnitOfMeasure[]>([]);
     const [categoryId, setCategoryId] = React.useState<number | null>(null);
     const [fieldValues, setFieldValues] = React.useState<Record<number, number | null>>({});
     const [colors, setColors] = React.useState<number[]>([]);
     const [sizes, setSizes] = React.useState<number[]>([]);
     const [skuPrefix, setSkuPrefix] = React.useState("");
     const [loadingSchema, setLoadingSchema] = React.useState(false);
+    const [loadingUnits, setLoadingUnits] = React.useState(false);
     const [busy, setBusy] = React.useState(false);
+    const [unitDialogOpen, setUnitDialogOpen] = React.useState(false);
+    const [unitBusy, setUnitBusy] = React.useState(false);
+    const [unitDraft, setUnitDraft] = React.useState({ name: "", shortName: "", decimalPlaces: 0 });
     const form = useFormValidation({ name: values.name.trim() ? null : "Введите название товара" });
     const category = categories.find((item) => item.id === categoryId) ?? null;
     const categoryAttributes = attributes.filter((item) => category?.attributeIds.includes(item.id) && item.isActive);
@@ -74,9 +79,21 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
     const sizeField = categoryAttributes.find((item) => item.role === "size");
     const isMatrix = !isEdit && Boolean(colorField && sizeField);
     const variantsCount = colors.length * sizes.length;
+    const selectedUnit = units.find((unit) => unit.id === values.unitId) ?? null;
+    const selectableUnits = units.filter((unit) => unit.isActive || unit.id === values.unitId);
+
+    const loadUnits = React.useCallback(async () => {
+        setLoadingUnits(true);
+        try {
+            setUnits(await getUnitsOfMeasure(undefined, orgId, Boolean(product?.unitId)));
+        } catch (error) {
+            console.error("Unable to load units of measure", error);
+            notify?.({ type: "error", message: "Не удалось загрузить единицы измерения" });
+        } finally { setLoadingUnits(false); }
+    }, [notify, orgId, product?.unitId]);
 
     const loadSchema = React.useCallback(async () => {
-        if (!isRetail) return;
+        if (!isRetail) { setAttributes([]); setCategories([]); return; }
         setLoadingSchema(true);
         try {
             const [nextAttributes, nextCategories] = await Promise.all([getProductAttributes(undefined, orgId), getProductCategoryTree(undefined, orgId)]);
@@ -89,32 +106,61 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
 
     React.useEffect(() => {
         if (!open) return;
-        setValues(product ? { name: product.name, barcode: product.barcode, unit: product.unit || "шт", description: product.description, comment: product.comment, isForSale: product.isForSale, isInfusion: product.isInfusion, isVaccine: canUseVaccines && product.isVaccine, price: product.price } : { ...blank, barcode: initialBarcode?.trim() ?? "" });
+        setValues(product ? { name: product.name, barcode: product.barcode, unit: product.unit || "", unitId: product.unitId ?? null, description: product.description, comment: product.comment, isForSale: product.isForSale, isInfusion: product.isInfusion, isVaccine: canUseVaccines && product.isVaccine, price: product.price } : { ...blank, barcode: initialBarcode?.trim() ?? "" });
         setCategoryId(product?.categoryId ?? null);
         setFieldValues(Object.fromEntries((product?.attributes ?? []).filter((item) => item.role === "generic").map((item) => [item.attributeId, item.valueId])));
-        setColors([]); setSizes([]); setSkuPrefix(""); setPhoto(null); setPhotoUrl(null); setBusy(false); form.reset(); void loadSchema();
+        setColors([]); setSizes([]); setSkuPrefix(""); setPhoto(null); setPhotoUrl(null); setBusy(false); setUnitDialogOpen(false); form.reset(); void loadSchema(); void loadUnits();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, product, canUseVaccines, loadSchema, initialBarcode]);
+    }, [open, product, canUseVaccines, loadSchema, loadUnits, initialBarcode]);
     React.useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
+
+    React.useEffect(() => {
+        if (!open || values.unitId != null || !units.length) return;
+        const matchingUnit = product
+            ? units.find((unit) => unit.shortName === product.unit)
+            : units.find((unit) => unit.shortName === "шт");
+        if (matchingUnit) set({ unit: matchingUnit.shortName, unitId: matchingUnit.id });
+    }, [open, product, units, values.unitId]);
 
     const set = (patch: Partial<Values>) => setValues((current) => ({ ...current, ...patch }));
     const genericIds = () => genericFields.map((field) => fieldValues[field.id]).filter((id): id is number => typeof id === "number");
     const selected = (field: DjangoProductAttribute | undefined, ids: number[]) => field?.values.filter((item) => item.isActive && ids.includes(item.id)) ?? [];
     const setPhotoFile = (file: File | null) => { if (photoUrl) URL.revokeObjectURL(photoUrl); setPhoto(file); setPhotoUrl(file ? URL.createObjectURL(file) : null); };
+    const chooseUnit = (unit: DjangoUnitOfMeasure | null) => set({ unit: unit?.shortName ?? "", unitId: unit?.id ?? null });
+
+    const saveUnit = async () => {
+        const name = unitDraft.name.trim();
+        const shortName = unitDraft.shortName.trim();
+        if (!name || !shortName) {
+            notify?.({ type: "error", message: "Укажите название и сокращение единицы" });
+            return;
+        }
+        setUnitBusy(true);
+        try {
+            const created = await createUnitOfMeasure({ name, shortName, decimalPlaces: unitDraft.decimalPlaces, organizationId: orgId });
+            setUnits((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name, "ru")));
+            chooseUnit(created);
+            setUnitDialogOpen(false);
+            setUnitDraft({ name: "", shortName: "", decimalPlaces: 0 });
+        } catch (error) {
+            notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось создать единицу измерения" });
+        } finally { setUnitBusy(false); }
+    };
     const selectAxis = (label: string, field: DjangoProductAttribute | undefined, ids: number[], change: (ids: number[]) => void, icon: React.ReactNode) => <Autocomplete<DjangoProductAttributeValueOption, true, false, false> multiple size="small" options={field?.values.filter((item) => item.isActive) ?? []} value={selected(field, ids)} onChange={(_, next) => change(next.map((item) => item.id))} getOptionLabel={(item) => item.value} isOptionEqualToValue={(a, b) => a.id === b.id} disabled={!field || busy} renderTags={(tags, getTagProps) => tags.map((item, index) => <Chip {...getTagProps({ index })} key={item.id} size="small" label={item.value} />)} renderInput={(params) => <TextField {...params} label={label} helperText="Список и порядок настраиваются в категории." InputProps={{ ...params.InputProps, startAdornment: <InputAdornment position="start">{icon}</InputAdornment> }} />} />;
 
     const save = async () => {
         if (!form.validate()) return;
         if (isRetail && !category) { notify?.({ type: "error", message: "Сначала выберите категорию товара" }); return; }
+        if (!selectedUnit) { notify?.({ type: "error", message: "Выберите единицу измерения из справочника" }); return; }
         if (isMatrix && (!colors.length || !sizes.length)) { notify?.({ type: "error", message: "Выберите хотя бы один цвет и размер" }); return; }
         setBusy(true);
         try {
             if (isMatrix && category && colorField && sizeField) {
                 const model = await createProductModel({ name: values.name.trim(), skuPrefix: skuPrefix.trim(), categoryId: category.id, description: values.description.trim(), organizationId: orgId });
-                const matrix = await generateProductMatrix({ modelId: model.id, rowValueIds: colors, columnValueIds: sizes, attributeValueIds: genericIds(), price: values.price || 0, unit: values.unit || "шт", generateBarcodes: true });
+                const matrix = await generateProductMatrix({ modelId: model.id, rowValueIds: colors, columnValueIds: sizes, attributeValueIds: genericIds(), price: values.price || 0, unit: selectedUnit.shortName, unitId: selectedUnit.id, generateBarcodes: true });
                 notify?.({ type: "success", message: `Добавлено вариантов: ${matrix.filled}` });
             } else {
-                const payload = { name: values.name.trim(), category: category?.name ?? "", categoryId: category?.id, barcode: values.barcode.trim(), unit: values.unit || "шт", description: values.description.trim(), comment: values.comment.trim(), isForSale: values.isForSale, isInfusion: values.isInfusion, isVaccine: canUseVaccines && values.isVaccine, price: values.price || 0 };
+                const payload = { name: values.name.trim(), category: category?.name ?? "", categoryId: category?.id, barcode: values.barcode.trim(), unit: selectedUnit.shortName, unitId: selectedUnit.id, description: values.description.trim(), comment: values.comment.trim(), isForSale: values.isForSale, isInfusion: values.isInfusion, isVaccine: canUseVaccines && values.isVaccine, price: values.price || 0 };
                 const saved = isEdit && product ? await updateProduct(product.id, payload) : await createProduct(payload);
                 if (isRetail) await replaceProductGenericAttributes(saved.id, genericIds());
                 if (photo) await uploadProductImage(saved.id, photo);
@@ -481,19 +527,40 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                                                 helperText="Например: MONO-PLT-BLK-42"
                                             />
                                         )}
-                                        <Autocomplete
-                                            freeSolo
-                                            fullWidth
-                                            size="small"
-                                            options={UNITS}
-                                            value={values.unit}
-                                            disabled={busy}
-                                            onChange={(_, next) => set({ unit: next ?? "шт" })}
-                                            onInputChange={(_, next) => set({ unit: next })}
-                                            renderInput={(params) => (
-                                                <TextField {...params} label="Единица измерения" />
-                                            )}
-                                        />
+                                        <Stack flex={1} gap={0.75}>
+                                            <Autocomplete<DjangoUnitOfMeasure, false, false, false>
+                                                fullWidth
+                                                size="small"
+                                                options={selectableUnits}
+                                                value={selectedUnit}
+                                                loading={loadingUnits}
+                                                disabled={busy || loadingUnits}
+                                                onChange={(_, next) => chooseUnit(next)}
+                                                getOptionLabel={(unit) => `${unit.name} (${unit.shortName})`}
+                                                isOptionEqualToValue={(left, right) => left.id === right.id}
+                                                noOptionsText="В справочнике пока нет единиц"
+                                                renderInput={(params) => (
+                                                    <TextField
+                                                        {...params}
+                                                        label="Единица измерения"
+                                                        required
+                                                        helperText={
+                                                            product && !product.unitId && !selectedUnit
+                                                                ? `У старого товара «${product.unit}» нет записи в справочнике — выберите подходящую единицу.`
+                                                                : "Единицы принадлежат только текущей организации."
+                                                        }
+                                                    />
+                                                )}
+                                            />
+                                            <Button
+                                                size="small"
+                                                onClick={() => setUnitDialogOpen(true)}
+                                                disabled={busy || loadingUnits}
+                                                sx={{ alignSelf: "flex-start", px: 0.5 }}
+                                            >
+                                                Добавить единицу
+                                            </Button>
+                                        </Stack>
                                     </Stack>
                                 </Stack>
                             </Paper>
@@ -838,7 +905,7 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                             <Button
                                 variant="contained"
                                 onClick={() => void save()}
-                                disabled={busy || loadingSchema}
+                                disabled={busy || loadingSchema || loadingUnits}
                                 startIcon={<CheckCircleOutlined />}
                                 sx={{
                                     borderRadius: 2,
@@ -852,6 +919,50 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                     </Stack>
                 </Box>
             </Box>
+            <Dialog
+                open={unitDialogOpen}
+                onClose={() => !unitBusy && setUnitDialogOpen(false)}
+                fullWidth
+                maxWidth="xs"
+            >
+                <DialogTitle>Новая единица измерения</DialogTitle>
+                <DialogContent>
+                    <Stack gap={1.5} sx={{ pt: 1 }}>
+                        <TextField
+                            autoFocus
+                            label="Название"
+                            value={unitDraft.name}
+                            disabled={unitBusy}
+                            placeholder="Штука"
+                            onChange={(event) => setUnitDraft((current) => ({ ...current, name: event.target.value }))}
+                        />
+                        <TextField
+                            label="Сокращение"
+                            value={unitDraft.shortName}
+                            disabled={unitBusy}
+                            placeholder="шт"
+                            helperText="Печатается на ценниках и в документах."
+                            onChange={(event) => setUnitDraft((current) => ({ ...current, shortName: event.target.value }))}
+                        />
+                        <TextField
+                            label="Знаков после запятой"
+                            type="number"
+                            value={unitDraft.decimalPlaces}
+                            disabled={unitBusy}
+                            inputProps={{ min: 0, max: 3, step: 1 }}
+                            helperText="0 — только целые значения; 1–3 — дробное количество."
+                            onChange={(event) => setUnitDraft((current) => ({
+                                ...current,
+                                decimalPlaces: Math.max(0, Math.min(3, Number(event.target.value) || 0)),
+                            }))}
+                        />
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setUnitDialogOpen(false)} disabled={unitBusy}>Отмена</Button>
+                    <Button variant="contained" onClick={() => void saveUnit()} disabled={unitBusy}>Создать</Button>
+                </DialogActions>
+            </Dialog>
         </Drawer>
     );
 };
