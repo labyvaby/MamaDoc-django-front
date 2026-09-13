@@ -12,7 +12,7 @@
       "operations": "Операционные"
     },
     "tabs": {
-      "posModule": "Касса магазина",
+      "store": "Магазин",
       "procurement": "Закупки и накладные",
       "discountKinds": "Виды скидок",
       "promotions": "Акции и промокоды",

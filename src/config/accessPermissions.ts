@@ -61,11 +61,11 @@ export const PAGE_PERMISSIONS = {
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {
-  posModule: "tenancy.modules.view",
-  // Вкладка модуля «Закупки»: включение модуля (tenancy.modules.*, как у
-  // posModule — иначе выключенный модуль нельзя включить обратно) и правила
-  // распознавания по фото — их правит и руководитель с procurement.manage.
-  procurement: ["tenancy.modules.view", "procurement.manage"],
+  // Модули подключает только администратор платформы в Django admin. В CRM
+  // остаются рабочие настройки подключённого продукта: canAccess проверит
+  // одновременно право роли и включённый модуль по префиксу кода.
+  store: "pos.manage",
+  procurement: "procurement.manage",
   discountKinds: "promotions.view",
   promotions: "promotions.view",
   organization: "organization.view",

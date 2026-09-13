@@ -891,7 +891,8 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                            <Route path="settings/pos-module" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.posModule}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
+                            <Route path="settings/store" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.store}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
+                            <Route path="settings/pos-module" element={<Navigate to="/settings/store" replace />} />
                             <Route path="settings/procurement" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.procurement}><Suspense fallback={<LinearProgress />}><ProcurementSettingsPage /></Suspense></RequirePermission>} />
                             <Route path="settings/discount-kinds" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.discountKinds}><Suspense fallback={<LinearProgress />}><DiscountKindsSettingsPage /></Suspense></RequirePermission>} />
                             <Route path="settings/promotions" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.promotions}><Suspense fallback={<LinearProgress />}><PromotionsSettingsPage /></Suspense></RequirePermission>} />

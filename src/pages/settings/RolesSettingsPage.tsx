@@ -72,6 +72,15 @@ const CATEGORY_KEYS = [
   "reviews", "targets", "tasks", "tenancy", "vaccinations",
 ] as const;
 
+// Тариф и состав модулей — платформа, а не настройка роли организации.
+// Сохранённые исторические коды не удаляем из роли автоматически, но новые
+// назначения через CRM больше не предлагаем: API всё равно их не принимает
+// как основание включить или выключить модуль.
+const PLATFORM_ONLY_PERMISSION_CODES = new Set([
+  "tenancy.modules.view",
+  "tenancy.modules.manage",
+]);
+
 function categoryLabel(cat: string, t: (key: string) => string): string {
   return (CATEGORY_KEYS as readonly string[]).includes(cat)
     ? t(`roles.categories.${cat}`)
@@ -208,11 +217,21 @@ function RoleFormDrawer({
   // Полный список и выбранные коды остаются в состоянии, чтобы отключение
   // модуля не удаляло ранее выданные права из роли.
   const visiblePermissions = React.useMemo(
-    () => permissions.filter((permission) => !isModuleOff(permission.code)),
+    () => permissions.filter(
+      (permission) =>
+        !isModuleOff(permission.code) &&
+        !PLATFORM_ONLY_PERMISSION_CODES.has(permission.code),
+    ),
     [permissions, isModuleOff],
   );
   const hiddenPermissionCodes = React.useMemo(
-    () => permissions.filter((permission) => isModuleOff(permission.code)).map((p) => p.code),
+    () => permissions
+      .filter(
+        (permission) =>
+          isModuleOff(permission.code) ||
+          PLATFORM_ONLY_PERMISSION_CODES.has(permission.code),
+      )
+      .map((permission) => permission.code),
     [permissions, isModuleOff],
   );
   const grouped = React.useMemo(
