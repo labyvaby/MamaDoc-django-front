@@ -13,6 +13,9 @@
     },
     "tabs": {
       "posModule": "Касса магазина",
+      "procurement": "Закупки и накладные",
+      "discountKinds": "Виды скидок",
+      "promotions": "Акции и промокоды",
       "organization": "Организация",
       "branches": "{{branch.nomPl, capitalize}}",
       "roles": "Роли",
@@ -253,6 +256,7 @@
     "branchIpHelper": "Например, IP основного и резервного Wi-Fi роутера {{branch.gen}}.",
     "loadError": "Не удалось загрузить настройки СКУД для выбранной организации",
     "saveSuccess": "Настройки успешно сохранены",
+    "saveNoChanges": "Изменений нет — сохранять нечего",
     "saveError": "Ошибка при сохранении настроек"
   },
   "diagnoses": {

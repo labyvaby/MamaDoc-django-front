@@ -74,6 +74,7 @@ const ServicesPage = lazy(() => import("./pages/services/DjangoServicesPage"));
 const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
 const DjangoProductsPage = lazy(() => import("./pages/products/django"));
 const DjangoInventoryPage = lazy(() => import("./pages/inventory/django"));
+const ProcurementInvoicesPage = lazy(() => import("./pages/procurement"));
 const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
 const DjangoLabPage = lazy(() => import("./pages/lab/django"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
@@ -128,6 +129,9 @@ const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSetting
 const SiteSettingsPage = lazy(() => import("./pages/settings/SiteSettingsPage"));
 const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"));
 const PosModuleSettingsPage = lazy(() => import("./pages/settings/PosModuleSettingsPage"));
+const ProcurementSettingsPage = lazy(() => import("./pages/settings/ProcurementSettingsPage"));
+const DiscountKindsSettingsPage = lazy(() => import("./pages/settings/DiscountKindsSettingsPage"));
+const PromotionsSettingsPage = lazy(() => import("./pages/settings/PromotionsSettingsPage"));
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
 const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
@@ -173,6 +177,7 @@ const RootRedirect = () => {
     can,
     canOpenModule: moduleGate,
     hasActiveEmployee: activeEmployee != null,
+    defaultHomeRoute: activeOrganization?.themeConfig?.defaultHomeRoute,
   });
   return <Navigate to={path} replace />;
 };
@@ -354,6 +359,11 @@ function App() {
                         name: "inventory",
                         list: "/inventory",
                         meta: { label: "Инвентаризация" }
+                      },
+                      {
+                        name: "invoices",
+                        list: "/invoices",
+                        meta: { label: "Накладные" }
                       },
                       {
                         name: "patients",
@@ -707,6 +717,17 @@ function App() {
                             </RequirePermission>
                           }
                         />
+                        {/* Накладные (закупки): page-visibility право + модуль procurement (canAccess). */}
+                        <Route
+                          path="invoices"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.procurementInvoices}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <ProcurementInvoicesPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
                         <Route
                           path="retail"
                           element={
@@ -981,6 +1002,9 @@ function App() {
                               }
                             />
                             <Route path="settings/pos-module" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.posModule}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
+                            <Route path="settings/procurement" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.procurement}><Suspense fallback={<LinearProgress />}><ProcurementSettingsPage /></Suspense></RequirePermission>} />
+                            <Route path="settings/discount-kinds" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.discountKinds}><Suspense fallback={<LinearProgress />}><DiscountKindsSettingsPage /></Suspense></RequirePermission>} />
+                            <Route path="settings/promotions" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.promotions}><Suspense fallback={<LinearProgress />}><PromotionsSettingsPage /></Suspense></RequirePermission>} />
                             <Route
                               path="settings/branches"
                               element={

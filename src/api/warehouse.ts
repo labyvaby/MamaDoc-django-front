@@ -75,6 +75,8 @@ export type DjangoProduct = {
     modelId?: number | null;
     attributes?: DjangoProductAttributeValue[];
     unit: string;
+    /** Справочник единиц организации; null у старых товаров без привязки. */
+    unitId?: number | null;
     /** Цена продажи, сом. */
     price: number;
     isInfusion: boolean;
@@ -153,6 +155,20 @@ export type DjangoProductModel = {
     categoryId: number | null;
     categoryName: string | null;
     description: string;
+    isActive: boolean;
+    productCount: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+/** Единица измерения из справочника активной организации. */
+export type DjangoUnitOfMeasure = {
+    id: number;
+    organizationId: number;
+    name: string;
+    shortName: string;
+    decimalPlaces: number;
+    isFractional: boolean;
     isActive: boolean;
     productCount: number;
     createdAt: string;
@@ -374,6 +390,7 @@ export type ProductWriteData = {
     categoryId?: number;
     barcode?: string;
     unit?: string;
+    unitId?: number;
     description?: string;
     comment?: string;
     isForSale?: boolean;
@@ -557,6 +574,33 @@ export function getProductModels(
     return apiRequest<DjangoProductModel[]>(`/v2/warehouse/product-models/${qs}`, { signal });
 }
 
+/** Справочник единиц измерения, изолированный бэкендом по организации. */
+export function getUnitsOfMeasure(
+    signal?: AbortSignal,
+    organizationId?: number,
+    includeInactive = false,
+): Promise<DjangoUnitOfMeasure[]> {
+    const params = new URLSearchParams();
+    if (organizationId != null) params.set("organizationId", String(organizationId));
+    if (includeInactive) params.set("includeInactive", "true");
+    const qs = params.toString() ? `?${params}` : "";
+    return apiRequest<DjangoUnitOfMeasure[]>(`/v2/warehouse/units/${qs}`, { signal });
+}
+
+export function createUnitOfMeasure(data: {
+    name: string;
+    shortName: string;
+    decimalPlaces?: number;
+    organizationId?: number;
+}): Promise<DjangoUnitOfMeasure> {
+    const { organizationId, ...body } = data;
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoUnitOfMeasure>(`/v2/warehouse/units/${qs}`, {
+        method: "POST",
+        body,
+    });
+}
+
 export function createProductModel(data: {
     name: string;
     skuPrefix?: string;
@@ -580,6 +624,7 @@ export function generateProductMatrix(data: {
     attributeValueIds?: number[];
     price: number;
     unit?: string;
+    unitId?: number;
     generateBarcodes?: boolean;
 }): Promise<DjangoProductMatrix> {
     const { modelId, ...body } = data;

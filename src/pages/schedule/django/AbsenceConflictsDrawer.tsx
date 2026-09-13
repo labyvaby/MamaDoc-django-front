@@ -170,8 +170,8 @@ export const AbsenceConflictsDrawer: React.FC<{
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const canCreateTask = useCan("tasks.create");
-  const canCancelAppointments = useCan("appointments.cancel");
   const canUpdateAppointments = useCan("appointments.update");
+  const canCancelAppointments = useCan("appointments.cancel");
 
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [mode, setMode] = React.useState<ModeChoice>("");

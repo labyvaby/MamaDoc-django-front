@@ -39,6 +39,7 @@ import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import PointOfSaleOutlined from "@mui/icons-material/PointOfSaleOutlined";
 // import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
@@ -443,6 +444,9 @@ const SidebarSecondary: React.FC = () => {
     sales: can(PAGE_PERMISSIONS.sales),
     storage: can(PAGE_PERMISSIONS.warehouses),
     inventory: can(PAGE_PERMISSIONS.warehouses),
+    // Накладные (закупки): page-visibility право; модуль procurement гейтится
+    // внутри can() по префиксу кода — выключенный модуль прячет пункт сам.
+    procurement: can(PAGE_PERMISSIONS.procurementInvoices),
     // УПРАВЛЕНИЕ
     // payroll.view открывает общий отчёт; payroll.view_own + активная карточка
     // сотрудника — тот же экран в персональном режиме (только свои цифры).
@@ -611,7 +615,7 @@ const SidebarSecondary: React.FC = () => {
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || (isRetail && can_.clients) || can_.offerings || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
-    "storage": can_.products || can_.vaccinations || can_.sales || can_.storage,
+    "storage": can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.billing || can_.load || can_.notifications || can_.settings,
   };
 
@@ -936,6 +940,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Инвентаризация по штрихкодам */}
         {show("storage") && can_.inventory && (
           <SidebarMenuItem to="/inventory" icon={<FactCheckOutlined />} label="Инвентаризация" collapsed={siderCollapsed} />
+        )}
+
+        {/* Накладные: приход от поставщиков, возвраты, оплаты, поставщики */}
+        {show("storage") && can_.procurement && (
+          <SidebarMenuItem to="/invoices" icon={<ReceiptLongOutlined />} label="Накладные" collapsed={siderCollapsed} />
         )}
 
         {/* ══════════════════════════════════════════
