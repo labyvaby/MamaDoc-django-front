@@ -2,17 +2,20 @@ import {
   Box,
   Button,
   Divider,
+  MenuItem,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import type { PosQuote } from "../../api/pos";
+import type { DiscountKind } from "../../api/promotions";
 import { posColors } from "./layout";
 import { PosAmount } from "./ui";
 
 export type Benefits = {
   discount: string;
+  discountKindId: number | null;
   clientDiscount: boolean;
   bonuses: boolean;
   promotions: boolean;
@@ -21,6 +24,7 @@ export type Benefits = {
 };
 export const emptyBenefits: Benefits = {
   discount: "0",
+  discountKindId: null,
   clientDiscount: false,
   bonuses: false,
   promotions: false,
@@ -39,6 +43,8 @@ export function LivePaymentPanel({
   bonuses,
   hasClient,
   locked,
+  discountKinds,
+  discountMode,
 }: {
   actions: Record<string, boolean>;
   benefits: Benefits;
@@ -50,6 +56,8 @@ export function LivePaymentPanel({
   bonuses: number;
   hasClient: boolean;
   locked: boolean;
+  discountKinds: DiscountKind[];
+  discountMode: "manual" | "kinds" | "both";
 }) {
   const c = posColors(useTheme());
   const patch = (value: Partial<Benefits>) =>
@@ -125,15 +133,45 @@ export function LivePaymentPanel({
             <Typography fontSize={14} fontWeight={700} mb={1}>
               Другая скидка
             </Typography>
-            <TextField
-              size="small"
-              label="Скидка, %"
-              value={benefits.discount}
-              onChange={(event) => patch({ discount: event.target.value })}
-              disabled={locked}
-              inputProps={{ inputMode: "decimal" }}
-              fullWidth
-            />
+            {discountMode !== "kinds" && (
+              <TextField
+                size="small"
+                label="Скидка, %"
+                value={benefits.discount}
+                onChange={(event) =>
+                  patch({ discount: event.target.value, discountKindId: null })
+                }
+                disabled={locked || benefits.discountKindId !== null}
+                inputProps={{ inputMode: "decimal" }}
+                fullWidth
+              />
+            )}
+            {discountMode !== "manual" && discountKinds.length > 0 && (
+              <TextField
+                select
+                size="small"
+                label="Вид скидки"
+                value={benefits.discountKindId ?? ""}
+                onChange={(event) =>
+                  patch({
+                    discount: "0",
+                    discountKindId:
+                      event.target.value === "" ? null : Number(event.target.value),
+                  })
+                }
+                disabled={locked || Number(benefits.discount) > 0}
+                fullWidth
+                sx={{ mt: discountMode === "both" ? 1 : 0 }}
+                helperText="Процент задаётся в настройках и проверяется сервером"
+              >
+                <MenuItem value="">Не выбран</MenuItem>
+                {discountKinds.map((kind) => (
+                  <MenuItem key={kind.id} value={kind.id}>
+                    {kind.name} · {kind.percent}%
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
           </Box>
         )}
         {actions.promotions && (

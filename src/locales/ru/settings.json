@@ -13,6 +13,8 @@
     },
     "tabs": {
       "posModule": "Касса магазина",
+      "discountKinds": "Виды скидок",
+      "promotions": "Акции и промокоды",
       "organization": "Организация",
       "branches": "{{branch.nomPl, capitalize}}",
       "roles": "Роли",

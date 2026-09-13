@@ -123,6 +123,8 @@ const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSetting
 const SiteSettingsPage = lazy(() => import("./pages/settings/SiteSettingsPage"));
 const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"));
 const PosModuleSettingsPage = lazy(() => import("./pages/settings/PosModuleSettingsPage"));
+const DiscountKindsSettingsPage = lazy(() => import("./pages/settings/DiscountKindsSettingsPage"));
+const PromotionsSettingsPage = lazy(() => import("./pages/settings/PromotionsSettingsPage"));
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
 const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
@@ -872,6 +874,8 @@ function App() {
                               }
                             />
                             <Route path="settings/pos-module" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.posModule}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
+                            <Route path="settings/discount-kinds" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.discountKinds}><Suspense fallback={<LinearProgress />}><DiscountKindsSettingsPage /></Suspense></RequirePermission>} />
+                            <Route path="settings/promotions" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.promotions}><Suspense fallback={<LinearProgress />}><PromotionsSettingsPage /></Suspense></RequirePermission>} />
                             <Route
                               path="settings/branches"
                               element={

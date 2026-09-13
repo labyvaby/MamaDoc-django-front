@@ -4,6 +4,7 @@ import {
   Button,
   FormControlLabel,
   LinearProgress,
+  MenuItem,
   Stack,
   Switch,
   TextField,
@@ -18,7 +19,7 @@ import { SettingsLayout } from "./SettingsLayout";
 
 type ModuleRow = { moduleCode: string; isEnabled: boolean };
 type PosRulesResponse = {
-  rules: Record<string, boolean | number>;
+  rules: Record<string, boolean | number | string>;
   labels: Record<string, string>;
 };
 
@@ -49,7 +50,7 @@ export default function PosModuleSettingsPage() {
     enabled: Boolean(enabled && canManageRules && scope.branchId),
   });
   const [ruleDraft, setRuleDraft] = React.useState<
-    Record<string, boolean | number>
+    Record<string, boolean | number | string>
   >({});
   const [rulesPending, setRulesPending] = React.useState(false);
 
@@ -178,6 +179,24 @@ export default function PosModuleSettingsPage() {
                         : key)
                     }
                   />
+                ) : key === "discount_mode" ? (
+                  <TextField
+                    key={key}
+                    select
+                    label="Режим скидок"
+                    value={value}
+                    onChange={(event) =>
+                      setRuleDraft((previous) => ({
+                        ...previous,
+                        [key]: event.target.value,
+                      }))
+                    }
+                    helperText="Ручной процент, справочник видов скидок или оба варианта"
+                  >
+                    <MenuItem value="both">Ручные и виды скидок</MenuItem>
+                    <MenuItem value="manual">Только ручные скидки</MenuItem>
+                    <MenuItem value="kinds">Только виды скидок</MenuItem>
+                  </TextField>
                 ) : (
                   <TextField
                     key={key}

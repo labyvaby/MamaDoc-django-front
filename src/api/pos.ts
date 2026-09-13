@@ -23,7 +23,7 @@ export type PosBootstrap = {
   cashlessMethods: Array<{ id: number; name: string }>;
   categories: Array<{ id: number; name: string }>;
   actions: Record<string, boolean>;
-  rules: Record<string, boolean | number>;
+  rules: Record<string, boolean | number | string>;
 };
 export type PosTender = {
   method: "cash" | "card" | "cashless";
@@ -36,6 +36,7 @@ export type PosCart = {
   clientId?: number;
   lines: Array<{ productId: number; quantity: string }>;
   discountPercent: string;
+  discountKindId?: number;
   clientDiscount: boolean;
   promotions: boolean;
   promoCode: string;

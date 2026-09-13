@@ -58,6 +58,8 @@ export const PAGE_PERMISSIONS = {
 
 export const SETTINGS_TAB_PERMISSIONS = {
   posModule: "tenancy.modules.view",
+  discountKinds: "promotions.view",
+  promotions: "promotions.view",
   organization: "organization.view",
   branches: "branches.view",
   // Сайт-визитку настраивает тот же, кто правит организацию: конструктор
