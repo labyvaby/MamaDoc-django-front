@@ -99,6 +99,11 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // же notifications.manage, что и настройки уведомлений — своего кода прав
   // у модуля нет (docs/automations-api.md §2).
   automations: PAGE_PERMISSIONS.notifications,
+  // Подключение WhatsApp и каталог шаблонов: на бэке те же
+  // notifications.manage (docs/whatsapp-templates-mvp.md §1.1). Привязка к
+  // подключению Raven внутри страницы — только суперадмину, это проверяет
+  // сам бэк.
+  whatsapp: PAGE_PERMISSIONS.notifications,
   productAttributes: "warehouse.manage",
   clients: "clients.manage",
   // Витрина odoctor.kg. Право своё, а не общее с расписанием: за страницей

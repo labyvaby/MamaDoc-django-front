@@ -104,6 +104,17 @@ export const djangoQueryKeys = {
       ["django", "notifications", "history", filters] as const,
   },
 
+  whatsapp: {
+    all: ["django", "whatsapp"] as const,
+    // Экран «Настройки → WhatsApp»: подключение организации и зеркало
+    // каталога. Каталог конструктора автоматизаций несёт ту же WhatsApp-часть,
+    // поэтому после «Обновить шаблоны» инвалидируется и он.
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "whatsapp", "settings", organizationId ?? null] as const,
+    // Подключения проекта Raven — общие на всю CRM, без организации в ключе.
+    ravenConnections: ["django", "whatsapp", "raven-connections"] as const,
+  },
+
   automations: {
     all: ["django", "automations"] as const,
     // Всё, что меняется при сохранении правила. Каталог сюда НЕ входит: он

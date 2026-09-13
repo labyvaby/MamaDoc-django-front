@@ -1,5 +1,10 @@
 import { apiRequest } from "./client";
 import { scopeParams, type Scope } from "./scope";
+import type {
+  WhatsAppConnectionInfo,
+  WhatsAppParameterSource,
+  WhatsAppTemplate,
+} from "./whatsapp";
 
 /**
  * Конструктор автоматизаций: «КОГДА событие → ЕСЛИ условия → ТО действия».
@@ -72,6 +77,8 @@ export interface AutomationCatalogActionConfigField {
   default?: string;
   /** Поле имеет смысл только для этих каналов (пусто = для всех). */
   onlyForChannels?: string[];
+  /** Поле запрещено для этих каналов (`body` у WhatsApp). */
+  notForChannels?: string[];
 }
 
 export interface AutomationCatalogAction {
@@ -103,11 +110,32 @@ export interface AutomationRecipientOptions {
   roles: AutomationRecipientRole[];
 }
 
+/**
+ * WhatsApp-часть каталога — единственная, что зависит от организации:
+ * подключение и зеркало её шаблонов. Пустой объект приходит, когда
+ * организацию по запросу определить не удалось.
+ */
+export interface AutomationWhatsAppCatalog {
+  connection: WhatsAppConnectionInfo;
+  templates: WhatsAppTemplate[];
+  parameterSources: WhatsAppParameterSource[];
+}
+
 export interface AutomationCatalog {
   events: AutomationCatalogEvent[];
   actions: AutomationCatalogAction[];
   conditionGroupOperators: string[];
   recipientOptions: AutomationRecipientOptions;
+  whatsapp?: AutomationWhatsAppCatalog | Record<string, never>;
+}
+
+/** WhatsApp-каталог, если бэк его прислал; `undefined` у пустого объекта. */
+export function whatsappCatalog(
+  catalog: AutomationCatalog,
+): AutomationWhatsAppCatalog | undefined {
+  const value = catalog.whatsapp;
+  if (!value || !("connection" in value)) return undefined;
+  return value as AutomationWhatsAppCatalog;
 }
 
 /** Лист дерева условий. У оператора `exists` поля `value` нет. */
@@ -148,6 +176,20 @@ export type AutomationRecipient =
 
 /** Верхняя граница списка получателей одного действия — ограничение бэка. */
 export const MAX_RECIPIENTS = 50;
+/** Откуда берётся значение позиционного параметра WhatsApp-шаблона. */
+export type WhatsAppParameterSourceCode = "event" | "constant";
+
+/**
+ * Привязка `{{i}}` шаблона: поле события (только из `variables` события,
+ * опечатка ловится при сохранении) или постоянная строка.
+ */
+export interface WhatsAppParameterBinding {
+  source: WhatsAppParameterSourceCode;
+  /** Только у `source: "event"`. */
+  field?: string;
+  /** Только у `source: "constant"`. */
+  value?: string;
+}
 
 export interface AutomationActionConfig {
   channel?: string;
@@ -162,7 +204,14 @@ export interface AutomationActionConfig {
   recipientPhone?: string;
   /** Заголовок push-уведомления; у SMS и WhatsApp заголовка нет. */
   title?: string;
+  /** Текст SMS и push. У WhatsApp запрещён: текст живёт в WhatsApp Manager. */
   body?: string;
+  /** WhatsApp: шаблон из `catalog.whatsapp.templates[].id`. */
+  templateId?: string;
+  /** WhatsApp: язык шаблона; должен совпадать с шаблоном. */
+  language?: string;
+  /** WhatsApp: `parameters[i]` заполняет `{{i+1}}`; ровно `parameterCount` штук. */
+  parameters?: WhatsAppParameterBinding[];
   [key: string]: unknown;
 }
 
@@ -172,6 +221,12 @@ export interface AutomationAction {
   actionType: string;
   delayMinutes: number;
   config: AutomationActionConfig;
+  /**
+   * WhatsApp-действие с произвольным текстом, сохранённое до появления
+   * шаблонов. Правило видно и редактируется, но движок его не отправляет,
+   * пока не выбран шаблон.
+   */
+  needsTemplateSetup?: boolean;
 }
 
 /**
@@ -212,6 +267,8 @@ export interface Automation {
   lastRunAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Хотя бы одно действие правила требует выбора шаблона WhatsApp. */
+  needsTemplateSetup?: boolean;
 }
 
 export interface AutomationActionInput {
@@ -242,7 +299,21 @@ export type AutomationRunStatus =
   | "completed"
   | "failed";
 
+/** Выполнение: `sent` значит «передано Raven», а не «доставлено». */
 export type AutomationJobStatus = "pending" | "sent" | "failed" | "cancelled";
+
+/**
+ * Доставка, как её сообщил Raven вебхуками и досверкой. Двигается только
+ * вперёд (`accepted` → `sent` → `delivered` → `read`); `failed` — терминал.
+ * Пусто, пока сообщение не передано Raven, и у SMS/push, где статусов
+ * доставки нет.
+ */
+export type AutomationDeliveryStatus =
+  | "accepted"
+  | "sent"
+  | "delivered"
+  | "read"
+  | "failed";
 
 export interface AutomationJob {
   id: number;
@@ -256,6 +327,19 @@ export interface AutomationJob {
   attemptsCount: number;
   externalMessageId: string;
   error: string;
+  channel?: string;
+  deliveryStatus?: AutomationDeliveryStatus | "";
+  deliveryErrorCode?: string;
+  deliveryError?: string;
+  deliveryUpdatedAt?: string | null;
+  /** wamid — id сообщения у Meta. */
+  providerMessageId?: string;
+  /** Снимок шаблона WhatsApp, с которым отправка была создана. */
+  whatsappTemplateId?: string;
+  whatsappTemplateName?: string;
+  whatsappLanguage?: string;
+  /** Уже подставленные значения `{{1}}..{{n}}`. */
+  resolvedParameters?: string[];
 }
 
 export interface AutomationRun {
@@ -281,6 +365,12 @@ export interface AutomationTestInput {
   organizationId?: number;
 }
 
+/** Что помешает отправке WhatsApp: машинный код и готовая подпись. */
+export interface AutomationTestActionError {
+  code: string;
+  label: string;
+}
+
 export interface AutomationTestActionPreview {
   actionType: string;
   recipient: string;
@@ -289,6 +379,14 @@ export interface AutomationTestActionPreview {
   delayMinutes: number;
   channel: string;
   renderedTitle: string;
+  /** Только у WhatsApp: номер отправителя, шаблон и подставленные параметры. */
+  senderPhone?: string;
+  templateId?: string;
+  templateName?: string;
+  language?: string;
+  parameters?: string[];
+  /** Пусто — всё в порядке. Dry-run ничего не отправляет в любом случае. */
+  errors?: AutomationTestActionError[];
 }
 
 export interface AutomationTestResult {
@@ -447,6 +545,13 @@ export function isEmptyConditions(
  * каталоге — нет и в выпадающем списке.
  */
 export const PROFICHAT_PUSH_CHANNEL = "profichat_push";
+
+/**
+ * Канал WhatsApp: сообщение — всегда одобренный Meta шаблон. Вместо текста
+ * действие хранит `templateId` и привязки параметров (`docs/automations-api.md`
+ * §7, «Канал whatsapp»).
+ */
+export const WHATSAPP_CHANNEL = "whatsapp";
 
 /**
  * Псевдособытие правила по расписанию.
