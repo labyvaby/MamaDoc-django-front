@@ -51,6 +51,10 @@ export const PAGE_PERMISSIONS = {
   // Просмотр истории и незавершённых пересчётов доступен вместе со складом;
   // операции открытия/сканирования/завершения дополнительно проверяет API.
   inventory: "warehouse.view",
+  // Накладные (закупки): page-visibility право; данные читает procurement.view,
+  // кнопки — свои коды (см. PROCUREMENT_PERMISSIONS в api/procurement.ts).
+  // Модуль procurement гейтится через canAccess по префиксу кода.
+  procurementInvoices: "procurement.invoices.view",
   ecommerce: "ecommerce.view",
   targets: "targets.view",
   messaging: "messaging.view",
@@ -58,6 +62,10 @@ export const PAGE_PERMISSIONS = {
 
 export const SETTINGS_TAB_PERMISSIONS = {
   posModule: "tenancy.modules.view",
+  // Вкладка модуля «Закупки»: включение модуля (tenancy.modules.*, как у
+  // posModule — иначе выключенный модуль нельзя включить обратно) и правила
+  // распознавания по фото — их правит и руководитель с procurement.manage.
+  procurement: ["tenancy.modules.view", "procurement.manage"],
   organization: "organization.view",
   branches: "branches.view",
   // Сайт-визитку настраивает тот же, кто правит организацию: конструктор

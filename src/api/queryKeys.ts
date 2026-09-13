@@ -261,6 +261,26 @@ export const djangoQueryKeys = {
       ["django", "documents", "roles", organizationId ?? null] as const,
   },
 
+  // Закупки: накладные, возвраты, оплаты и поставщики. В каждом ключе —
+  // организация и филиал: списки бэк сужает по ним (см. api/procurement.ts).
+  procurement: {
+    all: ["django", "procurement"] as const,
+    suppliers: (params: Record<string, unknown>) =>
+      ["django", "procurement", "suppliers", params] as const,
+    receipts: (params: Record<string, unknown>) =>
+      ["django", "procurement", "receipts", params] as const,
+    receipt: (id: number, params: Record<string, unknown>) =>
+      ["django", "procurement", "receipt", id, params] as const,
+    summary: (params: Record<string, unknown>) =>
+      ["django", "procurement", "summary", params] as const,
+    returns: (params: Record<string, unknown>) =>
+      ["django", "procurement", "returns", params] as const,
+    payments: (params: Record<string, unknown>) =>
+      ["django", "procurement", "payments", params] as const,
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "procurement", "settings", organizationId ?? null] as const,
+  },
+
   cleaning: {
     all: ["django", "cleaning"] as const,
     types: (params: Record<string, unknown>) =>
