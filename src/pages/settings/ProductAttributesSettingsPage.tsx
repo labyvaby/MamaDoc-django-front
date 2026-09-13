@@ -920,7 +920,6 @@ const AttributeEditor: React.FC<AttributeEditorProps> = ({
 type CategoryEditorProps = {
     item: DjangoProductCategoryNode | null;
     attributes: DjangoProductAttribute[];
-    categories: DjangoProductCategoryNode[];
     open: boolean;
     onClose: () => void;
     onChanged: () => void;
@@ -930,7 +929,6 @@ type CategoryEditorProps = {
 const CategoryEditor: React.FC<CategoryEditorProps> = ({
     item,
     attributes,
-    categories,
     open,
     onClose,
     onChanged,
@@ -940,7 +938,6 @@ const CategoryEditor: React.FC<CategoryEditorProps> = ({
     const theme = useTheme();
     const tones = useTones();
     const [name, setName] = React.useState("");
-    const [parentId, setParentId] = React.useState<number | null>(null);
     const [attributeIds, setAttributeIds] = React.useState<number[]>([]);
     const [active, setActive] = React.useState(true);
     const [busy, setBusy] = React.useState(false);
@@ -948,7 +945,6 @@ const CategoryEditor: React.FC<CategoryEditorProps> = ({
     React.useEffect(() => {
         if (!open) return;
         setName(item?.name ?? "");
-        setParentId(item?.parentId ?? null);
         setAttributeIds(item?.attributeIds ?? []);
         setActive(item?.isActive ?? true);
         setBusy(false);
@@ -974,15 +970,12 @@ const CategoryEditor: React.FC<CategoryEditorProps> = ({
             if (item) {
                 await updateProductCategory(item.id, {
                     name: name.trim(),
-                    parentId: parentId ?? undefined,
-                    clearParent: item.parentId != null && parentId == null,
                     attributeIds,
                     isActive: active,
                 });
             } else {
                 await createProductCategory({
                     name: name.trim(),
-                    parentId: parentId ?? undefined,
                     attributeIds,
                     organizationId,
                 });
@@ -1032,26 +1025,6 @@ const CategoryEditor: React.FC<CategoryEditorProps> = ({
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Одежда"
             />
-            <TextField
-                select
-                label="Родительская категория"
-                size="small"
-                value={parentId ?? ""}
-                disabled={busy}
-                onChange={(event) =>
-                    setParentId(event.target.value === "" ? null : Number(event.target.value))
-                }
-            >
-                <MenuItem value="">Без родителя</MenuItem>
-                {categories
-                    .filter((category) => category.id !== item?.id && category.isActive)
-                    .map((category) => (
-                        <MenuItem key={category.id} value={category.id}>
-                            {category.name}
-                        </MenuItem>
-                    ))}
-            </TextField>
-
             {hasColor && hasSize && (
                 <Box
                     sx={{
@@ -1715,7 +1688,6 @@ const ProductAttributesSettingsPage: React.FC = () => {
                     open={categoryEditor !== undefined}
                     item={categoryEditor ?? null}
                     attributes={attributes}
-                    categories={categories}
                     onClose={() => setCategoryEditor(undefined)}
                     onChanged={() => void load()}
                     organizationId={orgId}
