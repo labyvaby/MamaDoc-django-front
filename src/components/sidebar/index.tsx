@@ -99,7 +99,6 @@ import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
 import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
-import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 
