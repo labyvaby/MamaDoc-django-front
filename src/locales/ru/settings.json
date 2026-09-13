@@ -13,6 +13,7 @@
     },
     "tabs": {
       "posModule": "Касса магазина",
+      "procurement": "Закупки и накладные",
       "organization": "Организация",
       "branches": "{{branch.nomPl, capitalize}}",
       "roles": "Роли",
