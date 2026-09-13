@@ -35,10 +35,12 @@ import {
   testAutomation,
   updateAutomation,
   variableLabel,
+  whatsappCatalog,
   type Automation,
   type AutomationCatalog,
   type AutomationCatalogEvent,
   type AutomationStatus,
+  type AutomationTestActionPreview,
   type AutomationTestResult,
 } from "../../../api/automations";
 import { getErrorFields } from "../../../api/client";
@@ -48,12 +50,14 @@ import { ConditionBuilder } from "./ConditionBuilder";
 import { FieldValueInput } from "./FieldValueInput";
 import { PhonePayloadInput } from "./PhonePayloadInput";
 import { ScheduleEditor } from "./ScheduleEditor";
+import { WhatsAppActionFields } from "./WhatsAppActionFields";
 import {
   automationToForm,
   defaultRecipientField,
   emptyForm,
   hasErrors,
   isScheduledForm,
+  isWhatsAppAction,
   makeAction,
   supportsTitle,
   relevantPayloadFields,
@@ -124,6 +128,8 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
   /** Правило по расписанию: вместо условий — периодичность, вместо
       переменной-получателя — введённый номер телефона. */
   const scheduled = isScheduledForm(form);
+  /** Подключение WhatsApp организации и зеркало её шаблонов из каталога. */
+  const whatsapp = useMemo(() => whatsappCatalog(catalog), [catalog]);
 
   /**
    * Форма берётся из пропсов ровно один раз — при открытии диалога.
@@ -192,6 +198,18 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
       }),
       timeRequired: t("automations.schedule.timeRequired"),
       phoneRequired: t("automations.action.phoneRequired"),
+      templateRequired: t("automations.whatsapp.templateRequired"),
+      templateNotFound: t("automations.whatsapp.templateNotFound"),
+      activationBlocked: (reason: string) =>
+        t("automations.whatsapp.activationBlocked", { reason }),
+      parameterCount: (expected: number, actual: number) =>
+        t("automations.whatsapp.parameterCount", { expected, actual }),
+      parameterFieldRequired: (index: number) =>
+        t("automations.whatsapp.parameterFieldRequired", { index }),
+      parameterValueRequired: (index: number) =>
+        t("automations.whatsapp.parameterValueRequired", { index }),
+      parameterFieldUnknown: (index: number, field: string) =>
+        t("automations.whatsapp.parameterFieldUnknown", { index, field }),
     }),
     [t],
   );
@@ -200,8 +218,8 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
   // название в только что открытом «Создать» — шум.
   useEffect(() => {
     if (!submitted) return;
-    setErrors(validateForm(form, event, validationLabels));
-  }, [form, event, submitted, validationLabels]);
+    setErrors(validateForm(form, event, validationLabels, whatsapp));
+  }, [form, event, submitted, validationLabels, whatsapp]);
 
   const update = (patch: Partial<AutomationForm>) => {
     setDirty(true);
@@ -309,7 +327,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
    */
   const runTest = () => {
     setSubmitted(true);
-    const nextErrors = validateForm(form, event, validationLabels);
+    const nextErrors = validateForm(form, event, validationLabels, whatsapp);
     setErrors(nextErrors);
     if (hasErrors(nextErrors)) {
       setTestResult(null);
@@ -322,7 +340,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
 
   const submit = () => {
     setSubmitted(true);
-    const nextErrors = validateForm(form, event, validationLabels);
+    const nextErrors = validateForm(form, event, validationLabels, whatsapp);
     setErrors(nextErrors);
     if (hasErrors(nextErrors)) {
       setSaveError(t("automations.validation.fixErrors"));
@@ -649,46 +667,62 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                         />
                       )}
 
-                      <TextField
-                        required
-                        fullWidth
-                        multiline
-                        rows={3}
-                        size="small"
-                        label={t("automations.action.bodyLabel")}
-                        value={action.body}
-                        onChange={(e) => updateAction(action.key, { body: e.target.value })}
-                        disabled={busy}
-                        inputRef={(el) => {
-                          bodyRefs.current[action.key] = el;
-                        }}
-                        error={Boolean(errors.actionFields[action.key]?.body)}
-                        helperText={
-                          errors.actionFields[action.key]?.body ??
-                          t("automations.action.bodyHint")
-                        }
-                      />
+                      {/* WhatsApp — не текст, а одобренный Meta шаблон из
+                          каталога организации и привязки его параметров. */}
+                      {isWhatsAppAction(action) ? (
+                        <WhatsAppActionFields
+                          action={action}
+                          event={event}
+                          scheduled={scheduled}
+                          whatsapp={whatsapp}
+                          errors={errors.actionFields[action.key] ?? {}}
+                          disabled={busy}
+                          onChange={(patch) => updateAction(action.key, patch)}
+                        />
+                      ) : (
+                        <>
+                          <TextField
+                            required
+                            fullWidth
+                            multiline
+                            rows={3}
+                            size="small"
+                            label={t("automations.action.bodyLabel")}
+                            value={action.body}
+                            onChange={(e) => updateAction(action.key, { body: e.target.value })}
+                            disabled={busy}
+                            inputRef={(el) => {
+                              bodyRefs.current[action.key] = el;
+                            }}
+                            error={Boolean(errors.actionFields[action.key]?.body)}
+                            helperText={
+                              errors.actionFields[action.key]?.body ??
+                              t("automations.action.bodyHint")
+                            }
+                          />
 
-                      <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center" }}>
-                        <Typography variant="caption" color="text.secondary">
-                          {t("automations.action.variablesLabel")}
-                        </Typography>
-                        {(event?.variables ?? []).map((variable) => (
-                          // Показываем подпись, вставляем код: пользователю
-                          // «Телефон клиента» понятнее, чем {{client_phone}},
-                          // а в тексте шаблона движку нужен именно код.
-                          <Tooltip key={variable} title={`{{${variable}}}`}>
-                            <Chip
-                              size="small"
-                              variant="outlined"
-                              label={variableLabel(event, variable)}
-                              onClick={() => insertVariable(action, variable)}
-                              disabled={busy}
-                              sx={{ cursor: "pointer" }}
-                            />
-                          </Tooltip>
-                        ))}
-                      </Box>
+                          <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center" }}>
+                            <Typography variant="caption" color="text.secondary">
+                              {t("automations.action.variablesLabel")}
+                            </Typography>
+                            {(event?.variables ?? []).map((variable) => (
+                              // Показываем подпись, вставляем код: пользователю
+                              // «Телефон клиента» понятнее, чем {{client_phone}},
+                              // а в тексте шаблона движку нужен именно код.
+                              <Tooltip key={variable} title={`{{${variable}}}`}>
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  label={variableLabel(event, variable)}
+                                  onClick={() => insertVariable(action, variable)}
+                                  disabled={busy}
+                                  sx={{ cursor: "pointer" }}
+                                />
+                              </Tooltip>
+                            ))}
+                          </Box>
+                        </>
+                      )}
                     </Stack>
                   </Paper>
                 ))}
@@ -806,14 +840,20 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                             // отправлены» рядом с пустым получателем нельзя.
                             testResult.actions.some((preview) => !preview.recipient)
                             ? "warning"
-                            : "success"
+                            : // То же с WhatsApp: бэк перечислил, что помешает
+                              // отправке (подключение, модерация, пустой параметр).
+                              testResult.actions.some((preview) => preview.errors?.length)
+                              ? "warning"
+                              : "success"
                       }
                     >
                       {!testResult.matched
                         ? t("automations.test.notMatched")
                         : testResult.actions.some((preview) => !preview.recipient)
                           ? t("automations.test.matchedNoRecipient")
-                          : t("automations.test.matched")}
+                          : testResult.actions.some((preview) => preview.errors?.length)
+                            ? t("automations.test.matchedWithProblems")
+                            : t("automations.test.matched")}
                     </Alert>
                     {testResult.actions.length > 0 && (
                       <Typography variant="caption" color="text.secondary">
@@ -833,6 +873,12 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                             {" · "}
                             {t("automations.test.resultDelay", { count: preview.delayMinutes })}
                           </Typography>
+                          {/* У WhatsApp есть отправитель и шаблон; а список
+                              причин, по которым реальная отправка не пройдёт,
+                              бэк отдаёт готовыми подписями. */}
+                          {isWhatsAppPreview(preview) && (
+                            <WhatsAppPreviewDetails preview={preview} />
+                          )}
                           {/* Заголовок показываем отдельной строкой ровно
                               так, как его увидят в шторке телефона. */}
                           {supportsTitle(preview.channel) && (
@@ -940,6 +986,66 @@ function recipientChoices(
 function looksLikePhone(value: string): boolean {
   return /^\+?\d[\d\s()-]{8,}$/.test(value.trim());
 }
+
+/** Прогон WhatsApp-действия: бэк заполняет отправителя, шаблон и `errors`. */
+function isWhatsAppPreview(preview: AutomationTestActionPreview): boolean {
+  return preview.channel === "whatsapp";
+}
+
+/**
+ * Детали прогона WhatsApp: с какого номера, каким шаблоном, с какими
+ * значениями — и что помешает настоящей отправке. `errors` показываем
+ * предупреждением, а не ошибкой: прогон удался, это отправка не пройдёт.
+ */
+const WhatsAppPreviewDetails: React.FC<{ preview: AutomationTestActionPreview }> = ({
+  preview,
+}) => {
+  const { t } = useT("settings");
+  const parameters = preview.parameters ?? [];
+  const errors = preview.errors ?? [];
+  return (
+    <Stack spacing={0.5}>
+      <Typography variant="caption" color="text.secondary">
+        {t("automations.test.whatsappSender")}:{" "}
+        {preview.senderPhone || t("automations.test.whatsappSenderMissing")}
+        {" · "}
+        {t("automations.test.whatsappTemplate")}:{" "}
+        {preview.templateName
+          ? `${preview.templateName} (${preview.language})`
+          : t("automations.test.whatsappTemplateMissing")}
+      </Typography>
+      {parameters.length > 0 && (
+        <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center" }}>
+          <Typography variant="caption" color="text.secondary">
+            {t("automations.test.whatsappParameters")}:
+          </Typography>
+          {parameters.map((value, index) => (
+            <Chip
+              key={index}
+              size="small"
+              variant="outlined"
+              color={value ? "default" : "warning"}
+              label={`{{${index + 1}}} = ${value || t("automations.test.whatsappParameterEmpty")}`}
+              sx={{ fontFamily: "monospace" }}
+            />
+          ))}
+        </Box>
+      )}
+      {errors.length > 0 && (
+        <Alert severity="warning" sx={{ py: 0 }}>
+          <Typography variant="caption" display="block" fontWeight={600}>
+            {t("automations.test.whatsappErrors")}
+          </Typography>
+          {errors.map((error) => (
+            <Typography key={error.code} variant="caption" display="block">
+              • {error.label || error.code}
+            </Typography>
+          ))}
+        </Alert>
+      )}
+    </Stack>
+  );
+};
 
 /** Название действия из каталога — «Отправить сообщение», а не код. */
 function actionLabel(catalog: AutomationCatalog, actionType: string): string {

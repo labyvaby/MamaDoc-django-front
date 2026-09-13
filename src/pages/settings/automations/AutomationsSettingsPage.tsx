@@ -274,15 +274,30 @@ const AutomationsSettingsPage: React.FC = () => {
                     {t("automations.actionsCount", { count: item.actions.length })}
                   </TableCell>
                   <TableCell>
-                    <Tooltip title={t(`automations.statusHint.${item.status}`)}>
-                      <Chip
-                        size="small"
-                        label={t(`automations.status.${item.status}`)}
-                        color={STATUS_COLOR[item.status] ?? "default"}
-                        variant="outlined"
-                        sx={{ fontWeight: 600 }}
-                      />
-                    </Tooltip>
+                    <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
+                      <Tooltip title={t(`automations.statusHint.${item.status}`)}>
+                        <Chip
+                          size="small"
+                          label={t(`automations.status.${item.status}`)}
+                          color={STATUS_COLOR[item.status] ?? "default"}
+                          variant="outlined"
+                          sx={{ fontWeight: 600 }}
+                        />
+                      </Tooltip>
+                      {/* Старое WhatsApp-правило с текстом: движок его не
+                          отправляет, пока не выбран шаблон — видно из списка,
+                          а не только по ошибкам в истории. */}
+                      {item.needsTemplateSetup && (
+                        <Tooltip title={t("automations.needsTemplateSetupHint")}>
+                          <Chip
+                            size="small"
+                            label={t("automations.needsTemplateSetup")}
+                            color="warning"
+                            sx={{ fontWeight: 600 }}
+                          />
+                        </Tooltip>
+                      )}
+                    </Stack>
                   </TableCell>
                   <TableCell>{dayjs(item.updatedAt).format("DD.MM.YYYY HH:mm")}</TableCell>
                   <TableCell align="right">

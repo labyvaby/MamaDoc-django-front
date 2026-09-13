@@ -37,6 +37,7 @@ import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
 import RouterOutlined from "@mui/icons-material/RouterOutlined";
 import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 import BoltOutlined from "@mui/icons-material/BoltOutlined";
+import WhatsApp from "@mui/icons-material/WhatsApp";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
@@ -208,6 +209,12 @@ const TAB_DEFS: TabDef[] = [
     key: "automations",
     to: "/settings/automations",
     icon: <BoltOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "whatsapp",
+    to: "/settings/whatsapp",
+    icon: <WhatsApp fontSize="small" />,
     group: "operations",
   },
   {

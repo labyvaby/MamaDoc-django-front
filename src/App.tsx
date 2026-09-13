@@ -122,6 +122,7 @@ const PatientsPage = lazy(() => import("./pages/patients"));
 const RetailClientsPage = lazy(() => import("./pages/clients"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
+const WhatsAppSettingsPage = lazy(() => import("./pages/settings/WhatsAppSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
 const OrganizationSettingsPage = lazy(() => import("./pages/settings/OrganizationSettingsPage"));
 const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSettingsPage"));
@@ -924,6 +925,16 @@ function App() {
                             <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.automations}>
                               <Suspense fallback={<LinearProgress />}>
                                 <AutomationsSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="settings/whatsapp"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.whatsapp}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <WhatsAppSettingsPage />
                               </Suspense>
                             </RequirePermission>
                           }
