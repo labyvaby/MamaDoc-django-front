@@ -513,6 +513,17 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                                             disabled
                                         />
                                     )}
+                                    {isRetail && (
+                                        <Button
+                                            component={RouterLink}
+                                            to="/settings/product-attributes"
+                                            size="small"
+                                            startIcon={<SettingsOutlined fontSize="small" />}
+                                            sx={{ alignSelf: "flex-start", px: 0.5 }}
+                                        >
+                                            Добавить или настроить категории
+                                        </Button>
+                                    )}
                                     <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                                         {isMatrix && (
                                             <TextField
@@ -730,6 +741,7 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                                                 value={values.barcode}
                                                 disabled={busy}
                                                 onChange={(event) => set({ barcode: event.target.value })}
+                                                helperText="Необязательно: если оставить пустым, создадим EAN-13 автоматически"
                                                 InputProps={{
                                                     startAdornment: (
                                                         <InputAdornment position="start">
