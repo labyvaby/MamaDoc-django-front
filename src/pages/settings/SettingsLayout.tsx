@@ -41,6 +41,8 @@ import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
+import PercentOutlined from "@mui/icons-material/PercentOutlined";
+import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
@@ -84,6 +86,18 @@ type TabDef = {
 const TAB_DEFS: TabDef[] = [
   { key: "posModule", to: "/settings/pos-module", icon: <ReceiptLongOutlined fontSize="small" />, group: "operations" },
   { key: "procurement", to: "/settings/procurement", icon: <LocalShippingOutlined fontSize="small" />, group: "operations" },
+  {
+    key: "discountKinds",
+    to: "/settings/discount-kinds",
+    icon: <PercentOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "promotions",
+    to: "/settings/promotions",
+    icon: <LocalOfferOutlined fontSize="small" />,
+    group: "operations",
+  },
   {
     key: "productAttributes",
     to: "/settings/product-attributes",

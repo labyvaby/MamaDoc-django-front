@@ -14,6 +14,8 @@
     "tabs": {
       "posModule": "Касса магазина",
       "procurement": "Закупки и накладные",
+      "discountKinds": "Виды скидок",
+      "promotions": "Акции и промокоды",
       "organization": "Организация",
       "branches": "{{branch.nomPl, capitalize}}",
       "roles": "Роли",

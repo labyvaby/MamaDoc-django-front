@@ -66,6 +66,8 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // posModule — иначе выключенный модуль нельзя включить обратно) и правила
   // распознавания по фото — их правит и руководитель с procurement.manage.
   procurement: ["tenancy.modules.view", "procurement.manage"],
+  discountKinds: "promotions.view",
+  promotions: "promotions.view",
   organization: "organization.view",
   branches: "branches.view",
   // Сайт-визитку настраивает тот же, кто правит организацию: конструктор

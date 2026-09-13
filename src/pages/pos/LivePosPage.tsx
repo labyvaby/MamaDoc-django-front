@@ -15,6 +15,7 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { apiRequest } from "../../api/client";
+import { getDiscountKinds, type DiscountKind } from "../../api/promotions";
 import {
   checkoutPosCart,
   getPosBootstrap,
@@ -234,6 +235,7 @@ export default function LivePosPage() {
         quantity: String(row.quantity),
       })),
     discountPercent: benefits.discount || "0",
+    discountKindId: benefits.discountKindId ?? undefined,
     clientDiscount: benefits.clientDiscount,
     promotions: benefits.promotions,
     promoCode: benefits.promoCode.trim(),
@@ -247,6 +249,19 @@ export default function LivePosPage() {
     staleTime: 0,
     retry: false,
   });
+  const discountKindsQuery = useQuery({
+    queryKey: ["django", "promotions", "discount-kinds", scope.branchId],
+    queryFn: ({ signal }) => getDiscountKinds({ branchId: scope.branchId }, signal),
+    enabled: ready && actions.discount,
+  });
+  const discountKinds: DiscountKind[] = discountKindsQuery.data ?? [];
+  const configuredDiscountMode = data?.rules.discount_mode;
+  const discountMode =
+    configuredDiscountMode === "manual" ||
+    configuredDiscountMode === "kinds" ||
+    configuredDiscountMode === "both"
+      ? configuredDiscountMode
+      : "both";
   const heldQuote: PosQuote | undefined = held
     ? {
         subtotal: held.subtotal,
@@ -705,6 +720,8 @@ export default function LivePosPage() {
           bonuses={client?.bonuses ?? 0}
           hasClient={!!client}
           locked={!!held || pending}
+          discountKinds={discountKinds}
+          discountMode={discountMode}
         />
       </Box>
       <PosHoldReceiptDialog
