@@ -144,6 +144,7 @@ export default function LivePosPage() {
   const warehouseId = warehouseChoice ?? data?.warehouses[0]?.id ?? 0;
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = React.useState<number | null>(null);
   const [rows, setRows] = React.useState<CartRow[]>([]);
   const [variants, setVariants] = React.useState<PosProduct[]>([]);
   const [client, setClient] = React.useState<PosClient | null>(null);
@@ -183,8 +184,8 @@ export default function LivePosPage() {
           );
         })
       : undefined;
-  const categoryId = matchedCategory?.id;
-  const productSearch = matchedCategory ? "" : debounced;
+  const categoryId = selectedCategoryId ?? matchedCategory?.id;
+  const productSearch = matchedCategory && selectedCategoryId == null ? "" : debounced;
   const products = useQuery({
     queryKey: [
       ...prefix,
@@ -298,6 +299,7 @@ export default function LivePosPage() {
     setClient(null);
     setBenefits(emptyBenefits);
     setSearch("");
+    setSelectedCategoryId(null);
     setError(null);
     attempt.current = { fingerprint: "", key: "" };
   };
@@ -531,6 +533,9 @@ export default function LivePosPage() {
       <PosTopBar
         search={search}
         onSearchChange={setSearch}
+        categories={data.categories}
+        categoryId={selectedCategoryId}
+        onCategoryChange={setSelectedCategoryId}
         onNewReceipt={newReceipt}
         onOpenHeldReceipts={() => {
           setListOffset(0);
@@ -577,7 +582,7 @@ export default function LivePosPage() {
           оплатите его или начните новый чек.
         </Alert>
       )}
-      {!held && ((products.data?.count ?? 0) > 0 || !!search) && (
+      {!held && (!!search.trim() || categoryId != null) && (
         <>
           {products.isFetching && <LinearProgress />}
           <PosProductCards
