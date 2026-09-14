@@ -73,7 +73,7 @@ const DjangoProductQuickViewDrawer: React.FC<Props> = ({
         <Stack direction="row" spacing={2} alignItems="center" mb={2}>
           <Avatar
             variant="rounded"
-            src={product?.imageUrl ?? undefined}
+            src={product?.imageThumbnailUrl ?? product?.imageUrl ?? undefined}
             sx={{ width: 56, height: 56, bgcolor: "action.selected", color: "text.secondary" }}
           >
             <Inventory2Outlined />

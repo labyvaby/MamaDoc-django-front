@@ -306,7 +306,7 @@ const DjangoSalesPage: React.FC = () => {
                 id: p.id,
                 label: p.name,
                 price: p.price || 0,
-                image: p.imageUrl,
+                image: p.imageThumbnailUrl ?? p.imageUrl,
                 barcode: p.barcode,
                 isActive: p.isForSale,
             })));

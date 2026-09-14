@@ -92,6 +92,8 @@ export type DjangoProduct = {
     isForSale: boolean;
     isActive: boolean;
     imageUrl: string | null;
+    /** Сжатая WebP-миниатюра для списков; полная карточка использует imageUrl. */
+    imageThumbnailUrl?: string | null;
     /** Остаток по видимым складам контекста (агрегат — может включать чужие). */
     stock: number;
     /**

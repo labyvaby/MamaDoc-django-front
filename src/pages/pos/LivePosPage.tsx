@@ -98,7 +98,7 @@ function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
     barcode: p.barcode,
     quantity: row.quantity,
     price: Number(p.price),
-    imageUrl: p.imageUrl,
+    imageUrl: p.imageThumbnailUrl ?? p.imageUrl,
     colors: colors.map((a) => ({
       id: String(a.id),
       label: a.value,

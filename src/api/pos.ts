@@ -12,6 +12,7 @@ export type PosProduct = {
   price: string;
   stock: string;
   imageUrl: string | null;
+  imageThumbnailUrl?: string | null;
   attributes: Array<{ id: number; name: string; role: string; value: string }>;
 };
 export type PosBootstrap = {
