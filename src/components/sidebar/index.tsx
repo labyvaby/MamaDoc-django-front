@@ -972,8 +972,12 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/settings/notifications" icon={<NotificationsOutlined />} label="Уведомления" collapsed={siderCollapsed} />
         )}
 
-        {/* Настройки (Django-mode only) */}
-        {show("management") && can_.settings && (
+        {/* Настройки — единственный пункт на /settings, тот же принцип
+            консолидации, что «Отчеты» выше: у отеля "management" целиком
+            спрятан, поэтому для Viva показываем тот же пункт через "org".
+            SettingsRouter.tsx на самом /settings сам решает, что рендерить —
+            SettingsIndexPage или HotelRolesSettingsPage. */}
+        {((hotelOnly && show("org")) || (!hotelOnly && show("management") && can_.settings)) && (
           <SidebarMenuItem
             to="/settings"
             icon={<TuneOutlined />}
@@ -1014,11 +1018,12 @@ type SidebarMenuItemProps = {
  * отель (см. src/dev/*.tsx): «Расписание» — шахматка броней
  * (RoomBookingGrid), «Все гости» — HotelGuestsPage, «Интеграции» —
  * HotelIntegrationsPage, «Отчёты» — HotelReportsPage, «Кухня» —
- * HotelKitchenPage. Остальные ~30 пунктов (Вакцины, СКУД, Кабинет врача и
- * т.п.) ведут либо на несуществующие для синтетической организации данные,
- * либо просто не имеют отношения к отелю.
+ * HotelKitchenPage, «Настройки» — HotelRolesSettingsPage. Остальные ~30
+ * пунктов (Вакцины, СКУД, Кабинет врача и т.п.) ведут либо на
+ * несуществующие для синтетической организации данные, либо просто не
+ * имеют отношения к отелю.
  */
-const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/integrations", "/reports", "/kitchen"];
+const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/integrations", "/reports", "/kitchen", "/settings"];
 
 const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   to,

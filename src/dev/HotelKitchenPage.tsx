@@ -57,6 +57,7 @@ import {
   getKitchenStockSnapshot,
   isVivaActive,
   MEAL_LABELS,
+  MEAL_SERVING_WINDOW,
   type MealType,
   type KitchenShoppingItem,
 } from "./mockDemoData";
@@ -174,19 +175,19 @@ export const HotelKitchenPage: React.FC = () => {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Время</TableCell>
                 <TableCell>Приём пищи</TableCell>
+                <TableCell>Время подачи</TableCell>
                 <TableCell>Блюдо</TableCell>
                 <TableCell align="right">Порций</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {MEAL_ORDER.flatMap((meal) =>
-                plan.dishes
+              {MEAL_ORDER.flatMap((meal) => {
+                const window = MEAL_SERVING_WINDOW[meal];
+                return plan.dishes
                   .filter((d) => d.meal === meal)
                   .map((dish, idx) => (
                     <TableRow key={dish.id} hover>
-                      <TableCell sx={{ fontWeight: 600 }}>{dish.time}</TableCell>
                       <TableCell>
                         {idx === 0 && (
                           <Chip
@@ -196,13 +197,16 @@ export const HotelKitchenPage: React.FC = () => {
                           />
                         )}
                       </TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>
+                        {idx === 0 && `${window.from} – ${window.to}`}
+                      </TableCell>
                       <TableCell>{dish.name}</TableCell>
                       <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
                         {dish.portions}
                       </TableCell>
                     </TableRow>
-                  )),
-              )}
+                  ));
+              })}
             </TableBody>
           </Table>
         </Box>

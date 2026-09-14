@@ -120,7 +120,7 @@ const HotelIntegrationsPage = lazy(() => import("./dev/HotelIntegrationsPage"));
 const HotelKitchenPage = lazy(() => import("./dev/HotelKitchenPage"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
-const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
+const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsRouter"));
 const OrganizationSettingsPage = lazy(() => import("./pages/settings/OrganizationSettingsPage"));
 const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSettingsPage"));
 const SiteSettingsPage = lazy(() => import("./pages/settings/SiteSettingsPage"));

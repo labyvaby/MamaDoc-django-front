@@ -61,6 +61,7 @@ import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker } from "../components/ui";
+import { usePermissions } from "../hooks/usePermissions";
 import {
   HOTEL_ROOMS,
   addCustomBooking,
@@ -97,6 +98,10 @@ const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 export const CreateBookingButton: React.FC = () => {
   const [open, setOpen] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
+  // Кто создал бронь — реальный залогиненный сотрудник, а не выбор из списка
+  // (тот же источник имени, что createdByName на печатном чеке в реальном
+  // МамаДоктор — usePermissions().employee, не поле формы).
+  const { employee } = usePermissions();
 
   // Гость и проживание
   const [guestName, setGuestName] = React.useState("");
@@ -256,6 +261,8 @@ export const CreateBookingButton: React.FC = () => {
       specialRequests: orUndefined(specialRequests),
       companyInfo: orUndefined(companyInfo),
       dataConsent: dataConsent || undefined,
+      createdBy: employee?.fullName || undefined,
+      createdAt: dayjs().toISOString(),
     });
     setOpen(false);
     setToast(`Бронь для «${guestName.trim()}» в номере ${room} добавлена в шахматку`);

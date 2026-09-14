@@ -324,6 +324,10 @@ export interface HotelBooking {
   /** Юрлицо/командировочное удостоверение — для закрывающих документов. */
   companyInfo?: string;
   dataConsent?: boolean;
+  /** Кто создал бронь — имя реального залогиненного сотрудника (usePermissions().employee), не выбор из списка. */
+  createdBy?: string;
+  /** ISO-дата и время создания брони. */
+  createdAt?: string;
 }
 
 /**
@@ -586,11 +590,21 @@ export const MEAL_LABELS: Record<MealType, string> = {
   dinner: "Ужин",
 };
 
+/**
+ * Промежуток подачи — гость приходит в любой момент внутри окна, кухня не
+ * готовит блюдо к строго одной минуте. Раньше время было у каждого блюда
+ * отдельно (07:00/07:30 и т.п.) — по факту это один и тот же промежуток на
+ * весь приём пищи, поэтому вынесено на уровень MealType, а не блюда.
+ */
+export const MEAL_SERVING_WINDOW: Record<MealType, { from: string; to: string }> = {
+  breakfast: { from: "07:30", to: "10:00" },
+  lunch: { from: "13:00", to: "15:00" },
+  dinner: { from: "19:00", to: "21:00" },
+};
+
 export interface KitchenDishDef {
   id: string;
   meal: MealType;
-  /** Время начала готовки, "HH:mm". */
-  time: string;
   name: string;
   /** Порций на один занятый номер — дробное: не каждое блюдо берут все гости. */
   portionsPerRoom: number;
@@ -598,15 +612,15 @@ export interface KitchenDishDef {
 
 /** Условное меню отеля на день — три приёма пищи, без привязки к дате (повторяется каждый день демо). */
 export const KITCHEN_MENU: KitchenDishDef[] = [
-  { id: "b1", meal: "breakfast", time: "07:00", name: "Омлет с зеленью", portionsPerRoom: 0.9 },
-  { id: "b2", meal: "breakfast", time: "07:00", name: "Каша овсяная", portionsPerRoom: 0.6 },
-  { id: "b3", meal: "breakfast", time: "07:30", name: "Сосиски с гарниром", portionsPerRoom: 0.7 },
-  { id: "l1", meal: "lunch", time: "13:00", name: "Борщ", portionsPerRoom: 0.8 },
-  { id: "l2", meal: "lunch", time: "13:00", name: "Плов", portionsPerRoom: 0.7 },
-  { id: "l3", meal: "lunch", time: "13:30", name: "Салат Оливье", portionsPerRoom: 0.6 },
-  { id: "d1", meal: "dinner", time: "19:00", name: "Шашлык из курицы", portionsPerRoom: 0.7 },
-  { id: "d2", meal: "dinner", time: "19:00", name: "Манты", portionsPerRoom: 0.6 },
-  { id: "d3", meal: "dinner", time: "19:30", name: "Овощи на гриле", portionsPerRoom: 0.5 },
+  { id: "b1", meal: "breakfast", name: "Омлет с зеленью", portionsPerRoom: 0.9 },
+  { id: "b2", meal: "breakfast", name: "Каша овсяная", portionsPerRoom: 0.6 },
+  { id: "b3", meal: "breakfast", name: "Сосиски с гарниром", portionsPerRoom: 0.7 },
+  { id: "l1", meal: "lunch", name: "Борщ", portionsPerRoom: 0.8 },
+  { id: "l2", meal: "lunch", name: "Плов", portionsPerRoom: 0.7 },
+  { id: "l3", meal: "lunch", name: "Салат Оливье", portionsPerRoom: 0.6 },
+  { id: "d1", meal: "dinner", name: "Шашлык из курицы", portionsPerRoom: 0.7 },
+  { id: "d2", meal: "dinner", name: "Манты", portionsPerRoom: 0.6 },
+  { id: "d3", meal: "dinner", name: "Овощи на гриле", portionsPerRoom: 0.5 },
 ];
 
 export interface KitchenDish extends KitchenDishDef {
@@ -997,6 +1011,194 @@ export function subscribeQuickBookingRequest(onChange: () => void): () => void {
 
 export function getQuickBookingRequestSnapshot(): QuickBookingRequest | null {
   return quickBookingRequest;
+}
+
+// ── Оплата проживания — для GuestDetailsDialog.tsx ──────────────────────────
+//
+// Кто заселился — не значит, что оплачено: способ оплаты фиксируется отдельным
+// действием персонала при заезде (тот же смысл, что «Оплата приёма» в реальном
+// МамаДоктор), поэтому это отдельный стор, а не поле формы создания брони.
+// Ключ — номер+заезд, а не id брони: у процедурно сгенерированных броней id
+// не стабилен между разными окнами дат (getHotelBookings строит его заново на
+// каждый вызов), а номер+дата заезда — единственное, что не меняется.
+
+export type HotelPaymentMethod = "cash" | "card" | "transfer" | "online";
+
+export const HOTEL_PAYMENT_METHOD_LABELS: Record<HotelPaymentMethod, string> = {
+  cash: "Наличные",
+  card: "Карта",
+  transfer: "Банковский перевод",
+  online: "Онлайн-оплата",
+};
+
+export interface HotelPaymentRecord {
+  method: HotelPaymentMethod;
+  amount: number;
+  note?: string;
+  /** Имя реального залогиненного сотрудника (usePermissions().employee), не выбор из списка. */
+  acceptedBy: string;
+  /** ISO-дата и время. */
+  acceptedAt: string;
+}
+
+const HOTEL_PAYMENTS_KEY = "mamadoc:mockHotelPayments";
+const hotelPaymentListeners = new Set<() => void>();
+
+function paymentKey(roomNumber: string, checkIn: string): string {
+  return `${roomNumber}__${checkIn}`;
+}
+
+function readHotelPaymentsFromStorage(): Record<string, HotelPaymentRecord> {
+  try {
+    const raw = window.localStorage.getItem(HOTEL_PAYMENTS_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, HotelPaymentRecord>;
+  } catch {
+    return {};
+  }
+}
+
+let hotelPaymentsCache: Record<string, HotelPaymentRecord> = readHotelPaymentsFromStorage();
+
+function persistHotelPayments(next: Record<string, HotelPaymentRecord>): void {
+  hotelPaymentsCache = next;
+  try {
+    window.localStorage.setItem(HOTEL_PAYMENTS_KEY, JSON.stringify(next));
+  } catch {
+    // приватный режим/запрет на localStorage — доживёт до конца вкладки в памяти
+  }
+  hotelPaymentListeners.forEach((fn) => fn());
+}
+
+export function setHotelPayment(
+  roomNumber: string,
+  checkIn: string,
+  input: { method: HotelPaymentMethod; amount: number; note?: string; acceptedBy: string },
+): void {
+  const key = paymentKey(roomNumber, checkIn);
+  persistHotelPayments({
+    ...hotelPaymentsCache,
+    [key]: { ...input, acceptedAt: dayjs().toISOString() },
+  });
+}
+
+export function getHotelPayment(roomNumber: string, checkIn: string): HotelPaymentRecord | undefined {
+  return hotelPaymentsCache[paymentKey(roomNumber, checkIn)];
+}
+
+export function subscribeHotelPayments(onChange: () => void): () => void {
+  hotelPaymentListeners.add(onChange);
+  return () => hotelPaymentListeners.delete(onChange);
+}
+
+export function getHotelPaymentsSnapshot(): Record<string, HotelPaymentRecord> {
+  return hotelPaymentsCache;
+}
+
+// ── Роли и права — для HotelRolesSettingsPage.tsx (/settings у Viva) ────────
+//
+// Отдельная от реального RBAC (src/api/rbac.ts) витрина: та же форма
+// (роль → название + список прав, права сгруппированы по категории), но
+// полностью в браузерном сторе — у Viva нет организации на бэкенде, значит
+// и назначать роли/права по-настоящему некому.
+
+export interface HotelPermissionDef {
+  key: string;
+  label: string;
+  category: string;
+}
+
+export const HOTEL_PERMISSION_CATALOG: HotelPermissionDef[] = [
+  { key: "bookings.manage", label: "Создание и редактирование броней", category: "Брони" },
+  { key: "bookings.payment", label: "Приём оплаты за проживание", category: "Брони" },
+  { key: "guests.view", label: "Просмотр списка и карточек гостей", category: "Гости" },
+  { key: "kitchen.menu", label: "Расписание готовки и меню", category: "Кухня" },
+  { key: "kitchen.purchases", label: "Закупка продуктов и остатки склада", category: "Кухня" },
+  { key: "reports.view", label: "Просмотр и выгрузка отчётов", category: "Отчёты" },
+  { key: "integrations.manage", label: "Подключение каналов продаж", category: "Интеграции" },
+  { key: "settings.roles", label: "Роли и права доступа", category: "Настройки" },
+];
+
+export interface HotelRole {
+  id: string;
+  name: string;
+  permissions: string[];
+  /** Встроенная роль — нельзя удалить (можно поменять только состав прав). */
+  isSystem?: boolean;
+}
+
+const ALL_HOTEL_PERMISSION_KEYS = HOTEL_PERMISSION_CATALOG.map((p) => p.key);
+
+const DEFAULT_HOTEL_ROLES: HotelRole[] = [
+  { id: "owner", name: "Владелец", permissions: ALL_HOTEL_PERMISSION_KEYS, isSystem: true },
+  {
+    id: "admin",
+    name: "Администратор",
+    permissions: ["bookings.manage", "bookings.payment", "guests.view", "reports.view", "integrations.manage"],
+    isSystem: true,
+  },
+  {
+    id: "reception",
+    name: "Ресепшн",
+    permissions: ["bookings.manage", "bookings.payment", "guests.view"],
+  },
+  {
+    id: "cook",
+    name: "Повар",
+    permissions: ["kitchen.menu", "kitchen.purchases"],
+  },
+];
+
+const HOTEL_ROLES_KEY = "mamadoc:mockHotelRoles";
+const hotelRolesListeners = new Set<() => void>();
+
+function readHotelRolesFromStorage(): HotelRole[] {
+  try {
+    const raw = window.localStorage.getItem(HOTEL_ROLES_KEY);
+    if (!raw) return DEFAULT_HOTEL_ROLES;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return DEFAULT_HOTEL_ROLES;
+    return parsed.filter(
+      (r): r is HotelRole =>
+        !!r && typeof r === "object" && typeof (r as HotelRole).id === "string" && typeof (r as HotelRole).name === "string",
+    );
+  } catch {
+    return DEFAULT_HOTEL_ROLES;
+  }
+}
+
+let hotelRolesCache: HotelRole[] = readHotelRolesFromStorage();
+
+function persistHotelRoles(next: HotelRole[]): void {
+  hotelRolesCache = next;
+  try {
+    window.localStorage.setItem(HOTEL_ROLES_KEY, JSON.stringify(next));
+  } catch {
+    // приватный режим/запрет на localStorage — доживёт до конца вкладки в памяти
+  }
+  hotelRolesListeners.forEach((fn) => fn());
+}
+
+/** Создаёт или перезаписывает роль (по id) — единый вызов для «создать» и «сохранить правки». */
+export function saveHotelRole(role: HotelRole): void {
+  const idx = hotelRolesCache.findIndex((r) => r.id === role.id);
+  const next = idx >= 0 ? hotelRolesCache.map((r, i) => (i === idx ? role : r)) : [...hotelRolesCache, role];
+  persistHotelRoles(next);
+}
+
+export function deleteHotelRole(id: string): void {
+  persistHotelRoles(hotelRolesCache.filter((r) => r.id !== id));
+}
+
+export function subscribeHotelRoles(onChange: () => void): () => void {
+  hotelRolesListeners.add(onChange);
+  return () => hotelRolesListeners.delete(onChange);
+}
+
+export function getHotelRolesSnapshot(): HotelRole[] {
+  return hotelRolesCache;
 }
 
 /** Ключ localStorage: держит выбор Viva между перезагрузками страницы. */
