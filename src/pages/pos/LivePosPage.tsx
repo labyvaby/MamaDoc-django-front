@@ -30,7 +30,6 @@ import {
 } from "../../api/pos";
 import { usePermissions } from "../../hooks/usePermissions";
 import { ActiveContextSwitcher } from "../../components/sidebar/ActiveContextSwitcher";
-import { PosCategoryBar } from "./CategoryBar";
 import { PosClientFooter } from "./ClientFooter";
 import { PosHoldReceiptDialog } from "./HoldReceiptDialog";
 import { PosProductCards } from "./ProductCards";
@@ -145,7 +144,6 @@ export default function LivePosPage() {
   const warehouseId = warehouseChoice ?? data?.warehouses[0]?.id ?? 0;
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
-  const [category, setCategory] = React.useState<string | null>(null);
   const [rows, setRows] = React.useState<CartRow[]>([]);
   const [variants, setVariants] = React.useState<PosProduct[]>([]);
   const [client, setClient] = React.useState<PosClient | null>(null);
@@ -173,15 +171,26 @@ export default function LivePosPage() {
     }, 250);
     return () => window.clearTimeout(id);
   }, [search]);
-  const categoryId = data?.categories.find(
-    (item) => item.name === category
-  )?.id;
+  const normalizedSearch = debounced.trim().toLocaleLowerCase();
+  const matchedCategory =
+    normalizedSearch.length >= 2
+      ? data?.categories.find((item) => {
+          const categoryName = item.name.trim().toLocaleLowerCase();
+          return (
+            categoryName === normalizedSearch ||
+            (normalizedSearch.length >= 3 &&
+              categoryName.startsWith(normalizedSearch))
+          );
+        })
+      : undefined;
+  const categoryId = matchedCategory?.id;
+  const productSearch = matchedCategory ? "" : debounced;
   const products = useQuery({
     queryKey: [
       ...prefix,
       "products",
       warehouseId,
-      debounced,
+      productSearch,
       categoryId,
     ],
     queryFn: ({ signal }) =>
@@ -189,7 +198,7 @@ export default function LivePosPage() {
         scope,
         {
           warehouseId,
-          search: debounced,
+          search: productSearch,
           limit: 200,
           ...(categoryId ? { categoryId } : {}),
         },
@@ -568,14 +577,7 @@ export default function LivePosPage() {
           оплатите его или начните новый чек.
         </Alert>
       )}
-      <PosCategoryBar
-        categories={data.categories.map((item) => item.name)}
-        active={category}
-        onSelect={(value) => {
-          setCategory(value);
-        }}
-      />
-      {!held && category && ((products.data?.count ?? 0) > 0 || !!search) && (
+      {!held && ((products.data?.count ?? 0) > 0 || !!search) && (
         <>
           {products.isFetching && <LinearProgress />}
           <PosProductCards

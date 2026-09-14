@@ -105,7 +105,7 @@ export const PosTopBar: React.FC<Props> = ({ search, onSearchChange, onNewReceip
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); onScan?.(); } }}
-            placeholder="Поиск по названию, артикулу или штрихкоду"
+            placeholder="Поиск по названию, артикулу, штрихкоду или категории"
             sx={{
               flex: 1,
               minWidth: 0,
