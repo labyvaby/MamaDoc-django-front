@@ -1,3 +1,5 @@
+import type { PosProduct } from "../../api/pos";
+
 /** Типы модуля «Касса». Пока это форма моков — под неё же ляжет `/pos/` API. */
 
 /** Вариант цвета товара. `hex` — данные товара, а не токен темы. */
@@ -44,6 +46,8 @@ export type PosCatalogItem = {
   price: number;
   colors: PosColorOption[];
   sizes: PosSizeOption[];
+  /** Все варианты одной модели, из которых кассир выбирает цвет и размер. */
+  variants?: PosProduct[];
 };
 
 /** Уровень лояльности клиента. */

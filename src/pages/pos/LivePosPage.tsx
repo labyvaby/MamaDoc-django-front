@@ -44,7 +44,7 @@ import {
   type Benefits,
 } from "./LivePaymentPanel";
 import { posColors } from "./layout";
-import type { PosClient, PosReceiptLine } from "./types";
+import type { PosCatalogItem, PosClient, PosReceiptLine } from "./types";
 import { PosAmount } from "./ui";
 
 type CartRow = { product: PosProduct; quantity: number; removed?: boolean };
@@ -116,6 +116,43 @@ function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
     })),
     selectedSizeId: String(size?.id ?? ""),
     removed: row.removed,
+  };
+}
+
+function toCatalogItem(product: PosProduct, family: PosProduct[]): PosCatalogItem {
+  const colors = [
+    ...new Map(
+      family
+        .flatMap((item) => item.attributes.filter((attribute) => attribute.role === "color"))
+        .map((attribute) => [attribute.id, attribute])
+    ).values(),
+  ];
+  const sizes = [
+    ...new Map(
+      family
+        .flatMap((item) => item.attributes.filter((attribute) => attribute.role === "size"))
+        .map((attribute) => [attribute.id, attribute])
+    ).values(),
+  ];
+  return {
+    id: String(product.id),
+    name: product.name,
+    price: Number(product.price),
+    imageUrl: product.imageThumbnailUrl ?? product.imageUrl,
+    stock: family.reduce((total, item) => total + Number(item.stock), 0),
+    colors: colors.map((attribute) => ({
+      id: String(attribute.id),
+      label: attribute.value,
+      hex: colorHex(attribute.value),
+    })),
+    sizes: sizes.map((attribute) => ({
+      id: String(attribute.id),
+      label: attribute.value,
+      available: family.some(
+        (item) => item.attributes.some((value) => value.id === attribute.id) && Number(item.stock) > 0
+      ),
+    })),
+    variants: family,
   };
 }
 
@@ -226,6 +263,16 @@ export default function LivePosPage() {
       ),
     enabled: ready && !!warehouseId && canFetchProducts,
   });
+  const groupedProducts = React.useMemo(() => {
+    const groups = new Map<string, PosProduct[]>();
+    for (const product of products.data?.results ?? []) {
+      const key = product.modelId == null ? `product:${product.id}` : `model:${product.modelId}`;
+      const family = groups.get(key) ?? [];
+      family.push(product);
+      groups.set(key, family);
+    }
+    return [...groups.values()].map((family) => toCatalogItem(family[0], family));
+  }, [products.data?.results]);
   const clients = useQuery({
     queryKey: [...prefix, "clients", clientSearch],
     queryFn: ({ signal }) =>
@@ -637,16 +684,12 @@ export default function LivePosPage() {
             )}
           {!isSearchPending &&
             !products.isFetching &&
-            (products.data?.results.length ?? 0) > 0 && (
+            groupedProducts.length > 0 && (
           <PosProductCards
-            items={(products.data?.results ?? []).map((product) => ({
-              ...toLine({ product, quantity: 1 }, [product]),
-              id: String(product.id),
-              stock: Number(product.stock),
-            }))}
-            onAdd={(item) => {
-              const product = products.data?.results.find(
-                (p) => String(p.id) === item.id
+            items={groupedProducts}
+            onAdd={(item, selectedVariant) => {
+              const product = selectedVariant ?? products.data?.results.find(
+                (candidate) => String(candidate.id) === item.id
               );
               if (product) void add(product);
             }}
