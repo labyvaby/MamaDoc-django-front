@@ -183,9 +183,9 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
   const isAdmin = useCallback(() => hasRole(["superadmin", "admin", "administrator"]), [hasRole]);
   const isRegistrator = useCallback(() => hasRole(["receptionist", "registrator"]), [hasRole]);
   const isDoctor = useCallback(() => hasRole("doctor"), [hasRole]);
-  // Даже платформенный администратор в контексте конкретной организации
-  // видит только её включённые модули. Иначе, открыв магазин одежды, он
-  // получает клиническое меню только из-за глобальной роли.
+  // Django-суперпользователь получает от /auth/me все активные модули, чтобы
+  // видеть новые возможности для настройки. Защищённая роль superadmin без
+  // глобального флага по-прежнему ограничивается модулями своей организации.
   const hasModule = useCallback((code: string) => state.enabledModules.includes(code), [state.enabledModules]);
   const canAccess = useCallback((code: string) => {
     const module = getModuleCodeForPermission(code);
