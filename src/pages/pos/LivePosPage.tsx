@@ -120,6 +120,12 @@ function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
 }
 
 function toCatalogItem(product: PosProduct, family: PosProduct[]): PosCatalogItem {
+  const names = family.map((item) => item.name.trim()).filter(Boolean);
+  const commonName = names.reduce((prefix, name) => {
+    let length = 0;
+    while (length < prefix.length && length < name.length && prefix[length] === name[length]) length += 1;
+    return prefix.slice(0, length);
+  }, names[0] ?? product.name).replace(/[\s,;:/\\-]+$/, "");
   const colors = [
     ...new Map(
       family
@@ -136,7 +142,7 @@ function toCatalogItem(product: PosProduct, family: PosProduct[]): PosCatalogIte
   ];
   return {
     id: String(product.id),
-    name: product.name,
+    name: commonName || product.name,
     price: Number(product.price),
     imageUrl: product.imageThumbnailUrl ?? product.imageUrl,
     stock: family.reduce((total, item) => total + Number(item.stock), 0),
