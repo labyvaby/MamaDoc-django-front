@@ -4,12 +4,122 @@ import { flushSync } from "react-dom";
 import html2pdf from "html2pdf.js";
 
 import { pdfFileName } from "../../utility/pdfLayout";
-import type {
-  ConclusionFormTemplate,
-  ConclusionFormPayload,
+import {
+  planPageBreaks,
+  pageNumberTopMm,
+  sheetPageCount,
+  type MeasuredBlock,
+} from "../../utility/sheetPagination";
+import {
+  resolveMargins,
+  sheetSizeMm,
+  type ConclusionFormTemplate,
+  type ConclusionFormPayload,
 } from "../../api/conclusionForms";
 import { FormSheet, type SheetContext } from "./FormSheet";
 import { ConclusionTrailer, type ConclusionTrailerFields } from "./ConclusionTrailer";
+
+/** CSS-миллиметр — ровно 96/25.4 px, той же линейкой меряет и html2pdf. */
+const PX_PER_MM = 96 / 25.4;
+
+/**
+ * Раздвигает блоки листа (`data-print-block`) так, чтобы ни один не попал на
+ * границу страницы и не залез в поля бланка — иначе html2pdf режет картинку
+ * листа по миллиметрам, разрывая строку пополам, а продолжение начинается от
+ * самого края второй страницы. Расчёт — `planPageBreaks`; здесь только
+ * измерение и инлайновый `margin-top`, который html2pdf унесёт в свой клон
+ * вместе с остальными стилями.
+ *
+ * Отступ добавляется к уже имеющемуся margin-top блока, поэтому применять
+ * можно только один раз к свежему рендеру.
+ */
+export function applySheetPageBreaks(
+  container: HTMLElement,
+  template: ConclusionFormTemplate | ConclusionFormPayload,
+): void {
+  const { height: pageHeightMm } = sheetSizeMm(template.pageSize, template.orientation);
+  const margins = resolveMargins(template.pageSize, template.margins);
+  const originTop = container.getBoundingClientRect().top;
+
+  const elements = Array.from(container.querySelectorAll<HTMLElement>("[data-print-block]"));
+  const blocks: MeasuredBlock[] = elements.map((el) => {
+    const rect = el.getBoundingClientRect();
+    return {
+      top: (rect.top - originTop) / PX_PER_MM,
+      bottom: (rect.bottom - originTop) / PX_PER_MM,
+    };
+  });
+
+  const shifts = planPageBreaks(blocks, {
+    pageHeightMm,
+    marginTopMm: margins.top,
+    marginBottomMm: margins.bottom,
+  });
+
+  shifts.forEach((shiftMm, index) => {
+    if (shiftMm <= 0) return;
+    const el = elements[index];
+    const current = parseFloat(window.getComputedStyle(el).marginTop) || 0;
+    el.style.marginTop = `${current + shiftMm * PX_PER_MM}px`;
+  });
+}
+
+/**
+ * Оформление многостраничного листа: подложка и номер «1/2» на каждой странице.
+ *
+ * Подложка — фирменная бумага клиники — повторяется, а не только на первой:
+ * вторая страница без шапки и рамки бланка выглядела листом из другого
+ * документа. Номер страницы нужен, чтобы рассыпавшиеся листы заключения можно
+ * было собрать и понять, что второй не потерялся; у одностраничного
+ * документа «1/1» — шум, его не печатаем.
+ *
+ * Считается после `applySheetPageBreaks`: переносы удлиняют лист. Последняя
+ * страница добивается до полной высоты — иначе html2canvas снимет лист только
+ * до конца текста, и подложка на ней оборвётся посередине; заодно подпись,
+ * прижатая к низу колонки, встаёт у низа последней страницы, как и на
+ * одностраничном бланке.
+ */
+export function layoutSheetPages(
+  container: HTMLElement,
+  template: ConclusionFormTemplate | ConclusionFormPayload,
+): void {
+  const sheet = container.querySelector<HTMLElement>("[data-print-sheet]");
+  if (!sheet) return;
+
+  const { height: pageHeightMm } = sheetSizeMm(template.pageSize, template.orientation);
+  const margins = resolveMargins(template.pageSize, template.margins);
+  const sheetHeightMm = sheet.getBoundingClientRect().height / PX_PER_MM;
+  const pages = sheetPageCount(sheetHeightMm, pageHeightMm);
+  if (pages <= 1) return;
+
+  // Тот же миллиметр запаса, что у одностраничного листа (см. FormSheet).
+  sheet.style.minHeight = `${pages * pageHeightMm - 1}mm`;
+
+  const background = sheet.querySelector<HTMLElement>(":scope > [data-sheet-background]");
+  for (let page = pages - 1; page >= 1; page -= 1) {
+    if (!background) break;
+    const copy = background.cloneNode(true) as HTMLElement;
+    copy.style.top = `${page * pageHeightMm}mm`;
+    background.after(copy);
+  }
+
+  for (let page = 0; page < pages; page += 1) {
+    const label = document.createElement("div");
+    label.textContent = `${page + 1}/${pages}`;
+    // Номер живёт в нижнем поле бланка: `planPageBreaks` гарантирует, что
+    // текст туда не заходит, поэтому с подписью и заключением он не сталкивается.
+    Object.assign(label.style, {
+      position: "absolute",
+      top: `${pageNumberTopMm(page, pageHeightMm, margins.bottom)}mm`,
+      right: `${margins.right}mm`,
+      fontSize: "0.75em",
+      lineHeight: "1",
+      color: "#555",
+      pointerEvents: "none",
+    });
+    sheet.appendChild(label);
+  }
+}
 
 /**
  * PDF заключения, у которого есть бланк: один документ, а не два.
@@ -55,6 +165,11 @@ export async function generateConclusionSheetPdf(
         />,
       );
     });
+
+    // Лист уже в потоке документа и измерен браузером — самое время развести
+    // блоки по страницам, до того как html2pdf снимет его клон.
+    applySheetPageBreaks(container, template);
+    layoutSheetPages(container, template);
 
     const blob = await html2pdf()
       .set({
