@@ -48,6 +48,7 @@ import {
   type DjangoBank,
 } from "../../../api/staff";
 import { getBranches } from "../../../api/organization";
+import { SLOT_DURATION_OPTIONS, DEFAULT_SLOT_MINUTES } from "../../../pages/appointments/slotGrid";
 import { getPublicFeatures } from "../../../api/publicBooking";
 import { getServices, type Service } from "../../../api/catalog";
 import ServiceMultiPickerField from "../../../components/services/ServiceMultiPickerField";
@@ -183,6 +184,7 @@ type EditableDraftFields = {
   onlineBookingEnabled: boolean;
   prepaymentRequired: boolean;
   prepaymentAmount: string;
+  slotMinutes: string;
   telegramId: string;
   instagram: string;
   birthDate: string;
@@ -214,6 +216,7 @@ function sameAsBaseline(a: EditableDraftFields, b: EditableDraftFields): boolean
     a.onlineBookingEnabled === b.onlineBookingEnabled &&
     a.prepaymentRequired === b.prepaymentRequired &&
     a.prepaymentAmount === b.prepaymentAmount &&
+    a.slotMinutes === b.slotMinutes &&
     a.telegramId === b.telegramId &&
     a.instagram === b.instagram &&
     a.birthDate === b.birthDate &&
@@ -282,6 +285,13 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   // Знает ли бэк пару полей — как с онлайн-записью: неизвестное поле в PATCH
   // отклоняет весь запрос, и карточка перестала бы сохраняться.
   const [prepaymentSupported, setPrepaymentSupported] = React.useState(false);
+  // Свой шаг сетки окон: «» — общий шаг организации (30 минут), иначе минуты
+  // строкой (значение MenuItem).
+  const [slotMinutes, setSlotMinutes] = React.useState("");
+  // Как с онлайн-записью: на стенде, где поля ещё нет, его нельзя слать в PATCH
+  // (неизвестное поле бэк отклоняет вместе со всем запросом) — поле показываем,
+  // но заблокированным, чтобы настройка не выглядела сохранившейся.
+  const [slotDurationSupported, setSlotDurationSupported] = React.useState(false);
   const [telegramId, setTelegramId] = React.useState("");
   const [instagram, setInstagram] = React.useState("");
   const [birthDate, setBirthDate] = React.useState("");
@@ -447,6 +457,10 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setPrepaymentRequired(record.prepaymentRequired === true);
     setPrepaymentAmount(decimalToInput(record.prepaymentAmount));
     setPrepaymentSupported(record.prepaymentRequired != null);
+    // Шаг окон есть только в детали сотрудника — до её загрузки секцию не
+    // показываем, иначе она мигнула бы значением «по умолчанию».
+    setSlotDurationSupported(false);
+    setSlotMinutes("");
     setTelegramId(record.telegram_id || "");
     setInstagram(record.instagram || "");
     setBirthDate(record.birth_date || "");
@@ -499,6 +513,10 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         setPrepaymentRequired(full.prepaymentRequired === true);
         setPrepaymentAmount(decimalToInput(full.prepaymentAmount));
         setPrepaymentSupported(full.prepaymentRequired != null);
+        // Поле отсутствует (`undefined`) — бэк его на этом стенде ещё не выложил.
+        const slotSupported = full.slotDurationMinutes !== undefined;
+        setSlotDurationSupported(slotSupported);
+        setSlotMinutes(String(full.slotDurationMinutes ?? ""));
         setSpecializations(full.specializations ?? []);
         setOperationalBranches(full.operationalBranches ?? []);
         initialBranchIdsRef.current = serializeBranchIds(full.operationalBranches ?? []);
@@ -520,6 +538,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           onlineBookingEnabled: full.onlineBookingEnabled !== false,
           prepaymentRequired: full.prepaymentRequired === true,
           prepaymentAmount: decimalToInput(full.prepaymentAmount),
+          slotMinutes: String(full.slotDurationMinutes ?? ""),
           telegramId: full.telegramId || "",
           instagram: full.instagram || "",
           birthDate: full.birthDate || "",
@@ -548,6 +567,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           // Черновик мог быть записан до появления полей предоплаты.
           setPrepaymentRequired(draft.prepaymentRequired === true);
           setPrepaymentAmount(draft.prepaymentAmount ?? "");
+          // Черновик мог быть записан до появления поля — тогда общий шаг.
+          setSlotMinutes(draft.slotMinutes ?? "");
           setTelegramId(draft.telegramId);
           setInstagram(draft.instagram);
           setBirthDate(draft.birthDate);
@@ -680,6 +701,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       onlineBookingEnabled,
       prepaymentRequired,
       prepaymentAmount,
+      slotMinutes,
       telegramId,
       instagram,
       birthDate,
@@ -709,7 +731,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     return () => clearTimeout(id);
   }, [
     record, fullName, nickname, phoneCountry, phoneLocal, email, status, clinicalRole,
-    onlineBookingEnabled, prepaymentRequired, prepaymentAmount, telegramId, instagram, birthDate, hiredAt, bankAccountNumber,
+    onlineBookingEnabled, prepaymentRequired, prepaymentAmount, slotMinutes, telegramId, instagram, birthDate, hiredAt, bankAccountNumber,
     inn, address, notes, bank, bik, operationalBranches,
   ]);
 
@@ -734,6 +756,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       setOnlineBookingEnabled(b.onlineBookingEnabled);
       setPrepaymentRequired(b.prepaymentRequired);
       setPrepaymentAmount(b.prepaymentAmount);
+      setSlotMinutes(b.slotMinutes);
       setTelegramId(b.telegramId);
       setInstagram(b.instagram);
       setBirthDate(b.birthDate);
@@ -776,6 +799,10 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         ...(prepaymentSupported && {
           prepaymentRequired,
           prepaymentAmount: inputToDecimal(prepaymentAmount),
+        }),
+        // Шаг сетки окон: «» — вернуть общий шаг организации.
+        ...(slotDurationSupported && {
+          slotDurationMinutes: slotMinutes ? Number(slotMinutes) : null,
         }),
         telegramId: telegramId.trim() || null,
         instagram: instagram.trim().replace(/^@/, "") || null,
@@ -1185,37 +1212,41 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
             <SectionLabel title="Контакты" />
 
             <Field label="Телефон">
-              <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-                <PhoneCountryCodeSelect
-                  value={phoneCountry}
-                  onChange={(code) => { setPhoneCountry(code); setPhoneLocal(""); }}
-                  disabled={busy}
-                />
-                <TextField
-                  value={formatPhoneLocalDisplay(phoneCountry, phoneLocal)}
-                  inputRef={phoneInput.inputRef}
-                  onChange={phoneInput.onChange}
-                  onPaste={(e) =>
-                    handlePhonePaste(e, phoneCountry, (code, local) => {
-                      setPhoneCountry(code);
-                      setPhoneLocal(local);
-                      setServerError(null);
-                    })
-                  }
-                  onBlur={() => touch("phone")}
-                  onKeyDown={(e) => {
-                    phoneInput.onKeyDown(e);
-                    submitOnEnter(e);
-                  }}
-                  fullWidth
-                  size="small"
-                  placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
-                  disabled={busy}
-                  inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
-                  error={Boolean(showError("phone"))}
-                  helperText={showError("phone")}
-                />
-              </Box>
+              <TextField
+                value={formatPhoneLocalDisplay(phoneCountry, phoneLocal)}
+                inputRef={phoneInput.inputRef}
+                onChange={phoneInput.onChange}
+                onPaste={(e) =>
+                  handlePhonePaste(e, phoneCountry, (code, local) => {
+                    setPhoneCountry(code);
+                    setPhoneLocal(local);
+                    setServerError(null);
+                  })
+                }
+                onBlur={() => touch("phone")}
+                onKeyDown={(e) => {
+                  phoneInput.onKeyDown(e);
+                  submitOnEnter(e);
+                }}
+                fullWidth
+                size="small"
+                placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
+                disabled={busy}
+                inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
+                error={Boolean(showError("phone"))}
+                helperText={showError("phone")}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start" sx={{ mr: 1, ml: "-14px" }}>
+                      <PhoneCountryCodeSelect
+                        value={phoneCountry}
+                        onChange={setPhoneCountry}
+                        disabled={busy}
+                      />
+                    </InputAdornment>
+                  ),
+                }}
+              />
             </Field>
 
             <Field label="Email">
@@ -1508,6 +1539,39 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                 )}
               </Paper>
             )}
+
+            {/* Шаг сетки свободных окон этого сотрудника: у терапевта приём
+                20 минут, у УЗИ — 40, а «Окна» регистратуры режут день общим
+                шагом в 30. Настройка относится к расписанию, поэтому стоит
+                рядом с онлайн-записью, а не в настройках клиники: у каждого
+                сотрудника она своя. */}
+            <Field
+              label="Шаг записи"
+              hint="Через сколько минут идут свободные окна этого сотрудника"
+            >
+              <TextField
+                select
+                value={slotMinutes}
+                onChange={(e) => setSlotMinutes(e.target.value)}
+                fullWidth
+                size="small"
+                disabled={busy || !slotDurationSupported}
+                helperText={
+                  slotDurationSupported
+                    ? "Если в записи выбрана услуга, её длительность важнее этого шага"
+                    : "Появится после обновления сервера"
+                }
+              >
+                <MenuItem value="">
+                  По умолчанию ({DEFAULT_SLOT_MINUTES} мин)
+                </MenuItem>
+                {SLOT_DURATION_OPTIONS.map((minutes) => (
+                  <MenuItem key={minutes} value={String(minutes)}>
+                    {minutes} мин
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Field>
 
             {/* ── Операционные филиалы ── */}
             <Field

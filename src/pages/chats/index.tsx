@@ -83,6 +83,193 @@ const ChatsRecovery: React.FC<{ onRetry: () => void }> = ({ onRetry }) => (
 
 const FRAME_HEIGHT = { xs: "80vh", md: "calc(100vh - 96px)" } as const;
 
+/**
+ * Связь устанавливается — картинка ожидания.
+ *
+ * Раздел уже подписан парой реплик: на экране «вас не подключили»
+ * (`DisconnectedChats` в ChatsUnavailable) своя реплика сплошная, чужая
+ * пунктиром, а связь между ними разорвана. Ожидание рисуем той же парой, только
+ * живой: пунктир бежит от CRM к Чат-центру, тот отвечает многоточием. Отвлечённый
+ * круг спиннера сказал бы ровно «ждите» — эта же пара говорит, чего именно ждём.
+ *
+ * Анимации отключаются по `prefers-reduced-motion`; чтобы застывший кадр
+ * выглядел осмысленно, прозрачность ожидающей реплики и точек задана атрибутами
+ * прямо в разметке — CSS-анимация перебивает их, а без неё они и остаются.
+ */
+const ConnectingChats: React.FC = () => (
+  <Box
+    aria-hidden
+    sx={{
+      color: "primary.main",
+      lineHeight: 0,
+      "@keyframes chatsLinkFlow": { to: { strokeDashoffset: -8 } },
+      "@keyframes chatsTyping": {
+        "0%, 60%, 100%": { opacity: 0.25 },
+        "30%": { opacity: 1 },
+      },
+      "@keyframes chatsAwait": {
+        "0%, 100%": { opacity: 0.34 },
+        "50%": { opacity: 0.72 },
+      },
+      "& .link": { animation: "chatsLinkFlow 1.1s linear infinite" },
+      "& .await": { animation: "chatsAwait 2.2s ease-in-out infinite" },
+      "& .dot": { animation: "chatsTyping 1.4s ease-in-out infinite" },
+      "& .dot:nth-of-type(2)": { animationDelay: "0.18s" },
+      "& .dot:nth-of-type(3)": { animationDelay: "0.36s" },
+      "@media (prefers-reduced-motion: reduce)": {
+        "& .link, & .await, & .dot": { animation: "none" },
+      },
+    }}
+  >
+    <svg width="176" height="112" viewBox="0 0 132 84" fill="none">
+      {/* Реплика CRM — сплошная: сотрудник здесь есть. */}
+      <path
+        d="M6 14a8 8 0 0 1 8-8h34a8 8 0 0 1 8 8v20a8 8 0 0 1-8 8H26l-11 9v-9h-1a8 8 0 0 1-8-8V14Z"
+        fill="currentColor"
+        fillOpacity="0.13"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M17 19h28M17 27h18"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+
+      {/* Связь: пунктир бежит слева направо, к Чат-центру. */}
+      <path
+        className="link"
+        d="M55 38c7 6 11 8 17 8"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeDasharray="4 4"
+        opacity="0.75"
+      />
+
+      {/* Реплика Чат-центра — ещё пунктиром: ответа ждём. */}
+      <path
+        className="await"
+        d="M76 42a8 8 0 0 1 8-8h34a8 8 0 0 1 8 8v20a8 8 0 0 1-8 8h-1v9l-11-9H84a8 8 0 0 1-8-8V42Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeDasharray="5 4"
+        opacity="0.38"
+      />
+
+      {/* Многоточие: Чат-центр набирает ответ. */}
+      <g fill="currentColor">
+        <circle className="dot" cx="90" cy="52" r="2.6" opacity="0.45" />
+        <circle className="dot" cx="99" cy="52" r="2.6" opacity="0.45" />
+        <circle className="dot" cx="108" cy="52" r="2.6" opacity="0.45" />
+      </g>
+    </svg>
+  </Box>
+);
+
+/**
+ * Сколько ждать после `load`, прежде чем показывать саму рамку.
+ *
+ * `load` приходит на HTML, а рисует себя Chatwoot уже своим скриптом — снять
+ * подложку прямо на этом событии значит показать ровно тот кадр, ради которого
+ * она и заведена. Полсекунды хватает приложению встать на ноги, и на фоне самой
+ * загрузки раздела они не заметны.
+ */
+const FRAME_REVEAL_DELAY_MS = 500;
+
+/**
+ * Рамка Чат-центра с подложкой цвета CRM.
+ *
+ * Пока Chatwoot не нарисовал себя, рамка светится белым во весь экран, и на
+ * тёмной теме это вспышка. Причин у неё две, и обе закрываются одним приёмом:
+ * у пустой страницы Chatwoot фон прозрачный — сквозь рамку видно то, что под
+ * ней, — а поднявшееся приложение заливает её своим фоном, светлым, если
+ * браузер сотрудника просит светлую тему (Chatwoot смотрит на
+ * `prefers-color-scheme`, а тема CRM выбирается отдельно, в самой CRM).
+ *
+ * Поэтому под рамку кладём поверхность CRM (`background.paper`) и ею же
+ * накрываем сверху, пока Чат-центр не встал: сначала сотрудник видит обычную
+ * карточку CRM с картинкой ожидания, а не чужой белый лист. Дальше подложка не
+ * исчезает рывком, а растворяется — так и переход к светлому Chatwoot читается
+ * мягче.
+ *
+ * Внутрь рамки заглянуть нельзя, это чужой origin, поэтому единственный
+ * доступный признак готовности — `load` плюс пауза (`FRAME_REVEAL_DELAY_MS`).
+ *
+ * Компонент монтируется заново на каждую попытку входа (ключ снаружи), так что
+ * подложка сама возвращается на место — сбрасывать её руками не нужно.
+ */
+const ChatsFrame: React.FC<{ src: string }> = ({ src }) => {
+  const [revealed, setRevealed] = React.useState(false);
+  const timerRef = React.useRef<number | undefined>(undefined);
+
+  React.useEffect(() => () => window.clearTimeout(timerRef.current), []);
+
+  const handleLoad = React.useCallback(() => {
+    window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(
+      () => setRevealed(true),
+      FRAME_REVEAL_DELAY_MS,
+    );
+  }, []);
+
+  return (
+    <Box
+      sx={{
+        position: "relative",
+        height: "100%",
+        // Прозрачные кадры Chatwoot показывают то, что под рамкой: пусть это
+        // будет поверхность CRM, а не страница со своим градиентом.
+        bgcolor: "background.paper",
+      }}
+    >
+      <Box
+        component="iframe"
+        src={src}
+        title="Чаты"
+        onLoad={handleLoad}
+        // Chatwoot грузит вложения и уведомления; sandbox не ставим, иначе
+        // ломается его собственная авторизация и WebSocket.
+        allow="clipboard-write; microphone; camera; autoplay"
+        sx={{
+          width: "100%",
+          height: "100%",
+          border: 0,
+          display: "block",
+          // Прячем прозрачностью, а не `display: none`: рамка нулевого размера
+          // мешала бы Chatwoot считать вёрстку, а вход он ведёт сам.
+          opacity: revealed ? 1 : 0,
+          transition: (theme) =>
+            theme.transitions.create("opacity", { duration: 400 }),
+        }}
+      />
+      <Stack
+        role="status"
+        aria-hidden={revealed}
+        spacing={1.75}
+        sx={{
+          position: "absolute",
+          inset: 0,
+          alignItems: "center",
+          justifyContent: "center",
+          bgcolor: "background.paper",
+          opacity: revealed ? 0 : 1,
+          pointerEvents: "none",
+          transition: (theme) =>
+            theme.transitions.create("opacity", { duration: 400 }),
+        }}
+      >
+        <ConnectingChats />
+        <Typography sx={{ color: "text.secondary" }}>
+          Открываем Чат-центр…
+        </Typography>
+      </Stack>
+    </Box>
+  );
+};
+
 export const ChatsPage: React.FC = () => {
   usePageTitle("Чаты");
 
@@ -188,16 +375,7 @@ export const ChatsPage: React.FC = () => {
           border: (theme) => `1px solid ${theme.palette.divider}`,
         }}
       >
-        <Box
-          key={`${phase}-${attempt}`}
-          component="iframe"
-          src={iframeUrl}
-          title="Чаты"
-          // Chatwoot грузит вложения и уведомления; sandbox не ставим, иначе
-          // ломается его собственная авторизация и WebSocket.
-          allow="clipboard-write; microphone; camera; autoplay"
-          sx={{ width: "100%", height: "100%", border: 0, display: "block" }}
-        />
+        <ChatsFrame key={`${phase}-${attempt}`} src={iframeUrl} />
       </Box>
     </Box>
   );

@@ -836,44 +836,46 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             <SectionLabel title="Контакты" />
 
             <Field label="Телефон" hint="Телефон или email — нужен для входа по SMS-коду">
-              <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-                <PhoneCountryCodeSelect
-                  value={phoneCountry}
-                  onChange={(code) => { setPhoneCountry(code); setPhoneLocal(""); }}
-                  disabled={busy}
-                />
-                <TextField
-                  value={formatPhoneLocalDisplay(phoneCountry, phoneLocal)}
-                  inputRef={phoneInput.inputRef}
-                  onChange={phoneInput.onChange}
-                  onPaste={(e) =>
-                    handlePhonePaste(e, phoneCountry, (code, local) => {
-                      setPhoneCountry(code);
-                      setPhoneLocal(local);
-                    })
-                  }
-                  onKeyDown={(e) => {
-                    phoneInput.onKeyDown(e);
-                    submitOnEnter(e);
-                  }}
-                  fullWidth
-                  size="small"
-                  placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
-                  disabled={busy}
-                  // maxLength не ставим: значение показывается с пробелами
-                  // («700 123 456»), и лимит по числу цифр обрезал бы ввод
-                  // раньше времени — длину режет onChange.
-                  inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
-                  ref={focus.anchor("phone")}
-                  InputProps={{
-                    endAdornment: !errors.phone && phoneLocal.length === getPhoneLocalMaxLength(phoneCountry) ? (
-                      <InputAdornment position="end">
-                        <CheckCircleOutlined fontSize="small" color="success" />
-                      </InputAdornment>
-                    ) : undefined,
-                  }}
-                />
-              </Box>
+              <TextField
+                value={formatPhoneLocalDisplay(phoneCountry, phoneLocal)}
+                inputRef={phoneInput.inputRef}
+                onChange={phoneInput.onChange}
+                onPaste={(e) =>
+                  handlePhonePaste(e, phoneCountry, (code, local) => {
+                    setPhoneCountry(code);
+                    setPhoneLocal(local);
+                  })
+                }
+                onKeyDown={(e) => {
+                  phoneInput.onKeyDown(e);
+                  submitOnEnter(e);
+                }}
+                fullWidth
+                size="small"
+                placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
+                disabled={busy}
+                // maxLength не ставим: значение показывается с пробелами
+                // («700 123 456»), и лимит по числу цифр обрезал бы ввод
+                // раньше времени — длину режет onChange.
+                inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
+                ref={focus.anchor("phone")}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start" sx={{ mr: 1, ml: "-14px" }}>
+                      <PhoneCountryCodeSelect
+                        value={phoneCountry}
+                        onChange={setPhoneCountry}
+                        disabled={busy}
+                      />
+                    </InputAdornment>
+                  ),
+                  endAdornment: !errors.phone && phoneLocal.length === getPhoneLocalMaxLength(phoneCountry) ? (
+                    <InputAdornment position="end">
+                      <CheckCircleOutlined fontSize="small" color="success" />
+                    </InputAdornment>
+                  ) : undefined,
+                }}
+              />
             </Field>
 
             <Field label="Email">

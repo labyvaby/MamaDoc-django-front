@@ -138,6 +138,10 @@ export const PERMISSIONS = {
   APPOINTMENTS_CREATE: 'appointments.create',
   APPOINTMENTS_READ: 'appointments.read',
   APPOINTMENTS_UPDATE: 'appointments.update',
+  APPOINTMENTS_CANCEL: 'appointments.cancel',
+  APPOINTMENTS_CANCEL_OWN: 'appointments.cancel_own',
+  // Kept for compatibility with older permission payloads. The backend
+  // allows physical appointment deletion only for superadmins.
   APPOINTMENTS_DELETE: 'appointments.delete',
   APPOINTMENTS_LIST: 'appointments.list',
   APPOINTMENTS_OWN: 'appointments.own',

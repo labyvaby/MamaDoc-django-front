@@ -26,6 +26,7 @@ export type ClientPurchase = {
   createdAt: string;
   completedAt: string | null;
   lines: Array<{ id: number; productName: string; quantity: string; total: string }>;
+  audit: Array<{ id: number; action: string; reason: string; userId: number | null; userName: string | null; metadata: Record<string, unknown>; createdAt: string }>;
 };
 
 export function getClientPurchases(clientId: number, signal?: AbortSignal) {

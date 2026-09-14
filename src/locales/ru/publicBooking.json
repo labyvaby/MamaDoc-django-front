@@ -235,6 +235,8 @@
     "statusCompleted": "Завершена",
     "statusNoShow": "Неявка",
     "cancelAction": "Отменить {{record.acc}}",
+    "cancelByPhone": "Отменить {{record.acc}} можно по телефону {{phone}}",
+    "cancelByClinic": "Чтобы отменить {{record.acc}}, позвоните в {{org.acc}}",
     "cancelling": "Отменяем…",
     "cancelTitle": "Отменить {{record.acc}}?",
     "cancelQuestion": "{{record.nom, capitalize}} на {{date}}, {{time}} будет отменена. Время освободится для других пациентов.",

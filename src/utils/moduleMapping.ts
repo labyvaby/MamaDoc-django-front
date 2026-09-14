@@ -4,6 +4,9 @@
  */
 const PREFIX_TO_MODULE: Record<string, string> = {
   patients: 'patients',
+  // Клиенты — отдельный модуль. Медицинские карточки пациентов живут
+  // независимо и могут быть отключены для магазина.
+  clients: 'clients',
   appointments: 'appointments',
   medical: 'appointments',
   staff: 'staff',
@@ -42,6 +45,8 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   ecommerce: 'ecommerce',
   notifications: 'announcements',
   telegram_bot: 'telegram_bot',
+  // Закупки — свой модуль, отдельный от склада (см. rbac/module_mapping.py).
+  procurement: 'procurement',
 };
 
 /**

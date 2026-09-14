@@ -36,9 +36,9 @@ import { subtleBg } from "../../theme/uiHelpers";
 import { useT } from "../../i18n/VerticalProvider";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCanChecker } from "../../hooks/useCan";
-import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useActiveScope } from "../../hooks/useActiveScope";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
-import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
+import { doctorEmployeesOnly, useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatPhoneDisplay } from "../../utility/phone";
 import {
@@ -80,7 +80,8 @@ const WaitlistPage: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const orgId = useApiOrgId();
+  const scope = useActiveScope();
+  const orgId = scope.organizationId;
   const { can, loading: permLoading } = useCanChecker();
 
   usePageTitle(t("title"));
@@ -104,6 +105,12 @@ const WaitlistPage: React.FC = () => {
   const [onlyUrgent, setOnlyUrgent] = React.useState(searchParams.get("urgent") === "1");
   const [page, setPage] = React.useState(0);
 
+  // Смена филиала — другая очередь: страница пагинации сбрасывается, иначе
+  // после переключения можно попасть на пустую вторую страницу.
+  React.useEffect(() => {
+    setPage(0);
+  }, [scope.branchId]);
+
   React.useEffect(() => {
     const next = new URLSearchParams();
     if (tab !== "active") next.set("tab", tab);
@@ -113,8 +120,14 @@ const WaitlistPage: React.FC = () => {
     setSearchParams(next, { replace: true });
   }, [tab, debouncedSearch, employeeId, onlyUrgent, setSearchParams]);
 
-  const { employees } = useAllActiveEmployees(true);
+  const { employees: allEmployees } = useAllActiveEmployees(true);
+  // Фильтр очереди — по тем же людям, что и в форме: только врачи.
+  const employees = React.useMemo(() => doctorEmployeesOnly(allEmployees), [allEmployees]);
 
+  // Филиал режем сами: бэк по филиалу сессии не скоупит (проверено на проде
+  // 10.09.2026), но параметр branchId поддерживает. Без него регистратор видел
+  // бы очередь соседнего филиала. У суперадмина без филиала branchId пуст —
+  // это осознанный режим «все филиалы».
   const filters: WaitlistFilters = React.useMemo(
     () => ({
       status: tab === "active" ? WAITLIST_ACTIVE_STATUSES : WAITLIST_CLOSED_STATUSES,
@@ -124,8 +137,9 @@ const WaitlistPage: React.FC = () => {
       page: page + 1,
       pageSize: PAGE_SIZE,
       organizationId: orgId,
+      branchId: scope.branchId,
     }),
-    [tab, debouncedSearch, employeeId, onlyUrgent, page, orgId],
+    [tab, debouncedSearch, employeeId, onlyUrgent, page, orgId, scope.branchId],
   );
 
   const query = useQuery({
@@ -134,7 +148,7 @@ const WaitlistPage: React.FC = () => {
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     refetchInterval: WAITLIST_REFRESH_MS,
     placeholderData: keepPreviousData,
-    enabled: canView,
+    enabled: canView && scope.orgReady,
   });
 
   const invalidate = () => {

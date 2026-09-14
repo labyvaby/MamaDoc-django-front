@@ -6,6 +6,7 @@ const context = (
   roleCode: string,
   permissions: string[],
   modules: string[] = [],
+  defaultHomeRoute?: string | null,
 ) => ({
   roleCode,
   can: (requested: string | string[]) => {
@@ -15,9 +16,31 @@ const context = (
   canOpenModule: (module: "cleaning" | "documents" | "knowledge") =>
     modules.includes(module),
   hasActiveEmployee: true,
+  defaultHomeRoute,
 });
 
 describe("resolveHomeRoute", () => {
+  it("opens the configured store POS when the employee has access", () => {
+    expect(
+      resolveHomeRoute(
+        context(
+          "manager",
+          ["appointments.registry.view", "pos.view"],
+          [],
+          "/pos",
+        ),
+      ),
+    ).toBe("/pos");
+  });
+
+  it("falls back when the configured store POS is unavailable", () => {
+    expect(
+      resolveHomeRoute(
+        context("manager", ["appointments.registry.view"], [], "/pos"),
+      ),
+    ).toBe("/appointments");
+  });
+
   it("opens the doctor room for a doctor, even when registry is also allowed", () => {
     expect(
       resolveHomeRoute(

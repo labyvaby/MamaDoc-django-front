@@ -9,6 +9,10 @@
  * видимый период, а не по дню: отпуск на две недели иначе дал бы 14 запросов.
  * Ручка отдаёт приёмы по всем филиалам, доступным пользователю — это важно:
  * исключение ставится на один филиал, а записи бывают в обоих.
+ *
+ * В счётчики попадают только приёмы БЕЗ отметки разбора (`absenceReviewedAt`):
+ * маркер обязан гаснуть и тогда, когда приём осознанно оставили как есть, —
+ * иначе «оставить как есть» пришлось бы имитировать отменой.
  */
 import React from "react";
 import { useQueries } from "@tanstack/react-query";
@@ -60,12 +64,17 @@ export function appointmentHitsAbsence(
   return to === from ? from >= startTime && from < endTime : from < endTime && to > startTime;
 }
 
+/** Приём ещё не разобран — только такие попадают в счётчики и маркеры. */
+export function isUnreviewed(appt: ScheduleConflictAppointment): boolean {
+  return appt.absenceReviewedAt == null;
+}
+
 export interface AbsenceConflictsResult {
-  /** Приёмы конкретного сотрудника в конкретный день (YYYY-MM-DD). */
+  /** Приёмы конкретного сотрудника в конкретный день (включая разобранные). */
   forDay: (employeeId: number, date: string) => ScheduleConflictAppointment[];
-  /** Сколько приёмов у сотрудника за весь период отсутствия его пачки/дня. */
+  /** Сколько неразобранных приёмов у сотрудника за дни его пачки/дня. */
   countForDays: (employeeId: number, dates: string[]) => number;
-  /** Сколько записей всего в этот день — для маркера на календаре. */
+  /** Сколько неразобранных записей в этот день — для маркера на календаре. */
   dayTotals: Map<string, number>;
   /** Кто именно и сколько записей — для тултипа и дровера дня. */
   dayEmployees: Map<string, AbsenceDayEntry[]>;
@@ -165,9 +174,11 @@ export function useAbsenceConflicts(
     const employees = new Map<string, AbsenceDayEntry[]>();
     for (const [key, list] of byEmployeeDay) {
       const [rawEmployeeId, date] = key.split(":");
-      totals.set(date, (totals.get(date) ?? 0) + list.length);
+      const count = list.filter(isUnreviewed).length;
+      if (count === 0) continue;
+      totals.set(date, (totals.get(date) ?? 0) + count);
       const entries = employees.get(date) ?? [];
-      entries.push({ employeeId: Number(rawEmployeeId), count: list.length });
+      entries.push({ employeeId: Number(rawEmployeeId), count });
       employees.set(date, entries);
     }
     return { dayTotals: totals, dayEmployees: employees };
@@ -178,7 +189,9 @@ export function useAbsenceConflicts(
       forDay: (employeeId, date) => byEmployeeDay.get(`${employeeId}:${date}`) ?? EMPTY,
       countForDays: (employeeId, dates) =>
         dates.reduce(
-          (sum, date) => sum + (byEmployeeDay.get(`${employeeId}:${date}`)?.length ?? 0),
+          (sum, date) =>
+            sum +
+            (byEmployeeDay.get(`${employeeId}:${date}`)?.filter(isUnreviewed).length ?? 0),
           0,
         ),
       dayTotals,

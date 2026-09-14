@@ -4,6 +4,15 @@ import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 export type ClientType = "individual" | "company";
 export type ClientStatus = "new" | "active" | "inactive" | "no_offering";
 
+export interface DjangoClientStatus {
+  id: number;
+  code: string;
+  name: string;
+  color: string;
+  isSystem: boolean;
+  isActive: boolean;
+}
+
 export interface DjangoClientGroupRef {
   id: number;
   name: string;
@@ -49,6 +58,9 @@ export interface DjangoClient {
   primaryContact: DjangoClientContact | null;
   joinedAt: string;
   updatedAt: string;
+  customerStatus: DjangoClientStatus | null;
+  isBlacklisted: boolean;
+  blacklistReason: string;
 }
 
 export interface CreateClientPayload {
@@ -60,6 +72,9 @@ export interface CreateClientPayload {
   address?: string;
   clientType?: ClientType;
   status?: ClientStatus;
+  customerStatusId?: number | null;
+  isBlacklisted?: boolean;
+  blacklistReason?: string;
   note?: string;
   legalName?: string;
   inn?: string;
@@ -82,6 +97,37 @@ export function getClients(
   if (params.status) search.set("status", params.status);
   if (params.clientType) search.set("clientType", params.clientType);
   return apiRequest<DjangoClient[]>(`/clients/?${search.toString()}`, { signal });
+}
+
+export function getClientStatuses(
+  organizationId: number,
+  signal?: AbortSignal,
+): Promise<DjangoClientStatus[]> {
+  return apiRequest<DjangoClientStatus[]>(
+    `/clients/statuses/?organizationId=${organizationId}`,
+    { signal },
+  );
+}
+
+export function createClientStatus(
+  organizationId: number,
+  payload: { name: string; color?: string; sortOrder?: number },
+): Promise<DjangoClientStatus> {
+  return apiRequest<DjangoClientStatus>(
+    `/clients/statuses/?organizationId=${organizationId}`,
+    { method: "POST", body: payload },
+  );
+}
+
+export function updateClientStatus(
+  id: number,
+  organizationId: number,
+  payload: Partial<{ name: string; color: string; sortOrder: number; isActive: boolean }>,
+): Promise<DjangoClientStatus> {
+  return apiRequest<DjangoClientStatus>(
+    `/clients/statuses/${id}/?organizationId=${organizationId}`,
+    { method: "PATCH", body: payload },
+  );
 }
 
 export function getClientContacts(

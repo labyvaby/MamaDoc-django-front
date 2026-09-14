@@ -17,11 +17,19 @@ export const WAITLIST_REFRESH_MS = 60_000;
 /**
  * Канал витрины `/book` («Сообщить, когда освободится»).
  *
- * ⚠ Выключен: `POST /api/v1/waitlist/` бэком не реализован (тикет
- * `backend_ticket_waitlist_module.md` §5). Пока флаг false, гость видит
- * привычный текст «окон нет» без формы — иначе заявка уходила бы в никуда.
+ * Включён 10.09.2026: `POST /api/v1/waitlist/` выложен на прод и отвечает
+ * `201 {"data": {"id", "status": "waiting"}}` — ровно то, что ждёт
+ * `createWaitlistRequest`. Обязательны `professional_id`, `patient_name`,
+ * `patient_phone` (телефон проверяется как кыргызстанский); заявка приходит
+ * регистратору как `source: "public"`, имя гостя лежит в `contactName`
+ * (`patientName` пустой, пока запись не связали с картой) — секция «Кто ждёт»
+ * и так показывает `patientName || contactName`.
+ *
+ * ⚠ Анти-спама на ручке нет: подряд идущие POST с одного адреса проходят все
+ * (проверено на проде). Если очередь начнут засорять, защиту просить у бэка —
+ * тикет `backend_ticket_waitlist_module.md` §9.7.
  */
-export const WAITLIST_PUBLIC_CHANNEL_ENABLED = false;
+export const WAITLIST_PUBLIC_CHANNEL_ENABLED = true;
 
 /** Палитра-тон статусных плашек — общий тип с `TonedChip`. */
 export type { ToneName } from "../../components/ui/TonedChip";

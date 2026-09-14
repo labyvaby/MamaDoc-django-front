@@ -690,7 +690,6 @@ const DjangoServicesPage: React.FC = () => {
                 refreshToken={detailsRefreshToken}
                 onEdit={canUpdate ? handleEdit : undefined}
                 onDuplicate={canCreate ? handleDuplicate : undefined}
-                onSelectService={setSelectedServiceId}
                 onDelete={
                   canDelete
                     ? (s) => {

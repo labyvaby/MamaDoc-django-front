@@ -148,10 +148,33 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
   const [view, setView] = React.useState<ScheduleView>("day");
 
   const employeesById = React.useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
-  const { filters, set: setFilter, reset: resetFilters, apply: filterOccurrences } = useScheduleFilters(
-    employeesById,
-    currentEmployeeId,
-  );
+  const {
+    filters,
+    set: setFilter,
+    reset: resetFilters,
+    apply: filterOccurrences,
+    matchesEmployee,
+  } = useScheduleFilters(employeesById, currentEmployeeId);
+
+  /**
+   * Отсутствующие с неразобранными записями — под тем же фильтром, что и смены:
+   * иначе фильтр «только мои» или по специализации оставлял бы в сетке чужие
+   * строки отсутствия.
+   */
+  const absenceNames = React.useMemo(() => {
+    const map = new Map<number, string>();
+    for (const exc of exceptions) if (!map.has(exc.employeeId)) map.set(exc.employeeId, exc.employeeName);
+    return map;
+  }, [exceptions]);
+  const filteredAbsenceDayEmployees = React.useMemo(() => {
+    if (!absenceDayEmployees) return undefined;
+    const map = new Map<string, { employeeId: number; count: number }[]>();
+    for (const [date, list] of absenceDayEmployees) {
+      const kept = list.filter((e) => matchesEmployee(e.employeeId, absenceNames.get(e.employeeId)));
+      if (kept.length > 0) map.set(date, kept);
+    }
+    return map;
+  }, [absenceDayEmployees, matchesEmployee, absenceNames]);
 
   /**
    * Цвет сотрудника. Сотрудника может не быть в справочнике (правила приходят
@@ -801,6 +824,8 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
               exceptions={exceptions}
               employeeColorMap={employeeColorMap}
               onDayClick={onDayClick}
+              absenceDayEmployees={filteredAbsenceDayEmployees}
+              onAbsenceClick={onAbsenceBadgeClick}
             />
           </Box>
         ) : (
@@ -811,6 +836,9 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
               occurrences={occsFor(month)}
               employeeColorMap={employeeColorMap}
               onEmployeeClick={() => onDayClick(month)}
+              exceptions={exceptions}
+              absenceDayEmployees={filteredAbsenceDayEmployees}
+              onAbsenceClick={onAbsenceBadgeClick}
             />
           </Box>
         )}

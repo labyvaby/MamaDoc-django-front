@@ -1063,7 +1063,9 @@ export function getHomeDashboard(scope: Scope = {}, params: {
  * только активные сотрудники и активные назначения, `branchId` сужает до
  * пригодных в филиале, а старое общее назначение (`branch: null`) учитывается
  * лишь при доступе сотрудника к филиалу и доступности услуги в нём. Проверено
- * на test 09.09.2026: состав совпал с матрицей на 10 услугах из 10.
+ * на test 09.09.2026 (10 услуг из 10) и на проде 10.09.2026 — там режим
+ * заработал только с этой выкладкой, до неё отдавал `200 []` (36 услуг орг 1
+ * с назначениями, состав совпал с матрицей на всех).
  *
  * `organizationId` нужен суперадмину — обычный пользователь работает в
  * организации своей сессии.
@@ -1271,6 +1273,17 @@ export function startAppointment(id: number): Promise<DjangoAppointment> {
   }).then(normalizeAppointment);
 }
 
+/** Cancel an appointment without deleting its history or financial records. */
+export function cancelAppointment(
+  id: number,
+  cancelReason: AppointmentCancelReason = "other",
+): Promise<DjangoAppointment> {
+  return apiRequest<RawAppointment>(`/appointments/${id}/cancel/`, {
+    method: "POST",
+    body: { cancelReason },
+  }).then(normalizeAppointment);
+}
+
 export function deleteAppointment(id: number): Promise<void> {
   return apiRequest<void>(`/appointments/${id}/`, { method: "DELETE" });
 }
@@ -1283,7 +1296,20 @@ export function deleteAppointment(id: number): Promise<void> {
  */
 export const APPOINTMENT_BULK_MAX_ITEMS = 50;
 
-export type AppointmentBulkAction = "cancel" | "reschedule" | "reassign";
+/**
+ * Действия bulk-ручки.
+ *
+ * `ack_absence` / `unack_absence` — отметка «разобрано» для приёма, попавшего
+ * под отсутствие врача: сам приём не меняется (ни статус, ни время, ни
+ * исполнитель, ни платежи), пациенту ничего не уходит. Права — те же
+ * `appointments.update`.
+ */
+export type AppointmentBulkAction =
+  | "cancel"
+  | "reschedule"
+  | "reassign"
+  | "ack_absence"
+  | "unack_absence";
 
 export interface AppointmentBulkItem {
   id: number;

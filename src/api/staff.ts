@@ -82,6 +82,15 @@ export interface DjangoEmployee {
    * ответит 400: врач с флагом и суммой 0 означал бы «оплатите 0 сом».
    */
   prepaymentAmount?: string;
+  /**
+   * Шаг сетки свободных окон этого сотрудника, минуты: у терапевта приём 20
+   * минут, у УЗИ — 40. `null` — своего шага нет, действует общий шаг сетки
+   * (30 минут). `undefined` — окружение, где поля ещё нет (бэк-тикет
+   * `backend_ticket_employee_slot_duration.md`): тогда поле не показываем в
+   * форме и не шлём обратно, иначе PATCH упадёт `400 unknown field` и
+   * отклонит всю форму — как с `onlineBookingEnabled`.
+   */
+  slotDurationMinutes?: number | null;
   photoUrl: string | null;
   role: DjangoRoleShort | null;
   specializations: DjangoSpecializationShort[];
@@ -117,6 +126,15 @@ export interface DjangoEmployeeListItem {
    * ответит 400: врач с флагом и суммой 0 означал бы «оплатите 0 сом».
    */
   prepaymentAmount?: string;
+  /**
+   * Шаг сетки свободных окон этого сотрудника, минуты: у терапевта приём 20
+   * минут, у УЗИ — 40. `null` — своего шага нет, действует общий шаг сетки
+   * (30 минут). `undefined` — окружение, где поля ещё нет (бэк-тикет
+   * `backend_ticket_employee_slot_duration.md`): тогда поле не показываем в
+   * форме и не шлём обратно, иначе PATCH упадёт `400 unknown field` и
+   * отклонит всю форму — как с `onlineBookingEnabled`.
+   */
+  slotDurationMinutes?: number | null;
   photoUrl: string | null;
   role: DjangoRoleShort | null;
   specializations: DjangoSpecializationShort[];
@@ -221,6 +239,11 @@ export interface UpdateEmployeePayload {
    */
   prepaymentRequired?: boolean;
   prepaymentAmount?: string;
+  /**
+   * Шаг сетки окон сотрудника, минуты. `null` — вернуться к общему шагу;
+   * отсутствие поля в запросе шаг не меняет.
+   */
+  slotDurationMinutes?: number | null;
   /** Полный набор операционных филиалов (замена целиком); не слать, если не менялся. */
   employeeBranchIds?: number[];
 }

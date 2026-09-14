@@ -43,6 +43,27 @@ describe("isBookingClosed", () => {
     ).toBe(false);
   });
 
+  it("серверный expired закрывает бронь даже без срока в ответе", () => {
+    expect(
+      isBookingClosed({ status: "awaiting_payment", prepaymentStatus: "expired" }, now),
+    ).toBe(true);
+  });
+
+  it("живая оплата не закрыта, даже если ссылка формально истекла: бэк видит деньги", () => {
+    // §9.2 контракта: статус точнее часов браузера — по такой броне платёж
+    // подтверждён, и прятать её из списка нельзя.
+    expect(
+      isBookingClosed(
+        {
+          status: "awaiting_payment",
+          prepaymentStatus: "paid",
+          prepaymentExpiresAt: "2026-09-09T11:45:00",
+        },
+        now,
+      ),
+    ).toBe(false);
+  });
+
   it("оплата без срока и с мусорной датой — не закрыта: утверждать нечего", () => {
     expect(isBookingClosed({ status: "awaiting_payment" }, now)).toBe(false);
     expect(

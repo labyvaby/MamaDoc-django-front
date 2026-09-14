@@ -80,11 +80,17 @@ export const isTerminalBookingStatus = (status: BookingStatus): boolean =>
  * нет, это management-команда по расписанию), и всё это время список забит
  * записями, которые никогда не станут приёмами.
  *
- * ⚠ Судим по времени, а не по `prepaymentStatus`: у просроченных броней он
- * остаётся `pending` (проверено на тесте 09.09.2026 — брони от 6 сентября всё
- * ещё «Ждём оплату»), то есть в `expired` бэк их не переводит.
+ * Основной признак — `prepaymentStatus: "expired"`: с §9.2 контракта броней
+ * (10.09.2026) бэк выводит его при чтении, не дожидаясь поллера, так что
+ * читать статус достаточно. Проверено на тесте: все 12 просроченных приходят
+ * `expired`, а бронь с истёкшей ссылкой, по которой деньги всё-таки пришли,
+ * остаётся `paid` — то есть статус точнее часов браузера.
  *
- * `awaiting_payment` без `prepaymentExpiresAt` закрытой не считаем: срок
+ * ⚠ Сравнение с часами оставлено фолбэком: на проде §9 на 10.09.2026 не
+ * выложен, там просроченные брони всё ещё приходят `pending`. Как приедет —
+ * ветку с `prepaymentExpiresAt` можно снять.
+ *
+ * `awaiting_payment` без срока и без статуса закрытой не считаем: срок
  * неизвестен, а скрывать то, о чём нечего утверждать, нельзя.
  *
  * `completed` сюда не входит: выполненная бронь — законная история приёма.
@@ -92,12 +98,17 @@ export const isTerminalBookingStatus = (status: BookingStatus): boolean =>
 export function isBookingClosed(
   b: {
     status: BookingStatus;
+    prepaymentStatus?: BookingPrepaymentStatus | null;
     prepaymentExpiresAt?: string | null;
   },
   now: Dayjs = dayjs(),
 ): boolean {
   if (b.status === "cancelled" || b.status === "no_show") return true;
   if (b.status !== "awaiting_payment") return false;
+  if (b.prepaymentStatus === "expired") return true;
+  // Деньги дошли — бронь живая, сколько бы ни показывали часы браузера: ссылка
+  // могла истечь уже после оплаты (на тесте такая бронь есть).
+  if (b.prepaymentStatus === "paid") return false;
   if (!b.prepaymentExpiresAt) return false;
   const end = dayjs(b.prepaymentExpiresAt);
   return end.isValid() && end.isBefore(now);

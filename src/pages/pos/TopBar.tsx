@@ -2,6 +2,8 @@ import React from "react";
 import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
 import InputBase from "@mui/material/InputBase";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
@@ -16,6 +18,9 @@ type Props = {
   onScan?: () => void;
   search: string;
   onSearchChange: (value: string) => void;
+  categories?: Array<{ id: number; name: string }>;
+  categoryId?: number | null;
+  onCategoryChange?: (categoryId: number | null) => void;
   /** Kept for compatibility with the legacy mock POS page. */
   cashierDesk?: string;
   cashierName?: string;
@@ -50,7 +55,18 @@ const TopBarButton: React.FC<{ label: string; onClick: () => void }> = ({ label,
 };
 
 /** Верхняя полоса кассы: корзина, поиск товара и действия с чеком. */
-export const PosTopBar: React.FC<Props> = ({ search, onSearchChange, onNewReceipt, onOpenHeldReceipts, canSell = false, canHold = false, onScan }) => {
+export const PosTopBar: React.FC<Props> = ({
+  search,
+  onSearchChange,
+  categories,
+  categoryId = null,
+  onCategoryChange,
+  onNewReceipt,
+  onOpenHeldReceipts,
+  canSell = false,
+  canHold = false,
+  onScan,
+}) => {
   const theme = useTheme();
   const c = posColors(theme);
 
@@ -88,7 +104,7 @@ export const PosTopBar: React.FC<Props> = ({ search, onSearchChange, onNewReceip
 
         <Box
           sx={{
-            width: 450,
+            width: { xs: 320, md: 580 },
             maxWidth: "100%",
             height: 42,
             px: "16px",
@@ -105,7 +121,7 @@ export const PosTopBar: React.FC<Props> = ({ search, onSearchChange, onNewReceip
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); onScan?.(); } }}
-            placeholder="Поиск по названию, артикулу или штрихкоду"
+            placeholder="Поиск по названию, артикулу, штрихкоду или категории"
             sx={{
               flex: 1,
               minWidth: 0,
@@ -114,6 +130,49 @@ export const PosTopBar: React.FC<Props> = ({ search, onSearchChange, onNewReceip
               "& input::placeholder": { color: c.textDim, opacity: 1 },
             }}
           />
+          {categories && onCategoryChange && (
+            <Select
+              value={categoryId == null ? "" : String(categoryId)}
+              onChange={(event) => {
+                const value = event.target.value;
+                onCategoryChange(value ? Number(value) : null);
+              }}
+              displayEmpty
+              variant="standard"
+              disableUnderline
+              aria-label="Фильтр по категории"
+              renderValue={(value) => {
+                const selected = categories.find(
+                  (item) => String(item.id) === String(value)
+                );
+                return selected?.name ?? "Категория";
+              }}
+              sx={{
+                flexShrink: 0,
+                width: 150,
+                pl: 1.5,
+                borderLeft: `1px solid ${c.outline}`,
+                color: categoryId == null ? c.textDim : c.textSoft,
+                fontSize: 13,
+                "& .MuiSelect-select": {
+                  py: 0.5,
+                  pr: "24px !important",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                },
+                "& .MuiSelect-icon": { color: c.textDim },
+                "&:before, &:after": { display: "none" },
+              }}
+            >
+              <MenuItem value="">Все категории</MenuItem>
+              {categories.map((item) => (
+                <MenuItem key={item.id} value={String(item.id)}>
+                  {item.name}
+                </MenuItem>
+              ))}
+            </Select>
+          )}
           <Box
             sx={{
               flexShrink: 0,

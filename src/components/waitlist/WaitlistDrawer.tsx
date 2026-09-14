@@ -25,7 +25,7 @@ import { AppButton, CustomDatePicker, PhoneCountryCodeSelect } from "../ui";
 import { useT } from "../../i18n/VerticalProvider";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useActiveScope } from "../../hooks/useActiveScope";
-import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
+import { doctorEmployeesOnly, useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import { usePhoneLocalInput } from "../../hooks/usePhoneLocalInput";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import {
@@ -146,6 +146,27 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
   });
   const specializations = specializationsQuery.data ?? [];
 
+  /**
+   * В пикер попадают только врачи, и при выбранной специальности — лишь те, у
+   * кого она есть. Раньше селект отдавал весь штат: регистраторы и уборщицы
+   * стояли вперемешку с врачами, а окон у них не бывает.
+   */
+  const employeeOptions = React.useMemo(() => {
+    const doctors = doctorEmployeesOnly(employees);
+    const list =
+      specializationId === ""
+        ? doctors
+        : doctors.filter((e) => e.specializations.some((s) => s.id === specializationId));
+    // Уже сохранённого специалиста из списка не выкидываем, даже если он под
+    // фильтр не подходит: иначе при правке старой записи селект показал бы
+    // пустоту и молча подменил ориентир.
+    if (employeeId !== "" && !list.some((e) => e.id === employeeId)) {
+      const current = employees.find((e) => e.id === employeeId);
+      if (current) return [current, ...list];
+    }
+    return list;
+  }, [employees, specializationId, employeeId]);
+
   // ── Поиск пациента в базе ──
   const [patientSearch, setPatientSearch] = React.useState("");
   const debouncedSearch = useDebouncedValue(patientSearch, 350);
@@ -172,8 +193,6 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
     const rows = duplicateQuery.data ?? [];
     return rows.find((p) => p.phone.replace(/\D/g, "").endsWith(phoneTail)) ?? null;
   }, [duplicateQuery.data, phoneTail]);
-
-  const selectedEmployee = employees.find((e) => e.id === employeeId) ?? null;
 
   const applyPatient = (value: DjangoPatient | null) => {
     setPatient(value);
@@ -243,8 +262,9 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
     setError(null);
     if (!contactName.trim()) return setError(t("form.errorNoName"));
     if (phoneLocal.replace(/\D/g, "").length < 9) return setError(t("form.errorPhone"));
-    // Без врача и без специальности запись не с чем сопоставить: подсказка
-    // «окно освободилось» никогда её не найдёт.
+    // Без врача и без специальности запись не с чем сопоставить: matchesSlot
+    // ищет по employeeId либо по специальности врача слота, и подсказка «окно
+    // освободилось» такую запись никогда не найдёт.
     if (employeeId === "" && specializationId === "") return setError(t("form.errorNoTarget"));
     if (dateFrom && dateTo && dateFrom.isAfter(dateTo)) return setError(t("form.errorDates"));
     if (timeFrom && timeTo && timeFrom > timeTo) return setError(t("form.errorTimes"));
@@ -351,24 +371,25 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
             <TextField
               select
               size="small"
-              label={t("form.employee")}
-              value={employeeId}
+              label={t("form.specialization")}
+              value={specializationId}
               onChange={(e) => {
                 const value = e.target.value === "" ? "" : Number(e.target.value);
-                setEmployeeId(value);
-                // Специальность подставляем от выбранного специалиста — на неё
-                // матчатся окна его коллег, если человек согласен на любого.
-                const emp = employees.find((x) => x.id === value);
-                if (emp?.specializations?.[0] && specializationId === "") {
-                  setSpecializationId(emp.specializations[0].id);
+                setSpecializationId(value);
+                // Выбранный врач другой специальности перестал бы совпадать с
+                // фильтром — снимаем его, чтобы в записи не остался ориентир,
+                // которого больше нет в списке.
+                if (value !== "" && employeeId !== "") {
+                  const emp = employees.find((x) => x.id === employeeId);
+                  if (!emp?.specializations.some((s) => s.id === value)) setEmployeeId("");
                 }
               }}
               fullWidth
             >
-              <MenuItem value="">{t("form.employeeAny")}</MenuItem>
-              {employees.map((emp) => (
-                <MenuItem key={emp.id} value={emp.id}>
-                  {emp.fullName}
+              <MenuItem value="">{t("form.specializationAny")}</MenuItem>
+              {specializations.map((spec) => (
+                <MenuItem key={spec.id} value={spec.id}>
+                  {spec.name}
                 </MenuItem>
               ))}
             </TextField>
@@ -376,22 +397,26 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
             <TextField
               select
               size="small"
-              label={t("form.specialization")}
-              value={specializationId}
+              label={t("form.employee")}
+              value={employeeId}
               onChange={(e) =>
-                setSpecializationId(e.target.value === "" ? "" : Number(e.target.value))
+                setEmployeeId(e.target.value === "" ? "" : Number(e.target.value))
               }
               helperText={
-                selectedEmployee && specializationId !== ""
-                  ? "Подойдут и окна коллег этой специальности"
+                employeeId === "" && specializationId !== ""
+                  ? t("form.employeeAnyHint")
                   : undefined
               }
               fullWidth
             >
-              <MenuItem value="">—</MenuItem>
-              {specializations.map((spec) => (
-                <MenuItem key={spec.id} value={spec.id}>
-                  {spec.name}
+              {/* «Любой» имеет смысл только при выбранной специальности: без
+                  обоих ориентиров запись не сматчится ни с одним окном. */}
+              {specializationId !== "" && (
+                <MenuItem value="">{t("form.employeeAny")}</MenuItem>
+              )}
+              {employeeOptions.map((emp) => (
+                <MenuItem key={emp.id} value={emp.id}>
+                  {emp.fullName}
                 </MenuItem>
               ))}
             </TextField>

@@ -11,13 +11,7 @@ const EMPTY_IDS = new Map<number, number[]>();
 export interface ServiceAssignmentCounts {
   /** serviceId → сколько сотрудников её оказывают; услуги без пар в карте нет. */
   countByService: Map<number, number>;
-  /**
-   * serviceId → id сотрудников, оказывающих услугу. Тот же источник, что и
-   * счётчик, поэтому список в карточке услуги не может с ним разойтись.
-   */
-  employeeIdsByService: Map<number, number[]>;
   isLoading: boolean;
-  isError: boolean;
   /** Данные загружены — до этого «0 исполнителей» ещё ничего не значит. */
   isReady: boolean;
 }
@@ -70,9 +64,7 @@ export function useServiceAssignmentCounts(enabled: boolean = true): ServiceAssi
 
   return {
     countByService,
-    employeeIdsByService,
     isLoading: active && query.isLoading,
-    isError: query.isError,
     isReady: active && query.data != null,
   };
 }

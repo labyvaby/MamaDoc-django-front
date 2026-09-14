@@ -29,7 +29,7 @@ export const INVOICE_PHOTOS_ENABLED = true;
 export const INVOICE_PHOTOS_MAX = 2;
 
 /** Сущность, к которой крепится накладная. */
-export type InvoicePhotoTarget = "vaccinationBatch" | "stockMovement" | "expense";
+export type InvoicePhotoTarget = "vaccinationBatch" | "stockMovement" | "expense" | "goodsReceipt";
 
 export interface InvoicePhoto {
   id: number;
@@ -49,6 +49,9 @@ function basePath(target: InvoicePhotoTarget, entityId: number): string {
       return `/warehouse/movements/${entityId}/invoices/`;
     case "expense":
       return `/finance/expenses/${entityId}/invoices/`;
+    // Накладная поставщика (модуль «Закупки», v2) — тот же контракт.
+    case "goodsReceipt":
+      return `/v2/procurement/receipts/${entityId}/invoices/`;
   }
 }
 

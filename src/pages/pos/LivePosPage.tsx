@@ -14,7 +14,9 @@ import {
   Typography,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import SearchOffOutlined from "@mui/icons-material/SearchOffOutlined";
 import { apiRequest } from "../../api/client";
+import { getDiscountKinds, type DiscountKind } from "../../api/promotions";
 import {
   checkoutPosCart,
   getPosBootstrap,
@@ -29,7 +31,6 @@ import {
 } from "../../api/pos";
 import { usePermissions } from "../../hooks/usePermissions";
 import { ActiveContextSwitcher } from "../../components/sidebar/ActiveContextSwitcher";
-import { PosCategoryBar } from "./CategoryBar";
 import { PosClientFooter } from "./ClientFooter";
 import { PosHoldReceiptDialog } from "./HoldReceiptDialog";
 import { PosProductCards } from "./ProductCards";
@@ -58,6 +59,11 @@ const colorHex = (label: string) =>
     красный: "#af4141",
     серый: "#8a8c92",
   }[label.toLowerCase()] ?? "#887bb3");
+
+const canStartProductSearch = (value: string) => {
+  const term = value.trim();
+  return Boolean(term) && (!/^\d+$/.test(term) || term.length >= 3);
+};
 
 function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
   const p = row.product;
@@ -92,7 +98,7 @@ function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
     barcode: p.barcode,
     quantity: row.quantity,
     price: Number(p.price),
-    imageUrl: p.imageUrl,
+    imageUrl: p.imageThumbnailUrl ?? p.imageUrl,
     colors: colors.map((a) => ({
       id: String(a.id),
       label: a.value,
@@ -144,7 +150,7 @@ export default function LivePosPage() {
   const warehouseId = warehouseChoice ?? data?.warehouses[0]?.id ?? 0;
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
-  const [category, setCategory] = React.useState<string | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = React.useState<number | null>(null);
   const [rows, setRows] = React.useState<CartRow[]>([]);
   const [variants, setVariants] = React.useState<PosProduct[]>([]);
   const [client, setClient] = React.useState<PosClient | null>(null);
@@ -172,15 +178,38 @@ export default function LivePosPage() {
     }, 250);
     return () => window.clearTimeout(id);
   }, [search]);
-  const categoryId = data?.categories.find(
-    (item) => item.name === category
-  )?.id;
+  const typedSearch = search.trim();
+  const debouncedSearch = debounced.trim();
+  const isSearchPending = typedSearch !== debouncedSearch;
+  const normalizedSearch = debouncedSearch.toLocaleLowerCase();
+  const hasTypedSearch = canStartProductSearch(typedSearch);
+  const hasSearch = canStartProductSearch(debouncedSearch);
+  const matchedCategory =
+    normalizedSearch.length >= 2
+      ? data?.categories.find((item) => {
+          const categoryName = item.name.trim().toLocaleLowerCase();
+          return (
+            categoryName === normalizedSearch ||
+            (normalizedSearch.length >= 3 &&
+              categoryName.startsWith(normalizedSearch))
+          );
+        })
+      : undefined;
+  const activeMatchedCategory = isSearchPending ? undefined : matchedCategory;
+  const categoryId = selectedCategoryId ?? activeMatchedCategory?.id;
+  const productSearch =
+    !hasSearch || (activeMatchedCategory && selectedCategoryId == null)
+      ? ""
+      : debounced;
+  const canShowProducts = hasTypedSearch || categoryId != null;
+  const canFetchProducts =
+    !isSearchPending && (hasSearch || categoryId != null);
   const products = useQuery({
     queryKey: [
       ...prefix,
       "products",
       warehouseId,
-      debounced,
+      productSearch,
       categoryId,
     ],
     queryFn: ({ signal }) =>
@@ -188,13 +217,13 @@ export default function LivePosPage() {
         scope,
         {
           warehouseId,
-          search: debounced,
+          search: productSearch,
           limit: 200,
           ...(categoryId ? { categoryId } : {}),
         },
         signal
       ),
-    enabled: ready && !!warehouseId,
+    enabled: ready && !!warehouseId && canFetchProducts,
   });
   const clients = useQuery({
     queryKey: [...prefix, "clients", clientSearch],
@@ -234,6 +263,7 @@ export default function LivePosPage() {
         quantity: String(row.quantity),
       })),
     discountPercent: benefits.discount || "0",
+    discountKindId: benefits.discountKindId ?? undefined,
     clientDiscount: benefits.clientDiscount,
     promotions: benefits.promotions,
     promoCode: benefits.promoCode.trim(),
@@ -247,6 +277,19 @@ export default function LivePosPage() {
     staleTime: 0,
     retry: false,
   });
+  const discountKindsQuery = useQuery({
+    queryKey: ["django", "promotions", "discount-kinds", scope.branchId],
+    queryFn: ({ signal }) => getDiscountKinds({ branchId: scope.branchId }, signal),
+    enabled: ready && actions.discount,
+  });
+  const discountKinds: DiscountKind[] = discountKindsQuery.data ?? [];
+  const configuredDiscountMode = data?.rules.discount_mode;
+  const discountMode =
+    configuredDiscountMode === "manual" ||
+    configuredDiscountMode === "kinds" ||
+    configuredDiscountMode === "both"
+      ? configuredDiscountMode
+      : "both";
   const heldQuote: PosQuote | undefined = held
     ? {
         subtotal: held.subtotal,
@@ -274,6 +317,7 @@ export default function LivePosPage() {
     setClient(null);
     setBenefits(emptyBenefits);
     setSearch("");
+    setSelectedCategoryId(null);
     setError(null);
     attempt.current = { fingerprint: "", key: "" };
   };
@@ -507,6 +551,9 @@ export default function LivePosPage() {
       <PosTopBar
         search={search}
         onSearchChange={setSearch}
+        categories={data.categories}
+        categoryId={selectedCategoryId}
+        onCategoryChange={setSelectedCategoryId}
         onNewReceipt={newReceipt}
         onOpenHeldReceipts={() => {
           setListOffset(0);
@@ -516,7 +563,13 @@ export default function LivePosPage() {
         canHold={actions.hold}
         onScan={() => {
           const code = search.trim();
-          if (!code || !actions.sell || pending || held) return;
+          if (
+            !canStartProductSearch(code) ||
+            !actions.sell ||
+            pending ||
+            held
+          )
+            return;
           void getPosProducts(scope, { warehouseId, search: code })
             .then((result) => {
               const exact = result.results.find(
@@ -553,16 +606,35 @@ export default function LivePosPage() {
           оплатите его или начните новый чек.
         </Alert>
       )}
-      <PosCategoryBar
-        categories={data.categories.map((item) => item.name)}
-        active={category}
-        onSelect={(value) => {
-          setCategory(value);
-        }}
-      />
-      {!held && category && ((products.data?.count ?? 0) > 0 || !!search) && (
+      {!held && canShowProducts && (
         <>
-          {products.isFetching && <LinearProgress />}
+          {(isSearchPending || products.isFetching) && <LinearProgress />}
+          {!isSearchPending &&
+            !products.isFetching &&
+            products.data?.results.length === 0 && (
+              <Box
+                sx={{
+                  minHeight: 76,
+                  px: 2,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 1,
+                  bgcolor: c.page,
+                  borderBottom: `1px solid ${c.outline}`,
+                }}
+              >
+                <SearchOffOutlined sx={{ color: c.textDim, fontSize: 20 }} />
+                <Typography color="text.secondary" fontSize={13}>
+                  {categoryId != null
+                    ? "В выбранной категории товары не найдены."
+                    : "Товары не найдены. Попробуйте другое название."}
+                </Typography>
+              </Box>
+            )}
+          {!isSearchPending &&
+            !products.isFetching &&
+            (products.data?.results.length ?? 0) > 0 && (
           <PosProductCards
             items={(products.data?.results ?? []).map((product) => ({
               ...toLine({ product, quantity: 1 }, [product]),
@@ -577,6 +649,7 @@ export default function LivePosPage() {
             }}
             disabled={!actions.sell || pending}
           />
+            )}
         </>
       )}
       <Box
@@ -705,6 +778,8 @@ export default function LivePosPage() {
           bonuses={client?.bonuses ?? 0}
           hasClient={!!client}
           locked={!!held || pending}
+          discountKinds={discountKinds}
+          discountMode={discountMode}
         />
       </Box>
       <PosHoldReceiptDialog

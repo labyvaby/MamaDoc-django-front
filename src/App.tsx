@@ -73,6 +73,7 @@ const ServicesPage = lazy(() => import("./pages/services/DjangoServicesPage"));
 const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
 const DjangoProductsPage = lazy(() => import("./pages/products/django"));
 const DjangoInventoryPage = lazy(() => import("./pages/inventory/django"));
+const ProcurementInvoicesPage = lazy(() => import("./pages/procurement"));
 const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
 const DjangoSchedulePage = lazy(() => import("./pages/schedule/django"));
@@ -125,6 +126,9 @@ const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSetting
 const SiteSettingsPage = lazy(() => import("./pages/settings/SiteSettingsPage"));
 const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"));
 const PosModuleSettingsPage = lazy(() => import("./pages/settings/PosModuleSettingsPage"));
+const ProcurementSettingsPage = lazy(() => import("./pages/settings/ProcurementSettingsPage"));
+const DiscountKindsSettingsPage = lazy(() => import("./pages/settings/DiscountKindsSettingsPage"));
+const PromotionsSettingsPage = lazy(() => import("./pages/settings/PromotionsSettingsPage"));
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
 const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
@@ -152,7 +156,7 @@ const RootRedirect = () => {
   // был хардкод /appointments, и вход без права appointments.registry.view
   // заканчивался экраном «Нет доступа».
   const { loading, can } = useCanChecker();
-  const { role, activeEmployee } = usePermissions();
+  const { role, activeEmployee, activeOrganization } = usePermissions();
   const { loading: moduleLoading, moduleGate } = useModuleGate();
   if (loading || moduleLoading) {
     return <LinearProgress />;
@@ -162,6 +166,7 @@ const RootRedirect = () => {
     can,
     canOpenModule: moduleGate,
     hasActiveEmployee: activeEmployee != null,
+    defaultHomeRoute: activeOrganization?.themeConfig?.defaultHomeRoute,
   });
   return <Navigate to={path} replace />;
 };
@@ -338,6 +343,11 @@ function App() {
                         name: "inventory",
                         list: "/inventory",
                         meta: { label: "Инвентаризация" }
+                      },
+                      {
+                        name: "invoices",
+                        list: "/invoices",
+                        meta: { label: "Накладные" }
                       },
                       {
                         name: "patients",
@@ -558,27 +568,29 @@ function App() {
                         <Route path="home" element={<RootRedirect />} />
                         <Route path="patient-search" element={<Navigate to="/patients" replace />} />
                         {/* Исторические реестры «Все приёмы» / «Все процедуры» —
-                            только суперадминистратор (пожелание заказчика
-                            19.08.2026). Гейт ролевой, а не по праву: организация
-                            не должна открыть их себе через редактор ролей. */}
+                            по page-visibility праву, как три рабочих
+                            пространства приёмов. С 19.08.2026 были закрыты
+                            ролью superadmin; теперь право выдаёт сам
+                            суперадминистратор в редакторе ролей (по умолчанию
+                            его нет ни у кого). */}
                         <Route
                           path="all-appointments"
                           element={
-                            <RequireSuperAdmin>
+                            <RequirePermission permission={PAGE_PERMISSIONS.allAppointments}>
                               <Suspense fallback={<LinearProgress />}>
                                 <AllAppointmentsPage />
                               </Suspense>
-                            </RequireSuperAdmin>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="all-procedures"
                           element={
-                            <RequireSuperAdmin>
+                            <RequirePermission permission={PAGE_PERMISSIONS.allProcedures}>
                               <Suspense fallback={<LinearProgress />}>
                                 <AllProceduresPage />
                               </Suspense>
-                            </RequireSuperAdmin>
+                            </RequirePermission>
                           }
                         />
                         {/* Сводка — пока только суперадминистратору (решение
@@ -701,6 +713,17 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.warehouses}>
                               <Suspense fallback={<LinearProgress />}>
                                 <DjangoInventoryPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        {/* Накладные (закупки): page-visibility право + модуль procurement (canAccess). */}
+                        <Route
+                          path="invoices"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.procurementInvoices}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <ProcurementInvoicesPage />
                               </Suspense>
                             </RequirePermission>
                           }
@@ -891,7 +914,11 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                            <Route path="settings/pos-module" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.posModule}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
+                            <Route path="settings/store" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.store}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
+                            <Route path="settings/pos-module" element={<Navigate to="/settings/store" replace />} />
+                            <Route path="settings/procurement" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.procurement}><Suspense fallback={<LinearProgress />}><ProcurementSettingsPage /></Suspense></RequirePermission>} />
+                            <Route path="settings/discount-kinds" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.discountKinds}><Suspense fallback={<LinearProgress />}><DiscountKindsSettingsPage /></Suspense></RequirePermission>} />
+                            <Route path="settings/promotions" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.promotions}><Suspense fallback={<LinearProgress />}><PromotionsSettingsPage /></Suspense></RequirePermission>} />
                             <Route
                               path="settings/branches"
                               element={

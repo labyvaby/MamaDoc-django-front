@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Chip, Tooltip, Typography } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
@@ -8,6 +8,8 @@ import { type Dayjs } from "dayjs";
 
 import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
+import type { ScheduleException } from "../../../api/scheduling";
+import { absenceCountLabel, buildAbsenceIndex } from "./absenceRows";
 import { lunchNote, shiftTimeLabel, type DayOccurrence } from "./occurrences";
 import { segmentLunch, segmentWorkSpans } from "./monthTimeline";
 import { employeeColorHex, lunchFill } from "./employeeColors";
@@ -55,6 +57,12 @@ export interface ScheduleDayTimelineProps {
   occurrences: DayOccurrence[];
   employeeColorMap: Map<number, number>;
   onEmployeeClick?: (employeeId: number) => void;
+  /** Исключения периода — вид отсутствия и имя для строки без смен. */
+  exceptions?: ScheduleException[];
+  /** Дата → отсутствующие с неразобранными записями (см. absenceRows). */
+  absenceDayEmployees?: Map<string, { employeeId: number; count: number }[]>;
+  /** Клик по маркеру записей — открыть разбор. */
+  onAbsenceClick?: (employeeId: number, date: string) => void;
 }
 
 const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
@@ -63,17 +71,32 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
   occurrences,
   employeeColorMap,
   onEmployeeClick,
+  exceptions,
+  absenceDayEmployees,
+  onAbsenceClick,
 }) => {
   const theme = useTheme();
   const mode = theme.palette.mode;
   const { collapsed, toggle } = useCollapsedGroups();
 
-  const employeeIdsWithShifts = React.useMemo(
-    () => new Set(occurrences.map((o) => o.employeeId)),
-    [occurrences],
+  const dateStr = day.format("YYYY-MM-DD");
+  const absence = React.useMemo(
+    () => buildAbsenceIndex(exceptions, absenceDayEmployees, [dateStr]),
+    [exceptions, absenceDayEmployees, dateStr],
   );
-  const namesById = React.useMemo(() => namesFromOccurrences(occurrences), [occurrences]);
-  const groups = useResourceGroups(employees, employeeIdsWithShifts, namesById);
+
+  // Строку получает и тот, у кого смен нет, но остались записанные пациенты:
+  // иначе выходной прячет врача вместе с его приёмами.
+  const rowEmployeeIds = React.useMemo(
+    () => new Set([...occurrences.map((o) => o.employeeId), ...absence.employeeIds]),
+    [occurrences, absence],
+  );
+  const namesById = React.useMemo(() => {
+    const map = namesFromOccurrences(occurrences);
+    for (const [id, name] of absence.names) if (!map.has(id)) map.set(id, name);
+    return map;
+  }, [occurrences, absence]);
+  const groups = useResourceGroups(employees, rowEmployeeIds, namesById);
 
   const colorOf = React.useCallback(
     // ?? employeeId — сотрудника может не быть в справочнике (см. resourceRows).
@@ -332,6 +355,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                 group.rows.map(({ employee }) => {
                   const rowOccs = occurrencesOf(occurrences, employee.id);
                   const c = colorOf(employee.id);
+                  const absent = absence.cells.get(`${dateStr}_${employee.id}`);
                   return (
                     <React.Fragment key={employee.id}>
                       {/* Липкая колонка имени */}
@@ -354,10 +378,31 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                           "&:hover": { bgcolor: "action.hover" },
                         }}
                       >
-                        <UserAvatar name={employee.fullName} src={employee.photoUrl} size={24} />
-                        <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
-                          {employee.fullName}
-                        </Typography>
+                        <UserAvatar
+                          name={employee.fullName}
+                          src={employee.photoUrl}
+                          size={24}
+                          // Отсутствующий приглушён: строка есть только ради
+                          // записей, работать в этот день он не будет.
+                          sx={absent ? { opacity: 0.55 } : undefined}
+                        />
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography
+                            variant="body2"
+                            noWrap
+                            color={absent ? "text.secondary" : "text.primary"}
+                          >
+                            {employee.fullName}
+                          </Typography>
+                          {absent && (
+                            <Typography
+                              noWrap
+                              sx={{ fontSize: "0.62rem", lineHeight: 1.1, color: "text.disabled" }}
+                            >
+                              {absent.label}
+                            </Typography>
+                          )}
+                        </Box>
                       </Box>
 
                       {/* Дорожка времени */}
@@ -371,6 +416,55 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                       >
                         {/* Часовые + получасовые направляющие */}
                         {gridLines}
+                        {/* Отсутствие: штриховка на всю дорожку (плотная заливка
+                            читалась бы как ещё одна смена) и маркер записей,
+                            которые никто не разобрал. */}
+                        {absent && rowOccs.length === 0 && (
+                          <Box
+                            sx={{
+                              position: "absolute",
+                              left: 0,
+                              right: 0,
+                              top: 5,
+                              bottom: 5,
+                              borderRadius: "4px",
+                              backgroundImage: `repeating-linear-gradient(45deg, transparent 0 3px, ${alpha(
+                                theme.palette.text.primary,
+                                0.12,
+                              )} 3px 6px)`,
+                              pointerEvents: "none",
+                            }}
+                          />
+                        )}
+                        {absent && (
+                          <Tooltip
+                            title={`${absent.label}: пациенты остались записанными. Открыть разбор`}
+                            arrow
+                          >
+                            <Chip
+                              size="small"
+                              color="error"
+                              label={absenceCountLabel(absent.count)}
+                              onClick={
+                                onAbsenceClick
+                                  ? () => onAbsenceClick(employee.id, dateStr)
+                                  : undefined
+                              }
+                              sx={{
+                                position: "absolute",
+                                // Смены нет — маркер в начале дорожки, на пустом
+                                // месте; есть (частичное отсутствие) — в конце,
+                                // чтобы не перекрывать полосы.
+                                ...(rowOccs.length === 0 ? { left: 8 } : { right: 8 }),
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                zIndex: 4,
+                                height: 20,
+                                "& .MuiChip-label": { px: 0.75, fontSize: "0.65rem", fontWeight: 700 },
+                              }}
+                            />
+                          </Tooltip>
+                        )}
                         {showNow && (
                           <Box
                             sx={{

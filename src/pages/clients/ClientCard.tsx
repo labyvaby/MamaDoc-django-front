@@ -53,6 +53,8 @@ export default function ClientCard({ client, settings, canManage, onEdit }: Prop
               <Stack direction="row" gap={0.5} flexWrap="wrap">
                 <Chip size="small" label={isCompany ? "Компания" : "Физическое лицо"} />
                 <Chip size="small" label={statusLabels[client.status] ?? client.status} color={client.status === "active" ? "success" : "default"} />
+                {client.customerStatus && <Chip size="small" label={client.customerStatus.name} sx={{ bgcolor: client.customerStatus.color, color: "common.white" }} />}
+                {client.isBlacklisted && <Chip size="small" label="Чёрный список" color="error" />}
               </Stack>
             </Box>
           </Stack>
