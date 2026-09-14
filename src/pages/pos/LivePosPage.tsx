@@ -40,6 +40,7 @@ import { CheckoutDialog } from "./CheckoutDialog";
 import {
   LivePaymentPanel,
   emptyBenefits,
+  inlineQuoteErrorField,
   type Benefits,
 } from "./LivePaymentPanel";
 import { posColors } from "./layout";
@@ -526,10 +527,12 @@ export default function LivePosPage() {
       </Stack>
     );
   if (!data) return <LinearProgress />;
+  const quoteError =
+    quoteQuery.isError && !held ? message(quoteQuery.error) : null;
   const visibleError =
     error ??
-    (quoteQuery.isError && !held
-      ? message(quoteQuery.error)
+    (quoteError && !inlineQuoteErrorField(quoteError)
+      ? quoteError
       : products.isError
       ? message(products.error)
       : clients.isError
@@ -772,6 +775,7 @@ export default function LivePosPage() {
           benefits={benefits}
           onChange={setBenefits}
           quote={quote}
+          quoteError={quoteError}
           busy={busy}
           onCheckout={() => setCheckoutOpen(true)}
           discountPercent={client?.discountPercent ?? 0}

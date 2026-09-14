@@ -197,6 +197,10 @@ export const PosProductCards: React.FC<Props> = ({ items, onAdd, disabled = fals
         {items.map((item) => (
           <ButtonBase
             key={item.id}
+            // The parent viewport uses pointer capture for horizontal dragging.
+            // Keep card clicks inside the card so a normal click adds the item
+            // instead of being mistaken for a drag gesture.
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               if (dragRef.current.moved) {
                 event.preventDefault();

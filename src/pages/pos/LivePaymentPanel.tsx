@@ -1,17 +1,26 @@
-import {
-  Box,
-  Button,
-  Divider,
-  MenuItem,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
+import React from "react";
+import Box from "@mui/material/Box";
+import ButtonBase from "@mui/material/ButtonBase";
+import Collapse from "@mui/material/Collapse";
+import InputBase from "@mui/material/InputBase";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
+
+import CheckOutlined from "@mui/icons-material/CheckOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
+
 import type { PosQuote } from "../../api/pos";
 import type { DiscountKind } from "../../api/promotions";
-import { posColors } from "./layout";
+import { POS_LAYOUT, POS_RADIUS, posColors } from "./layout";
 import { PosAmount } from "./ui";
+
+/**
+ * Правая панель оплаты «живой» кассы — макет Monogram (Figma, «Касса»,
+ * правая колонка 340px). Визуально повторяет мок `PaymentPanel.tsx`, но
+ * данные и правила берёт с сервера: скидки, бонусы, промокод и сертификат
+ * лишь записываются в `Benefits`, а суммы считает `quote/`.
+ */
 
 export type Benefits = {
   discount: string;
@@ -32,11 +41,229 @@ export const emptyBenefits: Benefits = {
   certificateCode: "",
 };
 
+/**
+ * К какому полю панели относится ошибка расчёта чека. Сервер проверяет
+ * промокод и сертификат на `quote/`, и такую ошибку уместнее показать под
+ * самим полем, а не общим баннером над чеком.
+ */
+export const inlineQuoteErrorField = (
+  message: string | null | undefined
+): "promo" | "certificate" | null => {
+  if (!message) return null;
+  if (/промокод/i.test(message)) return "promo";
+  if (/сертификат/i.test(message)) return "certificate";
+  return null;
+};
+
+/** Кнопка «Применить» — обводка акцентом; применённое состояние заливается акцентом. */
+const ApplyButton: React.FC<{
+  applied?: boolean;
+  appliedLabel?: React.ReactNode;
+  disabled?: boolean;
+  onClick: () => void;
+  width?: number;
+}> = ({ applied, appliedLabel, disabled, onClick, width }) => {
+  const c = posColors(useTheme());
+  return (
+    <ButtonBase
+      onClick={onClick}
+      disabled={disabled}
+      sx={{
+        width,
+        px: "14px",
+        py: "4px",
+        gap: "6px",
+        flexShrink: 0,
+        borderRadius: `${POS_RADIUS.pill}px`,
+        border: `1px solid ${c.accent}`,
+        bgcolor: applied ? c.accent : "transparent",
+        color: applied ? c.onAccent : c.accentText,
+        fontSize: 12,
+        fontWeight: 700,
+        lineHeight: 1.2,
+        whiteSpace: "nowrap",
+        "&.Mui-disabled": { opacity: 0.45 },
+      }}
+    >
+      {applied ? <CheckOutlined sx={{ fontSize: 12 }} /> : null}
+      {applied ? appliedLabel ?? "Применено" : "Применить"}
+    </ButtonBase>
+  );
+};
+
+/** Карточка со списанием или включаемым правилом: «Бонусы», «Акции». */
+const RedemptionCard: React.FC<{
+  title: string;
+  hint: string;
+  applied: boolean;
+  appliedLabel?: React.ReactNode;
+  disabled?: boolean;
+  onToggle: () => void;
+}> = ({ title, hint, applied, appliedLabel, disabled, onToggle }) => {
+  const c = posColors(useTheme());
+  return (
+    <Box
+      sx={{
+        p: "12px",
+        borderRadius: `${POS_RADIUS.card}px`,
+        bgcolor: applied ? c.accentBg : c.card,
+        border: `1px solid ${applied ? c.accent : c.hairline}`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "8px",
+      }}
+    >
+      <Stack gap="2px" sx={{ minWidth: 0 }}>
+        <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: c.text }}>{title}</Typography>
+        <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>{hint}</Typography>
+      </Stack>
+      <ApplyButton applied={applied} appliedLabel={appliedLabel} disabled={disabled} onClick={onToggle} />
+    </Box>
+  );
+};
+
+/** Применённый код — чип вместо поля ввода; клик снимает код. */
+const AppliedChip: React.FC<{ label: string; disabled?: boolean; onClear: () => void }> = ({ label, disabled, onClear }) => {
+  const c = posColors(useTheme());
+  return (
+    <ButtonBase
+      onClick={onClear}
+      disabled={disabled}
+      sx={{
+        alignSelf: "flex-start",
+        px: "12px",
+        py: "6px",
+        borderRadius: `${POS_RADIUS.pill}px`,
+        bgcolor: c.accentBg,
+        border: `1px solid ${c.accent}`,
+        color: c.accentText,
+        fontSize: 12,
+        fontWeight: 700,
+        lineHeight: 1.2,
+        "&.Mui-disabled": { opacity: 0.45 },
+      }}
+    >
+      {label}
+    </ButtonBase>
+  );
+};
+
+/** Ошибка под полем — плашка в тонах ошибки, как в макете. */
+const FieldError: React.FC<{ text: string }> = ({ text }) => {
+  const c = posColors(useTheme());
+  return (
+    <Box
+      sx={{
+        alignSelf: "flex-start",
+        px: "8px",
+        py: "4px",
+        borderRadius: `${POS_RADIUS.pill}px`,
+        bgcolor: c.dangerBg,
+        color: c.danger,
+        fontSize: 12,
+        fontWeight: 600,
+        lineHeight: 1.2,
+      }}
+    >
+      {text}
+    </Box>
+  );
+};
+
+/** Поле-«таблетка» с кнопкой «Применить»: промокод, сертификат. */
+const CodeField: React.FC<{
+  label: string;
+  placeholder: string;
+  applied: string;
+  disabled?: boolean;
+  error: string | null;
+  onApply: (value: string) => void;
+}> = ({ label, placeholder, applied, disabled, error, onApply }) => {
+  const c = posColors(useTheme());
+  const [input, setInput] = React.useState(applied);
+  React.useEffect(() => {
+    setInput(applied);
+  }, [applied]);
+  const submit = () => onApply(input.trim());
+  return (
+    <Stack gap="6px">
+      <Typography sx={{ fontSize: 12, lineHeight: 1.2, textTransform: "uppercase", color: c.textDim }}>{label}</Typography>
+      {applied && !error ? (
+        <AppliedChip label={applied} disabled={disabled} onClear={() => onApply("")} />
+      ) : (
+        <Stack gap="5px">
+          <Stack direction="row" gap="5px">
+            <InputBase
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") submit();
+              }}
+              placeholder={placeholder}
+              disabled={disabled}
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                height: 32,
+                px: "14px",
+                display: "flex",
+                alignItems: "center",
+                bgcolor: c.page,
+                border: `1px solid ${error ? c.danger : c.hairline}`,
+                borderRadius: `${POS_RADIUS.pill}px`,
+                fontSize: 12,
+                color: c.text,
+                "& input::placeholder": { color: c.textDim, opacity: 1 },
+              }}
+            />
+            <ButtonBase
+              onClick={submit}
+              disabled={disabled}
+              sx={{
+                height: 32,
+                px: "14px",
+                flexShrink: 0,
+                borderRadius: `${POS_RADIUS.pill}px`,
+                bgcolor: c.tile,
+                border: `1px solid ${c.hairline}`,
+                color: c.text,
+                fontSize: 12,
+                fontWeight: 700,
+                "&.Mui-disabled": { opacity: 0.45 },
+              }}
+            >
+              Применить
+            </ButtonBase>
+          </Stack>
+          {error ? <FieldError text={error} /> : null}
+        </Stack>
+      )}
+    </Stack>
+  );
+};
+
+/** Строка блока итогов. */
+const SummaryLine: React.FC<{ label: string; value: React.ReactNode; tone?: "positive" }> = ({ label, value, tone }) => {
+  const c = posColors(useTheme());
+  return (
+    <Stack direction="row" alignItems="center" justifyContent="space-between">
+      <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>{label}</Typography>
+      <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: tone === "positive" ? c.positive : c.textSoft }}>
+        {value}
+      </Typography>
+    </Stack>
+  );
+};
+
+const amount = (value: string | undefined) => (value === undefined ? 0 : Number(value));
+
 export function LivePaymentPanel({
   actions,
   benefits,
   onChange,
   quote,
+  quoteError = null,
   busy,
   onCheckout,
   discountPercent,
@@ -50,6 +277,8 @@ export function LivePaymentPanel({
   benefits: Benefits;
   onChange: (value: Benefits) => void;
   quote?: PosQuote;
+  /** Ошибка `quote/` — промокод и сертификат показываем под своим полем. */
+  quoteError?: string | null;
   busy: boolean;
   onCheckout: () => void;
   discountPercent: number;
@@ -60,239 +289,284 @@ export function LivePaymentPanel({
   discountMode: "manual" | "kinds" | "both";
 }) {
   const c = posColors(useTheme());
-  const patch = (value: Partial<Benefits>) =>
-    onChange({ ...benefits, ...value });
-  const card = {
-    p: 1.5,
-    borderRadius: "12px",
+  const [kindsOpen, setKindsOpen] = React.useState(false);
+  const patch = (value: Partial<Benefits>) => onChange({ ...benefits, ...value });
+  const frozen = locked || busy;
+
+  const errorField = inlineQuoteErrorField(quoteError);
+  const promoError = errorField === "promo" ? quoteError : null;
+  const certificateError = errorField === "certificate" ? quoteError : null;
+
+  const selectedKind = discountKinds.find((kind) => kind.id === benefits.discountKindId) ?? null;
+  const manualPercent = Number(benefits.discount) > 0;
+  const showKinds = discountMode !== "manual" && discountKinds.length > 0;
+  const showManual = discountMode !== "kinds";
+  const showDiscountCard = actions.client_discount || (actions.discount && (showKinds || showManual));
+
+  const cardSx = {
+    p: "12px",
+    borderRadius: `${POS_RADIUS.card}px`,
     bgcolor: c.card,
     border: `1px solid ${c.hairline}`,
-  };
-  const apply = (active: boolean, disabled: boolean, callback: () => void) => (
-    <Button
-      size="small"
-      variant={active ? "contained" : "outlined"}
-      onClick={callback}
-      disabled={disabled || locked || busy}
-      sx={{ borderRadius: "20px", minWidth: 95 }}
-    >
-      {active ? "Отменить" : "Применить"}
-    </Button>
-  );
+  } as const;
+
+  const summary = [
+    { label: "Скидка", value: amount(quote?.discount) },
+    { label: "Бонусами", value: amount(quote?.bonuses), tone: "positive" as const },
+    { label: "Сертификатом", value: amount(quote?.certificateAmount), tone: "positive" as const },
+  ].filter((line) => line.value > 0);
+
   return (
-    <Stack
+    <Box
       sx={{
-        width: { xs: "100%", lg: 320 },
+        width: { xs: "100%", lg: POS_LAYOUT.paymentPanelWidth },
         flexShrink: 0,
         minHeight: 0,
-        p: 1.5,
-        borderLeft: `1px solid ${c.outline}`,
+        px: "10px",
+        py: "16px",
         bgcolor: c.page,
+        borderLeft: `1px solid ${c.outline}`,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        gap: "16px",
+        overflowY: { xs: "visible", lg: "auto" },
       }}
-      gap={1.4}
     >
-      <Typography fontSize={12} color="text.secondary">
-        ОПЛАТА
-      </Typography>
-      <Stack
-        gap={1.4}
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: { xs: "visible", lg: "auto" },
-          pb: 0.5,
-        }}
-      >
-        {actions.client_discount && (
-          <Box sx={card}>
-            <Stack
-              direction="row"
-              alignItems="center"
-              justifyContent="space-between"
-            >
-              <Box>
-                <Typography fontWeight={700} fontSize={14}>
-                  Скидка клиента
-                </Typography>
-                <Typography color="text.secondary" fontSize={12}>
-                  {hasClient
-                    ? `${discountPercent}% от суммы`
-                    : "Выберите покупателя"}
-                </Typography>
-              </Box>
-              {apply(
-                benefits.clientDiscount,
-                !hasClient || !discountPercent,
-                () => patch({ clientDiscount: !benefits.clientDiscount })
+      <Stack gap="12px">
+        <Typography sx={{ fontSize: 12, fontWeight: 700, lineHeight: 1.2, textTransform: "uppercase", color: c.textDim }}>
+          Оплата
+        </Typography>
+
+        <Stack gap="8px">
+          {showDiscountCard && (
+            <Box sx={{ ...cardSx, display: "flex", flexDirection: "column", gap: "10px" }}>
+              {actions.client_discount && (
+                <Stack direction="row" alignItems="center" justifyContent="space-between" gap="8px">
+                  <Stack gap="2px" sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: c.text }}>Скидка клиента</Typography>
+                    <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>
+                      {hasClient ? `${discountPercent}% от суммы` : "Выберите покупателя"}
+                    </Typography>
+                  </Stack>
+                  <ApplyButton
+                    applied={benefits.clientDiscount}
+                    appliedLabel={`${discountPercent}%`}
+                    disabled={frozen || !hasClient || !discountPercent}
+                    onClick={() =>
+                      // Сервер не складывает скидку клиента с видом из справочника — переключаем.
+                      patch({ clientDiscount: !benefits.clientDiscount, discountKindId: null })
+                    }
+                    width={97}
+                  />
+                </Stack>
               )}
-            </Stack>
-          </Box>
-        )}
-        {actions.discount && (
-          <Box sx={card}>
-            <Typography fontSize={14} fontWeight={700} mb={1}>
-              Другая скидка
-            </Typography>
-            {discountMode !== "kinds" && (
-              <TextField
-                size="small"
-                label="Скидка, %"
-                value={benefits.discount}
-                onChange={(event) =>
-                  patch({ discount: event.target.value, discountKindId: null })
-                }
-                disabled={locked || benefits.discountKindId !== null}
-                inputProps={{ inputMode: "decimal" }}
-                fullWidth
-              />
-            )}
-            {discountMode !== "manual" && discountKinds.length > 0 && (
-              <TextField
-                select
-                size="small"
-                label="Вид скидки"
-                value={benefits.discountKindId ?? ""}
-                onChange={(event) =>
-                  patch({
-                    discount: "0",
-                    discountKindId:
-                      event.target.value === "" ? null : Number(event.target.value),
-                  })
-                }
-                disabled={locked || Number(benefits.discount) > 0}
-                fullWidth
-                sx={{ mt: discountMode === "both" ? 1 : 0 }}
-                helperText="Процент задаётся в настройках и проверяется сервером"
-              >
-                <MenuItem value="">Не выбран</MenuItem>
-                {discountKinds.map((kind) => (
-                  <MenuItem key={kind.id} value={kind.id}>
-                    {kind.name} · {kind.percent}%
-                  </MenuItem>
-                ))}
-              </TextField>
-            )}
-          </Box>
-        )}
+
+              {actions.client_discount && actions.discount && (showKinds || showManual) && (
+                <Box sx={{ height: "1px", bgcolor: c.hairline }} />
+              )}
+
+              {actions.discount && showKinds && (
+                <Stack gap="5px">
+                  <ButtonBase
+                    onClick={() => setKindsOpen((open) => !open)}
+                    disabled={frozen || manualPercent}
+                    sx={{
+                      px: "12px",
+                      py: "6px",
+                      justifyContent: "space-between",
+                      borderRadius: `${POS_RADIUS.card}px`,
+                      bgcolor: selectedKind ? c.accentBg : c.page,
+                      border: `1px solid ${selectedKind ? c.accent : c.hairline}`,
+                      color: selectedKind ? c.text : c.textDim,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      lineHeight: 1.2,
+                      "&.Mui-disabled": { opacity: 0.45 },
+                    }}
+                  >
+                    {selectedKind ? `${selectedKind.name}  ·  ${Number(selectedKind.percent)}%` : "Другая скидка"}
+                    <ExpandMoreOutlined
+                      sx={{ fontSize: 16, transition: "transform .15s", transform: kindsOpen ? "rotate(180deg)" : "none" }}
+                    />
+                  </ButtonBase>
+
+                  <Collapse in={kindsOpen} unmountOnExit>
+                    <Stack gap="2px" sx={{ p: "4px", borderRadius: `${POS_RADIUS.card}px`, bgcolor: c.page, border: `1px solid ${c.hairline}` }}>
+                      {discountKinds.map((kind) => {
+                        const selected = kind.id === benefits.discountKindId;
+                        return (
+                          <ButtonBase
+                            key={kind.id}
+                            onClick={() => {
+                              patch({ discount: "0", clientDiscount: false, discountKindId: selected ? null : kind.id });
+                              setKindsOpen(false);
+                            }}
+                            sx={{
+                              px: "8px",
+                              py: "6px",
+                              gap: "10px",
+                              justifyContent: "flex-start",
+                              borderRadius: `${POS_RADIUS.tile}px`,
+                              bgcolor: selected ? c.accentBg : "transparent",
+                              "&:hover": { bgcolor: selected ? c.accentBg : c.tile },
+                            }}
+                          >
+                            <Box
+                              sx={{
+                                width: 38,
+                                py: "4px",
+                                flexShrink: 0,
+                                borderRadius: `${POS_RADIUS.chip}px`,
+                                bgcolor: selected ? c.accent : c.card,
+                                color: selected ? c.onAccent : c.textSoft,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                lineHeight: 1.1,
+                                textAlign: "center",
+                              }}
+                            >
+                              {Number(kind.percent)}%
+                            </Box>
+                            <Typography sx={{ fontSize: 12, fontWeight: 500, lineHeight: 1.2, color: c.textSoft }}>{kind.name}</Typography>
+                          </ButtonBase>
+                        );
+                      })}
+                    </Stack>
+                  </Collapse>
+                </Stack>
+              )}
+
+              {actions.discount && showManual && (
+                <Stack direction="row" alignItems="center" gap="8px">
+                  <Typography sx={{ flex: 1, fontSize: 12, lineHeight: 1.2, color: c.textDim }}>
+                    {showKinds ? "или свой процент" : "Своя скидка"}
+                  </Typography>
+                  <InputBase
+                    value={benefits.discount === "0" ? "" : benefits.discount}
+                    onChange={(event) => patch({ discount: event.target.value || "0", discountKindId: null })}
+                    placeholder="0"
+                    disabled={frozen || selectedKind !== null}
+                    inputProps={{ inputMode: "decimal", style: { textAlign: "right" } }}
+                    endAdornment={<Box component="span" sx={{ pl: "4px", color: c.textDim }}>%</Box>}
+                    sx={{
+                      width: 96,
+                      height: 32,
+                      px: "12px",
+                      bgcolor: c.page,
+                      border: `1px solid ${manualPercent ? c.accent : c.hairline}`,
+                      borderRadius: `${POS_RADIUS.pill}px`,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: c.text,
+                      "& input::placeholder": { color: c.textDim, opacity: 1 },
+                      "&.Mui-disabled": { opacity: 0.45 },
+                    }}
+                  />
+                </Stack>
+              )}
+            </Box>
+          )}
+
+          {actions.promotions && (
+            <RedemptionCard
+              title="Акции"
+              hint="автоматические скидки по акциям"
+              applied={benefits.promotions}
+              appliedLabel="Учтены"
+              disabled={frozen}
+              onToggle={() => patch({ promotions: !benefits.promotions })}
+            />
+          )}
+
+          {actions.bonus && (
+            <RedemptionCard
+              title="Бонусы"
+              hint={hasClient ? `доступно ${bonuses} сом` : "Выберите покупателя"}
+              applied={benefits.bonuses}
+              appliedLabel={<PosAmount value={quote ? amount(quote.bonuses) : bonuses} negative />}
+              disabled={frozen || !hasClient || bonuses <= 0}
+              onToggle={() => patch({ bonuses: !benefits.bonuses })}
+            />
+          )}
+        </Stack>
+
         {actions.promotions && (
-          <Box sx={card}>
-            <Stack
-              direction="row"
-              alignItems="center"
-              justifyContent="space-between"
-            >
-              <Typography fontSize={14} fontWeight={700}>
-                Действующие акции
-              </Typography>
-              {apply(benefits.promotions, false, () =>
-                patch({ promotions: !benefits.promotions })
-              )}
-            </Stack>
-          </Box>
-        )}
-        {actions.bonus && (
-          <Box sx={card}>
-            <Stack
-              direction="row"
-              alignItems="center"
-              justifyContent="space-between"
-            >
-              <Box>
-                <Typography fontWeight={700} fontSize={14}>
-                  Бонусы
-                </Typography>
-                <Typography color="text.secondary" fontSize={12}>
-                  доступно {bonuses} сом
-                </Typography>
-              </Box>
-              {apply(benefits.bonuses, !hasClient || bonuses <= 0, () =>
-                patch({ bonuses: !benefits.bonuses })
-              )}
-            </Stack>
-          </Box>
-        )}
-        {actions.promotions && (
-          <TextField
-            size="small"
+          <CodeField
             label="Промокод"
-            value={benefits.promoCode}
-            onChange={(event) => patch({ promoCode: event.target.value })}
+            placeholder="Введите промокод"
+            applied={benefits.promoCode}
             disabled={locked}
-            helperText="Проверяется сервером при расчёте"
+            error={promoError}
+            onApply={(promoCode) => patch({ promoCode })}
           />
         )}
+
         {actions.certificate && (
-          <TextField
-            size="small"
-            label="Код сертификата"
-            value={benefits.certificateCode}
-            onChange={(event) => patch({ certificateCode: event.target.value })}
+          <CodeField
+            label="Сертификат"
+            placeholder="Введите сертификат"
+            applied={benefits.certificateCode}
             disabled={locked}
-            helperText="Остаток проверяется по коду"
+            error={certificateError}
+            onApply={(certificateCode) => patch({ certificateCode })}
           />
         )}
       </Stack>
-      <Stack sx={{ ...card, flexShrink: 0 }} gap={1.5}>
-        {(
-          [
-            ["Подытог", quote?.subtotal],
-            ["Скидка", quote?.discount],
-            ["Бонусами", quote?.bonuses],
-            ["Сертификатом", quote?.certificateAmount],
-          ] as const
-        ).map(([label, value]) => (
-          <Stack key={label} direction="row" justifyContent="space-between">
-            <Typography fontSize={13} color="text.secondary">
-              {label}
-            </Typography>
-            <Typography fontSize={13} fontWeight={700}>
-              {value !== undefined ? <PosAmount value={Number(value)} /> : "—"}
+
+      <Stack gap="10px" sx={{ ...cardSx, border: "none", flexShrink: 0 }}>
+        <Stack gap="4px" sx={{ pb: "10px", borderBottom: `1px solid ${c.hairline}` }}>
+          <SummaryLine label="Подытог" value={quote ? <PosAmount value={amount(quote.subtotal)} /> : "—"} />
+          {summary.map((line) => (
+            <SummaryLine key={line.label} label={line.label} value={<PosAmount value={line.value} negative />} tone={line.tone} />
+          ))}
+        </Stack>
+
+        <Stack gap="16px">
+          <Stack direction="row" alignItems="flex-end" justifyContent="space-between">
+            <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.5, color: c.text }}>ИТОГО</Typography>
+            <Typography sx={{ fontSize: 32, fontWeight: 900, lineHeight: 1.2, color: c.text, whiteSpace: "nowrap" }}>
+              {quote ? <PosAmount value={amount(quote.due)} /> : "—"}
             </Typography>
           </Stack>
-        ))}
-        <Divider />
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-        >
-          <Typography fontWeight={700} fontSize={14}>
-            ИТОГО
-          </Typography>
-          <Typography fontSize={30} fontWeight={900}>
-            {quote ? <PosAmount value={Number(quote.due)} /> : "—"}
-          </Typography>
-        </Stack>
-        {actions.sell && (
-          <Button
-            variant="contained"
-            fullWidth
-            onClick={onCheckout}
-            disabled={busy || !quote}
-            sx={{
-              py: 1.7,
-              bgcolor: c.accent,
-              color: c.onAccent,
-              borderRadius: "14px",
-              fontWeight: 700,
-            }}
-          >
-            Принять оплату{" "}
-            <Box
-              component="span"
+
+          {actions.sell && (
+            <ButtonBase
+              onClick={onCheckout}
+              disabled={busy || !quote}
               sx={{
-                ml: 1,
-                opacity: 0.6,
-                border: "1px solid",
-                borderRadius: 1,
-                px: 0.4,
+                px: "20px",
+                py: "16px",
+                gap: "10px",
+                borderRadius: `${POS_RADIUS.control}px`,
+                bgcolor: c.accent,
+                color: c.onAccent,
+                fontSize: 16,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                lineHeight: 1,
+                "&.Mui-disabled": { opacity: 0.45 },
               }}
             >
-              F5
-            </Box>
-          </Button>
-        )}
+              Принять оплату
+              <Box
+                sx={{
+                  px: "6px",
+                  py: "4px",
+                  borderRadius: `${POS_RADIUS.chip}px`,
+                  border: "1px solid currentColor",
+                  opacity: 0.6,
+                  fontSize: 12,
+                  fontWeight: 400,
+                  lineHeight: 0.9,
+                }}
+              >
+                F5
+              </Box>
+            </ButtonBase>
+          )}
+        </Stack>
       </Stack>
-    </Stack>
+    </Box>
   );
 }
