@@ -173,8 +173,9 @@ export default function LivePosPage() {
     return () => window.clearTimeout(id);
   }, [search]);
   const normalizedSearch = debounced.trim().toLocaleLowerCase();
+  const hasSearch = normalizedSearch.length >= 2;
   const matchedCategory =
-    normalizedSearch.length >= 2
+    hasSearch
       ? data?.categories.find((item) => {
           const categoryName = item.name.trim().toLocaleLowerCase();
           return (
@@ -185,7 +186,11 @@ export default function LivePosPage() {
         })
       : undefined;
   const categoryId = selectedCategoryId ?? matchedCategory?.id;
-  const productSearch = matchedCategory && selectedCategoryId == null ? "" : debounced;
+  const productSearch =
+    !hasSearch || (matchedCategory && selectedCategoryId == null)
+      ? ""
+      : debounced;
+  const canShowProducts = hasSearch || categoryId != null;
   const products = useQuery({
     queryKey: [
       ...prefix,
@@ -205,7 +210,7 @@ export default function LivePosPage() {
         },
         signal
       ),
-    enabled: ready && !!warehouseId,
+    enabled: ready && !!warehouseId && canShowProducts,
   });
   const clients = useQuery({
     queryKey: [...prefix, "clients", clientSearch],
@@ -545,7 +550,7 @@ export default function LivePosPage() {
         canHold={actions.hold}
         onScan={() => {
           const code = search.trim();
-          if (!code || !actions.sell || pending || held) return;
+          if (!code || code.length < 2 || !actions.sell || pending || held) return;
           void getPosProducts(scope, { warehouseId, search: code })
             .then((result) => {
               const exact = result.results.find(
@@ -582,7 +587,7 @@ export default function LivePosPage() {
           оплатите его или начните новый чек.
         </Alert>
       )}
-      {!held && (!!search.trim() || categoryId != null) && (
+      {!held && canShowProducts && (
         <>
           {products.isFetching && <LinearProgress />}
           <PosProductCards
