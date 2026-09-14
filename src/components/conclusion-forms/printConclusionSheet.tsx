@@ -5,10 +5,9 @@ import html2pdf from "html2pdf.js";
 
 import { pdfFileName } from "../../utility/pdfLayout";
 import {
-  planPageBreaks,
+  pageBreakStep,
   pageNumberTopMm,
   sheetPageCount,
-  type MeasuredBlock,
 } from "../../utility/sheetPagination";
 import {
   resolveMargins,
@@ -22,16 +21,63 @@ import { ConclusionTrailer, type ConclusionTrailerFields } from "./ConclusionTra
 /** CSS-миллиметр — ровно 96/25.4 px, той же линейкой меряет и html2pdf. */
 const PX_PER_MM = 96 / 25.4;
 
+/** Меньше двух строк абзаца на странице не оставляем — висячая строка. */
+const MIN_KEEP_LINES = 2;
+/** Предохранитель от бесконечного цикла на вырожденной вёрстке. */
+const MAX_STEPS_PER_BLOCK = 60;
+
 /**
- * Раздвигает блоки листа (`data-print-block`) так, чтобы ни один не попал на
- * границу страницы и не залез в поля бланка — иначе html2pdf режет картинку
- * листа по миллиметрам, разрывая строку пополам, а продолжение начинается от
- * самого края второй страницы. Расчёт — `planPageBreaks`; здесь только
- * измерение и инлайновый `margin-top`, который html2pdf унесёт в свой клон
- * вместе с остальными стилями.
+ * Первая строка текста внутри `el`, которая заходит ниже `limitPx`.
  *
- * Отступ добавляется к уже имеющемуся margin-top блока, поэтому применять
- * можно только один раз к свежему рендеру.
+ * Строк как DOM-узлов нет — это переносы внутри текстового узла, поэтому
+ * ищем символ: у символов по порядку документа низ не убывает, и первый
+ * символ ниже границы начинает переносимую строку.
+ */
+function findOverflowLine(
+  el: HTMLElement,
+  limitPx: number,
+): { node: Text; offset: number; lineTopPx: number; lineHeightPx: number } | null {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+    range.selectNodeContents(node);
+    if (range.getBoundingClientRect().bottom <= limitPx) continue;
+    for (let offset = 0; offset < node.length; offset += 1) {
+      range.setStart(node, offset);
+      range.setEnd(node, offset + 1);
+      const rect = range.getClientRects()[0];
+      // У переноса строки и схлопнутых пробелов прямоугольника может не быть.
+      if (!rect || rect.height === 0) continue;
+      if (rect.bottom > limitPx) {
+        return { node, offset, lineTopPx: rect.top, lineHeightPx: rect.height };
+      }
+    }
+  }
+  return null;
+}
+
+/** Добавить к margin-top блока `mm` миллиметров. */
+function pushDown(el: HTMLElement, mm: number): void {
+  const current = parseFloat(window.getComputedStyle(el).marginTop) || 0;
+  el.style.marginTop = `${current + mm * PX_PER_MM}px`;
+}
+
+/**
+ * Разводит содержимое листа по страницам, чтобы ни одна строка не попала на
+ * границу страницы и не залезла в поля бланка — иначе html2pdf режет картинку
+ * листа по миллиметрам, разрывая строку пополам, а продолжение начинается от
+ * самого края второй страницы.
+ *
+ * Единица — блок `data-print-block` (поле бланка, строка заключения, подпись).
+ * Короткий блок, не влезший над нижним полем, переезжает на следующую страницу
+ * целиком. Длинный абзац режется по строке: перед первой не влезшей строкой
+ * вставляется распорка до верхнего поля следующей страницы. Раньше абзац без
+ * переносов (текст вставлен одной строкой) переезжал целиком, оставляя
+ * полстраницы пустой, а не влезая и в новую страницу — резался пополам
+ * (жалоба 14.09.2026). `data-print-keep` запрещает резать (подпись врача).
+ *
+ * Блоки обрабатываются по порядку с живым замером: каждый сдвиг меняет
+ * координаты всего, что ниже. Применять один раз к свежему рендеру.
  */
 export function applySheetPageBreaks(
   container: HTMLElement,
@@ -39,29 +85,64 @@ export function applySheetPageBreaks(
 ): void {
   const { height: pageHeightMm } = sheetSizeMm(template.pageSize, template.orientation);
   const margins = resolveMargins(template.pageSize, template.margins);
-  const originTop = container.getBoundingClientRect().top;
-
-  const elements = Array.from(container.querySelectorAll<HTMLElement>("[data-print-block]"));
-  const blocks: MeasuredBlock[] = elements.map((el) => {
-    const rect = el.getBoundingClientRect();
-    return {
-      top: (rect.top - originTop) / PX_PER_MM,
-      bottom: (rect.bottom - originTop) / PX_PER_MM,
-    };
-  });
-
-  const shifts = planPageBreaks(blocks, {
+  const geometry = {
     pageHeightMm,
     marginTopMm: margins.top,
     marginBottomMm: margins.bottom,
-  });
+  };
 
-  shifts.forEach((shiftMm, index) => {
-    if (shiftMm <= 0) return;
-    const el = elements[index];
-    const current = parseFloat(window.getComputedStyle(el).marginTop) || 0;
-    el.style.marginTop = `${current + shiftMm * PX_PER_MM}px`;
-  });
+  const elements = Array.from(container.querySelectorAll<HTMLElement>("[data-print-block]"));
+  for (const el of elements) {
+    // После разреза дальше решаем уже за хвост абзаца: он начинается с верха
+    // рабочей области новой страницы, а не с верха всего блока — иначе блок
+    // так и числился бы пересекающим первую страницу, и второй разрез не
+    // случился бы (найдено стендом 14.09.2026).
+    let pieceTopMm: number | null = null;
+    for (let step = 0; step < MAX_STEPS_PER_BLOCK; step += 1) {
+      const originTop = container.getBoundingClientRect().top;
+      const rect = el.getBoundingClientRect();
+      const blockTopMm = (rect.top - originTop) / PX_PER_MM;
+      const decision = pageBreakStep(
+        {
+          top: pieceTopMm ?? blockTopMm,
+          bottom: (rect.bottom - originTop) / PX_PER_MM,
+        },
+        geometry,
+      );
+
+      if (decision.kind === "fits") break;
+      if (decision.kind === "shift") {
+        pushDown(el, decision.shiftMm);
+        break;
+      }
+
+      if (!el.hasAttribute("data-print-keep")) {
+        const line = findOverflowLine(el, originTop + decision.limitMm * PX_PER_MM);
+        const pieceTopPx = originTop + (pieceTopMm ?? blockTopMm) * PX_PER_MM;
+        const keptPx = line ? line.lineTopPx - pieceTopPx : 0;
+        if (line && keptPx >= line.lineHeightPx * MIN_KEEP_LINES - 1) {
+          const lineTopMm = (line.lineTopPx - originTop) / PX_PER_MM;
+          const spacer = document.createElement("span");
+          spacer.setAttribute("data-print-spacer", "");
+          spacer.style.display = "block";
+          spacer.style.height = `${(decision.nextContentTopMm - lineTopMm) * PX_PER_MM}px`;
+          line.node.parentNode?.insertBefore(spacer, line.node.splitText(line.offset));
+          // Остаток абзаца мог не влезть и в следующую страницу — замеряем снова.
+          pieceTopMm = decision.nextContentTopMm;
+          continue;
+        }
+      }
+
+      if (decision.fallbackShiftMm > 0) {
+        // На этой странице места абзацу нет: переносим целиком, а если он
+        // длиннее страницы — режем уже там, на следующей итерации.
+        pushDown(el, decision.fallbackShiftMm);
+        continue;
+      }
+      // Неразрезаемый блок выше рабочей области — оставляем как есть.
+      break;
+    }
+  }
 }
 
 /**
@@ -106,7 +187,7 @@ export function layoutSheetPages(
   for (let page = 0; page < pages; page += 1) {
     const label = document.createElement("div");
     label.textContent = `${page + 1}/${pages}`;
-    // Номер живёт в нижнем поле бланка: `planPageBreaks` гарантирует, что
+    // Номер живёт в нижнем поле бланка: `applySheetPageBreaks` гарантирует, что
     // текст туда не заходит, поэтому с подписью и заключением он не сталкивается.
     Object.assign(label.style, {
       position: "absolute",

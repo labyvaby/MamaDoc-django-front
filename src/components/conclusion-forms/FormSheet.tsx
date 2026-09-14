@@ -409,7 +409,7 @@ export const FormSheet: React.FC<FormSheetProps> = ({
           {/* Подпись — всегда внизу листа. Линейка короткая и фиксированной
               длины: во всю ширину листа она читалась как пустая графа для
               текста, а росписи хватает пары сантиметров. */}
-          <Box data-print-block sx={{ mt: "5mm", pt: "3mm" }}>
+          <Box data-print-block data-print-keep sx={{ mt: "5mm", pt: "3mm" }}>
             <Box>
               <Label>{REQUIRED_BLOCK_LABELS.doctorFio}:</Label> {context.doctorFio}
             </Box>

@@ -69,7 +69,7 @@ export const ConclusionTrailer: React.FC<{ fields: ConclusionTrailerFields }> = 
   return (
     <Box sx={{ mt: "4mm", pt: "3mm", borderTop: "0.3mm dashed #999" }}>
       {measurements.length > 0 && (
-        <Box data-print-block sx={{ display: "flex", gap: "4mm", mb: "2mm" }}>
+        <Box data-print-block data-print-keep sx={{ display: "flex", gap: "4mm", mb: "2mm" }}>
           {measurements.map((key) => (
             <Box key={key} sx={{ flex: key === "temperature" ? 1 : "0 0 45mm", minWidth: 0 }}>
               <Box component="span" sx={{ fontWeight: 700 }}>

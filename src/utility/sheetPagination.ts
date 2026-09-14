@@ -1,17 +1,15 @@
 /**
- * Перенос блоков листа бланка на следующую страницу.
+ * Перенос содержимого листа бланка на следующую страницу.
  *
  * Зачем. html2pdf растеризует лист одной картинкой и режет её на страницы по
  * миллиметрам, не глядя на текст: строка, попавшая на границу, уходит в PDF
  * половинками, а продолжение на второй странице начинается от самого верхнего
  * края бумаги (у собственного `pagebreak` html2pdf полей нет, и в grid-строку
- * он вставляет распорку-div, ломая колонки). Поэтому переносы считаем сами:
- * каждому блоку — дополнительный отступ сверху, который сдвигает его на
- * следующую страницу за верхнее поле бланка.
+ * он вставляет распорку-div, ломая колонки). Поэтому переносы считаем сами.
  *
- * Чистая функция над измеренными координатами: DOM здесь нет, и её можно
- * проверить тестом без браузера (см. `applySheetPageBreaks` в
- * `printConclusionSheet.tsx`, где блоки измеряются и отступы применяются).
+ * Здесь — только решение по одному измеренному блоку, без DOM (проверяется
+ * тестом). Измеряет, сдвигает и режет абзацы по строкам `applySheetPageBreaks`
+ * в `printConclusionSheet.tsx`.
  */
 
 export interface PageGeometry {
@@ -23,65 +21,50 @@ export interface PageGeometry {
   marginBottomMm: number;
 }
 
-/** Блок листа в миллиметрах от верха листа, в порядке документа. */
+/** Блок листа в миллиметрах от верха листа. */
 export interface MeasuredBlock {
   top: number;
   bottom: number;
 }
 
+export type PageBreakStep =
+  /** Блок целиком в рабочей области своей страницы. */
+  | { kind: "fits" }
+  /** Блок начался в верхнем поле продолжения — опустить на `shiftMm`. */
+  | { kind: "shift"; shiftMm: number }
+  /**
+   * Блок заходит в нижнее поле. Сначала пробуют разрезать его по строке:
+   * строки ниже `limitMm` уезжают так, чтобы начаться с `nextContentTopMm`.
+   * Не вышло (на странице не остаётся и пары строк, или блок неразрезаемый) —
+   * сдвиг целиком на `fallbackShiftMm`; 0 — сдвигать бессмысленно: блок уже
+   * стоит в начале рабочей области и всё равно не влезает.
+   */
+  | { kind: "cross"; limitMm: number; nextContentTopMm: number; fallbackShiftMm: number };
+
 const EPSILON = 0.01;
 
-/**
- * Для каждого блока — отступ сверху (мм), который нужно добавить, чтобы блоки
- * не рвались границей страницы и не залезали в поля. Блоки с одинаковым `top`
- * (соседи в одной строке двухколоночной сетки) двигаются вместе: сдвинуть
- * половину строки нельзя — вторая половина останется на прежней странице.
- *
- * Блок выше рабочей области страницы перенести некуда — он остаётся на месте
- * и режется как раньше (гигантское заключение на две страницы — редкость, и
- * лучше разрез, чем пустая страница перед ним).
- */
-export function planPageBreaks(blocks: MeasuredBlock[], geometry: PageGeometry): number[] {
+export function pageBreakStep(block: MeasuredBlock, geometry: PageGeometry): PageBreakStep {
   const { pageHeightMm: pageH, marginTopMm, marginBottomMm } = geometry;
-  const usable = pageH - marginTopMm - marginBottomMm;
+  const page = Math.floor((block.top + EPSILON) / pageH);
+  const pageTop = page * pageH;
+  const contentTop = pageTop + marginTopMm;
+  const limitMm = pageTop + pageH - marginBottomMm;
 
-  const shifts: number[] = [];
-  // Накопленный сдвиг: каждый перенос двигает вниз и всё, что идёт после.
-  let offset = 0;
-  let groupTop: number | null = null;
-  let groupShift = 0;
-
-  for (const block of blocks) {
-    if (groupTop !== null && Math.abs(block.top - groupTop) < EPSILON) {
-      shifts.push(groupShift);
-      continue;
+  if (block.bottom <= limitMm + EPSILON) {
+    if (page >= 1 && block.top < contentTop - EPSILON) {
+      return { kind: "shift", shiftMm: contentTop - block.top };
     }
-
-    const top = block.top + offset;
-    const bottom = block.bottom + offset;
-    const height = block.bottom - block.top;
-    const page = Math.floor(top / pageH);
-    const pageTop = page * pageH;
-    const limit = pageTop + pageH - marginBottomMm;
-
-    let shift = 0;
-    if (height <= usable + EPSILON) {
-      if (bottom > limit + EPSILON) {
-        // Не влезает над нижним полем — на следующую страницу, за верхнее поле.
-        shift = pageTop + pageH + marginTopMm - top;
-      } else if (page >= 1 && top < pageTop + marginTopMm - EPSILON) {
-        // Начался в верхнем поле продолжения — опустить до рабочей области.
-        shift = pageTop + marginTopMm - top;
-      }
-    }
-
-    shifts.push(shift);
-    offset += shift;
-    groupTop = block.top;
-    groupShift = shift;
+    return { kind: "fits" };
   }
 
-  return shifts;
+  const nextContentTopMm = pageTop + pageH + marginTopMm;
+  const atContentTop = block.top <= contentTop + EPSILON;
+  return {
+    kind: "cross",
+    limitMm,
+    nextContentTopMm,
+    fallbackShiftMm: atContentTop ? 0 : nextContentTopMm - block.top,
+  };
 }
 
 /**

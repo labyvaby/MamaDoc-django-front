@@ -1,56 +1,53 @@
 import { describe, expect, it } from "vitest";
 
-import { pageNumberTopMm, planPageBreaks, sheetPageCount, type MeasuredBlock } from "./sheetPagination";
+import { pageBreakStep, pageNumberTopMm, sheetPageCount, type MeasuredBlock } from "./sheetPagination";
 
 // A4 с полями 15/15: рабочая область 15…282 мм, вторая страница с 312 мм.
 const a4 = { pageHeightMm: 297, marginTopMm: 15, marginBottomMm: 15 };
 
 const block = (top: number, height: number): MeasuredBlock => ({ top, bottom: top + height });
 
-describe("planPageBreaks", () => {
-  it("блоки внутри первой страницы не трогает", () => {
-    expect(planPageBreaks([block(20, 10), block(100, 50), block(270, 12)], a4)).toEqual([0, 0, 0]);
+describe("pageBreakStep", () => {
+  it("блок внутри первой страницы — на месте", () => {
+    expect(pageBreakStep(block(100, 50), a4)).toEqual({ kind: "fits" });
+    expect(pageBreakStep(block(270, 12), a4)).toEqual({ kind: "fits" });
   });
 
-  it("блок, рвущийся границей страницы, уезжает за верхнее поле второй", () => {
-    // 290…300: пересекает 297 → должен начаться с 297 + 15 = 312.
-    expect(planPageBreaks([block(290, 10)], a4)).toEqual([22]);
+  it("блок, заходящий в нижнее поле, пересекает страницу", () => {
+    // 278…290: граница рабочей области 282, следующая страница с 297 + 15.
+    expect(pageBreakStep(block(278, 12), a4)).toEqual({
+      kind: "cross",
+      limitMm: 282,
+      nextContentTopMm: 312,
+      fallbackShiftMm: 34,
+    });
   });
 
-  it("блок, заходящий в нижнее поле, тоже переносится", () => {
-    // 278…290: не рвётся, но лезет в поле (граница 282).
-    expect(planPageBreaks([block(278, 12)], a4)).toEqual([34]);
-  });
-
-  it("перенос сдвигает и всё, что идёт следом", () => {
-    const shifts = planPageBreaks([block(290, 10), block(302, 10)], a4);
-    // Второй после сдвига первого стоит на 324…334 — внутри страницы, свой сдвиг 0.
-    expect(shifts).toEqual([22, 0]);
+  it("длинный абзац от начала рабочей области сдвигать некуда — только резать", () => {
+    const step = pageBreakStep(block(15, 400), a4);
+    expect(step).toMatchObject({ kind: "cross", limitMm: 282, fallbackShiftMm: 0 });
   });
 
   it("блок, начавшийся в верхнем поле продолжения, опускается до рабочей области", () => {
-    // Предыдущий закончился ровно у нижнего поля, следующий стартует с 300.
-    expect(planPageBreaks([block(270, 12), block(300, 10)], a4)).toEqual([0, 12]);
+    expect(pageBreakStep(block(300, 10), a4)).toEqual({ kind: "shift", shiftMm: 12 });
   });
 
-  it("соседи одной строки сетки двигаются вместе", () => {
-    const shifts = planPageBreaks([block(290, 10), block(290, 6)], a4);
-    expect(shifts).toEqual([22, 22]);
-  });
-
-  it("блок выше рабочей области остаётся на месте", () => {
-    expect(planPageBreaks([block(100, 300)], a4)).toEqual([0]);
-  });
-
-  it("на первой странице верхнее поле не навязывается: шапка лежит там, где её сверстал бланк", () => {
-    expect(planPageBreaks([block(5, 10)], a4)).toEqual([0]);
+  it("на первой странице верхнее поле не навязывается", () => {
+    expect(pageBreakStep(block(5, 10), a4)).toEqual({ kind: "fits" });
   });
 
   it("считает страницы дальше второй", () => {
-    // 620…630 → третья страница (594…891), рабочая область 609…876: внутри.
-    expect(planPageBreaks([block(620, 10)], a4)).toEqual([0]);
-    // 870…880 заходит за 876 → на четвёртую: 891 + 15 = 906.
-    expect(planPageBreaks([block(870, 10)], a4)).toEqual([36]);
+    expect(pageBreakStep(block(620, 10), a4)).toEqual({ kind: "fits" });
+    expect(pageBreakStep(block(870, 10), a4)).toMatchObject({
+      kind: "cross",
+      limitMm: 876,
+      nextContentTopMm: 906,
+      fallbackShiftMm: 36,
+    });
+  });
+
+  it("блок, стоящий ровно на границе страницы, относится к следующей", () => {
+    expect(pageBreakStep(block(312, 10), a4)).toEqual({ kind: "fits" });
   });
 });
 
