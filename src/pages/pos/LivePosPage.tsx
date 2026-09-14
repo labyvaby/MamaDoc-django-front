@@ -14,6 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import SearchOffOutlined from "@mui/icons-material/SearchOffOutlined";
 import { apiRequest } from "../../api/client";
 import { getDiscountKinds, type DiscountKind } from "../../api/promotions";
 import {
@@ -58,6 +59,11 @@ const colorHex = (label: string) =>
     красный: "#af4141",
     серый: "#8a8c92",
   }[label.toLowerCase()] ?? "#887bb3");
+
+const canStartProductSearch = (value: string) => {
+  const term = value.trim();
+  return Boolean(term) && (!/^\d+$/.test(term) || term.length >= 3);
+};
 
 function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
   const p = row.product;
@@ -172,10 +178,14 @@ export default function LivePosPage() {
     }, 250);
     return () => window.clearTimeout(id);
   }, [search]);
-  const normalizedSearch = debounced.trim().toLocaleLowerCase();
-  const hasSearch = normalizedSearch.length >= 2;
+  const typedSearch = search.trim();
+  const debouncedSearch = debounced.trim();
+  const isSearchPending = typedSearch !== debouncedSearch;
+  const normalizedSearch = debouncedSearch.toLocaleLowerCase();
+  const hasTypedSearch = canStartProductSearch(typedSearch);
+  const hasSearch = canStartProductSearch(debouncedSearch);
   const matchedCategory =
-    hasSearch
+    normalizedSearch.length >= 2
       ? data?.categories.find((item) => {
           const categoryName = item.name.trim().toLocaleLowerCase();
           return (
@@ -185,12 +195,15 @@ export default function LivePosPage() {
           );
         })
       : undefined;
-  const categoryId = selectedCategoryId ?? matchedCategory?.id;
+  const activeMatchedCategory = isSearchPending ? undefined : matchedCategory;
+  const categoryId = selectedCategoryId ?? activeMatchedCategory?.id;
   const productSearch =
-    !hasSearch || (matchedCategory && selectedCategoryId == null)
+    !hasSearch || (activeMatchedCategory && selectedCategoryId == null)
       ? ""
       : debounced;
-  const canShowProducts = hasSearch || categoryId != null;
+  const canShowProducts = hasTypedSearch || categoryId != null;
+  const canFetchProducts =
+    !isSearchPending && (hasSearch || categoryId != null);
   const products = useQuery({
     queryKey: [
       ...prefix,
@@ -210,7 +223,7 @@ export default function LivePosPage() {
         },
         signal
       ),
-    enabled: ready && !!warehouseId && canShowProducts,
+    enabled: ready && !!warehouseId && canFetchProducts,
   });
   const clients = useQuery({
     queryKey: [...prefix, "clients", clientSearch],
@@ -550,7 +563,13 @@ export default function LivePosPage() {
         canHold={actions.hold}
         onScan={() => {
           const code = search.trim();
-          if (!code || code.length < 2 || !actions.sell || pending || held) return;
+          if (
+            !canStartProductSearch(code) ||
+            !actions.sell ||
+            pending ||
+            held
+          )
+            return;
           void getPosProducts(scope, { warehouseId, search: code })
             .then((result) => {
               const exact = result.results.find(
@@ -589,7 +608,33 @@ export default function LivePosPage() {
       )}
       {!held && canShowProducts && (
         <>
-          {products.isFetching && <LinearProgress />}
+          {(isSearchPending || products.isFetching) && <LinearProgress />}
+          {!isSearchPending &&
+            !products.isFetching &&
+            products.data?.results.length === 0 && (
+              <Box
+                sx={{
+                  minHeight: 76,
+                  px: 2,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 1,
+                  bgcolor: c.page,
+                  borderBottom: `1px solid ${c.outline}`,
+                }}
+              >
+                <SearchOffOutlined sx={{ color: c.textDim, fontSize: 20 }} />
+                <Typography color="text.secondary" fontSize={13}>
+                  {categoryId != null
+                    ? "В выбранной категории товары не найдены."
+                    : "Товары не найдены. Попробуйте другое название."}
+                </Typography>
+              </Box>
+            )}
+          {!isSearchPending &&
+            !products.isFetching &&
+            (products.data?.results.length ?? 0) > 0 && (
           <PosProductCards
             items={(products.data?.results ?? []).map((product) => ({
               ...toLine({ product, quantity: 1 }, [product]),
@@ -604,6 +649,7 @@ export default function LivePosPage() {
             }}
             disabled={!actions.sell || pending}
           />
+            )}
         </>
       )}
       <Box
