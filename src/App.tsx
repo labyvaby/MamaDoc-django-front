@@ -406,7 +406,7 @@ function App() {
                         name: "bookings",
                         list: "/bookings",
                         show: "/bookings/show/:id",
-                        meta: { label: "Брони" }
+                        meta: { label: "Онлайн-запись" }
                       },
                       {
                         name: "chats",

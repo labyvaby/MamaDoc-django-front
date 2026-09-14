@@ -281,7 +281,7 @@ const BOOKING_RANGE_PRESETS: DateRangePreset[] = DATE_PRESETS.map((p) => ({
 
 const BookingsPage: React.FC = () => {
   const { t } = useT("bookings");
-  usePageTitle("Брони");
+  usePageTitle("Онлайн-запись");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const canView = useCan("bookings.view");
@@ -673,7 +673,7 @@ const BookingsPage: React.FC = () => {
       // Первую неоднозначную открываем сразу — не заставляем искать её в списке.
       if (skipped.length > 0) openBooking(skipped[0]);
     },
-    onError: () => notify?.({ type: "error", message: "Не удалось подтвердить брони" }),
+    onError: () => notify?.({ type: "error", message: "Не удалось подтвердить онлайн-записи" }),
   });
 
   const columns = React.useMemo<GridColDef<BookingListItem>[]>(
@@ -856,8 +856,8 @@ const BookingsPage: React.FC = () => {
     view === "new"
       ? "Новых заявок за выбранный период нет"
       : view === "active"
-        ? "Незакрытых броней за выбранный период нет"
-        : "Броней за выбранный период не найдено";
+        ? "Незакрытых онлайн-записей за выбранный период нет"
+        : "Онлайн-записей за выбранный период не найдено";
 
   const NoRowsOverlay = () => (
     <Stack
@@ -880,7 +880,7 @@ const BookingsPage: React.FC = () => {
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <PageHeader
-        title="Брони"
+        title="Онлайн-запись"
         showTitle={false}
         showSearch
         searchVal={searchInput}
@@ -897,7 +897,7 @@ const BookingsPage: React.FC = () => {
 
       {needsOrg ? (
         <Box sx={{ px: 3, pt: 2 }}>
-          <Alert severity="info">Выберите организацию, чтобы увидеть брони.</Alert>
+          <Alert severity="info">Выберите организацию, чтобы увидеть онлайн-записи.</Alert>
         </Box>
       ) : (
         <Box
@@ -1017,7 +1017,7 @@ const BookingsPage: React.FC = () => {
                 Говорим это прямо: иначе сотрудник филиала считает чужие заявки
                 своими. Чип исчезает сам, как только филиал появится в ответе. */}
             {!branchScopingLive && hasSeveralBranches && hasAnyBooking && (
-              <Tooltip title="Онлайн-записи пока не разделены по филиалам: сервер не отдаёт филиал брони. Здесь заявки всей организации.">
+              <Tooltip title="Онлайн-записи пока не разделены по филиалам: сервер не отдаёт филиал онлайн-записи. Здесь заявки всей организации.">
                 <Chip
                   size="small"
                   icon={<InfoOutlinedIcon fontSize="small" />}
@@ -1152,7 +1152,7 @@ const BookingsPage: React.FC = () => {
                 />
                 <StatTile
                   icon={<EventAvailableOutlinedIcon />}
-                  label="Броней"
+                  label="Онлайн-записей"
                   value={summary.count}
                 />
                 <StatTile

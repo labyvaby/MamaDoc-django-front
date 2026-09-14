@@ -526,7 +526,7 @@
       },
       "record": {
         "label": "Запись",
-        "hint": "Строка расписания и брони."
+        "hint": "Строка расписания и онлайн-записи."
       },
       "complaint": {
         "label": "Обращение",
@@ -720,7 +720,7 @@
       "achievements": "Достижения",
       "announcements": "Объявления",
       "billing": "Оплаты и счета",
-      "bookings": "Брони",
+      "bookings": "Онлайн-запись",
       "chatwoot": "Чаты",
       "cleaning": "Уборка",
       "clients": "{{patient.nomPl, capitalize}} (CRM)",
@@ -797,7 +797,7 @@
         "doctorRoom": "Кабинет {{specialist.gen}}",
         "nurseRoom": "Процедурный кабинет",
         "schedule": "Расписание",
-        "bookings": "Брони",
+        "bookings": "Онлайн-запись",
         "chats": "Чаты",
         "tasks": "Задачи",
         "waitlist": "Лист ожидания",
