@@ -57,7 +57,7 @@ self.addEventListener("fetch", (event) => {
   // вести себя ровно так же, как без worker'а.
   if (event.request.mode !== "navigate") return;
   event.respondWith(
-    fetch(event.request).catch(
+    fetchWithRetry(event.request).catch(
       () =>
         new Response(OFFLINE_PAGE, {
           status: 503,
@@ -66,3 +66,17 @@ self.addEventListener("fetch", (event) => {
     ),
   );
 });
+
+// Во время выкладки Caddy/backend могут перезапускаться несколько секунд.
+// Не показываем пользователю offline-заглушку из-за такого краткого рестарта.
+async function fetchWithRetry(request) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await fetch(request);
+    } catch (error) {
+      if (attempt === 2) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+  throw new Error("Navigation request failed");
+}
