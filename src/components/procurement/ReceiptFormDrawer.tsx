@@ -44,7 +44,7 @@ import {
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { getProducts, getWarehouses, type DjangoProduct, type DjangoWarehouse } from "../../api/warehouse";
 import { useInvoicePhotos } from "../../hooks/useInvoicePhotos";
-import { PHOTO_ACCEPT } from "../../utility/imageCompression";
+import { INVOICE_DOCUMENT_ACCEPT } from "../../utility/imageCompression";
 import { CustomDateTimePicker, CustomDatePicker, InvoicePhotosField } from "../ui";
 import { formatMoney } from "./meta";
 
@@ -95,7 +95,7 @@ export interface ReceiptFormDrawerProps {
 }
 
 /**
- * «Новая накладная»: приход от поставщика. Снимок накладной — не только фото
+ * «Новая накладная»: приход от поставщика. Снимок или PDF накладной — не только фото
  * к документу: если распознавание включено, модель читает его, и форма
  * заполняется поставщиком, номером, датой и позициями; несопоставленные
  * позиции остаются с подсказками, выбор — за человеком. Ничего не пишется,
@@ -373,23 +373,22 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                {recognizing ? "Распознаём накладную…" : recognition ? "Накладная распознана" : "Заполнить по фото накладной"}
+                {recognizing ? "Распознаём накладную…" : recognition ? "Накладная распознана" : "Заполнить по фото или PDF"}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 {recognizing
-                  ? "Обычно 10–30 секунд. Фото уже прикреплено к накладной."
+                  ? "Обычно 10–30 секунд. Файл уже прикреплён к накладной."
                   : recognition
                     ? `${recognition.totals.linesCount} поз., сопоставлено ${recognition.totals.matchedCount} · уверенность ${Math.round(recognition.confidence * 100)}%`
                     : recognitionEnabled
-                      ? "Снимите документ — поставщик, номер, дата и позиции заполнятся сами. Проверьте и проведите."
-                      : recognitionHint ?? "Распознавание недоступно — фото сохранится к накладной."}
+                      ? "Снимите документ или выберите PDF — поставщик, номер, дата и позиции заполнятся сами."
+                      : recognitionHint ?? "Распознавание недоступно — файл сохранится к накладной."}
               </Typography>
             </Box>
             <input
               ref={cameraRef}
               type="file"
-              accept={PHOTO_ACCEPT}
-              capture="environment"
+              accept={INVOICE_DOCUMENT_ACCEPT}
               hidden
               onChange={(e) => void handlePhoto(e.target.files)}
             />
@@ -401,7 +400,7 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
               onClick={() => cameraRef.current?.click()}
               sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
             >
-              {recognition ? "Ещё фото" : "Фото"}
+              {recognition ? "Ещё файл" : "Фото / PDF"}
             </Button>
           </Stack>
           {recognizing && <LinearProgress sx={{ mt: 1.5, borderRadius: 1 }} />}

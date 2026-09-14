@@ -22,6 +22,7 @@ import {
 } from "../api/invoicePhotos";
 import {
   prepareImageForUpload,
+  isPdfFile,
   PHOTO_SOURCE_MAX_BYTES,
   PHOTO_SOURCE_MAX_MB,
 } from "../utility/imageCompression";
@@ -143,26 +144,26 @@ export function useInvoicePhotos({
 
       const free = INVOICE_PHOTOS_MAX - total;
       if (free <= 0) {
-        setError(`Можно приложить не больше ${INVOICE_PHOTOS_MAX} фото`);
+        setError(`Можно приложить не больше ${INVOICE_PHOTOS_MAX} файлов`);
         return;
       }
       const accepted = list.slice(0, free);
       if (list.length > free) {
-        setError(`Можно приложить не больше ${INVOICE_PHOTOS_MAX} фото — лишние пропущены`);
+        setError(`Можно приложить не больше ${INVOICE_PHOTOS_MAX} файлов — лишние пропущены`);
       }
 
       setBusy(true);
       try {
         for (const file of accepted) {
           if (file.size > PHOTO_SOURCE_MAX_BYTES) {
-            setError(`Фото не должно превышать ${PHOTO_SOURCE_MAX_MB} МБ`);
+            setError(`Файл не должен превышать ${PHOTO_SOURCE_MAX_MB} МБ`);
             continue;
           }
-          // Жмём сразу при выборе: превью легче, отправка быстрее, HEIC с
-          // айфона иначе не показать (см. prepareImageForUpload).
-          const prepared = await prepareImageForUpload(file);
+          // PDF оставляем исходным: Gemini читает все его страницы. Фото жмём
+          // сразу, чтобы отправка с телефона была быстрее.
+          const prepared = isPdfFile(file) ? file : await prepareImageForUpload(file);
           if (!prepared) {
-            setError("Не удалось обработать это фото — попробуйте другое или снимите заново");
+            setError("Не удалось обработать файл — попробуйте другой или снимите заново");
             continue;
           }
 

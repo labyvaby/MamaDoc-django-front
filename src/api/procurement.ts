@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
+import { preparePhotoIfImage, withUploadErrors } from "./uploads";
 
 /**
  * Модуль «Закупки» — поставщики, накладные (приёмки), возвраты и оплаты
@@ -427,14 +427,14 @@ export function cancelReceipt(id: number, reason: string, scope?: ProcurementSco
 }
 
 /**
- * Черновик накладной по фото. Снимок жмём и переводим в jpg так же, как фото
- * накладных (api/uploads.ts): модели хватает 1600 px по длинной стороне, а
- * HEIC с айфона бэк не читает. Ответ — предложение: ничего не записано, пока
- * человек не проверит позиции и не проведёт приход.
+ * Черновик накладной по фото или PDF. Изображение ужимаем до 1600 px, а PDF
+ * передаём Gemini целиком: модель видит все страницы и возвращает один
+ * черновик. Ничего не записано, пока человек не проверит позиции и не
+ * проведёт приход.
  */
 export async function recognizeReceiptPhoto(file: File, scope?: ProcurementScope, signal?: AbortSignal) {
   const formData = new FormData();
-  formData.append("image", await preparePhotoOrThrow(file));
+  formData.append("image", await preparePhotoIfImage(file));
   return withUploadErrors(() =>
     apiRequest<RecognitionResult>(`${BASE}/receipts/recognize/${query({ branchId: scope?.branchId })}`, {
       method: "POST",
