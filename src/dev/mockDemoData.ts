@@ -184,10 +184,16 @@ const HOTEL_BRANCH_NAME = "Viva — центр";
 export interface HotelRoomCategory {
   name: string;
   rooms: string[];
-  /** Цена за ночь, сом. */
+  /** Цена за ночь, сом — своя у категории, у номера отдельной цены нет. */
   pricePerNight: number;
   /** Вместимость, гостей. */
   capacity: number;
+  /** Вид из окна — основная характеристика категории, не «удобство». */
+  view: string;
+  /** Тип кровати — основная характеристика категории. */
+  bedType: string;
+  /** Планировка/комнатность — основная характеристика категории. */
+  roomLayout: string;
   amenities: string[];
   /** Люкс-уровень — бейдж и акцентный цвет в гриде/модалке деталей. */
   luxury?: boolean;
@@ -199,28 +205,40 @@ export const HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
     rooms: ["111", "112", "113"],
     pricePerNight: 1800,
     capacity: 2,
-    amenities: ["Две кровати", "Душ"],
+    view: "Без окна",
+    bedType: "2 отдельные кровати",
+    roomLayout: "Студия",
+    amenities: ["Душ"],
   },
   {
     name: "Standard",
     rooms: ["201", "202", "203", "204"],
     pricePerNight: 2500,
     capacity: 2,
-    amenities: ["Окно во двор", "Кондиционер", "Wi-Fi"],
+    view: "Двор",
+    bedType: "Двуспальная кровать",
+    roomLayout: "1 комната",
+    amenities: ["Кондиционер", "Wi-Fi"],
   },
   {
     name: "Делюкс",
     rooms: ["301", "302", "303"],
     pricePerNight: 4200,
     capacity: 3,
-    amenities: ["Окно на улицу", "Мини-бар", "Wi-Fi", "Халат"],
+    view: "Улица",
+    bedType: "Двуспальная кровать King-size",
+    roomLayout: "1 комната",
+    amenities: ["Мини-бар", "Wi-Fi", "Халат"],
   },
   {
     name: "Люкс",
     rooms: ["401", "402"],
     pricePerNight: 7500,
     capacity: 4,
-    amenities: ["Джакузи", "Вид на горы", "Мини-бар", "Отдельная гостиная", "Халат и тапочки"],
+    view: "Горы",
+    bedType: "Кровать King-size",
+    roomLayout: "Апартаменты (спальня + гостиная)",
+    amenities: ["Джакузи", "Мини-бар", "Отдельная гостиная", "Халат и тапочки"],
     luxury: true,
   },
 ];
@@ -910,6 +928,75 @@ export function getHotelGuests(): HotelGuestSummary[] {
   }
   guests.sort((a, b) => a.name.localeCompare(b.name, "ru"));
   return guests;
+}
+
+/**
+ * Данные документа/контактов вводятся один раз в форме брони
+ * (CreateBookingButton), не хранятся отдельно на гостя. Берём их с самой
+ * свежей брони, где они реально заполнены — так последняя введённая версия
+ * побеждает более раннюю. Общий хелпер для GuestDetailsDialog (что
+ * показать) и CreateBookingButton (чем предзаполнить форму при выборе
+ * существующего гостя) — то же самое «найти последнюю подробную бронь».
+ */
+export function findDetailedGuestBooking(bookings: HotelBooking[]): HotelBooking | undefined {
+  return [...bookings].reverse().find((b) => b.guestType != null);
+}
+
+/** Последние 7 цифр номера — сравнение «тот же человек» устойчивое к формату (+996/8, пробелы, скобки). */
+function phoneTail(phone: string): string {
+  return phone.replace(/\D/g, "").slice(-7);
+}
+
+/**
+ * Гости с тем же (или почти тем же) телефоном — защита от дублей в
+ * CreateBookingButton, тот же принцип, что getSimilarPatients в реальном
+ * МамаДоктор (там — по последним 9 цифрам на бэкенде, тут — по 7 на
+ * локальных данных): подсказка, не блокировка. `excludeName` — не
+ * предлагать гостя, которого уже выбрали в автоподборе.
+ */
+export function findGuestsByPhone(phone: string, excludeName?: string): HotelGuestSummary[] {
+  const tail = phoneTail(phone);
+  if (tail.length < 7) return [];
+  return getHotelGuests().filter((g) => g.name !== excludeName && phoneTail(g.phone) === tail);
+}
+
+// ── Быстрая бронь — клик по свободной ячейке шахматки (RoomBookingGrid.tsx) ──
+//
+// Грид и CreateBookingButton — соседние, не родитель-потомок компоненты на
+// одной странице (тот же расклад, что у customBookings/selectedHotelDate
+// выше): клик по пустой ячейке кладёт сюда номер+дату, CreateBookingButton
+// подписан и открывает форму с уже подставленными Номер/Заезд, остаётся
+// только выбрать гостя. Не персистится — это одноразовый сигнал «открой
+// форму с этими данными», не состояние просмотра.
+
+export interface QuickBookingRequest {
+  room: string;
+  /** YYYY-MM-DD. */
+  checkIn: string;
+}
+
+let quickBookingRequest: QuickBookingRequest | null = null;
+const quickBookingListeners = new Set<() => void>();
+
+export function requestQuickBooking(room: string, checkIn: string): void {
+  quickBookingRequest = { room, checkIn };
+  quickBookingListeners.forEach((fn) => fn());
+}
+
+/** CreateBookingButton вызывает сразу после того, как забрал запрос себе в форму — иначе следующее открытие формы повторно её подставит. */
+export function clearQuickBookingRequest(): void {
+  if (quickBookingRequest == null) return;
+  quickBookingRequest = null;
+  quickBookingListeners.forEach((fn) => fn());
+}
+
+export function subscribeQuickBookingRequest(onChange: () => void): () => void {
+  quickBookingListeners.add(onChange);
+  return () => quickBookingListeners.delete(onChange);
+}
+
+export function getQuickBookingRequestSnapshot(): QuickBookingRequest | null {
+  return quickBookingRequest;
 }
 
 /** Ключ localStorage: держит выбор Viva между перезагрузками страницы. */

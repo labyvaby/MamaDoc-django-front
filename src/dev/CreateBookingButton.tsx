@@ -11,6 +11,19 @@
  * другое не должно быть обязательным на этапе брони — гостя рано пугать
  * длинной анкетой, когда документа может даже не быть под рукой.
  *
+ * Поле «Гость» — автоподбор по существующим гостям (getHotelGuests), тот же
+ * принцип, что в реальном МамаДоктор (поиск пациента в форме приёма +
+ * подсказка о дублях по телефону в «Добавить пациента»): выбор гостя из
+ * списка сразу подставляет его контакты/документ (findDetailedGuestBooking)
+ * — не нужно вбивать их заново. Телефон отдельно сверяется на совпадение с
+ * уже известными гостями (findGuestsByPhone) — предупреждение, не блокировка,
+ * ровно как в реальной форме: можно осознанно создать нового гостя с тем же
+ * номером (например, супруги бронируют раздельно).
+ *
+ * Открывается и «быстрой бронью» — клик по свободной ячейке в
+ * RoomBookingGrid кладёт номер+дату в общий стор (requestQuickBooking), эта
+ * кнопка на них подписана и открывает форму уже с подставленными Номер/Заезд.
+ *
  * ⚠ Витрина: нет сущности «номер»/«бронь» в реальном API (см. mockDemoData.ts)
  * — бронь уходит в общий браузерный стор (addCustomBooking, localStorage), а
  * не на бэкенд. Она реально появляется в RoomBookingGrid/GuestDetailsDialog и
@@ -22,6 +35,8 @@
 import React from "react";
 import {
   Alert,
+  Autocomplete,
+  Avatar,
   Box,
   Button,
   Checkbox,
@@ -42,12 +57,20 @@ import {
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import UploadOutlined from "@mui/icons-material/UploadOutlined";
+import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker } from "../components/ui";
 import {
   HOTEL_ROOMS,
   addCustomBooking,
+  getHotelGuests,
+  findDetailedGuestBooking,
+  findGuestsByPhone,
+  subscribeQuickBookingRequest,
+  getQuickBookingRequestSnapshot,
+  clearQuickBookingRequest,
+  initialsOf,
   GUEST_TYPE_LABELS,
   GUARANTEE_METHOD_LABELS,
   BOOKING_SOURCE_LABELS,
@@ -56,6 +79,7 @@ import {
   type BookingGuaranteeMethod,
   type BookingSource,
   type VisitPurpose,
+  type HotelGuestSummary,
 } from "./mockDemoData";
 
 /** Демо-хранилище — localStorage, не файловый сервер: фото ограничено по размеру. */
@@ -133,6 +157,58 @@ export const CreateBookingButton: React.FC = () => {
     setDataConsent(false);
   };
 
+  // Список гостей для автоподбора — свежий на каждое открытие формы, не на
+  // каждый ввод буквы: getHotelGuests() пересобирает список из всех броней,
+  // пересчитывать это на каждый keystroke незачем.
+  const guests = React.useMemo(() => (open ? getHotelGuests() : []), [open]);
+
+  /** Подставляет контакты/документ существующего гостя — не даты/номер/гостей, это данные конкретно этой новой брони. */
+  const applyGuestPrefill = (guest: HotelGuestSummary) => {
+    setGuestName(guest.name);
+    setGuestPhone(guest.phone);
+    const detailed = findDetailedGuestBooking(guest.bookings);
+    if (!detailed) return;
+    setGuestEmail(detailed.guestEmail ?? "");
+    setGuestType(detailed.guestType ?? "resident");
+    setIdNumber(detailed.idNumber ?? "");
+    setInn(detailed.inn ?? "");
+    setCitizenship(detailed.citizenship ?? "");
+    setPassportNumber(detailed.passportNumber ?? "");
+    setPassportCountry(detailed.passportCountry ?? "");
+    setPassportExpiry(detailed.passportExpiry ? dayjs(detailed.passportExpiry) : null);
+    setEntryDate(detailed.entryDate ? dayjs(detailed.entryDate) : null);
+    setMigrationCardNumber(detailed.migrationCardNumber ?? "");
+    setVisitPurpose(detailed.visitPurpose ?? "");
+    setPassportPhoto(detailed.passportPhotoDataUrl ?? null);
+    setBookingSource(detailed.bookingSource ?? "");
+    setCompanyInfo(detailed.companyInfo ?? "");
+    // dataConsent намеренно не переносится — согласие даётся на эту бронь, а не наследуется от прошлой.
+  };
+
+  // «Быстрая бронь»: клик по свободной ячейке RoomBookingGrid кладёт сюда
+  // номер+дату — форма открывается уже с ними, остаётся выбрать гостя.
+  const quickBookingRequest = React.useSyncExternalStore(subscribeQuickBookingRequest, getQuickBookingRequestSnapshot);
+  React.useEffect(() => {
+    if (!quickBookingRequest) return;
+    reset();
+    setRoom(quickBookingRequest.room);
+    setCheckIn(dayjs(quickBookingRequest.checkIn));
+    setCheckOut(dayjs(quickBookingRequest.checkIn).add(1, "day"));
+    setOpen(true);
+    clearQuickBookingRequest();
+    // reset — плоская функция из тела компонента, не мемоизирована; включать
+    // её в deps запускало бы эффект на каждый рендер.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quickBookingRequest]);
+
+  // Защита от дублей — тот же принцип, что getSimilarPatients в реальном
+  // МамаДоктор: подсказка по совпадению телефона, не блокировка. Не считаем
+  // дублем самого выбранного гостя (guestName совпало бы и после applyGuestPrefill).
+  const duplicateMatches = React.useMemo(
+    () => (open ? findGuestsByPhone(guestPhone, guestName) : []),
+    [open, guestPhone, guestName],
+  );
+
   const canSubmit = guestName.trim() !== "" && room !== "" && !!checkIn && !!checkOut && checkOut.isAfter(checkIn);
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -202,12 +278,45 @@ export const CreateBookingButton: React.FC = () => {
             </Alert>
 
             <SectionTitle>Гость</SectionTitle>
-            <TextField
-              label="Гость"
-              placeholder="Имя и фамилия"
-              value={guestName}
-              onChange={(e) => setGuestName(e.target.value)}
-              autoFocus
+            <Autocomplete<HotelGuestSummary, false, false, true>
+              freeSolo
+              options={guests}
+              inputValue={guestName}
+              onInputChange={(_, value) => setGuestName(value)}
+              onChange={(_, value) => {
+                if (value && typeof value !== "string") applyGuestPrefill(value);
+              }}
+              filterOptions={(options, state) => {
+                const q = state.inputValue.trim().toLowerCase();
+                if (!q) return options.slice(0, 8);
+                return options.filter((g) => g.name.toLowerCase().includes(q) || g.phone.includes(q)).slice(0, 8);
+              }}
+              getOptionLabel={(option) => (typeof option === "string" ? option : option.name)}
+              renderOption={(props, option) => (
+                <li {...props} key={option.name}>
+                  <Stack direction="row" alignItems="center" gap={1.25} sx={{ width: "100%" }}>
+                    <Avatar sx={{ width: 28, height: 28, fontSize: "0.75rem", bgcolor: "primary.main" }}>
+                      {initialsOf(option.name)}
+                    </Avatar>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" fontWeight={600} noWrap>
+                        {option.name}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {option.phone}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                </li>
+              )}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Гость"
+                  placeholder="Имя и фамилия — или начните вводить, чтобы найти уже бронировавшего"
+                  autoFocus
+                />
+              )}
               fullWidth
             />
             <Stack direction="row" gap={2}>
@@ -226,6 +335,27 @@ export const CreateBookingButton: React.FC = () => {
                 sx={{ flex: 1 }}
               />
             </Stack>
+
+            {duplicateMatches.length > 0 && (
+              <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  С этим номером телефона уже есть {duplicateMatches.length === 1 ? "гость" : "гости"} в базе —
+                  возможно, это тот же человек:
+                </Typography>
+                <Stack gap={0.75}>
+                  {duplicateMatches.map((g) => (
+                    <Stack key={g.name} direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+                      <Typography variant="body2">
+                        <b>{g.name}</b> — {g.phone}
+                      </Typography>
+                      <Button size="small" onClick={() => applyGuestPrefill(g)}>
+                        Использовать этого гостя
+                      </Button>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Alert>
+            )}
 
             <Divider />
             <SectionTitle>Проживание</SectionTitle>

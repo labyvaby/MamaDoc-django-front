@@ -17,8 +17,12 @@
  * selectedHotelDate) — HotelOccupancyBanner сразу показывает загрузку и
  * гостей за этот день, а не всегда за сегодня. Клик по бару брони открывает
  * GuestDetailsDialog (телефон, история проживаний) — так же и из списка
- * «Ближайшие брони» в RoomDetailsDialog (onGuestClick). Ничего не пишет и не
- * читает с бэкенда.
+ * «Ближайшие брони» в RoomDetailsDialog (onGuestClick). Клик по свободной
+ * (не занятой бронью) ячейке — «быстрая бронь»: requestQuickBooking кладёт
+ * номер+дату в общий стор, CreateBookingButton подписан и открывает форму
+ * с уже подставленными Номер/Заезд. Окно — 60 дней (≈ два месяца), не 16:
+ * весь период умещается в скролл самого грида, не только по неделе за раз.
+ * Ничего не пишет и не читает с бэкенда.
  */
 import React from "react";
 import { Box, IconButton, Stack, Typography } from "@mui/material";
@@ -37,6 +41,7 @@ import {
   getSelectedHotelDate,
   setSelectedHotelDate,
   subscribeSelectedHotelDate,
+  requestQuickBooking,
   getHotelBookingStatusColor,
   nightsBetween,
   MONTH_NOM_RU,
@@ -48,7 +53,8 @@ import {
 import { RoomDetailsDialog } from "./RoomDetailsDialog";
 import { GuestDetailsDialog } from "./GuestDetailsDialog";
 
-const NUM_DAYS = 16;
+/** ≈ два месяца — весь период должен помещаться в шахматку, не только неделя за раз. */
+const NUM_DAYS = 60;
 const ROOM_COL_WIDTH = 148;
 const DAY_COL_WIDTH = 64;
 
@@ -326,25 +332,42 @@ export const RoomBookingGrid: React.FC = () => {
                     {row.room}
                   </Typography>
                 </Box>
-                {dates.map((d, i) => (
-                  <Box
-                    key={`${row.room}-${i}`}
-                    sx={{
-                      gridRow,
-                      gridColumn: i + 2,
-                      height: 44,
-                      borderRight: 1,
-                      borderBottom: 1,
-                      borderColor: "divider",
-                      bgcolor:
-                        i === todayIdx
-                          ? alpha(theme.palette.primary.main, 0.06)
-                          : d.day() === 0 || d.day() === 6
-                          ? theme.palette.action.hover
-                          : "transparent",
-                    }}
-                  />
-                ))}
+                {(() => {
+                  const roomBookings = bookingsByRoom.get(row.room) ?? [];
+                  return dates.map((d, i) => {
+                    const dateStr = d.format("YYYY-MM-DD");
+                    const isFree = !roomBookings.some((b) => dateStr >= b.checkIn && dateStr < b.checkOut);
+                    return (
+                      <Box
+                        key={`${row.room}-${i}`}
+                        component={isFree ? "button" : "div"}
+                        type={isFree ? "button" : undefined}
+                        onClick={isFree ? () => requestQuickBooking(row.room, dateStr) : undefined}
+                        title={isFree ? `Быстрая бронь — №${row.room}, ${d.format("D MMMM")}` : undefined}
+                        sx={{
+                          gridRow,
+                          gridColumn: i + 2,
+                          height: 44,
+                          borderRight: 1,
+                          borderBottom: 1,
+                          borderColor: "divider",
+                          border: 0,
+                          font: "inherit",
+                          p: 0,
+                          textAlign: "left",
+                          cursor: isFree ? "pointer" : "default",
+                          bgcolor:
+                            i === todayIdx
+                              ? alpha(theme.palette.primary.main, 0.06)
+                              : d.day() === 0 || d.day() === 6
+                              ? theme.palette.action.hover
+                              : "transparent",
+                          "&:hover": isFree ? { bgcolor: alpha(theme.palette.primary.main, 0.12) } : undefined,
+                        }}
+                      />
+                    );
+                  });
+                })()}
               </React.Fragment>
             );
           })}

@@ -118,6 +118,35 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
                   </Box>
                 </Stack>
 
+                {/* Основные характеристики категории — цену определяют они, а не
+                    произвольные «удобства» ниже (пример структуры: crm-building.adamtech.dev). */}
+                <Stack direction="row" gap={3} flexWrap="wrap" sx={{ mb: 2 }}>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Вид из окна
+                    </Typography>
+                    <Typography variant="body2" fontWeight={600}>
+                      {category.view}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Тип кровати
+                    </Typography>
+                    <Typography variant="body2" fontWeight={600}>
+                      {category.bedType}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Комната
+                    </Typography>
+                    <Typography variant="body2" fontWeight={600}>
+                      {category.roomLayout}
+                    </Typography>
+                  </Box>
+                </Stack>
+
                 <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mb: 2.5 }}>
                   {category.amenities.map((a) => (
                     <Chip key={a} label={a} size="small" variant="outlined" />

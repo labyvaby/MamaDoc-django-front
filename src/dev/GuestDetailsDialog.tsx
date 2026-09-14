@@ -27,6 +27,7 @@ import {
   formatHotelDate,
   formatHotelDateRange,
   initialsOf,
+  findDetailedGuestBooking,
   HOTEL_BOOKING_STATUS_LABELS,
   GUEST_TYPE_LABELS,
   GUARANTEE_METHOD_LABELS,
@@ -50,15 +51,6 @@ const DetailField: React.FC<{ label: string; value: React.ReactNode }> = ({ labe
   );
 };
 
-/**
- * Данные документа/контактов вводятся один раз в форме брони (CreateBookingButton),
- * не хранятся отдельно на гостя. Берём их с самой свежей брони, где они реально
- * заполнены — так последняя введённая версия побеждает более раннюю.
- */
-function findDetailedBooking(bookings: HotelBooking[]): HotelBooking | undefined {
-  return [...bookings].reverse().find((b) => b.guestType != null);
-}
-
 export interface GuestDetailsDialogProps {
   /** Имя гостя или null — диалог закрыт. Гость ищется в getHotelGuests() заново на каждое открытие. */
   guestName: string | null;
@@ -73,7 +65,7 @@ export const GuestDetailsDialog: React.FC<GuestDetailsDialogProps> = ({ guestNam
     return getHotelGuests().find((g) => g.name === guestName);
   }, [guestName]);
 
-  const detailed = guest ? findDetailedBooking(guest.bookings) : undefined;
+  const detailed = guest ? findDetailedGuestBooking(guest.bookings) : undefined;
 
   const statusColor = (status: HotelBooking["status"]) => getHotelBookingStatusColor(status, theme);
 
