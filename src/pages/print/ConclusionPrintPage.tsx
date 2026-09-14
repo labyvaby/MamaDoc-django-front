@@ -177,9 +177,17 @@ async function resolveTemplate(
   if (!parsed.snapshot) return current;
   // Шаблон удалили — печатаем снимок как есть, с его бумагой и отступами.
   if (!current) return parsed.snapshot;
-  // Отступы — та же бумага, что и подложка: их подгоняют под напечатанную
-  // шапку бланка, и старые заключения должны печататься по текущей настройке.
-  return { ...parsed.snapshot, background: current.background, margins: current.margins };
+  // Отступы и шапка клиники — та же бумага, что и подложка: их подгоняют под
+  // фирменный бланк, и старые заключения должны печататься по текущей
+  // настройке. Шапка из снимка печаталась даже после того, как её выключили в
+  // конструкторе (жалоба 14.09.2026).
+  return {
+    ...parsed.snapshot,
+    background: current.background,
+    margins: current.margins,
+    showClinicHeader: current.showClinicHeader,
+    headerContacts: current.headerContacts,
+  };
 }
 
 async function fetchCurrentForm(

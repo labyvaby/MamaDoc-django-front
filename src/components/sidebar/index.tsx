@@ -726,7 +726,7 @@ const SidebarSecondary: React.FC = () => {
         {/* Брони (гостевая форма /book + синк operator.kg, Django-mode only).
             Бейдж — сколько заявок ждёт подтверждения. */}
         {show("my-work") && can_.bookings && (
-          <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Брони" collapsed={siderCollapsed} badgeCount={bookingsBadgeCount} badgeColor={bookingsBadgeColor} />
+          <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Онлайн-запись" collapsed={siderCollapsed} badgeCount={bookingsBadgeCount} badgeColor={bookingsBadgeColor} />
         )}
 
         {/* Чаты — встроенный дашборд Chatwoot (chat.operator.kg) со сквозной

@@ -49,6 +49,7 @@ import {
   WAITLIST_ACTIVE_STATUSES,
   WAITLIST_CLOSED_STATUSES,
   WAITLIST_USE_MOCKS,
+  type WaitlistContactResult,
   type WaitlistEntry,
   type WaitlistFilters,
 } from "../../api/waitlist";
@@ -188,10 +189,21 @@ const WaitlistPage: React.FC = () => {
     onError: (e) => setError(waitlistErrorMessage(e, "Не удалось вернуть запись в очередь")),
   });
 
+  const [contactTarget, setContactTarget] = React.useState<WaitlistEntry | null>(null);
+  const [contactResult, setContactResult] = React.useState<WaitlistContactResult | null>(null);
+  const [contactNote, setContactNote] = React.useState("");
+
+  const openContactDialog = (entry: WaitlistEntry) => {
+    setContactTarget(entry);
+    setContactResult(null);
+    setContactNote("");
+  };
+
   const contactMutation = useMutation({
-    mutationFn: (entry: WaitlistEntry) =>
-      contactWaitlistEntry(entry.id, { result: "no_answer" }, orgId),
+    mutationFn: ({ entry, result }: { entry: WaitlistEntry; result: WaitlistContactResult }) =>
+      contactWaitlistEntry(entry.id, { result, note: contactNote.trim() || undefined }, orgId),
     onSuccess: () => {
+      setContactTarget(null);
       setToast(t("actions.contactSaved"));
       invalidate();
     },
@@ -310,7 +322,8 @@ const WaitlistPage: React.FC = () => {
       width: 120,
       sortable: false,
       renderCell: ({ row }) => (
-        <Stack direction="row" gap={0.25}>
+        // Клик по кнопкам не должен всплывать до строки: onRowClick открыл бы дровер поверх меню.
+        <Stack direction="row" gap={0.25} onClick={(e) => e.stopPropagation()}>
           <Tooltip title={t("actions.call")}>
             <IconButton size="small" href={`tel:${row.phone}`}>
               <PhoneOutlined fontSize="small" />
@@ -531,7 +544,7 @@ const WaitlistPage: React.FC = () => {
         {menuEntry && WAITLIST_ACTIVE_STATUSES.includes(menuEntry.status) && (
           <MenuItem
             onClick={() => {
-              contactMutation.mutate(menuEntry);
+              openContactDialog(menuEntry);
               setMenuAnchor(null);
             }}
           >
@@ -596,6 +609,58 @@ const WaitlistPage: React.FC = () => {
             onClick={() => cancelTarget && cancelMutation.mutate(cancelTarget)}
           >
             {t("actions.cancelConfirm")}
+          </AppButton>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={contactTarget != null} onClose={() => setContactTarget(null)} fullWidth maxWidth="xs">
+        <DialogTitle>{t("actions.contactTitle")}</DialogTitle>
+        <DialogContent>
+          {contactTarget && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+              {displayName(contactTarget)} · {formatPhoneDisplay(contactTarget.phone)}
+            </Typography>
+          )}
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            {(Object.keys(WAITLIST_CONTACT_RESULT_META) as WaitlistContactResult[]).map((result) => {
+              const meta = WAITLIST_CONTACT_RESULT_META[result];
+              const selected = contactResult === result;
+              return (
+                <Chip
+                  key={result}
+                  label={meta.label}
+                  color={selected ? (meta.color ?? "primary") : "default"}
+                  variant={selected ? "filled" : "outlined"}
+                  onClick={() => setContactResult(result)}
+                />
+              );
+            })}
+          </Stack>
+          <TextField
+            fullWidth
+            multiline
+            minRows={2}
+            size="small"
+            label={t("actions.contactNote")}
+            value={contactNote}
+            onChange={(e) => setContactNote(e.target.value)}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <AppButton color="inherit" onClick={() => setContactTarget(null)}>
+            Отмена
+          </AppButton>
+          <AppButton
+            variant="contained"
+            disabled={contactResult == null || contactMutation.isPending}
+            onClick={() =>
+              contactTarget &&
+              contactResult &&
+              contactMutation.mutate({ entry: contactTarget, result: contactResult })
+            }
+          >
+            {t("actions.contactConfirm")}
           </AppButton>
         </DialogActions>
       </Dialog>

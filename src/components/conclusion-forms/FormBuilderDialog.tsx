@@ -147,6 +147,10 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
             showClinicHeader: template.showClinicHeader,
             headerContacts: template.headerContacts ?? "",
             background: template.background,
+            // Без этой строки конструктор открывался с отступами по умолчанию:
+            // сохранённые приходили в шаблоне, но в черновик не копировались,
+            // и администратор видел «сброс» (жалоба 14.09.2026).
+            margins: template.margins,
             fields: template.fields,
             footerNote: template.footerNote ?? "",
             // Выбор «куда попадёт текст» убран из конструктора 03.09.2026:

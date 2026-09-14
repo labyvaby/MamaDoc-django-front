@@ -8,6 +8,7 @@ import {
   resolveMargins,
   sheetSizeMm,
   suggestSlotForLabel,
+  toApiPayload,
   usedSlots,
   type ConclusionFormTemplate,
   type FormField,
@@ -316,5 +317,66 @@ describe("отступы: транспорт внутри background", () => {
   it("бланк без отступов открывается с прежней геометрией", () => {
     const form = normalizeForm({ ...base, background: { imageUrl: null, opacity: 1 } });
     expect(form.margins).toEqual({ top: 12, right: 15, bottom: 12, left: 15 });
+  });
+});
+
+describe("шапка клиники: транспорт внутри background", () => {
+  // 14.09.2026: выключенная шапка после сохранения возвращалась включённой.
+  const base = {
+    id: 7,
+    name: "Карта осмотра",
+    pageSize: "A4",
+    orientation: "portrait",
+    title: "",
+    showClinicHeader: true,
+    fields: [],
+    target: "conclusion",
+    isActive: true,
+    createdAt: "",
+    updatedAt: "",
+  } as unknown as ConclusionFormTemplate;
+
+  it("выключатель из background важнее поля верхнего уровня", () => {
+    const form = normalizeForm({
+      ...base,
+      background: { imageUrl: null, opacity: 1, showClinicHeader: false },
+    });
+    expect(form.showClinicHeader).toBe(false);
+  });
+
+  it("старый бланк без флага в background берёт поле верхнего уровня", () => {
+    const form = normalizeForm({
+      ...base,
+      showClinicHeader: false,
+      background: { imageUrl: null, opacity: 1 },
+    });
+    expect(form.showClinicHeader).toBe(false);
+  });
+
+  it("при отправке флаг и отступы уезжают в background, прочее не теряется", () => {
+    const payload = toApiPayload({
+      showClinicHeader: false,
+      margins: { top: 40, right: 15, bottom: 12, left: 15 },
+      background: { imageUrl: "https://x/bg.png", opacity: 0.5 },
+    });
+    expect(payload.showClinicHeader).toBe(false);
+    expect(payload.background).toEqual({
+      imageUrl: "https://x/bg.png",
+      opacity: 0.5,
+      showClinicHeader: false,
+      margins: { top: 40, right: 15, bottom: 12, left: 15 },
+    });
+  });
+
+  it("сохранение → чтение даёт то же, что ввёл администратор", () => {
+    const sent = toApiPayload({
+      showClinicHeader: false,
+      margins: { top: 40, right: 15, bottom: 12, left: 15 },
+      background: { imageUrl: null, opacity: 1 },
+    });
+    // Бэк отбросил поля верхнего уровня и вернул дефолт шапки.
+    const echoed = normalizeForm({ ...base, background: sent.background! });
+    expect(echoed.showClinicHeader).toBe(false);
+    expect(echoed.margins).toEqual({ top: 40, right: 15, bottom: 12, left: 15 });
   });
 });

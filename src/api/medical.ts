@@ -453,3 +453,91 @@ export function getConclusionRevisions(
     { signal },
   );
 }
+
+// ── AI-помощник врача ──────────────────────────────────────────────────────────
+
+/**
+ * Поля заключения, для которых бэк умеет подсказывать текст
+ * (`frontend_ai_assist_guide.md`, 13.09.2026). Ровно пять; у каждой кнопки —
+ * строго своё поле, иначе модель получит чужой контекст.
+ */
+export const AI_ASSIST_FIELDS = [
+  "complaints",
+  "anamnesis",
+  "objective",
+  "diagnosis",
+  "conclusion",
+] as const;
+
+export type AiAssistField = (typeof AI_ASSIST_FIELDS)[number];
+
+export interface AiAssistPayload {
+  field: AiAssistField;
+  /** Текущее содержимое поля; пустая строка — просьба написать черновик с нуля. */
+  text: string;
+  /**
+   * Строка приёма — контекст для модели (услуга, витальные показатели).
+   * Без неё черновик «с нуля» обычно приходит пустым.
+   */
+  serviceLineId?: number;
+}
+
+interface AiAssistResponse {
+  suggestions?: Array<{ text?: string | null; confidence?: number }> | null;
+}
+
+/**
+ * Фразы-заглушки, которыми модель отвечает, когда опереться не на что.
+ * Гайд просит не показывать такой ответ как предложение: врачу нечего
+ * применять. Список — из формулировок гайда и типичных вариантов модели;
+ * точного перечня бэк не даёт, поэтому проверяем только короткие ответы,
+ * состоящие из одной такой фразы, а не ищем её внутри нормального текста.
+ */
+// ⚠ `\w` в JS без флага `u` — только латиница, кириллицу описываем явно.
+const AI_PLACEHOLDER_RE =
+  /^[\s«"'([]*(данн[а-яё]*\s+не\s+предоставлен[а-яё]*|нет\s+данных|данных\s+нет|недостаточно\s+данных|информаци[а-яё]+\s+отсутствует|нет\s+информации|n\/a|none|—|-)[\s.!»"')\]]*$/i;
+
+/**
+ * Текст подсказки из ответа бэка или null, если показывать нечего.
+ *
+ * В UI используется только `suggestions[0].text` (массив заложен на будущее).
+ * Пустой ответ, одни пробелы и заглушка вроде «данных не предоставлено» —
+ * это «модели не на что опереться», а не текст для поля.
+ */
+export function normalizeAiSuggestion(response: unknown): string | null {
+  const raw = (response as AiAssistResponse | null)?.suggestions?.[0]?.text;
+  if (typeof raw !== "string") return null;
+  const text = raw.trim();
+  if (!text || AI_PLACEHOLDER_RE.test(text)) return null;
+  return text;
+}
+
+/**
+ * POST /api/medical/ai/assist/ — подсказка для одного поля заключения.
+ *
+ * Режима нет: непустой `text` бэк исправляет и дописывает, пустой — пишет
+ * черновик с нуля. Ответ — предложение рядом с полем, не значение поля:
+ * в текст заключения оно попадает только после «Применить» врачом.
+ */
+export async function requestAiAssist(
+  payload: AiAssistPayload,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const body: AiAssistPayload = { field: payload.field, text: payload.text };
+  if (payload.serviceLineId != null) body.serviceLineId = payload.serviceLineId;
+  const response = await apiRequest<AiAssistResponse>("/medical/ai/assist/", {
+    method: "POST",
+    body,
+    signal,
+  });
+  return normalizeAiSuggestion(response);
+}
+
+/**
+ * true, когда AI-сервис за бэком временно недоступен (гайд: 502). 503/504 —
+ * те же «попробуйте позже» с точки зрения врача, поэтому считаем их тем же
+ * случаем: тост, но не блокировка сохранения заключения.
+ */
+export function isAiUnavailableError(err: unknown): boolean {
+  return err instanceof ApiError && err.status >= 502 && err.status <= 504;
+}
