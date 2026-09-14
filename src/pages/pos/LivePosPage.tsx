@@ -48,6 +48,13 @@ import type { PosCatalogItem, PosClient, PosReceiptLine } from "./types";
 import { PosAmount } from "./ui";
 
 type CartRow = { product: PosProduct; quantity: number; removed?: boolean };
+type PosDraft = {
+  rows: CartRow[];
+  client: PosClient | null;
+  benefits: Benefits;
+  held: PosSavedReceipt | null;
+  warehouseChoice: number | null;
+};
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Не удалось выполнить действие.";
 const colorHex = (label: string) =>
@@ -223,6 +230,49 @@ export default function LivePosPage() {
   const [returnTarget, setReturnTarget] =
     React.useState<PosSavedReceipt | null>(null);
   const [reason, setReason] = React.useState("");
+  const draftKey = ready
+    ? `mamadoc:pos:draft:${scope.organizationId}:${scope.branchId}`
+    : null;
+  const hydratedDraftKey = React.useRef<string | null>(null);
+  const skipDraftPersistKey = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (!draftKey) return;
+    let draft: PosDraft | null = null;
+    try {
+      const raw = window.localStorage.getItem(draftKey);
+      if (raw) draft = JSON.parse(raw) as PosDraft;
+    } catch {
+      draft = null;
+    }
+    if (draft) {
+      if (Array.isArray(draft.rows)) setRows(draft.rows);
+      if (draft.client) setClient(draft.client);
+      if (draft.benefits) setBenefits({ ...emptyBenefits, ...draft.benefits });
+      if (draft.held) setHeld(draft.held);
+      if (draft.warehouseChoice != null) setWarehouseChoice(draft.warehouseChoice);
+    }
+    hydratedDraftKey.current = draftKey;
+    skipDraftPersistKey.current = draftKey;
+  }, [draftKey]);
+
+  React.useEffect(() => {
+    if (!draftKey || hydratedDraftKey.current !== draftKey) return;
+    if (skipDraftPersistKey.current === draftKey) {
+      skipDraftPersistKey.current = null;
+      return;
+    }
+    try {
+      if (!rows.length && !held) {
+        window.localStorage.removeItem(draftKey);
+        return;
+      }
+      const draft: PosDraft = { rows, client, benefits, held, warehouseChoice };
+      window.localStorage.setItem(draftKey, JSON.stringify(draft));
+    } catch {
+      // localStorage can be unavailable in private mode or when the quota is full.
+    }
+  }, [draftKey, rows, client, benefits, held, warehouseChoice]);
 
   React.useEffect(() => {
     const id = window.setTimeout(() => {
