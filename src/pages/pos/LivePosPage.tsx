@@ -599,6 +599,17 @@ export default function LivePosPage() {
       : clients.isError
       ? message(clients.error)
       : null);
+  const checkoutLines = quote
+    ? quote.lines.map((line) => ({
+        name: line.name,
+        quantity: line.quantity,
+        total: Number(line.subtotal) - Number(line.discountAmount),
+      }))
+    : [];
+  const checkoutBenefits = [
+    { label: "Бонусы", value: Number(quote?.bonuses ?? 0), positive: true },
+    { label: "Сертификат", value: Number(quote?.certificateAmount ?? 0), positive: true },
+  ].filter((item) => item.value > 0);
 
   return (
     <Box
@@ -853,6 +864,10 @@ export default function LivePosPage() {
           open={checkoutOpen}
           due={quote.due}
           bootstrap={{ ...data, actions }}
+          lines={checkoutLines}
+          subtotal={Number(quote.subtotal)}
+          discount={Number(quote.discount)}
+          benefits={checkoutBenefits}
           pending={pending}
           error={error}
           onClose={() => setCheckoutOpen(false)}
