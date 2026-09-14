@@ -121,11 +121,6 @@ function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
 
 function toCatalogItem(product: PosProduct, family: PosProduct[]): PosCatalogItem {
   const names = family.map((item) => item.name.trim()).filter(Boolean);
-  const commonName = names.reduce((prefix, name) => {
-    let length = 0;
-    while (length < prefix.length && length < name.length && prefix[length] === name[length]) length += 1;
-    return prefix.slice(0, length);
-  }, names[0] ?? product.name).replace(/[\s,;:/\\-]+$/, "");
   const colors = [
     ...new Map(
       family
@@ -140,6 +135,19 @@ function toCatalogItem(product: PosProduct, family: PosProduct[]): PosCatalogIte
         .map((attribute) => [attribute.id, attribute])
     ).values(),
   ];
+  let commonName = names.reduce((prefix, name) => {
+    let length = 0;
+    while (length < prefix.length && length < name.length && prefix[length] === name[length]) length += 1;
+    return prefix.slice(0, length);
+  }, names[0] ?? product.name).replace(/[\s,;:/\\-]+$/, "");
+  const variantLabels = [...colors, ...sizes]
+    .map((attribute) => attribute.value.trim())
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+  for (const label of variantLabels) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    commonName = commonName.replace(new RegExp(`[\\s,;:/\\-]+${escaped}$`, "i"), "").trim();
+  }
   return {
     id: String(product.id),
     name: commonName || product.name,
