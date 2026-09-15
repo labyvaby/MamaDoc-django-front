@@ -25,12 +25,13 @@ import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import { getErrorMessage } from "../../../api/client";
-import { getLabOrders, type LabOrder } from "../../../api/lab";
+import { getLabOrders, getLabSettings, type LabOrder, type LabSettings } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
 import LabOrdersSummaryBar, { type LabOrdersFilter } from "../../../components/lab/LabOrdersSummaryBar";
 import LabIntakeDrawer from "../../../components/lab/LabIntakeDrawer";
 import LabOrderCard from "../../../components/lab/LabOrderCard";
+import LabNotConfigured from "../../../components/lab/LabNotConfigured";
 import { labOrderDispatchStatus } from "../../../utility/labOrderStatus";
 import { filterLabOrders, labOrderStats } from "./labOrderStats";
 
@@ -90,6 +91,18 @@ const DjangoLabPage: React.FC = () => {
   // для feedItems.
   const orders = useMemo(() => ordersQuery.data ?? [], [ordersQuery.data]);
 
+  // Подключена ли организация к ЛИС вообще. Без настройки лента всегда
+  // пуста, а приём упадёт на бэкенде — вместо «Заказов пока нет» и
+  // рабочей кнопки честнее показать заглушку и сразу сказать, что делать.
+  // Ошибка запроса настроек ленту не блокирует: она сама покажет своё.
+  const settingsQuery = useQuery<LabSettings>({
+    queryKey: djangoQueryKeys.lab.settings,
+    queryFn: ({ signal }) => getLabSettings(signal),
+    enabled: !permLoading && canView,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+  const notConfigured = settingsQuery.data?.configured === false;
+
   // Плитки и фильтр — над одним и тем же снимком ленты: переключение плитки
   // не бьёт по сети, только меняет срез уже загруженного списка.
   const stats = useMemo(() => labOrderStats(orders), [orders]);
@@ -97,7 +110,11 @@ const DjangoLabPage: React.FC = () => {
 
   if (!permLoading && !canView) return <AccessDenied />;
 
-  const intakeHint = canAccept ? "" : "Недостаточно прав для приёма анализов";
+  const intakeHint = !canAccept
+    ? "Недостаточно прав для приёма анализов"
+    : notConfigured
+      ? "Лаборатория ещё не подключена"
+      : "";
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -113,7 +130,7 @@ const DjangoLabPage: React.FC = () => {
                 variant="contained"
                 size="large"
                 startIcon={<AddOutlined />}
-                disabled={!canAccept}
+                disabled={!canAccept || notConfigured}
                 onClick={() => setDrawerOpen(true)}
               >
                 Принять анализы
@@ -142,7 +159,9 @@ const DjangoLabPage: React.FC = () => {
           canViewFinance={canViewFinance}
         />
 
-        {ordersQuery.isLoading ? (
+        {notConfigured ? (
+          <LabNotConfigured />
+        ) : ordersQuery.isLoading ? (
           <Paper variant="outlined" elevation={0} sx={{ overflow: "hidden" }}>
             <ListLoadingSkeleton rows={8} />
           </Paper>
