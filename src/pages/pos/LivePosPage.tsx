@@ -9,6 +9,8 @@ import {
   DialogContent,
   DialogTitle,
   LinearProgress,
+  IconButton,
+  Chip,
   Stack,
   TextField,
   Typography,
@@ -19,6 +21,7 @@ import CheckCircleRounded from "@mui/icons-material/CheckCircleRounded";
 import PrintRounded from "@mui/icons-material/PrintRounded";
 import DownloadRounded from "@mui/icons-material/DownloadRounded";
 import QrCode2Rounded from "@mui/icons-material/QrCode2Rounded";
+import CloseRounded from "@mui/icons-material/CloseRounded";
 import { apiRequest } from "../../api/client";
 import { getDiscountKinds, type DiscountKind } from "../../api/promotions";
 import {
@@ -1051,14 +1054,20 @@ export default function LivePosPage() {
         maxWidth="lg"
         PaperProps={{ sx: { borderRadius: { xs: 0, sm: 3 }, bgcolor: "#080b16", backgroundImage: "none", overflow: "hidden" } }}
       >
-        {saved && <DialogContent sx={{ p: { xs: 1.5, sm: 3 } }}>
+        {saved && <>
+          <DialogTitle sx={{ px: { xs: 2, sm: 3 }, py: 1.5, borderBottom: "1px solid #20283a", bgcolor: "#0d1220" }}>
+            <Stack direction="row" alignItems="center" gap={1}>
+              <Typography fontWeight={800}>Оплата</Typography>
+              <Typography variant="caption" color="text.secondary">{saved.lines.length} товаров</Typography>
+              <Typography variant="caption" color="text.secondary">· Чек №{saved.number.slice(0, 8)}</Typography>
+              <IconButton onClick={() => setSaved(null)} size="small" sx={{ ml: "auto", color: "text.secondary" }}><CloseRounded fontSize="small" /></IconButton>
+            </Stack>
+          </DialogTitle>
+          <DialogContent sx={{ p: { xs: 1.5, sm: 3 } }}>
           <Stack direction={{ xs: "column", md: "row" }} gap={{ xs: 2, md: 3 }}>
             <Box sx={{ width: { xs: "100%", md: 320 }, flexShrink: 0 }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
-                <Typography fontWeight={800}>Оплата</Typography>
-                <Typography variant="caption" color="text.secondary">{saved.lines.length} товаров · Чек</Typography>
-              </Stack>
-              <Box id="pos-print" sx={{ bgcolor: "#fff", color: "#141722", p: { xs: 2, sm: 2.5 }, borderRadius: 2, boxShadow: "0 18px 50px rgba(0,0,0,.35)" }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}><Typography sx={{ fontSize: 10, letterSpacing: ".1em", fontWeight: 800, color: "#747c91" }}>ПЕЧАТНАЯ ФОРМА ЧЕКА</Typography><Typography sx={{ fontSize: 10, color: "#747c91" }}>прокрутите</Typography></Stack>
+              <Box id="pos-print" sx={{ bgcolor: "#fff", color: "#141722", p: { xs: 2, sm: 2.5 }, borderRadius: 1.5, boxShadow: "0 18px 50px rgba(0,0,0,.35)", minHeight: { md: 470 } }}>
                 <Stack alignItems="center" gap={.25} mb={2}><Typography fontWeight={900} letterSpacing=".12em">{data.organization.name.toUpperCase()}</Typography><Typography variant="caption">{data.branch.name}</Typography><Typography variant="caption" color="text.secondary">Товарный чек · не фискальный</Typography></Stack>
                 <Stack direction="row" justifyContent="space-between" mb={1}><Typography variant="caption">ЧЕК №{saved.number.slice(0, 8)}</Typography><Typography variant="caption">{new Date(saved.createdAt).toLocaleDateString("ru-RU")}</Typography></Stack>
                 <Box sx={{ borderTop: "1px dashed #adb0ba", borderBottom: "1px dashed #adb0ba", py: 1 }}>{saved.lines.map((line) => <Stack key={line.id} direction="row" justifyContent="space-between" gap={1} py={.55}><Box sx={{ minWidth: 0 }}><Typography fontSize={12} fontWeight={600} noWrap>{line.productName}</Typography><Typography fontSize={10} color="#6e7280">{line.quantity} × {Number(line.unitPrice).toLocaleString("ru-RU")} сом</Typography></Box><Typography fontSize={12} fontWeight={700} whiteSpace="nowrap">{Number(line.total).toLocaleString("ru-RU")} сом</Typography></Stack>)}</Box>
@@ -1067,13 +1076,15 @@ export default function LivePosPage() {
               </Box>
             </Box>
             <Box sx={{ flex: 1, minWidth: 0, pt: { md: 3 } }}>
-              <Box sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2.5, bgcolor: "rgba(16,111,76,.35)", border: "1px solid rgba(75,220,148,.28)" }}><Stack direction="row" gap={1.25} alignItems="flex-start"><CheckCircleRounded sx={{ color: "#55e09b", fontSize: 28 }} /><Box><Typography fontWeight={800} color="#a7f4c8">Оплата прошла успешно</Typography><Typography variant="caption" color="rgba(220,255,238,.7)">Чек №{saved.number.slice(0, 8)} · {new Date(saved.createdAt).toLocaleString("ru-RU")}</Typography><Typography variant="h4" fontWeight={900} sx={{ mt: 1 }}>{Number(saved.totalAmount).toLocaleString("ru-RU")} сом</Typography></Box></Stack></Box>
-              <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 1, mt: 1.5 }}>{[{ label: "Позиций", value: `${saved.lines.length}` }, { label: "Способ оплаты", value: saved.payments.map((payment) => payment.method === "cash" ? "Наличные" : payment.method === "card" ? "Карта" : "Безналичные").join(", ") }, { label: "Клиент", value: saved.clientId ? `#${saved.clientId}` : "Без клиента" }, { label: "Кассир", value: data.cashier }].map((item) => <Box key={item.label} sx={{ p: 1.25, borderRadius: 1.5, bgcolor: "#111725", border: "1px solid #20283a" }}><Typography variant="caption" color="text.secondary">{item.label}</Typography><Typography fontWeight={700} noWrap>{item.value}</Typography></Box>)}</Box>
-              <Stack direction={{ xs: "column-reverse", sm: "row" }} gap={1} mt={2}><Button fullWidth startIcon={<DownloadRounded />} sx={{ borderRadius: 2, bgcolor: "#111725" }} onClick={() => window.print()}>Скачать чек</Button>{actions.print && <Button fullWidth startIcon={<PrintRounded />} sx={{ borderRadius: 2, bgcolor: "#111725" }} onClick={() => window.print()}>Повторная печать</Button>}</Stack>
-              <Button fullWidth variant="contained" onClick={() => setSaved(null)} sx={{ mt: 1.25, minHeight: 46, borderRadius: 2, fontWeight: 800 }}>Новый чек <Box component="span" sx={{ ml: 1, opacity: .65, fontSize: 11 }}>Enter</Box></Button>
+              <Box sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2.5, bgcolor: "rgba(16,111,76,.35)", border: "1px solid rgba(75,220,148,.28)" }}><Stack direction="row" gap={1.25} alignItems="flex-start"><CheckCircleRounded sx={{ color: "#55e09b", fontSize: 28 }} /><Box sx={{ minWidth: 0, flex: 1 }}><Stack direction="row" justifyContent="space-between" gap={1}><Box><Typography fontWeight={800} color="#a7f4c8">Оплата прошла успешно</Typography><Typography variant="caption" color="rgba(220,255,238,.7)">Чек №{saved.number.slice(0, 8)} · {new Date(saved.createdAt).toLocaleString("ru-RU")}</Typography></Box><Chip size="small" label={saved.payments[0]?.method === "cash" ? "Оплата наличными" : "Оплата картой"} sx={{ bgcolor: "rgba(255,255,255,.18)", color: "#fff", fontSize: 10, fontWeight: 700 }} /></Stack><Typography variant="h4" fontWeight={900} sx={{ mt: 1 }}>{Number(saved.totalAmount).toLocaleString("ru-RU")} сом</Typography></Box></Stack></Box>
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)" }, gap: 1, mt: 1.5 }}>{[{ label: "Позиций", value: `${saved.lines.length} шт.` }, { label: "Способ оплаты", value: saved.payments.map((payment) => payment.method === "cash" ? "Наличные" : payment.method === "card" ? "Карта" : "Безналичные").join(", ") }, { label: "Клиент", value: saved.clientId ? `#${saved.clientId}` : "Без клиента" }, { label: "Кассир", value: data.cashier }].map((item) => <Box key={item.label} sx={{ p: 1.25, borderRadius: 1.5, bgcolor: "#111725", border: "1px solid #20283a", minWidth: 0 }}><Typography variant="caption" color="text.secondary" noWrap>{item.label}</Typography><Typography fontWeight={700} noWrap>{item.value}</Typography></Box>)}</Box>
+              <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 1, mt: 1 }}><Box sx={{ p: 1.25, borderRadius: 1.5, bgcolor: "#111725", border: "1px solid #20283a" }}><Typography variant="caption" color="text.secondary">Печатный чек</Typography><Typography fontWeight={700} color="#55e09b">Готов к печати</Typography></Box><Box sx={{ p: 1.25, borderRadius: 1.5, bgcolor: "#111725", border: "1px solid #20283a" }}><Typography variant="caption" color="text.secondary">Электронный чек</Typography><Typography fontWeight={700} color="#55e09b">Не отправлен</Typography></Box></Box>
+              <Button fullWidth variant="contained" onClick={() => setSaved(null)} sx={{ mt: 1.5, minHeight: 46, borderRadius: 2, fontWeight: 800 }}>Новый чек <Box component="span" sx={{ ml: 1, opacity: .65, fontSize: 11 }}>Enter</Box></Button>
+              <Stack direction={{ xs: "column", sm: "row" }} gap={1} mt={1}><Button fullWidth startIcon={<DownloadRounded />} sx={{ borderRadius: 2, bgcolor: "#111725" }} onClick={() => window.print()}>Скачать чек</Button>{actions.print && <Button fullWidth startIcon={<PrintRounded />} sx={{ borderRadius: 2, bgcolor: "#111725" }} onClick={() => window.print()}>Повторная печать</Button>}</Stack>
             </Box>
           </Stack>
-        </DialogContent>}
+          </DialogContent>
+        </>}
       </Dialog>
       <Dialog
         open={!!returnTarget}
