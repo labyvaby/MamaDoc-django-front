@@ -163,16 +163,19 @@ const InstrumentsSection: React.FC<Props> = ({
   loading,
   chargeTubes,
 }) => {
-  const total = instruments.reduce((sum, item) => sum + item.count, 0);
+  // В счётчик идут только предметы: услуга взятия — не «штука» в штативе.
+  const tubes = instruments.filter((item) => instrumentKind(item.title) === "tube");
+  const services = instruments.length - tubes.length;
+  const total = tubes.reduce((sum, item) => sum + item.count, 0);
 
   return (
     <IntakeSection
-      title="Пробирки"
+      title={services > 0 ? "Пробирки и услуги" : "Пробирки"}
       loading={loading}
       action={
-        instruments.length > 0 ? (
+        tubes.length > 0 ? (
           <Typography variant="caption" color="text.secondary">
-            всего {total} шт
+            пробирок {total} шт
           </Typography>
         ) : null
       }
