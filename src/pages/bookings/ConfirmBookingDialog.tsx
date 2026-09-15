@@ -17,6 +17,8 @@ import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined
 
 import type { BookingDetail, BookingPatientMatch } from "../../api/bookings";
 import { getServices, type Service } from "../../api/catalog";
+import { getServiceAssignments } from "../../api/appointments";
+import { usePermissions } from "../../hooks/usePermissions";
 import { searchPatients } from "../../api/patients";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useT } from "../../i18n/VerticalProvider";
@@ -50,6 +52,7 @@ interface Props {
 const ConfirmBookingDialog: React.FC<Props> = ({ booking, open, busy, onClose, onConfirm }) => {
   const { t } = useT("bookings");
   const orgId = useApiOrgId();
+  const { activeBranch } = usePermissions();
 
   const [patient, setPatient] = React.useState<PatientOption | null>(null);
   const [patientInput, setPatientInput] = React.useState("");
@@ -74,28 +77,58 @@ const ConfirmBookingDialog: React.FC<Props> = ({ booking, open, busy, onClose, o
     setFound([]);
   }, [open, matches]);
 
-  // Каталог услуг + предвыбор тех, что уже в брони. У броней operator.kg id
-  // услуги может не быть — такие не предвыберутся, персонал укажет вручную.
+  // Услуги из заявки, которые врач в этом филиале не оказывает, — их не
+  // предвыбираем (приём с ними не сохранится) и называем под полем.
+  const [droppedServices, setDroppedServices] = React.useState<string[]>([]);
+  const branchId = booking.branchId ?? activeBranch?.id ?? undefined;
+
+  /**
+   * Услуги, которые можно выбрать: активные услуги филиала брони, закреплённые
+   * за её врачом. Раньше здесь был весь каталог организации — регистратор мог
+   * выбрать услугу, которую врач не ведёт или ведёт только в другом филиале.
+   *
+   * Связь «услуга ↔ врач» — та же матрица `service-assignments`, что фильтрует
+   * форму записи (с `branchId` — пары, пригодные в филиале, как и валидация
+   * при сохранении приёма). Врача без маппинга (`doctorId: null`, брони
+   * operator.kg) отфильтровать не по чему — показываем услуги филиала.
+   * Если матрица не загрузилась, тоже не прячем всё: лучше полный список
+   * филиала, чем пустое поле без объяснения.
+   */
   React.useEffect(() => {
     if (!open) return;
     const ctrl = new AbortController();
     setServicesLoading(true);
-    getServices({ organizationId: orgId }, undefined, ctrl.signal)
-      .then((list) => {
+    Promise.all([
+      getServices({ organizationId: orgId, branchId }, undefined, ctrl.signal),
+      booking.doctorId != null
+        ? getServiceAssignments(branchId, ctrl.signal).catch(() => null)
+        : Promise.resolve(null),
+    ])
+      .then(([list, assignments]) => {
         if (ctrl.signal.aborted) return;
-        const active = list.filter((s) => s.isActive);
-        setServices(active);
-        const bookingIds = (booking.services ?? [])
-          .map((s) => s.id)
-          .filter((id): id is number => id != null);
-        setSelected(active.filter((s) => bookingIds.includes(s.id)));
+        const doctorServiceIds =
+          assignments && booking.doctorId != null
+            ? new Set(
+                assignments.filter((a) => a.employeeId === booking.doctorId).map((a) => a.serviceId),
+              )
+            : null;
+        const available = list.filter(
+          (s) => s.isActive && (doctorServiceIds == null || doctorServiceIds.has(s.id)),
+        );
+        setServices(available);
+        const availableIds = new Set(available.map((s) => s.id));
+        const fromBooking = (booking.services ?? []).filter((s) => s.id != null);
+        setSelected(available.filter((s) => fromBooking.some((b) => b.id === s.id)));
+        setDroppedServices(
+          fromBooking.filter((b) => !availableIds.has(b.id as number)).map((b) => b.name),
+        );
       })
       .catch(() => {})
       .finally(() => {
         if (!ctrl.signal.aborted) setServicesLoading(false);
       });
     return () => ctrl.abort();
-  }, [open, orgId, booking.services]);
+  }, [open, orgId, branchId, booking.doctorId, booking.services]);
 
   // Поиск пациента вручную — когда подсказок нет или нужен не из них.
   React.useEffect(() => {
@@ -226,6 +259,21 @@ const ConfirmBookingDialog: React.FC<Props> = ({ booking, open, busy, onClose, o
                 />
               )}
             />
+            {droppedServices.length > 0 && !servicesLoading && (
+              <Typography variant="caption" color="warning.main">
+                {t("confirm.servicesNotProvided", {
+                  count: droppedServices.length,
+                  names: droppedServices.join(", "),
+                })}
+              </Typography>
+            )}
+            {/* Без услуг бэк подтверждение отклоняет — говорим до нажатия,
+                а не текстом ошибки после. */}
+            {selected.length === 0 && !servicesLoading && (
+              <Typography variant="caption" color="warning.main">
+                {t("confirm.servicesRequired")}
+              </Typography>
+            )}
             {selected.length > 0 && (
               <Typography variant="caption" color="text.secondary">
                 {t("confirm.servicesTotal", {
@@ -251,7 +299,7 @@ const ConfirmBookingDialog: React.FC<Props> = ({ booking, open, busy, onClose, o
           variant="contained"
           color="success"
           onClick={handleConfirm}
-          disabled={busy}
+          disabled={busy || selected.length === 0}
           startIcon={busy ? <CircularProgress size={14} /> : undefined}
         >
           {t("confirm.submit")}

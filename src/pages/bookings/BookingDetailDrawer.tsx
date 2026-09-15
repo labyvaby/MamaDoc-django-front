@@ -39,6 +39,7 @@ import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
 import {
+  claimBooking,
   getBooking,
   updateBookingStatus,
   type BookingDetail,
@@ -65,6 +66,9 @@ import {
   useTickingClock,
 } from "./meta";
 import ConfirmBookingDialog from "./ConfirmBookingDialog";
+import { ClaimControl, useReminderText, useRemindedBookings } from "./BookingRowActions";
+import { useBookingActions } from "./useBookingActions";
+import { whatsappUrl } from "./bookingViews";
 import { useT } from "../../i18n/VerticalProvider";
 
 interface Props {
@@ -78,6 +82,13 @@ interface Props {
    */
   siblingIds?: number[];
   onNavigate?: (id: number) => void;
+  /**
+   * Открыть диалог подтверждения сразу после загрузки — сюда приводит быстрое
+   * подтверждение из списка, когда в один клик нельзя (нет услуг / карта не
+   * однозначна). `onConfirmOpened` сбрасывает запрос, чтобы он не повторился.
+   */
+  openConfirm?: boolean;
+  onConfirmOpened?: () => void;
 }
 
 // ── Мелкие блоки ──────────────────────────────────────────────────────────────
@@ -110,9 +121,6 @@ const Section: React.FC<{
   </Stack>
 );
 
-/** Только цифры номера — формат, который понимает wa.me. */
-const waDigits = (phone: string): string => phone.replace(/\D/g, "");
-
 // ── Компонент ─────────────────────────────────────────────────────────────────
 
 const BookingDetailDrawer: React.FC<Props> = ({
@@ -121,6 +129,8 @@ const BookingDetailDrawer: React.FC<Props> = ({
   onClose,
   siblingIds,
   onNavigate,
+  openConfirm,
+  onConfirmOpened,
 }) => {
   const { t } = useT("bookings");
   const open = bookingId != null;
@@ -159,10 +169,19 @@ const BookingDetailDrawer: React.FC<Props> = ({
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [cancelOpen, setCancelOpen] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+  const bookingActions = useBookingActions();
+  const { reminded, markReminded } = useRemindedBookings();
+  const reminderText = useReminderText();
 
   const mutation = useMutation({
-    mutationFn: (vars: { status: BookingManageStatus; extras?: BookingStatusExtras }) =>
-      updateBookingStatus(bookingId as number, vars.status, vars.extras),
+    mutationFn: async (vars: { status: BookingManageStatus; extras?: BookingStatusExtras }) => {
+      // Время реакции: никем не взятую заявку берём на себя перед решением —
+      // иначе у разобранной без «Взять в работу» заявки его не посчитать.
+      if (query.data?.status === "pending" && !query.data.claimedAt) {
+        await claimBooking(bookingId as number).catch(() => undefined);
+      }
+      return updateBookingStatus(bookingId as number, vars.status, vars.extras);
+    },
     onSuccess: (data) => {
       queryClient.setQueryData(djangoQueryKeys.bookings.detail(data.id), data);
       queryClient.invalidateQueries({ queryKey: djangoQueryKeys.bookings.all });
@@ -179,6 +198,13 @@ const BookingDetailDrawer: React.FC<Props> = ({
 
   const b = query.data;
   const busy = mutation.isPending;
+
+  // Запрос «сразу к подтверждению» исполняем, когда карточка загрузилась.
+  React.useEffect(() => {
+    if (!openConfirm || !b || b.id !== bookingId) return;
+    if (canManage && b.status === "pending") setConfirmOpen(true);
+    onConfirmOpened?.();
+  }, [openConfirm, b, bookingId, canManage, onConfirmOpened]);
 
   // Тикающий отсчёт «Идёт оплата · N мин» в шапке — только пока карточка
   // реально ждёт оплату, чтобы не заводить лишний таймер на остальных броней.
@@ -406,7 +432,7 @@ const BookingDetailDrawer: React.FC<Props> = ({
                       <IconButton
                         size="small"
                         component="a"
-                        href={`https://wa.me/${waDigits(b.patientPhone)}`}
+                        href={whatsappUrl(b.patientPhone)}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
@@ -465,7 +491,30 @@ const BookingDetailDrawer: React.FC<Props> = ({
                   })}
                 />
               )}
+              {/* Кто разбирает заявку — видно всем, ставит тот, кто разбирает. */}
+              <ClaimControl booking={b} canManage={canManage} actions={bookingActions} />
             </Stack>
+
+            {/* Напоминание пациенту перед визитом — ручное: открываем WhatsApp
+                с готовым текстом, отправляет сотрудник. */}
+            {b.status === "confirmed" &&
+              b.patientPhone &&
+              !dayjs(b.date).isBefore(dayjs(), "day") && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color={reminded.has(b.id) ? "success" : "primary"}
+                  startIcon={<ChatOutlined />}
+                  component="a"
+                  href={whatsappUrl(b.patientPhone, reminderText(b))}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => markReminded(b.id)}
+                  sx={{ alignSelf: "flex-start", textTransform: "none" }}
+                >
+                  {reminded.has(b.id) ? t("reminder.sent") : t("reminder.button")}
+                </Button>
+              )}
 
             {/* ── Когда и к кому ── */}
             <Section icon={<EventOutlined />} title={t("detail.recordSection")}>
@@ -482,9 +531,12 @@ const BookingDetailDrawer: React.FC<Props> = ({
               </Stack>
             </Section>
 
+            {/* ── Есть ли карта в CRM ── нужна только до подтверждения: у брони
+                с приёмом карта уже привязана, и подсказка «найдут при
+                подтверждении» только путала. */}
+            {b.appointmentId == null && (
+            <>
             <Divider />
-
-            {/* ── Есть ли карта в CRM ── */}
             <Section icon={<PersonOutlineOutlined />} title={t("detail.patientSection")}>
               <Stack spacing={1} alignItems="flex-start">
                 <Typography variant="body2" color="text.secondary">
@@ -508,6 +560,8 @@ const BookingDetailDrawer: React.FC<Props> = ({
                 )}
               </Stack>
             </Section>
+            </>
+            )}
 
             <Divider />
 
@@ -555,6 +609,7 @@ const BookingDetailDrawer: React.FC<Props> = ({
                       status={b.prepaymentStatus}
                       amount={b.prepaymentAmount}
                       needsAttention={b.prepaymentNeedsAttention}
+                      expiresAt={b.prepaymentExpiresAt}
                       awaitingConfirmation={
                         b.prepaymentStatus === "paid" && b.status === "pending"
                       }
