@@ -4,7 +4,6 @@ import ruSettings from "../../../locales/ru/settings.json";
 
 const RECIPIENT_KEYS = [
   "title",
-  "fromEvent",
   "employeesLabel",
   "employeesPlaceholder",
   "rolesLabel",

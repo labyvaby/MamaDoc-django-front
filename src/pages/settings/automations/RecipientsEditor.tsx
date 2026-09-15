@@ -106,9 +106,6 @@ export const RecipientsEditor: React.FC<RecipientsEditorProps> = ({
 
       {phones.length > 0 && (
         <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center" }}>
-          <Typography variant="caption" color="text.secondary">
-            {t("automations.recipients.fromEvent")}
-          </Typography>
           {phones.map((variable) => {
             const selected = action.recipientFields.includes(variable);
             return (
@@ -208,8 +205,8 @@ export const RecipientsEditor: React.FC<RecipientsEditorProps> = ({
                   ? t("automations.recipients.rolesPlaceholder")
                   : undefined
               }
-              // Роль раздаётся сотрудникам филиала события; без филиала —
-              // всем держателям роли в организации.
+              // Роль раздаётся сотрудникам филиала, где сработало правило;
+              // без конкретного филиала — всем держателям роли в организации.
               helperText={t(
                 scheduled
                   ? "automations.recipients.rolesHintSchedule"
