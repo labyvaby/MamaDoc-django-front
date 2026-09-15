@@ -55,6 +55,8 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useT } from "../../i18n/VerticalProvider";
 import { SETTINGS_TAB_PERMISSIONS } from "../../config/accessPermissions";
 import { SettingsLayout } from "./SettingsLayout";
+import { WhatsAppConnectForm } from "./whatsapp/WhatsAppConnectForm";
+import { WhatsAppSetupCard } from "./whatsapp/WhatsAppSetupCard";
 
 const formatAt = (value: string | null | undefined): string =>
   value ? dayjs(value).format("DD.MM.YYYY HH:mm") : "—";
@@ -67,8 +69,10 @@ const formatAt = (value: string | null | undefined): string =>
  * WhatsApp Manager, Raven импортирует их из Meta, CRM хранит зеркало. Экран
  * отвечает на три вопроса — с какого номера уходят сообщения, можно ли
  * вообще отправлять, и какие шаблоны доступны конструктору автоматизаций и
- * почему остальные — нет. Привязка к подключению — платформенная операция
- * и показывается только суперадмину: токена Meta у CRM нет.
+ * почему остальные — нет. Подключение — самообслуживание: администратор
+ * вводит данные из Meta, Raven делает остальное и отчитывается блоком
+ * «Настройка Meta». Привязка через список Raven остаётся суперадмину как
+ * ремонтный путь.
  */
 const WhatsAppSettingsPage: React.FC = () => {
   const { t } = useT("settings");
@@ -81,9 +85,10 @@ const WhatsAppSettingsPage: React.FC = () => {
   const { organizationId, orgReady, isReady } = useActiveScope();
   const enabled = isReady && orgReady && canView;
 
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(
-    null,
-  );
+  const [message, setMessage] = useState<{
+    type: "success" | "error" | "info";
+    text: string;
+  } | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const settingsQuery = useQuery({
@@ -196,6 +201,28 @@ const WhatsAppSettingsPage: React.FC = () => {
                     : t("whatsapp.bind.success"),
                 });
               }}
+              onConnected={(data) => {
+                applySettings(data);
+                setSyncError(null);
+                const confirmed = data.connection.setup?.webhookConfirmed ?? false;
+                setMessage({
+                  type: data.syncError ? "error" : confirmed ? "success" : "info",
+                  text: data.syncError
+                    ? t("whatsapp.bind.boundWithSyncError", { error: data.syncError })
+                    : confirmed
+                      ? t("whatsapp.connect.success")
+                      : t("whatsapp.connect.successNeedsWebhook"),
+                });
+              }}
+              onSetupUpdated={(data) => {
+                applySettings(data);
+                setMessage({
+                  type: data.connection.setup?.webhookConfirmed ? "success" : "info",
+                  text: data.connection.setup?.webhookConfirmed
+                    ? t("whatsapp.setup.retrySuccess")
+                    : t("whatsapp.setup.retryStillPending"),
+                });
+              }}
             />
 
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
@@ -280,6 +307,8 @@ interface ConnectionCardProps {
   isSuper: boolean;
   organizationId: number;
   onBound: (data: WhatsAppSettings) => void;
+  onConnected: (data: WhatsAppSettings) => void;
+  onSetupUpdated: (data: WhatsAppSettings) => void;
 }
 
 /**
@@ -296,9 +325,12 @@ const ConnectionCard: React.FC<ConnectionCardProps> = ({
   isSuper,
   organizationId,
   onBound,
+  onConnected,
+  onSetupUpdated,
 }) => {
   const { t } = useT("settings");
   const [bindOpen, setBindOpen] = useState(false);
+  const [reconnectOpen, setReconnectOpen] = useState(false);
 
   const details: { label: string; value: React.ReactNode }[] = connection.configured
     ? [
@@ -360,7 +392,14 @@ const ConnectionCard: React.FC<ConnectionCardProps> = ({
         </Stack>
 
         {!connection.configured ? (
-          <Alert severity="info">{t("whatsapp.connection.notConfiguredText")}</Alert>
+          <>
+            <Alert severity="info">{t("whatsapp.connection.notConfiguredText")}</Alert>
+            <WhatsAppConnectForm
+              organizationId={organizationId}
+              reconnect={false}
+              onConnected={onConnected}
+            />
+          </>
         ) : (
           <>
             <Box>
@@ -402,13 +441,40 @@ const ConnectionCard: React.FC<ConnectionCardProps> = ({
                 </Box>
               ))}
             </Box>
+
+            <WhatsAppSetupCard
+              setup={connection.setup}
+              organizationId={organizationId}
+              onUpdated={onSetupUpdated}
+            />
+
+            <Box>
+              <Button
+                size="small"
+                startIcon={<WhatsApp />}
+                onClick={() => setReconnectOpen((open) => !open)}
+              >
+                {t("whatsapp.connect.reconnect")}
+              </Button>
+              <Collapse in={reconnectOpen} unmountOnExit>
+                <WhatsAppConnectForm
+                  organizationId={organizationId}
+                  reconnect
+                  onConnected={(data) => {
+                    setReconnectOpen(false);
+                    onConnected(data);
+                  }}
+                  onCancel={() => setReconnectOpen(false)}
+                />
+              </Collapse>
+            </Box>
           </>
         )}
 
-        {/* Привязка — только суперадмину: подключение заведено в Raven
-            оператором платформы, и он же говорит, чьё оно. Администратор
-            клиники видит номер и статус, но перевесить организацию на другой
-            номер не может. */}
+        {/* Ремонтный путь суперадмина: подключение, заведённое в Raven
+            руками, привязывается из списка проекта. Администратор клиники
+            перевесить организацию на чужой номер не может — только
+            подключить свой через форму выше. */}
         {isSuper && (
           <Box>
             <Button

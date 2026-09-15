@@ -1349,7 +1349,7 @@
       "usableHint": "Подключение включено, Raven отвечает, номер помечен этой организацией.",
       "notUsable": "Не работает",
       "notConfigured": "Не подключено",
-      "notConfiguredText": "WhatsApp для {{org.gen}} не подключён. Подключение заводит оператор платформы: обратитесь к администратору.",
+      "notConfiguredText": "WhatsApp для {{org.gen}} ещё не подключён. Введите данные из Meta ниже — остальное настроится автоматически.",
       "senderPhone": "Номер отправителя",
       "phoneUnknown": "Номер ещё не получен от Raven",
       "verifiedName": "Имя в WhatsApp",
@@ -1366,6 +1366,67 @@
       },
       "ravenLastError": "Последняя ошибка Raven",
       "lastSyncError": "Ошибка синхронизации"
+    },
+    "connect": {
+      "title": "Подключить WhatsApp",
+      "reconnectTitle": "Переподключить WhatsApp",
+      "reconnect": "Переподключить с новыми данными",
+      "reconnectHint": "Подключение останется тем же номером: обновятся токен, приложение и секрет. Используйте, если сменили токен или приложение в Meta.",
+      "intro": "Нужны пять значений из Meta: WABA ID и Phone number ID (App Dashboard → WhatsApp → API Setup), постоянный токен системного пользователя (Business Settings → System users), App ID и App secret (App settings → Basic). Дальше Raven всё сделает сам: проверит токен, пропишет вебхук в вашем приложении, подпишет его на события и загрузит шаблоны.",
+      "metaDocs": "Документация Meta",
+      "fields": {
+        "displayName": "Название подключения",
+        "wabaId": "WABA ID",
+        "phoneNumberId": "Phone number ID",
+        "accessToken": "Постоянный токен",
+        "appId": "App ID",
+        "appSecret": "App secret"
+      },
+      "hints": {
+        "displayName": "Как подписать отправителя в списках. По умолчанию — название {{org.gen}}.",
+        "wabaId": "ID WhatsApp Business Account — App Dashboard → WhatsApp → API Setup.",
+        "phoneNumberId": "Не сам номер, а его ID там же, рядом с номером.",
+        "accessToken": "Токен системного пользователя с правами whatsapp_business_messaging и whatsapp_business_management.",
+        "appId": "ID приложения Meta — App settings → Basic.",
+        "appSecret": "«App secret» там же, по кнопке «Show»."
+      },
+      "reveal": "Показать или скрыть значение",
+      "privacy": "Токен и App secret передаются в Raven и хранятся там в зашифрованном виде. В CRM они не сохраняются.",
+      "required": "Обязательное поле.",
+      "submit": "Подключить",
+      "submitting": "Подключаем…",
+      "cancel": "Отмена",
+      "error": "Не удалось подключить WhatsApp.",
+      "success": "WhatsApp подключён, вебхук Meta подтверждён, шаблоны загружены.",
+      "successNeedsWebhook": "WhatsApp подключён. Вебхук Meta ещё не подтверждён — см. блок «Настройка Meta»."
+    },
+    "setup": {
+      "title": "Настройка Meta",
+      "state": {
+        "confirmed": "Вебхук подтверждён",
+        "pending": "Ожидает подтверждения",
+        "failed": "Не удалось настроить"
+      },
+      "stateHint": {
+        "confirmed": "Meta проверила callback URL Raven, приложение подписано на события: статусы доставки и вердикты по шаблонам будут приходить.",
+        "pending": "Raven ещё не получил подтверждение от Meta. Нажмите «Повторить настройку» или введите данные в App Dashboard вручную.",
+        "failed": "Автоматическая настройка не прошла — причина под шагом. Исправьте и повторите либо введите данные в App Dashboard вручную."
+      },
+      "steps": {
+        "registered": "Callback URL прописан в приложении Meta",
+        "confirmed": "Meta подтвердила вебхук",
+        "subscribed": "Приложение подписано на события WABA"
+      },
+      "manualIntro": "Если автоматика не прошла: в App Dashboard приложения → WhatsApp → Configuration → Webhook введите эти значения и нажмите «Verify and save».",
+      "callbackUrl": "Callback URL",
+      "verifyToken": "Verify token",
+      "manualFields": "Подписать поля: messages, message_template_status_update, account_update, phone_number_quality_update.",
+      "copy": "Скопировать",
+      "copied": "Скопировано",
+      "retry": "Повторить настройку",
+      "retrySuccess": "Настройка Meta завершена: вебхук подтверждён.",
+      "retryStillPending": "Raven повторил настройку; подтверждения вебхука пока нет — проверьте причину под шагом.",
+      "retryError": "Не удалось повторить настройку."
     },
     "bind": {
       "open": "Привязать подключение",

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { renderTemplatePreview, splitTemplateBody } from "./whatsapp";
+import {
+  renderTemplatePreview,
+  setupState,
+  splitTemplateBody,
+  type WhatsAppSetupInfo,
+} from "./whatsapp";
 
 describe("renderTemplatePreview", () => {
   it("подставляет значения по номеру плейсхолдера, как dry-run на бэке", () => {
@@ -33,5 +38,41 @@ describe("splitTemplateBody", () => {
   it("текст без плейсхолдеров — один кусок; пустой — ничего", () => {
     expect(splitTemplateBody("просто текст")).toEqual([{ kind: "text", text: "просто текст" }]);
     expect(splitTemplateBody("")).toEqual([]);
+  });
+});
+
+describe("setupState", () => {
+  const setup = (overrides: Partial<WhatsAppSetupInfo> = {}): WhatsAppSetupInfo => ({
+    appId: "123",
+    webhookUrl: "https://raven/api/v1/webhooks/whatsapp/acc",
+    webhookVerifyToken: "tok",
+    webhookRegistered: true,
+    webhookRegisteredAt: "2026-09-16T09:00:01Z",
+    webhookConfirmed: true,
+    webhookVerifiedAt: "2026-09-16T09:00:02Z",
+    webhookError: "",
+    appSubscribed: true,
+    appSubscribedAt: "2026-09-16T09:00:03Z",
+    appSubscriptionError: "",
+    ...overrides,
+  });
+
+  it("подтверждено — только когда Meta прошла проверку URL и приложение подписано", () => {
+    expect(setupState(setup())).toBe("confirmed");
+    expect(setupState(setup({ appSubscribed: false, appSubscribedAt: null }))).toBe("pending");
+  });
+
+  it("ошибка любого шага — «не удалось», пока вебхук не подтверждён", () => {
+    expect(
+      setupState(setup({ webhookConfirmed: false, webhookError: "(#2200) verification failed" })),
+    ).toBe("failed");
+    expect(
+      setupState(setup({ appSubscribed: false, appSubscriptionError: "(#100) permission" })),
+    ).toBe("failed");
+  });
+
+  it("без данных о настройке — «в процессе», а не ошибка", () => {
+    expect(setupState(undefined)).toBe("pending");
+    expect(setupState(setup({ webhookConfirmed: false, webhookRegistered: false }))).toBe("pending");
   });
 });

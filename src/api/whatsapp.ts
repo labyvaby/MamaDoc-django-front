@@ -10,8 +10,13 @@ import { scopeParams, type Scope } from "./scope";
  * и подставляет данные. Текста сообщения здесь нет и быть не может — Meta
  * принимает только одобренный шаблон.
  *
- * Привязку организации к подключению делает оператор платформы
- * (superadmin): токена Meta у CRM нет, подключение заводится в Raven.
+ * Подключение — самообслуживание: администратор организации вводит пять
+ * значений из Meta (WABA ID, Phone number ID, токен, App ID, App secret),
+ * CRM относит их в Raven и не хранит; Raven проверяет токен, создаёт
+ * подключение, сам прописывает свой вебхук в приложении организации и
+ * подписывает приложение на WABA. Итог этой настройки приходит в
+ * `connection.setup`. Привязка через список подключений Raven остаётся
+ * суперадмину как ремонтный путь.
  */
 
 const BASE = "/v2/notifications/whatsapp";
@@ -56,6 +61,56 @@ export interface WhatsAppConnectionInfo {
   syncedAt?: string | null;
   lastSyncError?: string;
   templatesSyncedAt?: string | null;
+  /** Состояние настройки Meta со стороны Raven; есть у каждого подключения. */
+  setup?: WhatsAppSetupInfo;
+}
+
+/**
+ * Как далеко Raven продвинулся в настройке приложения Meta организации.
+ *
+ * `webhookConfirmed` — единственное, что важно по-настоящему: Meta дёрнула
+ * callback URL Raven, значит статусы доставки и вердикты по шаблонам будут
+ * приходить. Пока его нет, экран показывает `webhookUrl` и
+ * `webhookVerifyToken` для ручного ввода в App Dashboard и причину, по
+ * которой автоматика не прошла.
+ */
+export interface WhatsAppSetupInfo {
+  appId: string;
+  webhookUrl: string;
+  webhookVerifyToken: string;
+  /** Raven прописал callback URL в приложении через Graph API. */
+  webhookRegistered: boolean;
+  webhookRegisteredAt: string | null;
+  /** Meta прошла проверку URL — вебхук живой. */
+  webhookConfirmed: boolean;
+  webhookVerifiedAt: string | null;
+  webhookError: string;
+  /** Приложение подписано на события WABA (без этого Meta ничего не шлёт). */
+  appSubscribed: boolean;
+  appSubscribedAt: string | null;
+  appSubscriptionError: string;
+}
+
+/** Одно слово о настройке Meta — для чипа на карточке подключения. */
+export type WhatsAppSetupState = "confirmed" | "pending" | "failed";
+
+export function setupState(setup: WhatsAppSetupInfo | undefined): WhatsAppSetupState {
+  if (!setup) return "pending";
+  if (setup.webhookConfirmed && setup.appSubscribed) return "confirmed";
+  if (setup.webhookError || setup.appSubscriptionError) return "failed";
+  return "pending";
+}
+
+/** Форма «Подключить WhatsApp»: пять значений из Meta плюс подпись. */
+export interface WhatsAppConnectInput {
+  wabaId: string;
+  phoneNumberId: string;
+  accessToken: string;
+  appId: string;
+  appSecret: string;
+  displayName?: string;
+  displayPhoneNumber?: string;
+  organizationId?: number;
 }
 
 /** Одна строка зеркала каталога — то, что Raven знает о шаблоне Meta. */
@@ -156,6 +211,36 @@ export function syncWhatsAppTemplates(
   signal?: AbortSignal,
 ): Promise<WhatsAppSettings> {
   return apiRequest<WhatsAppSettings>(`${BASE}/templates/sync/${orgQuery(scope)}`, {
+    method: "POST",
+    body: {},
+    signal,
+  });
+}
+
+/**
+ * Подключить WhatsApp по данным из Meta. Токен и secret только проходят
+ * через CRM. Отказы Raven приходят как VALIDATION_ERROR по полям формы
+ * (`accessToken` — Meta не приняла, `wabaId` / `phoneNumberId` — уже
+ * подключены), недоступность Raven — 502 `RAVEN_UNAVAILABLE`.
+ */
+export function connectWhatsApp(
+  input: WhatsAppConnectInput,
+  signal?: AbortSignal,
+): Promise<WhatsAppSettings> {
+  const scope = orgQuery({ organizationId: input.organizationId });
+  return apiRequest<WhatsAppSettings>(`${BASE}/connect/${scope}`, {
+    method: "POST",
+    body: input,
+    signal,
+  });
+}
+
+/** Повторить настройку Meta (вебхук, подписка, каталог) с данными, сохранёнными в Raven. */
+export function retryWhatsAppSetup(
+  scope: Scope = {},
+  signal?: AbortSignal,
+): Promise<WhatsAppSettings> {
+  return apiRequest<WhatsAppSettings>(`${BASE}/setup/${orgQuery(scope)}`, {
     method: "POST",
     body: {},
     signal,
