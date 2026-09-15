@@ -5,14 +5,12 @@ import {
   Chip,
   Dialog,
   Divider,
-  FormControlLabel,
   IconButton,
   InputAdornment,
   Link,
   List,
   ListItemButton,
   Stack,
-  Switch,
   TextField,
   Tooltip,
   Typography,
@@ -28,7 +26,13 @@ import SearchOutlined from "@mui/icons-material/SearchOutlined";
 
 import type { LabTest } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
-import { groupCatalog, type CatalogGroup } from "./basketCatalog";
+import { SegmentedTabs } from "../../ui";
+import {
+  CATALOG_SECTION_LABELS,
+  groupCatalog,
+  type CatalogGroup,
+  type CatalogSection,
+} from "./basketCatalog";
 import type { BasketLine } from "./basketCatalog";
 
 interface Props {
@@ -65,9 +69,10 @@ function subtitle(test: LabTest): string {
  * только группы с совпадениями и раскрыты все. Поиск ищет и по названию
  * категории — набравший «аллерг» получает весь раздел.
  *
- * Ветеринария отделена: в каталоге ЛИС она живёт под своим корнем, и в
- * детской клинике её место не в общей выдаче. Показывается переключателем,
- * а если поиск нашёл что-то только там — подсказкой со счётчиком.
+ * Каталог разбит на разделы (`CatalogSection`): анализы, услуги клиники
+ * (прейскуранты врачей, операции, УЗИ, товары — в ЛИС они лежат в том же
+ * дереве) и ветеринария. Показывается один раздел, переключатель сверху;
+ * если поиск нашёл что-то в других разделах — подсказка со счётчиком.
  *
  * Диалог не закрывается по выбору: анализы почти всегда набирают пачкой.
  * Взятое помечено галочкой, повторный клик убирает позицию; закончив,
@@ -87,7 +92,7 @@ const TestPickerDialog: React.FC<Props> = ({
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("md"));
   const [search, setSearch] = React.useState("");
-  const [showVeterinary, setShowVeterinary] = React.useState(false);
+  const [section, setSection] = React.useState<CatalogSection>("lab");
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
 
   React.useEffect(() => {
@@ -107,10 +112,19 @@ const TestPickerDialog: React.FC<Props> = ({
     [tests, patientGender, search],
   );
   const searching = search.trim().length > 0;
-  const visible = groups.filter((group) => showVeterinary || !group.veterinary);
-  const hiddenVet = groups
-    .filter((group) => group.veterinary)
-    .reduce((sum, group) => sum + group.tests.length, 0);
+  const visible = groups.filter((group) => group.section === section);
+  // Совпадения в других разделах — чтобы «цистостомия» не выглядела
+  // пустым результатом, когда она лежит в услугах клиники.
+  const elsewhere = (Object.keys(CATALOG_SECTION_LABELS) as CatalogSection[])
+    .filter((key) => key !== section)
+    .map((key) => ({
+      key,
+      label: CATALOG_SECTION_LABELS[key],
+      count: groups
+        .filter((group) => group.section === key)
+        .reduce((sum, group) => sum + group.tests.length, 0),
+    }))
+    .filter((item) => item.count > 0);
 
   const toggleGroup = (key: string) =>
     setExpanded((was) => {
@@ -311,22 +325,24 @@ const TestPickerDialog: React.FC<Props> = ({
               sx: { borderRadius: "10px" },
             }}
           />
-          <FormControlLabel
-            sx={{ m: 0, flexShrink: 0 }}
-            control={
-              <Switch
-                size="small"
-                checked={showVeterinary}
-                onChange={(event) => setShowVeterinary(event.target.checked)}
-              />
-            }
-            label={
-              <Typography variant="body2" color="text.secondary">
-                Ветеринария
-              </Typography>
-            }
-          />
         </Stack>
+
+        <Box sx={{ px: 2.5, pb: 1.5 }}>
+          <SegmentedTabs<CatalogSection>
+            layoutId="lab-catalog-section"
+            value={section}
+            onChange={setSection}
+            tabs={(Object.keys(CATALOG_SECTION_LABELS) as CatalogSection[]).map((key) => ({
+              key,
+              label: CATALOG_SECTION_LABELS[key],
+              badge: searching
+                ? groups
+                    .filter((group) => group.section === key)
+                    .reduce((sum, group) => sum + group.tests.length, 0)
+                : undefined,
+            }))}
+          />
+        </Box>
 
         <Divider />
 
@@ -335,30 +351,39 @@ const TestPickerDialog: React.FC<Props> = ({
             <Typography variant="body2" color="text.secondary">
               {hint}
             </Typography>
-            {!showVeterinary && hiddenVet > 0 && (
-              <Typography variant="body2" color="text.secondary">
-                В ветеринарном разделе совпадений: {hiddenVet}.{" "}
+            {elsewhere.map((item) => (
+              <Typography key={item.key} variant="body2" color="text.secondary">
+                В разделе «{item.label}» совпадений: {item.count}.{" "}
                 <Link
                   component="button"
                   type="button"
-                  onClick={() => setShowVeterinary(true)}
+                  onClick={() => setSection(item.key)}
                 >
                   Показать
                 </Link>
               </Typography>
-            )}
+            ))}
           </Stack>
         ) : (
           <List sx={{ flex: 1, overflowY: "auto", py: 0, minHeight: 0 }}>
             {visible.map(renderGroup)}
-            {!showVeterinary && hiddenVet > 0 && (
+            {searching && elsewhere.length > 0 && (
               <Typography
                 variant="caption"
                 color="text.secondary"
                 sx={{ display: "block", px: 2.5, py: 1.5 }}
               >
-                Ещё {hiddenVet} в ветеринарном разделе — включите переключатель
-                сверху, чтобы увидеть.
+                Ещё{" "}
+                {elsewhere.map((item, index) => (
+                  <React.Fragment key={item.key}>
+                    {index > 0 && ", "}
+                    {item.count} в разделе{" "}
+                    <Link component="button" type="button" onClick={() => setSection(item.key)}>
+                      {item.label}
+                    </Link>
+                  </React.Fragment>
+                ))}
+                .
               </Typography>
             )}
           </List>

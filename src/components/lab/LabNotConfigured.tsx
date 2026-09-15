@@ -4,6 +4,7 @@ import LinkOffOutlined from "@mui/icons-material/LinkOffOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 
 import { usePermissions } from "../../hooks/usePermissions";
+import { subtleBg } from "../../theme/uiHelpers";
 
 /** Страница настройки ЛИС в админке — одна на организацию. */
 export const LAB_CONFIG_ADMIN_URL = "/admin/lab/organizationlabconfig/";
@@ -169,8 +170,10 @@ const LabNotConfigured: React.FC<Props> = ({ compact = false }) => {
         position: "relative",
         overflow: "hidden",
         borderRadius: 2,
+        // Плоско, как весь новый UI: тонкая пунктирная грань и едва заметная
+        // подложка, без градиентов (docs/ui-style-guide.md §2).
         border: `1px dashed ${t.palette.divider}`,
-        background: `radial-gradient(120% 90% at 20% 0%, ${alpha(t.palette.primary.main, 0.08)} 0%, transparent 60%), ${t.palette.background.paper}`,
+        bgcolor: subtleBg(t),
         px: compact ? 2.5 : { xs: 3, md: 5 },
         py: compact ? 3 : { xs: 4, md: 5 },
         display: "flex",

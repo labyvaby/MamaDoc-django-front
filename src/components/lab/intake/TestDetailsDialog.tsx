@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Alert,
+  Box,
   Chip,
   Dialog,
   Divider,
@@ -8,13 +9,25 @@ import {
   Skeleton,
   Stack,
   Typography,
+  alpha,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
+import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
+import HelpOutlineOutlined from "@mui/icons-material/HelpOutlineOutlined";
+import InfoOutlined from "@mui/icons-material/InfoOutlined";
+import NoFoodOutlined from "@mui/icons-material/NoFoodOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
+import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 
 import { getLabTestCard, type LabTestCard } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
+import { InfoTile } from "../../ui";
+import { subtleBg } from "../../../theme/uiHelpers";
+import { parseNotice, splitLisBullets } from "./labTestCardText";
 
 interface Props {
   /** Анализ, который открыли; `null` — диалог закрыт. */
@@ -27,31 +40,69 @@ function money(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-const Row: React.FC<{ label: string; children: React.ReactNode }> = ({
-  label,
-  children,
-}) => (
-  <Stack direction="row" justifyContent="space-between" gap={2}>
-    <Typography variant="body2" color="text.secondary">
-      {label}
-    </Typography>
-    <Typography variant="body2" sx={{ textAlign: "right" }}>
-      {children}
-    </Typography>
+/**
+ * Секция карточки с заметным заголовком: значок в тонированной плашке (как
+ * у InfoTile) и жирное название. Регистратор ищет глазами нужный раздел — «подготовка»
+ * или «показания», — заголовки должны читаться поверх плотного текста ЛИС.
+ */
+const Section: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+}> = ({ icon, title, children }) => (
+  <Stack spacing={1.25}>
+    <Stack direction="row" alignItems="center" gap={1.25}>
+      <Box
+        sx={(t) => ({
+          width: 32,
+          height: 32,
+          borderRadius: "10px",
+          display: "grid",
+          placeItems: "center",
+          flexShrink: 0,
+          color: "primary.onSurface",
+          bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1),
+          "& .MuiSvgIcon-root": { fontSize: 18 },
+        })}
+      >
+        {icon}
+      </Box>
+      <Typography variant="subtitle1" fontWeight={700} sx={{ lineHeight: 1.2 }}>
+        {title}
+      </Typography>
+    </Stack>
+    <Box sx={{ pl: { xs: 0, sm: 5.5 } }}>{children}</Box>
   </Stack>
 );
 
-const Block: React.FC<{ title: string; children: React.ReactNode }> = ({
-  title,
-  children,
-}) => (
-  <Stack spacing={0.5}>
-    <Typography variant="body2" color="text.secondary" fontWeight={500}>
-      {title}
-    </Typography>
-    <Typography variant="body2">{children}</Typography>
-  </Stack>
-);
+/** Текст ЛИС: список, если он там был склеен через « - », иначе абзац. */
+const LisText: React.FC<{ text: string }> = ({ text }) => {
+  const items = splitLisBullets(text);
+  if (items.length < 2) {
+    return (
+      <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
+        {items[0] ?? ""}
+      </Typography>
+    );
+  }
+  return (
+    <Stack
+      component="ul"
+      spacing={0.5}
+      sx={(t) => ({
+        m: 0,
+        pl: 2.25,
+        "& li::marker": { color: t.palette.primary.main },
+      })}
+    >
+      {items.map((item) => (
+        <Typography key={item} component="li" variant="body2" sx={{ lineHeight: 1.6 }}>
+          {item}
+        </Typography>
+      ))}
+    </Stack>
+  );
+};
 
 /**
  * Подробности одного анализа.
@@ -61,6 +112,10 @@ const Block: React.FC<{ title: string; children: React.ReactNode }> = ({
  * открывают. Регистратору это нужно ровно в двух случаях: пациент спрашивает
  * «а что это», и надо отличить два похожих названия друг от друга — оба раза
  * по одному анализу, а не по всему каталогу сразу.
+ *
+ * Тексты ЛИС приходят простынёй: показания — пункты через « - »,
+ * примечание — «Код: 1.2 Ежедн. *Гемоглобин (HGB), …». Здесь они
+ * раскладываются в список и в набор плашек (`labTestCardText.ts`).
  */
 const TestDetailsDialog: React.FC<Props> = ({ testId, onClose }) => {
   const theme = useTheme();
@@ -82,25 +137,53 @@ const TestDetailsDialog: React.FC<Props> = ({ testId, onClose }) => {
     return () => controller.abort();
   }, [testId]);
 
+  const notice = card?.notice ? parseNotice(card.notice) : null;
+
   return (
     <Dialog
       open={testId != null}
       onClose={onClose}
       fullScreen={fullScreen}
       fullWidth
-      maxWidth="sm"
-      PaperProps={{ sx: fullScreen ? {} : { borderRadius: "12px" } }}
+      maxWidth={false}
+      PaperProps={{
+        sx: fullScreen ? {} : { borderRadius: "14px", maxWidth: 760 },
+      }}
     >
       <Stack sx={{ minHeight: 0 }}>
         <Stack
           direction="row"
           alignItems="flex-start"
           spacing={1}
-          sx={{ pl: 2, pr: 1, py: 1.5 }}
+          sx={{ pl: 3, pr: 1.5, pt: 2, pb: 1.5 }}
         >
-          <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }}>
-            {card?.title ?? "Анализ"}
-          </Typography>
+          <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.25 }}>
+              {card?.title ?? "Анализ"}
+            </Typography>
+            {card && (
+              <Stack direction="row" gap={0.75} flexWrap="wrap">
+                {card.biomaterial && (
+                  <Chip size="small" variant="outlined" label={card.biomaterial} />
+                )}
+                {card.requiresDoctor && (
+                  <Chip
+                    size="small"
+                    color="warning"
+                    variant="outlined"
+                    label="Нужно направление врача"
+                  />
+                )}
+                {card.questions.length > 0 && (
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`Вопросы при приёме: ${card.questions.length}`}
+                  />
+                )}
+              </Stack>
+            )}
+          </Stack>
           <IconButton size="small" onClick={onClose} aria-label="Закрыть">
             <CloseOutlined fontSize="small" />
           </IconButton>
@@ -108,12 +191,13 @@ const TestDetailsDialog: React.FC<Props> = ({ testId, onClose }) => {
 
         <Divider />
 
-        <Stack spacing={2} sx={{ p: 2, overflowY: "auto" }}>
+        <Stack spacing={3} sx={{ px: 3, py: 2.5, overflowY: "auto" }}>
           {loading && (
             <Stack spacing={1}>
+              <Skeleton variant="rounded" height={64} />
               <Skeleton variant="text" />
               <Skeleton variant="text" width="70%" />
-              <Skeleton variant="rounded" height={64} />
+              <Skeleton variant="rounded" height={96} />
             </Stack>
           )}
 
@@ -125,61 +209,102 @@ const TestDetailsDialog: React.FC<Props> = ({ testId, onClose }) => {
 
           {card && (
             <>
-              <Stack direction="row" gap={0.75} flexWrap="wrap">
-                {card.biomaterial && (
-                  <Chip size="small" variant="outlined" label={card.biomaterial} />
-                )}
-                {card.requiresDoctor && (
-                  <Chip size="small" color="warning" variant="outlined" label="Нужно направление врача" />
-                )}
-                {card.questions.length > 0 && (
-                  <Chip
-                    size="small"
-                    variant="outlined"
-                    label={`Вопросы при приёме: ${card.questions.length}`}
-                  />
-                )}
-              </Stack>
-
-              <Stack spacing={0.75}>
-                <Row label="Цена">{formatKGS(money(card.priceStandard))}</Row>
-                {money(card.priceExpress) > 0 && (
-                  <Row label="Экспресс">{formatKGS(money(card.priceExpress))}</Row>
-                )}
-                <Row label="Срок">
-                  {card.requiredDay > 0
-                    ? `${card.requiredDay} дн.`
-                    : "в день сдачи"}
-                </Row>
-              </Stack>
-
-              {(card.indications || card.notice || card.preparation) && <Divider />}
+              {/* Плитки фактов — InfoTile из общего набора (гайд §5.2):
+                  то, что спрашивают первым, до показаний и подготовки. */}
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: { xs: "1fr", sm: "repeat(3, minmax(0, 1fr))" },
+                  gap: 1.25,
+                }}
+              >
+                <InfoTile
+                  icon={<PaymentsOutlined />}
+                  label="Цена"
+                  value={formatKGS(money(card.priceStandard))}
+                />
+                <InfoTile
+                  icon={<BoltOutlined />}
+                  label="Экспресс"
+                  value={
+                    money(card.priceExpress) > 0
+                      ? formatKGS(money(card.priceExpress))
+                      : "Не делается"
+                  }
+                  active={money(card.priceExpress) > 0}
+                />
+                <InfoTile
+                  icon={<ScheduleOutlined />}
+                  label="Срок готовности"
+                  value={card.requiredDay > 0 ? `${card.requiredDay} дн.` : "В день сдачи"}
+                />
+              </Box>
 
               {card.indications && (
-                <Block title="Показания">{card.indications}</Block>
+                <Section icon={<FactCheckOutlined />} title="Показания">
+                  <LisText text={card.indications} />
+                </Section>
               )}
-              {card.notice && <Block title="Примечание">{card.notice}</Block>}
+
+              {notice && notice.analytes.length > 0 && (
+                <Section icon={<ScienceOutlined />} title="Состав исследования">
+                  <Stack spacing={1}>
+                    {notice.meta && (
+                      <Typography variant="caption" color="text.secondary">
+                        {notice.meta}
+                      </Typography>
+                    )}
+                    <Stack direction="row" gap={0.75} flexWrap="wrap">
+                      {notice.analytes.map((item) => (
+                        <Chip
+                          key={item}
+                          size="small"
+                          label={item}
+                          sx={(t) => ({
+                            bgcolor: subtleBg(t, true),
+                            border: 1,
+                            borderColor: "divider",
+                            color: "text.primary",
+                            fontWeight: 500,
+                          })}
+                        />
+                      ))}
+                    </Stack>
+                  </Stack>
+                </Section>
+              )}
+
+              {notice && notice.rest && (
+                <Section icon={<InfoOutlined />} title="Примечание">
+                  <LisText text={notice.rest} />
+                </Section>
+              )}
+
               {card.preparation?.text && (
-                <Block title="Подготовка пациента">{card.preparation.text}</Block>
+                <Section icon={<NoFoodOutlined />} title="Подготовка пациента">
+                  <LisText text={card.preparation.text} />
+                </Section>
               )}
 
               {card.questions.length > 0 && (
-                <Stack spacing={0.5}>
-                  <Typography variant="body2" color="text.secondary" fontWeight={500}>
-                    О чём спросят при приёме
-                  </Typography>
-                  <Stack component="ul" spacing={0.25} sx={{ m: 0, pl: 2.5 }}>
+                <Section icon={<HelpOutlineOutlined />} title="О чём спросят при приёме">
+                  <Stack
+                    component="ul"
+                    spacing={0.5}
+                    sx={(t) => ({ m: 0, pl: 2.25, "& li::marker": { color: t.palette.primary.main } })}
+                  >
                     {card.questions.map((question) => (
                       <Typography
                         key={question.id}
                         component="li"
                         variant="body2"
+                        sx={{ lineHeight: 1.6 }}
                       >
                         {question.title}
                       </Typography>
                     ))}
                   </Stack>
-                </Stack>
+                </Section>
               )}
             </>
           )}
