@@ -146,6 +146,7 @@ const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPag
 // Касса (POS) — полноэкранный модуль: собственная шапка вместо общей, поэтому
 // живёт в отдельной ветке layout.
 const PosPage = lazy(() => import("./pages/pos"));
+const PosSalesHistoryPage = lazy(() => import("./pages/pos/PosSalesHistoryPage"));
 
 
 // Вспомогательный компонент для защиты корневого редиректа
@@ -511,8 +512,18 @@ function App() {
                           </RequireAuth>
                         }
                       >
-                        <Route
-                          path="pos"
+                      <Route
+                        path="pos/history"
+                        element={
+                          <RequirePermission permission={PAGE_PERMISSIONS.pos}>
+                            <Suspense fallback={<LinearProgress />}>
+                              <PosSalesHistoryPage />
+                            </Suspense>
+                          </RequirePermission>
+                        }
+                      />
+                      <Route
+                        path="pos"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.pos}>
                               <Suspense fallback={<LinearProgress />}>

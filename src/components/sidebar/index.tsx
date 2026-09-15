@@ -819,7 +819,10 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Касса магазина — рабочий инструмент продаж, в разделе «Моя работа» */}
         {show("my-work") && can_.pos && (
-          <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса магазина" collapsed={siderCollapsed} />
+          <>
+            <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса магазина" collapsed={siderCollapsed} />
+            <SidebarMenuItem to="/pos/history" icon={<HistoryOutlined />} label="История продаж" collapsed={siderCollapsed} />
+          </>
         )}
 
         {/* ══════════════════════════════════════════
