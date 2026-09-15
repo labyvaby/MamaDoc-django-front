@@ -94,6 +94,8 @@ export const RunList: React.FC<RunListProps> = ({ runs, showAutomationName = fal
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {job.recipient || "—"}
+                      {/* Чей номер: сотрудник по имени, держатель роли. */}
+                      {job.recipientLabel ? ` (${job.recipientLabel})` : ""}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {t("automations.runs.attempts", { count: job.attemptsCount })}

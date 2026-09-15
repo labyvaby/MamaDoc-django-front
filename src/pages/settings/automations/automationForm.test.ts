@@ -90,7 +90,9 @@ const LABELS = {
   weekdaysRequired: "weekdays",
   intervalRange: "interval",
   timeRequired: "time",
-  phoneRequired: "phone",
+  recipientRequired: "recipient",
+  recipientLimit: "recipient-limit",
+  phoneInvalid: "phone-invalid",
 };
 
 function baseForm(overrides: Partial<AutomationForm> = {}): AutomationForm {
@@ -107,7 +109,9 @@ function baseForm(overrides: Partial<AutomationForm> = {}): AutomationForm {
         actionType: "send_message",
         delayMinutes: "10",
         channel: "sms",
-        recipientField: "client_phone",
+        recipientFields: ["client_phone"],
+        recipientEmployeeIds: [],
+        recipientRoleIds: [],
         recipientPhone: "",
         title: "",
         body: "Здравствуйте, {{client_name}}!",
@@ -163,10 +167,32 @@ describe("toSaveInput", () => {
       delayMinutes: 10,
       config: {
         channel: "sms",
-        recipientField: "client_phone",
+        recipients: [{ type: "payload", field: "client_phone" }],
         body: "Здравствуйте, {{client_name}}!",
       },
     });
+  });
+
+  it("собирает получателей всех типов в порядке контролов", () => {
+    const form = baseForm();
+    form.actions[0].recipientFields = ["client_phone", "employee_phone"];
+    form.actions[0].recipientEmployeeIds = [12];
+    form.actions[0].recipientRoleIds = [3];
+    form.actions[0].recipientPhone = "+996700000001";
+
+    expect(toSaveInput(form).actions[0].config.recipients).toEqual([
+      { type: "payload", field: "client_phone" },
+      { type: "payload", field: "employee_phone" },
+      { type: "employee", employeeId: 12 },
+      { type: "role", roleId: 3 },
+      { type: "phone", phone: "+996700000001" },
+    ]);
+  });
+
+  it("не отправляет устаревшие одиночные ключи получателя", () => {
+    const config = toSaveInput(baseForm()).actions[0].config;
+    expect(config).not.toHaveProperty("recipientField");
+    expect(config).not.toHaveProperty("recipientPhone");
   });
 });
 
@@ -208,6 +234,56 @@ describe("automationToForm", () => {
     const automation = { conditions: {}, actions: [], status: "draft" } as unknown as Automation;
     expect(automationToForm(automation).conditions).toBeNull();
   });
+
+  it("раскладывает список получателей по типам", () => {
+    const automation = {
+      conditions: {},
+      status: "draft",
+      actions: [
+        {
+          id: 1,
+          position: 0,
+          actionType: "send_message",
+          delayMinutes: 0,
+          config: {
+            channel: "sms",
+            recipients: [
+              { type: "payload", field: "employee_phone" },
+              { type: "employee", employeeId: 12 },
+              { type: "role", roleId: 3 },
+              { type: "phone", phone: "+996700000001" },
+            ],
+            body: "текст",
+          },
+        },
+      ],
+    } as unknown as Automation;
+
+    expect(automationToForm(automation).actions[0]).toMatchObject({
+      recipientFields: ["employee_phone"],
+      recipientEmployeeIds: [12],
+      recipientRoleIds: [3],
+      recipientPhone: "+996700000001",
+    });
+  });
+
+  it("читает получателя правила старого формата", () => {
+    const legacy = (config: Record<string, unknown>) =>
+      automationToForm({
+        conditions: {},
+        status: "draft",
+        actions: [{ id: 1, position: 0, actionType: "send_message", delayMinutes: 0, config }],
+      } as unknown as Automation).actions[0];
+
+    expect(legacy({ channel: "sms", recipientField: "employee_phone", body: "т" })).toMatchObject({
+      recipientFields: ["employee_phone"],
+      recipientPhone: "",
+    });
+    expect(legacy({ channel: "sms", recipientPhone: "+996700000001", body: "т" })).toMatchObject({
+      recipientFields: [],
+      recipientPhone: "+996700000001",
+    });
+  });
 });
 
 describe("retargetForm", () => {
@@ -220,9 +296,19 @@ describe("retargetForm", () => {
     expect(result.form.eventCode).toBe("client.created");
   });
 
-  it("подменяет получателя, если такой переменной у события нет", () => {
+  it("убирает переменные-получатели, которых у события нет", () => {
     const result = retargetForm(baseForm(), CLIENT_EVENT);
-    expect(result.form.actions[0].recipientField).toBe("client_name");
+    expect(result.changed).toBe(true);
+    // У события нет ни одной телефонной переменной — подставлять нечего.
+    expect(result.form.actions[0].recipientFields).toEqual([]);
+  });
+
+  it("сохраняет оставшиеся переменные-получатели", () => {
+    const form = baseForm();
+    form.actions[0].recipientFields = ["client_phone", "client_email"];
+    const result = retargetForm(form, APPOINTMENT_EVENT);
+    expect(result.changed).toBe(true);
+    expect(result.form.actions[0].recipientFields).toEqual(["client_phone"]);
   });
 
   it("совместимую форму оставляет без изменений", () => {
@@ -288,6 +374,24 @@ describe("validateForm", () => {
     form.actions[0].body = "   ";
     expect(validateForm(form, APPOINTMENT_EVENT, LABELS).actionFields.a1.body).toBe("body");
   });
+
+  it("требует хотя бы одного получателя", () => {
+    const form = baseForm();
+    form.actions[0].recipientFields = [];
+    expect(validateForm(form, APPOINTMENT_EVENT, LABELS).actionFields.a1.recipients).toBe(
+      "recipient",
+    );
+    form.actions[0].recipientRoleIds = [3];
+    expect(validateForm(form, APPOINTMENT_EVENT, LABELS).actionFields.a1).toBeUndefined();
+  });
+
+  it("проверяет формат дополнительного номера", () => {
+    const form = baseForm();
+    form.actions[0].recipientPhone = "123";
+    expect(
+      validateForm(form, APPOINTMENT_EVENT, LABELS).actionFields.a1.recipientPhone,
+    ).toBe("phone-invalid");
+  });
 });
 
 describe("дерево условий", () => {
@@ -322,12 +426,15 @@ describe("templateVariables", () => {
 });
 
 describe("relevantPayloadFields", () => {
-  it("собирает поля условий, получателя и переменные текста", () => {
+  it("собирает поля условий, получателей и переменные текста", () => {
     const leaf = makeLeaf("status", "eq");
     leaf.value = "confirmed";
-    const roles = relevantPayloadFields(baseForm({ conditions: leaf }));
+    const form = baseForm({ conditions: leaf });
+    form.actions[0].recipientFields = ["client_phone", "employee_phone"];
+    const roles = relevantPayloadFields(form);
     expect(roles.get("status")).toEqual(["condition"]);
     expect(roles.get("client_phone")).toEqual(["recipient"]);
+    expect(roles.get("employee_phone")).toEqual(["recipient"]);
     expect(roles.get("client_name")).toEqual(["template"]);
   });
 
@@ -416,7 +523,7 @@ describe("канал ProfiChat push", () => {
           delayMinutes: 0,
           config: {
             channel: PROFICHAT_PUSH_CHANNEL,
-            recipientField: "client_phone",
+            recipients: [{ type: "payload", field: "client_phone" }],
             title: "Запись создана",
             body: "Ждём вас",
           },
@@ -449,7 +556,11 @@ describe("правило по расписанию", () => {
           actionType: "send_message",
           delayMinutes: "0",
           channel: "sms",
-          recipientField: "client_phone",
+          // Осталась от события до переключения на расписание: уйти на бэк
+          // не должна — payload у расписания нет.
+          recipientFields: ["client_phone"],
+          recipientEmployeeIds: [],
+          recipientRoleIds: [],
           recipientPhone: "+996700000001",
           title: "",
           body: "Планёрка.",
@@ -458,7 +569,7 @@ describe("правило по расписанию", () => {
       ...overrides,
     });
 
-  it("отправляет периодичность и телефон вместо переменной получателя", () => {
+  it("отправляет периодичность и телефон, но не переменную получателя", () => {
     const input = toSaveInput(scheduled());
 
     expect(input.schedule).toEqual({
@@ -466,8 +577,9 @@ describe("правило по расписанию", () => {
       time: "10:00",
       weekdays: [0],
     });
-    expect(input.actions[0].config.recipientPhone).toBe("+996700000001");
-    expect(input.actions[0].config.recipientField).toBeUndefined();
+    expect(input.actions[0].config.recipients).toEqual([
+      { type: "phone", phone: "+996700000001" },
+    ]);
   });
 
   it("интервальное повторение уходит числом", () => {
@@ -491,7 +603,7 @@ describe("правило по расписанию", () => {
     expect(toSaveInput(scheduled({ conditions: leaf })).conditions).toEqual({});
   });
 
-  it("требует день недели и телефон", () => {
+  it("требует день недели и хотя бы одного получателя", () => {
     const errors = validateForm(
       scheduled({
         schedule: { ...emptySchedule(), weekdays: [] },
@@ -501,7 +613,9 @@ describe("правило по расписанию", () => {
             actionType: "send_message",
             delayMinutes: "0",
             channel: "sms",
-            recipientField: "client_phone",
+            recipientFields: ["client_phone"],
+            recipientEmployeeIds: [],
+            recipientRoleIds: [],
             recipientPhone: "",
             title: "",
             body: "Планёрка.",
@@ -513,7 +627,8 @@ describe("правило по расписанию", () => {
     );
 
     expect(errors.schedule).toBe("weekdays");
-    expect(errors.actionFields.a1.recipientPhone).toBe("phone");
+    // Переменная события у расписания не считается получателем.
+    expect(errors.actionFields.a1.recipients).toBe("recipient");
   });
 
   it("проверяет границы интервала", () => {

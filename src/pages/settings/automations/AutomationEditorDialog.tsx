@@ -31,6 +31,7 @@ import SendOutlined from "@mui/icons-material/SendOutlined";
 import {
   MAX_DELAY_MINUTES,
   MAX_INTERVAL_DAYS,
+  MAX_RECIPIENTS,
   createAutomation,
   testAutomation,
   updateAutomation,
@@ -47,6 +48,7 @@ import { useT } from "../../../i18n/VerticalProvider";
 import { ConditionBuilder } from "./ConditionBuilder";
 import { FieldValueInput } from "./FieldValueInput";
 import { PhonePayloadInput } from "./PhonePayloadInput";
+import { RecipientsEditor } from "./RecipientsEditor";
 import { ScheduleEditor } from "./ScheduleEditor";
 import {
   automationToForm,
@@ -191,7 +193,9 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
         max: MAX_INTERVAL_DAYS,
       }),
       timeRequired: t("automations.schedule.timeRequired"),
-      phoneRequired: t("automations.action.phoneRequired"),
+      recipientRequired: t("automations.recipients.required"),
+      recipientLimit: t("automations.recipients.limit", { max: MAX_RECIPIENTS }),
+      phoneInvalid: t("automations.action.phoneInvalid"),
     }),
     [t],
   );
@@ -458,6 +462,11 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                       update({ branchId: e.target.value === "" ? null : Number(e.target.value) })
                     }
                     disabled={busy}
+                    // «Все филиалы» хранится пустой строкой, а Select без
+                    // displayEmpty пустое значение не рисует — поле выглядело
+                    // пустым, хотя вариант был выбран.
+                    SelectProps={{ displayEmpty: true }}
+                    InputLabelProps={{ shrink: true }}
                     sx={{ maxWidth: 420 }}
                   >
                     <MenuItem value="">{t("automations.editor.branchAll")}</MenuItem>
@@ -566,71 +575,21 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                           }
                           sx={{ minWidth: 200 }}
                         />
-
-                        {/* У расписания payload нет — номер вводится руками.
-                            Тем же полем, что и в карточке пациента: код
-                            страны, маска, проверка длины. */}
-                        {scheduled && (
-                          <Box sx={{ minWidth: 240, flex: 1 }}>
-                            <PhonePayloadInput
-                              label={t("automations.action.phoneLabel")}
-                              helperText={
-                                errors.actionFields[action.key]?.recipientPhone ??
-                                t("automations.action.phoneHint")
-                              }
-                              value={action.recipientPhone}
-                              onChange={(phone) =>
-                                updateAction(action.key, { recipientPhone: phone })
-                              }
-                              disabled={busy}
-                            />
-                          </Box>
-                        )}
-
-                        {/* Выбор получателя показываем, только когда выбирать
-                            действительно есть из чего. У всех текущих событий
-                            телефон ровно один — спрашивать «откуда взять
-                            номер» бессмысленно, достаточно назвать источник. */}
-                        {!scheduled &&
-                          recipientChoices(event, action.recipientField).length > 1 && (
-                          <TextField
-                            select
-                            size="small"
-                            label={t("automations.action.recipientLabel")}
-                            value={
-                              (event?.variables ?? []).includes(action.recipientField)
-                                ? action.recipientField
-                                : defaultRecipientField(event)
-                            }
-                            onChange={(e) =>
-                              updateAction(action.key, { recipientField: e.target.value })
-                            }
-                            disabled={busy}
-                            error={!action.recipientField.includes("phone")}
-                            helperText={
-                              action.recipientField.includes("phone")
-                                ? undefined
-                                : t("automations.action.recipientNotPhone")
-                            }
-                            sx={{ minWidth: 220, flex: 1 }}
-                          >
-                            {recipientChoices(event, action.recipientField).map((variable) => (
-                              <MenuItem key={variable} value={variable}>
-                                {variableLabel(event, variable)}
-                              </MenuItem>
-                            ))}
-                          </TextField>
-                        )}
                       </Stack>
 
-                      {!scheduled &&
-                        recipientChoices(event, action.recipientField).length <= 1 && (
-                        <Typography variant="caption" color="text.secondary">
-                          {t("automations.action.recipientFixed", {
-                            name: variableLabel(event, action.recipientField),
-                          })}
-                        </Typography>
-                      )}
+                      <Divider />
+
+                      <RecipientsEditor
+                        action={action}
+                        event={event}
+                        scheduled={scheduled}
+                        options={catalog.recipientOptions}
+                        errors={errors.actionFields[action.key]}
+                        onChange={(patch) => updateAction(action.key, patch)}
+                        disabled={busy}
+                      />
+
+                      <Divider />
 
                       {/* Заголовок есть только у push: в шторке телефона он
                           отдельная строка. У SMS и WhatsApp такой строки нет,
@@ -830,6 +789,10 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                             {" · "}
                             {t("automations.test.resultRecipient")}:{" "}
                             {preview.recipient || t("automations.test.recipientMissing")}
+                            {/* Чей это номер: сотрудник по имени, держатель
+                                роли — иначе список из пяти одинаковых
+                                сообщений не отличить друг от друга. */}
+                            {preview.recipientLabel ? ` (${preview.recipientLabel})` : ""}
                             {" · "}
                             {t("automations.test.resultDelay", { count: preview.delayMinutes })}
                           </Typography>
@@ -910,25 +873,6 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
     </>
   );
 };
-
-/**
- * Переменные, которые имеет смысл предлагать как получателя.
- *
- * Бэк разрешает любую переменную события, но в списке «кому отправить» ФИО
- * или дата — мусор: адресат SMS и WhatsApp это всегда телефон. Оставляем
- * телефонные переменные плюс уже сохранённое значение (иначе редактирование
- * старого правила молча подменило бы получателя). Если телефонных переменных
- * у события нет вовсе, показываем полный список — выбрать всё равно надо.
- */
-function recipientChoices(
-  event: AutomationCatalogEvent | undefined,
-  current: string,
-): string[] {
-  const variables = event?.variables ?? [];
-  const phones = variables.filter((variable) => variable.includes("phone"));
-  if (phones.length === 0) return variables;
-  return phones.includes(current) ? phones : [...phones, current].filter(Boolean);
-}
 
 /**
  * Похоже ли значение на телефон: плюс и не меньше девяти цифр.

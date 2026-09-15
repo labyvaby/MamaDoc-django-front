@@ -1,6 +1,7 @@
 import {
   MAX_DELAY_MINUTES,
   MAX_INTERVAL_DAYS,
+  MAX_RECIPIENTS,
   PROFICHAT_PUSH_CHANNEL,
   OPERATORS_WITHOUT_VALUE,
   OPERATORS_WITH_LIST_VALUE,
@@ -8,6 +9,8 @@ import {
   isEmptyConditions,
   isScheduledEvent,
   type Automation,
+  type AutomationAction,
+  type AutomationRecipient,
   type AutomationSchedule,
   type AutomationCatalogEvent,
   type AutomationConditionNode,
@@ -53,8 +56,16 @@ export interface ActionForm {
   actionType: string;
   delayMinutes: string;
   channel: string;
-  recipientField: string;
-  /** Телефон получателя у правила по расписанию; иначе не используется. */
+  /**
+   * Получатели, разложенные по типу: так каждой группе достаётся свой
+   * контрол (чипы переменных, выбор сотрудников, выбор ролей, номер), а в
+   * `recipients` API они собираются обратно при отправке.
+   */
+  /** Телефонные переменные события — клиент, сотрудник записи. */
+  recipientFields: string[];
+  recipientEmployeeIds: number[];
+  recipientRoleIds: number[];
+  /** Фиксированный номер; пусто — не отправлять на номер. */
   recipientPhone: string;
   /** Заголовок push-уведомления. Для SMS и WhatsApp не используется. */
   title: string;
@@ -111,7 +122,9 @@ export function makeAction(recipientField: string): ActionForm {
     actionType: "send_message",
     delayMinutes: "0",
     channel: "sms",
-    recipientField,
+    recipientFields: recipientField ? [recipientField] : [],
+    recipientEmployeeIds: [],
+    recipientRoleIds: [],
     recipientPhone: "",
     title: "",
     body: "",
@@ -131,14 +144,90 @@ export function emptyForm(event: AutomationCatalogEvent | undefined): Automation
   };
 }
 
-/** Получатель по умолчанию: `client_phone`, если событие такую переменную даёт. */
+/**
+ * Получатель по умолчанию: `client_phone`, если событие такую переменную
+ * даёт, иначе первая телефонная переменная. У расписания — пусто: данных
+ * события там нет, брать номер неоткуда.
+ */
 export function defaultRecipientField(
   event: AutomationCatalogEvent | undefined,
 ): string {
   if (!event) return "client_phone";
+  if (isScheduledEvent(event.code)) return "";
   return event.variables.includes("client_phone")
     ? "client_phone"
-    : event.variables[0] ?? "";
+    : phoneVariables(event)[0] ?? "";
+}
+
+/**
+ * Переменные события, которые могут быть адресатом.
+ *
+ * Бэк разрешает любую переменную, но получатель SMS и WhatsApp — всегда
+ * телефон: ФИО или дата в этом списке — мусор.
+ */
+export function phoneVariables(event: AutomationCatalogEvent | undefined): string[] {
+  return (event?.variables ?? []).filter((variable) => variable.includes("phone"));
+}
+
+/**
+ * Получатели сохранённого действия в форму.
+ *
+ * Правила, сохранённые до появления списка, хранят одиночный
+ * `recipientField` или `recipientPhone` — читаем и их, иначе открытие
+ * старого правила показало бы пустых получателей и сохранение молча
+ * оставило бы его без адресата.
+ */
+function recipientsToForm(
+  config: AutomationAction["config"],
+): Pick<
+  ActionForm,
+  "recipientFields" | "recipientEmployeeIds" | "recipientRoleIds" | "recipientPhone"
+> {
+  const out = {
+    recipientFields: [] as string[],
+    recipientEmployeeIds: [] as number[],
+    recipientRoleIds: [] as number[],
+    recipientPhone: "",
+  };
+  if (Array.isArray(config.recipients)) {
+    for (const item of config.recipients) {
+      if (item.type === "payload" && item.field) out.recipientFields.push(item.field);
+      else if (item.type === "employee") out.recipientEmployeeIds.push(Number(item.employeeId));
+      else if (item.type === "role") out.recipientRoleIds.push(Number(item.roleId));
+      else if (item.type === "phone" && item.phone && !out.recipientPhone) {
+        out.recipientPhone = String(item.phone);
+      }
+    }
+    return out;
+  }
+  if (config.recipientPhone) out.recipientPhone = String(config.recipientPhone);
+  else out.recipientFields = [String(config.recipientField ?? "client_phone")];
+  return out;
+}
+
+/** Получатели формы в список для API — в порядке контролов формы. */
+export function toRecipients(
+  action: ActionForm,
+  scheduled: boolean,
+): AutomationRecipient[] {
+  const recipients: AutomationRecipient[] = [];
+  // У расписания payload нет вовсе: переменные-получатели туда не уходят,
+  // даже если остались в форме после смены события.
+  if (!scheduled) {
+    for (const field of action.recipientFields) recipients.push({ type: "payload", field });
+  }
+  for (const employeeId of action.recipientEmployeeIds) {
+    recipients.push({ type: "employee", employeeId });
+  }
+  for (const roleId of action.recipientRoleIds) recipients.push({ type: "role", roleId });
+  const phone = action.recipientPhone.trim();
+  if (phone) recipients.push({ type: "phone", phone });
+  return recipients;
+}
+
+/** Сколько получателей выбрано — для проверки «хотя бы один». */
+export function recipientCount(action: ActionForm, scheduled: boolean): number {
+  return toRecipients(action, scheduled).length;
 }
 
 function conditionsToForm(node: AutomationConditionNode): ConditionNodeForm {
@@ -176,8 +265,7 @@ export function automationToForm(automation: Automation): AutomationForm {
       actionType: action.actionType,
       delayMinutes: String(action.delayMinutes),
       channel: String(action.config.channel ?? "sms"),
-      recipientField: String(action.config.recipientField ?? "client_phone"),
-      recipientPhone: String(action.config.recipientPhone ?? ""),
+      ...recipientsToForm(action.config),
       title: String(action.config.title ?? ""),
       body: String(action.config.body ?? ""),
     })),
@@ -262,12 +350,7 @@ export function toSaveInput(
       delayMinutes: Number(action.delayMinutes) || 0,
       config: {
         channel: action.channel,
-        // Получатель у расписания — конкретный номер, у события — переменная
-        // payload. Класть в конфиг оба ключа незачем: бэк читает ровно тот,
-        // что соответствует типу правила.
-        ...(isScheduledForm(form)
-          ? { recipientPhone: action.recipientPhone }
-          : { recipientField: action.recipientField }),
+        recipients: toRecipients(action, isScheduledForm(form)),
         body: action.body,
         // Заголовок хранится только там, где он есть: у SMS и WhatsApp его
         // нет вовсе, и пустой ключ в конфиге лишь путал бы при чтении правила.
@@ -301,7 +384,9 @@ export interface ValidationLabels {
   weekdaysRequired: string;
   intervalRange: string;
   timeRequired: string;
-  phoneRequired: string;
+  recipientRequired: string;
+  recipientLimit: string;
+  phoneInvalid: string;
 }
 
 /**
@@ -345,9 +430,14 @@ export function validateForm(
   for (const action of form.actions) {
     const fieldErrors: Record<string, string> = {};
     if (!action.body.trim()) fieldErrors.body = labels.bodyRequired;
-    if (scheduled && !action.recipientPhone.trim()) {
-      fieldErrors.recipientPhone = labels.phoneRequired;
+    const count = recipientCount(action, scheduled);
+    if (count === 0) {
+      fieldErrors.recipients = labels.recipientRequired;
+    } else if (count > MAX_RECIPIENTS) {
+      fieldErrors.recipients = labels.recipientLimit;
     }
+    const phone = action.recipientPhone.trim();
+    if (phone && !PHONE_RE.test(phone)) fieldErrors.recipientPhone = labels.phoneInvalid;
     const delay = Number(action.delayMinutes);
     if (
       action.delayMinutes.trim() === "" ||
@@ -363,6 +453,9 @@ export function validateForm(
 
   return errors;
 }
+
+/** Та же нестрогая проверка, что и на бэке: плюс и 9–15 цифр. */
+const PHONE_RE = /^\+?\d{9,15}$/;
 
 /** Ошибка периодичности или `undefined`, если она заполнена верно. */
 function scheduleError(
@@ -463,9 +556,14 @@ export function retargetForm(
   const conditions = form.conditions ? prune(form.conditions) : null;
   const fallbackRecipient = defaultRecipientField(event);
   const actions = form.actions.map((action) => {
-    if (variables.has(action.recipientField)) return action;
+    const kept = action.recipientFields.filter((field) => variables.has(field));
+    if (kept.length === action.recipientFields.length) return action;
     changed = true;
-    return { ...action, recipientField: fallbackRecipient };
+    // Все переменные-получатели отвалились — подставляем получателя по
+    // умолчанию нового события (у расписания его нет: остаётся пусто).
+    const recipientFields =
+      kept.length > 0 ? kept : fallbackRecipient ? [fallbackRecipient] : [];
+    return { ...action, recipientFields };
   });
 
   return {
@@ -566,7 +664,7 @@ export function relevantPayloadFields(
   for (const action of form.actions) {
     // У расписания получатель — введённый номер, а не поле payload: в форме
     // прогона ему делать нечего.
-    if (!scheduled) add(action.recipientField, "recipient");
+    if (!scheduled) action.recipientFields.forEach((field) => add(field, "recipient"));
     templateVariables(action.body).forEach((code) => add(code, "template"));
     if (supportsTitle(action.channel)) {
       templateVariables(action.title).forEach((code) => add(code, "template"));

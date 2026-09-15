@@ -80,10 +80,34 @@ export interface AutomationCatalogAction {
   configFields: AutomationCatalogActionConfigField[];
 }
 
+export interface AutomationRecipientEmployee {
+  id: number;
+  name: string;
+  /** В карточке нет телефона — отправка такому сотруднику провалится. */
+  hasPhone: boolean;
+}
+
+export interface AutomationRecipientRole {
+  id: number;
+  name: string;
+}
+
+/**
+ * Кого действие может назвать получателем. Приходит вместе с каталогом и
+ * привязано к организации: сотрудники и роли **всех** её филиалов, чтобы
+ * правило «во всех филиалах» могло адресовать любого. Справочник сотрудников
+ * остальной части приложения режется по активному филиалу и сюда не годится.
+ */
+export interface AutomationRecipientOptions {
+  employees: AutomationRecipientEmployee[];
+  roles: AutomationRecipientRole[];
+}
+
 export interface AutomationCatalog {
   events: AutomationCatalogEvent[];
   actions: AutomationCatalogAction[];
   conditionGroupOperators: string[];
+  recipientOptions: AutomationRecipientOptions;
 }
 
 /** Лист дерева условий. У оператора `exists` поля `value` нет. */
@@ -108,13 +132,33 @@ export type AutomationConditions =
   | Record<string, never>
   | AutomationConditionNode;
 
+/**
+ * Один получатель действия.
+ *
+ * `payload` — телефон из данных события (клиент, сотрудник записи), только у
+ * правил по событию; `employee` — конкретный сотрудник; `role` — все активные
+ * сотрудники с этой RBAC-ролью (у события с филиалом — только его филиала);
+ * `phone` — фиксированный номер. Бэк создаёт по одной отправке на каждого.
+ */
+export type AutomationRecipient =
+  | { type: "payload"; field: string }
+  | { type: "employee"; employeeId: number }
+  | { type: "role"; roleId: number }
+  | { type: "phone"; phone: string };
+
+/** Верхняя граница списка получателей одного действия — ограничение бэка. */
+export const MAX_RECIPIENTS = 50;
+
 export interface AutomationActionConfig {
   channel?: string;
-  recipientField?: string;
+  /** Получатели; ровно эту форму отправляем на бэк. */
+  recipients?: AutomationRecipient[];
   /**
-   * Телефон получателя целиком («+996700000001»). Только у правил по
-   * расписанию: события там нет, брать номер из payload неоткуда.
+   * Устаревшие одиночные получатели правил, сохранённых до появления списка.
+   * Бэк понимает их и при следующем сохранении сворачивает в `recipients`;
+   * фронт только читает — в `toSaveInput` они не попадают.
    */
+  recipientField?: string;
   recipientPhone?: string;
   /** Заголовок push-уведомления; у SMS и WhatsApp заголовка нет. */
   title?: string;
@@ -178,7 +222,7 @@ export interface AutomationActionInput {
 
 /**
  * Тело `POST` и `PUT`. `PUT` — полная замена: отправлять нужно всё состояние
- * формы, частичного обновления на бэке нет (как и `PATCH` с `DELETE`).
+ * формы, частичного обновления (`PATCH`) на бэке нет.
  */
 export interface AutomationSaveInput {
   name: string;
@@ -206,6 +250,8 @@ export interface AutomationJob {
   status: AutomationJobStatus;
   scheduledFor: string;
   recipient: string;
+  /** Чей это номер — имя сотрудника, роль. Пусто у номера из события. */
+  recipientLabel: string;
   renderedBody: string;
   attemptsCount: number;
   externalMessageId: string;
@@ -238,6 +284,7 @@ export interface AutomationTestInput {
 export interface AutomationTestActionPreview {
   actionType: string;
   recipient: string;
+  recipientLabel: string;
   renderedBody: string;
   delayMinutes: number;
   channel: string;
@@ -266,7 +313,15 @@ export function getAutomationCatalog(
 ): Promise<AutomationCatalog> {
   return apiRequest<AutomationCatalog>(`${BASE}/catalog/${orgQuery(scope)}`, {
     signal,
-  });
+  }).then((catalog) => ({
+    ...catalog,
+    // Бэк без списка получателей (ещё не обновлён) — пустые справочники, а
+    // не падение редактора на `undefined.map`.
+    recipientOptions: {
+      employees: catalog.recipientOptions?.employees ?? [],
+      roles: catalog.recipientOptions?.roles ?? [],
+    },
+  }));
 }
 
 export function getAutomations(
@@ -304,6 +359,21 @@ export function updateAutomation(
   return apiRequest<Automation>(`${BASE}/${id}/`, {
     method: "PUT",
     body: input,
+    signal,
+  });
+}
+
+/**
+ * Удаление правила вместе с историей запусков. Ответ `204`; чужое правило —
+ * `404`. `organizationId` уходит в query, как у чтения: тела у DELETE нет.
+ */
+export function deleteAutomation(
+  id: number,
+  scope: Scope = {},
+  signal?: AbortSignal,
+): Promise<void> {
+  return apiRequest<void>(`${BASE}/${id}/${orgQuery(scope)}`, {
+    method: "DELETE",
     signal,
   });
 }
