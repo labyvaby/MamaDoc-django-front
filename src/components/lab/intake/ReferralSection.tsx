@@ -73,6 +73,12 @@ const ReferralSection: React.FC<Props> = ({
             : option.fullName
         }
         isOptionEqualToValue={(option, current) => option.id === current.id}
+        // Ключ строки — наш id, а не подпись: по умолчанию Autocomplete
+        // берёт ключом getOptionLabel, а в справочнике ЛИС десятки врачей
+        // с одинаковым ФИО «А». Одинаковые ключи ломают сверку React —
+        // после смены запроса старые строки оставались в списке, и
+        // регистратор видел столбец из «А» вместо найденных.
+        getOptionKey={(option) => option.id}
         disabled={disabled}
         noOptionsText={
           searchQuery.trim().length < 3

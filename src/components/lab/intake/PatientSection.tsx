@@ -98,6 +98,9 @@ const PatientSection: React.FC<Props> = ({
           inputValue={searchQuery}
           onInputChange={(_, value) => onSearchChange(value)}
           getOptionLabel={patientLabel}
+          // Ключ — id: у однофамильцев с общим телефоном (дети одной
+          // семьи) подписи совпадают, см. ту же правку в ReferralSection.
+          getOptionKey={(option) => option.id}
           isOptionEqualToValue={(option, value) => option.id === value.id}
           filterOptions={(x) => x}
           loading={searchLoading}
