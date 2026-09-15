@@ -4,11 +4,15 @@ import {
   Box,
   Chip,
   FormHelperText,
+  Paper,
   Stack,
   TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
+import AddIcCallOutlined from "@mui/icons-material/AddIcCallOutlined";
+import ContactPhoneOutlined from "@mui/icons-material/ContactPhoneOutlined";
+import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import PhoneDisabledOutlined from "@mui/icons-material/PhoneDisabledOutlined";
 
 import {
@@ -101,134 +105,231 @@ export const RecipientsEditor: React.FC<RecipientsEditorProps> = ({
   const withoutPhone = selectedEmployees.filter((item) => !item.hasPhone);
 
   return (
-    <Stack spacing={1.25}>
-      <Typography variant="subtitle2">{t("automations.recipients.title")}</Typography>
+    <Stack spacing={1.5}>
+      <Box>
+        <Typography variant="subtitle1" fontWeight={700}>
+          {t("automations.recipients.title")}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+          {t("automations.recipients.hint")}
+        </Typography>
+      </Box>
 
       {phones.length > 0 && (
-        <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center" }}>
-          {phones.map((variable) => {
-            const selected = action.recipientFields.includes(variable);
-            return (
-              <Chip
-                key={variable}
-                size="small"
-                label={variableLabel(event, variable)}
-                color={selected ? "primary" : "default"}
-                variant={selected ? "filled" : "outlined"}
-                onClick={() => toggleField(variable)}
-                disabled={disabled}
-                sx={{ cursor: "pointer" }}
-              />
-            );
-          })}
-        </Box>
+        <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "action.hover" }}>
+          <Stack spacing={1.25}>
+            <Stack direction="row" spacing={1.25} alignItems="center">
+              <Box
+                sx={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 1.25,
+                  display: "grid",
+                  placeItems: "center",
+                  bgcolor: "primary.main",
+                  color: "primary.contrastText",
+                  flexShrink: 0,
+                }}
+              >
+                <ContactPhoneOutlined fontSize="small" />
+              </Box>
+              <Box>
+                <Typography variant="subtitle2">
+                  {t("automations.recipients.recordTitle")}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {t("automations.recipients.recordHint")}
+                </Typography>
+              </Box>
+            </Stack>
+
+            <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap" }}>
+              {phones.map((variable) => {
+                const selected = action.recipientFields.includes(variable);
+                return (
+                  <Chip
+                    key={variable}
+                    label={variableLabel(event, variable)}
+                    color={selected ? "primary" : "default"}
+                    variant={selected ? "filled" : "outlined"}
+                    onClick={() => toggleField(variable)}
+                    disabled={disabled}
+                    aria-pressed={selected}
+                    sx={{ cursor: "pointer", fontWeight: 600 }}
+                  />
+                );
+              })}
+            </Box>
+          </Stack>
+        </Paper>
       )}
 
-      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
-        <Autocomplete
-          multiple
-          size="small"
-          options={options.employees}
-          value={selectedEmployees}
-          onChange={(_, next) => onChange({ recipientEmployeeIds: next.map((item) => item.id) })}
-          getOptionLabel={(item) => item.name}
-          isOptionEqualToValue={(a, b) => a.id === b.id}
-          disabled={disabled}
-          disableCloseOnSelect
-          noOptionsText={t("automations.recipients.noEmployees")}
-          renderOption={(props, item) => (
-            <li {...props} key={item.id}>
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ width: "100%" }}>
-                <span style={{ flex: 1 }}>{item.name}</span>
-                {!item.hasPhone && (
-                  <Tooltip title={t("automations.recipients.noPhone")}>
-                    <PhoneDisabledOutlined fontSize="small" color="disabled" />
-                  </Tooltip>
-                )}
-              </Stack>
-            </li>
-          )}
-          renderTags={(value, getTagProps) =>
-            value.map((item, index) => (
-              <Chip
-                {...getTagProps({ index })}
-                key={item.id}
-                size="small"
-                label={item.name}
-                color={item.hasPhone ? "default" : "warning"}
-                variant="outlined"
-              />
-            ))
-          }
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label={t("automations.recipients.employeesLabel")}
-              placeholder={
-                selectedEmployees.length === 0
-                  ? t("automations.recipients.employeesPlaceholder")
-                  : undefined
-              }
-            />
-          )}
-          sx={{ flex: 1, minWidth: 240 }}
-        />
+      <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "action.hover" }}>
+        <Stack spacing={1.5}>
+          <Stack direction="row" spacing={1.25} alignItems="center">
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: 1.25,
+                display: "grid",
+                placeItems: "center",
+                bgcolor: "primary.main",
+                color: "primary.contrastText",
+                flexShrink: 0,
+              }}
+            >
+              <GroupsOutlined fontSize="small" />
+            </Box>
+            <Box>
+              <Typography variant="subtitle2">
+                {t("automations.recipients.staffTitle")}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {t("automations.recipients.staffHint")}
+              </Typography>
+            </Box>
+          </Stack>
 
-        <Autocomplete
-          multiple
-          size="small"
-          options={options.roles}
-          value={selectedRoles}
-          onChange={(_, next) => onChange({ recipientRoleIds: next.map((item) => item.id) })}
-          getOptionLabel={(item) => item.name}
-          isOptionEqualToValue={(a, b) => a.id === b.id}
-          disabled={disabled}
-          disableCloseOnSelect
-          noOptionsText={t("automations.recipients.noRoles")}
-          renderTags={(value, getTagProps) =>
-            value.map((item, index) => (
-              <Chip
-                {...getTagProps({ index })}
-                key={item.id}
-                size="small"
-                label={item.name}
-                variant="outlined"
-              />
-            ))
-          }
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label={t("automations.recipients.rolesLabel")}
-              placeholder={
-                selectedRoles.length === 0
-                  ? t("automations.recipients.rolesPlaceholder")
-                  : undefined
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+            <Autocomplete
+              multiple
+              size="small"
+              options={options.employees}
+              value={selectedEmployees}
+              onChange={(_, next) =>
+                onChange({ recipientEmployeeIds: next.map((item) => item.id) })
               }
-              // Роль раздаётся сотрудникам филиала, где сработало правило;
-              // без конкретного филиала — всем держателям роли в организации.
-              helperText={t(
-                scheduled
-                  ? "automations.recipients.rolesHintSchedule"
-                  : "automations.recipients.rolesHint",
+              getOptionLabel={(item) => item.name}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              disabled={disabled}
+              disableCloseOnSelect
+              noOptionsText={t("automations.recipients.noEmployees")}
+              renderOption={(props, item) => (
+                <li {...props} key={item.id}>
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ width: "100%" }}>
+                    <span style={{ flex: 1 }}>{item.name}</span>
+                    {!item.hasPhone && (
+                      <Tooltip title={t("automations.recipients.noPhone")}>
+                        <PhoneDisabledOutlined fontSize="small" color="disabled" />
+                      </Tooltip>
+                    )}
+                  </Stack>
+                </li>
               )}
+              renderTags={(value, getTagProps) =>
+                value.map((item, index) => (
+                  <Chip
+                    {...getTagProps({ index })}
+                    key={item.id}
+                    size="small"
+                    label={item.name}
+                    color={item.hasPhone ? "default" : "warning"}
+                    variant="outlined"
+                  />
+                ))
+              }
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label={t("automations.recipients.employeesLabel")}
+                  placeholder={
+                    selectedEmployees.length === 0
+                      ? t("automations.recipients.employeesPlaceholder")
+                      : undefined
+                  }
+                />
+              )}
+              sx={{ flex: 1, minWidth: 0 }}
             />
-          )}
-          sx={{ flex: 1, minWidth: 240 }}
-        />
-      </Stack>
+
+            <Autocomplete
+              multiple
+              size="small"
+              options={options.roles}
+              value={selectedRoles}
+              onChange={(_, next) => onChange({ recipientRoleIds: next.map((item) => item.id) })}
+              getOptionLabel={(item) => item.name}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              disabled={disabled}
+              disableCloseOnSelect
+              noOptionsText={t("automations.recipients.noRoles")}
+              renderTags={(value, getTagProps) =>
+                value.map((item, index) => (
+                  <Chip
+                    {...getTagProps({ index })}
+                    key={item.id}
+                    size="small"
+                    label={item.name}
+                    variant="outlined"
+                  />
+                ))
+              }
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label={t("automations.recipients.rolesLabel")}
+                  placeholder={
+                    selectedRoles.length === 0
+                      ? t("automations.recipients.rolesPlaceholder")
+                      : undefined
+                  }
+                />
+              )}
+              sx={{ flex: 1, minWidth: 0 }}
+            />
+          </Stack>
+
+          <Typography variant="caption" color="text.secondary">
+            {t(
+              scheduled
+                ? "automations.recipients.rolesHintSchedule"
+                : "automations.recipients.rolesHint",
+            )}
+          </Typography>
+        </Stack>
+      </Paper>
 
       {/* Номер вводится тем же полем, что и в карточке пациента: код
           страны, маска, проверка длины. */}
-      <Box sx={{ maxWidth: { md: 360 } }}>
-        <PhonePayloadInput
-          label={t("automations.action.phoneLabel")}
-          helperText={errors?.recipientPhone ?? t("automations.action.phoneHint")}
-          value={action.recipientPhone}
-          onChange={(phone) => onChange({ recipientPhone: phone })}
-          disabled={disabled}
-        />
-      </Box>
+      <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "action.hover" }}>
+        <Stack spacing={1.25}>
+          <Stack direction="row" spacing={1.25} alignItems="center">
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: 1.25,
+                display: "grid",
+                placeItems: "center",
+                bgcolor: "primary.main",
+                color: "primary.contrastText",
+                flexShrink: 0,
+              }}
+            >
+              <AddIcCallOutlined fontSize="small" />
+            </Box>
+            <Box>
+              <Typography variant="subtitle2">
+                {t("automations.recipients.otherTitle")}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {t("automations.recipients.otherHint")}
+              </Typography>
+            </Box>
+          </Stack>
+
+          <Box sx={{ maxWidth: { md: 360 } }}>
+            <PhonePayloadInput
+              label={t("automations.recipients.phoneLabel")}
+              helperText={errors?.recipientPhone}
+              value={action.recipientPhone}
+              onChange={(phone) => onChange({ recipientPhone: phone })}
+              disabled={disabled}
+            />
+          </Box>
+        </Stack>
+      </Paper>
 
       {withoutPhone.length > 0 && (
         <FormHelperText sx={{ color: "warning.main", mx: 0 }}>
