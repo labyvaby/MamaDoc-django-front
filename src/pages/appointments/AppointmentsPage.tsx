@@ -624,6 +624,14 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.scheduling.availabilityAll,
       });
+      // Подтверждённая бронь идёт за приёмом: оплата, отмена, неявка и
+      // завершение двигают её статус на бэке (памятка бэка 15.09.2026). Только
+      // помечаем устаревшим, без рефетча: экран броней перезапросит при
+      // открытии, а бейджи сайдбара (pending) от приёма не зависят.
+      queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.bookings.all,
+        refetchType: "none",
+      });
     },
   });
 
