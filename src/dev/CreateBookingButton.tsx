@@ -97,7 +97,16 @@ const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   </Typography>
 );
 
-export const CreateBookingButton: React.FC = () => {
+export interface CreateBookingButtonProps {
+  /**
+   * Не рендерить собственную кнопку-триггер — используется, когда открытие
+   * формы идёт снаружи (requestQuickBooking без аргументов, например кнопка
+   * «Добавить» в PageHeader на странице «Гости»), а не с этой самой кнопки.
+   */
+  hideTrigger?: boolean;
+}
+
+export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTrigger = false }) => {
   const [open, setOpen] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
   // Кто создал бронь — реальный залогиненный сотрудник, а не выбор из списка
@@ -196,13 +205,17 @@ export const CreateBookingButton: React.FC = () => {
 
   // «Быстрая бронь»: клик по свободной ячейке RoomBookingGrid кладёт сюда
   // номер+дату — форма открывается уже с ними, остаётся выбрать гостя.
+  // Кнопка «Добавить» на «Гостях» зовёт без аргументов — форма просто
+  // открывается пустой (room/checkIn отсутствуют).
   const quickBookingRequest = React.useSyncExternalStore(subscribeQuickBookingRequest, getQuickBookingRequestSnapshot);
   React.useEffect(() => {
     if (!quickBookingRequest) return;
     reset();
-    setRoom(quickBookingRequest.room);
-    setCheckIn(dayjs(quickBookingRequest.checkIn));
-    setCheckOut(dayjs(quickBookingRequest.checkIn).add(1, "day"));
+    if (quickBookingRequest.room) setRoom(quickBookingRequest.room);
+    if (quickBookingRequest.checkIn) {
+      setCheckIn(dayjs(quickBookingRequest.checkIn));
+      setCheckOut(dayjs(quickBookingRequest.checkIn).add(1, "day"));
+    }
     setOpen(true);
     clearQuickBookingRequest();
     // reset — плоская функция из тела компонента, не мемоизирована; включать
@@ -276,9 +289,11 @@ export const CreateBookingButton: React.FC = () => {
 
   return (
     <>
-      <Button size="small" variant="contained" startIcon={<AddOutlined />} onClick={() => setOpen(true)}>
-        Создать бронь
-      </Button>
+      {!hideTrigger && (
+        <Button size="small" variant="contained" startIcon={<AddOutlined />} onClick={() => setOpen(true)}>
+          Создать бронь
+        </Button>
+      )}
 
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Новая бронь</DialogTitle>

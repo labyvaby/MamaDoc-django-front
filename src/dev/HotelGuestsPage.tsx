@@ -1,48 +1,41 @@
 /**
- * «Гости» — список гостей отеля для Viva. Подключена вместо DjangoPatientsPage
- * в src/pages/patients/index.tsx: та страница ходит на настоящий бэкенд, а у
- * Viva там нет ни организации, ни картотеки. Гости собраны из тех же броней,
- * что и RoomBookingGrid/HotelOccupancyBanner (getHotelGuests, mockDemoData.ts)
- * — отдельной сущности «гость» в API нет, это имя внутри брони.
+ * «Гости» — тот же экран, что «Все пациенты» (DjangoPatientsPage), той же
+ * компоновкой (список слева + карточка + история проживаний) и теми же
+ * общими UI-примитивами (PageHeader/AppCard/UserAvatar/InfoTile/subtleBg —
+ * не копии, а прямой импорт из components/ui и theme/uiHelpers), но поля и
+ * подписи — отельные, чтобы сразу было видно, что это не картотека
+ * пациентов. Подключена вместо DjangoPatientsPage в src/pages/patients/index.tsx.
  *
- * Паритет с «Все пациенты» (DjangoPatientsPage) в той мере, в какой это
- * осмысленно для гостя-без-картотеки: фото документа вместо аватара-заглушки
- * (как photoUrl у пациента), бейдж чёрного списка на аватаре (как у
- * заблокированного пациента) и кнопка «Добавить» — здесь она открывает
- * создание брони (CreateBookingButton), потому что гость и появляется только
- * через бронь, отдельной формы «просто гость» не существует.
+ * Отличия неизбежны там, где у гостя просто нет аналога сущности: нет
+ * отдельной картотеки (гость — это имя внутри брони, getHotelGuests в
+ * mockDemoData.ts), поэтому нет бесконечной подгрузки с сервера (гостей от
+ * силы пара десятков, не тысячи), нет счёта/бонусов/семьи/объединения
+ * дублей/фото лица — реальных данных для этого в сторе нет, а выдумывать
+ * рабочие с виду, но ничего не делающие кнопки хуже, чем не рисовать их
+ * вовсе. Кнопка «Добавить» открывает создание брони (requestQuickBooking
+ * без аргументов) — гость у отеля и появляется только через бронь.
  */
 import React from "react";
-import {
-  Alert,
-  Avatar,
-  Badge,
-  Box,
-  InputAdornment,
-  Stack,
-  TextField,
-  Tooltip,
-  Typography,
-} from "@mui/material";
-import { useTheme } from "@mui/material/styles";
-import SearchOutlined from "@mui/icons-material/SearchOutlined";
-import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
+import { Box, useMediaQuery, useTheme } from "@mui/material";
+import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
+import IconButton from "@mui/material/IconButton";
 
+import { PageHeader } from "../components/ui";
 import { usePageTitle } from "../hooks/usePageTitle";
-import {
-  getHotelGuests,
-  initialsOf,
-  subscribeGuestBlacklist,
-  getGuestBlacklistSnapshot,
-} from "./mockDemoData";
-import { GuestDetailsDialog } from "./GuestDetailsDialog";
+import { getHotelGuests, requestQuickBooking, subscribeGuestBlacklist, getGuestBlacklistSnapshot } from "./mockDemoData";
+import { GuestListPanel } from "./GuestListPanel";
+import { GuestCardPanel } from "./GuestCardPanel";
+import { GuestHistoryPanel } from "./GuestHistoryPanel";
+import { useGuestDetails } from "./useGuestDetails";
 import { CreateBookingButton } from "./CreateBookingButton";
 
 export const HotelGuestsPage: React.FC = () => {
   usePageTitle("Гости");
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
   // Снимок в зависимостях — без него пометка «в чёрный список» не обновит
-  // бейджи в списке сразу же (getHotelGuests сам не подписан на этот стор).
+  // список слева сразу же (getHotelGuests сам не подписан на этот стор).
   const blacklistSnapshot = React.useSyncExternalStore(subscribeGuestBlacklist, getGuestBlacklistSnapshot);
   const guests = React.useMemo(
     () => getHotelGuests(),
@@ -50,134 +43,68 @@ export const HotelGuestsPage: React.FC = () => {
     [blacklistSnapshot],
   );
   const [search, setSearch] = React.useState("");
-  const [selectedGuest, setSelectedGuest] = React.useState<string | null>(null);
+  const [selectedName, setSelectedName] = React.useState<string | null>(null);
 
   const query = search.trim().toLowerCase();
   const filtered = query
     ? guests.filter((g) => g.name.toLowerCase().includes(query) || g.phone.includes(query))
     : guests;
 
-  const blacklistedCount = guests.filter((g) => g.isBlacklisted).length;
+  // Общее состояние карточки+истории — один хук на обе колонки, тот же
+  // приём, что связывает GuestCardPanel и GuestHistoryPanel в GuestDetailsDialog.
+  const state = useGuestDetails(selectedName);
+
+  const listNode = <GuestListPanel guests={filtered} totalCount={guests.length} selectedName={selectedName} onSelect={setSelectedName} />;
+  const cardNode = <GuestCardPanel guestName={selectedName} state={state} />;
+  const historyNode = <GuestHistoryPanel state={state} />;
 
   return (
-    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap" sx={{ mb: 2 }}>
-        <Typography variant="h6" fontWeight={700}>
-          Гости
-        </Typography>
-        <Stack direction="row" alignItems="center" gap={2}>
-          <Typography variant="body2" color="text.secondary">
-            Всего: {guests.length}
-            {blacklistedCount > 0 && ` · В чёрном списке: ${blacklistedCount}`}
-          </Typography>
-          <CreateBookingButton />
-        </Stack>
-      </Stack>
-
-      <Alert severity="info" variant="outlined" sx={{ mb: 2, fontSize: "0.8rem" }}>
-        Список собран из броней Viva — отдельной картотеки гостей в системе нет. Новый гость появляется
-        через создание брони.
-      </Alert>
-
-      <TextField
-        placeholder="Поиск по имени или телефону"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        size="small"
-        fullWidth
-        sx={{ mb: 2, maxWidth: 420 }}
-        slotProps={{
-          input: {
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchOutlined fontSize="small" sx={{ color: "text.secondary" }} />
-              </InputAdornment>
-            ),
-          },
-        }}
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <PageHeader
+        title="Гости"
+        showTitle={false}
+        addButtonText="Добавить"
+        onAdd={() => requestQuickBooking()}
+        showSearch
+        searchVal={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Поиск по имени или телефону"
       />
+      {/* Слушает requestQuickBooking() из onAdd выше — своей кнопки не рисует. */}
+      <CreateBookingButton hideTrigger />
 
-      {filtered.length === 0 ? (
-        <Typography variant="body2" color="text.disabled">
-          {guests.length === 0 ? "Гостей пока нет." : "Ничего не найдено."}
-        </Typography>
-      ) : (
-        <Stack gap={1}>
-          {filtered.map((g) => (
-            <Box
-              key={g.name}
-              component="button"
-              type="button"
-              onClick={() => setSelectedGuest(g.name)}
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 1.5,
-                px: 1.75,
-                py: 1.25,
-                border: "1px solid",
-                borderColor: "divider",
-                borderRadius: "12px",
-                bgcolor: "background.paper",
-                font: "inherit",
-                color: "inherit",
-                textAlign: "left",
-                cursor: "pointer",
-                width: "100%",
-                maxWidth: 560,
-                "&:hover": { borderColor: "primary.main" },
-              }}
-            >
-              <Badge
-                overlap="circular"
-                anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-                badgeContent={
-                  g.isBlacklisted ? (
-                    <Tooltip title={g.blacklistReason ? `Чёрный список: ${g.blacklistReason}` : "В чёрном списке"}>
-                      <Box
-                        sx={{
-                          width: 16,
-                          height: 16,
-                          borderRadius: "50%",
-                          bgcolor: "error.main",
-                          color: "#fff",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          border: "2px solid",
-                          borderColor: "background.paper",
-                        }}
-                      >
-                        <WarningAmberOutlined sx={{ fontSize: 10 }} />
-                      </Box>
-                    </Tooltip>
-                  ) : null
-                }
-              >
-                <Avatar
-                  src={g.photoDataUrl}
-                  sx={{ bgcolor: "primary.main", fontWeight: 700, flexShrink: 0 }}
-                >
-                  {initialsOf(g.name)}
-                </Avatar>
-              </Badge>
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="body2" fontWeight={600} noWrap>
-                  {g.name}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {g.phone}
-                </Typography>
-              </Box>
-              <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                {g.bookings.length} {g.bookings.length === 1 ? "проживание" : "проживаний"}
-              </Typography>
+      <Box
+        sx={(t) => ({
+          px: t.appLayout.page.paddingX,
+          pb: 2,
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "row",
+          gap: 2,
+          overflow: "hidden",
+        })}
+      >
+        {isMobile ? (
+          selectedName ? (
+            <Box sx={{ flex: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column", gap: 1.5, overflowY: "auto" }}>
+              <IconButton size="small" onClick={() => setSelectedName(null)} sx={{ alignSelf: "flex-start" }}>
+                <ArrowBackOutlined fontSize="small" />
+              </IconButton>
+              <Box sx={{ minHeight: 320 }}>{cardNode}</Box>
+              <Box sx={{ minHeight: 320 }}>{historyNode}</Box>
             </Box>
-          ))}
-        </Stack>
-      )}
-
-      <GuestDetailsDialog guestName={selectedGuest} onClose={() => setSelectedGuest(null)} />
+          ) : (
+            <Box sx={{ flex: 1, minWidth: 0, height: "100%" }}>{listNode}</Box>
+          )
+        ) : (
+          <>
+            <Box sx={{ flex: "3 1 0", minWidth: 0, height: "100%" }}>{listNode}</Box>
+            <Box sx={{ flex: "3.5 1 0", minWidth: 0, height: "100%" }}>{cardNode}</Box>
+            <Box sx={{ flex: "5.5 1 0", minWidth: 0, height: "100%" }}>{historyNode}</Box>
+          </>
+        )}
+      </Box>
     </Box>
   );
 };
