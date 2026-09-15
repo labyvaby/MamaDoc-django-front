@@ -246,6 +246,30 @@ describe("groupCatalog", () => {
     expect(groups.find((g) => g.tests.some((t) => t.id === 101))?.veterinary).toBe(false);
   });
 
+  it("услуги клиники отделяются от анализов по корню дерева", () => {
+    // В каталоге ЛИС рядом с анализами лежат прейскуранты врачей, операции
+    // и товары. Анализы — корни со словом «исследования» (и «Профили
+    // исследований»), остальное — услуги клиники.
+    const surgeryRoot = labTest({ id: 500, parentId: null, title: "ХИРУРГИЯ Бакаева" });
+    const surgerySub = labTest({ id: 501, parentId: 500, title: "УРОЛОГИЧЕСКИЕ ОПЕРАЦИИ" });
+    const surgery = labTest({ id: 502, parentId: 501, title: "Троакарная цистостомия" });
+    const profilesRoot = labTest({ id: 600, parentId: null, title: "Профили исследований" });
+    const profile = labTest({ id: 601, parentId: 600, title: "Check Up" });
+    const orphan = labTest({ id: 700, parentId: null, title: "Без категории" });
+    const groups = groupCatalog(
+      [allergy, ige, surgeryRoot, surgerySub, surgery, profilesRoot, profile, orphan],
+      "",
+      "",
+    );
+    const sectionOf = (id: number) =>
+      groups.find((g) => g.tests.some((t) => t.id === id))?.section;
+
+    expect(sectionOf(502)).toBe("services");
+    expect(sectionOf(601)).toBe("lab");
+    expect(sectionOf(101)).toBe("lab");
+    expect(sectionOf(700)).toBe("lab");
+  });
+
   it("пол пациента отсекает позиции внутри групп", () => {
     const male = labTest({ id: 103, parentId: 100, title: "ПСА", lisGender: "1" });
     const groups = groupCatalog([allergy, ige, male], "female", "");

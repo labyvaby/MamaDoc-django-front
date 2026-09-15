@@ -134,11 +134,31 @@ export function stepCount(current: number, delta: number): number {
   return Math.max(1, Math.trunc(current + delta));
 }
 
+/**
+ * Раздел каталога по корню дерева ЛИС.
+ *
+ * В каталоге ЛИС рядом с анализами лежат прейскуранты врачей, операции,
+ * УЗИ, чек-апы и товары — в интерфейсе самой ЛИС это один список. У стойки
+ * приёма анализов они только мешают: регистратор ищет «общий анализ», а не
+ * «троакарную цистостомию». Корни с «исследования» в названии (в том числе
+ * «Профили исследований») — анализы; «ВЕТЕРИНАРНЫЕ ИССЛЕДОВАНИЯ» —
+ * ветеринария; всё остальное — услуги клиники.
+ */
+export type CatalogSection = "lab" | "services" | "veterinary";
+
+export const CATALOG_SECTION_LABELS: Record<CatalogSection, string> = {
+  lab: "Анализы",
+  services: "Услуги клиники",
+  veterinary: "Ветеринария",
+};
+
 export interface CatalogGroup {
   /** Ключ группы — id ближайшей категории или `other`. */
   key: string;
   /** Путь категорий от корня: «Гематология › Общий анализ». */
   title: string;
+  /** Раздел каталога, см. `CatalogSection`. */
+  section: CatalogSection;
   /** Группа из ветеринарного раздела каталога. */
   veterinary: boolean;
   tests: LabTest[];
@@ -146,6 +166,15 @@ export interface CatalogGroup {
 
 const OTHER_GROUP = "Прочее";
 const VETERINARY_ROOT = /ветеринар/i;
+const LAB_ROOT = /исследован/i;
+
+/** Раздел по корню дерева; позиции без категории считаются анализами. */
+export function catalogSectionOf(rootTitle: string | undefined): CatalogSection {
+  if (rootTitle === undefined) return "lab";
+  if (VETERINARY_ROOT.test(rootTitle)) return "veterinary";
+  if (LAB_ROOT.test(rootTitle)) return "lab";
+  return "services";
+}
 
 /**
  * Каталог, разложенный по категориям дерева ЛИС.
@@ -202,10 +231,12 @@ export function groupCatalog(
 
     const key = ancestors.length ? String(ancestors[ancestors.length - 1].id) : "other";
     if (!groups.has(key)) {
+      const section = catalogSectionOf(ancestors[0]?.title);
       groups.set(key, {
         key,
         title: path || OTHER_GROUP,
-        veterinary: ancestors.length > 0 && VETERINARY_ROOT.test(ancestors[0].title),
+        section,
+        veterinary: section === "veterinary",
         tests: [],
       });
     }
