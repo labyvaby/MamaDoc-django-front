@@ -1349,7 +1349,6 @@
       "usableHint": "Подключение включено, Raven отвечает, номер помечен этой организацией.",
       "notUsable": "Не работает",
       "notConfigured": "Не подключено",
-      "notConfiguredText": "WhatsApp для {{org.gen}} ещё не подключён. Введите данные из Meta ниже — остальное настроится автоматически.",
       "senderPhone": "Номер отправителя",
       "phoneUnknown": "Номер ещё не получен от Raven",
       "verifiedName": "Имя в WhatsApp",
@@ -1372,8 +1371,22 @@
       "reconnectTitle": "Переподключить WhatsApp",
       "reconnect": "Переподключить с новыми данными",
       "reconnectHint": "Подключение останется тем же номером: обновятся токен, приложение и секрет. Используйте, если сменили токен или приложение в Meta.",
-      "intro": "Нужны пять значений из Meta: WABA ID и Phone number ID (App Dashboard → WhatsApp → API Setup), постоянный токен системного пользователя (Business Settings → System users), App ID и App secret (App settings → Basic). Дальше Raven всё сделает сам: проверит токен, пропишет вебхук в вашем приложении, подпишет его на события и загрузит шаблоны.",
+      "intro": "Введите данные приложения Meta {{org.gen}} — дальше Raven всё сделает сам: проверит токен, пропишет вебхук в приложении, подпишет его на события и загрузит шаблоны.",
       "metaDocs": "Документация Meta",
+      "steps": {
+        "account": {
+          "title": "Аккаунт и номер",
+          "where": "App Dashboard → WhatsApp → API Setup"
+        },
+        "app": {
+          "title": "Приложение Meta",
+          "where": "App settings → Basic"
+        },
+        "name": {
+          "title": "Название",
+          "where": "Необязательно"
+        }
+      },
       "fields": {
         "displayName": "Название подключения",
         "wabaId": "WABA ID",
@@ -1384,14 +1397,14 @@
       },
       "hints": {
         "displayName": "Как подписать отправителя в списках. По умолчанию — название {{org.gen}}.",
-        "wabaId": "ID WhatsApp Business Account — App Dashboard → WhatsApp → API Setup.",
-        "phoneNumberId": "Не сам номер, а его ID там же, рядом с номером.",
-        "accessToken": "Токен системного пользователя с правами whatsapp_business_messaging и whatsapp_business_management.",
-        "appId": "ID приложения Meta — App settings → Basic.",
-        "appSecret": "«App secret» там же, по кнопке «Show»."
+        "wabaId": "ID WhatsApp Business Account",
+        "phoneNumberId": "ID номера, а не сам номер",
+        "accessToken": "Постоянный токен системного пользователя (Business Settings → System users) с правами whatsapp_business_messaging и whatsapp_business_management.",
+        "appId": "ID приложения",
+        "appSecret": "По кнопке «Show» рядом с App secret"
       },
       "reveal": "Показать или скрыть значение",
-      "privacy": "Токен и App secret передаются в Raven и хранятся там в зашифрованном виде. В CRM они не сохраняются.",
+      "privacy": "Токен и App secret хранятся в Raven в зашифрованном виде, в CRM не сохраняются.",
       "required": "Обязательное поле.",
       "submit": "Подключить",
       "submitting": "Подключаем…",

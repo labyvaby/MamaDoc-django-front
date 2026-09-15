@@ -392,14 +392,11 @@ const ConnectionCard: React.FC<ConnectionCardProps> = ({
         </Stack>
 
         {!connection.configured ? (
-          <>
-            <Alert severity="info">{t("whatsapp.connection.notConfiguredText")}</Alert>
-            <WhatsAppConnectForm
-              organizationId={organizationId}
-              reconnect={false}
-              onConnected={onConnected}
-            />
-          </>
+          <WhatsAppConnectForm
+            organizationId={organizationId}
+            reconnect={false}
+            onConnected={onConnected}
+          />
         ) : (
           <>
             <Box>
