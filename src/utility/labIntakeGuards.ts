@@ -80,6 +80,8 @@ export interface IntakeState {
    * какую строку убрать, если направления нет и врача не назвать.
    */
   referralRequiredFor: string[];
+  /** Анализы корзины, не подходящие пациенту по полу (названия). */
+  genderMismatch: string[];
   /** Выбранный направивший врач; `null` — не выбран. */
   referringDoctorId: number | null;
   /**
@@ -108,6 +110,9 @@ export function intakeBlockReason(state: IntakeState): string | null {
     return "Отметьте согласие пациента на обработку персональных данных";
   }
   if (state.lineCount < 1) return "Добавьте хотя бы один анализ";
+  if (state.genderMismatch.length > 0) {
+    return "Не подходит по полу пациента: " + state.genderMismatch.join(", ");
+  }
 
   if (state.referralRequiredFor.length > 0 && state.referringDoctorId === null) {
     return (

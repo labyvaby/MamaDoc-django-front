@@ -26,7 +26,7 @@ import BasketSection from "./intake/BasketSection";
 import QuestionsSection from "./intake/QuestionsSection";
 import InstrumentsSection from "./intake/InstrumentsSection";
 import PaymentSection from "./intake/PaymentSection";
-import type { BasketLine } from "./intake/basketCatalog";
+import { isTestVisibleForGender, type BasketLine } from "./intake/basketCatalog";
 import { assembleLabAnswers } from "./intake/labQuestionFields";
 
 import { usePermissions } from "../../hooks/usePermissions";
@@ -44,6 +44,7 @@ import {
   getLabQuestions,
   getLabSettings,
   getLabTests,
+  instrumentSetQuery,
   testIdsQuery,
   type LabClientType,
   type LabDoctor,
@@ -368,9 +369,26 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
     [debouncedIdsKey],
   );
 
+  // Пробирки — по своему ключу: без приносных строк (материал уже в своей
+  // таре) и с числом сдач, вопросы и памятки — по всем анализам корзины.
+  const instrumentKey = React.useMemo(
+    () => instrumentSetQuery(lines.filter((line) => !line.broughtIn)),
+    [lines],
+  );
+  const debouncedInstrumentKey = useDebouncedValue(instrumentKey);
+  const debouncedInstrumentLines = React.useMemo(
+    () =>
+      debouncedInstrumentKey
+        ? debouncedInstrumentKey.split(",").map((part) => {
+            const [id, count] = part.split(":");
+            return { testId: Number(id), count: Number(count ?? 1) };
+          })
+        : [],
+    [debouncedInstrumentKey],
+  );
   const instrumentsQuery = useQuery({
-    queryKey: djangoQueryKeys.lab.instruments(debouncedIdsKey),
-    queryFn: ({ signal }) => getLabInstruments(debouncedIds, signal),
+    queryKey: djangoQueryKeys.lab.instruments(debouncedInstrumentKey),
+    queryFn: ({ signal }) => getLabInstruments(debouncedInstrumentLines, signal),
     enabled: open,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
   });
@@ -475,6 +493,20 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
   // (`requiresDoctor`, признак `@required_doctor` каталога ЛИС). Имена, а
   // не счётчик: если направления нет, регистратору надо знать, какую
   // строку убрать.
+  // Анализы корзины, не подходящие пациенту по полу: набрали до выбора
+  // пациента или сменили пол в карточке. Бэкенд их отвергнет — лучше
+  // назвать строку сразу, чем показать отказ на кнопке.
+  const genderMismatch = React.useMemo(() => {
+    const byId = new Map(tests.map((test) => [test.id, test]));
+    return lines
+      .map((line) => byId.get(line.testId))
+      .filter(
+        (test): test is LabTest =>
+          test !== undefined && !isTestVisibleForGender(test.lisGender, effective.gender),
+      )
+      .map((test) => test.title);
+  }, [lines, tests, effective.gender]);
+
   const referralRequiredFor = React.useMemo(() => {
     const byId = new Map(tests.map((test) => [test.id, test]));
     return lines
@@ -500,6 +532,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
     settingsFailed,
     sectionConfigured,
     referralRequiredFor,
+    genderMismatch,
     referringDoctorId,
     personalDataConsent,
   };
@@ -807,10 +840,15 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
             patientGender={effective.gender}
             loading={testsQuery.isLoading}
             disabled={!editing}
-            onAdd={(testId) => setLines((prev) => [...prev, { testId, count: 1, express: false }])}
+            onAdd={(testId) =>
+              setLines((prev) => [...prev, { testId, count: 1, express: false, broughtIn: false }])
+            }
             onRemove={(testId) => setLines((prev) => prev.filter((l) => l.testId !== testId))}
             onCountChange={(testId, count) =>
               setLines((prev) => prev.map((l) => (l.testId === testId ? { ...l, count } : l)))
+            }
+            onBroughtInChange={(testId, broughtIn) =>
+              setLines((prev) => prev.map((l) => (l.testId === testId ? { ...l, broughtIn } : l)))
             }
             onExpressChange={(testId, express) =>
               setLines((prev) => prev.map((l) => (l.testId === testId ? { ...l, express } : l)))

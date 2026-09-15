@@ -51,7 +51,7 @@ describe("списочные ручки лаборатории читают ма
   it("getLabInstruments отдаёт пробирки набора", async () => {
     mocked.mockResolvedValue([{ id: 3, title: "ЭДТА", price: "15.00" }]);
 
-    await expect(getLabInstruments([1])).resolves.toEqual([
+    await expect(getLabInstruments([{ testId: 1, count: 1 }])).resolves.toEqual([
       { id: 3, title: "ЭДТА", price: "15.00" },
     ]);
   });

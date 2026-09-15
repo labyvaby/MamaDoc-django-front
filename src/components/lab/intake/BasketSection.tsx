@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import BoltOutlined from "@mui/icons-material/BoltOutlined";
+import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
@@ -35,6 +36,7 @@ type Props = {
   onRemove: (testId: number) => void;
   onCountChange: (testId: number, count: number) => void;
   onExpressChange: (testId: number, express: boolean) => void;
+  onBroughtInChange: (testId: number, broughtIn: boolean) => void;
 };
 
 function money(value: string): number {
@@ -64,6 +66,7 @@ const BasketSection: React.FC<Props> = ({
   onRemove,
   onCountChange,
   onExpressChange,
+  onBroughtInChange,
 }) => {
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [detailsId, setDetailsId] = React.useState<number | null>(null);
@@ -199,6 +202,32 @@ const BasketSection: React.FC<Props> = ({
                     <AddOutlined fontSize="small" />
                   </IconButton>
                 </Stack>
+
+                {/* Приносной: пациент принёс биоматериал в своей таре —
+                    пробирки и взятие под этот анализ из набора уходят и не
+                    оплачиваются (см. basket._collect_instruments). */}
+                <Tooltip title="Приносной: пациент принёс биоматериал сам — пробирки и взятие не нужны и не оплачиваются">
+                  <ToggleButton
+                    value="broughtIn"
+                    size="small"
+                    selected={line.broughtIn}
+                    disabled={disabled}
+                    onChange={() => onBroughtInChange(line.testId, !line.broughtIn)}
+                    sx={{
+                      flexShrink: 0,
+                      px: 1,
+                      py: 0.25,
+                      gap: 0.5,
+                      textTransform: "none",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    <ShoppingBagOutlined sx={{ fontSize: 16 }} />
+                    <Typography variant="caption" fontWeight={600}>
+                      Приносной
+                    </Typography>
+                  </ToggleButton>
+                </Tooltip>
 
                 <Tooltip title="Срочное исполнение по повышенной цене">
                   <ToggleButton
