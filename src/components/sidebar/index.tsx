@@ -892,6 +892,10 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/sales" icon={<AnalyticsOutlined />} label="Продажи товаров" collapsed={siderCollapsed} />
         )}
 
+        {show("storage") && can_.pos && (
+          <SidebarMenuItem to="/pos/history" icon={<HistoryOutlined />} label="История продаж" collapsed={siderCollapsed} />
+        )}
+
         {/* Остатки (объединённые «Движение товара» + «Склад») */}
         {show("storage") && can_.storage && (
           <SidebarMenuItem to="/warehouses" icon={<Inventory2Outlined />} label="Остатки" collapsed={siderCollapsed} />
