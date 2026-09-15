@@ -21,6 +21,7 @@ import PatientSection from "./intake/PatientSection";
 import ReferralSection from "./intake/ReferralSection";
 import CommentSection from "./intake/CommentSection";
 import BarcodePreview from "./BarcodePreview";
+import LabNotConfigured from "./LabNotConfigured";
 import BasketSection from "./intake/BasketSection";
 import QuestionsSection from "./intake/QuestionsSection";
 import InstrumentsSection from "./intake/InstrumentsSection";
@@ -654,10 +655,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
               «дровер + настройки раздела»). Показываем плашкой сразу при
               открытии, а не только текстом блокировки в подвале. */}
           {editing && !settingsLoading && !settingsFailed && !sectionConfigured && (
-            <Alert severity="error">
-              Раздел лаборатории не настроен для вашей организации — приём анализов
-              недоступен. Обратитесь к администратору.
-            </Alert>
+            <LabNotConfigured compact />
           )}
 
           {phase === "done" && receipt && receipt.order.status !== "dispatched" && (
