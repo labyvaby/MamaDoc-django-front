@@ -1,22 +1,19 @@
 /**
- * «Создать бронь» — замена кнопки «Добавить смену» на верхней панели
- * «Шахматки броней» (Viva). Добавление смены — действие над графиком
- * персонала, для гостиничной брони оно не имеет смысла; здесь у отеля должно
- * быть создание брони номера, как в референсном PMS.
- *
- * Обязательны только Гость/Номер/даты — как и раньше. Остальные поля
- * (контакты, документ, фото паспорта, пожелания) добавлены по тому же
- * принципу, что у настоящих отелей: гражданин КР и иностранец сдают разные
- * документы (паспорт vs загранпаспорт + миграционный учёт), но ни то, ни
- * другое не должно быть обязательным на этапе брони — гостя рано пугать
- * длинной анкетой, когда документа может даже не быть под рукой.
+ * «Создать бронь» — та же форма-дровер, что «Добавить приём»
+ * (DjangoAddAppointmentDrawer.tsx) в реальном МамаДоктор: правый Drawer
+ * фиксированной ширины, шапка с крестиком, прокручиваемое тело в
+ * Stack spacing={2.5}, подвал с «Отмена»/«Создать» на borderTop, защищённое
+ * закрытие (грязная форма спрашивает подтверждение вместо тихого сброса).
+ * Порядок разделов зеркалит реальный: сначала «когда» (там — дата/время,
+ * здесь — номер и даты), потом «кто» (там — пациент, здесь — гость), и
+ * только когда есть с кем работать — карточка с документом и допполями
+ * (там это открывающаяся секция услуг после выбора пациента).
  *
  * Поле «Гость» — автоподбор по существующим гостям (getHotelGuests), тот же
- * принцип, что в реальном МамаДоктор (поиск пациента в форме приёма +
- * подсказка о дублях по телефону в «Добавить пациента»): выбор гостя из
- * списка сразу подставляет его контакты/документ (findDetailedGuestBooking)
- * — не нужно вбивать их заново. Телефон отдельно сверяется на совпадение с
- * уже известными гостями (findGuestsByPhone) — предупреждение, не блокировка,
+ * принцип, что поиск пациента в реальной форме: выбор гостя из списка сразу
+ * подставляет его контакты/документ (findDetailedGuestBooking) — не нужно
+ * вбивать их заново. Телефон отдельно сверяется на совпадение с уже
+ * известными гостями (findGuestsByPhone) — предупреждение, не блокировка,
  * ровно как в реальной форме: можно осознанно создать нового гостя с тем же
  * номером (например, супруги бронируют раздельно).
  *
@@ -39,13 +36,18 @@ import {
   Avatar,
   Box,
   Button,
+  Card,
+  CardContent,
   Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
+  DialogContentText,
   DialogTitle,
   Divider,
+  Drawer,
   FormControlLabel,
+  IconButton,
   MenuItem,
   Snackbar,
   Stack,
@@ -57,7 +59,6 @@ import {
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import UploadOutlined from "@mui/icons-material/UploadOutlined";
-import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker } from "../components/ui";
@@ -92,7 +93,7 @@ const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 const orUndefined = (value: string): string | undefined => (value.trim() ? value.trim() : undefined);
 
 const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <Typography variant="subtitle2" fontWeight={600} color="text.secondary">
+  <Typography variant="h6" sx={{ fontWeight: 600 }}>
     {children}
   </Typography>
 );
@@ -109,6 +110,7 @@ export interface CreateBookingButtonProps {
 export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTrigger = false }) => {
   const [open, setOpen] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
+  const [confirmCloseOpen, setConfirmCloseOpen] = React.useState(false);
   // Кто создал бронь — реальный залогиненный сотрудник, а не выбор из списка
   // (тот же источник имени, что createdByName на печатном чеке в реальном
   // МамаДоктор — usePermissions().employee, не поле формы).
@@ -287,6 +289,36 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     reset();
   };
 
+  // Грязная форма = заполнено хоть что-то значимое — тот же принцип, что
+  // isDirty в реальной форме приёма (даты не считаем, они проставляются
+  // автоматически при открытии).
+  const isDirty =
+    guestName.trim() !== "" ||
+    guestPhone.trim() !== "" ||
+    guestEmail.trim() !== "" ||
+    room !== "" ||
+    idNumber.trim() !== "" ||
+    passportNumber.trim() !== "" ||
+    specialRequests.trim() !== "" ||
+    companyInfo.trim() !== "" ||
+    passportPhoto !== null;
+
+  // Перехватывает все способы закрытия: крестик, «Отмена», клик по фону / Esc —
+  // тот же приём, что requestClose в реальной форме приёма.
+  const requestClose = () => {
+    if (isDirty) {
+      setConfirmCloseOpen(true);
+      return;
+    }
+    setOpen(false);
+  };
+
+  const confirmDiscardAndClose = () => {
+    setConfirmCloseOpen(false);
+    setOpen(false);
+    reset();
+  };
+
   return (
     <>
       {!hideTrigger && (
@@ -295,96 +327,32 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         </Button>
       )}
 
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Новая бронь</DialogTitle>
-        <DialogContent>
-          <Stack gap={2} sx={{ mt: 0.5 }}>
+      <Drawer
+        anchor="right"
+        open={open}
+        onClose={requestClose}
+        PaperProps={{
+          sx: { width: { xs: 390, sm: 480, md: 520 }, maxWidth: "100vw", display: "flex", flexDirection: "column" },
+        }}
+      >
+        {/* ── header ── */}
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1, flexShrink: 0 }}>
+          <Typography variant="h6">Новая бронь</Typography>
+          <IconButton onClick={requestClose}>
+            <CloseOutlined />
+          </IconButton>
+        </Box>
+        <Divider />
+
+        {/* ── scrollable body ── */}
+        <Box sx={{ p: 2, flex: 1, overflowY: "auto", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
+          <Stack spacing={2.5}>
             <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-              Демо-форма: бронь появится в шахматке ниже, но живёт только в этом браузере. Обязательны
-              только гость, номер и даты — остальное можно оставить пустым.
+              Демо-форма: бронь появится в шахматке, но живёт только в этом браузере. Обязательны только
+              гость, номер и даты — остальное можно оставить пустым.
             </Alert>
 
-            <SectionTitle>Гость</SectionTitle>
-            <Autocomplete<HotelGuestSummary, false, false, true>
-              freeSolo
-              options={guests}
-              inputValue={guestName}
-              onInputChange={(_, value) => setGuestName(value)}
-              onChange={(_, value) => {
-                if (value && typeof value !== "string") applyGuestPrefill(value);
-              }}
-              filterOptions={(options, state) => {
-                const q = state.inputValue.trim().toLowerCase();
-                if (!q) return options.slice(0, 8);
-                return options.filter((g) => g.name.toLowerCase().includes(q) || g.phone.includes(q)).slice(0, 8);
-              }}
-              getOptionLabel={(option) => (typeof option === "string" ? option : option.name)}
-              renderOption={(props, option) => (
-                <li {...props} key={option.name}>
-                  <Stack direction="row" alignItems="center" gap={1.25} sx={{ width: "100%" }}>
-                    <Avatar sx={{ width: 28, height: 28, fontSize: "0.75rem", bgcolor: "primary.main" }}>
-                      {initialsOf(option.name)}
-                    </Avatar>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography variant="body2" fontWeight={600} noWrap>
-                        {option.name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {option.phone}
-                      </Typography>
-                    </Box>
-                  </Stack>
-                </li>
-              )}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Гость"
-                  placeholder="Имя и фамилия — или начните вводить, чтобы найти уже бронировавшего"
-                  autoFocus
-                />
-              )}
-              fullWidth
-            />
-            <Stack direction="row" gap={2}>
-              <TextField
-                label="Телефон"
-                placeholder="+996 700 000 000"
-                value={guestPhone}
-                onChange={(e) => setGuestPhone(e.target.value)}
-                sx={{ flex: 1 }}
-              />
-              <TextField
-                label="Email"
-                placeholder="guest@mail.com"
-                value={guestEmail}
-                onChange={(e) => setGuestEmail(e.target.value)}
-                sx={{ flex: 1 }}
-              />
-            </Stack>
-
-            {duplicateMatches.length > 0 && (
-              <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-                <Typography variant="body2" sx={{ mb: 1 }}>
-                  С этим номером телефона уже есть {duplicateMatches.length === 1 ? "гость" : "гости"} в базе —
-                  возможно, это тот же человек:
-                </Typography>
-                <Stack gap={0.75}>
-                  {duplicateMatches.map((g) => (
-                    <Stack key={g.name} direction="row" alignItems="center" justifyContent="space-between" gap={1}>
-                      <Typography variant="body2">
-                        <b>{g.name}</b> — {g.phone}
-                      </Typography>
-                      <Button size="small" onClick={() => applyGuestPrefill(g)}>
-                        Использовать этого гостя
-                      </Button>
-                    </Stack>
-                  ))}
-                </Stack>
-              </Alert>
-            )}
-
-            <Divider />
+            {/* ── 1. Проживание ── */}
             <SectionTitle>Проживание</SectionTitle>
             <TextField select label="Номер" value={room} onChange={(e) => setRoom(e.target.value)} fullWidth>
               {HOTEL_ROOMS.map((r) => (
@@ -420,12 +388,14 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 slotProps={{ htmlInput: { min: 0 } }}
                 sx={{ flex: 1 }}
               />
+            </Stack>
+            <Stack direction="row" gap={2}>
               <TextField
                 select
                 label="Гарантия брони"
                 value={guaranteeMethod}
                 onChange={(e) => setGuaranteeMethod(e.target.value as BookingGuaranteeMethod | "")}
-                sx={{ flex: 2 }}
+                sx={{ flex: 1 }}
               >
                 <MenuItem value="">Не указана</MenuItem>
                 {(Object.keys(GUARANTEE_METHOD_LABELS) as BookingGuaranteeMethod[]).map((key) => (
@@ -434,186 +404,302 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                   </MenuItem>
                 ))}
               </TextField>
-            </Stack>
-            <TextField
-              select
-              label="Тариф"
-              value={boardType}
-              onChange={(e) => setBoardType(e.target.value as BookingBoardType | "")}
-              fullWidth
-            >
-              <MenuItem value="">Не указан</MenuItem>
-              {(Object.keys(BOARD_TYPE_LABELS) as BookingBoardType[]).map((key) => (
-                <MenuItem key={key} value={key}>
-                  {BOARD_TYPE_LABELS[key]}
-                </MenuItem>
-              ))}
-            </TextField>
-
-            <Divider />
-            <SectionTitle>Документ (необязательно)</SectionTitle>
-            <ToggleButtonGroup
-              value={guestType}
-              exclusive
-              size="small"
-              onChange={(_, value: GuestType | null) => value && setGuestType(value)}
-            >
-              {(Object.keys(GUEST_TYPE_LABELS) as GuestType[]).map((key) => (
-                <ToggleButton key={key} value={key}>
-                  {GUEST_TYPE_LABELS[key]}
-                </ToggleButton>
-              ))}
-            </ToggleButtonGroup>
-
-            {guestType === "resident" ? (
-              <Stack direction="row" gap={2}>
-                <TextField
-                  label="Паспорт (ID-карта)"
-                  value={idNumber}
-                  onChange={(e) => setIdNumber(e.target.value)}
-                  sx={{ flex: 1 }}
-                />
-                <TextField label="ИНН" value={inn} onChange={(e) => setInn(e.target.value)} sx={{ flex: 1 }} />
-              </Stack>
-            ) : (
-              <Stack gap={2}>
-                <Stack direction="row" gap={2}>
-                  <TextField
-                    label="Гражданство"
-                    value={citizenship}
-                    onChange={(e) => setCitizenship(e.target.value)}
-                    sx={{ flex: 1 }}
-                  />
-                  <TextField
-                    label="Номер загранпаспорта"
-                    value={passportNumber}
-                    onChange={(e) => setPassportNumber(e.target.value)}
-                    sx={{ flex: 1 }}
-                  />
-                </Stack>
-                <Stack direction="row" gap={2}>
-                  <TextField
-                    label="Страна выдачи"
-                    value={passportCountry}
-                    onChange={(e) => setPassportCountry(e.target.value)}
-                    sx={{ flex: 1 }}
-                  />
-                  <CustomDatePicker
-                    label="Действителен до"
-                    value={passportExpiry}
-                    onChange={setPassportExpiry}
-                    sx={{ flex: 1 }}
-                  />
-                </Stack>
-                <Stack direction="row" gap={2}>
-                  <CustomDatePicker
-                    label="Дата въезда в КР"
-                    value={entryDate}
-                    onChange={setEntryDate}
-                    disableFuture
-                    sx={{ flex: 1 }}
-                  />
-                  <TextField
-                    label="Номер миграционной карты"
-                    value={migrationCardNumber}
-                    onChange={(e) => setMigrationCardNumber(e.target.value)}
-                    sx={{ flex: 1 }}
-                  />
-                </Stack>
-                <TextField
-                  select
-                  label="Цель визита"
-                  value={visitPurpose}
-                  onChange={(e) => setVisitPurpose(e.target.value as VisitPurpose | "")}
-                  fullWidth
-                >
-                  <MenuItem value="">Не указана</MenuItem>
-                  {(Object.keys(VISIT_PURPOSE_LABELS) as VisitPurpose[]).map((key) => (
-                    <MenuItem key={key} value={key}>
-                      {VISIT_PURPOSE_LABELS[key]}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Stack>
-            )}
-
-            <Stack direction="row" alignItems="center" gap={1.5}>
-              <Button component="label" size="small" variant="outlined" startIcon={<UploadOutlined />}>
-                Фото паспорта
-                <input type="file" accept="image/*" hidden onChange={handlePhotoChange} />
-              </Button>
-              {passportPhoto && (
-                <Stack direction="row" alignItems="center" gap={1}>
-                  <Box
-                    component="img"
-                    src={passportPhoto}
-                    alt="Фото паспорта"
-                    sx={{ width: 40, height: 40, borderRadius: "6px", objectFit: "cover" }}
-                  />
-                  <Button
-                    size="small"
-                    color="inherit"
-                    startIcon={<CloseOutlined fontSize="small" />}
-                    onClick={() => setPassportPhoto(null)}
-                  >
-                    Убрать
-                  </Button>
-                </Stack>
-              )}
-            </Stack>
-            {photoError && (
-              <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-                {photoError}
-              </Alert>
-            )}
-
-            <Divider />
-            <SectionTitle>Дополнительно (необязательно)</SectionTitle>
-            <Stack direction="row" gap={2}>
               <TextField
                 select
-                label="Источник брони"
-                value={bookingSource}
-                onChange={(e) => setBookingSource(e.target.value as BookingSource | "")}
+                label="Тариф"
+                value={boardType}
+                onChange={(e) => setBoardType(e.target.value as BookingBoardType | "")}
                 sx={{ flex: 1 }}
               >
                 <MenuItem value="">Не указан</MenuItem>
-                {(Object.keys(BOOKING_SOURCE_LABELS) as BookingSource[]).map((key) => (
+                {(Object.keys(BOARD_TYPE_LABELS) as BookingBoardType[]).map((key) => (
                   <MenuItem key={key} value={key}>
-                    {BOOKING_SOURCE_LABELS[key]}
+                    {BOARD_TYPE_LABELS[key]}
                   </MenuItem>
                 ))}
               </TextField>
-              <TextField
-                label="Юрлицо / командировка"
-                value={companyInfo}
-                onChange={(e) => setCompanyInfo(e.target.value)}
-                sx={{ flex: 1 }}
-              />
             </Stack>
-            <TextField
-              label="Особые пожелания"
-              placeholder="Ранний заезд, вид на горы, детская кроватка…"
-              value={specialRequests}
-              onChange={(e) => setSpecialRequests(e.target.value)}
-              multiline
-              minRows={2}
-              fullWidth
-            />
-            <FormControlLabel
-              control={<Checkbox checked={dataConsent} onChange={(e) => setDataConsent(e.target.checked)} />}
-              label={
-                <Typography variant="body2" color="text.secondary">
-                  Согласие на обработку персональных данных получено
-                </Typography>
-              }
-            />
+
+            {/* ── 2. Гость ── */}
+            <Stack spacing={1}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                Гость
+              </Typography>
+              <Autocomplete<HotelGuestSummary, false, false, true>
+                freeSolo
+                options={guests}
+                inputValue={guestName}
+                onInputChange={(_, value) => setGuestName(value)}
+                onChange={(_, value) => {
+                  if (value && typeof value !== "string") applyGuestPrefill(value);
+                }}
+                filterOptions={(options, state) => {
+                  const q = state.inputValue.trim().toLowerCase();
+                  if (!q) return options.slice(0, 8);
+                  return options.filter((g) => g.name.toLowerCase().includes(q) || g.phone.includes(q)).slice(0, 8);
+                }}
+                getOptionLabel={(option) => (typeof option === "string" ? option : option.name)}
+                renderOption={(props, option) => (
+                  <li {...props} key={option.name}>
+                    <Stack direction="row" alignItems="center" gap={1.25} sx={{ width: "100%" }}>
+                      <Avatar sx={{ width: 28, height: 28, fontSize: "0.75rem", bgcolor: "primary.main" }}>
+                        {initialsOf(option.name)}
+                      </Avatar>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={600} noWrap>
+                          {option.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {option.phone}
+                        </Typography>
+                      </Box>
+                    </Stack>
+                  </li>
+                )}
+                renderInput={(params) => (
+                  <TextField {...params} placeholder="Имя и фамилия — или начните вводить, чтобы найти гостя" fullWidth />
+                )}
+              />
+
+              <Stack direction="row" gap={2}>
+                <TextField
+                  label="Телефон"
+                  placeholder="+996 700 000 000"
+                  value={guestPhone}
+                  onChange={(e) => setGuestPhone(e.target.value)}
+                  sx={{ flex: 1 }}
+                />
+                <TextField
+                  label="Email"
+                  placeholder="guest@mail.com"
+                  value={guestEmail}
+                  onChange={(e) => setGuestEmail(e.target.value)}
+                  sx={{ flex: 1 }}
+                />
+              </Stack>
+
+              {duplicateMatches.length > 0 && (
+                <Alert severity="warning" variant="outlined" sx={{ mt: 1, py: 0.25 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    С этим номером телефона уже есть {duplicateMatches.length === 1 ? "гость" : "гости"} в базе
+                  </Typography>
+                  <Stack gap={0.5} sx={{ mt: 0.5 }}>
+                    {duplicateMatches.map((g) => (
+                      <Stack key={g.name} direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+                        <Typography variant="body2">
+                          {g.name} — {g.phone}
+                        </Typography>
+                        <Button size="small" onClick={() => applyGuestPrefill(g)}>
+                          Использовать
+                        </Button>
+                      </Stack>
+                    ))}
+                  </Stack>
+                </Alert>
+              )}
+            </Stack>
+
+            {/* Как в реальной форме секция услуг открывается только с выбранным
+                пациентом — документ и допполя появляются только когда есть гость. */}
+            {guestName.trim() !== "" && (
+              <Card variant="outlined" sx={{ bgcolor: "background.paper" }}>
+                <CardContent sx={{ p: 2 }}>
+                  <Stack spacing={2}>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                      Документ (необязательно)
+                    </Typography>
+                    <Divider />
+
+                    <ToggleButtonGroup
+                      value={guestType}
+                      exclusive
+                      size="small"
+                      onChange={(_, value: GuestType | null) => value && setGuestType(value)}
+                    >
+                      {(Object.keys(GUEST_TYPE_LABELS) as GuestType[]).map((key) => (
+                        <ToggleButton key={key} value={key}>
+                          {GUEST_TYPE_LABELS[key]}
+                        </ToggleButton>
+                      ))}
+                    </ToggleButtonGroup>
+
+                    {guestType === "resident" ? (
+                      <Stack direction="row" gap={2}>
+                        <TextField
+                          label="Паспорт (ID-карта)"
+                          value={idNumber}
+                          onChange={(e) => setIdNumber(e.target.value)}
+                          sx={{ flex: 1 }}
+                        />
+                        <TextField label="ИНН" value={inn} onChange={(e) => setInn(e.target.value)} sx={{ flex: 1 }} />
+                      </Stack>
+                    ) : (
+                      <Stack gap={2}>
+                        <Stack direction="row" gap={2}>
+                          <TextField
+                            label="Гражданство"
+                            value={citizenship}
+                            onChange={(e) => setCitizenship(e.target.value)}
+                            sx={{ flex: 1 }}
+                          />
+                          <TextField
+                            label="Номер загранпаспорта"
+                            value={passportNumber}
+                            onChange={(e) => setPassportNumber(e.target.value)}
+                            sx={{ flex: 1 }}
+                          />
+                        </Stack>
+                        <Stack direction="row" gap={2}>
+                          <TextField
+                            label="Страна выдачи"
+                            value={passportCountry}
+                            onChange={(e) => setPassportCountry(e.target.value)}
+                            sx={{ flex: 1 }}
+                          />
+                          <CustomDatePicker
+                            label="Действителен до"
+                            value={passportExpiry}
+                            onChange={setPassportExpiry}
+                            sx={{ flex: 1 }}
+                          />
+                        </Stack>
+                        <Stack direction="row" gap={2}>
+                          <CustomDatePicker
+                            label="Дата въезда в КР"
+                            value={entryDate}
+                            onChange={setEntryDate}
+                            disableFuture
+                            sx={{ flex: 1 }}
+                          />
+                          <TextField
+                            label="Номер миграционной карты"
+                            value={migrationCardNumber}
+                            onChange={(e) => setMigrationCardNumber(e.target.value)}
+                            sx={{ flex: 1 }}
+                          />
+                        </Stack>
+                        <TextField
+                          select
+                          label="Цель визита"
+                          value={visitPurpose}
+                          onChange={(e) => setVisitPurpose(e.target.value as VisitPurpose | "")}
+                          fullWidth
+                        >
+                          <MenuItem value="">Не указана</MenuItem>
+                          {(Object.keys(VISIT_PURPOSE_LABELS) as VisitPurpose[]).map((key) => (
+                            <MenuItem key={key} value={key}>
+                              {VISIT_PURPOSE_LABELS[key]}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      </Stack>
+                    )}
+
+                    <Stack direction="row" alignItems="center" gap={1.5}>
+                      <Button component="label" size="small" variant="outlined" startIcon={<UploadOutlined />}>
+                        Фото паспорта
+                        <input type="file" accept="image/*" hidden onChange={handlePhotoChange} />
+                      </Button>
+                      {passportPhoto && (
+                        <Stack direction="row" alignItems="center" gap={1}>
+                          <Box
+                            component="img"
+                            src={passportPhoto}
+                            alt="Фото паспорта"
+                            sx={{ width: 40, height: 40, borderRadius: "6px", objectFit: "cover" }}
+                          />
+                          <Button
+                            size="small"
+                            color="inherit"
+                            startIcon={<CloseOutlined fontSize="small" />}
+                            onClick={() => setPassportPhoto(null)}
+                          >
+                            Убрать
+                          </Button>
+                        </Stack>
+                      )}
+                    </Stack>
+                    {photoError && (
+                      <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
+                        {photoError}
+                      </Alert>
+                    )}
+
+                    <Divider />
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                      Дополнительно (необязательно)
+                    </Typography>
+                    <Stack direction="row" gap={2}>
+                      <TextField
+                        select
+                        label="Источник брони"
+                        value={bookingSource}
+                        onChange={(e) => setBookingSource(e.target.value as BookingSource | "")}
+                        sx={{ flex: 1 }}
+                      >
+                        <MenuItem value="">Не указан</MenuItem>
+                        {(Object.keys(BOOKING_SOURCE_LABELS) as BookingSource[]).map((key) => (
+                          <MenuItem key={key} value={key}>
+                            {BOOKING_SOURCE_LABELS[key]}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                      <TextField
+                        label="Юрлицо / командировка"
+                        value={companyInfo}
+                        onChange={(e) => setCompanyInfo(e.target.value)}
+                        sx={{ flex: 1 }}
+                      />
+                    </Stack>
+                    <TextField
+                      label="Особые пожелания"
+                      placeholder="Ранний заезд, вид на горы, детская кроватка…"
+                      value={specialRequests}
+                      onChange={(e) => setSpecialRequests(e.target.value)}
+                      multiline
+                      minRows={2}
+                      fullWidth
+                    />
+                    <FormControlLabel
+                      control={<Checkbox checked={dataConsent} onChange={(e) => setDataConsent(e.target.checked)} />}
+                      label={
+                        <Typography variant="body2" color="text.secondary">
+                          Согласие на обработку персональных данных получено
+                        </Typography>
+                      }
+                    />
+                  </Stack>
+                </CardContent>
+              </Card>
+            )}
           </Stack>
+        </Box>
+
+        {/* ── footer ── */}
+        <Divider />
+        <Box sx={{ p: 2, flexShrink: 0, bgcolor: "background.paper", borderTop: "1px solid", borderColor: "divider" }}>
+          <Stack direction="row" spacing={1} justifyContent="flex-end">
+            <Button onClick={requestClose}>Отмена</Button>
+            <Button variant="contained" disabled={!canSubmit} onClick={handleSubmit}>
+              Создать
+            </Button>
+          </Stack>
+        </Box>
+      </Drawer>
+
+      {/* Подтверждение закрытия при незаполненной до конца форме — тот же
+          приём, что confirmCloseOpen в реальной форме приёма. */}
+      <Dialog open={confirmCloseOpen} onClose={() => setConfirmCloseOpen(false)}>
+        <DialogTitle>Закрыть форму?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>Введённые данные брони не сохранятся.</DialogContentText>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setOpen(false)}>Отмена</Button>
-          <Button variant="contained" disabled={!canSubmit} onClick={handleSubmit}>
-            Создать
+        <DialogActions>
+          <Button onClick={() => setConfirmCloseOpen(false)} autoFocus>
+            Вернуться к форме
+          </Button>
+          <Button color="warning" variant="contained" onClick={confirmDiscardAndClose}>
+            Закрыть без сохранения
           </Button>
         </DialogActions>
       </Dialog>
