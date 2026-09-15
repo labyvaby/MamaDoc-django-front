@@ -153,3 +153,19 @@ export function tubeAppearance(
     body: found.body,
   };
 }
+
+/**
+ * Что за позиция в наборе: пробирка или услуга взятия биоматериала.
+ *
+ * В справочнике инструментов ЛИС рядом с вакутейнерами и контейнерами
+ * лежат «Взятие крови», «Взятие мазка», «Забор биоматериала» — это работа
+ * медсестры, за которую клиника берёт плату, а не предмет в руках. Рисовать
+ * им пробирку с подписью «без цветовой маркировки» — вводить в заблуждение.
+ */
+export type InstrumentKind = "tube" | "service";
+
+const SERVICE = /^\(?\s*(взятие|забор)\s/i;
+
+export function instrumentKind(title: string): InstrumentKind {
+  return SERVICE.test(title.trim()) ? "service" : "tube";
+}
