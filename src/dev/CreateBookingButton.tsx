@@ -74,10 +74,12 @@ import {
   initialsOf,
   GUEST_TYPE_LABELS,
   GUARANTEE_METHOD_LABELS,
+  BOARD_TYPE_LABELS,
   BOOKING_SOURCE_LABELS,
   VISIT_PURPOSE_LABELS,
   type GuestType,
   type BookingGuaranteeMethod,
+  type BookingBoardType,
   type BookingSource,
   type VisitPurpose,
   type HotelGuestSummary,
@@ -113,6 +115,7 @@ export const CreateBookingButton: React.FC = () => {
   const [adults, setAdults] = React.useState("1");
   const [children, setChildren] = React.useState("0");
   const [guaranteeMethod, setGuaranteeMethod] = React.useState<BookingGuaranteeMethod | "">("");
+  const [boardType, setBoardType] = React.useState<BookingBoardType | "">("");
 
   // Документ
   const [guestType, setGuestType] = React.useState<GuestType>("resident");
@@ -144,6 +147,7 @@ export const CreateBookingButton: React.FC = () => {
     setAdults("1");
     setChildren("0");
     setGuaranteeMethod("");
+    setBoardType("");
     setGuestType("resident");
     setIdNumber("");
     setInn("");
@@ -246,6 +250,7 @@ export const CreateBookingButton: React.FC = () => {
       adults: Number(adults) || undefined,
       children: Number(children) || undefined,
       guaranteeMethod: guaranteeMethod || undefined,
+      boardType: boardType || undefined,
       guestType,
       idNumber: guestType === "resident" ? orUndefined(idNumber) : undefined,
       inn: guestType === "resident" ? orUndefined(inn) : undefined,
@@ -415,6 +420,20 @@ export const CreateBookingButton: React.FC = () => {
                 ))}
               </TextField>
             </Stack>
+            <TextField
+              select
+              label="Тариф"
+              value={boardType}
+              onChange={(e) => setBoardType(e.target.value as BookingBoardType | "")}
+              fullWidth
+            >
+              <MenuItem value="">Не указан</MenuItem>
+              {(Object.keys(BOARD_TYPE_LABELS) as BookingBoardType[]).map((key) => (
+                <MenuItem key={key} value={key}>
+                  {BOARD_TYPE_LABELS[key]}
+                </MenuItem>
+              ))}
+            </TextField>
 
             <Divider />
             <SectionTitle>Документ (необязательно)</SectionTitle>

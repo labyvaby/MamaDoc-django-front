@@ -14,6 +14,7 @@ import React from "react";
 import {
   Alert,
   Avatar,
+  Badge,
   Box,
   Button,
   Chip,
@@ -26,6 +27,7 @@ import {
   MenuItem,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
@@ -33,6 +35,10 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
+import TaskAltOutlined from "@mui/icons-material/TaskAltOutlined";
+import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
+import BlockOutlined from "@mui/icons-material/BlockOutlined";
 
 import { usePermissions } from "../hooks/usePermissions";
 import {
@@ -48,15 +54,27 @@ import {
   setHotelPayment,
   subscribeHotelPayments,
   getHotelPaymentsSnapshot,
+  setGuestBlacklisted,
+  subscribeGuestBlacklist,
+  getGuestBlacklistSnapshot,
   HOTEL_BOOKING_STATUS_LABELS,
   HOTEL_PAYMENT_METHOD_LABELS,
+  BOARD_TYPE_LABELS,
   GUEST_TYPE_LABELS,
   GUARANTEE_METHOD_LABELS,
   BOOKING_SOURCE_LABELS,
   VISIT_PURPOSE_LABELS,
   type HotelBooking,
+  type HotelBookingStatus,
   type HotelPaymentMethod,
 } from "./mockDemoData";
+
+/** Иконка статуса брони в истории — та же раскладка, что в RoomBookingGrid. */
+const BOOKING_STATUS_ICON: Record<HotelBookingStatus, React.ElementType> = {
+  confirmed: ScheduleOutlined,
+  arrived: CheckCircleOutlined,
+  completed: TaskAltOutlined,
+};
 
 /** "15 сент, 14:32" — дата создания брони/оплаты в истории. */
 function formatDateTimeShort(iso: string): string {
@@ -98,12 +116,17 @@ export const GuestDetailsDialog: React.FC<GuestDetailsDialogProps> = ({ guestNam
   // Подписка форсирует перерисовку при изменении оплаты — сами данные читаются
   // напрямую через getHotelPayment() в каждой строке истории при рендере.
   React.useSyncExternalStore(subscribeHotelPayments, getHotelPaymentsSnapshot);
+  // guest пересчитывается в useMemo ниже — снимок в зависимостях гарантирует
+  // пересчёт isBlacklisted сразу при переключении (getHotelGuests сам не подписан).
+  const blacklistSnapshot = React.useSyncExternalStore(subscribeGuestBlacklist, getGuestBlacklistSnapshot);
   const [paymentEdit, setPaymentEdit] = React.useState<PaymentEditState | null>(null);
+  const [blacklistReasonDraft, setBlacklistReasonDraft] = React.useState("");
 
   const guest = React.useMemo(() => {
     if (!guestName) return undefined;
     return getHotelGuests().find((g) => g.name === guestName);
-  }, [guestName]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guestName, blacklistSnapshot]);
 
   const detailed = guest ? findDetailedGuestBooking(guest.bookings) : undefined;
 
@@ -134,12 +157,50 @@ export const GuestDetailsDialog: React.FC<GuestDetailsDialogProps> = ({ guestNam
     setPaymentEdit(null);
   };
 
+  const addToBlacklist = () => {
+    if (!guestName) return;
+    setGuestBlacklisted(guestName, true, blacklistReasonDraft);
+    setBlacklistReasonDraft("");
+  };
+
+  const removeFromBlacklist = () => {
+    if (!guestName) return;
+    setGuestBlacklisted(guestName, false);
+  };
+
   return (
     <Dialog open={guestName != null} onClose={onClose} maxWidth="sm" fullWidth>
       {guestName && (
         <>
           <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1.5, pr: 6 }}>
-            <Avatar sx={{ bgcolor: "primary.main", fontWeight: 700 }}>{initialsOf(guestName)}</Avatar>
+            <Badge
+              overlap="circular"
+              anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+              badgeContent={
+                guest?.isBlacklisted ? (
+                  <Tooltip title={guest.blacklistReason ? `Чёрный список: ${guest.blacklistReason}` : "В чёрном списке"}>
+                    <Box
+                      sx={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: "50%",
+                        bgcolor: "error.main",
+                        color: "#fff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        border: "2px solid",
+                        borderColor: "background.paper",
+                      }}
+                    >
+                      <WarningAmberOutlined sx={{ fontSize: 12 }} />
+                    </Box>
+                  </Tooltip>
+                ) : null
+              }
+            >
+              <Avatar sx={{ bgcolor: "primary.main", fontWeight: 700 }}>{initialsOf(guestName)}</Avatar>
+            </Badge>
             <Typography variant="h6" component="span" fontWeight={700}>
               {guestName}
             </Typography>
@@ -151,22 +212,68 @@ export const GuestDetailsDialog: React.FC<GuestDetailsDialogProps> = ({ guestNam
           <DialogContent sx={{ pt: 0 }}>
             {guest ? (
               <>
-                <Stack direction="row" alignItems="center" gap={3} sx={{ mb: 2.5 }}>
-                  <Stack direction="row" alignItems="center" gap={0.75}>
-                    <PhoneOutlined fontSize="small" sx={{ color: "text.secondary" }} />
-                    <Typography variant="body2" fontWeight={600}>
-                      {guest.phone}
-                    </Typography>
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  justifyContent="space-between"
+                  gap={2}
+                  flexWrap="wrap"
+                  sx={{ mb: guest.isBlacklisted ? 1.5 : 2.5 }}
+                >
+                  <Stack direction="row" alignItems="center" gap={3}>
+                    <Stack direction="row" alignItems="center" gap={0.75}>
+                      <PhoneOutlined fontSize="small" sx={{ color: "text.secondary" }} />
+                      <Typography variant="body2" fontWeight={600}>
+                        {guest.phone}
+                      </Typography>
+                    </Stack>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Проживаний
+                      </Typography>
+                      <Typography variant="body2" fontWeight={600}>
+                        {guest.bookings.length}
+                      </Typography>
+                    </Box>
                   </Stack>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Проживаний
-                    </Typography>
-                    <Typography variant="body2" fontWeight={600}>
-                      {guest.bookings.length}
-                    </Typography>
-                  </Box>
+
+                  {guest.isBlacklisted ? (
+                    <Button
+                      size="small"
+                      color="error"
+                      variant="outlined"
+                      startIcon={<BlockOutlined fontSize="small" />}
+                      onClick={removeFromBlacklist}
+                    >
+                      Убрать из чёрного списка
+                    </Button>
+                  ) : (
+                    <Stack direction="row" gap={1} alignItems="center">
+                      <TextField
+                        size="small"
+                        placeholder="Причина (необязательно)"
+                        value={blacklistReasonDraft}
+                        onChange={(e) => setBlacklistReasonDraft(e.target.value)}
+                        sx={{ width: 180 }}
+                      />
+                      <Button
+                        size="small"
+                        color="error"
+                        variant="outlined"
+                        startIcon={<BlockOutlined fontSize="small" />}
+                        onClick={addToBlacklist}
+                      >
+                        В чёрный список
+                      </Button>
+                    </Stack>
+                  )}
                 </Stack>
+
+                {guest.isBlacklisted && (
+                  <Alert severity="error" variant="outlined" sx={{ mb: 2, fontSize: "0.8rem" }}>
+                    Гость в чёрном списке{guest.blacklistReason ? `: ${guest.blacklistReason}` : ""}.
+                  </Alert>
+                )}
 
                 {detailed && (
                   <>
@@ -187,6 +294,10 @@ export const GuestDetailsDialog: React.FC<GuestDetailsDialogProps> = ({ guestNam
                       <DetailField
                         label="Гарантия брони"
                         value={detailed.guaranteeMethod ? GUARANTEE_METHOD_LABELS[detailed.guaranteeMethod] : null}
+                      />
+                      <DetailField
+                        label="Тариф"
+                        value={detailed.boardType ? BOARD_TYPE_LABELS[detailed.boardType] : null}
                       />
                       <DetailField
                         label="Тип гостя"
@@ -279,6 +390,7 @@ export const GuestDetailsDialog: React.FC<GuestDetailsDialogProps> = ({ guestNam
                             </Typography>
                           </Box>
                           <Chip
+                            icon={React.createElement(BOOKING_STATUS_ICON[b.status], { sx: { fontSize: 14 } })}
                             label={HOTEL_BOOKING_STATUS_LABELS[b.status]}
                             size="small"
                             sx={{
@@ -286,6 +398,7 @@ export const GuestDetailsDialog: React.FC<GuestDetailsDialogProps> = ({ guestNam
                               color: statusColor(b.status),
                               fontWeight: 600,
                               flexShrink: 0,
+                              "& .MuiChip-icon": { color: statusColor(b.status) },
                             }}
                           />
                         </Stack>

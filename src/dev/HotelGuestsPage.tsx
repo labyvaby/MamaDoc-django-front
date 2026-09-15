@@ -4,28 +4,51 @@
  * Viva там нет ни организации, ни картотеки. Гости собраны из тех же броней,
  * что и RoomBookingGrid/HotelOccupancyBanner (getHotelGuests, mockDemoData.ts)
  * — отдельной сущности «гость» в API нет, это имя внутри брони.
+ *
+ * Паритет с «Все пациенты» (DjangoPatientsPage) в той мере, в какой это
+ * осмысленно для гостя-без-картотеки: фото документа вместо аватара-заглушки
+ * (как photoUrl у пациента), бейдж чёрного списка на аватаре (как у
+ * заблокированного пациента) и кнопка «Добавить» — здесь она открывает
+ * создание брони (CreateBookingButton), потому что гость и появляется только
+ * через бронь, отдельной формы «просто гость» не существует.
  */
 import React from "react";
 import {
   Alert,
   Avatar,
+  Badge,
   Box,
   InputAdornment,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 
 import { usePageTitle } from "../hooks/usePageTitle";
-import { getHotelGuests, initialsOf } from "./mockDemoData";
+import {
+  getHotelGuests,
+  initialsOf,
+  subscribeGuestBlacklist,
+  getGuestBlacklistSnapshot,
+} from "./mockDemoData";
 import { GuestDetailsDialog } from "./GuestDetailsDialog";
+import { CreateBookingButton } from "./CreateBookingButton";
 
 export const HotelGuestsPage: React.FC = () => {
   usePageTitle("Гости");
   const theme = useTheme();
-  const guests = React.useMemo(() => getHotelGuests(), []);
+  // Снимок в зависимостях — без него пометка «в чёрный список» не обновит
+  // бейджи в списке сразу же (getHotelGuests сам не подписан на этот стор).
+  const blacklistSnapshot = React.useSyncExternalStore(subscribeGuestBlacklist, getGuestBlacklistSnapshot);
+  const guests = React.useMemo(
+    () => getHotelGuests(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [blacklistSnapshot],
+  );
   const [search, setSearch] = React.useState("");
   const [selectedGuest, setSelectedGuest] = React.useState<string | null>(null);
 
@@ -34,19 +57,26 @@ export const HotelGuestsPage: React.FC = () => {
     ? guests.filter((g) => g.name.toLowerCase().includes(query) || g.phone.includes(query))
     : guests;
 
+  const blacklistedCount = guests.filter((g) => g.isBlacklisted).length;
+
   return (
     <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap" sx={{ mb: 2 }}>
         <Typography variant="h6" fontWeight={700}>
           Гости
         </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Всего: {guests.length}
-        </Typography>
+        <Stack direction="row" alignItems="center" gap={2}>
+          <Typography variant="body2" color="text.secondary">
+            Всего: {guests.length}
+            {blacklistedCount > 0 && ` · В чёрном списке: ${blacklistedCount}`}
+          </Typography>
+          <CreateBookingButton />
+        </Stack>
       </Stack>
 
       <Alert severity="info" variant="outlined" sx={{ mb: 2, fontSize: "0.8rem" }}>
-        Список собран из броней Viva — отдельной картотеки гостей в системе нет.
+        Список собран из броней Viva — отдельной картотеки гостей в системе нет. Новый гость появляется
+        через создание брони.
       </Alert>
 
       <TextField
@@ -98,9 +128,39 @@ export const HotelGuestsPage: React.FC = () => {
                 "&:hover": { borderColor: "primary.main" },
               }}
             >
-              <Avatar sx={{ bgcolor: "primary.main", fontWeight: 700, flexShrink: 0 }}>
-                {initialsOf(g.name)}
-              </Avatar>
+              <Badge
+                overlap="circular"
+                anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                badgeContent={
+                  g.isBlacklisted ? (
+                    <Tooltip title={g.blacklistReason ? `Чёрный список: ${g.blacklistReason}` : "В чёрном списке"}>
+                      <Box
+                        sx={{
+                          width: 16,
+                          height: 16,
+                          borderRadius: "50%",
+                          bgcolor: "error.main",
+                          color: "#fff",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          border: "2px solid",
+                          borderColor: "background.paper",
+                        }}
+                      >
+                        <WarningAmberOutlined sx={{ fontSize: 10 }} />
+                      </Box>
+                    </Tooltip>
+                  ) : null
+                }
+              >
+                <Avatar
+                  src={g.photoDataUrl}
+                  sx={{ bgcolor: "primary.main", fontWeight: 700, flexShrink: 0 }}
+                >
+                  {initialsOf(g.name)}
+                </Avatar>
+              </Badge>
               <Box sx={{ flex: 1, minWidth: 0 }}>
                 <Typography variant="body2" fontWeight={600} noWrap>
                   {g.name}

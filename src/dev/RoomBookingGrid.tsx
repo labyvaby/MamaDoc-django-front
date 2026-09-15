@@ -25,11 +25,14 @@
  * Ничего не пишет и не читает с бэкенда.
  */
 import React from "react";
-import { Box, IconButton, Stack, Typography } from "@mui/material";
+import { Box, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
+import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
+import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import TaskAltOutlined from "@mui/icons-material/TaskAltOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import {
@@ -43,13 +46,24 @@ import {
   subscribeSelectedHotelDate,
   requestQuickBooking,
   getHotelBookingStatusColor,
+  getRoomHousekeepingStatus,
+  getRoomHousekeepingStatusColor,
+  ROOM_HOUSEKEEPING_STATUS_LABELS,
   nightsBetween,
   MONTH_NOM_RU,
   WEEKDAY_SHORT_RU,
   HOTEL_BOOKING_STATUSES,
   HOTEL_BOOKING_STATUS_LABELS,
   type HotelBooking,
+  type HotelBookingStatus,
 } from "./mockDemoData";
+
+/** Иконка статуса брони — та же смысловая раскладка, что цвет (getHotelBookingStatusColor). */
+const BOOKING_STATUS_ICON: Record<HotelBookingStatus, React.ElementType> = {
+  confirmed: ScheduleOutlined,
+  arrived: CheckCircleOutlined,
+  completed: TaskAltOutlined,
+};
 import { RoomDetailsDialog } from "./RoomDetailsDialog";
 import { GuestDetailsDialog } from "./GuestDetailsDialog";
 
@@ -293,6 +307,8 @@ export const RoomBookingGrid: React.FC = () => {
               );
             }
             const luxury = getRoomCategory(row.room)?.luxury;
+            const housekeeping = getRoomHousekeepingStatus(row.room);
+            const housekeepingColor = getRoomHousekeepingStatusColor(housekeeping, theme);
             return (
               <React.Fragment key={row.room}>
                 <Box
@@ -331,6 +347,18 @@ export const RoomBookingGrid: React.FC = () => {
                   <Typography variant="body2" fontWeight={600}>
                     {row.room}
                   </Typography>
+                  <Tooltip title={`Статус номера: ${ROOM_HOUSEKEEPING_STATUS_LABELS[housekeeping]}`}>
+                    <Box
+                      sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        bgcolor: housekeepingColor,
+                        ml: "auto",
+                        flexShrink: 0,
+                      }}
+                    />
+                  </Tooltip>
                 </Box>
                 {(() => {
                   const roomBookings = bookingsByRoom.get(row.room) ?? [];
@@ -385,13 +413,15 @@ export const RoomBookingGrid: React.FC = () => {
               if (endCol <= startCol) return null;
               const color = statusColor(b.status);
               const nights = nightsBetween(b.checkIn, b.checkOut);
+              const StatusIcon = BOOKING_STATUS_ICON[b.status];
+              const iconColor = theme.palette.mode === "dark" ? "#fff" : color;
               return (
                 <Box
                   key={b.id}
                   component="button"
                   type="button"
                   onClick={() => setSelectedGuest(b.guestName)}
-                  title={`${b.guestName} · №${row.room} · ${nights} ноч. — показать гостя`}
+                  title={`${b.guestName} · №${row.room} · ${nights} ноч. · ${HOTEL_BOOKING_STATUS_LABELS[b.status]} — показать гостя`}
                   sx={{
                     gridRow,
                     gridColumn: `${startCol + 2} / ${endCol + 2}`,
@@ -405,17 +435,15 @@ export const RoomBookingGrid: React.FC = () => {
                     borderColor: alpha(color, 0.6),
                     display: "flex",
                     alignItems: "center",
+                    gap: 0.5,
                     overflow: "hidden",
                     font: "inherit",
                     cursor: "pointer",
                     "&:hover": { borderColor: color },
                   }}
                 >
-                  <Typography
-                    variant="caption"
-                    noWrap
-                    sx={{ color: theme.palette.mode === "dark" ? "#fff" : color, fontWeight: 600 }}
-                  >
+                  <StatusIcon sx={{ fontSize: 14, color: iconColor, flexShrink: 0 }} />
+                  <Typography variant="caption" noWrap sx={{ color: iconColor, fontWeight: 600 }}>
                     {b.guestName}
                   </Typography>
                 </Box>
@@ -426,14 +454,23 @@ export const RoomBookingGrid: React.FC = () => {
       </Box>
 
       <Stack direction="row" gap={2} flexWrap="wrap">
-        {HOTEL_BOOKING_STATUSES.map((status) => (
-          <Stack key={status} direction="row" alignItems="center" gap={0.75}>
-            <Box sx={{ width: 10, height: 10, borderRadius: "3px", bgcolor: statusColor(status) }} />
-            <Typography variant="caption" color="text.secondary">
-              {HOTEL_BOOKING_STATUS_LABELS[status]}
-            </Typography>
-          </Stack>
-        ))}
+        {HOTEL_BOOKING_STATUSES.map((status) => {
+          const StatusIcon = BOOKING_STATUS_ICON[status];
+          return (
+            <Stack key={status} direction="row" alignItems="center" gap={0.5}>
+              <StatusIcon sx={{ fontSize: 14, color: statusColor(status) }} />
+              <Typography variant="caption" color="text.secondary">
+                {HOTEL_BOOKING_STATUS_LABELS[status]}
+              </Typography>
+            </Stack>
+          );
+        })}
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: theme.palette.success.main }} />
+          <Typography variant="caption" color="text.secondary">
+            Точка у номера — статус уборки
+          </Typography>
+        </Stack>
       </Stack>
 
       <RoomDetailsDialog

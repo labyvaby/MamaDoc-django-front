@@ -250,6 +250,48 @@ export function getRoomCategory(room: string): HotelRoomCategory | undefined {
   return HOTEL_ROOM_CATEGORIES.find((c) => c.rooms.includes(room));
 }
 
+/** Статус уборки номера — независим от того, занят номер бронью или нет. */
+export type RoomHousekeepingStatus = "dirty" | "cleaned" | "inspected" | "repair";
+
+export const ROOM_HOUSEKEEPING_STATUS_LABELS: Record<RoomHousekeepingStatus, string> = {
+  dirty: "Грязно",
+  cleaned: "Убрано",
+  inspected: "Проверено",
+  repair: "Ремонт",
+};
+
+/**
+ * Статус уборки номера — детерминирован по номеру и дню (не по каждому
+ * рендеру): один и тот же номер весь день «Убран», а не мигает при каждом
+ * клике. Меняется на следующий день — тот же сид-приём, что у ops-цифр в
+ * getHotelOccupancySnapshot, только теперь по каждому номеру отдельно, а не
+ * общим счётчиком, — родная связка с точками в RoomBookingGrid и чипом в
+ * RoomDetailsDialog, а не отдельная независимая цифра.
+ */
+export function getRoomHousekeepingStatus(room: string): RoomHousekeepingStatus {
+  const today = dayjs().format("YYYY-MM-DD");
+  const rnd = rngFor(`roomstatus:${room}:${today}`);
+  const r = rnd();
+  if (r < 0.08) return "repair";
+  if (r < 0.35) return "dirty";
+  if (r < 0.65) return "inspected";
+  return "cleaned";
+}
+
+/** Цвет статуса уборки из активной MUI-темы — тот же в точке-индикаторе и в чипе. */
+export function getRoomHousekeepingStatusColor(status: RoomHousekeepingStatus, theme: Theme): string {
+  switch (status) {
+    case "dirty":
+      return theme.palette.error.main;
+    case "cleaned":
+      return theme.palette.success.main;
+    case "inspected":
+      return theme.palette.info.main;
+    case "repair":
+      return theme.palette.warning.main;
+  }
+}
+
 export type HotelBookingStatus = "confirmed" | "arrived" | "completed";
 
 /** Гражданин КР — паспорт/ИНН; иностранец — загранпаспорт/миграционный учёт. */
@@ -257,6 +299,8 @@ export type GuestType = "resident" | "foreign";
 export type BookingGuaranteeMethod = "card" | "prepayment" | "cash" | "corporate";
 export type BookingSource = "direct" | "phone" | "ota" | "agent" | "walkin";
 export type VisitPurpose = "tourism" | "business" | "other";
+/** Тариф проживания — что включено в стоимость номера, помимо самого проживания. */
+export type BookingBoardType = "roomOnly" | "breakfast" | "halfBoard" | "allInclusive";
 
 export const GUEST_TYPE_LABELS: Record<GuestType, string> = {
   resident: "Гражданин КР",
@@ -284,6 +328,13 @@ export const VISIT_PURPOSE_LABELS: Record<VisitPurpose, string> = {
   other: "Другое",
 };
 
+export const BOARD_TYPE_LABELS: Record<BookingBoardType, string> = {
+  roomOnly: "Только проживание",
+  breakfast: "Завтрак включён",
+  halfBoard: "Завтрак и ужин",
+  allInclusive: "Всё включено",
+};
+
 export interface HotelBooking {
   id: number;
   roomNumber: string;
@@ -303,6 +354,7 @@ export interface HotelBooking {
   adults?: number;
   children?: number;
   guaranteeMethod?: BookingGuaranteeMethod;
+  boardType?: BookingBoardType;
   guestType?: GuestType;
   /** Гражданин КР: паспорт (ID-карта). */
   idNumber?: string;
@@ -906,12 +958,73 @@ export interface HotelGuestSummary {
   phone: string;
   /** Все брони этого гостя за окно агрегации (см. getHotelGuests), по возрастанию заезда. */
   bookings: HotelBooking[];
+  /** Фото документа с самой свежей подробной брони — для аватара в списке гостей, как photoUrl у реального пациента. */
+  photoDataUrl?: string;
+  isBlacklisted: boolean;
+  blacklistReason?: string;
 }
 
 /** Телефон, детерминированный по имени — тот же гость всегда получает тот же номер. */
 function phoneForGuestName(name: string): string {
   const digits = String(hashString(`phone:${name}`) % 1_000_000).padStart(6, "0");
   return `+996 700 ${digits.slice(0, 3)} ${digits.slice(3, 6)}`;
+}
+
+// ── Чёрный список гостей — как isBlacklisted у реального пациента ──────────
+//
+// Отдельной картотеки гостей нет (см. выше), поэтому чёрный список ведётся
+// по имени, а не по id записи — тот же приём localStorage-стора, что у
+// остальных редактируемых сущностей отеля.
+
+export interface GuestBlacklistRecord {
+  reason?: string;
+}
+
+const GUEST_BLACKLIST_KEY = "mamadoc:mockGuestBlacklist";
+const guestBlacklistListeners = new Set<() => void>();
+
+function readGuestBlacklistFromStorage(): Record<string, GuestBlacklistRecord> {
+  try {
+    const raw = window.localStorage.getItem(GUEST_BLACKLIST_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, GuestBlacklistRecord>;
+  } catch {
+    return {};
+  }
+}
+
+let guestBlacklistCache: Record<string, GuestBlacklistRecord> = readGuestBlacklistFromStorage();
+
+function persistGuestBlacklist(next: Record<string, GuestBlacklistRecord>): void {
+  guestBlacklistCache = next;
+  try {
+    window.localStorage.setItem(GUEST_BLACKLIST_KEY, JSON.stringify(next));
+  } catch {
+    // приватный режим/запрет на localStorage — доживёт до конца вкладки в памяти
+  }
+  guestBlacklistListeners.forEach((fn) => fn());
+}
+
+export function setGuestBlacklisted(name: string, blacklisted: boolean, reason?: string): void {
+  if (!blacklisted) {
+    if (!(name in guestBlacklistCache)) return;
+    const next = { ...guestBlacklistCache };
+    delete next[name];
+    persistGuestBlacklist(next);
+    return;
+  }
+  persistGuestBlacklist({ ...guestBlacklistCache, [name]: { reason: reason?.trim() || undefined } });
+}
+
+export function subscribeGuestBlacklist(onChange: () => void): () => void {
+  guestBlacklistListeners.add(onChange);
+  return () => guestBlacklistListeners.delete(onChange);
+}
+
+export function getGuestBlacklistSnapshot(): Record<string, GuestBlacklistRecord> {
+  return guestBlacklistCache;
 }
 
 /**
@@ -938,7 +1051,16 @@ export function getHotelGuests(): HotelGuestSummary[] {
     // Реально введённый в форме телефон важнее сгенерированного — берём
     // с самой свежей брони, где он есть.
     const enteredPhone = [...bookings].reverse().find((b) => b.guestPhone)?.guestPhone;
-    guests.push({ name, phone: enteredPhone ?? phoneForGuestName(name), bookings });
+    const detailed = findDetailedGuestBooking(bookings);
+    const blacklist = guestBlacklistCache[name];
+    guests.push({
+      name,
+      phone: enteredPhone ?? phoneForGuestName(name),
+      bookings,
+      photoDataUrl: detailed?.passportPhotoDataUrl,
+      isBlacklisted: blacklist != null,
+      blacklistReason: blacklist?.reason,
+    });
   }
   guests.sort((a, b) => a.name.localeCompare(b.name, "ru"));
   return guests;

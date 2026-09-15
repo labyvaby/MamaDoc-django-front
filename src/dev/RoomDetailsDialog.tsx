@@ -26,6 +26,9 @@ import {
   getRoomCategory,
   getRoomAvailability,
   getHotelBookingStatusColor,
+  getRoomHousekeepingStatus,
+  getRoomHousekeepingStatusColor,
+  ROOM_HOUSEKEEPING_STATUS_LABELS,
   formatHotelDateRange,
   nightsBetween,
   HOTEL_BOOKING_STATUS_LABELS,
@@ -45,6 +48,7 @@ export interface RoomDetailsDialogProps {
 export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onClose, onGuestClick }) => {
   const theme = useTheme();
   const category = room ? getRoomCategory(room) : undefined;
+  const housekeeping = room ? getRoomHousekeepingStatus(room) : undefined;
 
   const { bookings, freeRanges } = React.useMemo(() => {
     if (!room) return { bookings: [] as HotelBooking[], freeRanges: [] };
@@ -76,6 +80,17 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
                 sx={{
                   bgcolor: alpha("#d4af37", 0.18),
                   color: theme.palette.mode === "dark" ? "#e9c766" : "#8a6d1a",
+                  fontWeight: 600,
+                }}
+              />
+            )}
+            {housekeeping && (
+              <Chip
+                label={ROOM_HOUSEKEEPING_STATUS_LABELS[housekeeping]}
+                size="small"
+                sx={{
+                  bgcolor: alpha(getRoomHousekeepingStatusColor(housekeeping, theme), theme.palette.mode === "dark" ? 0.25 : 0.14),
+                  color: getRoomHousekeepingStatusColor(housekeeping, theme),
                   fontWeight: 600,
                 }}
               />
