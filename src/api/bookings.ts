@@ -222,6 +222,20 @@ export function getBooking(id: number, signal?: AbortSignal): Promise<BookingDet
 }
 
 /**
+ * POST /api/bookings/<id>/claim/ — «взять в работу» (§8.3, право bookings.manage).
+ * Не блокировка: POST другого сотрудника перебивает отметку на себя, повторный
+ * POST тем же сотрудником `claimedAt` не двигает. Ответ — обновлённая карточка.
+ */
+export function claimBooking(id: number): Promise<BookingDetail> {
+  return apiRequest<BookingDetail>(`/bookings/${id}/claim/`, { method: "POST" });
+}
+
+/** DELETE /api/bookings/<id>/claim/ — снять отметку (не дозвонились). */
+export function unclaimBooking(id: number): Promise<BookingDetail> {
+  return apiRequest<BookingDetail>(`/bookings/${id}/claim/`, { method: "DELETE" });
+}
+
+/**
  * Дополнения к смене статуса. Оба поля бэк принимает (проверено на живом API
  * 05.08.2026: PATCH с `patientId`/`serviceIds` ругается только на невалидный
  * `status`, а не на неизвестное поле):

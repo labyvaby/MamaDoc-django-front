@@ -30,6 +30,30 @@ describe("normalizeAiSuggestion", () => {
     expect(normalizeAiSuggestion(null)).toBeNull();
   });
 
+  it("считает пустым ответ из одних невидимых символов (живой ответ test, 15.09.2026)", () => {
+    expect(normalizeAiSuggestion({ suggestions: [{ text: "\u200E" }] })).toBeNull();
+    expect(normalizeAiSuggestion({ suggestions: [{ text: " \uFEFF\u200B " }] })).toBeNull();
+  });
+
+  it("не показывает реплику модели в скобках про отсутствие данных (живые ответы test)", () => {
+    for (const text of [
+      "(Текст врача не предоставлен — данных для раздела «жалобы пациента» нет.)",
+      "(пусто — текст врача не содержит данных для раздела)",
+    ]) {
+      expect(normalizeAiSuggestion({ suggestions: [{ text }] }), text).toBeNull();
+    }
+  });
+
+  it("оставляет обычный текст про отсутствие жалоб и текст в скобках по делу", () => {
+    for (const text of [
+      "Жалоб на момент осмотра не предъявляет. Приём по поводу вакцинации.",
+      "Жалоб нет, данных о травмах нет.",
+      "(со слов матери) кашель третий день",
+    ]) {
+      expect(normalizeAiSuggestion({ suggestions: [{ text }] })).toBe(text);
+    }
+  });
+
   it("не показывает заглушку модели как предложение", () => {
     for (const text of [
       "Данных не предоставлено.",
@@ -51,7 +75,8 @@ describe("normalizeAiSuggestion", () => {
 });
 
 describe("isAiUnavailableError", () => {
-  it("502–504 — «AI временно недоступен», остальное — обычная ошибка", () => {
+  it("502–504 и 429 — «AI временно недоступен», остальное — обычная ошибка", () => {
+    expect(isAiUnavailableError(new ApiError("rate limit", 429, null))).toBe(true);
     expect(isAiUnavailableError(new ApiError("bad gateway", 502, null))).toBe(true);
     expect(isAiUnavailableError(new ApiError("unavailable", 503, null))).toBe(true);
     expect(isAiUnavailableError(new ApiError("timeout", 504, null))).toBe(true);

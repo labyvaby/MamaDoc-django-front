@@ -22,9 +22,9 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useNotification } from "@refinedev/core";
 import dayjs, { type Dayjs } from "dayjs";
 import "dayjs/locale/ru";
+import { useSearchParams } from "react-router";
 
 import EventBusyOutlinedIcon from "@mui/icons-material/EventBusyOutlined";
-import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlinedIcon from "@mui/icons-material/ChevronRightOutlined";
@@ -32,12 +32,18 @@ import StorefrontOutlinedIcon from "@mui/icons-material/StorefrontOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import CheckOutlinedIcon from "@mui/icons-material/CheckOutlined";
 import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
-import FiberNewOutlinedIcon from "@mui/icons-material/FiberNewOutlined";
-import { useSearchParams } from "react-router";
+import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
+import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
+import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
+import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
 
-import { DateRangeField, PageHeader, UserAvatar, type DateRangePreset } from "../../components/ui";
+import {
+  DateRangeField,
+  DEFAULT_RANGE_PRESETS,
+  PageHeader,
+  SegmentedTabs,
+  UserAvatar,
+} from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -47,9 +53,11 @@ import {
   getBookings,
   updateBookingStatus,
   bookingHasBranch,
+  claimBooking,
   type BookingListItem,
   type BookingStatus,
   type BookingPrepaymentStatus,
+  type BookingsFilters,
 } from "../../api/bookings";
 import { getDjangoEmployees } from "../../api/staff";
 import {
@@ -62,117 +70,49 @@ import { subtleBg } from "../../theme/uiHelpers";
 import { bookingShowcaseUrl } from "../public-booking/format";
 import BookingDetailDrawer from "./BookingDetailDrawer";
 import BookingNotificationsBell from "./BookingNotificationsBell";
+import BookingsAnalytics from "./BookingsAnalytics";
+import {
+  BookingRowActions,
+  ClaimControl,
+  useReminderText,
+  useRemindedBookings,
+} from "./BookingRowActions";
+import { autoConfirmExtras, loadDoctorServiceIds, useBookingActions } from "./useBookingActions";
 import {
   BOOKING_PREPAYMENT_META,
   BOOKING_STATUS_OPTIONS,
   PrepaymentChip,
   StatusChip,
+  bookingTimeHint,
   hasPrepayment,
-  isBookingClosed,
-  isBookingOverdue,
   sortBookingsByPriority,
-  statusTone,
   useTickingClock,
 } from "./meta";
+import {
+  TRIAGE_FUTURE_DAYS,
+  TRIAGE_PAST_DAYS,
+  UPCOMING_FUTURE_DAYS,
+  isBookingTab,
+  needsTriage,
+  type BookingTab,
+} from "./bookingViews";
 import { useT } from "../../i18n/VerticalProvider";
 import { useNewBookings } from "../../hooks/useNewBookings";
 
 const PAGE_SIZE = 20;
-/** Лимит выборки для сводки/счётчиков: 5 страниц по 100. */
-const STATS_PAGE_SIZE = 100;
-const STATS_MAX_PAGES = 5;
+/** Серверный максимум pageSize (контракт §2.1). */
+const BULK_PAGE_SIZE = 200;
+/** Аналитика тянет не больше 10 страниц по 200 — дальше честное «≈». */
+const ANALYTICS_MAX_PAGES = 10;
+/** Заявки ждут звонка — опрашиваем чаще общего поллинга (как useNewBookings). */
+const TRIAGE_POLL_MS = 45_000;
 
-/**
- * Режим списка. `active` и `new` — срезы, которых нет на сервере (он умеет
- * фильтровать только по одному статусу), поэтому считаются по сводной выборке
- * и пагинируются на клиенте. `all` и код статуса уходят в запрос.
- */
-type BookingView = "active" | "new" | "all" | BookingStatus;
-
-/** Срезы, которые собираются на клиенте из сводной выборки. */
-const isClientView = (v: BookingView): v is "active" | "new" =>
-  v === "active" || v === "new";
-
-// ── Помощники стилей ──────────────────────────────────────────────────────────
-
-/**
- * Компактная плитка сводки: иконка + подпись + значение. С `onClick` — тёплый
- * (warning) тон при `warn`, чтобы просроченные брони не терялись среди
- * нейтральных цифр.
- */
-const StatTile: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  value: React.ReactNode;
-  onClick?: () => void;
-  warn?: boolean;
-}> = ({ icon, label, value, onClick, warn }) => {
-  const content = (
-    <Stack
-      direction="row"
-      alignItems="center"
-      gap={1.25}
-      sx={(t) => ({
-        px: 1.5,
-        py: 1,
-        borderRadius: "10px",
-        border: 1,
-        borderColor: warn ? alpha(t.palette.warning.main, 0.4) : "divider",
-        bgcolor: warn
-          ? alpha(t.palette.warning.main, t.palette.mode === "dark" ? 0.14 : 0.08)
-          : subtleBg(t),
-        minWidth: 150,
-      })}
-    >
-      <Box
-        sx={(t) => ({
-          width: 34,
-          height: 34,
-          borderRadius: "9px",
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: warn
-            ? t.palette.mode === "dark"
-              ? t.palette.warning.light
-              : t.palette.warning.dark
-            : "primary.onSurface",
-          bgcolor: alpha(
-            warn ? t.palette.warning.main : t.palette.primary.main,
-            t.palette.mode === "dark" ? 0.16 : 0.1,
-          ),
-          "& .MuiSvgIcon-root": { fontSize: 18 },
-        })}
-      >
-        {icon}
-      </Box>
-      <Box sx={{ minWidth: 0 }}>
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.2 }}>
-          {label}
-        </Typography>
-        <Typography variant="subtitle2" fontWeight={600} noWrap>
-          {value}
-        </Typography>
-      </Box>
-    </Stack>
-  );
-
-  if (!onClick) return content;
-  return (
-    <ButtonBase onClick={onClick} sx={{ borderRadius: "10px", display: "block", textAlign: "left" }}>
-      {content}
-    </ButtonBase>
-  );
-};
+const DATE_FMT = "YYYY-MM-DD";
 
 /**
  * Ссылка на публичную витрину онлайн-записи: регистратуре её диктуют пациентам
  * и вставляют в соцсети, поэтому рядом с открытием — копирование адреса.
- *
- * Адрес строится по активной организации: витрина одна на весь CRM, и без слага
- * клиники «Клиника 21» открывала витрину организации по умолчанию — с чужими
- * врачами и филиалами.
+ * Адрес строится по активной организации (витрина одна на весь CRM).
  */
 const ShowcaseLink: React.FC<{ orgSlug: string | null }> = ({ orgSlug }) => {
   const [copied, setCopied] = React.useState(false);
@@ -209,13 +149,7 @@ const ShowcaseLink: React.FC<{ orgSlug: string | null }> = ({ orgSlug }) => {
           rel="noopener noreferrer"
           size="small"
           startIcon={<StorefrontOutlinedIcon fontSize="small" />}
-          sx={{
-            textTransform: "none",
-            color: "text.primary",
-            fontWeight: 500,
-            px: 1.25,
-            borderRadius: 0,
-          }}
+          sx={{ textTransform: "none", color: "text.primary", fontWeight: 500, px: 1.25, borderRadius: 0 }}
         >
           Сайт записи
         </Button>
@@ -234,50 +168,123 @@ const ShowcaseLink: React.FC<{ orgSlug: string | null }> = ({ orgSlug }) => {
   );
 };
 
-// ── Пресеты дат ───────────────────────────────────────────────────────────────
+// ── Мелкие чипы строки ────────────────────────────────────────────────────────
 
-type DatePreset = { key: string; label: string; from: () => Dayjs; to: () => Dayjs };
+const TinyChip: React.FC<{ label: string; tone?: "primary" | "warning" }> = ({
+  label,
+  tone = "primary",
+}) => (
+  <Chip
+    label={label}
+    size="small"
+    sx={(t) => {
+      const main = tone === "warning" ? t.palette.warning : t.palette.primary;
+      return {
+        height: 18,
+        fontSize: 11,
+        fontWeight: 600,
+        alignSelf: "flex-start",
+        borderRadius: "6px",
+        color: tone === "warning" ? (t.palette.mode === "dark" ? main.light : main.dark) : "primary.onSurface",
+        bgcolor: alpha(main.main, t.palette.mode === "dark" ? 0.2 : 0.12),
+      };
+    }}
+  />
+);
 
-/** «Август» вместо обезличенного «Месяц» — подпись пресета текущего месяца. */
-const currentMonthLabel = (): string => {
-  const name = dayjs().locale("ru").format("MMMM");
-  return name.charAt(0).toUpperCase() + name.slice(1);
-};
+/** «12 мин назад» / «14:05» / «12.09 14:05» — когда заявка пришла. */
+function receivedText(createdAt: string | undefined, now: Dayjs): string | null {
+  if (!createdAt) return null;
+  const d = dayjs(createdAt);
+  if (!d.isValid()) return null;
+  const mins = now.diff(d, "minute");
+  if (mins < 1) return "только что";
+  if (mins < 60) return `${mins} мин назад`;
+  if (d.isSame(now, "day")) return d.format("HH:mm");
+  return d.format("DD.MM HH:mm");
+}
 
-const DATE_PRESETS: DatePreset[] = [
-  { key: "today", label: "Сегодня", from: () => dayjs(), to: () => dayjs() },
-  {
-    key: "tomorrow",
-    label: "Завтра",
-    from: () => dayjs().add(1, "day"),
-    to: () => dayjs().add(1, "day"),
-  },
-  {
-    key: "week",
-    label: "7 дней",
-    from: () => dayjs(),
-    to: () => dayjs().add(6, "day"),
-  },
-  {
-    key: "month",
-    // Ленивый геттер: подпись месяца не должна «застыть» на месяце загрузки
-    // вкладки — сессия может пережить смену месяца.
-    get label() {
-      return currentMonthLabel();
-    },
-    from: () => dayjs().startOf("month"),
-    to: () => dayjs().endOf("month"),
-  },
-];
+/** Подсказка к дате визита: «сегодня»/«завтра», у разбора — ещё и просрочка. */
+function visitHint(b: BookingListItem, tab: BookingTab, todayStr: string, tomorrowStr: string) {
+  if (tab === "triage") {
+    const h = bookingTimeHint(b.date, b.time, b.status);
+    if (h?.tone === "warning" && b.status === "pending") return { label: h.text, tone: "warning" as const };
+  }
+  if (b.date === todayStr) return { label: "сегодня", tone: "primary" as const };
+  if (b.date === tomorrowStr) return { label: "завтра", tone: "primary" as const };
+  return null;
+}
 
-// Пресеты для единого поля-диапазона (та же семантика, что и чипы выше).
-const BOOKING_RANGE_PRESETS: DateRangePreset[] = DATE_PRESETS.map((p) => ({
-  key: p.key,
-  get label() {
-    return p.label;
-  },
-  range: () => [p.from(), p.to()],
-}));
+// ── Состояние фильтров в URL ──────────────────────────────────────────────────
+
+interface FiltersState {
+  tab: BookingTab;
+  doctorId: number | "";
+  status: BookingStatus | "";
+  prepaymentStatus: BookingPrepaymentStatus | "";
+  from: Dayjs;
+  to: Dayjs;
+  search: string;
+  page: number;
+}
+
+const defaultFrom = () => dayjs().startOf("month");
+const defaultTo = () => dayjs().endOf("month");
+
+function readFilters(p: URLSearchParams): FiltersState {
+  const tab = p.get("tab");
+  const doctor = Number(p.get("doctor"));
+  const status = p.get("status");
+  const pay = p.get("pay");
+  const from = p.get("from") ? dayjs(p.get("from")) : null;
+  const to = p.get("to") ? dayjs(p.get("to")) : null;
+  const page = Number(p.get("page"));
+  return {
+    tab: isBookingTab(tab) ? tab : "triage",
+    doctorId: Number.isFinite(doctor) && doctor > 0 ? doctor : "",
+    status: BOOKING_STATUS_OPTIONS.some((o) => o.value === status) ? (status as BookingStatus) : "",
+    prepaymentStatus: pay && pay in BOOKING_PREPAYMENT_META ? (pay as BookingPrepaymentStatus) : "",
+    from: from?.isValid() ? from : defaultFrom(),
+    to: to?.isValid() ? to : defaultTo(),
+    search: p.get("q") ?? "",
+    page: Number.isFinite(page) && page > 0 ? page - 1 : 0,
+  };
+}
+
+/**
+ * Все фильтры одним набором: react-router не батчит два `setSearchParams`
+ * подряд, поэтому URL всегда пишется целиком из состояния (см. память
+ * react-router-setsearchparams-batching). Дефолты в адрес не попадают.
+ */
+function writeFilters(f: FiltersState): URLSearchParams {
+  const p = new URLSearchParams();
+  if (f.tab !== "triage") p.set("tab", f.tab);
+  if (f.doctorId !== "") p.set("doctor", String(f.doctorId));
+  if (f.status) p.set("status", f.status);
+  if (f.prepaymentStatus) p.set("pay", f.prepaymentStatus);
+  if (!f.from.isSame(defaultFrom(), "day")) p.set("from", f.from.format(DATE_FMT));
+  if (!f.to.isSame(defaultTo(), "day")) p.set("to", f.to.format(DATE_FMT));
+  if (f.search) p.set("q", f.search);
+  if (f.page > 0) p.set("page", String(f.page + 1));
+  return p;
+}
+
+/** Все страницы выдачи (до лимита) — для клиентских срезов и аналитики. */
+async function fetchAllPages(
+  filters: BookingsFilters,
+  maxPages: number,
+  signal?: AbortSignal,
+): Promise<{ rows: BookingListItem[]; truncated: boolean }> {
+  let rows: BookingListItem[] = [];
+  for (let page = 1; ; page += 1) {
+    const r = await getBookings({ ...filters, page, pageSize: BULK_PAGE_SIZE }, signal);
+    rows = rows.concat(r.results);
+    if (!r.next) return { rows, truncated: false };
+    if (page >= maxPages) return { rows, truncated: true };
+  }
+}
+
+// ── Страница ──────────────────────────────────────────────────────────────────
 
 const BookingsPage: React.FC = () => {
   const { t } = useT("bookings");
@@ -301,42 +308,28 @@ const BookingsPage: React.FC = () => {
   const organizationId = activeOrganization?.id ?? undefined;
   const orgKey = activeOrganization?.id ?? null;
   // Активный филиал уходит в запрос всегда: без него бэк отдаёт брони всей
-  // организации (см. комментарий в api/bookings.ts). В queryKey он тоже нужен —
-  // иначе при смене филиала кэш отдал бы выдачу предыдущего.
+  // организации (см. api/bookings.ts). В queryKey он тоже нужен.
   const branchId = activeBranch?.id ?? undefined;
   const branchKey = branchId ?? null;
-  // Признак мультифилиальной организации — только для подписи «Все филиалы»:
-  // одиночной клинике сообщать нечего.
-  const hasSeveralBranches = React.useMemo(() => {
-    const active = (memberships ?? []).find(
-      (m) => m.organization?.id === activeOrganization?.id,
-    );
-    return (active?.branches ?? []).length > 1;
-  }, [memberships, activeOrganization?.id]);
 
-  // ── Filters ──
-  const [dateFrom, setDateFrom] = React.useState(() => dayjs().startOf("month"));
-  const [dateTo, setDateTo] = React.useState(() => dayjs().endOf("month"));
-  // Что показывает список. `active` — дефолт: всё, кроме закрытого
-  // (отменённые, неявки и просроченные оплаты — см. isBookingClosed). `new` —
-  // непросмотренные заявки. `all` — полная выдача. Код статуса — конкретный
-  // срез вкладкой.
-  const [view, setView] = React.useState<BookingView>("active");
-  const [doctorId, setDoctorId] = React.useState<number | "">("");
-  // Фильтр по состоянию онлайн-предоплаты — ортогонален статусу брони:
-  // администратор сначала разбирает оплаченные.
-  const [prepaymentStatus, setPrepaymentStatus] =
-    React.useState<BookingPrepaymentStatus | "">("");
-  const [searchInput, setSearchInput] = React.useState("");
-  const [search, setSearch] = React.useState("");
-  const [page, setPage] = React.useState(0);
+  // ── Фильтры: из URL при входе, обратно в URL при каждом изменении ──
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [filters, setFilters] = React.useState<FiltersState>(() => readFilters(searchParams));
+  const [searchInput, setSearchInput] = React.useState(filters.search);
+  const { tab, doctorId, status, prepaymentStatus, from, to, search, page } = filters;
+
+  const patch = React.useCallback((p: Partial<FiltersState>) => {
+    // Любая смена фильтра, кроме листания, возвращает на первую страницу.
+    setFilters((prev) => ({ ...prev, page: 0, ...p }));
+  }, []);
+
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   // Отмеченные для массового подтверждения — только «Ожидает» (isRowSelectable).
   const [selectedIds, setSelectedIds] = React.useState<number[]>([]);
 
-  // Непрочитанное — общее с колокольчиком, глобальным тостом и заголовком
-  // вкладки: открыли карточку здесь — погасло везде.
   const { isNew, markSeen } = useNewBookings();
+  const { reminded, markReminded } = useRemindedBookings();
+  const reminderText = useReminderText();
 
   /** Открытие карточки = разбор заявки: снимаем с неё пометку «новая». */
   const openBooking = React.useCallback(
@@ -347,274 +340,161 @@ const BookingsPage: React.FC = () => {
     [markSeen],
   );
 
-  // Ссылка из тоста «Новая заявка» ведёт сюда с ?open=<id> — открываем карточку
-  // и убираем параметр, чтобы он не всплыл повторно при возврате назад.
-  const [searchParams, setSearchParams] = useSearchParams();
-  React.useEffect(() => {
-    const raw = searchParams.get("open");
-    if (!raw) return;
-    const id = Number(raw);
-    if (Number.isFinite(id)) openBooking(id);
-    const next = new URLSearchParams(searchParams);
-    next.delete("open");
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams, openBooking]);
+  /**
+   * Заявку нельзя подтвердить в один клик (нет услуг или карта не однозначна) —
+   * открываем карточку сразу с диалогом подтверждения, а не с ошибкой бэка.
+   */
+  const [confirmOnOpenId, setConfirmOnOpenId] = React.useState<number | null>(null);
+  const reviewBooking = React.useCallback(
+    (id: number) => {
+      setConfirmOnOpenId(id);
+      openBooking(id);
+    },
+    [openBooking],
+  );
 
-  // Debounce поиска.
+  const actions = useBookingActions({ onNeedsReview: reviewBooking });
+
+  // Дебаунс поиска: поле живёт локально, в фильтры (и URL) — через 400 мс.
   React.useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput.trim()), 400);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => {
+      const next = searchInput.trim();
+      setFilters((prev) => (prev.search === next ? prev : { ...prev, search: next, page: 0 }));
+    }, 400);
+    return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Сброс на первую страницу при смене фильтров; выбор для массовых действий
-  // теряет смысл вместе со сменой выборки.
+  // Ссылка из тоста «Новая заявка» ведёт сюда с ?open=<id>: открываем карточку.
+  // Адрес переписываем целиком из фильтров — так `open` уходит, а фильтры нет.
+  const openParam = searchParams.get("open");
   React.useEffect(() => {
-    setPage(0);
-    setSelectedIds([]);
-  }, [dateFrom, dateTo, view, doctorId, prepaymentStatus, search, orgKey, branchKey]);
+    if (!openParam) return;
+    const id = Number(openParam);
+    if (Number.isFinite(id)) openBooking(id);
+    setSearchParams(writeFilters(filters), { replace: true });
+    // filters намеренно не в зависимостях: реагируем только на появление ?open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openParam, openBooking, setSearchParams]);
 
-  // И при листании страниц — отмеченные с прошлой страницы не видны здесь.
+  React.useEffect(() => {
+    const next = writeFilters(filters);
+    if (next.toString() !== new URLSearchParams(window.location.search).toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [filters, setSearchParams]);
+
+  // Выбор для массовых действий теряет смысл вместе со сменой выборки.
   React.useEffect(() => {
     setSelectedIds([]);
-  }, [page]);
+  }, [filters, orgKey, branchKey]);
 
-  const fromStr = dateFrom.format("YYYY-MM-DD");
-  const toStr = dateTo.format("YYYY-MM-DD");
-  const todayStr = dayjs().format("YYYY-MM-DD");
   const enabled = !permLoading && canView && !needsOrg;
+  const now = useTickingClock(30_000);
+  const todayStr = now.format(DATE_FMT);
+  const tomorrowStr = now.add(1, "day").format(DATE_FMT);
 
-  const activePresetKey = React.useMemo(() => {
-    const p = DATE_PRESETS.find(
-      (p) => dateFrom.isSame(p.from(), "day") && dateTo.isSame(p.to(), "day"),
-    );
-    return p?.key ?? null;
-  }, [dateFrom, dateTo]);
+  const scope = { organizationId, branchId };
+  const scopeKey = { orgId: orgKey, branch: branchKey };
+  const doctorFilter = doctorId === "" ? undefined : doctorId;
+  const searchFilter = search || undefined;
 
-  const hasActiveFilters =
-    view !== "active" ||
-    doctorId !== "" ||
-    prepaymentStatus !== "" ||
-    search !== "" ||
-    activePresetKey !== "month";
-
-  const handleResetFilters = () => {
-    setView("active");
-    setDoctorId("");
-    setPrepaymentStatus("");
-    setSearchInput("");
-    setDateFrom(dayjs().startOf("month"));
-    setDateTo(dayjs().endOf("month"));
-  };
-
-  const filters = {
-    dateFrom: fromStr,
-    dateTo: toStr,
-    // Срезы «в работе» и «новые» на сервере не выразить (он фильтрует по
-    // одному статусу) — они собираются из сводной выборки ниже.
-    status: isClientView(view) || view === "all" ? undefined : view,
-    doctorId: doctorId === "" ? undefined : doctorId,
-    prepaymentStatus: prepaymentStatus === "" ? undefined : prepaymentStatus,
-    search: search || undefined,
-    organizationId,
-    branchId,
-  };
-
-  const query = useQuery({
-    queryKey: djangoQueryKeys.bookings.list({
-      ...filters,
-      orgId: orgKey,
-      branch: branchKey,
-      page: page + 1,
+  // ── «Разобрать»: pending + отменённые/неявки с неразобранной предоплатой ──
+  // Серверный фильтр умеет один статус, поэтому три выборки и срез на клиенте.
+  const triageWindow = React.useMemo(
+    () => ({
+      dateFrom: dayjs().subtract(TRIAGE_PAST_DAYS, "day").format(DATE_FMT),
+      dateTo: dayjs().add(TRIAGE_FUTURE_DAYS, "day").format(DATE_FMT),
     }),
-    queryFn: ({ signal }) =>
-      getBookings({ ...filters, page: page + 1, pageSize: PAGE_SIZE }, signal),
-    enabled,
-    staleTime: DJANGO_LIST_STALE_TIME_MS,
-    placeholderData: keepPreviousData,
-  });
-
-  // Сводка: та же выборка без фильтра статуса — даёт счётчики по статусам
-  // и суммы. Ограничена STATS_MAX_PAGES страницами (флаг truncated).
-  const statsFilters = {
-    dateFrom: fromStr,
-    dateTo: toStr,
-    doctorId: doctorId === "" ? undefined : doctorId,
-    prepaymentStatus: prepaymentStatus === "" ? undefined : prepaymentStatus,
-    search: search || undefined,
-    organizationId,
-    branchId,
-  };
-  const statsQuery = useQuery({
+    [],
+  );
+  const triageQuery = useQuery({
     queryKey: djangoQueryKeys.bookings.list({
-      ...statsFilters,
-      orgId: orgKey,
-      branch: branchKey,
-      stats: true,
+      view: "triage",
+      ...triageWindow,
+      doctorId: doctorFilter,
+      search: searchFilter,
+      ...scopeKey,
     }),
     queryFn: async ({ signal }) => {
-      let page = 1;
-      let all: BookingListItem[] = [];
-      let count = 0;
-      let truncated = false;
-      for (;;) {
-        const r = await getBookings(
-          { ...statsFilters, page, pageSize: STATS_PAGE_SIZE },
-          signal,
-        );
-        count = r.count;
-        all = all.concat(r.results);
-        if (!r.next) break;
-        if (page >= STATS_MAX_PAGES) {
-          truncated = true;
-          break;
-        }
-        page += 1;
-      }
-      return { all, count, truncated };
+      const base = { ...triageWindow, ...scope, doctorId: doctorFilter, search: searchFilter };
+      const [pending, cancelled, noShow] = await Promise.all(
+        (["pending", "cancelled", "no_show"] as const).map((s) =>
+          fetchAllPages({ ...base, status: s, ordering: "-createdAt" }, s === "pending" ? 5 : 1, signal),
+        ),
+      );
+      return {
+        rows: [...pending.rows, ...cancelled.rows, ...noShow.rows],
+        truncated: pending.truncated,
+      };
     },
     enabled,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchInterval: TRIAGE_POLL_MS,
+    refetchOnWindowFocus: true,
+    placeholderData: keepPreviousData,
+  });
+  const triageRows = React.useMemo(
+    () => sortBookingsByPriority((triageQuery.data?.rows ?? []).filter((b) => needsTriage(b, now))),
+    [triageQuery.data, now],
+  );
+
+  // ── «Предстоящие»: подтверждённые с сегодняшнего дня, ближайшие сверху ──
+  const upcomingFilters: BookingsFilters = {
+    dateFrom: todayStr,
+    dateTo: dayjs().add(UPCOMING_FUTURE_DAYS, "day").format(DATE_FMT),
+    status: "confirmed",
+    ordering: "date",
+    doctorId: doctorFilter,
+    search: searchFilter,
+    ...scope,
+  };
+  const upcomingPage = tab === "upcoming" ? page : 0;
+  const upcomingQuery = useQuery({
+    queryKey: djangoQueryKeys.bookings.list({ view: "upcoming", ...upcomingFilters, ...scopeKey, page: upcomingPage }),
+    queryFn: ({ signal }) =>
+      getBookings({ ...upcomingFilters, page: upcomingPage + 1, pageSize: PAGE_SIZE }, signal),
+    enabled,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
 
-  /**
-   * Начал ли бэк отдавать филиал брони. Пока не отдаёт — колонку «Филиал» не
-   * рисуем (была бы пустой у каждой строки), а в фильтрах показываем честный
-   * чип «Все филиалы». Смотрим на всю известную выборку, а не на одну строку:
-   * текущая страница может быть пустой.
-   */
-  const branchScopingLive = React.useMemo(() => {
-    const sample = [
-      ...(statsQuery.data?.all ?? []),
-      ...(query.data?.results ?? []),
-    ];
-    return sample.some(bookingHasBranch);
-  }, [statsQuery.data, query.data]);
+  // ── «Журнал»: все брони периода по дате визита ──
+  const journalFilters: BookingsFilters = {
+    dateFrom: from.format(DATE_FMT),
+    dateTo: to.format(DATE_FMT),
+    status: status || undefined,
+    prepaymentStatus: prepaymentStatus || undefined,
+    ordering: "-date",
+    doctorId: doctorFilter,
+    search: searchFilter,
+    ...scope,
+  };
+  const journalQuery = useQuery({
+    queryKey: djangoQueryKeys.bookings.list({ view: "journal", ...journalFilters, ...scopeKey, page }),
+    queryFn: ({ signal }) => getBookings({ ...journalFilters, page: page + 1, pageSize: PAGE_SIZE }, signal),
+    enabled: enabled && tab === "journal",
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+  });
 
-  /**
-   * Есть ли в выборке брони с предоплатой. Колонку «Оплата» и фильтр по ней
-   * показываем только тогда — у клиники без предоплаты они были бы пустыми.
-   */
-  const prepaymentLive = React.useMemo(() => {
-    const sample = [
-      ...(statsQuery.data?.all ?? []),
-      ...(query.data?.results ?? []),
-    ];
-    return sample.some(hasPrepayment);
-  }, [statsQuery.data, query.data]);
-
-  // Тикающие часы для обратного отсчёта «Идёт оплата · N мин» — заводим таймер,
-  // только если в выборке вообще есть предоплата, иначе клинике без неё лишний
-  // повторный рендер раз в 15с не нужен.
-  const now = useTickingClock(15000, prepaymentLive);
-
-  /** Пустой выборке предупреждать не о чем. */
-  const hasAnyBooking =
-    (query.data?.results?.length ?? 0) > 0 || (statsQuery.data?.all?.length ?? 0) > 0;
-
-  const statusCounts = React.useMemo(() => {
-    const counts: Partial<Record<BookingStatus, number>> = {};
-    for (const b of statsQuery.data?.all ?? []) {
-      counts[b.status] = (counts[b.status] ?? 0) + 1;
-    }
-    return counts;
-  }, [statsQuery.data]);
-
-  /**
-   * Итоги для текущего выбора статуса. Денег здесь нет намеренно: `totalPrice`
-   * брони — прайс намерения, а не выручка (её считает касса по оплаченным
-   * приёмам), поэтому сумма по броням не сошлась бы с финансовыми отчётами.
-   * Броня — верх воронки, и метрика тут воронковая: доля потерянных записей.
-   */
-  const summary = React.useMemo(() => {
-    const data = statsQuery.data;
-    if (!data) return null;
-    const count =
-      view === "all" || view === "active" || view === "new"
-        ? data.count
-        : data.all.filter((b) => b.status === view).length;
-    // Доля отмен считается по всей выборке периода, а не по выбранной вкладке:
-    // иначе на вкладке «Отменена» она была бы всегда 100%.
-    const lost = data.all.filter(
-      (b) => b.status === "cancelled" || b.status === "no_show",
-    ).length;
-    const lostRate = data.all.length > 0 ? (lost / data.all.length) * 100 : 0;
-    return { count, lost, lostRate, truncated: data.truncated };
-  }, [statsQuery.data, view]);
-
-  /** «Ожидает», время которых уже прошло — висят необработанными дольше всех. */
-  const overdueCount = React.useMemo(
-    () => (statsQuery.data?.all ?? []).filter(isBookingOverdue).length,
-    [statsQuery.data],
-  );
-
-  /**
-   * Новые заявки в пределах выбранного периода — счётчик пилюли «Новые» и её же
-   * выборка. Считаем по данным сводки, а не по поллеру `useNewBookings`: у того
-   * своё окно дат (−30…+90), и число рядом с фильтром не сходилось бы со
-   * списком под ним. Потолок сводки (STATS_MAX_PAGES) здесь тоже действует.
-   */
-  const newRows = React.useMemo(
-    () => sortBookingsByPriority((statsQuery.data?.all ?? []).filter(isNew)),
-    [statsQuery.data, isNew],
-  );
-
-  /**
-   * «В работе» — дефолтный срез: всё, кроме закрытого (отменённые, неявки и
-   * брони с просроченной оплатой — см. `isBookingClosed`). Просроченная оплата
-   * держится в выдаче до прихода поллера бэка и забивает список записями,
-   * которые приёмами уже не станут.
-   *
-   * Как и «Новые», собирается из сводной выборки: серверный фильтр умеет
-   * только один статус, «всё кроме трёх» им не выразить.
-   */
-  const closedRows = React.useMemo(
-    () => (statsQuery.data?.all ?? []).filter((b) => isBookingClosed(b, now)),
-    [statsQuery.data, now],
-  );
-  const activeRows = React.useMemo(
-    () =>
-      sortBookingsByPriority(
-        (statsQuery.data?.all ?? []).filter((b) => !isBookingClosed(b, now)),
-      ),
-    [statsQuery.data, now],
-  );
-
-  /**
-   * Только что приехавшие поллингом строки — подсвечиваем на несколько секунд,
-   * иначе заявка бесшумно вклинивается в середину списка и её легко пропустить.
-   * Знакомство с выборкой начинается заново при смене фильтров и страницы:
-   * иначе «новой» мигала бы вся страница целиком.
-   */
-  const knownRowIdsRef = React.useRef<Set<number> | null>(null);
-  const [arrivedIds, setArrivedIds] = React.useState<ReadonlySet<number>>(() => new Set());
-  React.useEffect(() => {
-    knownRowIdsRef.current = null;
-    setArrivedIds(new Set());
-  }, [fromStr, toStr, view, doctorId, prepaymentStatus, search, orgKey, branchKey, page]);
-  React.useEffect(() => {
-    // Источник тот же, из которого построены строки: у клиентских срезов это
-    // сводная выборка, у остальных — страница с сервера.
-    const source = isClientView(view) ? statsQuery.data?.all : query.data?.results;
-    if (!source) return;
-    const ids = source.map((r) => r.id);
-    if (knownRowIdsRef.current === null) {
-      knownRowIdsRef.current = new Set(ids);
-      return;
-    }
-    const fresh = ids.filter((id) => !knownRowIdsRef.current!.has(id));
-    ids.forEach((id) => knownRowIdsRef.current!.add(id));
-    if (fresh.length === 0) return;
-    setArrivedIds((prev) => new Set([...prev, ...fresh]));
-    const timer = window.setTimeout(() => {
-      setArrivedIds((prev) => {
-        const next = new Set(prev);
-        fresh.forEach((id) => next.delete(id));
-        return next;
-      });
-    }, 4000);
-    return () => window.clearTimeout(timer);
-  }, [query.data, statsQuery.data, view]);
+  // ── «Аналитика»: период по времени поступления заявки ──
+  // Дата визита обязательна в запросе, поэтому окно визитов берём с запасом:
+  // записываются вперёд (до полугода), а синк внешних каналов — и задним числом.
+  const analyticsFilters: BookingsFilters = {
+    dateFrom: from.subtract(60, "day").format(DATE_FMT),
+    dateTo: to.add(UPCOMING_FUTURE_DAYS, "day").format(DATE_FMT),
+    createdFrom: from.format(DATE_FMT),
+    createdTo: to.format(DATE_FMT),
+    doctorId: doctorFilter,
+    ...scope,
+  };
+  const analyticsQuery = useQuery({
+    queryKey: djangoQueryKeys.bookings.list({ view: "analytics", ...analyticsFilters, ...scopeKey }),
+    queryFn: ({ signal }) => fetchAllPages(analyticsFilters, ANALYTICS_MAX_PAGES, signal),
+    enabled: enabled && tab === "analytics",
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+  });
 
   const doctorsQuery = useQuery({
     queryKey: [...djangoQueryKeys.reference.employees, "doctors", orgKey],
@@ -630,26 +510,20 @@ const BookingsPage: React.FC = () => {
 
   /**
    * Массовое подтверждение. Одним PATCH это не сделать безопасно: карточка
-   * требует привязать пациента и услуги (`ConfirmBookingDialog`), а в списке
-   * их нет — подтягиваем `getBooking` по каждой брони. Подтверждаем только
-   * однозначные (ровно одно совпадение по телефону) с готовым набором услуг;
-   * остальные оставляем для ручного разбора через карточку — так же, как при
-   * подтверждении по одной.
+   * требует пациента и услуги (`ConfirmBookingDialog`), а в списке их нет —
+   * подтягиваем `getBooking` по каждой брони. Подтверждаем только однозначные
+   * (ровно одно совпадение по телефону); остальные — на ручной разбор.
    */
   const bulkConfirm = useMutation({
     mutationFn: async (ids: number[]) => {
       const settled = await Promise.allSettled(
         ids.map(async (id) => {
           const detail = await getBooking(id);
-          const matches = detail.patientMatches ?? [];
-          if (matches.length !== 1) throw new Error("ambiguous-patient");
-          const serviceIds = (detail.services ?? [])
-            .map((s) => s.id)
-            .filter((sid): sid is number => sid != null);
-          await updateBookingStatus(id, "confirmed", {
-            patientId: matches[0].id,
-            serviceIds: serviceIds.length > 0 ? serviceIds : undefined,
-          });
+          const extras = autoConfirmExtras(detail, await loadDoctorServiceIds(detail));
+          if (!extras) throw new Error("needs-review");
+          // Время реакции: никем не взятую заявку берём на себя до подтверждения.
+          if (!detail.claimedAt) await claimBooking(id).catch(() => undefined);
+          await updateBookingStatus(id, "confirmed", extras);
           return id;
         }),
       );
@@ -659,7 +533,6 @@ const BookingsPage: React.FC = () => {
     },
     onSuccess: (confirmed, ids) => {
       queryClient.invalidateQueries({ queryKey: djangoQueryKeys.bookings.all });
-      // Подтверждение материализует приём.
       queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.all });
       setSelectedIds([]);
       const skipped = ids.filter((id) => !confirmed.includes(id));
@@ -667,53 +540,65 @@ const BookingsPage: React.FC = () => {
         type: confirmed.length > 0 ? "success" : "error",
         message:
           skipped.length > 0
-            ? `Подтверждено ${confirmed.length} из ${ids.length}. У ${skipped.length} — неоднозначная карта пациента, откройте вручную.`
+            ? `Подтверждено ${confirmed.length} из ${ids.length}. Для остальных ${skipped.length} нужно выбрать карту или услуги.`
             : `Подтверждено: ${confirmed.length}`,
       });
-      // Первую неоднозначную открываем сразу — не заставляем искать её в списке.
-      if (skipped.length > 0) openBooking(skipped[0]);
+      if (skipped.length > 0) reviewBooking(skipped[0]);
     },
     onError: () => notify?.({ type: "error", message: "Не удалось подтвердить онлайн-записи" }),
   });
 
-  const columns = React.useMemo<GridColDef<BookingListItem>[]>(
-    () => [
-      {
-        field: "confirmationCode",
-        headerName: "Код",
-        width: 104,
-        renderCell: ({ row }) => (
-          <Stack sx={{ height: "100%" }} justifyContent="center" gap={0.25}>
-            <Typography
-              variant="caption"
-              sx={{ fontFamily: "monospace", fontWeight: 600, letterSpacing: 0.4 }}
-            >
-              {row.confirmationCode}
-            </Typography>
-            {/* «Новая» = заявку ещё не открывали. Гаснет, как только карточку
-                разобрали, — своя у каждого устройства (см. useNewBookings). */}
-            {isNew(row) && (
-              <Chip
-                label="новая"
-                size="small"
-                sx={(t) => ({
-                  height: 16,
-                  fontSize: 10,
-                  fontWeight: 600,
-                  alignSelf: "flex-start",
-                  borderRadius: "5px",
-                  color: "primary.onSurface",
-                  bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.26 : 0.16),
-                })}
-              />
-            )}
-          </Stack>
-        ),
-      },
+  // ── Строки текущей вкладки ──
+  const listTab = tab === "analytics" ? null : tab;
+  const allRowsOfTab: BookingListItem[] =
+    tab === "triage"
+      ? triageRows
+      : tab === "upcoming"
+        ? [...(upcomingQuery.data?.results ?? [])].sort(
+            (a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time),
+          )
+        : journalQuery.data?.results ?? [];
+  const rows = tab === "triage" ? allRowsOfTab.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) : allRowsOfTab;
+  const total =
+    tab === "triage"
+      ? triageRows.length
+      : tab === "upcoming"
+        ? upcomingQuery.data?.count ?? 0
+        : journalQuery.data?.count ?? 0;
+  const activeQuery = tab === "triage" ? triageQuery : tab === "upcoming" ? upcomingQuery : journalQuery;
+  const listLoading = activeQuery.isLoading;
+
+  const branchLive = rows.some(bookingHasBranch);
+  const showsPrepayment = rows.some(hasPrepayment);
+  const showsReceived = tab === "triage" && rows.some((b) => b.createdAt);
+
+  const hasActiveFilters =
+    doctorId !== "" ||
+    search !== "" ||
+    ((tab === "journal" || tab === "analytics") &&
+      (status !== "" ||
+        prepaymentStatus !== "" ||
+        !from.isSame(defaultFrom(), "day") ||
+        !to.isSame(defaultTo(), "day")));
+
+  const handleResetFilters = () => {
+    setSearchInput("");
+    patch({
+      doctorId: "",
+      status: "",
+      prepaymentStatus: "",
+      search: "",
+      from: defaultFrom(),
+      to: defaultTo(),
+    });
+  };
+
+  const columns = React.useMemo<GridColDef<BookingListItem>[]>(() => {
+    const cols: GridColDef<BookingListItem>[] = [
       {
         field: "patientName",
         headerName: t("patientLabel"),
-        flex: 1,
+        flex: 1.2,
         minWidth: 200,
         sortable: false,
         renderCell: ({ row }) => (
@@ -721,11 +606,14 @@ const BookingsPage: React.FC = () => {
             <UserAvatar name={row.patientName} size={32} sx={{ borderRadius: "9px", flexShrink: 0 }} />
             <Box sx={{ lineHeight: 1.2, minWidth: 0 }}>
               {/* Непрочитанная заявка набрана жирнее — как непрочитанное письмо. */}
-              <Typography variant="body2" fontWeight={isNew(row) ? 700 : 500} noWrap>
-                {row.patientName}
-              </Typography>
+              <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={isNew(row) ? 700 : 500} noWrap>
+                  {row.patientName}
+                </Typography>
+                {isNew(row) && <TinyChip label="новая" />}
+              </Stack>
               {row.patientPhone && (
-                <Typography variant="caption" color="text.secondary" noWrap>
+                <Typography variant="caption" color="text.secondary" noWrap display="block">
                   {row.patientPhone}
                 </Typography>
               )}
@@ -734,138 +622,155 @@ const BookingsPage: React.FC = () => {
         ),
       },
       { field: "doctorName", headerName: t("specialistLabel"), flex: 1, minWidth: 150, sortable: false },
-      // Филиал показываем только когда бэк его отдаёт: до этого колонка была бы
-      // пустой у каждой брони.
-      ...(branchScopingLive
-        ? [
-            {
-              field: "branchName",
-              headerName: "Филиал",
-              width: 160,
-              sortable: false,
-              renderCell: ({ row }) => (
-                <Typography variant="body2" color="text.secondary" noWrap>
-                  {row.branchName || "—"}
-                </Typography>
-              ),
-            } satisfies GridColDef<BookingListItem>,
-          ]
-        : []),
-      {
-        field: "date",
-        headerName: "Дата и время",
-        width: 170,
+    ];
+    if (branchLive) {
+      cols.push({
+        field: "branchName",
+        headerName: "Филиал",
+        width: 150,
         sortable: false,
         renderCell: ({ row }) => (
-          <Stack sx={{ height: "100%" }} justifyContent="center">
+          <Typography variant="body2" color="text.secondary" noWrap>
+            {row.branchName || "—"}
+          </Typography>
+        ),
+      });
+    }
+    cols.push({
+      field: "date",
+      headerName: "Визит",
+      width: 150,
+      sortable: false,
+      renderCell: ({ row }) => {
+        const hint = visitHint(row, tab, todayStr, tomorrowStr);
+        return (
+          <Stack sx={{ height: "100%" }} justifyContent="center" gap={0.25}>
             <Typography variant="body2" noWrap>
               {dayjs(row.date).format("DD.MM.YYYY")} {row.time}
             </Typography>
-            {row.date === todayStr && (
-              <Chip
-                label="сегодня"
-                size="small"
-                sx={(t) => ({
-                  height: 18,
-                  fontSize: 11,
-                  alignSelf: "flex-start",
-                  borderRadius: "6px",
-                  color: "primary.onSurface",
-                  bgcolor: alpha(
-                    t.palette.primary.main,
-                    t.palette.mode === "dark" ? 0.18 : 0.1,
-                  ),
-                })}
+            {hint && <TinyChip label={hint.label} tone={hint.tone} />}
+          </Stack>
+        );
+      },
+    });
+    if (showsReceived) {
+      cols.push({
+        field: "createdAt",
+        headerName: "Поступила",
+        width: 110,
+        sortable: false,
+        renderCell: ({ row }) => (
+          <Tooltip title={row.createdAt ? dayjs(row.createdAt).format("DD.MM.YYYY HH:mm") : ""}>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {receivedText(row.createdAt, now) ?? "—"}
+            </Typography>
+          </Tooltip>
+        ),
+      });
+    }
+    cols.push({
+      field: "totalPrice",
+      headerName: "Сумма",
+      width: 110,
+      sortable: false,
+      renderCell: ({ row }) => (
+        <Typography variant="body2" fontWeight={600}>
+          {formatKGS(row.totalPrice)}
+        </Typography>
+      ),
+    });
+    // Статус нужен там, где он разный; в «Предстоящих» все подтверждены.
+    if (tab !== "upcoming" || showsPrepayment) {
+      cols.push({
+        field: "status",
+        headerName: tab === "upcoming" ? "Оплата" : "Статус",
+        width: showsPrepayment ? 290 : 170,
+        sortable: false,
+        renderCell: ({ row }) => (
+          <Stack direction="row" alignItems="center" gap={0.5} flexWrap="wrap" sx={{ py: 0.5 }}>
+            {tab !== "upcoming" && (
+              <StatusChip status={row.status} expiresAt={row.prepaymentExpiresAt} now={now} />
+            )}
+            {row.prepaymentStatus && (
+              <PrepaymentChip
+                status={row.prepaymentStatus}
+                amount={row.prepaymentAmount}
+                needsAttention={row.prepaymentNeedsAttention}
+                expiresAt={row.prepaymentExpiresAt}
+                awaitingConfirmation={row.prepaymentStatus === "paid" && row.status === "pending"}
               />
             )}
           </Stack>
         ),
-      },
-      {
-        field: "totalPrice",
-        headerName: "Сумма",
-        width: 110,
+      });
+    }
+    if (tab === "triage") {
+      cols.push({
+        field: "claimedBy",
+        headerName: "В работе",
+        width: 150,
         sortable: false,
         renderCell: ({ row }) => (
-          <Typography variant="body2" fontWeight={600}>
-            {formatKGS(row.totalPrice)}
-          </Typography>
+          <Box onClick={(e) => e.stopPropagation()}>
+            <ClaimControl booking={row} canManage={canManage} actions={actions} />
+          </Box>
         ),
-      },
-      {
-        field: "totalDurationMin",
-        headerName: "Длит.",
-        width: 90,
+      });
+    }
+    if (tab === "triage" || tab === "upcoming") {
+      cols.push({
+        field: "actions",
+        headerName: "",
+        width: tab === "triage" ? 116 : 84,
         sortable: false,
-        renderCell: ({ row }) => `${row.totalDurationMin} мин`,
-      },
-      {
-        field: "status",
-        headerName: "Статус",
-        width: prepaymentLive ? 190 : 150,
-        sortable: false,
+        align: "right",
         renderCell: ({ row }) => (
-          <StatusChip status={row.status} expiresAt={row.prepaymentExpiresAt} now={now} />
+          <BookingRowActions
+            booking={row}
+            mode={tab}
+            canManage={canManage}
+            actions={actions}
+            reminded={reminded.has(row.id)}
+            onRemind={(b) => markReminded(b.id)}
+            reminderText={reminderText}
+          />
         ),
-      },
-      // Колонка появляется, только когда предоплата в выборке вообще есть.
-      ...(prepaymentLive
-        ? [
-            {
-              field: "prepaymentStatus",
-              headerName: "Оплата",
-              width: 210,
-              sortable: false,
-              renderCell: ({ row }: { row: BookingListItem }) =>
-                row.prepaymentStatus ? (
-                  <PrepaymentChip
-                    status={row.prepaymentStatus}
-                    amount={row.prepaymentAmount}
-                    needsAttention={row.prepaymentNeedsAttention}
-                    awaitingConfirmation={
-                      row.prepaymentStatus === "paid" && row.status === "pending"
-                    }
-                  />
-                ) : (
-                  <Typography variant="caption" color="text.disabled">
-                    —
-                  </Typography>
-                ),
-            } as GridColDef<BookingListItem>,
-          ]
-        : []),
-    ],
-    [todayStr, t, branchScopingLive, prepaymentLive, now, isNew],
-  );
+      });
+    }
+    return cols;
+  }, [
+    t,
+    tab,
+    isNew,
+    branchLive,
+    showsReceived,
+    showsPrepayment,
+    todayStr,
+    tomorrowStr,
+    now,
+    canManage,
+    actions,
+    reminded,
+    markReminded,
+    reminderText,
+  ]);
 
   if (!permLoading && !canView) return <AccessDenied />;
 
-  // Сортировка «то, что горит — наверх» в пределах текущей страницы (см.
-  // sortBookingsByPriority) — сервер отдаёт страницу в своём порядке.
-  // У клиентских срезов («в работе», «новые») список и пагинация клиентские:
-  // сервер такие выборки отдать не умеет.
-  const clientRows = view === "new" ? newRows : activeRows;
-  const rows = isClientView(view)
-    ? clientRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-    : sortBookingsByPriority(query.data?.results ?? []);
-  const total = isClientView(view) ? clientRows.length : query.data?.count ?? 0;
-  const listLoading = isClientView(view) ? statsQuery.isLoading : query.isLoading;
-
-  /** Пустой список объясняем в терминах выбранного среза, а не вообще. */
   const emptyListText =
-    view === "new"
-      ? "Новых заявок за выбранный период нет"
-      : view === "active"
-        ? "Незакрытых онлайн-записей за выбранный период нет"
+    tab === "triage"
+      ? "Всё разобрано — новых заявок нет"
+      : tab === "upcoming"
+        ? "Подтверждённых онлайн-записей впереди нет"
         : "Онлайн-записей за выбранный период не найдено";
 
-  const NoRowsOverlay = () => (
-    <Stack
-      alignItems="center"
-      justifyContent="center"
-      sx={{ height: "100%", opacity: 0.75 }}
-    >
-      <EventBusyOutlinedIcon sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }} />
+  const emptyState = (
+    <Stack alignItems="center" justifyContent="center" sx={{ height: "100%", py: 6, opacity: 0.8 }}>
+      {tab === "triage" && !hasActiveFilters ? (
+        <CheckCircleOutlinedIcon sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }} />
+      ) : (
+        <EventBusyOutlinedIcon sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }} />
+      )}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
         {emptyListText}
       </Typography>
@@ -876,17 +781,35 @@ const BookingsPage: React.FC = () => {
       )}
     </Stack>
   );
+  const NoRowsOverlay = () => emptyState;
+
+  const tabs = [
+    {
+      key: "triage" as const,
+      label: "Разобрать",
+      icon: <InboxOutlinedIcon />,
+      badge: triageQuery.data ? triageRows.length : undefined,
+    },
+    {
+      key: "upcoming" as const,
+      label: "Предстоящие",
+      icon: <EventAvailableOutlinedIcon />,
+      badge: upcomingQuery.data?.count,
+    },
+    { key: "journal" as const, label: "Журнал", icon: <HistoryOutlinedIcon /> },
+    { key: "analytics" as const, label: "Аналитика", icon: <InsightsOutlinedIcon /> },
+  ];
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <PageHeader
         title="Онлайн-запись"
         showTitle={false}
-        showSearch
+        showSearch={tab !== "analytics"}
         searchVal={searchInput}
         onSearchChange={setSearchInput}
         searchPlaceholder="Имя, телефон или код"
-        loading={query.isFetching}
+        loading={activeQuery.isFetching || (tab === "analytics" && analyticsQuery.isFetching)}
         actions={
           <Stack direction="row" alignItems="center" gap={1}>
             <BookingNotificationsBell onOpenBooking={openBooking} />
@@ -910,27 +833,31 @@ const BookingsPage: React.FC = () => {
             pb: 2,
           }}
         >
-          {/* ── Фильтры: даты + пресеты + врач + сброс ── */}
-          <Stack direction="row" flexWrap="wrap" gap={1.5} alignItems="center" sx={{ mt: 2, mb: 1.5 }}>
-            <DateRangeField
-              value={{ from: dateFrom, to: dateTo }}
-              onChange={(r) => {
-                setDateFrom(r.from);
-                setDateTo(r.to);
-              }}
-              presets={BOOKING_RANGE_PRESETS}
-              minWidth={220}
+          {/* ── Одна строка управления: вкладки + фильтры текущей вкладки ── */}
+          <Stack direction="row" flexWrap="wrap" gap={1.25} alignItems="center" sx={{ mt: 2, mb: 1.5 }}>
+            <SegmentedTabs
+              layoutId="bookings-tabs"
+              tabs={tabs}
+              value={tab}
+              onChange={(key) => patch({ tab: key })}
             />
+
+            {(tab === "journal" || tab === "analytics") && (
+              <DateRangeField
+                value={{ from, to }}
+                onChange={(r) => patch({ from: r.from, to: r.to })}
+                presets={DEFAULT_RANGE_PRESETS}
+                minWidth={200}
+              />
+            )}
 
             <TextField
               select
               size="small"
               label={t("specialistLabel")}
               value={doctorId === "" ? "" : String(doctorId)}
-              onChange={(e) =>
-                setDoctorId(e.target.value === "" ? "" : Number(e.target.value))
-              }
-              sx={{ minWidth: 180 }}
+              onChange={(e) => patch({ doctorId: e.target.value === "" ? "" : Number(e.target.value) })}
+              sx={{ minWidth: 170 }}
             >
               <MenuItem value="">{t("allSpecialists")}</MenuItem>
               {doctors.map((d) => (
@@ -940,66 +867,43 @@ const BookingsPage: React.FC = () => {
               ))}
             </TextField>
 
-            {prepaymentLive && (
-              <>
-                {/* Быстрый доступ к самому частому разбору — «кто уже заплатил» —
-                    одним кликом, без похода в выпадающий список ниже. */}
-                <Chip
-                  clickable
-                  size="small"
-                  icon={<CheckOutlinedIcon fontSize="small" />}
-                  label="Оплачено"
-                  onClick={() =>
-                    setPrepaymentStatus((prev) => (prev === "paid" ? "" : "paid"))
-                  }
-                  sx={(t) => {
-                    const active = prepaymentStatus === "paid";
-                    return {
-                      height: 32,
-                      borderRadius: "8px",
-                      fontWeight: 500,
-                      border: 1,
-                      borderColor: active ? alpha(t.palette.success.main, 0.4) : "divider",
-                      color: active
-                        ? t.palette.mode === "dark"
-                          ? t.palette.success.light
-                          : t.palette.success.dark
-                        : "text.secondary",
-                      bgcolor: active
-                        ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.16 : 0.08)
-                        : "transparent",
-                      "& .MuiChip-icon": {
-                        color: active ? "inherit" : "text.disabled",
-                      },
-                      "&:hover": {
-                        bgcolor: active
-                          ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.22 : 0.12)
-                          : subtleBg(t, true),
-                      },
-                    };
-                  }}
-                />
+            {tab === "journal" && (
+              <TextField
+                select
+                size="small"
+                label="Статус"
+                value={status}
+                onChange={(e) => patch({ status: e.target.value as BookingStatus | "" })}
+                sx={{ minWidth: 150 }}
+              >
+                <MenuItem value="">Любой</MenuItem>
+                {BOOKING_STATUS_OPTIONS.map((o) => (
+                  <MenuItem key={o.value} value={o.value}>
+                    {o.label}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
 
-                <TextField
-                  select
-                  size="small"
-                  label="Предоплата"
-                  value={prepaymentStatus}
-                  onChange={(e) =>
-                    setPrepaymentStatus(e.target.value as BookingPrepaymentStatus | "")
-                  }
-                  sx={{ minWidth: 180 }}
-                >
-                  <MenuItem value="">Любая</MenuItem>
-                  {(Object.keys(BOOKING_PREPAYMENT_META) as BookingPrepaymentStatus[]).map(
-                    (code) => (
-                      <MenuItem key={code} value={code}>
-                        {BOOKING_PREPAYMENT_META[code].label}
-                      </MenuItem>
-                    ),
-                  )}
-                </TextField>
-              </>
+            {/* Предоплата — у клиник, где она вообще встречается. */}
+            {tab === "journal" && (showsPrepayment || prepaymentStatus !== "") && (
+              <TextField
+                select
+                size="small"
+                label="Предоплата"
+                value={prepaymentStatus}
+                onChange={(e) =>
+                  patch({ prepaymentStatus: e.target.value as BookingPrepaymentStatus | "" })
+                }
+                sx={{ minWidth: 150 }}
+              >
+                <MenuItem value="">Любая</MenuItem>
+                {(Object.keys(BOOKING_PREPAYMENT_META) as BookingPrepaymentStatus[]).map((code) => (
+                  <MenuItem key={code} value={code}>
+                    {BOOKING_PREPAYMENT_META[code].label}
+                  </MenuItem>
+                ))}
+              </TextField>
             )}
 
             {hasActiveFilters && (
@@ -1012,185 +916,20 @@ const BookingsPage: React.FC = () => {
                 Сбросить
               </Button>
             )}
-
-            {/* Пока бэк не отдаёт филиал брони, список — по всей организации.
-                Говорим это прямо: иначе сотрудник филиала считает чужие заявки
-                своими. Чип исчезает сам, как только филиал появится в ответе. */}
-            {!branchScopingLive && hasSeveralBranches && hasAnyBooking && (
-              <Tooltip title="Онлайн-записи пока не разделены по филиалам: сервер не отдаёт филиал онлайн-записи. Здесь заявки всей организации.">
-                <Chip
-                  size="small"
-                  icon={<InfoOutlinedIcon fontSize="small" />}
-                  label="Все филиалы"
-                  sx={(t) => ({
-                    height: 30,
-                    borderRadius: "8px",
-                    fontWeight: 500,
-                    border: 1,
-                    borderColor: "divider",
-                    color: "text.secondary",
-                    bgcolor: subtleBg(t),
-                    "& .MuiChip-icon": { color: "text.disabled" },
-                  })}
-                />
-              </Tooltip>
-            )}
           </Stack>
 
-          {/* ── Статусы-вкладки со счётчиками ── */}
-          <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center" sx={{ mb: 1.5 }}>
-            {/* «Новые» и «В работе» — не статусы, а срезы: непросмотренное и
-                всё, кроме закрытого. Стоят перед вкладками статусов, потому что
-                разбор начинается с них; «Все» открывает полную выдачу. */}
-            {(
-              [
-                {
-                  value: "new",
-                  label: "Новые",
-                  count: statsQuery.data ? newRows.length : undefined,
-                  icon: <FiberNewOutlinedIcon fontSize="small" />,
-                },
-                {
-                  value: "active",
-                  label: "В работе",
-                  count: statsQuery.data ? activeRows.length : undefined,
-                },
-                { value: "all", label: "Все", count: statsQuery.data?.count },
-                ...BOOKING_STATUS_OPTIONS.map((o) => ({
-                  value: o.value,
-                  label: o.label,
-                  count: statusCounts[o.value] ?? 0,
-                })),
-              ] as {
-                value: BookingView;
-                label: string;
-                count?: number;
-                /** Chip принимает только элемент, не любой ReactNode. */
-                icon?: React.ReactElement;
-              }[]
-            ).map((o) => {
-              const active = view === o.value;
-              const tone = isClientView(o.value) || o.value === "all"
-                ? null
-                : statusTone(theme, o.value);
-              const accent = tone ? tone.main : theme.palette.primary.main;
-              const accentText = tone
-                ? theme.palette.mode === "dark"
-                  ? tone.light
-                  : tone.dark
-                : theme.palette.primary.main;
-              return (
-                <Chip
-                  key={o.value}
-                  clickable
-                  icon={o.icon}
-                  onClick={() => setView(o.value)}
-                  label={
-                    <Stack direction="row" alignItems="center" gap={0.75}>
-                      <span>{o.label}</span>
-                      <Box
-                        component="span"
-                        sx={(t) => ({
-                          px: 0.75,
-                          borderRadius: "6px",
-                          fontSize: 11,
-                          fontWeight: 600,
-                          lineHeight: "16px",
-                          color: active ? accentText : "text.secondary",
-                          bgcolor: active
-                            ? alpha(accent, t.palette.mode === "dark" ? 0.3 : 0.16)
-                            : subtleBg(t, true),
-                        })}
-                      >
-                        {o.count ?? "…"}
-                      </Box>
-                    </Stack>
-                  }
-                  sx={(t) => ({
-                    height: 30,
-                    borderRadius: "8px",
-                    fontWeight: 500,
-                    border: 1,
-                    borderColor: active ? alpha(accent, 0.4) : "divider",
-                    color: active ? accentText : "text.secondary",
-                    bgcolor: active
-                      ? alpha(accent, t.palette.mode === "dark" ? 0.16 : 0.08)
-                      : "transparent",
-                    "& .MuiChip-icon": { color: active ? "inherit" : "text.disabled" },
-                    "&:hover": {
-                      bgcolor: active
-                        ? alpha(accent, t.palette.mode === "dark" ? 0.22 : 0.12)
-                        : subtleBg(t, true),
-                    },
-                  })}
-                />
-              );
-            })}
-
-            <Box sx={{ flex: 1 }} />
-
-            {/* ── Итоги за период ── */}
-            {summary && (
-              <Stack direction="row" gap={1} flexWrap="wrap">
-                {/* Непрочитанные заявки периода — тот же срез, что у пилюли
-                    «Новые»; клик включает его. */}
-                <StatTile
-                  icon={<FiberNewOutlinedIcon />}
-                  label="Новые"
-                  value={newRows.length}
-                  onClick={() => setView("new")}
-                />
-                {/* Просроченные «Ожидает» — самое горящее среди необработанных,
-                    поэтому на виду, а не только построчно в гриде. Клик —
-                    открывает вкладку «Ожидает» (там же они сортируются наверх). */}
-                <StatTile
-                  icon={<WarningAmberOutlinedIcon />}
-                  label="Просрочены"
-                  value={overdueCount}
-                  warn={overdueCount > 0}
-                  onClick={() => setView("pending")}
-                />
-                <StatTile
-                  icon={<EventAvailableOutlinedIcon />}
-                  label="Онлайн-записей"
-                  value={summary.count}
-                />
-                <StatTile
-                  icon={<EventBusyOutlinedIcon />}
-                  label="Отмены и неявки"
-                  value={`${summary.truncated ? "≈ " : ""}${Math.round(summary.lostRate)}% · ${summary.lost}`}
-                />
-              </Stack>
-            )}
-          </Stack>
-
-          {/* Дефолтный вид прячет закрытое — говорим это прямо и даём выход к
-              полному списку. Иначе «броней меньше, чем в прошлый раз» читается
-              как потеря данных. */}
-          {view === "active" && closedRows.length > 0 && (
-            <Stack
-              direction="row"
-              alignItems="center"
-              gap={0.75}
-              sx={{ mb: 1.5, mt: -0.5 }}
-            >
-              <InfoOutlinedIcon sx={{ fontSize: 16, color: "text.disabled" }} />
-              <Typography variant="caption" color="text.secondary">
-                Закрытые скрыты: {closedRows.length} — отменённые, неявки и с истёкшей оплатой
-              </Typography>
-              <Button
-                size="small"
-                onClick={() => setView("all")}
-                sx={{ textTransform: "none", minWidth: 0, py: 0 }}
-              >
-                Показать
-              </Button>
-            </Stack>
-          )}
-
-          {query.error ? (
+          {tab === "analytics" ? (
+            <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+              <BookingsAnalytics
+                rows={analyticsQuery.data?.rows ?? []}
+                loading={analyticsQuery.isLoading}
+                error={analyticsQuery.error}
+                truncated={analyticsQuery.data?.truncated ?? false}
+              />
+            </Box>
+          ) : activeQuery.error ? (
             <Alert severity="error">
-              {query.error instanceof Error ? query.error.message : "Ошибка загрузки"}
+              {activeQuery.error instanceof Error ? activeQuery.error.message : "Ошибка загрузки"}
             </Alert>
           ) : isMobile ? (
             /* ── Мобильный карточный список ── */
@@ -1198,167 +937,105 @@ const BookingsPage: React.FC = () => {
               {listLoading ? (
                 <Stack spacing={1}>
                   {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} variant="rounded" height={72} />
+                    <Skeleton key={i} variant="rounded" height={88} />
                   ))}
                 </Stack>
               ) : rows.length === 0 ? (
-                <Stack alignItems="center" sx={{ py: 6, opacity: 0.75 }}>
-                  <EventBusyOutlinedIcon
-                    sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }}
-                  />
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    {emptyListText}
-                  </Typography>
-                  {hasActiveFilters && (
-                    <Button
-                      size="small"
-                      onClick={handleResetFilters}
-                      sx={{ textTransform: "none" }}
-                    >
-                      Сбросить фильтры
-                    </Button>
-                  )}
-                </Stack>
+                emptyState
               ) : (
                 <Stack spacing={1}>
-                  {rows.map((b) => (
-                    <ButtonBase
-                      key={b.id}
-                      focusRipple
-                      onClick={() => openBooking(b.id)}
-                      sx={(t) => ({
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 1.25,
-                        width: "100%",
-                        textAlign: "left",
-                        p: 1.25,
-                        borderRadius: "14px",
-                        border: 1,
-                        // Непрочитанная заявка — акцентная рамка и полоса слева,
-                        // тот же язык, что у строки в гриде.
-                        borderColor: isNew(b) ? alpha(t.palette.primary.main, 0.45) : "divider",
-                        borderLeft: isNew(b) ? 3 : 1,
-                        borderLeftColor: isNew(b) ? t.palette.primary.main : "divider",
-                        bgcolor:
-                          b.date === todayStr
-                            ? alpha(
-                                t.palette.primary.main,
-                                t.palette.mode === "dark" ? 0.07 : 0.045,
-                              )
-                            : "background.paper",
-                        "&:hover": {
-                          borderColor: alpha(t.palette.primary.main, 0.28),
-                        },
-                        ...(arrivedIds.has(b.id)
-                          ? {
-                              animation: "bookingArrivedCard 3.5s ease-out",
-                              "@keyframes bookingArrivedCard": {
-                                "0%": {
-                                  backgroundColor: alpha(
-                                    t.palette.primary.main,
-                                    t.palette.mode === "dark" ? 0.32 : 0.22,
-                                  ),
-                                },
-                                "100%": { backgroundColor: "transparent" },
-                              },
-                            }
-                          : null),
-                      })}
-                    >
-                      <UserAvatar
-                        name={b.patientName}
-                        size={40}
-                        sx={{ borderRadius: "10px", flexShrink: 0 }}
-                      />
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography variant="body2" fontWeight={600} noWrap>
-                          {b.patientName}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          noWrap
-                          display="block"
-                        >
-                          {b.doctorName || "—"}
-                          {branchScopingLive && b.branchName ? ` · ${b.branchName}` : ""}
-                        </Typography>
-                        <Stack direction="row" alignItems="center" gap={0.75} sx={{ mt: 0.25 }}>
-                          <Typography variant="caption" color="text.secondary">
-                            {dayjs(b.date).format("DD.MM.YYYY")} {b.time}
-                          </Typography>
-                          {isNew(b) && (
-                            <Chip
-                              label="новая"
-                              size="small"
-                              sx={(t) => ({
-                                height: 16,
-                                fontSize: 10,
-                                fontWeight: 600,
-                                borderRadius: "5px",
-                                color: "primary.onSurface",
-                                bgcolor: alpha(
-                                  t.palette.primary.main,
-                                  t.palette.mode === "dark" ? 0.26 : 0.16,
-                                ),
-                              })}
-                            />
-                          )}
-                          {b.date === todayStr && (
-                            <Chip
-                              label="сегодня"
-                              size="small"
-                              sx={(t) => ({
-                                height: 16,
-                                fontSize: 10,
-                                borderRadius: "5px",
-                                color: "primary.onSurface",
-                                bgcolor: alpha(
-                                  t.palette.primary.main,
-                                  t.palette.mode === "dark" ? 0.18 : 0.1,
-                                ),
-                              })}
-                            />
-                          )}
+                  {rows.map((b) => {
+                    const hint = visitHint(b, tab, todayStr, tomorrowStr);
+                    return (
+                      <ButtonBase
+                        key={b.id}
+                        focusRipple
+                        component="div"
+                        onClick={() => openBooking(b.id)}
+                        sx={(th) => ({
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          p: 1.25,
+                          borderRadius: "14px",
+                          border: 1,
+                          borderColor: isNew(b) ? alpha(th.palette.primary.main, 0.45) : "divider",
+                          borderLeft: isNew(b) ? 3 : 1,
+                          borderLeftColor: isNew(b) ? th.palette.primary.main : "divider",
+                          bgcolor: "background.paper",
+                        })}
+                      >
+                        <Stack direction="row" alignItems="center" gap={1.25}>
+                          <UserAvatar name={b.patientName} size={40} sx={{ borderRadius: "10px", flexShrink: 0 }} />
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography variant="body2" fontWeight={600} noWrap>
+                              {b.patientName}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" noWrap display="block">
+                              {b.doctorName || "—"}
+                              {b.branchName ? ` · ${b.branchName}` : ""}
+                            </Typography>
+                            <Stack direction="row" alignItems="center" gap={0.75} sx={{ mt: 0.25 }}>
+                              <Typography variant="caption" color="text.secondary">
+                                {dayjs(b.date).format("DD.MM.YYYY")} {b.time}
+                              </Typography>
+                              {isNew(b) && <TinyChip label="новая" />}
+                              {hint && <TinyChip label={hint.label} tone={hint.tone} />}
+                            </Stack>
+                          </Box>
+                          <Stack alignItems="flex-end" gap={0.5} sx={{ flexShrink: 0 }}>
+                            <Typography variant="body2" fontWeight={600} whiteSpace="nowrap">
+                              {formatKGS(b.totalPrice)}
+                            </Typography>
+                            {tab !== "upcoming" && (
+                              <StatusChip status={b.status} expiresAt={b.prepaymentExpiresAt} now={now} />
+                            )}
+                            {b.prepaymentStatus && (
+                              <PrepaymentChip
+                                status={b.prepaymentStatus}
+                                amount={b.prepaymentAmount}
+                                needsAttention={b.prepaymentNeedsAttention}
+                                expiresAt={b.prepaymentExpiresAt}
+                                awaitingConfirmation={b.prepaymentStatus === "paid" && b.status === "pending"}
+                              />
+                            )}
+                          </Stack>
                         </Stack>
-                      </Box>
-                      <Stack alignItems="flex-end" gap={0.5} sx={{ flexShrink: 0 }}>
-                        <Typography variant="body2" fontWeight={600} whiteSpace="nowrap">
-                          {formatKGS(b.totalPrice)}
-                        </Typography>
-                        <StatusChip
-                          status={b.status}
-                          expiresAt={b.prepaymentExpiresAt}
-                          now={now}
-                        />
-                        {b.prepaymentStatus && (
-                          <PrepaymentChip
-                            status={b.prepaymentStatus}
-                            amount={b.prepaymentAmount}
-                            needsAttention={b.prepaymentNeedsAttention}
-                            awaitingConfirmation={
-                              b.prepaymentStatus === "paid" && b.status === "pending"
-                            }
-                          />
+                        {listTab !== "journal" && listTab != null && (
+                          <Stack
+                            direction="row"
+                            alignItems="center"
+                            justifyContent="space-between"
+                            gap={1}
+                            sx={{ mt: 1 }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {tab === "triage" ? (
+                              <ClaimControl booking={b} canManage={canManage} actions={actions} />
+                            ) : (
+                              <span />
+                            )}
+                            <BookingRowActions
+                              booking={b}
+                              mode={listTab}
+                              canManage={canManage}
+                              actions={actions}
+                              reminded={reminded.has(b.id)}
+                              onRemind={(x) => markReminded(x.id)}
+                              reminderText={reminderText}
+                            />
+                          </Stack>
                         )}
-                      </Stack>
-                    </ButtonBase>
-                  ))}
+                      </ButtonBase>
+                    );
+                  })}
 
-                  {/* Пагинация */}
                   {total > PAGE_SIZE && (
-                    <Stack
-                      direction="row"
-                      alignItems="center"
-                      justifyContent="center"
-                      gap={1}
-                      sx={{ pt: 0.5 }}
-                    >
+                    <Stack direction="row" alignItems="center" justifyContent="center" gap={1} sx={{ pt: 0.5 }}>
                       <IconButton
                         size="small"
                         disabled={page === 0}
-                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                        onClick={() => setFilters((f) => ({ ...f, page: Math.max(0, f.page - 1) }))}
                       >
                         <ChevronLeftOutlinedIcon fontSize="small" />
                       </IconButton>
@@ -1368,7 +1045,7 @@ const BookingsPage: React.FC = () => {
                       <IconButton
                         size="small"
                         disabled={(page + 1) * PAGE_SIZE >= total}
-                        onClick={() => setPage((p) => p + 1)}
+                        onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}
                       >
                         <ChevronRightOutlinedIcon fontSize="small" />
                       </IconButton>
@@ -1379,20 +1056,24 @@ const BookingsPage: React.FC = () => {
             </Box>
           ) : (
             <Box sx={{ flex: 1, minHeight: 360, display: "flex", flexDirection: "column", gap: 1 }}>
-              {/* Массовое подтверждение — только «Ожидает» можно отметить
-                  (isRowSelectable), доступно только с правом bookings.manage. */}
-              {canManage && selectedIds.length > 0 && (
+              {tab === "triage" && triageQuery.data?.truncated && (
+                <Alert severity="info">
+                  Заявок больше 1000 — показаны самые свежие. Сузьте выборку фильтром.
+                </Alert>
+              )}
+              {/* Массовое подтверждение — только «Ожидает», только с bookings.manage. */}
+              {tab === "triage" && canManage && selectedIds.length > 0 && (
                 <Stack
                   direction="row"
                   alignItems="center"
                   gap={1}
-                  sx={(t) => ({
+                  sx={(th) => ({
                     px: 1.5,
                     py: 1,
                     borderRadius: "10px",
                     border: 1,
                     borderColor: "divider",
-                    bgcolor: subtleBg(t),
+                    bgcolor: subtleBg(th),
                   })}
                 >
                   <Typography variant="body2" color="text.secondary">
@@ -1432,74 +1113,45 @@ const BookingsPage: React.FC = () => {
                 rowCount={total}
                 paginationMode="server"
                 paginationModel={{ page, pageSize: PAGE_SIZE }}
-                onPaginationModelChange={(m) => setPage(m.page)}
+                onPaginationModelChange={(m) => setFilters((f) => ({ ...f, page: m.page }))}
                 pageSizeOptions={[PAGE_SIZE]}
                 disableColumnMenu
                 disableRowSelectionOnClick
-                checkboxSelection={canManage}
+                checkboxSelection={canManage && tab === "triage"}
                 isRowSelectable={(p) => p.row.status === "pending"}
                 rowSelectionModel={selectedIds}
                 onRowSelectionModelChange={(model) => setSelectedIds(model as number[])}
-                /* Не density="comfortable": тема зажимает .MuiDataGrid-columnHeaders
-                   до headerRowHeight (52px), а comfortable раздувает ячейки шапки до
-                   72px — они закрашивали верх первой строки. Высоты задаём явно. */
+                /* Не density="comfortable": тема зажимает шапку до headerRowHeight,
+                   а comfortable раздувает её ячейки и закрашивает первую строку. */
                 rowHeight={64}
                 columnHeaderHeight={theme.appLayout.table.headerRowHeight}
                 onRowClick={(p) => openBooking(p.row.id)}
                 getRowClassName={(p) =>
-                  [
-                    p.row.date === todayStr ? "row-today" : "",
-                    isNew(p.row) ? "row-new" : "",
-                    arrivedIds.has(p.row.id) ? "row-arrived" : "",
-                  ]
+                  [p.row.date === todayStr ? "row-today" : "", isNew(p.row) ? "row-new" : ""]
                     .filter(Boolean)
                     .join(" ")
                 }
                 slots={{ noRowsOverlay: NoRowsOverlay }}
                 localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
-                sx={(t) => ({
+                sx={(th) => ({
                   flex: 1,
                   minHeight: 0,
                   bgcolor: "background.paper",
                   borderRadius: "14px",
                   "& .MuiDataGrid-row": { cursor: "pointer" },
                   "& .MuiDataGrid-columnHeaders": { bgcolor: "background.paper" },
-                  // Центрируем контент ячеек флексом: голая Typography из renderCell
-                  // иначе прилипает к верху строки (v7 центрирует line-height'ом).
+                  // Центрируем контент ячеек флексом: голая Typography иначе
+                  // прилипает к верху строки.
                   "& .MuiDataGrid-cell": { display: "flex", alignItems: "center" },
                   "& .row-today": {
-                    bgcolor: alpha(
-                      t.palette.primary.main,
-                      t.palette.mode === "dark" ? 0.07 : 0.045,
-                    ),
+                    bgcolor: alpha(th.palette.primary.main, th.palette.mode === "dark" ? 0.07 : 0.045),
                     "&:hover": {
-                      bgcolor: alpha(
-                        t.palette.primary.main,
-                        t.palette.mode === "dark" ? 0.11 : 0.08,
-                      ),
+                      bgcolor: alpha(th.palette.primary.main, th.palette.mode === "dark" ? 0.11 : 0.08),
                     },
                   },
-                  // Непрочитанная заявка — акцентная полоса слева. Рисуем тенью
-                  // внутрь самой строки: не сдвигает содержимое и не спорит с
-                  // границами ячеек (у чекбокс-ячейки :first-of-type не
-                  // срабатывает — DataGrid держит перед ней служебный элемент).
-                  "& .row-new": {
-                    boxShadow: `inset 3px 0 0 ${t.palette.primary.main}`,
-                  },
-                  // Строка, приехавшая поллингом при нас: короткая вспышка, чтобы
-                  // не вклинилась в список незаметно.
-                  "@keyframes bookingArrived": {
-                    "0%": {
-                      backgroundColor: alpha(
-                        t.palette.primary.main,
-                        t.palette.mode === "dark" ? 0.32 : 0.22,
-                      ),
-                    },
-                    "100%": { backgroundColor: "transparent" },
-                  },
-                  "& .row-arrived": {
-                    animation: "bookingArrived 3.5s ease-out",
-                  },
+                  // Непрочитанная заявка — акцентная полоса слева (тенью внутрь
+                  // строки: не сдвигает содержимое).
+                  "& .row-new": { boxShadow: `inset 3px 0 0 ${th.palette.primary.main}` },
                 })}
               />
             </Box>
@@ -1510,7 +1162,12 @@ const BookingsPage: React.FC = () => {
       <BookingDetailDrawer
         bookingId={selectedId}
         canManage={canManage}
-        onClose={() => setSelectedId(null)}
+        onClose={() => {
+          setSelectedId(null);
+          setConfirmOnOpenId(null);
+        }}
+        openConfirm={selectedId != null && confirmOnOpenId === selectedId}
+        onConfirmOpened={() => setConfirmOnOpenId(null)}
         siblingIds={rows.map((r) => r.id)}
         onNavigate={openBooking}
       />

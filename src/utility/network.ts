@@ -11,6 +11,20 @@ export function parseIpList(raw: string): string[] {
 }
 
 /**
+ * Подсеть /24 для IPv4-адреса: `178.125.10.84` → `178.125.10.0/24`.
+ * Для IPv6 и нераспознанных строк возвращает адрес как есть — маска /24
+ * там означала бы огромный диапазон.
+ */
+export function toSubnet24(ip: string): string {
+  const trimmed = ip.trim();
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(trimmed);
+  if (!match || match.slice(1).some((part) => Number(part) > 255)) {
+    return trimmed;
+  }
+  return `${Number(match[1])}.${Number(match[2])}.${Number(match[3])}.0/24`;
+}
+
+/**
  * Checks if a given IP address belongs to a CIDR network mask or matches an IP exactly.
  * Supports IPv4 addresses and CIDR subnets (e.g. 192.168.1.0/24).
  * Fallbacks to exact match for invalid/unsupported formats or IPv6.
