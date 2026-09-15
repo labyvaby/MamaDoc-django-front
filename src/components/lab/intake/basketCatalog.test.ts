@@ -30,6 +30,7 @@ const line = (over: Partial<BasketLine> = {}): BasketLine => ({
   testId: 1,
   count: 1,
   express: false,
+  broughtIn: false,
   ...over,
 });
 
@@ -114,14 +115,14 @@ describe("resolveSelectedLines", () => {
   it("подставляет данные теста по testId", () => {
     const tests = [labTest({ id: 5, title: "Ферритин" })];
     const got = resolveSelectedLines(tests, [line({ testId: 5, count: 2, express: true })]);
-    expect(got).toEqual([{ testId: 5, count: 2, express: true, test: tests[0] }]);
+    expect(got).toEqual([{ testId: 5, count: 2, express: true, broughtIn: false, test: tests[0] }]);
   });
 
   it("тест не найден в каталоге — test: null, а не падение", () => {
     // Каталог ещё не загрузился, либо строка восстановлена из черновика
     // (formDraft) для теста, которого сейчас нет в ответе API.
     const got = resolveSelectedLines([], [line({ testId: 9 })]);
-    expect(got).toEqual([{ testId: 9, count: 1, express: false, test: null }]);
+    expect(got).toEqual([{ testId: 9, count: 1, express: false, broughtIn: false, test: null }]);
   });
 
   it("сохраняет порядок selected", () => {

@@ -197,11 +197,33 @@ export function getLabProfiles(signal?: AbortSignal): Promise<LabProfile[]> {
   return apiRequest<LabProfile[]>("/lab/profiles/", { signal });
 }
 
+export interface InstrumentSetLine {
+  testId: number;
+  count: number;
+}
+
+/**
+ * `?tests=` для пробирок набора: `id` или `id:count`, когда сдач больше
+ * одной — бэкенд множит пробирки на число сдач, иначе сумма на экране
+ * не сошлась бы с расчётом приёма при «× 2». Приносные строки сюда не
+ * передают вовсе (см. `LabIntakeDrawer`).
+ */
+export function instrumentSetQuery(lines: InstrumentSetLine[]): string {
+  const counts = new Map<number, number>();
+  for (const line of lines) {
+    counts.set(line.testId, (counts.get(line.testId) ?? 0) + Math.max(1, line.count));
+  }
+  return [...counts.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([id, count]) => (count > 1 ? `${id}:${count}` : String(id)))
+    .join(",");
+}
+
 export function getLabInstruments(
-  testIds: number[],
+  lines: InstrumentSetLine[],
   signal?: AbortSignal,
 ): Promise<LabInstrument[]> {
-  const query = testIdsQuery(testIds);
+  const query = instrumentSetQuery(lines);
   if (!query) return Promise.resolve([]);
   return apiRequest<LabInstrument[]>(
     `/lab/tests/instruments/?tests=${query}`,
@@ -319,6 +341,8 @@ export interface LabOrderLineInput {
   testId: number;
   count: number;
   express: boolean;
+  /** Приносной: пациент принёс биоматериал сам, расходники не нужны. */
+  broughtIn?: boolean;
 }
 
 export interface LabOrderAnswerInput {
@@ -385,6 +409,7 @@ export interface LabOrderLineDetail {
   price: string;
   countItem: number;
   isExpress: boolean;
+  isBroughtIn: boolean;
 }
 
 export interface LabOrderInstrumentDetail {

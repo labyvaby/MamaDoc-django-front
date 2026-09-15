@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeLabOrder,
   normalizeLabOrderDetail,
+  instrumentSetQuery,
   testIdsQuery,
   type LabOrderDetailRaw,
   type LabOrderRaw,
@@ -72,7 +73,7 @@ const rawDetail = (over: Partial<LabOrderDetailRaw> = {}): LabOrderDetailRaw => 
   dispatchError: "",
   createdAt: "2026-09-09T09:00:00+06:00",
   lines: [
-    { id: 1, testId: 12, titleSnapshot: "Глюкоза", price: "150.00", countItem: 1, isExpress: false },
+    { id: 1, testId: 12, titleSnapshot: "Глюкоза", price: "150.00", countItem: 1, isExpress: false, isBroughtIn: false },
   ],
   instruments: [
     { id: 2, instrumentId: 3, titleSnapshot: "Пробирка EDTA", price: "50.00", count: 1 },
@@ -103,7 +104,7 @@ describe("normalizeLabOrderDetail", () => {
       dispatchError: "",
       createdAt: "2026-09-09T09:00:00+06:00",
       lines: [
-        { id: 1, testId: 12, titleSnapshot: "Глюкоза", price: "150.00", countItem: 1, isExpress: false },
+        { id: 1, testId: 12, titleSnapshot: "Глюкоза", price: "150.00", countItem: 1, isExpress: false, isBroughtIn: false },
       ],
       instruments: [
         { id: 2, instrumentId: 3, titleSnapshot: "Пробирка EDTA", price: "50.00", count: 1 },
@@ -155,5 +156,29 @@ describe("testIdsQuery", () => {
     // Пустая строка — сигнал вызывающему коду не делать запрос вовсе:
     // `?tests=` без значений вернул бы весь справочник.
     expect(testIdsQuery([])).toBe("");
+  });
+});
+
+describe("instrumentSetQuery", () => {
+  it("число сдач уходит через двоеточие, единица опускается", () => {
+    expect(
+      instrumentSetQuery([
+        { testId: 3, count: 2 },
+        { testId: 1, count: 1 },
+      ]),
+    ).toBe("1,3:2");
+  });
+
+  it("повтор анализа складывает сдачи", () => {
+    expect(
+      instrumentSetQuery([
+        { testId: 1, count: 1 },
+        { testId: 1, count: 2 },
+      ]),
+    ).toBe("1:3");
+  });
+
+  it("пустой список даёт пустую строку", () => {
+    expect(instrumentSetQuery([])).toBe("");
   });
 });

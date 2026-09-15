@@ -19,6 +19,7 @@ const ready = (over: Partial<IntakeState> = {}): IntakeState => ({
   settingsFailed: false,
   sectionConfigured: true,
   referralRequiredFor: [],
+  genderMismatch: [],
   referringDoctorId: null,
   personalDataConsent: true,
   ...over,
@@ -27,6 +28,12 @@ const ready = (over: Partial<IntakeState> = {}): IntakeState => ({
 describe("intakeBlockReason", () => {
   it("полный набор данных не блокирует", () => {
     expect(intakeBlockReason(ready())).toBeNull();
+  });
+
+  it("анализ не по полу пациента называется по имени", () => {
+    expect(intakeBlockReason(ready({ genderMismatch: ["Мазок из влагалища"] }))).toBe(
+      "Не подходит по полу пациента: Мазок из влагалища",
+    );
   });
 
   it("настройки раздела ещё грузятся — блокирует", () => {

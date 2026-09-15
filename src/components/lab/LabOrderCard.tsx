@@ -355,7 +355,11 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
                   <ItemRow
                     key={line.id}
                     title={line.titleSnapshot}
-                    tag={line.isExpress ? "экспресс" : null}
+                    tag={
+                      [line.isExpress ? "экспресс" : null, line.isBroughtIn ? "приносной" : null]
+                        .filter(Boolean)
+                        .join(" · ") || null
+                    }
                     count={line.countItem}
                     price={line.price}
                   />
