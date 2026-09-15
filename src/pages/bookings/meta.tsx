@@ -151,6 +151,24 @@ export const StatusChip: React.FC<{
 
   const countdown =
     status === "awaiting_payment" && now ? awaitingPaymentCountdown(expiresAt, now) : null;
+  // Ссылка уже истекла, а поллер бэка бронь ещё не снял: «Идёт оплата ·
+  // истекает» на броне трёхдневной давности врёт — оплаты больше не будет.
+  const lapsed = countdown?.text === "истекает" && expiresAt != null && now != null && dayjs(expiresAt).isBefore(now);
+  if (lapsed) {
+    return (
+      <Chip
+        size="small"
+        label="Не оплачена"
+        sx={(t) => ({
+          fontWeight: 500,
+          height: size === "medium" ? 28 : 24,
+          borderRadius: "7px",
+          color: "text.secondary",
+          bgcolor: subtleBg(t, true),
+        })}
+      />
+    );
+  }
   const label = countdown ? `${m.label} · ${countdown.text}` : m.label;
   const urgentTone = countdown?.urgent ?? false;
 
@@ -243,7 +261,12 @@ export const PrepaymentChip: React.FC<{
   amount?: string | null;
   needsAttention?: boolean;
   awaitingConfirmation?: boolean;
-}> = ({ status, amount, needsAttention, awaitingConfirmation }) => {
+  /** Срок ссылки: `pending` с истёкшим сроком показываем как «Ссылка истекла». */
+  expiresAt?: string | null;
+}> = ({ status: rawStatus, amount, needsAttention, awaitingConfirmation, expiresAt }) => {
+  // Бэк без §9.2 оставляет просроченную оплату `pending` — судим по сроку.
+  const status: BookingPrepaymentStatus =
+    rawStatus === "pending" && expiresAt && dayjs(expiresAt).isBefore(dayjs()) ? "expired" : rawStatus;
   const m = BOOKING_PREPAYMENT_META[status];
   if (!m) return <>{status}</>;
   const baseLabel =

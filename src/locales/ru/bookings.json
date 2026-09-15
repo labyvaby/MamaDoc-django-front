@@ -40,6 +40,20 @@
     "prepaymentLinkCopied": "Ссылка скопирована"
   },
 
+  "analytics": {
+    "bySpecialist": "По {{specialist.datPl}}"
+  },
+
+  "reminder": {
+    "button": "Напомнить в WhatsApp",
+    "sent": "Напоминание уже открывали в WhatsApp — отправить ещё раз",
+    "greeting": "Здравствуйте, {{name}}!",
+    "when": "Напоминаем, что вы записаны {{day}} в {{time}}.",
+    "specialist": "{{specialist.nom, capitalize}}: {{doctor}}",
+    "branch": "Филиал: {{branch}}",
+    "changePlans": "Если планы изменились, пожалуйста, ответьте на это сообщение — подберём другое время."
+  },
+
   "cancelConfirm": {
     "title": "Отменить онлайн-запись?",
     "message": "Пациент получит отмену онлайн-записи. {{visit.nom, capitalize}} по этой онлайн-записи ещё не создан, отменять в CRM нечего.",
@@ -59,6 +73,10 @@
     "noMatches": "По номеру {{phone}} карта не найдена. Найдите {{patient.acc}} вручную или создайте карту в разделе «{{patient.nomPl, capitalize}}».",
     "servicesSection": "Услуги",
     "servicesPlaceholder": "Выберите услуги",
+    "servicesNotProvided_one": "Услугу из заявки «{{names}}» {{specialist.nom}} в этом филиале не оказывает — выберите другую",
+    "servicesNotProvided_few": "Услуги из заявки «{{names}}» {{specialist.nom}} в этом филиале не оказывает — выберите другие",
+    "servicesNotProvided_many": "Услуги из заявки «{{names}}» {{specialist.nom}} в этом филиале не оказывает — выберите другие",
+    "servicesRequired": "Выберите хотя бы одну услугу — без услуг {{visit.acc}} не создать",
     "servicesTotal_one": "{{count}} услуга · {{sum}}",
     "servicesTotal_few": "{{count}} услуги · {{sum}}",
     "servicesTotal_many": "{{count}} услуг · {{sum}}",
