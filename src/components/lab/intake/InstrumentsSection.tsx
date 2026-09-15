@@ -6,12 +6,14 @@ import {
   Stack,
   Tooltip,
   Typography,
+  alpha,
 } from "@mui/material";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
+import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 
 import type { LabInstrument } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
-import { tubeAppearance, type TubeAppearance } from "../../../utility/labTubes";
+import { instrumentKind, tubeAppearance, type TubeAppearance } from "../../../utility/labTubes";
 import IntakeSection from "./IntakeSection";
 
 type Props = {
@@ -48,8 +50,29 @@ const TubeGlyph: React.FC<{ look: TubeAppearance }> = ({ look }) => (
   </Box>
 );
 
+/** Значок услуги взятия: шприц в тонированной плашке, той же ширины, что пробирка. */
+const ServiceGlyph: React.FC = () => (
+  <Box
+    aria-hidden
+    sx={(t) => ({
+      width: 22,
+      height: 22,
+      ml: -0.625,
+      borderRadius: "6px",
+      display: "grid",
+      placeItems: "center",
+      flexShrink: 0,
+      color: "primary.onSurface",
+      bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1),
+      "& .MuiSvgIcon-root": { fontSize: 15 },
+    })}
+  >
+    <VaccinesOutlined />
+  </Box>
+);
+
 /**
- * Одна пробирка — одна строка.
+ * Одна позиция набора — одна строка: пробирка или услуга взятия.
  *
  * Слева цвет крышки (значок и слово), потом название, под ним — под какие
  * анализы; справа количество. Инструкция ЛИС по пробирке — за значком
@@ -60,11 +83,12 @@ const TubeRow: React.FC<{ item: LabInstrument; chargeTubes: boolean }> = ({
   item,
   chargeTubes,
 }) => {
+  const service = instrumentKind(item.title) === "service";
   const look = tubeAppearance(item.title, item.instruction);
   const tests = item.tests ?? [];
   return (
     <Stack direction="row" alignItems="center" gap={1.25} sx={{ py: 1 }}>
-      <TubeGlyph look={look} />
+      {service ? <ServiceGlyph /> : <TubeGlyph look={look} />}
 
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="body2" fontWeight={500} noWrap>
@@ -80,9 +104,15 @@ const TubeRow: React.FC<{ item: LabInstrument; chargeTubes: boolean }> = ({
             whiteSpace: "nowrap",
           }}
         >
-          <Box component="span" sx={{ color: look.cap, fontWeight: 600 }}>
-            {look.label}
-          </Box>
+          {service ? (
+            <Box component="span" sx={{ color: "primary.onSurface", fontWeight: 600 }}>
+              Услуга
+            </Box>
+          ) : (
+            <Box component="span" sx={{ color: look.cap, fontWeight: 600 }}>
+              {look.label}
+            </Box>
+          )}
           {tests.length > 0 && ` · ${tests.join(", ")}`}
         </Typography>
       </Box>
@@ -106,7 +136,7 @@ const TubeRow: React.FC<{ item: LabInstrument; chargeTubes: boolean }> = ({
             </Typography>
           }
         >
-          <IconButton size="small" aria-label="Инструкция по пробирке">
+          <IconButton size="small" aria-label={service ? "Описание услуги" : "Инструкция по пробирке"}>
             <InfoOutlined fontSize="small" />
           </IconButton>
         </Tooltip>

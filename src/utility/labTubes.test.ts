@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { tubeAppearance } from "./labTubes";
+import { instrumentKind, tubeAppearance } from "./labTubes";
 
 /**
  * Цвет крышки — единственный признак, по которому пробирки различают у стола
@@ -54,5 +54,19 @@ describe("tubeAppearance", () => {
 
     expect(violet.cap).not.toBe(yellow.cap);
     expect(violet.cap).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+});
+
+describe("instrumentKind", () => {
+  it("взятие и забор биоматериала — услуга, а не пробирка", () => {
+    expect(instrumentKind("Взятие крови")).toBe("service");
+    expect(instrumentKind("(Взятие мазка на бакпосев)")).toBe("service");
+    expect(instrumentKind("Забор биоматериала")).toBe("service");
+  });
+
+  it("вакутейнеры, контейнеры и расходники остаются пробирками", () => {
+    expect(instrumentKind("вакутейнер (ОАК фиолетовый)")).toBe("tube");
+    expect(instrumentKind("контейнер для сбора мочи")).toBe("tube");
+    expect(instrumentKind("Расходный материал")).toBe("tube");
   });
 });
