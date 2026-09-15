@@ -41,6 +41,15 @@ export const emptyBenefits: Benefits = {
   certificateCode: "",
 };
 
+/** Ручная скидка всегда остаётся в допустимом диапазоне 0–100%. */
+const normalizeManualDiscount = (value: string): string => {
+  const normalized = value.replace(",", ".").replace(/[^\d.]/g, "");
+  const [whole = "", fraction = ""] = normalized.split(".");
+  const numeric = Number(`${whole || "0"}.${fraction.slice(0, 2)}`);
+  if (!Number.isFinite(numeric)) return "0";
+  return String(Math.min(100, Math.max(0, numeric)));
+};
+
 /**
  * К какому полю панели относится ошибка расчёта чека. Сервер проверяет
  * промокод и сертификат на `quote/`, и такую ошибку уместнее показать под
@@ -444,10 +453,13 @@ export function LivePaymentPanel({
                   </Typography>
                   <InputBase
                     value={benefits.discount === "0" ? "" : benefits.discount}
-                    onChange={(event) => patch({ discount: event.target.value || "0", discountKindId: null })}
+                    onChange={(event) => patch({
+                      discount: event.target.value ? normalizeManualDiscount(event.target.value) : "0",
+                      discountKindId: null,
+                    })}
                     placeholder="0"
                     disabled={frozen || selectedKind !== null}
-                    inputProps={{ inputMode: "decimal", style: { textAlign: "right" } }}
+                    inputProps={{ inputMode: "decimal", max: 100, style: { textAlign: "right" } }}
                     endAdornment={<Box component="span" sx={{ pl: "4px", color: c.textDim }}>%</Box>}
                     sx={{
                       width: 96,
