@@ -325,6 +325,78 @@ export function deleteHotelRoom(categoryName: string, room: string): void {
     c.name === categoryName ? { ...c, rooms: c.rooms.filter((r) => r !== room) } : c,
   );
   persistHotelRoomCategories(next);
+  clearRoomAdditionalTariffs(room);
+}
+
+// ── Доп. тарифы номера — задаются при добавлении номера («Настройка» → «Номера») ──
+//
+// Не то же самое, что boardType/BOARD_TYPE_LABELS ниже: тариф брони —
+// единственный выбранный пакет на конкретный заезд («Тариф» в
+// CreateBookingButton), а доп. тарифы — набор отдельных опций питания,
+// которые вообще доступны в этом номере (можно комбинировать: Завтрак+Обед
+// без Ужина и т.п.) — свойство номера, не брони, поэтому свой стор и свой тип.
+
+export type AdditionalTariff = "breakfast" | "lunch" | "dinner" | "allInclusive";
+
+export const ADDITIONAL_TARIFF_LABELS: Record<AdditionalTariff, string> = {
+  breakfast: "Завтрак",
+  lunch: "Обед",
+  dinner: "Ужин",
+  allInclusive: "Всё включено",
+};
+
+const ROOM_ADDITIONAL_TARIFFS_KEY = "mamadoc:mockRoomAdditionalTariffs";
+const roomAdditionalTariffsListeners = new Set<() => void>();
+
+function readRoomAdditionalTariffsFromStorage(): Record<string, AdditionalTariff[]> {
+  try {
+    const raw = window.localStorage.getItem(ROOM_ADDITIONAL_TARIFFS_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, AdditionalTariff[]>;
+  } catch {
+    return {};
+  }
+}
+
+let roomAdditionalTariffsCache: Record<string, AdditionalTariff[]> = readRoomAdditionalTariffsFromStorage();
+
+function persistRoomAdditionalTariffs(next: Record<string, AdditionalTariff[]>): void {
+  roomAdditionalTariffsCache = next;
+  try {
+    window.localStorage.setItem(ROOM_ADDITIONAL_TARIFFS_KEY, JSON.stringify(next));
+  } catch {
+    // приватный режим/запрет на localStorage — доживёт до конца вкладки в памяти
+  }
+  roomAdditionalTariffsListeners.forEach((fn) => fn());
+}
+
+export function setRoomAdditionalTariffs(room: string, tariffs: AdditionalTariff[]): void {
+  const next = { ...roomAdditionalTariffsCache };
+  if (tariffs.length === 0) delete next[room];
+  else next[room] = tariffs;
+  persistRoomAdditionalTariffs(next);
+}
+
+function clearRoomAdditionalTariffs(room: string): void {
+  if (!(room in roomAdditionalTariffsCache)) return;
+  const next = { ...roomAdditionalTariffsCache };
+  delete next[room];
+  persistRoomAdditionalTariffs(next);
+}
+
+export function getRoomAdditionalTariffs(room: string): AdditionalTariff[] {
+  return roomAdditionalTariffsCache[room] ?? [];
+}
+
+export function subscribeRoomAdditionalTariffs(onChange: () => void): () => void {
+  roomAdditionalTariffsListeners.add(onChange);
+  return () => roomAdditionalTariffsListeners.delete(onChange);
+}
+
+export function getRoomAdditionalTariffsSnapshot(): Record<string, AdditionalTariff[]> {
+  return roomAdditionalTariffsCache;
 }
 
 /** Статус уборки номера — независим от того, занят номер бронью или нет. */

@@ -1,9 +1,10 @@
 /**
  * Детали номера — открывается кликом по номеру в RoomBookingGrid. Тариф,
- * вместимость, удобства (getRoomCategory — стор категорий в mockDemoData.ts)
- * и доступность на
- * ближайшие 45 дней (getRoomAvailability из mockDemoData.ts — сгенерированные
- * брони + созданные вручную через CreateBookingButton, вместе).
+ * вместимость, удобства (getRoomCategory — стор категорий в mockDemoData.ts),
+ * доп. тарифы питания (getRoomAdditionalTariffs — задаются при добавлении
+ * номера в «Настройка» → «Номера») и доступность на ближайшие 45 дней
+ * (getRoomAvailability из mockDemoData.ts — сгенерированные брони + созданные
+ * вручную через CreateBookingButton, вместе).
  */
 import React from "react";
 import {
@@ -33,6 +34,8 @@ import {
   formatHotelDateRange,
   nightsBetween,
   HOTEL_BOOKING_STATUS_LABELS,
+  getRoomAdditionalTariffs,
+  ADDITIONAL_TARIFF_LABELS,
   type HotelBooking,
 } from "./mockDemoData";
 
@@ -50,6 +53,7 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
   const theme = useTheme();
   const category = room ? getRoomCategory(room) : undefined;
   const housekeeping = room ? getRoomHousekeepingStatus(room) : undefined;
+  const additionalTariffs = room ? getRoomAdditionalTariffs(room) : [];
 
   const { bookings, freeRanges } = React.useMemo(() => {
     if (!room) return { bookings: [] as HotelBooking[], freeRanges: [] };
@@ -163,11 +167,26 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
                   </Box>
                 </Stack>
 
-                <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mb: 2.5 }}>
+                <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mb: additionalTariffs.length > 0 ? 2 : 2.5 }}>
                   {category.amenities.map((a) => (
                     <Chip key={a} label={a} size="small" variant="outlined" />
                   ))}
                 </Stack>
+
+                {/* Доп. тарифы — свойство конкретного номера (setRoomAdditionalTariffs
+                    в «Настройка» → «Номера»), не тариф брони (boardType выше в форме). */}
+                {additionalTariffs.length > 0 && (
+                  <Box sx={{ mb: 2.5 }}>
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
+                      Доп. тарифы
+                    </Typography>
+                    <Stack direction="row" gap={0.75} flexWrap="wrap">
+                      {additionalTariffs.map((t) => (
+                        <Chip key={t} label={ADDITIONAL_TARIFF_LABELS[t]} size="small" color="primary" variant="outlined" />
+                      ))}
+                    </Stack>
+                  </Box>
+                )}
               </>
             )}
 
