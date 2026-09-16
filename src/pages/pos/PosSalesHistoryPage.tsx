@@ -815,7 +815,7 @@ export default function PosSalesHistoryPage() {
       <ReasonDialog
         open={returnTarget != null}
         title={`Возврат по чеку №${returnTarget ? receiptNumber(returnTarget) : ""}`}
-        description="Будет создан документ возврата на все товары чека и восстановлен остаток на складе. Возврат банковского платежа выполняется отдельно в терминале."
+        description="Будет создан документ возврата на все товары чека, восстановлен остаток и зафиксирован возврат денег теми же способами оплаты. Операцию по карте проведите также в терминале."
         label="Причина возврата"
         confirmText="Подтвердить возврат"
         loading={returnMutation.isPending}
