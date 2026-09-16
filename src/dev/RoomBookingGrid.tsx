@@ -75,7 +75,14 @@ import { GuestDetailsDialog } from "./GuestDetailsDialog";
 /** ≈ два месяца — весь период должен помещаться в шахматку, не только неделя за раз. */
 const NUM_DAYS = 60;
 const ROOM_COL_WIDTH = 148;
-const DAY_COL_WIDTH = 64;
+/**
+ * День — «резиновая» колонка (minmax, не фиксированный px): на широком
+ * экране 1fr растягивает все 60 дней вровень с шириной грида, и оба месяца
+ * видны без горизонтального скролла. На узком грид упирается в
+ * MIN_DAY_COL_WIDTH и переходит на скролл (overflow: auto на обёртке ниже) —
+ * не сжимается до нечитаемых полосок вместо номеров/статусов.
+ */
+const MIN_DAY_COL_WIDTH = 20;
 
 type RowPlan = { kind: "category"; label: string } | { kind: "room"; room: string };
 
@@ -187,8 +194,8 @@ export const RoomBookingGrid: React.FC = () => {
         <Box
           sx={{
             display: "grid",
-            gridTemplateColumns: `${ROOM_COL_WIDTH}px repeat(${NUM_DAYS}, ${DAY_COL_WIDTH}px)`,
-            minWidth: ROOM_COL_WIDTH + NUM_DAYS * DAY_COL_WIDTH,
+            gridTemplateColumns: `${ROOM_COL_WIDTH}px repeat(${NUM_DAYS}, minmax(${MIN_DAY_COL_WIDTH}px, 1fr))`,
+            minWidth: ROOM_COL_WIDTH + NUM_DAYS * MIN_DAY_COL_WIDTH,
           }}
         >
           {/* Угол над шапкой — sticky по обеим осям, перекрывает содержимое под собой при скролле */}
