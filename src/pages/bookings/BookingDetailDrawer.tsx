@@ -104,6 +104,9 @@ const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, val
   </Box>
 );
 
+/** Сколько найденных по телефону карт показываем списком; остальное — счётчиком. */
+const MATCHES_SHOWN = 5;
+
 /** Секция карточки: иконка + заголовок + содержимое (стиль ConfirmBookingDialog). */
 const Section: React.FC<{
   icon: React.ReactNode;
@@ -332,6 +335,8 @@ const BookingDetailDrawer: React.FC<Props> = ({
   // предлагаем открыть. Несколько — выбор делают при подтверждении.
   const matches = b?.patientMatches ?? [];
   const singleMatch = matches.length === 1 ? matches[0] : null;
+  const shownMatches = matches.slice(0, MATCHES_SHOWN);
+  const hiddenMatches = matches.length - shownMatches.length;
 
   const openAppointment = (appointmentId: number) => {
     navigate(`/appointments?appointment=${appointmentId}`);
@@ -541,7 +546,7 @@ const BookingDetailDrawer: React.FC<Props> = ({
             <>
             <Divider />
             <Section icon={<PersonOutlineOutlined />} title={t("detail.patientSection")}>
-              <Stack spacing={1} alignItems="flex-start">
+              <Stack spacing={1} alignItems="stretch">
                 <Typography variant="body2" color="text.secondary">
                   {singleMatch
                     ? t("detail.matchOne")
@@ -549,17 +554,43 @@ const BookingDetailDrawer: React.FC<Props> = ({
                       ? t("detail.matchMany", { count: matches.length })
                       : t("detail.matchNone")}
                 </Typography>
-                {singleMatch && (
-                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                {/* Сами карты — иначе фраза «выберите нужную» была тупиком: выбор
+                    делают в диалоге подтверждения, а посмотреть, кто это,
+                    регистратору негде. Один номер на семью даёт и десяток карт
+                    (телефон бэк ищет подстрокой), поэтому список ограничен. */}
+                {shownMatches.map((m) => (
+                  <Stack
+                    key={m.id}
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                    justifyContent="space-between"
+                    sx={(th) => ({
+                      p: 1.25,
+                      borderRadius: "10px",
+                      border: 1,
+                      borderColor: "divider",
+                      bgcolor: subtleBg(th),
+                    })}
+                  >
                     <Typography variant="body2" fontWeight={500}>
-                      {singleMatch.fullName}
+                      {m.fullName}
                     </Typography>
                     {canViewPatients && (
-                      <Button size="small" onClick={() => openPatient(singleMatch.id)} sx={{ textTransform: "none" }}>
+                      <Button
+                        size="small"
+                        onClick={() => openPatient(m.id)}
+                        sx={{ textTransform: "none", flexShrink: 0 }}
+                      >
                         {t("detail.openPatient")}
                       </Button>
                     )}
                   </Stack>
+                ))}
+                {hiddenMatches > 0 && (
+                  <Typography variant="caption" color="text.disabled">
+                    {t("detail.matchMore", { count: hiddenMatches })}
+                  </Typography>
                 )}
               </Stack>
             </Section>
