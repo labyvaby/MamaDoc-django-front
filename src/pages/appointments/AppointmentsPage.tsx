@@ -54,6 +54,7 @@ import {
   type HomeDashboard,
 } from "../../api/appointments";
 import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
+import { updateBookingStatus } from "../../api/bookings";
 import {
   getWaitlist,
   getWaitlistEntry,
@@ -472,6 +473,13 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
    * реального создания приёма: пока приёма нет, человек по-прежнему ждёт.
    */
   const [waitlistToClose, setWaitlistToClose] = React.useState<WaitlistEntry | null>(null);
+  /**
+   * Пропущенная онлайн-запись, которую перезаписывают (`?bookingId=` из модуля
+   * «Онлайн-запись»). Закрываем её, только когда новый приём создан — иначе
+   * недозвон оставил бы пациента и без заявки, и без приёма. Статуса
+   * «перенесена» у брони нет, поэтому `cancelled`: приёма по ней не было.
+   */
+  const [bookingToClose, setBookingToClose] = React.useState<number | null>(null);
   const activeScope = useActiveScope();
   const branchId = activeBranch?.id ?? undefined;
 
@@ -582,6 +590,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       setRebookPatientId(asId(searchParams.get("patient")));
       setRebookEmployeeId(asId(searchParams.get("employee")));
       setRebookServiceId(asId(searchParams.get("service")));
+      setBookingToClose(asId(searchParams.get("bookingId")));
       setCreateOpen(true);
       // Пришли из листа ожидания: запись закроется, когда приём будет создан
       // (см. handleCreated). Карточку тянем отдельно — в URL только id.
@@ -596,7 +605,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setSearchParams(
       (prev: URLSearchParams) => {
         const next = new URLSearchParams(prev);
-        for (const key of ["appointment", "new", "patient", "employee", "service", "waitlistId"]) {
+        for (const key of ["appointment", "new", "patient", "employee", "service", "waitlistId", "bookingId"]) {
           next.delete(key);
         }
         return next;
@@ -1020,9 +1029,16 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         ).catch((e) => notify?.({ type: "error", message: parseBackendError(e) }));
         setWaitlistToClose(null);
       }
+      // Перезапись пропущенной онлайн-записи: приём есть — заявку закрываем.
+      if (bookingToClose != null && created) {
+        void updateBookingStatus(bookingToClose, "cancelled")
+          .then(() => queryClient.invalidateQueries({ queryKey: djangoQueryKeys.bookings.all }))
+          .catch((e) => notify?.({ type: "error", message: parseBackendError(e) }));
+        setBookingToClose(null);
+      }
       refreshAfterMutation();
     },
-    [refreshAfterMutation, waitlistToClose, orgId, notify],
+    [refreshAfterMutation, waitlistToClose, bookingToClose, orgId, notify, queryClient],
   );
 
   const handleSaved = React.useCallback(() => {

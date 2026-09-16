@@ -76,7 +76,15 @@ type Props = {
   onClose: () => void;
   onCreated?: (p: DjangoPatient) => void;
   initialPhone?: string;
+  /** Имя из заявки: карту заводят прямо из подтверждения онлайн-записи. */
+  initialFullName?: string;
   branchId?: number | null;
+  /**
+   * Перекрыть z-index дровера. Нужен, когда форма открывается поверх диалога:
+   * у MUI `drawer` (1200) ниже `modal` (1300), и без этого форма уезжает под
+   * диалог подтверждения.
+   */
+  zIndex?: number;
 };
 
 const MotionStack = motion(Stack);
@@ -137,7 +145,9 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   onClose,
   onCreated,
   initialPhone,
+  initialFullName,
   branchId,
+  zIndex,
 }) => {
   const { t } = useT("patients");
   const { open: notify } = useNotification();
@@ -205,10 +215,15 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
       setDraftRestored(false);
       return;
     }
-    if (initialPhone) {
-      const parsed = parsePhone(initialPhone);
-      setPhone(parsed.local);
-      setPhoneCountryCode(parsed.countryCode);
+    // Предзаполнение из точки входа важнее черновика: заводят карту
+    // конкретного человека, а не продолжают прошлую форму.
+    if (initialPhone || initialFullName) {
+      if (initialPhone) {
+        const parsed = parsePhone(initialPhone);
+        setPhone(parsed.local);
+        setPhoneCountryCode(parsed.countryCode);
+      }
+      if (initialFullName) setFio(capitalizeFullName(initialFullName));
       return;
     }
     const draft = readPatientDraft();
@@ -225,7 +240,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
       setBlacklistReason(draft.blacklistReason);
       setDraftRestored(true);
     }
-  }, [open, initialPhone]);
+  }, [open, initialPhone, initialFullName]);
 
   // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
   // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
@@ -391,6 +406,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
       anchor="right"
       open={open}
       onClose={busy ? undefined : handleClose}
+      sx={zIndex != null ? { zIndex } : undefined}
       PaperProps={{
         sx: {
           width: { xs: 320, sm: 480, md: 520 },

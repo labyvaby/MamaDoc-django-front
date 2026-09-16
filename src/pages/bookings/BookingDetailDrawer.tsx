@@ -19,6 +19,7 @@ import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import CancelOutlined from "@mui/icons-material/CancelOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import PersonOffOutlined from "@mui/icons-material/PersonOffOutlined";
+import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
@@ -59,6 +60,7 @@ import AppointmentStatusChips from "../../components/appointments/AppointmentSta
 import {
   bookingTimeHint,
   bookingTimeRange,
+  isBookingMissed,
   isTerminalBookingStatus,
   prepaymentExpiryText,
   PrepaymentChip,
@@ -66,7 +68,12 @@ import {
   useTickingClock,
 } from "./meta";
 import ConfirmBookingDialog from "./ConfirmBookingDialog";
-import { ClaimControl, useReminderText, useRemindedBookings } from "./BookingRowActions";
+import {
+  ClaimControl,
+  MissedBookingActions,
+  useReminderText,
+  useRemindedBookings,
+} from "./BookingRowActions";
 import { useBookingActions } from "./useBookingActions";
 import { whatsappUrl } from "./bookingViews";
 import { useT } from "../../i18n/VerticalProvider";
@@ -203,11 +210,13 @@ const BookingDetailDrawer: React.FC<Props> = ({
 
   const b = query.data;
   const busy = mutation.isPending;
+  const missed = b != null && isBookingMissed(b);
 
   // Запрос «сразу к подтверждению» исполняем, когда карточка загрузилась.
   React.useEffect(() => {
     if (!openConfirm || !b || b.id !== bookingId) return;
-    if (canManage && b.status === "pending") setConfirmOpen(true);
+    // Пропущенную не подтверждаем — карточка просто откроется с её исходами.
+    if (canManage && b.status === "pending" && !isBookingMissed(b)) setConfirmOpen(true);
     onConfirmOpened?.();
   }, [openConfirm, b, bookingId, canManage, onConfirmOpened]);
 
@@ -274,10 +283,14 @@ const BookingDetailDrawer: React.FC<Props> = ({
     b == null
       ? []
       : b.status === "pending"
-        ? [
-            { status: "confirmed", label: "Подтвердить", icon: <CheckCircleOutlined />, color: "success" },
-            { status: "cancelled", label: "Отменить", icon: <CancelOutlined />, color: "error" },
-          ]
+        ? // Пропущенная заявка (окно визита прошло) подтверждению не подлежит:
+          // у неё свой набор исходов — MissedBookingActions в футере.
+          missed
+          ? []
+          : [
+              { status: "confirmed", label: "Подтвердить", icon: <CheckCircleOutlined />, color: "success" },
+              { status: "cancelled", label: "Отменить", icon: <CancelOutlined />, color: "error" },
+            ]
         : b.status === "confirmed"
           ? [
               /**
@@ -355,8 +368,8 @@ const BookingDetailDrawer: React.FC<Props> = ({
   };
 
   const terminal = b != null && isTerminalBookingStatus(b.status);
-  const timeHint = b ? bookingTimeHint(b.date, b.time, b.status) : null;
-  const footerActions = canManage && (actions.length > 0 || (terminal && canCreateAppointment));
+  const timeHint = b ? bookingTimeHint(b.date, b.time, b.status, b.totalDurationMin) : null;
+  const footerActions = canManage && (actions.length > 0 || missed || (terminal && canCreateAppointment));
 
   return (
     <Drawer
@@ -502,6 +515,33 @@ const BookingDetailDrawer: React.FC<Props> = ({
               {/* Кто разбирает заявку — видно всем, ставит тот, кто разбирает. */}
               <ClaimControl booking={b} canManage={canManage} actions={bookingActions} />
             </Stack>
+
+            {/* Пропущенная заявка: объясняем, почему нет «Подтвердить», и что
+                с ней делать — исходы в футере. */}
+            {missed && (
+              <Stack
+                direction="row"
+                spacing={1.25}
+                alignItems="flex-start"
+                sx={(th) => ({
+                  p: 1.5,
+                  borderRadius: "12px",
+                  border: 1,
+                  borderColor: alpha(th.palette.warning.main, 0.5),
+                  bgcolor: alpha(th.palette.warning.main, th.palette.mode === "dark" ? 0.12 : 0.08),
+                })}
+              >
+                <EventBusyOutlined sx={{ fontSize: 20, color: "warning.main", flexShrink: 0, mt: "1px" }} />
+                <Box>
+                  <Typography variant="body2" fontWeight={600}>
+                    {t("missed.title")}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {t("missed.hint")}
+                  </Typography>
+                </Box>
+              </Stack>
+            )}
 
             {/* Напоминание пациенту перед визитом — ручное: открываем WhatsApp
                 с готовым текстом, отправляет сотрудник. */}
@@ -778,6 +818,8 @@ const BookingDetailDrawer: React.FC<Props> = ({
                 {a.label}
               </Button>
             ))}
+
+            {missed && <MissedBookingActions booking={b} actions={bookingActions} variant="buttons" />}
 
             {/* Терминальная бронь: переходов больше нет, но пациента часто
                 записывают заново — из карточки это один клик. */}

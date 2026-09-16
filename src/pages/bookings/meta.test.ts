@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import dayjs from "dayjs";
 
-import { isBookingClosed, isBookingOverdue } from "./meta";
+import { bookingTimeHint, isBookingClosed, isBookingMissed, isBookingOverdue } from "./meta";
 
 /**
  * `isBookingClosed` решает, что скрыть из списка броней по умолчанию, поэтому
@@ -78,5 +78,32 @@ describe("isBookingClosed", () => {
     const overdue = { date: "2026-09-08", time: "10:00", status: "pending" as const };
     expect(isBookingOverdue(overdue)).toBe(true);
     expect(isBookingClosed(overdue, now)).toBe(false);
+  });
+});
+
+describe("isBookingMissed", () => {
+  const now = dayjs("2026-09-15T12:00:00");
+  const pending = (time: string, dur = 30) => ({
+    date: "2026-09-15",
+    time,
+    status: "pending" as const,
+    totalDurationMin: dur,
+  });
+
+  it("порог — конец окна визита, не начало: пациент мог опоздать", () => {
+    expect(isBookingMissed(pending("11:45"), now)).toBe(false);
+    expect(isBookingMissed(pending("11:20"), now)).toBe(true);
+  });
+
+  it("без длительности окно равно началу", () => {
+    expect(isBookingMissed(pending("11:59", 0), now)).toBe(true);
+  });
+
+  it("только «Ожидает»: подтверждённая с прошедшим временем — забота регистратуры", () => {
+    expect(isBookingMissed({ ...pending("10:00"), status: "confirmed" }, now)).toBe(false);
+  });
+
+  it("подсказка времени различает идущий визит и пропуск", () => {
+    expect(bookingTimeHint("2026-09-15", "11:20", "pending", 30)?.text).toMatch(/пропущена/);
   });
 });

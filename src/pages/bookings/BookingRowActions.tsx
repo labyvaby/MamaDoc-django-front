@@ -1,18 +1,23 @@
 import React from "react";
 import { Button, Chip, CircularProgress, IconButton, Stack, Tooltip } from "@mui/material";
 import CallOutlined from "@mui/icons-material/CallOutlined";
+import CancelOutlined from "@mui/icons-material/CancelOutlined";
 import ChatOutlined from "@mui/icons-material/ChatOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import EventRepeatOutlined from "@mui/icons-material/EventRepeatOutlined";
+import PersonOffOutlined from "@mui/icons-material/PersonOffOutlined";
 import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
 import MarkChatReadOutlined from "@mui/icons-material/MarkChatReadOutlined";
 import PanToolAltOutlined from "@mui/icons-material/PanToolAltOutlined";
 
 import type { BookingListItem } from "../../api/bookings";
+import { ConfirmDialog } from "../../components/ui";
+import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useT } from "../../i18n/VerticalProvider";
 import { subtleBg } from "../../theme/uiHelpers";
 import { visitDayPhrase, whatsappUrl } from "./bookingViews";
-import type { useBookingActions } from "./useBookingActions";
+import type { MissedCloseStatus, useBookingActions } from "./useBookingActions";
 
 type Actions = ReturnType<typeof useBookingActions>;
 
@@ -140,13 +145,134 @@ export const ClaimControl: React.FC<{
   );
 };
 
+// ── Пропущенная заявка ────────────────────────────────────────────────────────
+
+/**
+ * Исходы пропущенной заявки (`isBookingMissed`): перезаписать, неявка, отмена.
+ * «Подтвердить» здесь нет намеренно — приём создался бы задним числом на
+ * время, когда пациента не принимали. Один компонент на строку списка
+ * (`variant="icons"`) и футер карточки (`variant="buttons"`), чтобы набор
+ * исходов и тексты подтверждений не расходились.
+ */
+export const MissedBookingActions: React.FC<{
+  booking: BookingListItem;
+  actions: Actions;
+  variant: "icons" | "buttons";
+}> = ({ booking: b, actions, variant }) => {
+  const { t } = useT("bookings");
+  const canCreateAppointment = useCan("appointments.create");
+  const [ask, setAsk] = React.useState<MissedCloseStatus | null>(null);
+  const closing = actions.closeMissed.isPending && actions.closeMissed.variables?.id === b.id;
+  const rebooking = actions.rebook.isPending && actions.rebook.variables === b.id;
+  const busy = closing || rebooking;
+
+  const items: {
+    key: string;
+    label: string;
+    tooltip: string;
+    icon: React.ReactNode;
+    color: "primary" | "inherit" | "error";
+    onClick: () => void;
+    hidden?: boolean;
+  }[] = [
+    {
+      key: "rebook",
+      label: t("missed.rebook"),
+      tooltip: t("missed.rebookTooltip"),
+      icon: rebooking ? <CircularProgress size={16} color="inherit" /> : <EventRepeatOutlined sx={{ fontSize: 18 }} />,
+      color: "primary",
+      onClick: () => actions.rebook.mutate(b.id),
+      hidden: !canCreateAppointment,
+    },
+    {
+      key: "no_show",
+      label: t("missed.noShow"),
+      tooltip: t("missed.noShowTooltip"),
+      icon: <PersonOffOutlined sx={{ fontSize: 18 }} />,
+      color: "inherit",
+      onClick: () => setAsk("no_show"),
+    },
+    {
+      key: "cancelled",
+      label: t("missed.cancel"),
+      tooltip: t("missed.cancelTooltip"),
+      icon: <CancelOutlined sx={{ fontSize: 18 }} />,
+      color: "error",
+      onClick: () => setAsk("cancelled"),
+    },
+  ];
+
+  const dialog = (
+    <ConfirmDialog
+      open={ask != null}
+      onClose={() => setAsk(null)}
+      onConfirm={() => {
+        if (ask) actions.closeMissed.mutate({ id: b.id, status: ask }, { onSettled: () => setAsk(null) });
+      }}
+      title={ask === "cancelled" ? t("cancelConfirm.title") : t("missed.noShowConfirm.title")}
+      message={ask === "cancelled" ? t("cancelConfirm.message") : t("missed.noShowConfirm.message")}
+      confirmText={ask === "cancelled" ? t("cancelConfirm.confirm") : t("missed.noShowConfirm.confirm")}
+      cancelText={ask === "cancelled" ? t("cancelConfirm.cancel") : t("missed.noShowConfirm.cancel")}
+      variant={ask === "cancelled" ? "error" : "warning"}
+      loading={closing}
+    />
+  );
+
+  if (variant === "icons") {
+    return (
+      <>
+        {items
+          .filter((i) => !i.hidden)
+          .map((i) => (
+            <Tooltip key={i.key} title={i.tooltip}>
+              <span>
+                <IconButton
+                  size="small"
+                  color={i.color === "inherit" ? "default" : i.color}
+                  disabled={busy}
+                  onClick={i.onClick}
+                >
+                  {i.icon}
+                </IconButton>
+              </span>
+            </Tooltip>
+          ))}
+        {dialog}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {items
+        .filter((i) => !i.hidden)
+        .map((i) => (
+          <Button
+            key={i.key}
+            size="small"
+            variant={i.color === "primary" ? "contained" : "outlined"}
+            color={i.color}
+            startIcon={i.icon}
+            disabled={busy}
+            onClick={i.onClick}
+            sx={{ textTransform: "none" }}
+          >
+            {i.label}
+          </Button>
+        ))}
+      {dialog}
+    </>
+  );
+};
+
 // ── Кнопки строки ─────────────────────────────────────────────────────────────
 
 const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
 export const BookingRowActions: React.FC<{
   booking: BookingListItem;
-  mode: "triage" | "upcoming";
+  /** `missed` — пропущенная заявка из «Разобрать»: другой набор исходов. */
+  mode: "triage" | "missed" | "upcoming";
   canManage: boolean;
   actions: Actions;
   reminded?: boolean;
@@ -166,7 +292,7 @@ export const BookingRowActions: React.FC<{
         </Tooltip>
       )}
 
-      {b.patientPhone && mode === "triage" && (
+      {b.patientPhone && (mode === "triage" || mode === "missed") && (
         <Tooltip title={t("detail.whatsapp")}>
           <IconButton
             size="small"
@@ -198,6 +324,10 @@ export const BookingRowActions: React.FC<{
             )}
           </IconButton>
         </Tooltip>
+      )}
+
+      {mode === "missed" && canManage && b.status === "pending" && (
+        <MissedBookingActions booking={b} actions={actions} variant="icons" />
       )}
 
       {mode === "triage" && canManage && b.status === "pending" && (

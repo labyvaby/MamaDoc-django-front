@@ -6,7 +6,7 @@
 import dayjs, { type Dayjs } from "dayjs";
 
 import type { BookingDetail, BookingListItem, BookingStatus } from "../../api/bookings";
-import { isBookingClosed } from "./meta";
+import { isBookingClosed, isBookingMissed } from "./meta";
 
 /**
  * Вкладки экрана. Не статусы брони, а рабочие вопросы:
@@ -96,7 +96,8 @@ type FunnelSource = Pick<
   | "time"
   | "prepaymentStatus"
   | "prepaymentExpiresAt"
->;
+> &
+  Partial<Pick<BookingListItem, "totalDurationMin">>;
 
 export interface BookingFunnel {
   /** Заявок, дошедших до регистратуры (без брошенных на оплате). */
@@ -105,8 +106,15 @@ export interface BookingFunnel {
   confirmed: number;
   /** Визит состоялся (бронь `completed`). */
   completed: number;
-  /** Ещё не разобраны: `pending`. */
+  /** Ещё не разобраны: `pending`, чьё окно визита ещё не прошло. */
   waiting: number;
+  /**
+   * Пропущены регистратурой: заявку не подтвердили до конца окна визита. Это
+   * и висящие `pending` с прошедшим окном, и `no_show` без приёма — так
+   * закрывают пропущенную (`MissedBookingActions`), подтверждения у неё не
+   * было. Метрика работы регистратуры, а не пациента: в «Неявку» не входит.
+   */
+  missed: number;
   /** Подтверждены, визит впереди. */
   upcoming: number;
   /** Подтверждены, время визита прошло, а бронь не закрыта. */
@@ -115,6 +123,7 @@ export interface BookingFunnel {
   cancelledBefore: number;
   /** Отменены после подтверждения (приём был создан и отменён). */
   cancelledAfter: number;
+  /** Неявка после подтверждения: приём был создан, пациент не пришёл. */
   noShow: number;
   /** Не оплатили онлайн-предоплату — до регистратуры не дошли. */
   abandonedPayment: number;
@@ -135,6 +144,7 @@ export function bookingFunnel(rows: FunnelSource[], now: Dayjs = dayjs()): Booki
     confirmed: 0,
     completed: 0,
     waiting: 0,
+    missed: 0,
     upcoming: 0,
     unresolved: 0,
     cancelledBefore: 0,
@@ -153,7 +163,8 @@ export function bookingFunnel(rows: FunnelSource[], now: Dayjs = dayjs()): Booki
     f.requests += 1;
     switch (b.status) {
       case "pending":
-        f.waiting += 1;
+        if (isBookingMissed(b, now)) f.missed += 1;
+        else f.waiting += 1;
         break;
       case "confirmed":
         f.confirmed += 1;
@@ -165,8 +176,14 @@ export function bookingFunnel(rows: FunnelSource[], now: Dayjs = dayjs()): Booki
         f.completed += 1;
         break;
       case "no_show":
-        f.confirmed += 1;
-        f.noShow += 1;
+        // Неявка без приёма — пропущенная заявка, закрытая из «Разобрать»:
+        // через подтверждение она не проходила.
+        if (b.appointmentId != null) {
+          f.confirmed += 1;
+          f.noShow += 1;
+        } else {
+          f.missed += 1;
+        }
         break;
       case "cancelled":
         if (b.appointmentId != null) {

@@ -170,7 +170,7 @@ const ToastCard: React.FC<ToastCardProps> = ({ booking: b, onOpen, onDismiss }) 
   const expanded = !hasHover || active;
 
   const source = SOURCE_META[b.source] ?? SOURCE_META.public;
-  const hint = bookingTimeHint(b.date, b.time, b.status);
+  const hint = bookingTimeHint(b.date, b.time, b.status, b.totalDurationMin);
   const phone = formatPhoneDisplay(b.patientPhone);
 
   return (
