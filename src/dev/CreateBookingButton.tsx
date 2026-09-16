@@ -183,24 +183,32 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // пересчитывать это на каждый keystroke незачем.
   const guests = React.useMemo(() => (open ? getHotelGuests() : []), [open]);
 
-  /** Подставляет контакты/документ существующего гостя — не даты/номер/гостей, это данные конкретно этой новой брони. */
+  /**
+   * Подставляет контакты/документ существующего гостя — не даты/номер/гостей,
+   * это данные конкретно этой новой брони. Реквизиты личности (guestType…
+   * passportExpiry) берём с самого guest — там уже склеены профиль из
+   * AddGuestDrawer и самая свежая бронь (см. getHotelGuests в mockDemoData.ts),
+   * поэтому работает и для гостя без единой брони. Остальное — то, что
+   * относится именно к заезду (цель визита, источник брони и т.п.) — только
+   * если есть подробная бронь, иначе не из чего подставлять.
+   */
   const applyGuestPrefill = (guest: HotelGuestSummary) => {
     setGuestName(guest.name);
     setGuestPhone(guest.phone);
+    setGuestType(guest.guestType ?? "resident");
+    setIdNumber(guest.idNumber ?? "");
+    setInn(guest.inn ?? "");
+    setCitizenship(guest.citizenship ?? "");
+    setPassportNumber(guest.passportNumber ?? "");
+    setPassportCountry(guest.passportCountry ?? "");
+    setPassportExpiry(guest.passportExpiry ? dayjs(guest.passportExpiry) : null);
+    setPassportPhoto(guest.photoDataUrl ?? null);
     const detailed = findDetailedGuestBooking(guest.bookings);
     if (!detailed) return;
     setGuestEmail(detailed.guestEmail ?? "");
-    setGuestType(detailed.guestType ?? "resident");
-    setIdNumber(detailed.idNumber ?? "");
-    setInn(detailed.inn ?? "");
-    setCitizenship(detailed.citizenship ?? "");
-    setPassportNumber(detailed.passportNumber ?? "");
-    setPassportCountry(detailed.passportCountry ?? "");
-    setPassportExpiry(detailed.passportExpiry ? dayjs(detailed.passportExpiry) : null);
     setEntryDate(detailed.entryDate ? dayjs(detailed.entryDate) : null);
     setMigrationCardNumber(detailed.migrationCardNumber ?? "");
     setVisitPurpose(detailed.visitPurpose ?? "");
-    setPassportPhoto(detailed.passportPhotoDataUrl ?? null);
     setBookingSource(detailed.bookingSource ?? "");
     setCompanyInfo(detailed.companyInfo ?? "");
     // dataConsent намеренно не переносится — согласие даётся на эту бронь, а не наследуется от прошлой.

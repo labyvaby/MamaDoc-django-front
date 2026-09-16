@@ -7,13 +7,13 @@
  * пациентов. Подключена вместо DjangoPatientsPage в src/pages/patients/index.tsx.
  *
  * Отличия неизбежны там, где у гостя просто нет аналога сущности: нет
- * отдельной картотеки (гость — это имя внутри брони, getHotelGuests в
- * mockDemoData.ts), поэтому нет бесконечной подгрузки с сервера (гостей от
- * силы пара десятков, не тысячи), нет счёта/бонусов/семьи/объединения
- * дублей/фото лица — реальных данных для этого в сторе нет, а выдумывать
- * рабочие с виду, но ничего не делающие кнопки хуже, чем не рисовать их
- * вовсе. Кнопка «Добавить» открывает создание брони (requestQuickBooking
- * без аргументов) — гость у отеля и появляется только через бронь.
+ * бесконечной подгрузки с сервера (гостей от силы пара десятков, не тысячи),
+ * нет счёта/бонусов/семьи/объединения дублей — реальных данных для этого в
+ * сторе нет, а выдумывать рабочие с виду, но ничего не делающие кнопки хуже,
+ * чем не рисовать их вовсе. Кнопка «Добавить» теперь открывает AddGuestDrawer
+ * (та же Drawer-форма и логика черновика, что реальный DjangoAddPatientDrawer)
+ * — гость заводится независимо от брони, как пациент независимо от приёма;
+ * создание/выбор номера остаётся на «Расписании» (CreateBookingButton).
  */
 import React from "react";
 import { Box, useMediaQuery, useTheme } from "@mui/material";
@@ -22,28 +22,37 @@ import IconButton from "@mui/material/IconButton";
 
 import { PageHeader } from "../components/ui";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { getHotelGuests, requestQuickBooking, subscribeGuestBlacklist, getGuestBlacklistSnapshot } from "./mockDemoData";
+import {
+  getHotelGuests,
+  subscribeGuestBlacklist,
+  getGuestBlacklistSnapshot,
+  subscribeCustomGuests,
+  getCustomGuestsSnapshot,
+} from "./mockDemoData";
 import { GuestListPanel } from "./GuestListPanel";
 import { GuestCardPanel } from "./GuestCardPanel";
 import { GuestHistoryPanel } from "./GuestHistoryPanel";
 import { useGuestDetails } from "./useGuestDetails";
-import { CreateBookingButton } from "./CreateBookingButton";
+import { AddGuestDrawer } from "./AddGuestDrawer";
 
 export const HotelGuestsPage: React.FC = () => {
   usePageTitle("Гости");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
-  // Снимок в зависимостях — без него пометка «в чёрный список» не обновит
-  // список слева сразу же (getHotelGuests сам не подписан на этот стор).
+  // Снимки в зависимостях — без них пометка «в чёрный список» или новый гость
+  // из AddGuestDrawer не обновят список слева сразу же (getHotelGuests сам не
+  // подписан ни на один стор).
   const blacklistSnapshot = React.useSyncExternalStore(subscribeGuestBlacklist, getGuestBlacklistSnapshot);
+  const customGuestsSnapshot = React.useSyncExternalStore(subscribeCustomGuests, getCustomGuestsSnapshot);
   const guests = React.useMemo(
     () => getHotelGuests(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [blacklistSnapshot],
+    [blacklistSnapshot, customGuestsSnapshot],
   );
   const [search, setSearch] = React.useState("");
   const [selectedName, setSelectedName] = React.useState<string | null>(null);
+  const [addOpen, setAddOpen] = React.useState(false);
 
   const query = search.trim().toLowerCase();
   const filtered = query
@@ -64,14 +73,20 @@ export const HotelGuestsPage: React.FC = () => {
         title="Гости"
         showTitle={false}
         addButtonText="Добавить"
-        onAdd={() => requestQuickBooking()}
+        onAdd={() => setAddOpen(true)}
         showSearch
         searchVal={search}
         onSearchChange={setSearch}
         searchPlaceholder="Поиск по имени или телефону"
       />
-      {/* Слушает requestQuickBooking() из onAdd выше — своей кнопки не рисует. */}
-      <CreateBookingButton hideTrigger />
+      <AddGuestDrawer
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onCreated={(name) => {
+          setAddOpen(false);
+          setSelectedName(name);
+        }}
+      />
 
       <Box
         sx={(t) => ({

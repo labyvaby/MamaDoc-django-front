@@ -162,30 +162,31 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ guestName, state
               </FactBlock>
             )}
 
-            {/* Документ */}
-            {detailed?.guestType && (
-              <FactBlock icon={<BadgeOutlined />} title={`Документ · ${GUEST_TYPE_LABELS[detailed.guestType]}`}>
+            {/* Документ — реквизиты личности гостя (профиль AddGuestDrawer или самая
+                свежая бронь с этими полями), цель визита остаётся полем конкретной брони. */}
+            {guest.guestType && (
+              <FactBlock icon={<BadgeOutlined />} title={`Документ · ${GUEST_TYPE_LABELS[guest.guestType]}`}>
                 <Stack spacing={0.5}>
-                  {detailed.guestType === "resident" ? (
+                  {guest.guestType === "resident" ? (
                     <>
-                      {detailed.idNumber && <Typography variant="body2">Паспорт (ID-карта): {detailed.idNumber}</Typography>}
-                      {detailed.inn && <Typography variant="body2">ИНН: {detailed.inn}</Typography>}
+                      {guest.idNumber && <Typography variant="body2">Паспорт (ID-карта): {guest.idNumber}</Typography>}
+                      {guest.inn && <Typography variant="body2">ИНН: {guest.inn}</Typography>}
                     </>
                   ) : (
                     <>
-                      {detailed.citizenship && <Typography variant="body2">Гражданство: {detailed.citizenship}</Typography>}
-                      {detailed.passportNumber && (
-                        <Typography variant="body2">Загранпаспорт: {detailed.passportNumber}</Typography>
+                      {guest.citizenship && <Typography variant="body2">Гражданство: {guest.citizenship}</Typography>}
+                      {guest.passportNumber && (
+                        <Typography variant="body2">Загранпаспорт: {guest.passportNumber}</Typography>
                       )}
-                      {detailed.passportExpiry && (
-                        <Typography variant="body2">Действителен до: {formatHotelDate(detailed.passportExpiry)}</Typography>
+                      {guest.passportExpiry && (
+                        <Typography variant="body2">Действителен до: {formatHotelDate(guest.passportExpiry)}</Typography>
                       )}
-                      {detailed.visitPurpose && (
+                      {detailed?.visitPurpose && (
                         <Typography variant="body2">Цель визита: {VISIT_PURPOSE_LABELS[detailed.visitPurpose]}</Typography>
                       )}
                     </>
                   )}
-                  {!detailed.idNumber && !detailed.inn && !detailed.citizenship && !detailed.passportNumber && (
+                  {!guest.idNumber && !guest.inn && !guest.citizenship && !guest.passportNumber && (
                     <Typography variant="body2" color="text.disabled">
                       Реквизиты не заполнены.
                     </Typography>

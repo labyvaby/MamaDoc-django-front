@@ -1023,20 +1023,31 @@ export function getKitchenPurchasesSnapshot(): Record<string, KitchenPurchaseRec
   return kitchenPurchasesCache;
 }
 
-// ── Гости — для HotelGuestsPage.tsx и GuestDetailsDialog.tsx ────────────────
+// ── Гости — для HotelGuestsPage.tsx, AddGuestDrawer.tsx и GuestDetailsDialog.tsx ──
 //
-// Отдельной картотеки гостей в API нет — гость существует только как строка
-// внутри брони (guestName). Тот же приём, что и «Загрузка на сегодня»:
-// честная витрина того, что мог бы показывать такой экран, собранная из
-// уже сгенерированных + ручных броней, а не подключённый бэкенд.
+// Отдельной картотеки гостей в API нет — но с AddGuestDrawer.tsx гость может
+// появиться и без брони (тот же принцип, что пациент в реальном МамаДокторе:
+// «Добавить пациента» заводит запись независимо от того, есть ли уже приём).
+// getHotelGuests() ниже склеивает две части в одну строку на гостя: имя,
+// встреченное в брони (guestName — сгенерированной или ручной), и профиль без
+// брони (customGuestsCache) — тот же человек не должен задвоиться в списке.
 
 export interface HotelGuestSummary {
   name: string;
   phone: string;
-  /** Все брони этого гостя за окно агрегации (см. getHotelGuests), по возрастанию заезда. */
+  /** Все брони этого гостя за окно агрегации (см. getHotelGuests), по возрастанию заезда — пусто, если гость ещё не заезжал. */
   bookings: HotelBooking[];
-  /** Фото документа с самой свежей подробной брони — для аватара в списке гостей, как photoUrl у реального пациента. */
+  /** Фото — с самой свежей подробной брони или из профиля (AddGuestDrawer), для аватара в списке гостей, как photoUrl у реального пациента. */
   photoDataUrl?: string;
+  /** Документ гостя — реквизиты личности, не привязаны к конкретной брони (в отличие от цели визита/источника брони). Источник — самая свежая бронь с этими полями, иначе профиль. */
+  guestType?: GuestType;
+  idNumber?: string;
+  inn?: string;
+  citizenship?: string;
+  passportNumber?: string;
+  passportCountry?: string;
+  /** YYYY-MM-DD. */
+  passportExpiry?: string;
   isBlacklisted: boolean;
   blacklistReason?: string;
 }
@@ -1104,10 +1115,79 @@ export function getGuestBlacklistSnapshot(): Record<string, GuestBlacklistRecord
   return guestBlacklistCache;
 }
 
+// ── Гости без брони — AddGuestDrawer.tsx ────────────────────────────────────
+//
+// «Добавить» на «Гостях» заводит запись здесь, не бронь: тот же стор-приём,
+// что HOTEL_ROOM_CATEGORIES/HOTEL_ROLES (localStorage + слушатели). Поля —
+// только то, что относится к самому человеку (документ), а не к конкретному
+// заезду (цель визита, источник брони, миграционная карта остаются полями
+// брони в CreateBookingButton — они меняются от поездки к поездке).
+
+export interface HotelGuestProfile {
+  name: string;
+  phone: string;
+  photoDataUrl?: string;
+  guestType?: GuestType;
+  idNumber?: string;
+  inn?: string;
+  citizenship?: string;
+  passportNumber?: string;
+  passportCountry?: string;
+  /** YYYY-MM-DD. */
+  passportExpiry?: string;
+  /** Кто завёл гостя — usePermissions().employee, не выбор из списка. */
+  createdBy?: string;
+  createdAt?: string;
+}
+
+const CUSTOM_GUESTS_KEY = "mamadoc:mockCustomGuests";
+const customGuestsListeners = new Set<() => void>();
+
+function readCustomGuestsFromStorage(): HotelGuestProfile[] {
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_GUESTS_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as HotelGuestProfile[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+let customGuestsCache: HotelGuestProfile[] = readCustomGuestsFromStorage();
+
+function persistCustomGuests(next: HotelGuestProfile[]): void {
+  customGuestsCache = next;
+  try {
+    window.localStorage.setItem(CUSTOM_GUESTS_KEY, JSON.stringify(next));
+  } catch {
+    // приватный режим/запрет на localStorage — доживёт до конца вкладки в памяти
+  }
+  customGuestsListeners.forEach((fn) => fn());
+}
+
+/** Заводит гостя без брони. Повторное имя перезаписывает профиль тем же именем — не задваивает. */
+export function addCustomGuest(profile: HotelGuestProfile): void {
+  const idx = customGuestsCache.findIndex((g) => g.name === profile.name);
+  const next = idx >= 0 ? customGuestsCache.map((g, i) => (i === idx ? profile : g)) : [...customGuestsCache, profile];
+  persistCustomGuests(next);
+}
+
+export function subscribeCustomGuests(onChange: () => void): () => void {
+  customGuestsListeners.add(onChange);
+  return () => customGuestsListeners.delete(onChange);
+}
+
+export function getCustomGuestsSnapshot(): HotelGuestProfile[] {
+  return customGuestsCache;
+}
+
 /**
  * Все гости за широкое окно (−60…+120 дней от сегодня) — сгенерированные
  * брони на такой диапазон дают достаточно разнообразия для списка, плюс
- * все ручные брони целиком (они не привязаны к окну дат по построению).
+ * все ручные брони целиком (они не привязаны к окну дат по построению), плюс
+ * профили без брони (customGuestsCache) — гости из AddGuestDrawer, у которых
+ * заезда ещё не было.
  */
 export function getHotelGuests(): HotelGuestSummary[] {
   const today = dayjs().startOf("day");
@@ -1121,6 +1201,9 @@ export function getHotelGuests(): HotelGuestSummary[] {
     arr.push(b);
     byName.set(b.guestName, arr);
   }
+  for (const profile of customGuestsCache) {
+    if (!byName.has(profile.name)) byName.set(profile.name, []);
+  }
 
   const guests: HotelGuestSummary[] = [];
   for (const [name, bookings] of byName) {
@@ -1129,12 +1212,20 @@ export function getHotelGuests(): HotelGuestSummary[] {
     // с самой свежей брони, где он есть.
     const enteredPhone = [...bookings].reverse().find((b) => b.guestPhone)?.guestPhone;
     const detailed = findDetailedGuestBooking(bookings);
+    const profile = customGuestsCache.find((g) => g.name === name);
     const blacklist = guestBlacklistCache[name];
     guests.push({
       name,
-      phone: enteredPhone ?? phoneForGuestName(name),
+      phone: enteredPhone ?? profile?.phone ?? phoneForGuestName(name),
       bookings,
-      photoDataUrl: detailed?.passportPhotoDataUrl,
+      photoDataUrl: detailed?.passportPhotoDataUrl ?? profile?.photoDataUrl,
+      guestType: detailed?.guestType ?? profile?.guestType,
+      idNumber: detailed?.idNumber ?? profile?.idNumber,
+      inn: detailed?.inn ?? profile?.inn,
+      citizenship: detailed?.citizenship ?? profile?.citizenship,
+      passportNumber: detailed?.passportNumber ?? profile?.passportNumber,
+      passportCountry: detailed?.passportCountry ?? profile?.passportCountry,
+      passportExpiry: detailed?.passportExpiry ?? profile?.passportExpiry,
       isBlacklisted: blacklist != null,
       blacklistReason: blacklist?.reason,
     });

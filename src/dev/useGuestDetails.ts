@@ -20,6 +20,8 @@ import {
   setGuestBlacklisted,
   subscribeGuestBlacklist,
   getGuestBlacklistSnapshot,
+  subscribeCustomGuests,
+  getCustomGuestsSnapshot,
   getHotelBookingStatusColor,
   type HotelBooking,
   type HotelPaymentMethod,
@@ -38,9 +40,11 @@ export function useGuestDetails(guestName: string | null) {
   // Подписка форсирует перерисовку при изменении оплаты — сами данные читаются
   // напрямую через getHotelPayment() в каждой строке истории при рендере.
   React.useSyncExternalStore(subscribeHotelPayments, getHotelPaymentsSnapshot);
-  // guest пересчитывается в useMemo ниже — снимок в зависимостях гарантирует
-  // пересчёт isBlacklisted сразу при переключении (getHotelGuests сам не подписан).
+  // guest пересчитывается в useMemo ниже — снимки в зависимостях гарантируют
+  // пересчёт сразу при переключении чёрного списка или добавлении гостя без
+  // брони через AddGuestDrawer (getHotelGuests сам не подписан ни на один стор).
   const blacklistSnapshot = React.useSyncExternalStore(subscribeGuestBlacklist, getGuestBlacklistSnapshot);
+  const customGuestsSnapshot = React.useSyncExternalStore(subscribeCustomGuests, getCustomGuestsSnapshot);
   const [paymentEdit, setPaymentEdit] = React.useState<PaymentEditState | null>(null);
   const [blacklistReasonDraft, setBlacklistReasonDraft] = React.useState("");
 
@@ -48,7 +52,7 @@ export function useGuestDetails(guestName: string | null) {
     if (!guestName) return undefined;
     return getHotelGuests().find((g) => g.name === guestName);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guestName, blacklistSnapshot]);
+  }, [guestName, blacklistSnapshot, customGuestsSnapshot]);
 
   const detailed = guest ? findDetailedGuestBooking(guest.bookings) : undefined;
 
