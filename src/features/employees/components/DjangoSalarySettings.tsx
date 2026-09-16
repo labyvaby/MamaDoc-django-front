@@ -62,7 +62,7 @@ export type SalarySettingsValue = {
   dayRate: string;
   appointmentRate: string;
   rules: SalaryRuleRow[];
-  /** «Товары в приёмах» включены. */
+  /** Правила оплаты личных товарных продаж включены. */
   productEnabled: boolean;
   /** Правила по товарам; правило с ALL_PRODUCTS действует на все товары
    *  (кроме тех, у кого есть отдельное правило). */
@@ -343,7 +343,7 @@ const DjangoSalarySettings: React.FC<Props> = ({
         {" за "}
         {isAll ? (
           <>
-            <Hl>все товары</Hl>, проданные в его приёмах
+            <Hl>все личные продажи товаров</Hl> (в приёмах и POS)
             {hasOtherRules && " (кроме товаров с отдельным правилом)"}
           </>
         ) : (
@@ -635,12 +635,12 @@ const DjangoSalarySettings: React.FC<Props> = ({
         </Stack>
       </Box>
 
-      {/* ── 3. Товары в приёмах ── */}
+      {/* ── 3. Товарные продажи ── */}
       <Box>
         <SalarySection
           icon={<ShoppingBagOutlined />}
-          title="Товары в приёмах"
-          subtitle="% или бонус с проданных на приёме товаров"
+          title="Товарные продажи"
+          subtitle="% или бонус с личных продаж в приёмах и на POS"
           toggle={{
             checked: value.productEnabled,
             onChange: toggleProducts,

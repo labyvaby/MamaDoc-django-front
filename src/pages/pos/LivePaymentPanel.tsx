@@ -253,12 +253,12 @@ const CodeField: React.FC<{
 };
 
 /** Строка блока итогов. */
-const SummaryLine: React.FC<{ label: string; value: React.ReactNode; tone?: "positive" }> = ({ label, value, tone }) => {
+const SummaryLine: React.FC<{ label: string; value: React.ReactNode; tone?: "accent" | "positive" }> = ({ label, value, tone }) => {
   const c = posColors(useTheme());
   return (
     <Stack direction="row" alignItems="center" justifyContent="space-between">
       <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>{label}</Typography>
-      <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: tone === "positive" ? c.positive : c.textSoft }}>
+      <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: tone === "positive" ? c.positive : tone === "accent" ? c.accentText : c.textSoft }}>
         {value}
       </Typography>
     </Stack>
@@ -321,8 +321,8 @@ export function LivePaymentPanel({
 
   const summary = [
     { label: "Скидка", value: amount(quote?.discount) },
-    { label: "Бонусами", value: amount(quote?.bonuses), tone: "positive" as const },
-    { label: "Сертификатом", value: amount(quote?.certificateAmount), tone: "positive" as const },
+    { label: "Бонусы", value: amount(quote?.bonuses), tone: "accent" as const },
+    { label: "Сертификат", value: amount(quote?.certificateAmount), tone: "positive" as const },
   ].filter((line) => line.value > 0);
 
   return (

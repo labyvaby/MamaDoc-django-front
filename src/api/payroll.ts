@@ -29,7 +29,7 @@ export interface PayrollRow {
    */
   bonus?: string;
   /**
-   * Заработок с товаров, проданных в приёмах сотрудника (% от суммы +
+   * Заработок с личных товарных продаж: в приёмах и POS (% от суммы +
    * фикс-бонус за единицу). Включён в `earnings`/`netSalary`.
    * May be absent on older backends — treat undefined as "0.00".
    */
@@ -105,7 +105,7 @@ export interface EmployeeRule {
   appointmentRate: string;
   dayHourlyRate: string;
   nightHourlyRate: string;
-  /** Процент с товаров, проданных в приёмах сотрудника. */
+  /** Процент с личных товарных продаж: в приёмах и POS. */
   productPercent: string;
   /** Фикс-бонус за каждую единицу товара в приёме. */
   productFixedAmount: string;

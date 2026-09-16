@@ -49,6 +49,12 @@ export interface DateRangeFieldProps {
    * чипов-фильтров и весь ряд читался как одна линия одинаковых пилюль.
    */
   dense?: boolean;
+  /**
+   * Месяц, с которого открывается календарь; по умолчанию — начало диапазона.
+   * Нужен пресетам вроде «За всё время», у которых начало условное: иначе
+   * календарь открывался бы на много лет назад.
+   */
+  referenceDate?: Dayjs;
 }
 
 // ── Default presets ──────────────────────────────────────────────────────────────
@@ -157,6 +163,7 @@ export const DateRangeField: React.FC<DateRangeFieldProps> = ({
   minWidth,
   disabled = false,
   dense = false,
+  referenceDate,
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -302,7 +309,7 @@ export const DateRangeField: React.FC<DateRangeFieldProps> = ({
           <Box sx={{ p: 0.5 }}>
             <DateCalendar
               value={null}
-              referenceDate={value.from}
+              referenceDate={referenceDate ?? value.from}
               onChange={handleDayClick}
               views={["day"]}
               slots={{ day: RangeDay as unknown as React.ComponentType<PickersDayProps> }}
