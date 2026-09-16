@@ -21,6 +21,13 @@
  * RoomBookingGrid кладёт номер+дату в общий стор (requestQuickBooking), эта
  * кнопка на них подписана и открывает форму уже с подставленными Номер/Заезд.
  *
+ * handleSubmit проверяет номер+даты на пересечение с уже существующей бронью
+ * (getRoomAvailability) — без этого вторая бронь легла бы в ту же ячейку
+ * RoomBookingGrid поверх первой (бары пересекающихся броней там не разводятся
+ * по под-строкам) и выглядела бы как ничего не произошло. Предупреждение, не
+ * блокировка — тот же принцип, что ShiftOverlapDialog у пересечения смен в
+ * реальном расписании: сотрудник может осознанно продублировать бронь.
+ *
  * ⚠ Витрина: нет сущности «номер»/«бронь» в реальном API (см. mockDemoData.ts)
  * — бронь уходит в общий браузерный стор (addCustomBooking, localStorage), а
  * не на бэкенд. Она реально появляется в RoomBookingGrid/GuestDetailsDialog и
@@ -58,6 +65,7 @@ import {
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import UploadOutlined from "@mui/icons-material/UploadOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
@@ -70,6 +78,8 @@ import {
   getHotelGuests,
   findDetailedGuestBooking,
   findGuestsByPhone,
+  getRoomAvailability,
+  formatHotelDateRange,
   subscribeQuickBookingRequest,
   getQuickBookingRequestSnapshot,
   clearQuickBookingRequest,
@@ -85,6 +95,7 @@ import {
   type BookingSource,
   type VisitPurpose,
   type HotelGuestSummary,
+  type HotelBooking,
 } from "./mockDemoData";
 
 /** Демо-хранилище — localStorage, не файловый сервер: фото ограничено по размеру. */
@@ -112,6 +123,10 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [open, setOpen] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
   const [confirmCloseOpen, setConfirmCloseOpen] = React.useState(false);
+  // Номер уже занят на эти даты — тот же warn-принцип, что ShiftOverlapDialog
+  // у реальных смен (см. handleSubmit ниже): предупреждаем, не блокируем,
+  // подтверждение создаёт бронь поверх существующей осознанно.
+  const [overlapConflict, setOverlapConflict] = React.useState<HotelBooking[] | null>(null);
   // Кто создал бронь — реальный залогиненный сотрудник, а не выбор из списка
   // (тот же источник имени, что createdByName на печатном чеке в реальном
   // МамаДоктор — usePermissions().employee, не поле формы).
@@ -267,8 +282,24 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = () => {
+  /**
+   * Без проверки при создании номер+даты, что уже заняты, молча накладывали
+   * бы вторую бронь поверх первой — обе оказывались бы в одной ячейке грида
+   * (RoomBookingGrid не разводит пересекающиеся бары по под-строкам), и
+   * новая бронь выглядела бы как ничего не произошло: клик «Создать» —
+   * а в шахматке всё та же старая бронь, новая пряталась тонкой полоской
+   * позади неё. `force` — подтверждение из диалога ниже, пропускает проверку.
+   */
+  const handleSubmit = (force = false) => {
     if (!checkIn || !checkOut) return;
+    if (!force) {
+      const { bookings: roomBookings } = getRoomAvailability(room, checkIn.format("YYYY-MM-DD"), checkOut.format("YYYY-MM-DD"));
+      const conflicts = roomBookings.filter((b) => checkIn.isBefore(dayjs(b.checkOut)) && checkOut.isAfter(dayjs(b.checkIn)));
+      if (conflicts.length > 0) {
+        setOverlapConflict(conflicts);
+        return;
+      }
+    }
     addCustomBooking({
       roomNumber: room,
       guestName: guestName.trim(),
@@ -694,7 +725,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         <Box sx={{ p: 2, flexShrink: 0, bgcolor: "background.paper", borderTop: "1px solid", borderColor: "divider" }}>
           <Stack direction="row" spacing={1} justifyContent="flex-end">
             <Button onClick={requestClose}>Отмена</Button>
-            <Button variant="contained" disabled={!canSubmit} onClick={handleSubmit}>
+            <Button variant="contained" disabled={!canSubmit} onClick={() => handleSubmit()}>
               Создать
             </Button>
           </Stack>
@@ -714,6 +745,47 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           </Button>
           <Button color="warning" variant="contained" onClick={confirmDiscardAndClose}>
             Закрыть без сохранения
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Номер занят на выбранные даты — тот же warn-принцип, что ShiftOverlapDialog
+          у пересечения смен в реальном расписании: предупреждаем, не блокируем. */}
+      <Dialog open={overlapConflict !== null} onClose={() => setOverlapConflict(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>
+          <Stack direction="row" alignItems="center" gap={1}>
+            <LayersOutlined color="warning" fontSize="small" />
+            Номер уже занят на эти даты
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="caption" color="text.secondary">
+            В номере {room} уже есть бронь на пересекающиеся даты. Создать всё равно?
+          </Typography>
+          <Stack spacing={1} sx={{ mt: 0.75 }}>
+            {(overlapConflict ?? []).map((b) => (
+              <Box key={b.id} sx={{ borderLeft: "3px solid", borderColor: "warning.main", pl: 1.25, py: 0.25 }}>
+                <Typography variant="body2" fontWeight={600}>
+                  {b.guestName}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {formatHotelDateRange(b.checkIn, b.checkOut)}
+                </Typography>
+              </Box>
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOverlapConflict(null)}>Отмена</Button>
+          <Button
+            color="warning"
+            variant="contained"
+            onClick={() => {
+              setOverlapConflict(null);
+              handleSubmit(true);
+            }}
+          >
+            Создать всё равно
           </Button>
         </DialogActions>
       </Dialog>
