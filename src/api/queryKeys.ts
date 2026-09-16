@@ -98,8 +98,14 @@ export const djangoQueryKeys = {
   },
 
   notifications: {
+    all: ["django", "notifications"] as const,
       settings: (organizationId: number | null | undefined, branchId?: number | null) =>
         ["django", "notifications", "settings", organizationId ?? null, branchId ?? null] as const,
+    // Переключатели отправки (организация + филиалы) — экран «Автоматизация».
+    // Те же строки, что и у конструктора уведомлений, поэтому после
+    // сохранения инвалидируется весь `all`.
+    switches: (organizationId: number | null | undefined) =>
+      ["django", "notifications", "switches", organizationId ?? null] as const,
     history: (filters: Record<string, unknown>) =>
       ["django", "notifications", "history", filters] as const,
   },

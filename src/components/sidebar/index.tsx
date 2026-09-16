@@ -48,7 +48,7 @@ import MenuOutlined from "@mui/icons-material/MenuOutlined";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
 import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
-import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
+import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ReviewsOutlined from "@mui/icons-material/ReviewsOutlined";
 import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
@@ -949,9 +949,12 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/admin/load" icon={<AnalyticsOutlined />} label="Нагрузка" collapsed={siderCollapsed} />
         )}
 
-        {/* Уведомления */}
+        {/* Автоматизация: правила, история и переключатели уведомлений.
+            Пункт «Уведомления» (конструктор напоминаний о приёмах) остался
+            в разделе настроек — в сайдбаре ему места нет, главный экран
+            рассылок теперь этот. */}
         {show("management") && can_.notifications && (
-          <SidebarMenuItem to="/settings/notifications" icon={<NotificationsOutlined />} label="Уведомления" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/settings/automations" icon={<BoltOutlined />} label="Автоматизация" collapsed={siderCollapsed} />
         )}
 
         {/* Настройки (Django-mode only) */}
@@ -962,7 +965,7 @@ const SidebarSecondary: React.FC = () => {
             label="Настройки"
             collapsed={siderCollapsed}
             excludePaths={
-              ["/settings/notifications"]
+              ["/settings/automations"]
             }
           />
         )}
@@ -986,7 +989,7 @@ type SidebarMenuItemProps = {
    * Child paths that belong to a *different* menu item and must not light
    * this one up. Used by a parent route (e.g. "/settings") so it stays
    * inactive on sub-pages that have their own sidebar entry
-   * (e.g. "/settings/notifications").
+   * (e.g. "/settings/automations").
    */
   excludePaths?: string[];
 };

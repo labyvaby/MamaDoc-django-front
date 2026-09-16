@@ -29,6 +29,7 @@ import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import MoreVertOutlined from "@mui/icons-material/MoreVertOutlined";
+import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import dayjs from "dayjs";
 
 import {
@@ -40,8 +41,10 @@ import {
   type Automation,
   type AutomationStatus,
 } from "../../../api/automations";
+import { getNotificationSwitches } from "../../../api/notifications";
 import {
   djangoQueryKeys,
+  DJANGO_DETAIL_STALE_TIME_MS,
   DJANGO_LIST_STALE_TIME_MS,
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../../api/queryKeys";
@@ -57,9 +60,11 @@ import { SettingsLayout } from "../SettingsLayout";
 import { AutomationEditorDialog } from "./AutomationEditorDialog";
 import { AutomationHistoryTab } from "./AutomationHistoryTab";
 import { AutomationRunsDialog } from "./AutomationRunsDialog";
+import { AutomationSwitchesTab } from "./AutomationSwitchesTab";
 import { automationToForm, toSaveInput } from "./automationForm";
+import { switchesWarning } from "./notificationSwitches";
 
-type TabKey = "rules" | "history";
+type TabKey = "rules" | "history" | "switches";
 
 const STATUS_COLOR: Record<AutomationStatus, "default" | "success" | "warning"> = {
   draft: "default",
@@ -107,6 +112,18 @@ const AutomationsSettingsPage: React.FC = () => {
     enabled,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
+
+  // Переключатели отправки нужны и над списком правил: выключенная
+  // организация или филиал — самая частая причина «правило есть, а
+  // сообщений нет», и лучше сказать это здесь, чем оставить на историю
+  // с кодом notifications_disabled. Вкладка «Настройки» читает тот же ключ.
+  const switchesQuery = useQuery({
+    queryKey: djangoQueryKeys.notifications.switches(organizationId ?? null),
+    queryFn: ({ signal }) => getNotificationSwitches({ organizationId }, signal),
+    enabled,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  });
+  const warning = switchesQuery.data ? switchesWarning(switchesQuery.data) : null;
 
   /**
    * Включение и пауза идут тем же полным `PUT`, что и редактор: `PATCH` у
@@ -233,6 +250,12 @@ const AutomationsSettingsPage: React.FC = () => {
             iconPosition="start"
             label={t("automations.tabs.history")}
           />
+          <Tab
+            value="switches"
+            icon={<TuneOutlined fontSize="small" />}
+            iconPosition="start"
+            label={t("automations.tabs.switches")}
+          />
         </Tabs>
 
       {needsOrg ? (
@@ -243,6 +266,12 @@ const AutomationsSettingsPage: React.FC = () => {
           organizationId={organizationId}
           enabled={enabled}
         />
+      ) : tab === "switches" ? (
+        <AutomationSwitchesTab
+          organizationId={organizationId}
+          enabled={enabled}
+          onMessage={setMessage}
+        />
       ) : catalogQuery.isError ? (
         <Alert severity="error">{t("automations.catalogError")}</Alert>
       ) : listQuery.isError ? (
@@ -251,7 +280,23 @@ const AutomationsSettingsPage: React.FC = () => {
         <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
           <CircularProgress />
         </Box>
-      ) : rows.length === 0 ? (
+      ) : (
+        <>
+        {warning && (
+          <Alert
+            severity={warning.kind === "branches" ? "info" : "warning"}
+            action={
+              <Button color="inherit" size="small" onClick={() => setTab("switches")}>
+                {t("automations.switches.open")}
+              </Button>
+            }
+          >
+            {warning.kind === "branches"
+              ? t("automations.switches.banner.branches", { names: warning.names.join(", ") })
+              : t(`automations.switches.banner.${warning.kind}`)}
+          </Alert>
+        )}
+        {rows.length === 0 ? (
         <Paper variant="outlined" sx={{ borderRadius: 2, py: 8, textAlign: "center" }}>
           <Stack alignItems="center" spacing={1} sx={{ color: "text.secondary" }}>
             <BoltOutlined fontSize="large" />
@@ -259,7 +304,7 @@ const AutomationsSettingsPage: React.FC = () => {
             <Typography variant="body2">{t("automations.emptyHint")}</Typography>
           </Stack>
         </Paper>
-      ) : (
+        ) : (
         <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
           <Table size="small">
             <TableHead sx={{ bgcolor: "action.hover" }}>
@@ -366,6 +411,8 @@ const AutomationsSettingsPage: React.FC = () => {
             </TableBody>
           </Table>
         </TableContainer>
+        )}
+        </>
       )}
       </Stack>
 

@@ -34,6 +34,38 @@ export interface NotificationSettingsInput {
   branchId: number;
 }
 
+/** Один филиал организации и его переключатель отправки. */
+export interface BranchSwitch {
+  id: number;
+  name: string;
+  /** Строки на бэке нет — филиал ни разу не включали, читается как false. */
+  enabled: boolean;
+}
+
+/**
+ * Переключатели отправки без правил конструктора — то, что редактирует
+ * экран «Автоматизация». `platformEnabled` — флаг деплоя: при false
+ * переключатели организации ничего не меняют.
+ */
+export interface NotificationSwitches {
+  organizationId: number;
+  enabled: boolean;
+  platformEnabled: boolean;
+  branches: BranchSwitch[];
+}
+
+export interface BranchSwitchInput {
+  id: number;
+  enabled: boolean;
+}
+
+/** PUT /switches/: филиалы, которых нет в списке, остаются как были. */
+export interface NotificationSwitchesInput {
+  enabled: boolean;
+  branches: BranchSwitchInput[];
+  organizationId?: number;
+}
+
 export interface NotificationHistoryItem {
   id: number;
   notificationType: string;
@@ -76,6 +108,32 @@ export function saveNotificationSettings(
   signal?: AbortSignal,
 ): Promise<NotificationSettings> {
   return apiRequest<NotificationSettings>("/notifications/settings/", {
+    method: "PUT",
+    body: input,
+    signal,
+  });
+}
+
+export function getNotificationSwitches(
+  params: { organizationId?: number } = {},
+  signal?: AbortSignal,
+): Promise<NotificationSwitches> {
+  const q = new URLSearchParams();
+  if (params.organizationId != null) {
+    q.set("organizationId", String(params.organizationId));
+  }
+  const qs = q.toString();
+  return apiRequest<NotificationSwitches>(
+    `/notifications/switches/${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+}
+
+export function saveNotificationSwitches(
+  input: NotificationSwitchesInput,
+  signal?: AbortSignal,
+): Promise<NotificationSwitches> {
+  return apiRequest<NotificationSwitches>("/notifications/switches/", {
     method: "PUT",
     body: input,
     signal,
