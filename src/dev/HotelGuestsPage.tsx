@@ -32,6 +32,7 @@ import {
 import { GuestListPanel } from "./GuestListPanel";
 import { GuestCardPanel } from "./GuestCardPanel";
 import { GuestHistoryPanel } from "./GuestHistoryPanel";
+import { GuestPaymentDialog } from "./GuestPaymentDialog";
 import { useGuestDetails } from "./useGuestDetails";
 import { AddGuestDrawer } from "./AddGuestDrawer";
 
@@ -87,6 +88,10 @@ export const HotelGuestsPage: React.FC = () => {
           setSelectedName(name);
         }}
       />
+      {/* «Оплата» в GuestHistoryPanel (historyNode ниже) только взводит paymentEdit
+          в useGuestDetails — сам диалог общий, рендерим его здесь же, как
+          GuestDetailsDialog делает у себя для модалки с шахматки. */}
+      <GuestPaymentDialog state={state} />
 
       <Box
         sx={(t) => ({
