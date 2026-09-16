@@ -114,9 +114,9 @@ export const HotelGuestsPage: React.FC = () => {
           )
         ) : (
           <>
-            <Box sx={{ flex: "3 1 0", minWidth: 0, height: "100%" }}>{listNode}</Box>
+            <Box sx={{ flex: "4.5 1 0", minWidth: 0, height: "100%" }}>{listNode}</Box>
             <Box sx={{ flex: "3.5 1 0", minWidth: 0, height: "100%" }}>{cardNode}</Box>
-            <Box sx={{ flex: "5.5 1 0", minWidth: 0, height: "100%" }}>{historyNode}</Box>
+            <Box sx={{ flex: "4 1 0", minWidth: 0, height: "100%" }}>{historyNode}</Box>
           </>
         )}
       </Box>
