@@ -36,6 +36,7 @@ import {
   HOTEL_BOOKING_STATUS_LABELS,
   getRoomAdditionalTariffs,
   ADDITIONAL_TARIFF_LABELS,
+  ROOM_CHARACTERISTIC_LABELS,
   type HotelBooking,
 } from "./mockDemoData";
 
@@ -169,7 +170,7 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
 
                 <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mb: additionalTariffs.length > 0 ? 2 : 2.5 }}>
                   {category.amenities.map((a) => (
-                    <Chip key={a} label={a} size="small" variant="outlined" />
+                    <Chip key={a} label={ROOM_CHARACTERISTIC_LABELS[a] ?? a} size="small" variant="outlined" />
                   ))}
                 </Stack>
 

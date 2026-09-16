@@ -194,10 +194,47 @@ export interface HotelRoomCategory {
   bedType: string;
   /** Планировка/комнатность — основная характеристика категории. */
   roomLayout: string;
+  /** Ключи из HOTEL_ROOM_CHARACTERISTIC_CATALOG — что отличает номер от обычного (холодильник, два санузла…). */
   amenities: string[];
   /** Люкс-уровень — бейдж и акцентный цвет в гриде/модалке деталей. */
   luxury?: boolean;
 }
+
+// ── Характеристики категории номера — справочник, тот же принцип, что права ──
+//
+// Со слов заказчика: характеристика — это наличие чего-то в номере, что
+// отличает его от обычного («холодильник», «два санузла», «Wi-Fi»…). Категория
+// номера так же собирает характеристики в поимённый набор, как роль собирает
+// права (HOTEL_PERMISSION_CATALOG/HotelRole ниже) — тот же справочник +
+// группировка по разделу, та же форма «название + отмеченные пункты».
+// Раньше amenities заполнялись произвольным текстом (Autocomplete freeSolo) —
+// теперь это ключи из фиксированного каталога, лейбл берите через
+// ROOM_CHARACTERISTIC_LABELS.
+
+export interface HotelRoomCharacteristicDef {
+  key: string;
+  label: string;
+  category: string;
+}
+
+export const HOTEL_ROOM_CHARACTERISTIC_CATALOG: HotelRoomCharacteristicDef[] = [
+  { key: "fridge", label: "Холодильник", category: "Техника" },
+  { key: "minibar", label: "Мини-бар", category: "Техника" },
+  { key: "ac", label: "Кондиционер", category: "Техника" },
+  { key: "wifi", label: "Wi-Fi", category: "Техника" },
+  { key: "tv", label: "Телевизор", category: "Техника" },
+  { key: "shower", label: "Душ", category: "Ванная" },
+  { key: "jacuzzi", label: "Джакузи", category: "Ванная" },
+  { key: "twoBathrooms", label: "Два санузла", category: "Ванная" },
+  { key: "bathrobe", label: "Халат", category: "Ванная" },
+  { key: "slippers", label: "Тапочки", category: "Ванная" },
+  { key: "livingRoom", label: "Отдельная гостиная", category: "Планировка" },
+  { key: "balcony", label: "Балкон", category: "Планировка" },
+];
+
+export const ROOM_CHARACTERISTIC_LABELS: Record<string, string> = Object.fromEntries(
+  HOTEL_ROOM_CHARACTERISTIC_CATALOG.map((c) => [c.key, c.label]),
+);
 
 const DEFAULT_HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
   {
@@ -208,7 +245,7 @@ const DEFAULT_HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
     view: "Без окна",
     bedType: "2 отдельные кровати",
     roomLayout: "Студия",
-    amenities: ["Душ"],
+    amenities: ["shower"],
   },
   {
     name: "Standard",
@@ -218,7 +255,7 @@ const DEFAULT_HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
     view: "Двор",
     bedType: "Двуспальная кровать",
     roomLayout: "1 комната",
-    amenities: ["Кондиционер", "Wi-Fi"],
+    amenities: ["ac", "wifi"],
   },
   {
     name: "Делюкс",
@@ -228,7 +265,7 @@ const DEFAULT_HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
     view: "Улица",
     bedType: "Двуспальная кровать King-size",
     roomLayout: "1 комната",
-    amenities: ["Мини-бар", "Wi-Fi", "Халат"],
+    amenities: ["minibar", "wifi", "bathrobe"],
   },
   {
     name: "Люкс",
@@ -238,7 +275,7 @@ const DEFAULT_HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
     view: "Горы",
     bedType: "Кровать King-size",
     roomLayout: "Апартаменты (спальня + гостиная)",
-    amenities: ["Джакузи", "Мини-бар", "Отдельная гостиная", "Халат и тапочки"],
+    amenities: ["jacuzzi", "minibar", "livingRoom", "bathrobe", "slippers"],
     luxury: true,
   },
 ];
@@ -326,6 +363,52 @@ export function deleteHotelRoom(categoryName: string, room: string): void {
   );
   persistHotelRoomCategories(next);
   clearRoomAdditionalTariffs(room);
+}
+
+/** Есть ли уже категория с таким именем (без учёта регистра) — валидация при создании. */
+export function roomCategoryNameExists(name: string): boolean {
+  const trimmed = name.trim().toLowerCase();
+  return hotelRoomCategoriesCache.some((c) => c.name.toLowerCase() === trimmed);
+}
+
+/** Добавляет новую категорию (тариф) с пустым списком номеров. Дубль по имени — не добавляет. */
+export function addHotelRoomCategory(category: Omit<HotelRoomCategory, "rooms">): boolean {
+  const name = category.name.trim();
+  if (!name || roomCategoryNameExists(name)) return false;
+  persistHotelRoomCategories([...hotelRoomCategoriesCache, { ...category, name, rooms: [] }]);
+  return true;
+}
+
+/** Правит уже созданную категорию (цену, характеристики, можно и название) — состав номеров не трогает. */
+export function updateHotelRoomCategory(originalName: string, patch: Omit<HotelRoomCategory, "rooms">): boolean {
+  const name = patch.name.trim();
+  if (!name) return false;
+  if (name.toLowerCase() !== originalName.toLowerCase() && roomCategoryNameExists(name)) return false;
+  const next = hotelRoomCategoriesCache.map((c) => (c.name === originalName ? { ...patch, name, rooms: c.rooms } : c));
+  persistHotelRoomCategories(next);
+  return true;
+}
+
+/**
+ * Переносит номер в другую категорию и/или переименовывает его — правка при
+ * заведении номера без удаления и создания заново. Доп. тарифы номера
+ * переезжают вместе с ним, если номер переименован.
+ */
+export function updateHotelRoom(fromCategoryName: string, room: string, toCategoryName: string, newRoomNumber: string): boolean {
+  const trimmed = newRoomNumber.trim();
+  if (!trimmed) return false;
+  if (trimmed !== room && roomNumberExists(trimmed)) return false;
+  const next = hotelRoomCategoriesCache.map((c) => {
+    const withoutRoom = c.name === fromCategoryName ? { ...c, rooms: c.rooms.filter((r) => r !== room) } : c;
+    return withoutRoom.name === toCategoryName ? { ...withoutRoom, rooms: [...withoutRoom.rooms, trimmed] } : withoutRoom;
+  });
+  persistHotelRoomCategories(next);
+  if (trimmed !== room) {
+    const tariffs = getRoomAdditionalTariffs(room);
+    clearRoomAdditionalTariffs(room);
+    setRoomAdditionalTariffs(trimmed, tariffs);
+  }
+  return true;
 }
 
 // ── Доп. тарифы номера — задаются при добавлении номера («Настройка» → «Номера») ──
