@@ -25,6 +25,7 @@ import "dayjs/locale/ru";
 import { useSearchParams } from "react-router";
 
 import EventBusyOutlinedIcon from "@mui/icons-material/EventBusyOutlined";
+import PersonOffOutlinedIcon from "@mui/icons-material/PersonOffOutlined";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlinedIcon from "@mui/icons-material/ChevronRightOutlined";
@@ -38,6 +39,7 @@ import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
 
 import {
+  ConfirmDialog,
   DateRangeField,
   DEFAULT_RANGE_PRESETS,
   PageHeader,
@@ -85,6 +87,7 @@ import {
   StatusChip,
   bookingTimeHint,
   hasPrepayment,
+  isBookingMissed,
   sortBookingsByPriority,
   useTickingClock,
 } from "./meta";
@@ -207,7 +210,7 @@ function receivedText(createdAt: string | undefined, now: Dayjs): string | null 
 /** Подсказка к дате визита: «сегодня»/«завтра», у разбора — ещё и просрочка. */
 function visitHint(b: BookingListItem, tab: BookingTab, todayStr: string, tomorrowStr: string) {
   if (tab === "triage") {
-    const h = bookingTimeHint(b.date, b.time, b.status);
+    const h = bookingTimeHint(b.date, b.time, b.status, b.totalDurationMin);
     if (h?.tone === "warning" && b.status === "pending") return { label: h.text, tone: "warning" as const };
   }
   if (b.date === todayStr) return { label: "сегодня", tone: "primary" as const };
@@ -217,8 +220,17 @@ function visitHint(b: BookingListItem, tab: BookingTab, todayStr: string, tomorr
 
 // ── Состояние фильтров в URL ──────────────────────────────────────────────────
 
+/**
+ * Группа внутри «Разобрать»: живая очередь (подтвердить/отменить) и пропущенные
+ * — заявки, чьё окно визита прошло без подтверждения (`isBookingMissed`). У
+ * них другие исходы, поэтому и список отдельный: в очереди счёт на минуты,
+ * пропущенным спешить некуда, а вперемешку они бы её захламляли.
+ */
+type TriageGroup = "queue" | "missed";
+
 interface FiltersState {
   tab: BookingTab;
+  group: TriageGroup;
   doctorId: number | "";
   status: BookingStatus | "";
   prepaymentStatus: BookingPrepaymentStatus | "";
@@ -241,6 +253,7 @@ function readFilters(p: URLSearchParams): FiltersState {
   const page = Number(p.get("page"));
   return {
     tab: isBookingTab(tab) ? tab : "triage",
+    group: p.get("group") === "missed" ? "missed" : "queue",
     doctorId: Number.isFinite(doctor) && doctor > 0 ? doctor : "",
     status: BOOKING_STATUS_OPTIONS.some((o) => o.value === status) ? (status as BookingStatus) : "",
     prepaymentStatus: pay && pay in BOOKING_PREPAYMENT_META ? (pay as BookingPrepaymentStatus) : "",
@@ -259,6 +272,7 @@ function readFilters(p: URLSearchParams): FiltersState {
 function writeFilters(f: FiltersState): URLSearchParams {
   const p = new URLSearchParams();
   if (f.tab !== "triage") p.set("tab", f.tab);
+  if (f.tab === "triage" && f.group === "missed") p.set("group", "missed");
   if (f.doctorId !== "") p.set("doctor", String(f.doctorId));
   if (f.status) p.set("status", f.status);
   if (f.prepaymentStatus) p.set("pay", f.prepaymentStatus);
@@ -316,7 +330,7 @@ const BookingsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = React.useState<FiltersState>(() => readFilters(searchParams));
   const [searchInput, setSearchInput] = React.useState(filters.search);
-  const { tab, doctorId, status, prepaymentStatus, from, to, search, page } = filters;
+  const { tab, group, doctorId, status, prepaymentStatus, from, to, search, page } = filters;
 
   const patch = React.useCallback((p: Partial<FiltersState>) => {
     // Любая смена фильтра, кроме листания, возвращает на первую страницу.
@@ -433,10 +447,20 @@ const BookingsPage: React.FC = () => {
     refetchOnWindowFocus: true,
     placeholderData: keepPreviousData,
   });
-  const triageRows = React.useMemo(
+  const triageAll = React.useMemo(
     () => sortBookingsByPriority((triageQuery.data?.rows ?? []).filter((b) => needsTriage(b, now))),
     [triageQuery.data, now],
   );
+  // Очередь и пропущенные — два списка одной вкладки (см. TriageGroup).
+  const missedRows = React.useMemo(() => triageAll.filter((b) => isBookingMissed(b, now)), [triageAll, now]);
+  const queueRows = React.useMemo(() => triageAll.filter((b) => !isBookingMissed(b, now)), [triageAll, now]);
+  const triageRows = group === "missed" ? missedRows : queueRows;
+  // Пропущенных нет — переключатель не показываем, а адрес с group=missed
+  // ведёт в пустой список с понятной подписью.
+  const showGroupSwitch = tab === "triage" && (missedRows.length > 0 || group === "missed");
+  /** Режим кнопок строки: у пропущенных — свои исходы вместо «Подтвердить». */
+  const rowMode: "triage" | "missed" | "upcoming" | null =
+    tab === "triage" ? (group === "missed" ? "missed" : "triage") : tab === "upcoming" ? "upcoming" : null;
 
   // ── «Предстоящие»: подтверждённые с сегодняшнего дня, ближайшие сверху ──
   const upcomingFilters: BookingsFilters = {
@@ -548,8 +572,40 @@ const BookingsPage: React.FC = () => {
     onError: () => notify?.({ type: "error", message: "Не удалось подтвердить онлайн-записи" }),
   });
 
+  /**
+   * Массовая неявка по пропущенным. Один PATCH на заявку; `claim` перед ним —
+   * то же правило времени реакции, что у закрытия из строки.
+   */
+  const bulkNoShow = useMutation({
+    mutationFn: async (ids: number[]) => {
+      const settled = await Promise.allSettled(
+        ids.map(async (id) => {
+          const detail = await getBooking(id);
+          if (!detail.claimedAt) await claimBooking(id).catch(() => undefined);
+          await updateBookingStatus(id, "no_show");
+          return id;
+        }),
+      );
+      return settled
+        .filter((r): r is PromiseFulfilledResult<number> => r.status === "fulfilled")
+        .map((r) => r.value);
+    },
+    onSuccess: (done, ids) => {
+      queryClient.invalidateQueries({ queryKey: djangoQueryKeys.bookings.all });
+      setSelectedIds([]);
+      notify?.({
+        type: done.length > 0 ? "success" : "error",
+        message:
+          done.length === ids.length
+            ? `Неявка отмечена: ${done.length}`
+            : `Неявка отмечена у ${done.length} из ${ids.length}`,
+      });
+    },
+    onError: () => notify?.({ type: "error", message: "Не удалось отметить неявку" }),
+  });
+  const [bulkNoShowOpen, setBulkNoShowOpen] = React.useState(false);
+
   // ── Строки текущей вкладки ──
-  const listTab = tab === "analytics" ? null : tab;
   const allRowsOfTab: BookingListItem[] =
     tab === "triage"
       ? triageRows
@@ -717,17 +773,18 @@ const BookingsPage: React.FC = () => {
         ),
       });
     }
-    if (tab === "triage" || tab === "upcoming") {
+    if (rowMode != null) {
       cols.push({
         field: "actions",
         headerName: "",
-        width: tab === "triage" ? 116 : 84,
+        // Пропущенная: звонок, WhatsApp, перезаписать, неявка, отменить.
+        width: rowMode === "missed" ? 190 : rowMode === "triage" ? 116 : 84,
         sortable: false,
         align: "right",
         renderCell: ({ row }) => (
           <BookingRowActions
             booking={row}
-            mode={tab}
+            mode={rowMode}
             canManage={canManage}
             actions={actions}
             reminded={reminded.has(row.id)}
@@ -741,6 +798,7 @@ const BookingsPage: React.FC = () => {
   }, [
     t,
     tab,
+    rowMode,
     isNew,
     branchLive,
     showsReceived,
@@ -759,7 +817,9 @@ const BookingsPage: React.FC = () => {
 
   const emptyListText =
     tab === "triage"
-      ? "Всё разобрано — новых заявок нет"
+      ? group === "missed"
+        ? "Пропущенных заявок нет"
+        : "Всё разобрано — новых заявок нет"
       : tab === "upcoming"
         ? "Подтверждённых онлайн-записей впереди нет"
         : "Онлайн-записей за выбранный период не найдено";
@@ -788,7 +848,7 @@ const BookingsPage: React.FC = () => {
       key: "triage" as const,
       label: "Разобрать",
       icon: <InboxOutlinedIcon />,
-      badge: triageQuery.data ? triageRows.length : undefined,
+      badge: triageQuery.data ? queueRows.length : undefined,
     },
     {
       key: "upcoming" as const,
@@ -841,6 +901,21 @@ const BookingsPage: React.FC = () => {
               value={tab}
               onChange={(key) => patch({ tab: key })}
             />
+
+            {showGroupSwitch && (
+              <SegmentedTabs<TriageGroup>
+                layoutId="bookings-triage-group"
+                tabs={[
+                  { key: "queue", label: t("missed.queue"), badge: queueRows.length },
+                  { key: "missed", label: t("missed.group"), icon: <EventBusyOutlinedIcon />, badge: missedRows.length },
+                ]}
+                value={group}
+                onChange={(key) => {
+                  setSelectedIds([]);
+                  patch({ group: key });
+                }}
+              />
+            )}
 
             {(tab === "journal" || tab === "analytics") && (
               <DateRangeField
@@ -1001,7 +1076,7 @@ const BookingsPage: React.FC = () => {
                             )}
                           </Stack>
                         </Stack>
-                        {listTab !== "journal" && listTab != null && (
+                        {rowMode != null && (
                           <Stack
                             direction="row"
                             alignItems="center"
@@ -1017,7 +1092,7 @@ const BookingsPage: React.FC = () => {
                             )}
                             <BookingRowActions
                               booking={b}
-                              mode={listTab}
+                              mode={rowMode}
                               canManage={canManage}
                               actions={actions}
                               reminded={reminded.has(b.id)}
@@ -1061,8 +1136,65 @@ const BookingsPage: React.FC = () => {
                   Заявок больше 1000 — показаны самые свежие. Сузьте выборку фильтром.
                 </Alert>
               )}
-              {/* Массовое подтверждение — только «Ожидает», только с bookings.manage. */}
-              {tab === "triage" && canManage && selectedIds.length > 0 && (
+              {/* Массовые действия — только «Ожидает», только с bookings.manage:
+                  в очереди — подтвердить, у пропущенных — неявка. */}
+              {tab === "triage" && canManage && selectedIds.length > 0 && group === "missed" && (
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  gap={1}
+                  sx={(th) => ({
+                    px: 1.5,
+                    py: 1,
+                    borderRadius: "10px",
+                    border: 1,
+                    borderColor: "divider",
+                    bgcolor: subtleBg(th),
+                  })}
+                >
+                  <Typography variant="body2" color="text.secondary">
+                    Выбрано: {selectedIds.length}
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={
+                      bulkNoShow.isPending ? (
+                        <CircularProgress size={14} color="inherit" />
+                      ) : (
+                        <PersonOffOutlinedIcon fontSize="small" />
+                      )
+                    }
+                    disabled={bulkNoShow.isPending}
+                    onClick={() => setBulkNoShowOpen(true)}
+                    sx={{ textTransform: "none" }}
+                  >
+                    {t("missed.bulkNoShow")}
+                  </Button>
+                  <Button
+                    size="small"
+                    disabled={bulkNoShow.isPending}
+                    onClick={() => setSelectedIds([])}
+                    sx={{ textTransform: "none" }}
+                  >
+                    Снять выбор
+                  </Button>
+                  <ConfirmDialog
+                    open={bulkNoShowOpen}
+                    onClose={() => setBulkNoShowOpen(false)}
+                    onConfirm={() => {
+                      setBulkNoShowOpen(false);
+                      bulkNoShow.mutate(selectedIds);
+                    }}
+                    title={t("missed.noShowConfirm.title")}
+                    message={t("missed.noShowConfirm.message")}
+                    confirmText={t("missed.noShowConfirm.confirm")}
+                    cancelText={t("missed.noShowConfirm.cancel")}
+                    variant="warning"
+                  />
+                </Stack>
+              )}
+              {tab === "triage" && canManage && selectedIds.length > 0 && group === "queue" && (
                 <Stack
                   direction="row"
                   alignItems="center"

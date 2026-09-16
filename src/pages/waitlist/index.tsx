@@ -39,11 +39,10 @@ import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
 import MoreVertOutlined from "@mui/icons-material/MoreVertOutlined";
 import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
-import PhoneCallbackOutlined from "@mui/icons-material/PhoneCallbackOutlined";
 import PhoneInTalkOutlined from "@mui/icons-material/PhoneInTalkOutlined";
-import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import PlaylistAddOutlined from "@mui/icons-material/PlaylistAddOutlined";
 import PriorityHighOutlined from "@mui/icons-material/PriorityHighOutlined";
+import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import QueryBuilderOutlined from "@mui/icons-material/QueryBuilderOutlined";
 
 import {
@@ -51,7 +50,6 @@ import {
   FilterPill,
   PageHeader,
   SegmentedTabs,
-  TonedChip,
   UserAvatar,
   pillSx,
 } from "../../components/ui";
@@ -64,16 +62,17 @@ import { useActiveScope } from "../../hooks/useActiveScope";
 import { doctorEmployeesOnly, useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatPhoneDisplay } from "../../utility/phone";
+import { getProducts, productAvailableStock } from "../../api/warehouse";
 import {
   cancelWaitlistEntry,
-  contactWaitlistEntry,
   getWaitlist,
   getWaitlistSummary,
   reopenWaitlistEntry,
   WAITLIST_ACTIVE_STATUSES,
   WAITLIST_CLOSED_STATUSES,
   WAITLIST_USE_MOCKS,
-  type WaitlistContactResult,
+  WAITLIST_VACCINE_LIVE,
+  type WaitlistVaccineDemand,
   type WaitlistEntry,
   type WaitlistFilters,
 } from "../../api/waitlist";
@@ -93,7 +92,6 @@ import {
   waitingForLabel,
   weekdaysLabel,
   WAITING_LONG_DAYS,
-  WAITLIST_CONTACT_RESULT_META,
   WAITLIST_REFRESH_MS,
   waitlistErrorMessage,
 } from "./meta";
@@ -111,6 +109,8 @@ const isWaitlistTab = (v: string | null): v is WaitlistTab =>
 interface FiltersState {
   tab: WaitlistTab;
   employeeId: number | "";
+  /** Клик по строке блока «Ждут вакцину» на главном экране. */
+  vaccineId: number | "";
   urgent: boolean;
   fromSite: boolean;
   search: string;
@@ -119,11 +119,13 @@ interface FiltersState {
 
 function readFilters(p: URLSearchParams): FiltersState {
   const employee = Number(p.get("employee"));
+  const vaccine = Number(p.get("vaccine"));
   const page = Number(p.get("page"));
   const tab = p.get("tab");
   return {
     tab: isWaitlistTab(tab) ? tab : "active",
     employeeId: Number.isFinite(employee) && employee > 0 ? employee : "",
+    vaccineId: Number.isFinite(vaccine) && vaccine > 0 ? vaccine : "",
     urgent: p.get("urgent") === "1",
     fromSite: p.get("source") === "public",
     search: p.get("q") ?? "",
@@ -139,6 +141,7 @@ function writeFilters(f: FiltersState): URLSearchParams {
   const p = new URLSearchParams();
   if (f.tab !== "active") p.set("tab", f.tab);
   if (f.employeeId !== "") p.set("employee", String(f.employeeId));
+  if (f.vaccineId !== "") p.set("vaccine", String(f.vaccineId));
   if (f.urgent) p.set("urgent", "1");
   if (f.fromSite) p.set("source", "public");
   if (f.search) p.set("q", f.search);
@@ -253,37 +256,6 @@ const KpiTile: React.FC<{
   );
 };
 
-/** Квадратная иконка-кнопка строки (гайд §5.3, уменьшенная под строку таблицы). */
-const RowIconButton: React.FC<{
-  title: string;
-  onClick?: () => void;
-  href?: string;
-  children: React.ReactNode;
-}> = ({ title, onClick, href, children }) => (
-  <Tooltip title={title}>
-    <IconButton
-      size="small"
-      onClick={onClick}
-      {...(href ? { href } : {})}
-      sx={(t) => ({
-        width: 32,
-        height: 32,
-        borderRadius: "9px",
-        border: 1,
-        borderColor: "divider",
-        color: "text.secondary",
-        "& .MuiSvgIcon-root": { fontSize: 17 },
-        "&:hover": {
-          color: "text.primary",
-          bgcolor: subtleBg(t, true),
-          borderColor: alpha(t.palette.primary.main, 0.35),
-        },
-      })}
-    >
-      {children}
-    </IconButton>
-  </Tooltip>
-);
 
 /** Пустая очередь без фильтров — объясняем, как пользоваться модулем. */
 const HowItWorks: React.FC<{ onAdd?: () => void }> = ({ onAdd }) => {
@@ -392,6 +364,52 @@ const HowItWorks: React.FC<{ onAdd?: () => void }> = ({ onAdd }) => {
   );
 };
 
+/**
+ * «На какие вакцины ждут» — главная просьба клиники: у них в очередь встают
+ * в основном за препаратом. Рядом с числом ждущих показываем остаток склада:
+ * пустой остаток и есть повод для обзвона, когда приедет партия.
+ */
+const VaccineDemandRow: React.FC<{
+  row: WaitlistVaccineDemand;
+  stock: number | null;
+  active: boolean;
+  onClick: () => void;
+}> = ({ row, stock, active, onClick }) => {
+  const { t } = useT("waitlist");
+  const outOfStock = stock != null && stock <= 0;
+  return (
+    <Stack
+      direction="row"
+      alignItems="center"
+      gap={1}
+      onClick={onClick}
+      sx={(th) => ({
+        px: 1.25,
+        py: 0.85,
+        borderRadius: "10px",
+        border: 1,
+        borderColor: active ? alpha(th.palette.primary.main, 0.5) : "divider",
+        bgcolor: active ? alpha(th.palette.primary.main, th.palette.mode === "dark" ? 0.16 : 0.08) : subtleBg(th),
+        cursor: "pointer",
+        minWidth: 0,
+        "&:hover": { borderColor: alpha(th.palette.primary.main, 0.35) },
+      })}
+    >
+      <Typography variant="body2" fontWeight={600} noWrap sx={{ flex: 1, minWidth: 0 }}>
+        {row.name}
+      </Typography>
+      <Typography variant="body2" fontWeight={700}>
+        {row.count}
+      </Typography>
+      {stock != null && (
+        <Typography variant="caption" color={outOfStock ? "error.main" : "text.secondary"} noWrap>
+          {outOfStock ? t("vaccineDemand.outOfStock") : t("vaccineDemand.inStock", { count: stock })}
+        </Typography>
+      )}
+    </Stack>
+  );
+};
+
 /** «5 дней» + «с 02.09»; долгое ожидание и близкий конец срока — тоном. */
 const WaitingCell: React.FC<{ entry: WaitlistEntry; closed: boolean }> = ({ entry, closed }) => {
   const { t } = useT("waitlist");
@@ -441,27 +459,6 @@ const WaitingCell: React.FC<{ entry: WaitlistEntry; closed: boolean }> = ({ entr
   );
 };
 
-const LastContactCell: React.FC<{ entry: WaitlistEntry }> = ({ entry }) => {
-  const { t } = useT("waitlist");
-  if (!entry.lastContactAt || !entry.lastContactResult) {
-    return (
-      <Typography variant="caption" color="text.disabled" noWrap>
-        {t("neverContacted")}
-      </Typography>
-    );
-  }
-  const meta = WAITLIST_CONTACT_RESULT_META[entry.lastContactResult];
-  return (
-    <Stack gap={0.35} sx={{ minWidth: 0, alignItems: "flex-start" }}>
-      <TonedChip label={meta.label} toneName={meta.color} />
-      <Typography variant="caption" color="text.secondary" noWrap>
-        {dayjs(entry.lastContactAt).format("DD.MM HH:mm")}
-        {entry.contactsCount > 1 ? ` · ${t("calls", { count: entry.contactsCount })}` : ""}
-      </Typography>
-    </Stack>
-  );
-};
-
 // ── Страница ──────────────────────────────────────────────────────────────────
 
 const WaitlistPage: React.FC = () => {
@@ -484,7 +481,7 @@ const WaitlistPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = React.useState<FiltersState>(() => readFilters(searchParams));
   const [searchInput, setSearchInput] = React.useState(filters.search);
-  const { tab, employeeId, urgent, fromSite, search, page } = filters;
+  const { tab, employeeId, vaccineId, urgent, fromSite, search, page } = filters;
 
   const patch = React.useCallback((p: Partial<FiltersState>) => {
     // Любая смена фильтра, кроме листания, возвращает на первую страницу.
@@ -527,12 +524,13 @@ const WaitlistPage: React.FC = () => {
       employeeId: employeeId === "" ? undefined : employeeId,
       priority: urgent ? "urgent" : undefined,
       source: fromSite ? "public" : undefined,
+      vaccineId: vaccineId === "" ? undefined : vaccineId,
       page: page + 1,
       pageSize: PAGE_SIZE,
       organizationId: orgId,
       branchId: scope.branchId,
     }),
-    [tab, search, employeeId, urgent, fromSite, page, orgId, scope.branchId],
+    [tab, search, employeeId, vaccineId, urgent, fromSite, page, orgId, scope.branchId],
   );
 
   const enabled = canView && scope.orgReady;
@@ -554,6 +552,27 @@ const WaitlistPage: React.FC = () => {
     enabled,
   });
   const summary = summaryQuery.data;
+  const vaccineDemand = summary?.byVaccine ?? [];
+
+  /**
+   * Остаток вакцины бэк в сводке не считает (см. тикет) — берём со склада тем
+   * же запросом, что и пикер формы, поэтому цифра совпадает с той, по которой
+   * препарат спишется в приёме.
+   */
+  const vaccineStockQuery = useQuery({
+    queryKey: ["django", "warehouse", "products", "waitlist-vaccine-picker", orgId, scope.branchId],
+    queryFn: ({ signal }) =>
+      getProducts(signal, { organizationId: orgId, isVaccine: true, branchId: scope.branchId ?? undefined }),
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    enabled: enabled && WAITLIST_VACCINE_LIVE && vaccineDemand.length > 0,
+  });
+  const vaccineStock = React.useMemo(() => {
+    const map = new Map<number, number>();
+    for (const product of vaccineStockQuery.data ?? []) {
+      map.set(product.id, productAvailableStock(product));
+    }
+    return map;
+  }, [vaccineStockQuery.data]);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.waitlist.all });
@@ -607,27 +626,6 @@ const WaitlistPage: React.FC = () => {
     onError: (e) => setError(waitlistErrorMessage(e, "Не удалось вернуть запись в очередь")),
   });
 
-  const [contactTarget, setContactTarget] = React.useState<WaitlistEntry | null>(null);
-  const [contactResult, setContactResult] = React.useState<WaitlistContactResult | null>(null);
-  const [contactNote, setContactNote] = React.useState("");
-
-  const openContactDialog = (entry: WaitlistEntry) => {
-    setContactTarget(entry);
-    setContactResult(null);
-    setContactNote("");
-  };
-
-  const contactMutation = useMutation({
-    mutationFn: ({ entry, result }: { entry: WaitlistEntry; result: WaitlistContactResult }) =>
-      contactWaitlistEntry(entry.id, { result, note: contactNote.trim() || undefined }, orgId),
-    onSuccess: () => {
-      setContactTarget(null);
-      setToast(t("actions.contactSaved"));
-      invalidate();
-    },
-    onError: (e) => setError(waitlistErrorMessage(e, "Не удалось отметить контакт")),
-  });
-
   /**
    * «Записать» — уводим в приёмы с предзаполнением. Запись листа закрывается
    * не здесь, а после того, как приём действительно создан (см. §6.4 ТЗ):
@@ -648,10 +646,11 @@ const WaitlistPage: React.FC = () => {
   // Открытая карточка берёт свежую строку из списка после фонового обновления.
   const detailRow = detailEntry ? (rows.find((r) => r.id === detailEntry.id) ?? detailEntry) : null;
 
-  const hasActiveFilters = employeeId !== "" || urgent || fromSite || search !== "";
+  const hasActiveFilters =
+    employeeId !== "" || vaccineId !== "" || urgent || fromSite || search !== "";
   const resetFilters = () => {
     setSearchInput("");
-    patch({ employeeId: "", urgent: false, fromSite: false, search: "" });
+    patch({ employeeId: "", vaccineId: "", urgent: false, fromSite: false, search: "" });
   };
 
   const columns: GridColDef<WaitlistEntry>[] = [
@@ -727,13 +726,6 @@ const WaitlistPage: React.FC = () => {
       sortable: false,
       renderCell: ({ row }) => <WaitingCell entry={row} closed={closed} />,
     },
-    {
-      field: "lastContact",
-      headerName: t("columns.lastContact"),
-      width: 190,
-      sortable: false,
-      renderCell: ({ row }) => <LastContactCell entry={row} />,
-    },
   ];
   // «В очереди» смешивает ждущих и тех, кому уже предложили окно, — там статус
   // различает строки. На остальных вкладках он у всех один (кроме закрытых).
@@ -766,12 +758,6 @@ const WaitlistPage: React.FC = () => {
       <Stack direction="row" alignItems="center" gap={0.75} onClick={(e) => e.stopPropagation()}>
         {!closed && (
           <>
-            <RowIconButton title={t("actions.call")} href={`tel:${row.phone}`}>
-              <PhoneOutlined />
-            </RowIconButton>
-            <RowIconButton title={t("actions.contact")} onClick={() => openContactDialog(row)}>
-              <PhoneCallbackOutlined />
-            </RowIconButton>
             {canCreate && (
               <AppButton
                 size="small"
@@ -900,6 +886,37 @@ const WaitlistPage: React.FC = () => {
           />
         </Box>
 
+        {WAITLIST_VACCINE_LIVE && vaccineDemand.length > 0 && (
+          <Box sx={{ mt: 2 }}>
+            <Stack direction="row" alignItems="center" gap={0.75} sx={{ mb: 1 }}>
+              <VaccinesOutlined sx={{ fontSize: 18, color: "text.secondary" }} />
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {t("vaccineDemand.title")}
+              </Typography>
+            </Stack>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)" },
+                gap: 1,
+              }}
+            >
+              {vaccineDemand.map((row) => (
+                <VaccineDemandRow
+                  key={row.id}
+                  row={row}
+                  stock={vaccineStock.get(row.id) ?? null}
+                  active={vaccineId === row.id}
+                  // Повторный клик снимает фильтр: строка работает как пилюля.
+                  onClick={() =>
+                    patch({ tab: "active", vaccineId: vaccineId === row.id ? "" : row.id })
+                  }
+                />
+              ))}
+            </Box>
+          </Box>
+        )}
+
         {/* ── Одна строка управления: вкладки + фильтры ── */}
         <Stack direction="row" flexWrap="wrap" gap={1} alignItems="center" sx={{ mt: 2, mb: 1.5 }}>
           <SegmentedTabs layoutId="waitlist-tabs" tabs={tabs} value={tab} onChange={(key) => patch({ tab: key })} />
@@ -997,9 +1014,6 @@ const WaitlistPage: React.FC = () => {
                         <WaitlistSourceChip source={row.source} />
                         <Typography variant="caption" color="text.secondary">
                           {t("waitingDays", { count: waitingDays(row) })}
-                          {row.lastContactResult
-                            ? ` · ${WAITLIST_CONTACT_RESULT_META[row.lastContactResult].label}`
-                            : ` · ${t("neverContacted")}`}
                         </Typography>
                       </Stack>
                       {active && (
@@ -1009,15 +1023,6 @@ const WaitlistPage: React.FC = () => {
                           sx={{ mt: 1.25 }}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <AppButton
-                            size="small"
-                            variant="outlined"
-                            href={`tel:${row.phone}`}
-                            startIcon={<PhoneOutlined fontSize="small" />}
-                            sx={{ flex: 1 }}
-                          >
-                            {t("actions.call")}
-                          </AppButton>
                           {canCreate && (
                             <AppButton
                               size="small"
@@ -1113,16 +1118,6 @@ const WaitlistPage: React.FC = () => {
             {t("detail.title")}
           </MenuItem>
         )}
-        {menuEntry && WAITLIST_ACTIVE_STATUSES.includes(menuEntry.status) && (
-          <MenuItem
-            onClick={() => {
-              openContactDialog(menuEntry);
-              setMenuAnchor(null);
-            }}
-          >
-            {t("actions.contact")}
-          </MenuItem>
-        )}
         {menuEntry && canCreate && (
           <MenuItem
             onClick={() => {
@@ -1162,7 +1157,6 @@ const WaitlistPage: React.FC = () => {
         canCreate={canCreate}
         canManage={canManage}
         onClose={() => setDetailEntry(null)}
-        onContact={openContactDialog}
         onBook={handleBook}
         onEdit={openEdit}
         onCancel={setCancelTarget}
@@ -1199,58 +1193,6 @@ const WaitlistPage: React.FC = () => {
             onClick={() => cancelTarget && cancelMutation.mutate(cancelTarget)}
           >
             {t("actions.cancelConfirm")}
-          </AppButton>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog open={contactTarget != null} onClose={() => setContactTarget(null)} fullWidth maxWidth="xs">
-        <DialogTitle>{t("actions.contactTitle")}</DialogTitle>
-        <DialogContent>
-          {contactTarget && (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-              {displayName(contactTarget)} · {formatPhoneDisplay(contactTarget.phone)}
-            </Typography>
-          )}
-          <Stack direction="row" gap={1} flexWrap="wrap">
-            {(Object.keys(WAITLIST_CONTACT_RESULT_META) as WaitlistContactResult[]).map((result) => {
-              const meta = WAITLIST_CONTACT_RESULT_META[result];
-              const selected = contactResult === result;
-              return (
-                <Chip
-                  key={result}
-                  label={meta.label}
-                  color={selected ? (meta.color ?? "primary") : "default"}
-                  variant={selected ? "filled" : "outlined"}
-                  onClick={() => setContactResult(result)}
-                />
-              );
-            })}
-          </Stack>
-          <TextField
-            fullWidth
-            multiline
-            minRows={2}
-            size="small"
-            label={t("actions.contactNote")}
-            value={contactNote}
-            onChange={(e) => setContactNote(e.target.value)}
-            sx={{ mt: 2 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <AppButton color="inherit" onClick={() => setContactTarget(null)}>
-            Отмена
-          </AppButton>
-          <AppButton
-            variant="contained"
-            disabled={contactResult == null || contactMutation.isPending}
-            onClick={() =>
-              contactTarget &&
-              contactResult &&
-              contactMutation.mutate({ entry: contactTarget, result: contactResult })
-            }
-          >
-            {t("actions.contactConfirm")}
           </AppButton>
         </DialogActions>
       </Dialog>

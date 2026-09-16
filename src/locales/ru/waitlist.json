@@ -26,21 +26,19 @@
     "staff": "Из CRM",
     "public": "С сайта"
   },
-  "contactResult": {
-    "no_answer": "Не дозвонились",
-    "refused": "Отказался",
-    "agreed": "Согласен",
-    "callback_later": "Перезвонить позже"
-  },
-
   "columns": {
     "patient": "{{patient.nom, capitalize}}",
     "waitingFor": "Ждёт",
     "period": "Когда удобно",
     "waitingDays": "В очереди",
-    "lastContact": "Последний контакт",
     "status": "Статус",
     "closed": "Закрыта"
+  },
+
+  "vaccineDemand": {
+    "title": "Ждут вакцину",
+    "inStock": "на складе {{count}}",
+    "outOfStock": "нет в наличии"
   },
 
   "kpi": {
@@ -79,9 +77,6 @@
     "activeUntil": "Ждать до",
     "anyTime": "Любое",
     "comment": "Комментарий",
-    "history": "История звонков",
-    "historyEmpty": "Ещё не звонили — после звонка отметьте результат, чтобы коллеги не набирали повторно.",
-    "offeredSlot": "Предложено окно: {{slot}}",
     "createdBy": "Добавил(а) {{name}} · {{date}}",
     "createdFromSite": "Заявка с сайта · {{date}}",
     "closedAt": "Закрыта {{date}}",
@@ -92,9 +87,6 @@
 
   "waitingLong": "ждёт давно",
   "expiresOn": "до {{date}}",
-  "calls_one": "{{count}} звонок",
-  "calls_few": "{{count}} звонка",
-  "calls_many": "{{count}} звонков",
 
   "filters": {
     "search": "Имя, телефон, комментарий",
@@ -118,19 +110,25 @@
     "wishSection": "Чего ждёт",
     "whenSection": "Когда удобно",
     "existingPatient": "{{patient.nom, capitalize}} из базы",
+    "newPatient": "+ Добавить {{patient.acc}}",
     "newContact": "Имя и телефон",
     "contactName": "Имя",
     "phone": "Телефон",
     "employee": "{{specialist.nom, capitalize}}",
-    "employeeAny": "Любой {{specialist.nom}} этой специальности",
-    "employeeAnyHint": "Подойдёт окно любого {{specialist.gen}} этой специальности",
-    "specialization": "Специальность",
-    "specializationAny": "Любая",
+    "employeeSearch": "Имя или специальность",
+    "employeeNotFound": "Никого не нашли",
+    "vaccine": "Вакцина",
+    "vaccineSearch": "Название препарата",
+    "vaccineNotFound": "Такой вакцины нет в списке",
+    "vaccineStock": "На складе {{count}}",
+    "vaccineOutOfStock": "Нет в наличии",
+    "vaccineOnlyHint": "Ждёт препарат — {{specialist.nom}} можно не указывать",
     "services": "Услуги",
     "branch": "Филиал",
     "dateFrom": "Не раньше",
     "dateTo": "Не позже",
     "anyDate": "Когда угодно",
+    "anyTime": "Время любое",
     "timeFrom": "С",
     "timeTo": "До",
     "weekdays": "Дни недели",
@@ -146,7 +144,9 @@
     "updated": "Запись обновлена",
     "duplicateHint": "Карта с таким номером уже есть — привязать?",
     "duplicateLink": "Привязать карту",
-    "errorNoTarget": "Укажите {{specialist.acc}} или специальность — иначе непонятно, чьё окно ждать",
+    "errorNoTarget": "Укажите {{specialist.acc}} — иначе непонятно, чьё окно ждать",
+    "errorNoTargetVaccine": "Укажите {{specialist.acc}} или вакцину — иначе непонятно, чего ждать",
+    "errorNoPatient": "Выберите {{patient.acc}} из базы — без карты в очередь не поставить",
     "errorNoName": "Укажите имя",
     "errorPhone": "Укажите телефон для обратного звонка",
     "errorDates": "Начало периода позже его конца",
@@ -154,8 +154,6 @@
   },
 
   "actions": {
-    "call": "Позвонить",
-    "contact": "Отметить контакт",
     "book": "Записать",
     "cancel": "Снять с очереди",
     "reopen": "Вернуть в очередь",
@@ -169,18 +167,13 @@
     "reopened": "Запись вернулась в очередь",
     "deleteTitle": "Удалить запись",
     "deleteText": "Запись будет удалена без возможности восстановления.",
-    "deleted": "Запись удалена",
-    "contactTitle": "Отметить контакт",
-    "contactNote": "Заметка",
-    "contactConfirm": "Сохранить",
-    "contactSaved": "Контакт отмечен"
+    "deleted": "Запись удалена"
   },
 
   "waitingDays_one": "{{count}} день",
   "waitingDays_few": "{{count}} дня",
   "waitingDays_many": "{{count}} дней",
   "waitingSince": "В очереди с {{date}}",
-  "neverContacted": "Ещё не звонили",
   "anySpecialist": "Любой {{specialist.nom}}",
   "anyPeriod": "Когда угодно",
   "periodFrom": "с {{date}}",
@@ -197,6 +190,7 @@
     "slot": "{{date}}, {{time}} — {{employee}}",
     "none": "На это время в листе ожидания никого нет",
     "bookHere": "Записать сюда",
+    "offer": "Предложить окно",
     "notSuitable": "Не подошло",
     "offered": "Окно предложено — ждём ответа",
     "freedTitle": "Окно освободилось",
