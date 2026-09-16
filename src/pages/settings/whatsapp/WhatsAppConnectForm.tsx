@@ -28,7 +28,7 @@ import { useT } from "../../../i18n/VerticalProvider";
 
 type FieldKey = "wabaId" | "phoneNumberId" | "accessToken" | "appId" | "appSecret";
 
-const FIELDS: FieldKey[] = ["wabaId", "phoneNumberId", "accessToken", "appId", "appSecret"];
+const REQUIRED_FIELDS: FieldKey[] = ["wabaId", "phoneNumberId", "accessToken"];
 const SECRET_FIELDS: ReadonlySet<FieldKey> = new Set(["accessToken", "appSecret"]);
 
 const META_DOCS = "https://developers.facebook.com/docs/whatsapp/cloud-api/get-started";
@@ -55,12 +55,15 @@ interface WhatsAppConnectFormProps {
 }
 
 /**
- * «Подключить WhatsApp»: пять значений из Meta — и всё остальное делает
+ * «Подключить WhatsApp»: три значения из Meta — и всё остальное делает
  * Raven. Поля собраны в три шага по тому, где их брать в Meta (аккаунт и
- * номер, приложение, подпись); токен и App secret через CRM только проходят
- * и после ответа из формы стираются. Отказы Raven приходят по полям
- * (`VALIDATION_ERROR`), поэтому «Meta не приняла токен» встаёт под токен,
- * а «номер уже подключён» — под Phone number ID.
+ * номер, приложение, подпись). Пара App ID + App secret необязательна:
+ * без неё Raven'у некуда прописать вебхук, сообщения уходят, а статусы
+ * доставки нет — форма говорит об этом словами, а не звёздочкой. Токен и
+ * App secret через CRM только проходят и после ответа из формы стираются.
+ * Отказы Raven приходят по полям (`VALIDATION_ERROR`), поэтому «Meta не
+ * приняла токен» встаёт под токен, а «номер уже подключён» — под Phone
+ * number ID.
  */
 export const WhatsAppConnectForm: React.FC<WhatsAppConnectFormProps> = ({
   organizationId,
@@ -87,11 +90,13 @@ export const WhatsAppConnectForm: React.FC<WhatsAppConnectFormProps> = ({
         wabaId: values.wabaId.trim(),
         phoneNumberId: values.phoneNumberId.trim(),
         accessToken: values.accessToken.trim(),
-        appId: values.appId.trim(),
-        appSecret: values.appSecret.trim(),
         displayName: displayName.trim() || undefined,
         organizationId,
       };
+      if (values.appId.trim()) {
+        input.appId = values.appId.trim();
+        input.appSecret = values.appSecret.trim();
+      }
       return connectWhatsApp(input);
     },
     onSuccess: (data) => {
@@ -110,11 +115,18 @@ export const WhatsAppConnectForm: React.FC<WhatsAppConnectFormProps> = ({
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    // Пустые поля ловим до похода на бэк — та же проверка, что и у него.
-    const missing = FIELDS.filter((key) => !values[key].trim());
-    if (missing.length) {
-      const errors: Record<string, string> = {};
-      for (const key of missing) errors[key] = t("whatsapp.connect.required");
+    // Пустые поля и половину пары ловим до похода на бэк — те же проверки,
+    // что и у него.
+    const errors: Record<string, string> = {};
+    for (const key of REQUIRED_FIELDS) {
+      if (!values[key].trim()) errors[key] = t("whatsapp.connect.required");
+    }
+    const hasAppId = Boolean(values.appId.trim());
+    const hasAppSecret = Boolean(values.appSecret.trim());
+    if (hasAppId !== hasAppSecret) {
+      errors[hasAppId ? "appSecret" : "appId"] = t("whatsapp.connect.appPair");
+    }
+    if (Object.keys(errors).length) {
       setFieldErrors(errors);
       return;
     }
@@ -134,7 +146,7 @@ export const WhatsAppConnectForm: React.FC<WhatsAppConnectFormProps> = ({
       <TextField
         key={key}
         size="small"
-        required
+        required={REQUIRED_FIELDS.includes(key)}
         fullWidth
         name={`meta-${key}`}
         label={t(`whatsapp.connect.fields.${key}`)}
@@ -215,6 +227,7 @@ export const WhatsAppConnectForm: React.FC<WhatsAppConnectFormProps> = ({
         n={2}
         title={t("whatsapp.connect.steps.app.title")}
         where={t("whatsapp.connect.steps.app.where")}
+        note={t("whatsapp.connect.steps.app.note")}
       >
         <FieldRow>
           {field("appId")}
@@ -314,11 +327,13 @@ interface StepProps {
   title: string;
   /** Где это лежит в Meta — путь по меню, одной строкой. */
   where: string;
+  /** Зачем это нужно и что будет без него — для необязательного шага. */
+  note?: string;
   children: React.ReactNode;
 }
 
 /** Шаг формы: на широком экране номер и «где взять» слева, поля справа; иначе столбиком. */
-const Step: React.FC<StepProps> = ({ n, title, where, children }) => (
+const Step: React.FC<StepProps> = ({ n, title, where, note, children }) => (
   <Box
     sx={{
       display: "grid",
@@ -354,6 +369,11 @@ const Step: React.FC<StepProps> = ({ n, title, where, children }) => (
         <Typography variant="caption" color="text.secondary" display="block">
           {where}
         </Typography>
+        {note && (
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+            {note}
+          </Typography>
+        )}
       </Box>
     </Stack>
     <Stack spacing={1.5}>{children}</Stack>

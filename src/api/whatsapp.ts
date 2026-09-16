@@ -91,23 +91,32 @@ export interface WhatsAppSetupInfo {
   appSubscriptionError: string;
 }
 
-/** Одно слово о настройке Meta — для чипа на карточке подключения. */
-export type WhatsAppSetupState = "confirmed" | "pending" | "failed";
+/**
+ * Одно слово о настройке Meta — для чипа на карточке подключения.
+ *
+ * `noApp` — подключение без пары App ID + App secret: Raven'у некуда
+ * прописать вебхук, это не ошибка, а осознанное «пока без статусов».
+ */
+export type WhatsAppSetupState = "confirmed" | "pending" | "failed" | "noApp";
 
 export function setupState(setup: WhatsAppSetupInfo | undefined): WhatsAppSetupState {
   if (!setup) return "pending";
   if (setup.webhookConfirmed && setup.appSubscribed) return "confirmed";
+  if (!setup.appId) return "noApp";
   if (setup.webhookError || setup.appSubscriptionError) return "failed";
   return "pending";
 }
 
-/** Форма «Подключить WhatsApp»: пять значений из Meta плюс подпись. */
+/**
+ * Форма «Подключить WhatsApp»: три значения из Meta, по желанию пара
+ * App ID + App secret (только вместе — без неё вебхука не будет) и подпись.
+ */
 export interface WhatsAppConnectInput {
   wabaId: string;
   phoneNumberId: string;
   accessToken: string;
-  appId: string;
-  appSecret: string;
+  appId?: string;
+  appSecret?: string;
   displayName?: string;
   displayPhoneNumber?: string;
   organizationId?: number;

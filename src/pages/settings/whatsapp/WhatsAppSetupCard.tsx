@@ -11,6 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useMutation } from "@tanstack/react-query";
+import AddOutlined from "@mui/icons-material/AddOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import ReplayOutlined from "@mui/icons-material/ReplayOutlined";
@@ -31,12 +32,15 @@ const STATE_COLOR = {
   confirmed: "success",
   pending: "warning",
   failed: "error",
+  noApp: "default",
 } as const;
 
 interface WhatsAppSetupCardProps {
   setup: WhatsAppSetupInfo | undefined;
   organizationId: number;
   onUpdated: (data: WhatsAppSettings) => void;
+  /** Открыть форму переподключения — так добавляют пару App ID + App secret. */
+  onAddApp?: () => void;
 }
 
 /**
@@ -46,12 +50,15 @@ interface WhatsAppSetupCardProps {
  * не приходят — поэтому блок не прячет неудачу за общим «ошибка», а даёт
  * ровно два выхода: «Повторить настройку» (Raven пробует ещё раз с
  * сохранёнными данными) и ручной ввод Callback URL и Verify token в App
- * Dashboard, с кнопками копирования.
+ * Dashboard, с кнопками копирования. Подключение без пары App ID + App
+ * secret — отдельное состояние «без вебхука»: повторять нечего, выход один —
+ * переподключиться с парой.
  */
 export const WhatsAppSetupCard: React.FC<WhatsAppSetupCardProps> = ({
   setup,
   organizationId,
   onUpdated,
+  onAddApp,
 }) => {
   const { t } = useT("settings");
   const [error, setError] = useState<string | null>(null);
@@ -68,8 +75,9 @@ export const WhatsAppSetupCard: React.FC<WhatsAppSetupCardProps> = ({
     },
   });
 
-  const steps: { label: string; done: boolean; at: string | null; error: string }[] = setup
-    ? [
+  const steps: { label: string; done: boolean; at: string | null; error: string }[] =
+    setup && state !== "noApp"
+      ? [
         {
           label: t("whatsapp.setup.steps.registered"),
           done: setup.webhookRegistered,
@@ -137,7 +145,13 @@ export const WhatsAppSetupCard: React.FC<WhatsAppSetupCardProps> = ({
         </Stack>
       )}
 
-      {state !== "confirmed" && setup && (
+      {state === "noApp" && (
+        <Alert severity="info">
+          <Typography variant="body2">{t("whatsapp.setup.noAppText")}</Typography>
+        </Alert>
+      )}
+
+      {state !== "confirmed" && state !== "noApp" && setup && (
         <Alert severity={state === "failed" ? "warning" : "info"}>
           <Typography variant="body2" gutterBottom>
             {t("whatsapp.setup.manualIntro")}
@@ -152,7 +166,15 @@ export const WhatsAppSetupCard: React.FC<WhatsAppSetupCardProps> = ({
 
       {error && <Alert severity="error">{error}</Alert>}
 
-      {state !== "confirmed" && (
+      {state === "noApp" && onAddApp && (
+        <Box>
+          <Button size="small" variant="outlined" startIcon={<AddOutlined />} onClick={onAddApp}>
+            {t("whatsapp.setup.addApp")}
+          </Button>
+        </Box>
+      )}
+
+      {state !== "confirmed" && state !== "noApp" && (
         <Box>
           <Button
             size="small"

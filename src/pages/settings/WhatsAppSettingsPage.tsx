@@ -204,14 +204,17 @@ const WhatsAppSettingsPage: React.FC = () => {
               onConnected={(data) => {
                 applySettings(data);
                 setSyncError(null);
-                const confirmed = data.connection.setup?.webhookConfirmed ?? false;
+                const setup = data.connection.setup;
+                const confirmed = setup?.webhookConfirmed ?? false;
                 setMessage({
                   type: data.syncError ? "error" : confirmed ? "success" : "info",
                   text: data.syncError
                     ? t("whatsapp.bind.boundWithSyncError", { error: data.syncError })
                     : confirmed
                       ? t("whatsapp.connect.success")
-                      : t("whatsapp.connect.successNeedsWebhook"),
+                      : setup && !setup.appId
+                        ? t("whatsapp.connect.successNoWebhook")
+                        : t("whatsapp.connect.successNeedsWebhook"),
                 });
               }}
               onSetupUpdated={(data) => {
@@ -443,6 +446,7 @@ const ConnectionCard: React.FC<ConnectionCardProps> = ({
               setup={connection.setup}
               organizationId={organizationId}
               onUpdated={onSetupUpdated}
+              onAddApp={() => setReconnectOpen(true)}
             />
 
             <Box>

@@ -75,4 +75,12 @@ describe("setupState", () => {
     expect(setupState(undefined)).toBe("pending");
     expect(setupState(setup({ webhookConfirmed: false, webhookRegistered: false }))).toBe("pending");
   });
+
+  it("без пары App ID + App secret — «без вебхука», даже если подписка отвалилась", () => {
+    const noApp = { appId: "", webhookConfirmed: false, webhookRegistered: false };
+    expect(setupState(setup(noApp))).toBe("noApp");
+    expect(setupState(setup({ ...noApp, appSubscriptionError: "(#100)" }))).toBe("noApp");
+    // Вебхук, прописанный руками и подтверждённый Meta, важнее отсутствия пары.
+    expect(setupState(setup({ appId: "" }))).toBe("confirmed");
+  });
 });
