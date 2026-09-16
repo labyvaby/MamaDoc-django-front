@@ -2,28 +2,26 @@ import React from "react";
 import {
   Alert,
   Box,
+  Chip,
   Divider,
   Drawer,
   IconButton,
-  Skeleton,
   Stack,
   Tooltip,
   Typography,
 } from "@mui/material";
-import { alpha } from "@mui/material/styles";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
-import PhoneCallbackOutlined from "@mui/icons-material/PhoneCallbackOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import DateRangeOutlined from "@mui/icons-material/DateRangeOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
+import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import CalendarViewWeekOutlined from "@mui/icons-material/CalendarViewWeekOutlined";
 import HourglassBottomOutlined from "@mui/icons-material/HourglassBottomOutlined";
 import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
@@ -39,7 +37,6 @@ import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKey
 import {
   getWaitlistEntry,
   WAITLIST_ACTIVE_STATUSES,
-  type WaitlistContact,
   type WaitlistEntry,
 } from "../../api/waitlist";
 import {
@@ -50,7 +47,6 @@ import {
   waitingDays,
   waitingForLabel,
   weekdaysLabel,
-  WAITLIST_CONTACT_RESULT_META,
 } from "../../pages/waitlist/meta";
 import { WaitlistPriorityChip, WaitlistSourceChip, WaitlistStatusChip } from "./WaitlistChips";
 
@@ -61,7 +57,6 @@ export interface WaitlistDetailDrawerProps {
   canCreate: boolean;
   canManage: boolean;
   onClose: () => void;
-  onContact: (entry: WaitlistEntry) => void;
   onBook: (entry: WaitlistEntry) => void;
   onEdit: (entry: WaitlistEntry) => void;
   onCancel: (entry: WaitlistEntry) => void;
@@ -70,55 +65,12 @@ export interface WaitlistDetailDrawerProps {
 
 const SECTION_SX = { fontWeight: 600, fontSize: "0.8125rem", color: "text.secondary", mb: 1 } as const;
 
-const ContactItem: React.FC<{ contact: WaitlistContact; last: boolean }> = ({ contact, last }) => {
-  const { t } = useT("waitlist");
-  const meta = WAITLIST_CONTACT_RESULT_META[contact.result];
-  return (
-    <Stack direction="row" gap={1.5}>
-      {/* Точка результата и линия-связка до следующего звонка */}
-      <Stack alignItems="center" sx={{ pt: 0.6 }}>
-        <Box
-          sx={(th) => ({
-            width: 10,
-            height: 10,
-            borderRadius: "50%",
-            flexShrink: 0,
-            bgcolor: meta?.color ? th.palette[meta.color].main : th.palette.grey[500],
-          })}
-        />
-        {!last && <Box sx={{ width: "1px", flex: 1, bgcolor: "divider", my: 0.5 }} />}
-      </Stack>
-      <Box sx={{ minWidth: 0, pb: last ? 0 : 1.75 }}>
-        <Typography variant="body2" fontWeight={600}>
-          {meta?.label ?? contact.result}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" display="block">
-          {[contact.actorName, dayjs(contact.createdAt).format("DD.MM.YYYY HH:mm")]
-            .filter(Boolean)
-            .join(" · ")}
-        </Typography>
-        {contact.offeredStart && (
-          <Typography variant="caption" color="text.secondary" display="block">
-            {t("detail.offeredSlot", { slot: dayjs(contact.offeredStart).format("DD.MM HH:mm") })}
-          </Typography>
-        )}
-        {contact.note && (
-          <Typography variant="body2" sx={{ mt: 0.5, whiteSpace: "pre-wrap" }}>
-            {contact.note}
-          </Typography>
-        )}
-      </Box>
-    </Stack>
-  );
-};
-
 const WaitlistDetailDrawer: React.FC<WaitlistDetailDrawerProps> = ({
   entry: listEntry,
   organizationId,
   canCreate,
   canManage,
   onClose,
-  onContact,
   onBook,
   onEdit,
   onCancel,
@@ -138,7 +90,6 @@ const WaitlistDetailDrawer: React.FC<WaitlistDetailDrawerProps> = ({
   // Пока карточка догружается, показываем строку списка — она свежее кэша
   // карточки сразу после действия (список инвалидируется вместе с деталью).
   const entry: WaitlistEntry | null = detailQuery.data ?? listEntry;
-  const contacts = detailQuery.data?.contacts ?? null;
 
   React.useEffect(() => setCopied(false), [listEntry?.id]);
 
@@ -203,27 +154,19 @@ const WaitlistDetailDrawer: React.FC<WaitlistDetailDrawerProps> = ({
             <WaitlistStatusChip status={entry.status} />
             <WaitlistPriorityChip priority={entry.priority} />
             <WaitlistSourceChip source={entry.source} />
+            {entry.vaccine && (
+              <Chip
+                size="small"
+                icon={<VaccinesOutlined sx={{ fontSize: 15 }} />}
+                label={entry.vaccine.name}
+                sx={{ height: 22 }}
+              />
+            )}
           </Stack>
 
           {/* ── Действия ── */}
           {isActive && (
             <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2, "& .MuiButton-root": { whiteSpace: "nowrap" } }}>
-              <AppButton
-                variant="outlined"
-                href={`tel:${entry.phone}`}
-                startIcon={<PhoneOutlined fontSize="small" />}
-                sx={{ flex: 1, minWidth: 120 }}
-              >
-                {t("actions.call")}
-              </AppButton>
-              <AppButton
-                variant="outlined"
-                onClick={() => onContact(entry)}
-                startIcon={<PhoneCallbackOutlined fontSize="small" />}
-                sx={{ flex: 1, minWidth: 150 }}
-              >
-                {t("actions.contact")}
-              </AppButton>
               {canCreate && (
                 <AppButton
                   variant="contained"
@@ -319,46 +262,13 @@ const WaitlistDetailDrawer: React.FC<WaitlistDetailDrawerProps> = ({
             </>
           )}
 
-          {/* ── История звонков ── */}
-          <Stack direction="row" alignItems="baseline" justifyContent="space-between" sx={{ mt: 3 }}>
-            <Typography sx={SECTION_SX}>{t("detail.history")}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {t("waitingDays", { count: waitingDays(entry) })}
-            </Typography>
-          </Stack>
-          {detailQuery.isLoading ? (
-            <Stack spacing={1}>
-              <Skeleton variant="rounded" height={44} />
-              <Skeleton variant="rounded" height={44} />
-            </Stack>
-          ) : detailQuery.isError ? (
-            <Alert severity="error">{t("loadError")}</Alert>
-          ) : contacts && contacts.length > 0 ? (
-            <Box>
-              {[...contacts]
-                .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-                .map((c, i, arr) => (
-                  <ContactItem key={c.id} contact={c} last={i === arr.length - 1} />
-                ))}
-            </Box>
-          ) : (
-            <Box
-              sx={(th) => ({
-                p: 1.5,
-                borderRadius: "10px",
-                border: 1,
-                borderStyle: "dashed",
-                borderColor: alpha(th.palette.text.primary, 0.16),
-              })}
-            >
-              <Typography variant="body2" color="text.secondary">
-                {t("detail.historyEmpty")}
-              </Typography>
-            </Box>
-          )}
+          {detailQuery.isError && <Alert severity="error">{t("loadError")}</Alert>}
 
           {/* ── Служебное ── */}
           <Stack gap={0.25} sx={{ mt: 3 }}>
+            <Typography variant="caption" color="text.secondary">
+              {t("waitingDays", { count: waitingDays(entry) })}
+            </Typography>
             <Typography variant="caption" color="text.secondary">
               {entry.source === "public"
                 ? t("detail.createdFromSite", { date: dayjs(entry.createdAt).format("DD.MM.YYYY HH:mm") })

@@ -196,3 +196,34 @@ describe("напоминание", () => {
     expect(formatDurationMin(3 * 24 * 60)).toBe("3 дн.");
   });
 });
+
+describe("пропущенные заявки в воронке", () => {
+  it("«Ожидает» с прошедшим окном визита — пропущена, а не «ждёт»", () => {
+    const f = bookingFunnel(
+      [
+        // now = 15.09 12:00. Окно 10:00–10:30 закрылось — пропущена.
+        booking({ date: "2026-09-15", time: "10:00", totalDurationMin: 30 }),
+        // Начало прошло, окно ещё идёт — обычная очередь.
+        booking({ date: "2026-09-15", time: "11:45", totalDurationMin: 30 }),
+        booking({ date: "2026-09-16" }),
+      ],
+      now,
+    );
+    expect(f.missed).toBe(1);
+    expect(f.waiting).toBe(2);
+  });
+
+  it("неявка без приёма — пропущенная, закрытая из «Разобрать»; с приёмом — обычная неявка", () => {
+    const f = bookingFunnel(
+      [
+        booking({ status: "no_show", appointmentId: null }),
+        booking({ status: "no_show", appointmentId: 4 }),
+      ],
+      now,
+    );
+    expect(f.missed).toBe(1);
+    expect(f.noShow).toBe(1);
+    // Подтверждение — только у той, что прошла через приём.
+    expect(f.confirmed).toBe(1);
+  });
+});

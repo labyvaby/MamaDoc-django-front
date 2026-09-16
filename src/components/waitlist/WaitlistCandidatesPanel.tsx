@@ -13,7 +13,7 @@ import {
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
+import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -213,18 +213,17 @@ const WaitlistCandidatesPanel: React.FC<WaitlistCandidatesPanelProps> = ({
               )}
 
               <Stack direction="row" gap={1} flexWrap="wrap">
-                {/* Звонок из панели кандидатов = предложение этого окна:
-                    статус offered показывает второму регистратору, что по
-                    записи уже работают, и он не позвонит тому же человеку. */}
+                {/* Предложение окна = статус offered: второй регистратор
+                    видит, что по записи уже работают, и не займёт то же время. */}
                 <Tooltip title={t("candidates.offered")}>
                   <AppButton
                     size="small"
                     variant="outlined"
-                    href={`tel:${entry.phone}`}
-                    startIcon={<PhoneOutlined />}
+                    startIcon={<CampaignOutlined />}
                     onClick={() => offerMutation.mutate(entry)}
+                    disabled={offerMutation.isPending}
                   >
-                    {t("actions.call")}
+                    {t("candidates.offer")}
                   </AppButton>
                 </Tooltip>
                 <AppButton

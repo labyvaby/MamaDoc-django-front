@@ -325,21 +325,50 @@ export function isBookingOverdue(b: {
   return start.isValid() && start.isBefore(dayjs());
 }
 
+/** Конец окна визита: начало плюс длительность; без длительности — начало. */
+export function bookingEnd(date: string, time: string, durationMin: number | null | undefined) {
+  return bookingStart(date, time).add(durationMin || 0, "minute");
+}
+
+/**
+ * Пропущенная заявка: «Ожидает», у которой окно визита уже закрылось.
+ *
+ * Цикл онлайн-записи — заявка → приём в регистратуре → пациент пришёл. Если
+ * окно прошло, а приёма нет, пациента в это время не принимали, и подтверждать
+ * заявку нечего: приём создался бы задним числом на время, когда никто не
+ * пришёл. У такой заявки другие исходы — перезаписать, неявка, отмена
+ * (см. `MissedBookingActions`).
+ *
+ * Порог — конец окна, а не начало: пациент может опоздать, а регистратор —
+ * подтвердить заявку, пока визит ещё идёт.
+ */
+export function isBookingMissed(
+  b: { date: string; time: string; status: BookingStatus; totalDurationMin?: number | null },
+  now: Dayjs = dayjs(),
+): boolean {
+  if (b.status !== "pending") return false;
+  const end = bookingEnd(b.date, b.time, b.totalDurationMin);
+  return end.isValid() && end.isBefore(now);
+}
+
 /**
  * Приоритет разбора для сортировки списка: деньги пришли, а приёма не будет —
  * самое горящее (`prepaymentNeedsAttention`); дальше — оплаченные (ждут
- * подтверждения администратором) и просроченные «Ожидает»; остальное — как
- * раньше, по времени начала.
+ * подтверждения администратором) и «Ожидает», чей визит уже начался; остальное
+ * — как раньше, по времени начала. Пропущенные — в самый низ: в живой очереди
+ * счёт идёт на минуты, а по ним спешить уже некуда.
  */
 function bookingPriority(b: {
   date: string;
   time: string;
   status: BookingStatus;
+  totalDurationMin?: number | null;
   prepaymentStatus?: BookingPrepaymentStatus | null;
   prepaymentNeedsAttention?: boolean;
 }): number {
   if (b.prepaymentNeedsAttention) return 0;
   if (b.prepaymentStatus === "paid") return 1;
+  if (isBookingMissed(b)) return 4;
   if (isBookingOverdue(b)) return 2;
   return 3;
 }
@@ -354,6 +383,7 @@ export function sortBookingsByPriority<
     date: string;
     time: string;
     status: BookingStatus;
+    totalDurationMin?: number | null;
     prepaymentStatus?: BookingPrepaymentStatus | null;
     prepaymentNeedsAttention?: boolean;
   },
@@ -384,13 +414,16 @@ export type BookingTimeHint = {
  * Подсказка «когда»: скоро / сегодня / просрочена. Считается только для живых
  * броней — у завершённой или отменённой напоминать не о чем.
  *
- * Просроченной считаем `pending` с уже прошедшим временем: такая бронь висит
- * необработанной, и это главный повод открыть карточку.
+ * У `pending` с уже начавшимся визитом две стадии: пока окно визита идёт —
+ * «визит идёт, не подтверждена» (ещё можно подтвердить, пациент мог опоздать);
+ * после конца окна — «пропущена» (`isBookingMissed`), и подтверждать её уже
+ * нечего. Без `durationMin` конец окна равен началу.
  */
 export function bookingTimeHint(
   date: string,
   time: string,
   status: BookingStatus,
+  durationMin?: number | null,
 ): BookingTimeHint | null {
   if (isTerminalBookingStatus(status)) return null;
   // Бронь, ждущая оплаты, администратора не касается: её судьбу решает банк, а
@@ -403,8 +436,13 @@ export function bookingTimeHint(
 
   if (diffMin < 0) {
     if (status === "pending") {
+      const missed = isBookingMissed({ date, time, status, totalDurationMin: durationMin }, now);
       return {
-        text: start.isSame(now, "day") ? "время прошло, не обработана" : "просрочена",
+        text: missed
+          ? start.isSame(now, "day")
+            ? "пропущена сегодня"
+            : "пропущена"
+          : "визит идёт, не подтверждена",
         tone: "warning",
       };
     }

@@ -71,11 +71,14 @@ import { tt } from "../../../i18n/t";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
 import { useAuthUserNames } from "../../../hooks/useAuthUserNames";
+import { useAppointmentWorkflow } from "../../../hooks/useAppointmentWorkflow";
 import DjangoConclusionDrawer from "../DjangoConclusionDrawer";
 import { getConclusionSlots, type ConclusionSlot } from "../../../api/medical";
 import PatientQuickViewDrawer from "../../../components/patients/DjangoPatientQuickViewDrawer";
 import DjangoEditPatientDrawer from "../../../components/patients/DjangoEditPatientDrawer";
-import ServiceQuickViewDrawer from "../../../components/services/DjangoServiceQuickViewDrawer";
+import ServiceQuickViewDrawer, {
+  type ServiceQuickViewFallback,
+} from "../../../components/services/DjangoServiceQuickViewDrawer";
 import ProductQuickViewDrawer from "../../../components/products/DjangoProductQuickViewDrawer";
 import AppointmentPatientCard from "./details/AppointmentPatientCard";
 import AppointmentWhenBlock from "./details/AppointmentWhenBlock";
@@ -178,6 +181,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const theme = useTheme();
   const orgId = useApiOrgId();
   const { isDoctor, isNurse, activeEmployee } = usePermissions();
+  // Шаг «Подтверждён» организация может выключить в настройках — тогда
+  // действие не показываем, а уже подтверждённые приёмы не трогаем.
+  const { confirmStep } = useAppointmentWorkflow();
   // Каждое действие заключения проверяет ровно то право, которое требует API.
   // Объединять view/create/update нельзя: иначе фронт показывает действие,
   // которое сервер затем корректно отклоняет с 403.
@@ -215,6 +221,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const [selectedDoctorPhotoUrl, setSelectedDoctorPhotoUrl] = React.useState<string | null>(null);
   const [serviceDrawerOpen, setServiceDrawerOpen] = React.useState(false);
   const [selectedServiceId, setSelectedServiceId] = React.useState<number | null>(null);
+  const [selectedServiceFallback, setSelectedServiceFallback] =
+    React.useState<ServiceQuickViewFallback | null>(null);
   const [productDrawerOpen, setProductDrawerOpen] = React.useState(false);
   const [selectedProductId, setSelectedProductId] = React.useState<number | null>(null);
   const [selectedProductName, setSelectedProductName] = React.useState<string | null>(null);
@@ -655,7 +663,14 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const actions: HeaderAction[] = [];
 
   // Подтвердить — пациент подтвердил визит по телефону, но ещё не пришёл.
-  if (canUpdate && onConfirmVisit && appt.status === "scheduled" && !isPaymentAccepted) {
+  // Шаг выключается на организацию (Настройки → Организация → Ход приёма).
+  if (
+    confirmStep &&
+    canUpdate &&
+    onConfirmVisit &&
+    appt.status === "scheduled" &&
+    !isPaymentAccepted
+  ) {
     actions.push({
       key: "confirm",
       label: t("details.confirm"),
@@ -1107,6 +1122,21 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     setDoctorDrawerOpen(true);
                   }}
                   onServiceClick={(serviceId) => {
+                    // Запасные данные из строки приёма: карточку каталога бэк
+                    // отдаёт только по активному филиалу, и услуга приёма из
+                    // соседнего филиала отвечает 404 (дровер был пустым).
+                    const line = appt.services.find((sl) => sl.service?.id === serviceId);
+                    setSelectedServiceFallback(
+                      line?.service
+                        ? {
+                            name: line.service.name,
+                            imageUrl: line.service.imageUrl ?? null,
+                            price:
+                              Number(line.price) > 0 ? line.price : line.service.basePrice ?? null,
+                            durationMinutes: line.durationMinutes ?? null,
+                          }
+                        : null,
+                    );
                     setSelectedServiceId(serviceId);
                     setServiceDrawerOpen(true);
                   }}
@@ -1283,6 +1313,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         open={patientDrawerOpen}
         onClose={() => setPatientDrawerOpen(false)}
         patientId={appt.patient?.id ?? null}
+        fallback={appt.patient}
       />
       <DjangoEditPatientDrawer
         open={editPatientOpen}
@@ -1295,8 +1326,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         onClose={() => {
           setServiceDrawerOpen(false);
           setSelectedServiceId(null);
+          setSelectedServiceFallback(null);
         }}
         serviceId={selectedServiceId}
+        fallback={selectedServiceFallback}
       />
       <ProductQuickViewDrawer
         open={productDrawerOpen}

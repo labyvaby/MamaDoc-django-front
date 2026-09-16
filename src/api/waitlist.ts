@@ -28,6 +28,20 @@ export const WAITLIST_USE_MOCKS = false;
  */
 export const WAITLIST_MODULE_ENABLED = true;
 
+/**
+ * Вакцина в записи: пикер в форме, чип в списке и блок «Ждут вакцину» на
+ * главном экране модуля.
+ *
+ * ⚠ Пока false: поля на бэке нет, и проверено на test 16.09.2026 — `POST
+ * /api/waitlist/` с `vaccineId` отвечает 201 и **молча теряет** значение
+ * (в ответе поля нет). Включать до выкладки нельзя: регистратор выбирал бы
+ * препарат, а он бы не сохранялся. Снять флаг после тикета
+ * `backend_ticket_waitlist_vaccine.md` (поле `vaccine`, фильтр `vaccineId`,
+ * агрегат `byVaccine` в summary, валидация «врач ИЛИ специализация ИЛИ
+ * вакцина»).
+ */
+export const WAITLIST_VACCINE_LIVE = false;
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type WaitlistStatus = "waiting" | "offered" | "scheduled" | "cancelled" | "expired";
@@ -66,6 +80,12 @@ export interface WaitlistContact {
   createdAt: string;
 }
 
+/** Товар-вакцина склада (`/warehouse/products/?isVaccine=true`). */
+export interface WaitlistVaccineRef {
+  id: number;
+  name: string;
+}
+
 export interface WaitlistEntry {
   id: number;
   /** Карта пациента, если он уже в базе; иначе запись живёт как имя + телефон. */
@@ -79,6 +99,11 @@ export interface WaitlistEntry {
   specializationId: number | null;
   specializationName: string | null;
   services: WaitlistServiceRef[];
+  /**
+   * «Жду, когда привезут этот препарат»; null — вакцина не при чём.
+   * `undefined` — окружение, где поля ещё нет (см. WAITLIST_VACCINE_LIVE).
+   */
+  vaccine?: WaitlistVaccineRef | null;
   branchId: number | null;
   branchName: string | null;
   /** Желаемый период, `YYYY-MM-DD`. Пусто с обеих сторон = «когда угодно». */
@@ -124,6 +149,8 @@ export interface WaitlistFilters {
   status?: WaitlistStatus | readonly WaitlistStatus[];
   employeeId?: number;
   specializationId?: number;
+  /** Товар-вакцина; `byVaccine` в сводке кликом уводит сюда. */
+  vaccineId?: number;
   /**
    * Филиал записи. Бэк сам по филиалу сессии НЕ режет (проверено на проде
    * 10.09.2026: запись филиала 13 видна из сессии филиала 1), но параметр
@@ -155,12 +182,25 @@ export interface WaitlistFilters {
   matchBranchId?: number;
 }
 
+export interface WaitlistVaccineDemand {
+  id: number;
+  name: string;
+  count: number;
+  urgentCount: number;
+}
+
 export interface WaitlistSummary {
   waiting: number;
   offered: number;
   urgent: number;
   /** Записи, у которых activeUntil на подходе (порог задаёт бэк). */
   expiringSoon: number;
+  /**
+   * Сколько человек ждут каждую вакцину (активные записи, сортировка по count).
+   * Появляется вместе с полем `vaccine` на бэке — до этого ключа нет, поэтому
+   * поле необязательное.
+   */
+  byVaccine?: WaitlistVaccineDemand[];
 }
 
 export interface CreateWaitlistPayload {
@@ -170,6 +210,8 @@ export interface CreateWaitlistPayload {
   employeeId?: number | null;
   specializationId?: number | null;
   serviceIds?: number[];
+  /** Товар-вакцина склада; ориентир наравне с врачом и специализацией. */
+  vaccineId?: number | null;
   branchId?: number | null;
   desiredDateFrom?: string | null;
   desiredDateTo?: string | null;
@@ -189,6 +231,7 @@ export interface UpdateWaitlistPayload extends Partial<CreateWaitlistPayload> {
   clearPatient?: boolean;
   clearEmployee?: boolean;
   clearSpecialization?: boolean;
+  clearVaccine?: boolean;
   clearBranch?: boolean;
   clearDesiredDates?: boolean;
   clearDesiredTimes?: boolean;
@@ -413,6 +456,7 @@ function buildParams(filters: WaitlistFilters): URLSearchParams {
   if (filters.specializationId != null) {
     q.set("specializationId", String(filters.specializationId));
   }
+  if (filters.vaccineId != null) q.set("vaccineId", String(filters.vaccineId));
   if (filters.branchId != null) q.set("branchId", String(filters.branchId));
   if (filters.priority) q.set("priority", filters.priority);
   if (filters.source) q.set("source", filters.source);
@@ -446,6 +490,7 @@ export function getWaitlist(
       list = list.filter((e) => wanted.includes(e.status));
     }
     if (filters.employeeId != null) list = list.filter((e) => e.employeeId === filters.employeeId);
+    if (filters.vaccineId != null) list = list.filter((e) => e.vaccine?.id === filters.vaccineId);
     if (filters.specializationId != null) {
       list = list.filter((e) => e.specializationId === filters.specializationId);
     }

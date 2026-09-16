@@ -11,12 +11,14 @@ import {
   RadioGroup,
   Skeleton,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import TranslateOutlined from "@mui/icons-material/TranslateOutlined";
 import SpellcheckOutlined from "@mui/icons-material/SpellcheckOutlined";
 import FileUploadOutlined from "@mui/icons-material/FileUploadOutlined";
@@ -47,6 +49,10 @@ import {
   type GlossaryOverrides,
 } from "../../i18n/glossaryOverrides";
 import type { Vertical } from "../../i18n/types";
+import {
+  buildAppointmentWorkflowThemeConfig,
+  readAppointmentWorkflow,
+} from "../../config/appointmentWorkflow";
 import TerminologyDrawer from "./terminology/TerminologyDrawer";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -121,6 +127,9 @@ const OrganizationSettingsPage: React.FC = () => {
   const [overlapMode, setOverlapMode] =
     React.useState<AppointmentOverlapMode>("forbid");
   const [vertical, setVertical] = React.useState<Vertical>("clinic");
+  // Шаг «Подтверждён» в ходе приёма: живёт в themeConfig, но правится и
+  // сохраняется вместе с остальной формой (в отличие от терминологии).
+  const [confirmStep, setConfirmStep] = React.useState(true);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -153,6 +162,7 @@ const OrganizationSettingsPage: React.FC = () => {
       setScope(data.patientScope);
       setOverlapMode(data.appointmentOverlapMode);
       setVertical(data.vertical);
+      setConfirmStep(readAppointmentWorkflow(data.themeConfig).confirmStep);
       setOverrides(readGlossaryOverrides(data.themeConfig));
     } catch (err) {
       setLoadError(extractErrorMessage(err));
@@ -170,11 +180,14 @@ const OrganizationSettingsPage: React.FC = () => {
   const scopeDirty = !!org && scope !== org.patientScope;
   const overlapDirty = !!org && overlapMode !== org.appointmentOverlapMode;
   const verticalDirty = !!org && vertical !== org.vertical;
+  const confirmStepDirty =
+    !!org && confirmStep !== readAppointmentWorkflow(org.themeConfig).confirmStep;
   // Основа терминологии — СОХРАНЁННАЯ вертикаль: несохранённое переключение
   // радиокнопки не должно менять эталон, от которого считаются оверрайды.
   const termBase = getGlossary(org?.vertical);
   const changedCount = changedTermKeys(termBase, overrides).length;
-  const dirty = nameDirty || scopeDirty || overlapDirty || verticalDirty;
+  const dirty =
+    nameDirty || scopeDirty || overlapDirty || verticalDirty || confirmStepDirty;
 
   // Название обязательно: пустое поле блокирует сохранение и получает фокус.
   const form = useFormValidation({
@@ -193,17 +206,24 @@ const OrganizationSettingsPage: React.FC = () => {
         ...(scopeDirty ? { patientScope: scope } : {}),
         ...(overlapDirty ? { appointmentOverlapMode: overlapMode } : {}),
         ...(verticalDirty ? { vertical } : {}),
+        // themeConfig — общий мешок (палитра, лендинг, терминология): патч
+        // строится поверх текущего значения, иначе сотрём остальное.
+        ...(confirmStepDirty
+          ? { themeConfig: buildAppointmentWorkflowThemeConfig(org.themeConfig, { confirmStep }) }
+          : {}),
       });
       setOrg(updated);
       setName(updated.name);
       setScope(updated.patientScope);
       setOverlapMode(updated.appointmentOverlapMode);
       setVertical(updated.vertical);
+      setConfirmStep(readAppointmentWorkflow(updated.themeConfig).confirmStep);
       setSaved(true);
       // Название организации показывается в переключателе контекста в сайдбаре,
-      // а вертикаль меняет глоссарий по всему приложению — перечитываем
-      // /auth/me/, чтобы обновилось без перезагрузки страницы.
-      if (nameDirty || verticalDirty) retryAuth();
+      // вертикаль меняет глоссарий по всему приложению, а ход приёма читается
+      // из activeOrganization — перечитываем /auth/me/, чтобы обновилось без
+      // перезагрузки страницы.
+      if (nameDirty || verticalDirty || confirmStepDirty) retryAuth();
     } catch (err) {
       setSaveError(extractErrorMessage(err));
     } finally {
@@ -485,6 +505,42 @@ const OrganizationSettingsPage: React.FC = () => {
                   />
                 ))}
               </RadioGroup>
+            </FormControl>
+
+            {/* Ход приёма: шаг «Подтверждён» */}
+            <FormControl disabled={!canUpdate || busy}>
+              <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
+                <EventAvailableOutlined fontSize="small" color="action" />
+                <FormLabel sx={{ fontWeight: 600 }}>
+                  {t("organization.workflow.sectionTitle")}
+                </FormLabel>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" mb={1}>
+                {t("organization.workflow.sectionHint")}
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={confirmStep}
+                    onChange={(e) => {
+                      setConfirmStep(e.target.checked);
+                      setSaved(false);
+                    }}
+                  />
+                }
+                sx={{ alignItems: "flex-start", ml: 0, mt: 0.5 }}
+                label={
+                  <Box sx={{ py: 0.25, ml: 0.5 }}>
+                    <Typography variant="body2" fontWeight={500}>
+                      {t("organization.workflow.confirmStep.label")}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("organization.workflow.confirmStep.hint")}
+                    </Typography>
+                  </Box>
+                }
+              />
             </FormControl>
 
             {/* Профиль терминологии: стандартный набор вертикалей */}
