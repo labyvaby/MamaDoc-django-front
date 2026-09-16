@@ -53,12 +53,27 @@ import { AppButton, AppCard, UserAvatar } from "../ui";
  * раскрывается по наведению — тогда же встаёт таймер автозакрытия, так что
  * подробности не убегают из-под курсора. На тачскрине наводить нечем, там
  * карточка сразу развёрнута.
+ *
+ * Раскрытая часть растёт вверх (стек прижат к низу экрана), то есть карточка
+ * уезжает из-под курсора. Отсюда два правила: раскрываем с задержкой
+ * `EXPAND_DELAY_MS`, чтобы клик «в движении» не попал в подставленную кнопку,
+ * и крестик показываем только в раскрытом виде — в свёрнутом он был бы виден,
+ * но недоступен.
  */
 
 /** Сколько карточек показываем одновременно; остальное — в свёрнутой строке. */
 const MAX_VISIBLE = 3;
 /** Сколько живёт карточка, пока на неё не навели мышь. */
 const AUTO_HIDE_MS = 15_000;
+/**
+ * Задержка перед раскрытием карточки под курсором.
+ *
+ * Стек прижат к низу экрана, поэтому раскрытая часть растёт не вниз, а вверх —
+ * карточка уезжает из-под курсора, и на месте свёрнутой строки оказывается
+ * кнопка «Открыть заявку». Без задержки клик «в движении» по свёрнутому тосту
+ * попадал бы в неё, открывая заявку, которую никто не просил открывать.
+ */
+const EXPAND_DELAY_MS = 180;
 
 const SOURCE_META: Record<BookingSource, { label: string; icon: React.ReactNode }> = {
   public: { label: "сайт клиники", icon: <LanguageOutlined /> },
@@ -162,10 +177,29 @@ interface ToastCardProps {
 
 const ToastCard: React.FC<ToastCardProps> = ({ booking: b, onOpen, onDismiss }) => {
   const hasHover = useHasHover();
+  // Наведение и раскрытие — разные состояния: отсчёт встаёт на паузу сразу,
+  // иначе карточка исчезала бы под курсором, а разворачивается она с задержкой.
+  const [hovering, setHovering] = React.useState(false);
   const [active, setActive] = React.useState(false);
+  const expandTimer = React.useRef<number>();
+
+  const enter = (immediate: boolean) => {
+    window.clearTimeout(expandTimer.current);
+    setHovering(true);
+    // Клавиатуре задержка не нужна: фокус приходит один раз и осознанно.
+    if (immediate) setActive(true);
+    else expandTimer.current = window.setTimeout(() => setActive(true), EXPAND_DELAY_MS);
+  };
+  const leave = () => {
+    window.clearTimeout(expandTimer.current);
+    setHovering(false);
+    setActive(false);
+  };
+  React.useEffect(() => () => window.clearTimeout(expandTimer.current), []);
+
   // Таймер держим только настоящим наведением: на тачскрине карточка развёрнута
   // всегда, и вечно висящего тоста из этого получаться не должно.
-  const paused = hasHover && active;
+  const paused = hasHover && hovering;
   useAutoDismiss(paused, onDismiss);
   const expanded = !hasHover || active;
 
@@ -182,10 +216,10 @@ const ToastCard: React.FC<ToastCardProps> = ({ booking: b, onOpen, onDismiss }) 
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={{ opacity: 0, x: 32, scale: 0.96, transition: { duration: 0.2 } }}
       transition={{ type: "spring", stiffness: 420, damping: 34 }}
-      onMouseEnter={() => setActive(true)}
-      onMouseLeave={() => setActive(false)}
-      onFocusCapture={() => setActive(true)}
-      onBlurCapture={() => setActive(false)}
+      onMouseEnter={() => enter(false)}
+      onMouseLeave={leave}
+      onFocusCapture={() => enter(true)}
+      onBlurCapture={leave}
       sx={{ width: "100%", pointerEvents: "auto" }}
     >
       <AppCard
@@ -195,7 +229,8 @@ const ToastCard: React.FC<ToastCardProps> = ({ booking: b, onOpen, onDismiss }) 
         sx={(t) => ({
           position: "relative",
           overflow: "hidden",
-          borderColor: alpha(t.palette.primary.main, active ? 0.45 : 0.3),
+          // Рамка отзывается сразу на наведение, не дожидаясь раскрытия.
+          borderColor: alpha(t.palette.primary.main, hovering ? 0.45 : 0.3),
           bgcolor: "background.paper",
           transition: "border-color .15s ease",
           // Тень — исключение из плоского стиля, и оно оправдано: тост висит
@@ -213,6 +248,8 @@ const ToastCard: React.FC<ToastCardProps> = ({ booking: b, onOpen, onDismiss }) 
             textAlign: "left",
             px: 1.5,
             py: 1.25,
+            // Место под крестик держим всегда, хотя в свёрнутом виде его нет:
+            // иначе при раскрытии строка с именем меняла бы ширину и дёргалась.
             pr: 4.5,
           }}
         >
@@ -356,27 +393,34 @@ const ToastCard: React.FC<ToastCardProps> = ({ booking: b, onOpen, onDismiss }) 
           )}
         </AnimatePresence>
 
-        {/* Крестик поверх карточки: в свёрнутом виде отдельной строки под него нет */}
-        <Tooltip title="Скрыть — заявка останется новой">
-          <IconButton
-            size="small"
-            aria-label="Скрыть уведомление"
-            onClick={onDismiss}
-            sx={{
-              position: "absolute",
-              top: 6,
-              right: 6,
-              width: 24,
-              height: 24,
-              borderRadius: "8px",
-              color: "text.disabled",
-              "&:hover": { color: "text.primary", bgcolor: (t) => subtleBg(t, true) },
-              "& .MuiSvgIcon-root": { fontSize: 15 },
-            }}
-          >
-            <CloseOutlined />
-          </IconButton>
-        </Tooltip>
+        {/*
+          Крестик живёт только в раскрытой карточке — там он стоит на месте.
+          В свёрнутой его показывать нельзя: карточка раскрывается прямо под
+          курсором и уезжает вверх, так что нажать на видимый крестик было бы
+          невозможно — он уходил бы из-под пальца ровно в момент клика.
+        */}
+        {expanded && (
+          <Tooltip title="Скрыть — заявка останется новой">
+            <IconButton
+              size="small"
+              aria-label="Скрыть уведомление"
+              onClick={onDismiss}
+              sx={{
+                position: "absolute",
+                top: 6,
+                right: 6,
+                width: 24,
+                height: 24,
+                borderRadius: "8px",
+                color: "text.disabled",
+                "&:hover": { color: "text.primary", bgcolor: (t) => subtleBg(t, true) },
+                "& .MuiSvgIcon-root": { fontSize: 15 },
+              }}
+            >
+              <CloseOutlined />
+            </IconButton>
+          </Tooltip>
+        )}
 
         {/* Полоска автозакрытия: видно, сколько осталось и что наведение её держит */}
         <Box
