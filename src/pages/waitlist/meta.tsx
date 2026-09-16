@@ -4,7 +4,6 @@ import { ApiError } from "../../api/client";
 import type { ToneName } from "../../components/ui/TonedChip";
 import { tt } from "../../i18n/t";
 import type {
-  WaitlistContactResult,
   WaitlistEntry,
   WaitlistPriority,
   WaitlistSource,
@@ -105,36 +104,6 @@ export const WAITLIST_SOURCE_META: Record<WaitlistSource, { readonly label: stri
   },
 };
 
-export const WAITLIST_CONTACT_RESULT_META: Record<
-  WaitlistContactResult,
-  { readonly label: string; color: ToneName }
-> = {
-  no_answer: {
-    get label() {
-      return tt("waitlist:contactResult.no_answer");
-    },
-    color: "warning",
-  },
-  refused: {
-    get label() {
-      return tt("waitlist:contactResult.refused");
-    },
-    color: "error",
-  },
-  agreed: {
-    get label() {
-      return tt("waitlist:contactResult.agreed");
-    },
-    color: "success",
-  },
-  callback_later: {
-    get label() {
-      return tt("waitlist:contactResult.callback_later");
-    },
-    color: "info",
-  },
-};
-
 export const WAITLIST_STATUS_OPTIONS = (Object.keys(WAITLIST_STATUS_META) as WaitlistStatus[]).map(
   (value) => ({ value, get label() {
     return WAITLIST_STATUS_META[value].label;
@@ -197,6 +166,9 @@ export function waitingForLabel(entry: WaitlistEntry): string {
   if (entry.specializationName) {
     return `${tt("waitlist:anySpecialist")} · ${entry.specializationName}`;
   }
+  // Запись «жду Пентаксим, врач любой»: ориентир — препарат, и писать
+  // «любой специалист» вместо него бессмысленно.
+  if (entry.vaccine) return entry.vaccine.name;
   return tt("waitlist:anySpecialist");
 }
 

@@ -8,7 +8,6 @@ import {
   Drawer,
   FormControlLabel,
   IconButton,
-  MenuItem,
   Stack,
   Switch,
   TextField,
@@ -16,14 +15,18 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import { createFilterOptions } from "@mui/material/Autocomplete";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
+import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { AppButton, CustomDatePicker, PhoneCountryCodeSelect } from "../ui";
 import { useT } from "../../i18n/VerticalProvider";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { usePermissions } from "../../hooks/usePermissions";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { doctorEmployeesOnly, useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import { usePhoneLocalInput } from "../../hooks/usePhoneLocalInput";
@@ -37,10 +40,13 @@ import {
   type PhoneCountryCode,
 } from "../../utility/phone";
 import { searchPatients, type DjangoPatient } from "../../api/patients";
-import { getSpecializations } from "../../api/staff";
-import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
+import DjangoAddPatientDrawer from "../patients/DjangoAddPatientDrawer";
+import type { DjangoEmployeeListItem } from "../../api/staff";
+import { DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
+import { getProducts, productAvailableStock, type DjangoProduct } from "../../api/warehouse";
 import {
   createWaitlistEntry,
+  WAITLIST_VACCINE_LIVE,
   updateWaitlistEntry,
   type CreateWaitlistPayload,
   type WaitlistEntry,
@@ -70,6 +76,38 @@ export interface WaitlistDrawerProps {
 
 const SECTION_SX = { fontWeight: 600, fontSize: "0.8125rem", color: "text.secondary" } as const;
 
+/**
+ * Поиск по пикеру специалистов — локальный: справочник уже загружен целиком
+ * (useAllActiveEmployees), а по специальности бэк искать всё равно не умеет.
+ * Совпадение ищем в любом месте строки: в регистратуре чаще помнят фамилию, а
+ * не имя, с которого начинается fullName.
+ */
+/**
+ * Дефолт «когда удобно»: ближайшая неделя в рабочие часы. Пустые поля читались
+ * как «когда угодно», но регистратор почти всегда вписывал одно и то же — проще
+ * подставить и дать кнопку «Когда угодно», чтобы снять рамки одним кликом.
+ */
+const DEFAULT_DATE_RANGE_DAYS = 7;
+const DEFAULT_TIME_FROM = "09:00";
+const DEFAULT_TIME_TO = "18:00";
+
+const employeeFilter = createFilterOptions<DjangoEmployeeListItem>({
+  matchFrom: "any",
+  trim: true,
+  stringify: (emp) =>
+    [emp.fullName, emp.nickname, ...emp.specializations.map((s) => s.name)]
+      .filter(Boolean)
+      .join(" "),
+});
+
+const EMPTY_VACCINES: DjangoProduct[] = [];
+
+const vaccineFilter = createFilterOptions<DjangoProduct>({
+  matchFrom: "any",
+  trim: true,
+  stringify: (product) => product.name,
+});
+
 const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
   open,
   onClose,
@@ -80,7 +118,11 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
   const { t } = useT("waitlist");
   const orgId = useApiOrgId();
   const scope = useActiveScope();
+  const { hasPermission, isSuperAdmin } = usePermissions();
   const isEdit = entry != null;
+  // Заводить карту прямо отсюда может только тот, кому это разрешено вообще:
+  // регистратор без patients.create упёрся бы в 403 уже после заполнения формы.
+  const canCreatePatient = isSuperAdmin() || hasPermission("patients.create");
 
   // ── Поля формы ──
   const [patient, setPatient] = React.useState<DjangoPatient | null>(null);
@@ -90,6 +132,12 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
   );
   const [phoneLocal, setPhoneLocal] = React.useState("");
   const [employeeId, setEmployeeId] = React.useState<number | "">("");
+  const [vaccineId, setVaccineId] = React.useState<number | "">("");
+  /**
+   * Своего поля у специальности в форме нет: в CRM ждут конкретного врача.
+   * Состояние остаётся ради записей с витрины — там пациент выбирает
+   * специальность без врача, и правка из CRM не должна её затирать.
+   */
   const [specializationId, setSpecializationId] = React.useState<number | "">("");
   const [dateFrom, setDateFrom] = React.useState<Dayjs | null>(null);
   const [dateTo, setDateTo] = React.useState<Dayjs | null>(null);
@@ -113,23 +161,25 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
     setCountryCode(parsed.countryCode);
     setPhoneLocal(parsed.local);
     setEmployeeId(src?.employeeId ?? prefill?.employeeId ?? "");
+    setVaccineId(src?.vaccine?.id ?? "");
     setSpecializationId(src?.specializationId ?? prefill?.specializationId ?? "");
-    setDateFrom(
-      src?.desiredDateFrom
-        ? dayjs(src.desiredDateFrom)
-        : prefill?.desiredDateFrom
-          ? dayjs(prefill.desiredDateFrom)
-          : null,
-    );
-    setDateTo(
-      src?.desiredDateTo
-        ? dayjs(src.desiredDateTo)
-        : prefill?.desiredDateTo
+    // У сохранённой записи пустое поле — осознанное «когда угодно», его не
+    // трогаем. Дефолты подставляем только новой записи.
+    if (src) {
+      setDateFrom(src.desiredDateFrom ? dayjs(src.desiredDateFrom) : null);
+      setDateTo(src.desiredDateTo ? dayjs(src.desiredDateTo) : null);
+      setTimeFrom(src.desiredTimeFrom ?? "");
+      setTimeTo(src.desiredTimeTo ?? "");
+    } else {
+      setDateFrom(prefill?.desiredDateFrom ? dayjs(prefill.desiredDateFrom) : dayjs());
+      setDateTo(
+        prefill?.desiredDateTo
           ? dayjs(prefill.desiredDateTo)
-          : null,
-    );
-    setTimeFrom(src?.desiredTimeFrom ?? "");
-    setTimeTo(src?.desiredTimeTo ?? "");
+          : dayjs().add(DEFAULT_DATE_RANGE_DAYS, "day"),
+      );
+      setTimeFrom(DEFAULT_TIME_FROM);
+      setTimeTo(DEFAULT_TIME_TO);
+    }
     setWeekdays(src?.desiredWeekdays ?? []);
     setUrgent(src?.priority === "urgent");
     setComment(src?.comment ?? "");
@@ -137,35 +187,57 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
   }, [open, entry, prefill]);
 
   // ── Справочники ──
-  const { employees } = useAllActiveEmployees(open);
-  const specializationsQuery = useQuery({
-    queryKey: djangoQueryKeys.staff.specializations(orgId),
-    queryFn: ({ signal }) => getSpecializations(signal),
-    enabled: open,
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-  });
-  const specializations = specializationsQuery.data ?? [];
-
+  const { employees, isLoading: employeesLoading } = useAllActiveEmployees(open);
   /**
-   * В пикер попадают только врачи, и при выбранной специальности — лишь те, у
-   * кого она есть. Раньше селект отдавал весь штат: регистраторы и уборщицы
-   * стояли вперемешку с врачами, а окон у них не бывает.
+   * В пикер попадают только врачи: регистраторы и уборщицы стояли вперемешку с
+   * врачами, а окон у них не бывает. Сохранённого специалиста подмешиваем, даже
+   * если он из списка выпал (уволен, другой филиал) — иначе при правке старой
+   * записи поле показало бы пустоту и молча подменило ориентир.
    */
   const employeeOptions = React.useMemo(() => {
-    const doctors = doctorEmployeesOnly(employees);
-    const list =
-      specializationId === ""
-        ? doctors
-        : doctors.filter((e) => e.specializations.some((s) => s.id === specializationId));
-    // Уже сохранённого специалиста из списка не выкидываем, даже если он под
-    // фильтр не подходит: иначе при правке старой записи селект показал бы
-    // пустоту и молча подменил ориентир.
+    const list = doctorEmployeesOnly(employees);
     if (employeeId !== "" && !list.some((e) => e.id === employeeId)) {
       const current = employees.find((e) => e.id === employeeId);
       if (current) return [current, ...list];
     }
     return list;
-  }, [employees, specializationId, employeeId]);
+  }, [employees, employeeId]);
+
+  /**
+   * Вакцины — товары склада с `isVaccine`, а не отдельный справочник: остаток
+   * берём тот же, по которому препарат спишется в приёме, поэтому в пикере
+   * сразу видно, есть ли чего ждать. `branchId` даёт остаток своего филиала.
+   */
+  const vaccinesQuery = useQuery({
+    queryKey: ["django", "warehouse", "products", "waitlist-vaccine-picker", orgId, scope.branchId],
+    queryFn: ({ signal }) =>
+      getProducts(signal, {
+        organizationId: orgId,
+        isVaccine: true,
+        branchId: scope.branchId ?? undefined,
+      }),
+    enabled: open && WAITLIST_VACCINE_LIVE,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+  const vaccines = vaccinesQuery.data ?? EMPTY_VACCINES;
+  const selectedVaccine = React.useMemo(
+    () => vaccines.find((v) => v.id === vaccineId) ?? null,
+    [vaccines, vaccineId],
+  );
+
+  const selectedEmployee = React.useMemo(
+    () => employeeOptions.find((e) => e.id === employeeId) ?? null,
+    [employeeOptions, employeeId],
+  );
+
+  /**
+   * Имя и телефон руками больше не вводим: в очередь ставим карту пациента, а
+   * если её нет — заводим прямо отсюда. Поля остаются только у записей с
+   * витрины: там пациент оставил контакт без карты, и правка из CRM не должна
+   * терять возможность его исправить.
+   */
+  const showContactFields = isEdit && entry?.patientId == null;
+  const [addPatientOpen, setAddPatientOpen] = React.useState(false);
 
   // ── Поиск пациента в базе ──
   const [patientSearch, setPatientSearch] = React.useState("");
@@ -178,6 +250,18 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
   });
 
   /**
+   * Только что заведённая карта в выдачу поиска не попадает (запрос уже
+   * отработал по старой строке), а MUI показывает value, которого нет в
+   * options, с предупреждением и не подсвечивает строку в списке. Поэтому
+   * выбранную карту всегда держим первой опцией.
+   */
+  const patientOptions = React.useMemo(() => {
+    const found = patientsQuery.data ?? [];
+    if (patient && !found.some((p) => p.id === patient.id)) return [patient, ...found];
+    return found;
+  }, [patientsQuery.data, patient]);
+
+  /**
    * Подсказка «такая карта уже есть». Бэк ищет телефон подстрокой, поэтому
    * сверяем хвост из 9 цифр — иначе на «700» приезжает пол-картотеки и
    * предупреждение становится ложным (грабли модуля пациентов).
@@ -186,7 +270,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
   const duplicateQuery = useQuery({
     queryKey: ["django", "patients", "waitlist-dup", phoneTail, scope.organizationId],
     queryFn: ({ signal }) => searchPatients(scope, phoneTail, 5, signal),
-    enabled: open && !isEdit && patient == null && phoneTail.length === 9 && scope.orgReady,
+    enabled: open && showContactFields && patient == null && phoneTail.length === 9 && scope.orgReady,
     staleTime: 30_000,
   });
   const duplicate = React.useMemo(() => {
@@ -204,6 +288,33 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
     }
   };
 
+  const anyDate = dateFrom == null && dateTo == null;
+  const anyTime = !timeFrom && !timeTo;
+
+  /**
+   * Кнопка снимает рамки, повторное нажатие возвращает дефолт — чтобы
+   * очищенные поля не пришлось заполнять заново вручную.
+   */
+  const toggleAnyDate = () => {
+    if (anyDate) {
+      setDateFrom(dayjs());
+      setDateTo(dayjs().add(DEFAULT_DATE_RANGE_DAYS, "day"));
+    } else {
+      setDateFrom(null);
+      setDateTo(null);
+    }
+  };
+
+  const toggleAnyTime = () => {
+    if (anyTime) {
+      setTimeFrom(DEFAULT_TIME_FROM);
+      setTimeTo(DEFAULT_TIME_TO);
+    } else {
+      setTimeFrom("");
+      setTimeTo("");
+    }
+  };
+
   const toggleWeekday = (day: number) => {
     setWeekdays((prev) =>
       prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort(),
@@ -217,6 +328,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
         contactName: contactName.trim(),
         phone: composePhone(countryCode, phoneLocal) ?? "",
         employeeId: employeeId === "" ? null : employeeId,
+        ...(WAITLIST_VACCINE_LIVE ? { vaccineId: vaccineId === "" ? null : vaccineId } : null),
         specializationId: specializationId === "" ? null : specializationId,
         branchId: entry?.branchId ?? scope.branchId ?? null,
         desiredDateFrom: dateFrom ? dateFrom.format("YYYY-MM-DD") : null,
@@ -237,6 +349,8 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
             clearEmployee: payload.employeeId == null && entry.employeeId != null,
             clearSpecialization:
               payload.specializationId == null && entry.specializationId != null,
+            clearVaccine:
+              WAITLIST_VACCINE_LIVE && vaccineId === "" && entry.vaccine != null,
             clearDesiredDates:
               payload.desiredDateFrom == null &&
               payload.desiredDateTo == null &&
@@ -260,12 +374,18 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
 
   const handleSubmit = () => {
     setError(null);
+    // В очередь ставим карту пациента: без неё некому звонить из карточки и не
+    // с чем связать будущий приём. Нет карты — её заводят кнопкой прямо отсюда.
+    if (!isEdit && patient == null) return setError(t("form.errorNoPatient"));
     if (!contactName.trim()) return setError(t("form.errorNoName"));
     if (phoneLocal.replace(/\D/g, "").length < 9) return setError(t("form.errorPhone"));
-    // Без врача и без специальности запись не с чем сопоставить: matchesSlot
-    // ищет по employeeId либо по специальности врача слота, и подсказка «окно
-    // освободилось» такую запись никогда не найдёт.
-    if (employeeId === "" && specializationId === "") return setError(t("form.errorNoTarget"));
+    // Без ориентира запись не с чем сопоставить: matchesSlot ищет по
+    // employeeId либо по специальности врача слота, и подсказка «окно
+    // освободилось» такую запись никогда не найдёт. Специальность приходит
+    // только с витрины — в CRM ориентиром служит выбранный врач.
+    if (employeeId === "" && specializationId === "" && vaccineId === "") {
+      return setError(t(WAITLIST_VACCINE_LIVE ? "form.errorNoTargetVaccine" : "form.errorNoTarget"));
+    }
     if (dateFrom && dateTo && dateFrom.isAfter(dateTo)) return setError(t("form.errorDates"));
     if (timeFrom && timeTo && timeFrom > timeTo) return setError(t("form.errorTimes"));
     saveMutation.mutate();
@@ -299,10 +419,18 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
 
           {/* ── Кто ждёт ── */}
           <Stack spacing={1.5}>
-            <Typography sx={SECTION_SX}>{t("form.patientSection")}</Typography>
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Typography sx={SECTION_SX}>{t("form.patientSection")}</Typography>
+              {!isEdit && canCreatePatient && (
+                <AppButton size="small" onClick={() => setAddPatientOpen(true)}>
+                  {t("form.newPatient")}
+                </AppButton>
+              )}
+            </Stack>
 
+            {!isEdit && (
             <Autocomplete<DjangoPatient>
-              options={patientsQuery.data ?? []}
+              options={patientOptions}
               value={patient}
               onChange={(_, value) => applyPatient(value)}
               onInputChange={(_, value) => setPatientSearch(value)}
@@ -327,28 +455,41 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
                 />
               )}
             />
+            )}
 
-            <TextField
-              size="small"
-              label={t("form.contactName")}
-              value={contactName}
-              onChange={(e) => setContactName(e.target.value)}
-              fullWidth
-            />
+            {!showContactFields && (contactName || phoneLocal) && (
+              <Typography variant="body2">
+                {isEdit && contactName}
+                {isEdit && contactName && phoneLocal ? " · " : ""}
+                {phoneLocal && `${countryCode} ${formatPhoneLocalDisplay(countryCode, phoneLocal)}`}
+              </Typography>
+            )}
 
-            <Stack direction="row" spacing={1}>
-              <PhoneCountryCodeSelect value={countryCode} onChange={setCountryCode} />
-              <TextField
-                size="small"
-                label={t("form.phone")}
-                value={formatPhoneLocalDisplay(countryCode, phoneLocal)}
-                onChange={phoneInput.onChange}
-                onKeyDown={phoneInput.onKeyDown}
-                inputRef={phoneInput.inputRef}
-                placeholder={phonePlaceholder(countryCode)}
-                fullWidth
-              />
-            </Stack>
+            {showContactFields && (
+              <>
+                <TextField
+                  size="small"
+                  label={t("form.contactName")}
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  fullWidth
+                />
+
+                <Stack direction="row" spacing={1}>
+                  <PhoneCountryCodeSelect value={countryCode} onChange={setCountryCode} />
+                  <TextField
+                    size="small"
+                    label={t("form.phone")}
+                    value={formatPhoneLocalDisplay(countryCode, phoneLocal)}
+                    onChange={phoneInput.onChange}
+                    onKeyDown={phoneInput.onKeyDown}
+                    inputRef={phoneInput.inputRef}
+                    placeholder={phonePlaceholder(countryCode)}
+                    fullWidth
+                  />
+                </Stack>
+              </>
+            )}
 
             {duplicate && (
               <Alert
@@ -368,58 +509,97 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
           <Stack spacing={1.5}>
             <Typography sx={SECTION_SX}>{t("form.wishSection")}</Typography>
 
-            <TextField
-              select
-              size="small"
-              label={t("form.specialization")}
-              value={specializationId}
-              onChange={(e) => {
-                const value = e.target.value === "" ? "" : Number(e.target.value);
-                setSpecializationId(value);
-                // Выбранный врач другой специальности перестал бы совпадать с
-                // фильтром — снимаем его, чтобы в записи не остался ориентир,
-                // которого больше нет в списке.
-                if (value !== "" && employeeId !== "") {
-                  const emp = employees.find((x) => x.id === employeeId);
-                  if (!emp?.specializations.some((s) => s.id === value)) setEmployeeId("");
-                }
-              }}
-              fullWidth
-            >
-              <MenuItem value="">{t("form.specializationAny")}</MenuItem>
-              {specializations.map((spec) => (
-                <MenuItem key={spec.id} value={spec.id}>
-                  {spec.name}
-                </MenuItem>
-              ))}
-            </TextField>
-
-            <TextField
-              select
-              size="small"
-              label={t("form.employee")}
-              value={employeeId}
-              onChange={(e) =>
-                setEmployeeId(e.target.value === "" ? "" : Number(e.target.value))
-              }
-              helperText={
-                employeeId === "" && specializationId !== ""
-                  ? t("form.employeeAnyHint")
-                  : undefined
-              }
-              fullWidth
-            >
-              {/* «Любой» имеет смысл только при выбранной специальности: без
-                  обоих ориентиров запись не сматчится ни с одним окном. */}
-              {specializationId !== "" && (
-                <MenuItem value="">{t("form.employeeAny")}</MenuItem>
+            {/* Селект со всем штатом приходилось листать: врачей десятки, а
+                искомого помнят по фамилии. Здесь поиск по имени, прозвищу и
+                специальности — фильтрация локальная, справочник уже в кэше. */}
+            <Autocomplete<DjangoEmployeeListItem>
+              options={employeeOptions}
+              value={selectedEmployee}
+              onChange={(_, value) => setEmployeeId(value ? value.id : "")}
+              getOptionLabel={(option) => option.fullName}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              filterOptions={employeeFilter}
+              loading={employeesLoading}
+              noOptionsText={t("form.employeeNotFound")}
+              renderOption={(props, option) => (
+                <Box component="li" {...props} key={option.id}>
+                  <Stack spacing={0.25}>
+                    <Typography variant="body2">{option.fullName}</Typography>
+                    {option.specializations.length > 0 && (
+                      <Typography variant="caption" color="text.secondary">
+                        {option.specializations.map((spec) => spec.name).join(", ")}
+                      </Typography>
+                    )}
+                  </Stack>
+                </Box>
               )}
-              {employeeOptions.map((emp) => (
-                <MenuItem key={emp.id} value={emp.id}>
-                  {emp.fullName}
-                </MenuItem>
-              ))}
-            </TextField>
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  size="small"
+                  label={t("form.employee")}
+                  placeholder={t("form.employeeSearch")}
+                  InputProps={{
+                    ...params.InputProps,
+                    startAdornment: (
+                      <>
+                        <BadgeOutlined sx={{ fontSize: 18, ml: 0.5, mr: 0.5 }} />
+                        {params.InputProps.startAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
+            />
+
+            {WAITLIST_VACCINE_LIVE && (
+              <Autocomplete<DjangoProduct>
+                options={vaccines}
+                value={selectedVaccine}
+                onChange={(_, value) => setVaccineId(value ? value.id : "")}
+                getOptionLabel={(option) => option.name}
+                isOptionEqualToValue={(a, b) => a.id === b.id}
+                filterOptions={vaccineFilter}
+                loading={vaccinesQuery.isFetching}
+                noOptionsText={t("form.vaccineNotFound")}
+                renderOption={(props, option) => {
+                  const stock = productAvailableStock(option);
+                  return (
+                    <Box component="li" {...props} key={option.id}>
+                      <Stack spacing={0.25}>
+                        <Typography variant="body2">{option.name}</Typography>
+                        <Typography
+                          variant="caption"
+                          color={stock > 0 ? "text.secondary" : "error.main"}
+                        >
+                          {stock > 0
+                            ? t("form.vaccineStock", { count: stock })
+                            : t("form.vaccineOutOfStock")}
+                        </Typography>
+                      </Stack>
+                    </Box>
+                  );
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    size="small"
+                    label={t("form.vaccine")}
+                    placeholder={t("form.vaccineSearch")}
+                    helperText={employeeId === "" && vaccineId !== "" ? t("form.vaccineOnlyHint") : undefined}
+                    InputProps={{
+                      ...params.InputProps,
+                      startAdornment: (
+                        <>
+                          <VaccinesOutlined sx={{ fontSize: 18, ml: 0.5, mr: 0.5 }} />
+                          {params.InputProps.startAdornment}
+                        </>
+                      ),
+                    }}
+                  />
+                )}
+              />
+            )}
 
             <TextField
               size="small"
@@ -465,11 +645,14 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
                 slotProps={{ textField: { size: "small", fullWidth: true } }}
               />
             </Stack>
-            {!dateFrom && !dateTo && (
-              <Typography variant="caption" color="text.secondary">
-                {t("form.anyDate")}
-              </Typography>
-            )}
+            <Chip
+              size="small"
+              variant={anyDate ? "filled" : "outlined"}
+              color={anyDate ? "primary" : "default"}
+              label={t("form.anyDate")}
+              onClick={toggleAnyDate}
+              sx={{ alignSelf: "flex-start" }}
+            />
 
             <Stack direction="row" spacing={1}>
               <TextField
@@ -491,6 +674,15 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
                 fullWidth
               />
             </Stack>
+
+            <Chip
+              size="small"
+              variant={anyTime ? "filled" : "outlined"}
+              color={anyTime ? "primary" : "default"}
+              label={t("form.anyTime")}
+              onClick={toggleAnyTime}
+              sx={{ alignSelf: "flex-start" }}
+            />
 
             <Box>
               <Typography variant="caption" color="text.secondary">
@@ -533,6 +725,16 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
           </AppButton>
         </Stack>
       </Stack>
+
+      <DjangoAddPatientDrawer
+        open={addPatientOpen && canCreatePatient}
+        onClose={() => setAddPatientOpen(false)}
+        onCreated={(created) => {
+          applyPatient(created);
+          setPatientSearch(created.fullName);
+          setAddPatientOpen(false);
+        }}
+      />
     </Drawer>
   );
 };
