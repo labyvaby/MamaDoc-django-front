@@ -326,7 +326,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   // ── Services ──────────────────────────────────────────────────────────────
   const [allServices, setAllServices] = React.useState<Service[]>([]);
   const [servicesLoading, setServicesLoading] = React.useState(false);
-  // Товары склада — для правил ЗП «Товары в приёмах» (недоступны без права —
+  // Товары склада — для правил ЗП по товарным продажам (недоступны без права —
   // тогда селект покажет «Товары недоступны», это не ошибка).
   const [allProducts, setAllProducts] = React.useState<DjangoProduct[]>([]);
   const [productsLoading, setProductsLoading] = React.useState(false);
@@ -646,7 +646,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     }
 
     if (canViewPayroll) {
-      // Товары для правил «Товары в приёмах» (при отсутствии права — пусто).
+      // Товары для правил по товарным продажам (при отсутствии права — пусто).
       setProductsLoading(true);
       getProducts(ctrl.signal, { organizationId: orgId })
         .then((list) => {
