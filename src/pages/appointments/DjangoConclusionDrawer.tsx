@@ -72,6 +72,18 @@ import { agree } from "../../i18n/formatters";
 import { ConclusionFormInline } from "../../components/conclusion-forms/ConclusionFormInline";
 import { ConclusionHistory } from "../../components/conclusion-forms/ConclusionHistory";
 import {
+  AiAssistHeaderButton,
+  AiAssistPendingStrip,
+  AiAssistSuggestion,
+} from "../../components/conclusion-forms/AiAssistControls";
+import { useAiAssist } from "../../components/conclusion-forms/useAiAssist";
+import { CollapsibleTextField } from "../../components/conclusion-forms/CollapsibleTextField";
+import { useCan } from "../../hooks/useCan";
+import {
+  diagnosesAsText,
+  resolveDiagnosesFromText,
+} from "../../utility/conclusionAiDiagnosis";
+import {
   getConclusionForms,
   renderFilledForm,
   resolveFormForScope,
@@ -105,6 +117,7 @@ import {
   type ConclusionStatus,
   type CatalogDiagnosis,
   type ConclusionTemplate,
+  type AiAssistField,
 } from "../../api/medical";
 
 // ── types ──────────────────────────────────────────────────────────────────────
@@ -514,6 +527,34 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
 
   const readOnly = !canEdit;
 
+  // ── AI-помощник ───────────────────────────────────────────────────────────
+  // Кнопку видит только тот, кто может создавать заключения: без права бэк
+  // ответит 403 (гайд §4), и показывать кнопку, которая всегда падает, нельзя.
+  // «Чужой приём» закрывает readOnly — слот отдаёт canEdit по исполнителю.
+  const canAiAssist = useCan("medical.conclusions.create") && !readOnly;
+  const ai = useAiAssist({
+    serviceLineId,
+    // Один тост на нажатие. Пустые ответы при хоть одной подсказке молчат:
+    // в поле, где модели нечего сказать, плашки просто нет.
+    onSettled: ({ suggested, unavailable, failed }) => {
+      if (suggested === 0 && unavailable > 0) {
+        notify?.({ type: "error", message: t("conclusion.aiAssist.unavailable") });
+      } else if (suggested === 0 && failed > 0) {
+        notify?.({ type: "error", message: t("conclusion.aiAssist.failed") });
+      } else if (suggested === 0) {
+        notify?.({ type: "progress", message: t("conclusion.aiAssist.empty") });
+      } else if (unavailable + failed > 0) {
+        notify?.({ type: "progress", message: t("conclusion.aiAssist.partial") });
+      }
+    },
+  });
+  // Предложения принадлежат открытой строке: при смене строки или закрытии
+  // дровера старый ответ модели не должен всплыть над другим заключением.
+  React.useEffect(() => {
+    ai.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, serviceLineId]);
+
   /**
    * Блок-подсказку «жалобы при регистрации» показываем только когда врач
    * изменил перенесённый текст. Пока текст совпадает слово в слово, блок
@@ -901,6 +942,16 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const diagnosisAnchorRef = React.useRef<HTMLDivElement | null>(null);
 
   /**
+   * Диагноз для AI — не текстовое поле, а список чипов из каталога, поэтому
+   * туда и обратно ходим через текст: модели уходят выбранные диагнозы одной
+   * строкой, а её ответ раскладывается обратно по кодам МКБ (см. ниже).
+   */
+  const applyDiagnosisSuggestion = async (text: string) => {
+    const items = await resolveDiagnosesFromText(text, selectedDiagnoses);
+    setSelectedDiagnoses(items);
+  };
+
+  /**
    * Диагноз (МКБ) — тот же каталожный picker, что и в своей карточке.
    * Занявшему слот полю бланка нужен не текстовый ввод, а живой автокомплит:
    * диагноз выбирают кодом, а не печатают руками (см. FormFieldSlot выше).
@@ -909,9 +960,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     // minWidth: 0 — чипы выбранных диагнозов длинные («Z00.1 — Рутинное общее
     // медицинское обследование»), и без этого блок распирает контейнер вширь.
     <Stack spacing={0.5} ref={diagnosisAnchorRef} sx={{ minWidth: 0 }}>
-      <Typography variant="body2" color="text.secondary" fontWeight={600}>
-        {t("conclusion.diagnosisIcd")}
-      </Typography>
+      {fieldLabel(t("conclusion.diagnosisIcd"))}
       <Autocomplete
         multiple
         freeSolo
@@ -978,6 +1027,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               })}
         </Typography>
       </Paper>
+      {aiSuggestionNode("diagnosis", (text) => void applyDiagnosisSuggestion(text))}
     </Stack>
   );
 
@@ -1024,30 +1074,70 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     </Stack>
   );
 
+  /**
+   * Подпись поля. Кнопки AI у полей больше нет — одна на всю форму, в шапке
+   * (AiAssistHeaderButton); под полем остаётся только плашка предложения.
+   */
+  const fieldLabel = (label: React.ReactNode) => (
+    <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+      <Typography variant="body2" color="text.secondary" fontWeight={600}>
+        {label}
+      </Typography>
+    </Stack>
+  );
+
+  /**
+   * Плашка с предложением AI под полем. Текст поля не трогает: в него
+   * попадает только то, что врач применил сам (`apply`).
+   */
+  const aiSuggestionNode = (aiField: AiAssistField, apply: (text: string) => void) =>
+    canAiAssist ? (
+      <AiAssistSuggestion
+        state={ai.of(aiField)}
+        onApply={() => {
+          const text = ai.take(aiField);
+          if (text != null) apply(text);
+        }}
+        onDismiss={() => ai.dismiss(aiField)}
+      />
+    ) : null;
+
   /** Текстовое поле заключения одним узлом: подпись + поле. */
   const textFieldNode = (
     label: string,
     value: string,
     onChange: (next: string) => void,
-    options: { minRows?: number; required?: boolean; hint?: string; locked?: boolean } = {},
-  ) => (
-    <Stack spacing={0.5}>
-      <Typography variant="body2" color="text.secondary" fontWeight={600}>
-        {label} {options.required && !readOnly && "*"}
-      </Typography>
-      <TextField
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={readOnly || Boolean(options.locked)}
-        multiline
-        minRows={options.minRows ?? 2}
-        fullWidth
-        size="small"
-        placeholder={readOnly ? "—" : t("conclusion.optional")}
-        helperText={options.hint}
-      />
-    </Stack>
-  );
+    options: {
+      minRows?: number;
+      required?: boolean;
+      hint?: string;
+      locked?: boolean;
+      /** Поле AI-помощника; без него плашки предложения AI нет. */
+      aiField?: AiAssistField;
+    } = {},
+  ) => {
+    const aiField = options.locked ? undefined : options.aiField;
+    return (
+      <Stack spacing={0.5}>
+        {fieldLabel(
+          <>
+            {label} {options.required && !readOnly && "*"}
+          </>,
+        )}
+        <CollapsibleTextField
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={readOnly || Boolean(options.locked)}
+          minRows={options.minRows ?? 2}
+          fullWidth
+          size="small"
+          placeholder={readOnly ? "—" : t("conclusion.optional")}
+          helperText={options.hint}
+        />
+        {aiField && aiSuggestionNode(aiField, onChange)}
+      </Stack>
+    );
+  };
 
   /**
    * Штатное поле показываем на своём месте, только если бланк его не забрал.
@@ -1085,6 +1175,48 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const managedByForm = (field: FormTarget) =>
     attachedForm != null && attachedForm.target === field;
 
+  /**
+   * Поля, по которым одна кнопка «Помощь AI» просит подсказку, — текущий
+   * текст каждого и то, как предложение ложится обратно. Поле, текст которого
+   * собирает бланк (вместо ввода — итог projectionNode), в пачку не идёт:
+   * применить к нему подсказку некуда.
+   */
+  const aiTargets = (): Array<{
+    field: AiAssistField;
+    text: string;
+    apply: (text: string) => void;
+  }> => {
+    const editable = (field: FormTarget) => !slotFree(field) || !managedByForm(field);
+    const targets: Array<{ field: AiAssistField; text: string; apply: (text: string) => void }> = [
+      { field: "complaints", text: complaints, apply: setComplaints },
+    ];
+    if (editable("anamnesis")) targets.push({ field: "anamnesis", text: anamnesis, apply: setAnamnesis });
+    if (editable("objective")) targets.push({ field: "objective", text: objective, apply: setObjective });
+    targets.push({
+      field: "diagnosis",
+      text: diagnosesAsText(selectedDiagnoses),
+      apply: (text) => void applyDiagnosisSuggestion(text),
+    });
+    if (editable("conclusion")) {
+      targets.push({ field: "conclusion", text: conclusionText, apply: setConclusionText });
+    }
+    return targets;
+  };
+
+  const handleAiRequest = () =>
+    void ai.requestAll(aiTargets().map(({ field, text }) => ({ field, text })));
+
+  const handleAiApplyAll = () => {
+    for (const target of aiTargets()) {
+      const text = ai.take(target.field);
+      if (text != null) target.apply(text);
+    }
+  };
+
+  const handleAiDismissAll = () => {
+    for (const field of ai.suggestedFields) ai.dismiss(field);
+  };
+
   const handleDetachForm = () => {
     // Текст остаётся: врач дописывает уже собранное заключение руками.
     setFormId(null);
@@ -1105,16 +1237,19 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             t("conclusion.doctorComplaints"),
             complaints,
             setComplaints,
+            { aiField: "complaints" },
           );
           break;
         case "anamnesis":
           nodes.anamnesis = textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
             minRows: 3,
+            aiField: "anamnesis",
           });
           break;
         case "objective":
           nodes.objective = textFieldNode(t("conclusion.objectively"), objective, setObjective, {
             minRows: 3,
+            aiField: "objective",
           });
           break;
         case "diagnosis":
@@ -1125,7 +1260,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             t("conclusion.conclusionRequired"),
             conclusionText,
             setConclusionText,
-            { minRows: 4, required: true },
+            { minRows: 4, required: true, aiField: "conclusion" },
           );
           break;
         case "heightCm":
@@ -1158,6 +1293,11 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     catalogError,
     diagInput,
     readOnly,
+    // Кнопка и плашка AI живут внутри узлов бланка: без этих deps «AI думает…»
+    // и пришедшее предложение не перерисуются. `ai.of` меняется вместе с
+    // состоянием подсказок (useCallback на state).
+    canAiAssist,
+    ai.of,
   ]);
 
   /**
@@ -1597,6 +1737,16 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
           {!readOnly && (
             <>
+              {/* AI — одна кнопка на все поля; в шапке, потому что она не
+                  прокручивается, а просят AI обычно дописав форму до низа. */}
+              {canAiAssist && (
+                <AiAssistHeaderButton
+                  loading={ai.loading}
+                  progress={ai.progress}
+                  compact={isMobile}
+                  onClick={handleAiRequest}
+                />
+              )}
               {/* На телефоне текст кнопки ломал заголовок на две строки. */}
               {isMobile ? (
                 <IconButton
@@ -1636,6 +1786,18 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         </Stack>
       </Stack>
       <Divider />
+
+      {/* ── подсказки AI: массовые действия, пока есть неразобранные ── */}
+      {canAiAssist && ai.suggestedFields.length > 0 && (
+        <>
+          <AiAssistPendingStrip
+            pendingCount={ai.suggestedFields.length}
+            onApplyAll={handleAiApplyAll}
+            onDismissAll={handleAiDismissAll}
+          />
+          <Divider />
+        </>
+      )}
 
       {/* ── inline-просмотр: тулбар действий под шапкой (единая высота) ── */}
       {inline && readOnly && (onStartEdit || (canPrint && conclusion)) && (
@@ -1976,7 +2138,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {/* Поле, забранное бланком, здесь не рисуем: оно стоит в потоке его
               полей (slotNodes) — иначе врач вводил бы жалобы дважды. */}
           {slotFree("complaints") &&
-            textFieldNode(t("conclusion.doctorComplaints"), complaints, setComplaints)}
+            textFieldNode(t("conclusion.doctorComplaints"), complaints, setComplaints, {
+              aiField: "complaints",
+            })}
 
           {/* ── anamnesis ── */}
           {slotFree("anamnesis") &&
@@ -1984,6 +2148,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               ? projectionNode(t("conclusion.anamnesis"), anamnesis, null)
               : textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
                   minRows: 3,
+                  aiField: "anamnesis",
                 }))}
 
           {/* ── objective ── */}
@@ -1992,6 +2157,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               ? projectionNode(t("conclusion.objectively"), objective, null)
               : textFieldNode(t("conclusion.objectively"), objective, setObjective, {
                   minRows: 3,
+                  aiField: "objective",
                 }))}
 
           {/* ── diagnosis (catalog multi-select + free text) ── */}
@@ -2016,20 +2182,22 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               )
             ) : (
               <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  {t("conclusion.conclusionRequired")} {!readOnly && "*"}
-                </Typography>
-                <TextField
+                {fieldLabel(
+                  <>
+                    {t("conclusion.conclusionRequired")} {!readOnly && "*"}
+                  </>,
+                )}
+                <CollapsibleTextField
                   value={conclusionText}
                   onChange={(e) => setConclusionText(e.target.value)}
                   disabled={readOnly}
-                  multiline
                   minRows={4}
                   fullWidth
                   size="small"
                   placeholder={readOnly ? "—" : t("conclusion.text")}
                   {...completion.field("conclusionText", "")}
                 />
+                {aiSuggestionNode("conclusion", setConclusionText)}
               </Stack>
             ))}
 
@@ -2038,11 +2206,10 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
               {t("conclusion.internalComment")}
             </Typography>
-            <TextField
+            <CollapsibleTextField
               value={internalComment}
               onChange={(e) => setInternalComment(e.target.value)}
               disabled={readOnly}
-              multiline
               minRows={2}
               fullWidth
               size="small"

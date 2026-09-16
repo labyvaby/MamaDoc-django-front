@@ -336,6 +336,14 @@ export interface FormBackground {
    * не компоненты.
    */
   margins?: FormMargins | null;
+  /**
+   * ⚠ Транспорт, как и `margins`: выключенная шапка клиники после сохранения
+   * возвращалась включённой (14.09.2026) — PATCH с `showClinicHeader: false`
+   * не переживал запись. Флаг дублируется сюда и при чтении берётся отсюда
+   * первым (`normalizeForm`); у бланков, сохранённых до этого, его здесь нет —
+   * тогда работает поле верхнего уровня.
+   */
+  showClinicHeader?: boolean;
 }
 
 export interface ConclusionFormTemplate {
@@ -546,18 +554,28 @@ export function normalizeForm(form: ConclusionFormTemplate): ConclusionFormTempl
     // их прежней геометрией, а не нулями. `form.margins` читаем на случай,
     // когда бэк заведёт поле верхнего уровня: тогда оно и станет источником.
     margins: resolveMargins(form.pageSize, form.margins ?? form.background?.margins),
+    showClinicHeader:
+      typeof form.background?.showClinicHeader === "boolean"
+        ? form.background.showClinicHeader
+        : form.showClinicHeader ?? true,
     fields: form.fields ?? [],
   };
 }
 
 /**
- * Payload к отправке: отступы уезжают внутрь `background` (см. FormBackground).
+ * Payload к отправке: отступы и выключатель шапки дублируются внутрь
+ * `background` (см. FormBackground). Шапка уходит и полем верхнего уровня —
+ * если бэк его сохраняет, оба значения совпадут.
  */
-function toApiPayload<T extends Partial<ConclusionFormPayload>>(payload: T): T {
-  if (!("margins" in payload)) return payload;
+export function toApiPayload<T extends Partial<ConclusionFormPayload>>(payload: T): T {
+  if (!("margins" in payload) && !("showClinicHeader" in payload)) return payload;
   const { margins, ...rest } = payload;
-  const background = rest.background ?? { imageUrl: null, opacity: 1 };
-  return { ...rest, background: { ...background, margins: margins ?? null } } as T;
+  const background: FormBackground = { ...(rest.background ?? { imageUrl: null, opacity: 1 }) };
+  if ("margins" in payload) background.margins = margins ?? null;
+  if (typeof payload.showClinicHeader === "boolean") {
+    background.showClinicHeader = payload.showClinicHeader;
+  }
+  return { ...rest, background } as T;
 }
 
 export async function getConclusionForms(

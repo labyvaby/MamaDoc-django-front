@@ -734,7 +734,7 @@ const SidebarSecondary: React.FC = () => {
         {/* Брони (гостевая форма /book + синк operator.kg, Django-mode only).
             Бейдж — сколько заявок ждёт подтверждения. */}
         {show("my-work") && can_.bookings && (
-          <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Брони" collapsed={siderCollapsed} badgeCount={bookingsBadgeCount} badgeColor={bookingsBadgeColor} />
+          <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Онлайн-запись" collapsed={siderCollapsed} badgeCount={bookingsBadgeCount} badgeColor={bookingsBadgeColor} />
         )}
 
         {/* Чаты — встроенный дашборд Chatwoot (chat.operator.kg) со сквозной
@@ -827,7 +827,10 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Касса магазина — рабочий инструмент продаж, в разделе «Моя работа» */}
         {show("my-work") && can_.pos && (
-          <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса магазина" collapsed={siderCollapsed} />
+          <>
+            <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса магазина" collapsed={siderCollapsed} excludePaths={["/pos/history"]} />
+            <SidebarMenuItem to="/pos/history" icon={<HistoryOutlined />} label="История продаж" collapsed={siderCollapsed} />
+          </>
         )}
 
         {/* ══════════════════════════════════════════
@@ -917,6 +920,10 @@ const SidebarSecondary: React.FC = () => {
         {/* Продажи товаров */}
         {show("storage") && can_.sales && (
           <SidebarMenuItem to="/sales" icon={<AnalyticsOutlined />} label="Продажи товаров" collapsed={siderCollapsed} />
+        )}
+
+        {show("storage") && can_.pos && (
+          <SidebarMenuItem to="/pos/history" icon={<HistoryOutlined />} label="История продаж" collapsed={siderCollapsed} />
         )}
 
         {/* Остатки (объединённые «Движение товара» + «Склад») */}

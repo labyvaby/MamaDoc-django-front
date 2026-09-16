@@ -29,6 +29,13 @@ export const PHOTO_SOURCE_MAX_BYTES = PHOTO_SOURCE_MAX_MB * 1024 * 1024;
  */
 export const PHOTO_ACCEPT = "image/*,image/heic,image/heif";
 
+/** Фото или PDF — для накладной поставщика. */
+export const INVOICE_DOCUMENT_ACCEPT = `${PHOTO_ACCEPT},application/pdf,.pdf`;
+
+/** MIME у PDF иногда пустой, поэтому сверяем ещё и расширение. */
+export const isPdfFile = (file: Pick<File, "name" | "type">): boolean =>
+  file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
 /**
  * Форматы, которые можно отправлять как есть.
  *

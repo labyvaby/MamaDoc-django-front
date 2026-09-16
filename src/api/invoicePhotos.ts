@@ -20,7 +20,7 @@
  * называется `url`, синонимов (`fileUrl`/`photoUrl`/`image`) нет.
  */
 import { apiRequest, ApiError } from "./client";
-import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
+import { preparePhotoIfImage, withUploadErrors } from "./uploads";
 
 /** Раскатка: обратно в false — штатный откат, данные бэка не трогаются. */
 export const INVOICE_PHOTOS_ENABLED = true;
@@ -75,8 +75,8 @@ export function getInvoicePhotos(
 }
 
 /**
- * Загрузка одного фото. Снимок с телефона ужимаем и переводим в jpg — см.
- * api/uploads.ts (бэк режет тяжёлые файлы, HEIC не показать в превью).
+ * Загрузка одного фото или PDF. Снимок с телефона ужимаем и переводим в jpg,
+ * PDF сохраняем исходным, чтобы его можно было открыть полностью.
  */
 export async function uploadInvoicePhoto(
   target: InvoicePhotoTarget,
@@ -85,7 +85,7 @@ export async function uploadInvoicePhoto(
   organizationId?: number | null,
 ): Promise<InvoicePhoto> {
   const formData = new FormData();
-  formData.append("image", await preparePhotoOrThrow(file));
+  formData.append("image", await preparePhotoIfImage(file));
   return withUploadErrors(() =>
     apiRequest<InvoicePhoto>(withOrg(basePath(target, entityId), organizationId), {
       method: "POST",

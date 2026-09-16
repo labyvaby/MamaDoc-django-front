@@ -152,6 +152,35 @@ export const WEEKDAY_OPTIONS: { value: number; label: string }[] = [
   { value: 7, label: "Вс" },
 ];
 
+/**
+ * С какого срока ожидание подсвечиваем как «ждёт давно». Порог — решение
+ * фронта (в ТЗ его нет): две недели — больше половины дефолтного TTL в 30 дней.
+ */
+export const WAITING_LONG_DAYS = 14;
+
+/**
+ * За сколько дней до `activeUntil` запись помечается «скоро истечёт». Порог
+ * `summary.expiringSoon` задаёт бэк и нам не сообщает — 7 дней совпадает с
+ * моком, на живом API числа в плитке и подсветка строк могут разойтись.
+ */
+export const EXPIRING_SOON_DAYS = 7;
+
+/** «Пн, Ср, Пт» / «» — пустой массив означает любые дни. */
+export function weekdaysLabel(entry: WaitlistEntry): string {
+  if (entry.desiredWeekdays.length === 0 || entry.desiredWeekdays.length === 7) return "";
+  return [...entry.desiredWeekdays]
+    .sort((a, b) => a - b)
+    .map((d) => WEEKDAY_OPTIONS.find((o) => o.value === d)?.label ?? String(d))
+    .join(", ");
+}
+
+/** Активная запись, у которой срок ожидания закончится в ближайшие дни. */
+export function isExpiringSoon(entry: WaitlistEntry): boolean {
+  if (!entry.activeUntil || !["waiting", "offered"].includes(entry.status)) return false;
+  const left = dayjs(entry.activeUntil).startOf("day").diff(dayjs().startOf("day"), "day");
+  return left <= EXPIRING_SOON_DAYS;
+}
+
 /** Сколько дней человек уже в очереди. */
 export function waitingDays(entry: WaitlistEntry): number {
   return Math.max(0, dayjs().startOf("day").diff(dayjs(entry.createdAt).startOf("day"), "day"));

@@ -254,6 +254,9 @@
     "branchIpsTitle": "Wi-Fi IP по {{branch.datPl}}",
     "branchIpsDescription": "{{employee.nom, capitalize}} сможет начать смену, если его внешний IP совпадает с любым из IP {{branch.gen}} или с общим IP {{org.gen}}. У {{branch.gen}} может быть несколько адресов (например, разные Wi-Fi роутеры) — добавляйте их по одному или вставьте списком.",
     "branchIpHelper": "Например, IP основного и резервного Wi-Fi роутера {{branch.gen}}.",
+    "bindCurrentIp": "Привязать текущий IP ({{subnet}})",
+    "currentIpHint": "Ваш IP сейчас: {{ip}}. Добавится подсеть — не забудьте сохранить.",
+    "currentIpBound": "Ваш IP {{ip}} уже входит в список.",
     "loadError": "Не удалось загрузить настройки СКУД для выбранной организации",
     "saveSuccess": "Настройки успешно сохранены",
     "saveNoChanges": "Изменений нет — сохранять нечего",
@@ -529,7 +532,7 @@
       },
       "record": {
         "label": "Запись",
-        "hint": "Строка расписания и брони."
+        "hint": "Строка расписания и онлайн-записи."
       },
       "complaint": {
         "label": "Обращение",
@@ -723,7 +726,7 @@
       "achievements": "Достижения",
       "announcements": "Объявления",
       "billing": "Оплаты и счета",
-      "bookings": "Брони",
+      "bookings": "Онлайн-запись",
       "chatwoot": "Чаты",
       "cleaning": "Уборка",
       "clients": "{{patient.nomPl, capitalize}} (CRM)",
@@ -802,7 +805,7 @@
         "allAppointments": "Все {{visit.nomPl}}",
         "allProcedures": "Все процедуры",
         "schedule": "Расписание",
-        "bookings": "Брони",
+        "bookings": "Онлайн-запись",
         "chats": "Чаты",
         "tasks": "Задачи",
         "waitlist": "Лист ожидания",

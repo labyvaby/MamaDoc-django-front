@@ -9,12 +9,19 @@ import {
   DialogContent,
   DialogTitle,
   LinearProgress,
+  IconButton,
+  Chip,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import SearchOffOutlined from "@mui/icons-material/SearchOffOutlined";
+import CheckCircleRounded from "@mui/icons-material/CheckCircleRounded";
+import PrintRounded from "@mui/icons-material/PrintRounded";
+import DownloadRounded from "@mui/icons-material/DownloadRounded";
+import QrCode2Rounded from "@mui/icons-material/QrCode2Rounded";
+import CloseRounded from "@mui/icons-material/CloseRounded";
 import { apiRequest } from "../../api/client";
 import { getDiscountKinds, type DiscountKind } from "../../api/promotions";
 import {
@@ -40,13 +47,21 @@ import { CheckoutDialog } from "./CheckoutDialog";
 import {
   LivePaymentPanel,
   emptyBenefits,
+  inlineQuoteErrorField,
   type Benefits,
 } from "./LivePaymentPanel";
 import { posColors } from "./layout";
-import type { PosClient, PosReceiptLine } from "./types";
+import type { PosCatalogItem, PosClient, PosReceiptLine } from "./types";
 import { PosAmount } from "./ui";
 
 type CartRow = { product: PosProduct; quantity: number; removed?: boolean };
+type PosDraft = {
+  rows: CartRow[];
+  client: PosClient | null;
+  benefits: Benefits;
+  held: PosSavedReceipt | null;
+  warehouseChoice: number | null;
+};
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Не удалось выполнить действие.";
 const colorHex = (label: string) =>
@@ -118,6 +133,57 @@ function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
   };
 }
 
+function toCatalogItem(product: PosProduct, family: PosProduct[]): PosCatalogItem {
+  const names = family.map((item) => item.name.trim()).filter(Boolean);
+  const colors = [
+    ...new Map(
+      family
+        .flatMap((item) => item.attributes.filter((attribute) => attribute.role === "color"))
+        .map((attribute) => [attribute.id, attribute])
+    ).values(),
+  ];
+  const sizes = [
+    ...new Map(
+      family
+        .flatMap((item) => item.attributes.filter((attribute) => attribute.role === "size"))
+        .map((attribute) => [attribute.id, attribute])
+    ).values(),
+  ];
+  let commonName = names.reduce((prefix, name) => {
+    let length = 0;
+    while (length < prefix.length && length < name.length && prefix[length] === name[length]) length += 1;
+    return prefix.slice(0, length);
+  }, names[0] ?? product.name).replace(/[\s,;:/\\-]+$/, "");
+  const variantLabels = [...colors, ...sizes]
+    .map((attribute) => attribute.value.trim())
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+  for (const label of variantLabels) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    commonName = commonName.replace(new RegExp(`[\\s,;:/\\-]+${escaped}$`, "i"), "").trim();
+  }
+  return {
+    id: String(product.id),
+    name: commonName || product.name,
+    price: Number(product.price),
+    imageUrl: product.imageThumbnailUrl ?? product.imageUrl,
+    stock: family.reduce((total, item) => total + Number(item.stock), 0),
+    colors: colors.map((attribute) => ({
+      id: String(attribute.id),
+      label: attribute.value,
+      hex: colorHex(attribute.value),
+    })),
+    sizes: sizes.map((attribute) => ({
+      id: String(attribute.id),
+      label: attribute.value,
+      available: family.some(
+        (item) => item.attributes.some((value) => value.id === attribute.id) && Number(item.stock) > 0
+      ),
+    })),
+    variants: family,
+  };
+}
+
 export default function LivePosPage() {
   const auth = usePermissions();
   const c = posColors(useTheme());
@@ -171,6 +237,49 @@ export default function LivePosPage() {
   const [returnTarget, setReturnTarget] =
     React.useState<PosSavedReceipt | null>(null);
   const [reason, setReason] = React.useState("");
+  const draftKey = ready
+    ? `mamadoc:pos:draft:${scope.organizationId}:${scope.branchId}`
+    : null;
+  const hydratedDraftKey = React.useRef<string | null>(null);
+  const skipDraftPersistKey = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (!draftKey) return;
+    let draft: PosDraft | null = null;
+    try {
+      const raw = window.localStorage.getItem(draftKey);
+      if (raw) draft = JSON.parse(raw) as PosDraft;
+    } catch {
+      draft = null;
+    }
+    if (draft) {
+      if (Array.isArray(draft.rows)) setRows(draft.rows);
+      if (draft.client) setClient(draft.client);
+      if (draft.benefits) setBenefits({ ...emptyBenefits, ...draft.benefits });
+      if (draft.held) setHeld(draft.held);
+      if (draft.warehouseChoice != null) setWarehouseChoice(draft.warehouseChoice);
+    }
+    hydratedDraftKey.current = draftKey;
+    skipDraftPersistKey.current = draftKey;
+  }, [draftKey]);
+
+  React.useEffect(() => {
+    if (!draftKey || hydratedDraftKey.current !== draftKey) return;
+    if (skipDraftPersistKey.current === draftKey) {
+      skipDraftPersistKey.current = null;
+      return;
+    }
+    try {
+      if (!rows.length && !held) {
+        window.localStorage.removeItem(draftKey);
+        return;
+      }
+      const draft: PosDraft = { rows, client, benefits, held, warehouseChoice };
+      window.localStorage.setItem(draftKey, JSON.stringify(draft));
+    } catch {
+      // localStorage can be unavailable in private mode or when the quota is full.
+    }
+  }, [draftKey, rows, client, benefits, held, warehouseChoice]);
 
   React.useEffect(() => {
     const id = window.setTimeout(() => {
@@ -225,6 +334,16 @@ export default function LivePosPage() {
       ),
     enabled: ready && !!warehouseId && canFetchProducts,
   });
+  const groupedProducts = React.useMemo(() => {
+    const groups = new Map<string, PosProduct[]>();
+    for (const product of products.data?.results ?? []) {
+      const key = product.modelId == null ? `product:${product.id}` : `model:${product.modelId}`;
+      const family = groups.get(key) ?? [];
+      family.push(product);
+      groups.set(key, family);
+    }
+    return [...groups.values()].map((family) => toCatalogItem(family[0], family));
+  }, [products.data?.results]);
   const clients = useQuery({
     queryKey: [...prefix, "clients", clientSearch],
     queryFn: ({ signal }) =>
@@ -526,15 +645,28 @@ export default function LivePosPage() {
       </Stack>
     );
   if (!data) return <LinearProgress />;
+  const quoteError =
+    quoteQuery.isError && !held ? message(quoteQuery.error) : null;
   const visibleError =
     error ??
-    (quoteQuery.isError && !held
-      ? message(quoteQuery.error)
+    (quoteError && !inlineQuoteErrorField(quoteError)
+      ? quoteError
       : products.isError
       ? message(products.error)
       : clients.isError
       ? message(clients.error)
       : null);
+  const checkoutLines = quote
+    ? quote.lines.map((line) => ({
+        name: line.name,
+        quantity: line.quantity,
+        total: Number(line.subtotal) - Number(line.discountAmount),
+      }))
+    : [];
+  const checkoutBenefits = [
+    { label: "Бонусы", value: Number(quote?.bonuses ?? 0), positive: true },
+    { label: "Сертификат", value: Number(quote?.certificateAmount ?? 0), positive: true },
+  ].filter((item) => item.value > 0);
 
   return (
     <Box
@@ -634,16 +766,12 @@ export default function LivePosPage() {
             )}
           {!isSearchPending &&
             !products.isFetching &&
-            (products.data?.results.length ?? 0) > 0 && (
+            groupedProducts.length > 0 && (
           <PosProductCards
-            items={(products.data?.results ?? []).map((product) => ({
-              ...toLine({ product, quantity: 1 }, [product]),
-              id: String(product.id),
-              stock: Number(product.stock),
-            }))}
-            onAdd={(item) => {
-              const product = products.data?.results.find(
-                (p) => String(p.id) === item.id
+            items={groupedProducts}
+            onAdd={(item, selectedVariant) => {
+              const product = selectedVariant ?? products.data?.results.find(
+                (candidate) => String(candidate.id) === item.id
               );
               if (product) void add(product);
             }}
@@ -772,6 +900,7 @@ export default function LivePosPage() {
           benefits={benefits}
           onChange={setBenefits}
           quote={quote}
+          quoteError={quoteError}
           busy={busy}
           onCheckout={() => setCheckoutOpen(true)}
           discountPercent={client?.discountPercent ?? 0}
@@ -792,6 +921,10 @@ export default function LivePosPage() {
           open={checkoutOpen}
           due={quote.due}
           bootstrap={{ ...data, actions }}
+          lines={checkoutLines}
+          subtotal={Number(quote.subtotal)}
+          discount={Number(quote.discount)}
+          benefits={checkoutBenefits}
           pending={pending}
           error={error}
           onClose={() => setCheckoutOpen(false)}
@@ -918,62 +1051,40 @@ export default function LivePosPage() {
         open={!!saved}
         onClose={() => setSaved(null)}
         fullWidth
-        maxWidth="sm"
+        maxWidth="lg"
+        PaperProps={{ sx: { borderRadius: { xs: 0, sm: 3 }, bgcolor: "#080b16", backgroundImage: "none", overflow: "hidden" } }}
       >
-        <DialogTitle>
-          {saved?.status === "held" ? "Чек отложен" : "Товарный чек"}
-        </DialogTitle>
-        <DialogContent>
-          {saved && (
-            <Box id="pos-print">
-              <Typography variant="h5">{data.organization.name}</Typography>
-              <Typography>{data.branch.name}</Typography>
-              <Typography fontSize={12}>
-                №{saved.number} ·{" "}
-                {new Date(saved.createdAt).toLocaleString("ru-RU")}
-              </Typography>
-              <Typography fontSize={12} color="text.secondary">
-                Товарный чек · не является фискальным документом
-              </Typography>
-              {saved.lines.map((line) => (
-                <Stack
-                  key={line.id}
-                  direction="row"
-                  justifyContent="space-between"
-                  py={1}
-                >
-                  <Typography>
-                    {line.productName} × {line.quantity}
-                  </Typography>
-                  <PosAmount value={Number(line.total)} />
-                </Stack>
-              ))}
-              <Typography variant="h5" mt={2}>
-                Итого: <PosAmount value={Number(saved.totalAmount)} />
-              </Typography>
-              {saved.payments.map((payment) => (
-                <Typography key={payment.id}>
-                  {(
-                    {
-                      cash: "Наличные",
-                      card: "Карта",
-                      cashless: "Безналичные",
-                      bonus: "Бонусы",
-                      certificate: "Сертификат",
-                    } as Record<string, string>
-                  )[payment.method] ?? payment.method}
-                  : {payment.amount} сом
-                </Typography>
-              ))}
+        {saved && <>
+          <DialogTitle sx={{ px: { xs: 2, sm: 3 }, py: 1.5, borderBottom: "1px solid #20283a", bgcolor: "#0d1220" }}>
+            <Stack direction="row" alignItems="center" gap={1}>
+              <Typography fontWeight={800}>Оплата</Typography>
+              <Typography variant="caption" color="text.secondary">{saved.lines.length} товаров</Typography>
+              <Typography variant="caption" color="text.secondary">· Чек №{saved.number.slice(0, 8)}</Typography>
+              <IconButton onClick={() => setSaved(null)} size="small" sx={{ ml: "auto", color: "text.secondary" }}><CloseRounded fontSize="small" /></IconButton>
+            </Stack>
+          </DialogTitle>
+          <DialogContent sx={{ p: { xs: 1.5, sm: 3 } }}>
+          <Stack direction={{ xs: "column", md: "row" }} gap={{ xs: 2, md: 3 }}>
+            <Box sx={{ width: { xs: "100%", md: 320 }, flexShrink: 0 }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}><Typography sx={{ fontSize: 10, letterSpacing: ".1em", fontWeight: 800, color: "#747c91" }}>ПЕЧАТНАЯ ФОРМА ЧЕКА</Typography><Typography sx={{ fontSize: 10, color: "#747c91" }}>прокрутите</Typography></Stack>
+              <Box id="pos-print" sx={{ bgcolor: "#fff", color: "#141722", p: { xs: 2, sm: 2.5 }, borderRadius: 1.5, boxShadow: "0 18px 50px rgba(0,0,0,.35)", minHeight: { md: 470 } }}>
+                <Stack alignItems="center" gap={.25} mb={2}><Typography fontWeight={900} letterSpacing=".12em">{data.organization.name.toUpperCase()}</Typography><Typography variant="caption">{data.branch.name}</Typography><Typography variant="caption" color="text.secondary">Товарный чек · не фискальный</Typography></Stack>
+                <Stack direction="row" justifyContent="space-between" mb={1}><Typography variant="caption">ЧЕК №{saved.number.slice(0, 8)}</Typography><Typography variant="caption">{new Date(saved.createdAt).toLocaleDateString("ru-RU")}</Typography></Stack>
+                <Box sx={{ borderTop: "1px dashed #adb0ba", borderBottom: "1px dashed #adb0ba", py: 1 }}>{saved.lines.map((line) => <Stack key={line.id} direction="row" justifyContent="space-between" gap={1} py={.55}><Box sx={{ minWidth: 0 }}><Typography fontSize={12} fontWeight={600} noWrap>{line.productName}</Typography><Typography fontSize={10} color="#6e7280">{line.quantity} × {Number(line.unitPrice).toLocaleString("ru-RU")} сом</Typography></Box><Typography fontSize={12} fontWeight={700} whiteSpace="nowrap">{Number(line.total).toLocaleString("ru-RU")} сом</Typography></Stack>)}</Box>
+                <Stack gap={.5} mt={1.5}><Stack direction="row" justifyContent="space-between"><Typography variant="caption">Подытог</Typography><Typography variant="caption">{Number(saved.subtotal).toLocaleString("ru-RU")} сом</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography variant="caption">Скидка</Typography><Typography variant="caption">− {Number(saved.discountTotal).toLocaleString("ru-RU")} сом</Typography></Stack><Stack direction="row" justifyContent="space-between" mt={.5}><Typography fontWeight={800}>ИТОГО</Typography><Typography fontWeight={900}>{Number(saved.totalAmount).toLocaleString("ru-RU")} сом</Typography></Stack></Stack>
+                <Stack alignItems="center" mt={2}><QrCode2Rounded sx={{ fontSize: 76, color: "#191c26" }} /><Typography fontSize={9} color="#777">Проверить чек</Typography></Stack>
+              </Box>
             </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          {actions.print && saved && (
-            <Button onClick={() => window.print()}>Печать</Button>
-          )}
-          <Button onClick={() => setSaved(null)}>Закрыть</Button>
-        </DialogActions>
+            <Box sx={{ flex: 1, minWidth: 0, pt: { md: 3 } }}>
+              <Box sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2.5, bgcolor: "rgba(16,111,76,.35)", border: "1px solid rgba(75,220,148,.28)" }}><Stack direction="row" gap={1.25} alignItems="flex-start"><CheckCircleRounded sx={{ color: "#55e09b", fontSize: 28 }} /><Box sx={{ minWidth: 0, flex: 1 }}><Stack direction="row" justifyContent="space-between" gap={1}><Box><Typography fontWeight={800} color="#a7f4c8">Оплата прошла успешно</Typography><Typography variant="caption" color="rgba(220,255,238,.7)">Чек №{saved.number.slice(0, 8)} · {new Date(saved.createdAt).toLocaleString("ru-RU")}</Typography></Box><Chip size="small" label={saved.payments[0]?.method === "cash" ? "Оплата наличными" : "Оплата картой"} sx={{ bgcolor: "rgba(255,255,255,.18)", color: "#fff", fontSize: 10, fontWeight: 700 }} /></Stack><Typography variant="h4" fontWeight={900} sx={{ mt: 1 }}>{Number(saved.totalAmount).toLocaleString("ru-RU")} сом</Typography></Box></Stack></Box>
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)" }, gap: 1, mt: 1.5 }}>{[{ label: "Позиций", value: `${saved.lines.length} шт.` }, { label: "Способ оплаты", value: saved.payments.map((payment) => payment.method === "cash" ? "Наличные" : payment.method === "card" ? "Карта" : "Безналичные").join(", ") }, { label: "Клиент", value: saved.clientId ? `#${saved.clientId}` : "Без клиента" }, { label: "Кассир", value: data.cashier }].map((item) => <Box key={item.label} sx={{ p: 1.25, borderRadius: 1.5, bgcolor: "#111725", border: "1px solid #20283a", minWidth: 0 }}><Typography variant="caption" color="text.secondary" noWrap>{item.label}</Typography><Typography fontWeight={700} noWrap>{item.value}</Typography></Box>)}</Box>
+              <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 1, mt: 1 }}><Box sx={{ p: 1.25, borderRadius: 1.5, bgcolor: "#111725", border: "1px solid #20283a" }}><Typography variant="caption" color="text.secondary">Печатный чек</Typography><Typography fontWeight={700} color="#55e09b">Готов к печати</Typography></Box><Box sx={{ p: 1.25, borderRadius: 1.5, bgcolor: "#111725", border: "1px solid #20283a" }}><Typography variant="caption" color="text.secondary">Электронный чек</Typography><Typography fontWeight={700} color="#55e09b">Не отправлен</Typography></Box></Box>
+              <Button fullWidth variant="contained" onClick={() => setSaved(null)} sx={{ mt: 1.5, minHeight: 46, borderRadius: 2, fontWeight: 800 }}>Новый чек <Box component="span" sx={{ ml: 1, opacity: .65, fontSize: 11 }}>Enter</Box></Button>
+              <Stack direction={{ xs: "column", sm: "row" }} gap={1} mt={1}><Button fullWidth startIcon={<DownloadRounded />} sx={{ borderRadius: 2, bgcolor: "#111725" }} onClick={() => window.print()}>Скачать чек</Button>{actions.print && <Button fullWidth startIcon={<PrintRounded />} sx={{ borderRadius: 2, bgcolor: "#111725" }} onClick={() => window.print()}>Повторная печать</Button>}</Stack>
+            </Box>
+          </Stack>
+          </DialogContent>
+        </>}
       </Dialog>
       <Dialog
         open={!!returnTarget}

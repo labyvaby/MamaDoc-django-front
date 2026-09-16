@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import RouterOutlinedIcon from "@mui/icons-material/RouterOutlined";
+import AddLinkOutlined from "@mui/icons-material/AddLinkOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 
@@ -20,7 +21,7 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useActiveScope } from "../../../hooks/useActiveScope";
 import { getOfficeIp, setOfficeIp } from "../../../api/attendance";
 import { djangoQueryKeys } from "../../../api/queryKeys";
-import { parseIpList } from "../../../utility/network";
+import { isIpInCidr, parseIpList, toSubnet24 } from "../../../utility/network";
 import { AppCard } from "../../../components/ui";
 import { useT } from "../../../i18n/VerticalProvider";
 import { SettingsLayout } from "../SettingsLayout";
@@ -118,6 +119,66 @@ const IpListField: React.FC<IpListFieldProps> = ({
         />
       )}
     />
+  );
+};
+
+interface BindCurrentIpButtonProps {
+  /** Публичный IP текущего пользователя, определённый нашим сервером. */
+  currentIp: string;
+  value: string[];
+  onChange: (next: string[]) => void;
+  inputValue: string;
+  onInputValueChange: (next: string) => void;
+  disabled?: boolean;
+}
+
+/**
+ * «Привязать текущий IP»: добавляет в поле подсеть /24 от IP, с которого
+ * сейчас открыта страница. Только в форму — сохраняет общая кнопка.
+ */
+const BindCurrentIpButton: React.FC<BindCurrentIpButtonProps> = ({
+  currentIp,
+  value,
+  onChange,
+  inputValue,
+  onInputValueChange,
+  disabled,
+}) => {
+  const { t } = useT("settings");
+  const ip = currentIp.trim();
+  if (!ip) return null;
+
+  const subnet = toSubnet24(ip);
+  // Недобранный текст тоже считается — как и при сохранении.
+  const merged = mergeIpText(value, inputValue);
+  const alreadyBound = merged.some((allowed) => isIpInCidr(ip, allowed));
+
+  return (
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      flexWrap="wrap"
+      useFlexGap
+      sx={{ mt: 0.5 }}
+    >
+      <Button
+        size="small"
+        startIcon={<AddLinkOutlined />}
+        disabled={disabled || alreadyBound}
+        onClick={() => {
+          onChange(mergeIpText(merged, subnet));
+          onInputValueChange("");
+        }}
+      >
+        {t("skud.bindCurrentIp", { subnet })}
+      </Button>
+      <Typography variant="caption" color="text.secondary">
+        {alreadyBound
+          ? t("skud.currentIpBound", { ip })
+          : t("skud.currentIpHint", { ip })}
+      </Typography>
+    </Stack>
   );
 };
 
@@ -298,6 +359,14 @@ const DjangoSkudSettingsPage: React.FC = () => {
                   loading={loading}
                   helperText={t("skud.orgIpHelper")}
                 />
+                <BindCurrentIpButton
+                  currentIp={query.data?.currentIp ?? ""}
+                  value={ips}
+                  onChange={setIps}
+                  inputValue={orgIpInput}
+                  onInputValueChange={setOrgIpInput}
+                  disabled={loading || saving || query.isError}
+                />
 
                 {branches.length > 0 && (
                   <>
@@ -315,29 +384,37 @@ const DjangoSkudSettingsPage: React.FC = () => {
                       {t("skud.branchIpsDescription")}
                     </Typography>
                     <Stack spacing={2}>
-                      {branches.map((b) => (
-                        <IpListField
-                          key={b.branchId}
-                          label={b.branchName}
-                          placeholder={t("skud.ipPlaceholder")}
-                          value={branchIps[b.branchId] ?? []}
-                          onChange={(next) =>
+                      {branches.map((b) => {
+                        const fieldProps = {
+                          value: branchIps[b.branchId] ?? [],
+                          onChange: (next: string[]) =>
                             setBranchIps((prev) => ({
                               ...prev,
                               [b.branchId]: next,
-                            }))
-                          }
-                          inputValue={branchIpInputs[b.branchId] ?? ""}
-                          onInputValueChange={(next) =>
+                            })),
+                          inputValue: branchIpInputs[b.branchId] ?? "",
+                          onInputValueChange: (next: string) =>
                             setBranchIpInputs((prev) => ({
                               ...prev,
                               [b.branchId]: next,
-                            }))
-                          }
-                          disabled={loading || saving || query.isError}
-                          helperText={t("skud.branchIpHelper")}
-                        />
-                      ))}
+                            })),
+                          disabled: loading || saving || query.isError,
+                        };
+                        return (
+                          <Box key={b.branchId}>
+                            <IpListField
+                              {...fieldProps}
+                              label={b.branchName}
+                              placeholder={t("skud.ipPlaceholder")}
+                              helperText={t("skud.branchIpHelper")}
+                            />
+                            <BindCurrentIpButton
+                              {...fieldProps}
+                              currentIp={query.data?.currentIp ?? ""}
+                            />
+                          </Box>
+                        );
+                      })}
                     </Stack>
                   </>
                 )}

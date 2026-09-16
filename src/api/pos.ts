@@ -132,3 +132,14 @@ export const checkoutPosCart = (
     method: "POST",
     body: { ...cart, ...data },
   });
+
+export const getPosHistory = (
+  scope: PosScope,
+  params: { offset?: number; status?: string; clientId?: number | null } = {},
+  signal?: AbortSignal,
+) => {
+  const query = new URLSearchParams({ offset: String(params.offset ?? 0) });
+  if (params.status) query.set("status", params.status);
+  if (params.clientId != null) query.set("clientId", String(params.clientId));
+  return posRequest<PosSavedReceipt[]>(scope, `history/?${query.toString()}`, { signal });
+};

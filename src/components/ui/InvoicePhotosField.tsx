@@ -10,10 +10,11 @@ import {
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 
 import { INVOICE_PHOTOS_MAX } from "../../api/invoicePhotos";
-import { PHOTO_ACCEPT } from "../../utility/imageCompression";
+import { INVOICE_DOCUMENT_ACCEPT, isPdfFile } from "../../utility/imageCompression";
 import type { UseInvoicePhotosResult } from "../../hooks/useInvoicePhotos";
 
 export type InvoicePhotosFieldProps = {
@@ -39,7 +40,7 @@ const TILE = 88;
  */
 export const InvoicePhotosField: React.FC<InvoicePhotosFieldProps> = ({
   state,
-  label = "Фото накладной",
+  label = "Файл накладной",
   disabled = false,
   readOnly = false,
 }) => {
@@ -50,17 +51,19 @@ export const InvoicePhotosField: React.FC<InvoicePhotosFieldProps> = ({
 
   const locked = disabled || state.busy;
 
-  const tiles: { key: string; url: string; onRemove?: () => void }[] = [
+  const tiles: { key: string; url: string; isPdf: boolean; onRemove?: () => void }[] = [
     // Прежний одиночный чек расхода бэк отдаёт первым элементом списка
     // (отрицательный id) — отдельной плитки под него не нужно.
     ...state.photos.map((p) => ({
       key: `remote-${p.id}`,
       url: p.url,
+      isPdf: isPdfFile({ name: p.fileName ?? p.url, type: "" }),
       onRemove: readOnly ? undefined : () => void state.removePhoto(p.id),
     })),
     ...state.pending.map((p) => ({
       key: `local-${p.localId}`,
       url: p.previewUrl,
+      isPdf: isPdfFile(p.file),
       onRemove: readOnly ? undefined : () => state.removePending(p.localId),
     })),
   ];
@@ -72,7 +75,7 @@ export const InvoicePhotosField: React.FC<InvoicePhotosFieldProps> = ({
           {label}
         </Typography>
         <Typography variant="caption" color="text.disabled">
-          до {INVOICE_PHOTOS_MAX} шт
+          до {INVOICE_PHOTOS_MAX} файлов
         </Typography>
         {state.loading && <CircularProgress size={12} />}
       </Stack>
@@ -94,7 +97,7 @@ export const InvoicePhotosField: React.FC<InvoicePhotosFieldProps> = ({
       <input
         ref={inputRef}
         type="file"
-        accept={PHOTO_ACCEPT}
+        accept={INVOICE_DOCUMENT_ACCEPT}
         multiple
         style={{ display: "none" }}
         onChange={(e) => {
@@ -122,13 +125,33 @@ export const InvoicePhotosField: React.FC<InvoicePhotosFieldProps> = ({
               borderColor: "divider",
             }}
           >
-            <Box
-              component="img"
-              src={tile.url}
-              alt={label}
-              onClick={() => setPreview(tile.url)}
-              sx={{ width: "100%", height: "100%", objectFit: "cover", cursor: "zoom-in" }}
-            />
+            {tile.isPdf ? (
+              <Box
+                component="a"
+                href={tile.url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Открыть ${label} в PDF`}
+                sx={{
+                  width: "100%",
+                  height: "100%",
+                  display: "grid",
+                  placeItems: "center",
+                  color: "error.main",
+                  bgcolor: "action.hover",
+                }}
+              >
+                <PictureAsPdfOutlined fontSize="large" />
+              </Box>
+            ) : (
+              <Box
+                component="img"
+                src={tile.url}
+                alt={label}
+                onClick={() => setPreview(tile.url)}
+                sx={{ width: "100%", height: "100%", objectFit: "cover", cursor: "zoom-in" }}
+              />
+            )}
             {tile.onRemove && (
               <IconButton
                 size="small"

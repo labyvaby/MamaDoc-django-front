@@ -26,6 +26,8 @@ export type { DateNavigationProps } from "./DateNavigation";
 export { MonthNavigation } from "./MonthNavigation";
 export type { MonthNavigationProps } from "./MonthNavigation";
 export { ListLoadingSkeleton, ListEmptyState } from "./listStates";
+export { FilterPill, FILTER_PILL_HEIGHT, pillSx } from "./FilterPill";
+export type { FilterPillProps } from "./FilterPill";
 export { SegmentedTabs } from "./SegmentedTabs";
 export type { SegmentedTab, SegmentedTabsProps } from "./SegmentedTabs";
 export { cascadeContainer, cascadeItem } from "./motionPresets";
