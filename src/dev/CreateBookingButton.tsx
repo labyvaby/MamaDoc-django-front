@@ -64,7 +64,8 @@ import dayjs, { type Dayjs } from "dayjs";
 import { CustomDatePicker } from "../components/ui";
 import { usePermissions } from "../hooks/usePermissions";
 import {
-  HOTEL_ROOMS,
+  getHotelRoomCategoriesSnapshot,
+  subscribeHotelRoomCategories,
   addCustomBooking,
   getHotelGuests,
   findDetailedGuestBooking,
@@ -210,6 +211,11 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // Кнопка «Добавить» на «Гостях» зовёт без аргументов — форма просто
   // открывается пустой (room/checkIn отсутствуют).
   const quickBookingRequest = React.useSyncExternalStore(subscribeQuickBookingRequest, getQuickBookingRequestSnapshot);
+
+  // Список номеров — общий стор с «Настройка» → «Номера»: новый номер попадает
+  // в выпадающий список формы без reload.
+  const roomCategories = React.useSyncExternalStore(subscribeHotelRoomCategories, getHotelRoomCategoriesSnapshot);
+  const rooms = React.useMemo(() => roomCategories.flatMap((c) => c.rooms), [roomCategories]);
   React.useEffect(() => {
     if (!quickBookingRequest) return;
     reset();
@@ -355,7 +361,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
             {/* ── 1. Проживание ── */}
             <SectionTitle>Проживание</SectionTitle>
             <TextField select label="Номер" value={room} onChange={(e) => setRoom(e.target.value)} fullWidth>
-              {HOTEL_ROOMS.map((r) => (
+              {rooms.map((r) => (
                 <MenuItem key={r} value={r}>
                   {r}
                 </MenuItem>

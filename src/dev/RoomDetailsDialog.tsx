@@ -1,6 +1,7 @@
 /**
  * Детали номера — открывается кликом по номеру в RoomBookingGrid. Тариф,
- * вместимость, удобства (из HOTEL_ROOM_CATEGORIES) и доступность на
+ * вместимость, удобства (getRoomCategory — стор категорий в mockDemoData.ts)
+ * и доступность на
  * ближайшие 45 дней (getRoomAvailability из mockDemoData.ts — сгенерированные
  * брони + созданные вручную через CreateBookingButton, вместе).
  */

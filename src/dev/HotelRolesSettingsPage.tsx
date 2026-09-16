@@ -1,6 +1,7 @@
 /**
- * «Настройки» → «Роли и права» для Viva — подменяет реальный SettingsIndexPage
- * (см. src/pages/settings/SettingsRouter.tsx), у которого вкладки завязаны на
+ * «Настройки» → «Роли и права» для Viva — один из двух разделов
+ * HotelSettingsPage.tsx, которая подменяет реальный SettingsIndexPage (см.
+ * src/pages/settings/SettingsRouter.tsx), у которого вкладки завязаны на
  * реальный RBAC (src/api/rbac.ts) и клиническую специфику (диагнозы, страховые
  * и т.п.), не применимую к отелю.
  *

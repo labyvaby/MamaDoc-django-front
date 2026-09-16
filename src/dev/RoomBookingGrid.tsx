@@ -12,8 +12,12 @@
  * addCustomBooking/subscribeCustomBookings в mockDemoData.ts) — подписка
  * через useSyncExternalStore, новая бронь появляется без reload. Клик по
  * номеру открывает RoomDetailsDialog (тариф, вместимость, доступность).
- * Люкс-номера (HOTEL_ROOM_CATEGORIES[].luxury) отмечены значком и акцентным
- * фоном ярлыка. Клик по числу в шапке выбирает дату (общий стор
+ * Люкс-номера (HotelRoomCategory.luxury) отмечены значком и акцентным фоном
+ * ярлыка. Строки ROWS собраны из общего стора категорий/номеров
+ * (subscribeHotelRoomCategories/getHotelRoomCategoriesSnapshot в
+ * mockDemoData.ts) — номер, добавленный в «Настройка» → «Номера»
+ * (HotelRoomsSettingsPage), появляется в шахматке без reload, тот же приём,
+ * что и у ручных броней ниже. Клик по числу в шапке выбирает дату (общий стор
  * selectedHotelDate) — HotelOccupancyBanner сразу показывает загрузку и
  * гостей за этот день, а не всегда за сегодня. Клик по бару брони открывает
  * GuestDetailsDialog (телефон, история проживаний) — так же и из списка
@@ -36,7 +40,8 @@ import TaskAltOutlined from "@mui/icons-material/TaskAltOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import {
-  HOTEL_ROOM_CATEGORIES,
+  getHotelRoomCategoriesSnapshot,
+  subscribeHotelRoomCategories,
   getHotelBookings,
   getCustomBookingsSnapshot,
   subscribeCustomBookings,
@@ -74,11 +79,6 @@ const DAY_COL_WIDTH = 64;
 
 type RowPlan = { kind: "category"; label: string } | { kind: "room"; room: string };
 
-const ROWS: RowPlan[] = HOTEL_ROOM_CATEGORIES.flatMap((cat) => [
-  { kind: "category" as const, label: cat.name },
-  ...cat.rooms.map((room) => ({ kind: "room" as const, room })),
-]);
-
 export const RoomBookingGrid: React.FC = () => {
   const theme = useTheme();
   const [windowStart, setWindowStart] = React.useState<Dayjs>(() =>
@@ -89,6 +89,18 @@ export const RoomBookingGrid: React.FC = () => {
   // Общий с HotelOccupancyBanner стор — клик по числу ниже сразу двигает
   // карточки «Загрузка»/«Гости» сверху страницы.
   const selectedDate = React.useSyncExternalStore(subscribeSelectedHotelDate, getSelectedHotelDate);
+
+  // Категории/номера — общий стор с «Настройка» → «Номера»: новый номер
+  // появляется в шахматке без reload, тот же приём, что customBookings ниже.
+  const roomCategories = React.useSyncExternalStore(subscribeHotelRoomCategories, getHotelRoomCategoriesSnapshot);
+  const ROWS: RowPlan[] = React.useMemo(
+    () =>
+      roomCategories.flatMap((cat) => [
+        { kind: "category" as const, label: cat.name },
+        ...cat.rooms.map((room) => ({ kind: "room" as const, room })),
+      ]),
+    [roomCategories],
+  );
 
   const dates = React.useMemo(
     () => Array.from({ length: NUM_DAYS }, (_, i) => windowStart.add(i, "day")),

@@ -199,7 +199,7 @@ export interface HotelRoomCategory {
   luxury?: boolean;
 }
 
-export const HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
+const DEFAULT_HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
   {
     name: "Twin без окна",
     rooms: ["111", "112", "113"],
@@ -243,11 +243,88 @@ export const HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
   },
 ];
 
-export const HOTEL_ROOMS: string[] = HOTEL_ROOM_CATEGORIES.flatMap((c) => c.rooms);
+// Номера — тот же изменяемый браузерный стор, что HOTEL_ROLES ниже (localStorage +
+// слушатели): «Настройка» → «Номера» добавляет номер в существующую категорию, и
+// шахматка/форма брони должны увидеть его без reload. HOTEL_ROOM_CATEGORIES/HOTEL_ROOMS
+// раньше были статическими константами — теперь это функции, читающие живой снимок
+// на каждый вызов, а не застывший список из 12 номеров на момент импорта модуля.
+
+const HOTEL_ROOM_CATEGORIES_KEY = "mamadoc:mockHotelRoomCategories";
+const hotelRoomCategoriesListeners = new Set<() => void>();
+
+function isHotelRoomCategory(c: unknown): c is HotelRoomCategory {
+  return (
+    !!c &&
+    typeof c === "object" &&
+    typeof (c as HotelRoomCategory).name === "string" &&
+    Array.isArray((c as HotelRoomCategory).rooms)
+  );
+}
+
+function readHotelRoomCategoriesFromStorage(): HotelRoomCategory[] {
+  try {
+    const raw = window.localStorage.getItem(HOTEL_ROOM_CATEGORIES_KEY);
+    if (!raw) return DEFAULT_HOTEL_ROOM_CATEGORIES;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.every(isHotelRoomCategory)) return DEFAULT_HOTEL_ROOM_CATEGORIES;
+    return parsed;
+  } catch {
+    return DEFAULT_HOTEL_ROOM_CATEGORIES;
+  }
+}
+
+let hotelRoomCategoriesCache: HotelRoomCategory[] = readHotelRoomCategoriesFromStorage();
+
+function persistHotelRoomCategories(next: HotelRoomCategory[]): void {
+  hotelRoomCategoriesCache = next;
+  try {
+    window.localStorage.setItem(HOTEL_ROOM_CATEGORIES_KEY, JSON.stringify(next));
+  } catch {
+    // приватный режим/запрет на localStorage — доживёт до конца вкладки в памяти
+  }
+  hotelRoomCategoriesListeners.forEach((fn) => fn());
+}
+
+export function subscribeHotelRoomCategories(onChange: () => void): () => void {
+  hotelRoomCategoriesListeners.add(onChange);
+  return () => hotelRoomCategoriesListeners.delete(onChange);
+}
+
+export function getHotelRoomCategoriesSnapshot(): HotelRoomCategory[] {
+  return hotelRoomCategoriesCache;
+}
+
+/** Плоский список всех номеров — читает текущий стор на каждый вызов. */
+export function getHotelRooms(): string[] {
+  return hotelRoomCategoriesCache.flatMap((c) => c.rooms);
+}
 
 /** Категория (тариф/удобства) по номеру комнаты. */
 export function getRoomCategory(room: string): HotelRoomCategory | undefined {
-  return HOTEL_ROOM_CATEGORIES.find((c) => c.rooms.includes(room));
+  return hotelRoomCategoriesCache.find((c) => c.rooms.includes(room));
+}
+
+/** Занят ли номер таким названием уже в какой-либо категории — проверка дублей при добавлении. */
+export function roomNumberExists(room: string): boolean {
+  return hotelRoomCategoriesCache.some((c) => c.rooms.includes(room));
+}
+
+/** Добавляет номер в существующую категорию (по имени). Дубль по всему отелю — не добавляет. */
+export function addHotelRoom(categoryName: string, room: string): void {
+  const trimmed = room.trim();
+  if (!trimmed || roomNumberExists(trimmed)) return;
+  const next = hotelRoomCategoriesCache.map((c) =>
+    c.name === categoryName ? { ...c, rooms: [...c.rooms, trimmed] } : c,
+  );
+  persistHotelRoomCategories(next);
+}
+
+/** Убирает номер из категории — исправить опечатку при добавлении. */
+export function deleteHotelRoom(categoryName: string, room: string): void {
+  const next = hotelRoomCategoriesCache.map((c) =>
+    c.name === categoryName ? { ...c, rooms: c.rooms.filter((r) => r !== room) } : c,
+  );
+  persistHotelRoomCategories(next);
 }
 
 /** Статус уборки номера — независим от того, занят номер бронью или нет. */
@@ -395,7 +472,7 @@ export function getHotelBookings(dateFrom: string, dateTo: string): HotelBooking
   const out: HotelBooking[] = [];
   let bookingId = 960001;
 
-  for (const room of HOTEL_ROOMS) {
+  for (const room of getHotelRooms()) {
     const rnd = rngFor(`bookings:${room}`);
     let cursor = rangeStart;
     let guard = 0;
@@ -590,7 +667,7 @@ export function getHotelDailyReport(date: string): HotelDailyReport {
   const windowTo = dayjs(date).add(1, "day").format("YYYY-MM-DD");
   const all = [...getHotelBookings(date, windowTo), ...customBookingsCache];
 
-  const rows: HotelDailyReportRow[] = HOTEL_ROOMS.map((room) => {
+  const rows: HotelDailyReportRow[] = getHotelRooms().map((room) => {
     const category = getRoomCategory(room)!;
     const booking = all.find(
       (b) => b.roomNumber === room && !dayjs(date).isBefore(b.checkIn) && dayjs(date).isBefore(b.checkOut),
@@ -605,7 +682,7 @@ export function getHotelDailyReport(date: string): HotelDailyReport {
   });
 
   const occupied = rows.filter((r) => r.booking);
-  const totalRooms = HOTEL_ROOMS.length;
+  const totalRooms = getHotelRooms().length;
 
   return {
     date,
@@ -1413,7 +1490,7 @@ export function getHotelOccupancySnapshot(dateStr?: string): HotelOccupancySnaps
   const today = dayjs().format("YYYY-MM-DD");
   const rnd = rngFor(`occupancy:${date}`);
   const rndOps = rngFor(`ops:${today}`);
-  const totalRooms = HOTEL_ROOMS.length;
+  const totalRooms = getHotelRooms().length;
 
   const freeRooms = 1 + Math.floor(rnd() * 4); // 1–4
   const occupiedRooms = totalRooms - freeRooms;
