@@ -60,6 +60,27 @@ export type PosQuote = {
     name: string;
   }>;
 };
+/** Статусы чека — `ReceiptStatus` бэка. Отменённый отложенный чек возвращается в `draft`. */
+export type PosReceiptStatus = "draft" | "held" | "completed" | "returned";
+/** Способы оплаты — `ReceiptPaymentMethod` бэка; чек принимает несколько сразу. */
+export type PosPaymentMethod =
+  | "cash"
+  | "card"
+  | "cashless"
+  | "bonus"
+  | "certificate"
+  | "voucher"
+  | "debt";
+/** Запись журнала действий по чеку: кто и что сделал (продажа, откладывание, возврат…). */
+export type PosReceiptAudit = {
+  id: number;
+  action: string;
+  reason: string;
+  userId: number | null;
+  userName: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
 export type PosSavedReceipt = {
   id: number;
   number: string;
@@ -67,21 +88,55 @@ export type PosSavedReceipt = {
   branchId: number;
   warehouseId: number;
   clientId: number | null;
-  status: string;
+  /** Имена — чтобы история не показывала «Клиент #12». Бэк отдаёт их с 15.09.2026. */
+  clientName?: string | null;
+  sellerId?: number | null;
+  sellerName?: string | null;
+  cashboxShiftId?: number | null;
+  status: PosReceiptStatus | string;
   comment: string;
   subtotal: string;
   discountTotal: string;
   totalAmount: string;
   createdAt: string;
+  completedAt?: string | null;
   lines: Array<{
     id: number;
     productId: number;
     productName: string;
     quantity: string;
     unitPrice: string;
+    discountAmount?: string;
     total: string;
   }>;
-  payments: Array<{ id: number; method: string; amount: string }>;
+  payments: Array<{
+    id: number;
+    method: PosPaymentMethod | string;
+    amount: string;
+    reference?: string;
+    cashlessMethodId?: number | null;
+  }>;
+  audit?: PosReceiptAudit[];
+};
+/** Сводка истории по тем же фильтрам, что и список: считается по всем чекам, а не по странице. */
+export type PosHistorySummary = {
+  count: number;
+  completed: number;
+  held: number;
+  returned: number;
+  cancelled: number;
+  revenue: string;
+  discountTotal: string;
+};
+export type PosHistoryFilters = {
+  offset?: number;
+  status?: string;
+  clientId?: number | null;
+  /** ISO-дата (YYYY-MM-DD), включительно, в часовом поясе организации. */
+  dateFrom?: string;
+  dateTo?: string;
+  /** Начало номера чека, товар, имя или телефон клиента. */
+  search?: string;
 };
 export const posRequest = <T>(
   scope: PosScope,
@@ -133,13 +188,37 @@ export const checkoutPosCart = (
     body: { ...cart, ...data },
   });
 
-export const getPosHistory = (
-  scope: PosScope,
-  params: { offset?: number; status?: string; clientId?: number | null } = {},
-  signal?: AbortSignal,
-) => {
-  const query = new URLSearchParams({ offset: String(params.offset ?? 0) });
+/** Страница истории — 25 чеков, размер задаёт бэк. */
+export const POS_HISTORY_PAGE_SIZE = 25;
+
+const historyQuery = (params: PosHistoryFilters) => {
+  const query = new URLSearchParams();
   if (params.status) query.set("status", params.status);
   if (params.clientId != null) query.set("clientId", String(params.clientId));
-  return posRequest<PosSavedReceipt[]>(scope, `history/?${query.toString()}`, { signal });
+  if (params.dateFrom) query.set("dateFrom", params.dateFrom);
+  if (params.dateTo) query.set("dateTo", params.dateTo);
+  if (params.search?.trim()) query.set("search", params.search.trim());
+  return query;
 };
+
+const withQuery = (path: string, query: URLSearchParams) => {
+  const encoded = query.toString();
+  return encoded ? `${path}?${encoded}` : path;
+};
+
+export const getPosHistory = (
+  scope: PosScope,
+  params: PosHistoryFilters = {},
+  signal?: AbortSignal,
+) => {
+  const query = historyQuery(params);
+  query.set("offset", String(params.offset ?? 0));
+  return posRequest<PosSavedReceipt[]>(scope, withQuery("history/", query), { signal });
+};
+
+export const getPosHistorySummary = (
+  scope: PosScope,
+  params: Omit<PosHistoryFilters, "offset"> = {},
+  signal?: AbortSignal,
+) =>
+  posRequest<PosHistorySummary>(scope, withQuery("history/summary/", historyQuery(params)), { signal });
