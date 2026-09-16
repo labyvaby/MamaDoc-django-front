@@ -17,6 +17,7 @@ import HotelOutlined from "@mui/icons-material/HotelOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import RemoveCircleOutlineOutlined from "@mui/icons-material/RemoveCircleOutlineOutlined";
+import PublicOutlined from "@mui/icons-material/PublicOutlined";
 
 import { AppCard, ListEmptyState, UserAvatar } from "../components/ui";
 import { subtleBg } from "../theme/uiHelpers";
@@ -24,6 +25,7 @@ import {
   formatHotelDate,
   formatHotelDateRange,
   BOARD_TYPE_LABELS,
+  BOOKING_SOURCE_LABELS,
   GUEST_TYPE_LABELS,
   VISIT_PURPOSE_LABELS,
 } from "./mockDemoData";
@@ -159,6 +161,14 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ guestName, state
                     Всего проживаний: {guest.bookings.length}
                   </Typography>
                 </Stack>
+              </FactBlock>
+            )}
+
+            {/* Источник — платформа, с которой пришёл гость (профиль AddGuestDrawer или
+                самая свежая бронь с этим полем) — та же колонка, что в списке слева. */}
+            {guest.source && (
+              <FactBlock icon={<PublicOutlined />} title="Источник">
+                <Typography variant="body2">{BOOKING_SOURCE_LABELS[guest.source]}</Typography>
               </FactBlock>
             )}
 

@@ -4,6 +4,10 @@
  * чёрного списка поверх аватара, подсветка выбранной строки. Без бесконечной
  * подгрузки — список гостей отеля собирается целиком на клиенте (не тысячи
  * записей, как в реальной картотеке), фильтрация тоже локальная.
+ *
+ * Источник (g.source, справа в строке) — платформа, с которой пришёл гость
+ * (сайт/OTA/звонок и т.п., см. HotelGuestSummary.source в mockDemoData.ts) —
+ * запрошен отдельно как колонка списка, не только карточка гостя.
  */
 import React from "react";
 import { Box, Stack, Tooltip, Typography } from "@mui/material";
@@ -13,7 +17,7 @@ import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 
 import { AppCard, ListEmptyState, UserAvatar } from "../components/ui";
 import { subtleBg } from "../theme/uiHelpers";
-import type { HotelGuestSummary } from "./mockDemoData";
+import { BOOKING_SOURCE_LABELS, type HotelGuestSummary } from "./mockDemoData";
 
 export interface GuestListPanelProps {
   guests: HotelGuestSummary[];
@@ -125,9 +129,16 @@ export const GuestListPanel: React.FC<GuestListPanelProps> = ({ guests, totalCou
                   </Typography>
                 </Box>
 
-                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                  {g.bookings.length}
-                </Typography>
+                <Stack alignItems="flex-end" spacing={0.25} sx={{ flexShrink: 0 }}>
+                  {g.source && (
+                    <Typography variant="caption" color="text.secondary" noWrap sx={{ fontSize: "0.65rem" }}>
+                      {BOOKING_SOURCE_LABELS[g.source]}
+                    </Typography>
+                  )}
+                  <Typography variant="caption" color="text.secondary">
+                    {g.bookings.length}
+                  </Typography>
+                </Stack>
               </Box>
             );
           })}

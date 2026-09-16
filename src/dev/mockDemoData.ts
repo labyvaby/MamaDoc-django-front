@@ -471,6 +471,55 @@ export const BOOKING_SOURCE_LABELS: Record<BookingSource, string> = {
   walkin: "Без брони (walk-in)",
 };
 
+// ── Имитация распознавания фото паспорта — AddGuestDrawer.tsx/CreateBookingButton.tsx ──
+//
+// Настоящее распознавание — отдельная фича на потом (нужен бэкенд с OCR).
+// Сейчас по выбранному файлу подставляются правдоподобные фейковые реквизиты
+// — витрина того, как будет выглядеть автозаполнение. Детерминировано по
+// имени файла+размеру: один и тот же файл всегда даёт один и тот же
+// результат, повторный выбор того же фото не скачет.
+
+export interface PassportScanResult {
+  guestType: GuestType;
+  idNumber?: string;
+  inn?: string;
+  citizenship?: string;
+  passportNumber?: string;
+  passportCountry?: string;
+  /** YYYY-MM-DD. */
+  passportExpiry?: string;
+}
+
+const FOREIGN_CITIZENSHIPS = ["Казахстан", "Узбекистан", "Россия", "Таджикистан", "Турция"];
+
+function randomDigits(rnd: () => number, length: number): string {
+  let s = "";
+  for (let i = 0; i < length; i++) s += Math.floor(rnd() * 10);
+  return s;
+}
+
+export function simulatePassportScan(fileSeed: string): PassportScanResult {
+  const rnd = rngFor(`passport-scan:${fileSeed}`);
+  if (rnd() > 0.3) {
+    return {
+      guestType: "resident",
+      idNumber: randomDigits(rnd, 11),
+      inn: randomDigits(rnd, 14),
+    };
+  }
+  const citizenship = FOREIGN_CITIZENSHIPS[Math.floor(rnd() * FOREIGN_CITIZENSHIPS.length)];
+  const passportLetters = String.fromCharCode(65 + Math.floor(rnd() * 26)) + String.fromCharCode(65 + Math.floor(rnd() * 26));
+  return {
+    guestType: "foreign",
+    citizenship,
+    passportNumber: `${passportLetters}${randomDigits(rnd, 7)}`,
+    passportCountry: citizenship,
+    passportExpiry: dayjs()
+      .add(1 + Math.floor(rnd() * 5), "year")
+      .format("YYYY-MM-DD"),
+  };
+}
+
 export const VISIT_PURPOSE_LABELS: Record<VisitPurpose, string> = {
   tourism: "Туризм",
   business: "Бизнес",
@@ -562,6 +611,13 @@ export function getHotelBookings(dateFrom: string, dateTo: string): HotelBooking
         : checkIn.isAfter(today, "day")
         ? "confirmed"
         : "arrived";
+      // Источник — единственное «ручное» поле брони, которое всё же есть и у
+      // сгенерированных: в реальности его определяет канал/интеграция (OTA,
+      // сайт, звонок), не сотрудник за экраном — тот же принцип, по которому
+      // «Тариф» на приёме OTA-платформы определяется автоматически.
+      const sourceRoll = rnd();
+      const bookingSource: BookingSource =
+        sourceRoll < 0.35 ? "ota" : sourceRoll < 0.55 ? "direct" : sourceRoll < 0.75 ? "phone" : sourceRoll < 0.9 ? "agent" : "walkin";
       out.push({
         id: bookingId++,
         roomNumber: room,
@@ -569,6 +625,7 @@ export function getHotelBookings(dateFrom: string, dateTo: string): HotelBooking
         checkIn: checkIn.format("YYYY-MM-DD"),
         checkOut: checkOut.format("YYYY-MM-DD"),
         status,
+        bookingSource,
       });
       cursor = checkOut;
     }
@@ -1120,6 +1177,8 @@ export interface HotelGuestSummary {
   passportCountry?: string;
   /** YYYY-MM-DD. */
   passportExpiry?: string;
+  /** Платформа, с которой пришёл гость — самая свежая бронь с этим полем, иначе профиль (AddGuestDrawer). Показывается в колонке списка «Гости». */
+  source?: BookingSource;
   isBlacklisted: boolean;
   blacklistReason?: string;
 }
@@ -1191,9 +1250,12 @@ export function getGuestBlacklistSnapshot(): Record<string, GuestBlacklistRecord
 //
 // «Добавить» на «Гостях» заводит запись здесь, не бронь: тот же стор-приём,
 // что HOTEL_ROOM_CATEGORIES/HOTEL_ROLES (localStorage + слушатели). Поля —
-// только то, что относится к самому человеку (документ), а не к конкретному
-// заезду (цель визита, источник брони, миграционная карта остаются полями
-// брони в CreateBookingButton — они меняются от поездки к поездке).
+// то, что относится к самому человеку (документ), а не к конкретному заезду
+// (цель визита, миграционная карта остаются полями брони в CreateBookingButton
+// — они меняются от поездки к поездке). Источник — исключение: это канал, по
+// которому гость ВООБЩЕ появился в базе (сайт/OTA/агент), тоже свойство
+// человека, а не только брони — отдельная бронь может уточнить его позже
+// (getHotelGuests ниже берёт самую свежую бронь с этим полем, иначе профиль).
 
 export interface HotelGuestProfile {
   name: string;
@@ -1207,6 +1269,7 @@ export interface HotelGuestProfile {
   passportCountry?: string;
   /** YYYY-MM-DD. */
   passportExpiry?: string;
+  source?: BookingSource;
   /** Кто завёл гостя — usePermissions().employee, не выбор из списка. */
   createdBy?: string;
   createdAt?: string;
@@ -1283,6 +1346,7 @@ export function getHotelGuests(): HotelGuestSummary[] {
     // Реально введённый в форме телефон важнее сгенерированного — берём
     // с самой свежей брони, где он есть.
     const enteredPhone = [...bookings].reverse().find((b) => b.guestPhone)?.guestPhone;
+    const latestSource = [...bookings].reverse().find((b) => b.bookingSource)?.bookingSource;
     const detailed = findDetailedGuestBooking(bookings);
     const profile = customGuestsCache.find((g) => g.name === name);
     const blacklist = guestBlacklistCache[name];
@@ -1298,6 +1362,7 @@ export function getHotelGuests(): HotelGuestSummary[] {
       passportNumber: detailed?.passportNumber ?? profile?.passportNumber,
       passportCountry: detailed?.passportCountry ?? profile?.passportCountry,
       passportExpiry: detailed?.passportExpiry ?? profile?.passportExpiry,
+      source: latestSource ?? profile?.source,
       isBlacklisted: blacklist != null,
       blacklistReason: blacklist?.reason,
     });

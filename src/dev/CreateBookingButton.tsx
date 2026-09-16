@@ -46,6 +46,7 @@ import {
   Card,
   CardContent,
   Checkbox,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -64,6 +65,7 @@ import {
   Typography,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import UploadOutlined from "@mui/icons-material/UploadOutlined";
@@ -80,6 +82,7 @@ import {
   findGuestsByPhone,
   getRoomAvailability,
   formatHotelDateRange,
+  simulatePassportScan,
   subscribeQuickBookingRequest,
   getQuickBookingRequestSnapshot,
   clearQuickBookingRequest,
@@ -157,6 +160,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [visitPurpose, setVisitPurpose] = React.useState<VisitPurpose | "">("");
   const [passportPhoto, setPassportPhoto] = React.useState<string | null>(null);
   const [photoError, setPhotoError] = React.useState<string | null>(null);
+  const [scanNotice, setScanNotice] = React.useState(false);
 
   // Дополнительно
   const [bookingSource, setBookingSource] = React.useState<BookingSource | "">("");
@@ -187,6 +191,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setVisitPurpose("");
     setPassportPhoto(null);
     setPhotoError(null);
+    setScanNotice(false);
     setBookingSource("");
     setSpecialRequests("");
     setCompanyInfo("");
@@ -280,6 +285,17 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     const reader = new FileReader();
     reader.onload = () => setPassportPhoto(typeof reader.result === "string" ? reader.result : null);
     reader.readAsDataURL(file);
+
+    // Имитация распознавания — реального OCR нет, см. simulatePassportScan в mockDemoData.ts.
+    const scan = simulatePassportScan(`${file.name}:${file.size}`);
+    setGuestType(scan.guestType);
+    setIdNumber(scan.idNumber ?? "");
+    setInn(scan.inn ?? "");
+    setCitizenship(scan.citizenship ?? "");
+    setPassportNumber(scan.passportNumber ?? "");
+    setPassportCountry(scan.passportCountry ?? "");
+    setPassportExpiry(scan.passportExpiry ? dayjs(scan.passportExpiry) : null);
+    setScanNotice(true);
   };
 
   /**
@@ -669,6 +685,16 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         {photoError}
                       </Alert>
                     )}
+                    <Collapse in={scanNotice}>
+                      <Alert
+                        severity="info"
+                        icon={<AutoAwesomeOutlined fontSize="small" />}
+                        onClose={() => setScanNotice(false)}
+                        sx={{ fontSize: "0.8rem" }}
+                      >
+                        Реквизиты подставлены по фото — демо-распознавание, не настоящий OCR.
+                      </Alert>
+                    </Collapse>
 
                     <Divider />
                     <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>

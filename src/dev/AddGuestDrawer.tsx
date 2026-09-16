@@ -10,15 +10,28 @@
  * как у пациента; список найденных дублей и подписи — в стиле, уже принятом
  * в CreateBookingButton (Alert + «Использовать»), а не аватарки пациента.
  *
+ * Поле «Гость» — Autocomplete freeSolo с автопоиском по имени среди уже
+ * существующих гостей (getHotelGuests), тот же приём, что в CreateBookingButton
+ * — чтобы персонал не завёл дубль, набирая ФИО. Выбор существующего варианта
+ * из списка не создаёт нового гостя, а сразу использует найденного
+ * (handleUseDuplicate) — то же действие, что «Использовать» в предупреждении
+ * о дубле по телефону ниже.
+ *
+ * «Фото паспорта» в «Документ» — имитация распознавания (simulatePassportScan
+ * в mockDemoData.ts): реального OCR нет, при выборе файла просто
+ * подставляются правдоподобные фейковые реквизиты — витрина будущей фичи.
+ *
  * Гость заводится независимо от брони (addCustomGuest в mockDemoData.ts) —
- * тот же принцип, что пациент независимо от приёма. Документ — только
- * реквизиты личности (гражданство/паспорт), не то, что относится к
- * конкретному заезду (цель визита, источник брони — эти остаются полями
- * брони в CreateBookingButton).
+ * тот же принцип, что пациент независимо от приёма. Источник (платформа,
+ * откуда пришёл гость) — свойство самого человека, не только брони,
+ * поэтому есть и здесь (source в HotelGuestProfile), и в CreateBookingButton
+ * (bookingSource на конкретной брони уточняет его позже).
  */
 import React from "react";
 import {
   Alert,
+  Autocomplete,
+  Avatar,
   Box,
   Button,
   Collapse,
@@ -27,6 +40,7 @@ import {
   FormControlLabel,
   IconButton,
   InputAdornment,
+  MenuItem,
   Stack,
   Switch,
   TextField,
@@ -40,6 +54,8 @@ import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
+import UploadOutlined from "@mui/icons-material/UploadOutlined";
+import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import { motion } from "framer-motion";
 import dayjs, { type Dayjs } from "dayjs";
 
@@ -52,9 +68,14 @@ import { readFormDraft, writeFormDraft, clearFormDraft } from "../utility/formDr
 import {
   addCustomGuest,
   findGuestsByPhone,
+  getHotelGuests,
   setGuestBlacklisted,
+  simulatePassportScan,
+  initialsOf,
   GUEST_TYPE_LABELS,
+  BOOKING_SOURCE_LABELS,
   type GuestType,
+  type BookingSource,
   type HotelGuestProfile,
   type HotelGuestSummary,
 } from "./mockDemoData";
@@ -81,6 +102,7 @@ type GuestDraft = {
   passportCountry: string;
   /** YYYY-MM-DD или "". */
   passportExpiry: string;
+  source: BookingSource | "";
   isBlacklisted: boolean;
   blacklistReason: string;
 };
@@ -107,6 +129,7 @@ function isDraftEmpty(d: Omit<GuestDraft, "savedAt">): boolean {
     !d.passportNumber.trim() &&
     !d.passportCountry.trim() &&
     !d.passportExpiry &&
+    !d.source &&
     !d.isBlacklisted &&
     !d.blacklistReason.trim()
   );
@@ -133,6 +156,9 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
   const [passportNumber, setPassportNumber] = React.useState("");
   const [passportCountry, setPassportCountry] = React.useState("");
   const [passportExpiry, setPassportExpiry] = React.useState<Dayjs | null>(null);
+  const [source, setSource] = React.useState<BookingSource | "">("");
+  const [passportPhoto, setPassportPhoto] = React.useState<string | null>(null);
+  const [scanNotice, setScanNotice] = React.useState(false);
   const [isBlacklisted, setIsBlacklisted] = React.useState(false);
   const [blacklistReason, setBlacklistReason] = React.useState("");
   const [draftRestored, setDraftRestored] = React.useState(false);
@@ -154,15 +180,47 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     reader.readAsDataURL(file);
   };
 
+  /** Имитация распознавания фото паспорта — реального OCR нет, см. simulatePassportScan в mockDemoData.ts. */
+  const handlePickPassportPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setPhotoError("Нужен файл изображения");
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      setPhotoError("Файл больше 3 МБ — многовато для демо-хранилища (localStorage)");
+      return;
+    }
+    setPhotoError(null);
+    const reader = new FileReader();
+    reader.onload = () => setPassportPhoto(typeof reader.result === "string" ? reader.result : null);
+    reader.readAsDataURL(file);
+
+    const scan = simulatePassportScan(`${file.name}:${file.size}`);
+    setGuestType(scan.guestType);
+    setIdNumber(scan.idNumber ?? "");
+    setInn(scan.inn ?? "");
+    setCitizenship(scan.citizenship ?? "");
+    setPassportNumber(scan.passportNumber ?? "");
+    setPassportCountry(scan.passportCountry ?? "");
+    setPassportExpiry(scan.passportExpiry ? dayjs(scan.passportExpiry) : null);
+    setScanNotice(true);
+  };
+
   // ── reset / восстановление черновика при открытии ──────────────────────
   React.useEffect(() => {
     if (!open) {
       setPhotoFile(null);
       setPhotoPreview(null);
       setPhotoError(null);
+      setPassportPhoto(null);
+      setScanNotice(false);
       setName("");
       setPhone("");
       setGuestType("resident");
+      setSource("");
       setIdNumber("");
       setInn("");
       setCitizenship("");
@@ -185,6 +243,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
       setPassportNumber(draft.passportNumber);
       setPassportCountry(draft.passportCountry);
       setPassportExpiry(draft.passportExpiry ? dayjs(draft.passportExpiry) : null);
+      setSource(draft.source);
       setIsBlacklisted(draft.isBlacklisted);
       setBlacklistReason(draft.blacklistReason);
       setDraftRestored(true);
@@ -205,6 +264,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
       passportNumber,
       passportCountry,
       passportExpiry: passportExpiry ? passportExpiry.format("YYYY-MM-DD") : "",
+      source,
       isBlacklisted,
       blacklistReason,
     };
@@ -216,7 +276,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     if (!open) return;
     const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
-  }, [open, name, phone, guestType, idNumber, inn, citizenship, passportNumber, passportCountry, passportExpiry, isBlacklisted, blacklistReason]);
+  }, [open, name, phone, guestType, idNumber, inn, citizenship, passportNumber, passportCountry, passportExpiry, source, isBlacklisted, blacklistReason]);
 
   const handleClose = () => {
     flushDraftRef.current();
@@ -234,6 +294,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     setPassportNumber("");
     setPassportCountry("");
     setPassportExpiry(null);
+    setSource("");
     setIsBlacklisted(false);
     setBlacklistReason("");
     setDraftRestored(false);
@@ -244,6 +305,10 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     () => (open ? findGuestsByPhone(phone, name.trim() || undefined) : []),
     [open, phone, name],
   );
+
+  // ── автопоиск по ФИО (Autocomplete ниже) — чтобы персонал не завёл дубль,
+  // набирая имя уже существующего гостя.
+  const guestOptions = React.useMemo<HotelGuestSummary[]>(() => (open ? getHotelGuests() : []), [open]);
 
   const handleUseDuplicate = (guest: HotelGuestSummary) => {
     clearGuestDraft();
@@ -267,7 +332,9 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     const profile: HotelGuestProfile = {
       name: nameTrim,
       phone: phone.trim(),
-      photoDataUrl: photoPreview ?? undefined,
+      // Фото паспорта приоритетнее общего аватара — оно официальнее (лицо +
+      // документ на одном кадре), но если его не загрузили, подойдёт и аватар.
+      photoDataUrl: passportPhoto ?? photoPreview ?? undefined,
       guestType,
       idNumber: idNumber.trim() || undefined,
       inn: inn.trim() || undefined,
@@ -275,6 +342,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
       passportNumber: passportNumber.trim() || undefined,
       passportCountry: passportCountry.trim() || undefined,
       passportExpiry: passportExpiry ? passportExpiry.format("YYYY-MM-DD") : undefined,
+      source: source || undefined,
       createdBy: employee?.fullName || undefined,
       createdAt: dayjs().toISOString(),
     };
@@ -346,28 +414,67 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                 <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
                   Гость
                 </Typography>
-                <TextField
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  onBlur={() => setName(capitalizeFullName(name))}
-                  onKeyDown={submitOnEnter}
-                  fullWidth
-                  size="small"
-                  autoFocus
-                  placeholder="Имя и фамилия"
-                  {...v.field("name")}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <PersonOutlineOutlined fontSize="small" color="disabled" />
-                      </InputAdornment>
-                    ),
-                    endAdornment: name.trim() ? (
-                      <InputAdornment position="end">
-                        <CheckCircleOutlined fontSize="small" color="success" />
-                      </InputAdornment>
-                    ) : undefined,
+                <Autocomplete<HotelGuestSummary, false, false, true>
+                  freeSolo
+                  options={guestOptions}
+                  inputValue={name}
+                  onInputChange={(_, value) => setName(value)}
+                  onChange={(_, value) => {
+                    if (value && typeof value !== "string") handleUseDuplicate(value);
                   }}
+                  filterOptions={(options, state) => {
+                    const q = state.inputValue.trim().toLowerCase();
+                    if (!q) return [];
+                    return options.filter((g) => g.name.toLowerCase().includes(q)).slice(0, 6);
+                  }}
+                  getOptionLabel={(option) => (typeof option === "string" ? option : option.name)}
+                  renderOption={(props, option) => (
+                    <li {...props} key={option.name}>
+                      <Stack direction="row" alignItems="center" gap={1.25} sx={{ width: "100%" }}>
+                        <Avatar sx={{ width: 28, height: 28, fontSize: "0.75rem", bgcolor: "primary.main" }}>
+                          {initialsOf(option.name)}
+                        </Avatar>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap>
+                            {option.name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {option.phone}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </li>
+                  )}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      onBlur={() => setName(capitalizeFullName(name))}
+                      onKeyDown={submitOnEnter}
+                      fullWidth
+                      size="small"
+                      autoFocus
+                      placeholder="Имя и фамилия — начните вводить, чтобы найти гостя"
+                      {...v.field("name")}
+                      InputProps={{
+                        ...params.InputProps,
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <PersonOutlineOutlined fontSize="small" color="disabled" />
+                          </InputAdornment>
+                        ),
+                        endAdornment: (
+                          <>
+                            {name.trim() && (
+                              <InputAdornment position="end">
+                                <CheckCircleOutlined fontSize="small" color="success" />
+                              </InputAdornment>
+                            )}
+                            {params.InputProps.endAdornment}
+                          </>
+                        ),
+                      }}
+                    />
+                  )}
                 />
               </Stack>
             </MotionBox>
@@ -463,6 +570,71 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                     </Stack>
                   </Stack>
                 )}
+
+                {/* Имитация распознавания — реального OCR нет, см. simulatePassportScan. */}
+                <Stack direction="row" alignItems="center" gap={1.5}>
+                  <Button component="label" size="small" variant="outlined" startIcon={<UploadOutlined />}>
+                    Фото паспорта
+                    <input type="file" accept="image/*" hidden onChange={handlePickPassportPhoto} />
+                  </Button>
+                  {passportPhoto && (
+                    <Stack direction="row" alignItems="center" gap={1}>
+                      <Box
+                        component="img"
+                        src={passportPhoto}
+                        alt="Фото паспорта"
+                        sx={{ width: 40, height: 40, borderRadius: "6px", objectFit: "cover" }}
+                      />
+                      <Button
+                        size="small"
+                        color="inherit"
+                        startIcon={<CloseOutlined fontSize="small" />}
+                        onClick={() => setPassportPhoto(null)}
+                      >
+                        Убрать
+                      </Button>
+                    </Stack>
+                  )}
+                </Stack>
+                {photoError && (
+                  <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
+                    {photoError}
+                  </Alert>
+                )}
+                <Collapse in={scanNotice}>
+                  <Alert
+                    severity="info"
+                    icon={<AutoAwesomeOutlined fontSize="small" />}
+                    onClose={() => setScanNotice(false)}
+                    sx={{ fontSize: "0.8rem" }}
+                  >
+                    Реквизиты подставлены по фото — демо-распознавание, не настоящий OCR.
+                  </Alert>
+                </Collapse>
+              </Stack>
+            </MotionBox>
+
+            {/* ── Источник ── */}
+            <MotionBox variants={cascadeItem}>
+              <Stack spacing={0.5}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  Источник
+                </Typography>
+                <TextField
+                  select
+                  value={source}
+                  onChange={(e) => setSource(e.target.value as BookingSource | "")}
+                  fullWidth
+                  size="small"
+                  helperText="Откуда пришёл гость — сайт, звонок, Booking.com и т.п."
+                >
+                  <MenuItem value="">Не указан</MenuItem>
+                  {(Object.keys(BOOKING_SOURCE_LABELS) as BookingSource[]).map((key) => (
+                    <MenuItem key={key} value={key}>
+                      {BOOKING_SOURCE_LABELS[key]}
+                    </MenuItem>
+                  ))}
+                </TextField>
               </Stack>
             </MotionBox>
 
