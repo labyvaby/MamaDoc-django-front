@@ -75,7 +75,9 @@ import DjangoConclusionDrawer from "../DjangoConclusionDrawer";
 import { getConclusionSlots, type ConclusionSlot } from "../../../api/medical";
 import PatientQuickViewDrawer from "../../../components/patients/DjangoPatientQuickViewDrawer";
 import DjangoEditPatientDrawer from "../../../components/patients/DjangoEditPatientDrawer";
-import ServiceQuickViewDrawer from "../../../components/services/DjangoServiceQuickViewDrawer";
+import ServiceQuickViewDrawer, {
+  type ServiceQuickViewFallback,
+} from "../../../components/services/DjangoServiceQuickViewDrawer";
 import ProductQuickViewDrawer from "../../../components/products/DjangoProductQuickViewDrawer";
 import AppointmentPatientCard from "./details/AppointmentPatientCard";
 import AppointmentWhenBlock from "./details/AppointmentWhenBlock";
@@ -215,6 +217,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const [selectedDoctorPhotoUrl, setSelectedDoctorPhotoUrl] = React.useState<string | null>(null);
   const [serviceDrawerOpen, setServiceDrawerOpen] = React.useState(false);
   const [selectedServiceId, setSelectedServiceId] = React.useState<number | null>(null);
+  const [selectedServiceFallback, setSelectedServiceFallback] =
+    React.useState<ServiceQuickViewFallback | null>(null);
   const [productDrawerOpen, setProductDrawerOpen] = React.useState(false);
   const [selectedProductId, setSelectedProductId] = React.useState<number | null>(null);
   const [selectedProductName, setSelectedProductName] = React.useState<string | null>(null);
@@ -1107,6 +1111,21 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     setDoctorDrawerOpen(true);
                   }}
                   onServiceClick={(serviceId) => {
+                    // Запасные данные из строки приёма: карточку каталога бэк
+                    // отдаёт только по активному филиалу, и услуга приёма из
+                    // соседнего филиала отвечает 404 (дровер был пустым).
+                    const line = appt.services.find((sl) => sl.service?.id === serviceId);
+                    setSelectedServiceFallback(
+                      line?.service
+                        ? {
+                            name: line.service.name,
+                            imageUrl: line.service.imageUrl ?? null,
+                            price:
+                              Number(line.price) > 0 ? line.price : line.service.basePrice ?? null,
+                            durationMinutes: line.durationMinutes ?? null,
+                          }
+                        : null,
+                    );
                     setSelectedServiceId(serviceId);
                     setServiceDrawerOpen(true);
                   }}
@@ -1283,6 +1302,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         open={patientDrawerOpen}
         onClose={() => setPatientDrawerOpen(false)}
         patientId={appt.patient?.id ?? null}
+        fallback={appt.patient}
       />
       <DjangoEditPatientDrawer
         open={editPatientOpen}
@@ -1295,8 +1315,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         onClose={() => {
           setServiceDrawerOpen(false);
           setSelectedServiceId(null);
+          setSelectedServiceFallback(null);
         }}
         serviceId={selectedServiceId}
+        fallback={selectedServiceFallback}
       />
       <ProductQuickViewDrawer
         open={productDrawerOpen}
