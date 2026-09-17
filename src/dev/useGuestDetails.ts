@@ -12,6 +12,7 @@ import {
   getHotelGuests,
   findDetailedGuestBooking,
   getRoomCategory,
+  getCategoryTotalPrice,
   nightsBetween,
   getHotelPayment,
   setHotelPayment,
@@ -61,7 +62,7 @@ export function useGuestDetails(guestName: string | null) {
   const openPaymentEdit = (booking: HotelBooking) => {
     const existing = getHotelPayment(booking.roomNumber, booking.checkIn);
     const category = getRoomCategory(booking.roomNumber);
-    const defaultAmount = category ? category.pricePerNight * nightsBetween(booking.checkIn, booking.checkOut) : 0;
+    const defaultAmount = category ? getCategoryTotalPrice(category) * nightsBetween(booking.checkIn, booking.checkOut) : 0;
     setPaymentEdit({
       booking,
       method: existing?.method ?? "cash",

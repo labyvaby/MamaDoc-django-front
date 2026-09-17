@@ -184,7 +184,7 @@ const HOTEL_BRANCH_NAME = "Viva — центр";
 export interface HotelRoomCategory {
   name: string;
   rooms: string[];
-  /** Цена за ночь, сом — своя у категории, у номера отдельной цены нет. */
+  /** Цена номера «без ничего», сом/ночь — своя у категории. Итоговая цена — через getCategoryTotalPrice, не это поле напрямую. */
   pricePerNight: number;
   /** Вместимость, гостей. */
   capacity: number;
@@ -194,7 +194,7 @@ export interface HotelRoomCategory {
   bedType: string;
   /** Планировка/комнатность — основная характеристика категории. */
   roomLayout: string;
-  /** Ключи из HOTEL_ROOM_CHARACTERISTIC_CATALOG — что отличает номер от обычного (холодильник, два санузла…). */
+  /** Ключи из справочника характеристик — что отличает номер от обычного (холодильник, два санузла…) и на сколько дороже делает (extraPrice каждой). */
   amenities: string[];
   /** Люкс-уровень — бейдж и акцентный цвет в гриде/модалке деталей. */
   luxury?: boolean;
@@ -203,44 +203,132 @@ export interface HotelRoomCategory {
 // ── Характеристики категории номера — справочник, тот же принцип, что права ──
 //
 // Со слов заказчика: характеристика — это наличие чего-то в номере, что
-// отличает его от обычного («холодильник», «два санузла», «Wi-Fi»…). Категория
-// номера так же собирает характеристики в поимённый набор, как роль собирает
-// права (HOTEL_PERMISSION_CATALOG/HotelRole ниже) — тот же справочник +
-// группировка по разделу, та же форма «название + отмеченные пункты».
-// Раньше amenities заполнялись произвольным текстом (Autocomplete freeSolo) —
-// теперь это ключи из фиксированного каталога, лейбл берите через
-// ROOM_CHARACTERISTIC_LABELS.
+// отличает его от обычного («холодильник», «два санузла», «Wi-Fi»…) и делает
+// его дороже. Категория номера так же собирает характеристики в поимённый
+// набор, как роль собирает права (HOTEL_PERMISSION_CATALOG/HotelRole ниже) —
+// тот же справочник + группировка по разделу, та же форма «название +
+// отмеченные пункты». В отличие от прав, справочник характеристик —
+// изменяемый браузерный стор (тот же приём, что HOTEL_ROOM_CATEGORIES/
+// HOTEL_ROLES): персонал может добавить новую характеристику через
+// «Настройка» → «Номера», она сразу доступна во всех категориях. У каждой
+// характеристики — своя наценка (extraPrice, сом/ночь), тоже редактируемая.
+// Итоговая цена номера = category.pricePerNight (цена «номера без ничего») +
+// сумма наценок его отмеченных характеристик — считайте через
+// getCategoryTotalPrice, не через одно pricePerNight.
 
 export interface HotelRoomCharacteristicDef {
   key: string;
   label: string;
   category: string;
+  /** Наценка к цене номера за ночь, сом — 0, если характеристика не влияет на цену. */
+  extraPrice: number;
 }
 
-export const HOTEL_ROOM_CHARACTERISTIC_CATALOG: HotelRoomCharacteristicDef[] = [
-  { key: "fridge", label: "Холодильник", category: "Техника" },
-  { key: "minibar", label: "Мини-бар", category: "Техника" },
-  { key: "ac", label: "Кондиционер", category: "Техника" },
-  { key: "wifi", label: "Wi-Fi", category: "Техника" },
-  { key: "tv", label: "Телевизор", category: "Техника" },
-  { key: "shower", label: "Душ", category: "Ванная" },
-  { key: "jacuzzi", label: "Джакузи", category: "Ванная" },
-  { key: "twoBathrooms", label: "Два санузла", category: "Ванная" },
-  { key: "bathrobe", label: "Халат", category: "Ванная" },
-  { key: "slippers", label: "Тапочки", category: "Ванная" },
-  { key: "livingRoom", label: "Отдельная гостиная", category: "Планировка" },
-  { key: "balcony", label: "Балкон", category: "Планировка" },
+const DEFAULT_ROOM_CHARACTERISTIC_CATALOG: HotelRoomCharacteristicDef[] = [
+  { key: "fridge", label: "Холодильник", category: "Техника", extraPrice: 150 },
+  { key: "minibar", label: "Мини-бар", category: "Техника", extraPrice: 300 },
+  { key: "ac", label: "Кондиционер", category: "Техника", extraPrice: 200 },
+  { key: "wifi", label: "Wi-Fi", category: "Техника", extraPrice: 100 },
+  { key: "tv", label: "Телевизор", category: "Техника", extraPrice: 150 },
+  { key: "shower", label: "Душ", category: "Ванная", extraPrice: 100 },
+  { key: "jacuzzi", label: "Джакузи", category: "Ванная", extraPrice: 800 },
+  { key: "twoBathrooms", label: "Два санузла", category: "Ванная", extraPrice: 500 },
+  { key: "bathrobe", label: "Халат", category: "Ванная", extraPrice: 50 },
+  { key: "slippers", label: "Тапочки", category: "Ванная", extraPrice: 30 },
+  { key: "livingRoom", label: "Отдельная гостиная", category: "Планировка", extraPrice: 700 },
+  { key: "balcony", label: "Балкон", category: "Планировка", extraPrice: 400 },
 ];
 
-export const ROOM_CHARACTERISTIC_LABELS: Record<string, string> = Object.fromEntries(
-  HOTEL_ROOM_CHARACTERISTIC_CATALOG.map((c) => [c.key, c.label]),
-);
+const ROOM_CHARACTERISTIC_CATALOG_KEY = "mamadoc:mockRoomCharacteristicCatalog";
+const roomCharacteristicCatalogListeners = new Set<() => void>();
+
+function isHotelRoomCharacteristicDef(c: unknown): c is HotelRoomCharacteristicDef {
+  return (
+    !!c &&
+    typeof c === "object" &&
+    typeof (c as HotelRoomCharacteristicDef).key === "string" &&
+    typeof (c as HotelRoomCharacteristicDef).label === "string" &&
+    typeof (c as HotelRoomCharacteristicDef).category === "string" &&
+    typeof (c as HotelRoomCharacteristicDef).extraPrice === "number"
+  );
+}
+
+function readRoomCharacteristicCatalogFromStorage(): HotelRoomCharacteristicDef[] {
+  try {
+    const raw = window.localStorage.getItem(ROOM_CHARACTERISTIC_CATALOG_KEY);
+    if (!raw) return DEFAULT_ROOM_CHARACTERISTIC_CATALOG;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.every(isHotelRoomCharacteristicDef)) return DEFAULT_ROOM_CHARACTERISTIC_CATALOG;
+    return parsed;
+  } catch {
+    return DEFAULT_ROOM_CHARACTERISTIC_CATALOG;
+  }
+}
+
+let roomCharacteristicCatalogCache: HotelRoomCharacteristicDef[] = readRoomCharacteristicCatalogFromStorage();
+
+function persistRoomCharacteristicCatalog(next: HotelRoomCharacteristicDef[]): void {
+  roomCharacteristicCatalogCache = next;
+  try {
+    window.localStorage.setItem(ROOM_CHARACTERISTIC_CATALOG_KEY, JSON.stringify(next));
+  } catch {
+    // приватный режим/запрет на localStorage — доживёт до конца вкладки в памяти
+  }
+  roomCharacteristicCatalogListeners.forEach((fn) => fn());
+}
+
+export function subscribeRoomCharacteristicCatalog(onChange: () => void): () => void {
+  roomCharacteristicCatalogListeners.add(onChange);
+  return () => roomCharacteristicCatalogListeners.delete(onChange);
+}
+
+export function getRoomCharacteristicCatalogSnapshot(): HotelRoomCharacteristicDef[] {
+  return roomCharacteristicCatalogCache;
+}
+
+export function getRoomCharacteristicLabel(key: string): string {
+  return roomCharacteristicCatalogCache.find((c) => c.key === key)?.label ?? key;
+}
+
+/** Наценка характеристики к цене номера за ночь, сом — 0, если ключ не найден. */
+export function getRoomCharacteristicExtraPrice(key: string): number {
+  return roomCharacteristicCatalogCache.find((c) => c.key === key)?.extraPrice ?? 0;
+}
+
+/** Есть ли уже характеристика с таким названием (без учёта регистра) — валидация при добавлении. */
+export function roomCharacteristicLabelExists(label: string): boolean {
+  const trimmed = label.trim().toLowerCase();
+  return roomCharacteristicCatalogCache.some((c) => c.label.toLowerCase() === trimmed);
+}
+
+/** Добавляет новую характеристику в общий справочник — доступна сразу во всех категориях. Дубль по названию — не добавляет. */
+export function addRoomCharacteristic(label: string, category: string, extraPrice: number): HotelRoomCharacteristicDef | null {
+  const trimmed = label.trim();
+  if (!trimmed || roomCharacteristicLabelExists(trimmed)) return null;
+  const def: HotelRoomCharacteristicDef = {
+    key: `custom_${Date.now()}`,
+    label: trimmed,
+    category: category.trim() || "Другое",
+    extraPrice: Number.isFinite(extraPrice) ? extraPrice : 0,
+  };
+  persistRoomCharacteristicCatalog([...roomCharacteristicCatalogCache, def]);
+  return def;
+}
+
+/** Правит наценку уже существующей характеристики — общая для всех категорий, где она отмечена. */
+export function updateRoomCharacteristicPrice(key: string, extraPrice: number): void {
+  const next = roomCharacteristicCatalogCache.map((c) =>
+    c.key === key ? { ...c, extraPrice: Number.isFinite(extraPrice) ? extraPrice : 0 } : c,
+  );
+  persistRoomCharacteristicCatalog(next);
+}
 
 const DEFAULT_HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
   {
     name: "Twin без окна",
     rooms: ["111", "112", "113"],
-    pricePerNight: 1800,
+    // Цена номера «без ничего» — 1800 сом/ночь итог = 1700 (база) + 100 (Душ).
+    pricePerNight: 1700,
     capacity: 2,
     view: "Без окна",
     bedType: "2 отдельные кровати",
@@ -250,7 +338,8 @@ const DEFAULT_HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
   {
     name: "Standard",
     rooms: ["201", "202", "203", "204"],
-    pricePerNight: 2500,
+    // 2500 итог = 2200 (база) + 200 (Кондиционер) + 100 (Wi-Fi).
+    pricePerNight: 2200,
     capacity: 2,
     view: "Двор",
     bedType: "Двуспальная кровать",
@@ -260,7 +349,8 @@ const DEFAULT_HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
   {
     name: "Делюкс",
     rooms: ["301", "302", "303"],
-    pricePerNight: 4200,
+    // 4200 итог = 3750 (база) + 300 (Мини-бар) + 100 (Wi-Fi) + 50 (Халат).
+    pricePerNight: 3750,
     capacity: 3,
     view: "Улица",
     bedType: "Двуспальная кровать King-size",
@@ -270,7 +360,8 @@ const DEFAULT_HOTEL_ROOM_CATEGORIES: HotelRoomCategory[] = [
   {
     name: "Люкс",
     rooms: ["401", "402"],
-    pricePerNight: 7500,
+    // 7500 итог = 5620 (база) + 800 (Джакузи) + 300 (Мини-бар) + 700 (Гостиная) + 50 (Халат) + 30 (Тапочки).
+    pricePerNight: 5620,
     capacity: 4,
     view: "Горы",
     bedType: "Кровать King-size",
@@ -339,6 +430,11 @@ export function getHotelRooms(): string[] {
 /** Категория (тариф/удобства) по номеру комнаты. */
 export function getRoomCategory(room: string): HotelRoomCategory | undefined {
   return hotelRoomCategoriesCache.find((c) => c.rooms.includes(room));
+}
+
+/** Итоговая цена за ночь: pricePerNight категории (номер «без ничего») + наценка каждой отмеченной характеристики. */
+export function getCategoryTotalPrice(category: HotelRoomCategory): number {
+  return category.amenities.reduce((sum, key) => sum + getRoomCharacteristicExtraPrice(key), category.pricePerNight);
 }
 
 /** Занят ли номер таким названием уже в какой-либо категории — проверка дублей при добавлении. */
@@ -850,7 +946,7 @@ export interface HotelDailyReportRow {
   room: string;
   categoryName: string;
   luxury: boolean;
-  /** Тариф категории номера, сом/ночь. */
+  /** Итоговый тариф номера, сом/ночь — база категории + наценки характеристик (getCategoryTotalPrice). */
   pricePerNight: number;
   /** undefined — номер свободен на эту дату. */
   booking?: HotelBooking;
@@ -888,7 +984,7 @@ export function getHotelDailyReport(date: string): HotelDailyReport {
       room,
       categoryName: category.name,
       luxury: !!category.luxury,
-      pricePerNight: category.pricePerNight,
+      pricePerNight: getCategoryTotalPrice(category),
       booking,
     };
   });

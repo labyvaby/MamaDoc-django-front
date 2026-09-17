@@ -36,7 +36,9 @@ import {
   HOTEL_BOOKING_STATUS_LABELS,
   getRoomAdditionalTariffs,
   ADDITIONAL_TARIFF_LABELS,
-  ROOM_CHARACTERISTIC_LABELS,
+  getRoomCharacteristicLabel,
+  getRoomCharacteristicExtraPrice,
+  getCategoryTotalPrice,
   type HotelBooking,
 } from "./mockDemoData";
 
@@ -119,12 +121,17 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
                       Цена
                     </Typography>
                     <Typography variant="h6" fontWeight={700}>
-                      {category.pricePerNight.toLocaleString("ru-RU")} сом
+                      {getCategoryTotalPrice(category).toLocaleString("ru-RU")} сом
                       <Typography component="span" variant="body2" color="text.secondary">
                         {" "}
                         / ночь
                       </Typography>
                     </Typography>
+                    {category.amenities.length > 0 && (
+                      <Typography variant="caption" color="text.secondary">
+                        база {category.pricePerNight.toLocaleString("ru-RU")} + характеристики
+                      </Typography>
+                    )}
                   </Box>
                   <Box>
                     <Typography variant="caption" color="text.secondary" display="block">
@@ -139,8 +146,8 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
                   </Box>
                 </Stack>
 
-                {/* Основные характеристики категории — цену определяют они, а не
-                    произвольные «удобства» ниже (пример структуры: crm-building.adamtech.dev). */}
+                {/* Вид/кровать/планировка — чисто описательные поля категории, на цену не
+                    влияют (в отличие от характеристик ниже — у каждой своя наценка, см. «Цена» выше). */}
                 <Stack direction="row" gap={3} flexWrap="wrap" sx={{ mb: 2 }}>
                   <Box>
                     <Typography variant="caption" color="text.secondary" display="block">
@@ -169,9 +176,11 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
                 </Stack>
 
                 <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mb: additionalTariffs.length > 0 ? 2 : 2.5 }}>
-                  {category.amenities.map((a) => (
-                    <Chip key={a} label={ROOM_CHARACTERISTIC_LABELS[a] ?? a} size="small" variant="outlined" />
-                  ))}
+                  {category.amenities.map((a) => {
+                    const extra = getRoomCharacteristicExtraPrice(a);
+                    const label = extra > 0 ? `${getRoomCharacteristicLabel(a)} +${extra.toLocaleString("ru-RU")}` : getRoomCharacteristicLabel(a);
+                    return <Chip key={a} label={label} size="small" variant="outlined" />;
+                  })}
                 </Stack>
 
                 {/* Доп. тарифы — свойство конкретного номера (setRoomAdditionalTariffs
