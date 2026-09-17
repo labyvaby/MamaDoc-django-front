@@ -1,5 +1,15 @@
 import React from "react";
-import { Box, Stack, TextField, InputAdornment, IconButton, CircularProgress, Typography } from "@mui/material";
+import {
+    Box,
+    Stack,
+    TextField,
+    InputAdornment,
+    IconButton,
+    CircularProgress,
+    Typography,
+    useMediaQuery,
+    useTheme,
+} from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import SearchIcon from "@mui/icons-material/SearchOutlined";
 import ClearIcon from "@mui/icons-material/ClearOutlined";
@@ -38,6 +48,14 @@ export type PageHeaderProps = {
     /** Ссылка на поле поиска — чтобы страница могла навести фокус (шорткат «/»). */
     searchInputRef?: React.Ref<HTMLInputElement>;
     loading?: boolean;
+
+    /**
+     * На телефоне схлопывать шапку: вместо трёх строк (кнопка → даты → поиск)
+     * две — лента дат и ряд «поиск + действия + «+»». Подпись кнопки добавления
+     * занимала на телефоне целую строку экрана, а в списках каждый ряд шапки —
+     * это минус одна видимая запись.
+     */
+    compactMobile?: boolean;
 };
 
 export const PageHeader: React.FC<PageHeaderProps> = ({
@@ -55,8 +73,99 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
     searchPlaceholder = "Поиск...",
     searchInputRef,
     loading = false,
+    compactMobile = false,
 }) => {
+    const theme = useTheme();
+    // Граница «телефон/десктоп» — md: в теме проекта sm = 360 и телефон в него
+    // попадает (см. theme.ts).
+    const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+    const compact = compactMobile && isMobile;
     const handleClear = () => onSearchChange?.("");
+
+    const searchField = showSearch ? (
+        <TextField
+            size="small"
+            placeholder={searchPlaceholder}
+            value={searchVal}
+            inputRef={searchInputRef}
+            onChange={(e) => onSearchChange?.(e.target.value)}
+            InputProps={{
+                startAdornment: (
+                    <InputAdornment position="start">
+                        <SearchIcon color="action" />
+                    </InputAdornment>
+                ),
+                endAdornment: (
+                    <InputAdornment position="end">
+                        {loading ? <CircularProgress size={20} /> : null}
+                        {!loading && searchVal && (
+                            <IconButton size="small" onClick={handleClear}>
+                                <ClearIcon fontSize="small" />
+                            </IconButton>
+                        )}
+                    </InputAdornment>
+                ),
+            }}
+            sx={(t) => ({
+                flex: 1,
+                minWidth: 0,
+                maxWidth: {
+                    xs: "100%",
+                    md: 360,
+                },
+                "& .MuiInputBase-root": {
+                    minHeight: t.appLayout.controls.inputHeight,
+                    paddingRight: 1,
+                    boxSizing: "border-box",
+                },
+            })}
+        />
+    ) : null;
+
+    if (compact) {
+        return (
+            <Box sx={(t) => ({ mb: 1, px: t.appLayout.page.paddingX, pt: 0 })}>
+                <Stack spacing={1} sx={{ width: "100%" }}>
+                    {showTitle && (
+                        <Typography variant="h6" sx={{ fontWeight: 600, letterSpacing: -0.2 }}>
+                            {title}
+                        </Typography>
+                    )}
+
+                    {dateNavigation && (
+                        <Box sx={{ display: "flex", alignItems: "center", minWidth: 0 }}>
+                            {dateNavigation}
+                        </Box>
+                    )}
+
+                    {(searchField || actions || onAdd || leftActions) && (
+                        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                            {leftActions}
+                            {searchField}
+                            {actions}
+                            {onAdd && (
+                                <AppButton
+                                    variant="contained"
+                                    onClick={onAdd}
+                                    aria-label={addButtonText}
+                                    title={addButtonText}
+                                    startIcon={addButtonIcon ?? <AddOutlined />}
+                                    sx={(t) => ({
+                                        flexShrink: 0,
+                                        minWidth: t.appLayout.controls.buttonHeight,
+                                        width: t.appLayout.controls.buttonHeight,
+                                        height: t.appLayout.controls.buttonHeight,
+                                        px: 0,
+                                        "& .MuiButton-startIcon": { m: 0 },
+                                    })}
+                                />
+                            )}
+                        </Stack>
+                    )}
+                </Stack>
+            </Box>
+        );
+    }
 
     return (
         <Box sx={(theme) => ({
@@ -144,45 +253,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
                             }}
                         >
                             {/* Строка поиска */}
-                            {showSearch && (
-                                <TextField
-                                    size="small"
-                                    placeholder={searchPlaceholder}
-                                    value={searchVal}
-                                    inputRef={searchInputRef}
-                                    onChange={(e) => onSearchChange?.(e.target.value)}
-                                    InputProps={{
-                                        startAdornment: (
-                                            <InputAdornment position="start">
-                                                <SearchIcon color="action" />
-                                            </InputAdornment>
-                                        ),
-                                        endAdornment: (
-                                            <InputAdornment position="end">
-                                                {loading ? <CircularProgress size={20} /> : null}
-                                                {!loading && searchVal && (
-                                                    <IconButton size="small" onClick={handleClear}>
-                                                        <ClearIcon fontSize="small" />
-                                                    </IconButton>
-                                                )}
-                                            </InputAdornment>
-                                        ),
-                                    }}
-                                    sx={(theme) => ({
-                                        flex: 1,
-                                        minWidth: 0,
-                                        maxWidth: {
-                                            xs: "100%",
-                                            md: 360,
-                                        },
-                                        "& .MuiInputBase-root": {
-                                            minHeight: theme.appLayout.controls.inputHeight,
-                                            paddingRight: 1,
-                                            boxSizing: "border-box",
-                                        },
-                                    })}
-                                />
-                            )}
+                            {searchField}
 
                             {/* Дополнительные действия */}
                             {actions && (
