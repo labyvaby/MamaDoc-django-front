@@ -12,7 +12,9 @@ import {
   Drawer,
   IconButton,
   MenuItem,
+  Paper,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -61,6 +63,8 @@ import {
   deleteScheduleException,
   parseShiftOverlapConflict,
   PARTIAL_ABSENCE_ENABLED,
+  SCHEDULE_RULE_ONLINE_BOOKING_ENABLED,
+  isRuleOnlineBookingEnabled,
   type ScheduleRule,
   type ScheduleException,
   type ScheduleExceptionKind,
@@ -284,6 +288,9 @@ const RuleFormDrawer: React.FC<{
   const [lunchStart, setLunchStart] = React.useState("13:00");
   const [lunchEnd, setLunchEnd] = React.useState("14:00");
   const [comment, setComment] = React.useState("");
+  // Онлайн-запись у смены: выключенная смена работает внутри CRM, но её окна
+  // не показываются на витрине (см. SCHEDULE_RULE_ONLINE_BOOKING_ENABLED).
+  const [onlineBooking, setOnlineBooking] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   // Пересечение смен одного сотрудника в режиме «warn»: бэк отвечает 409 со
@@ -311,6 +318,7 @@ const RuleFormDrawer: React.FC<{
       setLunchStart(rule.lunchStart ?? "13:00");
       setLunchEnd(rule.lunchEnd ?? "14:00");
       setComment(rule.comment);
+      setOnlineBooking(isRuleOnlineBookingEnabled(rule));
       setRuleBranchId(rule.branchId);
     } else {
       setEmployee(null);
@@ -323,6 +331,7 @@ const RuleFormDrawer: React.FC<{
       setLunchStart("13:00");
       setLunchEnd("14:00");
       setComment("");
+      setOnlineBooking(true);
       setRuleBranchId(branchId ?? null);
     }
   }, [open, rule, branchId]);
@@ -366,6 +375,10 @@ const RuleFormDrawer: React.FC<{
           // tri-state: null в JSON филиал не очищает — только явный clearBranch.
           ...(ruleBranchId == null ? { clearBranch: true } : { branchId: ruleBranchId }),
           comment: comment.trim(),
+          // Поля нет на бэке без выкладки, а неизвестное поле роняет весь PATCH.
+          ...(SCHEDULE_RULE_ONLINE_BOOKING_ENABLED
+            ? { onlineBookingEnabled: onlineBooking }
+            : {}),
         });
       } else {
         await createScheduleRule({
@@ -381,6 +394,9 @@ const RuleFormDrawer: React.FC<{
           comment: comment.trim(),
           organizationId,
           branchId: ruleBranchId,
+          ...(SCHEDULE_RULE_ONLINE_BOOKING_ENABLED
+            ? { onlineBookingEnabled: onlineBooking }
+            : {}),
         });
       }
       setOverlap(null);
@@ -562,6 +578,35 @@ const RuleFormDrawer: React.FC<{
             )}
           </Stack>
 
+          {SCHEDULE_RULE_ONLINE_BOOKING_ENABLED && (
+            <Paper
+              elevation={0}
+              variant="outlined"
+              sx={{
+                p: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 1,
+              }}
+            >
+              <Stack spacing={0.25}>
+                <Typography variant="body2">Онлайн-запись</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Показывать окна этой смены на сайте записи. Выключите, чтобы
+                  перестать принимать брони в этом филиале, — смены сотрудника в
+                  других филиалах останутся открытыми, а регистратура запишет
+                  пациента как обычно.
+                </Typography>
+              </Stack>
+              <Switch
+                checked={onlineBooking}
+                onChange={(e) => setOnlineBooking(e.target.checked)}
+                disabled={busy}
+              />
+            </Paper>
+          )}
+
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
               Комментарий
@@ -661,6 +706,9 @@ const ExceptionDrawer: React.FC<{
   const [hasLunch, setHasLunch] = React.useState(true);
   const [lunchStart, setLunchStart] = React.useState("13:00");
   const [lunchEnd, setLunchEnd] = React.useState("14:00");
+  // Постоянный график уходит правилом — у него есть признак онлайн-записи
+  // (см. SCHEDULE_RULE_ONLINE_BOOKING_ENABLED). У разовой смены его нет.
+  const [onlineBooking, setOnlineBooking] = React.useState(true);
 
   const isRule = kind === "extra" && repeat === "weekly";
   const isAbsence = kind === "day_off" || kind === "vacation";
@@ -694,6 +742,7 @@ const ExceptionDrawer: React.FC<{
       setHasLunch(true);
       setLunchStart("13:00");
       setLunchEnd("14:00");
+      setOnlineBooking(true);
     }
   }, [open, initialDate, initialKind]);
 
@@ -761,6 +810,9 @@ const ExceptionDrawer: React.FC<{
           comment: comment.trim(),
           organizationId,
           branchId,
+          ...(SCHEDULE_RULE_ONLINE_BOOKING_ENABLED
+            ? { onlineBookingEnabled: onlineBooking }
+            : {}),
         });
       } else if (isAbsencePeriod) {
         await createScheduleExceptionPeriod({
@@ -1128,6 +1180,32 @@ const ExceptionDrawer: React.FC<{
                 </>
               )}
             </Stack>
+          )}
+
+          {isRule && SCHEDULE_RULE_ONLINE_BOOKING_ENABLED && (
+            <Paper
+              elevation={0}
+              variant="outlined"
+              sx={{
+                p: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 1,
+              }}
+            >
+              <Stack spacing={0.25}>
+                <Typography variant="body2">Онлайн-запись</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Показывать окна этого графика на сайте записи.
+                </Typography>
+              </Stack>
+              <Switch
+                checked={onlineBooking}
+                onChange={(e) => setOnlineBooking(e.target.checked)}
+                disabled={busy}
+              />
+            </Paper>
           )}
 
           <Stack spacing={0.5}>
@@ -1755,6 +1833,9 @@ const DjangoSchedulePage: React.FC = () => {
                     <TableCell sx={{ fontWeight: 600 }}>Филиал</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Часы</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Обед</TableCell>
+                    {SCHEDULE_RULE_ONLINE_BOOKING_ENABLED && (
+                      <TableCell sx={{ fontWeight: 600 }}>Онлайн-запись</TableCell>
+                    )}
                     {canManage && (
                       <TableCell sx={{ fontWeight: 600 }} align="right">
                         Действия
@@ -1786,6 +1867,24 @@ const DjangoSchedulePage: React.FC = () => {
                       <TableCell sx={{ fontFamily: "monospace" }}>
                         {rule.lunchStart ? `${rule.lunchStart}–${rule.lunchEnd}` : "—"}
                       </TableCell>
+                      {SCHEDULE_RULE_ONLINE_BOOKING_ENABLED && (
+                        <TableCell>
+                          {isRuleOnlineBookingEnabled(rule) ? (
+                            <Typography variant="body2" color="text.secondary">
+                              Принимает
+                            </Typography>
+                          ) : (
+                            <Tooltip title="Окна этой смены не показываются на сайте записи">
+                              <Chip
+                                label="Выключена"
+                                size="small"
+                                variant="outlined"
+                                color="warning"
+                              />
+                            </Tooltip>
+                          )}
+                        </TableCell>
+                      )}
                       {canManage && (
                         <TableCell align="right">
                           <Tooltip title="Редактировать">

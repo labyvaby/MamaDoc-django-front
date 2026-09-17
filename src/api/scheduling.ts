@@ -19,6 +19,11 @@ export interface ScheduleRule {
   lunchEnd: string | null;
   comment: string;
   isActive: boolean;
+  /**
+   * Принимать онлайн-записи на эту смену (см. SCHEDULE_RULE_ONLINE_BOOKING_ENABLED).
+   * На окружении без выкладки поля в ответе нет — отсутствие читаем как true.
+   */
+  onlineBookingEnabled?: boolean;
 }
 
 export interface ScheduleRuleWrite {
@@ -35,6 +40,8 @@ export interface ScheduleRuleWrite {
   lunchEnd?: string | null;
   comment?: string;
   organizationId?: number | null;
+  /** См. SCHEDULE_RULE_ONLINE_BOOKING_ENABLED — без флага поле не отправляем. */
+  onlineBookingEnabled?: boolean;
 }
 
 export interface ScheduleRulePatch {
@@ -52,6 +59,34 @@ export interface ScheduleRulePatch {
   clearBranch?: boolean;
   comment?: string;
   isActive?: boolean;
+  /** См. SCHEDULE_RULE_ONLINE_BOOKING_ENABLED — без флага поле не отправляем. */
+  onlineBookingEnabled?: boolean;
+}
+
+/**
+ * Онлайн-запись выключается в расписании: у правила смены (сотрудник × филиал ×
+ * дни × часы) свой признак `onlineBookingEnabled`. Смена с выключенным
+ * признаком остаётся рабочей внутри CRM (регистратура записывает как раньше),
+ * но исчезает из публичных окон витрины — так клиника закрывает бронь в одном
+ * филиале, не трогая смены того же врача в соседнем.
+ *
+ * Почему в расписании, а не тумблером у филиала: `Employee.onlineBookingEnabled`
+ * (api/staff.ts) и `Service.onlineBookingVisible` (api/catalog.ts) — общие для
+ * организации, а врачи работают в двух филиалах (запрос клиники 10.09.2026
+ * «отменить бронь на Орозбекова» гасил и Сейтек).
+ *
+ * ⚠ ТРЕБУЕТ ДЕПЛОЯ БЭКА — тикет `MamaDoc/backend_ticket_schedule_rule_online_booking.md`.
+ * Поля нет ни у правила, ни в публичных ответах; на неизвестное поле бэк отвечает
+ * `400 Object contains unknown field` и отклоняет запрос целиком — вместе с
+ * часами, филиалом и обедом. Поэтому при выключенном флаге поле не уходит в
+ * POST/PATCH, а тумблер в форме правила скрыт. Снять после выкладки, проверив
+ * чек-лист из §«Проверки» тикета.
+ */
+export const SCHEDULE_RULE_ONLINE_BOOKING_ENABLED = false;
+
+/** Смена принимает онлайн-записи: поля нет на старом бэке — считаем, что да. */
+export function isRuleOnlineBookingEnabled(rule: ScheduleRule): boolean {
+  return rule.onlineBookingEnabled !== false;
 }
 
 export interface ScheduleException {

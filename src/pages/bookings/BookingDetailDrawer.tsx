@@ -19,6 +19,7 @@ import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import CancelOutlined from "@mui/icons-material/CancelOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import PersonOffOutlined from "@mui/icons-material/PersonOffOutlined";
+import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
@@ -59,6 +60,7 @@ import AppointmentStatusChips from "../../components/appointments/AppointmentSta
 import {
   bookingTimeHint,
   bookingTimeRange,
+  isBookingMissed,
   isTerminalBookingStatus,
   prepaymentExpiryText,
   PrepaymentChip,
@@ -66,7 +68,12 @@ import {
   useTickingClock,
 } from "./meta";
 import ConfirmBookingDialog from "./ConfirmBookingDialog";
-import { ClaimControl, useReminderText, useRemindedBookings } from "./BookingRowActions";
+import {
+  ClaimControl,
+  MissedBookingActions,
+  useReminderText,
+  useRemindedBookings,
+} from "./BookingRowActions";
 import { useBookingActions } from "./useBookingActions";
 import { whatsappUrl } from "./bookingViews";
 import { useT } from "../../i18n/VerticalProvider";
@@ -103,6 +110,9 @@ const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, val
     </Typography>
   </Box>
 );
+
+/** Сколько найденных по телефону карт показываем списком; остальное — счётчиком. */
+const MATCHES_SHOWN = 5;
 
 /** Секция карточки: иконка + заголовок + содержимое (стиль ConfirmBookingDialog). */
 const Section: React.FC<{
@@ -200,11 +210,13 @@ const BookingDetailDrawer: React.FC<Props> = ({
 
   const b = query.data;
   const busy = mutation.isPending;
+  const missed = b != null && isBookingMissed(b);
 
   // Запрос «сразу к подтверждению» исполняем, когда карточка загрузилась.
   React.useEffect(() => {
     if (!openConfirm || !b || b.id !== bookingId) return;
-    if (canManage && b.status === "pending") setConfirmOpen(true);
+    // Пропущенную не подтверждаем — карточка просто откроется с её исходами.
+    if (canManage && b.status === "pending" && !isBookingMissed(b)) setConfirmOpen(true);
     onConfirmOpened?.();
   }, [openConfirm, b, bookingId, canManage, onConfirmOpened]);
 
@@ -271,10 +283,14 @@ const BookingDetailDrawer: React.FC<Props> = ({
     b == null
       ? []
       : b.status === "pending"
-        ? [
-            { status: "confirmed", label: "Подтвердить", icon: <CheckCircleOutlined />, color: "success" },
-            { status: "cancelled", label: "Отменить", icon: <CancelOutlined />, color: "error" },
-          ]
+        ? // Пропущенная заявка (окно визита прошло) подтверждению не подлежит:
+          // у неё свой набор исходов — MissedBookingActions в футере.
+          missed
+          ? []
+          : [
+              { status: "confirmed", label: "Подтвердить", icon: <CheckCircleOutlined />, color: "success" },
+              { status: "cancelled", label: "Отменить", icon: <CancelOutlined />, color: "error" },
+            ]
         : b.status === "confirmed"
           ? [
               /**
@@ -332,6 +348,8 @@ const BookingDetailDrawer: React.FC<Props> = ({
   // предлагаем открыть. Несколько — выбор делают при подтверждении.
   const matches = b?.patientMatches ?? [];
   const singleMatch = matches.length === 1 ? matches[0] : null;
+  const shownMatches = matches.slice(0, MATCHES_SHOWN);
+  const hiddenMatches = matches.length - shownMatches.length;
 
   const openAppointment = (appointmentId: number) => {
     navigate(`/appointments?appointment=${appointmentId}`);
@@ -350,8 +368,8 @@ const BookingDetailDrawer: React.FC<Props> = ({
   };
 
   const terminal = b != null && isTerminalBookingStatus(b.status);
-  const timeHint = b ? bookingTimeHint(b.date, b.time, b.status) : null;
-  const footerActions = canManage && (actions.length > 0 || (terminal && canCreateAppointment));
+  const timeHint = b ? bookingTimeHint(b.date, b.time, b.status, b.totalDurationMin) : null;
+  const footerActions = canManage && (actions.length > 0 || missed || (terminal && canCreateAppointment));
 
   return (
     <Drawer
@@ -498,6 +516,33 @@ const BookingDetailDrawer: React.FC<Props> = ({
               <ClaimControl booking={b} canManage={canManage} actions={bookingActions} />
             </Stack>
 
+            {/* Пропущенная заявка: объясняем, почему нет «Подтвердить», и что
+                с ней делать — исходы в футере. */}
+            {missed && (
+              <Stack
+                direction="row"
+                spacing={1.25}
+                alignItems="flex-start"
+                sx={(th) => ({
+                  p: 1.5,
+                  borderRadius: "12px",
+                  border: 1,
+                  borderColor: alpha(th.palette.warning.main, 0.5),
+                  bgcolor: alpha(th.palette.warning.main, th.palette.mode === "dark" ? 0.12 : 0.08),
+                })}
+              >
+                <EventBusyOutlined sx={{ fontSize: 20, color: "warning.main", flexShrink: 0, mt: "1px" }} />
+                <Box>
+                  <Typography variant="body2" fontWeight={600}>
+                    {t("missed.title")}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {t("missed.hint")}
+                  </Typography>
+                </Box>
+              </Stack>
+            )}
+
             {/* Напоминание пациенту перед визитом — ручное: открываем WhatsApp
                 с готовым текстом, отправляет сотрудник. */}
             {b.status === "confirmed" &&
@@ -541,7 +586,7 @@ const BookingDetailDrawer: React.FC<Props> = ({
             <>
             <Divider />
             <Section icon={<PersonOutlineOutlined />} title={t("detail.patientSection")}>
-              <Stack spacing={1} alignItems="flex-start">
+              <Stack spacing={1} alignItems="stretch">
                 <Typography variant="body2" color="text.secondary">
                   {singleMatch
                     ? t("detail.matchOne")
@@ -549,17 +594,43 @@ const BookingDetailDrawer: React.FC<Props> = ({
                       ? t("detail.matchMany", { count: matches.length })
                       : t("detail.matchNone")}
                 </Typography>
-                {singleMatch && (
-                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                {/* Сами карты — иначе фраза «выберите нужную» была тупиком: выбор
+                    делают в диалоге подтверждения, а посмотреть, кто это,
+                    регистратору негде. Один номер на семью даёт и десяток карт
+                    (телефон бэк ищет подстрокой), поэтому список ограничен. */}
+                {shownMatches.map((m) => (
+                  <Stack
+                    key={m.id}
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                    justifyContent="space-between"
+                    sx={(th) => ({
+                      p: 1.25,
+                      borderRadius: "10px",
+                      border: 1,
+                      borderColor: "divider",
+                      bgcolor: subtleBg(th),
+                    })}
+                  >
                     <Typography variant="body2" fontWeight={500}>
-                      {singleMatch.fullName}
+                      {m.fullName}
                     </Typography>
                     {canViewPatients && (
-                      <Button size="small" onClick={() => openPatient(singleMatch.id)} sx={{ textTransform: "none" }}>
+                      <Button
+                        size="small"
+                        onClick={() => openPatient(m.id)}
+                        sx={{ textTransform: "none", flexShrink: 0 }}
+                      >
                         {t("detail.openPatient")}
                       </Button>
                     )}
                   </Stack>
+                ))}
+                {hiddenMatches > 0 && (
+                  <Typography variant="caption" color="text.disabled">
+                    {t("detail.matchMore", { count: hiddenMatches })}
+                  </Typography>
                 )}
               </Stack>
             </Section>
@@ -747,6 +818,8 @@ const BookingDetailDrawer: React.FC<Props> = ({
                 {a.label}
               </Button>
             ))}
+
+            {missed && <MissedBookingActions booking={b} actions={bookingActions} variant="buttons" />}
 
             {/* Терминальная бронь: переходов больше нет, но пациента часто
                 записывают заново — из карточки это один клик. */}

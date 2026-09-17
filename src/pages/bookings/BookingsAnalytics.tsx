@@ -109,11 +109,17 @@ const FunnelStep: React.FC<{
 };
 
 /** Сколько записей потеряно и на каком шаге — строка «куда ушли». */
-const LossRow: React.FC<{ label: string; value: number }> = ({ label, value }) => (
+const LossRow: React.FC<{ label: string; value: number; hint?: string }> = ({ label, value, hint }) => (
   <Stack direction="row" justifyContent="space-between" sx={{ py: 0.35 }}>
-    <Typography variant="body2" color="text.secondary">
-      {label}
-    </Typography>
+    <Tooltip title={hint ?? ""}>
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        sx={hint ? { textDecoration: "underline dotted", textDecorationColor: "divider", cursor: "help" } : undefined}
+      >
+        {label}
+      </Typography>
+    </Tooltip>
     <Typography variant="body2" fontWeight={600}>
       {value}
     </Typography>
@@ -132,7 +138,11 @@ const FunnelTable: React.FC<{
           <TableCell align="right">Заявок</TableCell>
           <TableCell align="right">Подтверждено</TableCell>
           <TableCell align="right">Состоялось</TableCell>
-          <TableCell align="right">Отмены и неявки</TableCell>
+          <TableCell align="right">
+            <Tooltip title="Отмены, неявки и пропущенные регистратурой заявки">
+              <span>Потеряно</span>
+            </Tooltip>
+          </TableCell>
           <TableCell align="right">
             <Tooltip title="Состоявшиеся визиты от всех заявок">
               <span>Конверсия</span>
@@ -143,7 +153,8 @@ const FunnelTable: React.FC<{
       <TableBody>
         {rows.map((r) => {
           const f = r.funnel;
-          const lost = f.cancelledBefore + f.cancelledAfter + f.noShow;
+          // Пропущенные — тоже потеря: визит в назначенное время не состоялся.
+          const lost = f.cancelledBefore + f.cancelledAfter + f.noShow + f.missed;
           const conv = percentOf(f.completed, f.requests);
           return (
             <TableRow key={r.key}>
@@ -284,11 +295,16 @@ const BookingsAnalytics: React.FC<BookingsAnalyticsProps> = ({ rows, loading, er
             Где остальные
           </Typography>
           <LossRow label="Ждут подтверждения" value={funnel.waiting} />
+          <LossRow
+            label="Пропущены регистратурой"
+            value={funnel.missed}
+            hint="Заявку не подтвердили до конца окна визита: висит необработанной или закрыта как неявка без приёма."
+          />
           <LossRow label="Подтверждены, визит впереди" value={funnel.upcoming} />
           <LossRow label="Визит прошёл, запись не закрыта" value={funnel.unresolved} />
           <LossRow label="Отменены до подтверждения" value={funnel.cancelledBefore} />
           <LossRow label="Отменены после подтверждения" value={funnel.cancelledAfter} />
-          <LossRow label="Неявка" value={funnel.noShow} />
+          <LossRow label="Неявка после подтверждения" value={funnel.noShow} />
           {funnel.abandonedPayment > 0 && (
             <LossRow label="Не оплатили онлайн-предоплату" value={funnel.abandonedPayment} />
           )}

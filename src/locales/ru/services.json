@@ -23,7 +23,8 @@
     "durationValue": "{{minutes}} мин",
     "branches": "Филиалы:",
     "description": "Описание",
-    "hiddenOnline": "Не в онлайн-записи"
+    "hiddenOnline": "Не в онлайн-записи",
+    "limitedNotice": "Полная карточка недоступна: {{service.nom}} не найдена в текущем филиале. Показаны данные из записи."
   },
   "details": {
     "durationMin": "{{minutes}} мин",

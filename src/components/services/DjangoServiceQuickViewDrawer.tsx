@@ -15,6 +15,7 @@ import MedicalServicesIcon from "@mui/icons-material/MedicalServicesOutlined";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoneyOutlined";
 import AccessTimeIcon from "@mui/icons-material/AccessTimeOutlined";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import {
   getService,
   SERVICE_CATEGORIES_ENABLED,
@@ -26,13 +27,33 @@ import { formatKGS } from "../../utility/format";
 import { useT } from "../../i18n/VerticalProvider";
 import ServicePerformersSection from "./ServicePerformersSection";
 
+/**
+ * Что известно об услуге на стороне вызывающего экрана (строка приёма, продажа).
+ * Карточку каталога бэкенд отдаёт только в пределах активного филиала: услуга
+ * приёма из соседнего филиала отвечает 404, и без запасных данных дровер
+ * выглядел пустым. Тогда показываем то, что уже есть на руках.
+ */
+export type ServiceQuickViewFallback = {
+  name: string;
+  imageUrl?: string | null;
+  /** Цена строки/базовая цена — как есть, строкой-decimal или числом. */
+  price?: string | number | null;
+  durationMinutes?: number | null;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
   serviceId: number | null;
+  fallback?: ServiceQuickViewFallback | null;
 };
 
-const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceId }) => {
+const DjangoServiceQuickViewDrawer: React.FC<Props> = ({
+  open,
+  onClose,
+  serviceId,
+  fallback,
+}) => {
   const { t } = useT("services");
   const [loading, setLoading] = React.useState(false);
   const [service, setService] = React.useState<Service | null>(null);
@@ -227,6 +248,78 @@ const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceI
                   </Box>
                 </>
               )}
+            </Box>
+          </Stack>
+        ) : fallback ? (
+          /* Карточка каталога недоступна (чужой филиал, услуга снята) — тем не
+             менее показываем название, цену и длительность из строки приёма и
+             исполнителей: ручка service-providers филиалом не режется. */
+          <Stack spacing={3}>
+            <Box>
+              <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ mb: 2 }}>
+                <Avatar
+                  variant="rounded"
+                  src={fallback.imageUrl ?? undefined}
+                  sx={{ bgcolor: "success.main", width: 56, height: 56 }}
+                >
+                  <MedicalServicesIcon />
+                </Avatar>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="h6" fontWeight={600} gutterBottom>
+                    {fallback.name}
+                  </Typography>
+                  <Chip label={t("common.chip")} size="small" color="primary" variant="outlined" />
+                </Box>
+              </Stack>
+
+              <Divider sx={{ my: 2 }} />
+
+              <Stack spacing={1.5}>
+                {fallback.price != null && fallback.price !== "" && (
+                  <Stack direction="row" spacing={1.5} alignItems="center">
+                    <AttachMoneyIcon fontSize="small" color="action" />
+                    <Typography variant="body2" color="text.secondary">
+                      {t("quickView.price")}
+                    </Typography>
+                    <Typography variant="body2" fontWeight={500}>
+                      {formatKGS(Number(fallback.price))}
+                    </Typography>
+                  </Stack>
+                )}
+                {fallback.durationMinutes != null && fallback.durationMinutes > 0 && (
+                  <Stack direction="row" spacing={1.5} alignItems="center">
+                    <AccessTimeIcon fontSize="small" color="action" />
+                    <Typography variant="body2" color="text.secondary">
+                      {t("quickView.duration")}
+                    </Typography>
+                    <Typography variant="body2" fontWeight={500}>
+                      {t("quickView.durationValue", { minutes: fallback.durationMinutes })}
+                    </Typography>
+                  </Stack>
+                )}
+              </Stack>
+
+              <Box
+                sx={{
+                  mt: 2,
+                  p: 1.5,
+                  border: 1,
+                  borderColor: "divider",
+                  borderRadius: "10px",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 1.25,
+                }}
+              >
+                <InfoOutlinedIcon fontSize="small" color="action" sx={{ mt: 0.125 }} />
+                <Typography variant="caption" color="text.secondary">
+                  {t("quickView.limitedNotice")}
+                </Typography>
+              </Box>
+
+              {/* Секцию «Кто оказывает» здесь не рисуем: она тоже считается по
+                  активному филиалу и для чужой услуги показала бы пустой
+                  список с кнопкой назначения — это вводит в заблуждение. */}
             </Box>
           </Stack>
         ) : (
