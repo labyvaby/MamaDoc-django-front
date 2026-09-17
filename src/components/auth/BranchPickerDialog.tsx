@@ -77,14 +77,15 @@ export const BranchPickerDialog: React.FC = () => {
     [activeMembership],
   );
 
-  // Решаем судьбу флага, как только контекст загружен: >1 филиала — открываем
-  // диалог, иначе молча снимаем флаг (выбирать не из чего).
+  // Решаем судьбу флага, как только контекст загружен: если есть хотя бы один
+  // доступный филиал — открываем диалог. Даже при одном филиале пользователь
+  // должен выбрать конкретный филиал, а не оставаться в режиме «Все филиалы».
   React.useEffect(() => {
     if (authStatus !== "authenticated") return;
     if (!activeMembership) return;
     if (!isPending()) return;
 
-    if (branches.length > 1) {
+    if (branches.length >= 1) {
       setOpen(true);
     } else {
       clearPending();
