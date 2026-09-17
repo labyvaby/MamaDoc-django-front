@@ -75,6 +75,7 @@ import {
   DJANGO_LIST_STALE_TIME_MS,
 } from "../../api/queryKeys";
 
+import { hapticSuccess, hapticTap } from "../../utility/haptics";
 import AppointmentListPanel from "./components/AppointmentListPanel";
 import AppointmentDetailsPanel from "./components/AppointmentDetailsPanel";
 import DjangoConclusionSlotsPanel from "./DjangoConclusionSlotsPanel";
@@ -774,6 +775,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
 
   const handlePaymentSaved = React.useCallback(
     (summary: PaymentSummary) => {
+      // Чек закрыт — короткая вибрация подтверждает это раньше, чем регистратор
+      // поднимет глаза на экран (см. utility/haptics.ts).
+      hapticSuccess();
       setItems((prev) =>
         prev.map((appt) =>
           appt.id === summary.appointmentId
@@ -862,6 +866,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     async (appt: DjangoAppointment) => {
       try {
         const updated = await updateAppointment(appt.id, { status: "confirmed" });
+        hapticTap();
         notifyConsumptionWarnings(updated);
         refreshAfterMutation();
       } catch (e) {
@@ -884,6 +889,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     async (appt: DjangoAppointment) => {
       try {
         const updated = await updateAppointment(appt.id, { status: "arrived" });
+        hapticTap();
         statusBeforeArrivalRef.current.set(
           appt.id,
           appt.status === "confirmed" ? "confirmed" : "scheduled",
@@ -902,6 +908,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       const previousStatus = statusBeforeArrivalRef.current.get(appt.id) ?? "scheduled";
       try {
         const updated = await updateAppointment(appt.id, { status: previousStatus });
+        hapticTap();
         statusBeforeArrivalRef.current.delete(appt.id);
         notifyConsumptionWarnings(updated);
         refreshAfterMutation();
@@ -1093,6 +1100,42 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     />
   );
 
+  // Переключатель «Список / Окна». На телефоне подписи съедали половину ряда
+  // с поиском, поэтому там остаются только иконки (название — в title).
+  // Видимость шапки на телефоне — ею управляет скролл списка.
+  const [headerHidden, setHeaderHidden] = React.useState(false);
+  React.useEffect(() => {
+    setHeaderHidden(false);
+  }, [dateStr, viewMode]);
+
+  const viewModeToggle = canCreate ? (
+    <ToggleButtonGroup
+      size="small"
+      exclusive
+      value={viewMode}
+      onChange={(_, v) => v && handleViewModeChange(v)}
+    >
+      <ToggleButton
+        value="list"
+        aria-label={t("page.tabList")}
+        title={t("page.tabList")}
+        sx={{ textTransform: "none", px: isMobile ? 1 : 1.25 }}
+      >
+        <FormatListBulletedOutlined sx={{ fontSize: isMobile ? 18 : 16, mr: isMobile ? 0 : 0.5 }} />
+        {!isMobile && t("page.tabList")}
+      </ToggleButton>
+      <ToggleButton
+        value="slots"
+        aria-label={t("page.tabSlots")}
+        title={t("page.tabSlots")}
+        sx={{ textTransform: "none", px: isMobile ? 1 : 1.25 }}
+      >
+        <EventAvailableOutlined sx={{ fontSize: isMobile ? 18 : 16, mr: isMobile ? 0 : 0.5 }} />
+        {!isMobile && t("page.tabSlots")}
+      </ToggleButton>
+    </ToggleButtonGroup>
+  ) : null;
+
   // Details panel: drawer on mobile, inline panel on desktop
   const detailsPanel = selectedAppt
     ? renderDetailsPanel(selectedAppt, () => setSelectedAppt(null))
@@ -1112,6 +1155,19 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         {/* ── Top controls: like the original Регистратура ──
             «Добавить прием» (large, left) + horizontal date pills. */}
         {viewMode === "list" && (
+          // Шапка (даты, поиск, кнопки) на телефоне уезжает при скролле списка
+          // вниз и возвращается при скролле вверх: в покое она занимала ~100px
+          // из ~380px, которые отделяли верх экрана от первой записи.
+          <Box
+            sx={{
+              flexShrink: 0,
+              overflow: "hidden",
+              transition: "max-height 220ms ease, opacity 180ms ease",
+              maxHeight: isMobile && headerHidden ? 0 : 400,
+              opacity: isMobile && headerHidden ? 0 : 1,
+              pointerEvents: isMobile && headerHidden ? "none" : "auto",
+            }}
+          >
           <PageHeader
             title={pageTitle}
             showTitle={false}
@@ -1125,28 +1181,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             onSearchChange={setSearchQuery}
             searchPlaceholder={t("list.searchPlaceholder")}
             loading={loading}
-            actions={
-              <Stack direction="row" spacing={1} alignItems="center">
-                {canCreate && (
-                  <ToggleButtonGroup
-                    size="small"
-                    exclusive
-                    value={viewMode}
-                    onChange={(_, v) => v && handleViewModeChange(v)}
-                  >
-                    <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
-                      <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                      {t("page.tabList")}
-                    </ToggleButton>
-                    <ToggleButton value="slots" sx={{ textTransform: "none", px: 1.25 }}>
-                      <EventAvailableOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                      {t("page.tabSlots")}
-                    </ToggleButton>
-                  </ToggleButtonGroup>
-                )}
-              </Stack>
-            }
+            compactMobile
+            actions={viewModeToggle}
           />
+          </Box>
         )}
 
         {/* ── Error ── */}
@@ -1189,23 +1227,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                       {tWaitlist("add")}
                     </Button>
                   )}
-                  {canCreate && (
-                    <ToggleButtonGroup
-                      size="small"
-                      exclusive
-                      value={viewMode}
-                      onChange={(_, v) => v && handleViewModeChange(v)}
-                    >
-                      <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
-                        <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                        {t("page.tabList")}
-                      </ToggleButton>
-                      <ToggleButton value="slots" sx={{ textTransform: "none", px: 1.25 }}>
-                        <EventAvailableOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                        {t("page.tabSlots")}
-                      </ToggleButton>
-                    </ToggleButtonGroup>
-                  )}
+                  {viewModeToggle}
                 </Stack>
               }
               onBook={(employeeId, dateTime) => {
@@ -1237,8 +1259,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             flex: 1,
             minHeight: 0,
             overflow: "hidden",
-            px: t.appLayout.page.paddingX,
-            pb: 1,
+            // Телефон: список во всю ширину экрана (см. карточку в панели).
+            px: isMobile ? 0 : t.appLayout.page.paddingX,
+            pb: isMobile ? 0 : 1,
             display: "flex",
             flexDirection: "row",
             gap: 2,
@@ -1291,6 +1314,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               showGroupTotals
               groupEmployeeIds={groupEmployeeIds}
               dayShifts={dayShifts}
+              onScrollDirection={setHeaderHidden}
             />
           </Box>
 

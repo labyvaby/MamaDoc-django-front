@@ -65,6 +65,14 @@ describe("matchesSlot", () => {
     expect(matchesSlot(entry({ employeeId: 55 }), slot)).toBe(true);
   });
 
+  it("не берёт запись «жду только вакцину» — у неё нет ориентира по расписанию", () => {
+    expect(matchesSlot(entry({ vaccine: { id: 20, name: "Пентаксим" } }), slot)).toBe(false);
+    // Тот же препарат вместе с врачом ориентир не отменяет.
+    expect(
+      matchesSlot(entry({ employeeId: 55, vaccine: { id: 20, name: "Пентаксим" } }), slot),
+    ).toBe(true);
+  });
+
   it("не берёт запись, которая ждёт другого специалиста", () => {
     expect(matchesSlot(entry({ employeeId: 56 }), slot)).toBe(false);
   });

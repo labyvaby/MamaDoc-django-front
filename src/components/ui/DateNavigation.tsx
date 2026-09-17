@@ -1,6 +1,15 @@
 import React, { useRef, useEffect } from "react";
-import { Box, Stack, Typography, IconButton, useTheme, alpha } from "@mui/material";
-import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import {
+    Box,
+    Button,
+    Stack,
+    Typography,
+    IconButton,
+    useMediaQuery,
+    useTheme,
+    alpha,
+} from "@mui/material";
+import TodayOutlined from "@mui/icons-material/TodayOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs from "dayjs";
@@ -17,6 +26,8 @@ export const DateNavigation: React.FC<DateNavigationProps> = ({
     dayCounts = {},
 }) => {
     const theme = useTheme();
+    // Телефон попадает в sm (в теме проекта sm = 360), поэтому граница — md.
+    const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const dateRefs = useRef<Map<string, HTMLElement>>(new Map());
 
@@ -27,23 +38,43 @@ export const DateNavigation: React.FC<DateNavigationProps> = ({
     const calendarButtonRef = useRef<HTMLButtonElement>(null);
 
     // Автоцентрирование выбранной даты
-    useEffect(() => {
+    const didCenterRef = useRef(false);
+    const centerActiveDate = React.useCallback((smooth: boolean) => {
         const container = scrollContainerRef.current;
         const activeElement = dateRefs.current.get(date);
+        if (!container || !activeElement) return;
 
-        if (container && activeElement) {
-            const containerWidth = container.clientWidth;
-            const elementLeft = activeElement.offsetLeft;
-            const elementWidth = activeElement.clientWidth;
+        const containerWidth = container.clientWidth;
+        // На телефоне лента успевает смонтироваться раньше, чем контейнер
+        // получает ширину: центрирование считало от нуля и выбранный день
+        // оставался за левым краем — там видны прошедшие дни, а «сегодня»
+        // приходилось искать скроллом.
+        if (containerWidth === 0) return;
 
-            const scrollPosition = elementLeft - (containerWidth / 2) + (elementWidth / 2);
+        const scrollPosition =
+            activeElement.offsetLeft - containerWidth / 2 + activeElement.clientWidth / 2;
 
-            container.scrollTo({
-                left: scrollPosition,
-                behavior: 'smooth'
-            });
-        }
+        container.scrollTo({ left: scrollPosition, behavior: smooth ? 'smooth' : 'auto' });
+        didCenterRef.current = true;
     }, [date]);
+
+    useEffect(() => {
+        // Первый показ — без анимации (иначе лента заметно «доезжает» при
+        // открытии страницы), смена даты кликом — плавно.
+        centerActiveDate(didCenterRef.current);
+        const raf = requestAnimationFrame(() => centerActiveDate(false));
+        return () => cancelAnimationFrame(raf);
+    }, [centerActiveDate]);
+
+    // Поворот телефона и раскрытие сайдбара меняют ширину ленты — выбранный
+    // день должен остаться на виду.
+    useEffect(() => {
+        const container = scrollContainerRef.current;
+        if (!container || typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver(() => centerActiveDate(false));
+        observer.observe(container);
+        return () => observer.disconnect();
+    }, [centerActiveDate]);
 
     return (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
@@ -125,23 +156,30 @@ export const DateNavigation: React.FC<DateNavigationProps> = ({
                                     setDate(dateStr);
                                 }}
                                 sx={(theme) => ({
-                                    minWidth: 100, // Уменьшил немного ширину для компактности в шапке
-                                    [theme.breakpoints.down(505)]: {
-                                        minWidth: 80,
-                                    },
+                                    // Широкая пилюля «17 сен., чт» на телефоне
+                                    // помещалась втроём — регистратор скроллил
+                                    // ленту, чтобы увидеть послезавтра. Ячейка
+                                    // календаря (день недели + число) даёт
+                                    // неделю целиком.
+                                    minWidth: isMobile ? 44 : 100,
+                                    ...(isMobile ? { width: 44, height: 54 } : {}),
+                                    [theme.breakpoints.down(505)]: isMobile ? {} : { minWidth: 80 },
                                     flexShrink: 0,
                                     bgcolor: isActive ? 'primary.main' : 'action.hover',
                                     color: isActive ? 'primary.contrastText' : 'text.secondary',
-                                    borderRadius: '10px',
-                                    py: 1, // Уменьшил высоту для шапки
-                                    px: 1,
-                                    [theme.breakpoints.down(505)]: {
-                                        py: 0.75,
-                                        px: 0.5,
-                                    },
+                                    borderRadius: isMobile ? '12px' : '10px',
+                                    py: isMobile ? 0.5 : 1,
+                                    px: isMobile ? 0.25 : 1,
+                                    [theme.breakpoints.down(505)]: isMobile ? {} : { py: 0.75, px: 0.5 },
                                     cursor: 'pointer',
                                     border: '1px solid',
-                                    borderColor: isActive ? 'primary.main' : 'divider',
+                                    // Сегодня заметно и когда открыт другой день:
+                                    // на квадратах без этого терялась точка отсчёта.
+                                    borderColor: isActive
+                                        ? 'primary.main'
+                                        : dateStr === dayjs().format('YYYY-MM-DD')
+                                            ? alpha(theme.palette.primary.main, 0.55)
+                                            : 'divider',
                                     transition: 'background-color .15s ease, border-color .15s ease',
                                     display: 'flex',
                                     alignItems: 'center',
@@ -153,6 +191,62 @@ export const DateNavigation: React.FC<DateNavigationProps> = ({
                                     }
                                 })}
                             >
+                                {isMobile ? (
+                                    <Stack spacing={0} alignItems="center" sx={{ width: '100%' }}>
+                                        <Typography
+                                            sx={{
+                                                fontSize: '0.62rem',
+                                                lineHeight: 1.1,
+                                                opacity: isActive ? 0.85 : 0.7,
+                                                textTransform: 'uppercase',
+                                                letterSpacing: 0.2,
+                                            }}
+                                        >
+                                            {weekdays[d.day()]}
+                                        </Typography>
+                                        <Typography
+                                            sx={{
+                                                fontSize: '0.95rem',
+                                                fontWeight: 700,
+                                                lineHeight: 1.2,
+                                                color: isActive ? 'inherit' : 'text.primary',
+                                            }}
+                                        >
+                                            {d.date()}
+                                        </Typography>
+                                        {/* Счётчик записей — третьей строкой внутри
+                                            квадрата. Угловым бейджем он выходил за
+                                            границу ячейки, а лента режет всё, что
+                                            вылезает по вертикали (overflowY: hidden),
+                                            — цифра оказывалась срезана сверху. Место
+                                            под строку держим всегда, даже когда
+                                            записей нет: иначе дни прыгали бы по
+                                            высоте. */}
+                                        <Box
+                                            sx={(theme) => ({
+                                                height: 13,
+                                                mt: '1px',
+                                                minWidth: dayCounts[dateStr] > 0 ? 17 : 0,
+                                                px: dayCounts[dateStr] > 0 ? 0.375 : 0,
+                                                borderRadius: '7px',
+                                                bgcolor: dayCounts[dateStr] > 0
+                                                    ? (isActive
+                                                        ? alpha(theme.palette.common.black, 0.22)
+                                                        : theme.palette.mode === 'dark' ? 'grey.700' : 'grey.300')
+                                                    : 'transparent',
+                                                color: isActive ? 'primary.contrastText' : 'text.primary',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '0.58rem',
+                                                lineHeight: 1,
+                                                fontWeight: 700,
+                                            })}
+                                        >
+                                            {dayCounts[dateStr] > 0 ? dayCounts[dateStr] : ''}
+                                        </Box>
+                                    </Stack>
+                                ) : (
                                 <Stack direction="row" spacing={0.5} alignItems="center">
                                     <Typography
                                         variant="body2"
@@ -188,6 +282,7 @@ export const DateNavigation: React.FC<DateNavigationProps> = ({
                                         </Box>
                                     )}
                                 </Stack>
+                                )}
                             </Box>
                         );
                     })}
@@ -237,28 +332,32 @@ export const DateNavigation: React.FC<DateNavigationProps> = ({
 
                 if (isToday) return null;
 
+                // Раньше возврат к сегодняшнему дню прятался за крестиком, а ✕
+                // читается как «закрыть», а не «вернуться». Подпись словом.
                 return (
-                    <IconButton
+                    <Button
                         onClick={() => {
                             setDate(today);
                         }}
                         size="small"
+                        startIcon={<TodayOutlined sx={{ fontSize: 16 }} />}
                         sx={{
                             flexShrink: 0,
+                            minWidth: 'auto',
+                            height: 32,
+                            px: 1,
                             bgcolor: 'action.hover',
+                            color: 'text.secondary',
                             borderRadius: 1,
-                            '&:hover': {
-                                bgcolor: 'action.selected',
-                                transform: 'rotate(90deg)'
-                            },
-                            transition: 'all 0.2s ease-in-out',
-                            width: 32,
-                            height: 32
+                            textTransform: 'none',
+                            whiteSpace: 'nowrap',
+                            '& .MuiButton-startIcon': { mr: 0.5 },
+                            '&:hover': { bgcolor: 'action.selected' },
                         }}
-                        title="Сегодня"
+                        title="Вернуться к сегодняшнему дню"
                     >
-                        <CloseOutlined fontSize="small" sx={{ color: 'text.secondary' }} />
-                    </IconButton>
+                        Сегодня
+                    </Button>
                 );
             })()}
         </Stack>

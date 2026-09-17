@@ -75,14 +75,21 @@ export interface ScheduleRulePatch {
  * организации, а врачи работают в двух филиалах (запрос клиники 10.09.2026
  * «отменить бронь на Орозбекова» гасил и Сейтек).
  *
- * ⚠ ТРЕБУЕТ ДЕПЛОЯ БЭКА — тикет `MamaDoc/backend_ticket_schedule_rule_online_booking.md`.
- * Поля нет ни у правила, ни в публичных ответах; на неизвестное поле бэк отвечает
- * `400 Object contains unknown field` и отклоняет запрос целиком — вместе с
- * часами, филиалом и обедом. Поэтому при выключенном флаге поле не уходит в
- * POST/PATCH, а тумблер в форме правила скрыт. Снять после выкладки, проверив
- * чек-лист из §«Проверки» тикета.
+ * Тикет — `MamaDoc/backend_ticket_schedule_rule_online_booking.md`. 17.09.2026 бэк
+ * его закрыл и выложил на test: `GET /scheduling/rules/` отдаёт поле, а чек-лист
+ * §«Проверки» проходит целиком (публичные `available-times/`, `calendar/`,
+ * `available-services/` у выключенной смены пустеют, внутренний
+ * `/scheduling/availability/` окна сохраняет, `POST /api/v1/bookings/` на закрытое
+ * время → `400 online_booking_closed`).
+ *
+ * ⚠ ФЛАГ ВКЛЮЧЁН РАНЬШЕ ПРОДА (решение 17.09.2026: выкладываем, как только бэк
+ * будет готов). На проде поля в ответе ещё НЕТ, а с включённым флагом фронт шлёт
+ * `onlineBookingEnabled` в POST/PATCH правила — прод-бэк отвечает `400 Object
+ * contains unknown field` и отклоняет запрос целиком, вместе с часами, филиалом и
+ * обедом. То есть эту сборку нельзя выкладывать на прод, пока бэк туда не
+ * приехал: сломается редактирование смен. На test выкладывать можно.
  */
-export const SCHEDULE_RULE_ONLINE_BOOKING_ENABLED = false;
+export const SCHEDULE_RULE_ONLINE_BOOKING_ENABLED = true;
 
 /** Смена принимает онлайн-записи: поля нет на старом бэке — считаем, что да. */
 export function isRuleOnlineBookingEnabled(rule: ScheduleRule): boolean {

@@ -75,7 +75,21 @@ export type CleaningRecordStatus = "pending" | "approved" | "rejected";
 
 export interface CleaningPhoto {
   id: number;
+  /** Оригинал: полноэкранный просмотр — только отсюда. */
   url: string;
+  /**
+   * Превью 400px (JPEG q80) для лент и мелких карточек: фото с телефона весит
+   * мегабайты, и лента из 15 оригиналов «съедала» мобильный трафик.
+   * null у старых и неподдерживаемых файлов (бэк догоняет их командой
+   * generate_cleaning_thumbnails), а на окружении без выкладки поля нет вовсе —
+   * поэтому читать только через photoThumbUrl().
+   */
+  thumbnailUrl?: string | null;
+}
+
+/** Ссылка для миниатюры: превью, если бэк его собрал, иначе оригинал. */
+export function photoThumbUrl(photo: CleaningPhoto): string {
+  return photo.thumbnailUrl ?? photo.url;
 }
 
 export interface CleaningRecord {
@@ -182,7 +196,13 @@ function mockPhoto(label: string, hue: number): CleaningPhoto {
     `<rect width='100%' height='100%' fill='hsl(${hue},30%,52%)'/>` +
     `<text x='50%' y='50%' fill='#fff' font-size='32' font-family='sans-serif' text-anchor='middle'>${label}</text>` +
     `</svg>`;
-  return { id: ++mockSeq, url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}` };
+  // thumbnailUrl: null — как у старых снимков на бэке, чтобы в моках работал
+  // тот же откат на оригинал, что и в проде.
+  return {
+    id: ++mockSeq,
+    url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
+    thumbnailUrl: null,
+  };
 }
 
 // Дефолтные типы — предложены как сиды при включении модуля (см. тикет),

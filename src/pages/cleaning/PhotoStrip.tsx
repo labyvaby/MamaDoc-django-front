@@ -4,7 +4,7 @@ import { alpha } from "@mui/material/styles";
 import BrokenImageOutlined from "@mui/icons-material/BrokenImageOutlined";
 
 import { subtleBg } from "../../theme/uiHelpers";
-import type { CleaningPhoto } from "../../api/cleaning";
+import { photoThumbUrl, type CleaningPhoto } from "../../api/cleaning";
 
 /** Ширина миниатюры по умолчанию — под строку таблицы высотой 56px. */
 const DEFAULT_SIZE = 36;
@@ -28,7 +28,15 @@ const Thumb: React.FC<{
   index: number;
   onOpen: (index: number) => void;
 }> = ({ photo, size, index, onOpen }) => {
+  // Лента рисуется превью бэка; если превью нет или ссылка битая — один откат
+  // на оригинал и только потом заглушка (иначе снимок пропал бы из-за превью).
+  const [src, setSrc] = React.useState(() => photoThumbUrl(photo));
   const [failed, setFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    setSrc(photoThumbUrl(photo));
+    setFailed(false);
+  }, [photo]);
 
   const common = {
     width: size,
@@ -63,11 +71,11 @@ const Thumb: React.FC<{
   return (
     <Box
       component="img"
-      src={photo.url}
+      src={src}
       alt={`Фото ${index + 1}`}
       loading="lazy"
       draggable={false}
-      onError={() => setFailed(true)}
+      onError={() => (src === photo.url ? setFailed(true) : setSrc(photo.url))}
       onClick={() => onOpen(index)}
       sx={{ ...common, objectFit: "cover" }}
     />

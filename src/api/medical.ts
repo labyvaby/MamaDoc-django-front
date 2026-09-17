@@ -458,8 +458,9 @@ export function getConclusionRevisions(
 
 /**
  * Поля заключения, для которых бэк умеет подсказывать текст
- * (`frontend_ai_assist_guide.md`, 13.09.2026). Ровно пять; у каждой кнопки —
- * строго своё поле, иначе модель получит чужой контекст.
+ * (`frontend_ai_assist_guide.md`, 13.09.2026). Ровно пять. Одиночный
+ * `POST /medical/ai/assist/` на бэке остался, но фронт им больше не
+ * пользуется — только пакетным (см. `requestAiAssistBatch`).
  */
 export const AI_ASSIST_FIELDS = [
   "complaints",
@@ -470,21 +471,6 @@ export const AI_ASSIST_FIELDS = [
 ] as const;
 
 export type AiAssistField = (typeof AI_ASSIST_FIELDS)[number];
-
-export interface AiAssistPayload {
-  field: AiAssistField;
-  /** Текущее содержимое поля; пустая строка — просьба написать черновик с нуля. */
-  text: string;
-  /**
-   * Строка приёма — контекст для модели (услуга, витальные показатели).
-   * Без неё черновик «с нуля» обычно приходит пустым.
-   */
-  serviceLineId?: number;
-}
-
-interface AiAssistResponse {
-  suggestions?: Array<{ text?: string | null; confidence?: number }> | null;
-}
 
 /**
  * Фразы-заглушки, которыми модель отвечает, когда опереться не на что.
@@ -516,14 +502,12 @@ const AI_META_NO_DATA_RE =
 const INVISIBLE_CHARS_RE = /[\u200B-\u200F\u2060\uFEFF]/g;
 
 /**
- * Текст подсказки из ответа бэка или null, если показывать нечего.
+ * Текст одного предложения модели или null, если показывать нечего.
  *
- * В UI используется только `suggestions[0].text` (массив заложен на будущее).
  * Пустой ответ, одни пробелы и заглушка вроде «данных не предоставлено» —
  * это «модели не на что опереться», а не текст для поля.
  */
-export function normalizeAiSuggestion(response: unknown): string | null {
-  const raw = (response as AiAssistResponse | null)?.suggestions?.[0]?.text;
+export function normalizeAiText(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const text = raw.trim();
   if (!text.replace(INVISIBLE_CHARS_RE, "").trim()) return null;
@@ -532,35 +516,88 @@ export function normalizeAiSuggestion(response: unknown): string | null {
   return text;
 }
 
+/** Бэк принимает от 1 до 5 полей, каждое не более одного раза (иначе 400). */
+export const AI_ASSIST_BATCH_MAX = AI_ASSIST_FIELDS.length;
+
+export interface AiAssistBatchEntry {
+  field: AiAssistField;
+  /** Текущее содержимое поля; пустая строка — просьба написать черновик. */
+  text: string;
+}
+
+interface AiAssistBatchResponse {
+  suggestions?: Partial<Record<string, { text?: string | null; confidence?: number } | null>> | null;
+}
+
+/** Подсказки по запрошенным полям: null — модели нечего сказать, плашки нет. */
+export type AiAssistBatchResult = Record<AiAssistField, string | null>;
+
 /**
- * POST /api/medical/ai/assist/ — подсказка для одного поля заключения.
+ * Разложить ответ пакетного эндпоинта по запрошенным полям.
  *
- * Режима нет: непустой `text` бэк исправляет и дописывает, пустой — пишет
- * черновик с нуля. Ответ — предложение рядом с полем, не значение поля:
- * в текст заключения оно попадает только после «Применить» врачом.
+ * Бэк обещает ключи ровно по запросу и пустой `text` там, где добавить
+ * нечего (частичный успех — это 200, а не 502). Отсутствующий ключ читаем
+ * так же, как пустой: врач в обоих случаях просто не видит плашки.
+ * `confidence` не читаем: бэк отдаёт фиксированные 0.75.
  */
-export async function requestAiAssist(
-  payload: AiAssistPayload,
+export function normalizeAiBatchSuggestions(
+  response: unknown,
+  fields: readonly AiAssistField[],
+): AiAssistBatchResult {
+  const suggestions = (response as AiAssistBatchResponse | null)?.suggestions ?? {};
+  const result = {} as AiAssistBatchResult;
+  for (const field of fields) result[field] = normalizeAiText(suggestions[field]?.text);
+  return result;
+}
+
+/**
+ * POST /api/medical/ai/assist/batch/ — подсказки сразу по нескольким полям
+ * заключения одним вызовом модели (ответ бэка на
+ * `MamaDoc/backend_ticket_ai_assist_batch.md`, 16.09.2026).
+ *
+ * Один вызов вместо пяти: разделы согласованы между собой, а ждать 48–60 с
+ * на 5 полей, не 2–3 минуты. ⚠ Таймаута у клиента нет — и не добавлять:
+ * цепочка бэка 120 с (gunicorn) > 110 с > 100 с (модель), обрыв на нашей
+ * стороне выкинул бы нормальный ответ. Оборванный ответ модели бэк отдаёт
+ * как 502, а не как 200 с половиной фразы. После 502 ничего не ретраить:
+ * лимит провайдера общий на всех, и повторы только сжигают его.
+ */
+export async function requestAiAssistBatch(
+  entries: readonly AiAssistBatchEntry[],
+  serviceLineId?: number | null,
   signal?: AbortSignal,
-): Promise<string | null> {
-  const body: AiAssistPayload = { field: payload.field, text: payload.text };
-  if (payload.serviceLineId != null) body.serviceLineId = payload.serviceLineId;
-  const response = await apiRequest<AiAssistResponse>("/medical/ai/assist/", {
+): Promise<AiAssistBatchResult> {
+  const fields = entries.map((entry) => entry.field);
+  if (
+    fields.length === 0 ||
+    fields.length > AI_ASSIST_BATCH_MAX ||
+    new Set(fields).size !== fields.length
+  ) {
+    // 400 бэка здесь — баг фронта; ловим его до запроса.
+    throw new Error(`AI assist batch: 1–${AI_ASSIST_BATCH_MAX} уникальных полей, получено [${fields.join(", ")}]`);
+  }
+  const body: { fields: AiAssistBatchEntry[]; serviceLineId?: number } = {
+    fields: entries.map(({ field, text }) => ({ field, text })),
+  };
+  if (serviceLineId != null) body.serviceLineId = serviceLineId;
+  const response = await apiRequest<AiAssistBatchResponse>("/medical/ai/assist/batch/", {
     method: "POST",
     body,
     signal,
   });
-  return normalizeAiSuggestion(response);
+  return normalizeAiBatchSuggestions(response, fields);
 }
 
 /**
- * true, когда AI-сервис за бэком временно недоступен (гайд: 502). 503/504 —
- * те же «попробуйте позже» с точки зрения врача, поэтому считаем их тем же
+ * true, когда AI-сервис за бэком временно недоступен (гайд: 502 — сервис
+ * лёг, провайдер вернул ошибку или исчерпал квоту, ответ модели оборвался).
+ * 503/504 — те же «попробуйте позже» с точки зрения врача (504 возможен от
+ * внешнего прокси, если его таймаут меньше 120 с), поэтому считаем их тем же
  * случаем: тост, но не блокировка сохранения заключения.
  *
- * 429 — лимит модели (бэк, 15.09.2026, «лимит тоже есть»). ⚠ Код ответа на
- * превышение не подтверждён — предположение фронта по HTTP-конвенции, вопрос
- * в `MamaDoc/backend_ticket_ai_assist_batch.md`.
+ * 429 бэк не отдаёт никогда (ответ 16.09.2026: своего лимита у бэка и
+ * AI-сервиса нет, лимит провайдера приходит как 502). Оставлен страховкой
+ * от прокси.
  */
 export function isAiUnavailableError(err: unknown): boolean {
   if (!(err instanceof ApiError)) return false;

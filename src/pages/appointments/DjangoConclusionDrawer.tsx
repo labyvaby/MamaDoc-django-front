@@ -534,17 +534,17 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const canAiAssist = useCan("medical.conclusions.create") && !readOnly;
   const ai = useAiAssist({
     serviceLineId,
-    // Один тост на нажатие. Пустые ответы при хоть одной подсказке молчат:
-    // в поле, где модели нечего сказать, плашки просто нет.
+    // Один тост на нажатие, и только когда подсказок нет совсем: в поле, где
+    // модели нечего сказать, плашки просто нет. Пакет — всё или ничего,
+    // «часть полей упала» не бывает (частичный ответ бэк отдаёт как 200).
     onSettled: ({ suggested, unavailable, failed }) => {
-      if (suggested === 0 && unavailable > 0) {
+      if (suggested > 0) return;
+      if (unavailable > 0) {
         notify?.({ type: "error", message: t("conclusion.aiAssist.unavailable") });
-      } else if (suggested === 0 && failed > 0) {
+      } else if (failed > 0) {
         notify?.({ type: "error", message: t("conclusion.aiAssist.failed") });
-      } else if (suggested === 0) {
+      } else {
         notify?.({ type: "progress", message: t("conclusion.aiAssist.empty") });
-      } else if (unavailable + failed > 0) {
-        notify?.({ type: "progress", message: t("conclusion.aiAssist.partial") });
       }
     },
   });
@@ -1742,7 +1742,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               {canAiAssist && (
                 <AiAssistHeaderButton
                   loading={ai.loading}
-                  progress={ai.progress}
+                  fieldCount={ai.loadingCount}
                   compact={isMobile}
                   onClick={handleAiRequest}
                 />
