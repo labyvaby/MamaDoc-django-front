@@ -6,29 +6,24 @@
  * подписи — отельные, чтобы сразу было видно, что это не картотека
  * пациентов. Подключена вместо DjangoPatientsPage в src/pages/patients/index.tsx.
  *
- * Отличия неизбежны там, где у гостя просто нет аналога сущности: нет
- * бесконечной подгрузки с сервера (гостей от силы пара десятков, не тысячи),
- * нет счёта/бонусов/семьи/объединения дублей — реальных данных для этого в
- * сторе нет, а выдумывать рабочие с виду, но ничего не делающие кнопки хуже,
- * чем не рисовать их вовсе. Кнопка «Добавить» теперь открывает AddGuestDrawer
- * (та же Drawer-форма и логика черновика, что реальный DjangoAddPatientDrawer)
- * — гость заводится независимо от брони, как пациент независимо от приёма;
- * создание/выбор номера остаётся на «Расписании» (CreateBookingButton).
+ * Реальные гости — GET /hotel/guests/?q= (см. src/api/hotel.ts), поиск на
+ * бэкенде с debounce, без клиентской фильтрации и без бесконечной подгрузки
+ * (гостей от силы пара десятков, не тысячи, см. hotel-viva-frontend-api.md).
+ * Кнопка «Добавить» открывает AddGuestDrawer (та же Drawer-форма и логика
+ * черновика, что реальный DjangoAddPatientDrawer) — гость заводится
+ * независимо от брони, как пациент независимо от приёма; создание/выбор
+ * номера остаётся на «Расписании» (CreateBookingButton).
  */
 import React from "react";
 import { Box, useMediaQuery, useTheme } from "@mui/material";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import IconButton from "@mui/material/IconButton";
+import { useQuery } from "@tanstack/react-query";
 
 import { PageHeader } from "../components/ui";
 import { usePageTitle } from "../hooks/usePageTitle";
-import {
-  getHotelGuests,
-  subscribeGuestBlacklist,
-  getGuestBlacklistSnapshot,
-  subscribeCustomGuests,
-  getCustomGuestsSnapshot,
-} from "./mockDemoData";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { listGuests } from "../api/hotel";
 import { GuestListPanel } from "./GuestListPanel";
 import { GuestCardPanel } from "./GuestCardPanel";
 import { GuestHistoryPanel } from "./GuestHistoryPanel";
@@ -41,31 +36,25 @@ export const HotelGuestsPage: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
-  // Снимки в зависимостях — без них пометка «в чёрный список» или новый гость
-  // из AddGuestDrawer не обновят список слева сразу же (getHotelGuests сам не
-  // подписан ни на один стор).
-  const blacklistSnapshot = React.useSyncExternalStore(subscribeGuestBlacklist, getGuestBlacklistSnapshot);
-  const customGuestsSnapshot = React.useSyncExternalStore(subscribeCustomGuests, getCustomGuestsSnapshot);
-  const guests = React.useMemo(
-    () => getHotelGuests(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [blacklistSnapshot, customGuestsSnapshot],
-  );
   const [search, setSearch] = React.useState("");
-  const [selectedName, setSelectedName] = React.useState<string | null>(null);
+  const debouncedSearch = useDebouncedValue(search.trim());
+  const [selectedClientId, setSelectedClientId] = React.useState<number | null>(null);
   const [addOpen, setAddOpen] = React.useState(false);
 
-  const query = search.trim().toLowerCase();
-  const filtered = query
-    ? guests.filter((g) => g.name.toLowerCase().includes(query) || g.phone.includes(query))
-    : guests;
+  const guestsQuery = useQuery({
+    queryKey: ["hotel", "guests", debouncedSearch],
+    queryFn: ({ signal }) => listGuests({ q: debouncedSearch || undefined }, signal),
+  });
+  const guests = guestsQuery.data ?? [];
 
   // Общее состояние карточки+истории — один хук на обе колонки, тот же
   // приём, что связывает GuestCardPanel и GuestHistoryPanel в GuestDetailsDialog.
-  const state = useGuestDetails(selectedName);
+  const state = useGuestDetails(selectedClientId);
 
-  const listNode = <GuestListPanel guests={filtered} totalCount={guests.length} selectedName={selectedName} onSelect={setSelectedName} />;
-  const cardNode = <GuestCardPanel guestName={selectedName} state={state} />;
+  const listNode = (
+    <GuestListPanel guests={guests} totalCount={guests.length} selectedClientId={selectedClientId} onSelect={setSelectedClientId} />
+  );
+  const cardNode = <GuestCardPanel clientId={selectedClientId} state={state} />;
   const historyNode = <GuestHistoryPanel state={state} />;
 
   return (
@@ -83,9 +72,10 @@ export const HotelGuestsPage: React.FC = () => {
       <AddGuestDrawer
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        onCreated={(name) => {
+        onCreated={(clientId) => {
           setAddOpen(false);
-          setSelectedName(name);
+          void guestsQuery.refetch();
+          setSelectedClientId(clientId);
         }}
       />
       {/* «Оплата» в GuestHistoryPanel (historyNode ниже) только взводит paymentEdit
@@ -106,9 +96,9 @@ export const HotelGuestsPage: React.FC = () => {
         })}
       >
         {isMobile ? (
-          selectedName ? (
+          selectedClientId != null ? (
             <Box sx={{ flex: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column", gap: 1.5, overflowY: "auto" }}>
-              <IconButton size="small" onClick={() => setSelectedName(null)} sx={{ alignSelf: "flex-start" }}>
+              <IconButton size="small" onClick={() => setSelectedClientId(null)} sx={{ alignSelf: "flex-start" }}>
                 <ArrowBackOutlined fontSize="small" />
               </IconButton>
               <Box sx={{ minHeight: 320 }}>{cardNode}</Box>

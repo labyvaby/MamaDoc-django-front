@@ -1,13 +1,11 @@
 /**
  * GuestListPanel — левая колонка «Гости» (HotelGuestsPage). Тот же визуальный
  * язык, что PatientListPanel.tsx: аватар-плашка + ФИО + телефон, бейдж
- * чёрного списка поверх аватара, подсветка выбранной строки. Без бесконечной
- * подгрузки — список гостей отеля собирается целиком на клиенте (не тысячи
- * записей, как в реальной картотеке), фильтрация тоже локальная.
+ * чёрного списка поверх аватара, подсветка выбранной строки. Реальные гости
+ * (GET /hotel/guests/, см. src/api/hotel.ts) — ключ строки теперь clientId
+ * (число), не имя, поиск/фильтр уходят на бэкенд через listGuests({q}).
  *
- * Источник (g.source, справа в строке) — платформа, с которой пришёл гость
- * (сайт/OTA/звонок и т.п., см. HotelGuestSummary.source в mockDemoData.ts) —
- * запрошен отдельно как колонка списка, не только карточка гостя.
+ * Источник (g.source, справа в строке) — платформа, с которой пришёл гость.
  */
 import React from "react";
 import { Box, Stack, Tooltip, Typography } from "@mui/material";
@@ -17,16 +15,17 @@ import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 
 import { AppCard, ListEmptyState, UserAvatar } from "../components/ui";
 import { subtleBg } from "../theme/uiHelpers";
-import { BOOKING_SOURCE_LABELS, type HotelGuestSummary } from "./mockDemoData";
+import { HOTEL_BOOKING_SOURCE_LABELS } from "./hotelDisplay";
+import type { HotelGuest } from "../api/hotel";
 
 export interface GuestListPanelProps {
-  guests: HotelGuestSummary[];
+  guests: HotelGuest[];
   totalCount: number;
-  selectedName: string | null;
-  onSelect: (name: string) => void;
+  selectedClientId: number | null;
+  onSelect: (clientId: number) => void;
 }
 
-export const GuestListPanel: React.FC<GuestListPanelProps> = ({ guests, totalCount, selectedName, onSelect }) => (
+export const GuestListPanel: React.FC<GuestListPanelProps> = ({ guests, totalCount, selectedClientId, onSelect }) => (
   <AppCard
     variant="outlined"
     header={
@@ -62,17 +61,17 @@ export const GuestListPanel: React.FC<GuestListPanelProps> = ({ guests, totalCou
       ) : (
         <Stack spacing={0.5}>
           {guests.map((g) => {
-            const active = selectedName === g.name;
+            const active = selectedClientId === g.clientId;
             return (
               <Box
-                key={g.name}
+                key={g.clientId}
                 role="button"
                 tabIndex={0}
-                onClick={() => onSelect(g.name)}
+                onClick={() => onSelect(g.clientId)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    onSelect(g.name);
+                    onSelect(g.clientId);
                   }
                 }}
                 sx={(t) => ({
@@ -96,7 +95,7 @@ export const GuestListPanel: React.FC<GuestListPanelProps> = ({ guests, totalCou
                 })}
               >
                 <Box sx={{ position: "relative", flexShrink: 0 }}>
-                  <UserAvatar src={g.photoDataUrl} name={g.name} size={38} sx={{ borderRadius: "10px", fontSize: 13 }} />
+                  <UserAvatar src={g.photoUrl} name={g.fullName} size={38} sx={{ borderRadius: "10px", fontSize: 13 }} />
                   {g.isBlacklisted && (
                     <Tooltip title={g.blacklistReason || "В чёрном списке"} arrow>
                       <Box
@@ -122,7 +121,7 @@ export const GuestListPanel: React.FC<GuestListPanelProps> = ({ guests, totalCou
 
                 <Box sx={{ minWidth: 0, flex: 1 }}>
                   <Typography variant="body2" fontWeight={600} noWrap>
-                    {g.name}
+                    {g.fullName}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
                     {g.phone}
@@ -132,11 +131,11 @@ export const GuestListPanel: React.FC<GuestListPanelProps> = ({ guests, totalCou
                 <Stack alignItems="flex-end" spacing={0.25} sx={{ flexShrink: 0 }}>
                   {g.source && (
                     <Typography variant="caption" color="text.secondary" noWrap sx={{ fontSize: "0.65rem" }}>
-                      {BOOKING_SOURCE_LABELS[g.source]}
+                      {HOTEL_BOOKING_SOURCE_LABELS[g.source] ?? g.source}
                     </Typography>
                   )}
                   <Typography variant="caption" color="text.secondary">
-                    {g.bookings.length}
+                    {g.staysCount}
                   </Typography>
                 </Stack>
               </Box>

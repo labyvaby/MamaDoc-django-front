@@ -5,74 +5,53 @@
  * работают как прежде для всех остальных организаций — часы одного дня, не
  * ночи на несколько дат).
  *
- * Полностью самодостаточный демо-виджет: заменяет <ScheduleCalendar /> на
- * Viva (см. точку подключения в schedule/django/index.tsx). Данные — две
- * независимые части: getHotelBookings() (процедурно сгенерированные, по
- * дате) и общий стор ручных броней из CreateBookingButton (см.
- * addCustomBooking/subscribeCustomBookings в mockDemoData.ts) — подписка
- * через useSyncExternalStore, новая бронь появляется без reload. Клик по
- * номеру открывает RoomDetailsDialog (тариф, вместимость, доступность).
- * Люкс-номера (HotelRoomCategory.luxury) отмечены значком и акцентным фоном
- * ярлыка. Строки ROWS собраны из общего стора категорий/номеров
- * (subscribeHotelRoomCategories/getHotelRoomCategoriesSnapshot в
- * mockDemoData.ts) — номер, добавленный в «Настройка» → «Номера»
- * (HotelRoomsSettingsPage), появляется в шахматке без reload, тот же приём,
- * что и у ручных броней ниже. Клик по числу в шапке выбирает дату (общий стор
- * selectedHotelDate) — HotelOccupancyBanner сразу показывает загрузку и
- * гостей за этот день, а не всегда за сегодня. Клик по бару брони открывает
- * GuestDetailsDialog (телефон, история проживаний) — так же и из списка
- * «Ближайшие брони» в RoomDetailsDialog (onGuestClick). Клик по свободной
- * (не занятой бронью) ячейке — «быстрая бронь»: requestQuickBooking кладёт
- * номер+дату в общий стор, CreateBookingButton подписан и открывает форму
- * с уже подставленными Номер/Заезд. Окно — 60 дней (≈ два месяца), не 16:
- * весь период умещается в скролл самого грида, не только по неделе за раз.
- * Ничего не пишет и не читает с бэкенда.
+ * Реальные данные (src/api/hotel.ts, GET /hotel/calendar/) — одним вызовом
+ * категории (группировка строк + бейдж «люкс»), номера (со state уборки) и
+ * плоские позиции броней; см. hotel-viva-frontend-api.md §4.3. Черновики
+ * (reservationStatus: "draft") приходят, но номер не занимают — рисуются
+ * пунктиром. Окно — 60 дней (≈ два месяца, лимит бэка 62), не 16: весь период
+ * умещается в скролл самого грида, не только по неделе за раз.
+ *
+ * Клик по номеру открывает RoomDetailsDialog (тариф, вместимость,
+ * доступность), клик по бару — ReservationDetailsDialog (реальные детали
+ * брони). Клик по свободной ячейке — «быстрая бронь»: requestQuickBooking
+ * (мок-стор, чисто UI-хендофф между независимыми компонентами тулбара —
+ * данные в нём не хранятся) кладёт номер+дату, CreateBookingButton подписан
+ * и открывает форму с уже подставленными Номер/Заезд.
  */
 import React from "react";
-import { Box, IconButton, Stack, Tooltip, Typography } from "@mui/material";
+import { useQuery } from "@tanstack/react-query";
+import { Alert, Box, CircularProgress, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
-import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
-import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
-import TaskAltOutlined from "@mui/icons-material/TaskAltOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
+import { getCalendar, type HotelCalendarItem, type HotelCalendarRoom } from "../api/hotel";
+import { useHotelProperty } from "./useHotelProperty";
 import {
-  getHotelRoomCategoriesSnapshot,
-  subscribeHotelRoomCategories,
-  getHotelBookings,
-  getCustomBookingsSnapshot,
-  subscribeCustomBookings,
-  getRoomCategory,
+  mapStayDisplayStatus,
+  hotelStayStatusColor,
+  hotelRoomStateColor,
+  HOTEL_ROOM_STATE_LABELS,
+  HOTEL_STAY_STATUS_LABELS,
+  HOTEL_STAY_STATUSES,
+  HOTEL_STAY_STATUS_ICONS,
+} from "./hotelDisplay";
+import {
   getSelectedHotelDate,
   setSelectedHotelDate,
   subscribeSelectedHotelDate,
   requestQuickBooking,
-  getHotelBookingStatusColor,
-  getRoomHousekeepingStatus,
-  getRoomHousekeepingStatusColor,
-  ROOM_HOUSEKEEPING_STATUS_LABELS,
   nightsBetween,
   MONTH_NOM_RU,
   WEEKDAY_SHORT_RU,
-  HOTEL_BOOKING_STATUSES,
-  HOTEL_BOOKING_STATUS_LABELS,
-  type HotelBooking,
-  type HotelBookingStatus,
 } from "./mockDemoData";
-
-/** Иконка статуса брони — та же смысловая раскладка, что цвет (getHotelBookingStatusColor). */
-const BOOKING_STATUS_ICON: Record<HotelBookingStatus, React.ElementType> = {
-  confirmed: ScheduleOutlined,
-  arrived: CheckCircleOutlined,
-  completed: TaskAltOutlined,
-};
 import { RoomDetailsDialog } from "./RoomDetailsDialog";
-import { GuestDetailsDialog } from "./GuestDetailsDialog";
+import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 
-/** ≈ два месяца — весь период должен помещаться в шахматку, не только неделя за раз. */
+/** ≈ два месяца — весь период должен помещаться в шахматку, не только неделя за раз (лимит бэка — 62 дня). */
 const NUM_DAYS = 60;
 const ROOM_COL_WIDTH = 148;
 /**
@@ -84,64 +63,56 @@ const ROOM_COL_WIDTH = 148;
  */
 const MIN_DAY_COL_WIDTH = 20;
 
-type RowPlan = { kind: "category"; label: string } | { kind: "room"; room: string };
+type RowPlan = { kind: "category"; label: string } | { kind: "room"; room: HotelCalendarRoom };
 
 export const RoomBookingGrid: React.FC = () => {
   const theme = useTheme();
+  const { property, isLoading: propertyLoading } = useHotelProperty();
   const [windowStart, setWindowStart] = React.useState<Dayjs>(() =>
     dayjs().subtract(2, "day").startOf("day"),
   );
-  const [selectedRoom, setSelectedRoom] = React.useState<string | null>(null);
-  const [selectedGuest, setSelectedGuest] = React.useState<string | null>(null);
+  const [selectedRoomId, setSelectedRoomId] = React.useState<number | null>(null);
+  const [selectedReservationId, setSelectedReservationId] = React.useState<number | null>(null);
   // Общий с HotelOccupancyBanner стор — клик по числу ниже сразу двигает
   // карточки «Загрузка»/«Гости» сверху страницы.
   const selectedDate = React.useSyncExternalStore(subscribeSelectedHotelDate, getSelectedHotelDate);
-
-  // Категории/номера — общий стор с «Настройка» → «Номера»: новый номер
-  // появляется в шахматке без reload, тот же приём, что customBookings ниже.
-  const roomCategories = React.useSyncExternalStore(subscribeHotelRoomCategories, getHotelRoomCategoriesSnapshot);
-  const ROWS: RowPlan[] = React.useMemo(
-    () =>
-      roomCategories.flatMap((cat) => [
-        { kind: "category" as const, label: cat.name },
-        ...cat.rooms.map((room) => ({ kind: "room" as const, room })),
-      ]),
-    [roomCategories],
-  );
 
   const dates = React.useMemo(
     () => Array.from({ length: NUM_DAYS }, (_, i) => windowStart.add(i, "day")),
     [windowStart],
   );
+  const from = dates[0].format("YYYY-MM-DD");
+  const to = dates[dates.length - 1].format("YYYY-MM-DD");
 
-  const generatedBookings = React.useMemo(
-    () => getHotelBookings(dates[0].format("YYYY-MM-DD"), dates[dates.length - 1].format("YYYY-MM-DD")),
-    [dates],
-  );
+  const calendarQuery = useQuery({
+    queryKey: ["hotel", "calendar", property?.id, from, to],
+    queryFn: ({ signal }) => getCalendar({ propertyId: property!.id, from, to }, signal),
+    enabled: property != null,
+  });
+  const calendar = calendarQuery.data;
 
-  // Брони, созданные вручную через CreateBookingButton — общий стор,
-  // перерисовываемся сразу по подписке, без reload страницы.
-  const customBookings = React.useSyncExternalStore(subscribeCustomBookings, getCustomBookingsSnapshot);
+  const roomTypes = calendar?.roomTypes ?? [];
+  const ROWS: RowPlan[] = React.useMemo(() => {
+    if (!calendar) return [];
+    return calendar.roomTypes.flatMap((rt) => [
+      { kind: "category" as const, label: rt.name },
+      ...calendar.rooms.filter((r) => r.roomTypeId === rt.id).map((room) => ({ kind: "room" as const, room })),
+    ]);
+  }, [calendar]);
 
-  const bookings = React.useMemo(
-    () => [...generatedBookings, ...customBookings],
-    [generatedBookings, customBookings],
-  );
-
-  const bookingsByRoom = React.useMemo(() => {
-    const map = new Map<string, HotelBooking[]>();
-    for (const b of bookings) {
-      const arr = map.get(b.roomNumber) ?? [];
-      arr.push(b);
-      map.set(b.roomNumber, arr);
+  const itemsByRoomId = React.useMemo(() => {
+    const map = new Map<number, HotelCalendarItem[]>();
+    for (const it of calendar?.items ?? []) {
+      if (it.roomId == null) continue;
+      const arr = map.get(it.roomId) ?? [];
+      arr.push(it);
+      map.set(it.roomId, arr);
     }
     return map;
-  }, [bookings]);
+  }, [calendar]);
 
   const today = dayjs().startOf("day");
   const todayIdx = dates.findIndex((d) => d.isSame(today, "day"));
-
-  const statusColor = (status: HotelBooking["status"]) => getHotelBookingStatusColor(status, theme);
 
   // Подписи месяцев над днями (row 1) — соседние даты одного месяца схлопываются в одну ячейку.
   const monthSpans: Array<{ label: string; startCol: number; span: number }> = [];
@@ -151,6 +122,20 @@ export const RoomBookingGrid: React.FC = () => {
     if (last && last.label === label) last.span += 1;
     else monthSpans.push({ label, startCol: i, span: 1 });
   });
+
+  if (propertyLoading || calendarQuery.isLoading) {
+    return (
+      <Stack alignItems="center" sx={{ py: 4 }}>
+        <CircularProgress size={28} />
+      </Stack>
+    );
+  }
+  if (!property) {
+    return <Alert severity="warning">Для этого филиала не найден объект размещения (property).</Alert>;
+  }
+  if (calendarQuery.isError) {
+    return <Alert severity="error">Не удалось загрузить шахматку броней.</Alert>;
+  }
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1, flexShrink: 0 }}>
@@ -325,15 +310,16 @@ export const RoomBookingGrid: React.FC = () => {
                 </Box>
               );
             }
-            const luxury = getRoomCategory(row.room)?.luxury;
-            const housekeeping = getRoomHousekeepingStatus(row.room);
-            const housekeepingColor = getRoomHousekeepingStatusColor(housekeeping, theme);
+            const room = row.room;
+            const luxury = roomTypes.find((rt) => rt.id === room.roomTypeId)?.isLuxury;
+            const stateColor = hotelRoomStateColor(room.state, theme);
+            const roomItems = itemsByRoomId.get(room.id) ?? [];
             return (
-              <React.Fragment key={row.room}>
+              <React.Fragment key={room.id}>
                 <Box
                   component="button"
                   type="button"
-                  onClick={() => setSelectedRoom(row.room)}
+                  onClick={() => setSelectedRoomId(room.id)}
                   title="Показать детали номера"
                   sx={{
                     gridRow,
@@ -364,15 +350,15 @@ export const RoomBookingGrid: React.FC = () => {
                     />
                   )}
                   <Typography variant="body2" fontWeight={600}>
-                    {row.room}
+                    {room.number}
                   </Typography>
-                  <Tooltip title={`Статус номера: ${ROOM_HOUSEKEEPING_STATUS_LABELS[housekeeping]}`}>
+                  <Tooltip title={`Статус номера: ${HOTEL_ROOM_STATE_LABELS[room.state as keyof typeof HOTEL_ROOM_STATE_LABELS] ?? room.state}`}>
                     <Box
                       sx={{
                         width: 8,
                         height: 8,
                         borderRadius: "50%",
-                        bgcolor: housekeepingColor,
+                        bgcolor: stateColor,
                         ml: "auto",
                         flexShrink: 0,
                       }}
@@ -380,17 +366,18 @@ export const RoomBookingGrid: React.FC = () => {
                   </Tooltip>
                 </Box>
                 {(() => {
-                  const roomBookings = bookingsByRoom.get(row.room) ?? [];
+                  // Черновики (reservationStatus: "draft") номер не занимают — только подтверждённые/hold считаются на занятость.
+                  const occupying = roomItems.filter((it) => it.reservationStatus !== "draft");
                   return dates.map((d, i) => {
                     const dateStr = d.format("YYYY-MM-DD");
-                    const isFree = !roomBookings.some((b) => dateStr >= b.checkIn && dateStr < b.checkOut);
+                    const isFree = !occupying.some((it) => dateStr >= it.checkIn && dateStr < it.checkOut);
                     return (
                       <Box
-                        key={`${row.room}-${i}`}
+                        key={`${room.id}-${i}`}
                         component={isFree ? "button" : "div"}
                         type={isFree ? "button" : undefined}
-                        onClick={isFree ? () => requestQuickBooking(row.room, dateStr) : undefined}
-                        title={isFree ? `Быстрая бронь — №${row.room}, ${d.format("D MMMM")}` : undefined}
+                        onClick={isFree ? () => requestQuickBooking(room.number, dateStr) : undefined}
+                        title={isFree ? `Быстрая бронь — №${room.number}, ${d.format("D MMMM")}` : undefined}
                         sx={{
                           gridRow,
                           gridColumn: i + 2,
@@ -423,24 +410,27 @@ export const RoomBookingGrid: React.FC = () => {
           {ROWS.map((row, rowIdx) => {
             if (row.kind !== "room") return null;
             const gridRow = rowIdx + 3;
-            const roomBookings = bookingsByRoom.get(row.room) ?? [];
-            return roomBookings.map((b) => {
-              const rawStart = dayjs(b.checkIn).diff(windowStart, "day");
-              const rawEnd = dayjs(b.checkOut).diff(windowStart, "day");
+            const roomItems = itemsByRoomId.get(row.room.id) ?? [];
+            return roomItems.map((it) => {
+              const rawStart = dayjs(it.checkIn).diff(windowStart, "day");
+              const rawEnd = dayjs(it.checkOut).diff(windowStart, "day");
               const startCol = Math.max(0, rawStart);
               const endCol = Math.min(NUM_DAYS, rawEnd);
               if (endCol <= startCol) return null;
-              const color = statusColor(b.status);
-              const nights = nightsBetween(b.checkIn, b.checkOut);
-              const StatusIcon = BOOKING_STATUS_ICON[b.status];
+              const status = mapStayDisplayStatus(it.stayStatus);
+              const color = it.isOverbooking ? theme.palette.warning.main : hotelStayStatusColor(status, theme);
+              const nights = nightsBetween(it.checkIn, it.checkOut);
+              const isDraft = it.reservationStatus === "draft";
+              const StatusIcon = HOTEL_STAY_STATUS_ICONS[status];
               const iconColor = theme.palette.mode === "dark" ? "#fff" : color;
+              const label = it.customerName || `Бронь №${it.reservationNumber}`;
               return (
                 <Box
-                  key={b.id}
+                  key={it.itemId}
                   component="button"
                   type="button"
-                  onClick={() => setSelectedGuest(b.guestName)}
-                  title={`${b.guestName} · №${row.room} · ${nights} ноч. · ${HOTEL_BOOKING_STATUS_LABELS[b.status]} — показать гостя`}
+                  onClick={() => setSelectedReservationId(it.reservationId)}
+                  title={`${label} · №${row.room.number} · ${nights} ноч. · ${HOTEL_STAY_STATUS_LABELS[status]}${it.isOverbooking ? " · Овербукинг" : ""} — показать бронь`}
                   sx={{
                     gridRow,
                     gridColumn: `${startCol + 2} / ${endCol + 2}`,
@@ -450,7 +440,7 @@ export const RoomBookingGrid: React.FC = () => {
                     px: 1,
                     borderRadius: "8px",
                     bgcolor: alpha(color, theme.palette.mode === "dark" ? 0.3 : 0.16),
-                    border: "1px solid",
+                    border: isDraft ? "1px dashed" : "1px solid",
                     borderColor: alpha(color, 0.6),
                     display: "flex",
                     alignItems: "center",
@@ -463,7 +453,7 @@ export const RoomBookingGrid: React.FC = () => {
                 >
                   <StatusIcon sx={{ fontSize: 14, color: iconColor, flexShrink: 0 }} />
                   <Typography variant="caption" noWrap sx={{ color: iconColor, fontWeight: 600 }}>
-                    {b.guestName}
+                    {label}
                   </Typography>
                 </Box>
               );
@@ -473,17 +463,23 @@ export const RoomBookingGrid: React.FC = () => {
       </Box>
 
       <Stack direction="row" gap={2} flexWrap="wrap">
-        {HOTEL_BOOKING_STATUSES.map((status) => {
-          const StatusIcon = BOOKING_STATUS_ICON[status];
+        {HOTEL_STAY_STATUSES.map((status) => {
+          const StatusIcon = HOTEL_STAY_STATUS_ICONS[status];
           return (
             <Stack key={status} direction="row" alignItems="center" gap={0.5}>
-              <StatusIcon sx={{ fontSize: 14, color: statusColor(status) }} />
+              <StatusIcon sx={{ fontSize: 14, color: hotelStayStatusColor(status, theme) }} />
               <Typography variant="caption" color="text.secondary">
-                {HOTEL_BOOKING_STATUS_LABELS[status]}
+                {HOTEL_STAY_STATUS_LABELS[status]}
               </Typography>
             </Stack>
           );
         })}
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: theme.palette.warning.main }} />
+          <Typography variant="caption" color="text.secondary">
+            Овербукинг
+          </Typography>
+        </Stack>
         <Stack direction="row" alignItems="center" gap={0.5}>
           <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: theme.palette.success.main }} />
           <Typography variant="caption" color="text.secondary">
@@ -493,14 +489,15 @@ export const RoomBookingGrid: React.FC = () => {
       </Stack>
 
       <RoomDetailsDialog
-        room={selectedRoom}
-        onClose={() => setSelectedRoom(null)}
-        onGuestClick={(name) => {
-          setSelectedRoom(null);
-          setSelectedGuest(name);
+        roomId={selectedRoomId}
+        roomTypes={roomTypes}
+        onClose={() => setSelectedRoomId(null)}
+        onReservationClick={(id) => {
+          setSelectedRoomId(null);
+          setSelectedReservationId(id);
         }}
       />
-      <GuestDetailsDialog guestName={selectedGuest} onClose={() => setSelectedGuest(null)} />
+      <ReservationDetailsDialog reservationId={selectedReservationId} onClose={() => setSelectedReservationId(null)} />
     </Box>
   );
 };

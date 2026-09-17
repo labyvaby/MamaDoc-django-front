@@ -1,34 +1,26 @@
 /**
- * GuestCardPanel — средняя колонка «Карточка гостя» на странице «Гости»
- * (HotelGuestsPage) и содержимое GuestDetailsDialog. Тот же визуальный язык,
- * что PatientCard.tsx (AppCard/UserAvatar/InfoTile/subtleBg — общие,
- * переиспользуются как есть), но поля — отельные, не медицинские: вместо
- * счёта/бонусов/семьи — последнее проживание, документ, особые пожелания.
- * Чёрный список — тот же Alert+кнопка, что у заблокированного пациента.
+ * GuestCardPanel — средняя колонка «Карточка гостя» на странице «Гости».
+ * Реальный профиль (useGuestDetails → GET /hotel/guests/{clientId}/) + самая
+ * свежая бронь из истории для «последнего проживания»/тарифа/цели визита.
+ * Тот же визуальный язык, что PatientCard.tsx (AppCard/UserAvatar/InfoTile/
+ * subtleBg — общие, переиспользуются как есть), но поля — отельные.
  */
 import React from "react";
-import { Alert, AlertTitle, Box, IconButton, Link, Stack, TextField, Tooltip, Typography } from "@mui/material";
+import { Alert, AlertTitle, Box, CircularProgress, IconButton, Link, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PhoneInTalkOutlined from "@mui/icons-material/PhoneInTalkOutlined";
 import EmailOutlined from "@mui/icons-material/EmailOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
-import NotesOutlined from "@mui/icons-material/NotesOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import RemoveCircleOutlineOutlined from "@mui/icons-material/RemoveCircleOutlineOutlined";
 import PublicOutlined from "@mui/icons-material/PublicOutlined";
 
 import { AppCard, ListEmptyState, UserAvatar } from "../components/ui";
 import { subtleBg } from "../theme/uiHelpers";
-import {
-  formatHotelDate,
-  formatHotelDateRange,
-  BOARD_TYPE_LABELS,
-  BOOKING_SOURCE_LABELS,
-  GUEST_TYPE_LABELS,
-  VISIT_PURPOSE_LABELS,
-} from "./mockDemoData";
+import { HOTEL_BOARD_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS, HOTEL_GUEST_TYPE_LABELS, HOTEL_VISIT_PURPOSE_LABELS } from "./hotelDisplay";
+import { formatHotelDate, formatHotelDateRange } from "./mockDemoData";
 import type { GuestDetailsState } from "./useGuestDetails";
 
 /** Приглушённая плашка-факт — тот же визуальный приём, что FactBlock в PatientCard.tsx. */
@@ -49,15 +41,24 @@ const FactBlock: React.FC<{ icon: React.ReactNode; title: string; children: Reac
 );
 
 export interface GuestCardPanelProps {
-  guestName: string | null;
+  clientId: number | null;
   state: GuestDetailsState;
 }
 
-export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ guestName, state }) => {
-  const { guest, detailed, blacklistReasonDraft, setBlacklistReasonDraft, addToBlacklist, removeFromBlacklist } =
-    state;
+export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ clientId, state }) => {
+  const {
+    guest,
+    guestLoading,
+    reservations,
+    blacklistReasonDraft,
+    setBlacklistReasonDraft,
+    addToBlacklist,
+    removeFromBlacklist,
+    blacklistBusy,
+  } = state;
 
-  const lastBooking = guest?.bookings[guest.bookings.length - 1];
+  const lastReservation = reservations[0];
+  const lastItem = lastReservation?.items[0];
 
   return (
     <AppCard
@@ -73,7 +74,8 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ guestName, state
               <IconButton
                 size="small"
                 color="error"
-                onClick={guest.isBlacklisted ? removeFromBlacklist : addToBlacklist}
+                disabled={blacklistBusy}
+                onClick={() => void (guest.isBlacklisted ? removeFromBlacklist() : addToBlacklist())}
                 sx={(th) => ({
                   bgcolor: guest.isBlacklisted
                     ? alpha(th.palette.error.main, th.palette.mode === "dark" ? 0.2 : 0.12)
@@ -90,7 +92,11 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ guestName, state
       sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
     >
       <Box sx={{ flex: 1, overflowY: "auto", minHeight: 0, borderTop: 1, borderColor: "divider" }}>
-        {guest ? (
+        {guestLoading ? (
+          <Stack alignItems="center" sx={{ py: 4 }}>
+            <CircularProgress size={28} />
+          </Stack>
+        ) : guest ? (
           <Stack spacing={1.5} sx={{ p: 2 }}>
             {guest.isBlacklisted && (
               <Alert severity="error" variant="outlined" sx={{ borderRadius: "10px" }}>
@@ -113,10 +119,10 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ guestName, state
 
             {/* Идентификация: аватар-плашка + имя + телефон/email — тот же приём, что PatientCard. */}
             <Stack direction="row" alignItems="center" spacing={2}>
-              <UserAvatar src={guest.photoDataUrl} name={guest.name} size={64} sx={{ borderRadius: "18px", flexShrink: 0 }} />
+              <UserAvatar src={guest.photoUrl} name={guest.fullName} size={64} sx={{ borderRadius: "18px", flexShrink: 0 }} />
               <Box sx={{ minWidth: 0 }}>
                 <Typography variant="h6" fontWeight={700} noWrap sx={{ letterSpacing: -0.2, lineHeight: 1.25 }}>
-                  {guest.name}
+                  {guest.fullName}
                 </Typography>
                 <Link
                   href={`tel:${guest.phone}`}
@@ -133,83 +139,79 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ guestName, state
                   <PhoneInTalkOutlined fontSize="small" color="primary" />
                   <Typography variant="body2">{guest.phone}</Typography>
                 </Link>
-                {detailed?.guestEmail && (
+                {guest.email && (
                   <Stack direction="row" alignItems="center" gap={0.75} color="text.secondary" sx={{ mt: 0.5 }}>
                     <EmailOutlined fontSize="small" />
-                    <Typography variant="body2">{detailed.guestEmail}</Typography>
+                    <Typography variant="body2">{guest.email}</Typography>
                   </Stack>
                 )}
               </Box>
             </Stack>
 
             {/* Последнее проживание */}
-            {lastBooking && (
+            {lastItem && (
               <FactBlock icon={<HotelOutlined />} title="Последнее проживание">
                 <Stack spacing={0.5}>
                   <Typography variant="body2" fontWeight={600}>
-                    Номер {lastBooking.roomNumber} · {formatHotelDateRange(lastBooking.checkIn, lastBooking.checkOut)}
+                    Номер {lastItem.roomNumber ?? "—"} · {formatHotelDateRange(lastItem.checkIn, lastItem.checkOut)}
                   </Typography>
-                  {detailed?.boardType && (
-                    <Typography variant="body2">
-                      <Typography component="span" variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
-                        Тариф:
-                      </Typography>
-                      {BOARD_TYPE_LABELS[detailed.boardType]}
+                  <Typography variant="body2">
+                    <Typography component="span" variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
+                      Тариф:
                     </Typography>
-                  )}
+                    {HOTEL_BOARD_TYPE_LABELS[lastItem.boardType] ?? lastItem.boardType}
+                  </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Всего проживаний: {guest.bookings.length}
+                    Всего проживаний: {guest.staysCount}
                   </Typography>
                 </Stack>
               </FactBlock>
             )}
 
-            {/* Источник — платформа, с которой пришёл гость (профиль AddGuestDrawer или
-                самая свежая бронь с этим полем) — та же колонка, что в списке слева. */}
+            {/* Источник — платформа, с которой пришёл гость — та же колонка, что в списке слева. */}
             {guest.source && (
               <FactBlock icon={<PublicOutlined />} title="Источник">
-                <Typography variant="body2">{BOOKING_SOURCE_LABELS[guest.source]}</Typography>
+                <Typography variant="body2">{HOTEL_BOOKING_SOURCE_LABELS[guest.source] ?? guest.source}</Typography>
               </FactBlock>
             )}
 
-            {/* Документ — реквизиты личности гостя (профиль AddGuestDrawer или самая
-                свежая бронь с этими полями), цель визита остаётся полем конкретной брони. */}
+            {/* Документ — реквизиты личности гостя, видны только с правом hotel.guests.documents. */}
             {guest.guestType && (
-              <FactBlock icon={<BadgeOutlined />} title={`Документ · ${GUEST_TYPE_LABELS[guest.guestType]}`}>
+              <FactBlock icon={<BadgeOutlined />} title={`Документ · ${HOTEL_GUEST_TYPE_LABELS[guest.guestType] ?? guest.guestType}`}>
                 <Stack spacing={0.5}>
                   {guest.guestType === "resident" ? (
                     <>
-                      {guest.idNumber && <Typography variant="body2">Паспорт (ID-карта): {guest.idNumber}</Typography>}
+                      {guest.documentNumber && <Typography variant="body2">Паспорт (ID-карта): {guest.documentNumber}</Typography>}
                       {guest.inn && <Typography variant="body2">ИНН: {guest.inn}</Typography>}
                     </>
                   ) : (
                     <>
                       {guest.citizenship && <Typography variant="body2">Гражданство: {guest.citizenship}</Typography>}
-                      {guest.passportNumber && (
-                        <Typography variant="body2">Загранпаспорт: {guest.passportNumber}</Typography>
-                      )}
+                      {guest.documentNumber && <Typography variant="body2">Загранпаспорт: {guest.documentNumber}</Typography>}
                       {guest.passportExpiry && (
                         <Typography variant="body2">Действителен до: {formatHotelDate(guest.passportExpiry)}</Typography>
                       )}
-                      {detailed?.visitPurpose && (
-                        <Typography variant="body2">Цель визита: {VISIT_PURPOSE_LABELS[detailed.visitPurpose]}</Typography>
+                      {lastItem?.guests[0]?.document?.visitPurpose && (
+                        <Typography variant="body2">
+                          Цель визита: {HOTEL_VISIT_PURPOSE_LABELS[lastItem.guests[0].document.visitPurpose] ?? lastItem.guests[0].document.visitPurpose}
+                        </Typography>
                       )}
                     </>
                   )}
-                  {!guest.idNumber && !guest.inn && !guest.citizenship && !guest.passportNumber && (
+                  {!guest.documentNumber && !guest.inn && !guest.citizenship && (
                     <Typography variant="body2" color="text.disabled">
-                      Реквизиты не заполнены.
+                      Реквизиты не заполнены — либо не указаны, либо скрыты (нужно право «Паспортные данные»).
                     </Typography>
                   )}
                 </Stack>
               </FactBlock>
             )}
 
-            {/* Особые пожелания */}
-            {detailed?.specialRequests && (
-              <FactBlock icon={<NotesOutlined />} title="Особые пожелания">
+            {/* Особые пожелания — последняя бронь. */}
+            {lastReservation?.guestComment && (
+              <FactBlock icon={<PublicOutlined />} title="Особые пожелания">
                 <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-                  {detailed.specialRequests}
+                  {lastReservation.guestComment}
                 </Typography>
               </FactBlock>
             )}
@@ -217,8 +219,8 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ guestName, state
         ) : (
           <ListEmptyState
             icon={<PersonOutlineOutlined />}
-            title={guestName ? "Гость не найден" : "Гость не выбран"}
-            description={guestName ? "Броней с этим именем нет в текущем окне данных." : "Выберите гостя слева, чтобы увидеть карточку."}
+            title={clientId != null ? "Гость не найден" : "Гость не выбран"}
+            description={clientId != null ? "Не удалось загрузить карточку гостя." : "Выберите гостя слева, чтобы увидеть карточку."}
           />
         )}
       </Box>

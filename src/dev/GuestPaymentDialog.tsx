@@ -1,14 +1,10 @@
 /**
  * GuestPaymentDialog — «Оплата» на карточке брони в GuestHistoryPanel.tsx:
- * способ + сумма + комментарий, тот же принцип, что реальная оплата приёма
- * (DjangoPaymentDrawer.tsx) — только без баланса/бонусов/страховки/безнала
- * по терминалам, которых у отельного демо-стора нет. Логика (открыть/сохранить)
- * живёт в общем хуке useGuestDetails.ts, здесь только форма — общий компонент
- * для обеих точек входа, где показывается история проживаний: постоянная
- * колонка на «Гостях» (HotelGuestsPage) и модалка GuestDetailsDialog, вызываемая
- * с бара шахматки. Раньше диалог был вложен только в GuestDetailsDialog — на
- * «Гостях» кнопка «Оплата» молча взводила paymentEdit в хуке, а показать было
- * нечему.
+ * способ + сумма + комментарий → POST /hotel/reservations/{id}/payments/
+ * (append-only список, см. hotel-viva-frontend-api.md §4.5 — предоплата +
+ * доплата при заезде это отдельные записи, не перезапись одной). Логика
+ * (открыть/сохранить) живёт в общем хуке useGuestDetails.ts, здесь только
+ * форма — общий компонент для колонки на «Гостях».
  */
 import React from "react";
 import {
@@ -24,7 +20,8 @@ import {
   Typography,
 } from "@mui/material";
 
-import { formatHotelDateRange, nightsBetween, HOTEL_PAYMENT_METHOD_LABELS, type HotelPaymentMethod } from "./mockDemoData";
+import { HOTEL_PAYMENT_METHOD_LABELS } from "./hotelDisplay";
+import { formatHotelDateRange, nightsBetween } from "./mockDemoData";
 import type { GuestDetailsState } from "./useGuestDetails";
 
 export interface GuestPaymentDialogProps {
@@ -32,30 +29,32 @@ export interface GuestPaymentDialogProps {
 }
 
 export const GuestPaymentDialog: React.FC<GuestPaymentDialogProps> = ({ state }) => {
-  const { employee, paymentEdit, setPaymentEdit, savePayment } = state;
+  const { employee, paymentEdit, setPaymentEdit, savePayment, savingPayment, paymentError } = state;
+  const item = paymentEdit?.reservation.items[0];
 
   return (
     <Dialog open={paymentEdit != null} onClose={() => setPaymentEdit(null)} maxWidth="xs" fullWidth>
-      {paymentEdit && (
+      {paymentEdit && item && (
         <>
-          <DialogTitle>Оплата — номер {paymentEdit.booking.roomNumber}</DialogTitle>
+          <DialogTitle>Оплата — номер {item.roomNumber ?? "—"}</DialogTitle>
           <DialogContent>
             <Stack gap={2} sx={{ mt: 0.5 }}>
               <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-                {formatHotelDateRange(paymentEdit.booking.checkIn, paymentEdit.booking.checkOut)} ·{" "}
-                {nightsBetween(paymentEdit.booking.checkIn, paymentEdit.booking.checkOut)} ноч. Запись всегда можно
-                открыть и поправить.
+                {formatHotelDateRange(item.checkIn, item.checkOut)} · {nightsBetween(item.checkIn, item.checkOut)} ноч.
+                Оплачено {Number(paymentEdit.reservation.paidAmount).toLocaleString("ru-RU")} из{" "}
+                {Number(paymentEdit.reservation.totalAmount).toLocaleString("ru-RU")} {paymentEdit.reservation.currency}.
               </Alert>
+              {paymentError && <Alert severity="error">{paymentError}</Alert>}
               <TextField
                 select
                 label="Способ оплаты"
                 value={paymentEdit.method}
-                onChange={(e) => setPaymentEdit({ ...paymentEdit, method: e.target.value as HotelPaymentMethod })}
+                onChange={(e) => setPaymentEdit({ ...paymentEdit, method: e.target.value })}
                 fullWidth
               >
-                {(Object.keys(HOTEL_PAYMENT_METHOD_LABELS) as HotelPaymentMethod[]).map((key) => (
+                {Object.entries(HOTEL_PAYMENT_METHOD_LABELS).map(([key, label]) => (
                   <MenuItem key={key} value={key}>
-                    {HOTEL_PAYMENT_METHOD_LABELS[key]}
+                    {label}
                   </MenuItem>
                 ))}
               </TextField>
@@ -81,9 +80,11 @@ export const GuestPaymentDialog: React.FC<GuestPaymentDialogProps> = ({ state })
             </Stack>
           </DialogContent>
           <DialogActions sx={{ px: 3, pb: 2 }}>
-            <Button onClick={() => setPaymentEdit(null)}>Отмена</Button>
-            <Button variant="contained" onClick={savePayment}>
-              Провести оплату
+            <Button onClick={() => setPaymentEdit(null)} disabled={savingPayment}>
+              Отмена
+            </Button>
+            <Button variant="contained" onClick={() => void savePayment()} disabled={savingPayment}>
+              {savingPayment ? "Сохраняем…" : "Провести оплату"}
             </Button>
           </DialogActions>
         </>

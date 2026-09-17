@@ -1,34 +1,31 @@
 /**
- * «Настройки» → «Номера» для Viva — второй раздел рядом с «Роли и права»
- * (см. HotelSettingsPage.tsx, точка подключения в SettingsRouter.tsx).
+ * «Настройки» → «Номера» для Viva — вкладка рельса SettingsLayout.tsx,
+ * видна только vertical==="hotel" (useVisibleSettingsTabs), маршрут
+ * /settings/rooms гейтит hotel.manage (см. App.tsx, accessPermissions.ts).
+ * Реальный бэкенд (src/api/hotel.ts): категории — GET/POST/PATCH
+ * /hotel/room-types/, номера — GET/POST/PATCH/DELETE /hotel/rooms/,
+ * характеристики — GET/POST/PATCH /hotel/catalogs/amenities/ (см.
+ * hotel-viva-frontend-api.md §4.2, §6). totalPrice считает бэкенд (basePrice
+ * + Σ extraPrice отмеченных характеристик) — фронт больше не пересчитывает.
  *
- * Номера сгруппированы по категориям (тарифам) — той же форме, в которой их
- * показывают RoomBookingGrid и RoomDetailsDialog. «Добавить номер» кладёт
- * номер в выбранную категорию через общий localStorage-стор
- * (addHotelRoom/subscribeHotelRoomCategories в mockDemoData.ts) — шахматка и
- * форма создания брони подхватывают его без reload, тот же приём, что у
- * ручных броней и ролей. Категории теперь тоже можно создавать и править
- * («Добавить категорию»/«Изменить»): цена, вместимость и характеристики
- * принадлежат тарифу, а не отдельному номеру.
+ * Номера сгруппированы по категориям (тарифам), как в RoomBookingGrid и
+ * RoomDetailsDialog. «Добавить номер» создаёт номер в выбранной категории;
+ * шахматка и форма создания брони подхватывают его сразу же (react-query
+ * invalidate), без reload.
  *
- * Характеристики категории (со слов заказчика — «наличие чего-то в номере,
- * что отличает его от обычного и делает его дороже») выбираются чекбоксами по
- * разделам из общего справочника (subscribeRoomCharacteristicCatalog в
- * mockDemoData.ts) — тот же принцип, что роль собирает права из
- * HOTEL_PERMISSION_CATALOG в HotelRolesSettingsPage.tsx. В отличие от прав,
- * справочник не фиксирован: прямо в форме категории можно завести новую
- * характеристику со своей наценкой (addRoomCharacteristic) — она сразу
- * появится во всех категориях, а не только у текущей; наценка уже
- * существующей — тоже редактируется прямо там же (updateRoomCharacteristicPrice).
- * Цена категории (pricePerNight) — это цена номера «без ничего»; сколько
- * реально стоит ночь — getCategoryTotalPrice (база + наценки отмеченных
- * характеристик), не одно pricePerNight напрямую.
+ * Характеристики категории — чекбоксы по группам из справочника ОБЪЕКТА
+ * (catalogs.amenities, не платформы, см. hotel-viva-frontend-api.md §3) —
+ * тот же принцип, что роль собирает права из общего RBAC-каталога в реальной
+ * RolesSettingsPage.tsx. Справочник не фиксирован: прямо в форме категории
+ * можно завести новую характеристику со своей наценкой (createAmenity) — она
+ * появится у всех категорий объекта; наценка уже существующей правится там
+ * же (updateAmenity, коммитится по onBlur, не на каждый символ — это
+ * настоящий PATCH, не localStorage-запись).
  *
- * «Доп. тарифы» при добавлении номера — отдельный от категории мультивыбор
- * питания (Завтрак/Обед/Ужин/Всё включено, см. AdditionalTariff в
- * mockDemoData.ts): свойство конкретного номера, а не тарифа брони
- * (boardType/«Тариф» в CreateBookingButton — что выбрано на этот заезд),
- * поэтому и мультивыбор, и свой стор — можно скомбинировать Завтрак+Обед без Ужина.
+ * «Питание» при добавлении номера — HotelRoom.mealOptions, ключи из
+ * catalogs.mealOptions (какое питание доступно физически в этом номере) —
+ * отдельно от boardType брони (что выбрано на конкретный заезд, см.
+ * CreateBookingButton).
  */
 import React from "react";
 import {
@@ -38,6 +35,7 @@ import {
   Button,
   Checkbox,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -50,332 +48,469 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
-import { Navigate } from "react-router";
+import HotelOutlined from "@mui/icons-material/HotelOutlined";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { usePageTitle } from "../hooks/usePageTitle";
+import { SettingsLayout } from "../pages/settings/SettingsLayout";
+import { useHotelProperty } from "./useHotelProperty";
 import {
-  isVivaActive,
-  addHotelRoom,
-  deleteHotelRoom,
-  updateHotelRoom,
-  roomNumberExists,
-  addHotelRoomCategory,
-  updateHotelRoomCategory,
-  subscribeHotelRoomCategories,
-  getHotelRoomCategoriesSnapshot,
-  setRoomAdditionalTariffs,
-  getRoomAdditionalTariffs,
-  subscribeRoomAdditionalTariffs,
-  getRoomAdditionalTariffsSnapshot,
-  ADDITIONAL_TARIFF_LABELS,
-  subscribeRoomCharacteristicCatalog,
-  getRoomCharacteristicCatalogSnapshot,
-  getRoomCharacteristicLabel,
-  addRoomCharacteristic,
-  updateRoomCharacteristicPrice,
-  getCategoryTotalPrice,
-  type AdditionalTariff,
-  type HotelRoomCategory,
-} from "./mockDemoData";
-
-const ADDITIONAL_TARIFF_KEYS = Object.keys(ADDITIONAL_TARIFF_LABELS) as AdditionalTariff[];
+  getHotelCatalogs,
+  listRoomTypes,
+  createRoomType,
+  updateRoomType,
+  listRooms,
+  createRoom,
+  updateRoom,
+  deleteRoom,
+  createAmenity,
+  updateAmenity,
+  type HotelAmenity,
+  type HotelRoom,
+  type HotelRoomType,
+} from "../api/hotel";
+import { ApiError, getErrorMessage } from "../api/client";
 
 interface CategoryEditState {
-  /** null — создание новой категории, иначе имя правящейся (до переименования). */
-  originalName: string | null;
+  /** null — создание новой категории, иначе id правящейся. */
+  id: number | null;
   name: string;
   price: string;
-  capacity: string;
+  adultsCapacity: string;
+  childrenCapacity: string;
   view: string;
   bedType: string;
   roomLayout: string;
-  characteristics: Set<string>;
+  description: string;
+  amenities: Set<string>;
   luxury: boolean;
 }
 
 export const HotelRoomsSettingsPage: React.FC = () => {
   usePageTitle("Номера");
-  const theme = useTheme();
-  const categories = React.useSyncExternalStore(subscribeHotelRoomCategories, getHotelRoomCategoriesSnapshot);
-  // Снимок в зависимостях — иначе список чипов не обновит подсказку с доп.
-  // тарифами сразу после добавления номера (getRoomAdditionalTariffs сам не подписан).
-  React.useSyncExternalStore(subscribeRoomAdditionalTariffs, getRoomAdditionalTariffsSnapshot);
-  const characteristicCatalog = React.useSyncExternalStore(subscribeRoomCharacteristicCatalog, getRoomCharacteristicCatalogSnapshot);
-  const characteristicCategories = [...new Set(characteristicCatalog.map((c) => c.category))];
+  const { property } = useHotelProperty();
+  const queryClient = useQueryClient();
+
+  const catalogsQuery = useQuery({
+    queryKey: ["hotel", "catalogs", property?.id],
+    queryFn: ({ signal }) => getHotelCatalogs(property!.id, signal),
+    enabled: property != null,
+  });
+  const amenitiesCatalog = catalogsQuery.data?.amenities ?? [];
+  const amenityGroups = [...new Set(amenitiesCatalog.map((a) => a.group).filter(Boolean))];
+  const mealOptionChoices = catalogsQuery.data?.mealOptions ?? [];
+
+  const roomTypesQuery = useQuery({
+    queryKey: ["hotel", "roomTypes", property?.id],
+    queryFn: ({ signal }) => listRoomTypes(property!.id, {}, signal),
+    enabled: property != null,
+  });
+  const roomTypes = roomTypesQuery.data ?? [];
+
+  const roomsQuery = useQuery({
+    queryKey: ["hotel", "rooms", property?.id],
+    queryFn: ({ signal }) => listRooms({ propertyId: property!.id }, signal),
+    enabled: property != null,
+  });
+  const roomsByType = React.useMemo(() => {
+    const map = new Map<number, HotelRoom[]>();
+    for (const r of roomsQuery.data ?? []) {
+      const arr = map.get(r.roomTypeId) ?? [];
+      arr.push(r);
+      map.set(r.roomTypeId, arr);
+    }
+    return map;
+  }, [roomsQuery.data]);
+
+  const invalidateRoomTypes = () => void queryClient.invalidateQueries({ queryKey: ["hotel", "roomTypes", property?.id] });
+  const invalidateRooms = () => void queryClient.invalidateQueries({ queryKey: ["hotel", "rooms", property?.id] });
+  const invalidateCatalogs = () => void queryClient.invalidateQueries({ queryKey: ["hotel", "catalogs", property?.id] });
+
   const [addOpen, setAddOpen] = React.useState(false);
-  const [categoryName, setCategoryName] = React.useState("");
+  const [roomTypeId, setRoomTypeId] = React.useState<number | "">("");
   const [roomNumber, setRoomNumber] = React.useState("");
-  const [tariffs, setTariffs] = React.useState<AdditionalTariff[]>([]);
+  const [tariffs, setTariffs] = React.useState<string[]>([]);
+  const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Редактирование уже созданного номера — категория/номер/доп. тарифы можно
-  // поправить без удаления и создания заново (updateHotelRoom переносит номер
-  // между категориями и/или переименовывает его, сохраняя доп. тарифы).
-  const [editRoom, setEditRoom] = React.useState<{ fromCategory: string; room: string } | null>(null);
-  const [editCategoryName, setEditCategoryName] = React.useState("");
+  // Редактирование уже созданного номера — категорию/номер/питание можно
+  // поправить без удаления и создания заново.
+  const [editRoom, setEditRoom] = React.useState<HotelRoom | null>(null);
+  const [editRoomTypeId, setEditRoomTypeId] = React.useState<number | "">("");
   const [editRoomNumber, setEditRoomNumber] = React.useState("");
-  const [editTariffs, setEditTariffs] = React.useState<AdditionalTariff[]>([]);
+  const [editTariffs, setEditTariffs] = React.useState<string[]>([]);
+  const [editSaving, setEditSaving] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
 
-  // Категория (тариф) — раньше список категорий был фиксирован, теперь можно
-  // завести свой тариф или поправить уже созданный (цену/вместимость/
-  // характеристики), как роль собирает права (см. HotelRolesSettingsPage.tsx —
-  // тот же принцип «название + отмеченные пункты справочника» для catEdit.characteristics).
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
+
+  // Категория (тариф) — можно завести свой или поправить уже созданный
+  // (цену/вместимость/характеристики), как роль собирает права в реальной
+  // RolesSettingsPage.tsx — тот же принцип «название + отмеченные пункты
+  // справочника» для catEdit.amenities.
   const [catEdit, setCatEdit] = React.useState<CategoryEditState | null>(null);
+  const [catSaving, setCatSaving] = React.useState(false);
   const [catError, setCatError] = React.useState<string | null>(null);
 
-  // Новая характеристика — заводится прямо в форме категории (addRoomCharacteristic
-  // кладёт её в общий справочник) и сразу отмечается у текущей категории.
+  // Новая характеристика — заводится прямо в форме категории (createAmenity
+  // кладёт её в справочник объекта) и сразу отмечается у текущей категории.
   const [newCharLabel, setNewCharLabel] = React.useState("");
-  const [newCharCategory, setNewCharCategory] = React.useState("");
+  const [newCharGroup, setNewCharGroup] = React.useState("");
   const [newCharPrice, setNewCharPrice] = React.useState("");
+  const [newCharSaving, setNewCharSaving] = React.useState(false);
   const [newCharError, setNewCharError] = React.useState<string | null>(null);
 
-  // После хуков (Rules of Hooks) — страница доступна только Viva, как HotelRolesSettingsPage.
-  if (!isVivaActive()) return <Navigate to="/" replace />;
+  // Наценка уже существующей характеристики — черновик до onBlur, чтобы не
+  // слать PATCH на каждый символ (это настоящий запрос, не localStorage).
+  const [amenityPriceDrafts, setAmenityPriceDrafts] = React.useState<Record<number, string>>({});
 
   const openAdd = () => {
-    setCategoryName(categories[0]?.name ?? "");
+    setRoomTypeId(roomTypes[0]?.id ?? "");
     setRoomNumber("");
     setTariffs([]);
     setError(null);
     setAddOpen(true);
   };
 
-  const submitAdd = () => {
+  const submitAdd = async () => {
     const trimmed = roomNumber.trim();
     if (!trimmed) {
       setError("Введите номер комнаты");
       return;
     }
-    if (roomNumberExists(trimmed)) {
-      setError("Такой номер уже есть в отеле");
-      return;
+    if (!property || roomTypeId === "") return;
+    setSaving(true);
+    setError(null);
+    try {
+      await createRoom({ propertyId: property.id, roomTypeId, number: trimmed, mealOptions: tariffs });
+      invalidateRooms();
+      invalidateRoomTypes();
+      setAddOpen(false);
+    } catch (err) {
+      setError(getErrorMessage(err, "Не удалось добавить номер"));
+    } finally {
+      setSaving(false);
     }
-    addHotelRoom(categoryName, trimmed);
-    setRoomAdditionalTariffs(trimmed, tariffs);
-    setAddOpen(false);
   };
 
-  const openEditRoom = (fromCategory: string, room: string) => {
-    setEditRoom({ fromCategory, room });
-    setEditCategoryName(fromCategory);
-    setEditRoomNumber(room);
-    setEditTariffs(getRoomAdditionalTariffs(room));
+  const openEditRoom = (room: HotelRoom) => {
+    setEditRoom(room);
+    setEditRoomTypeId(room.roomTypeId);
+    setEditRoomNumber(room.number);
+    setEditTariffs(room.mealOptions);
     setEditError(null);
   };
 
-  const submitEditRoom = () => {
+  const submitEditRoom = async () => {
     if (!editRoom) return;
     const trimmed = editRoomNumber.trim();
     if (!trimmed) {
       setEditError("Введите номер комнаты");
       return;
     }
-    const ok = updateHotelRoom(editRoom.fromCategory, editRoom.room, editCategoryName, trimmed);
-    if (!ok) {
-      setEditError("Такой номер уже есть в отеле");
-      return;
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await updateRoom(editRoom.id, { roomTypeId: editRoomTypeId || undefined, number: trimmed, mealOptions: editTariffs });
+      invalidateRooms();
+      invalidateRoomTypes();
+      setEditRoom(null);
+    } catch (err) {
+      setEditError(getErrorMessage(err, "Не удалось сохранить номер"));
+    } finally {
+      setEditSaving(false);
     }
-    setRoomAdditionalTariffs(trimmed, editTariffs);
-    setEditRoom(null);
+  };
+
+  const handleDeleteRoom = async (room: HotelRoom) => {
+    setDeleteError(null);
+    try {
+      await deleteRoom(room.id);
+      invalidateRooms();
+      invalidateRoomTypes();
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "HAS_DEPENDENTS") {
+        // Номер уже фигурирует в бронях — удалить нельзя, снимаем с продажи вместо этого.
+        try {
+          await updateRoom(room.id, { status: "out_of_service" });
+          invalidateRooms();
+        } catch (err2) {
+          setDeleteError(getErrorMessage(err2, "Не удалось изменить статус номера"));
+        }
+      } else {
+        setDeleteError(getErrorMessage(err, "Не удалось удалить номер"));
+      }
+    }
   };
 
   const openAddCategory = () => {
     setCatEdit({
-      originalName: null,
+      id: null,
       name: "",
       price: "",
-      capacity: "",
+      adultsCapacity: "",
+      childrenCapacity: "",
       view: "",
       bedType: "",
       roomLayout: "",
-      characteristics: new Set(),
+      description: "",
+      amenities: new Set(),
       luxury: false,
     });
     setCatError(null);
     setNewCharLabel("");
-    setNewCharCategory("");
+    setNewCharGroup("");
     setNewCharPrice("");
     setNewCharError(null);
   };
 
-  const openEditCategory = (cat: HotelRoomCategory) => {
+  const openEditCategory = (cat: HotelRoomType) => {
     setCatEdit({
-      originalName: cat.name,
+      id: cat.id,
       name: cat.name,
-      price: String(cat.pricePerNight),
-      capacity: String(cat.capacity),
+      price: String(Number(cat.basePrice)),
+      adultsCapacity: String(cat.adultsCapacity),
+      childrenCapacity: String(cat.childrenCapacity),
       view: cat.view,
       bedType: cat.bedType,
       roomLayout: cat.roomLayout,
-      characteristics: new Set(cat.amenities),
-      luxury: !!cat.luxury,
+      description: cat.description,
+      amenities: new Set(cat.amenities),
+      luxury: cat.isLuxury,
     });
     setCatError(null);
     setNewCharLabel("");
-    setNewCharCategory("");
+    setNewCharGroup("");
     setNewCharPrice("");
     setNewCharError(null);
   };
 
-  const submitNewCharacteristic = () => {
-    if (!catEdit) return;
+  const submitNewAmenity = async () => {
+    if (!catEdit || !property) return;
     const trimmed = newCharLabel.trim();
     if (!trimmed) {
       setNewCharError("Введите название характеристики");
       return;
     }
-    const def = addRoomCharacteristic(trimmed, newCharCategory, Number(newCharPrice) || 0);
-    if (!def) {
-      setNewCharError("Такая характеристика уже есть");
-      return;
-    }
-    setCatEdit({ ...catEdit, characteristics: new Set([...catEdit.characteristics, def.key]) });
-    setNewCharLabel("");
-    setNewCharCategory("");
-    setNewCharPrice("");
+    setNewCharSaving(true);
     setNewCharError(null);
+    try {
+      const created = await createAmenity({
+        propertyId: property.id,
+        label: trimmed,
+        group: newCharGroup.trim() || undefined,
+        extraPrice: newCharPrice ? String(Number(newCharPrice) || 0) : undefined,
+      });
+      invalidateCatalogs();
+      setCatEdit({ ...catEdit, amenities: new Set([...catEdit.amenities, created.key]) });
+      setNewCharLabel("");
+      setNewCharGroup("");
+      setNewCharPrice("");
+    } catch (err) {
+      setNewCharError(getErrorMessage(err, "Не удалось добавить характеристику"));
+    } finally {
+      setNewCharSaving(false);
+    }
   };
 
-  const toggleCharacteristic = (key: string) => {
+  const commitAmenityPrice = async (amenity: HotelAmenity) => {
+    const draft = amenityPriceDrafts[amenity.id];
+    if (draft === undefined) return;
+    const nextPrice = Number(draft) || 0;
+    if (nextPrice === Number(amenity.extraPrice)) return;
+    try {
+      await updateAmenity(amenity.id, { extraPrice: String(nextPrice) });
+      invalidateCatalogs();
+      invalidateRoomTypes();
+    } catch (err) {
+      setCatError(getErrorMessage(err, "Не удалось изменить наценку"));
+    }
+  };
+
+  const toggleAmenity = (key: string) => {
     if (!catEdit) return;
-    const next = new Set(catEdit.characteristics);
+    const next = new Set(catEdit.amenities);
     if (next.has(key)) next.delete(key);
     else next.add(key);
-    setCatEdit({ ...catEdit, characteristics: next });
+    setCatEdit({ ...catEdit, amenities: next });
   };
 
-  const submitCategory = () => {
-    if (!catEdit) return;
+  const submitCategory = async () => {
+    if (!catEdit || !property) return;
     const trimmed = catEdit.name.trim();
     if (!trimmed) {
       setCatError("Введите название категории");
       return;
     }
-    const patch = {
-      name: trimmed,
-      pricePerNight: Number(catEdit.price) || 0,
-      capacity: Number(catEdit.capacity) || 1,
-      view: catEdit.view.trim(),
-      bedType: catEdit.bedType.trim(),
-      roomLayout: catEdit.roomLayout.trim(),
-      amenities: [...catEdit.characteristics],
-      luxury: catEdit.luxury || undefined,
-    };
-    const ok = catEdit.originalName
-      ? updateHotelRoomCategory(catEdit.originalName, patch)
-      : addHotelRoomCategory(patch);
-    if (!ok) {
-      setCatError("Такая категория уже есть");
-      return;
+    setCatSaving(true);
+    setCatError(null);
+    try {
+      const patch = {
+        name: trimmed,
+        basePrice: String(Number(catEdit.price) || 0),
+        adultsCapacity: Number(catEdit.adultsCapacity) || 1,
+        childrenCapacity: Number(catEdit.childrenCapacity) || 0,
+        view: catEdit.view.trim(),
+        bedType: catEdit.bedType.trim(),
+        roomLayout: catEdit.roomLayout.trim(),
+        description: catEdit.description.trim(),
+        amenities: [...catEdit.amenities],
+        isLuxury: catEdit.luxury,
+      };
+      if (catEdit.id != null) await updateRoomType(catEdit.id, patch);
+      else await createRoomType({ propertyId: property.id, ...patch });
+      invalidateRoomTypes();
+      setCatEdit(null);
+    } catch (err) {
+      setCatError(getErrorMessage(err, "Не удалось сохранить категорию"));
+    } finally {
+      setCatSaving(false);
     }
-    setCatEdit(null);
   };
 
   // Живой предпросчёт «Итого» в диалоге категории — база из формы + наценки
-  // отмеченных характеристик (из живого characteristicCatalog, а не из снимка
-  // категории — чтобы правка наценки прямо здесь сразу отражалась в сумме).
+  // отмеченных характеристик (из живого catalogsQuery, а не из cat.totalPrice
+  // — чтобы правка наценки прямо здесь сразу отражалась в сумме до сохранения).
   const catEditTotalPrice = catEdit
     ? (Number(catEdit.price) || 0) +
-      [...catEdit.characteristics].reduce((sum, key) => sum + (characteristicCatalog.find((c) => c.key === key)?.extraPrice ?? 0), 0)
+      [...catEdit.amenities].reduce((sum, key) => {
+        const a = amenitiesCatalog.find((c) => c.key === key);
+        return sum + (a ? Number(a.extraPrice) : 0);
+      }, 0)
     : 0;
 
+  const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading || roomsQuery.isLoading;
+
   return (
-    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
-        <Typography variant="h6" fontWeight={700}>
-          Номера
-        </Typography>
+    <SettingsLayout>
+      <Stack spacing={2} sx={{ height: "100%" }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
+        <Stack direction="row" alignItems="center" gap={1}>
+          <HotelOutlined color="action" />
+          <Typography variant="h6" fontWeight={600}>
+            Номера
+          </Typography>
+        </Stack>
         <Stack direction="row" gap={1}>
-          <Button size="small" variant="outlined" startIcon={<AddOutlined />} onClick={openAddCategory}>
+          <Button size="small" variant="outlined" startIcon={<AddOutlined />} onClick={openAddCategory} disabled={!property}>
             Добавить категорию
           </Button>
-          <Button size="small" variant="contained" startIcon={<AddOutlined />} onClick={openAdd}>
+          <Button size="small" variant="contained" startIcon={<AddOutlined />} onClick={openAdd} disabled={!property || roomTypes.length === 0}>
             Добавить номер
           </Button>
         </Stack>
       </Stack>
 
-      <Alert severity="info" variant="outlined" sx={{ mb: 2.5, fontSize: "0.8rem" }}>
-        Демо-справочник номеров Viva, сгруппирован по категориям (тарифам). Цена категории — это
-        номер «без ничего»: каждая отмеченная характеристика добавляет свою наценку сверху, итог
-        показан в карточке категории и в «Изменить». Новый номер сразу появляется в шахматке броней
-        и в списке выбора при создании брони; нажмите на номер, чтобы изменить его категорию, код
-        или доп. тарифы; ✕ на чипе — удаляет номер.
+      <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
+        Справочник номеров Viva, сгруппирован по категориям (тарифам). Цена категории — это номер
+        «без ничего»: каждая отмеченная характеристика добавляет свою наценку сверху, итог считает
+        бэкенд и показан в карточке категории и в «Изменить». Новый номер сразу появляется в
+        шахматке броней и в списке выбора при создании брони; нажмите на номер, чтобы изменить его
+        категорию, код или питание; ✕ на чипе — удаляет номер (если он уже фигурирует в бронях —
+        просто снимается с продажи).
       </Alert>
 
-      <Stack gap={2} sx={{ maxWidth: 640 }}>
-        {categories.map((cat) => {
-          const totalPrice = getCategoryTotalPrice(cat);
-          return (
-            <Paper key={cat.name} elevation={0} variant="outlined" sx={{ p: 1.75 }}>
-              <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={0.5} sx={{ mb: 1 }}>
-                <Stack direction="row" alignItems="baseline" gap={1} flexWrap="wrap">
-                  <Typography variant="body2" fontWeight={600}>
-                    {cat.name}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {totalPrice.toLocaleString("ru-RU")} сом/ночь
-                    {totalPrice !== cat.pricePerNight && ` (база ${cat.pricePerNight.toLocaleString("ru-RU")})`} · до {cat.capacity} гостей
-                  </Typography>
+      {deleteError && (
+        <Alert severity="error" variant="outlined" sx={{ fontSize: "0.8rem" }} onClose={() => setDeleteError(null)}>
+          {deleteError}
+        </Alert>
+      )}
+
+      {loading ? (
+        <Stack alignItems="center" sx={{ py: 4 }}>
+          <CircularProgress size={28} />
+        </Stack>
+      ) : !property ? (
+        <Alert severity="warning" variant="outlined">
+          Не найден объект размещения для текущего филиала.
+        </Alert>
+      ) : (
+        <Stack gap={2} sx={{ maxWidth: 640 }}>
+          {roomTypes.length === 0 && (
+            <Typography variant="body2" color="text.disabled">
+              Категорий пока нет — начните с «Добавить категорию».
+            </Typography>
+          )}
+          {roomTypes.map((cat) => {
+            const rooms = roomsByType.get(cat.id) ?? [];
+            const totalPrice = Number(cat.totalPrice);
+            const basePrice = Number(cat.basePrice);
+            return (
+              <Paper key={cat.id} elevation={0} variant="outlined" sx={{ p: 1.75 }}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={0.5} sx={{ mb: 1 }}>
+                  <Stack direction="row" alignItems="baseline" gap={1} flexWrap="wrap">
+                    <Typography variant="body2" fontWeight={600}>
+                      {cat.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {totalPrice.toLocaleString("ru-RU")} сом/ночь
+                      {totalPrice !== basePrice && ` (база ${basePrice.toLocaleString("ru-RU")})`} · до {cat.capacity} гостей
+                    </Typography>
+                  </Stack>
+                  <Button size="small" startIcon={<EditOutlined fontSize="small" />} onClick={() => openEditCategory(cat)}>
+                    Изменить
+                  </Button>
                 </Stack>
-                <Button size="small" startIcon={<EditOutlined fontSize="small" />} onClick={() => openEditCategory(cat)}>
-                  Изменить
-                </Button>
-              </Stack>
-              {cat.amenities.length > 0 && (
-                <Stack direction="row" flexWrap="wrap" gap={0.5} sx={{ mb: 1 }}>
-                  {cat.amenities.map((a) => {
-                    const def = characteristicCatalog.find((c) => c.key === a);
-                    const label = def && def.extraPrice > 0 ? `${def.label} +${def.extraPrice.toLocaleString("ru-RU")}` : getRoomCharacteristicLabel(a);
-                    return <Chip key={a} label={label} size="small" variant="outlined" sx={{ height: 20, fontSize: "0.7rem" }} />;
+                {cat.amenities.length > 0 && (
+                  <Stack direction="row" flexWrap="wrap" gap={0.5} sx={{ mb: 1 }}>
+                    {cat.amenities.map((key) => {
+                      const def = amenitiesCatalog.find((a) => a.key === key);
+                      const extra = def ? Number(def.extraPrice) : 0;
+                      const label = def ? (extra > 0 ? `${def.label} +${extra.toLocaleString("ru-RU")}` : def.label) : key;
+                      return <Chip key={key} label={label} size="small" variant="outlined" sx={{ height: 20, fontSize: "0.7rem" }} />;
+                    })}
+                  </Stack>
+                )}
+                <Stack direction="row" flexWrap="wrap" gap={0.75}>
+                  {rooms.length === 0 && (
+                    <Typography variant="caption" color="text.disabled">
+                      Номеров пока нет
+                    </Typography>
+                  )}
+                  {rooms.map((room) => {
+                    const chip = (
+                      <Chip
+                        key={room.id}
+                        label={room.number}
+                        size="small"
+                        onClick={() => openEditRoom(room)}
+                        onDelete={() => void handleDeleteRoom(room)}
+                        sx={room.status === "out_of_service" ? { opacity: 0.5, textDecoration: "line-through" } : undefined}
+                      />
+                    );
+                    const mealLabels = room.mealOptions.map((mo) => mealOptionChoices.find((c) => c.value === mo)?.label ?? mo);
+                    const tooltipTitle =
+                      (room.status === "out_of_service" ? "Снят с продажи · " : "") +
+                      (mealLabels.length === 0 ? "Нажмите, чтобы изменить" : `Питание: ${mealLabels.join(", ")} · нажмите, чтобы изменить`);
+                    return (
+                      <Tooltip key={room.id} title={tooltipTitle}>
+                        {chip}
+                      </Tooltip>
+                    );
                   })}
                 </Stack>
-              )}
-            <Stack direction="row" flexWrap="wrap" gap={0.75}>
-              {cat.rooms.length === 0 && (
-                <Typography variant="caption" color="text.disabled">
-                  Номеров пока нет
-                </Typography>
-              )}
-              {cat.rooms.map((room) => {
-                const roomTariffs = getRoomAdditionalTariffs(room);
-                const chip = (
-                  <Chip
-                    key={room}
-                    label={room}
-                    size="small"
-                    onClick={() => openEditRoom(cat.name, room)}
-                    onDelete={() => deleteHotelRoom(cat.name, room)}
-                  />
-                );
-                const tooltipTitle =
-                  roomTariffs.length === 0
-                    ? "Нажмите, чтобы изменить"
-                    : `Доп. тарифы: ${roomTariffs.map((t) => ADDITIONAL_TARIFF_LABELS[t]).join(", ")} · нажмите, чтобы изменить`;
-                return (
-                  <Tooltip key={room} title={tooltipTitle}>
-                    {chip}
-                  </Tooltip>
-                );
-              })}
-            </Stack>
-            </Paper>
-          );
-        })}
-      </Stack>
+              </Paper>
+            );
+          })}
+        </Stack>
+      )}
 
       <Dialog open={addOpen} onClose={() => setAddOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Новый номер</DialogTitle>
         <DialogContent>
           <Stack gap={2} sx={{ mt: 0.5 }}>
-            <TextField select label="Категория" value={categoryName} onChange={(e) => setCategoryName(e.target.value)} fullWidth>
-              {categories.map((cat) => (
-                <MenuItem key={cat.name} value={cat.name}>
+            <TextField
+              select
+              label="Категория"
+              value={roomTypeId}
+              onChange={(e) => setRoomTypeId(Number(e.target.value))}
+              disabled={saving}
+              fullWidth
+            >
+              {roomTypes.map((cat) => (
+                <MenuItem key={cat.id} value={cat.id}>
                   {cat.name}
                 </MenuItem>
               ))}
@@ -389,22 +524,24 @@ export const HotelRoomsSettingsPage: React.FC = () => {
                 setError(null);
               }}
               autoFocus
+              disabled={saving}
               fullWidth
             />
             <TextField
               select
-              label="Доп. тарифы"
+              label="Питание"
               value={tariffs}
               onChange={(e) => {
                 const v = e.target.value;
-                setTariffs((typeof v === "string" ? v.split(",") : v) as AdditionalTariff[]);
+                setTariffs(typeof v === "string" ? v.split(",") : v);
               }}
+              disabled={saving}
               SelectProps={{
                 multiple: true,
                 renderValue: (selected) => (
                   <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                    {(selected as AdditionalTariff[]).map((key) => (
-                      <Chip key={key} label={ADDITIONAL_TARIFF_LABELS[key]} size="small" sx={{ height: 20, borderRadius: "6px" }} />
+                    {(selected as string[]).map((key) => (
+                      <Chip key={key} label={mealOptionChoices.find((c) => c.value === key)?.label ?? key} size="small" sx={{ height: 20, borderRadius: "6px" }} />
                     ))}
                   </Box>
                 ),
@@ -412,9 +549,9 @@ export const HotelRoomsSettingsPage: React.FC = () => {
               helperText="Необязательно — какое питание доступно в этом номере"
               fullWidth
             >
-              {ADDITIONAL_TARIFF_KEYS.map((key) => (
-                <MenuItem key={key} value={key}>
-                  {ADDITIONAL_TARIFF_LABELS[key]}
+              {mealOptionChoices.map((c) => (
+                <MenuItem key={c.value} value={c.value}>
+                  {c.label}
                 </MenuItem>
               ))}
             </TextField>
@@ -426,20 +563,29 @@ export const HotelRoomsSettingsPage: React.FC = () => {
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setAddOpen(false)}>Отмена</Button>
-          <Button variant="contained" disabled={!roomNumber.trim()} onClick={submitAdd}>
-            Добавить
+          <Button onClick={() => setAddOpen(false)} disabled={saving}>
+            Отмена
+          </Button>
+          <Button variant="contained" disabled={!roomNumber.trim() || saving} onClick={() => void submitAdd()}>
+            {saving ? "Добавляем…" : "Добавить"}
           </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={editRoom != null} onClose={() => setEditRoom(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Номер {editRoom?.room}</DialogTitle>
+        <DialogTitle>Номер {editRoom?.number}</DialogTitle>
         <DialogContent>
           <Stack gap={2} sx={{ mt: 0.5 }}>
-            <TextField select label="Категория" value={editCategoryName} onChange={(e) => setEditCategoryName(e.target.value)} fullWidth>
-              {categories.map((cat) => (
-                <MenuItem key={cat.name} value={cat.name}>
+            <TextField
+              select
+              label="Категория"
+              value={editRoomTypeId}
+              onChange={(e) => setEditRoomTypeId(Number(e.target.value))}
+              disabled={editSaving}
+              fullWidth
+            >
+              {roomTypes.map((cat) => (
+                <MenuItem key={cat.id} value={cat.id}>
                   {cat.name}
                 </MenuItem>
               ))}
@@ -452,22 +598,24 @@ export const HotelRoomsSettingsPage: React.FC = () => {
                 setEditError(null);
               }}
               autoFocus
+              disabled={editSaving}
               fullWidth
             />
             <TextField
               select
-              label="Доп. тарифы"
+              label="Питание"
               value={editTariffs}
               onChange={(e) => {
                 const v = e.target.value;
-                setEditTariffs((typeof v === "string" ? v.split(",") : v) as AdditionalTariff[]);
+                setEditTariffs(typeof v === "string" ? v.split(",") : v);
               }}
+              disabled={editSaving}
               SelectProps={{
                 multiple: true,
                 renderValue: (selected) => (
                   <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                    {(selected as AdditionalTariff[]).map((key) => (
-                      <Chip key={key} label={ADDITIONAL_TARIFF_LABELS[key]} size="small" sx={{ height: 20, borderRadius: "6px" }} />
+                    {(selected as string[]).map((key) => (
+                      <Chip key={key} label={mealOptionChoices.find((c) => c.value === key)?.label ?? key} size="small" sx={{ height: 20, borderRadius: "6px" }} />
                     ))}
                   </Box>
                 ),
@@ -475,9 +623,9 @@ export const HotelRoomsSettingsPage: React.FC = () => {
               helperText="Необязательно — какое питание доступно в этом номере"
               fullWidth
             >
-              {ADDITIONAL_TARIFF_KEYS.map((key) => (
-                <MenuItem key={key} value={key}>
-                  {ADDITIONAL_TARIFF_LABELS[key]}
+              {mealOptionChoices.map((c) => (
+                <MenuItem key={c.value} value={c.value}>
+                  {c.label}
                 </MenuItem>
               ))}
             </TextField>
@@ -489,9 +637,11 @@ export const HotelRoomsSettingsPage: React.FC = () => {
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setEditRoom(null)}>Отмена</Button>
-          <Button variant="contained" disabled={!editRoomNumber.trim()} onClick={submitEditRoom}>
-            Сохранить
+          <Button onClick={() => setEditRoom(null)} disabled={editSaving}>
+            Отмена
+          </Button>
+          <Button variant="contained" disabled={!editRoomNumber.trim() || editSaving} onClick={() => void submitEditRoom()}>
+            {editSaving ? "Сохраняем…" : "Сохранить"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -499,7 +649,7 @@ export const HotelRoomsSettingsPage: React.FC = () => {
       <Dialog open={catEdit != null} onClose={() => setCatEdit(null)} maxWidth="xs" fullWidth>
         {catEdit && (
           <>
-            <DialogTitle>{catEdit.originalName ? "Изменить категорию" : "Новая категория (тариф)"}</DialogTitle>
+            <DialogTitle>{catEdit.id != null ? "Изменить категорию" : "Новая категория (тариф)"}</DialogTitle>
             <DialogContent>
               <Stack gap={2} sx={{ mt: 0.5 }}>
                 <TextField
@@ -523,12 +673,22 @@ export const HotelRoomsSettingsPage: React.FC = () => {
                     helperText="Номер «без ничего» — характеристики ниже добавляются к ней"
                     fullWidth
                   />
+                </Stack>
+                <Stack direction="row" gap={2}>
                   <TextField
-                    label="Вместимость, гостей"
+                    label="Взрослых"
                     type="number"
-                    value={catEdit.capacity}
-                    onChange={(e) => setCatEdit({ ...catEdit, capacity: e.target.value })}
+                    value={catEdit.adultsCapacity}
+                    onChange={(e) => setCatEdit({ ...catEdit, adultsCapacity: e.target.value })}
                     slotProps={{ htmlInput: { min: 1 } }}
+                    fullWidth
+                  />
+                  <TextField
+                    label="Детей"
+                    type="number"
+                    value={catEdit.childrenCapacity}
+                    onChange={(e) => setCatEdit({ ...catEdit, childrenCapacity: e.target.value })}
+                    slotProps={{ htmlInput: { min: 0 } }}
                     fullWidth
                   />
                 </Stack>
@@ -556,6 +716,15 @@ export const HotelRoomsSettingsPage: React.FC = () => {
                   onChange={(e) => setCatEdit({ ...catEdit, roomLayout: e.target.value })}
                   fullWidth
                 />
+                <TextField
+                  label="Описание"
+                  placeholder="Необязательно"
+                  value={catEdit.description}
+                  onChange={(e) => setCatEdit({ ...catEdit, description: e.target.value })}
+                  multiline
+                  minRows={2}
+                  fullWidth
+                />
 
                 <Box>
                   <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>
@@ -564,25 +733,25 @@ export const HotelRoomsSettingsPage: React.FC = () => {
                   <Typography variant="caption" color="text.secondary">
                     Что в номере отличает его от обычного и на сколько дороже делает — как права у роли. Нет нужной — заведите ниже.
                   </Typography>
-                  {characteristicCategories.map((category) => (
-                    <Box key={category} sx={{ mt: 1 }}>
+                  {amenityGroups.map((group) => (
+                    <Box key={group} sx={{ mt: 1 }}>
                       <Typography variant="caption" fontWeight={600} color="text.secondary">
-                        {category}
+                        {group}
                       </Typography>
                       <Stack direction="row" flexWrap="wrap" gap={1.5} alignItems="center">
-                        {characteristicCatalog.filter((c) => c.category === category).map((c) => (
-                          <Stack key={c.key} direction="row" alignItems="center" gap={0.25}>
+                        {amenitiesCatalog.filter((a) => a.group === group).map((a) => (
+                          <Stack key={a.id} direction="row" alignItems="center" gap={0.25}>
                             <FormControlLabel
                               control={
                                 <Checkbox
                                   size="small"
-                                  checked={catEdit.characteristics.has(c.key)}
-                                  onChange={() => toggleCharacteristic(c.key)}
+                                  checked={catEdit.amenities.has(a.key)}
+                                  onChange={() => toggleAmenity(a.key)}
                                 />
                               }
                               label={
                                 <Typography variant="body2" color="text.secondary">
-                                  {c.label}
+                                  {a.label}
                                 </Typography>
                               }
                               sx={{ mr: 0 }}
@@ -590,8 +759,9 @@ export const HotelRoomsSettingsPage: React.FC = () => {
                             <TextField
                               size="small"
                               type="number"
-                              value={c.extraPrice}
-                              onChange={(e) => updateRoomCharacteristicPrice(c.key, Number(e.target.value) || 0)}
+                              value={amenityPriceDrafts[a.id] ?? String(Number(a.extraPrice))}
+                              onChange={(e) => setAmenityPriceDrafts((prev) => ({ ...prev, [a.id]: e.target.value }))}
+                              onBlur={() => void commitAmenityPrice(a)}
                               slotProps={{ htmlInput: { min: 0, style: { textAlign: "right" } } }}
                               sx={{ width: 76 }}
                             />
@@ -611,14 +781,16 @@ export const HotelRoomsSettingsPage: React.FC = () => {
                         setNewCharLabel(e.target.value);
                         setNewCharError(null);
                       }}
+                      disabled={newCharSaving}
                       fullWidth
                     />
                     <Autocomplete
                       size="small"
                       freeSolo
-                      options={characteristicCategories}
-                      inputValue={newCharCategory}
-                      onInputChange={(_, v) => setNewCharCategory(v)}
+                      options={amenityGroups}
+                      inputValue={newCharGroup}
+                      onInputChange={(_, v) => setNewCharGroup(v)}
+                      disabled={newCharSaving}
                       sx={{ minWidth: 140 }}
                       renderInput={(params) => <TextField {...params} label="Раздел" placeholder="Техника…" />}
                     />
@@ -629,10 +801,11 @@ export const HotelRoomsSettingsPage: React.FC = () => {
                       value={newCharPrice}
                       onChange={(e) => setNewCharPrice(e.target.value)}
                       slotProps={{ htmlInput: { min: 0 } }}
+                      disabled={newCharSaving}
                       sx={{ width: 110 }}
                     />
-                    <Button variant="outlined" onClick={submitNewCharacteristic} disabled={!newCharLabel.trim()} sx={{ whiteSpace: "nowrap" }}>
-                      Добавить
+                    <Button variant="outlined" onClick={() => void submitNewAmenity()} disabled={!newCharLabel.trim() || newCharSaving} sx={{ whiteSpace: "nowrap" }}>
+                      {newCharSaving ? "Добавляем…" : "Добавить"}
                     </Button>
                   </Stack>
                   {newCharError && (
@@ -654,15 +827,18 @@ export const HotelRoomsSettingsPage: React.FC = () => {
               </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-              <Button onClick={() => setCatEdit(null)}>Отмена</Button>
-              <Button variant="contained" disabled={!catEdit.name.trim()} onClick={submitCategory}>
-                {catEdit.originalName ? "Сохранить" : "Добавить"}
+              <Button onClick={() => setCatEdit(null)} disabled={catSaving}>
+                Отмена
+              </Button>
+              <Button variant="contained" disabled={!catEdit.name.trim() || catSaving} onClick={() => void submitCategory()}>
+                {catSaving ? "Сохраняем…" : catEdit.id != null ? "Сохранить" : "Добавить"}
               </Button>
             </DialogActions>
           </>
         )}
       </Dialog>
-    </Box>
+      </Stack>
+    </SettingsLayout>
   );
 };
 

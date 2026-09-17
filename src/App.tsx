@@ -118,9 +118,10 @@ const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
 const HotelIntegrationsPage = lazy(() => import("./dev/HotelIntegrationsPage"));
 const HotelKitchenPage = lazy(() => import("./dev/HotelKitchenPage"));
+const HotelRoomsSettingsPage = lazy(() => import("./dev/HotelRoomsSettingsPage"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
-const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsRouter"));
+const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
 const OrganizationSettingsPage = lazy(() => import("./pages/settings/OrganizationSettingsPage"));
 const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSettingsPage"));
 const SiteSettingsPage = lazy(() => import("./pages/settings/SiteSettingsPage"));
@@ -623,7 +624,11 @@ function App() {
                         <Route
                           path="patients"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.patients}>
+                            // clients.view — тот же код, что видит вертикаль retail: реальный
+                            // бэкенд выдаёт его и организациям vertical="hotel" (Viva), у
+                            // которых своего patients.view нет (там «гости», не «пациенты»,
+                            // см. PatientsPage → HotelGuestsPage).
+                            <RequirePermission permission={[PAGE_PERMISSIONS.patients, PAGE_PERMISSIONS.clients]}>
                               <Suspense fallback={<LinearProgress />}>
                                 <PatientsPage />
                               </Suspense>
@@ -1030,6 +1035,16 @@ function App() {
                                 <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.clients}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <ClientsSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/rooms"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.rooms}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <HotelRoomsSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

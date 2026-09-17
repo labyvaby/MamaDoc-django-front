@@ -21,7 +21,7 @@
  */
 import dayjs, { type Dayjs } from "dayjs";
 import type { Theme } from "@mui/material/styles";
-import type { GlossaryOverrides } from "../i18n/glossaryOverrides";
+import { usePermissions } from "../hooks/usePermissions";
 
 const ENV_FLAG = "VITE_MOCK_DEMO_DATA";
 
@@ -95,84 +95,6 @@ const PAYMENT_CYCLE = ["unpaid", "unpaid", "partial", "paid", "paid", "unpaid", 
 const MOCK_LAST_UPDATE = "2026-09-01T09:00:00Z";
 
 const MOCK_BRANCH_NAME = "Филиал (демо)";
-
-// ── Viva (мок-организация «отель») ──────────────────────────────────────────
-//
-// Показывает, что та же CRM подходит и для отельного бизнеса: отдельная
-// организация в переключателе (шапка → «Организация»), терминология
-// подменена через штатный «конструктор терминологии» (themeConfig.glossary —
-// тот же механизм, что и для настоящей организации в /settings, см.
-// glossaryOverrides.ts), а сотрудники/услуги в моих же генераторах ниже
-// переключаются на отельный «флейвор», когда активна Viva.
-//
-// ⚠ Честная граница: вертикализованы только термины (patients/appointments
-// модули). Остальные ~330 файлов — хардкод медицинского текста (вакцины,
-// СКУД, «Кабинет врача» и т.п.), они останутся клиникой независимо от
-// вертикали — см. mamadoc-functionality.md §8.
-
-const VIVA_ORG_ID = 990000001;
-const VIVA_MEMBERSHIP_ID = 990000002;
-const VIVA_BRANCH_MAIN_ID = 990000003;
-const VIVA_BRANCH_AIRPORT_ID = 990000004;
-
-/**
- * Оверрайды терминов — форма `GlossaryOverrides` из glossaryOverrides.ts.
- * Базовая вертикаль — "beauty" (ближе к отелю, чем "clinic": там уже
- * «клиент»/«визит»/«услуга» вместо «пациент»/«приём»); эти 5 терминов
- * переопределены поверх нее до отельной лексики. Формы получены движком
- * declineTerm() из src/i18n/declension.ts, с ручной правкой двух мест,
- * которые он сам помечает как не умеет: «горничная» — субстантивированное
- * прилагательное (склоняется как прилагательное, не как обычное
- * существительное на -ая), «номер» — нестандартное мн.ч. на -а
- * (номера, не «номеры» — тот же тип, что и «мастер» → «мастера» в
- * комментарии declension.ts).
- */
-const HOTEL_GLOSSARY_OVERRIDES: GlossaryOverrides = {
-  patient: {
-    gender: "m", nom: "гость", gen: "гостя", dat: "гостю", acc: "гостя",
-    ins: "гостем", pre: "госте", nomPl: "гости", genPl: "гостей",
-    datPl: "гостям", accPl: "гостей", insPl: "гостями", prePl: "гостях",
-  },
-  specialist: {
-    gender: "m", nom: "администратор", gen: "администратора", dat: "администратору",
-    acc: "администратора", ins: "администратором", pre: "администраторе",
-    nomPl: "администраторы", genPl: "администраторов", datPl: "администраторам",
-    accPl: "администраторов", insPl: "администраторами", prePl: "администраторах",
-  },
-  assistant: {
-    gender: "f", nom: "горничная", gen: "горничной", dat: "горничной",
-    acc: "горничную", ins: "горничной", pre: "горничной", nomPl: "горничные",
-    genPl: "горничных", datPl: "горничным", accPl: "горничных",
-    insPl: "горничными", prePl: "горничных",
-  },
-  org: {
-    gender: "m", nom: "отель", gen: "отеля", dat: "отелю", acc: "отель",
-    ins: "отелем", pre: "отеле", nomPl: "отели", genPl: "отелей",
-    datPl: "отелям", accPl: "отели", insPl: "отелями", prePl: "отелях",
-  },
-  room: {
-    gender: "m", nom: "номер", gen: "номера", dat: "номеру", acc: "номер",
-    ins: "номером", pre: "номере", nomPl: "номера", genPl: "номеров",
-    datPl: "номерам", accPl: "номера", insPl: "номерами", prePl: "номерах",
-  },
-};
-
-const HOTEL_MOCK_EMPLOYEES: MockEmployee[] = [
-  { id: 950001, fullName: "Токтогулова Айгуль Максатовна", clinicalRole: "doctor", specializationId: 950101, specializationName: "Администратор" },
-  { id: 950002, fullName: "Бекбоев Нурлан Эркинович", clinicalRole: "doctor", specializationId: 950102, specializationName: "Менеджер по бронированию" },
-  { id: 950004, fullName: "Абдиев Руслан Талантович", clinicalRole: "doctor", specializationId: 950104, specializationName: "Консьерж" },
-  { id: 950003, fullName: "Осмонова Гульнара Таалайбековна", clinicalRole: "nurse", specializationId: 950103, specializationName: "Горничная" },
-];
-
-const HOTEL_MOCK_SERVICES = [
-  { id: 950201, name: "Заселение (check-in)", basePrice: "2500.00", durationMinutes: 30 },
-  { id: 950202, name: "Выселение (check-out)", basePrice: "0.00", durationMinutes: 20 },
-  { id: 950203, name: "Уборка номера", basePrice: "300.00", durationMinutes: 40 },
-  { id: 950204, name: "Трансфер из аэропорта", basePrice: "800.00", durationMinutes: 15 },
-  { id: 950205, name: "Поздний выезд", basePrice: "500.00", durationMinutes: 20 },
-];
-
-const HOTEL_BRANCH_NAME = "Viva — центр";
 
 // ── Номера и брони — для RoomBookingGrid.tsx ────────────────────────────────
 //
@@ -818,8 +740,10 @@ export function getHotelBookings(dateFrom: string, dateTo: string): HotelBooking
 // компоненты на одной странице: обычные пропсы тут не помогут. Модульный
 // стор + подписка (useSyncExternalStore в RoomBookingGrid) — созданная бронь
 // появляется в сетке сразу, без reload. localStorage — переживает и
-// перезагрузку страницы (тот же приём, что MOCK_CONTEXT_KEY выше); это всё
-// ещё демо-хранилище браузерной вкладки, не бэкенд.
+// перезагрузку страницы; это всё ещё демо-хранилище браузерной вкладки, не
+// бэкенд. Обе страницы (CreateBookingButton/RoomBookingGrid) уже переведены
+// на реальный createReservation/getCalendar — стор ниже осиротел, оставлен
+// про запас (снос мока затронул только фейковый Viva-переключатель).
 
 const CUSTOM_BOOKINGS_KEY = "mamadoc:mockCustomBookings";
 const customBookingListeners = new Set<() => void>();
@@ -1704,144 +1628,24 @@ export function getHotelPaymentsSnapshot(): Record<string, HotelPaymentRecord> {
   return hotelPaymentsCache;
 }
 
-// ── Роли и права — для HotelRolesSettingsPage.tsx (/settings у Viva) ────────
-//
-// Отдельная от реального RBAC (src/api/rbac.ts) витрина: та же форма
-// (роль → название + список прав, права сгруппированы по категории), но
-// полностью в браузерном сторе — у Viva нет организации на бэкенде, значит
-// и назначать роли/права по-настоящему некому.
-
-export interface HotelPermissionDef {
-  key: string;
-  label: string;
-  category: string;
+/**
+ * Признак Viva — настоящая организация — `vertical: "hotel"` в
+ * activeOrganization из /auth/me/ (тот же признак, что VerticalProvider
+ * берёт для глоссария). Раньше здесь же жил старый мок-переключатель
+ * (фейковая Viva в /auth/context/, localStorage mamadoc:mockActiveContext) —
+ * убран вместе с остальным перехватчиком /auth/*, теперь Viva тестируется
+ * только настоящим логином (viva-admin), как и полагается реальной
+ * организации (hotel-viva-frontend-api.md).
+ */
+export function useIsVivaActive(): boolean {
+  const { activeOrganization } = usePermissions();
+  return activeOrganization?.vertical === "hotel";
 }
 
-export const HOTEL_PERMISSION_CATALOG: HotelPermissionDef[] = [
-  { key: "bookings.manage", label: "Создание и редактирование броней", category: "Брони" },
-  { key: "bookings.payment", label: "Приём оплаты за проживание", category: "Брони" },
-  { key: "guests.view", label: "Просмотр списка и карточек гостей", category: "Гости" },
-  { key: "kitchen.menu", label: "Расписание готовки и меню", category: "Кухня" },
-  { key: "kitchen.purchases", label: "Закупка продуктов и остатки склада", category: "Кухня" },
-  { key: "reports.view", label: "Просмотр и выгрузка отчётов", category: "Отчёты" },
-  { key: "integrations.manage", label: "Подключение каналов продаж", category: "Интеграции" },
-  { key: "settings.roles", label: "Роли и права доступа", category: "Настройки" },
-];
-
-export interface HotelRole {
-  id: string;
-  name: string;
-  permissions: string[];
-  /** Встроенная роль — нельзя удалить (можно поменять только состав прав). */
-  isSystem?: boolean;
-}
-
-const ALL_HOTEL_PERMISSION_KEYS = HOTEL_PERMISSION_CATALOG.map((p) => p.key);
-
-const DEFAULT_HOTEL_ROLES: HotelRole[] = [
-  { id: "owner", name: "Владелец", permissions: ALL_HOTEL_PERMISSION_KEYS, isSystem: true },
-  {
-    id: "admin",
-    name: "Администратор",
-    permissions: ["bookings.manage", "bookings.payment", "guests.view", "reports.view", "integrations.manage"],
-    isSystem: true,
-  },
-  {
-    id: "reception",
-    name: "Ресепшн",
-    permissions: ["bookings.manage", "bookings.payment", "guests.view"],
-  },
-  {
-    id: "cook",
-    name: "Повар",
-    permissions: ["kitchen.menu", "kitchen.purchases"],
-  },
-];
-
-const HOTEL_ROLES_KEY = "mamadoc:mockHotelRoles";
-const hotelRolesListeners = new Set<() => void>();
-
-function readHotelRolesFromStorage(): HotelRole[] {
-  try {
-    const raw = window.localStorage.getItem(HOTEL_ROLES_KEY);
-    if (!raw) return DEFAULT_HOTEL_ROLES;
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return DEFAULT_HOTEL_ROLES;
-    return parsed.filter(
-      (r): r is HotelRole =>
-        !!r && typeof r === "object" && typeof (r as HotelRole).id === "string" && typeof (r as HotelRole).name === "string",
-    );
-  } catch {
-    return DEFAULT_HOTEL_ROLES;
-  }
-}
-
-let hotelRolesCache: HotelRole[] = readHotelRolesFromStorage();
-
-function persistHotelRoles(next: HotelRole[]): void {
-  hotelRolesCache = next;
-  try {
-    window.localStorage.setItem(HOTEL_ROLES_KEY, JSON.stringify(next));
-  } catch {
-    // приватный режим/запрет на localStorage — доживёт до конца вкладки в памяти
-  }
-  hotelRolesListeners.forEach((fn) => fn());
-}
-
-/** Создаёт или перезаписывает роль (по id) — единый вызов для «создать» и «сохранить правки». */
-export function saveHotelRole(role: HotelRole): void {
-  const idx = hotelRolesCache.findIndex((r) => r.id === role.id);
-  const next = idx >= 0 ? hotelRolesCache.map((r, i) => (i === idx ? role : r)) : [...hotelRolesCache, role];
-  persistHotelRoles(next);
-}
-
-export function deleteHotelRole(id: string): void {
-  persistHotelRoles(hotelRolesCache.filter((r) => r.id !== id));
-}
-
-export function subscribeHotelRoles(onChange: () => void): () => void {
-  hotelRolesListeners.add(onChange);
-  return () => hotelRolesListeners.delete(onChange);
-}
-
-export function getHotelRolesSnapshot(): HotelRole[] {
-  return hotelRolesCache;
-}
-
-/** Ключ localStorage: держит выбор Viva между перезагрузками страницы. */
-const MOCK_CONTEXT_KEY = "mamadoc:mockActiveContext";
-
-type MockContext = { org: "viva"; branchId: number | null } | null;
-
-function readMockContext(): MockContext {
-  try {
-    const raw = window.localStorage.getItem(MOCK_CONTEXT_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { org?: string; branchId?: unknown };
-    if (parsed?.org === "viva") {
-      return { org: "viva", branchId: typeof parsed.branchId === "number" ? parsed.branchId : null };
-    }
-  } catch {
-    // повреждённое значение — считаем, что контекста нет
-  }
-  return null;
-}
-
-function writeMockContext(ctx: MockContext): void {
-  try {
-    if (ctx) window.localStorage.setItem(MOCK_CONTEXT_KEY, JSON.stringify(ctx));
-    else window.localStorage.removeItem(MOCK_CONTEXT_KEY);
-  } catch {
-    // приватный режим/запрет на localStorage — просто не переживёт reload
-  }
-}
-
-export const isVivaActive = (): boolean => readMockContext()?.org === "viva";
-
-/** Пул сотрудников текущего «флейвора» — клиника по умолчанию, отель на Viva. */
-const activeEmployeePool = (): MockEmployee[] => (isVivaActive() ? HOTEL_MOCK_EMPLOYEES : MOCK_EMPLOYEES);
-const activeServicePool = () => (isVivaActive() ? HOTEL_MOCK_SERVICES : MOCK_SERVICES);
-const activeBranchName = (): string => (isVivaActive() ? HOTEL_BRANCH_NAME : MOCK_BRANCH_NAME);
+/** Пул сотрудников/услуг клиники — единственный «флейвор» перехватчика после сноса мока Viva. */
+const activeEmployeePool = (): MockEmployee[] => MOCK_EMPLOYEES;
+const activeServicePool = () => MOCK_SERVICES;
+const activeBranchName = (): string => MOCK_BRANCH_NAME;
 
 // ── «Шахматка броней» — верхние карточки-сводка ─────────────────────────────
 //
@@ -2143,73 +1947,6 @@ export function subscribeIntegrations(onChange: () => void): () => void {
 
 export function getIntegrationsSnapshot(): Record<string, HotelIntegrationState> {
   return integrationsCache;
-}
-
-/** Membership Viva для /auth/me/ и /auth/context/ — форма RbacMembership. */
-function buildVivaMembership(): Record<string, unknown> {
-  return {
-    id: VIVA_MEMBERSHIP_ID,
-    organization: {
-      id: VIVA_ORG_ID,
-      name: "Viva",
-      slug: "viva-hotel",
-      status: "active",
-      logoUrl: null,
-      vertical: "beauty",
-      themeConfig: { glossary: HOTEL_GLOSSARY_OVERRIDES },
-    },
-    role: { id: 990000005, name: "Владелец", code: "owner" },
-    isOwner: true,
-    isActive: true,
-    branches: [
-      { id: VIVA_BRANCH_MAIN_ID, name: "Viva — центр", timezone: "Asia/Bishkek", isActive: true, logoUrl: null },
-      { id: VIVA_BRANCH_AIRPORT_ID, name: "Viva — аэропорт", timezone: "Asia/Bishkek", isActive: true, logoUrl: null },
-    ],
-    // Права ролью Viva не читаются: usePermissions берёт плоский список прав
-    // из верхнего meData.permissions (реальный, суперюзерский), а не отсюда.
-    permissions: [],
-  };
-}
-
-/**
- * Последний настоящий ответ /auth/me/ (без Viva) — источник user/permissions/
- * enabledModules для фабрикации ответа POST /auth/context/, когда бэкенд о
- * membershipId Viva ничего не знает и не может его вернуть сам.
- */
-let lastRealMe: Record<string, unknown> | null = null;
-
-/** Полный MeResponse с активной Viva — на основе последнего настоящего ответа. */
-function buildVivaMeResponse(branchId: number | null): Record<string, unknown> {
-  const base = lastRealMe ?? {};
-  const memberships = Array.isArray(base.memberships) ? [...(base.memberships as Record<string, unknown>[])] : [];
-  if (!memberships.some((m) => m?.id === VIVA_MEMBERSHIP_ID)) memberships.push(buildVivaMembership());
-  const viva = buildVivaMembership();
-  const branches = viva.branches as Array<{ id: number }>;
-  const branch = branchId != null ? branches.find((b) => b.id === branchId) ?? null : null;
-  return {
-    ...base,
-    memberships,
-    activeMembership: viva,
-    activeOrganization: viva.organization,
-    activeBranch: branch,
-    activeEmployee: null,
-    enabledModules: Array.isArray(base.enabledModules) ? base.enabledModules : [],
-  };
-}
-
-/**
- * GET /auth/me/ и /auth/context/ (а также ответ /auth/login/) — дописывает
- * Viva в список memberships настоящего ответа. Если пользователь уже выбрал
- * Viva активной (localStorage), подменяет и активный контекст — иначе после
- * F5 сессия молча откатится на настоящую организацию.
- */
-function augmentMeResponse(real: Record<string, unknown>): Record<string, unknown> {
-  lastRealMe = real;
-  const ctx = readMockContext();
-  if (ctx) return buildVivaMeResponse(ctx.branchId);
-  const memberships = Array.isArray(real.memberships) ? [...(real.memberships as Record<string, unknown>[])] : [];
-  if (!memberships.some((m) => m?.id === VIVA_MEMBERSHIP_ID)) memberships.push(buildVivaMembership());
-  return { ...real, memberships };
 }
 
 // ── /appointments/home/ ─────────────────────────────────────────────────────
@@ -2550,58 +2287,6 @@ function mockResponse(body: unknown, signal?: AbortSignal | null): Promise<Respo
   });
 }
 
-/**
- * Пропускает запрос на настоящий бэкенд и дописывает Viva в тело ответа
- * (форма MeResponse). Ошибочные ответы (401 протухшая сессия и т.п.) не
- * трогаем — возвращаем как есть, augmentMeResponse ждёт валидный JSON.
- */
-async function passthroughAndAugmentMe(
-  originalFetch: typeof fetch,
-  input: RequestInfo | URL,
-  init: RequestInit | undefined,
-): Promise<Response> {
-  const res = await originalFetch(input, init);
-  if (!res.ok) return res;
-  let data: Record<string, unknown>;
-  try {
-    data = (await res.json()) as Record<string, unknown>;
-  } catch {
-    return res;
-  }
-  const augmented = augmentMeResponse(data);
-  return new Response(JSON.stringify(augmented), {
-    status: res.status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-/**
- * POST /auth/context/ — переключение организации/филиала. Viva обрабатываем
- * целиком сами (бэкенд про её membershipId ничего не знает и ответил бы 404);
- * переключение на настоящую организацию — сбрасывает мок-контекст и уходит
- * на бэкенд как обычно.
- */
-async function handleSwitchContext(
-  originalFetch: typeof fetch,
-  input: RequestInfo | URL,
-  init: RequestInit | undefined,
-): Promise<Response> {
-  let payload: { membershipId?: number; branchId?: number | null } = {};
-  try {
-    if (typeof init?.body === "string") payload = JSON.parse(init.body);
-  } catch {
-    // не наш формат — пусть решает бэкенд
-  }
-
-  if (payload.membershipId === VIVA_MEMBERSHIP_ID) {
-    writeMockContext({ org: "viva", branchId: payload.branchId ?? null });
-    return mockResponse(buildVivaMeResponse(payload.branchId ?? null), init?.signal);
-  }
-
-  writeMockContext(null);
-  return originalFetch(input, init);
-}
-
 let installed = false;
 
 /**
@@ -2628,25 +2313,8 @@ export function installMockDemoData(): void {
     }
     const path = url.pathname;
 
-    // Переключение организации/филиала — обрабатываем до общего GET-фильтра
-    // ниже, это единственный POST, который мы трогаем.
-    if (method === "POST" && path.endsWith("/auth/context/")) {
-      return handleSwitchContext(originalFetch, input, init);
-    }
-    // Ответ логина — та же форма MeResponse, дописываем Viva сразу, чтобы она
-    // была в переключателе с первого экрана, а не только после следующего
-    // /auth/me/.
-    if (method === "POST" && path.endsWith("/auth/login/")) {
-      return passthroughAndAugmentMe(originalFetch, input, init);
-    }
-
     if (method !== "GET") {
       return originalFetch(input, init);
-    }
-
-    // GET /auth/me/ и /auth/context/ (getAuthContext) — та же форма ответа.
-    if (path.endsWith("/auth/me/") || path.endsWith("/auth/context/")) {
-      return passthroughAndAugmentMe(originalFetch, input, init);
     }
 
     const params = url.searchParams;

@@ -1,114 +1,139 @@
 /**
- * Состояние и обработчики карточки гостя — общие для модалки (GuestDetailsDialog,
- * открывается с бара шахматки/из «Ближайших броней») и постоянной колонки на
- * странице «Гости» (GuestCardPanel + GuestHistoryPanel). Один хук вместо двух
- * копий одной и той же логики оплаты/чёрного списка.
+ * Состояние и обработчики карточки гостя — общие для GuestCardPanel +
+ * GuestHistoryPanel на «Гостях» (HotelGuestsPage). Реальные данные
+ * (src/api/hotel.ts): гость — GET /hotel/guests/{clientId}/, история —
+ * GET /hotel/reservations/?customerId= (см. hotel-viva-frontend-api.md §4.4).
+ * Ключ теперь clientId (число), не имя — имя не уникально и не годится как id.
  */
 import React from "react";
 import { useTheme } from "@mui/material/styles";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { usePermissions } from "../hooks/usePermissions";
+import { useHotelProperty } from "./useHotelProperty";
 import {
-  getHotelGuests,
-  findDetailedGuestBooking,
-  getRoomCategory,
-  getCategoryTotalPrice,
-  nightsBetween,
-  getHotelPayment,
-  setHotelPayment,
-  subscribeHotelPayments,
-  getHotelPaymentsSnapshot,
-  setGuestBlacklisted,
-  subscribeGuestBlacklist,
-  getGuestBlacklistSnapshot,
-  subscribeCustomGuests,
-  getCustomGuestsSnapshot,
-  getHotelBookingStatusColor,
-  type HotelBooking,
-  type HotelPaymentMethod,
-} from "./mockDemoData";
+  getGuest,
+  listReservations,
+  setGuestBlacklist,
+  clearGuestBlacklist,
+  addPayment,
+  type HotelReservation,
+} from "../api/hotel";
+import { getErrorMessage } from "../api/client";
 
 export interface PaymentEditState {
-  booking: HotelBooking;
-  method: HotelPaymentMethod;
+  reservation: HotelReservation;
+  method: string;
   amount: string;
   note: string;
 }
 
-export function useGuestDetails(guestName: string | null) {
+export function useGuestDetails(clientId: number | null) {
   const theme = useTheme();
   const { employee } = usePermissions();
-  // Подписка форсирует перерисовку при изменении оплаты — сами данные читаются
-  // напрямую через getHotelPayment() в каждой строке истории при рендере.
-  React.useSyncExternalStore(subscribeHotelPayments, getHotelPaymentsSnapshot);
-  // guest пересчитывается в useMemo ниже — снимки в зависимостях гарантируют
-  // пересчёт сразу при переключении чёрного списка или добавлении гостя без
-  // брони через AddGuestDrawer (getHotelGuests сам не подписан ни на один стор).
-  const blacklistSnapshot = React.useSyncExternalStore(subscribeGuestBlacklist, getGuestBlacklistSnapshot);
-  const customGuestsSnapshot = React.useSyncExternalStore(subscribeCustomGuests, getCustomGuestsSnapshot);
+  const { property } = useHotelProperty();
+  const queryClient = useQueryClient();
+
+  const guestQuery = useQuery({
+    queryKey: ["hotel", "guest", clientId],
+    queryFn: ({ signal }) => getGuest(clientId!, signal),
+    enabled: clientId != null,
+  });
+  const guest = guestQuery.data;
+
+  const reservationsQuery = useQuery({
+    queryKey: ["hotel", "reservations", "byGuest", clientId, property?.id],
+    queryFn: ({ signal }) => listReservations({ propertyId: property!.id, customerId: clientId!, limit: 50 }, signal),
+    enabled: clientId != null && property != null,
+  });
+  const reservations = reservationsQuery.data?.results ?? [];
+
   const [paymentEdit, setPaymentEdit] = React.useState<PaymentEditState | null>(null);
+  const [paymentError, setPaymentError] = React.useState<string | null>(null);
+  const [savingPayment, setSavingPayment] = React.useState(false);
   const [blacklistReasonDraft, setBlacklistReasonDraft] = React.useState("");
+  const [blacklistBusy, setBlacklistBusy] = React.useState(false);
 
-  const guest = React.useMemo(() => {
-    if (!guestName) return undefined;
-    return getHotelGuests().find((g) => g.name === guestName);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guestName, blacklistSnapshot, customGuestsSnapshot]);
-
-  const detailed = guest ? findDetailedGuestBooking(guest.bookings) : undefined;
-
-  const statusColor = (status: HotelBooking["status"]) => getHotelBookingStatusColor(status, theme);
-
-  const openPaymentEdit = (booking: HotelBooking) => {
-    const existing = getHotelPayment(booking.roomNumber, booking.checkIn);
-    const category = getRoomCategory(booking.roomNumber);
-    const defaultAmount = category ? getCategoryTotalPrice(category) * nightsBetween(booking.checkIn, booking.checkOut) : 0;
-    setPaymentEdit({
-      booking,
-      method: existing?.method ?? "cash",
-      amount: String(existing?.amount ?? defaultAmount),
-      note: existing?.note ?? "",
-    });
+  const openPaymentEdit = (reservation: HotelReservation) => {
+    setPaymentError(null);
+    // Остаток к оплате — разумный дефолт для новой записи: предоплата +
+    // доплата при заезде обычно закрывают именно недостающую часть, не всю
+    // сумму заново (hotel-viva-frontend-api.md §4.5).
+    const suggested = Number(reservation.balanceDue) > 0 ? reservation.balanceDue : reservation.totalAmount;
+    setPaymentEdit({ reservation, method: "cash", amount: suggested, note: "" });
   };
 
-  const savePayment = () => {
+  const invalidateGuest = () => {
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "guest", clientId] });
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "reservations", "byGuest", clientId] });
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "calendar"] });
+    // Список на HotelGuestsPage.tsx (бейдж ЧС в GuestListPanel) — иначе после
+    // блокировки/оплаты слева виден устаревший статус до следующего поиска.
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "guests"] });
+  };
+
+  const savePayment = async () => {
     if (!paymentEdit) return;
     const amount = Number(paymentEdit.amount);
     if (!Number.isFinite(amount) || amount <= 0) return;
-    setHotelPayment(paymentEdit.booking.roomNumber, paymentEdit.booking.checkIn, {
-      method: paymentEdit.method,
-      amount,
-      note: paymentEdit.note.trim() || undefined,
-      acceptedBy: employee?.fullName || "Неизвестный сотрудник",
-    });
-    setPaymentEdit(null);
+    setSavingPayment(true);
+    setPaymentError(null);
+    try {
+      await addPayment(paymentEdit.reservation.id, {
+        method: paymentEdit.method,
+        amount: String(amount),
+        note: paymentEdit.note.trim() || undefined,
+      });
+      setPaymentEdit(null);
+      invalidateGuest();
+    } catch (err) {
+      setPaymentError(getErrorMessage(err, "Не удалось провести оплату"));
+    } finally {
+      setSavingPayment(false);
+    }
   };
 
-  const addToBlacklist = () => {
-    if (!guestName) return;
-    setGuestBlacklisted(guestName, true, blacklistReasonDraft);
-    setBlacklistReasonDraft("");
+  const addToBlacklist = async () => {
+    if (clientId == null || !blacklistReasonDraft.trim()) return;
+    setBlacklistBusy(true);
+    try {
+      await setGuestBlacklist(clientId, blacklistReasonDraft.trim());
+      setBlacklistReasonDraft("");
+      invalidateGuest();
+    } finally {
+      setBlacklistBusy(false);
+    }
   };
 
-  const removeFromBlacklist = () => {
-    if (!guestName) return;
-    setGuestBlacklisted(guestName, false);
+  const removeFromBlacklist = async () => {
+    if (clientId == null) return;
+    setBlacklistBusy(true);
+    try {
+      await clearGuestBlacklist(clientId);
+      invalidateGuest();
+    } finally {
+      setBlacklistBusy(false);
+    }
   };
 
   return {
     theme,
     employee,
     guest,
-    detailed,
-    statusColor,
+    guestLoading: guestQuery.isLoading,
+    reservations,
+    reservationsLoading: reservationsQuery.isLoading,
     paymentEdit,
     setPaymentEdit,
     openPaymentEdit,
     savePayment,
+    savingPayment,
+    paymentError,
     blacklistReasonDraft,
     setBlacklistReasonDraft,
     addToBlacklist,
     removeFromBlacklist,
+    blacklistBusy,
   };
 }
 

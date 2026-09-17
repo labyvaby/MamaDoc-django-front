@@ -105,6 +105,10 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // менять эти настройки бэк разрешает по одному и тому же коду, поэтому
   // «смотреть, но не править» на странице нет.
   odoctor: "odoctor.manage",
+  // Номера/категории/характеристики фонда Viva — вкладка видна только
+  // vertical==="hotel" (см. useVisibleSettingsTabs в SettingsLayout.tsx),
+  // право то же, что общее управление отелем (hotel-viva-frontend-api.md §3).
+  rooms: "hotel.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

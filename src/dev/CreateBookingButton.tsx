@@ -4,39 +4,21 @@
  * фиксированной ширины, шапка с крестиком, прокручиваемое тело в
  * Stack spacing={2.5}, подвал с «Отмена»/«Создать» на borderTop, защищённое
  * закрытие (грязная форма спрашивает подтверждение вместо тихого сброса).
- * Порядок разделов зеркалит реальный: сначала «когда» (там — дата/время,
- * здесь — номер и даты), потом «кто» (там — пациент, здесь — гость), и
- * только когда есть с кем работать — карточка с документом и допполями
- * (там это открывающаяся секция услуг после выбора пациента).
  *
- * Поле «Гость» — автоподбор по существующим гостям (getHotelGuests), тот же
- * принцип, что поиск пациента в реальной форме: выбор гостя из списка сразу
- * подставляет его контакты/документ (findDetailedGuestBooking) — не нужно
- * вбивать их заново. Телефон отдельно сверяется на совпадение с уже
- * известными гостями (findGuestsByPhone) — предупреждение, не блокировка,
- * ровно как в реальной форме: можно осознанно создать нового гостя с тем же
- * номером (например, супруги бронируют раздельно).
+ * Реальный бэкенд (src/api/hotel.ts, POST /hotel/reservations/) — см.
+ * hotel-viva-frontend-api.md §4.3. Гость — customerId (выбран через
+ * searchGuests) либо customer:{...} (создаётся на лету, как раньше в моке).
+ * Пересечение дат — не превентивная проверка на фронте, а 409
+ * NO_AVAILABILITY от бэка с details.conflicts; подтверждение — тот же запрос
+ * с allowOverbooking: true. Документ гостя уходит в items[0].guests[0].document,
+ * фото паспорта — отдельным PUT после создания (нужен настоящий guestId).
  *
  * Открывается и «быстрой бронью» — клик по свободной ячейке в
  * RoomBookingGrid кладёт номер+дату в общий стор (requestQuickBooking), эта
  * кнопка на них подписана и открывает форму уже с подставленными Номер/Заезд.
- *
- * handleSubmit проверяет номер+даты на пересечение с уже существующей бронью
- * (getRoomAvailability) — без этого вторая бронь легла бы в ту же ячейку
- * RoomBookingGrid поверх первой (бары пересекающихся броней там не разводятся
- * по под-строкам) и выглядела бы как ничего не произошло. Предупреждение, не
- * блокировка — тот же принцип, что ShiftOverlapDialog у пересечения смен в
- * реальном расписании: сотрудник может осознанно продублировать бронь.
- *
- * ⚠ Витрина: нет сущности «номер»/«бронь» в реальном API (см. mockDemoData.ts)
- * — бронь уходит в общий браузерный стор (addCustomBooking, localStorage), а
- * не на бэкенд. Она реально появляется в RoomBookingGrid/GuestDetailsDialog и
- * переживает перезагрузку страницы, но это состояние только этой вкладки: у
- * другого человека или после очистки localStorage её не будет. Фото паспорта
- * хранится как data URL прямо в той же записи — реальный файловый сервер
- * потребовал бы отдельной инфраструктуры, которой у демо-мока нет.
  */
 import React from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Autocomplete,
@@ -72,37 +54,34 @@ import UploadOutlined from "@mui/icons-material/UploadOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker } from "../components/ui";
-import { usePermissions } from "../hooks/usePermissions";
+import { useHotelProperty } from "./useHotelProperty";
 import {
-  getHotelRoomCategoriesSnapshot,
-  subscribeHotelRoomCategories,
-  addCustomBooking,
-  getHotelGuests,
-  findDetailedGuestBooking,
-  findGuestsByPhone,
-  getRoomAvailability,
-  formatHotelDateRange,
-  simulatePassportScan,
+  getHotelCatalogs,
+  listRooms,
+  searchGuests,
+  getGuest,
+  createReservation,
+  uploadStayDocumentPhoto,
+  getReservationConflicts,
+  isOverbookingConfirmable,
+  type HotelRoom,
+  type HotelGuestSearchResult,
+  type HotelGuest,
+  type HotelReservationConflict,
+} from "../api/hotel";
+import { getErrorMessage } from "../api/client";
+import {
   subscribeQuickBookingRequest,
   getQuickBookingRequestSnapshot,
   clearQuickBookingRequest,
+  simulatePassportScan,
   initialsOf,
-  GUEST_TYPE_LABELS,
-  GUARANTEE_METHOD_LABELS,
-  BOARD_TYPE_LABELS,
-  BOOKING_SOURCE_LABELS,
-  VISIT_PURPOSE_LABELS,
+  formatHotelDateRange,
   type GuestType,
-  type BookingGuaranteeMethod,
-  type BookingBoardType,
-  type BookingSource,
-  type VisitPurpose,
-  type HotelGuestSummary,
-  type HotelBooking,
 } from "./mockDemoData";
 
-/** Демо-хранилище — localStorage, не файловый сервер: фото ограничено по размеру. */
-const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
+/** Ограничение на фото паспорта из контракта (§4.3): jpg/png/webp/heic/pdf ≤10 МБ. */
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
 /** "" → undefined — необязательные текстовые поля не должны улетать в бронь пустыми строками. */
 const orUndefined = (value: string): string | undefined => (value.trim() ? value.trim() : undefined);
@@ -123,29 +102,29 @@ export interface CreateBookingButtonProps {
 }
 
 export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTrigger = false }) => {
+  const { property } = useHotelProperty();
+  const queryClient = useQueryClient();
   const [open, setOpen] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
   const [confirmCloseOpen, setConfirmCloseOpen] = React.useState(false);
-  // Номер уже занят на эти даты — тот же warn-принцип, что ShiftOverlapDialog
-  // у реальных смен (см. handleSubmit ниже): предупреждаем, не блокируем,
-  // подтверждение создаёт бронь поверх существующей осознанно.
-  const [overlapConflict, setOverlapConflict] = React.useState<HotelBooking[] | null>(null);
-  // Кто создал бронь — реальный залогиненный сотрудник, а не выбор из списка
-  // (тот же источник имени, что createdByName на печатном чеке в реальном
-  // МамаДоктор — usePermissions().employee, не поле формы).
-  const { employee } = usePermissions();
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const [submitting, setSubmitting] = React.useState(false);
+  // Номер уже занят на эти даты — предупреждаем, не блокируем (409
+  // NO_AVAILABILITY с details.conflicts, см. handleSubmit ниже).
+  const [overlapConflict, setOverlapConflict] = React.useState<HotelReservationConflict[] | null>(null);
 
   // Гость и проживание
   const [guestName, setGuestName] = React.useState("");
   const [guestPhone, setGuestPhone] = React.useState("");
   const [guestEmail, setGuestEmail] = React.useState("");
-  const [room, setRoom] = React.useState("");
+  const [selectedClientId, setSelectedClientId] = React.useState<number | null>(null);
+  const [roomId, setRoomId] = React.useState<number | "">("");
   const [checkIn, setCheckIn] = React.useState<Dayjs | null>(dayjs());
   const [checkOut, setCheckOut] = React.useState<Dayjs | null>(dayjs().add(1, "day"));
   const [adults, setAdults] = React.useState("1");
   const [children, setChildren] = React.useState("0");
-  const [guaranteeMethod, setGuaranteeMethod] = React.useState<BookingGuaranteeMethod | "">("");
-  const [boardType, setBoardType] = React.useState<BookingBoardType | "">("");
+  const [guaranteeMethod, setGuaranteeMethod] = React.useState("");
+  const [boardType, setBoardType] = React.useState("");
 
   // Документ
   const [guestType, setGuestType] = React.useState<GuestType>("resident");
@@ -157,13 +136,14 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [passportExpiry, setPassportExpiry] = React.useState<Dayjs | null>(null);
   const [entryDate, setEntryDate] = React.useState<Dayjs | null>(null);
   const [migrationCardNumber, setMigrationCardNumber] = React.useState("");
-  const [visitPurpose, setVisitPurpose] = React.useState<VisitPurpose | "">("");
-  const [passportPhoto, setPassportPhoto] = React.useState<string | null>(null);
+  const [visitPurpose, setVisitPurpose] = React.useState("");
+  const [passportPhotoFile, setPassportPhotoFile] = React.useState<File | null>(null);
+  const [passportPhotoPreview, setPassportPhotoPreview] = React.useState<string | null>(null);
   const [photoError, setPhotoError] = React.useState<string | null>(null);
   const [scanNotice, setScanNotice] = React.useState(false);
 
   // Дополнительно
-  const [bookingSource, setBookingSource] = React.useState<BookingSource | "">("");
+  const [bookingSource, setBookingSource] = React.useState("");
   const [specialRequests, setSpecialRequests] = React.useState("");
   const [companyInfo, setCompanyInfo] = React.useState("");
   const [dataConsent, setDataConsent] = React.useState(false);
@@ -172,7 +152,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setGuestName("");
     setGuestPhone("");
     setGuestEmail("");
-    setRoom("");
+    setSelectedClientId(null);
+    setRoomId("");
     setCheckIn(dayjs());
     setCheckOut(dayjs().add(1, "day"));
     setAdults("1");
@@ -189,104 +170,123 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setEntryDate(null);
     setMigrationCardNumber("");
     setVisitPurpose("");
-    setPassportPhoto(null);
+    setPassportPhotoFile(null);
+    setPassportPhotoPreview(null);
     setPhotoError(null);
     setScanNotice(false);
     setBookingSource("");
     setSpecialRequests("");
     setCompanyInfo("");
     setDataConsent(false);
+    setSubmitError(null);
   };
 
-  // Список гостей для автоподбора — свежий на каждое открытие формы, не на
-  // каждый ввод буквы: getHotelGuests() пересобирает список из всех броней,
-  // пересчитывать это на каждый keystroke незачем.
-  const guests = React.useMemo(() => (open ? getHotelGuests() : []), [open]);
+  // Справочники объекта (питание/гарантия/источник/тип гостя/цель визита) —
+  // из бэкенда, не из констант мока (hotel-viva-frontend-api.md §3.2).
+  const catalogsQuery = useQuery({
+    queryKey: ["hotel", "catalogs", property?.id],
+    queryFn: ({ signal }) => getHotelCatalogs(property!.id, signal),
+    enabled: property != null,
+    staleTime: 5 * 60_000,
+  });
+  const catalogs = catalogsQuery.data;
 
-  /**
-   * Подставляет контакты/документ существующего гостя — не даты/номер/гостей,
-   * это данные конкретно этой новой брони. Реквизиты личности (guestType…
-   * passportExpiry) берём с самого guest — там уже склеены профиль из
-   * AddGuestDrawer и самая свежая бронь (см. getHotelGuests в mockDemoData.ts),
-   * поэтому работает и для гостя без единой брони. Остальное — то, что
-   * относится именно к заезду (цель визита, источник брони и т.п.) — только
-   * если есть подробная бронь, иначе не из чего подставлять.
-   */
-  const applyGuestPrefill = (guest: HotelGuestSummary) => {
-    setGuestName(guest.name);
+  // Номера объекта — для выпадающего списка формы.
+  const roomsQuery = useQuery({
+    queryKey: ["hotel", "rooms", property?.id],
+    queryFn: ({ signal }) => listRooms({ propertyId: property!.id }, signal),
+    enabled: property != null,
+  });
+  const rooms = React.useMemo(() => roomsQuery.data ?? [], [roomsQuery.data]);
+
+  // Поиск гостя по имени/телефону — ≥2 символа, бэкенд ищет по всем клиентам
+  // организации (не только бывшим гостям).
+  const guestSearchQuery = useQuery({
+    queryKey: ["hotel", "guests", "search", guestName],
+    queryFn: ({ signal }) => searchGuests(guestName.trim(), signal),
+    enabled: open && guestName.trim().length >= 2,
+  });
+  const guestOptions = guestSearchQuery.data ?? [];
+
+  // Полная карточка выбранного гостя — подставляет документ/реквизиты (в
+  // результатах поиска их нет, только имя/телефон/ЧС/число заездов).
+  const guestDetailQuery = useQuery({
+    queryKey: ["hotel", "guest", selectedClientId],
+    queryFn: ({ signal }) => getGuest(selectedClientId!, signal),
+    enabled: selectedClientId != null,
+  });
+  React.useEffect(() => {
+    const g = guestDetailQuery.data;
+    if (!g) return;
+    applyGuestPrefill(g);
+  }, [guestDetailQuery.data]);
+
+  const applyGuestPrefill = (guest: HotelGuest) => {
     setGuestPhone(guest.phone);
-    setGuestType(guest.guestType ?? "resident");
-    setIdNumber(guest.idNumber ?? "");
+    setGuestEmail(guest.email || "");
+    if (guest.guestType === "resident" || guest.guestType === "foreign") setGuestType(guest.guestType);
+    setIdNumber(guest.guestType === "resident" ? guest.documentNumber ?? "" : "");
     setInn(guest.inn ?? "");
     setCitizenship(guest.citizenship ?? "");
-    setPassportNumber(guest.passportNumber ?? "");
+    setPassportNumber(guest.guestType === "foreign" ? guest.documentNumber ?? "" : "");
     setPassportCountry(guest.passportCountry ?? "");
     setPassportExpiry(guest.passportExpiry ? dayjs(guest.passportExpiry) : null);
-    setPassportPhoto(guest.photoDataUrl ?? null);
-    const detailed = findDetailedGuestBooking(guest.bookings);
-    if (!detailed) return;
-    setGuestEmail(detailed.guestEmail ?? "");
-    setEntryDate(detailed.entryDate ? dayjs(detailed.entryDate) : null);
-    setMigrationCardNumber(detailed.migrationCardNumber ?? "");
-    setVisitPurpose(detailed.visitPurpose ?? "");
-    setBookingSource(detailed.bookingSource ?? "");
-    setCompanyInfo(detailed.companyInfo ?? "");
-    // dataConsent намеренно не переносится — согласие даётся на эту бронь, а не наследуется от прошлой.
   };
 
-  // «Быстрая бронь»: клик по свободной ячейке RoomBookingGrid кладёт сюда
-  // номер+дату — форма открывается уже с ними, остаётся выбрать гостя.
-  // Кнопка «Добавить» на «Гостях» зовёт без аргументов — форма просто
-  // открывается пустой (room/checkIn отсутствуют).
-  const quickBookingRequest = React.useSyncExternalStore(subscribeQuickBookingRequest, getQuickBookingRequestSnapshot);
+  // Дубли по телефону — предупреждение, не блокировка: тот же принцип, что
+  // getSimilarPatients в реальном МамаДоктор. Не считаем дублем уже
+  // выбранного гостя (selectedClientId).
+  const phoneDigits = guestPhone.replace(/\D/g, "");
+  const dupQuery = useQuery({
+    queryKey: ["hotel", "guests", "search", "dup", phoneDigits],
+    queryFn: ({ signal }) => searchGuests(phoneDigits, signal),
+    enabled: open && phoneDigits.length >= 6 && selectedClientId == null,
+  });
+  const duplicateMatches = (dupQuery.data ?? []).filter(
+    (g) => g.phone.replace(/\D/g, "").includes(phoneDigits) && g.fullName !== guestName.trim(),
+  );
 
-  // Список номеров — общий стор с «Настройка» → «Номера»: новый номер попадает
-  // в выпадающий список формы без reload.
-  const roomCategories = React.useSyncExternalStore(subscribeHotelRoomCategories, getHotelRoomCategoriesSnapshot);
-  const rooms = React.useMemo(() => roomCategories.flatMap((c) => c.rooms), [roomCategories]);
+  // «Быстрая бронь»: клик по свободной ячейке RoomBookingGrid кладёт сюда
+  // номер (строкой) + дату — находим номер по строке в уже загруженном
+  // списке комнат объекта. Кнопка «Добавить» на «Гостях» зовёт без
+  // аргументов — форма просто открывается пустой.
+  const quickBookingRequest = React.useSyncExternalStore(subscribeQuickBookingRequest, getQuickBookingRequestSnapshot);
   React.useEffect(() => {
     if (!quickBookingRequest) return;
     reset();
-    if (quickBookingRequest.room) setRoom(quickBookingRequest.room);
+    if (quickBookingRequest.room) {
+      const found = rooms.find((r) => r.number === quickBookingRequest.room);
+      if (found) setRoomId(found.id);
+    }
     if (quickBookingRequest.checkIn) {
       setCheckIn(dayjs(quickBookingRequest.checkIn));
       setCheckOut(dayjs(quickBookingRequest.checkIn).add(1, "day"));
     }
     setOpen(true);
     clearQuickBookingRequest();
-    // reset — плоская функция из тела компонента, не мемоизирована; включать
-    // её в deps запускало бы эффект на каждый рендер.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quickBookingRequest]);
+  }, [quickBookingRequest, rooms]);
 
-  // Защита от дублей — тот же принцип, что getSimilarPatients в реальном
-  // МамаДоктор: подсказка по совпадению телефона, не блокировка. Не считаем
-  // дублем самого выбранного гостя (guestName совпало бы и после applyGuestPrefill).
-  const duplicateMatches = React.useMemo(
-    () => (open ? findGuestsByPhone(guestPhone, guestName) : []),
-    [open, guestPhone, guestName],
-  );
-
-  const canSubmit = guestName.trim() !== "" && room !== "" && !!checkIn && !!checkOut && checkOut.isAfter(checkIn);
+  const canSubmit =
+    guestName.trim() !== "" && roomId !== "" && !!checkIn && !!checkOut && checkOut.isAfter(checkIn) && property != null;
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // позволяет выбрать тот же файл ещё раз
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setPhotoError("Нужен файл изображения");
+    if (!/^image\/|^application\/pdf$/.test(file.type)) {
+      setPhotoError("Нужен файл изображения или PDF");
       return;
     }
     if (file.size > MAX_PHOTO_BYTES) {
-      setPhotoError("Файл больше 3 МБ — многовато для демо-хранилища (localStorage)");
+      setPhotoError("Файл больше 10 МБ");
       return;
     }
     setPhotoError(null);
-    const reader = new FileReader();
-    reader.onload = () => setPassportPhoto(typeof reader.result === "string" ? reader.result : null);
-    reader.readAsDataURL(file);
+    if (passportPhotoPreview) URL.revokeObjectURL(passportPhotoPreview);
+    setPassportPhotoFile(file);
+    setPassportPhotoPreview(file.type.startsWith("image/") ? URL.createObjectURL(file) : null);
 
-    // Имитация распознавания — реального OCR нет, см. simulatePassportScan в mockDemoData.ts.
+    // Имитация распознавания — реального OCR нет (вне ТЗ), см. simulatePassportScan.
     const scan = simulatePassportScan(`${file.name}:${file.size}`);
     setGuestType(scan.guestType);
     setIdNumber(scan.idNumber ?? "");
@@ -298,56 +298,93 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setScanNotice(true);
   };
 
+  const removePhoto = () => {
+    if (passportPhotoPreview) URL.revokeObjectURL(passportPhotoPreview);
+    setPassportPhotoFile(null);
+    setPassportPhotoPreview(null);
+  };
+
   /**
-   * Без проверки при создании номер+даты, что уже заняты, молча накладывали
-   * бы вторую бронь поверх первой — обе оказывались бы в одной ячейке грида
-   * (RoomBookingGrid не разводит пересекающиеся бары по под-строкам), и
-   * новая бронь выглядела бы как ничего не произошло: клик «Создать» —
-   * а в шахматке всё та же старая бронь, новая пряталась тонкой полоской
-   * позади неё. `force` — подтверждение из диалога ниже, пропускает проверку.
+   * allowOverbooking=true — подтверждение из диалога конфликта ниже.
+   * Пересечение дат бэкенд обнаруживает сам (409 NO_AVAILABILITY), фронт
+   * ничего заранее не проверяет — тот же warn-принцип, что ShiftOverlapDialog
+   * у пересечения смен в реальном расписании.
    */
-  const handleSubmit = (force = false) => {
-    if (!checkIn || !checkOut) return;
-    if (!force) {
-      const { bookings: roomBookings } = getRoomAvailability(room, checkIn.format("YYYY-MM-DD"), checkOut.format("YYYY-MM-DD"));
-      const conflicts = roomBookings.filter((b) => checkIn.isBefore(dayjs(b.checkOut)) && checkOut.isAfter(dayjs(b.checkIn)));
-      if (conflicts.length > 0) {
+  const handleSubmit = async (allowOverbooking = false) => {
+    if (!checkIn || !checkOut || roomId === "" || !property) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const documentType = guestType === "resident" ? "id_card" : "passport";
+      const documentNumber = guestType === "resident" ? orUndefined(idNumber) : orUndefined(passportNumber);
+      const reservation = await createReservation({
+        propertyId: property.id,
+        source: bookingSource || "direct",
+        guaranteeMethod: guaranteeMethod || undefined,
+        ...(selectedClientId != null
+          ? { customerId: selectedClientId }
+          : { customer: { fullName: guestName.trim(), phone: orUndefined(guestPhone) ?? "", email: orUndefined(guestEmail) ?? "", source: bookingSource || "" } }),
+        guestComment: orUndefined(specialRequests) ?? "",
+        companyInfo: orUndefined(companyInfo) ?? "",
+        dataConsent,
+        allowOverbooking,
+        items: [
+          {
+            roomId,
+            checkIn: checkIn.format("YYYY-MM-DD"),
+            checkOut: checkOut.format("YYYY-MM-DD"),
+            adults: Number(adults) || 1,
+            children: Number(children) || 0,
+            boardType: boardType || "none",
+            guests: [
+              {
+                fullName: guestName.trim(),
+                phone: orUndefined(guestPhone),
+                email: orUndefined(guestEmail),
+                clientId: selectedClientId ?? undefined,
+                isPrimary: true,
+                document: {
+                  guestType,
+                  citizenship: guestType === "foreign" ? orUndefined(citizenship) : undefined,
+                  documentType,
+                  documentNumber,
+                  inn: guestType === "resident" ? orUndefined(inn) : undefined,
+                  passportCountry: guestType === "foreign" ? orUndefined(passportCountry) : undefined,
+                  passportExpiry: guestType === "foreign" ? passportExpiry?.format("YYYY-MM-DD") ?? null : null,
+                  entryDate: guestType === "foreign" ? entryDate?.format("YYYY-MM-DD") ?? null : null,
+                  migrationCardNumber: guestType === "foreign" ? orUndefined(migrationCardNumber) : undefined,
+                  visitPurpose: guestType === "foreign" ? visitPurpose || undefined : undefined,
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      const createdGuestId = reservation.items[0]?.guests[0]?.id;
+      if (passportPhotoFile && createdGuestId != null) {
+        try {
+          await uploadStayDocumentPhoto(reservation.id, createdGuestId, passportPhotoFile);
+        } catch {
+          // Бронь уже создана — молча пропускаем сбой загрузки фото, не откатываем бронь.
+        }
+      }
+
+      void queryClient.invalidateQueries({ queryKey: ["hotel", "calendar"] });
+      void queryClient.invalidateQueries({ queryKey: ["hotel", "reservations"] });
+      setOpen(false);
+      setToast(`Бронь №${reservation.number} для «${guestName.trim()}» добавлена в шахматку`);
+      reset();
+    } catch (err) {
+      const conflicts = getReservationConflicts(err);
+      if (conflicts && isOverbookingConfirmable(err)) {
         setOverlapConflict(conflicts);
         return;
       }
+      setSubmitError(getErrorMessage(err, "Не удалось создать бронь"));
+    } finally {
+      setSubmitting(false);
     }
-    addCustomBooking({
-      roomNumber: room,
-      guestName: guestName.trim(),
-      checkIn: checkIn.format("YYYY-MM-DD"),
-      checkOut: checkOut.format("YYYY-MM-DD"),
-      guestPhone: orUndefined(guestPhone),
-      guestEmail: orUndefined(guestEmail),
-      adults: Number(adults) || undefined,
-      children: Number(children) || undefined,
-      guaranteeMethod: guaranteeMethod || undefined,
-      boardType: boardType || undefined,
-      guestType,
-      idNumber: guestType === "resident" ? orUndefined(idNumber) : undefined,
-      inn: guestType === "resident" ? orUndefined(inn) : undefined,
-      citizenship: guestType === "foreign" ? orUndefined(citizenship) : undefined,
-      passportNumber: guestType === "foreign" ? orUndefined(passportNumber) : undefined,
-      passportCountry: guestType === "foreign" ? orUndefined(passportCountry) : undefined,
-      passportExpiry: guestType === "foreign" ? passportExpiry?.format("YYYY-MM-DD") : undefined,
-      entryDate: guestType === "foreign" ? entryDate?.format("YYYY-MM-DD") : undefined,
-      migrationCardNumber: guestType === "foreign" ? orUndefined(migrationCardNumber) : undefined,
-      visitPurpose: guestType === "foreign" ? visitPurpose || undefined : undefined,
-      passportPhotoDataUrl: passportPhoto ?? undefined,
-      bookingSource: bookingSource || undefined,
-      specialRequests: orUndefined(specialRequests),
-      companyInfo: orUndefined(companyInfo),
-      dataConsent: dataConsent || undefined,
-      createdBy: employee?.fullName || undefined,
-      createdAt: dayjs().toISOString(),
-    });
-    setOpen(false);
-    setToast(`Бронь для «${guestName.trim()}» в номере ${room} добавлена в шахматку`);
-    reset();
   };
 
   // Грязная форма = заполнено хоть что-то значимое — тот же принцип, что
@@ -357,12 +394,12 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     guestName.trim() !== "" ||
     guestPhone.trim() !== "" ||
     guestEmail.trim() !== "" ||
-    room !== "" ||
+    roomId !== "" ||
     idNumber.trim() !== "" ||
     passportNumber.trim() !== "" ||
     specialRequests.trim() !== "" ||
     companyInfo.trim() !== "" ||
-    passportPhoto !== null;
+    passportPhotoFile !== null;
 
   // Перехватывает все способы закрытия: крестик, «Отмена», клик по фону / Esc —
   // тот же приём, что requestClose в реальной форме приёма.
@@ -379,6 +416,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setOpen(false);
     reset();
   };
+
+  const selectedRoom: HotelRoom | undefined = rooms.find((r) => r.id === roomId);
 
   return (
     <>
@@ -409,16 +448,22 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         <Box sx={{ p: 2, flex: 1, overflowY: "auto", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
           <Stack spacing={2.5}>
             <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-              Демо-форма: бронь появится в шахматке, но живёт только в этом браузере. Обязательны только
-              гость, номер и даты — остальное можно оставить пустым.
+              Обязательны только гость, номер и даты — остальное можно оставить пустым.
             </Alert>
+            {submitError && <Alert severity="error">{submitError}</Alert>}
 
             {/* ── 1. Проживание ── */}
             <SectionTitle>Проживание</SectionTitle>
-            <TextField select label="Номер" value={room} onChange={(e) => setRoom(e.target.value)} fullWidth>
+            <TextField
+              select
+              label="Номер"
+              value={roomId}
+              onChange={(e) => setRoomId(e.target.value === "" ? "" : Number(e.target.value))}
+              fullWidth
+            >
               {rooms.map((r) => (
-                <MenuItem key={r} value={r}>
-                  {r}
+                <MenuItem key={r.id} value={r.id}>
+                  {r.number} — {r.roomTypeName}
                 </MenuItem>
               ))}
             </TextField>
@@ -455,60 +500,68 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 select
                 label="Гарантия брони"
                 value={guaranteeMethod}
-                onChange={(e) => setGuaranteeMethod(e.target.value as BookingGuaranteeMethod | "")}
+                onChange={(e) => setGuaranteeMethod(e.target.value)}
                 sx={{ flex: 1 }}
               >
                 <MenuItem value="">Не указана</MenuItem>
-                {(Object.keys(GUARANTEE_METHOD_LABELS) as BookingGuaranteeMethod[]).map((key) => (
-                  <MenuItem key={key} value={key}>
-                    {GUARANTEE_METHOD_LABELS[key]}
+                {(catalogs?.guaranteeMethods ?? []).map((c) => (
+                  <MenuItem key={c.value} value={c.value}>
+                    {c.label}
                   </MenuItem>
                 ))}
               </TextField>
-              <TextField
-                select
-                label="Тариф"
-                value={boardType}
-                onChange={(e) => setBoardType(e.target.value as BookingBoardType | "")}
-                sx={{ flex: 1 }}
-              >
+              <TextField select label="Тариф" value={boardType} onChange={(e) => setBoardType(e.target.value)} sx={{ flex: 1 }}>
                 <MenuItem value="">Не указан</MenuItem>
-                {(Object.keys(BOARD_TYPE_LABELS) as BookingBoardType[]).map((key) => (
-                  <MenuItem key={key} value={key}>
-                    {BOARD_TYPE_LABELS[key]}
+                {(catalogs?.boardTypes ?? []).map((c) => (
+                  <MenuItem key={c.value} value={c.value}>
+                    {c.label}
                   </MenuItem>
                 ))}
               </TextField>
             </Stack>
+            {selectedRoom && selectedRoom.mealOptions.length > 0 && (
+              <Typography variant="caption" color="text.secondary">
+                В номере доступно: {selectedRoom.mealOptions.join(", ")}
+              </Typography>
+            )}
 
             {/* ── 2. Гость ── */}
             <Stack spacing={1}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
                 Гость
               </Typography>
-              <Autocomplete<HotelGuestSummary, false, false, true>
+              <Autocomplete<HotelGuestSearchResult, false, false, true>
                 freeSolo
-                options={guests}
+                options={guestOptions}
                 inputValue={guestName}
-                onInputChange={(_, value) => setGuestName(value)}
+                loading={guestSearchQuery.isFetching}
+                onInputChange={(_, value) => {
+                  setGuestName(value);
+                  setSelectedClientId(null);
+                }}
                 onChange={(_, value) => {
-                  if (value && typeof value !== "string") applyGuestPrefill(value);
+                  if (value && typeof value !== "string") {
+                    setGuestName(value.fullName);
+                    setGuestPhone(value.phone);
+                    setSelectedClientId(value.clientId);
+                  }
                 }}
-                filterOptions={(options, state) => {
-                  const q = state.inputValue.trim().toLowerCase();
-                  if (!q) return options.slice(0, 8);
-                  return options.filter((g) => g.name.toLowerCase().includes(q) || g.phone.includes(q)).slice(0, 8);
-                }}
-                getOptionLabel={(option) => (typeof option === "string" ? option : option.name)}
+                getOptionLabel={(option) => (typeof option === "string" ? option : option.fullName)}
                 renderOption={(props, option) => (
-                  <li {...props} key={option.name}>
+                  <li {...props} key={option.clientId}>
                     <Stack direction="row" alignItems="center" gap={1.25} sx={{ width: "100%" }}>
                       <Avatar sx={{ width: 28, height: 28, fontSize: "0.75rem", bgcolor: "primary.main" }}>
-                        {initialsOf(option.name)}
+                        {initialsOf(option.fullName)}
                       </Avatar>
                       <Box sx={{ minWidth: 0 }}>
                         <Typography variant="body2" fontWeight={600} noWrap>
-                          {option.name}
+                          {option.fullName}
+                          {option.isBlacklisted && (
+                            <Typography component="span" variant="caption" color="error.main">
+                              {" "}
+                              · чёрный список
+                            </Typography>
+                          )}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                           {option.phone}
@@ -546,11 +599,18 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                   </Typography>
                   <Stack gap={0.5} sx={{ mt: 0.5 }}>
                     {duplicateMatches.map((g) => (
-                      <Stack key={g.name} direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+                      <Stack key={g.clientId} direction="row" alignItems="center" justifyContent="space-between" gap={1}>
                         <Typography variant="body2">
-                          {g.name} — {g.phone}
+                          {g.fullName} — {g.phone}
                         </Typography>
-                        <Button size="small" onClick={() => applyGuestPrefill(g)}>
+                        <Button
+                          size="small"
+                          onClick={() => {
+                            setGuestName(g.fullName);
+                            setGuestPhone(g.phone);
+                            setSelectedClientId(g.clientId);
+                          }}
+                        >
                           Использовать
                         </Button>
                       </Stack>
@@ -577,9 +637,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                       size="small"
                       onChange={(_, value: GuestType | null) => value && setGuestType(value)}
                     >
-                      {(Object.keys(GUEST_TYPE_LABELS) as GuestType[]).map((key) => (
-                        <ToggleButton key={key} value={key}>
-                          {GUEST_TYPE_LABELS[key]}
+                      {(catalogs?.guestTypes ?? []).map((c) => (
+                        <ToggleButton key={c.value} value={c.value}>
+                          {c.label}
                         </ToggleButton>
                       ))}
                     </ToggleButtonGroup>
@@ -643,13 +703,13 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                           select
                           label="Цель визита"
                           value={visitPurpose}
-                          onChange={(e) => setVisitPurpose(e.target.value as VisitPurpose | "")}
+                          onChange={(e) => setVisitPurpose(e.target.value)}
                           fullWidth
                         >
                           <MenuItem value="">Не указана</MenuItem>
-                          {(Object.keys(VISIT_PURPOSE_LABELS) as VisitPurpose[]).map((key) => (
-                            <MenuItem key={key} value={key}>
-                              {VISIT_PURPOSE_LABELS[key]}
+                          {(catalogs?.visitPurposes ?? []).map((c) => (
+                            <MenuItem key={c.value} value={c.value}>
+                              {c.label}
                             </MenuItem>
                           ))}
                         </TextField>
@@ -659,22 +719,19 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                     <Stack direction="row" alignItems="center" gap={1.5}>
                       <Button component="label" size="small" variant="outlined" startIcon={<UploadOutlined />}>
                         Фото паспорта
-                        <input type="file" accept="image/*" hidden onChange={handlePhotoChange} />
+                        <input type="file" accept="image/*,application/pdf" hidden onChange={handlePhotoChange} />
                       </Button>
-                      {passportPhoto && (
+                      {passportPhotoFile && (
                         <Stack direction="row" alignItems="center" gap={1}>
-                          <Box
-                            component="img"
-                            src={passportPhoto}
-                            alt="Фото паспорта"
-                            sx={{ width: 40, height: 40, borderRadius: "6px", objectFit: "cover" }}
-                          />
-                          <Button
-                            size="small"
-                            color="inherit"
-                            startIcon={<CloseOutlined fontSize="small" />}
-                            onClick={() => setPassportPhoto(null)}
-                          >
+                          {passportPhotoPreview && (
+                            <Box
+                              component="img"
+                              src={passportPhotoPreview}
+                              alt="Фото паспорта"
+                              sx={{ width: 40, height: 40, borderRadius: "6px", objectFit: "cover" }}
+                            />
+                          )}
+                          <Button size="small" color="inherit" startIcon={<CloseOutlined fontSize="small" />} onClick={removePhoto}>
                             Убрать
                           </Button>
                         </Stack>
@@ -705,13 +762,13 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         select
                         label="Источник брони"
                         value={bookingSource}
-                        onChange={(e) => setBookingSource(e.target.value as BookingSource | "")}
+                        onChange={(e) => setBookingSource(e.target.value)}
                         sx={{ flex: 1 }}
                       >
                         <MenuItem value="">Не указан</MenuItem>
-                        {(Object.keys(BOOKING_SOURCE_LABELS) as BookingSource[]).map((key) => (
-                          <MenuItem key={key} value={key}>
-                            {BOOKING_SOURCE_LABELS[key]}
+                        {(catalogs?.bookingSources ?? []).map((c) => (
+                          <MenuItem key={c.value} value={c.value}>
+                            {c.label}
                           </MenuItem>
                         ))}
                       </TextField>
@@ -751,8 +808,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         <Box sx={{ p: 2, flexShrink: 0, bgcolor: "background.paper", borderTop: "1px solid", borderColor: "divider" }}>
           <Stack direction="row" spacing={1} justifyContent="flex-end">
             <Button onClick={requestClose}>Отмена</Button>
-            <Button variant="contained" disabled={!canSubmit} onClick={() => handleSubmit()}>
-              Создать
+            <Button variant="contained" disabled={!canSubmit || submitting} onClick={() => void handleSubmit()}>
+              {submitting ? "Создаём…" : "Создать"}
             </Button>
           </Stack>
         </Box>
@@ -775,8 +832,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         </DialogActions>
       </Dialog>
 
-      {/* Номер занят на выбранные даты — тот же warn-принцип, что ShiftOverlapDialog
-          у пересечения смен в реальном расписании: предупреждаем, не блокируем. */}
+      {/* Номер занят на выбранные даты — 409 NO_AVAILABILITY от бэка, тот же
+          warn-принцип, что ShiftOverlapDialog у пересечения смен. */}
       <Dialog open={overlapConflict !== null} onClose={() => setOverlapConflict(null)} maxWidth="xs" fullWidth>
         <DialogTitle>
           <Stack direction="row" alignItems="center" gap={1}>
@@ -786,16 +843,16 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         </DialogTitle>
         <DialogContent>
           <Typography variant="caption" color="text.secondary">
-            В номере {room} уже есть бронь на пересекающиеся даты. Создать всё равно?
+            В номере {selectedRoom?.number ?? ""} уже есть бронь на пересекающиеся даты. Создать всё равно?
           </Typography>
           <Stack spacing={1} sx={{ mt: 0.75 }}>
-            {(overlapConflict ?? []).map((b) => (
-              <Box key={b.id} sx={{ borderLeft: "3px solid", borderColor: "warning.main", pl: 1.25, py: 0.25 }}>
+            {(overlapConflict ?? []).map((c) => (
+              <Box key={c.itemId} sx={{ borderLeft: "3px solid", borderColor: "warning.main", pl: 1.25, py: 0.25 }}>
                 <Typography variant="body2" fontWeight={600}>
-                  {b.guestName}
+                  {c.guestName || `Бронь №${c.reservationNumber}`}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {formatHotelDateRange(b.checkIn, b.checkOut)}
+                  {formatHotelDateRange(c.checkIn, c.checkOut)}
                 </Typography>
               </Box>
             ))}
@@ -808,7 +865,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
             variant="contained"
             onClick={() => {
               setOverlapConflict(null);
-              handleSubmit(true);
+              void handleSubmit(true);
             }}
           >
             Создать всё равно

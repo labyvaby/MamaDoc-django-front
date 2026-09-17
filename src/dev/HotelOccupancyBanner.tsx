@@ -1,32 +1,29 @@
 /**
- * «Шахматка броней» — верхние карточки-сводка для демо-организации Viva.
- *
- * Референс — экран реального PMS отеля (шахматка броней Bnovo/Exely
- * WebPMS): «Загрузка на сегодня», «Гости сегодня», «Заметки и указания»,
- * «Состояние номеров». Цифры — моковые (см. getHotelOccupancySnapshot в
- * mockDemoData.ts): в нашем API нет сущности «номер», это витрина того, что
- * такой экран мог бы показывать, а не подключённый расчёт.
+ * «Шахматка броней» — верхние карточки-сводка. Реальный бэкенд:
+ * GET /hotel/dashboard/ (см. src/api/hotel.ts) — загрузка, заезды/выезды,
+ * состояние номеров; «Задачи уборки» — открытые GET /hotel/housekeeping-tasks/
+ * (status=open), разложенные по dueAt на клиенте (бэкенд отдаёт только
+ * список, не готовые корзины).
  *
  * Самостоятельно решает, рендериться ли (isVivaActive) — точка подключения
  * (src/pages/schedule/django/index.tsx) остаётся однострочной.
  *
  * «Загрузка»/«Гости» — за число, выбранное кликом в RoomBookingGrid (общий
- * стор selectedHotelDate, см. mockDemoData.ts): один клик — обе карточки
- * сразу за другой день. «Заметки»/«Состояние номеров» от выбора не зависят —
- * это про сейчас, не про пролистанную дату (см. getHotelOccupancySnapshot).
+ * стор selectedHotelDate, см. mockDemoData.ts — то же локальное UI-состояние
+ * сессии, что quickBookingRequest у CreateBookingButton, не бизнес-данные):
+ * один клик — обе карточки сразу за другой день. «Задачи уборки»/«Состояние
+ * номеров» от выбора не зависят — dashboard.roomState всегда на сейчас,
+ * независимо от переданной date (см. HotelDashboard в hotel.ts).
  */
 import React from "react";
-import { Box, Paper, Stack, Typography } from "@mui/material";
+import { Box, CircularProgress, Paper, Stack, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import dayjs from "dayjs";
+import { useQuery } from "@tanstack/react-query";
 
-import {
-  getHotelOccupancySnapshot,
-  getSelectedHotelDate,
-  subscribeSelectedHotelDate,
-  isVivaActive,
-  formatHotelDate,
-} from "./mockDemoData";
+import { getSelectedHotelDate, subscribeSelectedHotelDate, useIsVivaActive, formatHotelDate } from "./mockDemoData";
+import { useHotelProperty } from "./useHotelProperty";
+import { getDashboard, listHousekeepingTasks } from "../api/hotel";
 
 const CardShell: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <Paper
@@ -64,25 +61,67 @@ const StatRow: React.FC<{ color: string; label: string; value: React.ReactNode }
 export const HotelOccupancyBanner: React.FC = () => {
   const theme = useTheme();
   // Хуки вызываются безусловно (Rules of Hooks) — если Viva не активна, их
-  // результат просто не идёт в дело; обе функции дешёвые, лишний вызов не жалко.
+  // результат просто не идёт в дело (useQuery остаётся выключенным через enabled).
   const selectedDate = React.useSyncExternalStore(subscribeSelectedHotelDate, getSelectedHotelDate);
-  const snap = React.useMemo(() => getHotelOccupancySnapshot(selectedDate), [selectedDate]);
+  const vivaActive = useIsVivaActive();
+  const { property } = useHotelProperty();
 
-  if (!isVivaActive()) return null;
+  const dashboardQuery = useQuery({
+    queryKey: ["hotel", "dashboard", property?.id, selectedDate],
+    queryFn: ({ signal }) => getDashboard(property!.id, selectedDate, signal),
+    enabled: vivaActive && property != null,
+  });
+  const dashboard = dashboardQuery.data;
+
+  const tasksQuery = useQuery({
+    queryKey: ["hotel", "housekeepingTasks", property?.id, "open"],
+    queryFn: ({ signal }) => listHousekeepingTasks({ propertyId: property!.id, status: "open" }, signal),
+    enabled: vivaActive && property != null,
+  });
+
+  const todayStr = dayjs().format("YYYY-MM-DD");
+  const tomorrowStr = dayjs().add(1, "day").format("YYYY-MM-DD");
+  const taskBuckets = React.useMemo(() => {
+    let scheduledToday = 0;
+    let overdue = 0;
+    let scheduledTomorrow = 0;
+    let unscheduled = 0;
+    for (const t of tasksQuery.data ?? []) {
+      if (!t.dueAt) {
+        unscheduled++;
+        continue;
+      }
+      const due = dayjs(t.dueAt).format("YYYY-MM-DD");
+      if (due < todayStr) overdue++;
+      else if (due === todayStr) scheduledToday++;
+      else if (due === tomorrowStr) scheduledTomorrow++;
+    }
+    return { scheduledToday, overdue, scheduledTomorrow, unscheduled };
+  }, [tasksQuery.data, todayStr, tomorrowStr]);
+
+  if (!vivaActive) return null;
+
+  if (!dashboard) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+        <CircularProgress size={24} />
+      </Box>
+    );
+  }
 
   const p = theme.palette;
-  const isToday = selectedDate === dayjs().format("YYYY-MM-DD");
+  const isToday = selectedDate === todayStr;
   const dateSuffix = isToday ? "сегодня" : formatHotelDate(selectedDate);
   const stayingColor = theme.palette.mode === "dark" ? "#a78bfa" : "#7c3aed";
 
-  const occupancyColor =
-    snap.occupancyPercent >= 90 ? p.success.main : snap.occupancyPercent >= 70 ? p.warning.main : p.error.main;
+  const occupancyPercent = Number(dashboard.occupancyPercent);
+  const occupancyColor = occupancyPercent >= 90 ? p.success.main : occupancyPercent >= 70 ? p.warning.main : p.error.main;
 
   const roomStatusRows: Array<[label: string, color: string, value: number]> = [
-    ["Грязно", p.error.main, snap.roomStatus.dirty],
-    ["Убрано", p.success.main, snap.roomStatus.cleaned],
-    ["Проверено", p.info.main, snap.roomStatus.inspected],
-    ["Ремонт", p.warning.main, snap.roomStatus.repair],
+    ["Грязно", p.error.main, dashboard.roomState.dirty],
+    ["Убрано", p.success.main, dashboard.roomState.clean],
+    ["Проверено", p.info.main, dashboard.roomState.inspected],
+    ["Ремонт", p.warning.main, dashboard.roomState.repair],
   ];
   const maxRoomStatus = Math.max(1, ...roomStatusRows.map(([, , v]) => v));
 
@@ -112,14 +151,14 @@ export const HotelOccupancyBanner: React.FC = () => {
               flexShrink: 0,
             }}
           >
-            {snap.occupancyPercent}%
+            {occupancyPercent}%
           </Box>
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="body2" fontWeight={600}>
-              {snap.occupiedRooms} занято
+              {dashboard.occupiedRooms} занято
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {snap.totalRooms} всего номеров
+              {dashboard.totalRooms} всего номеров
             </Typography>
           </Box>
         </Stack>
@@ -127,24 +166,20 @@ export const HotelOccupancyBanner: React.FC = () => {
 
       <CardShell title={isToday ? "Гости сегодня" : `Гости на ${dateSuffix}`}>
         <Box>
-          <StatRow
-            color={p.success.main}
-            label="Заезды / Горящая бронь"
-            value={`${snap.guests.arrivals} / ${snap.guests.hotBookings}`}
-          />
-          <StatRow color={p.error.main} label="Выезды" value={snap.guests.departures} />
-          <StatRow color={stayingColor} label="Проживания" value={snap.guests.staying} />
-          <StatRow color={p.text.disabled} label="Незаезды" value={snap.guests.dueOut} />
-          <StatRow color={p.text.disabled} label="Свободные номера" value={snap.guests.freeRooms} />
+          <StatRow color={p.success.main} label="Заезды / уже заехало" value={`${dashboard.arrivals} / ${dashboard.arrived}`} />
+          <StatRow color={p.error.main} label="Выезды / уже выехало" value={`${dashboard.departures} / ${dashboard.departed}`} />
+          <StatRow color={stayingColor} label="Проживают" value={dashboard.staying} />
+          <StatRow color={p.warning.main} label="Просрочено (не заехали)" value={dashboard.overdueArrivals} />
+          <StatRow color={p.text.disabled} label="Свободные номера" value={dashboard.freeRooms} />
         </Box>
       </CardShell>
 
-      <CardShell title="Заметки и указания">
+      <CardShell title="Задачи уборки">
         <Box>
-          <StatRow color={p.warning.main} label="Запланировано на сегодня" value={snap.notes.scheduledToday} />
-          <StatRow color={p.error.main} label="Просрочено" value={snap.notes.overdue} />
-          <StatRow color={p.info.main} label="Запланировано на завтра" value={snap.notes.scheduledTomorrow} />
-          <StatRow color={p.text.disabled} label="Не запланировано" value={snap.notes.unscheduled} />
+          <StatRow color={p.warning.main} label="Запланировано на сегодня" value={taskBuckets.scheduledToday} />
+          <StatRow color={p.error.main} label="Просрочено" value={taskBuckets.overdue} />
+          <StatRow color={p.info.main} label="Запланировано на завтра" value={taskBuckets.scheduledTomorrow} />
+          <StatRow color={p.text.disabled} label="Без срока" value={taskBuckets.unscheduled} />
         </Box>
       </CardShell>
 

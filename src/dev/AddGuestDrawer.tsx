@@ -6,26 +6,26 @@
  * confirm-диалог, как у CreateBookingButton/DjangoAddAppointmentDrawer, это
  * сознательно другой паттерн именно у формы добавления пациента/гостя,
  * восстановленный черновик можно стереть иконкой RestoreOutlined в шапке.
- * Предупреждение о дубле по телефону — в подвале, Collapse над кнопками,
- * как у пациента; список найденных дублей и подписи — в стиле, уже принятом
- * в CreateBookingButton (Alert + «Использовать»), а не аватарки пациента.
+ * Фото (аватар и паспорт) в черновик не входят — File не сериализуется.
  *
- * Поле «Гость» — Autocomplete freeSolo с автопоиском по имени среди уже
- * существующих гостей (getHotelGuests), тот же приём, что в CreateBookingButton
- * — чтобы персонал не завёл дубль, набирая ФИО. Выбор существующего варианта
- * из списка не создаёт нового гостя, а сразу использует найденного
- * (handleUseDuplicate) — то же действие, что «Использовать» в предупреждении
- * о дубле по телефону ниже.
+ * Поле «Гость» — Autocomplete freeSolo с реальным поиском по имени
+ * (searchGuests, см. src/api/hotel.ts, ≥2 символа), тот же приём, что в
+ * CreateBookingButton — чтобы персонал не завёл дубль, набирая ФИО. Выбор
+ * существующего варианта из списка не создаёт нового гостя, а сразу
+ * использует найденного (handleUseDuplicate) — то же действие, что
+ * «Использовать» в предупреждении о дубле по телефону ниже.
  *
  * «Фото паспорта» в «Документ» — имитация распознавания (simulatePassportScan
  * в mockDemoData.ts): реального OCR нет, при выборе файла просто
  * подставляются правдоподобные фейковые реквизиты — витрина будущей фичи.
+ * Само фото сохраняется как обычный File (как в CreateBookingButton), а не
+ * base64 — грузится на бэкенд после создания гостя.
  *
- * Гость заводится независимо от брони (addCustomGuest в mockDemoData.ts) —
- * тот же принцип, что пациент независимо от приёма. Источник (платформа,
- * откуда пришёл гость) — свойство самого человека, не только брони,
- * поэтому есть и здесь (source в HotelGuestProfile), и в CreateBookingButton
- * (bookingSource на конкретной брони уточняет его позже).
+ * Гость заводится независимо от брони (POST /hotel/guests/) — тот же
+ * принцип, что пациент независимо от приёма. Источник (платформа, откуда
+ * пришёл гость) — свойство самого человека, не только брони, поэтому есть и
+ * здесь (source гостя), и в CreateBookingButton (source на конкретной брони
+ * уточняет его позже).
  */
 import React from "react";
 import {
@@ -57,33 +57,35 @@ import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import UploadOutlined from "@mui/icons-material/UploadOutlined";
 import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import { motion } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker, cascadeContainer, cascadeItem } from "../components/ui";
 import PatientPhotoUploader from "../components/patients/PatientPhotoUploader";
-import { usePermissions } from "../hooks/usePermissions";
 import { useFormValidation } from "../hooks/useFormValidation";
 import { capitalizeFullName } from "../utility/name";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../utility/formDraft";
+import { simulatePassportScan, initialsOf, type GuestType } from "./mockDemoData";
+import { HOTEL_GUEST_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS } from "./hotelDisplay";
 import {
-  addCustomGuest,
-  findGuestsByPhone,
-  getHotelGuests,
-  setGuestBlacklisted,
-  simulatePassportScan,
-  initialsOf,
-  GUEST_TYPE_LABELS,
-  BOOKING_SOURCE_LABELS,
-  type GuestType,
-  type BookingSource,
-  type HotelGuestProfile,
-  type HotelGuestSummary,
-} from "./mockDemoData";
+  searchGuests,
+  createGuest,
+  uploadGuestPhoto,
+  uploadGuestDocumentPhoto,
+  setGuestBlacklist,
+  type HotelGuestSearchResult,
+  type HotelGuestCreateData,
+} from "../api/hotel";
+import { getErrorMessage } from "../api/client";
 
 const MotionStack = motion(Stack);
 const MotionBox = motion(Box);
 
-const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
+/** Ограничение на фото — как в CreateBookingButton (§4.3 контракта): ≤10 МБ. */
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+
+/** "" → undefined — необязательные текстовые поля не должны улетать пустыми строками. */
+const orUndefined = (value: string): string | undefined => (value.trim() ? value.trim() : undefined);
 
 // ── черновик формы (localStorage) — пережить случайное закрытие ────────────
 
@@ -102,7 +104,7 @@ type GuestDraft = {
   passportCountry: string;
   /** YYYY-MM-DD или "". */
   passportExpiry: string;
-  source: BookingSource | "";
+  source: string;
   isBlacklisted: boolean;
   blacklistReason: string;
 };
@@ -138,12 +140,10 @@ function isDraftEmpty(d: Omit<GuestDraft, "savedAt">): boolean {
 export interface AddGuestDrawerProps {
   open: boolean;
   onClose: () => void;
-  onCreated?: (name: string) => void;
+  onCreated?: (clientId: number) => void;
 }
 
 export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, onCreated }) => {
-  const { employee } = usePermissions();
-
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = React.useState<string | null>(null);
   const [photoError, setPhotoError] = React.useState<string | null>(null);
@@ -156,28 +156,32 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
   const [passportNumber, setPassportNumber] = React.useState("");
   const [passportCountry, setPassportCountry] = React.useState("");
   const [passportExpiry, setPassportExpiry] = React.useState<Dayjs | null>(null);
-  const [source, setSource] = React.useState<BookingSource | "">("");
-  const [passportPhoto, setPassportPhoto] = React.useState<string | null>(null);
+  const [source, setSource] = React.useState("");
+  const [passportPhotoFile, setPassportPhotoFile] = React.useState<File | null>(null);
+  const [passportPhotoPreview, setPassportPhotoPreview] = React.useState<string | null>(null);
   const [scanNotice, setScanNotice] = React.useState(false);
   const [isBlacklisted, setIsBlacklisted] = React.useState(false);
   const [blacklistReason, setBlacklistReason] = React.useState("");
   const [draftRestored, setDraftRestored] = React.useState(false);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
 
   const handlePickPhoto = (file: File | null) => {
-    setPhotoFile(file);
     setPhotoError(null);
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
     if (!file) {
+      setPhotoFile(null);
       setPhotoPreview(null);
       return;
     }
     if (file.size > MAX_PHOTO_BYTES) {
-      setPhotoError("Файл больше 3 МБ — многовато для демо-хранилища (localStorage)");
+      setPhotoError("Файл больше 10 МБ");
       setPhotoFile(null);
+      setPhotoPreview(null);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setPhotoPreview(typeof reader.result === "string" ? reader.result : null);
-    reader.readAsDataURL(file);
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
   };
 
   /** Имитация распознавания фото паспорта — реального OCR нет, см. simulatePassportScan в mockDemoData.ts. */
@@ -185,18 +189,18 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setPhotoError("Нужен файл изображения");
+    if (!/^image\/|^application\/pdf$/.test(file.type)) {
+      setPhotoError("Нужен файл изображения или PDF");
       return;
     }
     if (file.size > MAX_PHOTO_BYTES) {
-      setPhotoError("Файл больше 3 МБ — многовато для демо-хранилища (localStorage)");
+      setPhotoError("Файл больше 10 МБ");
       return;
     }
     setPhotoError(null);
-    const reader = new FileReader();
-    reader.onload = () => setPassportPhoto(typeof reader.result === "string" ? reader.result : null);
-    reader.readAsDataURL(file);
+    if (passportPhotoPreview) URL.revokeObjectURL(passportPhotoPreview);
+    setPassportPhotoFile(file);
+    setPassportPhotoPreview(file.type.startsWith("image/") ? URL.createObjectURL(file) : null);
 
     const scan = simulatePassportScan(`${file.name}:${file.size}`);
     setGuestType(scan.guestType);
@@ -213,9 +217,16 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
   React.useEffect(() => {
     if (!open) {
       setPhotoFile(null);
-      setPhotoPreview(null);
+      setPhotoPreview((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
       setPhotoError(null);
-      setPassportPhoto(null);
+      setPassportPhotoFile(null);
+      setPassportPhotoPreview((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
       setScanNotice(false);
       setName("");
       setPhone("");
@@ -230,6 +241,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
       setIsBlacklisted(false);
       setBlacklistReason("");
       setDraftRestored(false);
+      setSubmitError(null);
       return;
     }
     const draft = readGuestDraft();
@@ -251,7 +263,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
   }, [open]);
 
   // ── сохранение черновика (защита от случайного закрытия) — фото не
-  // сохраняем: File не сериализуется, а base64-превью может быть тяжёлым.
+  // сохраняем: File не сериализуется.
   const flushDraftRef = React.useRef<() => void>(() => {});
   flushDraftRef.current = () => {
     const draft = {
@@ -279,6 +291,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
   }, [open, name, phone, guestType, idNumber, inn, citizenship, passportNumber, passportCountry, passportExpiry, source, isBlacklisted, blacklistReason]);
 
   const handleClose = () => {
+    if (submitting) return;
     flushDraftRef.current();
     onClose();
   };
@@ -300,19 +313,30 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     setDraftRestored(false);
   };
 
-  // ── дубли по телефону — тот же локальный приём, что в CreateBookingButton ──
-  const duplicates = React.useMemo<HotelGuestSummary[]>(
-    () => (open ? findGuestsByPhone(phone, name.trim() || undefined) : []),
-    [open, phone, name],
+  // ── дубли по телефону — тот же приём, что в CreateBookingButton: поиск на
+  // бэкенде (searchGuests), предупреждение, не блокировка.
+  const phoneDigits = phone.replace(/\D/g, "");
+  const dupQuery = useQuery({
+    queryKey: ["hotel", "guests", "search", "dup", phoneDigits],
+    queryFn: ({ signal }) => searchGuests(phoneDigits, signal),
+    enabled: open && phoneDigits.length >= 6,
+  });
+  const duplicates = (dupQuery.data ?? []).filter(
+    (g) => g.phone.replace(/\D/g, "").includes(phoneDigits) && g.fullName !== name.trim(),
   );
 
   // ── автопоиск по ФИО (Autocomplete ниже) — чтобы персонал не завёл дубль,
   // набирая имя уже существующего гостя.
-  const guestOptions = React.useMemo<HotelGuestSummary[]>(() => (open ? getHotelGuests() : []), [open]);
+  const guestSearchQuery = useQuery({
+    queryKey: ["hotel", "guests", "search", name.trim()],
+    queryFn: ({ signal }) => searchGuests(name.trim(), signal),
+    enabled: open && name.trim().length >= 2,
+  });
+  const guestOptions = guestSearchQuery.data ?? [];
 
-  const handleUseDuplicate = (guest: HotelGuestSummary) => {
+  const handleUseDuplicate = (guest: HotelGuestSearchResult) => {
     clearGuestDraft();
-    onCreated?.(guest.name);
+    onCreated?.(guest.clientId);
     onClose();
   };
 
@@ -326,37 +350,65 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!v.validate()) return;
-    const nameTrim = capitalizeFullName(name);
-    const profile: HotelGuestProfile = {
-      name: nameTrim,
-      phone: phone.trim(),
-      // Фото паспорта приоритетнее общего аватара — оно официальнее (лицо +
-      // документ на одном кадре), но если его не загрузили, подойдёт и аватар.
-      photoDataUrl: passportPhoto ?? photoPreview ?? undefined,
-      guestType,
-      idNumber: idNumber.trim() || undefined,
-      inn: inn.trim() || undefined,
-      citizenship: citizenship.trim() || undefined,
-      passportNumber: passportNumber.trim() || undefined,
-      passportCountry: passportCountry.trim() || undefined,
-      passportExpiry: passportExpiry ? passportExpiry.format("YYYY-MM-DD") : undefined,
-      source: source || undefined,
-      createdBy: employee?.fullName || undefined,
-      createdAt: dayjs().toISOString(),
-    };
-    addCustomGuest(profile);
-    if (isBlacklisted) setGuestBlacklisted(nameTrim, true, blacklistReason);
-    clearGuestDraft();
-    onCreated?.(nameTrim);
-    onClose();
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const documentType = guestType === "resident" ? "id_card" : "passport";
+      const documentNumber = guestType === "resident" ? orUndefined(idNumber) : orUndefined(passportNumber);
+      const data: HotelGuestCreateData = {
+        fullName: capitalizeFullName(name),
+        phone: orUndefined(phone),
+        guestType,
+        documentType,
+        documentNumber,
+        inn: guestType === "resident" ? orUndefined(inn) : undefined,
+        citizenship: guestType === "foreign" ? orUndefined(citizenship) : undefined,
+        passportCountry: guestType === "foreign" ? orUndefined(passportCountry) : undefined,
+        passportExpiry: guestType === "foreign" ? passportExpiry?.format("YYYY-MM-DD") ?? undefined : undefined,
+        source: source || undefined,
+      };
+      const guest = await createGuest(data);
+
+      // Гость уже создан — сбои загрузки фото/паспорта/ЧС дальше не откатываем
+      // создание, только молча пропускаем (тот же принцип, что в CreateBookingButton).
+      if (photoFile) {
+        try {
+          await uploadGuestPhoto(guest.clientId, photoFile);
+        } catch {
+          // no-op
+        }
+      }
+      if (passportPhotoFile) {
+        try {
+          await uploadGuestDocumentPhoto(guest.clientId, passportPhotoFile);
+        } catch {
+          // no-op
+        }
+      }
+      if (isBlacklisted && blacklistReason.trim()) {
+        try {
+          await setGuestBlacklist(guest.clientId, blacklistReason.trim());
+        } catch {
+          // no-op
+        }
+      }
+
+      clearGuestDraft();
+      onCreated?.(guest.clientId);
+      onClose();
+    } catch (err) {
+      setSubmitError(getErrorMessage(err, "Не удалось создать гостя"));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const submitOnEnter = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      handleSubmit();
+      void handleSubmit();
     }
   };
 
@@ -393,6 +445,12 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
         {/* body */}
         <Box sx={{ p: 2, flex: 1, overflowY: "auto", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
           <MotionStack spacing={3} variants={cascadeContainer} initial="hidden" animate="show">
+            {submitError && (
+              <MotionBox variants={cascadeItem}>
+                <Alert severity="error">{submitError}</Alert>
+              </MotionBox>
+            )}
+
             {/* ── Фото ── */}
             <MotionBox variants={cascadeItem}>
               <PatientPhotoUploader
@@ -400,6 +458,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                 photoPreview={photoPreview}
                 onPickPhoto={handlePickPhoto}
                 inputId="add-guest-photo"
+                disabled={submitting}
               />
               {photoError && (
                 <Alert severity="warning" variant="outlined" sx={{ mt: 1, fontSize: "0.8rem" }}>
@@ -414,29 +473,31 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                 <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
                   Гость
                 </Typography>
-                <Autocomplete<HotelGuestSummary, false, false, true>
+                <Autocomplete<HotelGuestSearchResult, false, false, true>
                   freeSolo
                   options={guestOptions}
                   inputValue={name}
+                  loading={guestSearchQuery.isFetching}
                   onInputChange={(_, value) => setName(value)}
                   onChange={(_, value) => {
                     if (value && typeof value !== "string") handleUseDuplicate(value);
                   }}
-                  filterOptions={(options, state) => {
-                    const q = state.inputValue.trim().toLowerCase();
-                    if (!q) return [];
-                    return options.filter((g) => g.name.toLowerCase().includes(q)).slice(0, 6);
-                  }}
-                  getOptionLabel={(option) => (typeof option === "string" ? option : option.name)}
+                  getOptionLabel={(option) => (typeof option === "string" ? option : option.fullName)}
                   renderOption={(props, option) => (
-                    <li {...props} key={option.name}>
+                    <li {...props} key={option.clientId}>
                       <Stack direction="row" alignItems="center" gap={1.25} sx={{ width: "100%" }}>
                         <Avatar sx={{ width: 28, height: 28, fontSize: "0.75rem", bgcolor: "primary.main" }}>
-                          {initialsOf(option.name)}
+                          {initialsOf(option.fullName)}
                         </Avatar>
                         <Box sx={{ minWidth: 0 }}>
                           <Typography variant="body2" fontWeight={600} noWrap>
-                            {option.name}
+                            {option.fullName}
+                            {option.isBlacklisted && (
+                              <Typography component="span" variant="caption" color="error.main">
+                                {" "}
+                                · чёрный список
+                              </Typography>
+                            )}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
                             {option.phone}
@@ -453,6 +514,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                       fullWidth
                       size="small"
                       autoFocus
+                      disabled={submitting}
                       placeholder="Имя и фамилия — начните вводить, чтобы найти гостя"
                       {...v.field("name")}
                       InputProps={{
@@ -491,6 +553,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                   onKeyDown={submitOnEnter}
                   fullWidth
                   size="small"
+                  disabled={submitting}
                   placeholder="+996 700 000 000"
                 />
               </Stack>
@@ -508,11 +571,12 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                   value={guestType}
                   exclusive
                   size="small"
+                  disabled={submitting}
                   onChange={(_, value: GuestType | null) => value && setGuestType(value)}
                 >
-                  {(Object.keys(GUEST_TYPE_LABELS) as GuestType[]).map((key) => (
+                  {(Object.keys(HOTEL_GUEST_TYPE_LABELS) as GuestType[]).map((key) => (
                     <ToggleButton key={key} value={key}>
-                      {GUEST_TYPE_LABELS[key]}
+                      {HOTEL_GUEST_TYPE_LABELS[key]}
                     </ToggleButton>
                   ))}
                 </ToggleButtonGroup>
@@ -524,6 +588,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                       value={idNumber}
                       onChange={(e) => setIdNumber(e.target.value)}
                       size="small"
+                      disabled={submitting}
                       sx={{ flex: 1 }}
                     />
                     <TextField
@@ -531,6 +596,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                       value={inn}
                       onChange={(e) => setInn(e.target.value)}
                       size="small"
+                      disabled={submitting}
                       sx={{ flex: 1 }}
                     />
                   </Stack>
@@ -542,6 +608,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                         value={citizenship}
                         onChange={(e) => setCitizenship(e.target.value)}
                         size="small"
+                        disabled={submitting}
                         sx={{ flex: 1 }}
                       />
                       <TextField
@@ -549,6 +616,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                         value={passportNumber}
                         onChange={(e) => setPassportNumber(e.target.value)}
                         size="small"
+                        disabled={submitting}
                         sx={{ flex: 1 }}
                       />
                     </Stack>
@@ -558,13 +626,14 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                         value={passportCountry}
                         onChange={(e) => setPassportCountry(e.target.value)}
                         size="small"
+                        disabled={submitting}
                         sx={{ flex: 1 }}
                       />
                       <CustomDatePicker
                         label="Действителен до"
                         value={passportExpiry}
                         onChange={setPassportExpiry}
-                        slotProps={{ textField: { size: "small" } }}
+                        slotProps={{ textField: { size: "small", disabled: submitting } }}
                         sx={{ flex: 1 }}
                       />
                     </Stack>
@@ -573,27 +642,37 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
 
                 {/* Имитация распознавания — реального OCR нет, см. simulatePassportScan. */}
                 <Stack direction="row" alignItems="center" gap={1.5}>
-                  <Button component="label" size="small" variant="outlined" startIcon={<UploadOutlined />}>
+                  <Button component="label" size="small" variant="outlined" startIcon={<UploadOutlined />} disabled={submitting}>
                     Фото паспорта
-                    <input type="file" accept="image/*" hidden onChange={handlePickPassportPhoto} />
+                    <input type="file" accept="image/*,application/pdf" hidden onChange={handlePickPassportPhoto} />
                   </Button>
-                  {passportPhoto && (
+                  {passportPhotoPreview && (
                     <Stack direction="row" alignItems="center" gap={1}>
                       <Box
                         component="img"
-                        src={passportPhoto}
+                        src={passportPhotoPreview}
                         alt="Фото паспорта"
                         sx={{ width: 40, height: 40, borderRadius: "6px", objectFit: "cover" }}
                       />
                       <Button
                         size="small"
                         color="inherit"
+                        disabled={submitting}
                         startIcon={<CloseOutlined fontSize="small" />}
-                        onClick={() => setPassportPhoto(null)}
+                        onClick={() => {
+                          if (passportPhotoPreview) URL.revokeObjectURL(passportPhotoPreview);
+                          setPassportPhotoFile(null);
+                          setPassportPhotoPreview(null);
+                        }}
                       >
                         Убрать
                       </Button>
                     </Stack>
+                  )}
+                  {!passportPhotoPreview && passportPhotoFile && (
+                    <Typography variant="caption" color="text.secondary">
+                      {passportPhotoFile.name}
+                    </Typography>
                   )}
                 </Stack>
                 {photoError && (
@@ -623,15 +702,16 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                 <TextField
                   select
                   value={source}
-                  onChange={(e) => setSource(e.target.value as BookingSource | "")}
+                  onChange={(e) => setSource(e.target.value)}
                   fullWidth
                   size="small"
+                  disabled={submitting}
                   helperText="Откуда пришёл гость — сайт, звонок, Booking.com и т.п."
                 >
                   <MenuItem value="">Не указан</MenuItem>
-                  {(Object.keys(BOOKING_SOURCE_LABELS) as BookingSource[]).map((key) => (
+                  {Object.entries(HOTEL_BOOKING_SOURCE_LABELS).map(([key, label]) => (
                     <MenuItem key={key} value={key}>
-                      {BOOKING_SOURCE_LABELS[key]}
+                      {label}
                     </MenuItem>
                   ))}
                 </TextField>
@@ -646,6 +726,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                   control={
                     <Switch
                       checked={isBlacklisted}
+                      disabled={submitting}
                       onChange={(e) => {
                         setIsBlacklisted(e.target.checked);
                         if (!e.target.checked) setBlacklistReason("");
@@ -666,6 +747,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                     fullWidth
                     multiline
                     minRows={2}
+                    disabled={submitting}
                     placeholder="Причина"
                     required={isBlacklisted}
                     {...v.field("blacklistReason")}
@@ -686,9 +768,9 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                 </Typography>
                 <Stack gap={0.5} sx={{ mt: 0.75 }}>
                   {duplicates.slice(0, 3).map((g) => (
-                    <Stack key={g.name} direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+                    <Stack key={g.clientId} direction="row" alignItems="center" justifyContent="space-between" gap={1}>
                       <Typography variant="body2" noWrap>
-                        {g.name} — {g.phone}
+                        {g.fullName} — {g.phone}
                       </Typography>
                       <Button size="small" onClick={() => handleUseDuplicate(g)} sx={{ flexShrink: 0 }}>
                         Использовать
@@ -701,9 +783,11 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
           </Collapse>
 
           <Stack direction="row" gap={1} justifyContent="flex-end" sx={{ p: 2 }}>
-            <Button onClick={handleClose}>Отмена</Button>
-            <Button variant="contained" onClick={handleSubmit}>
-              Сохранить
+            <Button onClick={handleClose} disabled={submitting}>
+              Отмена
+            </Button>
+            <Button variant="contained" onClick={() => void handleSubmit()} disabled={submitting}>
+              {submitting ? "Сохраняем…" : "Сохранить"}
             </Button>
           </Stack>
         </Box>

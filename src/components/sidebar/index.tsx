@@ -26,7 +26,7 @@ import OrganizationBrand from "../brand/OrganizationBrand";
 import { useAppVersion } from "../../api/appVersion";
 import { fetchChatwootCounts } from "../../api/chatwoot";
 import { useT } from "../../i18n/VerticalProvider";
-import { isVivaActive } from "../../dev/mockDemoData";
+import { useIsVivaActive } from "../../dev/mockDemoData";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
@@ -377,6 +377,7 @@ const SidebarSecondary: React.FC = () => {
   const activeBranchId = useActiveScope().branchId;
   const isSuper = isSuperAdmin();
   const isRetail = activeOrganization?.vertical === "retail";
+  const isHotelOrg = activeOrganization?.vertical === "hotel";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -606,7 +607,7 @@ const SidebarSecondary: React.FC = () => {
   // (см. HOTEL_ONLY_NAV_PATHS) — "storage" и "management" целиком состоят из
   // скрытых пунктов и превратились бы в пустую вкладку; "my-work" и "org"
   // остаются видимыми, в них по одному отельному пункту (Расписание, Гости).
-  const hotelOnly = isVivaActive();
+  const hotelOnly = isHotelOrg;
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
@@ -863,9 +864,9 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* Интеграции (каналы продаж) — только Viva, у медицинской вертикали
-            своего права на это нет, поэтому гейт прямо по isVivaActive(), а
+            своего права на это нет, поэтому гейт прямо по isHotelOrg, а
             не через can_. */}
-        {show("org") && isVivaActive() && (
+        {show("org") && isHotelOrg && (
           <SidebarMenuItem
             to="/integrations"
             icon={<ExtensionOutlined />}
@@ -875,7 +876,7 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* Кухня (меню/закупка) — только Viva, тот же принцип, что «Интеграции». */}
-        {show("org") && isVivaActive() && (
+        {show("org") && isHotelOrg && (
           <SidebarMenuItem
             to="/kitchen"
             icon={<RestaurantOutlined />}
@@ -982,8 +983,9 @@ const SidebarSecondary: React.FC = () => {
         {/* Настройки — единственный пункт на /settings, тот же принцип
             консолидации, что «Отчеты» выше: у отеля "management" целиком
             спрятан, поэтому для Viva показываем тот же пункт через "org".
-            SettingsRouter.tsx на самом /settings сам решает, что рендерить —
-            SettingsIndexPage или HotelRolesSettingsPage. */}
+            Тот же реальный SettingsIndexPage/SettingsLayout, что у клиники —
+            рельс сам скрывает клиническую специфику и показывает «Номера»
+            по vertical==="hotel" (см. useVisibleSettingsTabs). */}
         {((hotelOnly && show("org")) || (!hotelOnly && show("management") && can_.settings)) && (
           <SidebarMenuItem
             to="/settings"
@@ -1025,8 +1027,9 @@ type SidebarMenuItemProps = {
  * отель (см. src/dev/*.tsx): «Расписание» — шахматка броней
  * (RoomBookingGrid), «Все гости» — HotelGuestsPage, «Интеграции» —
  * HotelIntegrationsPage, «Отчёты» — HotelReportsPage, «Кухня» —
- * HotelKitchenPage, «Настройки» — HotelRolesSettingsPage. Остальные ~30
- * пунктов (Вакцины, СКУД, Кабинет врача и т.п.) ведут либо на
+ * HotelKitchenPage, «Настройки» — реальный SettingsIndexPage/SettingsLayout
+ * (рельс сам показывает только доступные по правам разделы + «Номера»).
+ * Остальные ~30 пунктов (Вакцины, СКУД, Кабинет врача и т.п.) ведут либо на
  * несуществующие для синтетической организации данные, либо просто не
  * имеют отношения к отелю.
  */
@@ -1045,12 +1048,13 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const vivaActive = useIsVivaActive();
 
   // После хуков (Rules of Hooks): сайдбар не перемонтируется при смене
   // организации (DjangoContextRemount оборачивает только <Outlet/>), поэтому
-  // isVivaActive() может поменяться между рендерами ОДНОГО и того же
+  // vivaActive может поменяться между рендерами ОДНОГО и того же
   // смонтированного экземпляра — ранний return обязан идти после всех хуков.
-  if (isVivaActive() && !HOTEL_ONLY_NAV_PATHS.includes(to)) return null;
+  if (vivaActive && !HOTEL_ONLY_NAV_PATHS.includes(to)) return null;
 
   const collapsedFinal = (collapsed ?? false) && !isMobile;
   const hasBadge = badgeCount > 0;

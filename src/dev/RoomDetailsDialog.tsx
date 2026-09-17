@@ -1,12 +1,12 @@
 /**
- * Детали номера — открывается кликом по номеру в RoomBookingGrid. Тариф,
- * вместимость, удобства (getRoomCategory — стор категорий в mockDemoData.ts),
- * доп. тарифы питания (getRoomAdditionalTariffs — задаются при добавлении
- * номера в «Настройка» → «Номера») и доступность на ближайшие 45 дней
- * (getRoomAvailability из mockDemoData.ts — сгенерированные брони + созданные
- * вручную через CreateBookingButton, вместе).
+ * Детали номера — открывается кликом по номеру в RoomBookingGrid. Категория
+ * (переданная сверху — грид уже загрузил её вместе с шахматкой, второй раз
+ * не запрашиваем), доступность на ближайшие 45 дней — GET
+ * /hotel/rooms/{id}/availability/ (items + свободные окна уже посчитаны
+ * бэкендом, см. hotel-viva-frontend-api.md §4.2).
  */
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Box,
   Chip,
@@ -24,63 +24,57 @@ import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlin
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import dayjs from "dayjs";
 
+import { getRoomAvailability, type HotelRoomType } from "../api/hotel";
 import {
-  getRoomCategory,
-  getRoomAvailability,
-  getHotelBookingStatusColor,
-  getRoomHousekeepingStatus,
-  getRoomHousekeepingStatusColor,
-  ROOM_HOUSEKEEPING_STATUS_LABELS,
-  formatHotelDateRange,
-  nightsBetween,
-  HOTEL_BOOKING_STATUS_LABELS,
-  getRoomAdditionalTariffs,
-  ADDITIONAL_TARIFF_LABELS,
-  getRoomCharacteristicLabel,
-  getRoomCharacteristicExtraPrice,
-  getCategoryTotalPrice,
-  type HotelBooking,
-} from "./mockDemoData";
+  mapStayDisplayStatus,
+  HOTEL_STAY_STATUS_LABELS,
+  hotelStayStatusColor,
+  HOTEL_ROOM_STATE_LABELS,
+  hotelRoomStateColor,
+  HOTEL_BOARD_TYPE_LABELS,
+} from "./hotelDisplay";
+import { formatHotelDateRange, nightsBetween } from "./mockDemoData";
 
 const AVAILABILITY_WINDOW_DAYS = 45;
 
 export interface RoomDetailsDialogProps {
-  /** Номер комнаты или null — диалог закрыт. */
-  room: string | null;
+  /** Id номера или null — диалог закрыт. */
+  roomId: number | null;
+  /** Категории объекта — уже загружены родителем вместе с шахматкой. */
+  roomTypes: HotelRoomType[];
   onClose: () => void;
-  /** Клик по имени гостя в «Ближайших бронях» — не задан, если гостя показывать некуда. */
-  onGuestClick?: (guestName: string) => void;
+  /** Клик по брони в «Ближайших бронях» — не задан, если детали брони показывать некуда. */
+  onReservationClick?: (reservationId: number) => void;
 }
 
-export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onClose, onGuestClick }) => {
+export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, roomTypes, onClose, onReservationClick }) => {
   const theme = useTheme();
-  const category = room ? getRoomCategory(room) : undefined;
-  const housekeeping = room ? getRoomHousekeepingStatus(room) : undefined;
-  const additionalTariffs = room ? getRoomAdditionalTariffs(room) : [];
+  const today = dayjs().startOf("day");
+  const from = today.format("YYYY-MM-DD");
+  const to = today.add(AVAILABILITY_WINDOW_DAYS, "day").format("YYYY-MM-DD");
 
-  const { bookings, freeRanges } = React.useMemo(() => {
-    if (!room) return { bookings: [] as HotelBooking[], freeRanges: [] };
-    const today = dayjs().startOf("day");
-    return getRoomAvailability(
-      room,
-      today.format("YYYY-MM-DD"),
-      today.add(AVAILABILITY_WINDOW_DAYS, "day").format("YYYY-MM-DD"),
-    );
-  }, [room]);
+  const query = useQuery({
+    queryKey: ["hotel", "room-availability", roomId, from, to],
+    queryFn: ({ signal }) => getRoomAvailability(roomId!, from, to, signal),
+    enabled: roomId != null,
+  });
+  const availability = query.data;
+  const category = availability ? roomTypes.find((c) => c.id === availability.room.roomTypeId) : undefined;
 
-  const upcomingBookings = bookings.filter((b) => b.status !== "completed").slice(0, 6);
-
-  const statusColor = (status: HotelBooking["status"]) => getHotelBookingStatusColor(status, theme);
+  const upcomingItems = React.useMemo(
+    () => (availability ? availability.items.filter((i) => i.stayStatus !== "checked_out").slice(0, 6) : []),
+    [availability],
+  );
 
   return (
-    <Dialog open={room != null} onClose={onClose} maxWidth="sm" fullWidth>
-      {room && (
+    <Dialog open={roomId != null} onClose={onClose} maxWidth="sm" fullWidth>
+      {roomId != null && availability && (
         <>
           <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1.5, pr: 6 }}>
             <Typography variant="h6" component="span" fontWeight={700}>
-              Номер {room}
+              Номер {availability.room.number}
             </Typography>
-            {category?.luxury && (
+            {category?.isLuxury && (
               <Chip
                 icon={<WorkspacePremiumOutlined sx={{ fontSize: 16 }} />}
                 label="Люкс"
@@ -92,17 +86,15 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
                 }}
               />
             )}
-            {housekeeping && (
-              <Chip
-                label={ROOM_HOUSEKEEPING_STATUS_LABELS[housekeeping]}
-                size="small"
-                sx={{
-                  bgcolor: alpha(getRoomHousekeepingStatusColor(housekeeping, theme), theme.palette.mode === "dark" ? 0.25 : 0.14),
-                  color: getRoomHousekeepingStatusColor(housekeeping, theme),
-                  fontWeight: 600,
-                }}
-              />
-            )}
+            <Chip
+              label={HOTEL_ROOM_STATE_LABELS[availability.room.state as keyof typeof HOTEL_ROOM_STATE_LABELS] ?? availability.room.state}
+              size="small"
+              sx={{
+                bgcolor: alpha(hotelRoomStateColor(availability.room.state, theme), theme.palette.mode === "dark" ? 0.25 : 0.14),
+                color: hotelRoomStateColor(availability.room.state, theme),
+                fontWeight: 600,
+              }}
+            />
             <IconButton onClick={onClose} sx={{ position: "absolute", right: 12, top: 12 }}>
               <CloseOutlined fontSize="small" />
             </IconButton>
@@ -121,7 +113,7 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
                       Цена
                     </Typography>
                     <Typography variant="h6" fontWeight={700}>
-                      {getCategoryTotalPrice(category).toLocaleString("ru-RU")} сом
+                      {Number(category.totalPrice).toLocaleString("ru-RU")} сом
                       <Typography component="span" variant="body2" color="text.secondary">
                         {" "}
                         / ночь
@@ -129,7 +121,7 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
                     </Typography>
                     {category.amenities.length > 0 && (
                       <Typography variant="caption" color="text.secondary">
-                        база {category.pricePerNight.toLocaleString("ru-RU")} + характеристики
+                        база {Number(category.basePrice).toLocaleString("ru-RU")} + характеристики
                       </Typography>
                     )}
                   </Box>
@@ -146,8 +138,6 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
                   </Box>
                 </Stack>
 
-                {/* Вид/кровать/планировка — чисто описательные поля категории, на цену не
-                    влияют (в отличие от характеристик ниже — у каждой своя наценка, см. «Цена» выше). */}
                 <Stack direction="row" gap={3} flexWrap="wrap" sx={{ mb: 2 }}>
                   <Box>
                     <Typography variant="caption" color="text.secondary" display="block">
@@ -175,24 +165,14 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
                   </Box>
                 </Stack>
 
-                <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mb: additionalTariffs.length > 0 ? 2 : 2.5 }}>
-                  {category.amenities.map((a) => {
-                    const extra = getRoomCharacteristicExtraPrice(a);
-                    const label = extra > 0 ? `${getRoomCharacteristicLabel(a)} +${extra.toLocaleString("ru-RU")}` : getRoomCharacteristicLabel(a);
-                    return <Chip key={a} label={label} size="small" variant="outlined" />;
-                  })}
-                </Stack>
-
-                {/* Доп. тарифы — свойство конкретного номера (setRoomAdditionalTariffs
-                    в «Настройка» → «Номера»), не тариф брони (boardType выше в форме). */}
-                {additionalTariffs.length > 0 && (
+                {availability.room.mealOptions.length > 0 && (
                   <Box sx={{ mb: 2.5 }}>
                     <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
                       Доп. тарифы
                     </Typography>
                     <Stack direction="row" gap={0.75} flexWrap="wrap">
-                      {additionalTariffs.map((t) => (
-                        <Chip key={t} label={ADDITIONAL_TARIFF_LABELS[t]} size="small" color="primary" variant="outlined" />
+                      {availability.room.mealOptions.map((t) => (
+                        <Chip key={t} label={HOTEL_BOARD_TYPE_LABELS[t] ?? t} size="small" color="primary" variant="outlined" />
                       ))}
                     </Stack>
                   </Box>
@@ -205,14 +185,14 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
             <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
               Свободен ближайшие {AVAILABILITY_WINDOW_DAYS} дней
             </Typography>
-            {freeRanges.length === 0 ? (
+            {availability.freeWindows.length === 0 ? (
               <Typography variant="body2" color="text.disabled" sx={{ mb: 2.5 }}>
                 Свободных окон нет — номер занят на весь период.
               </Typography>
             ) : (
               <Stack gap={0.75} sx={{ mb: 2.5 }}>
-                {freeRanges.map((r) => (
-                  <Stack key={`${r.from}-${r.to}`} direction="row" alignItems="center" gap={1}>
+                {availability.freeWindows.map((r) => (
+                  <Stack key={`${r.dateFrom}-${r.dateTo}`} direction="row" alignItems="center" gap={1}>
                     <Box
                       sx={{
                         width: 8,
@@ -222,9 +202,9 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
                         flexShrink: 0,
                       }}
                     />
-                    <Typography variant="body2">{formatHotelDateRange(r.from, r.to)}</Typography>
+                    <Typography variant="body2">{formatHotelDateRange(r.dateFrom, r.dateTo)}</Typography>
                     <Typography variant="caption" color="text.secondary">
-                      ({nightsBetween(r.from, r.to)} ноч.)
+                      ({nightsBetween(r.dateFrom, r.dateTo)} ноч.)
                     </Typography>
                   </Stack>
                 ))}
@@ -236,68 +216,72 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ room, onCl
             <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
               Ближайшие брони
             </Typography>
-            {upcomingBookings.length === 0 ? (
+            {upcomingItems.length === 0 ? (
               <Typography variant="body2" color="text.disabled">
                 Броней на ближайшее время нет.
               </Typography>
             ) : (
               <Stack gap={1}>
-                {upcomingBookings.map((b) => (
-                  <Stack
-                    key={b.id}
-                    direction="row"
-                    alignItems="center"
-                    justifyContent="space-between"
-                    gap={1}
-                    sx={{
-                      px: 1.25,
-                      py: 0.75,
-                      borderRadius: "8px",
-                      bgcolor: theme.palette.mode === "dark" ? alpha("#fff", 0.04) : alpha("#000", 0.03),
-                    }}
-                  >
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography
-                        variant="body2"
-                        fontWeight={600}
-                        noWrap
-                        component={onGuestClick ? "button" : "p"}
-                        onClick={onGuestClick ? () => onGuestClick(b.guestName) : undefined}
-                        sx={
-                          onGuestClick
-                            ? {
-                                display: "block",
-                                font: "inherit",
-                                fontWeight: 600,
-                                color: "primary.main",
-                                border: 0,
-                                bgcolor: "transparent",
-                                p: 0,
-                                cursor: "pointer",
-                                textAlign: "left",
-                                "&:hover": { textDecoration: "underline" },
-                              }
-                            : undefined
-                        }
-                      >
-                        {b.guestName}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {formatHotelDateRange(b.checkIn, b.checkOut)}
-                      </Typography>
-                    </Box>
-                    <Chip
-                      label={HOTEL_BOOKING_STATUS_LABELS[b.status]}
-                      size="small"
+                {upcomingItems.map((it) => {
+                  const status = mapStayDisplayStatus(it.stayStatus);
+                  const color = hotelStayStatusColor(status, theme);
+                  return (
+                    <Stack
+                      key={it.itemId}
+                      direction="row"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      gap={1}
                       sx={{
-                        bgcolor: alpha(statusColor(b.status), theme.palette.mode === "dark" ? 0.25 : 0.14),
-                        color: statusColor(b.status),
-                        fontWeight: 600,
-                        flexShrink: 0,
+                        px: 1.25,
+                        py: 0.75,
+                        borderRadius: "8px",
+                        bgcolor: theme.palette.mode === "dark" ? alpha("#fff", 0.04) : alpha("#000", 0.03),
                       }}
-                    />
-                  </Stack>
-                ))}
+                    >
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography
+                          variant="body2"
+                          fontWeight={600}
+                          noWrap
+                          component={onReservationClick ? "button" : "p"}
+                          onClick={onReservationClick ? () => onReservationClick(it.reservationId) : undefined}
+                          sx={
+                            onReservationClick
+                              ? {
+                                  display: "block",
+                                  font: "inherit",
+                                  fontWeight: 600,
+                                  color: "primary.main",
+                                  border: 0,
+                                  bgcolor: "transparent",
+                                  p: 0,
+                                  cursor: "pointer",
+                                  textAlign: "left",
+                                  "&:hover": { textDecoration: "underline" },
+                                }
+                              : undefined
+                          }
+                        >
+                          {it.customerName || `Бронь №${it.reservationNumber}`}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {formatHotelDateRange(it.checkIn, it.checkOut)}
+                        </Typography>
+                      </Box>
+                      <Chip
+                        label={HOTEL_STAY_STATUS_LABELS[status]}
+                        size="small"
+                        sx={{
+                          bgcolor: alpha(color, theme.palette.mode === "dark" ? 0.25 : 0.14),
+                          color,
+                          fontWeight: 600,
+                          flexShrink: 0,
+                        }}
+                      />
+                    </Stack>
+                  );
+                })}
               </Stack>
             )}
           </DialogContent>
