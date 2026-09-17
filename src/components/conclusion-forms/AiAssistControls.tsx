@@ -25,16 +25,14 @@ import type { AiAssistFieldState } from "./useAiAssist";
  */
 export const AiAssistHeaderButton: React.FC<{
   loading: boolean;
-  progress: { done: number; total: number };
+  /** Сколько полей ждут ответа — подпись кнопки, пока запрос идёт. */
+  fieldCount: number;
   compact?: boolean;
   disabled?: boolean;
   onClick: () => void;
-}> = ({ loading, progress, compact, disabled, onClick }) => {
+}> = ({ loading, fieldCount, compact, disabled, onClick }) => {
   const { t } = useT("appointments");
-  const progressText = t("conclusion.aiAssist.progress", {
-    done: progress.done,
-    total: progress.total,
-  });
+  const progressText = t("conclusion.aiAssist.progress", { count: fieldCount });
   const icon = loading ? <CircularProgress size={16} color="inherit" /> : <AutoAwesomeOutlined fontSize="small" />;
   return (
     <Tooltip title={loading ? progressText : t("conclusion.aiAssist.tooltip")}>

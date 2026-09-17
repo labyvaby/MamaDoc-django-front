@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "./client";
-import { isAiUnavailableError, normalizeAiSuggestion } from "./medical";
+import {
+  AI_ASSIST_BATCH_MAX,
+  isAiUnavailableError,
+  normalizeAiBatchSuggestions,
+  normalizeAiText,
+  requestAiAssistBatch,
+} from "./medical";
 
 /**
  * Ответ AI-помощника — предложение рядом с полем, и показывать его есть
@@ -9,30 +15,21 @@ import { isAiUnavailableError, normalizeAiSuggestion } from "./medical";
  * полагаться на точное `""`: модель может вернуть пробелы или заглушку вроде
  * «данных не предоставлено», когда ей не на что опереться.
  */
-describe("normalizeAiSuggestion", () => {
-  it("берёт текст первого предложения и обрезает пробелы", () => {
-    expect(
-      normalizeAiSuggestion({
-        suggestions: [
-          { text: "  Жалуется на боль в горле.\n", confidence: 0.75 },
-          { text: "второй вариант" },
-        ],
-      }),
-    ).toBe("Жалуется на боль в горле.");
+describe("normalizeAiText", () => {
+  it("обрезает пробелы по краям", () => {
+    expect(normalizeAiText("  Жалуется на боль в горле.\n")).toBe("Жалуется на боль в горле.");
   });
 
   it("возвращает null для пустого ответа и одних пробелов", () => {
-    expect(normalizeAiSuggestion({ suggestions: [] })).toBeNull();
-    expect(normalizeAiSuggestion({ suggestions: [{ text: "" }] })).toBeNull();
-    expect(normalizeAiSuggestion({ suggestions: [{ text: " \n\t " }] })).toBeNull();
-    expect(normalizeAiSuggestion({ suggestions: [{ text: null }] })).toBeNull();
-    expect(normalizeAiSuggestion({})).toBeNull();
-    expect(normalizeAiSuggestion(null)).toBeNull();
+    expect(normalizeAiText("")).toBeNull();
+    expect(normalizeAiText(" \n\t ")).toBeNull();
+    expect(normalizeAiText(null)).toBeNull();
+    expect(normalizeAiText(undefined)).toBeNull();
   });
 
   it("считает пустым ответ из одних невидимых символов (живой ответ test, 15.09.2026)", () => {
-    expect(normalizeAiSuggestion({ suggestions: [{ text: "\u200E" }] })).toBeNull();
-    expect(normalizeAiSuggestion({ suggestions: [{ text: " \uFEFF\u200B " }] })).toBeNull();
+    expect(normalizeAiText("\u200E")).toBeNull();
+    expect(normalizeAiText(" \uFEFF\u200B ")).toBeNull();
   });
 
   it("не показывает реплику модели в скобках про отсутствие данных (живые ответы test)", () => {
@@ -40,7 +37,7 @@ describe("normalizeAiSuggestion", () => {
       "(Текст врача не предоставлен — данных для раздела «жалобы пациента» нет.)",
       "(пусто — текст врача не содержит данных для раздела)",
     ]) {
-      expect(normalizeAiSuggestion({ suggestions: [{ text }] }), text).toBeNull();
+      expect(normalizeAiText(text), text).toBeNull();
     }
   });
 
@@ -50,7 +47,7 @@ describe("normalizeAiSuggestion", () => {
       "Жалоб нет, данных о травмах нет.",
       "(со слов матери) кашель третий день",
     ]) {
-      expect(normalizeAiSuggestion({ suggestions: [{ text }] })).toBe(text);
+      expect(normalizeAiText(text)).toBe(text);
     }
   });
 
@@ -64,13 +61,13 @@ describe("normalizeAiSuggestion", () => {
       "N/A",
       "—",
     ]) {
-      expect(normalizeAiSuggestion({ suggestions: [{ text }] }), text).toBeNull();
+      expect(normalizeAiText(text), text).toBeNull();
     }
   });
 
   it("не режет нормальный текст, в котором заглушка — часть фразы", () => {
     const text = "Анамнез: данных о хронических заболеваниях не предоставлено, аллергии отрицает.";
-    expect(normalizeAiSuggestion({ suggestions: [{ text }] })).toBe(text);
+    expect(normalizeAiText(text)).toBe(text);
   });
 });
 
@@ -83,5 +80,62 @@ describe("isAiUnavailableError", () => {
     expect(isAiUnavailableError(new ApiError("forbidden", 403, null))).toBe(false);
     expect(isAiUnavailableError(new ApiError("server", 500, null))).toBe(false);
     expect(isAiUnavailableError(new Error("network"))).toBe(false);
+  });
+});
+
+/**
+ * Пакетный эндпоинт (ответ бэка 16.09.2026): ключи `suggestions` — ровно
+ * запрошенные поля, пустой `text` — «добавить нечего», не ошибка.
+ */
+describe("normalizeAiBatchSuggestions", () => {
+  it("раскладывает ответ по запрошенным полям, пустой text → null", () => {
+    expect(
+      normalizeAiBatchSuggestions(
+        {
+          suggestions: {
+            complaints: { text: "Жалуется на боль в горле.", confidence: 0.75 },
+            anamnesis: { text: "", confidence: 0.75 },
+            conclusion: { text: " Рекомендовано...\n", confidence: 0.75 },
+          },
+        },
+        ["complaints", "anamnesis", "conclusion"],
+      ),
+    ).toEqual({
+      complaints: "Жалуется на боль в горле.",
+      anamnesis: null,
+      conclusion: "Рекомендовано...",
+    });
+  });
+
+  it("отсутствующий ключ и заглушка модели — тоже «нечего показать»", () => {
+    expect(
+      normalizeAiBatchSuggestions(
+        { suggestions: { diagnosis: { text: "Нет данных" } } },
+        ["complaints", "diagnosis"],
+      ),
+    ).toEqual({ complaints: null, diagnosis: null });
+    expect(normalizeAiBatchSuggestions({}, ["objective"])).toEqual({ objective: null });
+    expect(normalizeAiBatchSuggestions(null, ["objective"])).toEqual({ objective: null });
+  });
+
+  it("лишние ключи ответа не попадают в результат", () => {
+    const result = normalizeAiBatchSuggestions(
+      { suggestions: { complaints: { text: "a" }, anamnesis: { text: "b" } } },
+      ["complaints"],
+    );
+    expect(Object.keys(result)).toEqual(["complaints"]);
+  });
+});
+
+describe("requestAiAssistBatch", () => {
+  it("не шлёт пакет, который бэк отверг бы 400: пусто, дубль поля, больше пяти", async () => {
+    await expect(requestAiAssistBatch([])).rejects.toThrow(/уникальных полей/);
+    await expect(
+      requestAiAssistBatch([
+        { field: "complaints", text: "" },
+        { field: "complaints", text: "x" },
+      ]),
+    ).rejects.toThrow(/уникальных полей/);
+    expect(AI_ASSIST_BATCH_MAX).toBe(5);
   });
 });
