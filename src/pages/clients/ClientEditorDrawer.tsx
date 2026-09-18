@@ -37,7 +37,6 @@ import {
   deleteClientPhoto,
   updateClient,
   uploadClientPhoto,
-  type ClientStatus,
   type DjangoClientStatus,
   type ClientType,
   type DjangoClient,
@@ -62,7 +61,6 @@ type Draft = {
   dob: string;
   address: string;
   clientType: ClientType;
-  status: ClientStatus;
   note: string;
   legalName: string;
   inn: string;
@@ -84,7 +82,6 @@ const emptyDraft: Draft = {
   dob: "",
   address: "",
   clientType: "individual",
-  status: "new",
   note: "",
   legalName: "",
   inn: "",
@@ -109,7 +106,6 @@ function toDraft(client: DjangoClient | null): Draft {
     dob: client.dob || "",
     address: client.address || "",
     clientType: client.clientType,
-    status: client.status,
     note: client.note,
     legalName: client.legalName,
     inn: client.inn,
@@ -188,7 +184,6 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
         dob: draft.dob || null,
         address: draft.address.trim(),
         clientType: draft.clientType,
-        status: draft.status,
         customerStatusId: draft.customerStatusId,
         isBlacklisted: draft.isBlacklisted,
         blacklistReason: draft.blacklistReason.trim(),
@@ -317,15 +312,6 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
 
             <Divider />
             <SectionLabel>Дополнительно</SectionLabel>
-            <FormControl fullWidth>
-              <InputLabel>Статус</InputLabel>
-              <Select value={draft.status} label="Статус" onChange={(event) => set("status", event.target.value as ClientStatus)}>
-                <MenuItem value="new">Новый</MenuItem>
-                <MenuItem value="active">Активен</MenuItem>
-                <MenuItem value="inactive">Неактивен</MenuItem>
-                <MenuItem value="no_offering">Без покупок</MenuItem>
-              </Select>
-            </FormControl>
             <FormControl fullWidth>
               <InputLabel>Статус клиента</InputLabel>
               <Select value={draft.customerStatusId ?? ""} label="Статус клиента" onChange={(event) => set("customerStatusId", event.target.value ? Number(event.target.value) : null)}>

@@ -2,7 +2,6 @@ import { apiRequest } from "./client";
 import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 
 export type ClientType = "individual" | "company";
-export type ClientStatus = "new" | "active" | "inactive" | "no_offering";
 
 export interface DjangoClientStatus {
   id: number;
@@ -29,7 +28,6 @@ export interface DjangoClient {
   photoUrl: string | null;
   dob: string | null;
   address: string;
-  status: ClientStatus;
   managerId: number | null;
   familyGroupId: number | null;
   note: string;
@@ -58,7 +56,6 @@ export interface CreateClientPayload {
   dob?: string | null;
   address?: string;
   clientType?: ClientType;
-  status?: ClientStatus;
   customerStatusId?: number | null;
   isBlacklisted?: boolean;
   blacklistReason?: string;
@@ -76,12 +73,11 @@ export type UpdateClientPayload = Omit<Partial<CreateClientPayload>, "organizati
 
 export function getClients(
   organizationId: number,
-  params: { query?: string; status?: string; clientType?: string } = {},
+  params: { query?: string; clientType?: string } = {},
   signal?: AbortSignal,
 ): Promise<DjangoClient[]> {
   const search = new URLSearchParams({ organizationId: String(organizationId) });
   if (params.query?.trim()) search.set("q", params.query.trim());
-  if (params.status) search.set("status", params.status);
   if (params.clientType) search.set("clientType", params.clientType);
   return apiRequest<DjangoClient[]>(`/clients/?${search.toString()}`, { signal });
 }

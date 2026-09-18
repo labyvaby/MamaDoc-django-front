@@ -15,16 +15,9 @@ import EmailOutlined from "@mui/icons-material/EmailOutlined";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
-import type { DjangoClient, ClientStatus } from "../../api/clients";
+import type { DjangoClient } from "../../api/clients";
 import type { ClientLayoutSettings } from "./clientLayout";
 import { UserAvatar } from "../../components/ui";
-
-const statusLabels: Record<ClientStatus, string> = {
-  new: "Новый",
-  active: "Активен",
-  inactive: "Неактивен",
-  no_offering: "Без покупок",
-};
 
 function money(value: string) {
   return `${Number(value || 0).toLocaleString("ru-RU")} сом`;
@@ -52,7 +45,6 @@ export default function ClientCard({ client, settings, canManage, onEdit }: Prop
               <Typography variant="h6" noWrap>{client.fullName}</Typography>
               <Stack direction="row" gap={0.5} flexWrap="wrap">
                 <Chip size="small" label={isCompany ? "Компания" : "Физическое лицо"} />
-                <Chip size="small" label={statusLabels[client.status] ?? client.status} color={client.status === "active" ? "success" : "default"} />
                 {client.customerStatus && <Chip size="small" label={client.customerStatus.name} sx={{ bgcolor: client.customerStatus.color, color: "common.white" }} />}
                 {client.isBlacklisted && <Chip size="small" label="Чёрный список" color="error" />}
               </Stack>
