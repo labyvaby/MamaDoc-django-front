@@ -36,6 +36,7 @@ function settings(over: Partial<OdoctorSettings> = {}): OdoctorSettings {
   return {
     organizationId: 1,
     isEnabled: true,
+    fullSync: false,
     horizonDays: 7,
     odoctorLogin: "mamadoc-service",
     hasPassword: true,
@@ -61,6 +62,7 @@ function leakySettings(over: Partial<OdoctorSettings> = {}): OdoctorSettings {
 function form(over: Partial<OdoctorSettingsForm> = {}): OdoctorSettingsForm {
   return {
     isEnabled: true,
+    fullSync: false,
     horizonDays: 7,
     odoctorLogin: "mamadoc-service",
     newPassword: "",
@@ -89,8 +91,11 @@ describe("odoctorSettingsToForm", () => {
   });
 
   it("переносит остальные поля как есть", () => {
-    expect(odoctorSettingsToForm(settings({ isEnabled: false, horizonDays: 14 }))).toEqual({
+    expect(
+      odoctorSettingsToForm(settings({ isEnabled: false, fullSync: true, horizonDays: 14 })),
+    ).toEqual({
       isEnabled: false,
+      fullSync: true,
       horizonDays: 14,
       odoctorLogin: "mamadoc-service",
       newPassword: "",
@@ -207,6 +212,13 @@ describe("passwordFieldState", () => {
 });
 
 describe("buildOdoctorSettingsPatch", () => {
+  it("полная синхронизация уходит явно в обе стороны", () => {
+    // Опущенное поле бэк не трогает, поэтому «выключить» — это false, а не
+    // отсутствие ключа.
+    expect(buildOdoctorSettingsPatch(form({ fullSync: true })).fullSync).toBe(true);
+    expect(buildOdoctorSettingsPatch(form({ fullSync: false })).fullSync).toBe(false);
+  });
+
   it("пустое поле пароля не отправляет newPassword вовсе", () => {
     // Пустая строка на бэке стирает пароль (set_password('')), поэтому «не
     // менять» — это отсутствие ключа, а не ключ с пустым значением: иначе
