@@ -73,6 +73,17 @@ export class EmployeesPage {
   }
 
   employeeRow(fullName: string): Locator {
-    return this.page.getByText(fullName, { exact: true });
+    return this.page.getByTestId("employee-row").filter({ hasText: fullName });
+  }
+
+  /** Уволить сотрудника из строки списка: иконка «Уволить» → подтверждение в диалоге. */
+  async fire(fullName: string): Promise<void> {
+    const row = this.employeeRow(fullName);
+    await row.hover();
+    await row.getByRole("button", { name: "Уволить" }).click();
+    const dialog = this.page.getByRole("dialog");
+    await expect(dialog.getByText("Уволить сотрудника")).toBeVisible();
+    await dialog.getByRole("button", { name: "Уволить сотрудника" }).click();
+    await expect(dialog).toBeHidden({ timeout: 15_000 });
   }
 }

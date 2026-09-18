@@ -6,14 +6,14 @@ import { LoginPage } from "../pages/LoginPage";
 test.use({ storageState: { cookies: [], origins: [] } });
 
 test.describe("Авторизация", () => {
-  test("логин по паролю ведёт на главную", async ({ page }) => {
+  test("логин по паролю ведёт на главную @prod-smoke", async ({ page }) => {
     const login = new LoginPage(page);
     await login.goto();
     await login.loginWithPassword(creds.admin.username, creds.admin.password);
     await login.expectLoggedIn();
   });
 
-  test("неверный пароль — понятная ошибка, не белый экран", async ({ page }) => {
+  test("неверный пароль — понятная ошибка, не белый экран @prod-smoke", async ({ page }) => {
     const login = new LoginPage(page);
     await login.goto();
     await login.loginWithPassword(creds.admin.username, "definitely-wrong-password");
