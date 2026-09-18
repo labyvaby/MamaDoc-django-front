@@ -122,6 +122,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
     return (
       <Box
         key={e.id}
+        data-testid="employee-row"
         onClick={() => onSelect(e)}
         sx={(t) => ({
           display: "flex",

@@ -3,7 +3,9 @@ import { seed, uniquePhoneLocal } from "../fixtures/seed";
 import { EmployeesPage } from "../pages/EmployeesPage";
 
 test.describe("Сотрудники", () => {
-  test("создать сотрудника → он в списке и находится поиском после перезагрузки", async ({ page }) => {
+  // @prod-smoke: самоочищающийся — созданный сотрудник тут же увольняется,
+  // в проде E2E-организация не растёт.
+  test("создать сотрудника → в списке, находится после перезагрузки → уволить @prod-smoke", async ({ page }) => {
     const employees = new EmployeesPage(page);
     const fullName = `Тестов Сотрудник ${Date.now()}`;
 
@@ -25,6 +27,10 @@ test.describe("Сотрудники", () => {
     await page.reload();
     await employees.search(fullName);
     await expect(employees.employeeRow(fullName)).toBeVisible();
+
+    // Уборка за собой + проверка увольнения.
+    await employees.fire(fullName);
+    await expect(employees.employeeRow(fullName)).toContainText("Уволен");
   });
 
   test("без ФИО и роли дровер не отправляет форму и называет пропуски", async ({ page }) => {
