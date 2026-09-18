@@ -1184,7 +1184,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             sx={{
               flexShrink: 0,
               overflow: "hidden",
-              transition: "max-height 220ms ease, opacity 180ms ease",
+              transition: "max-height 220ms ease, opacity 220ms ease",
               maxHeight: isMobile && headerHidden ? 0 : 400,
               opacity: isMobile && headerHidden ? 0 : 1,
               pointerEvents: isMobile && headerHidden ? "none" : "auto",

@@ -187,6 +187,18 @@ function isGap(item: RenderItem): item is GapSlot {
 
 const GAP_THRESHOLD_MS = 30 * 60 * 1000;
 
+// Шапка на телефоне занимает ~100px: пока запаса прокрутки меньше её двойной
+// высоты, прятать нечего — лента после скрытия просто упрётся в дно.
+const HEADER_HIDE_MIN_SCROLLABLE = 200;
+// Чуть больше, чем анимация max-height/opacity шапки (220ms) в AppointmentsPage.
+const HEADER_TOGGLE_LOCK_MS = 320;
+// Насколько надо потянуть ряд исполнителей вниз, чтобы вернуть шапку.
+const STRIP_PULL_THRESHOLD = 24;
+// Тишина в событиях скролла, после которой лента считается остановившейся.
+const SCROLL_IDLE_MS = 200;
+// Сколько надо непрерывно прокрутить ленту вверх, чтобы шапка вернулась сама.
+const HEADER_REVEAL_UP_DISTANCE = 80;
+
 // ─── SMS-уведомления: маппинг тип → иконка/цвет (1-в-1 со старым фронтом).
 // Подписи живут в словаре (appointments:notifications.*).
 const NOTIF_CONFIG: Record<string, { Icon: React.ElementType; color: string }> = {
@@ -1125,22 +1137,114 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     return best?.id ?? null;
   }, [groupEntries, isToday, nowTs]);
 
-  // Шапку страницы прячем по направлению скролла, с порогом: без него лента
-  // дёргалась бы на каждый пиксель инерции.
+  // Шапку страницы прячем при скролле ленты вниз, с порогом: без него она
+  // уезжала бы на каждый пиксель инерции. Обратно её возвращают три вещи:
+  // накопленные HEADER_REVEAL_UP_DISTANCE движения вверх (на каждое мелкое
+  // движение раскрываться нельзя — лента дёргалась посреди чтения), начало
+  // дня и свайп по ряду исполнителей (см. ниже). Короткий список шапку не
+  // прячет вовсе: она и есть весь запас прокрутки.
   const lastScrollTopRef = React.useRef(0);
-  const handleListScroll = React.useCallback(
-    (event: React.UIEvent<HTMLDivElement>) => {
+  const headerHiddenRef = React.useRef(false);
+  const headerLockUntilRef = React.useRef(0);
+  const upScrolledRef = React.useRef(0);
+  // Шапку развернули «ручкой», пока лента ещё едет по инерции: её собственные
+  // события сворачивали шапку обратно через полсекунды после жеста. Держим
+  // шапку, пока лента не остановится, — таймер перезапускает каждое событие.
+  const keepHeaderUntilIdleRef = React.useRef(false);
+  const idleTimerRef = React.useRef<number | null>(null);
+  const holdHeaderUntilIdle = React.useCallback(() => {
+    keepHeaderUntilIdleRef.current = true;
+    if (idleTimerRef.current != null) window.clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = window.setTimeout(() => {
+      idleTimerRef.current = null;
+      keepHeaderUntilIdleRef.current = false;
+      lastScrollTopRef.current = listScrollRef.current?.scrollTop ?? lastScrollTopRef.current;
+    }, SCROLL_IDLE_MS);
+  }, []);
+  React.useEffect(
+    () => () => {
+      if (idleTimerRef.current != null) window.clearTimeout(idleTimerRef.current);
+    },
+    [],
+  );
+  const applyHeaderHidden = React.useCallback(
+    (next: boolean) => {
       if (!onScrollDirection) return;
-      const top = event.currentTarget.scrollTop;
-      const delta = top - lastScrollTopRef.current;
-      if (Math.abs(delta) < 12) return;
-      lastScrollTopRef.current = top;
-      // У самого верха шапка всегда видна: иначе она не вернётся, если человек
-      // остановил инерцию на первой записи.
-      onScrollDirection(delta > 0 && top > 24);
+      if (next === headerHiddenRef.current) return;
+      headerHiddenRef.current = next;
+      headerLockUntilRef.current = Date.now() + HEADER_TOGGLE_LOCK_MS;
+      upScrolledRef.current = 0;
+      onScrollDirection(next);
     },
     [onScrollDirection],
   );
+  const handleListScroll = React.useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      if (!onScrollDirection) return;
+      const el = event.currentTarget;
+      const top = el.scrollTop;
+      const now = Date.now();
+      if (now < headerLockUntilRef.current) {
+        lastScrollTopRef.current = top;
+        return;
+      }
+      if (keepHeaderUntilIdleRef.current) {
+        lastScrollTopRef.current = top;
+        holdHeaderUntilIdle();
+        return;
+      }
+      // Докрутили ленту в самое начало дня — шапке незачем прятаться.
+      if (top <= 24) {
+        lastScrollTopRef.current = top;
+        applyHeaderHidden(false);
+        return;
+      }
+      const delta = top - lastScrollTopRef.current;
+      if (Math.abs(delta) < 12) return;
+      lastScrollTopRef.current = top;
+      if (delta < 0) {
+        // Движение вверх возвращает шапку не сразу: пока читают ленту, лёгкие
+        // подвижки и отскок инерции её не трогают — нужно осознанное движение.
+        upScrolledRef.current += -delta;
+        if (upScrolledRef.current >= HEADER_REVEAL_UP_DISTANCE) applyHeaderHidden(false);
+        return;
+      }
+      upScrolledRef.current = 0;
+      const scrollable = el.scrollHeight - el.clientHeight;
+      if (scrollable > HEADER_HIDE_MIN_SCROLLABLE) applyHeaderHidden(true);
+    },
+    [applyHeaderHidden, holdHeaderUntilIdle, onScrollDirection],
+  );
+
+  // Свайп вниз по ряду исполнителей возвращает шапку. Ряд остаётся на виду,
+  // когда шапка свёрнута, а вертикального скролла у него нет — для пальца это
+  // единственная «ручка», которой даты и поиск вытягиваются обратно, не
+  // прокручивая ленту приёмов к началу дня. По горизонтали тот же ряд листает
+  // исполнителей, поэтому жест засчитываем только когда движение вертикальное.
+  const stripSwipeRef = React.useRef<{ x: number; y: number; settled: boolean } | null>(null);
+  const handleStripPointerDown = React.useCallback((e: React.PointerEvent) => {
+    stripSwipeRef.current = { x: e.clientX, y: e.clientY, settled: false };
+  }, []);
+  const handleStripPointerMove = React.useCallback(
+    (e: React.PointerEvent) => {
+      const start = stripSwipeRef.current;
+      if (!start || start.settled) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        start.settled = true;
+        return;
+      }
+      if (dy < STRIP_PULL_THRESHOLD) return;
+      start.settled = true;
+      applyHeaderHidden(false);
+      holdHeaderUntilIdle();
+    },
+    [applyHeaderHidden, holdHeaderUntilIdle],
+  );
+  const handleStripPointerEnd = React.useCallback(() => {
+    stripSwipeRef.current = null;
+  }, []);
 
   const listScrollRef = React.useRef<HTMLDivElement>(null);
   const nowAnchorRef = React.useRef<HTMLDivElement>(null);
@@ -1151,6 +1255,11 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   React.useEffect(() => {
     listScrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
     lastScrollTopRef.current = 0;
+    // Родитель на новом дне тоже показывает шапку — держим флаги синхронными.
+    headerHiddenRef.current = false;
+    headerLockUntilRef.current = 0;
+    keepHeaderUntilIdleRef.current = false;
+    upScrolledRef.current = 0;
   }, [titleDate]);
 
   React.useEffect(() => {
@@ -1316,7 +1425,16 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
               // кружком есть подпись с именем, и центрирование по всей высоте
               // ряда опускало кнопку фильтра ниже линии аватаров. Кнопка и
               // кружок одного размера (40), поэтому по верху они совпадают.
-              <Stack direction="row" alignItems="flex-start" gap={1} sx={{ minWidth: 0 }}>
+              <Stack
+                direction="row"
+                alignItems="flex-start"
+                gap={1}
+                sx={{ minWidth: 0 }}
+                onPointerDown={handleStripPointerDown}
+                onPointerMove={handleStripPointerMove}
+                onPointerUp={handleStripPointerEnd}
+                onPointerCancel={handleStripPointerEnd}
+              >
                 <Stack
                   direction="row"
                   alignItems="center"
