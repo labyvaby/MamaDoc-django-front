@@ -24,7 +24,9 @@ export default function ClientsPage() {
   const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
   const organizationId = auth.activeOrganization?.id ?? null;
   const canView = auth.isSuperAdmin() || auth.hasPermission("clients.view");
-  const canManage = auth.isSuperAdmin() || auth.hasPermission("clients.manage");
+  // Права гранулярные, как у пациентов: заводить и править — разные галочки.
+  const canCreate = auth.isSuperAdmin() || auth.hasPermission("clients.create");
+  const canUpdate = auth.isSuperAdmin() || auth.hasPermission("clients.update");
   const canViewFinance = auth.isSuperAdmin() || auth.hasPermission("pos.view") || auth.hasPermission("pos.sell");
   const canViewPurchaseHistory = auth.isSuperAdmin() || auth.hasPermission("pos.history");
 
@@ -82,12 +84,12 @@ export default function ClientsPage() {
   const cardSettings = { ...layout, sections: { ...layout.sections, finance: layout.sections.finance && canViewFinance } };
 
   return <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-    <PageHeader title="Клиенты" showTitle={false} onAdd={canManage ? openCreate : undefined} addButtonText="Добавить клиента" addButtonIcon={<AddOutlined />} showSearch searchVal={search} onSearchChange={setSearch} searchPlaceholder="Поиск..." loading={clients.isFetching} />
+    <PageHeader title="Клиенты" showTitle={false} onAdd={canCreate ? openCreate : undefined} addButtonText="Добавить клиента" addButtonIcon={<AddOutlined />} showSearch searchVal={search} onSearchChange={setSearch} searchPlaceholder="Поиск..." loading={clients.isFetching} />
     <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: isMobile ? "column" : "row", gap: 1.5, px: { xs: 1, md: 2 }, pb: 1.5, overflow: isMobile ? "auto" : "hidden" }}>
       <Box sx={{ flex: isMobile ? "0 0 42%" : isTablet ? "5 1 0" : "3 1 0", minWidth: 0, minHeight: 0 }}><ClientListPanel clients={clients.data ?? []} selectedId={selected?.id ?? null} loading={clients.isLoading} error={clients.error instanceof Error ? clients.error.message : null} onSelect={setSelected} /></Box>
-      {!isMobile && !isTablet && selected && <Box sx={{ flex: "3.5 1 0", minWidth: 0, minHeight: 0 }}><ClientCard client={selected} settings={cardSettings} canManage={canManage} onEdit={openEdit} /></Box>}
+      {!isMobile && !isTablet && selected && <Box sx={{ flex: "3.5 1 0", minWidth: 0, minHeight: 0 }}><ClientCard client={selected} settings={cardSettings} canUpdate={canUpdate} onEdit={openEdit} /></Box>}
       <Box sx={{ flex: isMobile ? "1 1 auto" : isTablet ? "5 1 0" : selected ? "5.5 1 0" : "7 1 0", minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", gap: 1 }}>
-        {(isMobile || isTablet) && selected && <Box sx={{ flex: isTablet ? "0 0 46%" : "0 0 auto", minHeight: 0 }}><ClientCard client={selected} settings={cardSettings} canManage={canManage} onEdit={openEdit} /></Box>}
+        {(isMobile || isTablet) && selected && <Box sx={{ flex: isTablet ? "0 0 46%" : "0 0 auto", minHeight: 0 }}><ClientCard client={selected} settings={cardSettings} canUpdate={canUpdate} onEdit={openEdit} /></Box>}
         {selected && <Box sx={{ flex: 1, minHeight: 0 }}><ClientPurchaseHistoryCard purchases={purchases.data} loading={purchases.isLoading} error={purchases.error instanceof Error ? purchases.error.message : null} canViewPurchases={canViewPurchaseHistory} /></Box>}
         {!selected && <Box sx={{ flex: 1, display: "grid", placeItems: "center", border: 1, borderStyle: "dashed", borderColor: "divider", borderRadius: 1 }}><Typography color="text.secondary">Карточка клиента</Typography></Box>}
       </Box>

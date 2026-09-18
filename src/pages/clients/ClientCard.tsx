@@ -26,11 +26,11 @@ function money(value: string) {
 type Props = {
   client: DjangoClient | null;
   settings: ClientLayoutSettings;
-  canManage: boolean;
+  canUpdate: boolean;
   onEdit: () => void;
 };
 
-export default function ClientCard({ client, settings, canManage, onEdit }: Props) {
+export default function ClientCard({ client, settings, canUpdate, onEdit }: Props) {
   if (!client) {
     return <Card sx={{ height: "100%", display: "grid", placeItems: "center", p: 3 }}><Typography color="text.secondary">Карточка клиента</Typography></Card>;
   }
@@ -50,7 +50,7 @@ export default function ClientCard({ client, settings, canManage, onEdit }: Prop
               </Stack>
             </Box>
           </Stack>
-          {canManage && <Button size="small" startIcon={<EditOutlined />} onClick={onEdit}>Изменить</Button>}
+          {canUpdate && <Button size="small" startIcon={<EditOutlined />} onClick={onEdit}>Изменить</Button>}
         </Stack>
 
         {settings.sections.identity && (
