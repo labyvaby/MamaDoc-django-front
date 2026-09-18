@@ -737,7 +737,7 @@
       "bookings": "Онлайн-запись",
       "chatwoot": "Чаты",
       "cleaning": "Уборка",
-      "clients": "{{patient.nomPl, capitalize}} (CRM)",
+      "clients": "Клиенты",
       "deals": "Воронка продаж",
       "documents": "Документы",
       "ecommerce": "Интернет-магазин",
