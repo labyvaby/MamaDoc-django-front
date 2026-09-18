@@ -201,6 +201,17 @@ function parseQty(raw: string): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+// Строки товаров в форме PATCH: только заполненные, с количеством > 0.
+function toProductsPayload(rows: ProductRow[]) {
+  return rows
+    .filter((r) => r.productId !== null && parseQty(r.quantity) > 0)
+    .map((r) => ({
+      ...(r.lineId != null ? { id: r.lineId } : {}),
+      productId: r.productId!,
+      quantity: parseQty(r.quantity),
+    }));
+}
+
 // Черновик тоже считается созданным заключением — бэк блокирует удаление строки.
 function lineHasConclusion(line: AppointmentServiceLine): boolean {
   return (
@@ -861,6 +872,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const performSave = async (allowOverlap = false) => {
     if (saving || !appointment) return;
     setSaveError(null);
+    // Сравниваем с baseline (исходные строки приёма), а не с пустотой: правкой
+    // считается и добавление товара, и удаление уже проданного.
+    const productsPayload = toProductsPayload(productRows);
+    const productsDirty =
+      JSON.stringify(productsPayload) !==
+      JSON.stringify(toProductsPayload(baselineRef.current?.productRows ?? []));
     setSaving(true);
     try {
       const updated = await updateAppointment(appointment.id, {
@@ -897,18 +914,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
               }
             : {}),
         })),
-        // Пока флаг выключен, products в PATCH не шлём вовсе: бэкенд поле
-        // игнорирует, а слать «глухие» данные — маскировать проблему.
-        ...(EDIT_APPOINTMENT_PRODUCTS_ENABLED
-          ? {
-              products: productRows
-                .filter((r) => r.productId !== null && parseQty(r.quantity) > 0)
-                .map((r) => ({
-                  ...(r.lineId != null ? { id: r.lineId } : {}),
-                  productId: r.productId!,
-                  quantity: parseQty(r.quantity),
-                })),
-            }
+        // Товары шлём только когда их правили: бэк валидирует само поле
+        // `products` и у филиала без склада отбивает PATCH («У филиала … нет
+        // склада») даже с пустым массивом — иначе приём в таком филиале нельзя
+        // отредактировать вообще (ни дату, ни услуги, ни комментарий).
+        ...(EDIT_APPOINTMENT_PRODUCTS_ENABLED && productsDirty
+          ? { products: productsPayload }
           : {}),
         ...(allowOverlap ? { allowOverlap: true } : {}),
       });

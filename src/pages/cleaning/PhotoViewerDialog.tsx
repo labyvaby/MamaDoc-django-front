@@ -21,7 +21,7 @@ import ZoomOutOutlined from "@mui/icons-material/ZoomOutOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import BrokenImageOutlined from "@mui/icons-material/BrokenImageOutlined";
 
-import { isCleaningBackdated, type CleaningRecord } from "../../api/cleaning";
+import { isCleaningBackdated, photoThumbUrl, type CleaningRecord } from "../../api/cleaning";
 import { formatCleaningCreatedAt, formatCleaningDate } from "./recordDate";
 
 interface PhotoViewerDialogProps {
@@ -419,7 +419,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
                   key={photo.id}
                   data-idx={i}
                   component="img"
-                  src={photo.url}
+                  src={photoThumbUrl(photo)}
                   alt={`Фото ${i + 1}`}
                   draggable={false}
                   onClick={() => goTo(i)}

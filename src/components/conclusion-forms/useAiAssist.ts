@@ -1,6 +1,6 @@
 import React from "react";
 
-import { isAiUnavailableError, requestAiAssist, type AiAssistField } from "../../api/medical";
+import { isAiUnavailableError, requestAiAssistBatch, type AiAssistField } from "../../api/medical";
 
 /** Состояние подсказки у одного поля. */
 export interface AiAssistFieldState {
@@ -16,7 +16,7 @@ export interface AiAssistSummary {
   suggested: number;
   /** Модели не на что опереться — ответ пустой или заглушка. */
   empty: number;
-  /** 502–504: AI-сервис за бэком недоступен. */
+  /** 502–504: AI-сервис за бэком недоступен (в том числе квота провайдера). */
   unavailable: number;
   failed: number;
 }
@@ -26,28 +26,26 @@ type StateMap = Partial<Record<AiAssistField, AiAssistFieldState>>;
 interface UseAiAssistOptions {
   /** Строка приёма — контекст для модели; без неё черновик приходит пустым. */
   serviceLineId: number | null | undefined;
-  /** Все запросы нажатия завершились (отменённые не в счёт). */
+  /** Запрос нажатия завершился (отменённый не в счёт). */
   onSettled: (summary: AiAssistSummary) => void;
 }
 
 /**
  * Подсказки AI-помощника для полей заключения — одна кнопка на всю форму.
  *
- * Бэк подсказывает строго по одному полю за запрос, поэтому нажатие
- * проходит по доступным полям **по очереди**, сверху вниз, и подсказки
- * появляются по мере готовности. Не параллельно: модель на бэке отвечает
- * последовательно и с лимитом (бэк, 15.09.2026), параллельная пачка только
- * висела бы в очереди сервера разом и рисковала таймаутом шлюза. Когда бэк
- * сделает пакетный эндпоинт на все поля — перейти на него
- * (`MamaDoc/backend_ticket_ai_assist_batch.md`). Уведомление одно, по итогу
- * всех: иначе при недоступном AI врач получил бы пять одинаковых тостов.
+ * Нажатие — один пакетный запрос по всем доступным полям
+ * (`POST /medical/ai/assist/batch/`, бэк 16.09.2026): модель отвечает
+ * одним вызовом, разделы согласованы между собой, 48–60 с на 5 полей.
+ * Подсказки появляются все разом, когда вернётся ответ. По 502 (сервис лёг
+ * или кончилась квота провайдера) ничего не дозапрашиваем и не повторяем:
+ * квота общая на всех, повторы её только сжигают.
  *
  * Держится отдельно от текста полей: ответ модели — предложение рядом с
  * оригиналом, а не значение. В само поле текст попадает только когда
  * дровер вызовет свой setter по «Применить» (см. `take`).
  *
- * ⚠ Запросы живут дольше нажатия: повторное нажатие и закрытие дровера
- * обрывают прежнюю пачку, иначе старый ответ лёг бы поверх нового, а тост
+ * ⚠ Запрос живёт дольше нажатия (до минуты): повторное нажатие и закрытие
+ * дровера обрывают прежний, иначе старый ответ лёг бы поверх нового, а тост
  * всплыл бы над уже другим экраном.
  */
 export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
@@ -85,32 +83,21 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
         unavailable: 0,
         failed: 0,
       };
-      for (const [index, { field, text }] of entries.entries()) {
-        try {
-          const suggestion = await requestAiAssist(
-            { field, text, serviceLineId: serviceLineId ?? undefined },
-            ctrl.signal,
-          );
-          if (ctrl.signal.aborted) return;
+      try {
+        const result = await requestAiAssistBatch(entries, serviceLineId, ctrl.signal);
+        if (ctrl.signal.aborted) return;
+        for (const { field } of entries) {
+          const suggestion = result[field];
           patch(field, { loading: false, suggestion });
           if (suggestion == null) summary.empty += 1;
           else summary.suggested += 1;
-        } catch (err) {
-          if (ctrl.signal.aborted) return;
-          patch(field, { loading: false, suggestion: null });
-          if (!isAiUnavailableError(err)) {
-            summary.failed += 1;
-            continue;
-          }
-          // Сервис лёг или упёрся в лимит — остальные поля ответят тем же,
-          // только врач прождал бы их по очереди. Хвост снимаем разом.
-          const rest = entries.slice(index + 1);
-          summary.unavailable += 1 + rest.length;
-          for (const { field: skipped } of rest) patch(skipped, { loading: false });
-          break;
         }
+      } catch (err) {
+        if (ctrl.signal.aborted) return;
+        for (const { field } of entries) patch(field, { loading: false, suggestion: null });
+        if (isAiUnavailableError(err)) summary.unavailable = entries.length;
+        else summary.failed = entries.length;
       }
-      if (ctrl.signal.aborted) return;
       if (controller.current === ctrl) controller.current = null;
       settledRef.current(summary);
     },
@@ -158,8 +145,8 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
     take,
     reset,
     loading: loadingCount > 0,
-    /** Сколько запросов пачки уже вернулось — для «AI заполняет 2 из 5…». */
-    progress: { done: fields.length - loadingCount, total: fields.length },
+    /** Сколько полей ждут ответа — для «AI заполняет 5 полей…». */
+    loadingCount,
     suggestedFields,
   };
 }

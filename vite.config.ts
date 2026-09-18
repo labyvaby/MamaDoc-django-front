@@ -36,7 +36,7 @@ const bookingMeta = (env: Record<string, string>) => ({
       .replaceAll("__BOOKING_ORG_NAME__", env.VITE_BOOKING_ORG_NAME || "Мама Доктор")
       .replaceAll(
         "__BOOKING_ORIGIN__",
-        (env.VITE_BOOKING_PUBLIC_ORIGIN || "https://newcrm.pediatr.kg").replace(/\/+$/, ""),
+        (env.VITE_BOOKING_PUBLIC_ORIGIN || "https://crm.operator.kg").replace(/\/+$/, ""),
       ),
 });
 

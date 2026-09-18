@@ -36,6 +36,7 @@ import {
   cleaningRecordDate,
   createCleaningRecord,
   getCleaningEmployees,
+  photoThumbUrl,
   updateCleaningRecord,
   type CleaningEmployee,
   type CleaningPhoto,
@@ -523,7 +524,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
               <Box key={photo.id} sx={{ position: "relative" }}>
                 <Box
                   component="img"
-                  src={photo.url}
+                  src={photoThumbUrl(photo)}
                   alt={`Фото ${i + 1}`}
                   loading="lazy"
                   sx={{
