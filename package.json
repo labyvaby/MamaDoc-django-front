@@ -43,6 +43,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
+    "@playwright/test": "1.63.0",
     "@types/node": "^20",
     "@types/pdfmake": "^0.2.12",
     "@types/react": "^18.3.0",
@@ -68,7 +69,10 @@
     "refine": "refine",
     "test": "vitest run",
     "test:watch": "vitest",
-    "i18n:check": "node scripts/i18n-check.mjs"
+    "i18n:check": "node scripts/i18n-check.mjs",
+    "e2e": "playwright test -c e2e/playwright.config.ts",
+    "e2e:ui": "playwright test -c e2e/playwright.config.ts --ui",
+    "e2e:report": "playwright show-report e2e/playwright-report"
   },
   "browserslist": {
     "production": [
