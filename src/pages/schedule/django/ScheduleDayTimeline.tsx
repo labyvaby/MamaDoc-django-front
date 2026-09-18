@@ -63,6 +63,8 @@ export interface ScheduleDayTimelineProps {
   absenceDayEmployees?: Map<string, { employeeId: number; count: number }[]>;
   /** Клик по маркеру записей — открыть разбор. */
   onAbsenceClick?: (employeeId: number, date: string) => void;
+  /** Клик по полосе смены (и по вырезу обеда) — открыть карточку смены. */
+  onOccurrenceClick?: (occurrence: DayOccurrence) => void;
 }
 
 const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
@@ -74,6 +76,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
   exceptions,
   absenceDayEmployees,
   onAbsenceClick,
+  onOccurrenceClick,
 }) => {
   const theme = useTheme();
   const mode = theme.palette.mode;
@@ -489,6 +492,11 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                             endMin: parseTimeToMinutes(occ.endTime),
                           };
                           const tip = `${occ.employeeName}: ${shiftTimeLabel(occ)}${occ.lunch ? ` · ${lunchNote(occ)}` : ""}${occ.kind !== "rule" ? " (точечная смена)" : ""}`;
+                          // Один обработчик на все отрезки и вырез обеда: для
+                          // пользователя это одна смена, куда бы он ни кликнул.
+                          const openOcc = onOccurrenceClick
+                            ? () => onOccurrenceClick(occ)
+                            : undefined;
                           const lunch = segmentLunch(seg);
                           const spans = segmentWorkSpans(seg);
                           const lunchLeft = lunch ? leftPx(lunch.startMin) : 0;
@@ -507,6 +515,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                                 return (
                                   <Tooltip key={span.startMin} title={tip} arrow>
                                     <Box
+                                      onClick={openOcc}
                                       sx={{
                                         position: "absolute",
                                         left: l,
@@ -514,6 +523,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                                         top: 5,
                                         bottom: 5,
                                         zIndex: 2,
+                                        cursor: openOcc ? "pointer" : "default",
                                         borderRadius: `${first ? "5px" : "0"} ${last ? "5px" : "0"} ${last ? "5px" : "0"} ${first ? "5px" : "0"}`,
                                         // Сплошная заливка вместо полупрозрачной —
                                         // см. комментарий в ScheduleWeekResourceGrid.
@@ -553,6 +563,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                               {lunch && (
                                 <Tooltip title={lunchNote(occ)} arrow>
                                   <Box
+                                    onClick={openOcc}
                                     sx={{
                                       position: "absolute",
                                       left: lunchLeft,
@@ -560,6 +571,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                                       top: 5,
                                       bottom: 5,
                                       zIndex: 2,
+                                      cursor: openOcc ? "pointer" : "default",
                                       display: "flex",
                                       alignItems: "center",
                                       justifyContent: "center",
