@@ -80,6 +80,7 @@ export default function ClientsPage() {
     setSearchParams((previous) => { const next = new URLSearchParams(previous); next.delete("client"); return next; }, { replace: true });
   }, [clients.data, searchParams, setSearchParams]);
 
+  const selectedTab: ClientTabKey = layout.tabs.includes(activeTab) ? activeTab : layout.tabs[0] ?? "purchases";
   const purchases = useQuery({ queryKey: ["client-purchases", organizationId, selected?.id], queryFn: ({ signal }) => getClientPurchases(selected!.id, signal), enabled: Boolean(selected && canViewPurchases && layout.tabs.includes("purchases")) });
   const contacts = useQuery({ queryKey: ["client-contacts", organizationId, selected?.id], queryFn: ({ signal }) => getClientContacts(selected!.id, organizationId!, signal), enabled: Boolean(organizationId && selected && canView && layout.tabs.includes("contacts")) });
 
@@ -103,9 +104,9 @@ export default function ClientsPage() {
   if (auth.loading) return <Box sx={{ display: "grid", placeItems: "center", minHeight: "60vh" }}><CircularProgress /></Box>;
   if (!canView) return <AccessDenied />;
 
-  const selectedTab: ClientTabKey = layout.tabs.includes(activeTab) ? activeTab : layout.tabs[0] ?? "purchases";
-  const detailLoading = purchases.isLoading || contacts.isLoading;
-  const detailError = [purchases.error, contacts.error].find(Boolean);
+  const activeTabQuery = selectedTab === "purchases" ? purchases : contacts;
+  const detailLoading = activeTabQuery.isLoading;
+  const detailError = activeTabQuery.error;
   const cardSettings = { ...layout, sections: { ...layout.sections, finance: layout.sections.finance && canViewPurchases } };
 
   return <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
