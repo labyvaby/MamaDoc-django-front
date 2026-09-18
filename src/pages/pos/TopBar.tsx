@@ -16,6 +16,7 @@ type Props = {
   canSell?: boolean;
   canHold?: boolean;
   onScan?: () => void;
+  inputRef?: React.Ref<HTMLInputElement>;
   search: string;
   onSearchChange: (value: string) => void;
   categories?: Array<{ id: number; name: string }>;
@@ -58,6 +59,7 @@ const TopBarButton: React.FC<{ label: string; onClick: () => void }> = ({ label,
 export const PosTopBar: React.FC<Props> = ({
   search,
   onSearchChange,
+  inputRef,
   categories,
   categoryId = null,
   onCategoryChange,
@@ -118,6 +120,8 @@ export const PosTopBar: React.FC<Props> = ({
           }}
         >
           <InputBase
+            inputRef={inputRef}
+            autoFocus
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); onScan?.(); } }}
