@@ -220,10 +220,18 @@ const LoginPage: React.FC = () => {
       await djangoRequestOtp(fullPhone);
       setIsOtpSent(true);
       setLastSentPhone(fullPhone);
-      setInfoMsg("Если номер зарегистрирован, на него отправлен код.");
+      setInfoMsg(null); // номер и так показан над полем кода
       setResendCooldown(OTP_RESEND_COOLDOWN);
     } catch (err: unknown) {
-      setErrorMsg(getErrorMessage(err));
+      // Бэк отвечает 404 «сотрудник не найден» / 409 «номер на нескольких
+      // аккаунтах» — показываем его текст и остаёмся на шаге телефона.
+      // 429 — лимит промахов по IP, общий getErrorMessage для него отдаёт
+      // неуместное «обновите страницу».
+      if (err instanceof ApiError && err.status === 429) {
+        setErrorMsg("Слишком много попыток. Повторите позже.");
+      } else {
+        setErrorMsg(getErrorMessage(err));
+      }
     } finally {
       setLoading(false);
     }
