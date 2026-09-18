@@ -21,8 +21,10 @@ import LockOutlined from "@mui/icons-material/LockOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import {
   login as djangoLogin,
+  getOtpDelivery,
   requestOtp as djangoRequestOtp,
   verifyOtp as djangoVerifyOtp,
+  type OtpDeliveryChannel,
 } from "../../api";
 import { applyMeResponse, refreshAuthContext, usePermissions } from "../../hooks/usePermissions";
 import { markBranchPickerPending } from "../../components/auth/BranchPickerDialog";
@@ -48,6 +50,8 @@ import { subtleBg } from "../../theme";
 const formatMMSS = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 const OTP_RESEND_COOLDOWN = 60; // сек — задержка перед повторной отправкой кода
+// мс после отправки — когда спрашивать бэк, каким каналом ушёл код
+const OTP_DELIVERY_POLL_MS = [2000, 5000, 10000, 20000];
 
 // Простая проверка формата email для инлайн-валидации (не заменяет серверную).
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -118,6 +122,9 @@ const LoginPage: React.FC = () => {
   const [lastSentPhone, setLastSentPhone] = React.useState<string | null>(null);
   const [otpCode, setOtpCode] = React.useState("");
   const [isOtpSent, setIsOtpSent] = React.useState(false);
+  // Тикет доставки от /auth/otp/request/ и канал, который Raven в итоге выбрал.
+  const [deliveryTicket, setDeliveryTicket] = React.useState<string | null>(null);
+  const [deliveryChannel, setDeliveryChannel] = React.useState<OtpDeliveryChannel | null>(null);
 
   // -- EMAIL STATES --
   const [email, setEmail] = React.useState("");
@@ -130,6 +137,28 @@ const LoginPage: React.FC = () => {
   const [infoMsg, setInfoMsg] = React.useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = React.useState(0);
   const [redirecting, setRedirecting] = React.useState(false);
+
+  // Канал доставки Raven решает асинхронно (WhatsApp → fallback SMS), поэтому
+  // после отправки опрашиваем /auth/otp/delivery/ несколько раз, пока не узнаем.
+  React.useEffect(() => {
+    if (!deliveryTicket || deliveryChannel) return;
+    let cancelled = false;
+    const timers = OTP_DELIVERY_POLL_MS.map((delay) =>
+      setTimeout(async () => {
+        if (cancelled) return;
+        try {
+          const { channel } = await getOtpDelivery(deliveryTicket);
+          if (!cancelled && channel) setDeliveryChannel(channel);
+        } catch {
+          // косметика: не знаем канал — оставляем нейтральную формулировку
+        }
+      }, delay),
+    );
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+    };
+  }, [deliveryTicket, deliveryChannel]);
 
   // Тик кулдауна повторной отправки OTP: 1 раз в секунду до нуля.
   React.useEffect(() => {
@@ -217,11 +246,17 @@ const LoginPage: React.FC = () => {
     }
 
     try {
-      await djangoRequestOtp(fullPhone);
+      const { delivery } = await djangoRequestOtp(fullPhone);
       setIsOtpSent(true);
       setLastSentPhone(fullPhone);
       setInfoMsg(null); // номер и так показан над полем кода
       setResendCooldown(OTP_RESEND_COOLDOWN);
+      // Новый тикет только если код реально ушёл; при повторе внутри кулдауна
+      // бэк отдаёт null — оставляем то, что уже знаем.
+      if (delivery) {
+        setDeliveryChannel(null);
+        setDeliveryTicket(delivery);
+      }
     } catch (err: unknown) {
       // Бэк отвечает 404 «сотрудник не найден» / 409 «номер на нескольких
       // аккаунтах» — показываем его текст и остаёмся на шаге телефона.
@@ -442,7 +477,11 @@ const LoginPage: React.FC = () => {
                 <Stack spacing={2.5}>
                   <Box sx={{ textAlign: "center" }}>
                     <Typography variant="body2" color="text.secondary">
-                      Код отправлен на номер
+                      {deliveryChannel === "whatsapp"
+                        ? "Код отправлен в WhatsApp на номер"
+                        : deliveryChannel === "sms"
+                          ? "Код отправлен по SMS на номер"
+                          : "Код придёт в WhatsApp или по SMS на номер"}
                     </Typography>
                     <Stack direction="row" justifyContent="center" alignItems="center" gap={0.5}>
                       <Typography variant="subtitle1" fontWeight={600}>

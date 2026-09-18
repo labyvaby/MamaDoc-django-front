@@ -205,16 +205,29 @@ export function deleteProfileDocument(documentId: number) {
   });
 }
 
+export type OtpDeliveryChannel = "whatsapp" | "sms";
+
 /**
- * Request a one-time SMS login code for a phone number.
- * Always resolves to `{ ok: true }` — the backend never reveals whether the
- * phone belongs to a real account (no enumeration).
+ * Request a one-time login code for a phone number.
+ * 404 — no employee with this phone, 409 — phone on several accounts,
+ * 429 — too many misses from this IP. `delivery` is an opaque ticket for
+ * `getOtpDelivery` (null when nothing new was sent, e.g. resend cooldown).
  */
 export function requestOtp(phone: string) {
-  return apiRequest<{ ok: true }>("/auth/otp/request/", {
+  return apiRequest<{ ok: true; delivery: string | null }>("/auth/otp/request/", {
     method: "POST",
     body: { phone },
   });
+}
+
+/**
+ * Which channel Raven used for the code. `null` — not decided yet (still
+ * queued) or unknown; poll a few times after `requestOtp`.
+ */
+export function getOtpDelivery(ticket: string) {
+  return apiRequest<{ channel: OtpDeliveryChannel | null }>(
+    `/auth/otp/delivery/?t=${encodeURIComponent(ticket)}`,
+  );
 }
 
 /**
