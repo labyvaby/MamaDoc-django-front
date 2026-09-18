@@ -1,11 +1,9 @@
 import { apiRequest } from "../../api/client";
 
 export type ClientSectionKey = "identity" | "company" | "finance" | "note";
-export type ClientTabKey = "purchases" | "contacts";
 
 export type ClientLayoutSettings = {
   sections: Record<ClientSectionKey, boolean>;
-  tabs: ClientTabKey[];
 };
 
 export const defaultClientLayoutSettings: ClientLayoutSettings = {
@@ -15,23 +13,16 @@ export const defaultClientLayoutSettings: ClientLayoutSettings = {
     finance: true,
     note: true,
   },
-    tabs: ["purchases", "contacts"],
 };
 
 export function normalizeClientLayoutSettings(value: unknown): ClientLayoutSettings {
   if (!value || typeof value !== "object") return defaultClientLayoutSettings;
-  const raw = value as { sections?: unknown; tabs?: unknown };
-  const tabs = Array.isArray(raw.tabs)
-    ? raw.tabs
-        .map((tab) => (tab === "history" ? "purchases" : tab))
-        .filter((tab): tab is ClientTabKey => tab === "purchases" || tab === "contacts")
-    : [...defaultClientLayoutSettings.tabs];
+  const raw = value as { sections?: unknown };
   return {
     sections: {
       ...defaultClientLayoutSettings.sections,
       ...(raw.sections && typeof raw.sections === "object" ? raw.sections : {}),
     },
-    tabs,
   };
 }
 
@@ -52,6 +43,9 @@ export function updateClientLayoutSettings(
   return apiRequest<ClientLayoutSettings>(clientLayoutPath(organizationId), {
     method: "PATCH",
     headers: { "X-Organization-Id": String(organizationId) },
-    body: value,
+    // Older servers still require the retired tabs field. Newer servers
+    // ignore it, so this keeps the shared card-section settings writable
+    // throughout the rollout.
+    body: { ...value, tabs: ["purchases"] },
   }).then(normalizeClientLayoutSettings);
 }

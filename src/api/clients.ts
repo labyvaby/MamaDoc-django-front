@@ -19,18 +19,6 @@ export interface DjangoClientGroupRef {
   color: string;
 }
 
-export interface DjangoClientContact {
-  id: number | null;
-  clientId: number;
-  fullName: string;
-  position: string;
-  phone: string;
-  email: string;
-  isPrimary: boolean;
-  note: string;
-  isSelf: boolean;
-}
-
 export interface DjangoClient {
   id: number;
   organizationId: number;
@@ -55,7 +43,6 @@ export interface DjangoClient {
   bankAccount: string;
   bankBik: string;
   groups: DjangoClientGroupRef[];
-  primaryContact: DjangoClientContact | null;
   joinedAt: string;
   updatedAt: string;
   customerStatus: DjangoClientStatus | null;
@@ -126,42 +113,6 @@ export function updateClientStatus(
 ): Promise<DjangoClientStatus> {
   return apiRequest<DjangoClientStatus>(
     `/clients/statuses/${id}/?organizationId=${organizationId}`,
-    { method: "PATCH", body: payload },
-  );
-}
-
-export function getClientContacts(
-  id: number,
-  organizationId: number,
-  signal?: AbortSignal,
-): Promise<DjangoClientContact[]> {
-  return apiRequest<DjangoClientContact[]>(
-    `/clients/${id}/contacts/?organizationId=${organizationId}`,
-    { signal },
-  );
-}
-
-export type CreateClientContactPayload = Omit<DjangoClientContact, "id" | "clientId" | "isSelf">;
-
-export function createClientContact(
-  id: number,
-  organizationId: number,
-  payload: CreateClientContactPayload,
-): Promise<DjangoClientContact> {
-  return apiRequest<DjangoClientContact>(
-    `/clients/${id}/contacts/?organizationId=${organizationId}`,
-    { method: "POST", body: payload },
-  );
-}
-
-export function updateClientContact(
-  clientId: number,
-  contactId: number,
-  organizationId: number,
-  payload: Partial<CreateClientContactPayload>,
-): Promise<DjangoClientContact> {
-  return apiRequest<DjangoClientContact>(
-    `/clients/${clientId}/contacts/${contactId}/?organizationId=${organizationId}`,
     { method: "PATCH", body: payload },
   );
 }
