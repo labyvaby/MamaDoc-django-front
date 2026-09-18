@@ -11,9 +11,10 @@ export class LoginPage {
 
   async loginWithPassword(login: string, password: string): Promise<void> {
     await this.page.getByRole("tab", { name: "Логин" }).click();
-    await this.page.getByLabel("Email или логин").fill(login);
-    // exact — иначе подходит и кнопка aria-label="Показать пароль".
-    await this.page.getByLabel("Пароль", { exact: true }).fill(password);
+    // По accessible name, а не по <label>: MUI дописывает к обязательному
+    // полю « *», и getByLabel("Пароль", { exact: true }) его не находит.
+    await this.page.getByRole("textbox", { name: "Email или логин" }).fill(login);
+    await this.page.getByRole("textbox", { name: "Пароль", exact: true }).fill(password);
     await this.page.getByRole("button", { name: "Войти" }).click();
   }
 
@@ -27,6 +28,7 @@ export class LoginPage {
     await this.page.waitForURL((url) => !url.pathname.startsWith("/login"), {
       timeout: 20_000,
     });
-    await expect(this.page.getByRole("button", { name: "Открыть меню" })).toBeVisible();
+    // Боковое меню CRM — landmark navigation; на логине его нет.
+    await expect(this.page.getByRole("navigation").first()).toBeVisible();
   }
 }
