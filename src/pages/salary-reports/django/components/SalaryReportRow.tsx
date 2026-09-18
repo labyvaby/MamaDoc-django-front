@@ -50,6 +50,7 @@ export interface ColumnConfig {
   statusCancelled: boolean;
   statusDiscount: boolean;
   appointmentPay: boolean;
+  productPay: boolean;
   bonuses: boolean;
   percent: boolean;
   appointmentsLabel?: string;
@@ -64,6 +65,7 @@ export const COLUMNS_REGISTRATOR: ColumnConfig = {
   statusCancelled: false,
   statusDiscount: false,
   appointmentPay: true,
+  productPay: false,
   bonuses: true,
   percent: true,
 };
@@ -77,6 +79,7 @@ export const COLUMNS_DOCTOR: ColumnConfig = {
   statusCancelled: true,
   statusDiscount: true,
   appointmentPay: false,
+  productPay: false,
   bonuses: false,
   percent: true,
 };
@@ -90,6 +93,7 @@ export const COLUMNS_NURSE: ColumnConfig = {
   statusCancelled: true,
   statusDiscount: false,
   appointmentPay: false,
+  productPay: false,
   bonuses: true,
   percent: true,
 };
@@ -103,9 +107,26 @@ export const COLUMNS_ADMIN: ColumnConfig = {
   statusCancelled: false,
   statusDiscount: false,
   appointmentPay: false,
+  productPay: false,
   bonuses: false,
   // Начисленное показываем и здесь: иначе у санитарок/администраторов видны
   // только аванс и «К выплате», и минус в остатке ничем не объяснён.
+  percent: true,
+};
+
+/** Retail salary has no appointments/services columns: only store sales,
+ * hours, bonuses, total accruals and payout remain relevant. */
+export const COLUMNS_RETAIL: ColumnConfig = {
+  hours: true,
+  appointments: false,
+  distributed: false,
+  createdBy: false,
+  statusWaiting: false,
+  statusCancelled: false,
+  statusDiscount: false,
+  appointmentPay: false,
+  productPay: true,
+  bonuses: true,
   percent: true,
 };
 
@@ -140,6 +161,7 @@ export function getVisibleSalaryColumns(
     statusCancelled: baseColumns.statusCancelled && hasAny((row) => row.cancelledCount),
     statusDiscount: baseColumns.statusDiscount && hasAny((row) => row.discountedCount),
     appointmentPay: baseColumns.appointmentPay && hasAny((row) => toNumber(row.appointmentPay)),
+    productPay: baseColumns.productPay && hasAny((row) => toNumber(row.productPay)),
     bonuses: baseColumns.bonuses && hasAny((row) => toNumber(row.bonus)),
     percent: baseColumns.percent && hasAny((row) => toNumber(row.earnings)),
   };
@@ -512,6 +534,16 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                 </Typography>
               </Grid2>
             )}
+            {cols.productPay && (
+              <Grid2 size={4}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6rem", display: "block", lineHeight: 1.2 }}>
+                  {t("columns.productCommission")}
+                </Typography>
+                <Typography sx={{ fontSize: "0.78rem" }} fontWeight={700}>
+                  {formatKGS(row.productPay)}
+                </Typography>
+              </Grid2>
+            )}
             <Grid2 size={4}>
               <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6rem", display: "block", lineHeight: 1.2 }}>
                 {t("row.earnings")}
@@ -869,6 +901,12 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
             ) : (
               formatKGS(row.earnings)
             )}
+          </TableCell>
+        )}
+
+        {cols.productPay && (
+          <TableCell align="right" sx={{ fontWeight: 700 }}>
+            {parseFloat(row.productPay || "0") > 0 ? formatKGS(row.productPay as string) : "—"}
           </TableCell>
         )}
 
