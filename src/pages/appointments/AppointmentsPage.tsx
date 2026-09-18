@@ -924,6 +924,22 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     [refreshAfterMutation, notify, notifyConsumptionWarnings],
   );
 
+  // Отмена случайного «Подтвердить»: confirmed → scheduled. Отдельного
+  // экшена у бэка нет, тот же PATCH status, что и вперёд.
+  const handleUndoConfirm = React.useCallback(
+    async (appt: DjangoAppointment) => {
+      try {
+        const updated = await updateAppointment(appt.id, { status: "scheduled" });
+        hapticTap();
+        notifyConsumptionWarnings(updated);
+        refreshAfterMutation();
+      } catch (e) {
+        notify?.({ type: "error", message: parseBackendError(e) });
+      }
+    },
+    [refreshAfterMutation, notify, notifyConsumptionWarnings],
+  );
+
   // Врач начинает приём → статус in_progress («На приёме»). Используем
   // отдельный узкий эндпоинт start: он не требует appointments.update
   // (которого у врача нет), а только переводит статус. Форма заключения
@@ -1089,6 +1105,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       onConfirmVisit={handleConfirmVisit}
       onArrived={handleArrived}
       onUndoArrived={handleUndoArrived}
+      onUndoConfirm={handleUndoConfirm}
       onStartAppointment={handleStartAppointment}
       onRecordVaccination={(a, prefill) => {
         setVaccineAppt(a);
