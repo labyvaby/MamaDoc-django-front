@@ -88,7 +88,8 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // у модуля нет (docs/automations-api.md §2).
   automations: PAGE_PERMISSIONS.notifications,
   productAttributes: "warehouse.manage",
-  clients: "clients.manage",
+  // Настройки раздела (статусы, раскладка карточки) бэк закрывает clients.update.
+  clients: "clients.update",
   // Витрина odoctor.kg. Право своё, а не общее с расписанием: за страницей
   // лежит учётная запись внешнего кабинета — ключ от чужой системы. Читать и
   // менять эти настройки бэк разрешает по одному и тому же коду, поэтому
