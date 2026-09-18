@@ -60,7 +60,14 @@ interface FormLine {
   lotNumber: string;
   expiresAt: Dayjs | null;
   /** Строка пришла из распознавания: показываем исходный текст и кандидатов. */
-  recognized?: { name: string; candidates: RecognizedCandidate[]; matchScore: number | null };
+  recognized?: {
+    name: string;
+    modelCode: string | null;
+    color: string | null;
+    size: string | null;
+    candidates: RecognizedCandidate[];
+    matchScore: number | null;
+  };
 }
 
 const newLine = (): FormLine => ({
@@ -162,7 +169,18 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
     () =>
       (productsQuery.data ?? [])
         .filter((p: DjangoProduct) => p.isActive)
-        .map((p: DjangoProduct) => ({ id: p.id, label: p.name, unit: p.unit || "шт", sku: p.sku ?? "" })),
+        .map((p: DjangoProduct) => {
+          const variantAttributes = (p.attributes ?? [])
+            .filter((attribute) => attribute.role === "color" || attribute.role === "size")
+            .map((attribute) => attribute.value)
+            .filter(Boolean);
+          return {
+            id: p.id,
+            label: [p.name, ...variantAttributes].join(" · "),
+            unit: p.unit || "шт",
+            sku: p.sku ?? "",
+          };
+        }),
     [productsQuery.data],
   );
   const productById = React.useMemo(() => new Map(productOptions.map((p) => [p.id, p])), [productOptions]);
@@ -238,7 +256,14 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
           price: line.price ? String(Number(line.price)) : "",
           lotNumber: line.lotNumber ?? "",
           expiresAt: expires && expires.isValid() ? expires : null,
-          recognized: { name: line.name, candidates: line.candidates, matchScore: line.match?.score ?? null },
+          recognized: {
+            name: line.name,
+            modelCode: line.modelCode,
+            color: line.color,
+            size: line.size,
+            candidates: line.candidates,
+            matchScore: line.match?.score ?? null,
+          },
         };
       });
       if (recognizedLines.length > 0) {
@@ -571,6 +596,10 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                       )}
                       <Typography variant="caption" color="text.secondary" noWrap sx={{ flex: 1 }}>
                         В документе: «{line.recognized.name}»
+                        {[line.recognized.modelCode, line.recognized.color, line.recognized.size]
+                          .filter(Boolean)
+                          .map((part) => ` · ${part}`)
+                          .join("")}
                         {line.recognized.matchScore != null && line.product ? ` · совпадение ${line.recognized.matchScore}%` : ""}
                       </Typography>
                     </Stack>

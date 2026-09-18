@@ -261,6 +261,9 @@ export interface RecognizedCandidate {
 
 export interface RecognizedLine {
   name: string;
+  modelCode: string | null;
+  color: string | null;
+  size: string | null;
   quantity: string | null;
   unit: string | null;
   price: string | null;
