@@ -86,6 +86,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
         <TextField
             size="small"
             placeholder={searchPlaceholder}
+            inputProps={{ "data-testid": "page-search-input" }}
             value={searchVal}
             inputRef={searchInputRef}
             onChange={(e) => onSearchChange?.(e.target.value)}

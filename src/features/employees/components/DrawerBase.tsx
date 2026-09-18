@@ -19,6 +19,8 @@ type DrawerBaseProps = {
    * поэтому ошибка видна независимо от того, куда проскроллена длинная форма.
    */
   footerAlert?: React.ReactNode;
+  /** `data-testid` контейнера дровера — якорь для E2E-тестов. */
+  testId?: string;
 };
 
 const DrawerBase: React.FC<DrawerBaseProps> = ({
@@ -32,6 +34,7 @@ const DrawerBase: React.FC<DrawerBaseProps> = ({
   submitDisabled,
   headerExtra,
   footerAlert,
+  testId,
 }) => {
   return (
     <Drawer
@@ -49,7 +52,10 @@ const DrawerBase: React.FC<DrawerBaseProps> = ({
         },
       }}
     >
-      <Box sx={{ width: 1, minWidth: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Box
+        data-testid={testId}
+        sx={{ width: 1, minWidth: 0, display: 'flex', flexDirection: 'column', height: '100%' }}
+      >
         <Stack direction="row" alignItems="center" justifyContent="space-between" px={2} py={1.5}>
           <Typography variant="h6">{title}</Typography>
           <Stack direction="row" alignItems="center" gap={0.5}>
@@ -78,11 +84,16 @@ const DrawerBase: React.FC<DrawerBaseProps> = ({
         <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider', mt: 'auto', bgcolor: 'background.paper', flexShrink: 0 }}>
           {footerAlert && <Box sx={{ mb: 1.5 }}>{footerAlert}</Box>}
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5 }}>
-            <AppButton onClick={onClose} disabled={busy}>
+            <AppButton data-testid="drawer-cancel" onClick={onClose} disabled={busy}>
               Отмена
             </AppButton>
             {onSubmit && (
-              <AppButton onClick={onSubmit} variant="contained" disabled={busy || submitDisabled}>
+              <AppButton
+                data-testid="drawer-submit"
+                onClick={onSubmit}
+                variant="contained"
+                disabled={busy || submitDisabled}
+              >
                 {busy ? (
                   <Stack direction="row" alignItems="center" spacing={1}>
                     <CircularProgress size={18} />
