@@ -67,6 +67,7 @@ import { useCan } from "../../../hooks/useCan";
 import { getStatusChipSx, getStatusLabel } from "../../../config/appointmentStatuses";
 import { formatKGS } from "../../../utility/format";
 import { subtleBg } from "../../../theme/uiHelpers";
+import { isConflictsQueryOfEmployee } from "./scheduleInvalidation";
 import { appointmentHitsAbsence, isUnreviewed } from "./useAbsenceConflicts";
 
 /** Отсутствие, из-за которого поднялся разбор. */
@@ -377,10 +378,16 @@ export const AbsenceConflictsDrawer: React.FC<{
 
   const busy = applyMutation.isPending;
 
-  // Закрытие разбора — момент обновить график и списки: пока дровер открыт,
-  // список конфликтов держит результат применения и не рефетчится.
+  // Закрытие разбора — момент обновить маркеры на календаре: пока дровер
+  // открыт, список конфликтов держит результат применения и не рефетчится.
+  // Сбрасываем только conflicts этого сотрудника — правила и исключения
+  // дровер не меняет, а приёмы и свободные окна уже сброшены при применении.
   const handleClose = () => {
-    void queryClient.invalidateQueries({ queryKey: ["django", "scheduling"] });
+    if (absence) {
+      void queryClient.invalidateQueries({
+        predicate: (query) => isConflictsQueryOfEmployee(absence.employeeId)(query.queryKey),
+      });
+    }
     onClose();
   };
 
