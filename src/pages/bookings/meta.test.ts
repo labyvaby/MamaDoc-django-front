@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import dayjs from "dayjs";
 
-import { bookingTimeHint, isBookingClosed, isBookingMissed, isBookingOverdue } from "./meta";
+import { bookingAgeText, bookingTimeHint, isBookingClosed, isBookingMissed, isBookingOverdue } from "./meta";
 
 /**
  * `isBookingClosed` решает, что скрыть из списка броней по умолчанию, поэтому
@@ -105,5 +105,45 @@ describe("isBookingMissed", () => {
 
   it("подсказка времени различает идущий визит и пропуск", () => {
     expect(bookingTimeHint("2026-09-15", "11:20", "pending", 30)?.text).toMatch(/пропущена/);
+  });
+});
+
+/**
+ * Колонка «Создано» в разборе показывает возраст заявки, а не время суток:
+ * регистратуре важно, сколько заявка ждёт, а «00:08» без даты читалось как
+ * время визита.
+ */
+describe("bookingAgeText", () => {
+  const now = dayjs("2026-09-19T06:41:00");
+  const ago = (n: number, unit: "minute" | "hour" | "day") => now.subtract(n, unit).toISOString();
+
+  it("минуты и «только что»", () => {
+    expect(bookingAgeText(ago(0, "minute"), now)).toBe("только что");
+    expect(bookingAgeText(ago(1, "minute"), now)).toBe("1 мин назад");
+    expect(bookingAgeText(ago(59, "minute"), now)).toBe("59 мин назад");
+  });
+
+  it("часы со склонением", () => {
+    expect(bookingAgeText(ago(1, "hour"), now)).toBe("1 час назад");
+    expect(bookingAgeText(ago(3, "hour"), now)).toBe("3 часа назад");
+    expect(bookingAgeText(ago(6, "hour"), now)).toBe("6 часов назад");
+    expect(bookingAgeText(ago(23, "hour"), now)).toBe("23 часа назад");
+  });
+
+  it("дни со склонением — и вчерашняя ночная заявка тоже в днях, а не «00:08»", () => {
+    expect(bookingAgeText(ago(1, "day"), now)).toBe("1 день назад");
+    expect(bookingAgeText(ago(2, "day"), now)).toBe("2 дня назад");
+    expect(bookingAgeText(ago(5, "day"), now)).toBe("5 дней назад");
+    expect(bookingAgeText(ago(11, "day"), now)).toBe("11 дней назад");
+    expect(bookingAgeText(ago(21, "day"), now)).toBe("21 день назад");
+  });
+
+  it("часы округляются вниз: 1 ч 59 мин — это ещё «1 час назад»", () => {
+    expect(bookingAgeText(now.subtract(119, "minute").toISOString(), now)).toBe("1 час назад");
+  });
+
+  it("без даты или с мусором — null, ячейка покажет прочерк", () => {
+    expect(bookingAgeText(undefined, now)).toBeNull();
+    expect(bookingAgeText("not-a-date", now)).toBeNull();
   });
 });
