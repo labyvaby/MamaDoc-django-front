@@ -85,6 +85,7 @@ import {
   BOOKING_STATUS_OPTIONS,
   PrepaymentChip,
   StatusChip,
+  bookingAgeText,
   bookingTimeHint,
   hasPrepayment,
   isBookingMissed,
@@ -194,18 +195,6 @@ const TinyChip: React.FC<{ label: string; tone?: "primary" | "warning" }> = ({
     }}
   />
 );
-
-/** «12 мин назад» / «14:05» / «12.09 14:05» — когда заявка пришла. */
-function receivedText(createdAt: string | undefined, now: Dayjs): string | null {
-  if (!createdAt) return null;
-  const d = dayjs(createdAt);
-  if (!d.isValid()) return null;
-  const mins = now.diff(d, "minute");
-  if (mins < 1) return "только что";
-  if (mins < 60) return `${mins} мин назад`;
-  if (d.isSame(now, "day")) return d.format("HH:mm");
-  return d.format("DD.MM HH:mm");
-}
 
 /** Подсказка к дате визита: «сегодня»/«завтра», у разбора — ещё и просрочка. */
 function visitHint(b: BookingListItem, tab: BookingTab, todayStr: string, tomorrowStr: string) {
@@ -710,15 +699,17 @@ const BookingsPage: React.FC = () => {
       },
     });
     if (showsReceived) {
+      // Возраст заявки, а не время суток (см. bookingAgeText); точная дата —
+      // в тултипе.
       cols.push({
         field: "createdAt",
-        headerName: "Поступила",
-        width: 110,
+        headerName: "Создано",
+        width: 130,
         sortable: false,
         renderCell: ({ row }) => (
           <Tooltip title={row.createdAt ? dayjs(row.createdAt).format("DD.MM.YYYY HH:mm") : ""}>
             <Typography variant="body2" color="text.secondary" noWrap>
-              {receivedText(row.createdAt, now) ?? "—"}
+              {bookingAgeText(row.createdAt, now) ?? "—"}
             </Typography>
           </Tooltip>
         ),
