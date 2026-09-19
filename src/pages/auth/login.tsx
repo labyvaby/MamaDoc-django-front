@@ -52,6 +52,35 @@ const formatMMSS = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padSta
 const OTP_RESEND_COOLDOWN = 60; // сек — задержка перед повторной отправкой кода
 // мс после отправки — когда спрашивать бэк, каким каналом ушёл код
 const OTP_DELIVERY_POLL_MS = [2000, 5000, 10000, 20000];
+// Тикет доставки живёт на бэке 15 мин; помним его по номеру, чтобы после
+// перезагрузки страницы или повторного запроса внутри кулдауна (бэк тогда
+// отдаёт delivery: null) всё равно было что спросить.
+const OTP_DELIVERY_STORAGE_KEY = "mamadoc.otpDelivery";
+const OTP_DELIVERY_TICKET_TTL_MS = 14 * 60 * 1000;
+
+type StoredDelivery = { phone: string; ticket: string; at: number };
+
+function rememberDelivery(phone: string, ticket: string) {
+  try {
+    const rec: StoredDelivery = { phone, ticket, at: Date.now() };
+    sessionStorage.setItem(OTP_DELIVERY_STORAGE_KEY, JSON.stringify(rec));
+  } catch {
+    // приватный режим / выключенное хранилище — просто не запоминаем
+  }
+}
+
+function recallDelivery(phone: string): string | null {
+  try {
+    const raw = sessionStorage.getItem(OTP_DELIVERY_STORAGE_KEY);
+    if (!raw) return null;
+    const rec = JSON.parse(raw) as Partial<StoredDelivery>;
+    if (rec.phone !== phone || typeof rec.ticket !== "string" || typeof rec.at !== "number") return null;
+    if (Date.now() - rec.at > OTP_DELIVERY_TICKET_TTL_MS) return null;
+    return rec.ticket;
+  } catch {
+    return null;
+  }
+}
 
 // Простая проверка формата email для инлайн-валидации (не заменяет серверную).
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -252,10 +281,17 @@ const LoginPage: React.FC = () => {
       setInfoMsg(null); // номер и так показан над полем кода
       setResendCooldown(OTP_RESEND_COOLDOWN);
       // Новый тикет только если код реально ушёл; при повторе внутри кулдауна
-      // бэк отдаёт null — оставляем то, что уже знаем.
+      // бэк отдаёт null — берём тикет прошлой отправки на этот же номер.
       if (delivery) {
+        rememberDelivery(fullPhone, delivery);
         setDeliveryChannel(null);
         setDeliveryTicket(delivery);
+      } else if (!deliveryTicket) {
+        const previous = recallDelivery(fullPhone);
+        if (previous) {
+          setDeliveryChannel(null);
+          setDeliveryTicket(previous);
+        }
       }
     } catch (err: unknown) {
       // Бэк отвечает 404 «сотрудник не найден» / 409 «номер на нескольких
