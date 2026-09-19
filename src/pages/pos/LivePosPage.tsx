@@ -213,6 +213,7 @@ export default function LivePosPage() {
   const [warehouseChoice, setWarehouseChoice] = React.useState<number | null>(
     null
   );
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
   const warehouseId = warehouseChoice ?? data?.warehouses[0]?.id ?? 0;
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
@@ -494,6 +495,7 @@ export default function LivePosPage() {
         : [...previous, { product, quantity: 1 }];
     });
     setSearch("");
+    searchInputRef.current?.focus();
     if (product.modelId) {
       try {
         const result = await getPosProducts(scope, {
@@ -508,6 +510,39 @@ export default function LivePosPage() {
       } catch (e) {
         setError(message(e));
       }
+    }
+  };
+  const scanProduct = async (rawCode: string) => {
+    const code = rawCode.trim();
+    searchInputRef.current?.focus();
+    if (code) setSearch(code);
+    if (
+      !canStartProductSearch(code) ||
+      !actions.sell ||
+      pending ||
+      held
+    )
+      return;
+    try {
+      const result = await getPosProducts(scope, {
+        warehouseId,
+        search: code,
+        limit: 100,
+      });
+      const exact = result.results.find(
+        (item) =>
+          item.barcode === code ||
+          item.barcodes.includes(code) ||
+          item.sku === code
+      );
+      if (exact) void add(exact);
+      else if (result.count === 1) void add(result.results[0]);
+      else
+        setError(
+          "Уточните штрихкод или выберите товар в результатах поиска."
+        );
+    } catch (e) {
+      setError(message(e));
     }
   };
   const update = (id: string, change: Partial<CartRow>) => {
@@ -627,6 +662,47 @@ export default function LivePosPage() {
     return () => window.removeEventListener("keydown", handler);
   }, [actions.sell, quote, busy, list]);
 
+  React.useEffect(() => {
+    let buffer = "";
+    let lastDigitAt = 0;
+    let resetTimer: number | undefined;
+
+    const handler = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.matches("input, textarea, select, [contenteditable='true']")
+      )
+        return;
+
+      if (event.key === "Enter") {
+        if (buffer.length >= 3 && /^\d+$/.test(buffer)) {
+          event.preventDefault();
+          const code = buffer;
+          buffer = "";
+          window.clearTimeout(resetTimer);
+          void scanProduct(code);
+        }
+        return;
+      }
+      if (event.key.length !== 1 || !/^\d$/.test(event.key)) return;
+
+      const now = Date.now();
+      if (now - lastDigitAt > 120) buffer = "";
+      buffer += event.key;
+      lastDigitAt = now;
+      window.clearTimeout(resetTimer);
+      resetTimer = window.setTimeout(() => {
+        buffer = "";
+      }, 180);
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      window.clearTimeout(resetTimer);
+    };
+  }, [actions.sell, held, pending, scope.branchId, scope.organizationId, warehouseId]);
+
   if (!ready)
     return (
       <Stack p={3} gap={2}>
@@ -681,6 +757,7 @@ export default function LivePosPage() {
     >
       <style>{`@media print { body * { visibility:hidden !important; } #pos-print, #pos-print * { visibility:visible !important; } #pos-print { position:fixed; left:0; top:0; width:80mm; background:white; color:black; padding:8mm; } }`}</style>
       <PosTopBar
+        inputRef={searchInputRef}
         search={search}
         onSearchChange={setSearch}
         categories={data.categories}
@@ -693,32 +770,7 @@ export default function LivePosPage() {
         }}
         canSell={actions.sell && !pending}
         canHold={actions.hold}
-        onScan={() => {
-          const code = search.trim();
-          if (
-            !canStartProductSearch(code) ||
-            !actions.sell ||
-            pending ||
-            held
-          )
-            return;
-          void getPosProducts(scope, { warehouseId, search: code })
-            .then((result) => {
-              const exact = result.results.find(
-                (item) =>
-                  item.barcode === code ||
-                  item.barcodes.includes(code) ||
-                  item.sku === code
-              );
-              if (exact) void add(exact);
-              else if (result.count === 1) void add(result.results[0]);
-              else
-                setError(
-                  "Уточните штрихкод или выберите товар в результатах поиска."
-                );
-            })
-            .catch((e) => setError(message(e)));
-        }}
+        onScan={() => void scanProduct(search)}
       />
       {visibleError && (
         <Alert severity="error" onClose={() => setError(null)}>

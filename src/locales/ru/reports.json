@@ -23,6 +23,22 @@
     "debt": "Долги",
     "debtHint": "Не оплачено"
   },
+  "retail": {
+    "group": "Продажи магазина",
+    "sales": "Продажи товаров",
+    "salesHint": "Итог по кассе магазина",
+    "received": "Получено",
+    "receivedHint": "Нал: {{cash}} · Безнал: {{card}}",
+    "cash": "Наличные",
+    "cashless": "Безнал",
+    "discounts": "Скидки",
+    "discountsHint": "Сумма предоставленных скидок",
+    "table": "Продажи по дням",
+    "date": "Дата",
+    "salesColumn": "Продажи",
+    "debt": "Долг",
+    "empty": "Продаж за этот период нет"
+  },
   "table": {
     "byDays": "По дням",
     "summaryChip": "{{days}} дн. · {{sum}}",

@@ -198,6 +198,20 @@ const OdoctorSettingsPage: React.FC = () => {
               <FormHelperText>{t("odoctor.form.enabledHelper")}</FormHelperText>
             </Box>
 
+            <Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={form.fullSync}
+                    onChange={(e) => patch({ fullSync: e.target.checked })}
+                    disabled={busy}
+                  />
+                }
+                label={t("odoctor.form.fullSyncLabel")}
+              />
+              <FormHelperText>{t("odoctor.form.fullSyncHelper")}</FormHelperText>
+            </Box>
+
             <TextField
               label={t("odoctor.form.horizonLabel")}
               type="number"

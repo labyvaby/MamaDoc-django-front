@@ -8,6 +8,7 @@
     "registrators": "Регистраторы",
     "admins": "Администраторы",
     "technical": "Техперсонал / Санитарки",
+    "retail": "Сотрудники магазина",
     "other": "Прочие"
   },
   "columns": {
@@ -16,6 +17,7 @@
     "servicePercent": "{{service.nomPl, capitalize}} %",
     "fixed": "Фикс",
     "forAppointments": "За {{visit.accPl}}",
+    "productCommission": "Товарная комиссия",
     "hoursDayNight": "Часы (д/н)",
     "hourly": "Почасовая",
     "bonus": "Надбавка",

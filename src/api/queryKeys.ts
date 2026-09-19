@@ -236,6 +236,8 @@ export const djangoQueryKeys = {
       ["django", "deals", "stages", pipelineId ?? null, orgId ?? null] as const,
     sources: (orgId?: number) => ["django", "deals", "sources", orgId ?? null] as const,
     lostReasons: (orgId?: number) => ["django", "deals", "lost-reasons", orgId ?? null] as const,
+    bots: (orgId?: number) => ["django", "deals", "bots", orgId ?? null] as const,
+    botKeys: (botId: number, orgId?: number) => ["django", "deals", "bots", botId, "keys", orgId ?? null] as const,
     duplicates: (phone: string, orgId?: number) =>
       ["django", "deals", "duplicates", phone, orgId ?? null] as const,
     funnel: (params: Record<string, unknown>) => ["django", "deals", "funnel", params] as const,

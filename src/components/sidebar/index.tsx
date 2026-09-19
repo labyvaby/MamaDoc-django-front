@@ -433,7 +433,9 @@ const SidebarSecondary: React.FC = () => {
     // СКЛАДЫ
     pos: can(PAGE_PERMISSIONS.pos),
     products: can(PAGE_PERMISSIONS.products),
-    sales: can(PAGE_PERMISSIONS.sales),
+    // Для retail источником продаж является касса POS; старая страница
+    // warehouse/sales относится к медицинскому режиму и дублирует кассу.
+    sales: !isRetail && can(PAGE_PERMISSIONS.sales),
     storage: can(PAGE_PERMISSIONS.warehouses),
     inventory: can(PAGE_PERMISSIONS.warehouses),
     // Накладные (закупки): page-visibility право; модуль procurement гейтится
@@ -899,10 +901,6 @@ const SidebarSecondary: React.FC = () => {
         {/* Продажи товаров */}
         {show("storage") && can_.sales && (
           <SidebarMenuItem to="/sales" icon={<AnalyticsOutlined />} label="Продажи товаров" collapsed={siderCollapsed} />
-        )}
-
-        {show("storage") && can_.pos && (
-          <SidebarMenuItem to="/pos/history" icon={<HistoryOutlined />} label="История продаж" collapsed={siderCollapsed} />
         )}
 
         {/* Остатки (объединённые «Движение товара» + «Склад») */}

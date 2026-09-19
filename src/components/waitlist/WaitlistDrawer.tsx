@@ -27,6 +27,7 @@ import { AppButton, CustomDatePicker, PhoneCountryCodeSelect } from "../ui";
 import { useT } from "../../i18n/VerticalProvider";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useSeesOwnWaitlistOnly } from "../../pages/waitlist/useOwnScope";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { doctorEmployeesOnly, useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import { usePhoneLocalInput } from "../../hooks/usePhoneLocalInput";
@@ -118,11 +119,16 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
   const { t } = useT("waitlist");
   const orgId = useApiOrgId();
   const scope = useActiveScope();
-  const { hasPermission, isSuperAdmin } = usePermissions();
+  const { hasPermission, isSuperAdmin, activeEmployee } = usePermissions();
   const isEdit = entry != null;
   // Заводить карту прямо отсюда может только тот, кому это разрешено вообще:
   // регистратор без patients.create упёрся бы в 403 уже после заполнения формы.
   const canCreatePatient = isSuperAdmin() || hasPermission("patients.create");
+  // Клиницист без waitlist.view_all ставит в очередь только к себе: бэк
+  // отклонит чужой employeeId и подставит его самого вместо пустого поля,
+  // поэтому в пикере оставляем одного его и запираем поле.
+  const seesOwnOnly = useSeesOwnWaitlistOnly();
+  const ownEmployeeId = seesOwnOnly ? (activeEmployee?.id ?? null) : null;
 
   // ── Поля формы ──
   const [patient, setPatient] = React.useState<DjangoPatient | null>(null);
@@ -160,7 +166,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
     setContactName(src?.contactName ?? prefill?.patientName ?? "");
     setCountryCode(parsed.countryCode);
     setPhoneLocal(parsed.local);
-    setEmployeeId(src?.employeeId ?? prefill?.employeeId ?? "");
+    setEmployeeId(ownEmployeeId ?? src?.employeeId ?? prefill?.employeeId ?? "");
     setVaccineId(src?.vaccine?.id ?? "");
     setSpecializationId(src?.specializationId ?? prefill?.specializationId ?? "");
     // У сохранённой записи пустое поле — осознанное «когда угодно», его не
@@ -184,7 +190,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
     setUrgent(src?.priority === "urgent");
     setComment(src?.comment ?? "");
     setError(null);
-  }, [open, entry, prefill]);
+  }, [open, entry, prefill, ownEmployeeId]);
 
   // ── Справочники ──
   const { employees, isLoading: employeesLoading } = useAllActiveEmployees(open);
@@ -193,15 +199,19 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
    * врачами, а окон у них не бывает. Сохранённого специалиста подмешиваем, даже
    * если он из списка выпал (уволен, другой филиал) — иначе при правке старой
    * записи поле показало бы пустоту и молча подменило ориентир.
+   *
+   * Суженному сотруднику — только он сам (из полного списка, а не из врачей:
+   * медсестра тоже может быть адресатом ожидания).
    */
   const employeeOptions = React.useMemo(() => {
+    if (ownEmployeeId != null) return employees.filter((e) => e.id === ownEmployeeId);
     const list = doctorEmployeesOnly(employees);
     if (employeeId !== "" && !list.some((e) => e.id === employeeId)) {
       const current = employees.find((e) => e.id === employeeId);
       if (current) return [current, ...list];
     }
     return list;
-  }, [employees, employeeId]);
+  }, [employees, employeeId, ownEmployeeId]);
 
   /**
    * Вакцины — товары склада с `isVaccine`, а не отдельный справочник: остаток
@@ -520,6 +530,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
               isOptionEqualToValue={(a, b) => a.id === b.id}
               filterOptions={employeeFilter}
               loading={employeesLoading}
+              disabled={ownEmployeeId != null}
               noOptionsText={t("form.employeeNotFound")}
               renderOption={(props, option) => (
                 <Box component="li" {...props} key={option.id}>

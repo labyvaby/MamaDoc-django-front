@@ -105,7 +105,8 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // сам бэк.
   whatsapp: PAGE_PERMISSIONS.notifications,
   productAttributes: "warehouse.manage",
-  clients: "clients.manage",
+  // Настройки раздела (статусы, раскладка карточки) бэк закрывает clients.update.
+  clients: "clients.update",
   // Витрина odoctor.kg. Право своё, а не общее с расписанием: за страницей
   // лежит учётная запись внешнего кабинета — ключ от чужой системы. Читать и
   // менять эти настройки бэк разрешает по одному и тому же коду, поэтому

@@ -35,6 +35,7 @@ import SalaryReportRow, {
   COLUMNS_NURSE,
   COLUMNS_REGISTRATOR,
   COLUMNS_ADMIN,
+  COLUMNS_RETAIL,
   getVisibleSalaryColumns,
   isEmptyPayrollRow,
   type ColumnConfig,
@@ -94,6 +95,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
   } = usePermissions();
   
   const isSuper = isSuperAdmin();
+  const isRetail = activeOrganization?.vertical === "retail";
   const isMultiOrg = (memberships ?? []).length > 1;
   const needsOrg = (isSuper || isMultiOrg) && !activeOrganization;
   // payroll.view_own + активная карточка сотрудника — персональный режим
@@ -428,13 +430,15 @@ const DjangoSalaryReportsPage: React.FC = () => {
               /* Mobile card list grouping */
               <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {(() => {
-                  const roleGroups = [
+                  const roleGroups = isRetail
+                    ? [{ label: t("roleGroups.retail"), roleNames: rowsWithData.map((row) => row.roleName) }]
+                    : [
                     { label: t("roleGroups.doctors"), roleNames: ["doctor"] },
                     { label: t("roleGroups.nursesProcedure"), roleNames: ["nurse", "procedure"] },
                     { label: t("roleGroups.registrators"), roleNames: ["registrator", "receptionist"] },
                     { label: t("roleGroups.admins"), roleNames: ["admin", "accountant", "superadmin"] },
                     { label: t("roleGroups.technical"), roleNames: ["cleaner", "сleaner"] },
-                  ];
+                    ];
 
                   const rendered: React.ReactNode[] = [];
                   const seen = new Set<number>();
@@ -477,6 +481,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                               organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
                               branchId={branchFilterId}
                               isMobile
+                              columns={isRetail ? COLUMNS_RETAIL : undefined}
                               onPayout={canCreateExpense ? setPayoutRow : undefined}
                             />
                           ))}
@@ -534,13 +539,15 @@ const DjangoSalaryReportsPage: React.FC = () => {
               /* Desktop table grouping */
               <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
                 {(() => {
-                  const roleGroups: { label: string; roleNames: string[]; cols: ColumnConfig }[] = [
+                  const roleGroups: { label: string; roleNames: string[]; cols: ColumnConfig }[] = isRetail
+                    ? [{ label: t("roleGroups.retail"), roleNames: rowsWithData.map((row) => row.roleName), cols: COLUMNS_RETAIL }]
+                    : [
                     { label: t("roleGroups.doctors"), roleNames: ["doctor"], cols: COLUMNS_DOCTOR },
                     { label: t("roleGroups.nursesProcedure"), roleNames: ["nurse", "procedure"], cols: COLUMNS_NURSE },
                     { label: t("roleGroups.registrators"), roleNames: ["registrator", "receptionist"], cols: COLUMNS_REGISTRATOR },
                     { label: t("roleGroups.admins"), roleNames: ["admin", "accountant", "superadmin"], cols: COLUMNS_ADMIN },
                     { label: t("roleGroups.technical"), roleNames: ["cleaner", "сleaner"], cols: COLUMNS_ADMIN },
-                  ];
+                    ];
 
                   const rendered: React.ReactNode[] = [];
                   const seen = new Set<number>();
@@ -586,6 +593,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                               {cols.statusCancelled && <TableCell align="center">{t("columns.cancelled")}</TableCell>}
                               {cols.statusDiscount && <TableCell align="center">{t("columns.discount")}</TableCell>}
                               {cols.appointmentPay && <TableCell align="right">{t("columns.forAppointments")}</TableCell>}
+                              {cols.productPay && <TableCell align="right">{t("columns.productCommission")}</TableCell>}
                               {cols.bonuses && <TableCell align="right">{t("columns.bonusesColumn")}</TableCell>}
                               {cols.percent && <TableCell align="right">{t("columns.salary")}</TableCell>}
                               <TableCell align="right" sx={{ color: "error.onSurface" }}>{t("columns.advance")}</TableCell>

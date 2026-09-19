@@ -78,6 +78,7 @@ import {
 } from "../../api/waitlist";
 import WaitlistDrawer from "../../components/waitlist/WaitlistDrawer";
 import WaitlistDetailDrawer from "../../components/waitlist/WaitlistDetailDrawer";
+import { useSeesOwnWaitlistOnly } from "./useOwnScope";
 import {
   WaitlistPriorityChip,
   WaitlistSourceChip,
@@ -476,6 +477,9 @@ const WaitlistPage: React.FC = () => {
   const canView = can("waitlist.view") || can("waitlist.manage");
   const canCreate = can("waitlist.create") || can("waitlist.manage");
   const canManage = can("waitlist.manage");
+  // Клиницист без waitlist.view_all: API отдаёт только его очередь, фильтр
+  // «Сотрудник» ему нечего переключать — прячем.
+  const seesOwnOnly = useSeesOwnWaitlistOnly();
 
   // ── Фильтры: из URL при входе, обратно в URL при каждом изменении ──
   const [searchParams, setSearchParams] = useSearchParams();
@@ -920,14 +924,16 @@ const WaitlistPage: React.FC = () => {
         {/* ── Одна строка управления: вкладки + фильтры ── */}
         <Stack direction="row" flexWrap="wrap" gap={1} alignItems="center" sx={{ mt: 2, mb: 1.5 }}>
           <SegmentedTabs layoutId="waitlist-tabs" tabs={tabs} value={tab} onChange={(key) => patch({ tab: key })} />
-          <FilterPill
-            label={t("filters.employee")}
-            icon={<PersonOutlineOutlined />}
-            value={employeeId === "" ? "" : String(employeeId)}
-            options={employees.map((e) => ({ value: String(e.id), label: e.fullName }))}
-            allLabel={t("filters.allEmployees")}
-            onChange={(v) => patch({ employeeId: v === "" ? "" : Number(v) })}
-          />
+          {!seesOwnOnly && (
+            <FilterPill
+              label={t("filters.employee")}
+              icon={<PersonOutlineOutlined />}
+              value={employeeId === "" ? "" : String(employeeId)}
+              options={employees.map((e) => ({ value: String(e.id), label: e.fullName }))}
+              allLabel={t("filters.allEmployees")}
+              onChange={(v) => patch({ employeeId: v === "" ? "" : Number(v) })}
+            />
+          )}
           <Chip
             label={t("priority.urgent")}
             icon={<PriorityHighOutlined />}

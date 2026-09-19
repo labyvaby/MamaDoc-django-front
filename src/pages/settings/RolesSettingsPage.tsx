@@ -53,6 +53,7 @@ import { getModuleCodeForPermission } from "../../utils/moduleMapping";
 import { useT } from "../../i18n/VerticalProvider";
 import PermissionPicker, { type PermissionGroup } from "./roles/PermissionPicker";
 import { previewSectionsFor } from "./roles/rolePreview";
+import { sortRolesByMembers } from "./roles/sortRoles";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { useCloseGuard } from "../../hooks/useCloseGuard";
 
@@ -856,9 +857,16 @@ const RolesSettingsPage: React.FC = () => {
     );
   }, [orgRoles, search]);
 
-  // Separate system and custom roles
-  const systemRoles = filtered.filter((r) => r.isSystem);
-  const customRoles = filtered.filter((r) => !r.isSystem);
+  // Separate system and custom roles; within each block the roles with more
+  // people come first — those are the ones an edit actually affects.
+  const systemRoles = React.useMemo(
+    () => sortRolesByMembers(filtered.filter((r) => r.isSystem), memberCounts),
+    [filtered, memberCounts],
+  );
+  const customRoles = React.useMemo(
+    () => sortRolesByMembers(filtered.filter((r) => !r.isSystem), memberCounts),
+    [filtered, memberCounts],
+  );
 
   return (
     <SettingsLayout>
