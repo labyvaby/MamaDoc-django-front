@@ -60,6 +60,7 @@ import {
   matchesMoneyFlags,
   type AppointmentMoneyFlag,
 } from "./listFilters";
+import { buildListRows, isGap, type RenderItem } from "./listRows";
 import { isAppointmentCancelReason, type AppointmentCancelReason } from "../../../api/appointments";
 import { AppBottomSheet } from "../../../components/ui";
 
@@ -168,21 +169,6 @@ interface AppointmentListPanelProps {
     /** Сотрудники со сменой на выбранную дату, даже если приёмов ещё нет. */
     employeeNames: Map<number, string>;
   } | null;
-}
-
-type GapSlot = {
-  isGap: true;
-  id: string;
-  timeStr: string;
-  dateIso: string;
-  /** Исполнитель группы, в которой стоит окно (null — группа «без специалиста»). */
-  employeeId: number | null;
-};
-
-type RenderItem = DjangoAppointment | GapSlot;
-
-function isGap(item: RenderItem): item is GapSlot {
-  return (item as GapSlot).isGap === true;
 }
 
 const GAP_THRESHOLD_MS = 30 * 60 * 1000;
@@ -317,19 +303,21 @@ const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({
 // ─── NowLine — линия текущего времени в ленте дня ────────────────────────────
 //
 // Рисуется только в сегодняшнем дне и только перед первым НЕ начавшимся
-// приёмом каждого специалиста: у каждого свой ход дня. Красный — привычный
-// цвет «сейчас» в календарях; со статусными чипами не путается, потому что
-// это линия, а не чип.
+// элементом каждого специалиста — приёмом или окном (см. buildListRows): у
+// каждого свой ход дня. Красный — привычный цвет «сейчас» в календарях; со
+// статусными чипами не путается, потому что это линия, а не чип.
+// Ref — для подскролла к текущему моменту при открытии дня.
 
-const NowLine: React.FC<{ label: string }> = ({ label }) => (
-  <Stack direction="row" alignItems="center" gap={1} sx={{ px: 2, py: 0.75 }}>
+const NowLine = React.forwardRef<HTMLDivElement, { label: string }>(({ label }, ref) => (
+  <Stack ref={ref} direction="row" alignItems="center" gap={1} sx={{ px: 2, py: 0.75 }}>
     <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: "error.main", flexShrink: 0 }} />
     <Typography variant="caption" sx={{ color: "error.main", fontWeight: 700, whiteSpace: "nowrap" }}>
       {label}
     </Typography>
     <Box sx={{ flex: 1, height: "1px", bgcolor: "error.main", opacity: 0.45 }} />
   </Stack>
-);
+));
+NowLine.displayName = "NowLine";
 
 // ─── AddSlotButton — кнопка "Есть окно на HH:mm" ─────────────────────────────
 
@@ -1108,9 +1096,11 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     return freeGroupsOpen ? [...withAppts, ...freeGroupEntries] : withAppts;
   }, [allGroupEntries, collapseFreeGroups, freeGroupEntries, freeGroupsOpen]);
 
-  // Ближайший приём, который ещё не начался: к нему подскроллим ленту при
-  // открытии сегодняшнего дня. Прошедшие приёмы остаются выше — регистратуре
-  // нужен и вопрос «кто был только что».
+  // Ближайший приём, который ещё не начался: к линии «сейчас» в его группе
+  // подскроллим ленту при открытии сегодняшнего дня. Прошедшие приёмы остаются
+  // выше — регистратуре нужен и вопрос «кто был только что». Именно приём, а
+  // не окно: свободные смены стоят в конце ленты, и окно 08:00 у врача без
+  // записей увезло бы ленту мимо всех реальных приёмов.
   const nowAnchorApptId = React.useMemo(() => {
     if (!isToday) return null;
     let best: { id: number; ts: number } | null = null;
@@ -1163,6 +1153,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     if (!container || !anchor) return;
     autoScrolledDateRef.current = titleDate;
     const delta = anchor.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    // Якорь — сама линия «сейчас»: между ней и ближайшим приёмом может стоять
+    // окно, и якорь на приёме увозил бы линию под липкую шапку группы. Отступ
+    // оставляет над линией шапку и краешек только что закончившегося приёма.
     const target = Math.max(0, container.scrollTop + delta - 96);
     container.scrollTo({ top: target, behavior: "auto" });
     // Свой же подскролл выглядит для обработчика как рывок пальцем вниз и
@@ -1445,29 +1438,20 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           <Stack spacing={0}>
             {groupEntries.map(({ employeeId: groupEmployeeId, name: docName, appts, renderItems: groupItems }) => {
               const apptCount = groupItems.filter((i) => !isGap(i)).length;
-              // Линию «сейчас» ставим перед первым приёмом группы, который ещё
-              // не начался.
-              // Подряд идущие окна на телефоне объединяем в один ряд (GapRun).
-              const rows: (
-                | { kind: "gaps"; gaps: GapSlot[] }
-                | { kind: "appt"; appt: DjangoAppointment }
-              )[] = [];
-              for (const item of groupItems) {
-                if (isGap(item)) {
-                  const last = rows[rows.length - 1];
-                  if (isMobile && last && last.kind === "gaps") last.gaps.push(item);
-                  else rows.push({ kind: "gaps", gaps: [item] });
-                } else {
-                  rows.push({ kind: "appt", appt: item });
-                }
-              }
-
-              const groupNowLineApptId = isToday
-                ? groupItems.find(
-                    (i): i is DjangoAppointment =>
-                      !isGap(i) && dayjs((i as DjangoAppointment).scheduledAt).valueOf() >= nowTs,
-                  )?.id ?? null
-                : null;
+              // Ряды группы и место линии «сейчас» — перед первым элементом
+              // (приёмом или окном), который ещё не начался; на телефоне
+              // подряд идущие окна слиты в один ряд (GapRun).
+              const rows = buildListRows(groupItems, isToday ? nowTs : null, isMobile);
+              // Линия группы с ближайшим приёмом — якорь подскролла при
+              // открытии дня.
+              const isNowAnchorGroup =
+                nowAnchorApptId != null && groupItems.some((i) => !isGap(i) && i.id === nowAnchorApptId);
+              const nowLine = (
+                <NowLine
+                  ref={isNowAnchorGroup ? nowAnchorRef : undefined}
+                  label={t("list.nowMarker", { time: dayjs(nowTs).format("HH:mm") })}
+                />
+              );
               // Деньги группы — по строкам услуг этого исполнителя (см.
               // employeeMoneyTotals): чек совместного приёма иначе попал бы в
               // обе группы целиком.
@@ -1531,25 +1515,27 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                   <Box>
                     {rows.map((row) => {
                       if (row.kind === "gaps") {
-                        return isMobile ? (
-                          <GapRun
-                            key={row.gaps[0].id}
-                            label={t("list.freeSlotsRun")}
-                            times={row.gaps.map((gap) => gap.timeStr)}
-                            onPick={(index) => {
-                              const gap = row.gaps[index];
-                              onAddSlot?.(gap.dateIso, gap.employeeId);
-                            }}
-                          />
-                        ) : (
+                        return (
                           <React.Fragment key={row.gaps[0].id}>
-                            {row.gaps.map((gap) => (
-                              <AddSlotButton
-                                key={gap.id}
-                                timeStr={gap.timeStr}
-                                onClick={() => onAddSlot?.(gap.dateIso, gap.employeeId)}
+                            {row.nowLine && nowLine}
+                            {isMobile ? (
+                              <GapRun
+                                label={t("list.freeSlotsRun")}
+                                times={row.gaps.map((gap) => gap.timeStr)}
+                                onPick={(index) => {
+                                  const gap = row.gaps[index];
+                                  onAddSlot?.(gap.dateIso, gap.employeeId);
+                                }}
                               />
-                            ))}
+                            ) : (
+                              row.gaps.map((gap) => (
+                                <AddSlotButton
+                                  key={gap.id}
+                                  timeStr={gap.timeStr}
+                                  onClick={() => onAddSlot?.(gap.dateIso, gap.employeeId)}
+                                />
+                              ))
+                            )}
                           </React.Fragment>
                         );
                       }
@@ -1557,10 +1543,6 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       // ── Строка приёма — 1-в-1 с оригиналом AppointmentsList ──
                       const a = row.appt;
                       const isSelected = selectedId === a.id;
-                      const isNowAnchor = a.id === nowAnchorApptId;
-                      // Линию рисуем в каждой группе перед её первым будущим
-                      // приёмом: у каждого специалиста свой ход дня.
-                      const showNowLine = isToday && a.id === groupNowLineApptId;
 
                       // totalAmount с бэка — сумма ДО скидки. Пациент платит
                       // разницу, поэтому в «Итого» показываем её, а исходную
@@ -1769,13 +1751,8 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
                       return (
                         <React.Fragment key={a.id}>
-                          {showNowLine && (
-                            <NowLine
-                              label={t("list.nowMarker", { time: dayjs(nowTs).format("HH:mm") })}
-                            />
-                          )}
+                          {row.nowLine && nowLine}
                         <Box
-                          ref={isNowAnchor ? nowAnchorRef : undefined}
                           onClick={() => onSelect(a)}
                           sx={{
                             px: 2,
