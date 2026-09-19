@@ -41,6 +41,10 @@ type DealBoardViewProps = {
   canManage: boolean;
   enabled: boolean;
   emptyState?: React.ReactNode;
+  /** Сделка, только что пришедшая по realtime, — подсветить карточку. */
+  highlightId?: number | null;
+  /** Страховочный polling: при живом сокете реже. */
+  refetchIntervalMs?: number;
 };
 
 /** Содержимое карточки: оболочку (drag, меню, анимацию) даёт ядро доски. */
@@ -156,6 +160,8 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
   canManage,
   enabled,
   emptyState,
+  highlightId = null,
+  refetchIntervalMs = DEALS_REFRESH_MS,
 }) => {
   const { t } = useT("deals");
   const queryClient = useQueryClient();
@@ -180,7 +186,7 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     // Смена фильтра не должна схлопывать доску в скелетоны.
     placeholderData: keepPreviousData,
-    refetchInterval: DEALS_REFRESH_MS,
+    refetchInterval: refetchIntervalMs,
   });
 
   const board = boardQuery.data;
@@ -363,6 +369,7 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
       ariaLabel: t("board.cardLabel", { name: deal.patientName || deal.contactName }),
       accentColor: deal.isSlaBreached ? undefined : null,
       alert: deal.isActionOverdue,
+      highlight: deal.id === highlightId,
       actions,
       actionsTooltip: t("board.moveActions"),
       onOpen: () => onOpenDeal(deal.id),

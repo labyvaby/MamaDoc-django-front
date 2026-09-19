@@ -27,6 +27,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
   accentColor,
   accentTooltip,
   alert,
+  highlight,
   actions,
   actionsTooltip = "Действия",
   onOpen,
@@ -85,10 +86,12 @@ const BoardCard: React.FC<BoardCardProps> = ({
           borderRadius: "12px",
           border: 1,
           borderColor: alert ? alpha(t.palette.error.main, 0.35) : "divider",
+          boxShadow: highlight ? `0 0 0 2px ${alpha(t.palette.primary.main, 0.6)}` : "none",
           bgcolor: "background.paper",
           cursor: "grab",
           opacity: dragging ? 0.45 : 1,
-          transition: "border-color .15s ease, background-color .15s ease, opacity .15s ease",
+          transition:
+            "border-color .15s ease, background-color .15s ease, opacity .15s ease, box-shadow .6s ease",
           "&:hover": { borderColor: alpha(t.palette.primary.main, 0.35), bgcolor: subtleBg(t, true) },
           "&:active": { cursor: "grabbing" },
         })}

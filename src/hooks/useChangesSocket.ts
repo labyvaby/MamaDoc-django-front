@@ -6,22 +6,32 @@ import React from "react";
  * сокету не передаются, клиент перезапрашивает нужный экран обычным REST.
  */
 export type ChangeMessage = {
-  /** Раздел: пока только "appointment"; заключения/касса — следующие срезы. */
+  /** Раздел: "appointment", "deal", "sale", … */
   entity: string;
-  action: "created" | "updated" | "deleted";
+  action: "created" | "updated" | "deleted" | "moved";
   /** id изменённой записи — информативно, на него не завязываемся. */
   objectId: number | null;
-  /** Филиал события (совпадает с активным на момент подключения). */
-  branchId: number;
+  /** Филиал события; null — событие организации целиком (сделки). */
+  branchId: number | null;
+  /** Организация события (с 19.09.2026, у старых сообщений null). */
+  organizationId?: number | null;
+  /** Несколько id для фильтра на клиенте (у сделок — pipelineId, stageId, actorKind). */
+  meta?: Record<string, unknown>;
 };
 
 type Options = {
   /**
-   * Активный филиал. Без филиала (режим «вся организация») real-time на бэке
-   * недоступен — сокет не открываем, экран живёт на polling. При смене филиала
-   * сокет переоткрывается (события скоупятся по филиалу на момент подключения).
+   * Активный филиал. По умолчанию сокет открывается только с филиалом (так
+   * работают экраны приёмов и кассы); при смене филиала переоткрывается —
+   * события филиала скоупятся на момент подключения.
    */
   branchId?: number;
+  /**
+   * Открывать сокет и без филиала. С 19.09.2026 бэк подписывает сокет и на
+   * группу организации (по активному членству), так что доска сделок в режиме
+   * «вся организация» тоже получает события. По умолчанию — `branchId != null`.
+   */
+  enabled?: boolean;
   /** Вызывается на каждое входящее сообщение. */
   onMessage: (msg: ChangeMessage) => void;
 };
@@ -46,14 +56,15 @@ const MAX_RETRY_EXPONENT = 6;
  * @returns true, пока соединение открыто (вызывающий код по этому флагу
  * замедляет страховочный polling).
  */
-export function useChangesSocket({ branchId, onMessage }: Options): boolean {
+export function useChangesSocket({ branchId, enabled, onMessage }: Options): boolean {
+  const active = enabled ?? branchId != null;
   const [connected, setConnected] = React.useState(false);
   // Колбэк в ref — чтобы сокет не переоткрывался на каждый рендер страницы.
   const onMessageRef = React.useRef(onMessage);
   onMessageRef.current = onMessage;
 
   React.useEffect(() => {
-    if (branchId == null) return;
+    if (!active) return;
 
     let disposed = false;
     // Сервер отверг подключение (4401): нет сессии или филиала. Автоматически
@@ -126,7 +137,7 @@ export function useChangesSocket({ branchId, onMessage }: Options): boolean {
       // Обработчик уже видит disposed=true и не станет переподключаться.
       ws?.close();
     };
-  }, [branchId]);
+  }, [branchId, active]);
 
   return connected;
 }
