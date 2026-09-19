@@ -60,6 +60,39 @@ const OTP_DELIVERY_TICKET_TTL_MS = 14 * 60 * 1000;
 
 type StoredDelivery = { phone: string; ticket: string; at: number };
 
+const WHATSAPP_GREEN = "#25D366";
+
+/**
+ * Бейдж канала над полем кода: контур синим (SMS) / зелёным (WhatsApp),
+ * когда канал известен; серый контур, пока Raven ещё не выбрал маршрут.
+ */
+function ChannelBadge({ channel, active }: { channel: OtpDeliveryChannel; active: boolean }) {
+  const label = channel === "whatsapp" ? "WhatsApp" : "SMS";
+  return (
+    <Box
+      component="span"
+      sx={(theme) => {
+        const color = channel === "whatsapp" ? WHATSAPP_GREEN : theme.palette.primary.main;
+        return {
+          display: "inline-block",
+          px: 0.75,
+          py: 0.1,
+          mx: 0.25,
+          borderRadius: 1,
+          border: "1px solid",
+          borderColor: active ? color : theme.palette.divider,
+          color: active ? color : "text.secondary",
+          fontWeight: active ? 600 : 500,
+          lineHeight: 1.4,
+          transition: "color .2s, border-color .2s",
+        };
+      }}
+    >
+      {label}
+    </Box>
+  );
+}
+
 function rememberDelivery(phone: string, ticket: string) {
   try {
     const rec: StoredDelivery = { phone, ticket, at: Date.now() };
@@ -513,11 +546,16 @@ const LoginPage: React.FC = () => {
                 <Stack spacing={2.5}>
                   <Box sx={{ textAlign: "center" }}>
                     <Typography variant="body2" color="text.secondary">
-                      {deliveryChannel === "whatsapp"
-                        ? "Код отправлен в WhatsApp на номер"
-                        : deliveryChannel === "sms"
-                          ? "Код отправлен по SMS на номер"
-                          : "Код придёт в WhatsApp или по SMS на номер"}
+                      {deliveryChannel === "whatsapp" ? (
+                        <>Код отправлен в <ChannelBadge channel="whatsapp" active /> на номер</>
+                      ) : deliveryChannel === "sms" ? (
+                        <>Код отправлен по <ChannelBadge channel="sms" active /> на номер</>
+                      ) : (
+                        <>
+                          Код придёт в <ChannelBadge channel="whatsapp" active={false} /> или по{" "}
+                          <ChannelBadge channel="sms" active={false} /> на номер
+                        </>
+                      )}
                     </Typography>
                     <Stack direction="row" justifyContent="center" alignItems="center" gap={0.5}>
                       <Typography variant="subtitle1" fontWeight={600}>
