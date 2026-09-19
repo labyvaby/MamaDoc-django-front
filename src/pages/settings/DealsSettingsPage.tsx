@@ -56,6 +56,7 @@ import {
   type DealStageKind,
 } from "../../api/deals";
 import { dealsErrorMessage } from "../deals/meta";
+import BotsSection from "./deals/BotsSection";
 
 /** Палитра для новых этапов — те же оттенки, что засевает бэк. */
 const STAGE_COLORS = ["#3B82F6", "#8B5CF6", "#F59E0B", "#06B6D4", "#22C55E", "#EF4444", "#10B981"];
@@ -139,7 +140,7 @@ const DealsSettingsPage: React.FC = () => {
   const pipelineMutation = useMutation({
     mutationFn: async (action:
       | { kind: "create"; name: string }
-      | { kind: "update"; id: number; payload: { name?: string; isDefault?: boolean; isActive?: boolean } }
+      | { kind: "update"; id: number; payload: { name?: string; isDefault?: boolean; isActive?: boolean; code?: string; clearCode?: boolean } }
       | { kind: "delete"; id: number }): Promise<void> => {
       if (action.kind === "create") {
         await createPipeline({ name: action.name }, orgId);
@@ -160,8 +161,8 @@ const DealsSettingsPage: React.FC = () => {
 
   const stageMutation = useMutation({
     mutationFn: async (action:
-      | { kind: "create"; payload: { pipelineId: number; name: string; color: string; kind: DealStageKind; slaDays: number | null } }
-      | { kind: "update"; id: number; payload: Partial<{ name: string; color: string; slaDays: number | null; isActive: boolean }> }
+      | { kind: "create"; payload: { pipelineId: number; name: string; color: string; kind: DealStageKind; slaDays: number | null; code: string | null } }
+      | { kind: "update"; id: number; payload: Partial<{ name: string; color: string; slaDays: number | null; isActive: boolean; code: string; clearCode: boolean }> }
       | { kind: "delete"; id: number; moveToStageId?: number }
       | { kind: "reorder"; pipelineId: number; stageIds: number[] }): Promise<void> => {
       if (action.kind === "create") {
@@ -307,6 +308,27 @@ const DealsSettingsPage: React.FC = () => {
                   }}
                   sx={{ minWidth: 220 }}
                 />
+                <TextField
+                  size="small"
+                  label={t("settings.pipelineCode")}
+                  defaultValue={activePipeline.code ?? ""}
+                  key={`code-${activePipeline.id}`}
+                  inputProps={{ autoCapitalize: "off", spellCheck: false, style: { fontFamily: "monospace" } }}
+                  onBlur={(e) => {
+                    const code = e.target.value.trim().toLowerCase();
+                    if (code === (activePipeline.code ?? "")) return;
+                    if (code && !INTEGRATION_CODE_RE.test(code)) {
+                      setToast({ text: t("settings.codeInvalid"), severity: "error" });
+                      return;
+                    }
+                    pipelineMutation.mutate({
+                      kind: "update",
+                      id: activePipeline.id,
+                      payload: code ? { code } : { clearCode: true },
+                    });
+                  }}
+                  sx={{ width: 160 }}
+                />
                 <Stack direction="row" alignItems="center" gap={0.5}>
                   <Switch
                     size="small"
@@ -407,6 +429,18 @@ const DealsSettingsPage: React.FC = () => {
                     {stage.name}
                   </Typography>
 
+                  {stage.code ? (
+                    <Tooltip title={t("settings.stageCode")}>
+                      <Typography
+                        variant="caption"
+                        component="code"
+                        sx={{ fontFamily: "monospace", color: "text.secondary" }}
+                      >
+                        {stage.code}
+                      </Typography>
+                    </Tooltip>
+                  ) : null}
+
                   {stage.kind !== "open" ? (
                     <Chip size="small" variant="outlined" label={t(`kind.${stage.kind}`)} />
                   ) : null}
@@ -494,6 +528,10 @@ const DealsSettingsPage: React.FC = () => {
             }
             onDelete={(id) => dictMutation.mutate({ dict: "reason", kind: "delete", id })}
           />
+
+          <Divider />
+
+          <BotsSection orgId={orgId} onToast={setToast} />
         </Stack>
       )}
 
@@ -511,7 +549,13 @@ const DealsSettingsPage: React.FC = () => {
             stageMutation.mutate({
               kind: "update",
               id: stageDialog.stage.id,
-              payload: { name: payload.name, color: payload.color, slaDays: payload.slaDays },
+              payload: {
+                name: payload.name,
+                color: payload.color,
+                slaDays: payload.slaDays,
+                // null в PATCH ничего не чистит — только явный флаг.
+                ...(payload.code ? { code: payload.code } : { clearCode: true }),
+              },
             });
           } else if (activePipeline) {
             stageMutation.mutate({
@@ -615,7 +659,17 @@ const DealsSettingsPage: React.FC = () => {
   );
 };
 
-type StagePayload = { name: string; color: string; kind: DealStageKind; slaDays: number | null };
+type StagePayload = {
+  name: string;
+  color: string;
+  kind: DealStageKind;
+  slaDays: number | null;
+  /** Slug для бота; null — без кода. */
+  code: string | null;
+};
+
+/** Формат кода этапа/воронки — тот же, что валидирует бэк (CodeStr). */
+export const INTEGRATION_CODE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 const StageDialog: React.FC<{
   open: boolean;
@@ -630,6 +684,8 @@ const StageDialog: React.FC<{
   const [color, setColor] = React.useState(STAGE_COLORS[0]);
   const [kind, setKind] = React.useState<DealStageKind>("open");
   const [sla, setSla] = React.useState("");
+  const [code, setCode] = React.useState("");
+  const codeInvalid = code.trim() !== "" && !INTEGRATION_CODE_RE.test(code.trim());
 
   React.useEffect(() => {
     if (!open) return;
@@ -637,17 +693,19 @@ const StageDialog: React.FC<{
     setColor(stage?.color ?? STAGE_COLORS[0]);
     setKind(stage?.kind ?? "open");
     setSla(stage?.slaDays != null ? String(stage.slaDays) : "");
+    setCode(stage?.code ?? "");
   }, [open, stage]);
 
   const submit = () => {
     const trimmed = name.trim();
-    if (!trimmed) return;
+    if (!trimmed || codeInvalid) return;
     const parsed = sla.trim() === "" ? null : Number(sla);
     onSubmit({
       name: trimmed,
       color,
       kind,
       slaDays: parsed != null && Number.isFinite(parsed) && parsed > 0 ? parsed : null,
+      code: code.trim() || null,
     });
   };
 
@@ -713,6 +771,19 @@ const StageDialog: React.FC<{
             onChange={(e) => setSla(e.target.value)}
             helperText={t("settings.stageSlaHint")}
             inputProps={{ inputMode: "numeric" }}
+            fullWidth
+          />
+
+          {/* Код — то, чем этап адресует бот (stageCode). Латиница, без
+              пробелов; пустой — этап боту недоступен. */}
+          <TextField
+            size="small"
+            label={t("settings.stageCode")}
+            value={code}
+            onChange={(e) => setCode(e.target.value.toLowerCase())}
+            error={codeInvalid}
+            helperText={codeInvalid ? t("settings.codeInvalid") : t("settings.stageCodeHint")}
+            inputProps={{ autoCapitalize: "off", spellCheck: false, style: { fontFamily: "monospace" } }}
             fullWidth
           />
         </Stack>
