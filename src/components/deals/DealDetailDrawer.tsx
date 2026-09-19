@@ -31,6 +31,8 @@ import { AppButton, ConfirmDialog, CustomDateTimePicker, SegmentedTabs } from ".
 import ChannelIcon from "./ChannelIcon";
 import DealChatPane from "./DealChatPane";
 import LostReasonDialog from "./LostReasonDialog";
+import StageTimeline from "./StageTimeline";
+import { buildStageSegments } from "./stageSegments";
 import CreateTaskDrawer from "../tasks/CreateTaskDrawer";
 import DjangoAddAppointmentDrawer from "../../pages/appointments/DjangoAddAppointmentDrawer";
 import { useT } from "../../i18n/VerticalProvider";
@@ -238,6 +240,12 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
   const hasItems = (detail?.items.length ?? 0) > 0;
   const closed = deal != null && deal.stageKind !== "open";
+  /* Линия пути по этапам: считается из лога переходов, пересчёт — при
+     каждом новом ответе детали (перенос, возврат в работу). */
+  const segments = React.useMemo(
+    () => (detail ? buildStageSegments(detail.stageLog, stages, new Date(), closed) : []),
+    [detail, stages, closed],
+  );
   /** Пока сделка в работе — сумму правит любой с deals.update; дальше см. контракт §6. */
   const amountEditable =
     deal != null &&
@@ -416,6 +424,8 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
             </Alert>
           ) : (
             <Stack gap={2.5}>
+              <StageTimeline segments={segments} />
+
               {deal.lostReasonName ? (
                 <Alert severity="warning" variant="outlined">
                   {t("detail.lostReason", { name: deal.lostReasonName })}

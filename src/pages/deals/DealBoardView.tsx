@@ -9,6 +9,7 @@ import dayjs from "dayjs";
 import { Board, type BoardCardSpec, type BoardColumnDef } from "../../components/board";
 import { UserAvatar } from "../../components/ui";
 import ChannelIcon from "../../components/deals/ChannelIcon";
+import StageTimeline from "../../components/deals/StageTimeline";
 import LostReasonDialog from "../../components/deals/LostReasonDialog";
 import { relativeTime } from "../tasks/meta";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
@@ -52,10 +53,38 @@ type DealBoardViewProps = {
 };
 
 /** Содержимое карточки: оболочку (drag, меню, анимацию) даёт ядро доски. */
-const DealCardBody: React.FC<{ deal: Deal; hasActions: boolean }> = ({ deal, hasActions }) => {
+const DealCardBody: React.FC<{ deal: Deal; hasActions: boolean; stageColor?: string }> = ({
+  deal,
+  hasActions,
+  stageColor,
+}) => {
   const { t } = useT("deals");
   const age = stageAgeLabel(deal.daysInStage);
   const action = nextActionLabel(deal.nextActionAt);
+  /* Полоска текущего этапа. Полный путь (stagePath) бэк на карточке пока не
+     отдаёт — здесь один сегмент: цвет этапа, пульс у открытой сделки. */
+  const pathSegments = React.useMemo(
+    () =>
+      stageColor && deal.daysInStage != null
+        ? [
+            {
+              stageId: deal.stageId,
+              name: deal.stageName,
+              color: stageColor,
+              kind: deal.stageKind,
+              from: deal.createdAt,
+              to: deal.updatedAt,
+              seconds: deal.daysInStage * 86400,
+              share: 1,
+              actorName: null,
+              actorKind: null,
+              actorColor: null,
+              open: deal.stageKind === "open",
+            },
+          ]
+        : [],
+    [stageColor, deal],
+  );
 
   return (
     <>
@@ -165,6 +194,8 @@ const DealCardBody: React.FC<{ deal: Deal; hasActions: boolean }> = ({ deal, has
           </Tooltip>
         ) : null}
       </Stack>
+
+      <StageTimeline segments={pathSegments} variant="compact" />
     </>
   );
 };
@@ -410,7 +441,13 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
       actions,
       actionsTooltip: t("board.moveActions"),
       onOpen: () => onOpenDeal(deal.id),
-      content: <DealCardBody deal={deal} hasActions={actions.length > 0} />,
+      content: (
+        <DealCardBody
+          deal={deal}
+          hasActions={actions.length > 0}
+          stageColor={board?.columns.find((c) => c.stageId === deal.stageId)?.color}
+        />
+      ),
     };
   };
 
