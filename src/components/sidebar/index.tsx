@@ -779,9 +779,9 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
         )}
 
-        {/* Расписание */}
+        {/* Расписание — у Viva это шахматка броней, не расписание смен, поэтому своя подпись. */}
         {show("my-work") && can_.schedule && (
-          <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Расписание" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label={hotelOnly ? "Шахматка броней" : "Расписание"} collapsed={siderCollapsed} />
         )}
 
         {/* СКУД */}
