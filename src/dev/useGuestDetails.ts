@@ -13,6 +13,7 @@ import { usePermissions } from "../hooks/usePermissions";
 import { useHotelProperty } from "./useHotelProperty";
 import {
   getGuest,
+  getHotelCatalogs,
   listReservations,
   setGuestBlacklist,
   clearGuestBlacklist,
@@ -47,6 +48,17 @@ export function useGuestDetails(clientId: number | null) {
     enabled: clientId != null && property != null,
   });
   const reservations = reservationsQuery.data?.results ?? [];
+
+  // Способы оплаты — платформенные + свои у объекта (настройки), поэтому из
+  // каталога объекта, а не из статичного словаря. Тот же ключ кеша, что у
+  // ReservationDetailsDialog/CreateBookingButton.
+  const catalogsQuery = useQuery({
+    queryKey: ["hotel", "catalogs", property?.id],
+    queryFn: ({ signal }) => getHotelCatalogs(property!.id, signal),
+    enabled: property != null,
+    staleTime: 5 * 60_000,
+  });
+  const paymentMethods = catalogsQuery.data?.paymentMethods ?? [];
 
   const [paymentEdit, setPaymentEdit] = React.useState<PaymentEditState | null>(null);
   const [paymentError, setPaymentError] = React.useState<string | null>(null);
@@ -123,6 +135,7 @@ export function useGuestDetails(clientId: number | null) {
     guestLoading: guestQuery.isLoading,
     reservations,
     reservationsLoading: reservationsQuery.isLoading,
+    paymentMethods,
     paymentEdit,
     setPaymentEdit,
     openPaymentEdit,

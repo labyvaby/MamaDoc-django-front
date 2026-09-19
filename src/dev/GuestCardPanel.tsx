@@ -16,12 +16,56 @@ import HotelOutlined from "@mui/icons-material/HotelOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import RemoveCircleOutlineOutlined from "@mui/icons-material/RemoveCircleOutlineOutlined";
 import PublicOutlined from "@mui/icons-material/PublicOutlined";
+import dayjs from "dayjs";
 
 import { AppCard, ListEmptyState, UserAvatar } from "../components/ui";
 import { subtleBg } from "../theme/uiHelpers";
-import { HOTEL_BOARD_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS, HOTEL_GUEST_TYPE_LABELS, HOTEL_VISIT_PURPOSE_LABELS } from "./hotelDisplay";
-import { formatHotelDate, formatHotelDateRange } from "./mockDemoData";
+import {
+  HOTEL_BOARD_TYPE_LABELS,
+  HOTEL_BOOKING_SOURCE_LABELS,
+  HOTEL_GENDER_LABELS,
+  HOTEL_GUEST_TYPE_LABELS,
+  HOTEL_VISIT_PURPOSE_LABELS,
+} from "./hotelDisplay";
+import { formatHotelDateRange } from "./mockDemoData";
+import type { HotelGuest } from "../api/hotel";
 import type { GuestDetailsState } from "./useGuestDetails";
+
+/** Дата документа с годом — «12 сентября» (formatHotelDate) для рождения и срока действия не годится. */
+const formatDocumentDate = (iso: string): string => dayjs(iso).format("DD.MM.YYYY");
+
+/**
+ * Заполненные строки «подпись: значение» блока «Документ». Поля документа
+ * приходят только с правом hotel.guests.documents (без него null), дата
+ * рождения и пол — поля профиля, видны всем; пустое и скрытое опускаем.
+ * Срок действия — documentExpiry, общий для обоих типов документа (v2.2).
+ */
+function guestDocumentRows(guest: HotelGuest, visitPurpose: string | undefined): [string, string][] {
+  const rows: [string, string | null | undefined][] =
+    guest.guestType === "foreign"
+      ? [
+          ["Гражданство", guest.citizenship],
+          ["Загранпаспорт", guest.documentNumber],
+          ["Страна выдачи", guest.passportCountry],
+        ]
+      : [
+          ["Паспорт (ID-карта)", guest.documentNumber],
+          ["ИНН", guest.inn],
+          ["Адрес регистрации", guest.registrationAddress],
+        ];
+  rows.push(
+    ["Дата рождения", guest.dob ? formatDocumentDate(guest.dob) : null],
+    ["Пол", HOTEL_GENDER_LABELS[guest.gender] ?? guest.gender],
+    ["Место рождения", guest.placeOfBirth],
+    ["Дата выдачи", guest.issueDate ? formatDocumentDate(guest.issueDate) : null],
+    ["Орган, выдавший документ", guest.issuingAuthority],
+    ["Действителен до", guest.documentExpiry ? formatDocumentDate(guest.documentExpiry) : null],
+  );
+  if (guest.guestType === "foreign" && visitPurpose) {
+    rows.push(["Цель визита", HOTEL_VISIT_PURPOSE_LABELS[visitPurpose] ?? visitPurpose]);
+  }
+  return rows.filter((row): row is [string, string] => Boolean(row[1]));
+}
 
 /** Приглушённая плашка-факт — тот же визуальный приём, что FactBlock в PatientCard.tsx. */
 const FactBlock: React.FC<{ icon: React.ReactNode; title: string; children: React.ReactNode }> = ({
@@ -59,6 +103,7 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ clientId, state 
 
   const lastReservation = reservations[0];
   const lastItem = lastReservation?.items[0];
+  const documentRows = guest ? guestDocumentRows(guest, lastItem?.guests[0]?.document?.visitPurpose) : [];
 
   return (
     <AppCard
@@ -175,30 +220,19 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ clientId, state 
               </FactBlock>
             )}
 
-            {/* Документ — реквизиты личности гостя, видны только с правом hotel.guests.documents. */}
-            {guest.guestType && (
-              <FactBlock icon={<BadgeOutlined />} title={`Документ · ${HOTEL_GUEST_TYPE_LABELS[guest.guestType] ?? guest.guestType}`}>
+            {/* Документ — реквизиты личности гостя; поля документа видны только с правом hotel.guests.documents. */}
+            {(guest.guestType || documentRows.length > 0) && (
+              <FactBlock
+                icon={<BadgeOutlined />}
+                title={guest.guestType ? `Документ · ${HOTEL_GUEST_TYPE_LABELS[guest.guestType] ?? guest.guestType}` : "Документ"}
+              >
                 <Stack spacing={0.5}>
-                  {guest.guestType === "resident" ? (
-                    <>
-                      {guest.documentNumber && <Typography variant="body2">Паспорт (ID-карта): {guest.documentNumber}</Typography>}
-                      {guest.inn && <Typography variant="body2">ИНН: {guest.inn}</Typography>}
-                    </>
-                  ) : (
-                    <>
-                      {guest.citizenship && <Typography variant="body2">Гражданство: {guest.citizenship}</Typography>}
-                      {guest.documentNumber && <Typography variant="body2">Загранпаспорт: {guest.documentNumber}</Typography>}
-                      {guest.passportExpiry && (
-                        <Typography variant="body2">Действителен до: {formatHotelDate(guest.passportExpiry)}</Typography>
-                      )}
-                      {lastItem?.guests[0]?.document?.visitPurpose && (
-                        <Typography variant="body2">
-                          Цель визита: {HOTEL_VISIT_PURPOSE_LABELS[lastItem.guests[0].document.visitPurpose] ?? lastItem.guests[0].document.visitPurpose}
-                        </Typography>
-                      )}
-                    </>
-                  )}
-                  {!guest.documentNumber && !guest.inn && !guest.citizenship && (
+                  {documentRows.map(([label, value]) => (
+                    <Typography key={label} variant="body2">
+                      {label}: {value}
+                    </Typography>
+                  ))}
+                  {documentRows.length === 0 && (
                     <Typography variant="body2" color="text.disabled">
                       Реквизиты не заполнены — либо не указаны, либо скрыты (нужно право «Паспортные данные»).
                     </Typography>

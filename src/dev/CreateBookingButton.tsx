@@ -10,8 +10,14 @@
  * searchGuests) либо customer:{...} (создаётся на лету, как раньше в моке).
  * Пересечение дат — не превентивная проверка на фронте, а 409
  * NO_AVAILABILITY от бэка с details.conflicts; подтверждение — тот же запрос
- * с allowOverbooking: true. Документ гостя уходит в items[0].guests[0].document,
- * фото паспорта — отдельным PUT после создания (нужен настоящий guestId).
+ * с allowOverbooking: true. Если details.overbookable нет (номер в ремонте
+ * или заблокирован на даты, details.reason) — повтор ничего не изменит, поэтому
+ * показываем только message бэка и «Создать всё равно» не предлагаем. Документ
+ * гостя уходит в items[0].guests[0].document, фото паспорта — отдельным PUT
+ * после создания (нужен настоящий guestId). Фото документа распознаёт бэкенд
+ * (useDocumentScan → POST /hotel/guests/scan-document/) и раскладывает
+ * прочитанное по полям блока «Документ»; без права или при 503 у провайдера
+ * фото просто прикрепляется.
  *
  * Открывается и «быстрой бронью» — клик по свободной ячейке в
  * RoomBookingGrid кладёт номер+дату в общий стор (requestQuickBooking), эта
@@ -28,7 +34,7 @@ import {
   Card,
   CardContent,
   Checkbox,
-  Collapse,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -48,13 +54,17 @@ import {
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
+import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import UploadOutlined from "@mui/icons-material/UploadOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker } from "../components/ui";
+import { INVOICE_DOCUMENT_ACCEPT } from "../utility/imageCompression";
 import { useHotelProperty } from "./useHotelProperty";
+import { formatGuestMatchedBy } from "./hotelDisplay";
+import { isDocumentFile, prepareDocumentFile, useDocumentScan } from "./useDocumentScan";
 import {
   getHotelCatalogs,
   listRooms,
@@ -67,14 +77,14 @@ import {
   type HotelRoom,
   type HotelGuestSearchResult,
   type HotelGuest,
+  type HotelGuestDocumentScan,
   type HotelReservationConflict,
 } from "../api/hotel";
-import { getErrorMessage } from "../api/client";
+import { getErrorCode, getErrorMessage } from "../api/client";
 import {
   subscribeQuickBookingRequest,
   getQuickBookingRequestSnapshot,
   clearQuickBookingRequest,
-  simulatePassportScan,
   initialsOf,
   formatHotelDateRange,
   type GuestType,
@@ -112,6 +122,10 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // Номер уже занят на эти даты — предупреждаем, не блокируем (409
   // NO_AVAILABILITY с details.conflicts, см. handleSubmit ниже).
   const [overlapConflict, setOverlapConflict] = React.useState<HotelReservationConflict[] | null>(null);
+  // Тот же 409 NO_AVAILABILITY, но без details.overbookable — номер в ремонте
+  // или заблокирован на даты (details.reason): «Создать всё равно» не поможет,
+  // поэтому только сообщение бэка.
+  const [unavailableMessage, setUnavailableMessage] = React.useState<string | null>(null);
 
   // Гость и проживание
   const [guestName, setGuestName] = React.useState("");
@@ -133,14 +147,33 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [citizenship, setCitizenship] = React.useState("");
   const [passportNumber, setPassportNumber] = React.useState("");
   const [passportCountry, setPassportCountry] = React.useState("");
-  const [passportExpiry, setPassportExpiry] = React.useState<Dayjs | null>(null);
+  // Срок действия — общий для обоих типов документа (v2.2: documentExpiry).
+  const [documentExpiry, setDocumentExpiry] = React.useState<Dayjs | null>(null);
+  const [gender, setGender] = React.useState("");
+  const [placeOfBirth, setPlaceOfBirth] = React.useState("");
+  const [issueDate, setIssueDate] = React.useState<Dayjs | null>(null);
+  const [issuingAuthority, setIssuingAuthority] = React.useState("");
+  const [registrationAddress, setRegistrationAddress] = React.useState("");
+  // Тип документа по умолчанию выводится из guestType; распознавание может
+  // показать иное (резидент с паспортом-книжкой) — тогда берём прочитанное,
+  // пока тип гостя не переключат руками.
+  const [scannedDocumentType, setScannedDocumentType] = React.useState<string | null>(null);
   const [entryDate, setEntryDate] = React.useState<Dayjs | null>(null);
   const [migrationCardNumber, setMigrationCardNumber] = React.useState("");
   const [visitPurpose, setVisitPurpose] = React.useState("");
   const [passportPhotoFile, setPassportPhotoFile] = React.useState<File | null>(null);
   const [passportPhotoPreview, setPassportPhotoPreview] = React.useState<string | null>(null);
   const [photoError, setPhotoError] = React.useState<string | null>(null);
-  const [scanNotice, setScanNotice] = React.useState(false);
+  const {
+    available: scanAvailable,
+    scanning,
+    notice: scanNotice,
+    clearNotice: clearScanNotice,
+    scan: runDocumentScan,
+  } = useDocumentScan();
+  // Растёт при каждом сбросе формы — по нему отбрасываем результат
+  // распознавания, который вернулся уже в сброшенную форму.
+  const scanGenerationRef = React.useRef(0);
 
   // Дополнительно
   const [bookingSource, setBookingSource] = React.useState("");
@@ -148,7 +181,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [companyInfo, setCompanyInfo] = React.useState("");
   const [dataConsent, setDataConsent] = React.useState(false);
 
-  const reset = () => {
+  const reset = React.useCallback(() => {
     setGuestName("");
     setGuestPhone("");
     setGuestEmail("");
@@ -166,20 +199,27 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setCitizenship("");
     setPassportNumber("");
     setPassportCountry("");
-    setPassportExpiry(null);
+    setDocumentExpiry(null);
+    setGender("");
+    setPlaceOfBirth("");
+    setIssueDate(null);
+    setIssuingAuthority("");
+    setRegistrationAddress("");
+    setScannedDocumentType(null);
     setEntryDate(null);
     setMigrationCardNumber("");
     setVisitPurpose("");
     setPassportPhotoFile(null);
     setPassportPhotoPreview(null);
     setPhotoError(null);
-    setScanNotice(false);
+    scanGenerationRef.current += 1;
+    clearScanNotice();
     setBookingSource("");
     setSpecialRequests("");
     setCompanyInfo("");
     setDataConsent(false);
     setSubmitError(null);
-  };
+  }, [clearScanNotice]);
 
   // Справочники объекта (питание/гарантия/источник/тип гостя/цель визита) —
   // из бэкенда, не из констант мока (hotel-viva-frontend-api.md §3.2).
@@ -230,7 +270,13 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setCitizenship(guest.citizenship ?? "");
     setPassportNumber(guest.guestType === "foreign" ? guest.documentNumber ?? "" : "");
     setPassportCountry(guest.passportCountry ?? "");
-    setPassportExpiry(guest.passportExpiry ? dayjs(guest.passportExpiry) : null);
+    setDocumentExpiry(guest.documentExpiry ? dayjs(guest.documentExpiry) : null);
+    setGender(guest.gender ?? "");
+    setPlaceOfBirth(guest.placeOfBirth ?? "");
+    setIssueDate(guest.issueDate ? dayjs(guest.issueDate) : null);
+    setIssuingAuthority(guest.issuingAuthority ?? "");
+    setRegistrationAddress(guest.registrationAddress ?? "");
+    setScannedDocumentType(null);
   };
 
   // Дубли по телефону — предупреждение, не блокировка: тот же принцип, что
@@ -264,44 +310,74 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     }
     setOpen(true);
     clearQuickBookingRequest();
-  }, [quickBookingRequest, rooms]);
+  }, [quickBookingRequest, rooms, reset]);
 
   const canSubmit =
     guestName.trim() !== "" && roomId !== "" && !!checkIn && !!checkOut && checkOut.isAfter(checkIn) && property != null;
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /**
+   * Подставляет то, что прочитано с документа. Любое поле скана может быть
+   * null — такое не трогаем (контракт §4.4), форму не сбрасываем. Дата рождения
+   * и ФИО в форме брони не подставляются: у документа заезда нет dob, а имя
+   * гостя уже набрано (без него блок «Документ» не показывается).
+   */
+  const applyScan = (scan: HotelGuestDocumentScan) => {
+    const scannedType = scan.guestType === "resident" || scan.guestType === "foreign" ? scan.guestType : null;
+    if (scannedType) setGuestType(scannedType);
+    setScannedDocumentType(scan.documentType);
+    if (scan.gender === "male" || scan.gender === "female") setGender(scan.gender);
+    if (scan.placeOfBirth) setPlaceOfBirth(scan.placeOfBirth);
+    if (scan.issueDate) setIssueDate(dayjs(scan.issueDate));
+    if (scan.issuingAuthority) setIssuingAuthority(scan.issuingAuthority);
+    if (scan.documentExpiry) setDocumentExpiry(dayjs(scan.documentExpiry));
+    if (scan.documentNumber) {
+      // Номер живёт в разных полях у резидента и иностранца.
+      if ((scannedType ?? guestType) === "foreign") setPassportNumber(scan.documentNumber);
+      else setIdNumber(scan.documentNumber);
+    }
+    if (scan.inn) setInn(scan.inn);
+    if (scan.registrationAddress) setRegistrationAddress(scan.registrationAddress);
+    if (scan.citizenship) setCitizenship(scan.citizenship);
+    if (scan.passportCountry) setPassportCountry(scan.passportCountry);
+  };
+
+  /** Прикрепляет фото документа и, если распознавание доступно, подставляет реквизиты в поля. */
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // позволяет выбрать тот же файл ещё раз
     if (!file) return;
-    if (!/^image\/|^application\/pdf$/.test(file.type)) {
+    if (!isDocumentFile(file)) {
       setPhotoError("Нужен файл изображения или PDF");
       return;
     }
-    if (file.size > MAX_PHOTO_BYTES) {
+    setPhotoError(null);
+    const generation = scanGenerationRef.current;
+    // HEIC с телефона бэкенд не читает — приводим к jpg и заодно ужимаем тяжёлые снимки.
+    const prepared = await prepareDocumentFile(file);
+    if (generation !== scanGenerationRef.current) return;
+    if (!prepared) {
+      setPhotoError("Не удалось прочитать изображение");
+      return;
+    }
+    if (prepared.size > MAX_PHOTO_BYTES) {
       setPhotoError("Файл больше 10 МБ");
       return;
     }
-    setPhotoError(null);
     if (passportPhotoPreview) URL.revokeObjectURL(passportPhotoPreview);
-    setPassportPhotoFile(file);
-    setPassportPhotoPreview(file.type.startsWith("image/") ? URL.createObjectURL(file) : null);
+    setPassportPhotoFile(prepared);
+    setPassportPhotoPreview(prepared.type.startsWith("image/") ? URL.createObjectURL(prepared) : null);
 
-    // Имитация распознавания — реального OCR нет (вне ТЗ), см. simulatePassportScan.
-    const scan = simulatePassportScan(`${file.name}:${file.size}`);
-    setGuestType(scan.guestType);
-    setIdNumber(scan.idNumber ?? "");
-    setInn(scan.inn ?? "");
-    setCitizenship(scan.citizenship ?? "");
-    setPassportNumber(scan.passportNumber ?? "");
-    setPassportCountry(scan.passportCountry ?? "");
-    setPassportExpiry(scan.passportExpiry ? dayjs(scan.passportExpiry) : null);
-    setScanNotice(true);
+    if (!scanAvailable) return;
+    const scan = await runDocumentScan(prepared);
+    // Форму закрыли (и сбросили) пока шло распознавание — чужие поля в новую не подставляем.
+    if (scan && generation === scanGenerationRef.current) applyScan(scan);
   };
 
   const removePhoto = () => {
     if (passportPhotoPreview) URL.revokeObjectURL(passportPhotoPreview);
     setPassportPhotoFile(null);
     setPassportPhotoPreview(null);
+    clearScanNotice();
   };
 
   /**
@@ -315,7 +391,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const documentType = guestType === "resident" ? "id_card" : "passport";
+      const documentType = scannedDocumentType ?? (guestType === "resident" ? "id_card" : "passport");
       const documentNumber = guestType === "resident" ? orUndefined(idNumber) : orUndefined(passportNumber);
       const reservation = await createReservation({
         propertyId: property.id,
@@ -350,7 +426,12 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                   documentNumber,
                   inn: guestType === "resident" ? orUndefined(inn) : undefined,
                   passportCountry: guestType === "foreign" ? orUndefined(passportCountry) : undefined,
-                  passportExpiry: guestType === "foreign" ? passportExpiry?.format("YYYY-MM-DD") ?? null : null,
+                  documentExpiry: documentExpiry?.format("YYYY-MM-DD") ?? null,
+                  gender: gender || undefined,
+                  placeOfBirth: orUndefined(placeOfBirth),
+                  issueDate: issueDate?.format("YYYY-MM-DD") ?? null,
+                  issuingAuthority: orUndefined(issuingAuthority),
+                  registrationAddress: guestType === "resident" ? orUndefined(registrationAddress) : undefined,
                   entryDate: guestType === "foreign" ? entryDate?.format("YYYY-MM-DD") ?? null : null,
                   migrationCardNumber: guestType === "foreign" ? orUndefined(migrationCardNumber) : undefined,
                   visitPurpose: guestType === "foreign" ? visitPurpose || undefined : undefined,
@@ -379,6 +460,11 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
       const conflicts = getReservationConflicts(err);
       if (conflicts && isOverbookingConfirmable(err)) {
         setOverlapConflict(conflicts);
+        return;
+      }
+      // NO_AVAILABILITY без overbookable — повтор с allowOverbooking даст тот же 409.
+      if (getErrorCode(err) === "NO_AVAILABILITY") {
+        setUnavailableMessage(getErrorMessage(err, "Номер недоступен на эти даты"));
         return;
       }
       setSubmitError(getErrorMessage(err, "Не удалось создать бронь"));
@@ -565,6 +651,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                           {option.phone}
+                          {!option.matchedBy.includes("name") && option.matchedBy.length > 0 && (
+                            <> · совпадение по {formatGuestMatchedBy(option.matchedBy)}</>
+                          )}
                         </Typography>
                       </Box>
                     </Stack>
@@ -635,7 +724,12 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                       value={guestType}
                       exclusive
                       size="small"
-                      onChange={(_, value: GuestType | null) => value && setGuestType(value)}
+                      onChange={(_, value: GuestType | null) => {
+                        if (!value) return;
+                        setGuestType(value);
+                        // Тип документа, прочитанный со старого скана, к новому типу гостя не относится.
+                        setScannedDocumentType(null);
+                      }}
                     >
                       {(catalogs?.guestTypes ?? []).map((c) => (
                         <ToggleButton key={c.value} value={c.value}>
@@ -644,15 +738,63 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                       ))}
                     </ToggleButtonGroup>
 
+                    {/* Общее для обоих типов документа — то, что реально несёт любой скан
+                        паспорта/ID-карты независимо от гражданства. */}
+                    <Stack direction="row" gap={2}>
+                      <TextField
+                        select
+                        label="Пол"
+                        value={gender}
+                        onChange={(e) => setGender(e.target.value)}
+                        sx={{ flex: 1 }}
+                      >
+                        <MenuItem value="">Не указан</MenuItem>
+                        {(catalogs?.genders ?? []).map((c) => (
+                          <MenuItem key={c.value} value={c.value}>
+                            {c.label}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                      <TextField
+                        label="Место рождения"
+                        value={placeOfBirth}
+                        onChange={(e) => setPlaceOfBirth(e.target.value)}
+                        sx={{ flex: 1 }}
+                      />
+                    </Stack>
+                    <Stack direction="row" gap={2}>
+                      <CustomDatePicker label="Дата выдачи" value={issueDate} onChange={setIssueDate} sx={{ flex: 1 }} />
+                      <CustomDatePicker
+                        label="Действителен до"
+                        value={documentExpiry}
+                        onChange={setDocumentExpiry}
+                        sx={{ flex: 1 }}
+                      />
+                    </Stack>
+                    <TextField
+                      label="Орган, выдавший документ"
+                      value={issuingAuthority}
+                      onChange={(e) => setIssuingAuthority(e.target.value)}
+                      fullWidth
+                    />
+
                     {guestType === "resident" ? (
-                      <Stack direction="row" gap={2}>
+                      <Stack gap={2}>
+                        <Stack direction="row" gap={2}>
+                          <TextField
+                            label="Паспорт (ID-карта)"
+                            value={idNumber}
+                            onChange={(e) => setIdNumber(e.target.value)}
+                            sx={{ flex: 1 }}
+                          />
+                          <TextField label="ИНН" value={inn} onChange={(e) => setInn(e.target.value)} sx={{ flex: 1 }} />
+                        </Stack>
                         <TextField
-                          label="Паспорт (ID-карта)"
-                          value={idNumber}
-                          onChange={(e) => setIdNumber(e.target.value)}
-                          sx={{ flex: 1 }}
+                          label="Адрес регистрации"
+                          value={registrationAddress}
+                          onChange={(e) => setRegistrationAddress(e.target.value)}
+                          fullWidth
                         />
-                        <TextField label="ИНН" value={inn} onChange={(e) => setInn(e.target.value)} sx={{ flex: 1 }} />
                       </Stack>
                     ) : (
                       <Stack gap={2}>
@@ -678,49 +820,60 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                             sx={{ flex: 1 }}
                           />
                           <CustomDatePicker
-                            label="Действителен до"
-                            value={passportExpiry}
-                            onChange={setPassportExpiry}
-                            sx={{ flex: 1 }}
-                          />
-                        </Stack>
-                        <Stack direction="row" gap={2}>
-                          <CustomDatePicker
                             label="Дата въезда в КР"
                             value={entryDate}
                             onChange={setEntryDate}
                             disableFuture
                             sx={{ flex: 1 }}
                           />
+                        </Stack>
+                        <Stack direction="row" gap={2}>
                           <TextField
                             label="Номер миграционной карты"
                             value={migrationCardNumber}
                             onChange={(e) => setMigrationCardNumber(e.target.value)}
                             sx={{ flex: 1 }}
                           />
+                          <TextField
+                            select
+                            label="Цель визита"
+                            value={visitPurpose}
+                            onChange={(e) => setVisitPurpose(e.target.value)}
+                            sx={{ flex: 1 }}
+                          >
+                            <MenuItem value="">Не указана</MenuItem>
+                            {(catalogs?.visitPurposes ?? []).map((c) => (
+                              <MenuItem key={c.value} value={c.value}>
+                                {c.label}
+                              </MenuItem>
+                            ))}
+                          </TextField>
                         </Stack>
-                        <TextField
-                          select
-                          label="Цель визита"
-                          value={visitPurpose}
-                          onChange={(e) => setVisitPurpose(e.target.value)}
-                          fullWidth
-                        >
-                          <MenuItem value="">Не указана</MenuItem>
-                          {(catalogs?.visitPurposes ?? []).map((c) => (
-                            <MenuItem key={c.value} value={c.value}>
-                              {c.label}
-                            </MenuItem>
-                          ))}
-                        </TextField>
                       </Stack>
                     )}
 
+                    {/* Фото документа: прикрепляется всегда, реквизиты подставляются, если доступно распознавание. */}
                     <Stack direction="row" alignItems="center" gap={1.5}>
-                      <Button component="label" size="small" variant="outlined" startIcon={<UploadOutlined />}>
-                        Фото паспорта
-                        <input type="file" accept="image/*,application/pdf" hidden onChange={handlePhotoChange} />
+                      <Button
+                        component="label"
+                        size="small"
+                        variant="outlined"
+                        startIcon={scanning ? <CircularProgress size={14} /> : <UploadOutlined />}
+                        disabled={scanning}
+                      >
+                        {scanning ? "Распознаём…" : "Фото паспорта"}
+                        <input
+                          type="file"
+                          accept={INVOICE_DOCUMENT_ACCEPT}
+                          hidden
+                          onChange={(e) => void handlePhotoChange(e)}
+                        />
                       </Button>
+                      {scanAvailable && !passportPhotoFile && !scanning && (
+                        <Typography variant="caption" color="text.secondary">
+                          Реквизиты подставятся по фото автоматически
+                        </Typography>
+                      )}
                       {passportPhotoFile && (
                         <Stack direction="row" alignItems="center" gap={1}>
                           {passportPhotoPreview && (
@@ -742,16 +895,23 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         {photoError}
                       </Alert>
                     )}
-                    <Collapse in={scanNotice}>
+                    {scanNotice && (
                       <Alert
-                        severity="info"
+                        severity={scanNotice.severity}
                         icon={<AutoAwesomeOutlined fontSize="small" />}
-                        onClose={() => setScanNotice(false)}
+                        onClose={clearScanNotice}
                         sx={{ fontSize: "0.8rem" }}
                       >
-                        Реквизиты подставлены по фото — демо-распознавание, не настоящий OCR.
+                        {scanNotice.text}
+                        {scanNotice.warnings.length > 0 && (
+                          <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2 }}>
+                            {scanNotice.warnings.map((w) => (
+                              <li key={w}>{w}</li>
+                            ))}
+                          </Box>
+                        )}
                       </Alert>
-                    </Collapse>
+                    )}
 
                     <Divider />
                     <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
@@ -869,6 +1029,25 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
             }}
           >
             Создать всё равно
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Номер в ремонте или заблокирован на даты — 409 NO_AVAILABILITY без
+          details.overbookable, повтор с allowOverbooking вернёт то же самое. */}
+      <Dialog open={unavailableMessage !== null} onClose={() => setUnavailableMessage(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>
+          <Stack direction="row" alignItems="center" gap={1}>
+            <BlockOutlined color="error" fontSize="small" />
+            Номер недоступен
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>{unavailableMessage}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setUnavailableMessage(null)} autoFocus>
+            Понятно
           </Button>
         </DialogActions>
       </Dialog>

@@ -107,17 +107,28 @@ export const HOTEL_GUARANTEE_METHOD_LABELS: Record<string, string> = {
   corporate: "Корпоративный счёт",
 };
 
-export const HOTEL_PAYMENT_METHOD_LABELS: Record<string, string> = {
-  cash: "Наличные",
-  card: "Карта",
-  transfer: "Перевод",
-  online: "Онлайн",
-};
-
 export const HOTEL_GUEST_TYPE_LABELS: Record<string, string> = {
   resident: "Гражданин КР",
   foreign: "Иностранец",
 };
+
+export const HOTEL_GENDER_LABELS: Record<string, string> = {
+  male: "Мужской",
+  female: "Женский",
+};
+
+/** «Совпадение по …» — что значит элемент GuestSearchPayload.matchedBy. */
+export const HOTEL_GUEST_MATCH_LABELS: Record<string, string> = {
+  name: "ФИО",
+  phone: "телефону",
+  document: "номеру документа",
+  inn: "ИНН",
+};
+
+/** "телефону и ИНН" из matchedBy строки поиска; пусто, если бэкенд не прислал причину. */
+export function formatGuestMatchedBy(matchedBy: string[] | undefined): string {
+  return (matchedBy ?? []).map((m) => HOTEL_GUEST_MATCH_LABELS[m] ?? m).join(" и ");
+}
 
 export const HOTEL_VISIT_PURPOSE_LABELS: Record<string, string> = {
   tourism: "Туризм",

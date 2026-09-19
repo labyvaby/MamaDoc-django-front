@@ -20,7 +20,6 @@ import {
   Typography,
 } from "@mui/material";
 
-import { HOTEL_PAYMENT_METHOD_LABELS } from "./hotelDisplay";
 import { formatHotelDateRange, nightsBetween } from "./mockDemoData";
 import type { GuestDetailsState } from "./useGuestDetails";
 
@@ -29,7 +28,7 @@ export interface GuestPaymentDialogProps {
 }
 
 export const GuestPaymentDialog: React.FC<GuestPaymentDialogProps> = ({ state }) => {
-  const { employee, paymentEdit, setPaymentEdit, savePayment, savingPayment, paymentError } = state;
+  const { employee, paymentMethods, paymentEdit, setPaymentEdit, savePayment, savingPayment, paymentError } = state;
   const item = paymentEdit?.reservation.items[0];
 
   return (
@@ -52,9 +51,9 @@ export const GuestPaymentDialog: React.FC<GuestPaymentDialogProps> = ({ state })
                 onChange={(e) => setPaymentEdit({ ...paymentEdit, method: e.target.value })}
                 fullWidth
               >
-                {Object.entries(HOTEL_PAYMENT_METHOD_LABELS).map(([key, label]) => (
-                  <MenuItem key={key} value={key}>
-                    {label}
+                {paymentMethods.map((c) => (
+                  <MenuItem key={c.value} value={c.value}>
+                    {c.label}
                   </MenuItem>
                 ))}
               </TextField>

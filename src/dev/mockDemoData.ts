@@ -572,55 +572,6 @@ export const BOOKING_SOURCE_LABELS: Record<BookingSource, string> = {
   walkin: "Без брони (walk-in)",
 };
 
-// ── Имитация распознавания фото паспорта — AddGuestDrawer.tsx/CreateBookingButton.tsx ──
-//
-// Настоящее распознавание — отдельная фича на потом (нужен бэкенд с OCR).
-// Сейчас по выбранному файлу подставляются правдоподобные фейковые реквизиты
-// — витрина того, как будет выглядеть автозаполнение. Детерминировано по
-// имени файла+размеру: один и тот же файл всегда даёт один и тот же
-// результат, повторный выбор того же фото не скачет.
-
-export interface PassportScanResult {
-  guestType: GuestType;
-  idNumber?: string;
-  inn?: string;
-  citizenship?: string;
-  passportNumber?: string;
-  passportCountry?: string;
-  /** YYYY-MM-DD. */
-  passportExpiry?: string;
-}
-
-const FOREIGN_CITIZENSHIPS = ["Казахстан", "Узбекистан", "Россия", "Таджикистан", "Турция"];
-
-function randomDigits(rnd: () => number, length: number): string {
-  let s = "";
-  for (let i = 0; i < length; i++) s += Math.floor(rnd() * 10);
-  return s;
-}
-
-export function simulatePassportScan(fileSeed: string): PassportScanResult {
-  const rnd = rngFor(`passport-scan:${fileSeed}`);
-  if (rnd() > 0.3) {
-    return {
-      guestType: "resident",
-      idNumber: randomDigits(rnd, 11),
-      inn: randomDigits(rnd, 14),
-    };
-  }
-  const citizenship = FOREIGN_CITIZENSHIPS[Math.floor(rnd() * FOREIGN_CITIZENSHIPS.length)];
-  const passportLetters = String.fromCharCode(65 + Math.floor(rnd() * 26)) + String.fromCharCode(65 + Math.floor(rnd() * 26));
-  return {
-    guestType: "foreign",
-    citizenship,
-    passportNumber: `${passportLetters}${randomDigits(rnd, 7)}`,
-    passportCountry: citizenship,
-    passportExpiry: dayjs()
-      .add(1 + Math.floor(rnd() * 5), "year")
-      .format("YYYY-MM-DD"),
-  };
-}
-
 export const VISIT_PURPOSE_LABELS: Record<VisitPurpose, string> = {
   tourism: "Туризм",
   business: "Бизнес",

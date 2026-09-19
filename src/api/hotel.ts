@@ -1,7 +1,7 @@
 /**
  * Viva (отель) — реальный бэкенд, `/api/v2/hotel/`. Типы и вызовы по
- * контракту бэк-разработчика (`hotel-viva-frontend-api.md`, версия 2.1 от
- * 17.09.2026, тестовый стенд `https://test.crm.operator.kg`). Payload'ы —
+ * контракту бэк-разработчика (`hotel-viva-frontend-api.md`, версия 2.2 от
+ * 19.09.2026, тестовый стенд `https://test.crm.operator.kg`). Payload'ы —
  * дословный перевод раздела 6 контракта в camelCase-интерфейсы; эндпоинты —
  * раздел 4.
  *
@@ -57,6 +57,42 @@ export interface HotelAmenityUpdateData {
   sortOrder?: number;
 }
 
+/**
+ * Строка catalogs.paymentMethods — 4 платформенных способа + свои у объекта
+ * (§3.4 контракта). Для выпадающих списков хватает value/label, isCustom/id
+ * нужны только экрану настроек.
+ */
+export interface HotelPaymentMethodChoice extends HotelChoice {
+  /** true — способ добавлен объектом (можно переименовать/удалить), false — платформенный. */
+  isCustom: boolean;
+  /** id записи для PATCH/DELETE — только у своих способов, у платформенных null. */
+  id: number | null;
+}
+
+/** Свой способ оплаты объекта — справочник объекта (propertyId), как характеристики, но без цены. */
+export interface HotelPaymentMethod {
+  id: number;
+  propertyId: number;
+  /** Стабильный идентификатор: это `value` в catalogs.paymentMethods и `method` в addPayment. */
+  key: string;
+  label: string;
+  sortOrder: number;
+}
+
+export interface HotelPaymentMethodCreateData {
+  propertyId: number;
+  /** ≤120 символов; уникален в объекте без учёта регистра и не совпадает с платформенным («Наличные» → 400). */
+  label: string;
+  /** Если не передан — бэкенд сам выдаёт `custom-xxxxxxxx`. Платформенные ключи (cash/card/transfer/online) заняты. */
+  key?: string;
+  sortOrder?: number;
+}
+
+export interface HotelPaymentMethodUpdateData {
+  label?: string;
+  sortOrder?: number;
+}
+
 export interface HotelCatalogs {
   /** Характеристики ЭТОГО объекта (см. getHotelCatalogs propertyId) — без него приходит []. */
   amenities: HotelAmenity[];
@@ -67,7 +103,9 @@ export interface HotelCatalogs {
   visitPurposes: HotelChoice[];
   guaranteeMethods: HotelChoice[];
   bookingSources: HotelChoice[];
-  paymentMethods: HotelChoice[];
+  /** Без propertyId придут только платформенные способы. */
+  paymentMethods: HotelPaymentMethodChoice[];
+  genders: HotelChoice[];
   roomStates: HotelChoice[];
   mealTypes: HotelChoice[];
   ingredientUnits: HotelChoice[];
@@ -105,7 +143,12 @@ export function getReservationConflicts(err: unknown): HotelReservationConflict[
   return Array.isArray(conflicts) ? (conflicts as HotelReservationConflict[]) : null;
 }
 
-/** Можно ли подтвердить конфликт повтором с allowOverbooking: true. */
+/**
+ * Можно ли подтвердить конфликт повтором с allowOverbooking: true. Без
+ * details.overbookable (номер в ремонте, блокировка на даты — details.reason
+ * "out_of_service" | "blocked") повтор вернёт тот же 409: показываем только
+ * message из ошибки и «Создать всё равно» не предлагаем.
+ */
 export function isOverbookingConfirmable(err: unknown): boolean {
   return err instanceof ApiError && err.code === "NO_AVAILABILITY" && err.details?.overbookable === true;
 }
@@ -137,6 +180,27 @@ export function updateAmenity(id: number, data: HotelAmenityUpdateData): Promise
 /** 409 HAS_DEPENDENTS, если характеристика отмечена хоть у одной категории. */
 export function deleteAmenity(id: number): Promise<void> {
   return apiRequest<void>(`/v2/hotel/catalogs/amenities/${id}/`, { method: "DELETE" });
+}
+
+/** GET /v2/hotel/catalogs/payment-methods/?propertyId= — только СВОИ способы объекта; платформенные + свои вместе — catalogs.paymentMethods. Право hotel.view. */
+export function listPaymentMethods(propertyId: number, signal?: AbortSignal): Promise<HotelPaymentMethod[]> {
+  const qs = buildQuery({ propertyId });
+  return apiRequest<HotelPaymentMethod[]>(`/v2/hotel/catalogs/payment-methods/${qs}`, { signal });
+}
+
+/** Право hotel.manage. Дубль label или совпадение с платформенным — 400 details.fields.label. */
+export function createPaymentMethod(data: HotelPaymentMethodCreateData): Promise<HotelPaymentMethod> {
+  return apiRequest<HotelPaymentMethod>("/v2/hotel/catalogs/payment-methods/", { method: "POST", body: data });
+}
+
+/** Переименование сразу меняет methodLabel у старых оплат — в них хранится ключ, не название. */
+export function updatePaymentMethod(id: number, data: HotelPaymentMethodUpdateData): Promise<HotelPaymentMethod> {
+  return apiRequest<HotelPaymentMethod>(`/v2/hotel/catalogs/payment-methods/${id}/`, { method: "PATCH", body: data });
+}
+
+/** 409 HAS_DEPENDENTS, если этим способом уже принимали оплаты — история не должна терять название. */
+export function deletePaymentMethod(id: number): Promise<void> {
+  return apiRequest<void>(`/v2/hotel/catalogs/payment-methods/${id}/`, { method: "DELETE" });
 }
 
 // ── Объекты размещения (Property) ────────────────────────────────────────────
@@ -449,7 +513,13 @@ export interface HotelStayDocument {
   documentNumber?: string;
   inn?: string;
   passportCountry?: string;
-  passportExpiry?: string | null;
+  /** Срок действия любого документа (у ID-карты резидента тоже). Старое passportExpiry — алиас до v3, не используем. */
+  documentExpiry?: string | null;
+  gender?: string;
+  placeOfBirth?: string;
+  issueDate?: string | null;
+  issuingAuthority?: string;
+  registrationAddress?: string;
   entryDate?: string | null;
   migrationCardNumber?: string;
   visitPurpose?: string;
@@ -792,7 +862,10 @@ export interface HotelPayment {
   id: number;
   reservationId: number;
   kind: "payment" | "refund";
+  /** Ключ способа (catalogs.paymentMethods[].value) — платформенный или свой объекта. */
   method: string;
+  /** Название способа на момент запроса — для показа, в том числе у своих способов. */
+  methodLabel: string;
   amount: Money;
   currency: string;
   note: string;
@@ -812,6 +885,7 @@ export interface HotelPaymentList {
 }
 
 export interface HotelPaymentCreateData {
+  /** Любой value из catalogs.paymentMethods; чужой ключ или опечатка → 400 details.fields.method. */
   method: string;
   amount: Money;
   /** По умолчанию "payment"; "refund" — исправление ошибки, не больше принятого. */
@@ -846,27 +920,39 @@ export interface HotelGuest {
   guestType: string;
   citizenship: string;
   preferences: string;
+  /** Как и dob — поле профиля: видно всем с hotel.guests.view. "" — не указан. */
+  gender: string;
   isVip: boolean;
   marketingConsent: boolean;
   isBlacklisted: boolean;
   blacklistReason: string;
   staysCount: number;
   lastStay: string | null;
-  /** null без права hotel.guests.documents. */
+  /** Поля документа — null без права hotel.guests.documents (при записи без права — 400). */
   documentType: string | null;
   documentNumber: string | null;
   inn: string | null;
   passportCountry: string | null;
-  passportExpiry: string | null;
+  /** Срок действия любого документа. Старое passportExpiry — алиас до v3, не читаем. */
+  documentExpiry: string | null;
+  placeOfBirth: string | null;
+  issueDate: string | null;
+  issuingAuthority: string | null;
+  registrationAddress: string | null;
   documentPhotoUrl: string | null;
 }
 
+/** По какому полю совпал запрос: name | phone | document | inn (см. HOTEL_GUEST_MATCH_LABELS). */
 export interface HotelGuestSearchResult {
   clientId: number;
   fullName: string;
   phone: string;
   isBlacklisted: boolean;
   staysCount: number;
+  matchedBy: string[];
+  /** null без права hotel.guests.documents — тогда по документам поиск и не идёт. */
+  documentNumber: string | null;
+  inn: string | null;
 }
 
 export interface HotelGuestCreateData {
@@ -877,18 +963,59 @@ export interface HotelGuestCreateData {
   source?: string;
   guestType?: string;
   citizenship?: string;
+  /** "male" | "female" — catalogs.genders. */
+  gender?: string;
   documentType?: string;
   documentNumber?: string;
   inn?: string;
   passportCountry?: string;
-  passportExpiry?: string | null;
+  documentExpiry?: string | null;
+  placeOfBirth?: string;
+  issueDate?: string | null;
+  issuingAuthority?: string;
+  registrationAddress?: string;
   preferences?: string;
   isVip?: boolean;
   marketingConsent?: boolean;
 }
 
 export interface HotelGuestUpdateData extends Partial<HotelGuestCreateData> {
-  clearPassportExpiry?: boolean;
+  clearDocumentExpiry?: boolean;
+  clearIssueDate?: boolean;
+}
+
+/**
+ * Ответ POST /v2/hotel/guests/scan-document/. Все поля, кроме confidence и
+ * warnings, могут быть null — форма подставляет то, что пришло, остальное не
+ * трогает. guestType/documentType/gender уже в кодах API (resident|foreign,
+ * id_card|passport, male|female) — кладутся в HotelGuestCreateData как есть.
+ */
+export interface HotelGuestDocumentScan {
+  guestType: string | null;
+  documentType: string | null;
+  fullName: string | null;
+  lastName: string | null;
+  firstName: string | null;
+  middleName: string | null;
+  documentNumber: string | null;
+  /** Только resident (ПИН с ID-карты). */
+  inn: string | null;
+  dob: string | null;
+  gender: string | null;
+  placeOfBirth: string | null;
+  issueDate: string | null;
+  issuingAuthority: string | null;
+  documentExpiry: string | null;
+  /** Только resident. */
+  registrationAddress: string | null;
+  /** Только foreign. */
+  citizenship: string | null;
+  /** Только foreign (ISO alpha-3 или как в документе). */
+  passportCountry: string | null;
+  /** 0..1 — ниже 0.6 поля стоит подсветить «проверьте». */
+  confidence: number;
+  /** Что модель сочла сомнительным: блик, обрезанный край… — текст для показа. */
+  warnings: string[];
 }
 
 export interface HotelGuestListParams {
@@ -897,16 +1024,36 @@ export interface HotelGuestListParams {
   source?: string;
 }
 
-/** До 200 гостей, поиск по имени — список «Гости». */
+/** До 200 гостей, поиск по имени, телефону, номеру документа и ИНН — список «Гости». */
 export function listGuests(params: HotelGuestListParams = {}, signal?: AbortSignal): Promise<HotelGuest[]> {
   const qs = buildQuery(params);
   return apiRequest<HotelGuest[]>(`/v2/hotel/guests/${qs}`, { signal });
 }
 
-/** ≥2 символа, ≤20 результатов — автодополнение в форме брони; ищет по всем клиентам организации. */
+/**
+ * ≥2 символа, ≤20 результатов — автодополнение в форме брони; ищет по всем
+ * клиентам организации: по имени, телефону, номеру документа и ИНН. По
+ * документам — только с правом hotel.guests.documents (без него q=ID2311220
+ * вернёт []). Причина совпадения — в matchedBy каждой строки.
+ */
 export function searchGuests(q: string, signal?: AbortSignal): Promise<HotelGuestSearchResult[]> {
   const qs = buildQuery({ q });
   return apiRequest<HotelGuestSearchResult[]>(`/v2/hotel/guests/search/${qs}`, { signal });
+}
+
+/**
+ * Распознавание фото документа. jpg/png/webp/pdf ≤10 МБ, ответ синхронный
+ * (обычно 3–8 с, бэкенд обрывает на 25 с; собственного таймаута у apiRequest
+ * нет — браузерный заведомо больше 30 с). Ничего не сохраняет: ни фото, ни
+ * поля — фото после создания гостя грузится отдельно (uploadGuestDocumentPhoto).
+ * Право hotel.guests.documents. Ошибки: 422 DOCUMENT_NOT_RECOGNIZED, 429
+ * RECOGNITION_RATE_LIMITED, 503 RECOGNITION_UNAVAILABLE (провайдер не
+ * настроен или лежит), 400 — не файл / больше 10 МБ.
+ */
+export function scanGuestDocument(file: File, signal?: AbortSignal): Promise<HotelGuestDocumentScan> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequest<HotelGuestDocumentScan>("/v2/hotel/guests/scan-document/", { method: "POST", formData, signal });
 }
 
 export function createGuest(data: HotelGuestCreateData): Promise<HotelGuest> {

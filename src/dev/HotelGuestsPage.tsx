@@ -67,7 +67,7 @@ export const HotelGuestsPage: React.FC = () => {
         showSearch
         searchVal={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Поиск по имени или телефону"
+        searchPlaceholder="Имя, телефон, документ или ИНН"
       />
       <AddGuestDrawer
         open={addOpen}

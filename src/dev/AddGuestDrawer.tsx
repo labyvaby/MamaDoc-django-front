@@ -8,18 +8,25 @@
  * восстановленный черновик можно стереть иконкой RestoreOutlined в шапке.
  * Фото (аватар и паспорт) в черновик не входят — File не сериализуется.
  *
- * Поле «Гость» — Autocomplete freeSolo с реальным поиском по имени
- * (searchGuests, см. src/api/hotel.ts, ≥2 символа), тот же приём, что в
- * CreateBookingButton — чтобы персонал не завёл дубль, набирая ФИО. Выбор
- * существующего варианта из списка не создаёт нового гостя, а сразу
- * использует найденного (handleUseDuplicate) — то же действие, что
- * «Использовать» в предупреждении о дубле по телефону ниже.
+ * Поле «Гость» — Autocomplete freeSolo с реальным поиском (searchGuests, см.
+ * src/api/hotel.ts, ≥2 символа), тот же приём, что в CreateBookingButton —
+ * чтобы персонал не завёл дубль, набирая ФИО. Выбор существующего варианта
+ * из списка не создаёт нового гостя, а сразу использует найденного
+ * (handleUseDuplicate) — то же действие, что «Использовать» в предупреждении
+ * о дубле ниже. То же предупреждение триггерится телефоном, ИНН
+ * (guestType === "resident") и номером документа: бэкенд с v2.2 ищет по
+ * всем трём и в matchedBy говорит, по чему совпало — три запроса
+ * searchGuests, результаты объединяются по clientId (см. duplicates ниже).
  *
- * «Фото паспорта» в «Документ» — имитация распознавания (simulatePassportScan
- * в mockDemoData.ts): реального OCR нет, при выборе файла просто
- * подставляются правдоподобные фейковые реквизиты — витрина будущей фичи.
- * Само фото сохраняется как обычный File (как в CreateBookingButton), а не
- * base64 — грузится на бэкенд после создания гостя.
+ * «Фото паспорта» в «Документ» — реальное распознавание (useDocumentScan →
+ * POST /hotel/guests/scan-document/): после выбора файла поля формы
+ * заполняются тем, что удалось прочитать, включая ФИО, если оно ещё пустое.
+ * Если распознавание недоступно (нет права или 503 у провайдера) — фото всё
+ * равно прикрепляется, поля заполняются руками. Само фото сохраняется как
+ * обычный File (как в CreateBookingButton), а не base64 — грузится на бэкенд
+ * после создания гостя. Все поля документа (дата рождения, пол, место
+ * рождения, дата выдачи и срок действия, орган выдачи, адрес регистрации)
+ * уходят в POST /hotel/guests/ — их бэкенд принимает с v2.2.
  *
  * Гость заводится независимо от брони (POST /hotel/guests/) — тот же
  * принцип, что пациент независимо от приёма. Источник (платформа, откуда
@@ -34,6 +41,7 @@ import {
   Avatar,
   Box,
   Button,
+  CircularProgress,
   Collapse,
   Divider,
   Drawer,
@@ -65,8 +73,10 @@ import PatientPhotoUploader from "../components/patients/PatientPhotoUploader";
 import { useFormValidation } from "../hooks/useFormValidation";
 import { capitalizeFullName } from "../utility/name";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../utility/formDraft";
-import { simulatePassportScan, initialsOf, type GuestType } from "./mockDemoData";
-import { HOTEL_GUEST_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS } from "./hotelDisplay";
+import { INVOICE_DOCUMENT_ACCEPT } from "../utility/imageCompression";
+import { initialsOf, type GuestType } from "./mockDemoData";
+import { HOTEL_GUEST_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS, formatGuestMatchedBy } from "./hotelDisplay";
+import { isDocumentFile, prepareDocumentFile, useDocumentScan } from "./useDocumentScan";
 import {
   searchGuests,
   createGuest,
@@ -75,6 +85,7 @@ import {
   setGuestBlacklist,
   type HotelGuestSearchResult,
   type HotelGuestCreateData,
+  type HotelGuestDocumentScan,
 } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 
@@ -97,13 +108,21 @@ type GuestDraft = {
   name: string;
   phone: string;
   guestType: GuestType;
+  /** YYYY-MM-DD или "". */
+  dob: string;
+  gender: "" | "male" | "female";
+  placeOfBirth: string;
+  /** YYYY-MM-DD или "". */
+  issueDate: string;
+  issuingAuthority: string;
   idNumber: string;
   inn: string;
+  registrationAddress: string;
   citizenship: string;
   passportNumber: string;
   passportCountry: string;
-  /** YYYY-MM-DD или "". */
-  passportExpiry: string;
+  /** Срок действия документа, YYYY-MM-DD или "". */
+  documentExpiry: string;
   source: string;
   isBlacklisted: boolean;
   blacklistReason: string;
@@ -125,12 +144,18 @@ function isDraftEmpty(d: Omit<GuestDraft, "savedAt">): boolean {
   return (
     !d.name.trim() &&
     !d.phone.trim() &&
+    !d.dob &&
+    !d.gender &&
+    !d.placeOfBirth.trim() &&
+    !d.issueDate &&
+    !d.issuingAuthority.trim() &&
     !d.idNumber.trim() &&
     !d.inn.trim() &&
+    !d.registrationAddress.trim() &&
     !d.citizenship.trim() &&
     !d.passportNumber.trim() &&
     !d.passportCountry.trim() &&
-    !d.passportExpiry &&
+    !d.documentExpiry &&
     !d.source &&
     !d.isBlacklisted &&
     !d.blacklistReason.trim()
@@ -150,16 +175,38 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
   const [name, setName] = React.useState("");
   const [phone, setPhone] = React.useState("");
   const [guestType, setGuestType] = React.useState<GuestType>("resident");
+  // Тип документа по умолчанию выводится из guestType (резидент — ID-карта,
+  // иностранец — паспорт). Распознавание может показать иное — резидент с
+  // паспортом-книжкой: тогда берём то, что прочитано, пока тип гостя не
+  // переключат руками.
+  const [scannedDocumentType, setScannedDocumentType] = React.useState<string | null>(null);
+  // Общие для обоих типов документа поля — то, что реально несёт скан
+  // паспорта/ID-карты независимо от гражданства.
+  const [dob, setDob] = React.useState<Dayjs | null>(null);
+  const [gender, setGender] = React.useState<"" | "male" | "female">("");
+  const [placeOfBirth, setPlaceOfBirth] = React.useState("");
+  const [issueDate, setIssueDate] = React.useState<Dayjs | null>(null);
+  const [issuingAuthority, setIssuingAuthority] = React.useState("");
   const [idNumber, setIdNumber] = React.useState("");
   const [inn, setInn] = React.useState("");
+  const [registrationAddress, setRegistrationAddress] = React.useState("");
   const [citizenship, setCitizenship] = React.useState("");
   const [passportNumber, setPassportNumber] = React.useState("");
   const [passportCountry, setPassportCountry] = React.useState("");
-  const [passportExpiry, setPassportExpiry] = React.useState<Dayjs | null>(null);
+  const [documentExpiry, setDocumentExpiry] = React.useState<Dayjs | null>(null);
   const [source, setSource] = React.useState("");
   const [passportPhotoFile, setPassportPhotoFile] = React.useState<File | null>(null);
   const [passportPhotoPreview, setPassportPhotoPreview] = React.useState<string | null>(null);
-  const [scanNotice, setScanNotice] = React.useState(false);
+  const {
+    available: scanAvailable,
+    scanning,
+    notice: scanNotice,
+    clearNotice: clearScanNotice,
+    scan: runDocumentScan,
+  } = useDocumentScan();
+  // Растёт при каждом закрытии формы — по нему отбрасываем результат
+  // распознавания, который вернулся уже в сброшенную форму.
+  const scanGenerationRef = React.useRef(0);
   const [isBlacklisted, setIsBlacklisted] = React.useState(false);
   const [blacklistReason, setBlacklistReason] = React.useState("");
   const [draftRestored, setDraftRestored] = React.useState(false);
@@ -184,33 +231,67 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     setPhotoPreview(URL.createObjectURL(file));
   };
 
-  /** Имитация распознавания фото паспорта — реального OCR нет, см. simulatePassportScan в mockDemoData.ts. */
-  const handlePickPassportPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /**
+   * Подставляет то, что прочитано с документа. Любое поле скана может быть
+   * null — такое не трогаем (контракт §4.4), поэтому не сбрасываем форму, как
+   * делал мок. ФИО подставляем только в пустое поле: набранное руками
+   * персоналом важнее прочитанного.
+   */
+  const applyScan = (scan: HotelGuestDocumentScan) => {
+    const scannedType = scan.guestType === "resident" || scan.guestType === "foreign" ? scan.guestType : null;
+    if (scannedType) setGuestType(scannedType);
+    setScannedDocumentType(scan.documentType);
+    if (scan.fullName) {
+      const scannedName = capitalizeFullName(scan.fullName);
+      setName((prev) => (prev.trim() ? prev : scannedName));
+    }
+    if (scan.dob) setDob(dayjs(scan.dob));
+    if (scan.gender === "male" || scan.gender === "female") setGender(scan.gender);
+    if (scan.placeOfBirth) setPlaceOfBirth(scan.placeOfBirth);
+    if (scan.issueDate) setIssueDate(dayjs(scan.issueDate));
+    if (scan.issuingAuthority) setIssuingAuthority(scan.issuingAuthority);
+    if (scan.documentExpiry) setDocumentExpiry(dayjs(scan.documentExpiry));
+    if (scan.documentNumber) {
+      // Номер живёт в разных полях у резидента и иностранца.
+      if ((scannedType ?? guestType) === "foreign") setPassportNumber(scan.documentNumber);
+      else setIdNumber(scan.documentNumber);
+    }
+    if (scan.inn) setInn(scan.inn);
+    if (scan.registrationAddress) setRegistrationAddress(scan.registrationAddress);
+    if (scan.citizenship) setCitizenship(scan.citizenship);
+    if (scan.passportCountry) setPassportCountry(scan.passportCountry);
+  };
+
+  /** Прикрепляет фото документа и, если распознавание доступно, подставляет реквизиты в поля. */
+  const handlePickPassportPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (!/^image\/|^application\/pdf$/.test(file.type)) {
+    if (!isDocumentFile(file)) {
       setPhotoError("Нужен файл изображения или PDF");
       return;
     }
-    if (file.size > MAX_PHOTO_BYTES) {
+    setPhotoError(null);
+    const generation = scanGenerationRef.current;
+    // HEIC с телефона бэкенд не читает — приводим к jpg и заодно ужимаем тяжёлые снимки.
+    const prepared = await prepareDocumentFile(file);
+    if (generation !== scanGenerationRef.current) return;
+    if (!prepared) {
+      setPhotoError("Не удалось прочитать изображение");
+      return;
+    }
+    if (prepared.size > MAX_PHOTO_BYTES) {
       setPhotoError("Файл больше 10 МБ");
       return;
     }
-    setPhotoError(null);
     if (passportPhotoPreview) URL.revokeObjectURL(passportPhotoPreview);
-    setPassportPhotoFile(file);
-    setPassportPhotoPreview(file.type.startsWith("image/") ? URL.createObjectURL(file) : null);
+    setPassportPhotoFile(prepared);
+    setPassportPhotoPreview(prepared.type.startsWith("image/") ? URL.createObjectURL(prepared) : null);
 
-    const scan = simulatePassportScan(`${file.name}:${file.size}`);
-    setGuestType(scan.guestType);
-    setIdNumber(scan.idNumber ?? "");
-    setInn(scan.inn ?? "");
-    setCitizenship(scan.citizenship ?? "");
-    setPassportNumber(scan.passportNumber ?? "");
-    setPassportCountry(scan.passportCountry ?? "");
-    setPassportExpiry(scan.passportExpiry ? dayjs(scan.passportExpiry) : null);
-    setScanNotice(true);
+    if (!scanAvailable) return;
+    const scan = await runDocumentScan(prepared);
+    // Форму закрыли (и сбросили) пока шло распознавание — чужие поля в новую не подставляем.
+    if (scan && generation === scanGenerationRef.current) applyScan(scan);
   };
 
   // ── reset / восстановление черновика при открытии ──────────────────────
@@ -227,17 +308,25 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
         if (prev) URL.revokeObjectURL(prev);
         return null;
       });
-      setScanNotice(false);
+      scanGenerationRef.current += 1;
+      clearScanNotice();
+      setScannedDocumentType(null);
       setName("");
       setPhone("");
       setGuestType("resident");
+      setDob(null);
+      setGender("");
+      setPlaceOfBirth("");
+      setIssueDate(null);
+      setIssuingAuthority("");
       setSource("");
       setIdNumber("");
       setInn("");
+      setRegistrationAddress("");
       setCitizenship("");
       setPassportNumber("");
       setPassportCountry("");
-      setPassportExpiry(null);
+      setDocumentExpiry(null);
       setIsBlacklisted(false);
       setBlacklistReason("");
       setDraftRestored(false);
@@ -249,18 +338,24 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
       setName(draft.name);
       setPhone(draft.phone);
       setGuestType(draft.guestType);
+      setDob(draft.dob ? dayjs(draft.dob) : null);
+      setGender(draft.gender);
+      setPlaceOfBirth(draft.placeOfBirth);
+      setIssueDate(draft.issueDate ? dayjs(draft.issueDate) : null);
+      setIssuingAuthority(draft.issuingAuthority);
       setIdNumber(draft.idNumber);
       setInn(draft.inn);
+      setRegistrationAddress(draft.registrationAddress);
       setCitizenship(draft.citizenship);
       setPassportNumber(draft.passportNumber);
       setPassportCountry(draft.passportCountry);
-      setPassportExpiry(draft.passportExpiry ? dayjs(draft.passportExpiry) : null);
+      setDocumentExpiry(draft.documentExpiry ? dayjs(draft.documentExpiry) : null);
       setSource(draft.source);
       setIsBlacklisted(draft.isBlacklisted);
       setBlacklistReason(draft.blacklistReason);
       setDraftRestored(true);
     }
-  }, [open]);
+  }, [open, clearScanNotice]);
 
   // ── сохранение черновика (защита от случайного закрытия) — фото не
   // сохраняем: File не сериализуется.
@@ -270,12 +365,18 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
       name,
       phone,
       guestType,
+      dob: dob ? dob.format("YYYY-MM-DD") : "",
+      gender,
+      placeOfBirth,
+      issueDate: issueDate ? issueDate.format("YYYY-MM-DD") : "",
+      issuingAuthority,
       idNumber,
       inn,
+      registrationAddress,
       citizenship,
       passportNumber,
       passportCountry,
-      passportExpiry: passportExpiry ? passportExpiry.format("YYYY-MM-DD") : "",
+      documentExpiry: documentExpiry ? documentExpiry.format("YYYY-MM-DD") : "",
       source,
       isBlacklisted,
       blacklistReason,
@@ -288,7 +389,27 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     if (!open) return;
     const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
-  }, [open, name, phone, guestType, idNumber, inn, citizenship, passportNumber, passportCountry, passportExpiry, source, isBlacklisted, blacklistReason]);
+  }, [
+    open,
+    name,
+    phone,
+    guestType,
+    dob,
+    gender,
+    placeOfBirth,
+    issueDate,
+    issuingAuthority,
+    idNumber,
+    inn,
+    registrationAddress,
+    citizenship,
+    passportNumber,
+    passportCountry,
+    documentExpiry,
+    source,
+    isBlacklisted,
+    blacklistReason,
+  ]);
 
   const handleClose = () => {
     if (submitting) return;
@@ -301,29 +422,68 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     setName("");
     setPhone("");
     setGuestType("resident");
+    setDob(null);
+    setGender("");
+    setPlaceOfBirth("");
+    setIssueDate(null);
+    setIssuingAuthority("");
     setIdNumber("");
     setInn("");
+    setRegistrationAddress("");
     setCitizenship("");
     setPassportNumber("");
     setPassportCountry("");
-    setPassportExpiry(null);
+    setDocumentExpiry(null);
+    setScannedDocumentType(null);
     setSource("");
     setIsBlacklisted(false);
     setBlacklistReason("");
     setDraftRestored(false);
   };
 
-  // ── дубли по телефону — тот же приём, что в CreateBookingButton: поиск на
-  // бэкенде (searchGuests), предупреждение, не блокировка.
+  // ── дубли по телефону, ИНН и номеру документа — тот же приём, что в
+  // CreateBookingButton: поиск на бэкенде (searchGuests), предупреждение, не
+  // блокировка. Бэкенд с v2.2 ищет по всем трём и в matchedBy каждой строки
+  // говорит, по чему совпало, — клиентской проверки телефона больше не нужно.
+  // По документам поиск идёт только с правом hotel.guests.documents — без
+  // него запросы по ИНН/номеру просто вернут [].
   const phoneDigits = phone.replace(/\D/g, "");
-  const dupQuery = useQuery({
-    queryKey: ["hotel", "guests", "search", "dup", phoneDigits],
+  const phoneDupQuery = useQuery({
+    queryKey: ["hotel", "guests", "search", "dup-phone", phoneDigits],
     queryFn: ({ signal }) => searchGuests(phoneDigits, signal),
     enabled: open && phoneDigits.length >= 6,
   });
-  const duplicates = (dupQuery.data ?? []).filter(
-    (g) => g.phone.replace(/\D/g, "").includes(phoneDigits) && g.fullName !== name.trim(),
-  );
+
+  const innDigits = inn.replace(/\D/g, "");
+  const innDupQuery = useQuery({
+    queryKey: ["hotel", "guests", "search", "dup-inn", innDigits],
+    queryFn: ({ signal }) => searchGuests(innDigits, signal),
+    enabled: open && guestType === "resident" && innDigits.length >= 8,
+  });
+
+  const documentNumberQuery = (guestType === "resident" ? idNumber : passportNumber).trim();
+  const documentDupQuery = useQuery({
+    queryKey: ["hotel", "guests", "search", "dup-document", documentNumberQuery],
+    queryFn: ({ signal }) => searchGuests(documentNumberQuery, signal),
+    enabled: open && documentNumberQuery.length >= 6,
+  });
+
+  // Объединяем по clientId — один и тот же гость мог совпасть и по телефону, и
+  // по ИНН, и по номеру документа. Совпадение одним лишь именем — не дубль:
+  // запрос здесь всегда телефон/ИНН/номер, имя в нём случайно.
+  const duplicates = React.useMemo(() => {
+    const map = new Map<number, { guest: HotelGuestSearchResult; matchedBy: Set<string> }>();
+    for (const rows of [phoneDupQuery.data, innDupQuery.data, documentDupQuery.data]) {
+      for (const g of rows ?? []) {
+        const reasons = g.matchedBy.filter((m) => m !== "name");
+        if (reasons.length === 0) continue;
+        const existing = map.get(g.clientId);
+        if (existing) reasons.forEach((m) => existing.matchedBy.add(m));
+        else map.set(g.clientId, { guest: g, matchedBy: new Set(reasons) });
+      }
+    }
+    return [...map.values()].map(({ guest, matchedBy }) => ({ guest, matchedBy: [...matchedBy] }));
+  }, [phoneDupQuery.data, innDupQuery.data, documentDupQuery.data]);
 
   // ── автопоиск по ФИО (Autocomplete ниже) — чтобы персонал не завёл дубль,
   // набирая имя уже существующего гостя.
@@ -355,18 +515,26 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const documentType = guestType === "resident" ? "id_card" : "passport";
+      const documentType = scannedDocumentType ?? (guestType === "resident" ? "id_card" : "passport");
       const documentNumber = guestType === "resident" ? orUndefined(idNumber) : orUndefined(passportNumber);
       const data: HotelGuestCreateData = {
         fullName: capitalizeFullName(name),
         phone: orUndefined(phone),
+        dob: dob?.format("YYYY-MM-DD") ?? undefined,
+        gender: gender || undefined,
         guestType,
         documentType,
         documentNumber,
         inn: guestType === "resident" ? orUndefined(inn) : undefined,
         citizenship: guestType === "foreign" ? orUndefined(citizenship) : undefined,
         passportCountry: guestType === "foreign" ? orUndefined(passportCountry) : undefined,
-        passportExpiry: guestType === "foreign" ? passportExpiry?.format("YYYY-MM-DD") ?? undefined : undefined,
+        // Срок действия — общий для обоих типов документа (у ID-карты резидента
+        // тоже), с v2.2 это documentExpiry, а не passportExpiry только про загран.
+        documentExpiry: documentExpiry?.format("YYYY-MM-DD") ?? undefined,
+        placeOfBirth: orUndefined(placeOfBirth),
+        issueDate: issueDate?.format("YYYY-MM-DD") ?? undefined,
+        issuingAuthority: orUndefined(issuingAuthority),
+        registrationAddress: guestType === "resident" ? orUndefined(registrationAddress) : undefined,
         source: source || undefined,
       };
       const guest = await createGuest(data);
@@ -501,6 +669,9 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
                             {option.phone}
+                            {!option.matchedBy.includes("name") && option.matchedBy.length > 0 && (
+                              <> · совпадение по {formatGuestMatchedBy(option.matchedBy)}</>
+                            )}
                           </Typography>
                         </Box>
                       </Stack>
@@ -572,7 +743,12 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                   exclusive
                   size="small"
                   disabled={submitting}
-                  onChange={(_, value: GuestType | null) => value && setGuestType(value)}
+                  onChange={(_, value: GuestType | null) => {
+                    if (!value) return;
+                    setGuestType(value);
+                    // Тип документа, прочитанный со старого скана, к новому типу гостя не относится.
+                    setScannedDocumentType(null);
+                  }}
                 >
                   {(Object.keys(HOTEL_GUEST_TYPE_LABELS) as GuestType[]).map((key) => (
                     <ToggleButton key={key} value={key}>
@@ -581,23 +757,92 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                   ))}
                 </ToggleButtonGroup>
 
+                {/* Общее для обоих типов документа — то, что реально несёт любой скан
+                    паспорта/ID-карты независимо от гражданства. */}
+                <Stack direction="row" gap={2}>
+                  <CustomDatePicker
+                    label="Дата рождения"
+                    value={dob}
+                    onChange={setDob}
+                    slotProps={{ textField: { size: "small", disabled: submitting } }}
+                    sx={{ flex: 1 }}
+                  />
+                  <TextField
+                    select
+                    label="Пол"
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value as "" | "male" | "female")}
+                    size="small"
+                    disabled={submitting}
+                    sx={{ flex: 1 }}
+                  >
+                    <MenuItem value="">Не указан</MenuItem>
+                    <MenuItem value="male">Мужской</MenuItem>
+                    <MenuItem value="female">Женский</MenuItem>
+                  </TextField>
+                </Stack>
+                <Stack direction="row" gap={2}>
+                  <TextField
+                    label="Место рождения"
+                    value={placeOfBirth}
+                    onChange={(e) => setPlaceOfBirth(e.target.value)}
+                    size="small"
+                    disabled={submitting}
+                    sx={{ flex: 1 }}
+                  />
+                  <CustomDatePicker
+                    label="Дата выдачи"
+                    value={issueDate}
+                    onChange={setIssueDate}
+                    slotProps={{ textField: { size: "small", disabled: submitting } }}
+                    sx={{ flex: 1 }}
+                  />
+                </Stack>
+                <Stack direction="row" gap={2}>
+                  <CustomDatePicker
+                    label="Действителен до"
+                    value={documentExpiry}
+                    onChange={setDocumentExpiry}
+                    slotProps={{ textField: { size: "small", disabled: submitting } }}
+                    sx={{ flex: 1 }}
+                  />
+                  <TextField
+                    label="Орган, выдавший документ"
+                    value={issuingAuthority}
+                    onChange={(e) => setIssuingAuthority(e.target.value)}
+                    size="small"
+                    disabled={submitting}
+                    sx={{ flex: 1 }}
+                  />
+                </Stack>
+
                 {guestType === "resident" ? (
-                  <Stack direction="row" gap={2}>
+                  <Stack gap={2}>
+                    <Stack direction="row" gap={2}>
+                      <TextField
+                        label="Паспорт (ID-карта)"
+                        value={idNumber}
+                        onChange={(e) => setIdNumber(e.target.value)}
+                        size="small"
+                        disabled={submitting}
+                        sx={{ flex: 1 }}
+                      />
+                      <TextField
+                        label="ИНН"
+                        value={inn}
+                        onChange={(e) => setInn(e.target.value)}
+                        size="small"
+                        disabled={submitting}
+                        sx={{ flex: 1 }}
+                      />
+                    </Stack>
                     <TextField
-                      label="Паспорт (ID-карта)"
-                      value={idNumber}
-                      onChange={(e) => setIdNumber(e.target.value)}
+                      label="Адрес регистрации"
+                      value={registrationAddress}
+                      onChange={(e) => setRegistrationAddress(e.target.value)}
                       size="small"
                       disabled={submitting}
-                      sx={{ flex: 1 }}
-                    />
-                    <TextField
-                      label="ИНН"
-                      value={inn}
-                      onChange={(e) => setInn(e.target.value)}
-                      size="small"
-                      disabled={submitting}
-                      sx={{ flex: 1 }}
+                      fullWidth
                     />
                   </Stack>
                 ) : (
@@ -620,32 +865,39 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                         sx={{ flex: 1 }}
                       />
                     </Stack>
-                    <Stack direction="row" gap={2}>
-                      <TextField
-                        label="Страна выдачи"
-                        value={passportCountry}
-                        onChange={(e) => setPassportCountry(e.target.value)}
-                        size="small"
-                        disabled={submitting}
-                        sx={{ flex: 1 }}
-                      />
-                      <CustomDatePicker
-                        label="Действителен до"
-                        value={passportExpiry}
-                        onChange={setPassportExpiry}
-                        slotProps={{ textField: { size: "small", disabled: submitting } }}
-                        sx={{ flex: 1 }}
-                      />
-                    </Stack>
+                    <TextField
+                      label="Страна выдачи"
+                      value={passportCountry}
+                      onChange={(e) => setPassportCountry(e.target.value)}
+                      size="small"
+                      disabled={submitting}
+                      fullWidth
+                    />
                   </Stack>
                 )}
 
-                {/* Имитация распознавания — реального OCR нет, см. simulatePassportScan. */}
+                {/* Фото документа: прикрепляется всегда, реквизиты подставляются, если доступно распознавание. */}
                 <Stack direction="row" alignItems="center" gap={1.5}>
-                  <Button component="label" size="small" variant="outlined" startIcon={<UploadOutlined />} disabled={submitting}>
-                    Фото паспорта
-                    <input type="file" accept="image/*,application/pdf" hidden onChange={handlePickPassportPhoto} />
+                  <Button
+                    component="label"
+                    size="small"
+                    variant="outlined"
+                    startIcon={scanning ? <CircularProgress size={14} /> : <UploadOutlined />}
+                    disabled={submitting || scanning}
+                  >
+                    {scanning ? "Распознаём…" : "Фото паспорта"}
+                    <input
+                      type="file"
+                      accept={INVOICE_DOCUMENT_ACCEPT}
+                      hidden
+                      onChange={(e) => void handlePickPassportPhoto(e)}
+                    />
                   </Button>
+                  {scanAvailable && !passportPhotoFile && !scanning && (
+                    <Typography variant="caption" color="text.secondary">
+                      Реквизиты подставятся по фото автоматически
+                    </Typography>
+                  )}
                   {passportPhotoPreview && (
                     <Stack direction="row" alignItems="center" gap={1}>
                       <Box
@@ -663,6 +915,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                           if (passportPhotoPreview) URL.revokeObjectURL(passportPhotoPreview);
                           setPassportPhotoFile(null);
                           setPassportPhotoPreview(null);
+                          clearScanNotice();
                         }}
                       >
                         Убрать
@@ -680,16 +933,23 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                     {photoError}
                   </Alert>
                 )}
-                <Collapse in={scanNotice}>
+                {scanNotice && (
                   <Alert
-                    severity="info"
+                    severity={scanNotice.severity}
                     icon={<AutoAwesomeOutlined fontSize="small" />}
-                    onClose={() => setScanNotice(false)}
+                    onClose={clearScanNotice}
                     sx={{ fontSize: "0.8rem" }}
                   >
-                    Реквизиты подставлены по фото — демо-распознавание, не настоящий OCR.
+                    {scanNotice.text}
+                    {scanNotice.warnings.length > 0 && (
+                      <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2 }}>
+                        {scanNotice.warnings.map((w) => (
+                          <li key={w}>{w}</li>
+                        ))}
+                      </Box>
+                    )}
                   </Alert>
-                </Collapse>
+                )}
               </Stack>
             </MotionBox>
 
@@ -764,13 +1024,13 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
             <Box sx={{ px: 2, pt: 1.5 }}>
               <Alert severity="warning" icon={<WarningAmberOutlined fontSize="small" />} sx={{ py: 0.5 }}>
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  С этим номером телефона уже есть {duplicates.length === 1 ? "гость" : "гости"} в базе
+                  Похожий {duplicates.length === 1 ? "гость уже есть" : "гости уже есть"} в базе
                 </Typography>
                 <Stack gap={0.5} sx={{ mt: 0.75 }}>
-                  {duplicates.slice(0, 3).map((g) => (
+                  {duplicates.slice(0, 3).map(({ guest: g, matchedBy }) => (
                     <Stack key={g.clientId} direction="row" alignItems="center" justifyContent="space-between" gap={1}>
-                      <Typography variant="body2" noWrap>
-                        {g.fullName} — {g.phone}
+                      <Typography variant="body2">
+                        {g.fullName} — {g.phone} · совпадение по {formatGuestMatchedBy(matchedBy)}
                       </Typography>
                       <Button size="small" onClick={() => handleUseDuplicate(g)} sx={{ flexShrink: 0 }}>
                         Использовать
