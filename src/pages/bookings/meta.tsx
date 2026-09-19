@@ -5,6 +5,7 @@ import dayjs, { type Dayjs } from "dayjs";
 
 import type { BookingPrepaymentStatus, BookingStatus } from "../../api/bookings";
 import { subtleBg } from "../../theme/uiHelpers";
+import { pluralRu } from "../../utility/amountInWords";
 import { formatKGS } from "../../utility/format";
 
 type ChipColor = "default" | "success" | "warning" | "error" | "info";
@@ -236,6 +237,25 @@ export function prepaymentExpiryText(expiresAt: string | null | undefined): stri
   const minutes = end.diff(dayjs(), "minute");
   if (minutes < 0) return "ссылка истекла";
   return `ссылка действует ещё ${Math.max(minutes, 1)} мин`;
+}
+
+/**
+ * Возраст заявки для колонки «Создано» в разборе: «только что» / «12 мин назад» /
+ * «6 часов назад» / «3 дня назад». Всегда длительность, а не время суток:
+ * «00:08» без даты читалось как время визита, а регистратуре нужно другое —
+ * сколько заявка ждёт ответа. Точная дата — в тултипе ячейки.
+ */
+export function bookingAgeText(createdAt: string | null | undefined, now: Dayjs): string | null {
+  if (!createdAt) return null;
+  const d = dayjs(createdAt);
+  if (!d.isValid()) return null;
+  const mins = now.diff(d, "minute");
+  if (mins < 1) return "только что";
+  if (mins < 60) return `${mins} мин назад`;
+  const hours = now.diff(d, "hour");
+  if (hours < 24) return `${hours} ${pluralRu(hours, ["час", "часа", "часов"])} назад`;
+  const days = now.diff(d, "day");
+  return `${days} ${pluralRu(days, ["день", "дня", "дней"])} назад`;
 }
 
 /** Есть ли у брони онлайн-предоплата вообще (у врача без неё поле null). */
