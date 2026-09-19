@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { dismissProfileBanner } from "../fixtures/ui";
 
 /** Страница /employees и дровер «Создать сотрудника». */
 export class EmployeesPage {
@@ -7,6 +8,7 @@ export class EmployeesPage {
   async goto(): Promise<void> {
     await this.page.goto("/employees");
     await expect(this.addButton()).toBeVisible();
+    await dismissProfileBanner(this.page);
   }
 
   /** В шапке две кнопки (компактная и обычная) — видна одна по брейкпоинту;
@@ -54,12 +56,20 @@ export class EmployeesPage {
     if ((await option.getAttribute("aria-selected")) !== "true") {
       await option.click();
     }
-    await this.page.keyboard.press("Escape");
+    // Не Escape: если список уже закрылся после выбора, Escape закроет
+    // сам дровер. Клик по заголовку — нейтральное место, закрывает только список.
+    await this.drawer().getByText("Создать сотрудника").click();
+    await expect(this.page.getByRole("listbox")).toBeHidden();
     await expect(this.drawer().getByText(branchName, { exact: true })).toBeVisible();
   }
 
   async submit(): Promise<void> {
-    await this.drawer().getByTestId("drawer-submit").click();
+    const button = this.drawer().getByTestId("drawer-submit");
+    await expect(button).toBeEnabled();
+    // В дровере есть бесконечная анимация (framer-motion): Playwright считает
+    // кнопку «нестабильной» и не кликает, а force-клик по координатам
+    // промахивается. Событие клика уходит самой кнопке — React его принимает.
+    await button.dispatchEvent("click");
   }
 
   /** Alert об ошибке в футере дровера (виден, пока дровер открыт). */
@@ -82,7 +92,7 @@ export class EmployeesPage {
     await row.hover();
     await row.getByRole("button", { name: "Уволить" }).click();
     const dialog = this.page.getByRole("dialog");
-    await expect(dialog.getByText("Уволить сотрудника")).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Уволить сотрудника" })).toBeVisible();
     await dialog.getByRole("button", { name: "Уволить сотрудника" }).click();
     await expect(dialog).toBeHidden({ timeout: 15_000 });
   }
