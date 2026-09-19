@@ -2,11 +2,15 @@ import React from "react";
 import { Box, Stack, Tooltip, Typography } from "@mui/material";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
+import SmartToyOutlined from "@mui/icons-material/SmartToyOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
+import dayjs from "dayjs";
 
 import { Board, type BoardCardSpec, type BoardColumnDef } from "../../components/board";
 import { UserAvatar } from "../../components/ui";
+import ChannelIcon from "../../components/deals/ChannelIcon";
 import LostReasonDialog from "../../components/deals/LostReasonDialog";
+import { relativeTime } from "../tasks/meta";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { formatPhoneDisplay } from "../../utility/phone";
@@ -70,7 +74,13 @@ const DealCardBody: React.FC<{ deal: Deal; hasActions: boolean }> = ({ deal, has
         {deal.patientName || deal.contactName}
       </Typography>
 
-      <Stack direction="row" alignItems="baseline" gap={0.75} sx={{ mt: 0.25 }}>
+      <Stack direction="row" alignItems="center" gap={0.75} sx={{ mt: 0.25 }}>
+        <ChannelIcon channel={deal.channel} size={14} />
+        {deal.actorKind === "bot" ? (
+          <Tooltip title={t("board.createdByBot", { name: deal.createdByName ?? "" })}>
+            <SmartToyOutlined sx={{ fontSize: 14, color: deal.actorColor ?? "text.disabled", flexShrink: 0 }} />
+          </Tooltip>
+        ) : null}
         {deal.phone ? (
           <Typography variant="caption" color="text.secondary" noWrap>
             {formatPhoneDisplay(deal.phone)}
@@ -82,6 +92,22 @@ const DealCardBody: React.FC<{ deal: Deal; hasActions: boolean }> = ({ deal, has
           {formatKGS(deal.amount)}
         </Typography>
       </Stack>
+
+      {/* Последнее касание — для лидов из чата важнее возраста карточки: без
+          ответа больше суток — оранжевым. */}
+      {deal.lastActivityAt && deal.stageKind === "open" ? (
+        <Typography
+          variant="caption"
+          noWrap
+          sx={{
+            display: "block",
+            mt: 0.25,
+            color: dayjs().diff(dayjs(deal.lastActivityAt), "hour") >= 24 ? "warning.main" : "text.disabled",
+          }}
+        >
+          {t("board.lastActivity", { value: relativeTime(deal.lastActivityAt) })}
+        </Typography>
+      ) : null}
 
       <Stack direction="row" alignItems="center" gap={0.75} sx={{ mt: 1 }}>
         {deal.assigneeName ? (

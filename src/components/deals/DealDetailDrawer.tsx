@@ -20,10 +20,16 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
+import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
+import SmartToyOutlined from "@mui/icons-material/SmartToyOutlined";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 
-import { AppButton, ConfirmDialog, CustomDateTimePicker } from "../ui";
+import { AppButton, ConfirmDialog, CustomDateTimePicker, SegmentedTabs } from "../ui";
+import ChannelIcon from "./ChannelIcon";
+import DealChatPane from "./DealChatPane";
 import LostReasonDialog from "./LostReasonDialog";
 import CreateTaskDrawer from "../tasks/CreateTaskDrawer";
 import DjangoAddAppointmentDrawer from "../../pages/appointments/DjangoAddAppointmentDrawer";
@@ -84,6 +90,23 @@ const ACTIVITY_TYPES: DealActivityType[] = ["call", "message", "visit", "note"];
  * в работе: после выигрыша нужен `deals.amount_override`, у проигранной она не
  * правится вовсе, а при непустых позициях считается по ним.
  */
+/** Имя автора записи; бот — с иконкой робота своего цвета. */
+const ActorLabel: React.FC<{
+  name: string | null;
+  kind: "employee" | "bot" | null;
+  color: string | null;
+}> = ({ name, kind, color }) => {
+  if (!name) return null;
+  return (
+    <Stack direction="row" alignItems="center" gap={0.5} component="span" sx={{ minWidth: 0 }}>
+      {kind === "bot" ? <SmartToyOutlined sx={{ fontSize: 13, color: color ?? "text.disabled" }} /> : null}
+      <Typography variant="caption" color="text.disabled" noWrap component="span">
+        {name}
+      </Typography>
+    </Stack>
+  );
+};
+
 const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   dealId,
   onClose,
@@ -101,6 +124,9 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   const queryClient = useQueryClient();
   const { employees } = useAllActiveEmployees(dealId != null);
   const { can } = useCanChecker();
+  const theme = useTheme();
+  const isNarrow = useMediaQuery(theme.breakpoints.down("md"));
+  const [pane, setPane] = React.useState<"deal" | "chat">("deal");
 
   /* Действия ведут в чужие модули, поэтому и права спрашиваем их: у
      регистратора может быть deals.update без tasks.create. */
@@ -117,6 +143,13 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
   const detail = detailQuery.data;
   const deal = detail?.deal;
+
+  /* Чат показываем только тем, кому открыт раздел «Чаты»: iframe всё равно
+     потребует учётку в Чат-центре, а без права незачем и пытаться. */
+  const withChat = Boolean(deal?.chatUrl) && can("chatwoot.view");
+  React.useEffect(() => {
+    if (!open) setPane("deal");
+  }, [open]);
 
   const [amount, setAmount] = React.useState("");
   const [comment, setComment] = React.useState("");
@@ -300,7 +333,7 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
       anchor="right"
       open={open}
       onClose={onClose}
-      PaperProps={{ sx: { width: { xs: "100%", sm: 520 }, maxWidth: "100%" } }}
+      PaperProps={{ sx: { width: { xs: "100%", sm: withChat ? 1100 : 520 }, maxWidth: "100%" } }}
     >
       <Stack sx={{ height: "100%" }}>
         <Stack
@@ -310,9 +343,12 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
           sx={{ px: 2, py: 1.5, gap: 1 }}
         >
           <Stack sx={{ minWidth: 0 }}>
-            <Typography variant="subtitle1" fontWeight={600} noWrap>
-              {deal ? deal.patientName || deal.contactName : t("detail.title")}
-            </Typography>
+            <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+              {deal ? <ChannelIcon channel={deal.channel} size={16} /> : null}
+              <Typography variant="subtitle1" fontWeight={600} noWrap>
+                {deal ? deal.patientName || deal.contactName : t("detail.title")}
+              </Typography>
+            </Stack>
             {deal ? (
               <Stack direction="row" alignItems="center" gap={0.75}>
                 {deal.branchName ? (
@@ -345,7 +381,31 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
         </Stack>
         <Divider />
 
-        <Box sx={{ flex: 1, overflowY: "auto", px: 2, py: 2 }}>
+        {withChat && isNarrow ? (
+          <Box sx={{ px: 2, pt: 1 }}>
+            <SegmentedTabs<"deal" | "chat">
+              tabs={[
+                { key: "deal", label: t("detail.dealTab") },
+                { key: "chat", label: t("detail.chatTab") },
+              ]}
+              value={pane}
+              onChange={setPane}
+              layoutId="deal-drawer-tabs"
+            />
+          </Box>
+        ) : null}
+
+        <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
+        <Box
+          sx={{
+            flex: withChat && !isNarrow ? "0 0 520px" : 1,
+            minWidth: 0,
+            overflowY: "auto",
+            px: 2,
+            py: 2,
+            display: withChat && isNarrow && pane === "chat" ? "none" : "block",
+          }}
+        >
           {detailQuery.isLoading ? (
             <Stack alignItems="center" sx={{ py: 4 }}>
               <CircularProgress size={22} />
@@ -615,11 +675,7 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                       <Typography variant="caption" color="text.secondary">
                         {exactMoment(a.occurredAt)}
                       </Typography>
-                      {a.actorName ? (
-                        <Typography variant="caption" color="text.disabled" noWrap>
-                          {a.actorName}
-                        </Typography>
-                      ) : null}
+                      <ActorLabel name={a.actorName} kind={a.actorKind} color={a.actorColor} />
                     </Stack>
                     {a.note ? <Typography variant="body2">{a.note}</Typography> : null}
                   </Stack>
@@ -645,6 +701,7 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                         {stageDurationLabel(log.durationHours)}
                       </Typography>
                     ) : null}
+                    <ActorLabel name={log.actorName} kind={log.actorKind} color={log.actorColor} />
                     <Typography variant="caption" color="text.disabled" noWrap>
                       {exactMoment(log.enteredAt)}
                     </Typography>
@@ -678,10 +735,15 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                 ) : null}
 
                 <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 1 }}>
-                  <Typography variant="caption" color="text.disabled">
-                    {t("detail.createdBy", { name: deal.createdByName ?? "—" })},{" "}
-                    {exactMoment(deal.createdAt)}
-                  </Typography>
+                  <Stack direction="row" alignItems="center" gap={0.5}>
+                    {deal.actorKind === "bot" ? (
+                      <SmartToyOutlined sx={{ fontSize: 13, color: deal.actorColor ?? "text.disabled" }} />
+                    ) : null}
+                    <Typography variant="caption" color="text.disabled">
+                      {t("detail.createdBy", { name: deal.createdByName ?? "—" })},{" "}
+                      {exactMoment(deal.createdAt)}
+                    </Typography>
+                  </Stack>
                   {deal.wonAt ? (
                     <Typography variant="caption" color="success.main">
                       {t("detail.wonAt", { value: exactMoment(deal.wonAt) })}
@@ -697,6 +759,35 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
             </Stack>
           )}
         </Box>
+
+        {withChat && deal?.chatUrl && (!isNarrow || pane === "chat") ? (
+          <>
+            {!isNarrow ? <Divider orientation="vertical" flexItem /> : null}
+            <Stack sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                gap={1}
+                sx={{ px: 2, py: 1, borderBottom: 1, borderColor: "divider" }}
+              >
+                <ChannelIcon channel={deal.channel} size={16} />
+                <Typography variant="subtitle2" noWrap sx={{ flex: 1, minWidth: 0 }}>
+                  {t("detail.chat")}
+                  {deal.inboxName ? ` · ${deal.inboxName}` : ""}
+                </Typography>
+                <Tooltip title={t("detail.chatOpenInChats")}>
+                  <IconButton size="small" component="a" href="/chats" target="_blank" rel="noopener">
+                    <OpenInNewOutlined fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                <DealChatPane chatUrl={deal.chatUrl} />
+              </Box>
+            </Stack>
+          </>
+        ) : null}
+        </Stack>
       </Stack>
 
       {/* Задача из карточки: ссылки на сделку у задачи нет (поля на бэке не
