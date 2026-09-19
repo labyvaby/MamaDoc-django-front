@@ -9,8 +9,10 @@
  * категории (группировка строк + бейдж «люкс»), номера (со state уборки) и
  * плоские позиции броней; см. hotel-viva-frontend-api.md §4.3. Черновики
  * (reservationStatus: "draft") приходят, но номер не занимают — рисуются
- * пунктиром. Окно — 60 дней (≈ два месяца, лимит бэка 62), не 16: весь период
- * умещается в скролл самого грида, не только по неделе за раз.
+ * пунктиром. С бэка всегда забираем широкое окно — 60 дней (≈ два месяца,
+ * лимит бэка 62) — а масштаб +/- в углу над шапкой (раньше пустовавшем)
+ * только укорачивает/удлиняет видимую часть этого окна на клиенте (7…60
+ * дней), без похода на бэк за каждый клик — см. ZOOM_LEVELS ниже.
  *
  * Клик по номеру открывает RoomDetailsDialog (тариф, вместимость,
  * доступность), клик по бару — ReservationDetailsDialog (реальные детали
@@ -26,6 +28,8 @@ import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
+import AddOutlined from "@mui/icons-material/AddOutlined";
+import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { getCalendar, type HotelCalendarItem, type HotelCalendarRoom } from "../api/hotel";
@@ -51,8 +55,15 @@ import {
 import { RoomDetailsDialog } from "./RoomDetailsDialog";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 
-/** ≈ два месяца — весь период должен помещаться в шахматку, не только неделя за раз (лимит бэка — 62 дня). */
-const NUM_DAYS = 60;
+/**
+ * Дни, которые запрашиваем у бэка, — всегда «широкое» окно (≈ два месяца,
+ * лимит бэка 62), независимо от масштаба. Масштаб (ZOOM_LEVELS ниже) —
+ * сколько из уже загруженных FETCH_DAYS реально показать в сетке; переключение
+ * +/- в углу шахматки меняет только это и не ходит на бэк за новыми данными.
+ */
+const FETCH_DAYS = 60;
+/** Шаги масштаба — от «1 неделя» (детальнее) до «2 месяца» (весь загруженный период), см. FETCH_DAYS выше. */
+const ZOOM_LEVELS = [7, 14, 21, 30, 45, 60];
 const ROOM_COL_WIDTH = 148;
 /**
  * День — «резиновая» колонка (minmax, не фиксированный px): на широком
@@ -76,11 +87,20 @@ export const RoomBookingGrid: React.FC = () => {
   // Общий с HotelOccupancyBanner стор — клик по числу ниже сразу двигает
   // карточки «Загрузка»/«Гости» сверху страницы.
   const selectedDate = React.useSyncExternalStore(subscribeSelectedHotelDate, getSelectedHotelDate);
+  // Индекс в ZOOM_LEVELS — по умолчанию последний (60 дней), то же поведение,
+  // что было раньше с фиксированным NUM_DAYS: оба месяца видны сразу.
+  const [zoomIndex, setZoomIndex] = React.useState(ZOOM_LEVELS.length - 1);
+  const numVisibleDays = ZOOM_LEVELS[zoomIndex];
+  const canZoomIn = zoomIndex > 0;
+  const canZoomOut = zoomIndex < ZOOM_LEVELS.length - 1;
 
   const dates = React.useMemo(
-    () => Array.from({ length: NUM_DAYS }, (_, i) => windowStart.add(i, "day")),
+    () => Array.from({ length: FETCH_DAYS }, (_, i) => windowStart.add(i, "day")),
     [windowStart],
   );
+  // Только эти реально рисуются в сетке — первые numVisibleDays из уже
+  // загруженных FETCH_DAYS, зум их просто укорачивает/удлиняет без рефетча.
+  const visibleDates = React.useMemo(() => dates.slice(0, numVisibleDays), [dates, numVisibleDays]);
   const from = dates[0].format("YYYY-MM-DD");
   const to = dates[dates.length - 1].format("YYYY-MM-DD");
 
@@ -112,11 +132,11 @@ export const RoomBookingGrid: React.FC = () => {
   }, [calendar]);
 
   const today = dayjs().startOf("day");
-  const todayIdx = dates.findIndex((d) => d.isSame(today, "day"));
+  const todayIdx = visibleDates.findIndex((d) => d.isSame(today, "day"));
 
   // Подписи месяцев над днями (row 1) — соседние даты одного месяца схлопываются в одну ячейку.
   const monthSpans: Array<{ label: string; startCol: number; span: number }> = [];
-  dates.forEach((d, i) => {
+  visibleDates.forEach((d, i) => {
     const label = `${MONTH_NOM_RU[d.month()]} ${d.year()}`;
     const last = monthSpans[monthSpans.length - 1];
     if (last && last.label === label) last.span += 1;
@@ -179,11 +199,12 @@ export const RoomBookingGrid: React.FC = () => {
         <Box
           sx={{
             display: "grid",
-            gridTemplateColumns: `${ROOM_COL_WIDTH}px repeat(${NUM_DAYS}, minmax(${MIN_DAY_COL_WIDTH}px, 1fr))`,
-            minWidth: ROOM_COL_WIDTH + NUM_DAYS * MIN_DAY_COL_WIDTH,
+            gridTemplateColumns: `${ROOM_COL_WIDTH}px repeat(${numVisibleDays}, minmax(${MIN_DAY_COL_WIDTH}px, 1fr))`,
+            minWidth: ROOM_COL_WIDTH + numVisibleDays * MIN_DAY_COL_WIDTH,
           }}
         >
-          {/* Угол над шапкой — sticky по обеим осям, перекрывает содержимое под собой при скролле */}
+          {/* Угол над шапкой — sticky по обеим осям, перекрывает содержимое под собой при
+              скролле; раньше пустовал, теперь несёт масштаб +/- (7 дней … 2 месяца). */}
           <Box
             sx={{
               gridRow: "1 / 3",
@@ -196,8 +217,30 @@ export const RoomBookingGrid: React.FC = () => {
               borderRight: 1,
               borderBottom: 1,
               borderColor: "divider",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 0.25,
             }}
-          />
+          >
+            <Tooltip title="Показывать больше дней (до 2 месяцев)">
+              <span>
+                <IconButton size="small" onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))} disabled={!canZoomOut}>
+                  <RemoveOutlined fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Typography variant="caption" color="text.secondary" sx={{ minWidth: 30, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
+              {numVisibleDays} дн.
+            </Typography>
+            <Tooltip title="Показывать меньше дней (до 1 недели)">
+              <span>
+                <IconButton size="small" onClick={() => setZoomIndex((i) => Math.max(0, i - 1))} disabled={!canZoomIn}>
+                  <AddOutlined fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
 
           {monthSpans.map((m) => (
             <Box
@@ -223,7 +266,7 @@ export const RoomBookingGrid: React.FC = () => {
             </Box>
           ))}
 
-          {dates.map((d, i) => {
+          {visibleDates.map((d, i) => {
             const dateStr = d.format("YYYY-MM-DD");
             const isToday = i === todayIdx;
             const isSelected = dateStr === selectedDate;
@@ -368,7 +411,7 @@ export const RoomBookingGrid: React.FC = () => {
                 {(() => {
                   // Черновики (reservationStatus: "draft") номер не занимают — только подтверждённые/hold считаются на занятость.
                   const occupying = roomItems.filter((it) => it.reservationStatus !== "draft");
-                  return dates.map((d, i) => {
+                  return visibleDates.map((d, i) => {
                     const dateStr = d.format("YYYY-MM-DD");
                     const isFree = !occupying.some((it) => dateStr >= it.checkIn && dateStr < it.checkOut);
                     return (
@@ -415,7 +458,7 @@ export const RoomBookingGrid: React.FC = () => {
               const rawStart = dayjs(it.checkIn).diff(windowStart, "day");
               const rawEnd = dayjs(it.checkOut).diff(windowStart, "day");
               const startCol = Math.max(0, rawStart);
-              const endCol = Math.min(NUM_DAYS, rawEnd);
+              const endCol = Math.min(numVisibleDays, rawEnd);
               if (endCol <= startCol) return null;
               const status = mapStayDisplayStatus(it.stayStatus);
               const color = it.isOverbooking ? theme.palette.warning.main : hotelStayStatusColor(status, theme);
