@@ -42,6 +42,12 @@ export interface RegistrationSheetData {
   maxRequiredDays: number | null;
   /** PNG штрихкода от ЛИС в base64; пусто — без штрихкода (заказ не отправлен). */
   barcodeBase64: string;
+  /**
+   * Печатать ли цены и итоги. Сотрудник без `finance.view` получает от
+   * бэкенда суммы `null` — лист у него без колонки «Цена» и без итогов,
+   * а не с нулями.
+   */
+  withPrices: boolean;
 }
 
 /**
@@ -80,6 +86,7 @@ export function registrationSheetFromOrder(input: {
     paidAmount: order.paidCash + order.paidCard,
     maxRequiredDays: days.length > 0 ? Math.max(...days) : null,
     barcodeBase64: input.barcodeBase64,
+    withPrices: order.financeVisible,
   };
 }
 
@@ -145,11 +152,11 @@ export interface RegistrationSheetTotals {
  */
 export function registrationSheetTotals(data: RegistrationSheetData): RegistrationSheetTotals {
   const testsGross = round2(
-    data.lines.reduce((sum, line) => sum + money(line.price) * line.countItem, 0),
+    data.lines.reduce((sum, line) => sum + money(line.price ?? "0") * line.countItem, 0),
   );
   const discount = round2((testsGross * data.discountPercent) / 100);
   const instrumentsTotal = round2(
-    data.instruments.reduce((sum, item) => sum + money(item.price) * item.count, 0),
+    data.instruments.reduce((sum, item) => sum + money(item.price ?? "0") * item.count, 0),
   );
   const total = round2(data.totalAmount);
   const instrumentsCharged =
@@ -209,6 +216,9 @@ export function buildRegistrationSheetHtml(data: RegistrationSheetData): string 
   const resultAt =
     data.maxRequiredDays == null ? null : addDays(data.registeredAt, data.maxRequiredDays);
 
+  const priceCell = (value: string): string =>
+    data.withPrices ? `<td class="s">${value}</td>` : "";
+
   const lineRows = data.lines
     .map(
       (line, index) => `
@@ -216,7 +226,7 @@ export function buildRegistrationSheetHtml(data: RegistrationSheetData): string 
         <td class="n">${index + 1}</td>
         <td>${esc(line.titleSnapshot)}${lineTags(line)}</td>
         <td class="q">${line.countItem}</td>
-        <td class="s">${esc(formatKGS(money(line.price) * line.countItem))}</td>
+        ${priceCell(esc(formatKGS(money(line.price ?? "0") * line.countItem)))}
       </tr>`,
     )
     .join("");
@@ -228,7 +238,7 @@ export function buildRegistrationSheetHtml(data: RegistrationSheetData): string 
         <td class="n"></td>
         <td>${esc(item.titleSnapshot)}</td>
         <td class="q">${item.count}</td>
-        <td class="s">${totals.instrumentsCharged ? esc(formatKGS(money(item.price) * item.count)) : "—"}</td>
+        ${priceCell(totals.instrumentsCharged ? esc(formatKGS(money(item.price ?? "0") * item.count)) : "—")}
       </tr>`,
     )
     .join("");
@@ -236,7 +246,7 @@ export function buildRegistrationSheetHtml(data: RegistrationSheetData): string 
   const summaryRow = (label: string, value: string, cls = ""): string =>
     `<tr class="${cls}"><td class="n"></td><td colspan="2">${label}</td><td class="s">${esc(value)}</td></tr>`;
 
-  const summaryRows = [
+  const summaryRows = !data.withPrices ? "" : [
     totals.discount > 0
       ? summaryRow(`Скидка ${data.discountPercent}%`, `− ${formatKGS(totals.discount)}`)
       : "",
@@ -275,7 +285,7 @@ export function buildRegistrationSheetHtml(data: RegistrationSheetData): string 
   </div>
 
   <table>
-    <thead><tr><th></th><th>Исследование</th><th class="q">Кол-во</th><th class="s">Цена</th></tr></thead>
+    <thead><tr><th></th><th>Исследование</th><th class="q">Кол-во</th>${data.withPrices ? '<th class="s">Цена</th>' : ""}</tr></thead>
     <tbody>${lineRows}${instrumentRows}${summaryRows}</tbody>
   </table>
 

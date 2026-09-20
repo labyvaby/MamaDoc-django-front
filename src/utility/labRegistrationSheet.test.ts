@@ -27,6 +27,7 @@ const data = (over: Partial<RegistrationSheetData> = {}): RegistrationSheetData 
   paidAmount: 1000,
   maxRequiredDays: 0,
   barcodeBase64: "iVBORw0KGgoBARCODE",
+  withPrices: true,
   ...over,
 });
 
@@ -106,5 +107,13 @@ describe("buildRegistrationSheetHtml", () => {
       data({ lines: [{ ...line, titleSnapshot: "<b>Витамин D</b> & Co" }] }),
     );
     expect(html).toContain("&lt;b&gt;Витамин D&lt;/b&gt; &amp; Co");
+  });
+
+  it("без права на финансы — ни колонки «Цена», ни итогов", () => {
+    const html = buildRegistrationSheetHtml(data({ withPrices: false }));
+    expect(html).not.toContain("Цена");
+    expect(html).not.toContain("Сумма итого");
+    expect(html).not.toContain("KGS");
+    expect(html).toContain("Общий анализ мочи (ОАМ)");
   });
 });

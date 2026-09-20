@@ -493,6 +493,8 @@ export const djangoQueryKeys = {
      * каталога, берётся из контекста пользователя, а не передаётся явно.
      */
     settings: ["django", "lab", "settings"] as const,
+    /** Настройка ЛИС управляющим (`GET /lab/settings/config/`). */
+    config: ["django", "lab", "settings", "config"] as const,
     /**
      * Пробирки/вопросы/подготовка зависят от состава корзины (`?tests=`) и
      * перезагружаются при её изменении, с debounce — ключ по строке

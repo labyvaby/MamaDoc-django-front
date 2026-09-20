@@ -40,6 +40,7 @@ import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
+import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
@@ -214,6 +215,12 @@ const TAB_DEFS: TabDef[] = [
     key: "odoctor",
     to: "/settings/odoctor",
     icon: <StorefrontOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "lab",
+    to: "/settings/lab",
+    icon: <ScienceOutlined fontSize="small" />,
     group: "operations",
   },
 ];

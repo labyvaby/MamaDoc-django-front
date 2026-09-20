@@ -130,6 +130,7 @@ const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
 const OdoctorSettingsPage = lazy(() => import("./pages/settings/OdoctorSettingsPage"));
+const LabSettingsPage = lazy(() => import("./pages/settings/LabSettingsPage"));
 const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const ClientsSettingsPage = lazy(() => import("./pages/settings/ClientsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
@@ -836,6 +837,16 @@ function App() {
                             <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.odoctor}>
                               <Suspense fallback={<LinearProgress />}>
                                 <OdoctorSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="settings/lab"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.lab}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <LabSettingsPage />
                               </Suspense>
                             </RequirePermission>
                           }
