@@ -2,9 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   buildLabelsHtml,
-  buildTicketHtml,
   buildPreparationHtml,
-  looksLikePngBase64,
   type LabelData,
 } from "./labLabels";
 
@@ -49,13 +47,6 @@ describe("buildLabelsHtml", () => {
   });
 });
 
-describe("buildTicketHtml", () => {
-  it("вставляет регистрационный лист из ЛИС картинкой", () => {
-    const html = buildTicketHtml({ ...data, ticketBase64: "VElDS0VU" });
-    expect(html).toContain("data:image/png;base64,VElDS0VU");
-  });
-});
-
 describe("buildPreparationHtml", () => {
   it("печатает каждый текст отдельным блоком", () => {
     const html = buildPreparationHtml(data, [
@@ -75,24 +66,5 @@ describe("buildPreparationHtml", () => {
   it("пустой список даёт понятную заглушку, а не пустой лист", () => {
     const html = buildPreparationHtml(data, []);
     expect(html).toContain("Особой подготовки не требуется");
-  });
-});
-
-describe("looksLikePngBase64", () => {
-  it("узнаёт настоящую PNG-картинку по сигнатуре", () => {
-    // "iVBORw0KGgo" — base64 первых 8 байт любого PNG (89 50 4E 47 0D 0A 1A 0A).
-    expect(looksLikePngBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB")).toBe(true);
-  });
-
-  it("отличает сериализованный JasperPrint от картинки", () => {
-    // Реальный префикс регистрационного листа живой ЛИС (lab-intake-live-
-    // findings.md, находка 17): заголовок Java-сериализации `\xac\xed\x00\x05`
-    // и далее `sr` (TC_OBJECT + TC_CLASSDESC) — в base64 "rO0ABXNy...".
-    // Вставить это как data:image/png дало бы битую картинку вместо листа.
-    expect(looksLikePngBase64("rO0ABXNyACduZXQuc2YuamFzcGVycmVwb3J0cw==")).toBe(false);
-  });
-
-  it("пустую строку не принимает за картинку", () => {
-    expect(looksLikePngBase64("")).toBe(false);
   });
 });

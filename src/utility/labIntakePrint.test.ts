@@ -17,13 +17,12 @@ const receipt = (over: Partial<LabReceipt["order"]> = {}): LabReceipt => ({
     ...over,
   },
   barcodeBase64: "QkFSQ09ERQ==",
-  // Префикс настоящей PNG: печать регистрационного листа возможна только
-  // для картинки, а ЛИС сегодня присылает под этим полем JasperPrint.
-  ticketBase64: "iVBORw0KGgoTICKET",
+  // ЛИС присылает под этим полем JasperPrint, печать его не читает.
+  ticketBase64: "rO0ABXNyACduZXQuc2Yu",
 });
 
 describe("buildLabIntakePrintouts", () => {
-  it("собирает все три формы разом", () => {
+  it("собирает этикетки и памятку разом", () => {
     const printouts = buildLabIntakePrintouts({
       receipt: receipt(),
       patientName: "Иванова Мария Петровна",
@@ -34,24 +33,7 @@ describe("buildLabIntakePrintouts", () => {
     expect(printouts.labels).toContain("Иванова Мария Петровна");
     expect(printouts.labels).toContain("17.05.1990");
     expect(printouts.labels).toContain("777");
-    expect(printouts.ticket).toContain("data:image/png;base64,iVBORw0KGgoTICKET");
     expect(printouts.preparation).toContain("Натощак 8 часов");
-  });
-
-  it("не картинка под регистрационным листом — печатать нечего", () => {
-    // Ровно то, что живая ЛИС присылает сегодня: сериализованный
-    // Java-объект JasperPrint вместо PNG (находка 17). Вставить его в
-    // data:image нельзя, и лист напечатался бы битым — поэтому вместо
-    // готового HTML возвращается null, а кнопка печати гаснет.
-    const printouts = buildLabIntakePrintouts({
-      receipt: { ...receipt(), ticketBase64: "rO0ABXNyACduZXQuc2Yu" },
-      patientName: "Петров Иван",
-      patientBirthDate: "1990-05-17",
-      preparationTexts: [],
-    });
-    expect(printouts.ticket).toBeNull();
-    // Этикетки и памятка от этого не страдают — они не про ЛИС-картинку.
-    expect(printouts.labels).toContain("data:image/png;base64,QkFSQ09ERQ==");
   });
 
   it("дата рождения приходит в формате ISO из карты, а печатается по-русски", () => {
@@ -95,17 +77,5 @@ describe("buildLabIntakePrintouts", () => {
       preparationTexts: [],
     });
     expect(printouts.preparation).toContain("Особой подготовки не требуется");
-  });
-
-  it("этикетки и регистрационный лист используют разные картинки из ЛИС", () => {
-    const printouts = buildLabIntakePrintouts({
-      receipt: receipt(),
-      patientName: "Петров Иван",
-      patientBirthDate: "1990-05-17",
-      preparationTexts: [],
-    });
-    // Штрихкод в регистрационный лист не подмешивается, а лист — в этикетки.
-    expect(printouts.labels).not.toContain("data:image/png;base64,VElDS0VU");
-    expect(printouts.ticket).not.toContain("data:image/png;base64,QkFSQ09ERQ==");
   });
 });

@@ -22,35 +22,29 @@ import {
   getLabOrder,
   getLabOrderLabels,
   getLabPreparation,
+  getLabTests,
   testIdsQuery,
+  type LabTest,
 } from "../../api/lab";
 import { getPatient } from "../../api/patients";
 import { getErrorMessage } from "../../api/client";
-import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
+import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
+import { usePermissions } from "../../hooks/usePermissions";
 import {
   buildLabelsHtml,
   buildPreparationHtml,
-  buildTicketHtml,
-  looksLikePngBase64,
   printHtml,
   type LabelData,
 } from "../../utility/labLabels";
+import {
+  buildRegistrationSheetHtml,
+  registrationSheetFromOrder,
+} from "../../utility/labRegistrationSheet";
 import { labOrderDispatchStatus, labOrderLisPrintBlockReason } from "../../utility/labOrderStatus";
 import { formatDateRu, formatKGS } from "../../utility/format";
 
 const POPUP_BLOCKED_MESSAGE =
   "Браузер заблокировал окно печати — разрешите всплывающие окна для этой страницы и повторите";
-
-/**
- * ЛИС отдаёт регистрационный лист сериализованным `JasperPrint`, а не
- * картинкой (см. `labLabels.ts`/`looksLikePngBase64`, `lab-intake-live-
- * findings.md`, находка 17). Кнопка остаётся живой и реально ходит в ЛИС —
- * если бэкенд однажды научится конвертировать лист в картинку, печать
- * заработает сама; до тех пор регистратор должен увидеть внятную причину, а
- * не битую картинку в окне печати.
- */
-const TICKET_NOT_AN_IMAGE_MESSAGE =
-  "ЛИС отдаёт регистрационный лист не картинкой, а служебным форматом — известное ограничение вендора. Напечатать его пока нельзя.";
 
 export interface LabOrderCardProps {
   /** Заказ, который открыт карточкой. `null` — карточка закрыта, запросов нет. */
@@ -142,6 +136,7 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
   canRetryDispatch,
 }) => {
   const queryClient = useQueryClient();
+  const { activeOrganization } = usePermissions();
 
   const orderQuery = useQuery({
     queryKey: djangoQueryKeys.lab.order(orderId ?? 0),
@@ -169,6 +164,15 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
     queryFn: ({ signal }) => getLabPreparation(lineTestIds, signal),
     enabled: open && order != null,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  });
+
+  // Каталог — ради сроков готовности на регистрационном листе; тот же
+  // ключ, что у дровера приёма, так что чаще всего уже в кэше.
+  const testsQuery = useQuery<LabTest[]>({
+    queryKey: djangoQueryKeys.lab.tests,
+    queryFn: ({ signal }) => getLabTests(signal),
+    enabled: open && order != null,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
   const [retrying, setRetrying] = React.useState(false);
@@ -219,22 +223,14 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
     barcodeBase64,
   });
 
-  /** Этикетки и регистрационный лист — оба идут через один и тот же живой вызов ЛИС. */
-  const handleLisPrint = async (kind: "labels" | "ticket") => {
+  /** Этикетки — живой вызов ЛИС за штрихкодом. */
+  const handlePrintLabels = async () => {
     if (!order) return;
     setPrintMessage(null);
-    setPrintBusy(kind);
+    setPrintBusy("labels");
     try {
       const labels = await getLabOrderLabels(order.id);
-      if (kind === "labels") {
-        setPrintMessage(printHtml(buildLabelsHtml(labelData(labels.barcodeBase64))) ? null : POPUP_BLOCKED_MESSAGE);
-      } else if (!looksLikePngBase64(labels.ticketBase64)) {
-        // Не открываем окно печати с битой картинкой — см. TICKET_NOT_AN_IMAGE_MESSAGE.
-        setPrintMessage(TICKET_NOT_AN_IMAGE_MESSAGE);
-      } else {
-        const html = buildTicketHtml({ ...labelData(labels.barcodeBase64), ticketBase64: labels.ticketBase64 });
-        setPrintMessage(printHtml(html) ? null : POPUP_BLOCKED_MESSAGE);
-      }
+      setPrintMessage(printHtml(buildLabelsHtml(labelData(labels.barcodeBase64))) ? null : POPUP_BLOCKED_MESSAGE);
     } catch (err) {
       // 502 (ЛИС недоступна на момент печати) и любой другой отказ — не
       // открываем пустое окно печати, показываем причину (см. задачу).
@@ -242,6 +238,40 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
     } finally {
       setPrintBusy(null);
     }
+  };
+
+  /**
+   * Регистрационный лист — свой (`labRegistrationSheet.ts`), из карточки
+   * заказа. Штрихкод ЛИС на нём — тот, что уже показан в карточке; если у
+   * отправленного заказа он ещё не пришёл, лист запрашивает его сам, а при
+   * отказе ЛИС печатается без штрихкода, но с номером: лист нужен пациенту
+   * как чек и без него.
+   */
+  const handlePrintSheet = async () => {
+    if (!order) return;
+    setPrintMessage(null);
+    setPrintBusy("ticket");
+    let barcodeBase64 = barcodeQuery.data?.barcodeBase64 ?? "";
+    if (!barcodeBase64 && order.isDispatched) {
+      try {
+        barcodeBase64 = (await getLabOrderLabels(order.id)).barcodeBase64;
+      } catch {
+        barcodeBase64 = "";
+      }
+    }
+    const html = buildRegistrationSheetHtml(
+      registrationSheetFromOrder({
+        order,
+        clinicName: activeOrganization?.name ?? "",
+        patient: patientQuery.data
+          ? { birthDate: patientQuery.data.birthDate, gender: patientQuery.data.gender }
+          : null,
+        tests: testsQuery.data ?? [],
+        barcodeBase64,
+      }),
+    );
+    setPrintMessage(printHtml(html) ? null : POPUP_BLOCKED_MESSAGE);
+    setPrintBusy(null);
   };
 
   const handlePrintPreparation = () => {
@@ -424,25 +454,20 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
                       variant="outlined"
                       disabled={!!printBlockReason}
                       loading={printBusy === "labels"}
-                      onClick={() => handleLisPrint("labels")}
+                      onClick={handlePrintLabels}
                     >
                       Этикетки
                     </AppButton>
                   </span>
                 </Tooltip>
-                <Tooltip title={printBlockReason ?? ""}>
-                  <span>
-                    <AppButton
-                      size="small"
-                      variant="outlined"
-                      disabled={!!printBlockReason}
-                      loading={printBusy === "ticket"}
-                      onClick={() => handleLisPrint("ticket")}
-                    >
-                      Регистрационный лист
-                    </AppButton>
-                  </span>
-                </Tooltip>
+                <AppButton
+                  size="small"
+                  variant="outlined"
+                  loading={printBusy === "ticket"}
+                  onClick={handlePrintSheet}
+                >
+                  Регистрационный лист
+                </AppButton>
                 <Tooltip title={preparationQuery.isError ? "Не удалось загрузить памятку подготовки" : ""}>
                   <span>
                     <AppButton size="small" variant="outlined" disabled={!preparationReady} onClick={handlePrintPreparation}>
