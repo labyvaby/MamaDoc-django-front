@@ -1,5 +1,6 @@
 import React from "react";
-import { Box, CircularProgress, Stack, Typography } from "@mui/material";
+import { Box, CircularProgress, Link, Stack, Typography } from "@mui/material";
+import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import { useQuery } from "@tanstack/react-query";
 
 import { AppButton } from "../ui";
@@ -18,7 +19,9 @@ const SSO_SETTLE_MS = 2500;
 const REVEAL_DELAY_MS = 400;
 
 type Phase =
-  /** Сразу ведём iframe на разговор: сессия Чат-центра обычно уже есть. */
+  /** Карточка открыта, но чат ещё не запрашивали: только кнопка. */
+  | "idle"
+  /** Ведём iframe на разговор: сессия Чат-центра обычно уже есть. */
   | "conversation"
   /** Сессии нет — грузим ссылку входа, Chatwoot ставит cookie. */
   | "sso"
@@ -30,7 +33,13 @@ type Phase =
 /**
  * Разговор Chatwoot внутри карточки сделки.
  *
- * Повторяет ленивый вход раздела «Чаты», но с другой целью: не дашборд, а
+ * Грузится только по кнопке «Открыть чат»: карточку открывают чаще, чем
+ * читают переписку, а каждый iframe — это отдельная загрузка SPA Chatwoot и,
+ * при отсутствии сессии, одноразовый SSO-токен. Рядом — ссылка на разговор в
+ * новой вкладке: она работает и там, где Chatwoot запрещает встраивание
+ * (frame-ancestors) — например, со стенда.
+ *
+ * Дальше — ленивый вход раздела «Чаты», но с другой целью: не дашборд, а
  * конкретный разговор (`Deal.chatUrl`). Порядок: разговор → (нет сессии) →
  * SSO-ссылка → разговор заново → (снова нет сессии) → «Переподключить».
  * Прочитать содержимое iframe нельзя — о срыве сообщает сама страница
@@ -38,7 +47,7 @@ type Phase =
  */
 const DealChatPane: React.FC<{ chatUrl: string }> = ({ chatUrl }) => {
   const { t } = useT("deals");
-  const [phase, setPhase] = React.useState<Phase>("conversation");
+  const [phase, setPhase] = React.useState<Phase>("idle");
   const [attempt, setAttempt] = React.useState(0);
 
   const embedQuery = useQuery({
@@ -56,7 +65,11 @@ const DealChatPane: React.FC<{ chatUrl: string }> = ({ chatUrl }) => {
   });
 
   const src =
-    phase === "sso" ? (embedQuery.data?.url ?? null) : phase === "failed" ? null : chatUrl;
+    phase === "sso"
+      ? (embedQuery.data?.url ?? null)
+      : phase === "failed" || phase === "idle"
+        ? null
+        : chatUrl;
 
   const onLoginRequired = React.useCallback(() => {
     setPhase((current) => {
@@ -67,15 +80,28 @@ const DealChatPane: React.FC<{ chatUrl: string }> = ({ chatUrl }) => {
   }, []);
   useChatwootLoginFailed(src, onLoginRequired);
 
-  // Новый разговор (другая сделка в том же дровере) — начинаем с чистого листа.
+  // Новый разговор (другая сделка в том же дровере) — снова только кнопка.
   React.useEffect(() => {
-    setPhase("conversation");
+    setPhase("idle");
   }, [chatUrl]);
 
   const retry = () => {
     setAttempt((n) => n + 1);
     setPhase("sso");
   };
+
+  if (phase === "idle") {
+    return (
+      <Stack spacing={1.5} sx={{ height: "100%", alignItems: "center", justifyContent: "center", px: 3 }}>
+        <AppButton variant="contained" startIcon={<ForumOutlined />} onClick={() => setPhase("conversation")}>
+          {t("detail.chatOpen")}
+        </AppButton>
+        <Link href={chatUrl} target="_blank" rel="noopener" variant="body2" underline="hover">
+          {t("detail.chatOpenExternal")}
+        </Link>
+      </Stack>
+    );
+  }
 
   if (phase === "failed") {
     return (
