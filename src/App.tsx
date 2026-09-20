@@ -68,6 +68,7 @@ const UnderConstruction = lazy(() =>
   import("./pages/placeholder").then((m) => ({ default: m.UnderConstruction })),
 );
 const DashboardPage = lazy(() => import("./pages/dashboard"));
+const ModulesCatalogPage = lazy(() => import("./pages/settings/ModulesCatalogPage"));
 const EmployeesPage = lazy(() => import("./pages/employes"));
 const ServicesPage = lazy(() => import("./pages/services/DjangoServicesPage"));
 const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
@@ -902,6 +903,7 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            <Route path="settings/modules" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.modules}><Suspense fallback={<LinearProgress />}><ModulesCatalogPage /></Suspense></RequirePermission>} />
                             <Route path="settings/store" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.store}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
                             <Route path="settings/pos-module" element={<Navigate to="/settings/store" replace />} />
                             <Route path="settings/procurement" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.procurement}><Suspense fallback={<LinearProgress />}><ProcurementSettingsPage /></Suspense></RequirePermission>} />
