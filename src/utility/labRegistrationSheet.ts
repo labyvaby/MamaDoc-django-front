@@ -113,6 +113,14 @@ const money = (value: string | number): number => {
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
+/**
+ * Скидка от суммы анализов — в тыйынах, как `basket.quote_basket`
+ * (`Decimal`, ROUND_HALF_UP). Счёт во float даёт другой тыйын на ровной
+ * половине: 1.45 × 10 % = 0.145 → 0.14 у float, 0.15 у бэкенда.
+ */
+const discountOf = (gross: number, percent: number): number =>
+  Math.round((Math.round(gross * 100) * percent) / 100) / 100;
+
 function formatDateTimeRu(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
@@ -154,13 +162,18 @@ export function registrationSheetTotals(data: RegistrationSheetData): Registrati
   const testsGross = round2(
     data.lines.reduce((sum, line) => sum + money(line.price ?? "0") * line.countItem, 0),
   );
-  const discount = round2((testsGross * data.discountPercent) / 100);
+  const discount = discountOf(testsGross, data.discountPercent);
   const instrumentsTotal = round2(
     data.instruments.reduce((sum, item) => sum + money(item.price ?? "0") * item.count, 0),
   );
   const total = round2(data.totalAmount);
+  // Какая из двух сумм ближе к итогу бэкенда — та и правда; строгое
+  // равенство ломалось бы на любой тыйын расхождения в округлении.
+  const withInstruments = testsGross - discount + instrumentsTotal;
+  const withoutInstruments = testsGross - discount;
   const instrumentsCharged =
-    instrumentsTotal > 0 && Math.abs(total - (testsGross - discount + instrumentsTotal)) < 0.005;
+    instrumentsTotal > 0 &&
+    Math.abs(total - withInstruments) < Math.abs(total - withoutInstruments);
   const paid = round2(data.paidAmount);
   return {
     testsGross,

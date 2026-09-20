@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 
-import { labQuestionFieldKind, labQuestionOptions, assembleLabAnswers } from "./labQuestionFields";
+import {
+  labQuestionFieldKind,
+  labQuestionOptions,
+  assembleLabAnswers,
+  groupLabQuestions,
+} from "./labQuestionFields";
 import type { LabQuestion } from "../../../api/lab";
 
 const question = (over: Partial<LabQuestion> = {}): LabQuestion => ({
@@ -83,16 +88,39 @@ describe("labQuestionOptions", () => {
   });
 });
 
+describe("groupLabQuestions", () => {
+  it("один вопрос у двух анализов — одна группа с обоими анализами", () => {
+    const groups = groupLabQuestions([
+      question({ id: 1, lisQuestionId: 501, testId: 10, title: "Беременность" }),
+      question({ id: 2, lisQuestionId: 502, testId: 10, title: "Срок" }),
+      question({ id: 3, lisQuestionId: 501, testId: 11, title: "Беременность" }),
+    ]);
+    expect(groups.map((g) => [g.lisQuestionId, g.testIds])).toEqual([
+      [501, [10, 11]],
+      [502, [10]],
+    ]);
+    expect(groups[0].question.id).toBe(1);
+  });
+});
+
 describe("assembleLabAnswers", () => {
-  it("отправляет идентификатор ЛИС, а ответы ищет по локальному", () => {
-    // Числа нарочно разные: форма ключует ответы своим `id`, а в
-    // лабораторию обязан уехать `lisQuestionId`. При совпадающих числах
-    // подмена одного другим прошла бы мимо теста — ровно та ошибка,
-    // которая до этого пряталась в бэкенде.
+  it("общий вопрос двух анализов уезжает одним ответом — иначе бэкенд упадёт на уникальности", () => {
+    const questions = [
+      question({ id: 1, lisQuestionId: 501, testId: 10, title: "Беременность", fieldType: "BOOLEAN" }),
+      question({ id: 3, lisQuestionId: 501, testId: 11, title: "Беременность", fieldType: "BOOLEAN" }),
+    ];
+    expect(assembleLabAnswers(questions, { 501: "true" })).toEqual([
+      { lisQuestionId: 501, title: "Беременность", fieldType: "BOOLEAN", value: "true" },
+    ]);
+  });
+
+  it("отправляет идентификатор ЛИС и по нему же ищет ответ, а не по локальному id", () => {
+    // Числа нарочно разные: при совпадающих подмена одного другим прошла бы
+    // мимо теста — ровно та ошибка, которая до этого пряталась в бэкенде.
     const questions = [
       question({ id: 1, lisQuestionId: 501, title: "Вопрос 1", fieldType: "STRING" }),
     ];
-    const got = assembleLabAnswers(questions, { 1: "ответ" });
+    const got = assembleLabAnswers(questions, { 501: "ответ" });
     expect(got).toEqual([
       { lisQuestionId: 501, title: "Вопрос 1", fieldType: "STRING", value: "ответ" },
     ]);
@@ -113,7 +141,7 @@ describe("assembleLabAnswers", () => {
       question({ id: 1, lisQuestionId: 501, title: "A", fieldType: "STRING" }),
       question({ id: 2, lisQuestionId: 502, title: "B", fieldType: "BOOLEAN" }),
     ];
-    const got = assembleLabAnswers(questions, { 1: "x", 2: "true" });
+    const got = assembleLabAnswers(questions, { 501: "x", 502: "true" });
     expect(got).toEqual([
       { lisQuestionId: 501, title: "A", fieldType: "STRING", value: "x" },
       { lisQuestionId: 502, title: "B", fieldType: "BOOLEAN", value: "true" },

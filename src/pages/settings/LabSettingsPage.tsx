@@ -64,8 +64,11 @@ const LabSettingsPage: React.FC = () => {
   });
   const config = configQuery.data;
 
+  // Только первое заполнение: рефетч (реконнект, invalidate `lab.all` из
+  // дровера) с изменившимися счётчиками зеркала не должен стирать
+  // несохранённые правки. После сохранения форма берётся из ответа PUT.
   React.useEffect(() => {
-    if (config) setForm(labConfigToForm(config));
+    if (config) setForm((prev) => prev ?? labConfigToForm(config));
   }, [config]);
 
   const patch = (change: Partial<LabSettingsForm>) => {

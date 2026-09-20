@@ -16,20 +16,23 @@ import { CustomDatePicker } from "../../ui";
 import IntakeSection from "./IntakeSection";
 import {
   INLINE_CHOICE_MAX,
+  groupLabQuestions,
   labQuestionFieldKind,
   labQuestionOptions,
+  type LabQuestionGroup,
   type LabQuestionOption,
 } from "./labQuestionFields";
 import type { LabQuestion } from "../../../api/lab";
 
 type Props = {
   questions: LabQuestion[];
+  /** Ответы по `lisQuestionId` — один на вопрос, сколько бы анализов его ни задавали. */
   answers: Record<number, string>;
-  /** Название анализа по его id — вопросы группируются под анализом, к которому относятся. */
+  /** Название анализа по его id — под вопросом перечисляются анализы, которым он нужен. */
   testTitleById: ReadonlyMap<number, string>;
   loading: boolean;
   disabled: boolean;
-  onAnswerChange: (questionId: number, value: string) => void;
+  onAnswerChange: (lisQuestionId: number, value: string) => void;
 };
 
 /** Заголовок вопроса с пометкой обязательности — все вопросы обязательны, признака необязательности в контракте ЛИС нет. */
@@ -117,19 +120,13 @@ const QuestionsSection: React.FC<Props> = ({
   disabled,
   onAnswerChange,
 }) => {
-  // Группы в порядке первого появления анализа среди вопросов — ЛИС отдаёт
-  // вопросы по анализам подряд, порядок корзины здесь ни к чему.
-  const groups = React.useMemo(() => {
-    const byTest = new Map<number, LabQuestion[]>();
-    for (const question of questions) {
-      const bucket = byTest.get(question.testId);
-      if (bucket) bucket.push(question);
-      else byTest.set(question.testId, [question]);
-    }
-    return [...byTest.entries()];
-  }, [questions]);
+  // Один вопрос — одно поле, даже если его задают несколько анализов
+  // корзины: у заказа ответ на вопрос один (`groupLabQuestions`). Под
+  // вопросом — чьи он, чтобы регистратор понимал, о чём спрашивает
+  // лаборатория.
+  const groups: LabQuestionGroup[] = React.useMemo(() => groupLabQuestions(questions), [questions]);
 
-  const unanswered = questions.filter((q) => !(answers[q.id] ?? "").trim()).length;
+  const unanswered = groups.filter((g) => !(answers[g.lisQuestionId] ?? "").trim()).length;
 
   // Вопросы есть лишь у части анализов (в зеркале — у ~40 из 2 400), и
   // пустая секция с надписью «вопросов нет» на каждом приёме только занимала
@@ -161,73 +158,70 @@ const QuestionsSection: React.FC<Props> = ({
           <Typography variant="caption" color="text.secondary">
             Лаборатория не примет заказ, пока эти поля пусты.
           </Typography>
-          {groups.map(([testId, testQuestions]) => (
-            <Stack key={testId} spacing={1}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                {testTitleById.get(testId) ?? "Анализ"}
-              </Typography>
-              {testQuestions.map((question) => {
-                const value = answers[question.id] ?? "";
-                const kind = labQuestionFieldKind(question);
+          {groups.map(({ lisQuestionId, question, testIds }) => {
+            const value = answers[lisQuestionId] ?? "";
+            const kind = labQuestionFieldKind(question);
+            const owners = testIds.map((id) => testTitleById.get(id) ?? "Анализ").join(", ");
 
-                return (
-                  <Box
-                    key={question.id}
-                    sx={{ p: 1.25, border: 1, borderColor: "divider", borderRadius: 1 }}
-                  >
-                    <Stack spacing={0.75}>
-                      <QuestionLabel title={question.title} />
+            return (
+              <Box
+                key={lisQuestionId}
+                sx={{ p: 1.25, border: 1, borderColor: "divider", borderRadius: 1 }}
+              >
+                <Stack spacing={0.75}>
+                  <QuestionLabel title={question.title} />
+                  <Typography variant="caption" color="text.secondary">
+                    {owners}
+                  </Typography>
 
-                      {kind === "date" && (
-                        <CustomDatePicker
-                          value={value ? dayjs(value) : null}
-                          onChange={(next) =>
-                            onAnswerChange(
-                              question.id,
-                              next && next.isValid() ? next.format("YYYY-MM-DD") : "",
-                            )
-                          }
-                          disabled={disabled}
-                          slotProps={{ textField: { size: "small", fullWidth: true } }}
-                        />
-                      )}
+                  {kind === "date" && (
+                    <CustomDatePicker
+                      value={value ? dayjs(value) : null}
+                      onChange={(next) =>
+                        onAnswerChange(
+                          lisQuestionId,
+                          next && next.isValid() ? next.format("YYYY-MM-DD") : "",
+                        )
+                      }
+                      disabled={disabled}
+                      slotProps={{ textField: { size: "small", fullWidth: true } }}
+                    />
+                  )}
 
-                      {kind === "choice" && (
-                        <ChoiceField
-                          options={labQuestionOptions(question)}
-                          value={value}
-                          disabled={disabled}
-                          onChange={(next) => onAnswerChange(question.id, next)}
-                        />
-                      )}
+                  {kind === "choice" && (
+                    <ChoiceField
+                      options={labQuestionOptions(question)}
+                      value={value}
+                      disabled={disabled}
+                      onChange={(next) => onAnswerChange(lisQuestionId, next)}
+                    />
+                  )}
 
-                      {kind === "integer" && (
-                        <TextField
-                          size="small"
-                          fullWidth
-                          type="number"
-                          value={value}
-                          onChange={(e) => onAnswerChange(question.id, e.target.value)}
-                          disabled={disabled}
-                        />
-                      )}
+                  {kind === "integer" && (
+                    <TextField
+                      size="small"
+                      fullWidth
+                      type="number"
+                      value={value}
+                      onChange={(e) => onAnswerChange(lisQuestionId, e.target.value)}
+                      disabled={disabled}
+                    />
+                  )}
 
-                      {kind === "text" && (
-                        <TextField
-                          size="small"
-                          fullWidth
-                          value={value}
-                          onChange={(e) => onAnswerChange(question.id, e.target.value)}
-                          disabled={disabled}
-                          placeholder={question.defaultValue || undefined}
-                        />
-                      )}
-                    </Stack>
-                  </Box>
-                );
-              })}
-            </Stack>
-          ))}
+                  {kind === "text" && (
+                    <TextField
+                      size="small"
+                      fullWidth
+                      value={value}
+                      onChange={(e) => onAnswerChange(lisQuestionId, e.target.value)}
+                      disabled={disabled}
+                      placeholder={question.defaultValue || undefined}
+                    />
+                  )}
+                </Stack>
+              </Box>
+            );
+          })}
         </Stack>
       )}
     </IntakeSection>

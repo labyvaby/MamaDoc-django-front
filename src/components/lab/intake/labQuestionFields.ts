@@ -87,36 +87,61 @@ export function labQuestionFieldKind(
 }
 
 /**
+ * Один вопрос ЛИС, к каким бы анализам корзины он ни относился.
+ *
+ * `GET /api/lab/tests/questions/` отдаёт строку на каждую пару
+ * «анализ → вопрос», а один вопрос («Беременность», «Контроль после
+ * лечения») законно принадлежит нескольким анализам — у зеркала
+ * уникальность `(lab_test, lis_question_id)`. Ответ же у заказа один на
+ * вопрос (`LabOrderAnswer` уникален по `(order, lis_question_id)`), и
+ * спрашивать одно и то же дважды, а потом уехать в бэкенд с двумя
+ * ответами — ошибка целостности вместо заказа. Поэтому форма ключует
+ * ответы `lisQuestionId`, а не локальным `id` строки зеркала.
+ */
+export interface LabQuestionGroup {
+  /** Идентификатор вопроса в ЛИС — ключ ответа в форме. */
+  lisQuestionId: number;
+  /** Первая строка зеркала с этим вопросом: текст, тип, варианты. */
+  question: LabQuestion;
+  /** Анализы корзины, которым нужен ответ, в порядке появления. */
+  testIds: number[];
+}
+
+/** Свернуть строки зеркала в уникальные вопросы, порядок — первого появления. */
+export function groupLabQuestions(questions: readonly LabQuestion[]): LabQuestionGroup[] {
+  const byLisId = new Map<number, LabQuestionGroup>();
+  for (const question of questions) {
+    const group = byLisId.get(question.lisQuestionId);
+    if (group) {
+      if (!group.testIds.includes(question.testId)) group.testIds.push(question.testId);
+    } else {
+      byLisId.set(question.lisQuestionId, {
+        lisQuestionId: question.lisQuestionId,
+        question,
+        testIds: [question.testId],
+      });
+    }
+  }
+  return [...byLisId.values()];
+}
+
+/**
  * Собрать ответы для отправки в приёме.
  *
- * Отдаёт запись на каждый вопрос из `questions`, даже если ответа ещё нет
- * (пустая строка вместо `undefined`) — `intakeBlockReason` не пускает к
- * отправке, пока это не так, но сама сборка не должна зависеть от порядка
- * вызовов и обязана быть тотальной функцией от своих аргументов.
- *
- * **Известный контрактный разрыв (обнаружен 2026-09-09).** Бэкенд ожидает в
- * `LabOrderAnswerInput.lisQuestionId` идентификатор вопроса **в самой ЛИС**
- * (`LabTestQuestion.lis_question_id` — `server/apps/lab/services.py` ищет
- * ответы через `lis_question_id__in=...`, а не по Django `pk`). Но
- * `GET /api/lab/tests/questions/` (`question_to_payload` в
- * `server/apps/lab/api/serializers.py`) кладёт в поле `id` **локальный
- * Django pk** (`question.pk`), а не `lis_question_id` — в отличие от
- * `LabTest`/`LabProfile`/`LabInstrument`, где `id` (локальный) и `lisId`
- * (ЛИС) существуют как два разных явных поля, у `LabQuestion` второго
- * идентификатора нет вовсе. Ниже подставляется единственное, что есть —
- * `question.id`, — и это разойдётся с `lis_question_id`, как только каталог
- * перестанет быть игрушечным (сейчас он пуст, ЛИС недоступна со стенда).
- * Требует правки бэкенда (добавить настоящий `lisId` в
- * `LabTestQuestionPayload`), а не фронта — собирать здесь больше не из чего.
+ * Отдаёт запись на каждый уникальный вопрос из `questions`
+ * (`groupLabQuestions`), даже если ответа ещё нет (пустая строка вместо
+ * `undefined`) — `intakeBlockReason` не пускает к отправке, пока это не
+ * так, но сама сборка не должна зависеть от порядка вызовов и обязана быть
+ * тотальной функцией от своих аргументов. Ответы ключуются `lisQuestionId`.
  */
 export function assembleLabAnswers(
-  questions: LabQuestion[],
+  questions: readonly LabQuestion[],
   answers: Record<number, string>,
 ): LabOrderAnswerInput[] {
-  return questions.map((question) => ({
-    lisQuestionId: question.lisQuestionId,
+  return groupLabQuestions(questions).map(({ question, lisQuestionId }) => ({
+    lisQuestionId,
     title: question.title,
     fieldType: question.fieldType,
-    value: answers[question.id] ?? "",
+    value: answers[lisQuestionId] ?? "",
   }));
 }

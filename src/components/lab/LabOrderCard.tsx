@@ -293,6 +293,9 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
   // «Особой подготовки не требуется», а это неправда, если тексты просто ещё
   // не загрузились).
   const preparationReady = preparationQuery.isSuccess;
+  // Тот же принцип для регистрационного листа: без пациента он печатается с
+  // «—» вместо даты рождения и пола, без каталога — без даты результата.
+  const sheetReady = patientQuery.isSuccess && testsQuery.isSuccess;
 
   return (
     <Drawer
@@ -475,6 +478,7 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
                   size="small"
                   variant="outlined"
                   loading={printBusy === "ticket"}
+                  disabled={!sheetReady}
                   onClick={handlePrintSheet}
                 >
                   Регистрационный лист
