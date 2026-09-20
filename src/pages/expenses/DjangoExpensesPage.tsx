@@ -31,7 +31,8 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import ImageOutlined from "@mui/icons-material/ImageOutlined";
-import ImageNotSupportedOutlined from "@mui/icons-material/ImageNotSupportedOutlined";
+import NoPhotographyOutlined from "@mui/icons-material/NoPhotographyOutlined";
+import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
 import ExpandLess from "@mui/icons-material/ExpandLess";
 import ExpandMore from "@mui/icons-material/ExpandMore";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
@@ -57,6 +58,7 @@ import {
   parseBackendError,
   type Expense,
 } from "../../api/expenses";
+import { expensePhotoMark } from "./photoMark";
 import {
   prepareImageForUpload,
   PHOTO_ACCEPT,
@@ -117,6 +119,7 @@ const ExpenseDetailCard: React.FC<{
   const [photoError, setPhotoError] = React.useState<string | null>(null);
   const photoInputRef = React.useRef<HTMLInputElement>(null);
   const orgId = useApiOrgId();
+  const queryClient = useQueryClient();
 
   // Накладные (до 2 шт). Пока флаг выключен — остаётся одиночное фото чека
   // (photoUrl + PUT/DELETE .../photo/), поэтому старые кнопки не удалены.
@@ -133,6 +136,11 @@ const ExpenseDetailCard: React.FC<{
     onLegacyPhotoRemoved: React.useCallback(() => {
       if (expense) onPhotoDeleted({ ...expense, photoUrl: null });
     }, [expense, onPhotoDeleted]),
+    // Добавили/удалили накладную — метка «есть/нет фото» в строке списка
+    // считается по photosCount с бэка, перечитываем список.
+    onPhotosChanged: React.useCallback(() => {
+      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
+    }, [queryClient]),
   });
 
   React.useEffect(() => {
@@ -1129,10 +1137,10 @@ const DjangoExpensesPage: React.FC = () => {
                             const cardAmt = parseFloat(exp.cardAmount);
                             const isMixed = cashAmt > 0 && cardAmt > 0;
                             const isCash = !isMixed && cashAmt > 0;
-                            // Метка «есть фото / нет фото» — только для обычных расходов;
-                            // у авансов и ЗП чек не нужен, метку не показываем.
-                            const showPhotoMark = exp.categoryKind === "general";
-                            const hasPhoto = Boolean(exp.photoUrl);
+                            // Метка «есть фото / нет фото» — кому показывать и что,
+                            // решает expensePhotoMark (вид категории, флаг «требуется
+                            // фото чека», старый чек + накладные).
+                            const photoMark = expensePhotoMark(exp);
                             return (
                               <React.Fragment key={exp.id}>
                                 {isNewDay && (
@@ -1196,16 +1204,15 @@ const DjangoExpensesPage: React.FC = () => {
                                       </Box>
                                     )}
                                     <Stack direction="row" spacing={0.5} alignItems="center">
-                                      {showPhotoMark && (
-                                        hasPhoto ? (
-                                          <Tooltip title="Фото прикреплено">
-                                            <ImageOutlined sx={{ fontSize: 15, color: exp.isVoided ? "text.disabled" : "success.main" }} />
-                                          </Tooltip>
-                                        ) : (
-                                          <Tooltip title="Нет фото">
-                                            <ImageNotSupportedOutlined sx={{ fontSize: 15, color: exp.isVoided ? "text.disabled" : "warning.main" }} />
-                                          </Tooltip>
-                                        )
+                                      {photoMark === "has" && (
+                                        <Tooltip title="Есть фото">
+                                          <PhotoCameraOutlined sx={{ fontSize: 15, color: exp.isVoided ? "text.disabled" : "success.main" }} />
+                                        </Tooltip>
+                                      )}
+                                      {photoMark === "missing" && (
+                                        <Tooltip title="Нет фото">
+                                          <NoPhotographyOutlined sx={{ fontSize: 15, color: exp.isVoided ? "text.disabled" : "error.main" }} />
+                                        </Tooltip>
                                       )}
                                       {isMixed ? (
                                         <>

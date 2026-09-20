@@ -13,6 +13,11 @@ export interface ExpenseCategory {
   name: string;
   kind: ExpenseCategoryKind;
   isActive: boolean;
+  /**
+   * false — чека у таких расходов не бывает (инкассация): метку «нет фото» в
+   * списке не показываем. Ставится в админке. Нет поля — бэк ещё без него.
+   */
+  photoRequired?: boolean;
 }
 
 export interface Expense {
@@ -23,6 +28,8 @@ export interface Expense {
   categoryId: number | null;
   categoryName: string | null;
   categoryKind: ExpenseCategoryKind;
+  /** См. ExpenseCategory.photoRequired. */
+  categoryPhotoRequired?: boolean;
   method: ExpenseMethod;
   cashAmount: string;
   cardAmount: string;
@@ -35,7 +42,14 @@ export interface Expense {
   employeeId: number | null;
   employeeName: string | null;
   affectsMonth: string | null;
+  /** Старый одиночный чек. «Фото накладной» (до двух) сюда не попадают. */
   photoUrl: string | null;
+  /**
+   * Сколько фото всего: старый чек + «фото накладной». Именно по нему метка
+   * «есть/нет фото» — по одному photoUrl расход с накладными выглядел бы
+   * «без фото». Нет поля — бэк ещё без него, тогда смотрим на photoUrl.
+   */
+  photosCount?: number;
   isVoided: boolean;
   voidedById: number | null;
   voidedAt: string | null;
