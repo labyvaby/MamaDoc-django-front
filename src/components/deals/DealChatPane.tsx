@@ -113,6 +113,10 @@ const DealChatPane: React.FC<{ chatUrl: string }> = ({ chatUrl }) => {
           {t("detail.chatFailedHint")}
         </Typography>
         <AppButton onClick={retry}>{t("detail.chatReconnect")}</AppButton>
+        {/* Фрейм не пустил — как раз случай для ссылки в новой вкладке. */}
+        <Link href={chatUrl} target="_blank" rel="noopener" variant="body2" underline="hover">
+          {t("detail.chatOpenExternal")}
+        </Link>
       </Stack>
     );
   }
