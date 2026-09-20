@@ -133,6 +133,7 @@ const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
 const OdoctorSettingsPage = lazy(() => import("./pages/settings/OdoctorSettingsPage"));
+const ChatwootLeadsSettingsPage = lazy(() => import("./pages/settings/ChatwootLeadsSettingsPage"));
 const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const ClientsSettingsPage = lazy(() => import("./pages/settings/ClientsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
@@ -856,6 +857,16 @@ function App() {
                             <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.odoctor}>
                               <Suspense fallback={<LinearProgress />}>
                                 <OdoctorSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="settings/chatwoot"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.chatwoot}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <ChatwootLeadsSettingsPage />
                               </Suspense>
                             </RequirePermission>
                           }

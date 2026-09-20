@@ -41,6 +41,7 @@ import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
+import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import PercentOutlined from "@mui/icons-material/PercentOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 
@@ -230,6 +231,12 @@ const TAB_DEFS: TabDef[] = [
     key: "odoctor",
     to: "/settings/odoctor",
     icon: <StorefrontOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "chatwoot",
+    to: "/settings/chatwoot",
+    icon: <ForumOutlined fontSize="small" />,
     group: "operations",
   },
 ];
