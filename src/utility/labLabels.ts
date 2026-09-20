@@ -5,9 +5,10 @@
  * этого решения: метку можно забыть напечатать, и пробирка уедет
  * неподписанной. Страховка обсуждается отдельно, здесь её нет.
  *
- * Штрихкод и регистрационный лист приходят готовыми картинками из ЛИС
- * (base64). Свой `barcode128Svg` для этикеток не годится: лабораторный
- * сканер узнаёт только код ЛИС.
+ * Штрихкод приходит готовой картинкой из ЛИС (base64). Свой
+ * `barcode128Svg` для этикеток не годится: лабораторный сканер узнаёт
+ * только код ЛИС. Регистрационный лист ЛИС картинкой не отдаёт — он
+ * собирается у нас (`labRegistrationSheet.ts`).
  *
  * Сборка HTML отделена от печати, чтобы её можно было проверить тестом:
  * рендер-тестов в проекте нет, и вся логика живёт в чистых функциях.
@@ -21,10 +22,6 @@ export interface LabelData {
   birthDate: string;
   orderCode: number | null;
   barcodeBase64: string;
-}
-
-export interface TicketData extends LabelData {
-  ticketBase64: string;
 }
 
 const ESCAPES: Record<string, string> = {
@@ -67,13 +64,6 @@ export function buildLabelsHtml(data: LabelData): string {
   );
 }
 
-export function buildTicketHtml(data: TicketData): string {
-  return page(
-    "Регистрационный лист",
-    `<div class="block">${image(data.ticketBase64, "Регистрационный лист")}</div>`,
-  );
-}
-
 export function buildPreparationHtml(
   data: LabelData,
   texts: string[],
@@ -85,33 +75,6 @@ export function buildPreparationHtml(
     "Подготовка к анализам",
     `${header(data)}<h2>Как подготовиться</h2>${body}`,
   );
-}
-
-/**
- * Base64 начала PNG-сигнатуры (`89 50 4E 47 0D 0A 1A 0A`). Общеизвестный
- * фиксированный префикс: любая настоящая PNG-картинка в base64 начинается
- * ровно с этих символов, независимо от содержимого.
- */
-const PNG_BASE64_PREFIX = "iVBORw0KGgo";
-
-/**
- * Похоже ли содержимое base64 на настоящую PNG-картинку.
- *
- * Живая ЛИС отдаёт регистрационный лист (`ticketBase64`) не картинкой, а
- * сериализованным Java-объектом `JasperPrint` — байты начинаются с
- * `\xac\xed\x00\x05` (заголовок Java serialization), в base64 это
- * "rO0ABQ..." (см. `lab-intake-live-findings.md`, находка 17). Вставить это
- * как `data:image/png;base64,...` даст битую картинку в окне печати —
- * `buildTicketHtml` сам этого не проверяет (не его забота), поэтому
- * вызывающий код обязан проверить перед печатью и объяснить причину, а не
- * открывать окно с «пустой» картинкой.
- *
- * Проверяем именно сигнатуру ХОРОШЕГО формата (PNG), а не пытаемся опознать
- * конкретно Java-сериализацию: день, когда бэкенд научится конвертировать
- * `JasperPrint` в картинку, печать заработает сама, без правок этой функции.
- */
-export function looksLikePngBase64(base64: string): boolean {
-  return base64.startsWith(PNG_BASE64_PREFIX);
 }
 
 /**

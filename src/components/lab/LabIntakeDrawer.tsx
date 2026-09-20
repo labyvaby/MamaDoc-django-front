@@ -41,6 +41,7 @@ import {
   getLabDoctors,
   getLabInstruments,
   getLabPreparation,
+  getLabOrder,
   getLabQuestions,
   getLabSettings,
   getLabTests,
@@ -63,6 +64,10 @@ import { clearFormDraft, readFormDraft, writeFormDraft } from "../../utility/for
 import { basketTotals } from "../../utility/labTotals";
 import { intakeBlockReason, type IntakeState } from "../../utility/labIntakeGuards";
 import { printHtml } from "../../utility/labLabels";
+import {
+  buildRegistrationSheetHtml,
+  registrationSheetFromOrder,
+} from "../../utility/labRegistrationSheet";
 import {
   buildLabIntakeBody,
   buildPatientPatch,
@@ -138,7 +143,7 @@ export interface LabIntakeDrawerProps {
 const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initialPatientId }) => {
   const { enqueueSnackbar } = useSnackbar();
   const queryClient = useQueryClient();
-  const { activeBranch } = usePermissions();
+  const { activeBranch, activeOrganization } = usePermissions();
   const orgId = useApiOrgId();
 
   // ── Состояние — шесть полей плюс то, что неизбежно ложится поверх приёма
@@ -554,6 +559,32 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
     });
   }, [receipt, patient, effective.birthDate, preparationTexts]);
 
+  // Регистрационный лист собирается из карточки заказа: чек приёма несёт
+  // только номер и сумму, а листу нужны строки с ценами и расходники.
+  // Карточка запрашивается сразу после приёма и лежит в кэше под тем же
+  // ключом, что и у LabOrderCard, — открыть заказ из ленты потом будет
+  // бесплатно.
+  const receiptOrderId = receipt?.order.id ?? null;
+  const receiptDetailQuery = useQuery({
+    queryKey: djangoQueryKeys.lab.order(receiptOrderId ?? 0),
+    queryFn: ({ signal }) => getLabOrder(receiptOrderId!, signal),
+    enabled: open && receiptOrderId != null,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  });
+  const registrationSheet = React.useMemo(() => {
+    const order = receiptDetailQuery.data;
+    if (!receipt || !order) return null;
+    return buildRegistrationSheetHtml(
+      registrationSheetFromOrder({
+        order,
+        clinicName: activeOrganization?.name ?? "",
+        patient: { birthDate: effective.birthDate, gender: effective.gender },
+        tests,
+        barcodeBase64: receipt.barcodeBase64,
+      }),
+    );
+  }, [receipt, receiptDetailQuery.data, activeOrganization, effective.birthDate, effective.gender, tests]);
+
   const handlePrint = (html: string) => {
     setPrintError(printHtml(html) ? null : "Браузер заблокировал окно печати — разрешите всплывающие окна для этой страницы и повторите");
   };
@@ -705,10 +736,18 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
                 </Typography>
                 <Typography variant="body2">
                   Отправка в лабораторию отложена настройкой — заказ ждёт
-                  отправки. Этикетки и регистрационный лист рисует сама ЛИС по
-                  номеру заказа, поэтому появятся после отправки.
+                  отправки. Этикетки со штрихкодом ЛИС появятся после отправки;
+                  регистрационный лист пока без номера и штрихкода.
                 </Typography>
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <AppButton
+                    size="small"
+                    variant="outlined"
+                    disabled={registrationSheet === null}
+                    onClick={() => registrationSheet && handlePrint(registrationSheet)}
+                  >
+                    Регистрационный лист
+                  </AppButton>
                   <AppButton
                     size="small"
                     variant="outlined"
@@ -737,24 +776,15 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
                   <AppButton size="small" variant="outlined" onClick={() => printouts && handlePrint(printouts.labels)}>
                     Этикетки
                   </AppButton>
-                  <Tooltip
-                    title={
-                      printouts && printouts.ticket === null
-                        ? "ЛИС присылает регистрационный лист не картинкой — распечатать его пока нельзя"
-                        : ""
-                    }
+                  <AppButton
+                    size="small"
+                    variant="outlined"
+                    disabled={registrationSheet === null}
+                    loading={receiptDetailQuery.isLoading}
+                    onClick={() => registrationSheet && handlePrint(registrationSheet)}
                   >
-                    <span>
-                      <AppButton
-                        size="small"
-                        variant="outlined"
-                        disabled={!printouts || printouts.ticket === null}
-                        onClick={() => printouts?.ticket && handlePrint(printouts.ticket)}
-                      >
-                        Регистрационный лист
-                      </AppButton>
-                    </span>
-                  </Tooltip>
+                    Регистрационный лист
+                  </AppButton>
                   <AppButton
                     size="small"
                     variant="outlined"
