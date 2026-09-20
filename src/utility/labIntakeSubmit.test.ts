@@ -455,4 +455,31 @@ describe("согласие в теле приёма", () => {
 
     expect(body.personalDataConsent).toBe(true);
   });
+
+  it("SMS о готовности и почта уходят только когда заданы", () => {
+    const base = {
+      patientId: 1,
+      branchId: 1,
+      lines: [],
+      answers: [],
+      paidCash: "100",
+      paidCard: "0",
+      cashlessMethodId: null,
+      discountPercent: 0,
+      referringDoctorId: null,
+      clientTypeId: null,
+      personalDataConsent: true,
+    };
+    const silent = buildLabIntakeBody({ ...base, receiverSms: false, resultEmail: "  " });
+    expect(silent).not.toHaveProperty("receiverSms");
+    expect(silent).not.toHaveProperty("resultEmail");
+
+    const loud = buildLabIntakeBody({
+      ...base,
+      receiverSms: true,
+      resultEmail: " patient@example.com ",
+    });
+    expect(loud.receiverSms).toBe(true);
+    expect(loud.resultEmail).toBe("patient@example.com");
+  });
 });

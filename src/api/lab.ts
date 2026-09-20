@@ -388,6 +388,13 @@ export interface LabIntakeInput {
    * отвергает приём: заказ уезжает в стороннюю лабораторию с ФИО и ИНН.
    */
   personalDataConsent: boolean;
+  /**
+   * SMS от лаборатории о готовности результата — та же галочка, что в
+   * интерфейсе ЛИС (`orderDTO.@receiver_sms`). Нужен телефон в карте.
+   */
+  receiverSms?: boolean;
+  /** Почта для результатов (`patientDTO.email`); в карте пациента её нет. */
+  resultEmail?: string;
 }
 
 export interface LabLabels {
@@ -432,6 +439,8 @@ export interface LabOrderDetailRaw {
   referringDoctorName: string;
   /** Когда отмечено согласие на обработку ПДн; null у старых заказов. */
   personalDataConsentAt: string | null;
+  receiverSms?: boolean;
+  resultEmail?: string;
   discountPercent: number;
   totalAmount: string;
   paidCash: string;
@@ -464,6 +473,10 @@ export interface LabOrderDetail {
   referringDoctorName: string;
   /** Когда отмечено согласие на обработку ПДн; null у старых заказов. */
   personalDataConsentAt: string | null;
+  /** SMS о готовности от лаборатории — как заказано при приёме. */
+  receiverSms: boolean;
+  /** Почта для результатов, если указали при приёме. */
+  resultEmail: string;
   discountPercent: number;
   totalAmount: number;
   paidCash: number;
@@ -503,6 +516,8 @@ export function normalizeLabOrderDetail(raw: LabOrderDetailRaw): LabOrderDetail 
     comment: raw.comment,
     referringDoctorName: raw.referringDoctorName ?? "",
     personalDataConsentAt: raw.personalDataConsentAt ?? null,
+    receiverSms: raw.receiverSms ?? false,
+    resultEmail: raw.resultEmail ?? "",
     discountPercent: raw.discountPercent,
     totalAmount: parseMoney(raw.totalAmount),
     paidCash: parseMoney(raw.paidCash),

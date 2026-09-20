@@ -89,6 +89,8 @@ describe("normalizeLabOrderDetail", () => {
       patientId: 9622,
       referringDoctorName: "",
       personalDataConsentAt: null,
+      receiverSms: false,
+      resultEmail: "",
       patientName: "Иванова А.",
       branchName: "Центральный",
       isDispatched: true,

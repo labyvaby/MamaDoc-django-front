@@ -157,6 +157,10 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
   const [comment, setComment] = React.useState("");
   const [clientTypeId, setClientTypeId] = React.useState<number | null>(null);
   const [personalDataConsent, setPersonalDataConsent] = React.useState(false);
+  // SMS о готовности включена по умолчанию, как в интерфейсе ЛИС; без
+  // телефона в карте в тело не попадает (см. buildLabIntakeBody).
+  const [receiverSms, setReceiverSms] = React.useState(true);
+  const [resultEmail, setResultEmail] = React.useState("");
   const [answers, setAnswers] = React.useState<Record<number, string>>({});
   const [payment, setPayment] = React.useState<PaymentState>(DEFAULT_PAYMENT);
   const [phase, setPhase] = React.useState<Phase>("editing");
@@ -238,6 +242,8 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       setComment("");
       setClientTypeId(null);
       setPersonalDataConsent(false);
+      setReceiverSms(true);
+      setResultEmail("");
       setPayment(DEFAULT_PAYMENT);
       setDraftRestored(false);
     }
@@ -639,6 +645,8 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       comment,
       clientTypeId,
       personalDataConsent,
+      receiverSms: receiverSms && !!patient.phone,
+      resultEmail,
     });
 
     try {
@@ -852,6 +860,10 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
             onGenderChange={(value) => setPatientEdits((prev) => ({ ...prev, gender: value }))}
             consent={personalDataConsent}
             onConsentChange={setPersonalDataConsent}
+            receiverSms={receiverSms}
+            onReceiverSmsChange={setReceiverSms}
+            resultEmail={resultEmail}
+            onResultEmailChange={setResultEmail}
             searchQuery={patientQuery}
             searchResults={patientResults}
             searchLoading={patientSearchLoading}

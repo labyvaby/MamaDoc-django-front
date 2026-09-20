@@ -372,6 +372,14 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
                   value={order.referringDoctorName}
                 />
               )}
+              <InfoRow
+                label="Уведомления"
+                value={
+                  [order.receiverSms ? "SMS от лаборатории" : null, order.resultEmail || null]
+                    .filter(Boolean)
+                    .join(" · ") || "не заказаны"
+                }
+              />
               {order.diagnosis && <InfoRow label="Диагноз" value={order.diagnosis} />}
               {order.comment && <InfoRow label="Комментарий" value={order.comment} />}
             </Stack>
