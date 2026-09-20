@@ -119,6 +119,8 @@ export interface ScheduleCalendarProps {
   absenceDayEmployees?: Map<string, { employeeId: number; count: number }[]>;
   /** Клик по маркеру — открыть разбор по конкретному сотруднику и дню. */
   onAbsenceBadgeClick?: (employeeId: number, date: string) => void;
+  /** Клик по полосе смены в дневном виде — открыть карточку этой смены. */
+  onOccurrenceClick?: (day: Dayjs, occurrence: DayOccurrence) => void;
 }
 
 const WEEKDAY_FULL = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
@@ -138,6 +140,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
   absenceDayTotals,
   absenceDayEmployees,
   onAbsenceBadgeClick,
+  onOccurrenceClick,
 }) => {
   const theme = useTheme();
   const mode = theme.palette.mode;
@@ -880,6 +883,9 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
               exceptions={exceptions}
               absenceDayEmployees={filteredAbsenceDayEmployees}
               onAbsenceClick={onAbsenceBadgeClick}
+              onOccurrenceClick={
+                onOccurrenceClick ? (occ) => onOccurrenceClick(month, occ) : undefined
+              }
             />
           </Box>
         )}

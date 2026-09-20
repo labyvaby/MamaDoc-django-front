@@ -599,7 +599,7 @@ const DjangoProductsPage: React.FC = () => {
                           {/* Левая часть приглушается, если товара нет в наличии */}
                           <Avatar
                             variant="rounded"
-                            src={p.imageUrl || undefined}
+                            src={p.imageThumbnailUrl ?? p.imageUrl ?? undefined}
                             sx={{
                               flexShrink: 0,
                               width: 48,

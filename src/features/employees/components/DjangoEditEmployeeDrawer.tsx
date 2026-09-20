@@ -314,6 +314,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
 
   // ── Операционные филиалы (карточка видна в каждом из набора) ──────────────
   const { activeBranch } = usePermissions();
+  const activeBranchId = activeBranch?.id ?? null;
   const orgId = useApiOrgId();
   // Набор меняется только из режима «все филиалы» — бэкенд в филиальном
   // контексте отклонит запрос.
@@ -326,7 +327,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   // ── Services ──────────────────────────────────────────────────────────────
   const [allServices, setAllServices] = React.useState<Service[]>([]);
   const [servicesLoading, setServicesLoading] = React.useState(false);
-  // Товары склада — для правил ЗП «Товары в приёмах» (недоступны без права —
+  // Товары склада — для правил ЗП по товарным продажам (недоступны без права —
   // тогда селект покажет «Товары недоступны», это не ошибка).
   const [allProducts, setAllProducts] = React.useState<DjangoProduct[]>([]);
   const [productsLoading, setProductsLoading] = React.useState(false);
@@ -646,7 +647,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     }
 
     if (canViewPayroll) {
-      // Товары для правил «Товары в приёмах» (при отсутствии права — пусто).
+      // Товары для правил по товарным продажам (при отсутствии права — пусто).
       setProductsLoading(true);
       getProducts(ctrl.signal, { organizationId: orgId })
         .then((list) => {
@@ -884,7 +885,13 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
               }
             } else {
               try {
-                await assignEmployeeService(empId, { serviceId: svc.id });
+                // В филиальном контексте backend отклоняет новую привязку без
+                // идентификатора активного филиала. В режиме всей организации
+                // `undefined` сохраняет назначение на уровне организации.
+                await assignEmployeeService(empId, {
+                  serviceId: svc.id,
+                  branchId: activeBranchId ?? undefined,
+                });
               } catch (e) {
                 servicesFailed += 1;
                 console.warn("Could not assign service:", e);

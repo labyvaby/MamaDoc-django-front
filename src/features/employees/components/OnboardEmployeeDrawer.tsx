@@ -628,6 +628,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     <DrawerBase
       open={open}
       title="Создать сотрудника"
+      testId="employee-onboard-drawer"
       onClose={handleClose}
       busy={busy}
       onSubmit={handleSubmit}
@@ -786,7 +787,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                   placeholder="Иванов Иван Иванович"
                   required
                   disabled={busy}
-                  inputProps={{ maxLength: 255 }}
+                  inputProps={{ maxLength: 255, "data-testid": "employee-fullname-input" }}
                   error={Boolean(showError("fullName"))}
                   helperText={showError("fullName")}
                   ref={focus.anchor("fullName")}
@@ -857,7 +858,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 // maxLength не ставим: значение показывается с пробелами
                 // («700 123 456»), и лимит по числу цифр обрезал бы ввод
                 // раньше времени — длину режет onChange.
-                inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
+                inputProps={{ inputMode: "tel", pattern: "[0-9]*", "data-testid": "employee-phone-input" }}
                 ref={focus.anchor("phone")}
                 InputProps={{
                   startAdornment: (
@@ -1116,6 +1117,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 renderInput={(params) => (
                   <TextField
                     {...params}
+                    inputProps={{ ...params.inputProps, "data-testid": "employee-role-input" }}
                     placeholder={loadingDeps ? "Загрузка…" : "Найти роль…"}
                     error={submitAttempted && roleId === ""}
                     helperText={submitAttempted && roleId === "" ? "Выберите роль" : ""}
@@ -1147,6 +1149,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                   renderInput={(params) => (
                     <TextField
                       {...params}
+                      inputProps={{ ...params.inputProps, "data-testid": "employee-branches-input" }}
                       placeholder={loadingDeps ? "Загрузка…" : "Выберите филиалы"}
                       ref={focus.anchor("employeeBranches")}
                     />

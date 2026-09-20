@@ -13,12 +13,17 @@
 # /media/staff/employees/ — фото врачей: на странице врача (/book/doctor/…)
 # бэкенд ставит в og:image его фото, и без правила превью приходит без картинки.
 # Эти фото и так публичны — их показывает сама витрина.
+#
+# /static/public_api/ — логотип платформы для нейтральной карточки CRM: на
+# любой адрес CRM, кроме /book и /site, бэкенд отдаёт краулерам og-теги
+# платформы с этим og:image. Из статики Django открыт только этот подкаталог.
 User-agent: *
 Disallow: /
 Allow: /book
 Allow: /assets/
 Allow: /media/organizations/
 Allow: /media/staff/employees/
+Allow: /static/public_api/
 Allow: /og-image.png
 Allow: /booking-icon.png
 Allow: /favicon.ico

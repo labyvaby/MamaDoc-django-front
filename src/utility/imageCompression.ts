@@ -29,6 +29,13 @@ export const PHOTO_SOURCE_MAX_BYTES = PHOTO_SOURCE_MAX_MB * 1024 * 1024;
  */
 export const PHOTO_ACCEPT = "image/*,image/heic,image/heif";
 
+/** Фото или PDF — для накладной поставщика. */
+export const INVOICE_DOCUMENT_ACCEPT = `${PHOTO_ACCEPT},application/pdf,.pdf`;
+
+/** MIME у PDF иногда пустой, поэтому сверяем ещё и расширение. */
+export const isPdfFile = (file: Pick<File, "name" | "type">): boolean =>
+  file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
 /**
  * Форматы, которые можно отправлять как есть.
  *
@@ -48,6 +55,23 @@ function withExtension(name: string, ext: string): string {
 function hasSupportedExtension(name: string): boolean {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   return PASS_THROUGH_EXTENSIONS.includes(ext);
+}
+
+/**
+ * Форматы, которые бэк принимает как есть (heic/heif он конвертирует сам,
+ * см. finance/expenses/services.py). Если браузер не смог декодировать или
+ * сжать картинку локально (HEIC/HEIF вне Safari, слишком тяжёлый снимок), но
+ * исходник — один из этих форматов и в пределах лимита, отправляем его как есть:
+ * иначе загрузка молча отваливалась «фото не загрузилось», хотя запрос на сервер
+ * даже не уходил (бэк формат принял бы). Тип HEIC с телефона в `type` бывает
+ * пустым — поэтому смотрим ещё и расширение.
+ */
+const BACKEND_IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "heic", "heif"];
+function canSendOriginalToBackend(file: File): boolean {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const okType =
+    BACKEND_IMAGE_EXTENSIONS.includes(ext) || /^image\/(jpeg|png|webp|heic|heif)$/.test(file.type);
+  return okType && file.size <= PHOTO_SOURCE_MAX_BYTES;
 }
 
 /**
@@ -88,7 +112,10 @@ export async function prepareImageForUpload(
   try {
     bitmap = await loadImage(file);
   } catch {
-    return null;
+    // Браузер не декодировал снимок (HEIC/HEIF вне Safari и т.п.). Раньше здесь
+    // загрузка обрывалась совсем; теперь, если бэк такой формат принимает —
+    // отправляем исходник как есть, конвертацию сделает сервер.
+    return canSendOriginalToBackend(file) ? file : null;
   }
 
   // Логотипы и прочая графика с прозрачностью: сначала пробуем ужать в png
@@ -102,12 +129,14 @@ export async function prepareImageForUpload(
 
   for (const step of steps) {
     const blob = await encodeImage(bitmap, step.maxWidth, "image/jpeg", step.quality);
-    if (!blob) return null;
+    if (!blob) return canSendOriginalToBackend(file) ? file : null;
     if (blob.size <= maxBytes) {
       return new File([blob], withExtension(file.name, "jpg"), { type: "image/jpeg" });
     }
   }
-  return null;
+  // Сжать до лимита не удалось — но если исходник и так в пределах серверного
+  // потолка (25 МБ) и допустимого формата, пусть уходит он: бэк примет.
+  return canSendOriginalToBackend(file) ? file : null;
 }
 
 /** Файл → готовый к отрисовке <img> (data-URL переживает HEIC в Safari). */

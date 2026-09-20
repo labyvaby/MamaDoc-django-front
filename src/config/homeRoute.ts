@@ -9,6 +9,8 @@ export interface HomeRouteContext {
   can: PermissionCheck;
   canOpenModule: ModuleCheck;
   hasActiveEmployee?: boolean;
+  /** Настроенный организацией безопасный стартовый экран. */
+  defaultHomeRoute?: string | null;
 }
 
 /**
@@ -23,8 +25,16 @@ export function resolveHomeRoute({
   can,
   canOpenModule,
   hasActiveEmployee = false,
+  defaultHomeRoute,
 }: HomeRouteContext): string {
   const role = String(roleCode ?? "").toLowerCase();
+
+  // Не перенаправляем на произвольный путь из свободного JSON themeConfig.
+  // Разрешённые стартовые страницы перечисляются здесь и всё равно требуют
+  // обычного permission/module-гейта для текущего сотрудника.
+  if (defaultHomeRoute === "/pos" && can(PAGE_PERMISSIONS.pos)) {
+    return "/pos";
+  }
 
   if (role === "doctor" && can(PAGE_PERMISSIONS.doctorRoom)) return "/doctor";
   if (role === "nurse" && can(PAGE_PERMISSIONS.nurseRoom)) return "/nurse";

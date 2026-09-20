@@ -13,11 +13,12 @@ export const PAGE_PERMISSIONS = {
   appointmentsRegistry: "appointments.registry.view",
   doctorRoom: "appointments.doctor_room.view",
   nurseRoom: "appointments.nurse_room.view",
-  // Исторические реестры «Все приёмы» / «Все процедуры» permission-кода не
-  // имеют: с 19.08.2026 они скрыты от всех, кроме суперадминистратора, и
-  // гейтятся ролью (RequireSuperAdmin в App.tsx + isSuper в сайдбаре). Право
-  // выдать нельзя — иначе организация вернула бы себе доступ через редактор
-  // ролей.
+  // Исторические реестры «Все приёмы» / «Все процедуры» — такие же
+  // page-visibility права. По умолчанию не выдаются ни одной роли (ни в
+  // шаблонах, ни бэкфиллом): после деплоя разделы по-прежнему видит только
+  // суперадминистратор, пока он сам не включит право нужной роли в редакторе.
+  allAppointments: "appointments.all_appointments.view",
+  allProcedures: "appointments.all_procedures.view",
   patients: "patients.view",
   employees: "staff.view",
   services: "catalog.view",
@@ -50,13 +51,23 @@ export const PAGE_PERMISSIONS = {
   // Просмотр истории и незавершённых пересчётов доступен вместе со складом;
   // операции открытия/сканирования/завершения дополнительно проверяет API.
   inventory: "warehouse.view",
+  // Накладные (закупки): page-visibility право; данные читает procurement.view,
+  // кнопки — свои коды (см. PROCUREMENT_PERMISSIONS в api/procurement.ts).
+  // Модуль procurement гейтится через canAccess по префиксу кода.
+  procurementInvoices: "procurement.invoices.view",
   ecommerce: "ecommerce.view",
   targets: "targets.view",
   messaging: "messaging.view",
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {
-  posModule: "tenancy.modules.view",
+  // Модули подключает только администратор платформы в Django admin. В CRM
+  // остаются рабочие настройки подключённого продукта: canAccess проверит
+  // одновременно право роли и включённый модуль по префиксу кода.
+  store: "pos.manage",
+  procurement: "procurement.manage",
+  discountKinds: "promotions.view",
+  promotions: "promotions.view",
   organization: "organization.view",
   branches: "branches.view",
   // Сайт-визитку настраивает тот же, кто правит организацию: конструктор
@@ -88,7 +99,8 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // у модуля нет (docs/automations-api.md §2).
   automations: PAGE_PERMISSIONS.notifications,
   productAttributes: "warehouse.manage",
-  clients: "clients.manage",
+  // Настройки раздела (статусы, раскладка карточки) бэк закрывает clients.update.
+  clients: "clients.update",
   // Витрина odoctor.kg. Право своё, а не общее с расписанием: за страницей
   // лежит учётная запись внешнего кабинета — ключ от чужой системы. Читать и
   // менять эти настройки бэк разрешает по одному и тому же коду, поэтому

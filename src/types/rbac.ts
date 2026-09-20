@@ -198,6 +198,8 @@ export const PERMISSIONS = {
   WAITLIST_VIEW: 'waitlist.view',
   WAITLIST_CREATE: 'waitlist.create',
   WAITLIST_MANAGE: 'waitlist.manage',
+  // Область чтения: без него сотрудник с карточкой видит только ожидания к себе.
+  WAITLIST_VIEW_ALL: 'waitlist.view_all',
 
   // Достижения (контракт: MamaDoc/backend_ticket_achievements_module.md)
   ACHIEVEMENTS_VIEW: 'achievements.view',

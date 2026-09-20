@@ -51,7 +51,6 @@ import dayjs from "dayjs";
 import {
   bulkAppointments,
   parseBackendError,
-  APPOINTMENTS_CANCEL_BACKEND_LIVE,
   type AppointmentBulkAction,
   type AppointmentBulkItem,
   type AppointmentBulkRow,
@@ -68,6 +67,7 @@ import { useCan } from "../../../hooks/useCan";
 import { getStatusChipSx, getStatusLabel } from "../../../config/appointmentStatuses";
 import { formatKGS } from "../../../utility/format";
 import { subtleBg } from "../../../theme/uiHelpers";
+import { isConflictsQueryOfEmployees } from "./scheduleInvalidation";
 import { appointmentHitsAbsence, isUnreviewed } from "./useAbsenceConflicts";
 
 /** Отсутствие, из-за которого поднялся разбор. */
@@ -85,6 +85,12 @@ export interface AbsenceSpan {
    */
   startTime?: string | null;
   endTime?: string | null;
+  /**
+   * Филиал исключения; пусто — любой. Ручка отдаёт приёмы по всем филиалам,
+   * а отсутствие в одном филиале не задевает приёмы в смене другого — их
+   * тоже отбрасываем здесь, тем же правилом, что и счётчики на сетке.
+   */
+  branchId?: number | null;
 }
 
 type Mode = "cancel" | "reassign" | "ack" | "unack";
@@ -172,11 +178,7 @@ export const AbsenceConflictsDrawer: React.FC<{
   const navigate = useNavigate();
   const canCreateTask = useCan("tasks.create");
   const canUpdateAppointments = useCan("appointments.update");
-  // Пока право appointments.cancel не выехало на прод — отменяет тот, кто
-  // редактирует (см. APPOINTMENTS_CANCEL_BACKEND_LIVE в api/appointments.ts).
-  const canCancelAppointments =
-    useCan("appointments.cancel") ||
-    (!APPOINTMENTS_CANCEL_BACKEND_LIVE && canUpdateAppointments);
+  const canCancelAppointments = useCan("appointments.cancel");
 
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [mode, setMode] = React.useState<ModeChoice>("");
@@ -211,7 +213,14 @@ export const AbsenceConflictsDrawer: React.FC<{
     // (отменённые приёмы из выдачи уходят). Свежий запрос — при следующем
     // открытии: ключ не инвалидируется вместе с приёмами.
     refetchOnWindowFocus: false,
+    // Снимок берётся заново при каждом открытии: приёмы могли отменить или
+    // перенести с другой страницы, а кэш страницы живёт до сброса.
+    staleTime: 0,
   });
+
+  // Кому передавали приёмы в этом разборе: их маркеры на календаре тоже
+  // устарели (коллега может сам отсутствовать в этом окне).
+  const reassignedToRef = React.useRef<Set<number>>(new Set());
 
   const categoriesQuery = useQuery({
     queryKey: ["django", "tasks", "categories", orgId],
@@ -220,16 +229,19 @@ export const AbsenceConflictsDrawer: React.FC<{
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
-  const conflicts = React.useMemo(() => {
-    const all = conflictsQuery.data ?? [];
-    if (!absence?.startTime || !absence?.endTime) return all;
-    return all.filter((appt) =>
-      appointmentHitsAbsence(appt, {
-        startTime: absence.startTime ?? null,
-        endTime: absence.endTime ?? null,
-      }),
-    );
-  }, [conflictsQuery.data, absence?.startTime, absence?.endTime]);
+  // Ручка отдаёт все приёмы периода; к отсутствию их относит тот же предикат,
+  // что кормит счётчики на сетке, — по интервалу и филиалу.
+  const conflicts = React.useMemo(
+    () =>
+      (conflictsQuery.data ?? []).filter((appt) =>
+        appointmentHitsAbsence(appt, {
+          startTime: absence?.startTime ?? null,
+          endTime: absence?.endTime ?? null,
+          branchId: absence?.branchId ?? null,
+        }),
+      ),
+    [conflictsQuery.data, absence?.startTime, absence?.endTime, absence?.branchId],
+  );
   const categories = React.useMemo(
     () => (categoriesQuery.data ?? []).filter((c) => c.isActive),
     [categoriesQuery.data],
@@ -248,6 +260,7 @@ export const AbsenceConflictsDrawer: React.FC<{
     setWithCallTask(true);
     setResults(new Map());
     setError(null);
+    reassignedToRef.current = new Set();
   }, [open, absence]);
 
   // Смена списка (другое отсутствие, свежая выдача) — снимаем выбор, а не
@@ -350,6 +363,9 @@ export const AbsenceConflictsDrawer: React.FC<{
     onSuccess: (response) => {
       setResults(new Map(response.results.map((row) => [row.id, row])));
       const failed = response.results.filter((row) => !row.ok);
+      if (mode === "reassign" && replacementId !== null && failed.length < response.results.length) {
+        reassignedToRef.current.add(replacementId);
+      }
       // Приёмы изменились — сбрасываем списки приёмов и свободные окна. Сам
       // список конфликтов не трогаем: он держит построчный результат разбора.
       void queryClient.invalidateQueries({ queryKey: ["django", "appointments"] });
@@ -382,10 +398,19 @@ export const AbsenceConflictsDrawer: React.FC<{
 
   const busy = applyMutation.isPending;
 
-  // Закрытие разбора — момент обновить график и списки: пока дровер открыт,
-  // список конфликтов держит результат применения и не рефетчится.
+  // Закрытие разбора — момент обновить маркеры на календаре: пока дровер
+  // открыт, список конфликтов держит результат применения и не рефетчится.
+  // Сбрасываем conflicts только этого сотрудника и тех, кому передали приёмы:
+  // правила и исключения дровер не меняет, а приёмы и свободные окна уже
+  // сброшены при применении.
   const handleClose = () => {
-    void queryClient.invalidateQueries({ queryKey: ["django", "scheduling"] });
+    if (absence) {
+      const matches = isConflictsQueryOfEmployees([
+        absence.employeeId,
+        ...reassignedToRef.current,
+      ]);
+      void queryClient.invalidateQueries({ predicate: (query) => matches(query.queryKey) });
+    }
     onClose();
   };
 

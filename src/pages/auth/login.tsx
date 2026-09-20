@@ -21,8 +21,10 @@ import LockOutlined from "@mui/icons-material/LockOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import {
   login as djangoLogin,
+  getOtpDelivery,
   requestOtp as djangoRequestOtp,
   verifyOtp as djangoVerifyOtp,
+  type OtpDeliveryChannel,
 } from "../../api";
 import { applyMeResponse, refreshAuthContext, usePermissions } from "../../hooks/usePermissions";
 import { markBranchPickerPending } from "../../components/auth/BranchPickerDialog";
@@ -48,6 +50,70 @@ import { subtleBg } from "../../theme";
 const formatMMSS = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 const OTP_RESEND_COOLDOWN = 60; // сек — задержка перед повторной отправкой кода
+// мс после отправки — когда спрашивать бэк, каким каналом ушёл код
+const OTP_DELIVERY_POLL_MS = [2000, 5000, 10000, 20000];
+// Тикет доставки живёт на бэке 15 мин; помним его по номеру, чтобы после
+// перезагрузки страницы или повторного запроса внутри кулдауна (бэк тогда
+// отдаёт delivery: null) всё равно было что спросить.
+const OTP_DELIVERY_STORAGE_KEY = "mamadoc.otpDelivery";
+const OTP_DELIVERY_TICKET_TTL_MS = 14 * 60 * 1000;
+
+type StoredDelivery = { phone: string; ticket: string; at: number };
+
+const WHATSAPP_GREEN = "#25D366";
+
+/**
+ * Бейдж канала над полем кода: контур синим (SMS) / зелёным (WhatsApp),
+ * когда канал известен; серый контур, пока Raven ещё не выбрал маршрут.
+ */
+function ChannelBadge({ channel, active }: { channel: OtpDeliveryChannel; active: boolean }) {
+  const label = channel === "whatsapp" ? "WhatsApp" : "SMS";
+  return (
+    <Box
+      component="span"
+      sx={(theme) => {
+        const color = channel === "whatsapp" ? WHATSAPP_GREEN : theme.palette.primary.main;
+        return {
+          display: "inline-block",
+          px: 0.75,
+          py: 0.1,
+          mx: 0.25,
+          borderRadius: 1,
+          border: "1px solid",
+          borderColor: active ? color : theme.palette.divider,
+          color: active ? color : "text.secondary",
+          fontWeight: active ? 600 : 500,
+          lineHeight: 1.4,
+          transition: "color .2s, border-color .2s",
+        };
+      }}
+    >
+      {label}
+    </Box>
+  );
+}
+
+function rememberDelivery(phone: string, ticket: string) {
+  try {
+    const rec: StoredDelivery = { phone, ticket, at: Date.now() };
+    sessionStorage.setItem(OTP_DELIVERY_STORAGE_KEY, JSON.stringify(rec));
+  } catch {
+    // приватный режим / выключенное хранилище — просто не запоминаем
+  }
+}
+
+function recallDelivery(phone: string): string | null {
+  try {
+    const raw = sessionStorage.getItem(OTP_DELIVERY_STORAGE_KEY);
+    if (!raw) return null;
+    const rec = JSON.parse(raw) as Partial<StoredDelivery>;
+    if (rec.phone !== phone || typeof rec.ticket !== "string" || typeof rec.at !== "number") return null;
+    if (Date.now() - rec.at > OTP_DELIVERY_TICKET_TTL_MS) return null;
+    return rec.ticket;
+  } catch {
+    return null;
+  }
+}
 
 // Простая проверка формата email для инлайн-валидации (не заменяет серверную).
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -118,6 +184,9 @@ const LoginPage: React.FC = () => {
   const [lastSentPhone, setLastSentPhone] = React.useState<string | null>(null);
   const [otpCode, setOtpCode] = React.useState("");
   const [isOtpSent, setIsOtpSent] = React.useState(false);
+  // Тикет доставки от /auth/otp/request/ и канал, который Raven в итоге выбрал.
+  const [deliveryTicket, setDeliveryTicket] = React.useState<string | null>(null);
+  const [deliveryChannel, setDeliveryChannel] = React.useState<OtpDeliveryChannel | null>(null);
 
   // -- EMAIL STATES --
   const [email, setEmail] = React.useState("");
@@ -130,6 +199,28 @@ const LoginPage: React.FC = () => {
   const [infoMsg, setInfoMsg] = React.useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = React.useState(0);
   const [redirecting, setRedirecting] = React.useState(false);
+
+  // Канал доставки Raven решает асинхронно (WhatsApp → fallback SMS), поэтому
+  // после отправки опрашиваем /auth/otp/delivery/ несколько раз, пока не узнаем.
+  React.useEffect(() => {
+    if (!deliveryTicket || deliveryChannel) return;
+    let cancelled = false;
+    const timers = OTP_DELIVERY_POLL_MS.map((delay) =>
+      setTimeout(async () => {
+        if (cancelled) return;
+        try {
+          const { channel } = await getOtpDelivery(deliveryTicket);
+          if (!cancelled && channel) setDeliveryChannel(channel);
+        } catch {
+          // косметика: не знаем канал — оставляем нейтральную формулировку
+        }
+      }, delay),
+    );
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+    };
+  }, [deliveryTicket, deliveryChannel]);
 
   // Тик кулдауна повторной отправки OTP: 1 раз в секунду до нуля.
   React.useEffect(() => {
@@ -217,13 +308,34 @@ const LoginPage: React.FC = () => {
     }
 
     try {
-      await djangoRequestOtp(fullPhone);
+      const { delivery } = await djangoRequestOtp(fullPhone);
       setIsOtpSent(true);
       setLastSentPhone(fullPhone);
-      setInfoMsg("Если номер зарегистрирован, на него отправлен код.");
+      setInfoMsg(null); // номер и так показан над полем кода
       setResendCooldown(OTP_RESEND_COOLDOWN);
+      // Новый тикет только если код реально ушёл; при повторе внутри кулдауна
+      // бэк отдаёт null — берём тикет прошлой отправки на этот же номер.
+      if (delivery) {
+        rememberDelivery(fullPhone, delivery);
+        setDeliveryChannel(null);
+        setDeliveryTicket(delivery);
+      } else if (!deliveryTicket) {
+        const previous = recallDelivery(fullPhone);
+        if (previous) {
+          setDeliveryChannel(null);
+          setDeliveryTicket(previous);
+        }
+      }
     } catch (err: unknown) {
-      setErrorMsg(getErrorMessage(err));
+      // Бэк отвечает 404 «сотрудник не найден» / 409 «номер на нескольких
+      // аккаунтах» — показываем его текст и остаёмся на шаге телефона.
+      // 429 — лимит промахов по IP, общий getErrorMessage для него отдаёт
+      // неуместное «обновите страницу».
+      if (err instanceof ApiError && err.status === 429) {
+        setErrorMsg("Слишком много попыток. Повторите позже.");
+      } else {
+        setErrorMsg(getErrorMessage(err));
+      }
     } finally {
       setLoading(false);
     }
@@ -434,7 +546,16 @@ const LoginPage: React.FC = () => {
                 <Stack spacing={2.5}>
                   <Box sx={{ textAlign: "center" }}>
                     <Typography variant="body2" color="text.secondary">
-                      Код отправлен на номер
+                      {deliveryChannel === "whatsapp" ? (
+                        <>Код отправлен в <ChannelBadge channel="whatsapp" active /> на номер</>
+                      ) : deliveryChannel === "sms" ? (
+                        <>Код отправлен по <ChannelBadge channel="sms" active /> на номер</>
+                      ) : (
+                        <>
+                          Код придёт в <ChannelBadge channel="whatsapp" active={false} /> или по{" "}
+                          <ChannelBadge channel="sms" active={false} /> на номер
+                        </>
+                      )}
                     </Typography>
                     <Stack direction="row" justifyContent="center" alignItems="center" gap={0.5}>
                       <Typography variant="subtitle1" fontWeight={600}>

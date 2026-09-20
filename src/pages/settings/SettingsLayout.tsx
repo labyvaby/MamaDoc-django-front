@@ -20,6 +20,7 @@ import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
 import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
 import WorkOutlined from "@mui/icons-material/WorkOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
@@ -40,6 +41,8 @@ import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
+import PercentOutlined from "@mui/icons-material/PercentOutlined";
+import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
@@ -81,7 +84,20 @@ type TabDef = {
 
 /** Labels come from t(`layout.tabs.${key}`) — see useVisibleSettingsTabs. */
 const TAB_DEFS: TabDef[] = [
-  { key: "posModule", to: "/settings/pos-module", icon: <ReceiptLongOutlined fontSize="small" />, group: "operations" },
+  { key: "store", to: "/settings/store", icon: <ReceiptLongOutlined fontSize="small" />, group: "operations" },
+  { key: "procurement", to: "/settings/procurement", icon: <LocalShippingOutlined fontSize="small" />, group: "operations" },
+  {
+    key: "discountKinds",
+    to: "/settings/discount-kinds",
+    icon: <PercentOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "promotions",
+    to: "/settings/promotions",
+    icon: <LocalOfferOutlined fontSize="small" />,
+    group: "operations",
+  },
   {
     key: "productAttributes",
     to: "/settings/product-attributes",

@@ -53,6 +53,7 @@ import { getModuleCodeForPermission } from "../../utils/moduleMapping";
 import { useT } from "../../i18n/VerticalProvider";
 import PermissionPicker, { type PermissionGroup } from "./roles/PermissionPicker";
 import { previewSectionsFor } from "./roles/rolePreview";
+import { sortRolesByMembers } from "./roles/sortRoles";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { useCloseGuard } from "../../hooks/useCloseGuard";
 
@@ -71,6 +72,15 @@ const CATEGORY_KEYS = [
   "printforms", "procurement", "profigram", "programs", "promotions", "retail",
   "reviews", "targets", "tasks", "tenancy", "vaccinations",
 ] as const;
+
+// Тариф и состав модулей — платформа, а не настройка роли организации.
+// Сохранённые исторические коды не удаляем из роли автоматически, но новые
+// назначения через CRM больше не предлагаем: API всё равно их не принимает
+// как основание включить или выключить модуль.
+const PLATFORM_ONLY_PERMISSION_CODES = new Set([
+  "tenancy.modules.view",
+  "tenancy.modules.manage",
+]);
 
 function categoryLabel(cat: string, t: (key: string) => string): string {
   return (CATEGORY_KEYS as readonly string[]).includes(cat)
@@ -208,11 +218,21 @@ function RoleFormDrawer({
   // Полный список и выбранные коды остаются в состоянии, чтобы отключение
   // модуля не удаляло ранее выданные права из роли.
   const visiblePermissions = React.useMemo(
-    () => permissions.filter((permission) => !isModuleOff(permission.code)),
+    () => permissions.filter(
+      (permission) =>
+        !isModuleOff(permission.code) &&
+        !PLATFORM_ONLY_PERMISSION_CODES.has(permission.code),
+    ),
     [permissions, isModuleOff],
   );
   const hiddenPermissionCodes = React.useMemo(
-    () => permissions.filter((permission) => isModuleOff(permission.code)).map((p) => p.code),
+    () => permissions
+      .filter(
+        (permission) =>
+          isModuleOff(permission.code) ||
+          PLATFORM_ONLY_PERMISSION_CODES.has(permission.code),
+      )
+      .map((permission) => permission.code),
     [permissions, isModuleOff],
   );
   const grouped = React.useMemo(
@@ -837,9 +857,16 @@ const RolesSettingsPage: React.FC = () => {
     );
   }, [orgRoles, search]);
 
-  // Separate system and custom roles
-  const systemRoles = filtered.filter((r) => r.isSystem);
-  const customRoles = filtered.filter((r) => !r.isSystem);
+  // Separate system and custom roles; within each block the roles with more
+  // people come first — those are the ones an edit actually affects.
+  const systemRoles = React.useMemo(
+    () => sortRolesByMembers(filtered.filter((r) => r.isSystem), memberCounts),
+    [filtered, memberCounts],
+  );
+  const customRoles = React.useMemo(
+    () => sortRolesByMembers(filtered.filter((r) => !r.isSystem), memberCounts),
+    [filtered, memberCounts],
+  );
 
   return (
     <SettingsLayout>
