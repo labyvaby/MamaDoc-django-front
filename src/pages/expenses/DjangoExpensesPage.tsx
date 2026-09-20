@@ -545,8 +545,11 @@ const DjangoExpensesPage: React.FC = () => {
   const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
   const [expandedEmployee, setExpandedEmployee] = React.useState<string | null>(null);
   const [selectedEmployeeFilter, setSelectedEmployeeFilter] = React.useState<string | null>(null);
-  // Секции «Получатели»/«Категории» в левой панели — сворачиваемые.
-  const [recipientsOpen, setRecipientsOpen] = React.useState(true);
+  const [expandedCategory, setExpandedCategory] = React.useState<string | null>(null);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = React.useState<string | null>(null);
+  // Секции «Получатели»/«Категории» — сворачиваемые. «Получатели» по умолчанию
+  // свёрнуты (обычно их много), но если получатель один — раскрыты (эффект ниже).
+  const [recipientsOpen, setRecipientsOpen] = React.useState(false);
   const [categoriesOpen, setCategoriesOpen] = React.useState(true);
 
   // UI-state
@@ -693,8 +696,11 @@ const DjangoExpensesPage: React.FC = () => {
         list = list.filter((e) => e.employeeName === selectedEmployeeFilter);
       }
     }
+    if (selectedCategoryFilter !== null) {
+      list = list.filter((e) => (e.categoryName ?? "Без категории") === selectedCategoryFilter);
+    }
     return list;
-  }, [allExpenses, searchQuery, selectedDate, selectedEmployeeFilter]);
+  }, [allExpenses, searchQuery, selectedDate, selectedEmployeeFilter, selectedCategoryFilter]);
 
   // Догрузка следующей страницы, когда нижний сентинел появляется в зоне
   // видимости списка (root — сам скролл-контейнер средней колонки).
@@ -719,7 +725,7 @@ const DjangoExpensesPage: React.FC = () => {
   React.useEffect(() => {
     if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
     if (pageScrollRef.current) pageScrollRef.current.scrollTop = 0;
-  }, [searchQuery, selectedCategoryId, selectedYear, selectedMonth, selectedDate, selectedEmployeeFilter]);
+  }, [searchQuery, selectedCategoryId, selectedYear, selectedMonth, selectedDate, selectedEmployeeFilter, selectedCategoryFilter]);
 
   // Вычисляем года и месяцы для левой панели
   const availableYears = React.useMemo(() => {
@@ -787,17 +793,32 @@ const DjangoExpensesPage: React.FC = () => {
     [groupedByEmployee],
   );
 
-  // Разбивка за месяц по категориям (только суммы — «видеть суммы за месяц»).
+  // Разбивка за месяц по категориям: сумма + дни (как у получателей).
   const groupedByCategory = React.useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, { total: number; days: Map<string, number> }>();
     monthExpenses.forEach((e) => {
       const label = e.categoryName ?? "Без категории";
-      map.set(label, (map.get(label) ?? 0) + parseFloat(e.amount));
+      const entry = map.get(label) ?? { total: 0, days: new Map() };
+      entry.total += parseFloat(e.amount);
+      entry.days.set(e.expenseDate, (entry.days.get(e.expenseDate) ?? 0) + parseFloat(e.amount));
+      map.set(label, entry);
     });
     return Array.from(map.entries())
-      .map(([categoryLabel, total]) => ({ categoryLabel, total }))
+      .map(([categoryLabel, { total, days }]) => ({
+        categoryLabel,
+        total,
+        days: Array.from(days.entries())
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .map(([date, amt]) => ({ date, total: amt })),
+      }))
       .sort((a, b) => b.total - a.total);
   }, [monthExpenses]);
+
+  // По умолчанию «Получатели» свёрнуты; один получатель — раскрываем сразу.
+  // Пересматривается при смене числа получателей (месяц/данные).
+  React.useEffect(() => {
+    setRecipientsOpen(groupedByEmployee.length <= 1);
+  }, [groupedByEmployee.length]);
 
   if (!permLoading && !canView) return <AccessDenied />;
 
@@ -872,7 +893,7 @@ const DjangoExpensesPage: React.FC = () => {
                 <Paper elevation={0} variant="outlined" sx={{ height: { xs: "auto", md: "100%" }, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                   <Box sx={{ p: 1.5, borderBottom: 1, borderColor: "divider", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>Период</Typography>
-                    <Button size="small" onClick={() => { setSelectedYear(null); setSelectedMonth(null); setSelectedDate(null); setSelectedEmployeeFilter(null); setExpandedEmployee(null); }} sx={{ textTransform: "none" }}>
+                    <Button size="small" onClick={() => { setSelectedYear(null); setSelectedMonth(null); setSelectedDate(null); setSelectedEmployeeFilter(null); setExpandedEmployee(null); setSelectedCategoryFilter(null); setExpandedCategory(null); }} sx={{ textTransform: "none" }}>
                       Все расходы
                     </Button>
                   </Box>
@@ -891,6 +912,8 @@ const DjangoExpensesPage: React.FC = () => {
                             setSelectedDate(null);
                             setSelectedEmployeeFilter(null);
                             setExpandedEmployee(null);
+                            setSelectedCategoryFilter(null);
+                            setExpandedCategory(null);
                           }}
                           SelectProps={{ displayEmpty: true }}
                         >
@@ -912,6 +935,8 @@ const DjangoExpensesPage: React.FC = () => {
                               setSelectedDate(null);
                               setSelectedEmployeeFilter(null);
                               setExpandedEmployee(null);
+                              setSelectedCategoryFilter(null);
+                              setExpandedCategory(null);
                             }}
                             SelectProps={{ displayEmpty: true }}
                             disabled={monthOptions.length === 0}
@@ -965,6 +990,8 @@ const DjangoExpensesPage: React.FC = () => {
                                         setExpandedEmployee(emp.employeeLabel);
                                         setSelectedEmployeeFilter(emp.employeeFilterKey);
                                         setSelectedDate(null);
+                                        setSelectedCategoryFilter(null);
+                                        setExpandedCategory(null);
                                       }
                                     }}
                                     sx={{ borderRadius: 1, mb: 0.5, pr: 1 }}
@@ -980,7 +1007,7 @@ const DjangoExpensesPage: React.FC = () => {
                                         <ListItemButton
                                           key={day.date}
                                           sx={{ borderRadius: 1, mb: 0.5, pl: 3, bgcolor: selectedDate === day.date ? "action.selected" : "transparent" }}
-                                          onClick={() => { setSelectedEmployeeFilter(emp.employeeFilterKey); setSelectedDate(day.date); }}
+                                          onClick={() => { setSelectedEmployeeFilter(emp.employeeFilterKey); setSelectedDate(day.date); setSelectedCategoryFilter(null); setExpandedCategory(null); }}
                                         >
                                           <Typography variant="body2" sx={{ flex: 1, color: "text.secondary" }}>{formatDateRu(day.date)}</Typography>
                                           <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatKGS(day.total)}</Typography>
@@ -996,7 +1023,7 @@ const DjangoExpensesPage: React.FC = () => {
                         </Stack>
                       )}
 
-                      {/* Категории — суммы за месяц по категориям (сворачиваемо) */}
+                      {/* Категории — сумма за месяц; клик фильтрует список, шеврон раскрывает дни */}
                       {selectedMonth && groupedByCategory.length > 0 && (
                         <Stack spacing={0.5}>
                           <Box
@@ -1007,22 +1034,52 @@ const DjangoExpensesPage: React.FC = () => {
                             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Категории</Typography>
                           </Box>
                           <Collapse in={categoriesOpen} timeout="auto" unmountOnExit>
-                            <Box>
-                              {groupedByCategory.map((cat) => (
-                                <Box
-                                  key={cat.categoryLabel}
-                                  sx={{ display: "flex", alignItems: "center", px: 1, py: 0.5, borderRadius: 1 }}
-                                >
-                                  <ReceiptLongOutlined sx={{ fontSize: 16, mr: 1, color: "text.secondary", flexShrink: 0 }} />
-                                  <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap title={cat.categoryLabel}>
-                                    {cat.categoryLabel}
-                                  </Typography>
-                                  <Typography variant="body2" sx={{ fontWeight: 600, ml: 1, flexShrink: 0 }}>
-                                    {formatKGS(cat.total)}
-                                  </Typography>
-                                </Box>
-                              ))}
-                            </Box>
+                          <List dense sx={{ py: 0 }}>
+                            {groupedByCategory.map((cat) => {
+                              const isExpanded = expandedCategory === cat.categoryLabel;
+                              const isSelected = selectedCategoryFilter === cat.categoryLabel;
+                              return (
+                                <React.Fragment key={cat.categoryLabel}>
+                                  <ListItemButton
+                                    selected={isSelected}
+                                    onClick={() => {
+                                      if (isExpanded) {
+                                        setExpandedCategory(null);
+                                        setSelectedCategoryFilter(null);
+                                        setSelectedDate(null);
+                                      } else {
+                                        setExpandedCategory(cat.categoryLabel);
+                                        setSelectedCategoryFilter(cat.categoryLabel);
+                                        setSelectedDate(null);
+                                        setSelectedEmployeeFilter(null);
+                                        setExpandedEmployee(null);
+                                      }
+                                    }}
+                                    sx={{ borderRadius: 1, mb: 0.5, pr: 1 }}
+                                  >
+                                    <ReceiptLongOutlined sx={{ fontSize: 16, mr: 1, color: "text.secondary" }} />
+                                    <Typography variant="body2" sx={{ flex: 1, fontWeight: isSelected ? 600 : 400 }} noWrap title={cat.categoryLabel}>{cat.categoryLabel}</Typography>
+                                    <Typography variant="body2" sx={{ fontWeight: 600, mr: 1 }}>{formatKGS(cat.total)}</Typography>
+                                    {isExpanded ? <ExpandLess fontSize="small" color="action" /> : <ExpandMore fontSize="small" color="action" />}
+                                  </ListItemButton>
+                                  <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                                    <List dense disablePadding>
+                                      {cat.days.map((day) => (
+                                        <ListItemButton
+                                          key={day.date}
+                                          sx={{ borderRadius: 1, mb: 0.5, pl: 3, bgcolor: selectedDate === day.date ? "action.selected" : "transparent" }}
+                                          onClick={() => { setSelectedCategoryFilter(cat.categoryLabel); setSelectedDate(day.date); setSelectedEmployeeFilter(null); setExpandedEmployee(null); }}
+                                        >
+                                          <Typography variant="body2" sx={{ flex: 1, color: "text.secondary" }}>{formatDateRu(day.date)}</Typography>
+                                          <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatKGS(day.total)}</Typography>
+                                        </ListItemButton>
+                                      ))}
+                                    </List>
+                                  </Collapse>
+                                </React.Fragment>
+                              );
+                            })}
+                          </List>
                           </Collapse>
                         </Stack>
                       )}
