@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { expensePhotoMark } from "./photoMark";
 
-const general = { categoryKind: "general" as const, photoUrl: null, photosCount: 0 };
+const general = {
+  categoryKind: "general" as const,
+  categoryPhotoRequired: true,
+  photoUrl: null,
+  photosCount: 0,
+};
 
 describe("expensePhotoMark", () => {
   it("обычный расход без фото — «нет фото»", () => {
@@ -24,12 +29,14 @@ describe("expensePhotoMark", () => {
     expect(expensePhotoMark({ ...general, categoryPhotoRequired: false, photosCount: 1 })).toBeNull();
   });
 
-  it("аванс и ЗП — метки нет", () => {
-    expect(expensePhotoMark({ ...general, categoryKind: "advance" })).toBeNull();
-    expect(expensePhotoMark({ ...general, categoryKind: "salary" })).toBeNull();
+  it("аванс и ЗП — по флагу, а не по виду: тумблер включён → метка есть", () => {
+    expect(expensePhotoMark({ ...general, categoryKind: "advance" })).toBe("missing");
+    expect(expensePhotoMark({ ...general, categoryKind: "salary", photosCount: 1 })).toBe("has");
+    expect(expensePhotoMark({ ...general, categoryKind: "advance", categoryPhotoRequired: false })).toBeNull();
   });
 
-  it("бэк без флага (поле не пришло) — метка показывается как раньше", () => {
+  it("бэк без флага (поле не пришло) — как раньше: обычным метка, авансу/ЗП нет", () => {
     expect(expensePhotoMark({ ...general, categoryPhotoRequired: undefined })).toBe("missing");
+    expect(expensePhotoMark({ ...general, categoryKind: "advance", categoryPhotoRequired: undefined })).toBeNull();
   });
 });

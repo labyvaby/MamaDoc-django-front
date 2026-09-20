@@ -60,8 +60,8 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
   const { t } = useT("settings");
   const [name, setName] = React.useState("");
   const [kind, setKind] = React.useState<ExpenseCategoryKind>("general");
-  // Чек нужен по умолчанию; снимают у категорий вроде инкассации, где чека
-  // не бывает. У аванса/ЗП галки нет — метку по ним и так не показывают.
+  // Чек по умолчанию нужен обычным расходам; у аванса/ЗП его обычно не бывает,
+  // поэтому смена вида переставляет галку — а дальше решает человек.
   const [photoRequired, setPhotoRequired] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -70,19 +70,18 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
     if (open) { setName(""); setKind("general"); setPhotoRequired(true); setError(null); setBusy(false); }
   }, [open]);
 
+  const handleKindChange = (next: ExpenseCategoryKind) => {
+    setKind(next);
+    setPhotoRequired(next === "general");
+  };
+
   const handleSubmit = async () => {
     const trimmed = name.trim();
     if (trimmed.length < 2) { setError(t("expenseCategories.dialog.nameTooShort")); return; }
     setBusy(true);
     setError(null);
     try {
-      await createExpenseCategory({
-        name: trimmed,
-        kind,
-        organizationId,
-        isActive: true,
-        photoRequired: kind === "general" ? photoRequired : true,
-      });
+      await createExpenseCategory({ name: trimmed, kind, organizationId, isActive: true, photoRequired });
       onCreated();
       onClose();
     } catch (e) {
@@ -118,7 +117,7 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
             size="small"
             fullWidth
             value={kind}
-            onChange={(e) => setKind(e.target.value as ExpenseCategoryKind)}
+            onChange={(e) => handleKindChange(e.target.value as ExpenseCategoryKind)}
             disabled={busy}
           >
             {KIND_KEYS.map((key) => (
@@ -130,25 +129,23 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
               </MenuItem>
             ))}
           </TextField>
-          {kind === "general" && (
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={photoRequired}
-                  onChange={(e) => setPhotoRequired(e.target.checked)}
-                  disabled={busy}
-                />
-              }
-              label={
-                <Stack>
-                  <Typography variant="body2">{t("expenseCategories.photoRequired.label")}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {t("expenseCategories.photoRequired.description")}
-                  </Typography>
-                </Stack>
-              }
-            />
-          )}
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={photoRequired}
+                onChange={(e) => setPhotoRequired(e.target.checked)}
+                disabled={busy}
+              />
+            }
+            label={
+              <Stack>
+                <Typography variant="body2">{t("expenseCategories.photoRequired.label")}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {t("expenseCategories.photoRequired.description")}
+                </Typography>
+              </Stack>
+            }
+          />
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
       </DialogContent>
@@ -307,32 +304,24 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      {cat.kind === "general" ? (
-                        <Tooltip
-                          title={
-                            cat.photoRequired === false
-                              ? t("expenseCategories.photoRequired.off")
-                              : t("expenseCategories.photoRequired.on")
-                          }
-                          arrow
-                        >
-                          <span>
-                            <Switch
-                              size="small"
-                              checked={cat.photoRequired !== false}
-                              disabled={!canManage || savingId === cat.id}
-                              onChange={(e) => void handlePhotoRequiredChange(cat, e.target.checked)}
-                              inputProps={{ "aria-label": t("expenseCategories.columns.photoRequired") }}
-                            />
-                          </span>
-                        </Tooltip>
-                      ) : (
-                        // Аванс и ЗП: чека не бывает по смыслу вида, метку по ним
-                        // не показывают — переключать нечего.
-                        <Tooltip title={t("expenseCategories.photoRequired.notApplicable")} arrow>
-                          <Typography variant="body2" color="text.disabled" component="span">—</Typography>
-                        </Tooltip>
-                      )}
+                      <Tooltip
+                        title={
+                          cat.photoRequired === false
+                            ? t("expenseCategories.photoRequired.off")
+                            : t("expenseCategories.photoRequired.on")
+                        }
+                        arrow
+                      >
+                        <span>
+                          <Switch
+                            size="small"
+                            checked={cat.photoRequired !== false}
+                            disabled={!canManage || savingId === cat.id}
+                            onChange={(e) => void handlePhotoRequiredChange(cat, e.target.checked)}
+                            inputProps={{ "aria-label": t("expenseCategories.columns.photoRequired") }}
+                          />
+                        </span>
+                      </Tooltip>
                     </TableCell>
                     <TableCell>
                       <Chip
