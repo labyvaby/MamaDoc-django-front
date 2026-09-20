@@ -35,7 +35,7 @@ import ExpandLess from "@mui/icons-material/ExpandLess";
 import ExpandMore from "@mui/icons-material/ExpandMore";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { PageHeader, AppBottomSheet, PaymentInfoBlock, InvoicePhotosField } from "../../components/ui";
 import { DjangoAddExpenseDrawer } from "../../components/expenses/DjangoAddExpenseDrawer";
@@ -497,7 +497,19 @@ const VoidDialog: React.FC<{
 
 // ── Главный компонент ──────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 50;
+// Бэк отдаёт расходы страницами (page/pageSize, максимум 200). 100 покрывает
+// типичный месяц одним запросом (чтобы «Итого за месяц» было полным сразу), а
+// остальное подгружается скроллом (см. useInfiniteQuery ниже).
+const PAGE_SIZE = 100;
+
+// Дефолт периода — текущий год и текущий месяц (по просьбе: «2026 и текущий
+// месяц»). Считаем в момент открытия/сброса, чтобы не устареть при смене месяца.
+function defaultPeriod(): { year: string; month: string } {
+  const d = new Date();
+  const year = String(d.getFullYear());
+  const month = `${year}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return { year, month };
+}
 
 const DjangoExpensesPage: React.FC = () => {
   usePageTitle("Расходы");
@@ -527,8 +539,8 @@ const DjangoExpensesPage: React.FC = () => {
 
   // Фильтры периода
   const [selectedCategoryId, setSelectedCategoryId] = React.useState<number | null>(null);
-  const [selectedYear, setSelectedYear] = React.useState<string | null>(null);
-  const [selectedMonth, setSelectedMonth] = React.useState<string | null>(null);
+  const [selectedYear, setSelectedYear] = React.useState<string | null>(() => defaultPeriod().year);
+  const [selectedMonth, setSelectedMonth] = React.useState<string | null>(() => defaultPeriod().month);
   const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
   const [expandedEmployee, setExpandedEmployee] = React.useState<string | null>(null);
   const [selectedEmployeeFilter, setSelectedEmployeeFilter] = React.useState<string | null>(null);
@@ -559,10 +571,11 @@ const DjangoExpensesPage: React.FC = () => {
     if (prevOrgId.current !== orgId || prevBranchId.current !== branchId) {
       prevOrgId.current = orgId;
       prevBranchId.current = branchId;
+      const { year, month } = defaultPeriod();
       setSelectedExpense(null);
       setSelectedCategoryId(null);
-      setSelectedYear(null);
-      setSelectedMonth(null);
+      setSelectedYear(year);
+      setSelectedMonth(month);
       setSelectedDate(null);
     }
   }, [orgId, branchId]);
@@ -598,9 +611,9 @@ const DjangoExpensesPage: React.FC = () => {
     return f;
   }, [orgId, branchId, selectedCategoryId, selectedYear, selectedMonth]);
 
-  const expensesQuery = useQuery({
+  const expensesQuery = useInfiniteQuery({
     queryKey: djangoQueryKeys.expenses.list(expFilters),
-    queryFn: ({ signal }) => getExpenses(
+    queryFn: ({ pageParam, signal }) => getExpenses(
       {
         organizationId: orgId,
         branchId,
@@ -608,10 +621,16 @@ const DjangoExpensesPage: React.FC = () => {
         dateFrom: expFilters.dateFrom as string | undefined,
         dateTo: expFilters.dateTo as string | undefined,
         includeVoided: true,
+        page: pageParam,
         pageSize: PAGE_SIZE,
       },
       signal,
     ),
+    initialPageParam: 1,
+    // Бэк отдаёт next-URL, пока есть следующая страница; номер следующей — это
+    // просто количество уже загруженных страниц + 1.
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.next ? allPages.length + 1 : undefined,
     enabled: !permLoading && canView && !needsOrg,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     retry: (count, err) => {
@@ -620,7 +639,27 @@ const DjangoExpensesPage: React.FC = () => {
     },
   });
 
-  const allExpenses = expensesQuery.data?.results ?? [];
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = expensesQuery;
+
+  const allExpenses = React.useMemo(
+    () => expensesQuery.data?.pages.flatMap((p) => p.results) ?? [],
+    [expensesQuery.data],
+  );
+
+  // Для выбранного месяца подтягиваем все страницы: «Итого за месяц» и разбивка
+  // по получателям считаются на клиенте из загруженных записей — при неполной
+  // выборке они были бы занижены. Месяц ограничен, дозагрузка дешёвая. Для
+  // «Все расходы»/года такого драйна нет — там страницы грузятся по скроллу.
+  React.useEffect(() => {
+    if (selectedMonth && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [selectedMonth, hasNextPage, isFetchingNextPage, fetchNextPage, allExpenses.length]);
+
+  // Бесконечный скролл среднего списка
+  const listScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const loadMoreRef = React.useRef<HTMLDivElement | null>(null);
+  const pageScrollRef = React.useRef<HTMLDivElement | null>(null);
   // Аннулированные не должны искажать суммы (итого за месяц, разбивка по
   // получателям) — используем этот массив только для денежных расчётов,
   // список слева по-прежнему показывает все записи (зачёркнутыми).
@@ -653,23 +692,63 @@ const DjangoExpensesPage: React.FC = () => {
     return list;
   }, [allExpenses, searchQuery, selectedDate, selectedEmployeeFilter]);
 
+  // Догрузка следующей страницы, когда нижний сентинел появляется в зоне
+  // видимости списка (root — сам скролл-контейнер средней колонки).
+  React.useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting) && hasNextPage && !isFetchingNextPage) {
+          void fetchNextPage();
+        }
+      },
+      { root: listScrollRef.current, rootMargin: "300px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, filteredExpenses.length]);
+
+  // При смене фильтров/поиска список резко короче — возвращаем прокрутку
+  // среднего списка (а на мобиле — всей страницы) наверх, иначе остаётся
+  // пустой экран и приходится крутить вверх вручную.
+  React.useEffect(() => {
+    if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
+    if (pageScrollRef.current) pageScrollRef.current.scrollTop = 0;
+  }, [searchQuery, selectedCategoryId, selectedYear, selectedMonth, selectedDate, selectedEmployeeFilter]);
+
   // Вычисляем года и месяцы для левой панели
   const availableYears = React.useMemo(() => {
     const ys = new Set(allExpenses.map((e) => e.expenseDate.slice(0, 4)));
     return Array.from(ys).sort((a, b) => b.localeCompare(a));
   }, [allExpenses]);
 
-  const availableMonths = React.useMemo(() => {
+  // Список годов в селекте НЕ зависит от загруженной выборки: последние
+  // несколько лет + годы из данных + выбранный год. Иначе, открывшись сразу на
+  // конкретном месяце, селект показывал бы только один год (данные-то только
+  // за этот месяц).
+  const yearOptions = React.useMemo(() => {
+    const cur = new Date().getFullYear();
+    const set = new Set<string>();
+    for (let y = cur; y >= cur - 3; y -= 1) set.add(String(y));
+    availableYears.forEach((y) => set.add(y));
+    if (selectedYear) set.add(selectedYear);
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [availableYears, selectedYear]);
+
+  // Месяцы тоже генерируем, а не берём из выборки: для текущего года — с января
+  // по текущий месяц, для прошлых — все 12. Так селект остаётся полным, даже
+  // когда загружены записи лишь за один месяц.
+  const monthOptions = React.useMemo(() => {
     if (!selectedYear) return [];
-    const ms = new Set(
-      allExpenses
-        .filter((e) => e.expenseDate.startsWith(selectedYear))
-        .map((e) => e.expenseDate.slice(0, 7)),
-    );
-    return Array.from(ms)
-      .sort((a, b) => a.localeCompare(b))
-      .map((ym) => ({ value: ym, monthIndex: Number(ym.slice(5, 7)) - 1 }));
-  }, [allExpenses, selectedYear]);
+    const now = new Date();
+    const isCurrentYear = selectedYear === String(now.getFullYear());
+    const lastMonth = isCurrentYear ? now.getMonth() : 11;
+    return Array.from({ length: lastMonth + 1 }, (_, m) => ({
+      value: `${selectedYear}-${String(m + 1).padStart(2, "0")}`,
+      monthIndex: m,
+    }));
+  }, [selectedYear]);
 
   // Группировка по employeeName (получателю) для выбранного месяца
   const monthExpenses = React.useMemo(() => {
@@ -745,6 +824,7 @@ const DjangoExpensesPage: React.FC = () => {
 
       {!needsOrg && (
         <Box
+          ref={pageScrollRef}
           sx={{
             flex: 1,
             display: "flex",
@@ -799,7 +879,7 @@ const DjangoExpensesPage: React.FC = () => {
                           SelectProps={{ displayEmpty: true }}
                         >
                           <MenuItem value=""><Typography variant="body2" color="text.secondary">Все годы</Typography></MenuItem>
-                          {availableYears.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
+                          {yearOptions.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
                         </TextField>
                       </Stack>
 
@@ -818,10 +898,10 @@ const DjangoExpensesPage: React.FC = () => {
                               setExpandedEmployee(null);
                             }}
                             SelectProps={{ displayEmpty: true }}
-                            disabled={availableMonths.length === 0}
+                            disabled={monthOptions.length === 0}
                           >
                             <MenuItem value=""><Typography variant="body2" color="text.secondary">Все месяцы</Typography></MenuItem>
-                            {availableMonths.map((m) => <MenuItem key={m.value} value={m.value}>{MONTH_NAMES[m.monthIndex]}</MenuItem>)}
+                            {monthOptions.map((m) => <MenuItem key={m.value} value={m.value}>{MONTH_NAMES[m.monthIndex]}</MenuItem>)}
                           </TextField>
                         </Stack>
                       )}
@@ -915,7 +995,7 @@ const DjangoExpensesPage: React.FC = () => {
                       Список расходов ({filteredExpenses.length})
                     </Typography>
                   </Box>
-                  <Box sx={{ overflowY: "auto", flex: 1 }}>
+                  <Box ref={listScrollRef} sx={{ overflowY: "auto", flex: 1 }}>
                     {expensesQuery.isLoading ? (
                       <Box sx={{ p: 4, textAlign: "center" }}>
                         <CircularProgress size={24} />
@@ -925,6 +1005,7 @@ const DjangoExpensesPage: React.FC = () => {
                         <Typography variant="body2" color="text.secondary">Нет расходов</Typography>
                       </Box>
                     ) : (
+                      <>
                       <List sx={{ py: 0 }}>
                         {(() => {
                           let currentDay = "";
@@ -1031,6 +1112,13 @@ const DjangoExpensesPage: React.FC = () => {
                           });
                         })()}
                       </List>
+                      <Box ref={loadMoreRef} sx={{ height: 1 }} />
+                      {isFetchingNextPage && (
+                        <Box sx={{ py: 2, textAlign: "center" }}>
+                          <CircularProgress size={20} />
+                        </Box>
+                      )}
+                      </>
                     )}
                   </Box>
                 </Paper>

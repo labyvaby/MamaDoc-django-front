@@ -18,10 +18,12 @@ import { useNowMinute } from "./useNowMinute";
 
 // ── Геометрия ────────────────────────────────────────────────────────────────
 
+// Окно до полуночи: вечерние смены (17:00–23:59) раньше обрезались на 22:00,
+// и шкала заканчивалась подписью 21:00 (просьба заказчика 20.09.2026).
 const DAY_START_MIN = 7 * 60;
-const DAY_END_MIN = 22 * 60;
+const DAY_END_MIN = 24 * 60;
 const DAY_DURATION = DAY_END_MIN - DAY_START_MIN;
-const HOURS = Array.from({ length: 16 }, (_, i) => 7 + i); // 7..22
+const HOURS = Array.from({ length: 18 }, (_, i) => 7 + i); // 7..24
 
 const NAME_COL_W = 210;
 const ROW_H = 40;
@@ -29,7 +31,7 @@ const ROW_H = 40;
 const HEADER_H = 42;
 /** Отступ шкалы часов от верха шапки — под ним ряд метки текущего времени. */
 const HOUR_LABEL_TOP = 20;
-/** Ширина часа: при 16 часах даёт ~1150px — влезает без скролла на десктопе. */
+/** Ширина часа: при 17 часах даёт ~1220px — на широком десктопе без скролла. */
 const HOUR_W = 72;
 const BODY_W = (HOURS.length - 1) * HOUR_W;
 
@@ -47,7 +49,7 @@ const leftPx = (min: number) =>
 // Единый формат «Ч:ММ» без ведущего нуля у часа (9:00, 10:30, 18:00) —
 // минуты показываем всегда, чтобы подписи смен читались одинаково.
 const minutesToShort = (min: number) =>
-  `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
+  `${Math.floor(min / 60) % 24}:${String(min % 60).padStart(2, "0")}`; // 1440 → «0:00»
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -486,10 +488,15 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                           />
                         )}
                         {rowOccs.map((occ) => {
+                          const startMin = parseTimeToMinutes(occ.startTime);
+                          const rawEnd = parseTimeToMinutes(occ.endTime);
                           const seg = {
                             occ,
-                            startMin: parseTimeToMinutes(occ.startTime),
-                            endMin: parseTimeToMinutes(occ.endTime),
+                            startMin,
+                            // Конец «00:00» (и вообще конец ≤ начала) — это
+                            // полночь, а не 0:00 текущего дня; иначе полоса
+                            // схлопывалась бы в минимальную ширину.
+                            endMin: rawEnd <= startMin ? DAY_END_MIN : rawEnd,
                           };
                           const tip = `${occ.employeeName}: ${shiftTimeLabel(occ)}${occ.lunch ? ` · ${lunchNote(occ)}` : ""}${occ.kind !== "rule" ? " (точечная смена)" : ""}`;
                           // Один обработчик на все отрезки и вырез обеда: для
