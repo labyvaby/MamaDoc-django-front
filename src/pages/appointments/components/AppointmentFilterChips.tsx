@@ -99,10 +99,21 @@ const AppointmentFilterChips: React.FC<Props> = ({
     moneyCounts && onToggleMoneyFlag
       ? MONEY_FLAG_OPTIONS.filter((flag) => (moneyCounts.get(flag) ?? 0) > 0)
       : [];
-  const reasonChips =
+  const presentReasons =
     reasonCounts && onToggleReason
       ? CANCEL_REASON_OPTIONS.filter((reason) => (reasonCounts.get(reason) ?? 0) > 0)
       : [];
+  // «другое» — дефолтная причина отмены: ручная отмена причину не спрашивает и
+  // падает в неё, поэтому как ЕДИНСТВЕННАЯ причина этот чип лишь дублирует
+  // «Отменено» (тот же набор, ничего не сообщает) — прячем его. Вместе с
+  // конкретной причиной он осмыслен («остальные отмены») и остаётся. Не прячем,
+  // если он уже выбран, иначе активный фильтр нельзя было бы снять кликом.
+  const reasonChips =
+    presentReasons.length === 1 &&
+    presentReasons[0] === "other" &&
+    !selectedReasons.includes("other")
+      ? []
+      : presentReasons;
 
   const hasActive =
     selectedStatuses.length > 0 ||
