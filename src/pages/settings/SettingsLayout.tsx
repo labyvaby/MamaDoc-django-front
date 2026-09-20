@@ -45,6 +45,7 @@ import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import PercentOutlined from "@mui/icons-material/PercentOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
+import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
@@ -244,6 +245,12 @@ const TAB_DEFS: TabDef[] = [
     key: "chatwoot",
     to: "/settings/chatwoot",
     icon: <ForumOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "lab",
+    to: "/settings/lab",
+    icon: <ScienceOutlined fontSize="small" />,
     group: "operations",
   },
 ];

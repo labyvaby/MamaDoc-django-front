@@ -286,6 +286,54 @@ export function getLabSettings(signal?: AbortSignal): Promise<LabSettings> {
   return apiRequest<LabSettings>("/lab/settings/", { signal });
 }
 
+// ── Настройка ЛИС управляющим (`lab.settings.manage`) ──────────────────────
+
+export interface LabBranchRegistry {
+  branchId: number;
+  branchName: string;
+  lisRegistryId: number | null;
+  lisLaboratoryId: number | null;
+}
+
+export interface LabMirrorStats {
+  tests: number;
+  doctors: number;
+  clientTypes: number;
+  instruments: number;
+  preparations: number;
+  lastSyncedAt: string | null;
+}
+
+export interface LabConfig {
+  configured: boolean;
+  lisOrganizationId: number | null;
+  lisDoctorId: number | null;
+  chargeInstruments: boolean;
+  branches: LabBranchRegistry[];
+  mirror: LabMirrorStats;
+}
+
+export interface LabBranchRegistryInput {
+  branchId: number;
+  lisRegistryId?: number | null;
+  lisLaboratoryId?: number | null;
+}
+
+export interface LabConfigInput {
+  lisOrganizationId: number;
+  lisDoctorId: number;
+  chargeInstruments: boolean;
+  branches: LabBranchRegistryInput[];
+}
+
+export function getLabConfig(signal?: AbortSignal): Promise<LabConfig> {
+  return apiRequest<LabConfig>("/lab/settings/config/", { signal });
+}
+
+export function saveLabConfig(body: LabConfigInput): Promise<LabConfig> {
+  return apiRequest<LabConfig>("/lab/settings/config/", { method: "PUT", body });
+}
+
 // ── Заказы ─────────────────────────────────────────────────────────────────
 
 export interface LabOrderRaw {
@@ -294,7 +342,8 @@ export interface LabOrderRaw {
   patientName: string;
   branchName: string;
   status: string;
-  totalAmount: string;
+  /** `null` — суммы скрыты: у сотрудника нет права `finance.view`. */
+  totalAmount: string | null;
   lisOrderCode: number | null;
   titles?: string[];
   createdAt: string;
@@ -322,7 +371,7 @@ export interface LabOrder {
  * заказы.
  */
 export function normalizeLabOrder(raw: LabOrderRaw): LabOrder {
-  const amount = Number.parseFloat(raw.totalAmount);
+  const amount = Number.parseFloat(raw.totalAmount ?? "");
   return {
     id: raw.id,
     patientId: raw.patientId,
@@ -413,7 +462,8 @@ export interface LabOrderLineDetail {
   testId: number;
   /** Снимок названия на момент продажи — не текущее название из каталога. */
   titleSnapshot: string;
-  price: string;
+  /** `null` — цена скрыта (нет `finance.view`). */
+  price: string | null;
   countItem: number;
   isExpress: boolean;
   isBroughtIn: boolean;
@@ -423,7 +473,8 @@ export interface LabOrderInstrumentDetail {
   id: number;
   instrumentId: number;
   titleSnapshot: string;
-  price: string;
+  /** `null` — цена скрыта (нет `finance.view`). */
+  price: string | null;
   count: number;
 }
 
@@ -442,9 +493,10 @@ export interface LabOrderDetailRaw {
   receiverSms?: boolean;
   resultEmail?: string;
   discountPercent: number;
-  totalAmount: string;
-  paidCash: string;
-  paidCard: string;
+  /** Суммы `null` — скрыты: у сотрудника нет права `finance.view`. */
+  totalAmount: string | null;
+  paidCash: string | null;
+  paidCard: string | null;
   lisOrderId: number | null;
   lisOrderCode: number | null;
   dispatchedAt: string | null;
@@ -478,6 +530,12 @@ export interface LabOrderDetail {
   /** Почта для результатов, если указали при приёме. */
   resultEmail: string;
   discountPercent: number;
+  /**
+   * Суммы видны этому сотруднику (`finance.view`). Без права бэкенд
+   * отдаёт `null`, ниже они превращаются в нули — печатать такие нули на
+   * регистрационном листе нельзя, поэтому флаг нужен отдельно.
+   */
+  financeVisible: boolean;
   totalAmount: number;
   paidCash: number;
   paidCard: number;
@@ -491,8 +549,8 @@ export interface LabOrderDetail {
 }
 
 /** Decimal-строка бэка → число; мусор (NaN, Infinity) считаем нулём, не даём ему течь в formatKGS. */
-function parseMoney(raw: string): number {
-  const n = Number.parseFloat(raw);
+function parseMoney(raw: string | null): number {
+  const n = Number.parseFloat(raw ?? "");
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -519,6 +577,7 @@ export function normalizeLabOrderDetail(raw: LabOrderDetailRaw): LabOrderDetail 
     receiverSms: raw.receiverSms ?? false,
     resultEmail: raw.resultEmail ?? "",
     discountPercent: raw.discountPercent,
+    financeVisible: raw.totalAmount != null,
     totalAmount: parseMoney(raw.totalAmount),
     paidCash: parseMoney(raw.paidCash),
     paidCard: parseMoney(raw.paidCard),

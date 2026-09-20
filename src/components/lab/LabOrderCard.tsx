@@ -77,7 +77,8 @@ const InfoRow: React.FC<{ label: string; value: React.ReactNode; bold?: boolean 
   </Stack>
 );
 
-const ItemRow: React.FC<{ title: string; tag?: string | null; count: number; price: string }> = ({
+/** `price` null — сумма скрыта бэкендом (нет `finance.view`): строка без цены. */
+const ItemRow: React.FC<{ title: string; tag?: string | null; count: number; price: string | null }> = ({
   title,
   tag,
   count,
@@ -102,9 +103,11 @@ const ItemRow: React.FC<{ title: string; tag?: string | null; count: number; pri
           × {count}
         </Typography>
       )}
-      <Typography variant="body2" fontWeight={600}>
-        {formatKGS(price)}
-      </Typography>
+      {price !== null && (
+        <Typography variant="body2" fontWeight={600}>
+          {formatKGS(price)}
+        </Typography>
+      )}
     </Stack>
   </Stack>
 );

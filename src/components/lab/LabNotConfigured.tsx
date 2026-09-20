@@ -3,6 +3,9 @@ import { Box, Button, Stack, Typography, alpha } from "@mui/material";
 import LinkOffOutlined from "@mui/icons-material/LinkOffOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 
+import { Link as RouterLink } from "react-router";
+
+import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { subtleBg } from "../../theme/uiHelpers";
 
@@ -154,13 +157,15 @@ const Illustration: React.FC = () => (
  * на странице раздела и вместо формы в дровере приёма, когда у организации
  * нет `OrganizationLabConfig` (`GET /lab/settings/` → `configured: false`).
  *
- * Кому что говорить: суперпользователь видит кнопку в админку — именно
- * там раздел и настраивается, а для остальных ссылка бесполезна
- * (`/admin/` их не пустит), им — «обратитесь к администратору».
+ * Кому что говорить: держатель `lab.settings.manage` (управляющий,
+ * администратор) идёт на страницу настроек раздела; суперпользователь без
+ * такого права — в админку; остальным — «обратитесь к администратору».
  */
 const LabNotConfigured: React.FC<Props> = ({ compact = false }) => {
   const { role, activeOrganization } = usePermissions();
-  const canConfigure = role?.name === "superadmin";
+  const canManage = useCan("lab.settings.manage");
+  const isSuper = role?.name === "superadmin";
+  const canConfigure = canManage || isSuper;
   const orgName = activeOrganization?.name;
 
   return (
@@ -239,7 +244,7 @@ const LabNotConfigured: React.FC<Props> = ({ compact = false }) => {
           {orgName ? `Организация «${orgName}»` : "Ваша организация"} не связана с ЛИС
           ExpressLab, поэтому принимать анализы пока нельзя.
           {canConfigure
-            ? " Подключение настраивается в админке: код организации в ЛИС, врач по умолчанию и точки регистрации по филиалам, после чего запускается синхронизация каталога."
+            ? " Для подключения нужны код организации в ЛИС, врач по умолчанию и точки регистрации по филиалам, после чего запускается синхронизация каталога."
             : " Подключение настраивает администратор системы — обратитесь к нему."}
         </Typography>
 
@@ -251,16 +256,27 @@ const LabNotConfigured: React.FC<Props> = ({ compact = false }) => {
           >
             {/* Обычный Button, не AppButton: тому нужен component="a" с
                 target, а его обёртка полиморфные пропсы не пропускает. */}
-            <Button
-              variant="contained"
-              size="small"
-              href={LAB_CONFIG_ADMIN_URL}
-              target="_blank"
-              rel="noopener"
-              endIcon={<OpenInNewOutlined sx={{ fontSize: 16 }} />}
-            >
-              Открыть настройки ЛИС
-            </Button>
+            {canManage ? (
+              <Button
+                variant="contained"
+                size="small"
+                component={RouterLink}
+                to="/settings/lab"
+              >
+                Настроить подключение
+              </Button>
+            ) : (
+              <Button
+                variant="contained"
+                size="small"
+                href={LAB_CONFIG_ADMIN_URL}
+                target="_blank"
+                rel="noopener"
+                endIcon={<OpenInNewOutlined sx={{ fontSize: 16 }} />}
+              >
+                Открыть настройки ЛИС
+              </Button>
+            )}
           </Stack>
         )}
       </Stack>

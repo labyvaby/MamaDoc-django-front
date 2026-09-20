@@ -91,6 +91,7 @@ describe("normalizeLabOrderDetail", () => {
       personalDataConsentAt: null,
       receiverSms: false,
       resultEmail: "",
+      financeVisible: true,
       patientName: "Иванова А.",
       branchName: "Центральный",
       isDispatched: true,

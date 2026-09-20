@@ -116,6 +116,8 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // (chatwoot.manage), отдельное от chatwoot.view — видеть чаты и
   // настраивать секрет приёмника не одно и то же.
   chatwoot: "chatwoot.manage",
+  // Подключение ЛИС: код организации, точки регистрации филиалов.
+  lab: "lab.settings.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;
