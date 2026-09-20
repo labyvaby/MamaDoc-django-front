@@ -93,6 +93,14 @@ const MotionBox = motion(Box);
 // асинхронно.
 
 const DRAFT_STORAGE_KEY = "mamadoc:services:add-draft";
+
+/**
+ * Новая услуга заводится выключенной (просьба заказчика): пока у неё не
+ * проставлены цена, исполнители и филиалы, она не должна попадать ни в выбор
+ * при записи, ни на витрину. Включают вручную, когда услуга настроена.
+ * Дубликат и восстановленный черновик берут статус из источника, а не отсюда.
+ */
+const DEFAULT_IS_ACTIVE = false;
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
 
 type ServiceAddDraft = {
@@ -115,7 +123,7 @@ function isDraftEmpty(d: Omit<ServiceAddDraft, "savedAt">): boolean {
     d.durationMinutes === "30" &&
     !d.category &&
     !d.description.trim() &&
-    d.isActive === true &&
+    d.isActive === DEFAULT_IS_ACTIVE &&
     d.onlineBookingVisible === true &&
     d.allowPriceOverride === false &&
     d.selectedBranchIds.length === 0
@@ -144,7 +152,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({
   const [durationMinutes, setDurationMinutes] = React.useState("30");
   const [category, setCategory] = React.useState<ServiceCategory | "">("");
   const [description, setDescription] = React.useState("");
-  const [isActive, setIsActive] = React.useState(true);
+  const [isActive, setIsActive] = React.useState(DEFAULT_IS_ACTIVE);
   // Дефолт бэка для новой услуги — видима в онлайн-записи.
   const [onlineBookingVisible, setOnlineBookingVisible] = React.useState(true);
   // Дефолт бэка для новой услуги — цену меняет только справочник (opt-in).
@@ -315,7 +323,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({
     setDurationMinutes("30");
     setCategory("");
     setDescription("");
-    setIsActive(true);
+    setIsActive(DEFAULT_IS_ACTIVE);
     setOnlineBookingVisible(true);
     setAllowPriceOverride(false);
     setSelectedBranches(
@@ -331,7 +339,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({
       setDurationMinutes("30");
       setCategory("");
       setDescription("");
-      setIsActive(true);
+      setIsActive(DEFAULT_IS_ACTIVE);
       setOnlineBookingVisible(true);
       setAllowPriceOverride(false);
       setPhotoFile(null);
