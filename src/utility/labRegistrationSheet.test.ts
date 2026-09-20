@@ -61,6 +61,23 @@ describe("registrationSheetTotals", () => {
     expect(totals.instrumentsCharged).toBe(true);
     expect(totals.debt).toBe(420);
   });
+
+  it("скидка на ровной половине тыйына округляется как Decimal ROUND_HALF_UP у бэкенда", () => {
+    // 1.45 × 10 % = 0.145: float даёт 0.14, бэкенд — 0.15; итог бэкенда с
+    // расходниками = 1.45 − 0.15 + 200 = 201.30, и расходники обязаны
+    // остаться «взятыми», а не выпасть из-за тыйына.
+    const line = data().lines[0];
+    const totals = registrationSheetTotals(
+      data({
+        lines: [{ ...line, price: "1.45" }],
+        discountPercent: 10,
+        totalAmount: 201.3,
+        paidAmount: 201.3,
+      }),
+    );
+    expect(totals.discount).toBe(0.15);
+    expect(totals.instrumentsCharged).toBe(true);
+  });
 });
 
 describe("buildRegistrationSheetHtml", () => {

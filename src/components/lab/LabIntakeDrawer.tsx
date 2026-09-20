@@ -27,9 +27,10 @@ import QuestionsSection from "./intake/QuestionsSection";
 import InstrumentsSection from "./intake/InstrumentsSection";
 import PaymentSection from "./intake/PaymentSection";
 import { isTestVisibleForGender, type BasketLine } from "./intake/basketCatalog";
-import { assembleLabAnswers } from "./intake/labQuestionFields";
+import { assembleLabAnswers, groupLabQuestions } from "./intake/labQuestionFields";
 
 import { usePermissions } from "../../hooks/usePermissions";
+import { useCan } from "../../hooks/useCan";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useCashlessMethods } from "../../hooks/useCashlessMethods";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
@@ -144,6 +145,10 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
   const { enqueueSnackbar } = useSnackbar();
   const queryClient = useQueryClient();
   const { activeBranch, activeOrganization } = usePermissions();
+  // Повтор отправки — отдельное право (`lab.dispatch`), у принимающего его
+  // может не быть: тогда заказ остаётся оплаченным и не отправленным, а
+  // повторит его тот, у кого право есть, из карточки заказа.
+  const canDispatch = useCan("lab.dispatch");
   const orgId = useApiOrgId();
 
   // ── Состояние — шесть полей плюс то, что неизбежно ложится поверх приёма
@@ -482,7 +487,12 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
     [clientTypesQuery.data],
   );
 
-  const requiredQuestionIds = React.useMemo(() => questions.map((q) => q.id), [questions]);
+  // Ключ ответа — `lisQuestionId`: один вопрос может стоять у нескольких
+  // анализов корзины, а ответ у заказа на него один (см. `groupLabQuestions`).
+  const requiredQuestionIds = React.useMemo(
+    () => groupLabQuestions(questions).map((g) => g.lisQuestionId),
+    [questions],
+  );
 
   // Строки детализации расходников: только платные и только когда клиника
   // берёт за них плату — иначе в итоге они не участвуют и показывать нечего.
@@ -814,6 +824,12 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
                   Заказ №{failedOrderId} создан и оплачен, но не ушёл в лабораторию.
                   {submitError ? ` ${submitError}` : ""}
                 </Typography>
+                {!canDispatch && (
+                  <Typography variant="body2">
+                    Повторить отправку может сотрудник с правом «Повторная отправка анализов в
+                    лабораторию» — из карточки заказа.
+                  </Typography>
+                )}
                 {retryError && (
                   <Typography variant="body2" color="error.main">
                     Повтор не удался: {retryError}
@@ -956,9 +972,11 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
             {editing || phase === "submitting" ? "Отмена" : "Закрыть"}
           </AppButton>
           {phase === "failed" ? (
-            <AppButton variant="contained" onClick={handleRetryDispatch} loading={retrying}>
-              Повторить отправку
-            </AppButton>
+            canDispatch && (
+              <AppButton variant="contained" onClick={handleRetryDispatch} loading={retrying}>
+                Повторить отправку
+              </AppButton>
+            )
           ) : phase !== "done" ? (
             <AppButton variant="contained" onClick={handleAccept} disabled={!!blockReason} loading={phase === "submitting"}>
               Принять анализы
