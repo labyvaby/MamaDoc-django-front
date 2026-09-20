@@ -269,7 +269,7 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
             )}
             {visibleAbsences.map((mark) => (
               <Box
-                key={`absence_${mark.employeeId}_${mark.startTime ?? "all"}`}
+                key={mark.id}
                 sx={{
                   p: 1.5,
                   borderRadius: "10px",

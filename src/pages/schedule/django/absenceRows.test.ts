@@ -123,6 +123,15 @@ describe("buildAbsenceMarks", () => {
   it("рабочие смены отсутствиями не считает", () => {
     expect(buildAbsenceMarks([exc({ kind: "extra" }), exc({ id: 2, kind: "override" })]).size).toBe(0);
   });
+
+  it("закрытый день важнее часов: штриховка идёт на всю дорожку", () => {
+    const marks = buildAbsenceMarks([
+      exc({ id: 1 }),
+      exc({ id: 2, startTime: "14:00", endTime: "17:00" }),
+    ]);
+
+    expect(marks.get("2026-09-10_7")).toMatchObject({ startTime: null });
+  });
 });
 
 describe("absencesOfDay", () => {
@@ -138,6 +147,24 @@ describe("absencesOfDay", () => {
 
     expect(list.map((m) => m.employeeName)).toEqual(["Абдиева Б.", "Асанова А."]);
   });
+
+  it("один и тот же выходной из двух филиалов показывает одной строкой", () => {
+    const list = absencesOfDay(
+      [exc({ id: 1, branchId: 1 }), exc({ id: 2, branchId: 2 })],
+      "2026-09-10",
+    );
+
+    expect(list).toHaveLength(1);
+  });
+
+  it("часы отсутствия того же дня остаются отдельной строкой", () => {
+    const list = absencesOfDay(
+      [exc({ id: 1 }), exc({ id: 2, startTime: "14:00", endTime: "17:00" })],
+      "2026-09-10",
+    );
+
+    expect(list).toHaveLength(2);
+  });
 });
 
 describe("groupAbsencesByDate", () => {
@@ -150,5 +177,11 @@ describe("groupAbsencesByDate", () => {
 
     expect(byDate.get("2026-09-10")).toHaveLength(2);
     expect(byDate.get("2026-09-11")).toHaveLength(1);
+  });
+
+  it("счётчик дня не считает один выходной дважды", () => {
+    const byDate = groupAbsencesByDate([exc({ id: 1 }), exc({ id: 2 })]);
+
+    expect(byDate.get("2026-09-10")).toHaveLength(1);
   });
 });

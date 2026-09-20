@@ -1014,7 +1014,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                     </Typography>
                     {dayAbsences.map((mark) => (
                       <Stack
-                        key={`${mark.employeeId}_${mark.label}_${mark.startTime ?? "all"}`}
+                        key={mark.id}
                         direction="row"
                         spacing={1}
                         alignItems="center"

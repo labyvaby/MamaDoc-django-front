@@ -93,6 +93,8 @@ export function buildAbsenceIndex(
 
 /** Отсутствие, каким его показывает сетка: подпись, часы и комментарий. */
 export interface AbsenceMark {
+  /** id исключения — ключ списка: у сотрудника их в дне бывает несколько. */
+  id: number;
   employeeId: number;
   employeeName: string;
   /** «Выходной» / «Отпуск». */
@@ -105,6 +107,7 @@ export interface AbsenceMark {
 
 function toMark(exc: ScheduleException): AbsenceMark {
   return {
+    id: exc.id,
     employeeId: exc.employeeId,
     employeeName: exc.employeeName,
     label: ABSENCE_LABELS[exc.kind] ?? FALLBACK_LABEL,
@@ -112,6 +115,27 @@ function toMark(exc: ScheduleException): AbsenceMark {
     endTime: exc.endTime,
     comment: exc.comment,
   };
+}
+
+/**
+ * Одно и то же отсутствие приходит в списке несколько раз: период заводится
+ * пачкой, да и филиалов у сотрудника бывает два, а день закрыт целиком. В
+ * списке это читается как два выходных подряд у одного человека, поэтому
+ * одинаковые (сотрудник + вид + часы) схлопываем.
+ */
+const sameMark = (m: AbsenceMark): string =>
+  `${m.employeeId}_${m.label}_${m.startTime ?? ""}_${m.endTime ?? ""}`;
+
+function dedupe(marks: AbsenceMark[]): AbsenceMark[] {
+  const seen = new Set<string>();
+  const out: AbsenceMark[] = [];
+  for (const mark of marks) {
+    const key = sameMark(mark);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(mark);
+  }
+  return out;
 }
 
 /**
@@ -128,7 +152,11 @@ export function buildAbsenceMarks(
   const map = new Map<string, AbsenceMark>();
   for (const exc of exceptions ?? []) {
     if (!ABSENCE_LABELS[exc.kind]) continue;
-    map.set(`${exc.date}_${exc.employeeId}`, toMark(exc));
+    const key = `${exc.date}_${exc.employeeId}`;
+    // В сетке у строки одна отметка на день. Закрытый день важнее часов: если
+    // выходной стоит и целиком, и куском, штриховать надо всю дорожку.
+    if (map.get(key)?.startTime === null) continue;
+    map.set(key, toMark(exc));
   }
   return map;
 }
@@ -144,7 +172,9 @@ export function groupAbsencesByDate(
     if (list) list.push(toMark(exc));
     else map.set(exc.date, [toMark(exc)]);
   }
-  for (const list of map.values()) list.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+  for (const [date, list] of map) {
+    map.set(date, dedupe(list.sort((a, b) => a.employeeName.localeCompare(b.employeeName))));
+  }
   return map;
 }
 
@@ -158,7 +188,7 @@ export function absencesOfDay(
     if (exc.date !== date || !ABSENCE_LABELS[exc.kind]) continue;
     marks.push(toMark(exc));
   }
-  return marks.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+  return dedupe(marks.sort((a, b) => a.employeeName.localeCompare(b.employeeName)));
 }
 
 /** «3 записи» — подпись маркера. */
