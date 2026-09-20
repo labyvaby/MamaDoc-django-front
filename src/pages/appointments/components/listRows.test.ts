@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import dayjs from "dayjs";
 
-import { buildListRows, type GapSlot } from "./listRows";
+import { buildListRows, isGap, type GapSlot } from "./listRows";
 import type { DjangoAppointment } from "../../../api/appointments";
 
 const DAY = "2026-09-19";
@@ -64,6 +64,20 @@ describe("buildListRows: линия «сейчас»", () => {
     const items = [gap("09:00"), appt(1, "09:30")];
     expect(buildListRows(items, null, false).every((r) => !r.nowLine)).toBe(true);
     expect(buildListRows(items, at("18:00"), false).every((r) => !r.nowLine)).toBe(true);
+  });
+
+  it("не вешает линию на отменённый приём — предикат eligibility её пропускает", () => {
+    // Отменённые приёмы уведены в конец группы (см. AppointmentListPanel).
+    // Даже если по времени отменённый раньше, линия «сейчас» должна встать над
+    // первым АКТИВНЫМ элементом, а не над отменённой строкой.
+    const canceled = { ...appt(1, "09:00"), status: "canceled" } as DjangoAppointment;
+    const rows = buildListRows(
+      [canceled, appt(2, "09:30")],
+      at("08:00"),
+      false,
+      (item) => isGap(item) || item.status !== "canceled",
+    );
+    expect(rows.map((r) => r.nowLine)).toEqual([false, true]);
   });
 });
 

@@ -819,13 +819,33 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       renderItems: RenderItem[];
     }[] = [];
 
+    // Отменённые и неявки уводим в конец группы: активные записи и свободные
+    // окна остаются вверху в хронологии, а строки, по которым делать нечего,
+    // не разрывают ленту. Между собой сохраняют порядок из renderItems
+    // (хронологический). Свободное окно, освободившееся из-за отмены, остаётся
+    // на своём времени — вниз уезжает только карточка отменённого приёма.
+    const cancelledToBottom = (list: RenderItem[]): RenderItem[] => {
+      const head: RenderItem[] = [];
+      const tail: RenderItem[] = [];
+      for (const it of list) {
+        if (!isGap(it) && isCancelledStatus(it.status)) tail.push(it);
+        else head.push(it);
+      }
+      return tail.length > 0 ? [...head, ...tail] : list;
+    };
+
     rawGroups.forEach(({ employeeId: groupEmployeeId, name: docName, appts }) => {
       const sorted = [...appts].sort((a, b) =>
         dayjs(a.scheduledAt).valueOf() - dayjs(b.scheduledAt).valueOf(),
       );
 
       if (!onAddSlot) {
-        result.push({ employeeId: groupEmployeeId, name: docName, appts: sorted, renderItems: sorted });
+        result.push({
+          employeeId: groupEmployeeId,
+          name: docName,
+          appts: sorted,
+          renderItems: cancelledToBottom(sorted),
+        });
         return;
       }
 
@@ -980,7 +1000,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       }
 
       if (renderItems.length > 0) {
-        result.push({ employeeId: groupEmployeeId, name: docName, appts: sorted, renderItems });
+        result.push({
+          employeeId: groupEmployeeId,
+          name: docName,
+          appts: sorted,
+          renderItems: cancelledToBottom(renderItems),
+        });
       }
     });
 
@@ -1107,6 +1132,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     for (const group of groupEntries) {
       for (const item of group.renderItems) {
         if (isGap(item)) continue;
+        // Отменённые уехали в конец группы — «ближайшим» их считать нельзя,
+        // иначе автоскролл прыгнет к отменённой строке внизу ленты.
+        if (isCancelledStatus(item.status)) continue;
         const ts = dayjs(item.scheduledAt).valueOf();
         if (ts < nowTs) continue;
         if (!best || ts < best.ts) best = { id: item.id, ts };
@@ -1441,7 +1469,14 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
               // Ряды группы и место линии «сейчас» — перед первым элементом
               // (приёмом или окном), который ещё не начался; на телефоне
               // подряд идущие окна слиты в один ряд (GapRun).
-              const rows = buildListRows(groupItems, isToday ? nowTs : null, isMobile);
+              const rows = buildListRows(
+                groupItems,
+                isToday ? nowTs : null,
+                isMobile,
+                // Линию «сейчас» не вешаем на отменённые: они уведены в конец
+                // группы, и над ними внизу ленты она вводила бы в заблуждение.
+                (i) => isGap(i) || !isCancelledStatus(i.status),
+              );
               // Линия группы с ближайшим приёмом — якорь подскролла при
               // открытии дня.
               const isNowAnchorGroup =
