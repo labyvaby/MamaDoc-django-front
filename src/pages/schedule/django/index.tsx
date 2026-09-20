@@ -77,6 +77,7 @@ import ShiftOverlapDialog from "./ShiftOverlapDialog";
 import AbsenceConflictsDrawer, { type AbsenceSpan } from "./AbsenceConflictsDrawer";
 import { isAbsenceKind, useAbsenceConflicts } from "./useAbsenceConflicts";
 import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
+import { absencesOfDay, type AbsenceMark } from "./absenceRows";
 import { useEmployeeColorMap } from "./employeeColors";
 
 const WEEKDAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -1470,6 +1471,16 @@ const DjangoSchedulePage: React.FC = () => {
     [selectedDay, rules, monthExceptions],
   );
 
+  // Отпуска и выходные того же дня: смен они не порождают, поэтому в дровер
+  // идут отдельным списком — иначе отсутствующего там просто нет.
+  const selectedDayAbsences = React.useMemo<AbsenceMark[]>(
+    () =>
+      selectedDay
+        ? absencesOfDay(monthExceptions, selectedDay.format("YYYY-MM-DD"))
+        : [],
+    [selectedDay, monthExceptions],
+  );
+
   const openExceptionDialog = (opts: {
     kind?: ScheduleExceptionKind;
     title?: string;
@@ -2067,6 +2078,7 @@ const DjangoSchedulePage: React.FC = () => {
         onClose={() => setDayDrawerOpen(false)}
         day={selectedDay}
         occurrences={selectedDayOccurrences}
+        absences={selectedDayAbsences}
         employeesById={employeesById}
         employeeColorMap={employeeColorMap}
         canManage={canManage}

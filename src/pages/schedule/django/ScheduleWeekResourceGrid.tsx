@@ -19,7 +19,7 @@ import { occMinutes, packIntoLanes, segmentLunch, segmentWorkSpans } from "./mon
 import { computeWeekWindow, hourTicks, windowPct } from "./weekWindow";
 import { employeeColorHex, lunchFill } from "./employeeColors";
 import { namesFromOccurrences, occurrencesOf, useCollapsedGroups, useResourceGroups } from "./resourceRows";
-import { ABSENCE_LABELS, absenceCountLabel, buildAbsenceIndex } from "./absenceRows";
+import { absenceCountLabel, buildAbsenceIndex, buildAbsenceMarks } from "./absenceRows";
 import { useNowMinute } from "./useNowMinute";
 
 /**
@@ -120,17 +120,34 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
     () => buildAbsenceIndex(exceptions, absenceDayEmployees, weekDates),
     [exceptions, absenceDayEmployees, weekDates],
   );
+  // Отсутствия недели сами по себе — по ним рисуются плитки «Отпуск» и живёт
+  // строка того, у кого на неделе нет ни одной смены (отпуск с понедельника по
+  // пятницу иначе просто убирал человека из сетки).
+  const weekMarks = React.useMemo(() => {
+    const all = buildAbsenceMarks(exceptions);
+    const inWeek = new Set(weekDates);
+    return new Map([...all].filter(([key]) => inWeek.has(key.slice(0, 10))));
+  }, [exceptions, weekDates]);
+
   // Отсутствующий без единой смены на неделе выпадал из сетки вместе со своими
-  // записанными пациентами — теперь строка остаётся ради них.
+  // записанными пациентами — теперь строка остаётся и ради них, и ради отпуска.
   const rowEmployeeIds = React.useMemo(
-    () => new Set([...weekOccurrences.map((o) => o.employeeId), ...absenceIndex.employeeIds]),
-    [weekOccurrences, absenceIndex],
+    () =>
+      new Set([
+        ...weekOccurrences.map((o) => o.employeeId),
+        ...absenceIndex.employeeIds,
+        ...[...weekMarks.values()].map((m) => m.employeeId),
+      ]),
+    [weekOccurrences, absenceIndex, weekMarks],
   );
   const namesById = React.useMemo(() => {
     const map = namesFromOccurrences(weekOccurrences);
     for (const [id, name] of absenceIndex.names) if (!map.has(id)) map.set(id, name);
+    for (const mark of weekMarks.values()) {
+      if (mark.employeeName && !map.has(mark.employeeId)) map.set(mark.employeeId, mark.employeeName);
+    }
     return map;
-  }, [weekOccurrences, absenceIndex]);
+  }, [weekOccurrences, absenceIndex, weekMarks]);
 
   /**
    * Окно таймлайна по фактическому графику недели. Жёсткие 07:00–22:00 отдавали
@@ -139,16 +156,6 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
   const timeWindow = React.useMemo(() => computeWeekWindow(weekOccurrences), [weekOccurrences]);
   const ticks = React.useMemo(() => hourTicks(timeWindow), [timeWindow]);
   const pct = React.useCallback((min: number) => windowPct(min, timeWindow), [timeWindow]);
-
-  /** Отсутствия по ключу "дата_сотрудник" — ищем их на каждый пустой день. */
-  const absenceByKey = React.useMemo(() => {
-    const map = new Map<string, ScheduleException>();
-    for (const exc of exceptions ?? []) {
-      if (!ABSENCE_LABELS[exc.kind]) continue;
-      map.set(`${exc.date}_${exc.employeeId}`, exc);
-    }
-    return map;
-  }, [exceptions]);
 
   /** Часы за неделю по сотруднику — сумма смен за вычетом обедов. */
   const weekMinutesByEmployee = React.useMemo(() => {
@@ -414,14 +421,12 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                         // Отпуск/выходной отменяют смену ещё при материализации,
                         // поэтому ищем их отдельно — иначе день выглядит как
                         // обычный невыход по графику.
-                        const absence = absenceByKey.get(`${dateStr}_${employee.id}`);
+                        const absence = weekMarks.get(`${dateStr}_${employee.id}`);
                         // Записи, оставшиеся в день отсутствия: выходной их не
                         // отменяет, разбирает человек — значит в сетке должен
                         // быть виден счётчик.
                         const conflict = absenceIndex.cells.get(`${dateStr}_${employee.id}`);
-                        const absenceLabel = absence
-                          ? ABSENCE_LABELS[absence.kind]
-                          : conflict?.label ?? null;
+                        const absenceLabel = absence?.label ?? conflict?.label ?? null;
                         return (
                           <Box
                             key={d.format("YYYY-MM-DD")}
@@ -521,7 +526,11 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                             {dayOccs.length === 0 ? (
                               absenceLabel ? (
                                 <Tooltip
-                                  title={`${absenceLabel}${absence?.comment ? `: ${absence.comment}` : ""}`}
+                                  title={`${absenceLabel}${
+                                    absence?.startTime && absence.endTime
+                                      ? ` ${absence.startTime}–${absence.endTime}`
+                                      : ""
+                                  }${absence?.comment ? `: ${absence.comment}` : ""}`}
                                   arrow
                                 >
                                   <Box

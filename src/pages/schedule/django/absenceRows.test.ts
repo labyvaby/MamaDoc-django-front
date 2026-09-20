@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { absenceCountLabel, buildAbsenceIndex } from "./absenceRows";
+import {
+  absenceCountLabel,
+  absencesOfDay,
+  buildAbsenceIndex,
+  buildAbsenceMarks,
+  groupAbsencesByDate,
+} from "./absenceRows";
 import type { ScheduleException } from "../../../api/scheduling";
 
 const exc = (over: Partial<ScheduleException>): ScheduleException => ({
@@ -88,5 +94,61 @@ describe("absenceCountLabel", () => {
     expect(absenceCountLabel(11)).toBe("11 записей");
     expect(absenceCountLabel(21)).toBe("21 запись");
     expect(absenceCountLabel(112)).toBe("112 записей");
+  });
+});
+
+describe("buildAbsenceMarks", () => {
+  it("видит отсутствие само по себе, без данных о записях", () => {
+    const marks = buildAbsenceMarks([
+      exc({}),
+      exc({ id: 2, employeeId: 8, kind: "vacation", employeeName: "Асанова А." }),
+    ]);
+
+    expect(marks.get("2026-09-10_7")).toMatchObject({ label: "Выходной" });
+    expect(marks.get("2026-09-10_8")).toMatchObject({ label: "Отпуск" });
+  });
+
+  it("сохраняет часы частичного отсутствия и комментарий", () => {
+    const marks = buildAbsenceMarks([
+      exc({ startTime: "14:00", endTime: "17:00", comment: "Конференция" }),
+    ]);
+
+    expect(marks.get("2026-09-10_7")).toMatchObject({
+      startTime: "14:00",
+      endTime: "17:00",
+      comment: "Конференция",
+    });
+  });
+
+  it("рабочие смены отсутствиями не считает", () => {
+    expect(buildAbsenceMarks([exc({ kind: "extra" }), exc({ id: 2, kind: "override" })]).size).toBe(0);
+  });
+});
+
+describe("absencesOfDay", () => {
+  it("берёт только свой день и сортирует по имени", () => {
+    const list = absencesOfDay(
+      [
+        exc({ id: 1, employeeId: 8, employeeName: "Асанова А." }),
+        exc({ id: 2, employeeId: 7, employeeName: "Абдиева Б." }),
+        exc({ id: 3, employeeId: 9, employeeName: "Осмонова В.", date: "2026-09-11" }),
+      ],
+      "2026-09-10",
+    );
+
+    expect(list.map((m) => m.employeeName)).toEqual(["Абдиева Б.", "Асанова А."]);
+  });
+});
+
+describe("groupAbsencesByDate", () => {
+  it("раскладывает отсутствия по датам", () => {
+    const byDate = groupAbsencesByDate([
+      exc({ id: 1, employeeId: 7 }),
+      exc({ id: 2, employeeId: 8, employeeName: "Асанова А." }),
+      exc({ id: 3, employeeId: 9, employeeName: "Осмонова В.", date: "2026-09-11" }),
+    ]);
+
+    expect(byDate.get("2026-09-10")).toHaveLength(2);
+    expect(byDate.get("2026-09-11")).toHaveLength(1);
   });
 });
