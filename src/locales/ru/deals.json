@@ -123,7 +123,9 @@
     "chatReconnect": "Переподключить",
     "createdByBot": "Создано ботом {{name}}",
     "botActor": "Бот",
-    "lastActivity": "касание {{value}}"
+    "lastActivity": "касание {{value}}",
+    "chatOpen": "Открыть чат",
+    "chatOpenExternal": "Открыть в Chatwoot (новая вкладка)"
   },
   "activity": {
     "call": "Звонок",
