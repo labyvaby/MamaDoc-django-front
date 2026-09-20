@@ -134,7 +134,6 @@ export default function ChatwootLeadsSettingsPage() {
   const [busy, setBusy] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [snack, setSnack] = React.useState<string | null>(null);
-  const [inboxes, setInboxes] = React.useState<ChatwootInbox[] | null>(null);
   const [testState, setTestState] = React.useState<
     { kind: "idle" } | { kind: "busy" } | { kind: "ok"; count: number } | { kind: "failed"; error: string }
   >({ kind: "idle" });
@@ -167,6 +166,18 @@ export default function ChatwootLeadsSettingsPage() {
     enabled: !!selectedPipeline,
   });
   const openStages: DealStage[] = (stagesQuery.data ?? []).filter((s) => s.kind === "open");
+
+  // Инбоксы тянем сами при открытии — иначе сохранённая карта показывает голые
+  // «#61» без названий, пока не нажали «Проверить связь». Читается стороной
+  // Chatwoot с сохранённым/минтимым токеном; токен из формы сюда не идёт.
+  const inboxesQuery = useQuery({
+    queryKey: ["django", "chatwoot", "lead-integration", "inboxes", orgId ?? null] as const,
+    queryFn: () => testChatwootLeadConnection({ organizationId: orgId }),
+    enabled: !!settingsQuery.data && settingsQuery.data.accountId != null,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const inboxes: ChatwootInbox[] | null = inboxesQuery.data?.ok ? inboxesQuery.data.inboxes : null;
 
   const employeesQuery = useQuery({
     queryKey: ["django", "employees", "all", orgId ?? null, "chatwoot-settings"] as const,
@@ -207,7 +218,10 @@ export default function ChatwootLeadsSettingsPage() {
         organizationId: orgId,
       });
       if (result.ok) {
-        setInboxes(result.inboxes);
+        queryClient.setQueryData(
+          ["django", "chatwoot", "lead-integration", "inboxes", orgId ?? null],
+          result,
+        );
         setTestState({ kind: "ok", count: result.inboxes.length });
       } else {
         setTestState({ kind: "failed", error: result.error ?? "" });
@@ -435,7 +449,11 @@ export default function ChatwootLeadsSettingsPage() {
                 <Typography variant="body2" color="text.secondary">
                   {t("chatwoot.inboxes.description")}
                 </Typography>
-                {rows.length === 0 ? (
+                {inboxesQuery.isLoading && rows.length === 0 ? (
+                  <Stack alignItems="center" py={2}>
+                    <CircularProgress size={20} />
+                  </Stack>
+                ) : rows.length === 0 ? (
                   <Alert severity="info">
                     {inboxes === null ? t("chatwoot.inboxes.loadHint") : t("chatwoot.inboxes.empty")}
                   </Alert>
