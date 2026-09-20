@@ -85,6 +85,12 @@ export interface AbsenceSpan {
    */
   startTime?: string | null;
   endTime?: string | null;
+  /**
+   * Филиал исключения; пусто — любой. Ручка отдаёт приёмы по всем филиалам,
+   * а отсутствие в одном филиале не задевает приёмы в смене другого — их
+   * тоже отбрасываем здесь, тем же правилом, что и счётчики на сетке.
+   */
+  branchId?: number | null;
 }
 
 type Mode = "cancel" | "reassign" | "ack" | "unack";
@@ -216,16 +222,19 @@ export const AbsenceConflictsDrawer: React.FC<{
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
-  const conflicts = React.useMemo(() => {
-    const all = conflictsQuery.data ?? [];
-    if (!absence?.startTime || !absence?.endTime) return all;
-    return all.filter((appt) =>
-      appointmentHitsAbsence(appt, {
-        startTime: absence.startTime ?? null,
-        endTime: absence.endTime ?? null,
-      }),
-    );
-  }, [conflictsQuery.data, absence?.startTime, absence?.endTime]);
+  // Ручка отдаёт все приёмы периода; к отсутствию их относит тот же предикат,
+  // что кормит счётчики на сетке, — по интервалу и филиалу.
+  const conflicts = React.useMemo(
+    () =>
+      (conflictsQuery.data ?? []).filter((appt) =>
+        appointmentHitsAbsence(appt, {
+          startTime: absence?.startTime ?? null,
+          endTime: absence?.endTime ?? null,
+          branchId: absence?.branchId ?? null,
+        }),
+      ),
+    [conflictsQuery.data, absence?.startTime, absence?.endTime, absence?.branchId],
+  );
   const categories = React.useMemo(
     () => (categoriesQuery.data ?? []).filter((c) => c.isActive),
     [categoriesQuery.data],

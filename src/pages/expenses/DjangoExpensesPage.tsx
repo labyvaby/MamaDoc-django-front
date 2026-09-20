@@ -31,11 +31,12 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import ImageOutlined from "@mui/icons-material/ImageOutlined";
+import ImageNotSupportedOutlined from "@mui/icons-material/ImageNotSupportedOutlined";
 import ExpandLess from "@mui/icons-material/ExpandLess";
 import ExpandMore from "@mui/icons-material/ExpandMore";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { PageHeader, AppBottomSheet, PaymentInfoBlock, InvoicePhotosField } from "../../components/ui";
 import { DjangoAddExpenseDrawer } from "../../components/expenses/DjangoAddExpenseDrawer";
@@ -497,7 +498,19 @@ const VoidDialog: React.FC<{
 
 // ── Главный компонент ──────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 50;
+// Бэк отдаёт расходы страницами (page/pageSize, максимум 200). 100 покрывает
+// типичный месяц одним запросом (чтобы «Итого за месяц» было полным сразу), а
+// остальное подгружается скроллом (см. useInfiniteQuery ниже).
+const PAGE_SIZE = 100;
+
+// Дефолт периода — текущий год и текущий месяц (по просьбе: «2026 и текущий
+// месяц»). Считаем в момент открытия/сброса, чтобы не устареть при смене месяца.
+function defaultPeriod(): { year: string; month: string } {
+  const d = new Date();
+  const year = String(d.getFullYear());
+  const month = `${year}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return { year, month };
+}
 
 const DjangoExpensesPage: React.FC = () => {
   usePageTitle("Расходы");
@@ -527,11 +540,17 @@ const DjangoExpensesPage: React.FC = () => {
 
   // Фильтры периода
   const [selectedCategoryId, setSelectedCategoryId] = React.useState<number | null>(null);
-  const [selectedYear, setSelectedYear] = React.useState<string | null>(null);
-  const [selectedMonth, setSelectedMonth] = React.useState<string | null>(null);
+  const [selectedYear, setSelectedYear] = React.useState<string | null>(() => defaultPeriod().year);
+  const [selectedMonth, setSelectedMonth] = React.useState<string | null>(() => defaultPeriod().month);
   const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
   const [expandedEmployee, setExpandedEmployee] = React.useState<string | null>(null);
   const [selectedEmployeeFilter, setSelectedEmployeeFilter] = React.useState<string | null>(null);
+  const [expandedCategory, setExpandedCategory] = React.useState<string | null>(null);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = React.useState<string | null>(null);
+  // Секции «Получатели»/«Категории» — сворачиваемые. «Получатели» по умолчанию
+  // свёрнуты (обычно их много), но если получатель один — раскрыты (эффект ниже).
+  const [recipientsOpen, setRecipientsOpen] = React.useState(false);
+  const [categoriesOpen, setCategoriesOpen] = React.useState(true);
 
   // UI-state
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -559,10 +578,11 @@ const DjangoExpensesPage: React.FC = () => {
     if (prevOrgId.current !== orgId || prevBranchId.current !== branchId) {
       prevOrgId.current = orgId;
       prevBranchId.current = branchId;
+      const { year, month } = defaultPeriod();
       setSelectedExpense(null);
       setSelectedCategoryId(null);
-      setSelectedYear(null);
-      setSelectedMonth(null);
+      setSelectedYear(year);
+      setSelectedMonth(month);
       setSelectedDate(null);
     }
   }, [orgId, branchId]);
@@ -598,9 +618,9 @@ const DjangoExpensesPage: React.FC = () => {
     return f;
   }, [orgId, branchId, selectedCategoryId, selectedYear, selectedMonth]);
 
-  const expensesQuery = useQuery({
+  const expensesQuery = useInfiniteQuery({
     queryKey: djangoQueryKeys.expenses.list(expFilters),
-    queryFn: ({ signal }) => getExpenses(
+    queryFn: ({ pageParam, signal }) => getExpenses(
       {
         organizationId: orgId,
         branchId,
@@ -608,10 +628,16 @@ const DjangoExpensesPage: React.FC = () => {
         dateFrom: expFilters.dateFrom as string | undefined,
         dateTo: expFilters.dateTo as string | undefined,
         includeVoided: true,
+        page: pageParam,
         pageSize: PAGE_SIZE,
       },
       signal,
     ),
+    initialPageParam: 1,
+    // Бэк отдаёт next-URL, пока есть следующая страница; номер следующей — это
+    // просто количество уже загруженных страниц + 1.
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.next ? allPages.length + 1 : undefined,
     enabled: !permLoading && canView && !needsOrg,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     retry: (count, err) => {
@@ -620,7 +646,27 @@ const DjangoExpensesPage: React.FC = () => {
     },
   });
 
-  const allExpenses = expensesQuery.data?.results ?? [];
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = expensesQuery;
+
+  const allExpenses = React.useMemo(
+    () => expensesQuery.data?.pages.flatMap((p) => p.results) ?? [],
+    [expensesQuery.data],
+  );
+
+  // Для выбранного месяца подтягиваем все страницы: «Итого за месяц» и разбивка
+  // по получателям считаются на клиенте из загруженных записей — при неполной
+  // выборке они были бы занижены. Месяц ограничен, дозагрузка дешёвая. Для
+  // «Все расходы»/года такого драйна нет — там страницы грузятся по скроллу.
+  React.useEffect(() => {
+    if (selectedMonth && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [selectedMonth, hasNextPage, isFetchingNextPage, fetchNextPage, allExpenses.length]);
+
+  // Бесконечный скролл среднего списка
+  const listScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const loadMoreRef = React.useRef<HTMLDivElement | null>(null);
+  const pageScrollRef = React.useRef<HTMLDivElement | null>(null);
   // Аннулированные не должны искажать суммы (итого за месяц, разбивка по
   // получателям) — используем этот массив только для денежных расчётов,
   // список слева по-прежнему показывает все записи (зачёркнутыми).
@@ -650,8 +696,36 @@ const DjangoExpensesPage: React.FC = () => {
         list = list.filter((e) => e.employeeName === selectedEmployeeFilter);
       }
     }
+    if (selectedCategoryFilter !== null) {
+      list = list.filter((e) => (e.categoryName ?? "Без категории") === selectedCategoryFilter);
+    }
     return list;
-  }, [allExpenses, searchQuery, selectedDate, selectedEmployeeFilter]);
+  }, [allExpenses, searchQuery, selectedDate, selectedEmployeeFilter, selectedCategoryFilter]);
+
+  // Догрузка следующей страницы, когда нижний сентинел появляется в зоне
+  // видимости списка (root — сам скролл-контейнер средней колонки).
+  React.useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting) && hasNextPage && !isFetchingNextPage) {
+          void fetchNextPage();
+        }
+      },
+      { root: listScrollRef.current, rootMargin: "300px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, filteredExpenses.length]);
+
+  // При смене фильтров/поиска список резко короче — возвращаем прокрутку
+  // среднего списка (а на мобиле — всей страницы) наверх, иначе остаётся
+  // пустой экран и приходится крутить вверх вручную.
+  React.useEffect(() => {
+    if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
+    if (pageScrollRef.current) pageScrollRef.current.scrollTop = 0;
+  }, [searchQuery, selectedCategoryId, selectedYear, selectedMonth, selectedDate, selectedEmployeeFilter, selectedCategoryFilter]);
 
   // Вычисляем года и месяцы для левой панели
   const availableYears = React.useMemo(() => {
@@ -659,17 +733,32 @@ const DjangoExpensesPage: React.FC = () => {
     return Array.from(ys).sort((a, b) => b.localeCompare(a));
   }, [allExpenses]);
 
-  const availableMonths = React.useMemo(() => {
+  // Список годов в селекте НЕ зависит от загруженной выборки: последние
+  // несколько лет + годы из данных + выбранный год. Иначе, открывшись сразу на
+  // конкретном месяце, селект показывал бы только один год (данные-то только
+  // за этот месяц).
+  const yearOptions = React.useMemo(() => {
+    const cur = new Date().getFullYear();
+    const set = new Set<string>();
+    for (let y = cur; y >= cur - 3; y -= 1) set.add(String(y));
+    availableYears.forEach((y) => set.add(y));
+    if (selectedYear) set.add(selectedYear);
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [availableYears, selectedYear]);
+
+  // Месяцы тоже генерируем, а не берём из выборки: для текущего года — с января
+  // по текущий месяц, для прошлых — все 12. Так селект остаётся полным, даже
+  // когда загружены записи лишь за один месяц.
+  const monthOptions = React.useMemo(() => {
     if (!selectedYear) return [];
-    const ms = new Set(
-      allExpenses
-        .filter((e) => e.expenseDate.startsWith(selectedYear))
-        .map((e) => e.expenseDate.slice(0, 7)),
-    );
-    return Array.from(ms)
-      .sort((a, b) => a.localeCompare(b))
-      .map((ym) => ({ value: ym, monthIndex: Number(ym.slice(5, 7)) - 1 }));
-  }, [allExpenses, selectedYear]);
+    const now = new Date();
+    const isCurrentYear = selectedYear === String(now.getFullYear());
+    const lastMonth = isCurrentYear ? now.getMonth() : 11;
+    return Array.from({ length: lastMonth + 1 }, (_, m) => ({
+      value: `${selectedYear}-${String(m + 1).padStart(2, "0")}`,
+      monthIndex: m,
+    }));
+  }, [selectedYear]);
 
   // Группировка по employeeName (получателю) для выбранного месяца
   const monthExpenses = React.useMemo(() => {
@@ -703,6 +792,33 @@ const DjangoExpensesPage: React.FC = () => {
     () => groupedByEmployee.reduce((s, e) => s + e.total, 0),
     [groupedByEmployee],
   );
+
+  // Разбивка за месяц по категориям: сумма + дни (как у получателей).
+  const groupedByCategory = React.useMemo(() => {
+    const map = new Map<string, { total: number; days: Map<string, number> }>();
+    monthExpenses.forEach((e) => {
+      const label = e.categoryName ?? "Без категории";
+      const entry = map.get(label) ?? { total: 0, days: new Map() };
+      entry.total += parseFloat(e.amount);
+      entry.days.set(e.expenseDate, (entry.days.get(e.expenseDate) ?? 0) + parseFloat(e.amount));
+      map.set(label, entry);
+    });
+    return Array.from(map.entries())
+      .map(([categoryLabel, { total, days }]) => ({
+        categoryLabel,
+        total,
+        days: Array.from(days.entries())
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .map(([date, amt]) => ({ date, total: amt })),
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [monthExpenses]);
+
+  // По умолчанию «Получатели» свёрнуты; один получатель — раскрываем сразу.
+  // Пересматривается при смене числа получателей (месяц/данные).
+  React.useEffect(() => {
+    setRecipientsOpen(groupedByEmployee.length <= 1);
+  }, [groupedByEmployee.length]);
 
   if (!permLoading && !canView) return <AccessDenied />;
 
@@ -745,6 +861,7 @@ const DjangoExpensesPage: React.FC = () => {
 
       {!needsOrg && (
         <Box
+          ref={pageScrollRef}
           sx={{
             flex: 1,
             display: "flex",
@@ -776,7 +893,7 @@ const DjangoExpensesPage: React.FC = () => {
                 <Paper elevation={0} variant="outlined" sx={{ height: { xs: "auto", md: "100%" }, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                   <Box sx={{ p: 1.5, borderBottom: 1, borderColor: "divider", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>Период</Typography>
-                    <Button size="small" onClick={() => { setSelectedYear(null); setSelectedMonth(null); setSelectedDate(null); setSelectedEmployeeFilter(null); setExpandedEmployee(null); }} sx={{ textTransform: "none" }}>
+                    <Button size="small" onClick={() => { setSelectedYear(null); setSelectedMonth(null); setSelectedDate(null); setSelectedEmployeeFilter(null); setExpandedEmployee(null); setSelectedCategoryFilter(null); setExpandedCategory(null); }} sx={{ textTransform: "none" }}>
                       Все расходы
                     </Button>
                   </Box>
@@ -795,11 +912,13 @@ const DjangoExpensesPage: React.FC = () => {
                             setSelectedDate(null);
                             setSelectedEmployeeFilter(null);
                             setExpandedEmployee(null);
+                            setSelectedCategoryFilter(null);
+                            setExpandedCategory(null);
                           }}
                           SelectProps={{ displayEmpty: true }}
                         >
                           <MenuItem value=""><Typography variant="body2" color="text.secondary">Все годы</Typography></MenuItem>
-                          {availableYears.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
+                          {yearOptions.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
                         </TextField>
                       </Stack>
 
@@ -816,12 +935,14 @@ const DjangoExpensesPage: React.FC = () => {
                               setSelectedDate(null);
                               setSelectedEmployeeFilter(null);
                               setExpandedEmployee(null);
+                              setSelectedCategoryFilter(null);
+                              setExpandedCategory(null);
                             }}
                             SelectProps={{ displayEmpty: true }}
-                            disabled={availableMonths.length === 0}
+                            disabled={monthOptions.length === 0}
                           >
                             <MenuItem value=""><Typography variant="body2" color="text.secondary">Все месяцы</Typography></MenuItem>
-                            {availableMonths.map((m) => <MenuItem key={m.value} value={m.value}>{MONTH_NAMES[m.monthIndex]}</MenuItem>)}
+                            {monthOptions.map((m) => <MenuItem key={m.value} value={m.value}>{MONTH_NAMES[m.monthIndex]}</MenuItem>)}
                           </TextField>
                         </Stack>
                       )}
@@ -844,7 +965,14 @@ const DjangoExpensesPage: React.FC = () => {
                       {/* Сотрудники / получатели */}
                       {selectedMonth && groupedByEmployee.length > 0 && (
                         <Stack spacing={0.5}>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Получатели</Typography>
+                          <Box
+                            onClick={() => setRecipientsOpen((o) => !o)}
+                            sx={{ display: "flex", alignItems: "center", gap: 0.25, cursor: "pointer", userSelect: "none" }}
+                          >
+                            {recipientsOpen ? <ExpandLess fontSize="small" color="action" /> : <ExpandMore fontSize="small" color="action" />}
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Получатели</Typography>
+                          </Box>
+                          <Collapse in={recipientsOpen} timeout="auto" unmountOnExit>
                           <List dense sx={{ py: 0 }}>
                             {groupedByEmployee.map((emp) => {
                               const isExpanded = expandedEmployee === emp.employeeLabel;
@@ -862,6 +990,8 @@ const DjangoExpensesPage: React.FC = () => {
                                         setExpandedEmployee(emp.employeeLabel);
                                         setSelectedEmployeeFilter(emp.employeeFilterKey);
                                         setSelectedDate(null);
+                                        setSelectedCategoryFilter(null);
+                                        setExpandedCategory(null);
                                       }
                                     }}
                                     sx={{ borderRadius: 1, mb: 0.5, pr: 1 }}
@@ -877,7 +1007,7 @@ const DjangoExpensesPage: React.FC = () => {
                                         <ListItemButton
                                           key={day.date}
                                           sx={{ borderRadius: 1, mb: 0.5, pl: 3, bgcolor: selectedDate === day.date ? "action.selected" : "transparent" }}
-                                          onClick={() => { setSelectedEmployeeFilter(emp.employeeFilterKey); setSelectedDate(day.date); }}
+                                          onClick={() => { setSelectedEmployeeFilter(emp.employeeFilterKey); setSelectedDate(day.date); setSelectedCategoryFilter(null); setExpandedCategory(null); }}
                                         >
                                           <Typography variant="body2" sx={{ flex: 1, color: "text.secondary" }}>{formatDateRu(day.date)}</Typography>
                                           <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatKGS(day.total)}</Typography>
@@ -889,6 +1019,68 @@ const DjangoExpensesPage: React.FC = () => {
                               );
                             })}
                           </List>
+                          </Collapse>
+                        </Stack>
+                      )}
+
+                      {/* Категории — сумма за месяц; клик фильтрует список, шеврон раскрывает дни */}
+                      {selectedMonth && groupedByCategory.length > 0 && (
+                        <Stack spacing={0.5}>
+                          <Box
+                            onClick={() => setCategoriesOpen((o) => !o)}
+                            sx={{ display: "flex", alignItems: "center", gap: 0.25, cursor: "pointer", userSelect: "none" }}
+                          >
+                            {categoriesOpen ? <ExpandLess fontSize="small" color="action" /> : <ExpandMore fontSize="small" color="action" />}
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Категории</Typography>
+                          </Box>
+                          <Collapse in={categoriesOpen} timeout="auto" unmountOnExit>
+                          <List dense sx={{ py: 0 }}>
+                            {groupedByCategory.map((cat) => {
+                              const isExpanded = expandedCategory === cat.categoryLabel;
+                              const isSelected = selectedCategoryFilter === cat.categoryLabel;
+                              return (
+                                <React.Fragment key={cat.categoryLabel}>
+                                  <ListItemButton
+                                    selected={isSelected}
+                                    onClick={() => {
+                                      if (isExpanded) {
+                                        setExpandedCategory(null);
+                                        setSelectedCategoryFilter(null);
+                                        setSelectedDate(null);
+                                      } else {
+                                        setExpandedCategory(cat.categoryLabel);
+                                        setSelectedCategoryFilter(cat.categoryLabel);
+                                        setSelectedDate(null);
+                                        setSelectedEmployeeFilter(null);
+                                        setExpandedEmployee(null);
+                                      }
+                                    }}
+                                    sx={{ borderRadius: 1, mb: 0.5, pr: 1 }}
+                                  >
+                                    <ReceiptLongOutlined sx={{ fontSize: 16, mr: 1, color: "text.secondary" }} />
+                                    <Typography variant="body2" sx={{ flex: 1, fontWeight: isSelected ? 600 : 400 }} noWrap title={cat.categoryLabel}>{cat.categoryLabel}</Typography>
+                                    <Typography variant="body2" sx={{ fontWeight: 600, mr: 1 }}>{formatKGS(cat.total)}</Typography>
+                                    {isExpanded ? <ExpandLess fontSize="small" color="action" /> : <ExpandMore fontSize="small" color="action" />}
+                                  </ListItemButton>
+                                  <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                                    <List dense disablePadding>
+                                      {cat.days.map((day) => (
+                                        <ListItemButton
+                                          key={day.date}
+                                          sx={{ borderRadius: 1, mb: 0.5, pl: 3, bgcolor: selectedDate === day.date ? "action.selected" : "transparent" }}
+                                          onClick={() => { setSelectedCategoryFilter(cat.categoryLabel); setSelectedDate(day.date); setSelectedEmployeeFilter(null); setExpandedEmployee(null); }}
+                                        >
+                                          <Typography variant="body2" sx={{ flex: 1, color: "text.secondary" }}>{formatDateRu(day.date)}</Typography>
+                                          <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatKGS(day.total)}</Typography>
+                                        </ListItemButton>
+                                      ))}
+                                    </List>
+                                  </Collapse>
+                                </React.Fragment>
+                              );
+                            })}
+                          </List>
+                          </Collapse>
                         </Stack>
                       )}
                     </Stack>
@@ -915,7 +1107,7 @@ const DjangoExpensesPage: React.FC = () => {
                       Список расходов ({filteredExpenses.length})
                     </Typography>
                   </Box>
-                  <Box sx={{ overflowY: "auto", flex: 1 }}>
+                  <Box ref={listScrollRef} sx={{ overflowY: "auto", flex: 1 }}>
                     {expensesQuery.isLoading ? (
                       <Box sx={{ p: 4, textAlign: "center" }}>
                         <CircularProgress size={24} />
@@ -925,6 +1117,7 @@ const DjangoExpensesPage: React.FC = () => {
                         <Typography variant="body2" color="text.secondary">Нет расходов</Typography>
                       </Box>
                     ) : (
+                      <>
                       <List sx={{ py: 0 }}>
                         {(() => {
                           let currentDay = "";
@@ -936,6 +1129,10 @@ const DjangoExpensesPage: React.FC = () => {
                             const cardAmt = parseFloat(exp.cardAmount);
                             const isMixed = cashAmt > 0 && cardAmt > 0;
                             const isCash = !isMixed && cashAmt > 0;
+                            // Метка «есть фото / нет фото» — только для обычных расходов;
+                            // у авансов и ЗП чек не нужен, метку не показываем.
+                            const showPhotoMark = exp.categoryKind === "general";
+                            const hasPhoto = Boolean(exp.photoUrl);
                             return (
                               <React.Fragment key={exp.id}>
                                 {isNewDay && (
@@ -999,6 +1196,17 @@ const DjangoExpensesPage: React.FC = () => {
                                       </Box>
                                     )}
                                     <Stack direction="row" spacing={0.5} alignItems="center">
+                                      {showPhotoMark && (
+                                        hasPhoto ? (
+                                          <Tooltip title="Фото прикреплено">
+                                            <ImageOutlined sx={{ fontSize: 15, color: exp.isVoided ? "text.disabled" : "success.main" }} />
+                                          </Tooltip>
+                                        ) : (
+                                          <Tooltip title="Нет фото">
+                                            <ImageNotSupportedOutlined sx={{ fontSize: 15, color: exp.isVoided ? "text.disabled" : "warning.main" }} />
+                                          </Tooltip>
+                                        )
+                                      )}
                                       {isMixed ? (
                                         <>
                                           <AccountBalanceWalletOutlined sx={{ fontSize: 14, color: exp.isVoided ? "text.disabled" : "success.main" }} />
@@ -1031,6 +1239,13 @@ const DjangoExpensesPage: React.FC = () => {
                           });
                         })()}
                       </List>
+                      <Box ref={loadMoreRef} sx={{ height: 1 }} />
+                      {isFetchingNextPage && (
+                        <Box sx={{ py: 2, textAlign: "center" }}>
+                          <CircularProgress size={20} />
+                        </Box>
+                      )}
+                      </>
                     )}
                   </Box>
                 </Paper>

@@ -847,8 +847,10 @@ const ExceptionDrawer: React.FC<{
               dateFrom: date.format("YYYY-MM-DD"),
               dateTo: (isAbsencePeriod ? absenceDateTo : date).format("YYYY-MM-DD"),
               kind,
-              // Разбирать нужно только приёмы внутри интервала отсутствия.
+              // Разбирать нужно только приёмы внутри интервала отсутствия
+              // и только в филиале, где оно поставлено.
               ...(isPartialAbsence ? { startTime, endTime } : {}),
+              branchId: branchId ?? null,
             }
           : undefined,
       );
@@ -1449,9 +1451,10 @@ const DjangoSchedulePage: React.FC = () => {
       dateFrom: sorted[0],
       dateTo: sorted[sorted.length - 1],
       kind: exc.kind,
-      // У пачки периода интервал одинаков во все дни — берём со строки.
+      // У пачки периода интервал и филиал одинаковы во все дни — берём со строки.
       startTime: exc.startTime,
       endTime: exc.endTime,
+      branchId: exc.branchId,
     });
   };
   // Пул цветов — сотрудники со сменами в отображаемом периоде (месяц + 2
@@ -1514,6 +1517,7 @@ const DjangoSchedulePage: React.FC = () => {
         dateFrom: date,
         dateTo: date,
         kind: "day_off",
+        branchId: branchId ?? null,
       });
     } catch (e) {
       notify?.({ type: "error", message: "Ошибка", description: parseBackendError(e) });
@@ -1552,6 +1556,19 @@ const DjangoSchedulePage: React.FC = () => {
       endTime: rule?.endTime ?? existing?.endTime ?? occurrence.endTime,
       comment: rule?.comment ?? existing?.comment ?? "",
     });
+  };
+
+  // Клик по полосе смены в дневном виде: сразу карточка «Изменить смену».
+  // Диалог и сохранение берут дату из selectedDay, поэтому его выставляем
+  // первым — дровер дня при этом не открываем. Без права управления
+  // показываем панель дня, как при клике на имя сотрудника.
+  const handleOccurrenceClick = (day: Dayjs, occurrence: DayOccurrence) => {
+    if (!canManage) {
+      handleDayClick(day);
+      return;
+    }
+    setSelectedDay(day);
+    handleEditOccurrence(occurrence);
   };
 
   const handleSavePointEdit = async (
@@ -1748,20 +1765,26 @@ const DjangoSchedulePage: React.FC = () => {
               employeeColorMap={employeeColorMap}
               absenceDayTotals={absenceConflicts.dayTotals}
               absenceDayEmployees={absenceConflicts.dayEmployees}
-              onAbsenceBadgeClick={(employeeId, date) =>
+              onAbsenceBadgeClick={(employeeId, date) => {
+                // Маркер посчитан по отсутствию этого дня — разбор открываем в
+                // его же рамках (вид, интервал, филиал), иначе список в дровере
+                // разойдётся со счётчиком. Рабочие исключения того же дня
+                // (доп. смена рядом с выходным) — не отсутствие.
+                const absence = [...exceptions, ...monthExceptions].find(
+                  (e) => e.employeeId === employeeId && e.date === date && isAbsenceKind(e.kind),
+                );
                 setAbsenceReview({
                   employeeId,
                   employeeName: employeesById.get(employeeId)?.fullName ?? "Сотрудник",
                   dateFrom: date,
                   dateTo: date,
-                  kind:
-                    exceptions.find((e) => e.employeeId === employeeId && e.date === date)
-                      ?.kind ??
-                    monthExceptions.find((e) => e.employeeId === employeeId && e.date === date)
-                      ?.kind ??
-                    "day_off",
-                })
-              }
+                  kind: absence?.kind ?? "day_off",
+                  startTime: absence?.startTime ?? null,
+                  endTime: absence?.endTime ?? null,
+                  branchId: absence?.branchId ?? null,
+                });
+              }}
+              onOccurrenceClick={handleOccurrenceClick}
             />
           </>
         )}

@@ -18,10 +18,12 @@ import { useNowMinute } from "./useNowMinute";
 
 // ── Геометрия ────────────────────────────────────────────────────────────────
 
+// Окно до полуночи: вечерние смены (17:00–23:59) раньше обрезались на 22:00,
+// и шкала заканчивалась подписью 21:00 (просьба заказчика 20.09.2026).
 const DAY_START_MIN = 7 * 60;
-const DAY_END_MIN = 22 * 60;
+const DAY_END_MIN = 24 * 60;
 const DAY_DURATION = DAY_END_MIN - DAY_START_MIN;
-const HOURS = Array.from({ length: 16 }, (_, i) => 7 + i); // 7..22
+const HOURS = Array.from({ length: 18 }, (_, i) => 7 + i); // 7..24
 
 const NAME_COL_W = 210;
 const ROW_H = 40;
@@ -29,9 +31,14 @@ const ROW_H = 40;
 const HEADER_H = 42;
 /** Отступ шкалы часов от верха шапки — под ним ряд метки текущего времени. */
 const HOUR_LABEL_TOP = 20;
-/** Ширина часа: при 16 часах даёт ~1150px — влезает без скролла на десктопе. */
-const HOUR_W = 72;
-const BODY_W = (HOURS.length - 1) * HOUR_W;
+/**
+ * Дорожка резиновая: занимает всю ширину контейнера за вычетом колонки имён
+ * (после расширения окна до 00:00 фиксированные 72px/час перестали влезать).
+ * Ниже минимума подпись часа уже не влезает — тогда включается горизонтальный
+ * скролл. 36px/час × 17 = 612px: укладывается и на 1920 при масштабе 150%.
+ */
+const MIN_HOUR_W = 36; // подпись «10:00» при 0.68rem ≈ 30px + отступ
+const MIN_BODY_W = (HOURS.length - 1) * MIN_HOUR_W;
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
@@ -41,13 +48,13 @@ const parseTimeToMinutes = (t: string): number => {
   return clamp(parseInt(m[1], 10) * 60 + parseInt(m[2], 10), 0, 1439);
 };
 
-const leftPx = (min: number) =>
-  ((clamp(min, DAY_START_MIN, DAY_END_MIN) - DAY_START_MIN) / DAY_DURATION) * BODY_W;
+const minutesToPx = (min: number, bodyW: number) =>
+  ((clamp(min, DAY_START_MIN, DAY_END_MIN) - DAY_START_MIN) / DAY_DURATION) * bodyW;
 
 // Единый формат «Ч:ММ» без ведущего нуля у часа (9:00, 10:30, 18:00) —
 // минуты показываем всегда, чтобы подписи смен читались одинаково.
 const minutesToShort = (min: number) =>
-  `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
+  `${Math.floor(min / 60) % 24}:${String(min % 60).padStart(2, "0")}`; // 1440 → «0:00»
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +70,8 @@ export interface ScheduleDayTimelineProps {
   absenceDayEmployees?: Map<string, { employeeId: number; count: number }[]>;
   /** Клик по маркеру записей — открыть разбор. */
   onAbsenceClick?: (employeeId: number, date: string) => void;
+  /** Клик по полосе смены (и по вырезу обеда) — открыть карточку смены. */
+  onOccurrenceClick?: (occurrence: DayOccurrence) => void;
 }
 
 const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
@@ -74,6 +83,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
   exceptions,
   absenceDayEmployees,
   onAbsenceClick,
+  onOccurrenceClick,
 }) => {
   const theme = useTheme();
   const mode = theme.palette.mode;
@@ -104,13 +114,31 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
     [employeeColorMap, mode],
   );
 
+  // Ширина дорожки — по контейнеру (см. MIN_BODY_W). Меряем внешний скролл-бокс:
+  // его clientWidth уже без вертикального скроллбара.
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  const [bodyW, setBodyW] = React.useState(MIN_BODY_W);
+  // Пустой день рендерит заглушку без контейнера — эффект перезапускаем,
+  // когда строки появятся, иначе наблюдатель так и не подцепится.
+  const hasRows = groups.length > 0;
+  React.useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const measure = () => setBodyW(Math.max(MIN_BODY_W, Math.floor(el.clientWidth) - NAME_COL_W));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasRows]);
+  const leftPx = React.useCallback((min: number) => minutesToPx(min, bodyW), [bodyW]);
+
   // Линия «сейчас» — только для сегодняшнего дня и внутри рабочего окна.
   const now = useNowMinute();
   const nowMin = now.hour() * 60 + now.minute();
   const showNow = day.isSame(now, "day") && nowMin >= DAY_START_MIN && nowMin <= DAY_END_MIN;
   const nowLeft = showNow ? leftPx(nowMin) : 0;
   // Метку у краёв поджимаем внутрь, иначе она обрезается контейнером.
-  const nowLabelShift = nowLeft < 22 ? "0%" : nowLeft > BODY_W - 22 ? "-100%" : "-50%";
+  const nowLabelShift = nowLeft < 22 ? "0%" : nowLeft > bodyW - 22 ? "-100%" : "-50%";
 
   // Вертикальные направляющие: часовые (сплошные, идут через шапку и строки —
   // связывают полосу смены с меткой часа наверху) и получасовые (пунктир, слабее)
@@ -122,7 +150,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
       (m % 60 === 0 ? hour : half).push(leftPx(m));
     }
     return { hourLines: hour, halfLines: half };
-  }, []);
+  }, [leftPx]);
 
   // Общая сетка направляющих (используется в шапке и в дорожке каждой строки).
   const gridLines = (
@@ -169,8 +197,8 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
   }
 
   return (
-    <Box sx={{ overflow: "auto", height: "100%" }}>
-      <Box sx={{ display: "grid", gridTemplateColumns: `${NAME_COL_W}px ${BODY_W}px`, minWidth: "fit-content" }}>
+    <Box ref={scrollRef} sx={{ overflow: "auto", height: "100%" }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: `${NAME_COL_W}px ${bodyW}px`, minWidth: "fit-content" }}>
         {/* ── Шапка: угол + шкала часов (липкая по вертикали) ── */}
         <Box
           sx={{
@@ -220,12 +248,12 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                 }}
               />
             ))}
-            {HOURS.slice(0, -1).map((h, i) => (
+            {HOURS.slice(0, -1).map((h) => (
               <Typography
                 key={h}
                 sx={{
                   position: "absolute",
-                  left: i * HOUR_W,
+                  left: leftPx(h * 60),
                   top: HOUR_LABEL_TOP,
                   pl: 0.75,
                   fontSize: "0.68rem",
@@ -317,7 +345,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                   bgcolor: "action.hover",
                   borderBottom: "1px solid",
                   borderColor: "divider",
-                  width: NAME_COL_W + BODY_W,
+                  width: NAME_COL_W + bodyW,
                   "&:hover": { bgcolor: "action.selected" },
                 }}
               >
@@ -483,12 +511,22 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                           />
                         )}
                         {rowOccs.map((occ) => {
+                          const startMin = parseTimeToMinutes(occ.startTime);
+                          const rawEnd = parseTimeToMinutes(occ.endTime);
                           const seg = {
                             occ,
-                            startMin: parseTimeToMinutes(occ.startTime),
-                            endMin: parseTimeToMinutes(occ.endTime),
+                            startMin,
+                            // Конец «00:00» (и вообще конец ≤ начала) — это
+                            // полночь, а не 0:00 текущего дня; иначе полоса
+                            // схлопывалась бы в минимальную ширину.
+                            endMin: rawEnd <= startMin ? DAY_END_MIN : rawEnd,
                           };
                           const tip = `${occ.employeeName}: ${shiftTimeLabel(occ)}${occ.lunch ? ` · ${lunchNote(occ)}` : ""}${occ.kind !== "rule" ? " (точечная смена)" : ""}`;
+                          // Один обработчик на все отрезки и вырез обеда: для
+                          // пользователя это одна смена, куда бы он ни кликнул.
+                          const openOcc = onOccurrenceClick
+                            ? () => onOccurrenceClick(occ)
+                            : undefined;
                           const lunch = segmentLunch(seg);
                           const spans = segmentWorkSpans(seg);
                           const lunchLeft = lunch ? leftPx(lunch.startMin) : 0;
@@ -507,6 +545,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                                 return (
                                   <Tooltip key={span.startMin} title={tip} arrow>
                                     <Box
+                                      onClick={openOcc}
                                       sx={{
                                         position: "absolute",
                                         left: l,
@@ -514,6 +553,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                                         top: 5,
                                         bottom: 5,
                                         zIndex: 2,
+                                        cursor: openOcc ? "pointer" : "default",
                                         borderRadius: `${first ? "5px" : "0"} ${last ? "5px" : "0"} ${last ? "5px" : "0"} ${first ? "5px" : "0"}`,
                                         // Сплошная заливка вместо полупрозрачной —
                                         // см. комментарий в ScheduleWeekResourceGrid.
@@ -553,6 +593,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                               {lunch && (
                                 <Tooltip title={lunchNote(occ)} arrow>
                                   <Box
+                                    onClick={openOcc}
                                     sx={{
                                       position: "absolute",
                                       left: lunchLeft,
@@ -560,6 +601,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                                       top: 5,
                                       bottom: 5,
                                       zIndex: 2,
+                                      cursor: openOcc ? "pointer" : "default",
                                       display: "flex",
                                       alignItems: "center",
                                       justifyContent: "center",
