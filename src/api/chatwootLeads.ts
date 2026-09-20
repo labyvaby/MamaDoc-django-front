@@ -31,6 +31,8 @@ export interface ChatwootInboxRule {
   source: string;
   identity: ChatwootInboxIdentity;
   channel: ChatwootInboxChannel;
+  /** Филиал, куда заводится новая сделка из инбокса; null — общая (видна на всех досках). */
+  branchId?: number | null;
 }
 
 /** Ключи — id инбоксов Chatwoot строкой (JSON-объект). */

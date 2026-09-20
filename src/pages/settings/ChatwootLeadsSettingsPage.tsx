@@ -46,6 +46,7 @@ import {
 } from "../../api/chatwootLeads";
 import { getPipelines, getStages, type DealPipeline, type DealStage } from "../../api/deals";
 import { getAllDjangoEmployees } from "../../api/staff";
+import { getBranches } from "../../api/organization";
 import { ApiError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
 
@@ -185,6 +186,13 @@ export default function ChatwootLeadsSettingsPage() {
     enabled: !permLoading && !needsOrg,
   });
   const employees = employeesQuery.data ?? [];
+
+  const branchesQuery = useQuery({
+    queryKey: ["django", "branches", orgId ?? null, "chatwoot-settings"] as const,
+    queryFn: () => getBranches(orgId ?? null),
+    enabled: !permLoading && !needsOrg,
+  });
+  const branches = branchesQuery.data ?? [];
 
   const patch = (changes: Partial<Form>) =>
     setForm((prev) => (prev ? { ...prev, ...changes } : prev));
@@ -467,6 +475,7 @@ export default function ChatwootLeadsSettingsPage() {
                           <TableCell>{t("chatwoot.inboxes.colSource")}</TableCell>
                           <TableCell>{t("chatwoot.inboxes.colIdentity")}</TableCell>
                           <TableCell>{t("chatwoot.inboxes.colChannel")}</TableCell>
+                          <TableCell>{t("chatwoot.inboxes.colBranch")}</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -536,9 +545,30 @@ export default function ChatwootLeadsSettingsPage() {
                                       ))}
                                     </Select>
                                   </TableCell>
+                                  <TableCell>
+                                    <Select
+                                      size="small"
+                                      value={rule.branchId ?? ""}
+                                      onChange={(e) =>
+                                        setRule(inbox.id, {
+                                          branchId: e.target.value === "" ? null : Number(e.target.value),
+                                        })
+                                      }
+                                      disabled={busy}
+                                      displayEmpty
+                                      sx={{ minWidth: 150 }}
+                                    >
+                                      <MenuItem value="">{t("chatwoot.inboxes.branchNone")}</MenuItem>
+                                      {branches.map((b) => (
+                                        <MenuItem key={b.id} value={b.id}>
+                                          {b.name}
+                                        </MenuItem>
+                                      ))}
+                                    </Select>
+                                  </TableCell>
                                 </>
                               ) : (
-                                <TableCell colSpan={3}>
+                                <TableCell colSpan={4}>
                                   <Typography variant="body2" color="text.secondary">
                                     {t("chatwoot.inboxes.unmapped")}
                                   </Typography>
