@@ -31,6 +31,7 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import ImageOutlined from "@mui/icons-material/ImageOutlined";
+import ImageNotSupportedOutlined from "@mui/icons-material/ImageNotSupportedOutlined";
 import ExpandLess from "@mui/icons-material/ExpandLess";
 import ExpandMore from "@mui/icons-material/ExpandMore";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
@@ -544,6 +545,9 @@ const DjangoExpensesPage: React.FC = () => {
   const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
   const [expandedEmployee, setExpandedEmployee] = React.useState<string | null>(null);
   const [selectedEmployeeFilter, setSelectedEmployeeFilter] = React.useState<string | null>(null);
+  // Секции «Получатели»/«Категории» в левой панели — сворачиваемые.
+  const [recipientsOpen, setRecipientsOpen] = React.useState(true);
+  const [categoriesOpen, setCategoriesOpen] = React.useState(true);
 
   // UI-state
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -783,6 +787,18 @@ const DjangoExpensesPage: React.FC = () => {
     [groupedByEmployee],
   );
 
+  // Разбивка за месяц по категориям (только суммы — «видеть суммы за месяц»).
+  const groupedByCategory = React.useMemo(() => {
+    const map = new Map<string, number>();
+    monthExpenses.forEach((e) => {
+      const label = e.categoryName ?? "Без категории";
+      map.set(label, (map.get(label) ?? 0) + parseFloat(e.amount));
+    });
+    return Array.from(map.entries())
+      .map(([categoryLabel, total]) => ({ categoryLabel, total }))
+      .sort((a, b) => b.total - a.total);
+  }, [monthExpenses]);
+
   if (!permLoading && !canView) return <AccessDenied />;
 
   return (
@@ -924,7 +940,14 @@ const DjangoExpensesPage: React.FC = () => {
                       {/* Сотрудники / получатели */}
                       {selectedMonth && groupedByEmployee.length > 0 && (
                         <Stack spacing={0.5}>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Получатели</Typography>
+                          <Box
+                            onClick={() => setRecipientsOpen((o) => !o)}
+                            sx={{ display: "flex", alignItems: "center", gap: 0.25, cursor: "pointer", userSelect: "none" }}
+                          >
+                            {recipientsOpen ? <ExpandLess fontSize="small" color="action" /> : <ExpandMore fontSize="small" color="action" />}
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Получатели</Typography>
+                          </Box>
+                          <Collapse in={recipientsOpen} timeout="auto" unmountOnExit>
                           <List dense sx={{ py: 0 }}>
                             {groupedByEmployee.map((emp) => {
                               const isExpanded = expandedEmployee === emp.employeeLabel;
@@ -969,6 +992,38 @@ const DjangoExpensesPage: React.FC = () => {
                               );
                             })}
                           </List>
+                          </Collapse>
+                        </Stack>
+                      )}
+
+                      {/* Категории — суммы за месяц по категориям (сворачиваемо) */}
+                      {selectedMonth && groupedByCategory.length > 0 && (
+                        <Stack spacing={0.5}>
+                          <Box
+                            onClick={() => setCategoriesOpen((o) => !o)}
+                            sx={{ display: "flex", alignItems: "center", gap: 0.25, cursor: "pointer", userSelect: "none" }}
+                          >
+                            {categoriesOpen ? <ExpandLess fontSize="small" color="action" /> : <ExpandMore fontSize="small" color="action" />}
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Категории</Typography>
+                          </Box>
+                          <Collapse in={categoriesOpen} timeout="auto" unmountOnExit>
+                            <Box>
+                              {groupedByCategory.map((cat) => (
+                                <Box
+                                  key={cat.categoryLabel}
+                                  sx={{ display: "flex", alignItems: "center", px: 1, py: 0.5, borderRadius: 1 }}
+                                >
+                                  <ReceiptLongOutlined sx={{ fontSize: 16, mr: 1, color: "text.secondary", flexShrink: 0 }} />
+                                  <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap title={cat.categoryLabel}>
+                                    {cat.categoryLabel}
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ fontWeight: 600, ml: 1, flexShrink: 0 }}>
+                                    {formatKGS(cat.total)}
+                                  </Typography>
+                                </Box>
+                              ))}
+                            </Box>
+                          </Collapse>
                         </Stack>
                       )}
                     </Stack>
@@ -1017,6 +1072,10 @@ const DjangoExpensesPage: React.FC = () => {
                             const cardAmt = parseFloat(exp.cardAmount);
                             const isMixed = cashAmt > 0 && cardAmt > 0;
                             const isCash = !isMixed && cashAmt > 0;
+                            // Метка «есть фото / нет фото» — только для обычных расходов;
+                            // у авансов и ЗП чек не нужен, метку не показываем.
+                            const showPhotoMark = exp.categoryKind === "general";
+                            const hasPhoto = Boolean(exp.photoUrl);
                             return (
                               <React.Fragment key={exp.id}>
                                 {isNewDay && (
@@ -1080,6 +1139,17 @@ const DjangoExpensesPage: React.FC = () => {
                                       </Box>
                                     )}
                                     <Stack direction="row" spacing={0.5} alignItems="center">
+                                      {showPhotoMark && (
+                                        hasPhoto ? (
+                                          <Tooltip title="Фото прикреплено">
+                                            <ImageOutlined sx={{ fontSize: 15, color: exp.isVoided ? "text.disabled" : "success.main" }} />
+                                          </Tooltip>
+                                        ) : (
+                                          <Tooltip title="Нет фото">
+                                            <ImageNotSupportedOutlined sx={{ fontSize: 15, color: exp.isVoided ? "text.disabled" : "warning.main" }} />
+                                          </Tooltip>
+                                        )
+                                      )}
                                       {isMixed ? (
                                         <>
                                           <AccountBalanceWalletOutlined sx={{ fontSize: 14, color: exp.isVoided ? "text.disabled" : "success.main" }} />
