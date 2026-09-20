@@ -659,6 +659,7 @@ const DjangoExpensesPage: React.FC = () => {
   // Бесконечный скролл среднего списка
   const listScrollRef = React.useRef<HTMLDivElement | null>(null);
   const loadMoreRef = React.useRef<HTMLDivElement | null>(null);
+  const pageScrollRef = React.useRef<HTMLDivElement | null>(null);
   // Аннулированные не должны искажать суммы (итого за месяц, разбивка по
   // получателям) — используем этот массив только для денежных расчётов,
   // список слева по-прежнему показывает все записи (зачёркнутыми).
@@ -707,6 +708,14 @@ const DjangoExpensesPage: React.FC = () => {
     observer.observe(node);
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage, filteredExpenses.length]);
+
+  // При смене фильтров/поиска список резко короче — возвращаем прокрутку
+  // среднего списка (а на мобиле — всей страницы) наверх, иначе остаётся
+  // пустой экран и приходится крутить вверх вручную.
+  React.useEffect(() => {
+    if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
+    if (pageScrollRef.current) pageScrollRef.current.scrollTop = 0;
+  }, [searchQuery, selectedCategoryId, selectedYear, selectedMonth, selectedDate, selectedEmployeeFilter]);
 
   // Вычисляем года и месяцы для левой панели
   const availableYears = React.useMemo(() => {
@@ -815,6 +824,7 @@ const DjangoExpensesPage: React.FC = () => {
 
       {!needsOrg && (
         <Box
+          ref={pageScrollRef}
           sx={{
             flex: 1,
             display: "flex",
