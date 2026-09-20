@@ -31,9 +31,13 @@ const ROW_H = 40;
 const HEADER_H = 42;
 /** Отступ шкалы часов от верха шапки — под ним ряд метки текущего времени. */
 const HOUR_LABEL_TOP = 20;
-/** Ширина часа: при 17 часах даёт ~1220px — на широком десктопе без скролла. */
-const HOUR_W = 72;
-const BODY_W = (HOURS.length - 1) * HOUR_W;
+/**
+ * Дорожка резиновая: занимает всю ширину контейнера за вычетом колонки имён
+ * (после расширения окна до 00:00 фиксированные 72px/час перестали влезать).
+ * Ниже минимума час уже не читается — тогда включается горизонтальный скролл.
+ */
+const MIN_HOUR_W = 44;
+const MIN_BODY_W = (HOURS.length - 1) * MIN_HOUR_W;
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
@@ -43,8 +47,8 @@ const parseTimeToMinutes = (t: string): number => {
   return clamp(parseInt(m[1], 10) * 60 + parseInt(m[2], 10), 0, 1439);
 };
 
-const leftPx = (min: number) =>
-  ((clamp(min, DAY_START_MIN, DAY_END_MIN) - DAY_START_MIN) / DAY_DURATION) * BODY_W;
+const minutesToPx = (min: number, bodyW: number) =>
+  ((clamp(min, DAY_START_MIN, DAY_END_MIN) - DAY_START_MIN) / DAY_DURATION) * bodyW;
 
 // Единый формат «Ч:ММ» без ведущего нуля у часа (9:00, 10:30, 18:00) —
 // минуты показываем всегда, чтобы подписи смен читались одинаково.
@@ -109,13 +113,31 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
     [employeeColorMap, mode],
   );
 
+  // Ширина дорожки — по контейнеру (см. MIN_BODY_W). Меряем внешний скролл-бокс:
+  // его clientWidth уже без вертикального скроллбара.
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  const [bodyW, setBodyW] = React.useState(MIN_BODY_W);
+  // Пустой день рендерит заглушку без контейнера — эффект перезапускаем,
+  // когда строки появятся, иначе наблюдатель так и не подцепится.
+  const hasRows = groups.length > 0;
+  React.useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const measure = () => setBodyW(Math.max(MIN_BODY_W, Math.floor(el.clientWidth) - NAME_COL_W));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasRows]);
+  const leftPx = React.useCallback((min: number) => minutesToPx(min, bodyW), [bodyW]);
+
   // Линия «сейчас» — только для сегодняшнего дня и внутри рабочего окна.
   const now = useNowMinute();
   const nowMin = now.hour() * 60 + now.minute();
   const showNow = day.isSame(now, "day") && nowMin >= DAY_START_MIN && nowMin <= DAY_END_MIN;
   const nowLeft = showNow ? leftPx(nowMin) : 0;
   // Метку у краёв поджимаем внутрь, иначе она обрезается контейнером.
-  const nowLabelShift = nowLeft < 22 ? "0%" : nowLeft > BODY_W - 22 ? "-100%" : "-50%";
+  const nowLabelShift = nowLeft < 22 ? "0%" : nowLeft > bodyW - 22 ? "-100%" : "-50%";
 
   // Вертикальные направляющие: часовые (сплошные, идут через шапку и строки —
   // связывают полосу смены с меткой часа наверху) и получасовые (пунктир, слабее)
@@ -127,7 +149,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
       (m % 60 === 0 ? hour : half).push(leftPx(m));
     }
     return { hourLines: hour, halfLines: half };
-  }, []);
+  }, [leftPx]);
 
   // Общая сетка направляющих (используется в шапке и в дорожке каждой строки).
   const gridLines = (
@@ -174,8 +196,8 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
   }
 
   return (
-    <Box sx={{ overflow: "auto", height: "100%" }}>
-      <Box sx={{ display: "grid", gridTemplateColumns: `${NAME_COL_W}px ${BODY_W}px`, minWidth: "fit-content" }}>
+    <Box ref={scrollRef} sx={{ overflow: "auto", height: "100%" }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: `${NAME_COL_W}px ${bodyW}px`, minWidth: "fit-content" }}>
         {/* ── Шапка: угол + шкала часов (липкая по вертикали) ── */}
         <Box
           sx={{
@@ -225,12 +247,12 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                 }}
               />
             ))}
-            {HOURS.slice(0, -1).map((h, i) => (
+            {HOURS.slice(0, -1).map((h) => (
               <Typography
                 key={h}
                 sx={{
                   position: "absolute",
-                  left: i * HOUR_W,
+                  left: leftPx(h * 60),
                   top: HOUR_LABEL_TOP,
                   pl: 0.75,
                   fontSize: "0.68rem",
@@ -322,7 +344,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                   bgcolor: "action.hover",
                   borderBottom: "1px solid",
                   borderColor: "divider",
-                  width: NAME_COL_W + BODY_W,
+                  width: NAME_COL_W + bodyW,
                   "&:hover": { bgcolor: "action.selected" },
                 }}
               >
