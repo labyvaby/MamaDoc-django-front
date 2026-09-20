@@ -133,10 +133,13 @@ export function getCashboxShifts(
 
 export function getCashboxShiftSummary(
   id: number,
+  /** Суперпользователю обязателен: без него ручка отвечает 400 (проверено на test 20.09.2026). */
+  organizationId?: number,
   signal?: AbortSignal,
 ): Promise<CashboxShiftSummary> {
+  const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
   return apiRequest<CashboxShiftSummary>(
-    `/cashbox/cashbox-shifts/${id}/summary/`,
+    `/cashbox/cashbox-shifts/${id}/summary/${qs}`,
     { signal },
   );
 }
