@@ -3,14 +3,17 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   MenuItem,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -18,19 +21,25 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNotification } from "@refinedev/core";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useCan } from "../../hooks/useCan";
 import { SettingsLayout } from "./SettingsLayout";
 import {
   getExpenseCategoriesPage,
   createExpenseCategory,
+  updateExpenseCategory,
   parseBackendError,
+  type ExpenseCategory,
   type ExpenseCategoryKind,
+  type ExpenseCategoriesResponse,
 } from "../../api/expenses";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
@@ -51,11 +60,14 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
   const { t } = useT("settings");
   const [name, setName] = React.useState("");
   const [kind, setKind] = React.useState<ExpenseCategoryKind>("general");
+  // Чек нужен по умолчанию; снимают у категорий вроде инкассации, где чека
+  // не бывает. У аванса/ЗП галки нет — метку по ним и так не показывают.
+  const [photoRequired, setPhotoRequired] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    if (open) { setName(""); setKind("general"); setError(null); setBusy(false); }
+    if (open) { setName(""); setKind("general"); setPhotoRequired(true); setError(null); setBusy(false); }
   }, [open]);
 
   const handleSubmit = async () => {
@@ -64,7 +76,13 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
     setBusy(true);
     setError(null);
     try {
-      await createExpenseCategory({ name: trimmed, kind, organizationId, isActive: true });
+      await createExpenseCategory({
+        name: trimmed,
+        kind,
+        organizationId,
+        isActive: true,
+        photoRequired: kind === "general" ? photoRequired : true,
+      });
       onCreated();
       onClose();
     } catch (e) {
@@ -112,6 +130,25 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
               </MenuItem>
             ))}
           </TextField>
+          {kind === "general" && (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={photoRequired}
+                  onChange={(e) => setPhotoRequired(e.target.checked)}
+                  disabled={busy}
+                />
+              }
+              label={
+                <Stack>
+                  <Typography variant="body2">{t("expenseCategories.photoRequired.label")}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {t("expenseCategories.photoRequired.description")}
+                  </Typography>
+                </Stack>
+              }
+            />
+          )}
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
       </DialogContent>
@@ -163,8 +200,32 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
     void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
   };
 
-  const fmt = (iso: string) =>
-    new Date(iso).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+  // Переключатель «Фото чека» сохраняется сразу, без кнопки: одна категория —
+  // одно действие. Пока запрос идёт, строка заблокирована; список расходов
+  // после ответа перечитывается — метка «нет фото» по категории гаснет/появляется.
+  const canManage = useCan(["finance.expense.manage", "finance.manage"]);
+  const { open: notify } = useNotification();
+  const [savingId, setSavingId] = React.useState<number | null>(null);
+  const handlePhotoRequiredChange = async (category: ExpenseCategory, photoRequired: boolean) => {
+    setSavingId(category.id);
+    try {
+      const updated = await updateExpenseCategory(category.id, { photoRequired });
+      queryClient.setQueryData<ExpenseCategoriesResponse>(
+        djangoQueryKeys.expenses.categories(orgId ?? null),
+        (prev) =>
+          prev && {
+            ...prev,
+            results: prev.results.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)),
+          },
+      );
+      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
+    } catch (e) {
+      notify?.({ type: "error", message: t("expenseCategories.photoRequired.saveError"), description: parseBackendError(e) });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
 
   return (
     <SettingsLayout>
@@ -228,6 +289,11 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
                 <TableRow>
                   <TableCell sx={{ fontWeight: 600 }}>{t("expenseCategories.columns.name")}</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>{t("expenseCategories.columns.kind")}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>
+                    <Tooltip title={t("expenseCategories.photoRequired.description")} arrow>
+                      <span>{t("expenseCategories.columns.photoRequired")}</span>
+                    </Tooltip>
+                  </TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>{t("expenseCategories.columns.status")}</TableCell>
                 </TableRow>
               </TableHead>
@@ -239,6 +305,34 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
                       <Typography variant="body2">
                         {t(`expenseCategories.kindShort.${cat.kind}`)}
                       </Typography>
+                    </TableCell>
+                    <TableCell>
+                      {cat.kind === "general" ? (
+                        <Tooltip
+                          title={
+                            cat.photoRequired === false
+                              ? t("expenseCategories.photoRequired.off")
+                              : t("expenseCategories.photoRequired.on")
+                          }
+                          arrow
+                        >
+                          <span>
+                            <Switch
+                              size="small"
+                              checked={cat.photoRequired !== false}
+                              disabled={!canManage || savingId === cat.id}
+                              onChange={(e) => void handlePhotoRequiredChange(cat, e.target.checked)}
+                              inputProps={{ "aria-label": t("expenseCategories.columns.photoRequired") }}
+                            />
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        // Аванс и ЗП: чека не бывает по смыслу вида, метку по ним
+                        // не показывают — переключать нечего.
+                        <Tooltip title={t("expenseCategories.photoRequired.notApplicable")} arrow>
+                          <Typography variant="body2" color="text.disabled" component="span">—</Typography>
+                        </Tooltip>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Chip

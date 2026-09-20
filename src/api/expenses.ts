@@ -78,6 +78,13 @@ export interface CreateCategoryPayload {
   name: string;
   kind?: ExpenseCategoryKind;
   isActive?: boolean;
+  /** По умолчанию true; false — у категории чека не бывает (инкассация). */
+  photoRequired?: boolean;
+}
+
+/** PATCH /finance/expense-categories/{id}/ — что прислали, то и меняется. */
+export interface UpdateCategoryPayload {
+  photoRequired?: boolean;
 }
 
 export interface CreateExpensePayload {
@@ -170,6 +177,16 @@ export function createExpenseCategory(
 ): Promise<ExpenseCategory> {
   return apiRequest<ExpenseCategory>("/finance/expense-categories/", {
     method: "POST",
+    body: payload,
+  });
+}
+
+export function updateExpenseCategory(
+  id: number,
+  payload: UpdateCategoryPayload,
+): Promise<ExpenseCategory> {
+  return apiRequest<ExpenseCategory>(`/finance/expense-categories/${id}/`, {
+    method: "PATCH",
     body: payload,
   });
 }
