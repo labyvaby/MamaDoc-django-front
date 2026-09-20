@@ -121,6 +121,10 @@ export const SETTINGS_TAB_PERMISSIONS = {
   chatwoot: "chatwoot.manage",
   // Подключение ЛИС: код организации, точки регистрации филиалов.
   lab: "lab.settings.manage",
+  // Номера/категории/характеристики фонда Viva — вкладка видна только
+  // vertical==="hotel" (см. useVisibleSettingsTabs в SettingsLayout.tsx),
+  // право то же, что общее управление отелем (hotel-viva-frontend-api.md §3).
+  rooms: "hotel.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

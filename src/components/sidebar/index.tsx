@@ -26,6 +26,7 @@ import OrganizationBrand from "../brand/OrganizationBrand";
 import { useAppVersion } from "../../api/appVersion";
 import { fetchChatwootCounts } from "../../api/chatwoot";
 import { useT } from "../../i18n/VerticalProvider";
+import { useIsVivaActive } from "../../dev/mockDemoData";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
@@ -60,6 +61,8 @@ import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlin
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
+import ExtensionOutlined from "@mui/icons-material/ExtensionOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
@@ -374,6 +377,7 @@ const SidebarSecondary: React.FC = () => {
   const activeBranchId = useActiveScope().branchId;
   const isSuper = isSuperAdmin();
   const isRetail = activeOrganization?.vertical === "retail";
+  const isHotelOrg = activeOrganization?.vertical === "hotel";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -605,11 +609,16 @@ const SidebarSecondary: React.FC = () => {
     (bookingsOverdueQuery.data?.count ?? 0) > 0 ? "error" : "primary";
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
+  // На Viva SidebarMenuItem сам прячет все пункты кроме /schedule и /patients
+  // (см. HOTEL_ONLY_NAV_PATHS) — "storage" и "management" целиком состоят из
+  // скрытых пунктов и превратились бы в пустую вкладку; "my-work" и "org"
+  // остаются видимыми, в них по одному отельному пункту (Расписание, Гости).
+  const hotelOnly = isHotelOrg;
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
-    "storage": can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement,
-    "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
+    "storage": !hotelOnly && (can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement),
+    "management": !hotelOnly && (can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings),
   };
 
   // Если активная группа стала недоступной — сбросить на "all"
@@ -781,9 +790,9 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/lab" icon={<ScienceOutlined />} label="Лаборатория" collapsed={siderCollapsed} />
         )}
 
-        {/* Расписание */}
+        {/* Расписание — у Viva это шахматка броней, не расписание смен, поэтому своя подпись. */}
         {show("my-work") && can_.schedule && (
-          <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Расписание" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label={hotelOnly ? "Шахматка броней" : "Расписание"} collapsed={siderCollapsed} />
         )}
 
         {/* СКУД */}
@@ -865,6 +874,28 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
+        {/* Интеграции (каналы продаж) — только Viva, у медицинской вертикали
+            своего права на это нет, поэтому гейт прямо по isHotelOrg, а
+            не через can_. */}
+        {show("org") && isHotelOrg && (
+          <SidebarMenuItem
+            to="/integrations"
+            icon={<ExtensionOutlined />}
+            label="Интеграции"
+            collapsed={siderCollapsed}
+          />
+        )}
+
+        {/* Кухня (меню/закупка) — только Viva, тот же принцип, что «Интеграции». */}
+        {show("org") && isHotelOrg && (
+          <SidebarMenuItem
+            to="/kitchen"
+            icon={<RestaurantOutlined />}
+            label="Кухня"
+            collapsed={siderCollapsed}
+          />
+        )}
+
         {/* Все приемы */}
         {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label={t("allAppointments")} collapsed={siderCollapsed} />
@@ -927,8 +958,12 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/salary-reports" icon={<AccountBalanceWalletOutlined />} label="Отчет по ЗП" collapsed={siderCollapsed} />
         )}
 
-        {/* Отчеты */}
-        {show("management") && can_.reports && (
+        {/* Отчеты — единственный пункт на /reports, а не пара «реальный +
+            отдельный для Viva»: у отеля "management" целиком спрятан
+            (!hotelOnly, groupVisible выше), поэтому для Viva показываем тот
+            же пункт через "org". ReportsRouter.tsx на самом /reports сам
+            решает, что рендерить — DjangoReportsPage или HotelReportsPage. */}
+        {((hotelOnly && show("org")) || (!hotelOnly && show("management") && can_.reports)) && (
           <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчеты" collapsed={siderCollapsed} />
         )}
 
@@ -955,8 +990,13 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/settings/automations" icon={<BoltOutlined />} label="Автоматизация" collapsed={siderCollapsed} />
         )}
 
-        {/* Настройки (Django-mode only) */}
-        {show("management") && can_.settings && (
+        {/* Настройки — единственный пункт на /settings, тот же принцип
+            консолидации, что «Отчеты» выше: у отеля "management" целиком
+            спрятан, поэтому для Viva показываем тот же пункт через "org".
+            Тот же реальный SettingsIndexPage/SettingsLayout, что у клиники —
+            рельс сам скрывает клиническую специфику и показывает «Номера»
+            по vertical==="hotel" (см. useVisibleSettingsTabs). */}
+        {((hotelOnly && show("org")) || (!hotelOnly && show("management") && can_.settings)) && (
           <SidebarMenuItem
             to="/settings"
             icon={<TuneOutlined />}
@@ -992,6 +1032,19 @@ type SidebarMenuItemProps = {
   excludePaths?: string[];
 };
 
+/**
+ * На Viva в навигации остаются только страницы, реально переделанные под
+ * отель (см. src/dev/*.tsx): «Расписание» — шахматка броней
+ * (RoomBookingGrid), «Все гости» — HotelGuestsPage, «Интеграции» —
+ * HotelIntegrationsPage, «Отчёты» — HotelReportsPage, «Кухня» —
+ * HotelKitchenPage, «Настройки» — реальный SettingsIndexPage/SettingsLayout
+ * (рельс сам показывает только доступные по правам разделы + «Номера»).
+ * Остальные ~30 пунктов (Вакцины, СКУД, Кабинет врача и т.п.) ведут либо на
+ * несуществующие для синтетической организации данные, либо просто не
+ * имеют отношения к отелю.
+ */
+const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/integrations", "/reports", "/kitchen", "/settings"];
+
 const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   to,
   icon,
@@ -1005,6 +1058,14 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const vivaActive = useIsVivaActive();
+
+  // После хуков (Rules of Hooks): сайдбар не перемонтируется при смене
+  // организации (DjangoContextRemount оборачивает только <Outlet/>), поэтому
+  // vivaActive может поменяться между рендерами ОДНОГО и того же
+  // смонтированного экземпляра — ранний return обязан идти после всех хуков.
+  if (vivaActive && !HOTEL_ONLY_NAV_PATHS.includes(to)) return null;
+
   const collapsedFinal = (collapsed ?? false) && !isMobile;
   const hasBadge = badgeCount > 0;
   const badgeLabel = badgeCount > 99 ? "99+" : String(badgeCount);

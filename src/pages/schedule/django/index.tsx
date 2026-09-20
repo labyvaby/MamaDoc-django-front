@@ -41,6 +41,10 @@ import { useNotification } from "@refinedev/core";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { HotelOccupancyBanner } from "../../../dev/HotelOccupancyBanner";
+import { CreateBookingButton } from "../../../dev/CreateBookingButton";
+import { RoomBookingGrid } from "../../../dev/RoomBookingGrid";
+import { useIsVivaActive } from "../../../dev/mockDemoData";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { ConfirmDialog, CustomDatePicker } from "../../../components/ui";
@@ -1265,9 +1269,18 @@ const SCHEDULE_TABS: { id: ScheduleTab; label: string; icon: React.ElementType }
 // ── Страница ──────────────────────────────────────────────────────────────────
 
 const DjangoSchedulePage: React.FC = () => {
-  usePageTitle("Расписание");
+  // "Шахматка броней" на Viva — тот же экран, что и обычное расписание, просто
+  // с другим заголовком для демонстрации отельного применения (см. useIsVivaActive).
+  const vivaActive = useIsVivaActive();
+  usePageTitle(vivaActive ? "Шахматка броней" : "Расписание");
   const theme = useTheme();
   const canManage = useCan("schedule.manage");
+  // «Создать бронь» на Viva — отдельное право (hotel.reservations.manage),
+  // не schedule.manage (то — про управление сменами персонала, у
+  // Viva-сотрудников его нет, а бронь администратор/ресепшен создавать
+  // должны). Использовать только для этой кнопки, не вместо canManage
+  // выше — остальные места canManage (настройка смен) специфичны клинике.
+  const canManageBookings = useCan(["schedule.manage", "hotel.reservations.manage"]);
   const { isSuperAdmin, activeOrganization, activeBranch, activeEmployee } = usePermissions();
   const orgId = isSuperAdmin() ? activeOrganization?.id ?? undefined : undefined;
   const queryClient = useQueryClient();
@@ -1665,7 +1678,10 @@ const DjangoSchedulePage: React.FC = () => {
               </Button>
             </Stack>
           )}
-          {canManage && tab === "calendar" && (
+          {/* На Viva это шахматка броней — «Добавить смену» не имеет смысла,
+              вместо неё создание брони номера (см. src/dev/CreateBookingButton.tsx). */}
+          {canManageBookings && tab === "calendar" && vivaActive && <CreateBookingButton />}
+          {canManage && tab === "calendar" && !vivaActive && (
             <Button
               size="small"
               variant="contained"
@@ -1734,8 +1750,10 @@ const DjangoSchedulePage: React.FC = () => {
           flex: 1,
           minHeight: 0,
           // Календарь скроллится внутри себя; на вкладке «Настройка» скроллим
-          // содержимое (таблицы правил/исключений).
-          overflowY: tab === "calendar" ? "hidden" : "auto",
+          // содержимое (таблицы правил/исключений). RoomBookingGrid (Viva) так
+          // не умеет — банер + грид + легенда легко не влезают в фиксированную
+          // высоту, а обрезать нечем: скроллим контейнер как на «Настройке».
+          overflowY: tab === "calendar" && !vivaActive ? "hidden" : "auto",
           px: theme.appLayout.page.paddingX,
           pb: 2,
           display: "flex",
@@ -1745,9 +1763,16 @@ const DjangoSchedulePage: React.FC = () => {
       >
         {tab === "calendar" && (
           <>
+            {/* Демо-сводка «шахматки броней» для Viva — см. src/dev/HotelOccupancyBanner.tsx. */}
+            <HotelOccupancyBanner />
             {monthExceptionsQuery.isError && (
               <Alert severity="error">{parseBackendError(monthExceptionsQuery.error)}</Alert>
             )}
+            {/* На Viva ось грида другая: номера × даты, а не сотрудники × часы —
+                обычная шахматка смен здесь не подходит (см. RoomBookingGrid.tsx). */}
+            {vivaActive ? (
+              <RoomBookingGrid />
+            ) : (
             <ScheduleCalendar
               employees={employees}
               rules={rules}
@@ -1780,6 +1805,7 @@ const DjangoSchedulePage: React.FC = () => {
               }}
               onOccurrenceClick={handleOccurrenceClick}
             />
+            )}
           </>
         )}
 

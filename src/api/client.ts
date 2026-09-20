@@ -456,7 +456,10 @@ export async function apiRequest<T>(
   if (response.status === 403 && parseErrorEnvelope(payload)?.code !== "MODULE_DISABLED") {
     window.dispatchEvent(new Event("mamadoc:api-forbidden"));
   }
-  if (response.status === 429) {
+  // RECOGNITION_RATE_LIMITED — лимит модели распознавания документа, а не общий
+  // лимит API: форма гостя сама пишет «подождите минуту», а общий диалог
+  // («обновите страницу») тут только сбил бы с толку.
+  if (response.status === 429 && parseErrorEnvelope(payload)?.code !== "RECOGNITION_RATE_LIMITED") {
     notifyRateLimited();
   }
 
