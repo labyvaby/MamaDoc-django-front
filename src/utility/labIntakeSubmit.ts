@@ -98,6 +98,10 @@ export interface LabIntakeFormValues {
   clientTypeId: number | null;
   /** Согласие на обработку ПДн — в тело попадает всегда, явно. */
   personalDataConsent: boolean;
+  /** SMS о готовности от лаборатории; в тело идёт только включённая. */
+  receiverSms?: boolean;
+  /** Почта для результатов; пустая не отправляется. */
+  resultEmail?: string;
 }
 
 /**
@@ -145,5 +149,8 @@ export function buildLabIntakeBody(values: LabIntakeFormValues): LabIntakeInput 
   const comment = (values.comment ?? '').trim();
   if (comment) body.comment = comment;
   if (values.clientTypeId != null) body.clientTypeId = values.clientTypeId;
+  if (values.receiverSms) body.receiverSms = true;
+  const resultEmail = (values.resultEmail ?? "").trim();
+  if (resultEmail) body.resultEmail = resultEmail;
   return body;
 }

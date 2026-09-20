@@ -30,6 +30,12 @@ type Props = {
   /** Согласие пациента на обработку персональных данных. */
   consent: boolean;
   onConsentChange: (value: boolean) => void;
+  /** SMS от лаборатории о готовности — как галочка в интерфейсе ЛИС. */
+  receiverSms: boolean;
+  onReceiverSmsChange: (value: boolean) => void;
+  /** Почта для результатов — в карте пациента её нет, спрашивается здесь. */
+  resultEmail: string;
+  onResultEmailChange: (value: string) => void;
   /**
    * План (Task 9) не включал эти четыре поля в пропсы секции: автокомплит
    * ищет через `searchPatients`, а по правилу проекта (см. `PaymentSection`,
@@ -69,6 +75,10 @@ const PatientSection: React.FC<Props> = ({
   onGenderChange,
   consent,
   onConsentChange,
+  receiverSms,
+  onReceiverSmsChange,
+  resultEmail,
+  onResultEmailChange,
   searchQuery,
   searchResults,
   searchLoading,
@@ -209,6 +219,46 @@ const PatientSection: React.FC<Props> = ({
           </Typography>
         }
       />
+
+      {/* Уведомления о готовности шлёт сама лаборатория: SMS — по телефону
+          из карты (orderDTO.@receiver_sms), письмо — на почту, которой в
+          карте пациента нет, поэтому она спрашивается при приёме. */}
+      {patient && (
+        <Stack spacing={1}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+            Уведомления о готовности результата
+          </Typography>
+          <FormControlLabel
+            sx={{ alignItems: "flex-start", ml: 0 }}
+            control={
+              <Checkbox
+                size="small"
+                checked={receiverSms && !!patient.phone}
+                onChange={(event) => onReceiverSmsChange(event.target.checked)}
+                disabled={disabled || !patient.phone}
+                sx={{ pt: 0.25 }}
+              />
+            }
+            label={
+              <Typography variant="body2">
+                SMS от лаборатории
+                {patient.phone ? ` на ${patient.phone}` : " — в карте нет телефона"}
+              </Typography>
+            }
+          />
+          <TextField
+            size="small"
+            fullWidth
+            type="email"
+            label="Результаты на почту"
+            placeholder="необязательно"
+            value={resultEmail}
+            onChange={(event) => onResultEmailChange(event.target.value)}
+            disabled={disabled}
+            slotProps={{ inputLabel: { shrink: true } }}
+          />
+        </Stack>
+      )}
     </IntakeSection>
   );
 };
