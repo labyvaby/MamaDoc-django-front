@@ -1548,6 +1548,19 @@ const DjangoSchedulePage: React.FC = () => {
     });
   };
 
+  // Клик по полосе смены в дневном виде: сразу карточка «Изменить смену».
+  // Диалог и сохранение берут дату из selectedDay, поэтому его выставляем
+  // первым — дровер дня при этом не открываем. Без права управления
+  // показываем панель дня, как при клике на имя сотрудника.
+  const handleOccurrenceClick = (day: Dayjs, occurrence: DayOccurrence) => {
+    if (!canManage) {
+      handleDayClick(day);
+      return;
+    }
+    setSelectedDay(day);
+    handleEditOccurrence(occurrence);
+  };
+
   const handleSavePointEdit = async (
     values: SchedulePointEditValues,
     allowOverlap = false,
@@ -1756,6 +1769,7 @@ const DjangoSchedulePage: React.FC = () => {
                     "day_off",
                 })
               }
+              onOccurrenceClick={handleOccurrenceClick}
             />
           </>
         )}
