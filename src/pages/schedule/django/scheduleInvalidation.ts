@@ -42,3 +42,14 @@ export function isConflictsQueryOfEmployee(employeeId: number): (queryKey: Query
     );
   };
 }
+
+/**
+ * Conflicts нескольких сотрудников разом: исходный отсутствующий и коллеги,
+ * которым передали его приёмы (у них тоже может быть отсутствие в этом окне).
+ */
+export function isConflictsQueryOfEmployees(
+  employeeIds: Iterable<number>,
+): (queryKey: QueryKey) => boolean {
+  const predicates = Array.from(new Set(employeeIds), isConflictsQueryOfEmployee);
+  return (queryKey) => predicates.some((matches) => matches(queryKey));
+}

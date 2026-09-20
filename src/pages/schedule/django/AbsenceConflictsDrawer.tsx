@@ -67,7 +67,7 @@ import { useCan } from "../../../hooks/useCan";
 import { getStatusChipSx, getStatusLabel } from "../../../config/appointmentStatuses";
 import { formatKGS } from "../../../utility/format";
 import { subtleBg } from "../../../theme/uiHelpers";
-import { isConflictsQueryOfEmployee } from "./scheduleInvalidation";
+import { isConflictsQueryOfEmployees } from "./scheduleInvalidation";
 import { appointmentHitsAbsence, isUnreviewed } from "./useAbsenceConflicts";
 
 /** Отсутствие, из-за которого поднялся разбор. */
@@ -213,7 +213,14 @@ export const AbsenceConflictsDrawer: React.FC<{
     // (отменённые приёмы из выдачи уходят). Свежий запрос — при следующем
     // открытии: ключ не инвалидируется вместе с приёмами.
     refetchOnWindowFocus: false,
+    // Снимок берётся заново при каждом открытии: приёмы могли отменить или
+    // перенести с другой страницы, а кэш страницы живёт до сброса.
+    staleTime: 0,
   });
+
+  // Кому передавали приёмы в этом разборе: их маркеры на календаре тоже
+  // устарели (коллега может сам отсутствовать в этом окне).
+  const reassignedToRef = React.useRef<Set<number>>(new Set());
 
   const categoriesQuery = useQuery({
     queryKey: ["django", "tasks", "categories", orgId],
@@ -253,6 +260,7 @@ export const AbsenceConflictsDrawer: React.FC<{
     setWithCallTask(true);
     setResults(new Map());
     setError(null);
+    reassignedToRef.current = new Set();
   }, [open, absence]);
 
   // Смена списка (другое отсутствие, свежая выдача) — снимаем выбор, а не
@@ -355,6 +363,9 @@ export const AbsenceConflictsDrawer: React.FC<{
     onSuccess: (response) => {
       setResults(new Map(response.results.map((row) => [row.id, row])));
       const failed = response.results.filter((row) => !row.ok);
+      if (mode === "reassign" && replacementId !== null && failed.length < response.results.length) {
+        reassignedToRef.current.add(replacementId);
+      }
       // Приёмы изменились — сбрасываем списки приёмов и свободные окна. Сам
       // список конфликтов не трогаем: он держит построчный результат разбора.
       void queryClient.invalidateQueries({ queryKey: ["django", "appointments"] });
@@ -389,13 +400,16 @@ export const AbsenceConflictsDrawer: React.FC<{
 
   // Закрытие разбора — момент обновить маркеры на календаре: пока дровер
   // открыт, список конфликтов держит результат применения и не рефетчится.
-  // Сбрасываем только conflicts этого сотрудника — правила и исключения
-  // дровер не меняет, а приёмы и свободные окна уже сброшены при применении.
+  // Сбрасываем conflicts только этого сотрудника и тех, кому передали приёмы:
+  // правила и исключения дровер не меняет, а приёмы и свободные окна уже
+  // сброшены при применении.
   const handleClose = () => {
     if (absence) {
-      void queryClient.invalidateQueries({
-        predicate: (query) => isConflictsQueryOfEmployee(absence.employeeId)(query.queryKey),
-      });
+      const matches = isConflictsQueryOfEmployees([
+        absence.employeeId,
+        ...reassignedToRef.current,
+      ]);
+      void queryClient.invalidateQueries({ predicate: (query) => matches(query.queryKey) });
     }
     onClose();
   };

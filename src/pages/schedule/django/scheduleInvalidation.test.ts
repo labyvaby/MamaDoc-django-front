@@ -45,3 +45,14 @@ describe("isConflictsQueryOfEmployee", () => {
     expect(own(djangoQueryKeys.scheduling.exceptions({ employeeId: 7 }))).toBe(false);
   });
 });
+
+describe("isConflictsQueryOfEmployees", () => {
+  it("исходный сотрудник и коллега-замена — оба, остальные нет", async () => {
+    const { isConflictsQueryOfEmployees } = await import("./scheduleInvalidation");
+    const both = isConflictsQueryOfEmployees([7, 9]);
+    expect(both(conflicts(7))).toBe(true);
+    expect(both(conflicts(9))).toBe(true);
+    expect(both(conflicts(8))).toBe(false);
+    expect(both(djangoQueryKeys.scheduling.exceptions({ employeeId: 7 }))).toBe(false);
+  });
+});

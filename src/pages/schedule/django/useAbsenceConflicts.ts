@@ -28,7 +28,7 @@ import {
   type ScheduleConflictAppointment,
   type ScheduleException,
 } from "../../../api/scheduling";
-import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/queryKeys";
+import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
 
 // Предикат отсутствия живёт в occurrences.ts (там же разбор частичных
 // интервалов); реэкспорт — чтобы не менять импорты страницы.
@@ -184,11 +184,12 @@ export function useAbsenceConflicts(
           signal,
         ),
       enabled,
-      // Не 30 с, как у списков: приёмы под отсутствием меняются только из
-      // дровера разбора, и он сам сбрасывает conflicts своего сотрудника
-      // (scheduleInvalidation.ts). Иначе каждое возвращение на вкладку
-      // перезапрашивало бы всех сотрудников.
-      staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+      // 30 с, как у списков: страница расписания без realtime-подписки, а
+      // приёмы могут отменить с другой страницы — маркеры не должны врать
+      // дольше. Шторма это не даёт: правка исключения conflicts не сбрасывает
+      // (scheduleInvalidation.ts), по staleTime рефетч идёт только при
+      // возврате на страницу.
+      staleTime: DJANGO_LIST_STALE_TIME_MS,
       // Права на приёмы могут быть не выданы — тогда маркеров просто не будет,
       // а расписание должно работать как раньше.
       retry: false,
