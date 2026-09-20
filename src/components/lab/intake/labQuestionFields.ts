@@ -9,29 +9,81 @@
 import type { LabOrderAnswerInput, LabQuestion } from "../../../api/lab";
 
 /** Управляющий элемент, которым рисуется вопрос анализа. */
-export type LabQuestionFieldKind = "date" | "boolean" | "integer" | "text";
+export type LabQuestionFieldKind = "date" | "choice" | "integer" | "text";
 
 const FIELD_KIND_BY_TYPE: Record<string, LabQuestionFieldKind> = {
   DATE: "date",
-  BOOLEAN: "boolean",
+  BOOLEAN: "choice",
   INTEGER: "integer",
 };
 
 /**
- * Тип поля ввода по `fieldType` вопроса.
+ * Строковое представление ответа BOOLEAN не подтверждено ExpressLab (как и
+ * код пола в `basketCatalog.ts`) — используем `"true"`/`"false"`. Контракт
+ * уточнится, менять придётся только здесь.
+ */
+export const BOOLEAN_OPTIONS: readonly LabQuestionOption[] = [
+  { value: "true", label: "Да" },
+  { value: "false", label: "Нет" },
+];
+
+/** Разделитель вариантов в `defaultValue` вопроса типа SELECT. */
+const SELECT_OPTION_SEPARATOR = "|";
+
+/**
+ * Вариантов не больше этого — рисуются кнопками в ряд (Да / Нет /
+ * Неизвестно), иначе — выпадающий список с поиском: у «Гражданства» в ЛИС
+ * двести пятьдесят стран, у «Кода исследования» — девять строк по полсотни
+ * знаков, кнопками такое не разложить.
+ */
+export const INLINE_CHOICE_MAX = 4;
+
+export interface LabQuestionOption {
+  /** Что уедет в ЛИС как `value` ответа. */
+  value: string;
+  label: string;
+}
+
+/**
+ * Варианты ответа на вопрос.
+ *
+ * Для `SELECT` ЛИС кладёт перечень в `default_value` через «|»:
+ * «Да|Нет|Неизвестно», «Женский|Мужской», «1-роды|2-роды|…». Это не
+ * значение по умолчанию — это и есть список; в ЛИС такой вопрос
+ * заполняется выбором, и свободный текст туда не подходит. Хвостовой
+ * разделитель («…|Япония|») даёт пустой элемент — он выбрасывается.
+ * `BOOLEAN` — те же две кнопки, но со строковыми `true`/`false`.
+ * У остальных типов вариантов нет.
+ */
+export function labQuestionOptions(question: Pick<LabQuestion, "fieldType" | "defaultValue">): LabQuestionOption[] {
+  if (question.fieldType === "BOOLEAN") return [...BOOLEAN_OPTIONS];
+  if (question.fieldType !== "SELECT") return [];
+  return question.defaultValue
+    .split(SELECT_OPTION_SEPARATOR)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => ({ value: item, label: item }));
+}
+
+/**
+ * Тип поля ввода по вопросу.
  *
  * `fieldType` — закрытое перечисление ЛИС (`STRING`, `INTEGER`, `DATE`,
  * `BOOLEAN`, `SELECT`, `FULL_NAME`, `FULL_NAME2`, `PIN`, `PHONE`, `ADDRESS`,
- * `PASSWORD_DATA`), но управляющих элементов у нас четыре: план явно
- * выделяет дату, переключатель и число, всё остальное — обычный текст. Сюда
- * же попадает `SELECT` — контракт ЛИС не передаёт варианты выбора, поэтому
- * до подтверждения у ExpressLab он тоже рисуется текстовым полем (с
- * подсказкой из `defaultValue` — см. `QuestionsSection`), и любой ещё не
- * описанный тип: расширение перечисления вендором в будущем не должно
- * прятать вопрос, которому просто не нашлось спец-поля.
+ * `PASSWORD_DATA`), но управляющих элементов у нас четыре: дата, выбор из
+ * вариантов, число, всё остальное — обычный текст. `SELECT` — выбор, когда
+ * в `defaultValue` есть из чего выбирать (`labQuestionOptions`); пустой
+ * перечень — текст, чтобы вопрос не стал неотвечаемым. Любой ещё не
+ * описанный тип — тоже текст: расширение перечисления вендором в будущем
+ * не должно прятать вопрос, которому просто не нашлось спец-поля.
  */
-export function labQuestionFieldKind(fieldType: string): LabQuestionFieldKind {
-  return FIELD_KIND_BY_TYPE[fieldType] ?? "text";
+export function labQuestionFieldKind(
+  question: Pick<LabQuestion, "fieldType" | "defaultValue">,
+): LabQuestionFieldKind {
+  if (question.fieldType === "SELECT") {
+    return labQuestionOptions(question).length > 0 ? "choice" : "text";
+  }
+  return FIELD_KIND_BY_TYPE[question.fieldType] ?? "text";
 }
 
 /**

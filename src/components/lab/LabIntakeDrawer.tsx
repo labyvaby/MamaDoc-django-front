@@ -496,6 +496,11 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
   // Анализы корзины, не подходящие пациенту по полу: набрали до выбора
   // пациента или сменили пол в карточке. Бэкенд их отвергнет — лучше
   // назвать строку сразу, чем показать отказ на кнопке.
+  const testTitleById = React.useMemo(
+    () => new Map(tests.map((test) => [test.id, test.title])),
+    [tests],
+  );
+
   const genderMismatch = React.useMemo(() => {
     const byId = new Map(tests.map((test) => [test.id, test]));
     return lines
@@ -858,6 +863,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
           <QuestionsSection
             questions={questions}
             answers={answers}
+            testTitleById={testTitleById}
             loading={questionsQuery.isLoading}
             disabled={!editing}
             onAnswerChange={(questionId, value) => setAnswers((prev) => ({ ...prev, [questionId]: value }))}
