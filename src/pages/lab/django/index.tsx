@@ -55,6 +55,9 @@ const DjangoLabPage: React.FC = () => {
   const canView = useCan("lab.view");
   const canViewFinance = useCan("finance.view");
   const canAccept = useCan("lab.accept");
+  // Повтор отправки — отдельное право: действие над чужим оплаченным
+  // заказом с поиском сироты в ЛИС, а не часть приёма.
+  const canDispatch = useCan("lab.dispatch");
 
   const [searchParams] = useSearchParams();
   // Из истории пациента кнопка «Принять анализы» ведёт сюда с этим
@@ -262,7 +265,7 @@ const DjangoLabPage: React.FC = () => {
         open={selectedOrderId != null}
         onClose={() => setSelectedOrderId(null)}
         canViewFinance={canViewFinance}
-        canRetryDispatch={canAccept}
+        canRetryDispatch={canDispatch}
       />
     </Box>
   );
