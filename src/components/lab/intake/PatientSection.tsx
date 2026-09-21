@@ -90,7 +90,8 @@ const PatientSection: React.FC<Props> = ({
   // поле после выбора) — иначе Autocomplete не находит value среди options
   // и показывает пустое поле вместо имени.
   const options = React.useMemo(() => {
-    if (!patient || searchResults.some((p) => p.id === patient.id)) return searchResults;
+    if (!patient || searchResults.some((p) => p.id === patient.id))
+      return searchResults;
     return [patient, ...searchResults];
   }, [patient, searchResults]);
 
@@ -100,117 +101,178 @@ const PatientSection: React.FC<Props> = ({
   const needsAnything = needsInn || needsBirthDate || needsGender;
 
   const [addOpen, setAddOpen] = React.useState(false);
+  // Поле почты — по галочке: у большинства пациентов её нет, а пустое поле
+  // занимало строку. Восстановленный черновик с адресом раскрывает его сам.
+  const [emailAsked, setEmailAsked] = React.useState(false);
+  const emailWanted = emailAsked || resultEmail !== "";
+  const setEmailWanted = setEmailAsked;
 
   return (
     <Stack spacing={1.25}>
       <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ fontWeight: 500 }}
+        >
           Пациент *
         </Typography>
-        <Button size="small" disabled={disabled} onClick={() => setAddOpen(true)}>
+        <Button
+          size="small"
+          disabled={disabled}
+          onClick={() => setAddOpen(true)}
+        >
           + Добавить пациента
         </Button>
       </Stack>
 
-        <Autocomplete
-          options={options}
-          value={patient}
-          onChange={(_, value) => onSelect(value)}
-          inputValue={searchQuery}
-          onInputChange={(_, value) => onSearchChange(value)}
-          getOptionLabel={patientLabel}
-          // Ключ — id: у однофамильцев с общим телефоном (дети одной
-          // семьи) подписи совпадают, см. ту же правку в ReferralSection.
-          getOptionKey={(option) => option.id}
-          isOptionEqualToValue={(option, value) => option.id === value.id}
-          filterOptions={(x) => x}
-          loading={searchLoading}
-          disabled={disabled}
-          noOptionsText={
-            searchQuery.trim().length < 2 ? "Введите не менее 2 символов" : "Ничего не найдено"
-          }
-          renderOption={(props, option) => (
-            <li {...props} key={option.id}>
-              <Stack>
-                <Typography variant="body2">{patientLabel(option)}</Typography>
-                {option.phone && (
-                  <Typography variant="caption" color="text.secondary">
-                    {option.phone}
-                  </Typography>
-                )}
-              </Stack>
-            </li>
-          )}
-          renderInput={(params) => (
-            <TextField {...params} size="small" placeholder="ФИО или телефон пациента" />
-          )}
-        />
-
-        {needsAnything && (
-          <Stack spacing={1.5}>
-            <Typography variant="caption" color="text.secondary">
-              Без этих данных заказ не уйдёт в лабораторию, а референсные интервалы
-              результатов зависят от возраста и пола.
-            </Typography>
-
-            {needsInn && (
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  ИНН
+      <Autocomplete
+        options={options}
+        value={patient}
+        onChange={(_, value) => onSelect(value)}
+        inputValue={searchQuery}
+        onInputChange={(_, value) => onSearchChange(value)}
+        getOptionLabel={patientLabel}
+        // Ключ — id: у однофамильцев с общим телефоном (дети одной
+        // семьи) подписи совпадают, см. ту же правку в ReferralSection.
+        getOptionKey={(option) => option.id}
+        isOptionEqualToValue={(option, value) => option.id === value.id}
+        filterOptions={(x) => x}
+        loading={searchLoading}
+        disabled={disabled}
+        noOptionsText={
+          searchQuery.trim().length < 2
+            ? "Введите не менее 2 символов"
+            : "Ничего не найдено"
+        }
+        renderOption={(props, option) => (
+          <li {...props} key={option.id}>
+            <Stack>
+              <Typography variant="body2">{patientLabel(option)}</Typography>
+              {option.phone && (
+                <Typography variant="caption" color="text.secondary">
+                  {option.phone}
                 </Typography>
-                <TextField
-                  size="small"
-                  fullWidth
-                  value={inn}
-                  onChange={(e) => onInnChange(e.target.value)}
-                  disabled={disabled}
-                  placeholder="14 цифр"
-                />
-              </Stack>
-            )}
-
-            {needsBirthDate && (
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Дата рождения
-                </Typography>
-                <CustomDatePicker
-                  value={birthDate ? dayjs(birthDate) : null}
-                  onChange={(value) =>
-                    onBirthDateChange(value && value.isValid() ? value.format("YYYY-MM-DD") : null)
-                  }
-                  disabled={disabled}
-                  slotProps={{ textField: { size: "small", fullWidth: true } }}
-                />
-              </Stack>
-            )}
-
-            {needsGender && (
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Пол
-                </Typography>
-                <ToggleButtonGroup
-                  value={gender === "male" || gender === "female" ? gender : null}
-                  exclusive
-                  onChange={(_, value) => onGenderChange((value as string | null) ?? "unknown")}
-                  disabled={disabled}
-                  fullWidth
-                  size="small"
-                >
-                  <ToggleButton value="male" sx={{ gap: 0.5 }}>
-                    <BoyOutlined fontSize="small" />
-                    Мужской
-                  </ToggleButton>
-                  <ToggleButton value="female" sx={{ gap: 0.5 }}>
-                    <GirlOutlined fontSize="small" />
-                    Женский
-                  </ToggleButton>
-                </ToggleButtonGroup>
-              </Stack>
-            )}
-          </Stack>
+              )}
+            </Stack>
+          </li>
         )}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            size="small"
+            placeholder="ФИО или телефон пациента"
+          />
+        )}
+      />
+
+      {needsAnything && (
+        <Stack spacing={1.5}>
+          <Typography variant="caption" color="text.secondary">
+            Без этих данных заказ не уйдёт в лабораторию, а референсные
+            интервалы результатов зависят от возраста и пола.
+          </Typography>
+
+          {needsInn && (
+            <Stack spacing={0.5}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                fontWeight={600}
+              >
+                ИНН
+              </Typography>
+              <TextField
+                size="small"
+                fullWidth
+                value={inn}
+                onChange={(e) => onInnChange(e.target.value)}
+                disabled={disabled}
+                placeholder="14 цифр"
+              />
+            </Stack>
+          )}
+
+          {needsBirthDate && (
+            <Stack spacing={0.5}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                fontWeight={600}
+              >
+                Дата рождения
+              </Typography>
+              <CustomDatePicker
+                value={birthDate ? dayjs(birthDate) : null}
+                onChange={(value) =>
+                  onBirthDateChange(
+                    value && value.isValid() ? value.format("YYYY-MM-DD") : null
+                  )
+                }
+                disabled={disabled}
+                slotProps={{ textField: { size: "small", fullWidth: true } }}
+              />
+            </Stack>
+          )}
+
+          {needsGender && (
+            <Stack spacing={0.5}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                fontWeight={600}
+              >
+                Пол
+              </Typography>
+              <ToggleButtonGroup
+                value={gender === "male" || gender === "female" ? gender : null}
+                exclusive
+                onChange={(_, value) =>
+                  onGenderChange((value as string | null) ?? "unknown")
+                }
+                disabled={disabled}
+                fullWidth
+                size="small"
+                // Как переключатель день/ночь в форме приёма: выбранный
+                // сегмент залит основным цветом, а не серым.
+                sx={{
+                  bgcolor: "action.hover",
+                  borderRadius: "10px",
+                  p: "3px",
+                  border: "none",
+                  "& .MuiToggleButton-root": {
+                    flex: 1,
+                    border: "none",
+                    borderRadius: "6px !important",
+                    py: 0.75,
+                    gap: 0.5,
+                    textTransform: "none",
+                    transition: "all 0.2s ease-in-out",
+                    bgcolor: "transparent",
+                    color: "text.secondary",
+                    "&:hover": { bgcolor: "action.selected" },
+                    "&.Mui-selected": {
+                      bgcolor: "primary.main",
+                      color: "primary.contrastText",
+                      fontWeight: 600,
+                      "&:hover": { bgcolor: "primary.dark" },
+                    },
+                  },
+                }}
+              >
+                <ToggleButton value="male">
+                  <BoyOutlined fontSize="small" />
+                  Мужской
+                </ToggleButton>
+                <ToggleButton value="female">
+                  <GirlOutlined fontSize="small" />
+                  Женский
+                </ToggleButton>
+              </ToggleButtonGroup>
+            </Stack>
+          )}
+        </Stack>
+      )}
 
       <FormControlLabel
         sx={{ alignItems: "flex-start", ml: 0 }}
@@ -224,9 +286,12 @@ const PatientSection: React.FC<Props> = ({
           />
         }
         label={
-          <Typography variant="body2">
-            Пациент дал согласие на обработку персональных данных и передачу
-            их в лабораторию
+          <Typography
+            variant="caption"
+            sx={{ lineHeight: 1.3, display: "block" }}
+          >
+            Пациент дал согласие на обработку персональных данных и передачу их
+            в лабораторию
           </Typography>
         }
       />
@@ -235,40 +300,61 @@ const PatientSection: React.FC<Props> = ({
           из карты (orderDTO.@receiver_sms), письмо — на почту, которой в
           карте пациента нет, поэтому она спрашивается при приёме. */}
       {patient && (
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          alignItems={{ sm: "center" }}
-          gap={1}
-        >
-          <FormControlLabel
-            sx={{ ml: 0, mr: 0, flex: 1, minWidth: 0 }}
-            control={
-              <Checkbox
-                size="small"
-                checked={receiverSms && !!patient.phone}
-                onChange={(event) => onReceiverSmsChange(event.target.checked)}
-                disabled={disabled || !patient.phone}
-                sx={{ py: 0.25 }}
-              />
-            }
-            label={
-              <Typography variant="body2" noWrap>
-                SMS о готовности
-                {patient.phone ? ` на ${patient.phone}` : " — нет телефона"}
-              </Typography>
-            }
-          />
-          <TextField
-            size="small"
-            type="email"
-            label="Результаты на почту"
-            placeholder="необязательно"
-            value={resultEmail}
-            onChange={(event) => onResultEmailChange(event.target.value)}
-            disabled={disabled}
-            slotProps={{ inputLabel: { shrink: true } }}
-            sx={{ flex: 1, minWidth: 0 }}
-          />
+        <Stack spacing={0.5}>
+          <Stack direction="row" flexWrap="wrap" useFlexGap columnGap={2}>
+            <FormControlLabel
+              sx={{ ml: 0, mr: 0 }}
+              control={
+                <Checkbox
+                  size="small"
+                  checked={receiverSms && !!patient.phone}
+                  onChange={(event) =>
+                    onReceiverSmsChange(event.target.checked)
+                  }
+                  disabled={disabled || !patient.phone}
+                  sx={{ py: 0.25 }}
+                />
+              }
+              label={
+                <Typography variant="caption" sx={{ lineHeight: 1.3 }}>
+                  SMS о готовности
+                  {patient.phone ? ` на ${patient.phone}` : " — нет телефона"}
+                </Typography>
+              }
+            />
+            <FormControlLabel
+              sx={{ ml: 0, mr: 0 }}
+              control={
+                <Checkbox
+                  size="small"
+                  checked={emailWanted}
+                  onChange={(event) => {
+                    setEmailWanted(event.target.checked);
+                    if (!event.target.checked) onResultEmailChange("");
+                  }}
+                  disabled={disabled}
+                  sx={{ py: 0.25 }}
+                />
+              }
+              label={
+                <Typography variant="caption" sx={{ lineHeight: 1.3 }}>
+                  Результаты на почту
+                </Typography>
+              }
+            />
+          </Stack>
+          {emailWanted && (
+            <TextField
+              size="small"
+              fullWidth
+              type="email"
+              placeholder="email@example.com"
+              autoFocus={resultEmail === ""}
+              value={resultEmail}
+              onChange={(event) => onResultEmailChange(event.target.value)}
+              disabled={disabled}
+            />
+          )}
         </Stack>
       )}
       {/* Тот же дровер, что в форме приёма: пациент с улицы без карты —
