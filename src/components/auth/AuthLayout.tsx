@@ -61,7 +61,8 @@ const AuthLayout: React.FC<Props> = ({ children }) => {
       sx={(theme) => ({
         minHeight: theme.appLayout.fullPage.minHeight,
         display: "grid",
-        gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+        // 3/5 бренд-панель, 2/5 форма; форме не даём ужаться ниже 420px.
+        gridTemplateColumns: { xs: "1fr", md: "3fr minmax(420px, 2fr)" },
         gridTemplateRows: { xs: "auto 1fr", md: "auto" },
         bgcolor: "background.default",
       })}
