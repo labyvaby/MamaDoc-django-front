@@ -216,6 +216,14 @@ function visitHint(b: BookingListItem, tab: BookingTab, todayStr: string, tomorr
  */
 const COMPACT_TABLE_WIDTH = 1040;
 
+/**
+ * Уже этого таблице не помочь никакими колонками: минимальные ширины того,
+ * что обязано остаться (пациент, врач, визит, статус, «в работе», кнопки),
+ * дают около 740 px. Дальше — карточки, как на телефоне: они помещаются в
+ * любую ширину.
+ */
+const CARDS_BELOW_WIDTH = 780;
+
 /** Текущая ширина элемента; до первого замера — Infinity, чтобы не мигать. */
 function useElementWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
   const ref = React.useRef<T | null>(null);
@@ -318,9 +326,12 @@ const BookingsPage: React.FC = () => {
   const { t } = useT("bookings");
   usePageTitle("Онлайн-запись");
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const [tableRef, tableWidth] = useElementWidth<HTMLDivElement>();
-  const compactTable = tableWidth < COMPACT_TABLE_WIDTH;
+  const isPhone = useMediaQuery(theme.breakpoints.down("md"));
+  // Ширина меряется у корня страницы — он смонтирован при любой раскладке,
+  // а таблица и карточки сменяют друг друга и замер бы терялся.
+  const [pageRef, pageWidth] = useElementWidth<HTMLDivElement>();
+  const isMobile = isPhone || pageWidth < CARDS_BELOW_WIDTH;
+  const compactTable = pageWidth < COMPACT_TABLE_WIDTH;
   const canView = useCan("bookings.view");
   const canManage = useCan("bookings.manage");
   const queryClient = useQueryClient();
@@ -700,7 +711,7 @@ const BookingsPage: React.FC = () => {
       field: "date",
       headerName: "Визит",
       flex: 0.8,
-      minWidth: 112,
+      minWidth: 120,
       sortable: false,
       renderCell: ({ row }) => {
         const hint = visitHint(row, tab, todayStr, tomorrowStr);
@@ -870,7 +881,7 @@ const BookingsPage: React.FC = () => {
   ];
 
   return (
-    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+    <Box ref={pageRef} sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <PageHeader
         title="Онлайн-запись"
         showTitle={false}
@@ -1138,10 +1149,7 @@ const BookingsPage: React.FC = () => {
               )}
             </Box>
           ) : (
-            <Box
-              ref={tableRef}
-              sx={{ flex: 1, minHeight: 360, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}
-            >
+            <Box sx={{ flex: 1, minHeight: 360, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
               {tab === "triage" && triageQuery.data?.truncated && (
                 <Alert severity="info">
                   Заявок больше 1000 — показаны самые свежие. Сузьте выборку фильтром.
@@ -1260,7 +1268,9 @@ const BookingsPage: React.FC = () => {
                 pageSizeOptions={[PAGE_SIZE]}
                 disableColumnMenu
                 disableRowSelectionOnClick
-                checkboxSelection={canManage && tab === "triage"}
+                // Чекбоксы массового подтверждения — только там, где им есть
+                // место: на узкой таблице они выталкивали кнопки строки за край.
+                checkboxSelection={canManage && tab === "triage" && !compactTable}
                 isRowSelectable={(p) => p.row.status === "pending"}
                 rowSelectionModel={selectedIds}
                 onRowSelectionModelChange={(model) => setSelectedIds(model as number[])}
