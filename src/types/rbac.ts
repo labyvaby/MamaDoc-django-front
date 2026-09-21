@@ -115,6 +115,9 @@ export interface UserPermissions {
   authError?: string | null;
   /** Принудительно повторить запрос /auth/me/ без reload страницы (только Django-режим). */
   retryAuth?: () => void;
+  /** Есть ли у пользователя пароль (из /auth/me/): false → в шапке кнопка
+   *  «Установить пароль»; null — бэк поля не прислал (Django-режим). */
+  hasPassword?: boolean | null;
 }
 
 // Конфигурация защищенного маршрута

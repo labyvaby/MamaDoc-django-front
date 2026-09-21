@@ -1249,7 +1249,7 @@ const SidebarFooter: React.FC = () => {
           <>
             <Box>
               <Typography variant="caption" color="text.secondary" display="block">
-                Aximo CRM {appVersion}
+                ErkinAI {appVersion}
               </Typography>
               <Typography variant="caption" color="text.secondary" display="block">
                 © {new Date().getFullYear()}

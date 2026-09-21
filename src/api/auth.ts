@@ -11,7 +11,18 @@ export type DjangoUser = {
   lastName: string;
   isStaff: boolean;
   isSuperuser: boolean;
+  /** Задан ли у пользователя пароль. Сотрудники заводятся без него (вход по
+   *  OTP). Бэк отдаёт поле с 21.09.2026; у старого бэка его нет. */
+  hasPassword?: boolean;
 };
+
+/** true/false — как сказал бэк; null — поле не пришло (старый бэк). Шапка
+ *  показывает «Установить пароль» только при false. */
+export function userHasPassword(
+  user: Pick<DjangoUser, "hasPassword"> | null | undefined,
+): boolean | null {
+  return typeof user?.hasPassword === "boolean" ? user.hasPassword : null;
+}
 
 // ── RBAC shapes (mirrors server/apps/rbac/selectors.py) ───────────────────────
 
