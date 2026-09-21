@@ -54,7 +54,6 @@ import {
   getBooking,
   getBookings,
   updateBookingStatus,
-  bookingHasBranch,
   claimBooking,
   type BookingListItem,
   type BookingStatus,
@@ -207,6 +206,32 @@ function visitHint(b: BookingListItem, tab: BookingTab, todayStr: string, tomorr
   return null;
 }
 
+// ── Ширина таблицы ────────────────────────────────────────────────────────────
+
+/**
+ * Уже этой ширины контейнера таблица прячет второстепенные колонки («Создано»,
+ * «Сумма»), чтобы не уезжать в горизонтальную прокрутку. Мерится контейнер, а
+ * не окно: слева сайдбар, и на одном и том же ноутбуке таблице достаётся то
+ * 900, то 1100 пикселей в зависимости от того, свёрнут ли он.
+ */
+const COMPACT_TABLE_WIDTH = 1040;
+
+/** Текущая ширина элемента; до первого замера — Infinity, чтобы не мигать. */
+function useElementWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
+  const ref = React.useRef<T | null>(null);
+  const [width, setWidth] = React.useState(Number.POSITIVE_INFINITY);
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setWidth(el.getBoundingClientRect().width);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, width];
+}
+
 // ── Состояние фильтров в URL ──────────────────────────────────────────────────
 
 /**
@@ -294,6 +319,8 @@ const BookingsPage: React.FC = () => {
   usePageTitle("Онлайн-запись");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const [tableRef, tableWidth] = useElementWidth<HTMLDivElement>();
+  const compactTable = tableWidth < COMPACT_TABLE_WIDTH;
   const canView = useCan("bookings.view");
   const canManage = useCan("bookings.manage");
   const queryClient = useQueryClient();
@@ -613,7 +640,6 @@ const BookingsPage: React.FC = () => {
   const activeQuery = tab === "triage" ? triageQuery : tab === "upcoming" ? upcomingQuery : journalQuery;
   const listLoading = activeQuery.isLoading;
 
-  const branchLive = rows.some(bookingHasBranch);
   const showsPrepayment = rows.some(hasPrepayment);
   const showsReceived = tab === "triage" && rows.some((b) => b.createdAt);
 
@@ -643,8 +669,8 @@ const BookingsPage: React.FC = () => {
       {
         field: "patientName",
         headerName: t("patientLabel"),
-        flex: 1.2,
-        minWidth: 200,
+        flex: 1.4,
+        minWidth: 150,
         sortable: false,
         renderCell: ({ row }) => (
           <Stack direction="row" alignItems="center" gap={1.25} sx={{ height: "100%", minWidth: 0 }}>
@@ -666,25 +692,15 @@ const BookingsPage: React.FC = () => {
           </Stack>
         ),
       },
-      { field: "doctorName", headerName: t("specialistLabel"), flex: 1, minWidth: 150, sortable: false },
+      { field: "doctorName", headerName: t("specialistLabel"), flex: 1, minWidth: 110, sortable: false },
     ];
-    if (branchLive) {
-      cols.push({
-        field: "branchName",
-        headerName: "Филиал",
-        width: 150,
-        sortable: false,
-        renderCell: ({ row }) => (
-          <Typography variant="body2" color="text.secondary" noWrap>
-            {row.branchName || "—"}
-          </Typography>
-        ),
-      });
-    }
+    // Колонки «Филиал» нет по решению заказчика (22.09.2026): филиал уже
+    // выбран переключателем вверху, а в таблице он только ел ширину.
     cols.push({
       field: "date",
       headerName: "Визит",
-      width: 150,
+      flex: 0.8,
+      minWidth: 112,
       sortable: false,
       renderCell: ({ row }) => {
         const hint = visitHint(row, tab, todayStr, tomorrowStr);
@@ -704,7 +720,7 @@ const BookingsPage: React.FC = () => {
       cols.push({
         field: "createdAt",
         headerName: "Создано",
-        width: 130,
+        width: 100,
         sortable: false,
         renderCell: ({ row }) => (
           <Tooltip title={row.createdAt ? dayjs(row.createdAt).format("DD.MM.YYYY HH:mm") : ""}>
@@ -718,7 +734,7 @@ const BookingsPage: React.FC = () => {
     cols.push({
       field: "totalPrice",
       headerName: "Сумма",
-      width: 110,
+      width: 96,
       sortable: false,
       renderCell: ({ row }) => (
         <Typography variant="body2" fontWeight={600}>
@@ -731,7 +747,10 @@ const BookingsPage: React.FC = () => {
       cols.push({
         field: "status",
         headerName: tab === "upcoming" ? "Оплата" : "Статус",
-        width: showsPrepayment ? 290 : 170,
+        // Чипы переносятся (flexWrap ниже), поэтому колонка тянется, а не
+        // держит ширину под самый длинный вариант.
+        flex: showsPrepayment ? 1.2 : 0.9,
+        minWidth: showsPrepayment ? 170 : 130,
         sortable: false,
         renderCell: ({ row }) => (
           <Stack direction="row" alignItems="center" gap={0.5} flexWrap="wrap" sx={{ py: 0.5 }}>
@@ -755,7 +774,7 @@ const BookingsPage: React.FC = () => {
       cols.push({
         field: "claimedBy",
         headerName: "В работе",
-        width: 150,
+        width: 120,
         sortable: false,
         renderCell: ({ row }) => (
           <Box onClick={(e) => e.stopPropagation()}>
@@ -791,7 +810,6 @@ const BookingsPage: React.FC = () => {
     tab,
     rowMode,
     isNew,
-    branchLive,
     showsReceived,
     showsPrepayment,
     todayStr,
@@ -1039,7 +1057,6 @@ const BookingsPage: React.FC = () => {
                             </Typography>
                             <Typography variant="caption" color="text.secondary" noWrap display="block">
                               {b.doctorName || "—"}
-                              {b.branchName ? ` · ${b.branchName}` : ""}
                             </Typography>
                             <Stack direction="row" alignItems="center" gap={0.75} sx={{ mt: 0.25 }}>
                               <Typography variant="caption" color="text.secondary">
@@ -1121,7 +1138,10 @@ const BookingsPage: React.FC = () => {
               )}
             </Box>
           ) : (
-            <Box sx={{ flex: 1, minHeight: 360, display: "flex", flexDirection: "column", gap: 1 }}>
+            <Box
+              ref={tableRef}
+              sx={{ flex: 1, minHeight: 360, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}
+            >
               {tab === "triage" && triageQuery.data?.truncated && (
                 <Alert severity="info">
                   Заявок больше 1000 — показаны самые свежие. Сузьте выборку фильтром.
@@ -1248,6 +1268,10 @@ const BookingsPage: React.FC = () => {
                    а comfortable раздувает её ячейки и закрашивает первую строку. */
                 rowHeight={64}
                 columnHeaderHeight={theme.appLayout.table.headerRowHeight}
+                // Узкому контейнеру — без «Создано» и «Суммы»: возраст заявки
+                // и цена есть в карточке, а горизонтальная прокрутка прячет
+                // статус и действия, ради которых страницу открывают.
+                columnVisibilityModel={{ createdAt: !compactTable, totalPrice: !compactTable }}
                 onRowClick={(p) => openBooking(p.row.id)}
                 getRowClassName={(p) =>
                   [p.row.date === todayStr ? "row-today" : "", isNew(p.row) ? "row-new" : ""]
