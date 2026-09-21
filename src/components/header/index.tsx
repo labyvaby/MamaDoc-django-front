@@ -165,11 +165,17 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
       }}
       elevation={0}
     >
+      {/* Сетка «лево — заголовок — право»: заголовок центрирован, пока хватает
+          места, а когда правый блок (обновить, «Установить пароль», аватар)
+          шире своей доли — сдвигается и режется многоточием, не наезжая. */}
       <Toolbar
         sx={{
           minHeight: { xs: 56, sm: 64 },
           px: { xs: 1, sm: 2 },
-          gap: { xs: 0.5, sm: 1 },
+          display: "grid",
+          gridTemplateColumns: "1fr minmax(0, auto) 1fr",
+          alignItems: "center",
+          columnGap: { xs: 0.5, sm: 1 },
         }}
       >
         {/* Левая часть: Бургер-меню + Компактный логотип */}
@@ -203,14 +209,11 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
 
         {/* Центр: Заголовок страницы */}
         <Box sx={{
-          position: "absolute",
-          left: "50%",
-          transform: "translateX(-50%)",
+          minWidth: 0,
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
           pointerEvents: "none", // Чтобы не мешать кликам если что
-          maxWidth: { xs: "50%", md: "60%" },
         }}>
           <Typography
             variant="subtitle1"
@@ -229,15 +232,13 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
           </Typography>
         </Box>
 
-        {/* Spacer to push right content if needed, but absolute positioning handles center */}
-        <Box sx={{ flex: 1 }} />
 
         {/* Правая часть: Refresh + Avatar */}
         <Stack
           direction="row"
           alignItems="center"
           spacing={{ xs: 0.5, sm: 1 }}
-          sx={{ ml: "auto" }}
+          sx={{ justifySelf: "end", minWidth: 0 }}
         >
           <IconButton
             color="inherit"

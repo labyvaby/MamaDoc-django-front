@@ -2,7 +2,6 @@ import React from "react";
 import {
   Alert,
   Box,
-  Divider,
   IconButton,
   InputAdornment,
   Stack,
@@ -83,9 +82,6 @@ const ChangePasswordCard: React.FC = () => {
 
   return (
     <AppCard variant="outlined" title="Безопасность">
-      {/* Зачем пароль и как им входить — сюда ведёт кнопка из шапки. */}
-      <PasswordLoginHint />
-      <Divider sx={{ my: 2.5 }} />
       <Box component="form" onSubmit={handleSubmit}>
         <Stack spacing={2} sx={{ maxWidth: 420 }}>
           {error && (
@@ -160,6 +156,11 @@ const ChangePasswordCard: React.FC = () => {
             </AppButton>
           </Box>
         </Stack>
+      </Box>
+
+      {/* Зачем пароль и как им входить — сюда ведёт кнопка из шапки. */}
+      <Box sx={{ mt: 3 }}>
+        <PasswordLoginHint />
       </Box>
     </AppCard>
   );

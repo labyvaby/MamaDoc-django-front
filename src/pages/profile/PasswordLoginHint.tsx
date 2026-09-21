@@ -23,8 +23,8 @@ const Marker: React.FC<{ n: number; sx?: SxProps<Theme> }> = ({ n, sx }) => (
         width: 18,
         height: 18,
         borderRadius: "50%",
-        bgcolor: "primary.main",
-        color: "primary.contrastText",
+        bgcolor: "error.main",
+        color: "error.contrastText",
         fontSize: "0.7rem",
         fontWeight: 700,
         lineHeight: 1,
@@ -157,10 +157,18 @@ const LoginFormMock: React.FC = () => {
   );
 };
 
-/** Зачем сотруднику пароль и как им входить — над формой установки пароля на
- *  вкладке «Безопасность» профиля (туда ведёт кнопка «Установить пароль» в шапке). */
+/** Зачем сотруднику пароль и как им входить — в рамке под формой установки
+ *  пароля на вкладке «Безопасность» профиля (туда ведёт кнопка «Установить
+ *  пароль» в шапке). */
 const PasswordLoginHint: React.FC = () => (
-  <Stack direction={{ xs: "column", md: "row" }} spacing={{ xs: 2, md: 4 }} alignItems={{ md: "flex-start" }}>
+  <Stack
+    component={Paper}
+    variant="outlined"
+    direction={{ xs: "column", md: "row" }}
+    spacing={{ xs: 2, md: 4 }}
+    alignItems={{ md: "flex-start" }}
+    sx={{ p: { xs: 2, md: 2.5 }, borderRadius: "14px" }}
+  >
     <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
       <Typography variant="subtitle2">Зачем нужен пароль</Typography>
       <Typography variant="body2" color="text.secondary">
