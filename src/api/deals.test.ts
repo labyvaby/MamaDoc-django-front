@@ -26,6 +26,7 @@ function deal(over: Partial<Deal> = {}): Deal {
     contactName: "Тест",
     contactUsername: "",
     phone: "+996700000001",
+    customValues: {},
     comment: "",
     patientId: null,
     patientName: null,

@@ -56,7 +56,9 @@ import {
   type DealStageKind,
   DEAL_CARD_ACTIONS,
   type DealCardAction,
+  type DealCustomField,
 } from "../../api/deals";
+import CustomFieldsEditor from "../../components/deals/CustomFieldsEditor";
 import { dealsErrorMessage } from "../deals/meta";
 import BotsSection from "./deals/BotsSection";
 
@@ -142,7 +144,7 @@ const DealsSettingsPage: React.FC = () => {
   const pipelineMutation = useMutation({
     mutationFn: async (action:
       | { kind: "create"; name: string }
-      | { kind: "update"; id: number; payload: { name?: string; isDefault?: boolean; isActive?: boolean; code?: string; clearCode?: boolean; nextTouchHours?: number; cardActions?: DealCardAction[] } }
+      | { kind: "update"; id: number; payload: { name?: string; isDefault?: boolean; isActive?: boolean; code?: string; clearCode?: boolean; nextTouchHours?: number; cardActions?: DealCardAction[]; customFields?: DealCustomField[] } }
       | { kind: "delete"; id: number }): Promise<void> => {
       if (action.kind === "create") {
         await createPipeline({ name: action.name }, orgId);
@@ -427,6 +429,21 @@ const DealsSettingsPage: React.FC = () => {
               </Stack>
             ) : null}
           </Stack>
+
+          {activePipeline ? (
+            <>
+              <Divider />
+              {/* Свои поля карточки для этой воронки. */}
+              <CustomFieldsEditor
+                key={`fields-${activePipeline.id}`}
+                fields={activePipeline.customFields}
+                saving={pipelineMutation.isPending}
+                onSave={(customFields) =>
+                  pipelineMutation.mutate({ kind: "update", id: activePipeline.id, payload: { customFields } })
+                }
+              />
+            </>
+          ) : null}
 
           <Divider />
 
