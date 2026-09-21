@@ -160,27 +160,38 @@ export function suggestInboxRule(inbox: ChatwootInbox): ChatwootInboxRule {
   return { source: inbox.name, identity: "phone", channel: "" };
 }
 
-/** Сотрудник CRM ↔ агент Chatwoot (по email); agentId null — в «Чаты» не попадёт. */
-export interface ChatwootAgentStatus {
-  employeeId: number;
-  fullName: string;
-  email: string;
-  agentId: number | null;
+/** Агент Chatwoot и сотрудник CRM, к которому он привязан. */
+export interface ChatwootAgent {
+  agentId: number;
   agentName: string;
-  linked: boolean;
+  agentEmail: string;
+  employeeId: number | null;
+  employeeName: string;
+  /** link — сохранённая связь; email — подсказка по совпадению; "" — нет. */
+  matchedBy: "link" | "email" | "";
 }
 
-export interface ChatwootAgentsStatus {
+export interface ChatwootAgents {
   ok: boolean;
   error: string;
-  agentsTotal: number;
-  results: ChatwootAgentStatus[];
+  results: ChatwootAgent[];
 }
 
-export function getChatwootAgentsStatus(
+export function getChatwootAgents(
   signal?: AbortSignal,
   opts?: { organizationId?: number },
-): Promise<ChatwootAgentsStatus> {
+): Promise<ChatwootAgents> {
   const qs = opts?.organizationId != null ? `?organizationId=${opts.organizationId}` : "";
-  return apiRequest<ChatwootAgentsStatus>(`/chatwoot/agents-status/${qs}`, { signal });
+  return apiRequest<ChatwootAgents>(`/chatwoot/agents/${qs}`, { signal });
+}
+
+/** Сохранить привязки агент → сотрудник (employeeId null — отвязать). */
+export function saveChatwootAgentLinks(
+  links: { agentId: number; employeeId: number | null }[],
+  opts?: { organizationId?: number },
+): Promise<ChatwootAgents> {
+  return apiRequest<ChatwootAgents>("/chatwoot/agents/links/", {
+    method: "PUT",
+    body: { links, organizationId: opts?.organizationId },
+  });
 }
