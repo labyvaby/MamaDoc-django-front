@@ -46,6 +46,11 @@ export type OldConclusion = {
   conclusion?: string | null;
   /** Филиал, где сделана запись. Есть только у живых заключений. */
   branch_name?: string | null;
+  /**
+   * Строка услуги живого заключения — по ней печать открывает тот же
+   * документ, что из приёма (лист бланка), а не штатный шаблон.
+   */
+  service_line_id?: number | null;
 };
 
 /** Ответ Django: GET /api/medical/legacy-conclusions/ (camelCase). */
@@ -189,6 +194,7 @@ function fromLiveConclusion(row: DjangoPatientConclusion): OldConclusion {
     source: "current",
     conclusion: orNull(row.conclusion),
     branch_name: row.branch?.name ?? null,
+    service_line_id: row.serviceLineId ?? null,
   };
 }
 
