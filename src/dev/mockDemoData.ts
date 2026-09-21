@@ -1602,7 +1602,7 @@ const activeEmployeePool = (): MockEmployee[] => MOCK_EMPLOYEES;
 const activeServicePool = () => MOCK_SERVICES;
 const activeBranchName = (): string => MOCK_BRANCH_NAME;
 
-// ── «Шахматка броней» — верхние карточки-сводка ─────────────────────────────
+// ── «Бронирования» — верхние карточки-сводка ────────────────────────────────
 //
 // В нашем API нет сущности «номер» (appointments/scheduling режут по
 // сотруднику, не по помещению) — это чисто витринные цифры для демонстрации

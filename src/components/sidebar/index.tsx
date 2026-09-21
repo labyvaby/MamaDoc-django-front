@@ -780,7 +780,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Расписание — у Viva это шахматка броней, не расписание смен, поэтому своя подпись. */}
         {show("my-work") && can_.schedule && (
-          <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label={hotelOnly ? "Шахматка броней" : "Расписание"} collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label={hotelOnly ? "Бронирования" : "Расписание"} collapsed={siderCollapsed} />
         )}
 
         {/* СКУД */}
