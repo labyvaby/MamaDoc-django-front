@@ -13,9 +13,9 @@ export const SET_PASSWORD_LABEL = "Установить пароль";
 export const SET_PASSWORD_TARGET = "/profile?tab=security";
 
 /** Кнопка в шапке, пока у пользователя нет пароля (`hasPassword === false` в
- *  /auth/me/). На телефоне — круглая иконка в стиле «Обновить», шире — контурная
- *  кнопка с текстом; переключение по CSS-брейкпоинту (`display`), как у имени
- *  рядом с аватаром. Ничего не рендерит, если бэк поля не прислал (null) или
+ *  /auth/me/). До `md` (768px в теме приложения: sm=360, md=768) — круглая
+ *  иконка в стиле «Обновить», шире — контурная кнопка с текстом; переключение
+ *  по CSS-брейкпоинту (`display`), как у имени рядом с аватаром. Ничего не рендерит, если бэк поля не прислал (null) или
  *  пароль уже есть. */
 const SetPasswordButton: React.FC = () => {
   const { hasPassword } = usePermissions();
@@ -34,7 +34,7 @@ const SetPasswordButton: React.FC = () => {
           aria-label={SET_PASSWORD_LABEL}
           onClick={go}
           sx={{
-            display: { xs: "inline-flex", sm: "none" },
+            display: { xs: "inline-flex", md: "none" },
             p: 0.5,
             bgcolor: (theme) => subtleBg(theme),
             borderRadius: "50%",
@@ -50,7 +50,7 @@ const SetPasswordButton: React.FC = () => {
         startIcon={<KeyOutlined />}
         onClick={go}
         sx={{
-          display: { xs: "none", sm: "inline-flex" },
+          display: { xs: "none", md: "inline-flex" },
           whiteSpace: "nowrap",
           borderRadius: "999px",
           fontWeight: 600,
