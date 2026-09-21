@@ -31,10 +31,18 @@ export type DealStageKind = "open" | "won" | "lost";
 
 export type DealActivityType = "call" | "message" | "visit" | "note";
 
+/** Мессенджер, в котором живёт разговор (фиксированный enum, для иконки). */
+export type DealChannel = "whatsapp" | "instagram" | "telegram" | "web" | "phone" | "other";
+
+/** Кто сделал запись: сотрудник или интеграционный бот. */
+export type DealActorKind = "employee" | "bot";
+
 export interface DealStage {
   id: number;
   pipelineId: number;
   name: string;
+  /** Стабильный код для бота (`new`, `contacted`, …); null — этап боту недоступен. */
+  code: string | null;
   /** hex, приходит из настроек этапа: используем как есть, своей палитры не навязываем. */
   color: string;
   order: number;
@@ -47,6 +55,8 @@ export interface DealStage {
 export interface DealPipeline {
   id: number;
   name: string;
+  /** Код для интеграций (`sales`); null — не задан. */
+  code: string | null;
   isDefault: boolean;
   isActive: boolean;
   order: number;
@@ -106,6 +116,21 @@ export interface Deal {
   isSlaBreached: boolean;
   /** Дробное число дней с последнего входа в этап (0.04 — час); null — лога нет. */
   daysInStage: number | null;
+  /** Разговор в Chatwoot, если сделку завёл или привязал бот. */
+  conversationId: number | null;
+  contactId: number | null;
+  channel: DealChannel;
+  /** Снимок названия инбокса Chatwoot. */
+  inboxName: string;
+  /** Прямая ссылка на разговор; null — нет разговора или у организации выключен Chatwoot. */
+  chatUrl: string | null;
+  /** Последнее касание любого типа — «касание 12 мин назад» на карточке. */
+  lastActivityAt: string | null;
+  createdByBotId: number | null;
+  /** Кто создал: сотрудник или бот; null — автора нет. */
+  actorKind: DealActorKind | null;
+  /** Цвет бота-создателя (только при actorKind === "bot"). */
+  actorColor: string | null;
 }
 
 export interface DealItem {
@@ -124,6 +149,8 @@ export interface DealActivity {
   dealId: number;
   actorId: number | null;
   actorName: string | null;
+  actorKind: DealActorKind | null;
+  actorColor: string | null;
   type: DealActivityType;
   note: string;
   occurredAt: string;
@@ -135,6 +162,8 @@ export interface DealStageLogEntry {
   dealId: number;
   actorId: number | null;
   actorName: string | null;
+  actorKind: DealActorKind | null;
+  actorColor: string | null;
   fromStageId: number | null;
   fromStageName: string | null;
   toStageId: number;
@@ -150,6 +179,8 @@ export interface DealChangeLogEntry {
   dealId: number;
   actorId: number | null;
   actorName: string | null;
+  actorKind: DealActorKind | null;
+  actorColor: string | null;
   /** Пока пишутся только `amount` и `assignee`. */
   field: string;
   oldValue: string | null;
@@ -289,6 +320,13 @@ export interface CreateDealPayload {
   pipelineId?: number;
   /** Не передан — первый активный open-этап; won/lost при создании запрещены (400). */
   stageId?: number;
+  /** Альтернатива stageId/pipelineId — коды из настроек; оба сразу → 400. */
+  stageCode?: string;
+  pipelineCode?: string;
+  conversationId?: number;
+  contactId?: number;
+  channel?: DealChannel;
+  inboxName?: string;
   patientId?: number;
   assigneeId?: number;
   sourceId?: number;
@@ -318,10 +356,18 @@ export interface UpdateDealPayload {
   clearLostReason?: boolean;
   clearSource?: boolean;
   clearBranch?: boolean;
+  conversationId?: number;
+  contactId?: number;
+  channel?: DealChannel;
+  inboxName?: string;
+  /** Обнуляет разговор и контакт Chatwoot. */
+  clearConversation?: boolean;
 }
 
 export interface MoveDealPayload {
-  stageId: number;
+  /** Либо stageId, либо stageCode — не оба. */
+  stageId?: number;
+  stageCode?: string;
   /** 0-based индекс, куда карточка встала; колонки перенумеровывает сервер. */
   position: number;
   /**
@@ -499,7 +545,7 @@ export async function getPipelines(
 }
 
 export function createPipeline(
-  payload: { name: string; isDefault?: boolean },
+  payload: { name: string; isDefault?: boolean; code?: string },
   organizationId?: number,
 ): Promise<DealPipeline> {
   return apiRequest<DealPipeline>(withOrg("/deals/pipelines/", organizationId), {
@@ -510,7 +556,14 @@ export function createPipeline(
 
 export function updatePipeline(
   pipelineId: number,
-  payload: { name?: string; isDefault?: boolean; isActive?: boolean; order?: number },
+  payload: {
+    name?: string;
+    isDefault?: boolean;
+    isActive?: boolean;
+    order?: number;
+    code?: string;
+    clearCode?: boolean;
+  },
   organizationId?: number,
 ): Promise<DealPipeline> {
   return apiRequest<DealPipeline>(withOrg(`/deals/pipelines/${pipelineId}/`, organizationId), {
@@ -546,6 +599,8 @@ export async function getStages(
 export interface StagePayload {
   pipelineId: number;
   name: string;
+  /** Slug `^[a-z0-9][a-z0-9_-]{0,63}$`; null — без кода. */
+  code?: string | null;
   color?: string;
   kind?: DealStageKind;
   slaDays?: number | null;
@@ -562,7 +617,7 @@ export function createStage(payload: StagePayload, organizationId?: number): Pro
 
 export function updateStage(
   stageId: number,
-  payload: Partial<Omit<StagePayload, "pipelineId">> & { isActive?: boolean },
+  payload: Partial<Omit<StagePayload, "pipelineId">> & { isActive?: boolean; clearCode?: boolean },
   organizationId?: number,
 ): Promise<DealStage> {
   return apiRequest<DealStage>(withOrg(`/deals/stages/${stageId}/`, organizationId), {
@@ -894,4 +949,110 @@ export async function getDealChangelog(
     { signal },
   );
   return res.results ?? [];
+}
+
+// ── Боты и API-ключи ─────────────────────────────────────────────────────────
+
+/**
+ * Интеграционный бот: служебный пользователь с ролью «Бот воронки» и
+ * партнёрскими ключами. Действия бота видны в истории как `actorKind: "bot"`.
+ */
+export interface DealBot {
+  id: number;
+  name: string;
+  color: string;
+  /** Филиал, которым штампуются сделки бота; null — общеорганизационные. */
+  branchId: number | null;
+  branchName: string | null;
+  isActive: boolean;
+  activeKeysCount: number;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+/** Ключ в списке — без секрета, только префикс для опознания. */
+export interface DealBotKey {
+  id: number;
+  label: string;
+  prefix: string;
+  isActive: boolean;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+/** Ответ на выпуск: секрет показывается один раз и нигде больше не хранится. */
+export interface DealBotIssuedKey {
+  key: DealBotKey;
+  secret: string;
+}
+
+export async function getBots(organizationId?: number, signal?: AbortSignal): Promise<DealBot[]> {
+  const res = await apiRequest<ResultsEnvelope<DealBot>>(withOrg("/deals/bots/", organizationId), {
+    signal,
+  });
+  return res.results ?? [];
+}
+
+export function createBot(
+  payload: { name: string; color?: string; branchId?: number },
+  organizationId?: number,
+): Promise<DealBot> {
+  return apiRequest<DealBot>(withOrg("/deals/bots/", organizationId), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+/** Выключение бота (`isActive: false`) отзывает доступ по всем его ключам сразу. */
+export function updateBot(
+  botId: number,
+  payload: { name?: string; color?: string; isActive?: boolean; branchId?: number; clearBranch?: boolean },
+  organizationId?: number,
+): Promise<DealBot> {
+  return apiRequest<DealBot>(withOrg(`/deals/bots/${botId}/`, organizationId), {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function getBotKeys(
+  botId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<DealBotKey[]> {
+  const res = await apiRequest<ResultsEnvelope<DealBotKey>>(
+    withOrg(`/deals/bots/${botId}/keys/`, organizationId),
+    { signal },
+  );
+  return res.results ?? [];
+}
+
+export function issueBotKey(
+  botId: number,
+  payload: { label: string; expiresAt?: string },
+  organizationId?: number,
+): Promise<DealBotIssuedKey> {
+  return apiRequest<DealBotIssuedKey>(withOrg(`/deals/bots/${botId}/keys/`, organizationId), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+/** Отзыв — деактивация; строка ключа остаётся в списке как неактивная. */
+export function revokeBotKey(botId: number, keyId: number, organizationId?: number): Promise<void> {
+  return apiRequest<void>(withOrg(`/deals/bots/${botId}/keys/${keyId}/`, organizationId), {
+    method: "DELETE",
+  });
+}
+
+/** Карта для бота: активные воронки с кодами этапов и справочники одним запросом. */
+export interface DealsMeta {
+  pipelines: DealPipeline[];
+  sources: DealDictionaryItem[];
+  lostReasons: DealDictionaryItem[];
+}
+
+export function getDealsMeta(organizationId?: number, signal?: AbortSignal): Promise<DealsMeta> {
+  return apiRequest<DealsMeta>(withOrg("/deals/meta/", organizationId), { signal });
 }
