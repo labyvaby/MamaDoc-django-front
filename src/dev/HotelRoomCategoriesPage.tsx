@@ -7,7 +7,9 @@
  * категории — типы номеров с ценой за ночь, которые в интерфейсе называют
  * тарифами, — смотрятся здесь.
  *
- * Здесь только список. Добавление («Добавить категорию» → /room-categories/new)
+ * Здесь только список категорий и их тарифов (цена за ночь, гости, характеристики)
+ * без самих номеров — ни счётчика, ни перечня: номера живут на странице «Номера»
+ * (HotelRoomsPage.tsx). Добавление («Добавить категорию» → /room-categories/new)
  * и правка («Изменить» → /room-categories/:categoryId) — отдельная страница-форма
  * HotelRoomCategoryFormPage.tsx, а не диалог.
  *
@@ -72,10 +74,8 @@ export const HotelRoomCategoriesPage: React.FC = () => {
       </Stack>
 
       <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-        Категория (тариф) — тип номера с ценой за ночь. Цена категории — это номер «без ничего»: каждая
-        отмеченная характеристика добавляет свою наценку сверху, итог считает бэкенд и показан в карточке
-        категории и в «Изменить». Сами номера заводятся в разделе «Номера» — они привязываются к категории
-        и сразу появляются в шахматке броней и в списке выбора при создании брони.
+        Категория (тариф) — цена за ночь и набор характеристик. Цена задаётся без характеристик: каждая
+        отмеченная характеристика добавляет свою наценку сверху, итог считает бэкенд и показан в списке.
       </Alert>
 
       {loading ? (
@@ -105,8 +105,7 @@ export const HotelRoomCategoriesPage: React.FC = () => {
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {totalPrice.toLocaleString("ru-RU")} сом/ночь
-                      {totalPrice !== basePrice && ` (база ${basePrice.toLocaleString("ru-RU")})`} · до {cat.capacity} гостей ·
-                      номеров: {cat.roomsCount}
+                      {totalPrice !== basePrice && ` (база ${basePrice.toLocaleString("ru-RU")})`} · до {cat.capacity} гостей
                     </Typography>
                   </Stack>
                   <Button
