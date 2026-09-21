@@ -33,6 +33,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { SettingsLayout } from "./SettingsLayout";
 import {
+  getChatwootAgentsStatus,
   getChatwootLeadSettings,
   rotateChatwootLeadSecret,
   saveChatwootLeadSettings,
@@ -65,6 +66,8 @@ import { useT } from "../../i18n/VerticalProvider";
 
 type Form = {
   enabled: boolean;
+  chatsEnabled: boolean;
+  accountId: string;
   apiToken: string;
   apiTokenClear: boolean;
   pipelineCode: string;
@@ -98,6 +101,8 @@ function codeOf(item: DealPipeline | DealStage): string {
 function toForm(settings: ChatwootLeadSettings): Form {
   return {
     enabled: settings.enabled,
+    chatsEnabled: settings.chatsEnabled,
+    accountId: settings.accountId == null ? "" : String(settings.accountId),
     apiToken: "",
     apiTokenClear: false,
     pipelineCode: settings.pipelineCode,
@@ -149,6 +154,15 @@ export default function ChatwootLeadsSettingsPage() {
   React.useEffect(() => {
     if (settingsQuery.data) setForm(toForm(settingsQuery.data));
   }, [settingsQuery.data]);
+
+  /* Кто из сотрудников попадёт в «Чаты»: сопоставление по email с агентами
+     аккаунта. Грузим, когда аккаунт задан; ошибка сети — не ошибка страницы. */
+  const agentsQuery = useQuery({
+    queryKey: ["django", "chatwoot", "agents-status", orgId ?? null],
+    queryFn: ({ signal }) => getChatwootAgentsStatus(signal, { organizationId: orgId }),
+    enabled: !!settingsQuery.data && settingsQuery.data.accountId != null,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const pipelinesQuery = useQuery({
     queryKey: ["django", "deals", "pipelines", orgId ?? null, "chatwoot-settings"] as const,
@@ -244,8 +258,11 @@ export default function ChatwootLeadsSettingsPage() {
     setBusy(true);
     setSaveError(null);
     try {
+      const accountId = form.accountId.trim() === "" ? null : Number(form.accountId);
       const saved = await saveChatwootLeadSettings({
         enabled: form.enabled,
+        chatsEnabled: form.chatsEnabled,
+        ...(accountId != null && Number.isInteger(accountId) && accountId > 0 ? { accountId } : {}),
         chatwootApiToken: form.apiToken,
         chatwootApiTokenClear: form.apiTokenClear,
         pipelineCode: form.pipelineCode,
@@ -331,6 +348,94 @@ export default function ChatwootLeadsSettingsPage() {
 
         {form && settings && (
           <>
+            {/* Раздел «Чаты»: встроенный Chatwoot и кто из сотрудников в него попадёт. */}
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <Stack spacing={2}>
+                <Typography variant="subtitle1" fontWeight={600}>
+                  {t("chatwoot.chats.title")}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {t("chatwoot.chats.description")}
+                </Typography>
+                <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={form.chatsEnabled}
+                        onChange={(e) => patch({ chatsEnabled: e.target.checked })}
+                        disabled={busy}
+                      />
+                    }
+                    label={t("chatwoot.chats.enabled")}
+                  />
+                  <TextField
+                    size="small"
+                    label={t("chatwoot.chats.accountId")}
+                    value={form.accountId}
+                    onChange={(e) => patch({ accountId: e.target.value.replace(/[^0-9]/g, "") })}
+                    disabled={busy || !isSuper}
+                    helperText={isSuper ? t("chatwoot.chats.accountHelper") : t("chatwoot.chats.accountLocked")}
+                    inputProps={{ inputMode: "numeric" }}
+                    sx={{ width: 220 }}
+                  />
+                </Stack>
+
+                {settings.accountId != null ? (
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      {t("chatwoot.chats.agentsTitle")}
+                    </Typography>
+                    {agentsQuery.isLoading ? (
+                      <CircularProgress size={18} />
+                    ) : agentsQuery.data && !agentsQuery.data.ok ? (
+                      <Alert severity="warning">{agentsQuery.data.error}</Alert>
+                    ) : agentsQuery.data ? (
+                      <>
+                        <Typography variant="caption" color="text.secondary">
+                          {t("chatwoot.chats.agentsSummary", {
+                            matched: agentsQuery.data.results.filter((r) => r.agentId != null).length,
+                            total: agentsQuery.data.results.length,
+                            agents: agentsQuery.data.agentsTotal,
+                          })}
+                        </Typography>
+                        <Table size="small" sx={{ mt: 1 }}>
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>{t("chatwoot.chats.colEmployee")}</TableCell>
+                              <TableCell>{t("chatwoot.chats.colEmail")}</TableCell>
+                              <TableCell>{t("chatwoot.chats.colAgent")}</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {agentsQuery.data.results.map((row) => (
+                              <TableRow key={row.employeeId}>
+                                <TableCell>{row.fullName}</TableCell>
+                                <TableCell sx={{ color: row.email ? "text.primary" : "text.disabled" }}>
+                                  {row.email || t("chatwoot.chats.noEmail")}
+                                </TableCell>
+                                <TableCell>
+                                  {row.agentId != null ? (
+                                    <Chip
+                                      size="small"
+                                      color="success"
+                                      variant="outlined"
+                                      label={row.agentName || `#${row.agentId}`}
+                                    />
+                                  ) : (
+                                    <Chip size="small" variant="outlined" label={t("chatwoot.chats.noAgent")} />
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </>
+                    ) : null}
+                  </Box>
+                ) : null}
+              </Stack>
+            </Paper>
+
             <Box>
               <FormControlLabel
                 control={
