@@ -93,6 +93,18 @@ const LeadInfoCard: React.FC<LeadInfoCardProps> = ({
     enabled: !linked && canUpdate && debounced.trim().length >= 2,
   });
 
+  /* Ровно один клиент с этим номером — привязываем сами, без клика; при
+     нескольких оставляем выбор. После «Отвязать» повторно не привязываем:
+     это было осознанное решение сотрудника. */
+  const autoLinkedFor = React.useRef<number | null>(null);
+  const candidates = candidatesQuery.data;
+  React.useEffect(() => {
+    if (linked || !canUpdate || busy || !candidates || candidates.length !== 1) return;
+    if (autoLinkedFor.current === deal.id) return;
+    autoLinkedFor.current = deal.id;
+    onLinkPatient(candidates[0].id);
+  }, [linked, canUpdate, busy, candidates, deal.id, onLinkPatient]);
+
   const url = profileUrl(deal.channel, deal.contactUsername);
   const copy = async (text: string) => {
     if (await copyText(text)) onNotify(t("detail.copied"));
@@ -204,7 +216,10 @@ const LeadInfoCard: React.FC<LeadInfoCardProps> = ({
               {(candidatesQuery.data?.length ?? 0) > 0 ? (
                 <Stack gap={0.5}>
                   <Typography variant="caption" color="text.secondary">
-                    {t("detail.clientCandidates")}:
+                    {(candidatesQuery.data?.length ?? 0) > 1
+                      ? t("detail.clientCandidatesMany")
+                      : t("detail.clientCandidates")}
+                    :
                   </Typography>
                   <Stack direction="row" gap={0.75} flexWrap="wrap">
                     {candidatesQuery.data?.map((candidate) => (

@@ -470,6 +470,7 @@ const DealsPage: React.FC = () => {
         canManage={canManage}
         canOverrideAmount={canOverrideAmount}
         nextTouchHours={activePipeline?.nextTouchHours ?? 24}
+        cardActions={activePipeline?.cardActions}
       />
 
       <Snackbar
