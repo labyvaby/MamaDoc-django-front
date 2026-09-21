@@ -42,6 +42,8 @@ export interface ChatwootLeadSettings {
   enabled: boolean;
   /** Аккаунт Chatwoot организации (из подключения «Чаты»); null — не настроен. */
   accountId: number | null;
+  /** Раздел «Чаты» (встроенный Chatwoot) включён для организации. */
+  chatsEnabled: boolean;
   /** Готовая ссылка приёмника с секретом; пустая, пока настройки ни разу не сохранены. */
   webhookUrl: string;
   apiTokenConfigured: boolean;
@@ -54,6 +56,9 @@ export interface ChatwootLeadSettings {
 
 export interface ChatwootLeadSettingsInput {
   enabled: boolean;
+  /** Раздел «Чаты» и аккаунт: не передавать — не трогать. */
+  chatsEnabled?: boolean;
+  accountId?: number | null;
   chatwootApiToken: string;
   chatwootApiTokenClear: boolean;
   pipelineCode: string;
@@ -153,4 +158,29 @@ export function suggestInboxRule(inbox: ChatwootInbox): ChatwootInboxRule {
     return { source: "Сайт", identity: "username", channel: "web" };
   }
   return { source: inbox.name, identity: "phone", channel: "" };
+}
+
+/** Сотрудник CRM ↔ агент Chatwoot (по email); agentId null — в «Чаты» не попадёт. */
+export interface ChatwootAgentStatus {
+  employeeId: number;
+  fullName: string;
+  email: string;
+  agentId: number | null;
+  agentName: string;
+  linked: boolean;
+}
+
+export interface ChatwootAgentsStatus {
+  ok: boolean;
+  error: string;
+  agentsTotal: number;
+  results: ChatwootAgentStatus[];
+}
+
+export function getChatwootAgentsStatus(
+  signal?: AbortSignal,
+  opts?: { organizationId?: number },
+): Promise<ChatwootAgentsStatus> {
+  const qs = opts?.organizationId != null ? `?organizationId=${opts.organizationId}` : "";
+  return apiRequest<ChatwootAgentsStatus>(`/chatwoot/agents-status/${qs}`, { signal });
 }
