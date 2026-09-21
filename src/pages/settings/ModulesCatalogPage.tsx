@@ -43,6 +43,7 @@ const ModulesCatalogPage: React.FC = () => {
   }
 
   return (
+    <Box sx={{ height: "100%", overflowY: "auto", minHeight: 0 }}>
     <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 900, mx: "auto" }}>
       <Typography variant="h5" sx={{ fontWeight: 500 }}>
         Модули
@@ -136,6 +137,7 @@ const ModulesCatalogPage: React.FC = () => {
         message="Скоро — обратитесь к вашему менеджеру, чтобы подключить модуль"
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       />
+    </Box>
     </Box>
   );
 };
