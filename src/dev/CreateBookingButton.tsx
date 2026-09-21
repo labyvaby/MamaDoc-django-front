@@ -459,6 +459,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
 
       void queryClient.invalidateQueries({ queryKey: ["hotel", "calendar"] });
       void queryClient.invalidateQueries({ queryKey: ["hotel", "reservations"] });
+      // Новая бронь на сегодня/завтра двигает «Загрузку» и «Заезды» в карточках над шахматкой.
+      void queryClient.invalidateQueries({ queryKey: ["hotel", "dashboard"] });
       setOpen(false);
       setToast(`Бронь №${reservation.number} для «${guestName.trim()}» добавлена в шахматку`);
       reset();

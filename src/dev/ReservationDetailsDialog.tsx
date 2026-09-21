@@ -145,6 +145,11 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const invalidateReservation = () => {
     void queryClient.invalidateQueries({ queryKey: ["hotel", "reservation", reservationId] });
     void queryClient.invalidateQueries({ queryKey: ["hotel", "calendar"] });
+    // Карточки над шахматкой (HotelOccupancyBanner) считает бэкенд: выезд ставит
+    // номеру «Грязно» и заводит задачу уборки, заселение/отмена двигают заезды и
+    // загрузку. Без этого они подтягивались бы только при следующем фокусе окна.
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "dashboard"] });
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "housekeepingTasks"] });
   };
 
   const handleConfirm = async () => {
