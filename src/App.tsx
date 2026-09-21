@@ -645,19 +645,12 @@ function App() {
                             </RequirePermission>
                           }
                         />
-                        {/* Интеграции (каналы продаж) — пока только Viva, своего
-                            права в PAGE_PERMISSIONS нет: страница сама
+                        {/* Интеграции (каналы продаж) переехали в «Настройки»
+                            (/settings/integrations) — старую ссылку не ломаем. */}
+                        <Route path="integrations" element={<Navigate to="/settings/integrations" replace />} />
+                        {/* Кухня (меню/закупка) — пока только Viva: своего
+                            права в PAGE_PERMISSIONS нет, страница сама
                             редиректит на "/", если открыта не из Viva. */}
-                        <Route
-                          path="integrations"
-                          element={
-                            <Suspense fallback={<LinearProgress />}>
-                              <HotelIntegrationsPage />
-                            </Suspense>
-                          }
-                        />
-                        {/* Кухня (меню/закупка) — пока только Viva, тот же
-                            принцип, что и «Интеграции» выше. */}
                         <Route
                           path="kitchen"
                           element={
@@ -1045,6 +1038,16 @@ function App() {
                                 <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.rooms}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <HotelRoomsSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/integrations"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.integrations}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <HotelIntegrationsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

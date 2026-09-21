@@ -44,6 +44,7 @@ import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 import PercentOutlined from "@mui/icons-material/PercentOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
+import HubOutlined from "@mui/icons-material/HubOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
@@ -186,6 +187,12 @@ const TAB_DEFS: TabDef[] = [
     group: "catalogs",
   },
   {
+    key: "integrations",
+    to: "/settings/integrations",
+    icon: <HubOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
     key: "conclusionForms",
     to: "/settings/conclusion-forms",
     icon: <DescriptionOutlined fontSize="small" />,
@@ -272,6 +279,7 @@ export function useVisibleSettingsTabs(): TabDef[] {
     if (tab.key === "productAttributes" && activeOrganization?.vertical !== "retail") return false;
     if (tab.key === "clients" && activeOrganization?.vertical !== "retail") return false;
     if (tab.key === "rooms" && activeOrganization?.vertical !== "hotel") return false;
+    if (tab.key === "integrations" && activeOrganization?.vertical !== "hotel") return false;
     // Справочник способов безнала: на бэке эндпоинта ещё нет — вкладку
     // показываем только вместе с остальным UI, по флагу (api/cashlessMethods.ts).
     if (tab.key === "cashlessMethods" && !CASHLESS_METHODS_ENABLED) return false;
