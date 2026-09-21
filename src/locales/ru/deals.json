@@ -90,7 +90,7 @@
     "activities": "Касания",
     "addActivity": "Записать касание",
     "activityNote": "Что было",
-    "history": "История этапов",
+    "history": "История",
     "changes": "Правки суммы и ответственного",
     "changedAmount": "Сумма: {{from}} → {{to}}",
     "changedAssignee": "Ответственный: {{from}} → {{to}}",
@@ -149,7 +149,11 @@
     "stageLocked": "Вернуть в работу может только руководитель",
     "sourceLabel": "Источник",
     "changedAssigneeAuto": "Ответственный назначен автоматически: {{to}}",
-    "clientCandidatesMany": "Несколько клиентов с этим номером — выберите"
+    "clientCandidatesMany": "Несколько клиентов с этим номером — выберите",
+    "feedCreated": "Создано",
+    "feedStage": "Этап",
+    "feedAmount": "Сумма",
+    "feedAssignee": "Ответственный"
   },
   "activity": {
     "call": "Звонок",

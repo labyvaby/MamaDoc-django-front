@@ -103,6 +103,19 @@ type DealDetailDrawerProps = {
 
 const ACTIVITY_TYPES: DealActivityType[] = ["call", "message", "visit", "note"];
 
+/** Запись единой ленты истории: касание, переход этапа, правка или создание. */
+interface HistoryEntry {
+  key: string;
+  at: string;
+  label: string;
+  text?: string;
+  /** Справа мелким: например, сколько сделка пробыла в этапе. */
+  meta?: string;
+  actorName: string | null;
+  actorKind: "employee" | "bot" | null;
+  actorColor: string | null;
+}
+
 /** Шаг минут у пикера даты-времени: значение вне сетки он подсвечивает как ошибку. */
 const TOUCH_MINUTES_STEP = 15;
 
@@ -256,10 +269,69 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   };
 
   /** Имя сотрудника по id из лога правок (там хранятся только id). */
-  const employeeName = (value: string | null) => {
-    if (!value) return "—";
-    return employees.find((e) => String(e.id) === value)?.fullName ?? value;
-  };
+  const employeeName = React.useCallback(
+    (value: string | null) => {
+      if (!value) return "—";
+      return employees.find((e) => String(e.id) === value)?.fullName ?? value;
+    },
+    [employees],
+  );
+
+  /* Единая лента истории: касания, переходы этапов, правки и создание сделки
+     сшиваются по времени. Раздельные списки заставляли искать «что было» в
+     трёх местах. */
+  const feed = React.useMemo<HistoryEntry[]>(() => {
+    if (!detail || !deal) return [];
+    const entries: HistoryEntry[] = [];
+    for (const a of detail.activities) {
+      entries.push({
+        key: `a-${a.id}`,
+        at: a.occurredAt,
+        label: DEAL_ACTIVITY_META[a.type]?.label ?? a.type,
+        text: a.note,
+        actorName: a.actorName,
+        actorKind: a.actorKind,
+        actorColor: a.actorColor,
+      });
+    }
+    for (const log of detail.stageLog) {
+      const first = log.fromStageName == null;
+      entries.push({
+        key: `s-${log.id}`,
+        at: log.enteredAt,
+        label: first ? t("detail.feedCreated") : t("detail.feedStage"),
+        text: first ? log.toStageName : `${log.fromStageName} → ${log.toStageName}`,
+        meta: stageDurationLabel(log.durationHours) ?? undefined,
+        actorName: log.actorName ?? (first ? deal.createdByName : null),
+        actorKind: log.actorKind ?? (first ? deal.actorKind : null),
+        actorColor: log.actorColor ?? (first ? deal.actorColor : null),
+      });
+    }
+    for (const log of detail.changeLog) {
+      const auto = !log.oldValue && log.actorId != null && String(log.actorId) === log.newValue;
+      entries.push({
+        key: `c-${log.id}`,
+        at: log.createdAt,
+        label: log.field === "amount" ? t("detail.feedAmount") : t("detail.feedAssignee"),
+        text:
+          log.field === "amount"
+            ? t("detail.changedAmount", {
+                from: formatKGS(log.oldValue ?? "0"),
+                to: formatKGS(log.newValue ?? "0"),
+              })
+            : auto
+              ? t("detail.changedAssigneeAuto", { to: employeeName(log.newValue) })
+              : t("detail.changedAssignee", {
+                  from: employeeName(log.oldValue),
+                  to: employeeName(log.newValue),
+                }),
+        actorName: log.actorName,
+        actorKind: log.actorKind,
+        actorColor: log.actorColor,
+      });
+    }
+    return entries.sort((x, y) => dayjs(y.at).valueOf() - dayjs(x.at).valueOf());
+  }, [detail, deal, t, employeeName]);
 
   const invalidate = React.useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.deals.all });
@@ -774,20 +846,6 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                   </Stack>
                 ) : null}
 
-                {detail.activities.map((a) => (
-                  <Stack key={a.id} gap={0.25} sx={{ py: 0.5 }}>
-                    <Stack direction="row" alignItems="baseline" gap={1}>
-                      <Typography variant="caption" fontWeight={600}>
-                        {DEAL_ACTIVITY_META[a.type]?.label ?? a.type}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {exactMoment(a.occurredAt)}
-                      </Typography>
-                      <ActorLabel name={a.actorName} kind={a.actorKind} color={a.actorColor} />
-                    </Stack>
-                    {a.note ? <Typography variant="body2">{a.note}</Typography> : null}
-                  </Stack>
-                ))}
               </Stack>
 
               <Divider />
@@ -824,61 +882,33 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                   </Typography>
                 ) : null}
 
-                {[...detail.stageLog].reverse().map((log) => (
-                  <Stack key={log.id} direction="row" alignItems="baseline" gap={1}>
-                    <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
-                      {log.fromStageName ? `${log.fromStageName} → ${log.toStageName}` : log.toStageName}
-                    </Typography>
-                    {stageDurationLabel(log.durationHours) ? (
-                      <Typography variant="caption" color="text.secondary" noWrap>
-                        {stageDurationLabel(log.durationHours)}
+                {/* Единая лента: касания, переходы этапов, правки и создание —
+                    по времени, свежее сверху. */}
+                {feed.map((entry) => (
+                  <Stack key={entry.key} gap={0.25} sx={{ py: 0.5 }}>
+                    <Stack direction="row" alignItems="baseline" gap={1} sx={{ minWidth: 0 }}>
+                      <Typography variant="caption" fontWeight={600} sx={{ whiteSpace: "nowrap" }}>
+                        {entry.label}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
+                        {exactMoment(entry.at)}
+                      </Typography>
+                      <ActorLabel name={entry.actorName} kind={entry.actorKind} color={entry.actorColor} />
+                      {entry.meta ? (
+                        <Typography variant="caption" color="text.disabled" noWrap sx={{ ml: "auto" }}>
+                          {entry.meta}
+                        </Typography>
+                      ) : null}
+                    </Stack>
+                    {entry.text ? (
+                      <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                        {entry.text}
                       </Typography>
                     ) : null}
-                    <ActorLabel name={log.actorName} kind={log.actorKind} color={log.actorColor} />
-                    <Typography variant="caption" color="text.disabled" noWrap>
-                      {exactMoment(log.enteredAt)}
-                    </Typography>
                   </Stack>
                 ))}
 
-                {detail.changeLog.length > 0 ? (
-                  <>
-                    <Typography variant="subtitle2" sx={{ mt: 1 }}>
-                      {t("detail.changes")}
-                    </Typography>
-                    {detail.changeLog.map((log) => (
-                      <Stack key={log.id} direction="row" alignItems="baseline" gap={1}>
-                        <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
-                          {log.field === "amount"
-                            ? t("detail.changedAmount", {
-                                from: formatKGS(log.oldValue ?? "0"),
-                                to: formatKGS(log.newValue ?? "0"),
-                              })
-                            : !log.oldValue && log.actorId != null && String(log.actorId) === log.newValue
-                              ? t("detail.changedAssigneeAuto", { to: employeeName(log.newValue) })
-                              : t("detail.changedAssignee", {
-                                  from: employeeName(log.oldValue),
-                                  to: employeeName(log.newValue),
-                                })}
-                        </Typography>
-                        <Typography variant="caption" color="text.disabled" noWrap>
-                          {log.actorName ?? ""} {exactMoment(log.createdAt)}
-                        </Typography>
-                      </Stack>
-                    ))}
-                  </>
-                ) : null}
-
-                <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 1 }}>
-                  <Stack direction="row" alignItems="center" gap={0.5}>
-                    {deal.actorKind === "bot" ? (
-                      <SmartToyOutlined sx={{ fontSize: 13, color: deal.actorColor ?? "text.disabled" }} />
-                    ) : null}
-                    <Typography variant="caption" color="text.disabled">
-                      {t("detail.createdBy", { name: deal.createdByName ?? "—" })},{" "}
-                      {exactMoment(deal.createdAt)}
-                    </Typography>
-                  </Stack>
+                <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 0.5 }}>
                   {deal.wonAt ? (
                     <Typography variant="caption" color="success.main">
                       {t("detail.wonAt", { value: exactMoment(deal.wonAt) })}
