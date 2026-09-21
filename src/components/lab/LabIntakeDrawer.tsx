@@ -940,7 +940,10 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
             onAnswerChange={(questionId, value) => setAnswers((prev) => ({ ...prev, [questionId]: value }))}
           />
 
-          <InstrumentsSection instruments={instruments} loading={instrumentsQuery.isLoading} chargeTubes={chargeTubes} />
+          {/* Пока корзина пуста, «пробирки не требуются» — шум. */}
+          {lines.length > 0 && (
+            <InstrumentsSection instruments={instruments} loading={instrumentsQuery.isLoading} chargeTubes={chargeTubes} />
+          )}
 
 
           <CommentSection

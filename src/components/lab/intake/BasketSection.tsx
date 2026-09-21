@@ -123,7 +123,7 @@ const BasketSection: React.FC<Props> = ({
           alignItems="center"
           spacing={1}
           sx={{
-            py: 3,
+            py: 2,
             px: 2,
             border: "1px dashed",
             borderColor: "divider",
