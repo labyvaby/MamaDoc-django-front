@@ -2,11 +2,16 @@ import React from "react";
 import { Box, Stack, Tooltip, Typography } from "@mui/material";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
+import SmartToyOutlined from "@mui/icons-material/SmartToyOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
+import dayjs from "dayjs";
 
 import { Board, type BoardCardSpec, type BoardColumnDef } from "../../components/board";
 import { UserAvatar } from "../../components/ui";
+import ChannelIcon from "../../components/deals/ChannelIcon";
+import StageTimeline from "../../components/deals/StageTimeline";
 import LostReasonDialog from "../../components/deals/LostReasonDialog";
+import { relativeTime } from "../tasks/meta";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { formatPhoneDisplay } from "../../utility/phone";
@@ -41,13 +46,45 @@ type DealBoardViewProps = {
   canManage: boolean;
   enabled: boolean;
   emptyState?: React.ReactNode;
+  /** Сделка, только что пришедшая по realtime, — подсветить карточку. */
+  highlightId?: number | null;
+  /** Страховочный polling: при живом сокете реже. */
+  refetchIntervalMs?: number;
 };
 
 /** Содержимое карточки: оболочку (drag, меню, анимацию) даёт ядро доски. */
-const DealCardBody: React.FC<{ deal: Deal; hasActions: boolean }> = ({ deal, hasActions }) => {
+const DealCardBody: React.FC<{ deal: Deal; hasActions: boolean; stageColor?: string }> = ({
+  deal,
+  hasActions,
+  stageColor,
+}) => {
   const { t } = useT("deals");
   const age = stageAgeLabel(deal.daysInStage);
   const action = nextActionLabel(deal.nextActionAt);
+  /* Полоска текущего этапа. Полный путь (stagePath) бэк на карточке пока не
+     отдаёт — здесь один сегмент: цвет этапа, пульс у открытой сделки. */
+  const pathSegments = React.useMemo(
+    () =>
+      stageColor && deal.daysInStage != null
+        ? [
+            {
+              stageId: deal.stageId,
+              name: deal.stageName,
+              color: stageColor,
+              kind: deal.stageKind,
+              from: deal.createdAt,
+              to: deal.updatedAt,
+              seconds: deal.daysInStage * 86400,
+              share: 1,
+              actorName: null,
+              actorKind: null,
+              actorColor: null,
+              open: deal.stageKind === "open",
+            },
+          ]
+        : [],
+    [stageColor, deal],
+  );
 
   return (
     <>
@@ -66,7 +103,13 @@ const DealCardBody: React.FC<{ deal: Deal; hasActions: boolean }> = ({ deal, has
         {deal.patientName || deal.contactName}
       </Typography>
 
-      <Stack direction="row" alignItems="baseline" gap={0.75} sx={{ mt: 0.25 }}>
+      <Stack direction="row" alignItems="center" gap={0.75} sx={{ mt: 0.25 }}>
+        <ChannelIcon channel={deal.channel} size={14} />
+        {deal.actorKind === "bot" ? (
+          <Tooltip title={t("board.createdByBot", { name: deal.createdByName ?? "" })}>
+            <SmartToyOutlined sx={{ fontSize: 14, color: deal.actorColor ?? "text.disabled", flexShrink: 0 }} />
+          </Tooltip>
+        ) : null}
         {deal.phone ? (
           <Typography variant="caption" color="text.secondary" noWrap>
             {formatPhoneDisplay(deal.phone)}
@@ -78,6 +121,22 @@ const DealCardBody: React.FC<{ deal: Deal; hasActions: boolean }> = ({ deal, has
           {formatKGS(deal.amount)}
         </Typography>
       </Stack>
+
+      {/* Последнее касание — для лидов из чата важнее возраста карточки: без
+          ответа больше суток — оранжевым. */}
+      {deal.lastActivityAt && deal.stageKind === "open" ? (
+        <Typography
+          variant="caption"
+          noWrap
+          sx={{
+            display: "block",
+            mt: 0.25,
+            color: dayjs().diff(dayjs(deal.lastActivityAt), "hour") >= 24 ? "warning.main" : "text.disabled",
+          }}
+        >
+          {t("board.lastActivity", { value: relativeTime(deal.lastActivityAt) })}
+        </Typography>
+      ) : null}
 
       <Stack direction="row" alignItems="center" gap={0.75} sx={{ mt: 1 }}>
         {deal.assigneeName ? (
@@ -135,6 +194,8 @@ const DealCardBody: React.FC<{ deal: Deal; hasActions: boolean }> = ({ deal, has
           </Tooltip>
         ) : null}
       </Stack>
+
+      <StageTimeline segments={pathSegments} variant="compact" />
     </>
   );
 };
@@ -156,12 +217,16 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
   canManage,
   enabled,
   emptyState,
+  highlightId = null,
+  refetchIntervalMs = DEALS_REFRESH_MS,
 }) => {
   const { t } = useT("deals");
   const queryClient = useQueryClient();
   const [limit, setLimit] = React.useState(DEALS_COLUMN_SIZE);
   /** Перенос в этап потери ждёт причину: карточка поедет только после ответа. */
-  const [lostPrompt, setLostPrompt] = React.useState<{ deal: Deal; stageId: number } | null>(null);
+  const [lostPrompt, setLostPrompt] = React.useState<{ deal: Deal; stageId: number; position?: number } | null>(
+    null,
+  );
 
   const boardParams: DealBoardParams = React.useMemo(
     () => ({ ...params, limit, organizationId: orgId }),
@@ -180,7 +245,7 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     // Смена фильтра не должна схлопывать доску в скелетоны.
     placeholderData: keepPreviousData,
-    refetchInterval: DEALS_REFRESH_MS,
+    refetchInterval: refetchIntervalMs,
   });
 
   const board = boardQuery.data;
@@ -198,11 +263,14 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
     mutationFn: ({
       deal,
       stageId,
+      position = 0,
       lostReasonId,
       note,
     }: {
       deal: Deal;
       stageId: number;
+      /** Куда встала карточка (0-based, без неё самой); из меню — в начало. */
+      position?: number;
       lostReasonId?: number;
       note?: string;
     }) =>
@@ -210,7 +278,7 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
         deal.id,
         {
           stageId,
-          position: 0,
+          position,
           // Версия карточки на экране: сервер ответит 409, если её уже двигали.
           updatedAt: deal.updatedAt,
           ...(lostReasonId != null ? { lostReasonId } : {}),
@@ -219,30 +287,35 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
         orgId,
       ),
     // Карточка переезжает сразу: перенос — это жест, и пауза читается как «не сработало».
-    onMutate: async ({ deal, stageId }) => {
+    onMutate: async ({ deal, stageId, position = 0 }) => {
       await queryClient.cancelQueries({ queryKey: boardKey });
       const prev = queryClient.getQueryData<DealBoard>(boardKey);
       if (prev) {
+        const sameColumn = deal.stageId === stageId;
         queryClient.setQueryData<DealBoard>(boardKey, {
           ...prev,
           columns: prev.columns.map((column) => {
+            if (column.stageId === stageId) {
+              // Вставляем на место броска; в своей колонке — это перестановка,
+              // итоги не меняются.
+              const rest = column.deals.filter((d) => d.id !== deal.id);
+              const moved = { ...deal, stageId, stageName: column.stageName, stageKind: column.stageKind };
+              const deals = [...rest.slice(0, position), moved, ...rest.slice(position)];
+              return sameColumn
+                ? { ...column, deals }
+                : {
+                    ...column,
+                    deals,
+                    count: column.count + 1,
+                    amountTotal: sumStrings(column.amountTotal, deal.amount, 1),
+                  };
+            }
             if (column.stageId === deal.stageId) {
               return {
                 ...column,
                 deals: column.deals.filter((d) => d.id !== deal.id),
                 count: Math.max(0, column.count - 1),
                 amountTotal: sumStrings(column.amountTotal, deal.amount, -1),
-              };
-            }
-            if (column.stageId === stageId) {
-              return {
-                ...column,
-                deals: [
-                  { ...deal, stageId, stageName: column.stageName, stageKind: column.stageKind },
-                  ...column.deals,
-                ],
-                count: column.count + 1,
-                amountTotal: sumStrings(column.amountTotal, deal.amount, 1),
               };
             }
             return column;
@@ -294,7 +367,8 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
   const canDrop = React.useCallback(
     (deal: Deal, stageId: number) => {
       if (!canUpdate && !canManage) return false;
-      if (deal.stageId === stageId) return false;
+      // Своя колонка: переставить карточку внутри — обычное право на правку.
+      if (deal.stageId === stageId) return true;
       const from = deal.stageKind;
       const to = stageKindOf(stageId);
       if (to == null) return false;
@@ -305,16 +379,16 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
   );
 
   const startMove = React.useCallback(
-    (deal: Deal, stageId: number) => {
+    (deal: Deal, stageId: number, position = 0) => {
       if (!canDrop(deal, stageId)) {
         onError(t("conflict.reopenForbidden"));
         return;
       }
-      if (stageKindOf(stageId) === "lost") {
-        setLostPrompt({ deal, stageId });
+      if (stageKindOf(stageId) === "lost" && deal.stageId !== stageId) {
+        setLostPrompt({ deal, stageId, position });
         return;
       }
-      moveMutation.mutate({ deal, stageId });
+      moveMutation.mutate({ deal, stageId, position });
     },
     [canDrop, moveMutation, onError, stageKindOf, t],
   );
@@ -352,7 +426,7 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
 
   const card = (deal: Deal): BoardCardSpec => {
     const actions = (board?.columns ?? [])
-      .filter((c) => canDrop(deal, c.stageId))
+      .filter((c) => c.stageId !== deal.stageId && canDrop(deal, c.stageId))
       .map((c) => ({
         key: String(c.stageId),
         label: c.stageName,
@@ -363,10 +437,17 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
       ariaLabel: t("board.cardLabel", { name: deal.patientName || deal.contactName }),
       accentColor: deal.isSlaBreached ? undefined : null,
       alert: deal.isActionOverdue,
+      highlight: deal.id === highlightId,
       actions,
       actionsTooltip: t("board.moveActions"),
       onOpen: () => onOpenDeal(deal.id),
-      content: <DealCardBody deal={deal} hasActions={actions.length > 0} />,
+      content: (
+        <DealCardBody
+          deal={deal}
+          hasActions={actions.length > 0}
+          stageColor={board?.columns.find((c) => c.stageId === deal.stageId)?.color}
+        />
+      ),
     };
   };
 
@@ -382,7 +463,7 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
         getItemId={(deal) => deal.id}
         columnOf={columnOf}
         canDrop={canDrop}
-        onDrop={(deal, stageId) => startMove(deal, stageId)}
+        onDrop={(deal, stageId, index) => startMove(deal, stageId, index)}
         card={card}
         dropHint={t("board.dropHint")}
         isEmpty={isEmpty}
@@ -400,6 +481,7 @@ const DealBoardView: React.FC<DealBoardViewProps> = ({
           moveMutation.mutate({
             deal: lostPrompt.deal,
             stageId: lostPrompt.stageId,
+            position: lostPrompt.position,
             lostReasonId: reasonId,
             note,
           });
