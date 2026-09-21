@@ -91,6 +91,106 @@ export function buildAbsenceIndex(
   return { cells, employeeIds, names };
 }
 
+/** Отсутствие, каким его показывает сетка: подпись, часы и комментарий. */
+export interface AbsenceMark {
+  /** id исключения — ключ списка: у сотрудника их в дне бывает несколько. */
+  id: number;
+  employeeId: number;
+  employeeName: string;
+  /** «Выходной» / «Отпуск». */
+  label: string;
+  /** Часы частичного отсутствия; null — закрыт весь день. */
+  startTime: string | null;
+  endTime: string | null;
+  comment: string;
+}
+
+function toMark(exc: ScheduleException): AbsenceMark {
+  return {
+    id: exc.id,
+    employeeId: exc.employeeId,
+    employeeName: exc.employeeName,
+    label: ABSENCE_LABELS[exc.kind] ?? FALLBACK_LABEL,
+    startTime: exc.startTime,
+    endTime: exc.endTime,
+    comment: exc.comment,
+  };
+}
+
+/**
+ * Одно и то же отсутствие приходит в списке несколько раз: период заводится
+ * пачкой, да и филиалов у сотрудника бывает два, а день закрыт целиком. В
+ * списке это читается как два выходных подряд у одного человека, поэтому
+ * одинаковые (сотрудник + вид + часы) схлопываем.
+ */
+const sameMark = (m: AbsenceMark): string =>
+  `${m.employeeId}_${m.label}_${m.startTime ?? ""}_${m.endTime ?? ""}`;
+
+function dedupe(marks: AbsenceMark[]): AbsenceMark[] {
+  const seen = new Set<string>();
+  const out: AbsenceMark[] = [];
+  for (const mark of marks) {
+    const key = sameMark(mark);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(mark);
+  }
+  return out;
+}
+
+/**
+ * Отсутствия по ключу `${date}_${employeeId}`.
+ *
+ * Отличие от `buildAbsenceIndex`: там отсутствие видно только там, где остались
+ * неразобранные записи, а здесь — каждое. Сетке нужно и то, и другое: красный
+ * счётчик рисуется по первому, сама плитка «Отпуск» — по второму, иначе отпуск
+ * без записей выглядит как обычный невыход по графику.
+ */
+export function buildAbsenceMarks(
+  exceptions: ScheduleException[] | undefined,
+): Map<string, AbsenceMark> {
+  const map = new Map<string, AbsenceMark>();
+  for (const exc of exceptions ?? []) {
+    if (!ABSENCE_LABELS[exc.kind]) continue;
+    const key = `${exc.date}_${exc.employeeId}`;
+    // В сетке у строки одна отметка на день. Закрытый день важнее часов: если
+    // выходной стоит и целиком, и куском, штриховать надо всю дорожку.
+    if (map.get(key)?.startTime === null) continue;
+    map.set(key, toMark(exc));
+  }
+  return map;
+}
+
+/** Отсутствия по датам — для счётчика «N в отпуске» в месячном виде. */
+export function groupAbsencesByDate(
+  exceptions: ScheduleException[] | undefined,
+): Map<string, AbsenceMark[]> {
+  const map = new Map<string, AbsenceMark[]>();
+  for (const exc of exceptions ?? []) {
+    if (!ABSENCE_LABELS[exc.kind]) continue;
+    const list = map.get(exc.date);
+    if (list) list.push(toMark(exc));
+    else map.set(exc.date, [toMark(exc)]);
+  }
+  for (const [date, list] of map) {
+    map.set(date, dedupe(list.sort((a, b) => a.employeeName.localeCompare(b.employeeName))));
+  }
+  return map;
+}
+
+/** Отсутствия одного дня — в порядке, пригодном для списка. */
+export function absencesOfDay(
+  exceptions: ScheduleException[] | undefined,
+  date: string,
+): AbsenceMark[] {
+  const marks: AbsenceMark[] = [];
+  for (const exc of exceptions ?? []) {
+    if (exc.date !== date || !ABSENCE_LABELS[exc.kind]) continue;
+    marks.push(toMark(exc));
+  }
+  return dedupe(marks.sort((a, b) => a.employeeName.localeCompare(b.employeeName)));
+}
+
 /** «3 записи» — подпись маркера. */
 export function absenceCountLabel(count: number): string {
   const mod10 = count % 10;

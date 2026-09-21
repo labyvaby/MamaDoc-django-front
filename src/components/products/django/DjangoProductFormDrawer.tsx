@@ -21,7 +21,7 @@ import { useNotification } from "@refinedev/core";
 import { ApiError } from "../../../api/client";
 import {
     createProduct, createProductModel, createUnitOfMeasure, generateProductMatrix, getProductAttributes,
-    getProductCategoryTree, replaceProductGenericAttributes, type DjangoProduct,
+    getProductCategories, getProductCategoryTree, replaceProductGenericAttributes, type DjangoProduct,
     type DjangoProductAttribute, type DjangoProductAttributeValueOption,
     type DjangoProductCategoryNode, getUnitsOfMeasure, type DjangoUnitOfMeasure,
     updateProduct, uploadProductImage,
@@ -33,10 +33,18 @@ import { cascadeContainer, cascadeItem } from "../../ui";
 import { DjangoProductGallery } from "./DjangoProductGallery";
 import { PHOTO_ACCEPT } from "../../../utility/imageCompression";
 
+/**
+ * Единицы клиники — строка в самом товаре: справочник `/v2/warehouse/units/`
+ * заводится под розницу и у клиник пуст (проверено на проде 20.09.2026: 0
+ * записей, ни у одного товара нет unitId). Это лишь подсказки к свободному
+ * полю, а не закрытый список.
+ */
+const CLINIC_UNITS = ["шт", "упак", "мл", "л", "г", "кг", "ампула", "флакон", "таб", "доза", "шприц", "набор", "пара", "тюбик"];
+
 const MotionStack = motion(Stack);
 const MotionBox = motion(Box);
-type Values = { name: string; barcode: string; unit: string; unitId: number | null; description: string; comment: string; isForSale: boolean; isInfusion: boolean; isVaccine: boolean; price: number };
-const blank: Values = { name: "", barcode: "", unit: "", unitId: null, description: "", comment: "", isForSale: true, isInfusion: false, isVaccine: false, price: 0 };
+type Values = { name: string; category: string; barcode: string; unit: string; unitId: number | null; description: string; comment: string; isForSale: boolean; isInfusion: boolean; isVaccine: boolean; price: number };
+const blank: Values = { name: "", category: "", barcode: "", unit: "", unitId: null, description: "", comment: "", isForSale: true, isInfusion: false, isVaccine: false, price: 0 };
 type Props = {
     open: boolean;
     onClose: () => void;
@@ -59,6 +67,12 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
     const [photoUrl, setPhotoUrl] = React.useState<string | null>(null);
     const [attributes, setAttributes] = React.useState<DjangoProductAttribute[]>([]);
     const [categories, setCategories] = React.useState<DjangoProductCategoryNode[]>([]);
+    /**
+     * Категории клиники — свободные строки самих товаров, а не справочник v2:
+     * ручка отдаёт готовый список уникальных значений, он же кормит фильтры
+     * на странице товаров.
+     */
+    const [legacyCategories, setLegacyCategories] = React.useState<string[]>([]);
     const [units, setUnits] = React.useState<DjangoUnitOfMeasure[]>([]);
     const [categoryId, setCategoryId] = React.useState<number | null>(null);
     const [fieldValues, setFieldValues] = React.useState<Record<number, number | null>>({});
@@ -81,6 +95,10 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
     const variantsCount = colors.length * sizes.length;
     const selectedUnit = units.find((unit) => unit.id === values.unitId) ?? null;
     const selectableUnits = units.filter((unit) => unit.isActive || unit.id === values.unitId);
+    const clinicUnitOptions = React.useMemo(
+        () => [...new Set([...CLINIC_UNITS, ...units.map((unit) => unit.shortName), product?.unit ?? ""].filter(Boolean))],
+        [units, product?.unit],
+    );
 
     const loadUnits = React.useCallback(async () => {
         setLoadingUnits(true);
@@ -93,7 +111,14 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
     }, [notify, orgId, product?.unitId]);
 
     const loadSchema = React.useCallback(async () => {
-        if (!isRetail) { setAttributes([]); setCategories([]); return; }
+        if (!isRetail) {
+            setAttributes([]); setCategories([]);
+            // Подсказки к свободному полю: без них сотрудник заводит «Расходники»,
+            // «расходники» и «Расходник» как три разные категории.
+            try { setLegacyCategories(await getProductCategories(undefined, orgId)); }
+            catch (error) { console.error("Unable to load product categories", error); }
+            return;
+        }
         setLoadingSchema(true);
         try {
             const [nextAttributes, nextCategories] = await Promise.all([getProductAttributes(undefined, orgId), getProductCategoryTree(undefined, orgId)]);
@@ -106,7 +131,7 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
 
     React.useEffect(() => {
         if (!open) return;
-        setValues(product ? { name: product.name, barcode: product.barcode, unit: product.unit || "", unitId: product.unitId ?? null, description: product.description, comment: product.comment, isForSale: product.isForSale, isInfusion: product.isInfusion, isVaccine: canUseVaccines && product.isVaccine, price: product.price } : { ...blank, barcode: initialBarcode?.trim() ?? "" });
+        setValues(product ? { name: product.name, category: product.category ?? "", barcode: product.barcode, unit: product.unit || "", unitId: product.unitId ?? null, description: product.description, comment: product.comment, isForSale: product.isForSale, isInfusion: product.isInfusion, isVaccine: canUseVaccines && product.isVaccine, price: product.price } : { ...blank, barcode: initialBarcode?.trim() ?? "" });
         setCategoryId(product?.categoryId ?? null);
         setFieldValues(Object.fromEntries((product?.attributes ?? []).filter((item) => item.role === "generic").map((item) => [item.attributeId, item.valueId])));
         setColors([]); setSizes([]); setSkuPrefix(""); setPhoto(null); setPhotoUrl(null); setBusy(false); setUnitDialogOpen(false); form.reset(); void loadSchema(); void loadUnits();
@@ -115,12 +140,18 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
     React.useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
 
     React.useEffect(() => {
-        if (!open || values.unitId != null || !units.length) return;
+        if (!open || values.unitId != null) return;
+        // Клиника: справочника нет — новому товару хватает строки «шт», у
+        // существующего единица уже подставлена из него самого.
+        if (!units.length) {
+            if (!isRetail && !product && !values.unit) set({ unit: "шт" });
+            return;
+        }
         const matchingUnit = product
             ? units.find((unit) => unit.shortName === product.unit)
             : units.find((unit) => unit.shortName === "шт");
         if (matchingUnit) set({ unit: matchingUnit.shortName, unitId: matchingUnit.id });
-    }, [open, product, units, values.unitId]);
+    }, [open, product, units, values.unitId, values.unit, isRetail]);
 
     const set = (patch: Partial<Values>) => setValues((current) => ({ ...current, ...patch }));
     const genericIds = () => genericFields.map((field) => fieldValues[field.id]).filter((id): id is number => typeof id === "number");
@@ -151,16 +182,20 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
     const save = async () => {
         if (!form.validate()) return;
         if (isRetail && !category) { notify?.({ type: "error", message: "Сначала выберите категорию товара" }); return; }
-        if (!selectedUnit) { notify?.({ type: "error", message: "Выберите единицу измерения из справочника" }); return; }
+        if (isRetail && !selectedUnit) { notify?.({ type: "error", message: "Выберите единицу измерения из справочника" }); return; }
+        if (!isRetail && !values.unit.trim()) { notify?.({ type: "error", message: "Укажите единицу измерения" }); return; }
         if (isMatrix && (!colors.length || !sizes.length)) { notify?.({ type: "error", message: "Выберите хотя бы один цвет и размер" }); return; }
         setBusy(true);
         try {
             if (isMatrix && category && colorField && sizeField) {
                 const model = await createProductModel({ name: values.name.trim(), skuPrefix: skuPrefix.trim(), categoryId: category.id, description: values.description.trim(), organizationId: orgId });
-                const matrix = await generateProductMatrix({ modelId: model.id, rowValueIds: colors, columnValueIds: sizes, attributeValueIds: genericIds(), price: values.price || 0, unit: selectedUnit.shortName, unitId: selectedUnit.id, generateBarcodes: true });
+                const matrix = await generateProductMatrix({ modelId: model.id, rowValueIds: colors, columnValueIds: sizes, attributeValueIds: genericIds(), price: values.price || 0, unit: selectedUnit!.shortName, unitId: selectedUnit!.id, generateBarcodes: true });
                 notify?.({ type: "success", message: `Добавлено вариантов: ${matrix.filled}` });
             } else {
-                const payload = { name: values.name.trim(), category: category?.name ?? "", categoryId: category?.id, barcode: values.barcode.trim(), unit: selectedUnit.shortName, unitId: selectedUnit.id, description: values.description.trim(), comment: values.comment.trim(), isForSale: values.isForSale, isInfusion: values.isInfusion, isVaccine: canUseVaccines && values.isVaccine, price: values.price || 0 };
+                // ⚠ Пустую строку бэк пишет в товар буквально (проверено на test
+                // 20.09.2026), поэтому в клинике шлём то, что ввёл сотрудник, а не
+                // `${category?.name ?? ""}` от справочника, которого у неё нет.
+                const payload = { name: values.name.trim(), category: isRetail ? category?.name ?? "" : values.category.trim(), categoryId: category?.id, barcode: values.barcode.trim(), unit: selectedUnit?.shortName ?? values.unit.trim(), unitId: selectedUnit?.id, description: values.description.trim(), comment: values.comment.trim(), isForSale: values.isForSale, isInfusion: values.isInfusion, isVaccine: canUseVaccines && values.isVaccine, price: values.price || 0 };
                 const saved = isEdit && product ? await updateProduct(product.id, payload) : await createProduct(payload);
                 if (isRetail) await replaceProductGenericAttributes(saved.id, genericIds());
                 if (photo) await uploadProductImage(saved.id, photo);
@@ -269,9 +304,11 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
                                     {isMatrix
                                         ? "Соберите матрицу вариантов по цветам и размерам"
-                                        : category
-                                            ? "Поля настроены для категории «" + category.name + "»"
-                                            : "Сначала выберите категорию товара"}
+                                        : !isRetail
+                                            ? "Название, категория, единица и цена"
+                                            : category
+                                                ? "Поля настроены для категории «" + category.name + "»"
+                                                : "Сначала выберите категорию товара"}
                                 </Typography>
                             </Box>
                         </Stack>
@@ -459,8 +496,10 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                             >
                                 {sectionHeader(
                                     <SettingsOutlined fontSize="small" />,
-                                    "Категория и схема",
-                                    "Категория определяет поля и тип создания товара",
+                                    isRetail ? "Категория и схема" : "Категория",
+                                    isRetail
+                                        ? "Категория определяет поля и тип создания товара"
+                                        : "Нужна, чтобы товары группировались в списке и фильтрах",
                                 )}
                                 <Stack spacing={1.5} sx={{ mt: 2 }}>
                                     {isRetail ? (
@@ -506,11 +545,31 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                                                 ))}
                                         </TextField>
                                     ) : (
-                                        <TextField
+                                        /* Клиника: справочника категорий у неё нет, поэтому
+                                           свободная строка с подсказками из уже заведённых
+                                           значений — по ним же фильтруется список товаров. */
+                                        <Autocomplete<string, false, false, true>
+                                            freeSolo
                                             fullWidth
-                                            label="Категория"
-                                            value={product?.category ?? ""}
-                                            disabled
+                                            options={legacyCategories}
+                                            value={values.category}
+                                            disabled={busy}
+                                            onChange={(_, next) => set({ category: next ?? "" })}
+                                            onInputChange={(_, next) => set({ category: next })}
+                                            renderInput={(params) => (
+                                                <TextField
+                                                    {...params}
+                                                    label="Категория"
+                                                    placeholder="Например, Расходники"
+                                                    helperText="Выберите из заведённых или введите новую"
+                                                    sx={{
+                                                        "& .MuiOutlinedInput-root": {
+                                                            borderRadius: 2,
+                                                            bgcolor: "background.paper",
+                                                        },
+                                                    }}
+                                                />
+                                            )}
                                         />
                                     )}
                                     {isRetail && (
@@ -539,38 +598,65 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                                             />
                                         )}
                                         <Stack flex={1} gap={0.75}>
-                                            <Autocomplete<DjangoUnitOfMeasure, false, false, false>
-                                                fullWidth
-                                                size="small"
-                                                options={selectableUnits}
-                                                value={selectedUnit}
-                                                loading={loadingUnits}
-                                                disabled={busy || loadingUnits}
-                                                onChange={(_, next) => chooseUnit(next)}
-                                                getOptionLabel={(unit) => `${unit.name} (${unit.shortName})`}
-                                                isOptionEqualToValue={(left, right) => left.id === right.id}
-                                                noOptionsText="В справочнике пока нет единиц"
-                                                renderInput={(params) => (
-                                                    <TextField
-                                                        {...params}
-                                                        label="Единица измерения"
-                                                        required
-                                                        helperText={
-                                                            product && !product.unitId && !selectedUnit
-                                                                ? `У старого товара «${product.unit}» нет записи в справочнике — выберите подходящую единицу.`
-                                                                : "Единицы принадлежат только текущей организации."
-                                                        }
-                                                    />
-                                                )}
-                                            />
-                                            <Button
-                                                size="small"
-                                                onClick={() => setUnitDialogOpen(true)}
-                                                disabled={busy || loadingUnits}
-                                                sx={{ alignSelf: "flex-start", px: 0.5 }}
-                                            >
-                                                Добавить единицу
-                                            </Button>
+                                            {isRetail ? (
+                                                <Autocomplete<DjangoUnitOfMeasure, false, false, false>
+                                                    fullWidth
+                                                    size="small"
+                                                    options={selectableUnits}
+                                                    value={selectedUnit}
+                                                    loading={loadingUnits}
+                                                    disabled={busy || loadingUnits}
+                                                    onChange={(_, next) => chooseUnit(next)}
+                                                    getOptionLabel={(unit) => `${unit.name} (${unit.shortName})`}
+                                                    isOptionEqualToValue={(left, right) => left.id === right.id}
+                                                    noOptionsText="В справочнике пока нет единиц"
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            label="Единица измерения"
+                                                            required
+                                                            helperText={
+                                                                product && !product.unitId && !selectedUnit
+                                                                    ? `У старого товара «${product.unit}» нет записи в справочнике — выберите подходящую единицу.`
+                                                                    : "Единицы принадлежат только текущей организации."
+                                                            }
+                                                        />
+                                                    )}
+                                                />
+                                            ) : (
+                                                /* Клиника: единица живёт строкой в товаре, справочник у неё
+                                                   пуст. Закрытый список тут означал бы, что ни один товар
+                                                   не сохранить, пока кто-то не заведёт «ампулу». */
+                                                <Autocomplete<string, false, false, true>
+                                                    freeSolo
+                                                    fullWidth
+                                                    size="small"
+                                                    options={clinicUnitOptions}
+                                                    value={values.unit}
+                                                    disabled={busy}
+                                                    onChange={(_, next) => set({ unit: next ?? "" })}
+                                                    onInputChange={(_, next) => set({ unit: next })}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            label="Единица измерения"
+                                                            required
+                                                            placeholder="Например, ампула"
+                                                            helperText="Выберите из частых или введите свою"
+                                                        />
+                                                    )}
+                                                />
+                                            )}
+                                            {isRetail && (
+                                                <Button
+                                                    size="small"
+                                                    onClick={() => setUnitDialogOpen(true)}
+                                                    disabled={busy || loadingUnits}
+                                                    sx={{ alignSelf: "flex-start", px: 0.5 }}
+                                                >
+                                                    Добавить единицу
+                                                </Button>
+                                            )}
                                         </Stack>
                                     </Stack>
                                 </Stack>
@@ -900,7 +986,8 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                                     ? variantsCount
                                         ? variantsCount + " вариантов к созданию"
                                         : "Матрица ещё не заполнена"
-                                    : category?.name || "Категория не выбрана"}
+                                    : (isRetail ? category?.name : values.category.trim()) ||
+                                    "Категория не выбрана"}
                             </Typography>
                             <Typography variant="body2" fontWeight={800} noWrap>
                                 {values.name.trim() || "Заполните название товара"}

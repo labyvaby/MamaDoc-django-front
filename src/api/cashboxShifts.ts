@@ -2,6 +2,13 @@ import { apiRequest, ApiError } from "./client";
 import type { CashlessMethodBreakdownRow } from "./cashbox";
 export { parseBackendError } from "./appointments";
 
+/**
+ * X-отчёт временно скрыт (21.09.2026, просьба владельца): кнопка на странице
+ * кассы и иконка в истории смен не показываются. Расчёт, диалог и печать
+ * остаются в коде — вернуть раздел значит поставить здесь true.
+ */
+export const X_REPORT_ENABLED = false;
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type CashboxShiftStatus = "open" | "closed";
@@ -133,10 +140,13 @@ export function getCashboxShifts(
 
 export function getCashboxShiftSummary(
   id: number,
+  /** Суперпользователю обязателен: без него ручка отвечает 400 (проверено на test 20.09.2026). */
+  organizationId?: number,
   signal?: AbortSignal,
 ): Promise<CashboxShiftSummary> {
+  const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
   return apiRequest<CashboxShiftSummary>(
-    `/cashbox/cashbox-shifts/${id}/summary/`,
+    `/cashbox/cashbox-shifts/${id}/summary/${qs}`,
     { signal },
   );
 }

@@ -919,6 +919,22 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     [refreshAfterMutation, notify, notifyConsumptionWarnings],
   );
 
+  // Отмена случайного «Подтвердить»: confirmed → scheduled. Отдельного
+  // экшена у бэка нет, тот же PATCH status, что и вперёд.
+  const handleUndoConfirm = React.useCallback(
+    async (appt: DjangoAppointment) => {
+      try {
+        const updated = await updateAppointment(appt.id, { status: "scheduled" });
+        hapticTap();
+        notifyConsumptionWarnings(updated);
+        refreshAfterMutation();
+      } catch (e) {
+        notify?.({ type: "error", message: parseBackendError(e) });
+      }
+    },
+    [refreshAfterMutation, notify, notifyConsumptionWarnings],
+  );
+
   // Врач начинает приём → статус in_progress («На приёме»). Используем
   // отдельный узкий эндпоинт start: он не требует appointments.update
   // (которого у врача нет), а только переводит статус. Форма заключения
@@ -1084,6 +1100,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       onConfirmVisit={handleConfirmVisit}
       onArrived={handleArrived}
       onUndoArrived={handleUndoArrived}
+      onUndoConfirm={handleUndoConfirm}
       onStartAppointment={handleStartAppointment}
       onRecordVaccination={(a, prefill) => {
         setVaccineAppt(a);
@@ -1162,7 +1179,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             sx={{
               flexShrink: 0,
               overflow: "hidden",
-              transition: "max-height 220ms ease, opacity 180ms ease",
+              transition: "max-height 220ms ease, opacity 220ms ease",
               maxHeight: isMobile && headerHidden ? 0 : 400,
               opacity: isMobile && headerHidden ? 0 : 1,
               pointerEvents: isMobile && headerHidden ? "none" : "auto",

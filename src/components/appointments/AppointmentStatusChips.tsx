@@ -87,6 +87,11 @@ export interface AppointmentStatusChipsProps {
    * статуса arrived и только там, где вызывающий явно разрешил это действие.
    */
   onUndoArrived?: () => void;
+  /**
+   * Отменить случайное «Подтвердить». Крестик появляется только у статуса
+   * confirmed и возвращает приём в «Ожидаем».
+   */
+  onUndoConfirm?: () => void;
 }
 
 const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
@@ -96,6 +101,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
   direction = "row",
   hidePayChip = false,
   onUndoArrived,
+  onUndoConfirm,
 }) => {
   const { t } = useT("appointments");
   const methods = appt.paymentMethods ?? [];
@@ -113,6 +119,10 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
 
   const statusCfg = getStatusConfig(appt.status);
   const canUndoArrived = appt.status === "arrived" && onUndoArrived != null;
+  const canUndoConfirm = appt.status === "confirmed" && onUndoConfirm != null;
+  // Крестик у чипа один: статус в каждый момент только один, поэтому обе
+  // отмены сводим к одному обработчику.
+  const undoStatus = canUndoArrived ? onUndoArrived : canUndoConfirm ? onUndoConfirm : undefined;
 
   /** Стиль чипа + опциональная компактная высота.
    *  getStatusChipSx возвращает функцию от темы — её нельзя расплющить спредом
@@ -121,7 +131,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
     (theme: Theme) => ({
       ...(getStatusChipSx(statusCode) as (t: Theme) => Record<string, unknown>)(theme),
       ...(chipHeight != null ? { height: chipHeight } : {}),
-      ...(canUndoArrived
+      ...(undoStatus
         ? {
             "& .MuiChip-deleteIcon": {
               color: "inherit",
@@ -141,8 +151,8 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
       label={statusCfg.label}
       icon={isOverdue ? <ScheduleOutlined fontSize="small" /> : statusCfg.icon}
       size="small"
-      onDelete={canUndoArrived ? onUndoArrived : undefined}
-      deleteIcon={canUndoArrived ? <CloseOutlined /> : undefined}
+      onDelete={undoStatus}
+      deleteIcon={undoStatus ? <CloseOutlined /> : undefined}
       sx={chipSx(appt.status, isOverdue ? { borderStyle: "dashed" } : undefined)}
     />
   );
@@ -163,8 +173,16 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
       flexWrap={direction === "row" ? "wrap" : undefined}
     >
       {showStatusChip &&
-        (isOverdue || canUndoArrived ? (
-          <Tooltip title={canUndoArrived ? t("chips.undoArrived") : t("chips.overdue")}>
+        (isOverdue || undoStatus ? (
+          <Tooltip
+            title={
+              canUndoArrived
+                ? t("chips.undoArrived")
+                : canUndoConfirm
+                  ? t("chips.undoConfirm")
+                  : t("chips.overdue")
+            }
+          >
             {/* span: Chip со sx-функцией не пробрасывает ref тултипу */}
             <span>{statusChip}</span>
           </Tooltip>

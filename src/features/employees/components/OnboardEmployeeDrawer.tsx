@@ -218,6 +218,10 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     [activeMembership],
   );
   const [roleId, setRoleId] = React.useState<number | "">("");
+  // Пустой список после загрузки — почти всегда отсутствие rbac.roles.view.
+  // До первой загрузки список тоже пуст, поэтому ждём её завершения.
+  const [depsLoaded, setDepsLoaded] = React.useState(false);
+  const noRoles = depsLoaded && !loadingDeps && roles.length === 0;
   const [employeeBranches, setEmployeeBranches] = React.useState<RbacBranch[]>([]);
   const [userAccessBranches, setUserAccessBranches] = React.useState<RbacBranch[]>([]);
   const [overrideUserAccess, setOverrideUserAccess] = React.useState(false);
@@ -332,7 +336,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
         if (!cancelled)
           notify?.({ type: "error", message: `Ошибка загрузки: ${err?.message ?? err}` });
       })
-      .finally(() => { if (!cancelled) setLoadingDeps(false); });
+      .finally(() => { if (!cancelled) { setLoadingDeps(false); setDepsLoaded(true); } });
     return () => { cancelled = true; };
   }, [open, notify, canViewSpecs, canManageSpecs, canManagePrivate, activeOrganization?.id]);
 
@@ -1119,8 +1123,16 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                     {...params}
                     inputProps={{ ...params.inputProps, "data-testid": "employee-role-input" }}
                     placeholder={loadingDeps ? "Загрузка…" : "Найти роль…"}
-                    error={submitAttempted && roleId === ""}
-                    helperText={submitAttempted && roleId === "" ? "Выберите роль" : ""}
+                    error={(submitAttempted && roleId === "") || noRoles}
+                    helperText={
+                      // Роли приходят из /rbac/roles/: без права на их просмотр
+                      // списка не будет, и форма молча не отправится — говорим прямо.
+                      noRoles
+                        ? "Роли не загрузились — нужно право «Роли: просмотр»"
+                        : submitAttempted && roleId === ""
+                          ? "Выберите роль"
+                          : ""
+                    }
                     ref={focus.anchor("roleId")}
                   />
                 )}

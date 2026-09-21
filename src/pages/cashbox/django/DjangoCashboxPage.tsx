@@ -25,6 +25,7 @@ import { cardFlowNumbers } from "./flowNumbers";
 import { formatSom } from "./money";
 import CashBalanceCard from "./CashBalanceCard";
 import CashFlowFeed from "./CashFlowFeed";
+import ShiftSection from "./shifts/ShiftSection";
 import { useT } from "../../../i18n/VerticalProvider";
 
 // ── Period presets ────────────────────────────────────────────────────────────
@@ -90,8 +91,11 @@ const DjangoCashboxPage: React.FC = () => {
   const theme = useTheme();
   const canView = useCan("finance.view");
   const canViewHistory = useCan("finance.view_history");
-  const { isSuperAdmin, activeOrganization, activeBranch, memberships, loading: permLoading } =
+  const { isSuperAdmin, activeOrganization, activeBranch, activeMembership, memberships, loading: permLoading } =
     usePermissions();
+  // Открыть и закрыть смену может тот, кто правит финансы; смотреть X-отчёт —
+  // все, у кого открыта сама касса (finance.view).
+  const canManageShift = useCan("finance.manage");
   const isSuper = isSuperAdmin();
   const isMultiOrg = (memberships ?? []).length > 1;
   const orgRequired = isSuper || isMultiOrg;
@@ -189,6 +193,15 @@ const DjangoCashboxPage: React.FC = () => {
                 minWidth={200}
               />
             </Stack>
+
+            {/* Смена кассы: X-отчёт, открытие и закрытие, история */}
+            <ShiftSection
+              organizationId={orgRequired ? (activeOrganization?.id ?? undefined) : undefined}
+              branches={activeMembership?.branches ?? []}
+              activeBranch={activeBranch ?? undefined}
+              queriesEnabled={queriesEnabled}
+              canManage={canManageShift}
+            />
 
             {/* Наличные (смена, без периода) / Безнал (за окно) */}
             <Box
