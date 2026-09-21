@@ -31,7 +31,6 @@ import { markBranchPickerPending } from "../../components/auth/BranchPickerDialo
 import { ApiError } from "../../api/client";
 import AuthLayout from "../../components/auth/AuthLayout";
 import AuthCard from "../../components/auth/AuthCard";
-import AximoLogo from "../../components/auth/AximoLogo";
 import OtpCodeInput from "../../components/auth/OtpCodeInput";
 import { useWebOtpAutofill } from "../../components/auth/useWebOtpAutofill";
 import { PhoneCountryCodeSelect } from "../../components/ui";
@@ -422,16 +421,6 @@ const LoginPage: React.FC = () => {
     <AuthLayout>
       <AuthCard>
         <Box sx={{ mb: 3 }}>
-          <Stack
-            direction="row"
-            alignItems="center"
-            gap={1.25}
-            mb={3.5}
-            sx={{ display: { xs: "none", md: "flex" } }}
-          >
-            <AximoLogo />
-          </Stack>
-
           <Typography variant="h5" fontWeight={600} sx={{ mb: 0.5 }}>
             Вход в систему
           </Typography>

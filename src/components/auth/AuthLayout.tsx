@@ -17,7 +17,7 @@
 import React from "react";
 import { Box, Stack, Typography, alpha } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
-import AximoLogo from "./AximoLogo";
+import erkinLogoUrl from "../../assets/brand/erkinai-logo.svg";
 import ErkinBrandPanel from "./ErkinBrandPanel";
 
 type Props = {
@@ -87,7 +87,10 @@ const AuthLayout: React.FC<Props> = ({ children }) => {
       >
         <PatternLayer dots={MOBILE_PATTERN} />
         <Stack direction="row" alignItems="center" gap={1.25} sx={{ position: "relative" }}>
-          <AximoLogo light compact />
+          <Box component="img" src={erkinLogoUrl} alt="" sx={{ width: 30, height: 30 }} />
+          <Typography sx={{ fontSize: "1.08rem", fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1 }}>
+            Erkin<Box component="b" sx={{ fontWeight: 800, opacity: 0.85 }}>AI</Box>
+          </Typography>
         </Stack>
         <Typography variant="h5" sx={{ fontWeight: 600, mt: 1, lineHeight: 1.25 }}>
           Управляйте бизнесом с ясностью
