@@ -1,11 +1,12 @@
 import React from "react";
-import { Box, LinearProgress, Link, Stack, Typography } from "@mui/material";
+import { Box, Link, Stack, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 
 import { AppButton } from "../ui";
 import { chatwootUnavailableReason, fetchChatwootEmbed } from "../../api/chatwoot";
 import { useT } from "../../i18n/VerticalProvider";
 import { ChatsUnavailable } from "../../pages/chats/ChatsUnavailable";
+import { ConnectingChats } from "../../pages/chats/ConnectingChats";
 import { useChatwootLoginFailed } from "../../pages/chats/useChatwootSession";
 
 /**
@@ -203,18 +204,19 @@ const ChatFrame: React.FC<{
 };
 
 /**
- * Тот же лоадер, что в разделе «Чаты» (`pages/chats`): полоса сверху, а не
- * кружок по центру — панель узкая и высокая, полоса читается как «страница
- * грузится», а не как «что-то зависло».
+ * Та же картинка ожидания, что в разделе «Чаты» (`ConnectingChats`): пара
+ * реплик, пунктир бежит от CRM к Чат-центру. Панель узкая — картинка та же,
+ * подпись ниже.
  */
 const ChatLoader: React.FC<{ label: string }> = ({ label }) => (
-  <Stack sx={{ height: "100%", bgcolor: "background.paper" }}>
-    <LinearProgress />
-    <Stack sx={{ flex: 1, alignItems: "center", justifyContent: "center", px: 3 }}>
-      <Typography variant="body2" color="text.secondary" textAlign="center">
-        {label}
-      </Typography>
-    </Stack>
+  <Stack
+    spacing={1.75}
+    sx={{ height: "100%", alignItems: "center", justifyContent: "center", px: 3, bgcolor: "background.paper" }}
+  >
+    <ConnectingChats />
+    <Typography variant="body2" color="text.secondary" textAlign="center">
+      {label}
+    </Typography>
   </Stack>
 );
 
