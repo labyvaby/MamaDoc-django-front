@@ -35,6 +35,8 @@ export interface AppointmentWhenBlockProps {
   hidePaymentChip?: boolean;
   /** Отменить ошибочную отметку «Пациент здесь». */
   onUndoArrived?: () => void;
+  /** Отменить ошибочное «Подтвердить» — вернуть приём в «Ожидаем». */
+  onUndoConfirm?: () => void;
 }
 
 /**
@@ -58,6 +60,7 @@ const AppointmentWhenBlock: React.FC<AppointmentWhenBlockProps> = ({
   paymentsLoading,
   hidePaymentChip,
   onUndoArrived,
+  onUndoConfirm,
 }) => {
   const { t } = useT("appointments");
 
@@ -209,6 +212,7 @@ const AppointmentWhenBlock: React.FC<AppointmentWhenBlockProps> = ({
           appointment={statusSource}
           hidePayChip={hidePaymentChip}
           onUndoArrived={onUndoArrived}
+          onUndoConfirm={onUndoConfirm}
         />
         {hasBankConfirmation && (
           <Tooltip title={t("details.paymentConfirmedByBank")}>

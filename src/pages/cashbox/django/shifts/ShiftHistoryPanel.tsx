@@ -20,17 +20,20 @@ import {
   Typography,
 } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import {
   getCashboxShifts,
   parseBackendError,
+  X_REPORT_ENABLED,
   type CashboxShift,
   type CashboxShiftStatus,
 } from "../../../../api/cashboxShifts";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../../api/queryKeys";
 import { ApiError } from "../../../../api/client";
 import ShiftSummaryDialog from "./ShiftSummaryDialog";
+import ShiftXReportDialog from "./ShiftXReportDialog";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -78,6 +81,7 @@ const ShiftHistoryPanel: React.FC<Props> = ({
   const [branchFilter, setBranchFilter] = React.useState<number | "">("");
   const [statusFilter, setStatusFilter] = React.useState<CashboxShiftStatus | "">("");
   const [summaryTarget, setSummaryTarget] = React.useState<CashboxShift | null>(null);
+  const [xReportTarget, setXReportTarget] = React.useState<CashboxShift | null>(null);
 
   // Reset page on filter change
   const prevFiltersRef = React.useRef({ branchFilter, statusFilter, organizationId });
@@ -264,7 +268,14 @@ const ShiftHistoryPanel: React.FC<Props> = ({
                   <TableCell align="right">
                     {fmtDiff(sh.difference)}
                   </TableCell>
-                  <TableCell align="right">
+                  <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                    {X_REPORT_ENABLED && (
+                      <Tooltip title="X-отчёт">
+                        <IconButton size="small" onClick={() => setXReportTarget(sh)}>
+                          <ReceiptLongOutlined fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                     <Tooltip title="Итоги смены">
                       <IconButton
                         size="small"
@@ -299,6 +310,11 @@ const ShiftHistoryPanel: React.FC<Props> = ({
         open={summaryTarget !== null}
         shift={summaryTarget}
         onClose={() => setSummaryTarget(null)}
+      />
+      <ShiftXReportDialog
+        open={xReportTarget !== null}
+        shift={xReportTarget}
+        onClose={() => setXReportTarget(null)}
       />
     </Stack>
   );

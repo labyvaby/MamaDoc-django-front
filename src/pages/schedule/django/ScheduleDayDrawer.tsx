@@ -1,7 +1,8 @@
 import React from "react";
-import { Box, Button, Chip, CircularProgress, Divider, Drawer, IconButton, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, Button, Chip, CircularProgress, Divider, Drawer, IconButton, InputAdornment, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
@@ -13,12 +14,18 @@ import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
 import { lunchNote, shiftTimeLabel, type DayOccurrence } from "./occurrences";
 import { employeeColorHex } from "./employeeColors";
+import type { AbsenceMark } from "./absenceRows";
+
+/** Со скольких смен в дне показываем поиск по ФИО. */
+const SEARCH_MIN_ROWS = 6;
 
 export interface ScheduleDayDrawerProps {
   open: boolean;
   onClose: () => void;
   day: Dayjs | null;
   occurrences: DayOccurrence[];
+  /** Отпуска и выходные этого дня — смен они не порождают. */
+  absences?: AbsenceMark[];
   employeesById: Map<number, DjangoEmployeeListItem>;
   employeeColorMap: Map<number, number>;
   canManage: boolean;
@@ -35,6 +42,7 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
   onClose,
   day,
   occurrences,
+  absences,
   employeesById,
   employeeColorMap,
   canManage,
@@ -57,7 +65,37 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
     }
   };
 
-  const sorted = [...occurrences].sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const sorted = React.useMemo(
+    () => [...occurrences].sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    [occurrences],
+  );
+
+  // Поиск по ФИО: в клинике на день выходит несколько десятков смен, и нужного
+  // человека искали прокруткой. Фильтр в шапке календаря сюда не доходит —
+  // дровер получает уже готовый список занятий дня.
+  const [query, setQuery] = React.useState("");
+  React.useEffect(() => {
+    if (open) setQuery("");
+  }, [open, day]);
+
+  const visible = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sorted;
+    return sorted.filter((occ) => occ.employeeName.toLowerCase().includes(q));
+  }, [sorted, query]);
+
+  const absenceList = React.useMemo(
+    () => [...(absences ?? [])].sort((a, b) => a.employeeName.localeCompare(b.employeeName)),
+    [absences],
+  );
+  const visibleAbsences = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return absenceList;
+    return absenceList.filter((m) => m.employeeName.toLowerCase().includes(q));
+  }, [absenceList, query]);
+
+  // На коротком списке поле только съедает высоту — искать там нечего.
+  const showSearch = sorted.length + absenceList.length >= SEARCH_MIN_ROWS;
 
   return (
     <Drawer anchor="right" open={open} onClose={onClose} PaperProps={{ sx: { width: { xs: "100%", sm: 420 }, maxWidth: "100%" } }}>
@@ -71,14 +109,48 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
       </Box>
       <Divider />
 
-      <Box sx={{ p: 2.5, flex: 1, overflowY: "auto" }}>
-        {sorted.length === 0 ? (
+      {/* Поле над лентой, а не внутри неё: при прокрутке списка запрос остаётся
+          на виду вместе со счётчиком найденных. */}
+      {showSearch && (
+        <Box sx={{ px: 2.5, pt: 2, pb: 1 }}>
+          <TextField
+            size="small"
+            fullWidth
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Поиск по ФИО..."
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchOutlined sx={{ fontSize: 16, color: "text.disabled" }} />
+                </InputAdornment>
+              ),
+            }}
+          />
+          <Typography variant="caption" color="text.disabled" sx={{ mt: 0.5, display: "block" }}>
+            {query.trim()
+              ? `Найдено: ${visible.length + visibleAbsences.length} из ${
+                  sorted.length + absenceList.length
+                }`
+              : `Сотрудников в смене: ${sorted.length}${
+                  absenceList.length > 0 ? ` · отсутствуют: ${absenceList.length}` : ""
+                }`}
+          </Typography>
+        </Box>
+      )}
+
+      <Box sx={{ px: 2.5, pt: showSearch ? 0.5 : 2.5, pb: 2.5, flex: 1, overflowY: "auto" }}>
+        {sorted.length === 0 && absenceList.length === 0 ? (
           <Typography color="text.secondary" align="center" sx={{ mt: 4 }}>
             Нет смен на этот день
           </Typography>
+        ) : visible.length === 0 && visibleAbsences.length === 0 ? (
+          <Typography color="text.secondary" align="center" sx={{ mt: 4 }}>
+            Никого не нашли по запросу «{query.trim()}»
+          </Typography>
         ) : (
           <Stack spacing={1}>
-            {sorted.map((occ) => {
+            {visible.map((occ) => {
               const employee = employeesById.get(occ.employeeId);
               const occKey = `${occ.kind}_${occ.sourceId}_${occ.startTime}`;
               const busy = busyKey === occKey;
@@ -187,6 +259,52 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
                 </Box>
               );
             })}
+
+            {/* Отсутствия — тем же списком, но пунктиром и приглушённо: это не
+                смена, а закрытый день (или его часть). */}
+            {visibleAbsences.length > 0 && (
+              <Typography variant="caption" color="text.secondary" sx={{ pt: 1 }}>
+                Отсутствуют
+              </Typography>
+            )}
+            {visibleAbsences.map((mark) => (
+              <Box
+                key={mark.id}
+                sx={{
+                  p: 1.5,
+                  borderRadius: "10px",
+                  border: "1px dashed",
+                  borderColor: "divider",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1.5,
+                }}
+              >
+                <UserAvatar
+                  name={mark.employeeName}
+                  src={employeesById.get(mark.employeeId)?.photoUrl}
+                  size={38}
+                  sx={{ opacity: 0.55 }}
+                />
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="subtitle2" color="text.secondary" noWrap>
+                    {mark.employeeName}
+                  </Typography>
+                  <Typography variant="body2" color="text.disabled" noWrap>
+                    {mark.startTime && mark.endTime
+                      ? `${mark.startTime}–${mark.endTime}`
+                      : "весь день"}
+                    {mark.comment ? ` · ${mark.comment}` : ""}
+                  </Typography>
+                </Box>
+                <Chip
+                  label={mark.label}
+                  size="small"
+                  variant="outlined"
+                  sx={{ flexShrink: 0 }}
+                />
+              </Box>
+            ))}
           </Stack>
         )}
       </Box>

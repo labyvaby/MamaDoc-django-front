@@ -109,6 +109,10 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // менять эти настройки бэк разрешает по одному и тому же коду, поэтому
   // «смотреть, но не править» на странице нет.
   odoctor: "odoctor.manage",
+  // Chatwoot → сделки: приёмник вебхука и карта инбоксов. Право своё
+  // (chatwoot.manage), отдельное от chatwoot.view — видеть чаты и
+  // настраивать секрет приёмника не одно и то же.
+  chatwoot: "chatwoot.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

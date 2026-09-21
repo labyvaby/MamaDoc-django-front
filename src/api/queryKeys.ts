@@ -219,6 +219,8 @@ export const djangoQueryKeys = {
       ["django", "deals", "stages", pipelineId ?? null, orgId ?? null] as const,
     sources: (orgId?: number) => ["django", "deals", "sources", orgId ?? null] as const,
     lostReasons: (orgId?: number) => ["django", "deals", "lost-reasons", orgId ?? null] as const,
+    bots: (orgId?: number) => ["django", "deals", "bots", orgId ?? null] as const,
+    botKeys: (botId: number, orgId?: number) => ["django", "deals", "bots", botId, "keys", orgId ?? null] as const,
     duplicates: (phone: string, orgId?: number) =>
       ["django", "deals", "duplicates", phone, orgId ?? null] as const,
     funnel: (params: Record<string, unknown>) => ["django", "deals", "funnel", params] as const,
@@ -433,9 +435,13 @@ export const djangoQueryKeys = {
       ["django", "scheduling", "rules", params] as const,
     exceptions: (params: Record<string, unknown>) =>
       ["django", "scheduling", "exceptions", params] as const,
-    /** Приёмы, попадающие под отсутствие сотрудника (exceptions/conflicts/). */
+    /**
+     * Приёмы, попадающие под отсутствие сотрудника (exceptions/conflicts/).
+     * Свой корень, а не под `exceptions`: сброс списков исключений не должен
+     * тянуть за собой запросы по всем сотрудникам (см. scheduleInvalidation.ts).
+     */
     conflicts: (params: Record<string, unknown>) =>
-      ["django", "scheduling", "exceptions", "conflicts", params] as const,
+      ["django", "scheduling", "conflicts", params] as const,
     availability: (params: Record<string, unknown>) =>
       ["django", "scheduling", "availability", params] as const,
     availabilitySummary: (params: Record<string, unknown>) =>

@@ -75,8 +75,10 @@ import ScheduleDayDrawer from "./ScheduleDayDrawer";
 import SchedulePointEditDialog, { type SchedulePointEditValues } from "./SchedulePointEditDialog";
 import ShiftOverlapDialog from "./ShiftOverlapDialog";
 import AbsenceConflictsDrawer, { type AbsenceSpan } from "./AbsenceConflictsDrawer";
+import { isScheduleQueryExceptConflicts } from "./scheduleInvalidation";
 import { isAbsenceKind, useAbsenceConflicts } from "./useAbsenceConflicts";
 import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
+import { absencesOfDay, type AbsenceMark } from "./absenceRows";
 import { useEmployeeColorMap } from "./employeeColors";
 
 const WEEKDAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -1364,8 +1366,13 @@ const DjangoSchedulePage: React.FC = () => {
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
+  // Правила, исключения и свободные окна — но не conflicts: отметка выходного
+  // приёмы не меняет, а их перезапрос по всем сотрудникам стоил секунды на
+  // каждый клик (см. scheduleInvalidation.ts).
   const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ["django", "scheduling"] });
+    void queryClient.invalidateQueries({
+      predicate: (query) => isScheduleQueryExceptConflicts(query.queryKey),
+    });
   };
 
   const deleteRuleMutation = useMutation({
@@ -1473,6 +1480,16 @@ const DjangoSchedulePage: React.FC = () => {
     [selectedDay, rules, monthExceptions],
   );
 
+  // Отпуска и выходные того же дня: смен они не порождают, поэтому в дровер
+  // идут отдельным списком — иначе отсутствующего там просто нет.
+  const selectedDayAbsences = React.useMemo<AbsenceMark[]>(
+    () =>
+      selectedDay
+        ? absencesOfDay(monthExceptions, selectedDay.format("YYYY-MM-DD"))
+        : [],
+    [selectedDay, monthExceptions],
+  );
+
   const openExceptionDialog = (opts: {
     kind?: ScheduleExceptionKind;
     title?: string;
@@ -1503,7 +1520,7 @@ const DjangoSchedulePage: React.FC = () => {
         organizationId: orgId,
         branchId,
       });
-      void queryClient.invalidateQueries({ queryKey: ["django", "scheduling"] });
+      invalidate();
       notify?.({ type: "success", message: "Выходной отмечен" });
       setAbsenceReview({
         employeeId,
@@ -1522,7 +1539,7 @@ const DjangoSchedulePage: React.FC = () => {
   const handleDeleteShift = async (exceptionId: number) => {
     try {
       await deleteScheduleException(exceptionId);
-      void queryClient.invalidateQueries({ queryKey: ["django", "scheduling"] });
+      invalidate();
       notify?.({ type: "success", message: "Смена удалена" });
     } catch (e) {
       notify?.({ type: "error", message: "Ошибка", description: parseBackendError(e) });
@@ -2090,6 +2107,7 @@ const DjangoSchedulePage: React.FC = () => {
         onClose={() => setDayDrawerOpen(false)}
         day={selectedDay}
         occurrences={selectedDayOccurrences}
+        absences={selectedDayAbsences}
         employeesById={employeesById}
         employeeColorMap={employeeColorMap}
         canManage={canManage}
