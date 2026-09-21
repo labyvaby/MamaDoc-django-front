@@ -153,7 +153,8 @@
     "feedCreated": "Создано",
     "feedStage": "Этап",
     "feedAmount": "Сумма",
-    "feedAssignee": "Ответственный"
+    "feedAssignee": "Ответственный",
+    "customFields": "Дополнительно"
   },
   "activity": {
     "call": "Звонок",
@@ -255,10 +256,25 @@
     "cancel": "Отмена",
     "pipelineNextTouch": "Следующее касание через, ч",
     "pipelineNextTouchHint": "При записи касания в карточке дата следующего подставляется на столько часов вперёд; 0 — не подставлять.",
-    "cardActions": "Кнопки в карточке:",
+    "cardActions": "Блоки карточки:",
     "cardAction_chat": "Открыть чат",
     "cardAction_task": "Поставить задачу",
-    "cardAction_appointment": "Записать на приём"
+    "cardAction_appointment": "Записать на приём",
+    "cardAction_services": "Услуги и сумма",
+    "customFields": "Дополнительные поля карточки",
+    "customFieldsHint": "Свои поля для этой воронки: откуда реклама, объект, дата заезда — что важно вашему сценарию.",
+    "customFieldAdd": "Добавить поле",
+    "customFieldLabel": "Название",
+    "customFieldType": "Тип",
+    "customFieldType_text": "Текст",
+    "customFieldType_number": "Число",
+    "customFieldType_date": "Дата",
+    "customFieldType_select": "Список",
+    "customFieldType_checkbox": "Да / нет",
+    "customFieldOptions": "Варианты через запятую",
+    "customFieldRequired": "Обязательное",
+    "customFieldDeleteHint": "Значения этого поля у сделок останутся в базе, но перестанут показываться",
+    "customFieldsEmpty": "Полей пока нет — карточка показывает только стандартные."
   },
   "kind": {
     "open": "В работе",

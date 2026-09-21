@@ -37,6 +37,7 @@ import LostReasonDialog from "./LostReasonDialog";
 import StageStepper from "./StageStepper";
 import StageTimeline from "./StageTimeline";
 import LeadInfoCard from "./LeadInfoCard";
+import DealCustomFields from "./DealCustomFields";
 import { buildStageSegments } from "./stageSegments";
 import CreateTaskDrawer from "../tasks/CreateTaskDrawer";
 import DjangoAddAppointmentDrawer from "../../pages/appointments/DjangoAddAppointmentDrawer";
@@ -62,6 +63,7 @@ import {
   DEAL_CARD_ACTIONS,
   type DealActivityType,
   type DealCardAction,
+  type DealCustomField,
   type DealDictionaryItem,
   type DealStage,
   type UpdateDealPayload,
@@ -99,6 +101,8 @@ type DealDetailDrawerProps = {
   nextTouchHours?: number;
   /** Какие кнопки действий показывать (настройка воронки). */
   cardActions?: DealCardAction[];
+  /** Схема дополнительных полей воронки. */
+  customFields?: DealCustomField[];
 };
 
 const ACTIVITY_TYPES: DealActivityType[] = ["call", "message", "visit", "note"];
@@ -163,6 +167,7 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   canOverrideAmount,
   nextTouchHours = 24,
   cardActions = DEAL_CARD_ACTIONS,
+  customFields = [],
 }) => {
   const { t } = useT("deals");
   const orgId = useApiOrgId();
@@ -679,6 +684,20 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                 </Stack>
               ) : null}
 
+              {customFields.length > 0 ? (
+                <>
+                  <Divider />
+                  <DealCustomFields
+                    fields={customFields}
+                    values={deal.customValues ?? {}}
+                    disabled={!canUpdate || patchMutation.isPending}
+                    onChange={(patch) => patchMutation.mutate({ customValues: patch })}
+                  />
+                </>
+              ) : null}
+
+              {actionOn("services") ? (
+              <>
               <Divider />
 
               {/* Услуги и сумма — в одну строку: сумма считается по позициям,
@@ -778,6 +797,8 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                   </Stack>
                 ))}
               </Stack>
+              </>
+              ) : null}
 
               <Divider />
 
