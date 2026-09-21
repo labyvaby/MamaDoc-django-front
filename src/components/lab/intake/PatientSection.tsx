@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Autocomplete,
+  Button,
   Checkbox,
   FormControlLabel,
   Stack,
@@ -15,9 +16,7 @@ import dayjs from "dayjs";
 
 import { CustomDatePicker } from "../../ui";
 import type { DjangoPatient } from "../../../api/patients";
-import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
-
-import IntakeSection from "./IntakeSection";
+import DjangoAddPatientDrawer from "../../patients/DjangoAddPatientDrawer";
 
 type Props = {
   patient: DjangoPatient | null;
@@ -100,8 +99,18 @@ const PatientSection: React.FC<Props> = ({
   const needsGender = !!patient && patient.gender === "unknown";
   const needsAnything = needsInn || needsBirthDate || needsGender;
 
+  const [addOpen, setAddOpen] = React.useState(false);
+
   return (
-    <IntakeSection title="Пациент" icon={<PersonOutlineOutlined />}>
+    <Stack spacing={1.25}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+          Пациент *
+        </Typography>
+        <Button size="small" disabled={disabled} onClick={() => setAddOpen(true)}>
+          + Добавить пациента
+        </Button>
+      </Stack>
 
         <Autocomplete
           options={options}
@@ -262,7 +271,17 @@ const PatientSection: React.FC<Props> = ({
           />
         </Stack>
       )}
-    </IntakeSection>
+      {/* Тот же дровер, что в форме приёма: пациент с улицы без карты —
+          обычный случай у стойки лаборатории. */}
+      <DjangoAddPatientDrawer
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onCreated={(created) => {
+          onSelect(created);
+          setAddOpen(false);
+        }}
+      />
+    </Stack>
   );
 };
 

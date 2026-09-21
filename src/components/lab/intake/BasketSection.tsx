@@ -81,7 +81,6 @@ const BasketSection: React.FC<Props> = ({
   return (
     <IntakeSection
       title="Анализы"
-      icon={<ScienceOutlined />}
       loading={loading}
       action={
         selected.length > 0 ? (

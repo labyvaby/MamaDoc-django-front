@@ -12,8 +12,6 @@ import { CashlessMethodSelect } from "../../ui";
 import type { DjangoCashlessMethod } from "../../../api/cashlessMethods";
 import type { LabClientType } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
-import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
-
 import IntakeSection from "./IntakeSection";
 
 export interface PaidTube {
@@ -136,7 +134,7 @@ const PaymentSection: React.FC<Props> = ({
   const diff = round2(total - paid);
 
   return (
-    <IntakeSection title="Оплата" icon={<PaymentsOutlined />}>
+    <IntakeSection title="Оплата">
 
         <Stack direction="row" spacing={2}>
           <Stack flex={1} spacing={0.5}>

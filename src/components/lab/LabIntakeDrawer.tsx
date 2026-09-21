@@ -28,7 +28,6 @@ import InstrumentsSection from "./intake/InstrumentsSection";
 import PaymentSection from "./intake/PaymentSection";
 import { isTestVisibleForGender, type BasketLine } from "./intake/basketCatalog";
 import { assembleLabAnswers, groupLabQuestions } from "./intake/labQuestionFields";
-import { pluralRu } from "../../utility/amountInWords";
 
 import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
@@ -93,9 +92,6 @@ const BLANK_EDITS: PatientEdits = { inn: "", birthDate: null, gender: "" };
 const DEFAULT_PAYMENT: PaymentState = { cash: "0", card: "0", cashlessMethodId: null, discountPercent: 0 };
 
 type Phase = "editing" | "submitting" | "done" | "failed";
-
-const declineTests = (n: number): string =>
-  `${n} ${pluralRu(n, ["анализ", "анализа", "анализов"])}`;
 
 interface LabIntakeDraftValues {
   lines: BasketLine[];
@@ -715,22 +711,19 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       anchor="right"
       open={open}
       onClose={busy ? undefined : handleClose}
-      PaperProps={{ sx: { width: { xs: "100%", sm: 520, md: 620, lg: 680 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
+      PaperProps={{
+        sx: {
+          width: { xs: "100%", sm: 480, md: 560 },
+          maxWidth: "100vw",
+          display: "flex",
+          flexDirection: "column",
+          overscrollBehavior: "contain",
+        },
+      }}
     >
       {/* Шапка */}
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2, py: 1, flexShrink: 0 }}>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h6" fontWeight={600} sx={{ lineHeight: 1.25 }}>
-            Приём анализов
-          </Typography>
-          {/* Куда уедет заказ: точка регистрации ЛИС привязана к филиалу,
-              и регистратор с доступом к нескольким должен видеть, в каком
-              он сейчас, не открывая переключатель. */}
-          <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
-            {activeBranch?.name ?? activeOrganization?.name ?? ""}
-            {lines.length > 0 && ` · ${declineTests(lines.length)}`}
-          </Typography>
-        </Box>
+        <Typography variant="h6">Приём анализов</Typography>
         <Stack direction="row" alignItems="center" gap={0.5}>
           {draftRestored && editing && (
             <Tooltip title="Восстановлен черновик — очистить?">
@@ -747,8 +740,16 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       <Divider />
 
       {/* Содержимое */}
-      <Box sx={{ p: 1.5, flex: 1, overflowY: "auto" }}>
-        <Stack spacing={1.5}>
+      <Box
+        sx={{
+          p: 2,
+          flex: 1,
+          overflowY: "auto",
+          scrollbarWidth: "none",
+          "&::-webkit-scrollbar": { display: "none" },
+        }}
+      >
+        <Stack spacing={2}>
           {/* Раздел не настроен у организации — регистратор должен узнать
               об этом до того, как соберёт корзину и введёт оплату, а не из
               загадочного отказа на кнопке приёма (см. отчёт по задаче
@@ -979,7 +980,13 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       <Divider />
 
       {/* Подвал */}
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2, py: 1, flexShrink: 0 }} gap={2}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        gap={2}
+        sx={{ p: 2, flexShrink: 0, bgcolor: "background.paper", borderTop: "1px solid", borderColor: "divider" }}
+      >
         {/* Сумма всегда на виду, пока форма прокручивается: регистратор
             называет её пациенту и вводит оплату, глядя сюда, а не в низ
             секции «Оплата». Причина блокировки — под суммой, а не вместо. */}

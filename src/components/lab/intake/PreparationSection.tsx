@@ -1,8 +1,6 @@
 import React from "react";
 import { Collapse, Link, Skeleton, Stack, Typography } from "@mui/material";
 
-import NoFoodOutlined from "@mui/icons-material/NoFoodOutlined";
-
 import IntakeSection from "./IntakeSection";
 
 type Props = {
@@ -35,7 +33,6 @@ const PreparationSection: React.FC<Props> = ({ texts, loading }) => {
   return (
     <IntakeSection
       title="Подготовка к анализам"
-      icon={<NoFoodOutlined />}
       loading={loading}
       action={
         !loading && texts.length > 0 ? (

@@ -45,7 +45,7 @@ const CommentSection: React.FC<Props> = ({ value, disabled, onChange }) => {
     );
   }
   return (
-    <IntakeSection title="Комментарий к заказу" icon={<ChatBubbleOutlineOutlined />}>
+    <IntakeSection title="Комментарий к заказу">
       <TextField
         size="small"
         fullWidth

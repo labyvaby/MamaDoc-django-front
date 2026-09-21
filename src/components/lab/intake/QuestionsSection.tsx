@@ -13,8 +13,6 @@ import {
 import dayjs from "dayjs";
 
 import { CustomDatePicker } from "../../ui";
-import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
-
 import IntakeSection from "./IntakeSection";
 import {
   INLINE_CHOICE_MAX,
@@ -138,7 +136,6 @@ const QuestionsSection: React.FC<Props> = ({
   return (
     <IntakeSection
       title="Обязательные поля лаборатории"
-      icon={<FactCheckOutlined />}
       loading={loading}
       action={
         !loading && (
