@@ -202,6 +202,7 @@ const DjangoLabPage: React.FC = () => {
                     <TableCell sx={headCellSx}>Дата</TableCell>
                     <TableCell sx={headCellSx}>Пациент</TableCell>
                     <TableCell sx={headCellSx}>Филиал</TableCell>
+                    <TableCell sx={headCellSx}>Оформил</TableCell>
                     <TableCell sx={headCellSx}>Состав</TableCell>
                     {canViewFinance && (
                       <TableCell sx={headCellSx} align="right">
@@ -228,6 +229,7 @@ const DjangoLabPage: React.FC = () => {
                         </TableCell>
                         <TableCell>{order.patientName}</TableCell>
                         <TableCell>{order.branchName}</TableCell>
+                        <TableCell>{order.createdByName || "—"}</TableCell>
                         <TableCell>
                           <Tooltip title={composition}>
                             <Typography variant="body2" noWrap sx={{ maxWidth: 260 }}>

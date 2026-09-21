@@ -106,12 +106,14 @@ describe("normalizeLabOrderDetail", () => {
       dispatchedAt: "2026-09-09T09:05:00+06:00",
       dispatchError: "",
       createdAt: "2026-09-09T09:00:00+06:00",
+      createdByName: "",
       lines: [
         { id: 1, testId: 12, titleSnapshot: "Глюкоза", price: "150.00", countItem: 1, isExpress: false, isBroughtIn: false },
       ],
       instruments: [
         { id: 2, instrumentId: 3, titleSnapshot: "Пробирка EDTA", price: "50.00", count: 1 },
       ],
+      answers: [],
     });
   });
 

@@ -22,6 +22,7 @@ const data = (over: Partial<RegistrationSheetData> = {}): RegistrationSheetData 
   instruments: [
     { id: 5, instrumentId: 7, titleSnapshot: "Забор биоматериала", price: "200.00", count: 1 },
   ],
+  answers: [],
   discountPercent: 0,
   totalAmount: 1000,
   paidAmount: 1000,
@@ -49,7 +50,7 @@ describe("registrationSheetTotals", () => {
     const totals = registrationSheetTotals(data({ totalAmount: 800, paidAmount: 800 }));
     expect(totals.instrumentsCharged).toBe(false);
     expect(buildRegistrationSheetHtml(data({ totalAmount: 800, paidAmount: 800 }))).not.toContain(
-      "200 KGS",
+      "Расходные материалы",
     );
   });
 
@@ -85,21 +86,23 @@ describe("buildRegistrationSheetHtml", () => {
     const html = buildRegistrationSheetHtml(data());
     expect(html).toContain("Мама Доктор");
     expect(html).toContain("Мыктыбаева Мадина");
-    expect(html).toContain("24.09.2001");
-    expect(html).toContain("Жен.");
+    expect(html).toContain("24-09-2001");
+    expect(html).toContain("А. / Жен.");
     expect(html).toContain("06.07.2026");
-    expect(html).toContain("Общий анализ мочи (ОАМ)");
-    expect(html).toContain("Забор биоматериала");
+    expect(html).toContain("1. Общий анализ мочи (ОАМ)");
+    expect(html).toContain("Забор биоматериала / Расходные материалы");
     expect(html).toContain("Сумма итого");
     expect(html).toContain("data:image/png;base64,iVBORw0KGgoBARCODE");
     expect(html).toContain("рег. № <b>23456</b>");
     expect(html).toContain("Дата результата");
+    // Талоны: по одному на анализ плюс сводный — три штуки при двух анализах.
+    expect(html.match(/class="stub"/g)).toHaveLength(3);
   });
 
   it("неотправленный заказ — без штрихкода и номера, с пометкой", () => {
     const html = buildRegistrationSheetHtml(data({ regCode: null, barcodeBase64: "" }));
     expect(html).not.toContain("data:image/png");
-    expect(html).toContain("рег. № —");
+    expect(html).toContain("рег. № <b>—</b>");
     expect(html).toContain("ещё не передан в лабораторию");
   });
 
@@ -128,9 +131,8 @@ describe("buildRegistrationSheetHtml", () => {
 
   it("без права на финансы — ни колонки «Цена», ни итогов", () => {
     const html = buildRegistrationSheetHtml(data({ withPrices: false }));
-    expect(html).not.toContain("Цена");
+    expect(html).not.toContain("цена");
     expect(html).not.toContain("Сумма итого");
-    expect(html).not.toContain("KGS");
     expect(html).toContain("Общий анализ мочи (ОАМ)");
   });
 });

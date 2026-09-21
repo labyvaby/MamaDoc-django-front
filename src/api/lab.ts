@@ -346,6 +346,8 @@ export interface LabOrderRaw {
   totalAmount: string | null;
   lisOrderCode: number | null;
   titles?: string[];
+  /** Кто оформил заказ в CRM; пусто у старых заказов без автора. */
+  createdByName?: string;
   createdAt: string;
 }
 
@@ -359,6 +361,7 @@ export interface LabOrder {
   totalAmount: number;
   lisOrderCode: number | null;
   titles: string[];
+  createdByName: string;
   createdAt: string;
 }
 
@@ -382,6 +385,7 @@ export function normalizeLabOrder(raw: LabOrderRaw): LabOrder {
     totalAmount: Number.isFinite(amount) ? amount : 0,
     lisOrderCode: raw.lisOrderCode ?? null,
     titles: raw.titles ?? [],
+    createdByName: raw.createdByName ?? "",
     createdAt: raw.createdAt,
   };
 }
@@ -504,12 +508,17 @@ export interface LabOrderDetailRaw {
   createdAt: string;
   lines: LabOrderLineDetail[];
   instruments: LabOrderInstrumentDetail[];
-  /**
-   * Ответы на вопросы ЛИС. Карточка их не показывает (план задачи 11 не
-   * просит) — тип оставлен нестрогим, чтобы не выдумывать поля контракта,
-   * которые нигде не читаются.
-   */
-  answers: unknown[];
+  createdByName?: string;
+  answers: LabOrderAnswerDetail[];
+}
+
+/** Ответ на обязательный вопрос ЛИС, как сохранён в заказе. */
+export interface LabOrderAnswerDetail {
+  id: number;
+  lisQuestionId: number;
+  title: string;
+  fieldType: string;
+  value: string;
 }
 
 export interface LabOrderDetail {
@@ -544,8 +553,11 @@ export interface LabOrderDetail {
   dispatchedAt: string | null;
   dispatchError: string;
   createdAt: string;
+  createdByName: string;
   lines: LabOrderLineDetail[];
   instruments: LabOrderInstrumentDetail[];
+  /** Ответы на вопросы ЛИС — печатаются на регистрационном листе, как у ЛИС. */
+  answers: LabOrderAnswerDetail[];
 }
 
 /** Decimal-строка бэка → число; мусор (NaN, Infinity) считаем нулём, не даём ему течь в formatKGS. */
@@ -586,8 +598,10 @@ export function normalizeLabOrderDetail(raw: LabOrderDetailRaw): LabOrderDetail 
     dispatchedAt: raw.dispatchedAt,
     dispatchError: raw.dispatchError,
     createdAt: raw.createdAt,
+    createdByName: raw.createdByName ?? "",
     lines: raw.lines,
     instruments: raw.instruments,
+    answers: raw.answers ?? [],
   };
 }
 
