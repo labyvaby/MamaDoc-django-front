@@ -59,7 +59,9 @@ import {
   updateDeal,
   updateDealItem,
   moveDealTo,
+  DEAL_CARD_ACTIONS,
   type DealActivityType,
+  type DealCardAction,
   type DealDictionaryItem,
   type DealStage,
   type UpdateDealPayload,
@@ -95,6 +97,8 @@ type DealDetailDrawerProps = {
   canOverrideAmount: boolean;
   /** Интервал воронки: на сколько часов вперёд подставлять следующее касание. */
   nextTouchHours?: number;
+  /** Какие кнопки действий показывать (настройка воронки). */
+  cardActions?: DealCardAction[];
 };
 
 const ACTIVITY_TYPES: DealActivityType[] = ["call", "message", "visit", "note"];
@@ -145,6 +149,7 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   canManage,
   canOverrideAmount,
   nextTouchHours = 24,
+  cardActions = DEAL_CARD_ACTIONS,
 }) => {
   const { t } = useT("deals");
   const orgId = useApiOrgId();
@@ -157,8 +162,10 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
   /* Действия ведут в чужие модули, поэтому и права спрашиваем их: у
      регистратора может быть deals.update без tasks.create. */
-  const canCreateTask = can("tasks.create") || can("tasks.manage");
-  const canCreateAppointment = can("appointments.create") || can("appointments.manage");
+  const actionOn = (action: DealCardAction) => cardActions.includes(action);
+  const canCreateTask = actionOn("task") && (can("tasks.create") || can("tasks.manage"));
+  const canCreateAppointment =
+    actionOn("appointment") && (can("appointments.create") || can("appointments.manage"));
 
   const open = dealId != null;
 
@@ -173,7 +180,7 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
   /* Чат показываем только тем, кому открыт раздел «Чаты»: iframe всё равно
      потребует учётку в Чат-центре, а без права незачем и пытаться. */
-  const withChat = Boolean(deal?.chatUrl) && can("chatwoot.view");
+  const withChat = actionOn("chat") && Boolean(deal?.chatUrl) && can("chatwoot.view");
   /* Панель чата закрыта по умолчанию и выезжает справа по кнопке в карточке:
      iframe Chatwoot тяжёлый, а переписку читают реже, чем правят сделку.
      Закрытие дровера и переход к другой сделке её сворачивают. */
@@ -531,23 +538,26 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                 onNotify={onNotify}
               />
 
-              <TextField
-                select
+              {/* Сотрудников десятки — вместо меню на весь экран поиск по
+                  имени и список ограниченной высоты. */}
+              <Autocomplete
                 size="small"
-                label={t("detail.assignee")}
-                value={deal.assigneeId ?? ""}
-                onChange={(e) => setAssignee(e.target.value === "" ? "" : Number(e.target.value))}
+                options={employees}
+                getOptionLabel={(e) => e.fullName}
+                isOptionEqualToValue={(a, b) => a.id === b.id}
+                value={employees.find((e) => e.id === deal.assigneeId) ?? null}
+                onChange={(_e, employee) => setAssignee(employee ? employee.id : "")}
                 disabled={!canUpdate || patchMutation.isPending}
-                helperText={deal.assigneeId == null ? t("detail.assigneeAuto") : " "}
-                fullWidth
-              >
-                <MenuItem value="">—</MenuItem>
-                {employees.map((e) => (
-                  <MenuItem key={e.id} value={e.id}>
-                    {e.fullName}
-                  </MenuItem>
-                ))}
-              </TextField>
+                ListboxProps={{ style: { maxHeight: 280 } }}
+                noOptionsText="—"
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label={t("detail.assignee")}
+                    helperText={deal.assigneeId == null ? t("detail.assigneeAuto") : " "}
+                  />
+                )}
+              />
 
               {/* Действия в остальную CRM: обращение доводится до записи, не
                   выходя из карточки. */}

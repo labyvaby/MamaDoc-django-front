@@ -52,6 +52,10 @@ export interface DealStage {
   isActive: boolean;
 }
 
+/** Кнопки-действия в карточке сделки; набор включённых настраивается у воронки. */
+export type DealCardAction = "chat" | "task" | "appointment";
+export const DEAL_CARD_ACTIONS: DealCardAction[] = ["chat", "task", "appointment"];
+
 export interface DealPipeline {
   id: number;
   name: string;
@@ -62,6 +66,8 @@ export interface DealPipeline {
   order: number;
   /** На сколько часов вперёд карточка подставляет «следующее касание» при записи касания. */
   nextTouchHours: number;
+  /** Какие кнопки показывать в карточке сделок этой воронки (порядок канонический). */
+  cardActions: DealCardAction[];
   stages: DealStage[];
 }
 
@@ -569,6 +575,7 @@ export function updatePipeline(
     code?: string;
     clearCode?: boolean;
     nextTouchHours?: number;
+    cardActions?: DealCardAction[];
   },
   organizationId?: number,
 ): Promise<DealPipeline> {
