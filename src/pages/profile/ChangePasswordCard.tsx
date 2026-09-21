@@ -2,6 +2,7 @@ import React from "react";
 import {
   Alert,
   Box,
+  Divider,
   IconButton,
   InputAdornment,
   Stack,
@@ -14,6 +15,7 @@ import { AppCard } from "../../components/ui";
 import { AppButton } from "../../components/ui/AppButton";
 import { changePassword } from "../../api/auth";
 import { markPasswordSet, usePermissions } from "../../hooks/usePermissions";
+import PasswordLoginHint from "./PasswordLoginHint";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { ApiError } from "../../api/client";
 
@@ -81,6 +83,9 @@ const ChangePasswordCard: React.FC = () => {
 
   return (
     <AppCard variant="outlined" title="Безопасность">
+      {/* Зачем пароль и как им входить — сюда ведёт кнопка из шапки. */}
+      <PasswordLoginHint />
+      <Divider sx={{ my: 2.5 }} />
       <Box component="form" onSubmit={handleSubmit}>
         <Stack spacing={2} sx={{ maxWidth: 420 }}>
           {error && (
