@@ -165,17 +165,20 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
       }}
       elevation={0}
     >
-      {/* Сетка «лево — заголовок — право»: заголовок центрирован, пока хватает
-          места, а когда правый блок (обновить, «Установить пароль», аватар)
-          шире своей доли — сдвигается и режется многоточием, не наезжая. */}
+      {/* С md — сетка «лево — заголовок — право»: боковые колонки не уже своего
+          содержимого, заголовок живёт в средней и центрирован в ней. Пока правый
+          блок (обновить, «Установить пароль», аватар) помещается в треть —
+          заголовок ровно по центру шапки; когда шире — сдвигается, но не
+          наезжает и при нехватке места режется многоточием. На телефоне —
+          прежнее абсолютное центрирование. */}
       <Toolbar
         sx={{
           minHeight: { xs: 56, sm: 64 },
           px: { xs: 1, sm: 2 },
-          display: "grid",
-          gridTemplateColumns: "1fr minmax(0, auto) 1fr",
+          gap: { xs: 0.5, sm: 1 },
+          display: { xs: "flex", md: "grid" },
+          gridTemplateColumns: "minmax(max-content, 1fr) minmax(0, 1fr) minmax(max-content, 1fr)",
           alignItems: "center",
-          columnGap: { xs: 0.5, sm: 1 },
         }}
       >
         {/* Левая часть: Бургер-меню + Компактный логотип */}
@@ -209,6 +212,10 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
 
         {/* Центр: Заголовок страницы */}
         <Box sx={{
+          position: { xs: "absolute", md: "static" },
+          left: { xs: "50%", md: "auto" },
+          transform: { xs: "translateX(-50%)", md: "none" },
+          maxWidth: { xs: "50%", md: "none" },
           minWidth: 0,
           display: "flex",
           justifyContent: "center",
@@ -221,6 +228,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
               fontWeight: 700,
               fontSize: "1.5rem",
               color: "text.primary",
+              minWidth: 0,
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -232,13 +240,15 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
           </Typography>
         </Box>
 
+        {/* Распорка только для flex-режима (xs/sm); в сетке колонки заданы явно. */}
+        <Box sx={{ flex: 1, display: { xs: "block", md: "none" } }} />
 
         {/* Правая часть: Refresh + Avatar */}
         <Stack
           direction="row"
           alignItems="center"
           spacing={{ xs: 0.5, sm: 1 }}
-          sx={{ justifySelf: "end", minWidth: 0 }}
+          sx={{ ml: "auto", justifySelf: "end", minWidth: 0 }}
         >
           <IconButton
             color="inherit"
