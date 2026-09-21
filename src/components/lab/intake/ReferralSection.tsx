@@ -2,6 +2,8 @@ import React from "react";
 import { Autocomplete, TextField, Typography } from "@mui/material";
 
 import type { LabDoctor } from "../../../api/lab";
+import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
+
 import IntakeSection from "./IntakeSection";
 
 type Props = {
@@ -51,7 +53,7 @@ const ReferralSection: React.FC<Props> = ({
   const required = requiredFor.length > 0;
 
   return (
-    <IntakeSection title="Направление" loading={loading}>
+    <IntakeSection title="Направление" icon={<MedicalServicesOutlined />} loading={loading}>
       <Autocomplete
         options={selected && !doctors.some((d) => d.id === selected.id)
           ? [selected, ...doctors]

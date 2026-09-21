@@ -1,6 +1,8 @@
 import React from "react";
 import { TextField } from "@mui/material";
 
+import ChatBubbleOutlineOutlined from "@mui/icons-material/ChatBubbleOutlineOutlined";
+
 import IntakeSection from "./IntakeSection";
 
 type Props = {
@@ -23,7 +25,7 @@ type Props = {
  * `order_to_dto` на бэкенде).
  */
 const CommentSection: React.FC<Props> = ({ value, disabled, onChange }) => (
-  <IntakeSection title="Комментарий к заказу">
+  <IntakeSection title="Комментарий к заказу" icon={<ChatBubbleOutlineOutlined />}>
     <TextField
       size="small"
       fullWidth

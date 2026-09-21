@@ -28,6 +28,7 @@ import InstrumentsSection from "./intake/InstrumentsSection";
 import PaymentSection from "./intake/PaymentSection";
 import { isTestVisibleForGender, type BasketLine } from "./intake/basketCatalog";
 import { assembleLabAnswers, groupLabQuestions } from "./intake/labQuestionFields";
+import { pluralRu } from "../../utility/amountInWords";
 
 import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
@@ -92,6 +93,9 @@ const BLANK_EDITS: PatientEdits = { inn: "", birthDate: null, gender: "" };
 const DEFAULT_PAYMENT: PaymentState = { cash: "0", card: "0", cashlessMethodId: null, discountPercent: 0 };
 
 type Phase = "editing" | "submitting" | "done" | "failed";
+
+const declineTests = (n: number): string =>
+  `${n} ${pluralRu(n, ["анализ", "анализа", "анализов"])}`;
 
 interface LabIntakeDraftValues {
   lines: BasketLine[];
@@ -715,9 +719,18 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
     >
       {/* Шапка */}
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5, flexShrink: 0 }}>
-        <Typography variant="h6" fontWeight={600}>
-          Приём анализов
-        </Typography>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="h6" fontWeight={600} sx={{ lineHeight: 1.25 }}>
+            Приём анализов
+          </Typography>
+          {/* Куда уедет заказ: точка регистрации ЛИС привязана к филиалу,
+              и регистратор с доступом к нескольким должен видеть, в каком
+              он сейчас, не открывая переключатель. */}
+          <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+            {activeBranch?.name ?? activeOrganization?.name ?? ""}
+            {lines.length > 0 && ` · ${declineTests(lines.length)}`}
+          </Typography>
+        </Box>
         <Stack direction="row" alignItems="center" gap={0.5}>
           {draftRestored && editing && (
             <Tooltip title="Восстановлен черновик — очистить?">
@@ -964,9 +977,35 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
 
       {/* Подвал */}
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5, flexShrink: 0 }} gap={2}>
-        <Typography variant="caption" color="error.main" sx={{ minWidth: 0 }}>
-          {editing ? blockReason : ""}
-        </Typography>
+        {/* Сумма всегда на виду, пока форма прокручивается: регистратор
+            называет её пациенту и вводит оплату, глядя сюда, а не в низ
+            секции «Оплата». Причина блокировки — под суммой, а не вместо. */}
+        <Box sx={{ minWidth: 0 }}>
+          {editing ? (
+            <>
+              <Stack direction="row" alignItems="baseline" gap={1}>
+                <Typography variant="caption" color="text.secondary">
+                  К оплате
+                </Typography>
+                <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
+                  {formatKGS(totals.total)}
+                </Typography>
+              </Stack>
+              <Typography
+                variant="caption"
+                color={blockReason ? "error.main" : "success.main"}
+                noWrap
+                sx={{ display: "block" }}
+              >
+                {blockReason ?? "Готово к приёму"}
+              </Typography>
+            </>
+          ) : receipt ? (
+            <Typography variant="body2" color="text.secondary">
+              Заказ №{receipt.order.id}
+            </Typography>
+          ) : null}
+        </Box>
         <Stack direction="row" gap={1} flexShrink={0}>
           <AppButton variant="text" onClick={handleClose} disabled={busy}>
             {editing || phase === "submitting" ? "Отмена" : "Закрыть"}

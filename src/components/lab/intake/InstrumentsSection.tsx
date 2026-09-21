@@ -171,6 +171,7 @@ const InstrumentsSection: React.FC<Props> = ({
   return (
     <IntakeSection
       title={services > 0 ? "Пробирки и услуги" : "Пробирки"}
+      icon={<VaccinesOutlined />}
       loading={loading}
       action={
         tubes.length > 0 ? (
