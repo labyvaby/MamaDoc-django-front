@@ -74,8 +74,8 @@ import {
 const DRAWER_WIDTH = 520;
 /** Колонка сделки, когда рядом открыт чат: чуть шире обычного, чтобы поля не сжимались. */
 const DEAL_COLUMN_WIDTH = 560;
-/** Дровер с чатом: сделка + ~460px на разговор Chatwoot. */
-const DRAWER_WIDTH_WITH_CHAT = 1020;
+/** Дровер с чатом: сделка + ~400px на разговор Chatwoot (сам iframe ужат до 85%, см. DealChatPane). */
+const DRAWER_WIDTH_WITH_CHAT = 960;
 /** Длительность выезда панели чата и расширения дровера — одна, чтобы шли синхронно. */
 const CHAT_SLIDE_MS = 300;
 
@@ -375,7 +375,7 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
       onClose={onClose}
       PaperProps={{
         sx: {
-          /* Карточке — 560, чату — остаток (~460): панель уже, чем у раздела
+          /* Карточке — 560, чату — остаток (~400): панель уже, чем у раздела
              «Чаты», зато полям сделки хватает места. Ширина анимируется вместе
              с выездом панели. */
           width: { xs: "100%", sm: showChat ? DRAWER_WIDTH_WITH_CHAT : DRAWER_WIDTH },
