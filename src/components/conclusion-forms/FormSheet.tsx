@@ -2,10 +2,13 @@ import React from "react";
 import { Box } from "@mui/material";
 
 import {
+  fieldCaption,
   REQUIRED_BLOCK_LABELS,
   resolveMargins,
   sheetSizeMm,
   sheetTypography,
+  startsOnNewLine,
+  stripLeadingBlankLines,
   type ConclusionFormTemplate,
   type ConclusionFormPayload,
   type FormField,
@@ -136,6 +139,13 @@ const SheetField: React.FC<{
   highlighted: boolean;
 }> = ({ field, value, highlighted }) => {
   const multiline = field.type === "multiline";
+  // Двоеточие ровно одно: в бланках его часто пишут прямо в подписи.
+  const caption = fieldCaption(field.label);
+  // Пустые строки в начале значения печать не тянет (в старых заключениях они
+  // сохранены вместе с нормой), а «с новой строки под подписью» решает норма
+  // поля — так её задумал администратор, ставя перенос первым символом.
+  const stripped = stripLeadingBlankLines(value);
+  const shown = multiline && stripped && startsOnNewLine(field) ? `\n${stripped}` : stripped;
   return (
     <Box
       data-print-block
@@ -153,13 +163,13 @@ const SheetField: React.FC<{
           {/* Пробел после двоеточия — иначе текст врача прилипает к подписи
               («Семейный анамнез:без особенностей»), и администратору
               приходилось дописывать пробел в саму подпись поля. */}
-          {field.label.trim() && <Label>{field.label}: </Label>}
-          <FieldValue value={value} multiline rows={field.rows ?? 3} />
+          {caption && <Label>{caption} </Label>}
+          <FieldValue value={shown} multiline rows={field.rows ?? 3} />
         </>
       ) : (
         <Box sx={{ display: "flex", alignItems: "baseline", gap: "2mm" }}>
-          {field.label.trim() && <Label>{field.label}:</Label>}
-          <FieldValue value={value} />
+          {caption && <Label>{caption}</Label>}
+          <FieldValue value={shown} />
         </Box>
       )}
     </Box>
@@ -213,12 +223,10 @@ export const FormSheet: React.FC<FormSheetProps> = ({
         // Обёртка занимает место уже отмасштабированного листа: scale не влияет
         // на поток, без этого в конструкторе появлялась бы пустая полоса.
         width: `${width * scale}mm`,
-        // В печати обёртка растёт за листом: html2canvas снимает область по
-        // границам элемента, и всё, что выходит за фиксированную высоту,
-        // просто не попадает в снимок.
-        ...(printMode
-          ? { minHeight: `${height}mm` }
-          : { height: `${height * scale}mm` }),
+        // Обёртка растёт за листом: html2canvas снимает область по границам
+        // элемента, и всё, что выходит за фиксированную высоту, не попадает в
+        // снимок. На страницы экранный лист режет FormSheetPreview.
+        minHeight: `${height * scale}mm`,
         flexShrink: 0,
       }}
     >
@@ -227,16 +235,19 @@ export const FormSheet: React.FC<FormSheetProps> = ({
         sx={{
           boxSizing: "border-box",
           position: "relative",
-          // На экране лист — ровно страница с обрезкой (превью в конструкторе
-          // показывает, что влезает на бумагу). В печати страница — минимум:
+          // Страница — минимум, а не потолок:
           // лист растёт с контентом, а подпись, будучи последним flex-элементом
           // колонки, стоит у низа короткого листа и уезжает вниз за длинным.
           // Прежняя авто-высота (08.09.2026) ломала прижим подписи потому, что
           // блок содержимого был `height: 100%`, а проценты от min-height
           // родителя не считаются; теперь он flex-элемент — см. ниже.
-          overflow: printMode ? "visible" : "hidden",
+          overflow: "visible",
           width: `${width}mm`,
-          ...(printMode ? { minHeight: `${height}mm` } : { height: `${height}mm` }),
+          // Минимум — страница (короткий бланк: подпись у низа листа), дальше
+          // лист растёт с контентом — и в печати, и на экране. Обрезка по
+          // странице на экране теряла всё, что не влезло (карта гинеколога,
+          // 21.09.2026); по страницам лист раскладывает FormSheetPreview.
+          minHeight: `${height}mm`,
           transform: `scale(${scale})`,
           transformOrigin: "top left",
           bgcolor: "#fff",
