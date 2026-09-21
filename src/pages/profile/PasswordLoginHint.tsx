@@ -3,6 +3,7 @@ import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { alpha } from "@mui/material/styles";
 import type { SxProps, Theme } from "@mui/material/styles";
 import PhoneIphoneIcon from "@mui/icons-material/PhoneIphone";
 import EmailIcon from "@mui/icons-material/Email";
@@ -167,7 +168,13 @@ const PasswordLoginHint: React.FC = () => (
     direction={{ xs: "column", md: "row" }}
     spacing={{ xs: 2, md: 4 }}
     alignItems={{ md: "flex-start" }}
-    sx={{ p: { xs: 2, md: 2.5 }, borderRadius: "14px" }}
+    sx={(t) => ({
+      p: { xs: 2, md: 2.5 },
+      borderRadius: "14px",
+      // Подсказка: мягкий зелёный фон и зелёная рамка (как success-алерт), в обеих темах.
+      bgcolor: alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.12 : 0.08),
+      borderColor: alpha(t.palette.success.main, 0.45),
+    })}
   >
     <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
       <Typography variant="subtitle2">Зачем нужен пароль</Typography>
