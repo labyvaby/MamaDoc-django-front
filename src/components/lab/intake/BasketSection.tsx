@@ -209,6 +209,7 @@ const BasketSection: React.FC<Props> = ({
                 <Tooltip title="Приносной: пациент принёс биоматериал сам — пробирки и взятие не нужны и не оплачиваются">
                   <ToggleButton
                     value="broughtIn"
+                    color="info"
                     size="small"
                     selected={line.broughtIn}
                     disabled={disabled}
@@ -232,6 +233,7 @@ const BasketSection: React.FC<Props> = ({
                 <Tooltip title="Срочное исполнение по повышенной цене">
                   <ToggleButton
                     value="express"
+                    color="warning"
                     size="small"
                     selected={line.express}
                     disabled={disabled}
