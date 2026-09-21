@@ -23,7 +23,7 @@ const REVEAL_DELAY_MS = 400;
  * влезало больше переписки. `zoom` на iframe браузеры трактуют по-разному,
  * transform — одинаково везде.
  */
-const CHAT_SCALE = 0.85;
+const CHAT_SCALE = 0.75;
 
 type Phase =
   /** Ведём iframe на разговор: сессия Чат-центра обычно уже есть. */
@@ -175,7 +175,7 @@ const ChatFrame: React.FC<{
         // ломается его собственная авторизация и WebSocket.
         allow="clipboard-write; microphone; camera; autoplay"
         sx={{
-          // Рисуем фрейм крупнее и ужимаем: 100/0.85 ≈ 117.6% в обе стороны.
+          // Рисуем фрейм крупнее и ужимаем: 100/0.75 ≈ 133% в обе стороны.
           width: `${100 / CHAT_SCALE}%`,
           height: `${100 / CHAT_SCALE}%`,
           transform: `scale(${CHAT_SCALE})`,
