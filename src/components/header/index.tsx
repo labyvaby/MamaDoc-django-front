@@ -292,7 +292,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
                 cursor: "pointer",
                 ml: 0.5,
                 borderRadius: "999px",
-                pr: { xs: 0, md: 1.5 },
+                pr: { xs: 0, lg: 1.5 },
                 py: 0.5,
                 transition: 'background-color 0.2s',
                 '&:hover': {
@@ -305,7 +305,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
                 variant="subtitle2"
                 noWrap
                 sx={{
-                  display: { xs: "none", md: "block" },
+                  display: { xs: "none", lg: "block" },
                   maxWidth: 200,
                   fontWeight: 600,
                   color: 'text.primary'
