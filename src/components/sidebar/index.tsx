@@ -33,6 +33,8 @@ import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
+import HotelOutlined from "@mui/icons-material/HotelOutlined";
+import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
@@ -433,6 +435,10 @@ const SidebarSecondary: React.FC = () => {
     allProcedures: !isRetail && (isSuper || can(PAGE_PERMISSIONS.allProcedures)),
     services: !isRetail && can(PAGE_PERMISSIONS.services),
     documents: moduleGate("documents"),
+    // Структура отеля Viva — самостоятельные страницы, к «Настройкам» не
+    // относятся (право hotel.manage, см. PAGE_PERMISSIONS).
+    hotelRooms: isHotelOrg && can(PAGE_PERMISSIONS.hotelRooms),
+    hotelRoomCategories: isHotelOrg && can(PAGE_PERMISSIONS.hotelRoomCategories),
     // СКЛАДЫ
     pos: can(PAGE_PERMISSIONS.pos),
     products: can(PAGE_PERMISSIONS.products),
@@ -608,14 +614,15 @@ const SidebarSecondary: React.FC = () => {
     (bookingsOverdueQuery.data?.count ?? 0) > 0 ? "error" : "primary";
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
-  // На Viva SidebarMenuItem сам прячет все пункты кроме /schedule и /patients
+  // На Viva SidebarMenuItem сам прячет все пункты кроме отельных
   // (см. HOTEL_ONLY_NAV_PATHS) — "storage" и "management" целиком состоят из
   // скрытых пунктов и превратились бы в пустую вкладку; "my-work" и "org"
-  // остаются видимыми, в них по одному отельному пункту (Расписание, Гости).
+  // остаются видимыми ("my-work" — Бронирования, "org" — Гости, Кухня, Номера,
+  // Категории и тарифы, Отчёты, Настройки).
   const hotelOnly = isHotelOrg;
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
-    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
+    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents || can_.hotelRooms || can_.hotelRoomCategories,
     "storage": !hotelOnly && (can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement),
     "management": !hotelOnly && (can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings),
   };
@@ -885,6 +892,16 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
+        {/* Номера и категории (тарифы) Viva — самостоятельные страницы, не
+            вкладки «Настроек». Форма категории (/room-categories/new и
+            /:categoryId) подсвечивает «Категории и тарифы» по префиксу. */}
+        {show("org") && can_.hotelRooms && (
+          <SidebarMenuItem to="/rooms" icon={<HotelOutlined />} label="Номера" collapsed={siderCollapsed} />
+        )}
+        {show("org") && can_.hotelRoomCategories && (
+          <SidebarMenuItem to="/room-categories" icon={<CategoryOutlined />} label="Категории и тарифы" collapsed={siderCollapsed} />
+        )}
+
         {/* Все приемы */}
         {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label={t("allAppointments")} collapsed={siderCollapsed} />
@@ -983,7 +1000,7 @@ const SidebarSecondary: React.FC = () => {
             консолидации, что «Отчеты» выше: у отеля "management" целиком
             спрятан, поэтому для Viva показываем тот же пункт через "org".
             Тот же реальный SettingsIndexPage/SettingsLayout, что у клиники —
-            рельс сам скрывает клиническую специфику и показывает «Номера»
+            рельс сам скрывает клиническую специфику и показывает «Интеграции»
             по vertical==="hotel" (см. useVisibleSettingsTabs). */}
         {((hotelOnly && show("org")) || (!hotelOnly && show("management") && can_.settings)) && (
           <SidebarMenuItem
@@ -1027,12 +1044,14 @@ type SidebarMenuItemProps = {
  * (RoomBookingGrid), «Все гости» — HotelGuestsPage, «Отчёты» —
  * HotelReportsPage, «Кухня» — HotelKitchenPage, «Настройки» — реальный
  * SettingsIndexPage/SettingsLayout (рельс сам показывает только доступные по
- * правам разделы + «Номера» и «Интеграции» — каналы продаж живут там).
+ * правам разделы + «Интеграции» — каналы продаж живут там). «Номера»
+ * (HotelRoomsPage) и «Категории и тарифы» (HotelRoomCategoriesPage) — свои
+ * страницы, не «Настройки».
  * Остальные ~30 пунктов (Вакцины, СКУД, Кабинет врача и т.п.) ведут либо на
  * несуществующие для синтетической организации данные, либо просто не
  * имеют отношения к отелю.
  */
-const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/reports", "/kitchen", "/settings"];
+const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/reports", "/kitchen", "/rooms", "/room-categories", "/settings"];
 
 const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   to,

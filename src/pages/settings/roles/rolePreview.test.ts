@@ -30,6 +30,13 @@ describe("previewSectionsFor", () => {
     expect(keysFor(["rbac.roles.view"])).toContain("settings");
   });
 
+  it("номера и категории отеля — свои разделы, а не «Настройки»", () => {
+    const keys = keysFor(["hotel.manage"]);
+    expect(keys).toContain("hotelRooms");
+    expect(keys).toContain("hotelRoomCategories");
+    expect(keys).not.toContain("settings");
+  });
+
   it("сохраняет порядок сайдбара независимо от порядка прав", () => {
     const order = PREVIEW_SECTIONS.map((s) => s.key);
     const got = keysFor(["finance.view", "patients.view", "appointments.registry.view"]);

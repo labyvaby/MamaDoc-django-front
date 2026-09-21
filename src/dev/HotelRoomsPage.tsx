@@ -1,14 +1,15 @@
 /**
- * «Настройки» → «Номера» для Viva — вкладка рельса SettingsLayout.tsx,
- * видна только vertical==="hotel" (useVisibleSettingsTabs), маршрут
- * /settings/rooms гейтит hotel.manage (см. App.tsx, accessPermissions.ts).
+ * «Номера» Viva — самостоятельная страница отеля: пункт сайдбара во вкладке
+ * «Организация», а не раздел «Настроек» (рельса SettingsLayout здесь нет).
+ * Маршрут /rooms гейтит hotel.manage (PAGE_PERMISSIONS.hotelRooms, см.
+ * App.tsx, accessPermissions.ts).
  * Реальный бэкенд (src/api/hotel.ts): номера — GET/POST/PATCH/DELETE
  * /hotel/rooms/, категории — только чтение GET /hotel/room-types/ (см.
  * hotel-viva-frontend-api.md §4.2, §6).
  *
  * Здесь только сами номера. Категории (тарифы) — тип номера с ценой за ночь и
  * характеристиками — заводятся и правятся на своей странице «Категории и
- * тарифы» (HotelRoomCategoriesSettingsPage.tsx, /settings/room-categories);
+ * тарифы» (HotelRoomCategoriesPage.tsx, /room-categories);
  * тут они показаны справочно, как группы, в которые входят номера.
  *
  * Номера сгруппированы по категориям, как в RoomBookingGrid и
@@ -41,6 +42,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useTheme,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
@@ -49,13 +51,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router";
 
 import { usePageTitle } from "../hooks/usePageTitle";
-import { SettingsLayout } from "../pages/settings/SettingsLayout";
 import { useHotelProperty } from "./useHotelProperty";
 import { getHotelCatalogs, listRoomTypes, listRooms, createRoom, updateRoom, deleteRoom, type HotelRoom } from "../api/hotel";
 import { ApiError, getErrorMessage } from "../api/client";
 
-export const HotelRoomsSettingsPage: React.FC = () => {
+export const HotelRoomsPage: React.FC = () => {
   usePageTitle("Номера");
+  const theme = useTheme();
   const { property } = useHotelProperty();
   const queryClient = useQueryClient();
 
@@ -191,8 +193,8 @@ export const HotelRoomsSettingsPage: React.FC = () => {
   const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading || roomsQuery.isLoading;
 
   return (
-    <SettingsLayout>
-      <Stack spacing={2} sx={{ height: "100%" }}>
+    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
+      <Stack spacing={2}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
         <Stack direction="row" alignItems="center" gap={1}>
           <HotelOutlined color="action" />
@@ -206,7 +208,7 @@ export const HotelRoomsSettingsPage: React.FC = () => {
             variant="outlined"
             startIcon={<CategoryOutlined />}
             component={RouterLink}
-            to="/settings/room-categories"
+            to="/room-categories"
           >
             Категории и тарифы
           </Button>
@@ -440,8 +442,8 @@ export const HotelRoomsSettingsPage: React.FC = () => {
         </DialogActions>
       </Dialog>
       </Stack>
-    </SettingsLayout>
+    </Box>
   );
 };
 
-export default HotelRoomsSettingsPage;
+export default HotelRoomsPage;

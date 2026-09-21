@@ -46,8 +46,6 @@ import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import PercentOutlined from "@mui/icons-material/PercentOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
-import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
-import HotelOutlined from "@mui/icons-material/HotelOutlined";
 import HubOutlined from "@mui/icons-material/HubOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
@@ -185,18 +183,6 @@ const TAB_DEFS: TabDef[] = [
     group: "catalogs",
   },
   {
-    key: "roomCategories",
-    to: "/settings/room-categories",
-    icon: <CategoryOutlined fontSize="small" />,
-    group: "catalogs",
-  },
-  {
-    key: "rooms",
-    to: "/settings/rooms",
-    icon: <HotelOutlined fontSize="small" />,
-    group: "catalogs",
-  },
-  {
     key: "integrations",
     to: "/settings/integrations",
     icon: <HubOutlined fontSize="small" />,
@@ -306,8 +292,6 @@ export function useVisibleSettingsTabs(): TabDef[] {
     }
     if (tab.key === "productAttributes" && activeOrganization?.vertical !== "retail") return false;
     if (tab.key === "clients" && activeOrganization?.vertical !== "retail") return false;
-    if (tab.key === "roomCategories" && activeOrganization?.vertical !== "hotel") return false;
-    if (tab.key === "rooms" && activeOrganization?.vertical !== "hotel") return false;
     if (tab.key === "integrations" && activeOrganization?.vertical !== "hotel") return false;
     // Справочник способов безнала: на бэке эндпоинта ещё нет — вкладку
     // показываем только вместе с остальным UI, по флагу (api/cashlessMethods.ts).

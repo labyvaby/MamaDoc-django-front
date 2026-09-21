@@ -59,6 +59,14 @@ export const PAGE_PERMISSIONS = {
   ecommerce: "ecommerce.view",
   targets: "targets.view",
   messaging: "messaging.view",
+  // Номера и категории (тарифы) Viva — самостоятельные страницы отеля, не
+  // вкладки «Настроек»: свои пункты сайдбара и роуты /rooms, /room-categories.
+  // Право то же, что общее управление отелем (hotel-viva-frontend-api.md §3):
+  // номера правятся /hotel/rooms/, категории и характеристики —
+  // /hotel/room-types/ и /hotel/catalogs/amenities/. Видны только vertical==="hotel"
+  // (сайдбар гейтит isHotelOrg).
+  hotelRooms: "hotel.manage",
+  hotelRoomCategories: "hotel.manage",
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {
@@ -118,16 +126,11 @@ export const SETTINGS_TAB_PERMISSIONS = {
   chatwoot: "chatwoot.manage",
   // Подключение ЛИС: код организации, точки регистрации филиалов.
   lab: "lab.settings.manage",
-  // Номера/категории/характеристики фонда Viva — вкладка видна только
-  // vertical==="hotel" (см. useVisibleSettingsTabs в SettingsLayout.tsx),
-  // право то же, что общее управление отелем (hotel-viva-frontend-api.md §3).
-  rooms: "hotel.manage",
-  // Категории (тарифы) номеров Viva — отдельная от «Номеров» вкладка, право то же
-  // (заводятся и правятся /hotel/room-types/ и характеристики — hotel.manage).
-  roomCategories: "hotel.manage",
   // Каналы продаж Viva (Booking.com и др.) — вкладка видна только
-  // vertical==="hotel", как «Номера»; подключить/отключить канал бэк
-  // разрешает по hotel.channels.manage (hotel-viva-frontend-api.md §3.1).
+  // vertical==="hotel" (см. useVisibleSettingsTabs в SettingsLayout.tsx);
+  // подключить/отключить канал бэк разрешает по hotel.channels.manage
+  // (hotel-viva-frontend-api.md §3.1). «Номера» и «Категории и тарифы» —
+  // не вкладки настроек, их права в PAGE_PERMISSIONS (hotelRooms, hotelRoomCategories).
   integrations: "hotel.channels.manage",
 } satisfies Record<string, string | string[]>;
 

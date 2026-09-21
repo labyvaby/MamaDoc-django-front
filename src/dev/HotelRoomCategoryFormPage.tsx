@@ -1,9 +1,10 @@
 /**
- * «Настройки» → «Категории и тарифы» → «Новая категория» / «Изменить» — форма
- * категории (тарифа) номеров на отдельной странице, а не диалогом. Маршруты
- * /settings/room-categories/new (создание) и /settings/room-categories/:categoryId
- * (правка) ведут на эту же страницу, гейт hotel.manage (см. App.tsx,
- * accessPermissions.ts). Список категорий — HotelRoomCategoriesSettingsPage.tsx,
+ * «Категории и тарифы» → «Новая категория» / «Изменить» — форма категории
+ * (тарифа) номеров на отдельной странице, а не диалогом; к «Настройкам» страница
+ * отношения не имеет (рельса SettingsLayout нет). Маршруты /room-categories/new
+ * (создание) и /room-categories/:categoryId (правка) ведут на эту же страницу,
+ * гейт hotel.manage (PAGE_PERMISSIONS.hotelRoomCategories, см. App.tsx,
+ * accessPermissions.ts). Список категорий — HotelRoomCategoriesPage.tsx,
  * после сохранения возвращаемся на него.
  *
  * Реальный бэкенд (src/api/hotel.ts): создание/правка — POST/PATCH
@@ -36,6 +37,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useTheme,
 } from "@mui/material";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
@@ -43,7 +45,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate, useParams } from "react-router";
 
 import { usePageTitle } from "../hooks/usePageTitle";
-import { SettingsLayout } from "../pages/settings/SettingsLayout";
 import { useHotelProperty } from "./useHotelProperty";
 import {
   getHotelCatalogs,
@@ -57,7 +58,7 @@ import {
 } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 
-const LIST_PATH = "/settings/room-categories";
+const LIST_PATH = "/room-categories";
 
 interface CategoryFormState {
   name: string;
@@ -248,7 +249,7 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
             fullWidth
           />
           {/* Поля переносятся по ширине области (flex-wrap), а не по брейкпоинту окна:
-              страница живёт внутри SettingsLayout с рельсом слева, области заметно уже окна. */}
+              форма ограничена maxWidth и на узких экранах сжимается вместе с окном. */}
           <Stack direction="row" flexWrap="wrap" gap={2}>
             <TextField
               label="Цена без характеристик, сом"
@@ -442,6 +443,7 @@ export const HotelRoomCategoryFormPage: React.FC = () => {
   const { categoryId } = useParams();
   const isEdit = categoryId != null;
   usePageTitle(isEdit ? "Категория номеров" : "Новая категория");
+  const theme = useTheme();
   const { property } = useHotelProperty();
 
   const catalogsQuery = useQuery({
@@ -459,8 +461,8 @@ export const HotelRoomCategoryFormPage: React.FC = () => {
   const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading;
 
   return (
-    <SettingsLayout>
-      <Stack spacing={2} sx={{ height: "100%" }}>
+    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
+      <Stack spacing={2}>
         <Stack direction="row" alignItems="center" gap={1}>
           <Tooltip title="К списку категорий">
             <IconButton size="small" component={RouterLink} to={LIST_PATH} aria-label="К списку категорий">
@@ -502,7 +504,7 @@ export const HotelRoomCategoryFormPage: React.FC = () => {
           />
         )}
       </Stack>
-    </SettingsLayout>
+    </Box>
   );
 };
 
