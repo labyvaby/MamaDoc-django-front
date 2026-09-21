@@ -2,6 +2,13 @@ import { apiRequest, ApiError } from "./client";
 import type { CashlessMethodBreakdownRow } from "./cashbox";
 export { parseBackendError } from "./appointments";
 
+/**
+ * X-отчёт временно скрыт (21.09.2026, просьба владельца): кнопка на странице
+ * кассы и иконка в истории смен не показываются. Расчёт, диалог и печать
+ * остаются в коде — вернуть раздел значит поставить здесь true.
+ */
+export const X_REPORT_ENABLED = false;
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type CashboxShiftStatus = "open" | "closed";

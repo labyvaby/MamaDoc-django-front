@@ -11,6 +11,7 @@ import { AppCard } from "../../../../components/ui";
 import {
   getCashboxShiftSummary,
   getCurrentShift,
+  X_REPORT_ENABLED,
   type CashboxShift,
 } from "../../../../api/cashboxShifts";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../../api/queryKeys";
@@ -103,20 +104,24 @@ const ShiftSection: React.FC<Props> = ({
               ? "Выберите филиал, чтобы работать со сменой"
               : shift
                 ? `${shift.openedByName ?? "—"} · с ${dayjs(shift.openedAt).format("DD.MM HH:mm")} · начальные ${formatSom(parseFloat(shift.openingCash) || 0)}`
-                : "Открытой смены нет — X-отчёт можно снять по прошлым сменам в истории"}
+                : X_REPORT_ENABLED
+                  ? "Открытой смены нет — X-отчёт можно снять по прошлым сменам в истории"
+                  : "Открытой смены нет — прошлые смены и их итоги лежат в истории"}
           </Typography>
         </Box>
 
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<ReceiptLongOutlined fontSize="small" />}
-            disabled={!shift}
-            onClick={() => setXReportShift(shift)}
-          >
-            X-отчёт
-          </Button>
+          {X_REPORT_ENABLED && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ReceiptLongOutlined fontSize="small" />}
+              disabled={!shift}
+              onClick={() => setXReportShift(shift)}
+            >
+              X-отчёт
+            </Button>
+          )}
           {canManage &&
             (shift ? (
               <Button

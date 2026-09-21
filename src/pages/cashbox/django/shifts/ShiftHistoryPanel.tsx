@@ -26,6 +26,7 @@ import dayjs from "dayjs";
 import {
   getCashboxShifts,
   parseBackendError,
+  X_REPORT_ENABLED,
   type CashboxShift,
   type CashboxShiftStatus,
 } from "../../../../api/cashboxShifts";
@@ -268,11 +269,13 @@ const ShiftHistoryPanel: React.FC<Props> = ({
                     {fmtDiff(sh.difference)}
                   </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                    <Tooltip title="X-отчёт">
-                      <IconButton size="small" onClick={() => setXReportTarget(sh)}>
-                        <ReceiptLongOutlined fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+                    {X_REPORT_ENABLED && (
+                      <Tooltip title="X-отчёт">
+                        <IconButton size="small" onClick={() => setXReportTarget(sh)}>
+                          <ReceiptLongOutlined fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                     <Tooltip title="Итоги смены">
                       <IconButton
                         size="small"
