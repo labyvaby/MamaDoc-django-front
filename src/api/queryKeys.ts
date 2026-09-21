@@ -223,6 +223,9 @@ export const djangoQueryKeys = {
     botKeys: (botId: number, orgId?: number) => ["django", "deals", "bots", botId, "keys", orgId ?? null] as const,
     duplicates: (phone: string, orgId?: number) =>
       ["django", "deals", "duplicates", phone, orgId ?? null] as const,
+    /** Клиенты с тем же телефоном — подсказка «Привязать» в карточке. */
+    patientCandidates: (dealId: number, orgId?: number) =>
+      ["django", "deals", dealId, "patient-candidates", orgId ?? null] as const,
     funnel: (params: Record<string, unknown>) => ["django", "deals", "funnel", params] as const,
     /** Пикер услуг в карточке сделки: прайс общий по организации. */
     servicePicker: (search: string, orgId?: number) =>
