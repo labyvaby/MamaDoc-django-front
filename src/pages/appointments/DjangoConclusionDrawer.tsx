@@ -71,6 +71,8 @@ import { tt } from "../../i18n/t";
 import { agree } from "../../i18n/formatters";
 import { ConclusionFormInline } from "../../components/conclusion-forms/ConclusionFormInline";
 import { ConclusionHistory } from "../../components/conclusion-forms/ConclusionHistory";
+import { ConclusionFormReadView } from "../../components/conclusion-forms/ConclusionFormReadView";
+import { buildConclusionPrintParts, formatDiagnoses } from "../../utility/conclusionPrintParts";
 import {
   AiAssistHeaderButton,
   AiAssistPendingStrip,
@@ -86,6 +88,7 @@ import {
 import {
   getConclusionForms,
   renderFilledForm,
+  fieldCaption,
   resolveFormForScope,
   stripLeadingBlankLines,
   type ConclusionFormTemplate,
@@ -863,6 +866,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     if (!open) {
       attachedForLineRef.current = null;
       restoredWithFormRef.current = false;
+      detachedFormRef.current = null;
     }
   }, [open]);
 
@@ -890,6 +894,50 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     for (const field of attachedForm?.fields ?? []) if (field.slot) set.add(field.slot);
     return set;
   }, [attachedForm]);
+
+  /**
+   * Просмотр заключения по бланку раскладывается так же, как печать: строки
+   * листа плюс колонки, которых на листе нет (см. ConclusionFormReadView).
+   * Одно правило на экран и бумагу — иначе они снова разъедутся.
+   */
+  const readOnlyFormParts = React.useMemo(() => {
+    if (!readOnly || !attachedForm) return null;
+    const quantity = (value: string) => (value.trim() ? formatQuantity(value) : "");
+    return buildConclusionPrintParts({
+      template: attachedForm,
+      formValues,
+      manual: manualText,
+      columns: {
+        heightCm: quantity(heightCm),
+        weightKg: quantity(weightKg),
+        temperature: quantity(temperature),
+        complaints,
+        diagnosis: formatDiagnoses(
+          selectedDiagnoses.map((d) => ({
+            diagnosisCode: d.code,
+            title: d.title,
+            displayName: d.displayName,
+          })),
+        ),
+        anamnesis,
+        objective,
+        conclusion: conclusionText,
+      },
+    });
+  }, [
+    readOnly,
+    attachedForm,
+    formValues,
+    manualText,
+    heightCm,
+    weightKg,
+    temperature,
+    complaints,
+    selectedDiagnoses,
+    anamnesis,
+    objective,
+    conclusionText,
+  ]);
 
   // ── штатные поля как узлы ─────────────────────────────────────────────────
   // Одно и то же поле рисуется либо на своём обычном месте, либо в потоке
@@ -938,12 +986,18 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     temperature: { value: temperature, onChange: setTemperature },
   };
 
-  const vitalNode = (kind: VitalKind) => {
+  const vitalNode = (kind: VitalKind, label?: string) => {
     const props = VITAL_PROPS[kind];
     const state = VITAL_STATE[kind];
+    // Степпер сам дописывает единицы, а в подписи из бланка они обычно уже
+    // есть («Рост, см») — без этого выходило «Рост, см, см».
+    const unit = props.suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const shownLabel = label
+      ? label.replace(new RegExp(`[\\s,(]*${unit}\\)?\\s*$`, "i"), "") || props.label
+      : props.label;
     return (
       <VitalStepper
-        label={props.label}
+        label={shownLabel}
         suffix={props.suffix}
         value={state.value}
         onChange={state.onChange}
@@ -974,11 +1028,11 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
    * Занявшему слот полю бланка нужен не текстовый ввод, а живой автокомплит:
    * диагноз выбирают кодом, а не печатают руками (см. FormFieldSlot выше).
    */
-  const diagnosisNode = () => (
+  const diagnosisNode = (label?: string) => (
     // minWidth: 0 — чипы выбранных диагнозов длинные («Z00.1 — Рутинное общее
     // медицинское обследование»), и без этого блок распирает контейнер вширь.
     <Stack spacing={0.5} ref={diagnosisAnchorRef} sx={{ minWidth: 0 }}>
-      {fieldLabel(t("conclusion.diagnosisIcd"))}
+      {fieldLabel(label ?? t("conclusion.diagnosisIcd"))}
       <Autocomplete
         multiple
         freeSolo
@@ -1224,10 +1278,54 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   /** Видит ли врач колонку хоть где-то: своим полем или строкой бланка. */
   const columnVisible = (slot: FormFieldSlot) => !slotFree(slot) || standardShown(slot);
 
+  /**
+   * «Заполнено ранее»: колонка с текстом, которой в прикреплённом бланке нет.
+   *
+   * Такое поле видно только потому, что в нём уже есть значение (старое
+   * заключение, другой бланк до смены). Раньше оно стояло на своём штатном
+   * месте, и температура оказывалась над бланком, где её никто не ждёт
+   * (заключение 08.09 педиатра, открытое по бланку гинеколога, 21.09.2026).
+   * Теперь все такие поля собраны под бланком одним блоком с пояснением и
+   * кнопкой «Очистить». Итог бланка (projectionNode) и обязательное
+   * «Заключение» сюда не относятся — это не остаток, а часть документа.
+   */
+  const isLeftover = (slot: FormFieldSlot) =>
+    attachedForm != null &&
+    slotFree(slot) &&
+    slot !== "conclusion" &&
+    !((slot === "anamnesis" || slot === "objective") && managedByForm(slot)) &&
+    columnValue[slot].trim() !== "";
+
+  const LEFTOVER_ORDER: FormFieldSlot[] = [
+    "heightCm",
+    "weightKg",
+    "temperature",
+    "complaints",
+    "anamnesis",
+    "objective",
+    "diagnosis",
+  ];
+  const leftoverSlots = LEFTOVER_ORDER.filter(isLeftover);
+
+  const clearLeftovers = () => {
+    for (const slot of leftoverSlots) {
+      if (slot === "heightCm") setHeightCm("");
+      else if (slot === "weightKg") setWeightKg("");
+      else if (slot === "temperature") setTemperature("");
+      else if (slot === "complaints") setComplaints("");
+      else if (slot === "anamnesis") setAnamnesis("");
+      else if (slot === "objective") setObjective("");
+      else if (slot === "diagnosis") setSelectedDiagnoses([]);
+    }
+  };
+
   /** Степперы, которые бланк не забрал и которые не спрятаны под бланком. */
   const freeVitals = (Object.keys(VITAL_PROPS) as VitalKind[]).filter((kind) =>
     standardShown(kind),
   );
+  /** Без бланка степперы стоят сверху; при бланке остатки — в блоке под ним. */
+  const topVitals = attachedForm ? [] : freeVitals;
+  const leftoverVitals = attachedForm ? freeVitals : [];
 
   /**
    * Перенесённые с регистрации жалобы под бланком без строки жалоб: поле
@@ -1246,9 +1344,79 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     setComplaints((prev) => (prev.trim() === prefill ? "" : prev));
   };
 
+  /**
+   * Смена бланка, которая молча уничтожила бы текст врача, — через вопрос.
+   *
+   * Бланк собирает свою колонку заново из строк, поэтому:
+   *  - без бланка: текст, который врач написал в этой колонке руками (в том
+   *    числе после «Открепить»), был бы заменён строками бланка;
+   *  - с бланком: введённые строки прежнего бланка сбросились бы на нормы
+   *    нового.
+   * Оба раза врач терял текст без предупреждения (проверка флоу 21.09.2026).
+   */
+  const [pendingFormSwitch, setPendingFormSwitch] = React.useState<{
+    form: ConclusionFormTemplate;
+    /** Текст колонки, который бланк заменит (только без прикреплённого бланка). */
+    columnText: string | null;
+  } | null>(null);
+
+  const targetColumnText = (target: FormTarget) =>
+    target === "anamnesis" ? anamnesis : target === "objective" ? objective : conclusionText;
+
+  /** Врач правил строки прикреплённого бланка — они разошлись с нормами. */
+  const formValuesEdited = () => {
+    if (!attachedForm) return false;
+    const defaults = formDefaults(attachedForm);
+    return attachedForm.fields.some(
+      (field) => (formValues[field.id] ?? "").trim() !== (defaults[field.id] ?? "").trim(),
+    );
+  };
+
+  /** Бланк, снятый кнопкой «Открепить», — чтобы вернуть его без потерь. */
+  const detachedFormRef = React.useRef<{
+    form: ConclusionFormTemplate;
+    values: Record<string, string>;
+    snapshot: ConclusionFormTemplate | null;
+    text: string;
+  } | null>(null);
+
   const handleSelectForm = (nextId: number) => {
     const next = selectableForms.find((form) => form.id === nextId);
-    if (!next) return;
+    if (!next || next.id === attachedForm?.id) return;
+    const detached = detachedFormRef.current;
+    if (
+      !attachedForm &&
+      detached &&
+      detached.form.id === next.id &&
+      targetColumnText(next.target) === detached.text
+    ) {
+      // Открепили и вернули тот же бланк, текст не трогали: это «отмена
+      // открепления» — возвращаем строки как были, спрашивать не о чем.
+      detachedFormRef.current = null;
+      setFormId(detached.form.id);
+      setFormValues(detached.values);
+      setFormSnapshot(detached.snapshot);
+      return;
+    }
+    if (!attachedForm) {
+      const text = targetColumnText(next.target);
+      if (text.trim()) {
+        setPendingFormSwitch({ form: next, columnText: text });
+        return;
+      }
+    } else if (formValuesEdited()) {
+      setPendingFormSwitch({ form: next, columnText: null });
+      return;
+    }
+    applySelectForm(next);
+  };
+
+  const applySelectForm = (next: ConclusionFormTemplate, keepAsManual?: string) => {
+    if (keepAsManual?.trim()) {
+      // Текст врача уходит в «Дополнительно» — он допишется в конец
+      // собранного бланком текста, а не пропадёт.
+      setManualText((prev) => [prev.trim(), keepAsManual.trim()].filter(Boolean).join("\n\n"));
+    }
     // Колонка, которую собирал прежний бланк, — его проекция, а не текст
     // врача (руками она не правится, хвост врача живёт в manualText). Если
     // новый бланк собирает текст в другую колонку, прежняя осталась бы с
@@ -1320,6 +1488,16 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
 
   const handleDetachForm = () => {
     // Текст остаётся: врач дописывает уже собранное заключение руками.
+    // Бланк со строками запоминаем: вернули его, не трогая текст, — строки
+    // восстанавливаются, а не сбрасываются на нормы (см. handleSelectForm).
+    if (attachedForm) {
+      detachedFormRef.current = {
+        form: attachedForm,
+        values: formValues,
+        snapshot: formSnapshot,
+        text: targetColumnText(attachedForm.target),
+      };
+    }
     setFormId(null);
     setFormValues({});
     setFormSnapshot(null);
@@ -1331,34 +1509,50 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
    */
   const slotNodes = React.useMemo<Partial<Record<FormFieldSlot, React.ReactNode>>>(() => {
     const nodes: Partial<Record<FormFieldSlot, React.ReactNode>> = {};
+    /**
+     * Подпись строки — из бланка, а не название колонки. Врач заполняет
+     * документ, каким его собрал администратор: «План ведения», «DS»,
+     * «Жалобы», — а видел «Заключение», «Диагноз (МКБ-10)», «Жалобы (врач)»
+     * (21.09.2026). На печати подписи и так из бланка. Пустая подпись в
+     * бланке — тогда название колонки, иначе поле осталось бы безымянным.
+     */
+    const slotLabel = (slot: FormFieldSlot, fallback: string) => {
+      const label = attachedForm?.fields.find((field) => field.slot === slot)?.label ?? "";
+      return fieldCaption(label).replace(/:$/, "") || fallback;
+    };
     for (const slot of attachedSlots) {
       switch (slot) {
         case "complaints":
           nodes.complaints = textFieldNode(
-            t("conclusion.doctorComplaints"),
+            slotLabel(slot, t("conclusion.doctorComplaints")),
             complaints,
             setComplaints,
             { aiField: "complaints" },
           );
           break;
         case "anamnesis":
-          nodes.anamnesis = textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
-            minRows: 3,
-            aiField: "anamnesis",
-          });
+          nodes.anamnesis = textFieldNode(
+            slotLabel(slot, t("conclusion.anamnesis")),
+            anamnesis,
+            setAnamnesis,
+            { minRows: 3, aiField: "anamnesis" },
+          );
           break;
         case "objective":
-          nodes.objective = textFieldNode(t("conclusion.objectively"), objective, setObjective, {
-            minRows: 3,
-            aiField: "objective",
-          });
+          nodes.objective = textFieldNode(
+            slotLabel(slot, t("conclusion.objectively")),
+            objective,
+            setObjective,
+            { minRows: 3, aiField: "objective" },
+          );
           break;
         case "diagnosis":
-          nodes.diagnosis = diagnosisNode();
+          nodes.diagnosis = diagnosisNode(slotLabel(slot, t("conclusion.diagnosisIcd")));
           break;
         case "conclusion":
+          // Звёздочку «обязательно» ставит textFieldNode по `required`.
           nodes.conclusion = textFieldNode(
-            t("conclusion.conclusionRequired"),
+            slotLabel(slot, t("conclusion.conclusionRequired")),
             conclusionText,
             setConclusionText,
             { minRows: 4, required: true, aiField: "conclusion" },
@@ -1369,7 +1563,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         case "temperature":
           nodes[slot] = (
             <Stack direction="row" spacing={1.5}>
-              {vitalNode(slot)}
+              {vitalNode(slot, slotLabel(slot, VITAL_PROPS[slot].label))}
             </Stack>
           );
           break;
@@ -1381,6 +1575,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     attachedSlots,
+    attachedForm,
     complaints,
     anamnesis,
     objective,
@@ -1656,6 +1851,10 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const vitals = useFormValidation({
     vitals: validateVitals(weightKg, heightCm, temperature),
   });
+  /** Подпись строки бланка, привязанной к «Заключению», — для текста ошибки. */
+  const conclusionRowLabel = fieldCaption(
+    attachedForm?.fields.find((field) => field.slot === "conclusion")?.label ?? "",
+  ).replace(/:$/, "");
   const completion = useFormValidation({
     // Пустое заключение при бланке — это незаполненный протокол, а не
     // незаполненное поле: поля как такового врач уже не видит.
@@ -1663,6 +1862,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       ? null
       : managedByForm("conclusion")
       ? "Заполните хотя бы одну строку бланка — заключение не может быть пустым."
+      : conclusionRowLabel
+      ? `Заполните «${conclusionRowLabel}» — без этого заключение не завершить.`
       : t("conclusion.errors.fillBeforeComplete"),
   });
 
@@ -2036,7 +2237,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {/* ════════ READ-ONLY ПРОСМОТР (как в оригинале, фото 2) ════════ */}
           {readOnly && conclusion && (
             <Stack spacing={3}>
-              {/* Витальные — карточки с разделителями */}
+              {/* Витальные — карточки с разделителями. У заключения по бланку
+                  показатели, если они есть, выводит ConclusionFormReadView. */}
+              {!readOnlyFormParts && (
               <Paper variant="outlined" sx={{ p: 2, bgcolor: "action.hover" }}>
                 <Stack direction="row" spacing={3} justifyContent="space-around">
                   <Box textAlign="center">
@@ -2060,6 +2263,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   </Box>
                 </Stack>
               </Paper>
+              )}
 
               {/* Жалобы пациента (контекст) */}
               {showPatientComplaints && (
@@ -2073,6 +2277,14 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 </Box>
               )}
 
+              {readOnlyFormParts && attachedForm ? (
+                <ConclusionFormReadView
+                  template={attachedForm}
+                  values={readOnlyFormParts.sheetValues}
+                  trailer={readOnlyFormParts.trailer}
+                />
+              ) : (
+              <>
               {/* Диагноз — чипы */}
               <Box>
                 <Typography variant="subtitle2" color="text.secondary" gutterBottom>
@@ -2131,6 +2343,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                     })}
                 </Typography>
               </Box>
+              </>
+              )}
 
               {internalComment.trim() && (
                 <Box>
@@ -2183,12 +2397,15 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {/* Степпер, который забрал бланк, здесь не рисуем: он стоит в потоке
               его полей (см. slotNodes). Карточку показываем, пока в ней есть
               хоть один степпер или пока есть что сказать об ошибке. */}
-          {(freeVitals.length > 0 || Boolean(vitals.errorOf("vitals"))) && (
+          {/* При бланке оставшиеся степперы уходят в блок «Заполнено ранее»
+              под ним; здесь карточка нужна разве что для ошибки привязанного. */}
+          {(topVitals.length > 0 ||
+            (Boolean(vitals.errorOf("vitals")) && leftoverVitals.length === 0)) && (
             <Paper ref={vitals.anchor("vitals")} variant="outlined" sx={{ p: 1.5 }}>
               {/* Три степпера в ряд на узком экране упираются в свою minWidth:
                   разрешаем перенос, иначе карточка выезжает вбок. */}
               <Stack direction="row" gap={1.5} flexWrap="wrap">
-                {freeVitals.map((kind) => (
+                {topVitals.map((kind) => (
                   <React.Fragment key={kind}>{vitalNode(kind)}</React.Fragment>
                 ))}
               </Stack>
@@ -2218,7 +2435,13 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {/* Пустой протокол — это незаполненное заключение, поэтому при
               «Завершить» скролл и фокус ведут сюда, к строкам бланка. */}
           {!readOnly && (
-          <Box ref={managedByForm("conclusion") ? completion.anchor("conclusionText") : undefined}>
+          <Box
+            ref={
+              managedByForm("conclusion") || !slotFree("conclusion")
+                ? completion.anchor("conclusionText")
+                : undefined
+            }
+          >
             <ConclusionFormInline
               forms={selectableForms}
               loading={formsQuery.isLoading}
@@ -2237,6 +2460,14 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               }
               disabled={readOnly}
             />
+            {/* Строка бланка, привязанная к «Заключению», сама ошибку не
+                показывает (её узел собирается до проверки — см. slotNodes):
+                без этой плашки «Завершить» молча ничего не делал. */}
+            {!slotFree("conclusion") && completion.errorOf("conclusionText") && (
+              <Alert severity="error" sx={{ mt: 1 }}>
+                {completion.errorOf("conclusionText")}
+              </Alert>
+            )}
           </Box>
           )}
 
@@ -2247,12 +2478,14 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               бланком без такой строки штатного поля тоже нет (standardShown):
               документ — это поля бланка. */}
           {standardShown("complaints") &&
+            !isLeftover("complaints") &&
             textFieldNode(t("conclusion.doctorComplaints"), complaints, setComplaints, {
               aiField: "complaints",
             })}
 
           {/* ── anamnesis ── */}
           {standardShown("anamnesis") &&
+            !isLeftover("anamnesis") &&
             (managedByForm("anamnesis")
               ? projectionNode(t("conclusion.anamnesis"), anamnesis, null)
               : textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
@@ -2262,6 +2495,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
 
           {/* ── objective ── */}
           {standardShown("objective") &&
+            !isLeftover("objective") &&
             (managedByForm("objective")
               ? projectionNode(t("conclusion.objectively"), objective, null)
               : textFieldNode(t("conclusion.objectively"), objective, setObjective, {
@@ -2272,7 +2506,64 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {/* ── diagnosis (catalog multi-select + free text) ── */}
           {/* Поле, забранное бланком, здесь не рисуем: оно стоит в потоке его
               полей (slotNodes) — иначе врач выбирал бы диагноз дважды. */}
-          {standardShown("diagnosis") && diagnosisNode()}
+          {standardShown("diagnosis") && !isLeftover("diagnosis") && diagnosisNode()}
+
+          {/* ── заполнено ранее: колонки с текстом, которых в бланке нет ── */}
+          {leftoverSlots.length > 0 && (
+            <Paper variant="outlined" sx={{ p: 1.5 }}>
+              <Stack spacing={1.5}>
+                <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="body2" fontWeight={600}>
+                      Заполнено ранее — в бланке таких строк нет
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Выйдет на печать отдельно, под строками бланка. Не нужно — очистите.
+                    </Typography>
+                  </Box>
+                  <Button
+                    size="small"
+                    color="inherit"
+                    startIcon={<DeleteOutline />}
+                    onClick={clearLeftovers}
+                    sx={{ flexShrink: 0 }}
+                  >
+                    Очистить
+                  </Button>
+                </Stack>
+
+                {leftoverVitals.length > 0 && (
+                  <Box ref={vitals.anchor("vitals")}>
+                    <Stack direction="row" gap={1.5} flexWrap="wrap">
+                      {leftoverVitals.map((kind) => (
+                        <React.Fragment key={kind}>{vitalNode(kind)}</React.Fragment>
+                      ))}
+                    </Stack>
+                    {vitals.errorOf("vitals") && (
+                      <Alert severity="error" sx={{ py: 0, mt: 1 }}>
+                        {vitals.errorOf("vitals")}
+                      </Alert>
+                    )}
+                  </Box>
+                )}
+                {isLeftover("complaints") &&
+                  textFieldNode(t("conclusion.doctorComplaints"), complaints, setComplaints, {
+                    aiField: "complaints",
+                  })}
+                {isLeftover("anamnesis") &&
+                  textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
+                    minRows: 3,
+                    aiField: "anamnesis",
+                  })}
+                {isLeftover("objective") &&
+                  textFieldNode(t("conclusion.objectively"), objective, setObjective, {
+                    minRows: 3,
+                    aiField: "objective",
+                  })}
+                {isLeftover("diagnosis") && diagnosisNode()}
+              </Stack>
+            </Paper>
+          )}
 
           {/* ── conclusion (main) ── */}
           {/* Забрать заключение в поток бланка можно (slot "conclusion"), но
@@ -2556,6 +2847,54 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       </Box>
       </>
       )}
+
+      {/* ── смена бланка поверх текста врача ── */}
+      <Dialog
+        open={pendingFormSwitch != null}
+        onClose={() => setPendingFormSwitch(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>
+          {pendingFormSwitch?.columnText != null
+            ? `Заменить текст в «${TARGET_LABELS[pendingFormSwitch.form.target]}»?`
+            : "Сменить бланк?"}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            {pendingFormSwitch?.columnText != null
+              ? `Бланк «${pendingFormSwitch.form.name}» собирает это поле из своих строк. Текст, который там сейчас, можно сохранить в «Дополнительно» — он допишется в конце.`
+              : `Заполненные строки бланка «${attachedForm?.name ?? ""}» сбросятся, вместо них будут строки бланка «${pendingFormSwitch?.form.name ?? ""}».`}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button color="inherit" onClick={() => setPendingFormSwitch(null)}>
+            Отмена
+          </Button>
+          {pendingFormSwitch?.columnText != null && (
+            <Button
+              color="inherit"
+              onClick={() => {
+                const pending = pendingFormSwitch;
+                setPendingFormSwitch(null);
+                if (pending) applySelectForm(pending.form);
+              }}
+            >
+              Заменить
+            </Button>
+          )}
+          <Button
+            variant="contained"
+            onClick={() => {
+              const pending = pendingFormSwitch;
+              setPendingFormSwitch(null);
+              if (pending) applySelectForm(pending.form, pending.columnText ?? undefined);
+            }}
+          >
+            {pendingFormSwitch?.columnText != null ? "Сохранить в «Дополнительно»" : "Сменить"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ── завершение без диагноза ── */}
       <Dialog

@@ -69,7 +69,8 @@ import {
 import type { DjangoSpecialization } from "../../api/staff";
 import type { Service } from "../../api/catalog";
 import type { RbacBranch } from "../../api/auth";
-import { FormSheet, PREVIEW_CONTEXT, type SheetContext } from "./FormSheet";
+import { PREVIEW_CONTEXT, type SheetContext } from "./FormSheet";
+import { FormSheetPreview } from "./FormSheetPreview";
 
 /**
  * Конструктор бланка заключения.
@@ -909,12 +910,18 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
               position: { lg: "sticky" },
               top: 0,
               justifySelf: { xs: "center", lg: "end" },
+              // Лист длинного бланка — несколько страниц. Прилипшая колонка
+              // выше окна не прокручивалась бы вовсе, и вторую страницу было
+              // бы не увидеть: у неё своя прокрутка в пределах окна диалога.
+              maxHeight: { lg: "calc(100dvh - 200px)" },
+              overflowY: { lg: "auto" },
+              pr: { lg: 1 },
             }}
           >
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
               Так бланк выйдет на печать
             </Typography>
-            <FormSheet
+            <FormSheetPreview
               template={draft}
               context={previewContext}
               scale={previewScale}
