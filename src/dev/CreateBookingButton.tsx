@@ -19,9 +19,10 @@
  * прочитанное по полям блока «Документ»; без права или при 503 у провайдера
  * фото просто прикрепляется.
  *
- * Открывается и «быстрой бронью» — клик по свободной ячейке в
- * RoomBookingGrid кладёт номер+дату в общий стор (requestQuickBooking), эта
- * кнопка на них подписана и открывает форму уже с подставленными Номер/Заезд.
+ * Открывается и «быстрой бронью» — выделение на свободных ячейках
+ * RoomBookingGrid (клик — одна ночь, зажатие и протяжка — период) кладёт
+ * номер+даты в общий стор (requestQuickBooking), эта кнопка на них подписана
+ * и открывает форму уже с подставленными Номер/Заезд/Выезд.
  */
 import React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -306,7 +307,12 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     }
     if (quickBookingRequest.checkIn) {
       setCheckIn(dayjs(quickBookingRequest.checkIn));
-      setCheckOut(dayjs(quickBookingRequest.checkIn).add(1, "day"));
+      // Период протянут в шахматке зажатием мыши — выезд оттуда; простой клик — одна ночь.
+      setCheckOut(
+        quickBookingRequest.checkOut
+          ? dayjs(quickBookingRequest.checkOut)
+          : dayjs(quickBookingRequest.checkIn).add(1, "day"),
+      );
     }
     setOpen(true);
     clearQuickBookingRequest();

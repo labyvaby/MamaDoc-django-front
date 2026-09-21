@@ -16,10 +16,13 @@
  *
  * Клик по номеру открывает RoomDetailsDialog (тариф, вместимость,
  * доступность), клик по бару — ReservationDetailsDialog (реальные детали
- * брони). Клик по свободной ячейке — «быстрая бронь»: requestQuickBooking
- * (мок-стор, чисто UI-хендофф между независимыми компонентами тулбара —
- * данные в нём не хранятся) кладёт номер+дату, CreateBookingButton подписан
- * и открывает форму с уже подставленными Номер/Заезд.
+ * брони). Свободные ячейки — «быстрая бронь»: нажатие мыши — дата «от»,
+ * протяжка по строке номера подсвечивает ночи, отпускание — дата «до»
+ * (простой клик — одна ночь; выделение не тянется через чужие брони, Esc —
+ * отмена, см. roomBookingSelection.ts). requestQuickBooking (мок-стор, чисто
+ * UI-хендофф между независимыми компонентами тулбара — данные в нём не
+ * хранятся) кладёт номер+даты, CreateBookingButton подписан и открывает форму
+ * с уже подставленными Номер/Заезд/Выезд.
  */
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -49,9 +52,11 @@ import {
   subscribeSelectedHotelDate,
   requestQuickBooking,
   nightsBetween,
+  formatHotelDateRange,
   MONTH_NOM_RU,
   WEEKDAY_SHORT_RU,
 } from "./mockDemoData";
+import { clampSelectionEnd, selectionBounds } from "./roomBookingSelection";
 import { RoomDetailsDialog } from "./RoomDetailsDialog";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 
@@ -143,6 +148,71 @@ export const RoomBookingGrid: React.FC = () => {
     else monthSpans.push({ label, startCol: i, span: 1 });
   });
 
+  // ── Выделение периода зажатием мыши (быстрая бронь) ─────────────────────────
+  // «От» — нажатие на свободной ячейке, «до» — отпускание; простой клик — одна
+  // ночь, как раньше. Ячейка = ночь: выделенные ячейки и есть ночи брони,
+  // выезд — день после последней. Диапазон живёт в одной строке-номере и не
+  // тянется через чужие брони (roomBookingSelection.ts). Хуки — выше ранних
+  // return (Rules of Hooks).
+  const [dragSel, setDragSel] = React.useState<{
+    roomId: number;
+    roomNumber: string;
+    startIdx: number;
+    endIdx: number;
+  } | null>(null);
+
+  // Слушатели на window и только пока идёт выделение: кнопку можно отпустить
+  // где угодно, не только над сеткой. useLayoutEffect и перерегистрация на каждое
+  // изменение диапазона — чтобы mouseup всегда видел актуальный endIdx, а не
+  // значение из прошлого рендера.
+  React.useLayoutEffect(() => {
+    if (!dragSel) return;
+    const finish = () => {
+      setDragSel(null);
+      const [lo, hi] = selectionBounds(dragSel.startIdx, dragSel.endIdx);
+      requestQuickBooking(
+        dragSel.roomNumber,
+        visibleDates[lo].format("YYYY-MM-DD"),
+        visibleDates[hi].add(1, "day").format("YYYY-MM-DD"),
+      );
+    };
+    const cancel = () => setDragSel(null);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") cancel();
+    };
+    window.addEventListener("mouseup", finish);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("blur", cancel);
+    return () => {
+      window.removeEventListener("mouseup", finish);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("blur", cancel);
+    };
+  }, [dragSel, visibleDates]);
+
+  const startSelection = (e: React.MouseEvent, room: HotelCalendarRoom, idx: number) => {
+    if (e.button !== 0) return;
+    // Без этого протяжка выделяла бы текст и уводила фокус с ячейки.
+    e.preventDefault();
+    setDragSel({ roomId: room.id, roomNumber: room.number, startIdx: idx, endIdx: idx });
+  };
+
+  const extendSelection = (roomId: number, hoverIdx: number, free: readonly boolean[]) =>
+    setDragSel((cur) => {
+      if (!cur || cur.roomId !== roomId) return cur;
+      const endIdx = clampSelectionEnd(free, cur.startIdx, hoverIdx);
+      return endIdx === cur.endIdx ? cur : { ...cur, endIdx };
+    });
+
+  // Подсказка в тулбаре, пока идёт выделение: номер, период и число ночей.
+  const dragHint = (() => {
+    if (!dragSel) return null;
+    const [lo, hi] = selectionBounds(dragSel.startIdx, dragSel.endIdx);
+    const checkIn = visibleDates[lo].format("YYYY-MM-DD");
+    const checkOut = visibleDates[hi].add(1, "day").format("YYYY-MM-DD");
+    return `№${dragSel.roomNumber}: ${formatHotelDateRange(checkIn, checkOut)} · ${nightsBetween(checkIn, checkOut)} ноч.`;
+  })();
+
   if (propertyLoading || calendarQuery.isLoading) {
     return (
       <Stack alignItems="center" sx={{ py: 4 }}>
@@ -185,6 +255,11 @@ export const RoomBookingGrid: React.FC = () => {
         >
           Сегодня
         </Box>
+        {dragHint && (
+          <Typography variant="caption" color="primary.main" fontWeight={600} sx={{ ml: 1 }}>
+            {dragHint}
+          </Typography>
+        )}
       </Stack>
 
       <Box
@@ -201,6 +276,8 @@ export const RoomBookingGrid: React.FC = () => {
             display: "grid",
             gridTemplateColumns: `${ROOM_COL_WIDTH}px repeat(${numVisibleDays}, minmax(${MIN_DAY_COL_WIDTH}px, 1fr))`,
             minWidth: ROOM_COL_WIDTH + numVisibleDays * MIN_DAY_COL_WIDTH,
+            // Пока тянем период, браузер не должен выделять текст под курсором.
+            userSelect: dragSel ? "none" : undefined,
           }}
         >
           {/* Угол над шапкой — sticky по обеим осям, перекрывает содержимое под собой при
@@ -411,16 +488,39 @@ export const RoomBookingGrid: React.FC = () => {
                 {(() => {
                   // Черновики (reservationStatus: "draft") номер не занимают — только подтверждённые/hold считаются на занятость.
                   const occupying = roomItems.filter((it) => it.reservationStatus !== "draft");
+                  // Свободна ли каждая видимая ночь — и для рисования ячеек, и чтобы выделение не тянулось через чужую бронь.
+                  const freeMask = visibleDates.map((d) => {
+                    const dateStr = d.format("YYYY-MM-DD");
+                    return !occupying.some((it) => dateStr >= it.checkIn && dateStr < it.checkOut);
+                  });
+                  const selection =
+                    dragSel && dragSel.roomId === room.id ? selectionBounds(dragSel.startIdx, dragSel.endIdx) : null;
                   return visibleDates.map((d, i) => {
                     const dateStr = d.format("YYYY-MM-DD");
-                    const isFree = !occupying.some((it) => dateStr >= it.checkIn && dateStr < it.checkOut);
+                    const isFree = freeMask[i];
+                    const inSelection = selection != null && i >= selection[0] && i <= selection[1];
                     return (
                       <Box
                         key={`${room.id}-${i}`}
                         component={isFree ? "button" : "div"}
                         type={isFree ? "button" : undefined}
-                        onClick={isFree ? () => requestQuickBooking(room.number, dateStr) : undefined}
-                        title={isFree ? `Быстрая бронь — №${room.number}, ${d.format("D MMMM")}` : undefined}
+                        // Мышь: нажатие — «от», отпускание (обработчик на window) — «до».
+                        onMouseDown={isFree ? (e: React.MouseEvent) => startSelection(e, room, i) : undefined}
+                        onMouseEnter={dragSel ? () => extendSelection(room.id, i, freeMask) : undefined}
+                        // Клавиатура (Enter/Space на ячейке) даёт click с detail === 0 — одна ночь;
+                        // click от мыши (detail ≥ 1) уже обработан нажатием/отпусканием выше.
+                        onClick={
+                          isFree
+                            ? (e: React.MouseEvent) => {
+                                if (e.detail === 0) requestQuickBooking(room.number, dateStr);
+                              }
+                            : undefined
+                        }
+                        title={
+                          isFree
+                            ? `Быстрая бронь — №${room.number}, ${d.format("D MMMM")}. Клик — одна ночь, зажмите и протяните — период`
+                            : undefined
+                        }
                         sx={{
                           gridRow,
                           gridColumn: i + 2,
@@ -433,13 +533,14 @@ export const RoomBookingGrid: React.FC = () => {
                           p: 0,
                           textAlign: "left",
                           cursor: isFree ? "pointer" : "default",
-                          bgcolor:
-                            i === todayIdx
-                              ? alpha(theme.palette.primary.main, 0.06)
-                              : d.day() === 0 || d.day() === 6
-                              ? theme.palette.action.hover
-                              : "transparent",
-                          "&:hover": isFree ? { bgcolor: alpha(theme.palette.primary.main, 0.12) } : undefined,
+                          bgcolor: inSelection
+                            ? alpha(theme.palette.primary.main, 0.34)
+                            : i === todayIdx
+                            ? alpha(theme.palette.primary.main, 0.06)
+                            : d.day() === 0 || d.day() === 6
+                            ? theme.palette.action.hover
+                            : "transparent",
+                          "&:hover": isFree && !inSelection ? { bgcolor: alpha(theme.palette.primary.main, 0.12) } : undefined,
                         }}
                       />
                     );
@@ -529,6 +630,9 @@ export const RoomBookingGrid: React.FC = () => {
             Точка у номера — статус уборки
           </Typography>
         </Stack>
+        <Typography variant="caption" color="text.secondary">
+          Быстрая бронь: клик по свободной ячейке — одна ночь, зажмите и протяните — несколько ночей
+        </Typography>
       </Stack>
 
       <RoomDetailsDialog
