@@ -24,6 +24,7 @@ import {
   cardDndId,
   columnDndId,
   columnOfCard,
+  moveCard,
   resolveDrop,
   type DndColumn,
 } from "./dnd";
@@ -87,6 +88,11 @@ function Board<T, C extends BoardColumnId>({
 }: BoardProps<T, C>) {
   const [dragged, setDragged] = React.useState<T | null>(null);
   const [hoverColumn, setHoverColumn] = React.useState<C | null>(null);
+  /* Раскладка на время перетаскивания. Когда карточку несут в другую колонку,
+     переносим её id туда уже во время drag: тогда она попадает в
+     `SortableContext` целевой колонки, и соседи раздвигаются под неё так же,
+     как внутри своей. Снаружи данные не меняются — только этот снимок. */
+  const [dragLayout, setDragLayout] = React.useState<DndColumn[] | null>(null);
   const [ghostWidth, setGhostWidth] = React.useState<number | undefined>(
     undefined
   );
@@ -106,11 +112,12 @@ function Board<T, C extends BoardColumnId>({
   );
 
   /* Снимок раскладки для чистых функций: dnd-kit говорит только «над чем»,
-     а колонку и индекс мы считаем сами. */
-  const dndColumns: DndColumn[] = columns.map((column) => ({
+     а колонку и индекс мы считаем сами. Во время drag — локальная раскладка. */
+  const baseColumns: DndColumn[] = columns.map((column) => ({
     key: columnDndId(column.id),
     ids: itemsOf(column.id).map((item) => cardDndId(getItemId(item))),
   }));
+  const dndColumns: DndColumn[] = dragLayout ?? baseColumns;
   const columnByKey = new Map<string, BoardColumnDef<C>>(
     columns.map((column) => [columnDndId(column.id), column])
   );
@@ -123,25 +130,33 @@ function Board<T, C extends BoardColumnId>({
   const endDrag = () => {
     setDragged(null);
     setHoverColumn(null);
+    setDragLayout(null);
   };
 
   const onDragStart = (event: DragStartEvent) => {
     const item = itemByDndId.get(String(event.active.id)) ?? null;
     setDragged(item);
+    setDragLayout(baseColumns);
     const width = event.active.rect.current.initial?.width;
     setGhostWidth(width && width > 0 ? width : undefined);
   };
 
   const onDragOver = (event: DragOverEvent) => {
     if (!dragged) return;
+    const activeId = String(event.active.id);
     const target = resolveDrop(
-      String(event.active.id),
+      activeId,
       event.over ? String(event.over.id) : null,
       dndColumns
     );
-    setHoverColumn(
-      target ? columnByKey.get(target.columnKey)?.id ?? null : null
-    );
+    const column = target ? columnByKey.get(target.columnKey) : undefined;
+    setHoverColumn(column?.id ?? null);
+    if (!target || !column || !canDrop(dragged, column.id)) return;
+    // Внутри колонки соседей двигает сам sortable; вмешиваемся только при
+    // переходе между колонками — переносим id, чтобы освободить место.
+    if (columnOfCard(activeId, dndColumns) !== target.columnKey) {
+      setDragLayout(moveCard(dndColumns, activeId, target.columnKey, target.index));
+    }
   };
 
   const onDragEnd = (event: DragEndEvent) => {
@@ -156,10 +171,12 @@ function Board<T, C extends BoardColumnId>({
     if (!item || !target) return;
     const column = columnByKey.get(target.columnKey);
     if (!column || !canDrop(item, column.id)) return;
-    const sourceKey = columnOfCard(activeId, dndColumns);
+    // Исходное место — по данным модуля, а не по раскладке drag: в ней
+    // карточка уже могла переехать в целевую колонку.
+    const sourceKey = columnOfCard(activeId, baseColumns);
     if (sourceKey === target.columnKey) {
       // Внутри колонки: сравниваем с текущим местом без самой карточки.
-      const ids = dndColumns.find((c) => c.key === sourceKey)?.ids ?? [];
+      const ids = baseColumns.find((c) => c.key === sourceKey)?.ids ?? [];
       const currentIndex = ids.indexOf(activeId);
       if (currentIndex === target.index) return;
     }
@@ -206,8 +223,13 @@ function Board<T, C extends BoardColumnId>({
         }}
       >
         {columns.map((column) => {
-          const items = itemsOf(column.id);
           const key = columnDndId(column.id);
+          // Во время drag — по локальной раскладке (карточка уже «в» целевой колонке).
+          const items = dragLayout
+            ? (dndColumns.find((c) => c.key === key)?.ids ?? [])
+                .map((id) => itemByDndId.get(id))
+                .filter((item): item is T => item != null)
+            : itemsOf(column.id);
           const ownColumn = dragged != null && columnOf(dragged) === column.id;
           const droppable = dragged != null && canDrop(dragged, column.id);
 
