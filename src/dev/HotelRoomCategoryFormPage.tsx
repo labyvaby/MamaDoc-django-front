@@ -13,6 +13,10 @@
  * totalPrice считает бэкенд (basePrice + Σ extraPrice отмеченных
  * характеристик); здесь — только живое «Итого» до сохранения.
  *
+ * Характеристики (AmenityTile, ниже) — плитки по разделам справочника ОБЪЕКТА: вся плитка —
+ * область нажатия чекбокса, выбранная подсвечена, справа наценка с видимой единицей «сом».
+ * Наценка общая для всех категорий объекта — на это прямо указано в подписи блока.
+ *
  * Характеристики категории — чекбоксы по группам из справочника ОБЪЕКТА
  * (catalogs.amenities, не платформы, см. hotel-viva-frontend-api.md §3) —
  * тот же принцип, что роль собирает права из общего RBAC-каталога в реальной
@@ -29,9 +33,11 @@ import {
   Box,
   Button,
   Checkbox,
+  Chip,
   CircularProgress,
   FormControlLabel,
   IconButton,
+  InputAdornment,
   Paper,
   Stack,
   TextField,
@@ -39,10 +45,14 @@ import {
   Typography,
   useTheme,
 } from "@mui/material";
+import AddOutlined from "@mui/icons-material/AddOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate, useParams } from "react-router";
+import { useSnackbar } from "notistack";
+import { alpha } from "@mui/material/styles";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
@@ -101,6 +111,82 @@ function toForm(cat: HotelRoomType): CategoryFormState {
   };
 }
 
+/** Раздел для характеристик без раздела — иначе они выпадали бы из списка и их нельзя было бы отметить. */
+const UNGROUPED = "Прочее";
+const amenityGroupOf = (a: HotelAmenity) => a.group?.trim() || UNGROUPED;
+/** Справочник больше этого — показываем поиск. */
+const AMENITY_SEARCH_MIN = 12;
+
+interface AmenityTileProps {
+  amenity: HotelAmenity;
+  checked: boolean;
+  disabled: boolean;
+  /** Значение поля наценки: черновик, пока человек печатает, иначе сохранённая наценка. */
+  price: string;
+  onToggle: () => void;
+  onPriceChange: (value: string) => void;
+  onPriceCommit: () => void;
+}
+
+/**
+ * Одна характеристика: чекбокс с названием (вся левая часть — область нажатия, длинное название
+ * переносится, а не обрезается) и наценка справа с видимыми «+» и «сом». Выбранная плитка —
+ * в рамке и заливке цвета темы: выбор читается не только по галочке. Наценку правят по blur
+ * или Enter — это настоящий PATCH справочника, не на каждый символ.
+ */
+const AmenityTile: React.FC<AmenityTileProps> = ({ amenity, checked, disabled, price, onToggle, onPriceChange, onPriceCommit }) => (
+  <Box
+    sx={(theme) => ({
+      display: "flex",
+      alignItems: "center",
+      gap: 1,
+      minHeight: 48,
+      pr: 1,
+      border: "1px solid",
+      borderColor: checked ? "primary.main" : "divider",
+      borderRadius: "10px",
+      bgcolor: checked ? alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.16 : 0.06) : "transparent",
+      transition: theme.transitions.create(["border-color", "background-color"], { duration: 120 }),
+      "&:hover": { borderColor: checked ? "primary.main" : "text.disabled" },
+    })}
+  >
+    <FormControlLabel
+      control={<Checkbox size="small" checked={checked} onChange={onToggle} disabled={disabled} />}
+      label={
+        <Typography variant="body2" color="text.primary" sx={{ overflowWrap: "anywhere" }}>
+          {amenity.label}
+        </Typography>
+      }
+      sx={{ flex: 1, m: 0, pl: 0.5, py: 0.5, minWidth: 0, alignSelf: "stretch" }}
+    />
+    <TextField
+      size="small"
+      type="number"
+      value={price}
+      placeholder="0"
+      onChange={(e) => onPriceChange(e.target.value)}
+      onBlur={onPriceCommit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+      slotProps={{
+        htmlInput: { min: 0, "aria-label": `Наценка за «${amenity.label}», сом за ночь`, style: { textAlign: "right" } },
+        input: {
+          startAdornment: <InputAdornment position="start">+</InputAdornment>,
+          endAdornment: <InputAdornment position="end">сом</InputAdornment>,
+        },
+      }}
+      sx={{
+        width: 132,
+        flexShrink: 0,
+        // Стрелки-счётчики number-поля съедают ширину и «режут» число — наценку печатают.
+        "& input[type=number]": { MozAppearance: "textfield" },
+        "& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button": { WebkitAppearance: "none", margin: 0 },
+      }}
+    />
+  </Box>
+);
+
 interface CategoryFormProps {
   propertyId: number;
   /** null — создание новой категории, иначе правящаяся. */
@@ -115,7 +201,12 @@ interface CategoryFormProps {
 const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenitiesCatalog }) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const amenityGroups = [...new Set(amenitiesCatalog.map((a) => a.group).filter(Boolean))];
+  const { enqueueSnackbar } = useSnackbar();
+  // Разделы для показа (включая «Прочее» для характеристик без раздела) и настоящие разделы
+  // справочника — для подсказок поля «Раздел» при заведении своей.
+  const amenityGroupNames = [...new Set(amenitiesCatalog.map(amenityGroupOf))];
+  const knownGroups = [...new Set(amenitiesCatalog.map((a) => a.group?.trim()).filter((g): g is string => Boolean(g)))];
+  const [amenityQuery, setAmenityQuery] = React.useState("");
 
   const [form, setForm] = React.useState<CategoryFormState>(() => (editing ? toForm(editing) : EMPTY_FORM));
   const [saving, setSaving] = React.useState(false);
@@ -129,6 +220,8 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
   const [newCharPrice, setNewCharPrice] = React.useState("");
   const [newCharSaving, setNewCharSaving] = React.useState(false);
   const [newCharError, setNewCharError] = React.useState<string | null>(null);
+  // Форма «своя характеристика» свёрнута: чаще выбирают из готовых. Пустой справочник — открыта сразу.
+  const [addOpen, setAddOpen] = React.useState(amenitiesCatalog.length === 0);
 
   // Наценка уже существующей характеристики — черновик до onBlur, чтобы не
   // слать PATCH на каждый символ (это настоящий запрос, не localStorage).
@@ -137,12 +230,19 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
   const invalidateRoomTypes = () => void queryClient.invalidateQueries({ queryKey: ["hotel", "roomTypes", propertyId] });
   const invalidateCatalogs = () => void queryClient.invalidateQueries({ queryKey: ["hotel", "catalogs", propertyId] });
 
+  // Дубль по названию (без учёта регистра) бэк всё равно отклонит (400 details.fields.label) —
+  // говорим об этом сразу, под полем, а не после запроса.
+  const newCharDuplicate = amenitiesCatalog.some(
+    (a) => a.label.trim().toLowerCase() === newCharLabel.trim().toLowerCase() && newCharLabel.trim() !== "",
+  );
+
   const submitNewAmenity = async () => {
     const trimmed = newCharLabel.trim();
     if (!trimmed) {
       setNewCharError("Введите название характеристики");
       return;
     }
+    if (newCharDuplicate) return;
     setNewCharSaving(true);
     setNewCharError(null);
     try {
@@ -157,6 +257,8 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
       setNewCharLabel("");
       setNewCharGroup("");
       setNewCharPrice("");
+      setAddOpen(false);
+      enqueueSnackbar(`Характеристика «${created.label}» добавлена и отмечена`, { variant: "success" });
     } catch (err) {
       setNewCharError(getErrorMessage(err, "Не удалось добавить характеристику"));
     } finally {
@@ -218,6 +320,10 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
       setSaving(false);
     }
   };
+
+  // Сводка блока «Характеристики»: сколько отмечено и на сколько это удорожает ночь.
+  const selectedAmenities = amenitiesCatalog.filter((a) => form.amenities.has(a.key));
+  const selectedExtra = selectedAmenities.reduce((sum, a) => sum + (Number(a.extraPrice) || 0), 0);
 
   // Живой предпросчёт «Итого» — база из формы + наценки отмеченных характеристик
   // (из живого справочника, а не из cat.totalPrice — чтобы правка наценки прямо
@@ -335,90 +441,199 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
       </Paper>
 
       <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
-        <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>
-          Характеристики
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Что в номере отличает его от обычного и на сколько дороже делает — как права у роли. Нет нужной — заведите ниже.
-        </Typography>
-        {amenityGroups.map((group) => (
-          <Box key={group} sx={{ mt: 1.5 }}>
-            <Typography variant="caption" fontWeight={600} color="text.secondary">
-              {group}
-            </Typography>
-            <Stack direction="row" flexWrap="wrap" gap={1.5} alignItems="center">
-              {amenitiesCatalog
-                .filter((a) => a.group === group)
-                .map((a) => (
-                  <Stack key={a.id} direction="row" alignItems="center" gap={0.25}>
-                    <FormControlLabel
-                      control={<Checkbox size="small" checked={form.amenities.has(a.key)} onChange={() => toggleAmenity(a.key)} disabled={saving} />}
-                      label={
-                        <Typography variant="body2" color="text.secondary">
-                          {a.label}
-                        </Typography>
-                      }
-                      sx={{ mr: 0 }}
-                    />
-                    <Tooltip title="Наценка к цене за ночь, сом">
-                      <TextField
-                        size="small"
-                        type="number"
-                        value={amenityPriceDrafts[a.id] ?? String(Number(a.extraPrice))}
-                        onChange={(e) => setAmenityPriceDrafts((prev) => ({ ...prev, [a.id]: e.target.value }))}
-                        onBlur={() => void commitAmenityPrice(a)}
-                        slotProps={{ htmlInput: { min: 0, style: { textAlign: "right" } } }}
-                        sx={{ width: 76 }}
-                      />
-                    </Tooltip>
-                  </Stack>
-                ))}
-            </Stack>
-          </Box>
-        ))}
-
-        <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 2 }}>
-          <TextField
+        <Stack direction="row" alignItems="flex-start" justifyContent="space-between" flexWrap="wrap" gap={1}>
+          <Typography variant="subtitle2" fontWeight={600}>
+            Характеристики
+          </Typography>
+          {/* Живая сводка: сразу видно, сколько отмечено и на сколько это удорожает ночь. */}
+          <Chip
+            role="status"
             size="small"
-            label="Новая характеристика"
-            placeholder="Например, Балкон"
-            value={newCharLabel}
-            onChange={(e) => {
-              setNewCharLabel(e.target.value);
-              setNewCharError(null);
-            }}
-            disabled={newCharSaving}
-            sx={{ flex: "2 1 200px" }}
+            color={selectedAmenities.length > 0 ? "primary" : "default"}
+            variant={selectedAmenities.length > 0 ? "filled" : "outlined"}
+            label={
+              selectedAmenities.length > 0
+                ? `Выбрано: ${selectedAmenities.length} · +${selectedExtra.toLocaleString("ru-RU")} сом / ночь`
+                : "Ничего не выбрано"
+            }
           />
-          <Autocomplete
-            size="small"
-            freeSolo
-            options={amenityGroups}
-            inputValue={newCharGroup}
-            onInputChange={(_, v) => setNewCharGroup(v)}
-            disabled={newCharSaving}
-            sx={{ flex: "1 1 150px" }}
-            renderInput={(params) => <TextField {...params} label="Раздел" placeholder="Техника…" />}
-          />
-          <TextField
-            size="small"
-            label="Наценка, сом"
-            type="number"
-            value={newCharPrice}
-            onChange={(e) => setNewCharPrice(e.target.value)}
-            slotProps={{ htmlInput: { min: 0 } }}
-            disabled={newCharSaving}
-            sx={{ flex: "0 1 120px" }}
-          />
-          <Button variant="outlined" onClick={() => void submitNewAmenity()} disabled={!newCharLabel.trim() || newCharSaving} sx={{ whiteSpace: "nowrap" }}>
-            {newCharSaving ? "Добавляем…" : "Добавить"}
-          </Button>
         </Stack>
-        {newCharError && (
-          <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.75rem", mt: 0.75 }}>
-            {newCharError}
-          </Alert>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
+          Отметьте, что есть в номерах этой категории. Наценка прибавляется к цене за ночь и{" "}
+          <strong>общая для всех категорий объекта</strong>: если изменить её здесь, она изменится везде, где
+          эта характеристика отмечена.
+        </Typography>
+
+        {amenitiesCatalog.length > AMENITY_SEARCH_MIN && (
+          <TextField
+            size="small"
+            type="search"
+            value={amenityQuery}
+            onChange={(e) => setAmenityQuery(e.target.value)}
+            placeholder="Найти характеристику"
+            slotProps={{
+              htmlInput: { "aria-label": "Найти характеристику" },
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchOutlined fontSize="small" />
+                  </InputAdornment>
+                ),
+              },
+            }}
+            sx={{ mb: 2, width: { xs: "100%", sm: 320 } }}
+          />
         )}
+
+        {amenitiesCatalog.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Справочник характеристик пока пуст — добавьте первую ниже.
+          </Typography>
+        ) : (
+          (() => {
+            const query = amenityQuery.trim().toLowerCase();
+            const groups = amenityGroupNames
+              .map((name) => {
+                const all = amenitiesCatalog.filter((a) => amenityGroupOf(a) === name);
+                return { name, all, shown: all.filter((a) => !query || a.label.toLowerCase().includes(query)) };
+              })
+              .filter((g) => g.shown.length > 0);
+            if (groups.length === 0) {
+              return (
+                <Typography variant="body2" color="text.secondary">
+                  Ничего не найдено по «{amenityQuery.trim()}».
+                </Typography>
+              );
+            }
+            return (
+              <Stack gap={2.5}>
+                {groups.map((g) => {
+                  const headingId = `amenity-group-${g.name}`;
+                  const checkedCount = g.all.filter((a) => form.amenities.has(a.key)).length;
+                  return (
+                    <Box key={g.name} component="section" role="group" aria-labelledby={headingId}>
+                      <Stack direction="row" alignItems="baseline" gap={1} sx={{ mb: 1 }}>
+                        <Typography id={headingId} variant="overline" color="text.secondary" fontWeight={700} sx={{ lineHeight: 1.5 }}>
+                          {g.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {`отмечено ${checkedCount} из ${g.all.length}`}
+                        </Typography>
+                      </Stack>
+                      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: 1 }}>
+                        {g.shown.map((a) => (
+                          <AmenityTile
+                            key={a.id}
+                            amenity={a}
+                            checked={form.amenities.has(a.key)}
+                            disabled={saving}
+                            price={amenityPriceDrafts[a.id] ?? (Number(a.extraPrice) ? String(Number(a.extraPrice)) : "")}
+                            onToggle={() => toggleAmenity(a.key)}
+                            onPriceChange={(v) => setAmenityPriceDrafts((prev) => ({ ...prev, [a.id]: v }))}
+                            onPriceCommit={() => void commitAmenityPrice(a)}
+                          />
+                        ))}
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </Stack>
+            );
+          })()
+        )}
+
+        {/* Своя характеристика — свёрнута, пока не нужна (прогрессивное раскрытие). */}
+        <Box sx={{ mt: 2.5 }}>
+          {!addOpen ? (
+            <Button size="small" startIcon={<AddOutlined />} onClick={() => setAddOpen(true)} aria-expanded={false}>
+              Добавить свою характеристику
+            </Button>
+          ) : (
+            <Box sx={{ border: "1px dashed", borderColor: "divider", borderRadius: "10px", p: 1.5 }}>
+              <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1.5 }}>
+                Своя характеристика
+              </Typography>
+              <Stack direction="row" flexWrap="wrap" gap={1.5} alignItems="flex-start">
+                <TextField
+                  size="small"
+                  required
+                  label="Название"
+                  placeholder="Например, Балкон"
+                  value={newCharLabel}
+                  onChange={(e) => {
+                    setNewCharLabel(e.target.value);
+                    setNewCharError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newCharLabel.trim() && !newCharDuplicate && !newCharSaving) {
+                      e.preventDefault();
+                      void submitNewAmenity();
+                    }
+                  }}
+                  error={newCharDuplicate}
+                  helperText={newCharDuplicate ? "Такая характеристика уже есть в списке" : undefined}
+                  autoFocus={amenitiesCatalog.length > 0}
+                  disabled={newCharSaving}
+                  sx={{ flex: "2 1 220px" }}
+                />
+                <Autocomplete
+                  size="small"
+                  freeSolo
+                  options={knownGroups}
+                  inputValue={newCharGroup}
+                  onInputChange={(_, v) => setNewCharGroup(v)}
+                  disabled={newCharSaving}
+                  sx={{ flex: "1 1 160px" }}
+                  renderInput={(params) => <TextField {...params} label="Раздел" placeholder="Техника…" helperText="Необязательно" />}
+                />
+                <TextField
+                  size="small"
+                  label="Наценка"
+                  type="number"
+                  value={newCharPrice}
+                  onChange={(e) => setNewCharPrice(e.target.value)}
+                  placeholder="0"
+                  slotProps={{
+                    htmlInput: { min: 0 },
+                    input: {
+                      startAdornment: <InputAdornment position="start">+</InputAdornment>,
+                      endAdornment: <InputAdornment position="end">сом</InputAdornment>,
+                    },
+                  }}
+                  disabled={newCharSaving}
+                  sx={{ flex: "0 1 150px" }}
+                />
+              </Stack>
+              {newCharError && (
+                <Alert severity="error" variant="outlined" sx={{ fontSize: "0.75rem", mt: 1.25 }}>
+                  {newCharError}
+                </Alert>
+              )}
+              <Stack direction="row" gap={1} sx={{ mt: 1.5 }}>
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={() => void submitNewAmenity()}
+                  disabled={!newCharLabel.trim() || newCharDuplicate || newCharSaving}
+                >
+                  {newCharSaving ? "Добавляем…" : "Добавить"}
+                </Button>
+                {amenitiesCatalog.length > 0 && (
+                  <Button
+                    size="small"
+                    disabled={newCharSaving}
+                    onClick={() => {
+                      setAddOpen(false);
+                      setNewCharError(null);
+                    }}
+                  >
+                    Отмена
+                  </Button>
+                )}
+              </Stack>
+            </Box>
+          )}
+        </Box>
       </Paper>
 
       {error && (

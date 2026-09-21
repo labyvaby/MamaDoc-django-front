@@ -13,9 +13,10 @@
  */
 import React from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Alert, Box, Chip, CircularProgress, Menu, MenuItem, Snackbar, Typography } from "@mui/material";
+import { Box, Chip, CircularProgress, Menu, MenuItem, Stack, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ArrowDropDownOutlined from "@mui/icons-material/ArrowDropDownOutlined";
+import { useSnackbar } from "notistack";
 
 import { setRoomHousekeeping } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
@@ -30,9 +31,9 @@ export interface RoomStateControlProps {
 export const RoomStateControl: React.FC<RoomStateControlProps> = ({ roomId, state }) => {
   const theme = useTheme();
   const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
   const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
   const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
 
   const label = HOTEL_ROOM_STATE_LABELS[state as HotelRoomState] ?? state;
   const color = hotelRoomStateColor(state, theme);
@@ -42,7 +43,6 @@ export const RoomStateControl: React.FC<RoomStateControlProps> = ({ roomId, stat
     setAnchor(null);
     if (next === state) return;
     setSaving(true);
-    setError(null);
     try {
       await setRoomHousekeeping(roomId, next);
       // Состояние видно в шахматке (точка у номера), в карточках над ней и в списке
@@ -57,7 +57,8 @@ export const RoomStateControl: React.FC<RoomStateControlProps> = ({ roomId, stat
         queryClient.invalidateQueries({ queryKey: ["hotel", "rooms"] }),
       ]);
     } catch (err) {
-      setError(getErrorMessage(err, "Не удалось изменить состояние номера"));
+      // Тост приложения (как в остальных формах); текст бэка показываем как есть.
+      enqueueSnackbar(getErrorMessage(err, "Не удалось изменить состояние номера"), { variant: "error" });
     } finally {
       setSaving(false);
     }
@@ -68,7 +69,14 @@ export const RoomStateControl: React.FC<RoomStateControlProps> = ({ roomId, stat
   return (
     <>
       <Chip
-        label={label}
+        // Цвет состояния — цветная точка, а текст text.primary: цвет состояния как цвет
+        // текста давал 2.7–4.3:1 в светлой теме («Ремонт» хуже всех), так ≥ 13:1.
+        label={
+          <Stack component="span" direction="row" alignItems="center" gap={0.75}>
+            <Box component="span" sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: color, flexShrink: 0 }} />
+            {label}
+          </Stack>
+        }
         size="small"
         onClick={open}
         onDelete={open}
@@ -79,7 +87,7 @@ export const RoomStateControl: React.FC<RoomStateControlProps> = ({ roomId, stat
         title="Изменить состояние номера"
         sx={{
           bgcolor: alpha(color, dark ? 0.25 : 0.14),
-          color,
+          color: "text.primary",
           fontWeight: 600,
           "& .MuiChip-deleteIcon": { color: "inherit", opacity: 0.8 },
           "&:hover, &:focus": { bgcolor: alpha(color, dark ? 0.35 : 0.22) },
@@ -93,11 +101,6 @@ export const RoomStateControl: React.FC<RoomStateControlProps> = ({ roomId, stat
           </MenuItem>
         ))}
       </Menu>
-      <Snackbar open={error != null} autoHideDuration={7000} onClose={() => setError(null)} anchorOrigin={{ vertical: "bottom", horizontal: "center" }}>
-        <Alert severity="error" variant="filled" onClose={() => setError(null)} sx={{ width: "100%" }}>
-          {error}
-        </Alert>
-      </Snackbar>
     </>
   );
 };

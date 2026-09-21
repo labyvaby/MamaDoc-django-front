@@ -1,3 +1,18 @@
+import type { HotelStayDisplayStatus } from "./hotelDisplay";
+
+/**
+ * Прозрачность заливки бара по статусу брони. Значков статуса на барах нет, поэтому
+ * помимо цвета статус читается по плотности заливки: «Гость заехал» плотнее всех,
+ * «Подтверждена» средняя, «Завершена» самая бледная (уже прошла). Образцы в легенде
+ * берут те же числа. Подпись на любой из заливок — text.primary/secondary с контрастом
+ * ≥ 4.5:1 (см. RoomBookingGrid).
+ */
+export function barFillAlpha(status: HotelStayDisplayStatus, dark: boolean): number {
+  const light: Record<HotelStayDisplayStatus, number> = { confirmed: 0.16, arrived: 0.28, completed: 0.12 };
+  const night: Record<HotelStayDisplayStatus, number> = { confirmed: 0.3, arrived: 0.44, completed: 0.22 };
+  return (dark ? night : light)[status];
+}
+
 /**
  * Подпись бара брони в шахматке (RoomBookingGrid) в зависимости от его ширины.
  * Бар — это число ночей × ширина колонки дня, и при мелком масштабе одна ночь
