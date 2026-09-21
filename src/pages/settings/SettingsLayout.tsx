@@ -14,7 +14,6 @@ import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { Link as RouterLink, useLocation } from "react-router";
 
-import ExtensionOutlined from "@mui/icons-material/ExtensionOutlined";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
@@ -72,7 +71,6 @@ export type { SettingsTabKey };
  * these are stable lookup keys, not user-facing text.
  */
 export const SETTINGS_GROUPS = [
-  "platform",
   "clinic",
   "access",
   "catalogs",
@@ -91,7 +89,6 @@ type TabDef = {
 
 /** Labels come from t(`layout.tabs.${key}`) — see useVisibleSettingsTabs. */
 const TAB_DEFS: TabDef[] = [
-  { key: "modules", to: "/settings/modules", icon: <ExtensionOutlined fontSize="small" />, group: "platform" },
   { key: "store", to: "/settings/store", icon: <ReceiptLongOutlined fontSize="small" />, group: "operations" },
   { key: "procurement", to: "/settings/procurement", icon: <LocalShippingOutlined fontSize="small" />, group: "operations" },
   {

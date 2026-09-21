@@ -62,9 +62,6 @@ export const PAGE_PERMISSIONS = {
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {
-  // Витрина модулей: read-only каталог. Право узкое, выдаётся admin-tier ролям
-  // (см. rbac backfill 0015). Тумблинг модулей остаётся за платформой.
-  modules: "tenancy.catalog.view",
   // Модули подключает только администратор платформы в Django admin. В CRM
   // остаются рабочие настройки подключённого продукта: canAccess проверит
   // одновременно право роли и включённый модуль по префиксу кода.

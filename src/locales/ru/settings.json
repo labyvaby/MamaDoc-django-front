@@ -6,14 +6,12 @@
     "tabsAriaLabel": "Разделы настроек",
     "noOrgSelected": "Организация не выбрана",
     "groups": {
-      "platform": "Платформа",
       "clinic": "{{org.nom, capitalize}}",
       "access": "Доступы",
       "catalogs": "Справочники",
       "operations": "Операционные"
     },
     "tabs": {
-      "modules": "Модули",
       "store": "Магазин",
       "procurement": "Закупки и накладные",
       "discountKinds": "Виды скидок",
