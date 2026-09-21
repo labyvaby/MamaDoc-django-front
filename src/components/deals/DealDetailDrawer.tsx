@@ -86,7 +86,6 @@ type DealDetailDrawerProps = {
   onClose: () => void;
   onError: (message: string) => void;
   onNotify: (message: string) => void;
-  sources: DealDictionaryItem[];
   /** Этапы воронки сделки: смена этапа прямо из карточки. */
   stages: DealStage[];
   lostReasons: DealDictionaryItem[];
@@ -99,6 +98,16 @@ type DealDetailDrawerProps = {
 };
 
 const ACTIVITY_TYPES: DealActivityType[] = ["call", "message", "visit", "note"];
+
+/** Шаг минут у пикера даты-времени: значение вне сетки он подсвечивает как ошибку. */
+const TOUCH_MINUTES_STEP = 15;
+
+/** «Сейчас + интервал», округлённое вверх до сетки пикера. */
+function suggestNextTouch(hours: number): Dayjs {
+  const raw = dayjs().add(hours, "hour").second(0).millisecond(0);
+  const rest = raw.minute() % TOUCH_MINUTES_STEP;
+  return rest === 0 ? raw : raw.add(TOUCH_MINUTES_STEP - rest, "minute");
+}
 
 /**
  * Карточка обращения: деньги, ответственный, касания, история этапов.
@@ -130,7 +139,6 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   onClose,
   onError,
   onNotify,
-  sources,
   stages,
   lostReasons,
   canUpdate,
@@ -191,7 +199,6 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   };
 
   const [amount, setAmount] = React.useState("");
-  const [comment, setComment] = React.useState("");
   const [activityType, setActivityType] = React.useState<DealActivityType>("call");
   const [activityNote, setActivityNote] = React.useState("");
   /* Следующее касание рядом с вводом: подставляется «сейчас + интервал
@@ -212,12 +219,10 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
      пользователь набирает прямо сейчас. */
   const loadedId = deal?.id;
   const loadedAmount = deal?.amount;
-  const loadedComment = deal?.comment;
   React.useEffect(() => {
     if (loadedId == null) return;
     setAmount(loadedAmount ?? "");
-    setComment(loadedComment ?? "");
-  }, [loadedId, loadedAmount, loadedComment]);
+  }, [loadedId, loadedAmount]);
   const loadedNextAction = deal?.nextActionAt ?? null;
   React.useEffect(() => {
     if (loadedId == null) return;
@@ -227,9 +232,21 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
       setNextTouchSuggested(false);
       return;
     }
-    setNextTouchAt(nextTouchHours > 0 ? dayjs().add(nextTouchHours, "hour") : null);
+    setNextTouchAt(nextTouchHours > 0 ? suggestNextTouch(nextTouchHours) : null);
     setNextTouchSuggested(nextTouchHours > 0);
   }, [loadedId, loadedNextAction, nextTouchHours]);
+
+  /** Сотрудник поправил дату руками — сохраняем сразу, не дожидаясь касания. */
+  const changeNextTouch = (value: Dayjs | null) => {
+    setNextTouchAt(value);
+    setNextTouchSuggested(false);
+    if (value == null) {
+      if (deal?.nextActionAt) patchMutation.mutate({ clearNextAction: true });
+      return;
+    }
+    if (!value.isValid()) return;
+    patchMutation.mutate({ nextActionAt: value.toISOString() });
+  };
 
   /** Имя сотрудника по id из лога правок (там хранятся только id). */
   const employeeName = (value: string | null) => {
@@ -339,18 +356,9 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
     patchMutation.mutate({ amount: normalized });
   };
 
-  const saveComment = () => {
-    if (!deal || comment === (deal.comment ?? "")) return;
-    patchMutation.mutate({ comment });
-  };
-
   const setAssignee = (value: number | "") => {
     // Очистка — только явным флагом: null бэк читает как «поле не присылали».
     patchMutation.mutate(value === "" ? { clearAssignee: true } : { assigneeId: value });
-  };
-
-  const setSource = (value: number | "") => {
-    patchMutation.mutate(value === "" ? { clearSource: true } : { sourceId: value });
   };
 
   /**
@@ -743,8 +751,8 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                         <CustomDateTimePicker
                           label={t("detail.nextTouch")}
                           value={nextTouchAt}
-                          onChange={setNextTouchAt}
-                          disabled={closed}
+                          onChange={changeNextTouch}
+                          disabled={closed || patchMutation.isPending}
                         />
                       </Box>
                       {nextTouchSuggested && nextTouchHours > 0 ? (
@@ -774,21 +782,10 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
               <Divider />
 
-              {/* Комментарий и история — рядом: заметка о лиде читается вместе
-                  с тем, откуда он пришёл и как двигался. */}
+              {/* История: свежее сверху. Заметки пишутся касанием типа
+                  «Заметка», отдельного поля комментария нет; старый комментарий,
+                  если был, показываем здесь же. */}
               <Stack gap={1.5}>
-                <TextField
-                  size="small"
-                  label={t("detail.comment")}
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  onBlur={saveComment}
-                  disabled={!canUpdate}
-                  multiline
-                  minRows={2}
-                  fullWidth
-                />
-
                 <Stack direction="row" alignItems="center" gap={0.75}>
                   <HistoryOutlined fontSize="small" sx={{ color: "text.secondary" }} />
                   <Typography variant="subtitle2">{t("detail.history")}</Typography>
@@ -796,38 +793,28 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
                 <StageTimeline segments={segments} />
 
-                {/* Источник у автолида выставляет интеграция; правится тут же,
-                    но не занимает место среди рабочих полей. */}
-                <Stack direction="row" alignItems="center" gap={1}>
+                {/* Источник — факт о том, откуда пришёл лид; его выставляет
+                    интеграция, и руками он не меняется. */}
+                <Stack direction="row" alignItems="baseline" gap={1} sx={{ minWidth: 0 }}>
                   <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
                     {t("detail.sourceLabel")}
                   </Typography>
-                  <TextField
-                    select
-                    size="small"
-                    variant="standard"
-                    value={deal.sourceId ?? ""}
-                    onChange={(e) => setSource(e.target.value === "" ? "" : Number(e.target.value))}
-                    disabled={!canUpdate || patchMutation.isPending}
-                    sx={{ minWidth: 140 }}
-                  >
-                    <MenuItem value="">—</MenuItem>
-                    {sources
-                      .filter((s) => s.isActive || s.id === deal.sourceId)
-                      .map((s) => (
-                        <MenuItem key={s.id} value={s.id}>
-                          {s.name}
-                        </MenuItem>
-                      ))}
-                  </TextField>
-                  {deal.inboxName ? (
-                    <Typography variant="caption" color="text.disabled" noWrap sx={{ minWidth: 0 }}>
-                      · {deal.inboxName}
-                    </Typography>
-                  ) : null}
+                  <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
+                    {deal.sourceName ?? "—"}
+                    {deal.inboxName ? ` · ${deal.inboxName}` : ""}
+                  </Typography>
                 </Stack>
 
-                {detail.stageLog.map((log) => (
+                {deal.comment ? (
+                  <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                    <Typography component="span" variant="body2" color="text.secondary">
+                      {t("detail.comment")}:{" "}
+                    </Typography>
+                    {deal.comment}
+                  </Typography>
+                ) : null}
+
+                {[...detail.stageLog].reverse().map((log) => (
                   <Stack key={log.id} direction="row" alignItems="baseline" gap={1}>
                     <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
                       {log.fromStageName ? `${log.fromStageName} → ${log.toStageName}` : log.toStageName}
