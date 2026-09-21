@@ -441,7 +441,7 @@ const LoginPage: React.FC = () => {
               m: "11px 0 12px",
             }}
           >
-            С возвращением
+            Вход в систему
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, fontSize: 15 }}>
             Войдите, чтобы продолжить работу в CRM.
