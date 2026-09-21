@@ -15,8 +15,8 @@ export const SET_PASSWORD_TARGET = "/profile?tab=security";
 /** Кнопка в шапке, пока у пользователя нет пароля (`hasPassword === false` в
  *  /auth/me/). До `md` (768px в теме приложения: sm=360, md=768) — круглая
  *  иконка в стиле «Обновить», шире — контурная кнопка с текстом; переключение
- *  по CSS-брейкпоинту (`display`), как у имени рядом с аватаром. Ничего не рендерит, если бэк поля не прислал (null) или
- *  пароль уже есть. */
+ *  по CSS-брейкпоинту (`display`), как у имени рядом с аватаром. Ничего не
+ *  рендерит, если бэк поля не прислал (null) или пароль уже есть. */
 const SetPasswordButton: React.FC = () => {
   const { hasPassword } = usePermissions();
   const navigate = useNavigate();
