@@ -125,6 +125,7 @@
     "botActor": "Бот",
     "lastActivity": "касание {{value}}",
     "chatOpen": "Открыть чат",
+    "chatHide": "Свернуть чат",
     "chatOpenExternal": "Открыть в Chatwoot (новая вкладка)"
   },
   "activity": {
