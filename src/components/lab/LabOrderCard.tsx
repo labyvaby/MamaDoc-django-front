@@ -364,6 +364,7 @@ const LabOrderCard: React.FC<LabOrderCardProps> = ({
               <InfoRow label="Пациент" value={order.patientName} />
               <InfoRow label="Филиал" value={order.branchName} />
               <InfoRow label="Дата приёма" value={dayjs(order.createdAt).format("DD.MM.YYYY HH:mm")} />
+              {order.createdByName && <InfoRow label="Оформил" value={order.createdByName} />}
               <InfoRow
                 label="Согласие на обработку ПДн"
                 value={

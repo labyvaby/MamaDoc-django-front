@@ -13,6 +13,7 @@ const order = (over: Partial<LabOrder> = {}): LabOrder => ({
   totalAmount: 250,
   lisOrderCode: 55,
   titles: ["Глюкоза"],
+  createdByName: "",
   createdAt: "2026-09-03T09:00:00+06:00",
   ...over,
 });

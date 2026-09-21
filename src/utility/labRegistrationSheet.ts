@@ -13,7 +13,7 @@
  * тестами. Открытие окна — `printHtml` там же.
  */
 
-import { formatDateRu, formatKGS } from "./format";
+import { formatDateRu } from "./format";
 import type { LabOrderDetail, LabTest } from "../api/lab";
 import type { PatientGender } from "../api/patients";
 
@@ -32,6 +32,8 @@ export interface RegistrationSheetData {
   referringDoctorName: string;
   lines: LabOrderDetail["lines"];
   instruments: LabOrderDetail["instruments"];
+  /** Ответы на вопросы ЛИС — на отрывных талонах, как печатает ЛИС. */
+  answers: LabOrderDetail["answers"];
   discountPercent: number;
   totalAmount: number;
   paidAmount: number;
@@ -81,6 +83,7 @@ export function registrationSheetFromOrder(input: {
     referringDoctorName: order.referringDoctorName,
     lines: order.lines,
     instruments: order.instruments,
+    answers: order.answers,
     discountPercent: order.discountPercent,
     totalAmount: order.totalAmount,
     paidAmount: order.paidCash + order.paidCard,
@@ -90,10 +93,18 @@ export function registrationSheetFromOrder(input: {
   };
 }
 
+/** Пол двумя языками, как на листе ЛИС («А.Ж.» — Аял / Жен.). */
 const GENDER_LABEL: Record<PatientGender, string> = {
-  male: "Муж.",
-  female: "Жен.",
+  male: "Э. / Муж.",
+  female: "А. / Жен.",
   unknown: "—",
+};
+const GENDER_SHORT: Record<PatientGender, string> = { male: "М", female: "Ж", unknown: "—" };
+
+/** Дата как на листе ЛИС: дд-мм-гггг. */
+const formatDateDash = (iso: string | null): string => {
+  const text = formatDateRu(iso);
+  return text ? text.replace(/\./g, "-") : "";
 };
 
 const ESCAPES: Record<string, string> = {
@@ -187,35 +198,44 @@ export function registrationSheetTotals(data: RegistrationSheetData): Registrati
 }
 
 const STYLE = `
-  @page { size: A4; margin: 12mm; }
-  body { font-family: system-ui, "Segoe UI", Arial, sans-serif; color: #000; margin: 0; font-size: 12px; line-height: 1.35; }
-  .sheet { max-width: 170mm; margin: 0 auto; }
-  .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8mm; border-bottom: 2px solid #000; padding-bottom: 3mm; margin-bottom: 4mm; }
-  .clinic { font-size: 16px; font-weight: 700; }
-  .branch { color: #333; }
-  .doc { text-align: right; }
-  .doc .title { font-size: 15px; font-weight: 700; }
-  .doc .reg { font-size: 13px; margin-top: 1mm; }
-  .patient { display: grid; grid-template-columns: 34mm 1fr; row-gap: 1mm; column-gap: 3mm; margin-bottom: 4mm; }
-  .patient .k { color: #444; }
-  .patient .v { font-weight: 600; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
-  th, td { border: 1px solid #000; padding: 1.2mm 2mm; vertical-align: top; }
-  th { text-align: left; font-weight: 600; background: #f2f2f2; }
-  td.n { width: 6mm; text-align: right; color: #444; }
-  td.q, th.q { width: 12mm; text-align: center; }
-  td.s, th.s { width: 26mm; text-align: right; white-space: nowrap; }
-  tr.sub td { color: #333; }
-  tr.total td { font-weight: 700; }
-  .tag { display: inline-block; border: 1px solid #000; border-radius: 2px; padding: 0 1mm; font-size: 10px; margin-left: 1.5mm; vertical-align: middle; }
-  .bottom { display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; margin-top: 2mm; }
-  .notes { color: #333; }
-  .notes div { margin-bottom: 1mm; }
-  .barcode { text-align: center; }
-  .barcode img { max-width: 60mm; display: block; margin: 0 auto 1mm; }
-  .barcode .code { font-size: 13px; font-weight: 700; letter-spacing: 0.5px; }
-  .pending { border: 1px dashed #000; padding: 2mm 3mm; font-size: 11px; max-width: 60mm; }
-  .foot { margin-top: 5mm; padding-top: 2mm; border-top: 1px solid #000; font-size: 11px; color: #333; display: flex; justify-content: space-between; }
+  @page { size: A4; margin: 10mm 12mm; }
+  body { font-family: Arial, "Segoe UI", system-ui, sans-serif; color: #000; margin: 0; font-size: 12px; line-height: 1.3; }
+  .sheet { max-width: 150mm; margin: 0 auto; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 6mm; margin-bottom: 5mm; }
+  .clinic { font-size: 17px; font-weight: 700; line-height: 1.15; }
+  .clinic small { display: block; font-size: 11px; font-weight: 400; color: #333; margin-top: 1mm; }
+  .lic { font-size: 9px; color: #333; text-align: right; white-space: pre-line; }
+  .title { font-size: 15px; font-weight: 700; line-height: 1.2; margin-bottom: 3mm; }
+  .intro { display: flex; justify-content: space-between; align-items: flex-start; gap: 6mm; }
+  .fields { flex: 1; display: grid; grid-template-columns: 46mm 1fr; column-gap: 3mm; row-gap: 1.2mm; align-items: baseline; }
+  .fields .k { font-size: 11px; line-height: 1.2; }
+  .fields .v { font-weight: 700; }
+  .fields .reg { font-size: 13px; }
+  .code { text-align: center; width: 42mm; flex-shrink: 0; }
+  .code img { max-width: 42mm; display: block; margin: 0 auto 1mm; }
+  .code .hint { font-size: 9px; color: #333; }
+  .pending { border: 1px dashed #000; padding: 2mm; font-size: 9.5px; text-align: left; }
+  table { width: 100%; border-collapse: collapse; margin: 3mm 0 2.5mm; }
+  th, td { border: 1.5px solid #000; padding: 1mm 2mm; vertical-align: middle; }
+  th { text-align: center; font-weight: 400; padding: 3mm 2mm; }
+  td.s, th.s { width: 24mm; text-align: center; white-space: nowrap; }
+  .tag { display: inline-block; border: 1px solid #000; border-radius: 2px; padding: 0 1mm; font-size: 9px; margin-left: 1.5mm; vertical-align: middle; }
+  .site { display: grid; grid-template-columns: 1fr auto; column-gap: 4mm; row-gap: 1.5mm; align-items: center; margin-top: 1mm; }
+  .site .url { font-weight: 700; text-decoration: underline; }
+  .site .box { border: 1.5px solid #000; padding: 1.5mm 6mm; font-size: 15px; font-weight: 700; text-align: center; letter-spacing: 0.5px; }
+  .call { font-style: italic; margin-top: 1.5mm; }
+  .stubs { margin-top: 7mm; }
+  .stub { border-top: 2px solid #000; padding: 2mm 0 3mm; page-break-inside: avoid; }
+  .stub .num { text-align: right; font-size: 12px; margin-top: -5.5mm; margin-bottom: 1mm; }
+  .stub .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 4mm; }
+  .stub .row img { max-width: 36mm; max-height: 12mm; }
+  .stub .date { margin: 3mm 0 2mm; display: flex; gap: 6mm; align-items: baseline; }
+  .stub .date b { font-size: 12.5px; }
+  .stub .who { margin-bottom: 1.5mm; }
+  .stub .who span { margin-right: 4mm; }
+  .stub ol { margin: 0; padding: 0; list-style: none; }
+  .stub ol li { font-weight: 700; font-size: 13px; line-height: 1.45; }
+  .stub .ans { font-style: italic; margin-top: 1mm; }
 `;
 
 const lineTags = (line: LabOrderDetail["lines"][number]): string =>
@@ -224,95 +244,137 @@ const lineTags = (line: LabOrderDetail["lines"][number]): string =>
     .map((tag) => `<span class="tag">${tag}</span>`)
     .join("");
 
+/**
+ * Регистрационный лист по образцу листа ЛИС ExpressLab: двуязычные
+ * (кыргызча / русский) подписи, таблица «Исследование / цена» с итогами,
+ * строка про результаты на сайте, и ниже — отрывные талоны, как их печатает
+ * ЛИС: по одному на анализ (штрихкод, дата сдачи, филиал, номер, пациент,
+ * анализ и ответы на вопросы) плюс сводный со всем заказом.
+ *
+ * Чего у нас нет и что на листе ЛИС есть: QR-код проверки результатов и
+ * длинный «номер заказа» для сайта (API их не отдаёт) — вместо QR стоит
+ * штрихкод заказа, в рамке — рег. №; и штрихкоды на каждую пробирку
+ * (у нас один на заказ — он и печатается на каждом талоне).
+ */
 export function buildRegistrationSheetHtml(data: RegistrationSheetData): string {
   const totals = registrationSheetTotals(data);
   const resultAt =
     data.maxRequiredDays == null ? null : addDays(data.registeredAt, data.maxRequiredDays);
-
-  const priceCell = (value: string): string =>
-    data.withPrices ? `<td class="s">${value}</td>` : "";
+  const birth = formatDateDash(data.birthDate) || "—";
+  const regDate = formatDateRu(data.registeredAt);
+  const priceOf = (value: number): string => String(Math.round(value * 100) / 100);
 
   const lineRows = data.lines
     .map(
       (line, index) => `
       <tr>
-        <td class="n">${index + 1}</td>
-        <td>${esc(line.titleSnapshot)}${lineTags(line)}</td>
-        <td class="q">${line.countItem}</td>
-        ${priceCell(esc(formatKGS(money(line.price ?? "0") * line.countItem)))}
+        <td>${index + 1}. ${esc(line.titleSnapshot)}${line.countItem > 1 ? ` × ${line.countItem}` : ""}${lineTags(line)}</td>
+        ${data.withPrices ? `<td class="s">${priceOf(money(line.price ?? "0") * line.countItem)}</td>` : ""}
       </tr>`,
     )
     .join("");
 
-  const instrumentRows = data.instruments
-    .map(
-      (item) => `
-      <tr class="sub">
-        <td class="n"></td>
-        <td>${esc(item.titleSnapshot)}</td>
-        <td class="q">${item.count}</td>
-        ${priceCell(totals.instrumentsCharged ? esc(formatKGS(money(item.price ?? "0") * item.count)) : "—")}
-      </tr>`,
-    )
-    .join("");
+  const row = (label: string, value: string): string =>
+    `<tr><td>${label}</td><td class="s">${esc(value)}</td></tr>`;
 
-  const summaryRow = (label: string, value: string, cls = ""): string =>
-    `<tr class="${cls}"><td class="n"></td><td colspan="2">${label}</td><td class="s">${esc(value)}</td></tr>`;
+  const summaryRows = !data.withPrices
+    ? ""
+    : [
+        totals.instrumentsCharged
+          ? row("Забор биоматериала / Расходные материалы", priceOf(totals.instrumentsTotal))
+          : "",
+        row("Баардык төлөм / Сумма итого", priceOf(totals.total)),
+        row(`Скидка ${data.discountPercent}% / Сумма скидки`, priceOf(totals.discount)),
+        row("Төлөндү / Оплачено", priceOf(totals.paid)),
+        row("Карыз / Долг", priceOf(totals.debt)),
+      ].join("");
+  const resultRow = resultAt
+    ? row("Жыйынтыктын күнү / Дата результата", formatDateRu(resultAt))
+    : "";
 
-  const summaryRows = !data.withPrices ? "" : [
-    totals.discount > 0
-      ? summaryRow(`Скидка ${data.discountPercent}%`, `− ${formatKGS(totals.discount)}`)
-      : "",
-    summaryRow("Сумма итого", formatKGS(totals.total), "total"),
-    summaryRow("Оплачено", formatKGS(totals.paid)),
-    totals.debt > 0 ? summaryRow("Долг", formatKGS(totals.debt)) : "",
-  ].join("");
+  const barcodeImg = data.barcodeBase64
+    ? `<img src="data:image/png;base64,${data.barcodeBase64}" alt="Штрихкод" />`
+    : "";
+  const headCode = data.barcodeBase64
+    ? `<div class="code">${barcodeImg}<div class="hint">Натыйжаларды текшерүү<br>(Проверка результатов)</div></div>`
+    : `<div class="code"><div class="pending">Заказ ещё не передан в лабораторию — номер регистрации и штрихкод появятся после отправки.</div></div>`;
+  const regNo = data.regCode != null ? String(data.regCode) : "—";
 
-  const barcode = data.barcodeBase64
-    ? `<div class="barcode">
-        <img src="data:image/png;base64,${data.barcodeBase64}" alt="Штрихкод" />
-        ${data.regCode != null ? `<div class="code">№ ${data.regCode}</div>` : ""}
-      </div>`
-    : `<div class="pending">Заказ ещё не передан в лабораторию — номер регистрации и штрихкод появятся после отправки.</div>`;
+  const answersOf = (): string =>
+    data.answers.length > 0
+      ? `<div class="ans">${data.answers.map((a) => esc(`${a.title}: ${a.value}`)).join("; ")}</div>`
+      : "";
+
+  const stub = (items: string[], withAnswers: boolean, withCode: boolean): string => `
+    <div class="stub">
+      ${withCode && data.regCode != null ? `<div class="num">${regNo}</div>` : ""}
+      <div class="row">
+        <div>Каттоо баракчасы / Регистрационный лист</div>
+        ${withCode ? barcodeImg : ""}
+      </div>
+      <div class="date"><span>Дата сдачи:</span><span>${esc(regDate)}</span><b>${esc(data.branchName)}</b></div>
+      <div class="who"><span>№${regNo}</span><span>${esc(data.patientName)}</span><span>${birth}</span><span>${GENDER_SHORT[data.gender]}</span></div>
+      <ol>${items.map((item, i) => `<li>${i + 1}. ${esc(item)}</li>`).join("")}</ol>
+      ${withAnswers ? answersOf() : ""}
+    </div>`;
+
+  const instrumentTitles = data.instruments.map((item) =>
+    item.count > 1 ? `${item.titleSnapshot} — ${item.count} шт` : item.titleSnapshot,
+  );
+  // Талон на каждый анализ: у одного анализа — с его расходниками (они и
+  // есть его пробирки), у нескольких — расходники на сводном талоне: связь
+  // «пробирка → анализ» заказ не хранит.
+  const perTest = data.lines.map((line) =>
+    stub(
+      data.lines.length === 1
+        ? [line.titleSnapshot, ...instrumentTitles]
+        : [line.titleSnapshot],
+      true,
+      true,
+    ),
+  );
+  const summary =
+    data.lines.length > 1
+      ? stub([...data.lines.map((line) => line.titleSnapshot), ...instrumentTitles], true, false)
+      : "";
 
   return `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><title>Регистрационный лист</title>
 <style>${STYLE}</style></head><body><div class="sheet">
-  <div class="top">
-    <div>
-      <div class="clinic">${esc(data.clinicName)}</div>
-      <div class="branch">${esc(data.branchName)}</div>
-    </div>
-    <div class="doc">
-      <div class="title">Регистрационный лист</div>
-      <div class="reg">${data.regCode != null ? `рег. № <b>${data.regCode}</b>` : "рег. № —"}</div>
-    </div>
+  <div class="head">
+    <div class="clinic">${esc(data.clinicName)}<small>${esc(data.branchName)}</small></div>
+    <div class="lic">Лаборатория-исполнитель: ЭКСПРЕСС ПЛЮС
+Бишкек, Токтоналиева 60/1</div>
   </div>
 
-  <div class="patient">
-    <div class="k">ФИО</div><div class="v">${esc(data.patientName)}</div>
-    <div class="k">Дата рождения</div><div class="v">${esc(formatDateRu(data.birthDate) || "—")}</div>
-    <div class="k">Пол</div><div class="v">${GENDER_LABEL[data.gender]}</div>
-    <div class="k">Дата регистрации</div><div class="v">${esc(formatDateTimeRu(data.registeredAt))}</div>
-    ${data.referringDoctorName ? `<div class="k">Направил</div><div class="v">${esc(data.referringDoctorName)}</div>` : ""}
+  <div class="intro">
+    <div>
+      <div class="title">Каттоо баракчасы /<br>Регистрационный лист</div>
+      <div class="fields">
+        <div class="k">Аты жөнү / ФИО</div><div class="v">${esc(data.patientName)}</div>
+        <div class="k">Туулган күнү /<br>Дата рождения:</div><div class="v">${birth}</div>
+        <div class="k">Жынысы / Пол:</div><div class="v">${GENDER_LABEL[data.gender]}</div>
+        <div class="k">Катталган күнү / Дата<br>регистрации:</div><div class="v">${esc(formatDateTimeRu(data.registeredAt))}</div>
+        ${data.referringDoctorName ? `<div class="k">Дарыгер / Врач:</div><div class="v">${esc(data.referringDoctorName)}</div>` : ""}
+        <div class="k"></div><div class="reg">рег. № <b>${regNo}</b></div>
+      </div>
+    </div>
+    ${headCode}
   </div>
 
   <table>
-    <thead><tr><th></th><th>Исследование</th><th class="q">Кол-во</th>${data.withPrices ? '<th class="s">Цена</th>' : ""}</tr></thead>
-    <tbody>${lineRows}${instrumentRows}${summaryRows}</tbody>
+    <thead><tr><th>Изилдөө / Исследование</th>${data.withPrices ? '<th class="s">Баасы / цена</th>' : ""}</tr></thead>
+    <tbody>${lineRows}${summaryRows}${resultRow}</tbody>
   </table>
 
-  <div class="bottom">
-    <div class="notes">
-      ${resultAt ? `<div>Дата результата: <b>${esc(formatDateRu(resultAt))}</b></div>` : ""}
-      <div>Результаты выдаёт лаборатория ExpressLab — проверка на сайте www.expresslab.kg.</div>
-    </div>
-    ${barcode}
+  <div class="site">
+    <div>Жыйынтыгын сайт аркылуу да алсаңыз болот /<br>Результаты на нашем сайте: <span class="url">www.expresslab.kg</span></div>
+    <div></div>
+    <div>Тапшырыктын номери / Номер заказа</div>
+    <div class="box">${regNo}</div>
   </div>
+  <div class="call">Колл центр: +996 (312) 90-90-09, whatsapp: +996 (505) 90-90-09</div>
 
-  <div class="foot">
-    <span>${data.regCode != null ? `№${data.regCode} · ` : ""}${esc(data.patientName)} · ${esc(formatDateRu(data.birthDate) || "—")} · ${GENDER_LABEL[data.gender]}</span>
-    <span>${esc(formatDateRu(data.registeredAt))}</span>
-  </div>
+  <div class="stubs">${perTest.join("")}${summary}</div>
 </div></body></html>`;
 }
