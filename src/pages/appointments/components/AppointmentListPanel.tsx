@@ -1200,6 +1200,16 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     (event: React.UIEvent<HTMLDivElement>) => {
       if (!onScrollDirection) return;
       const el = event.currentTarget;
+      const maxTop = el.scrollHeight - el.clientHeight;
+      // Резиновый отскок у дна: iOS уводит scrollTop за maxTop и откатывает
+      // обратно — откат читался как скролл вверх, шапка возвращалась, лента
+      // сжималась, следующий свайп снова её прятал, и у конца списка шапка
+      // мерцала. Позиции за краями ленты — не движение пользователя.
+      if (el.scrollTop < 0 || el.scrollTop > maxTop) {
+        lastScrollTopRef.current = Math.min(Math.max(el.scrollTop, 0), Math.max(maxTop, 0));
+        upScrolledRef.current = 0;
+        return;
+      }
       const top = el.scrollTop;
       const now = Date.now();
       if (now < headerLockUntilRef.current) {
@@ -1564,6 +1574,8 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           "&:last-child": { pb: 0 },
           flex: 1,
           overflowY: "auto",
+          // Докрученная до конца лента не должна тянуть за собой страницу.
+          overscrollBehaviorY: "contain",
           msOverflowStyle: "none",
           scrollbarWidth: "none",
           "&::-webkit-scrollbar": { display: "none" },
