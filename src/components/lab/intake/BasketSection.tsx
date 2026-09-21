@@ -21,7 +21,11 @@ import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 
-import { resolveSelectedLines, stepCount, type BasketLine } from "./basketCatalog";
+import {
+  resolveSelectedLines,
+  stepCount,
+  type BasketLine,
+} from "./basketCatalog";
 import type { LabTest } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
 import IntakeSection from "./IntakeSection";
@@ -75,7 +79,7 @@ const BasketSection: React.FC<Props> = ({
 
   const selectedLines = React.useMemo(
     () => resolveSelectedLines(tests, selected),
-    [tests, selected],
+    [tests, selected]
   );
 
   return (
@@ -148,166 +152,185 @@ const BasketSection: React.FC<Props> = ({
         <Stack divider={<Box sx={{ borderTop: 1, borderColor: "divider" }} />}>
           {selectedLines.map((line) => {
             const price = line.test
-              ? money(line.express ? line.test.priceExpress : line.test.priceStandard)
+              ? money(
+                  line.express
+                    ? line.test.priceExpress
+                    : line.test.priceStandard
+                )
               : 0;
             return (
-              <Stack
-                key={line.testId}
-                direction="row"
-                alignItems="center"
-                gap={1}
-                sx={{ py: 0.75 }}
-              >
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  {line.test ? (
-                    <Link
-                      component="button"
-                      type="button"
-                      underline="hover"
-                      color="inherit"
-                      onClick={() => setDetailsId(line.testId)}
-                      sx={{
-                        display: "block",
-                        textAlign: "left",
-                        width: "100%",
-                        fontSize: "0.875rem",
-                        fontWeight: 500,
-                      }}
-                    >
-                      {line.test.title}
-                    </Link>
-                  ) : (
-                    <Typography variant="body2" color="error.main">
-                      Тест не найден в каталоге
-                    </Typography>
-                  )}
-                </Box>
+              <Stack key={line.testId} spacing={0.5} sx={{ py: 0.75 }}>
+                {/* Верхняя строка — что и почём; нижняя — управление.
+                    В одну строку название анализа в дровере шириной 480–560
+                    рвалось на четыре. */}
+                <Stack direction="row" alignItems="center" gap={1}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    {line.test ? (
+                      <Link
+                        component="button"
+                        type="button"
+                        underline="hover"
+                        color="inherit"
+                        onClick={() => setDetailsId(line.testId)}
+                        sx={{
+                          display: "block",
+                          textAlign: "left",
+                          width: "100%",
+                          fontSize: "0.875rem",
+                          fontWeight: 500,
+                        }}
+                      >
+                        {line.test.title}
+                      </Link>
+                    ) : (
+                      <Typography variant="body2" color="error.main">
+                        Тест не найден в каталоге
+                      </Typography>
+                    )}
+                  </Box>
 
-                {/* Та же карточка анализа, что по клику на название и из
-                    каталога: описание, подготовка, пробирки — одним окном,
-                    а не отдельным попапом только с подготовкой. */}
-                {line.test && (
-                  <Tooltip title="Карточка анализа">
-                    <IconButton
-                      size="small"
-                      aria-label={`Карточка анализа: ${line.test.title}`}
-                      onClick={() => setDetailsId(line.testId)}
-                      sx={{ flexShrink: 0, color: "action.active" }}
-                    >
-                      <MenuBookOutlined fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                )}
+                  <Typography
+                    variant="body2"
+                    fontWeight={600}
+                    sx={{ flexShrink: 0, textAlign: "right" }}
+                  >
+                    {formatKGS(price * line.count)}
+                  </Typography>
+
+                  <IconButton
+                    size="small"
+                    onClick={() => onRemove(line.testId)}
+                    disabled={disabled}
+                    aria-label="Убрать анализ"
+                    sx={{ flexShrink: 0, mr: -0.5 }}
+                  >
+                    <DeleteOutlined fontSize="small" />
+                  </IconButton>
+                </Stack>
 
                 <Stack
                   direction="row"
                   alignItems="center"
-                  sx={{
-                    flexShrink: 0,
-                    border: 1,
-                    borderColor: "divider",
-                    borderRadius: 1,
-                    overflow: "hidden",
-                  }}
+                  gap={1}
+                  flexWrap="wrap"
+                  useFlexGap
                 >
-                  <IconButton
-                    size="small"
-                    disabled={disabled || line.count <= 1}
-                    onClick={() =>
-                      onCountChange(line.testId, stepCount(line.count, -1))
-                    }
-                    aria-label="Меньше на один"
-                    sx={{ borderRadius: 0 }}
-                  >
-                    <RemoveOutlined fontSize="small" />
-                  </IconButton>
-                  <Typography
-                    variant="body2"
-                    sx={{ width: 28, textAlign: "center", userSelect: "none" }}
-                  >
-                    {line.count}
-                  </Typography>
-                  <IconButton
-                    size="small"
-                    disabled={disabled}
-                    onClick={() =>
-                      onCountChange(line.testId, stepCount(line.count, +1))
-                    }
-                    aria-label="Больше на один"
-                    sx={{ borderRadius: 0 }}
-                  >
-                    <AddOutlined fontSize="small" />
-                  </IconButton>
-                </Stack>
+                  {/* Та же карточка анализа, что по клику на название и из
+                    каталога: описание, подготовка, пробирки — одним окном,
+                    а не отдельным попапом только с подготовкой. */}
+                  {line.test && (
+                    <Tooltip title="Карточка анализа">
+                      <IconButton
+                        size="small"
+                        aria-label={`Карточка анализа: ${line.test.title}`}
+                        onClick={() => setDetailsId(line.testId)}
+                        sx={{ flexShrink: 0, color: "action.active" }}
+                      >
+                        <MenuBookOutlined fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
 
-                {/* Приносной: пациент принёс биоматериал в своей таре —
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    sx={{
+                      flexShrink: 0,
+                      border: 1,
+                      borderColor: "divider",
+                      borderRadius: 1,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <IconButton
+                      size="small"
+                      disabled={disabled || line.count <= 1}
+                      onClick={() =>
+                        onCountChange(line.testId, stepCount(line.count, -1))
+                      }
+                      aria-label="Меньше на один"
+                      sx={{ borderRadius: 0 }}
+                    >
+                      <RemoveOutlined fontSize="small" />
+                    </IconButton>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        width: 28,
+                        textAlign: "center",
+                        userSelect: "none",
+                      }}
+                    >
+                      {line.count}
+                    </Typography>
+                    <IconButton
+                      size="small"
+                      disabled={disabled}
+                      onClick={() =>
+                        onCountChange(line.testId, stepCount(line.count, +1))
+                      }
+                      aria-label="Больше на один"
+                      sx={{ borderRadius: 0 }}
+                    >
+                      <AddOutlined fontSize="small" />
+                    </IconButton>
+                  </Stack>
+
+                  {/* Приносной: пациент принёс биоматериал в своей таре —
                     пробирки и взятие под этот анализ из набора уходят и не
                     оплачиваются (см. basket._collect_instruments). */}
-                <Tooltip title="Приносной: пациент принёс биоматериал сам — пробирки и взятие не нужны и не оплачиваются">
-                  <ToggleButton
-                    value="broughtIn"
-                    color="info"
-                    size="small"
-                    selected={line.broughtIn}
-                    disabled={disabled}
-                    onChange={() => onBroughtInChange(line.testId, !line.broughtIn)}
-                    sx={{
-                      flexShrink: 0,
-                      px: 1,
-                      py: 0.25,
-                      gap: 0.5,
-                      textTransform: "none",
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    <ShoppingBagOutlined sx={{ fontSize: 16 }} />
-                    <Typography variant="caption" fontWeight={600}>
-                      Приносной
-                    </Typography>
-                  </ToggleButton>
-                </Tooltip>
+                  <Tooltip title="Приносной: пациент принёс биоматериал сам — пробирки и взятие не нужны и не оплачиваются">
+                    <ToggleButton
+                      value="broughtIn"
+                      color="info"
+                      size="small"
+                      selected={line.broughtIn}
+                      disabled={disabled}
+                      onChange={() =>
+                        onBroughtInChange(line.testId, !line.broughtIn)
+                      }
+                      sx={{
+                        flexShrink: 0,
+                        px: 1,
+                        py: 0.25,
+                        gap: 0.5,
+                        textTransform: "none",
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      <ShoppingBagOutlined sx={{ fontSize: 16 }} />
+                      <Typography variant="caption" fontWeight={600}>
+                        Приносной
+                      </Typography>
+                    </ToggleButton>
+                  </Tooltip>
 
-                <Tooltip title="Срочное исполнение по повышенной цене">
-                  <ToggleButton
-                    value="express"
-                    color="warning"
-                    size="small"
-                    selected={line.express}
-                    disabled={disabled}
-                    onChange={() => onExpressChange(line.testId, !line.express)}
-                    sx={{
-                      flexShrink: 0,
-                      px: 1,
-                      py: 0.25,
-                      gap: 0.5,
-                      textTransform: "none",
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    <BoltOutlined sx={{ fontSize: 16 }} />
-                    <Typography variant="caption" fontWeight={600}>
-                      Экспресс
-                    </Typography>
-                  </ToggleButton>
-                </Tooltip>
-
-                <Typography
-                  variant="body2"
-                  fontWeight={600}
-                  sx={{ flexShrink: 0, minWidth: 76, textAlign: "right" }}
-                >
-                  {formatKGS(price * line.count)}
-                </Typography>
-
-                <IconButton
-                  size="small"
-                  onClick={() => onRemove(line.testId)}
-                  disabled={disabled}
-                  aria-label="Убрать анализ"
-                  sx={{ flexShrink: 0 }}
-                >
-                  <DeleteOutlined fontSize="small" />
-                </IconButton>
+                  <Tooltip title="Срочное исполнение по повышенной цене">
+                    <ToggleButton
+                      value="express"
+                      color="warning"
+                      size="small"
+                      selected={line.express}
+                      disabled={disabled}
+                      onChange={() =>
+                        onExpressChange(line.testId, !line.express)
+                      }
+                      sx={{
+                        flexShrink: 0,
+                        px: 1,
+                        py: 0.25,
+                        gap: 0.5,
+                        textTransform: "none",
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      <BoltOutlined sx={{ fontSize: 16 }} />
+                      <Typography variant="caption" fontWeight={600}>
+                        Экспресс
+                      </Typography>
+                    </ToggleButton>
+                  </Tooltip>
+                </Stack>
               </Stack>
             );
           })}
