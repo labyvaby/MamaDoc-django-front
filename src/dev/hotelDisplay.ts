@@ -78,7 +78,9 @@ export function hotelRoomStateColor(state: string, theme: Theme): string {
     case "inspected":
       return theme.palette.info.main;
     case "repair":
-      return theme.palette.warning.main;
+      // Серый, а не оранжевый: оранжевый в шахматке уже занят «Овербукингом», и два разных
+      // смысла в одном цвете путают. Серый — «вне эксплуатации»; на белом 4.6:1 (точка ≥ 3:1).
+      return theme.palette.mode === "dark" ? theme.palette.grey[400] : theme.palette.grey[600];
     default:
       return theme.palette.text.disabled;
   }

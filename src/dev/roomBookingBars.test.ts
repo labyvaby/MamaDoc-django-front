@@ -3,10 +3,28 @@ import { describe, expect, it } from "vitest";
 import {
   BAR_INITIALS_MIN_PX,
   BAR_NAME_MIN_PX,
+  barFillAlpha,
   barLabelMode,
   barLabelText,
   guestInitials,
 } from "./roomBookingBars";
+
+describe("barFillAlpha", () => {
+  it("статус читается по плотности заливки: заехал > подтверждена > завершена, в обеих темах", () => {
+    for (const dark of [false, true]) {
+      const arrived = barFillAlpha("arrived", dark);
+      const confirmed = barFillAlpha("confirmed", dark);
+      const completed = barFillAlpha("completed", dark);
+      expect(arrived).toBeGreaterThan(confirmed);
+      expect(confirmed).toBeGreaterThan(completed);
+      expect(completed).toBeGreaterThan(0);
+    }
+  });
+
+  it("в тёмной теме заливка плотнее, чем в светлой, при том же статусе", () => {
+    expect(barFillAlpha("confirmed", true)).toBeGreaterThan(barFillAlpha("confirmed", false));
+  });
+});
 
 describe("guestInitials", () => {
   it("берёт первые буквы первых двух слов", () => {

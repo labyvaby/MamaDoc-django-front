@@ -41,14 +41,18 @@ import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlin
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import dayjs, { type Dayjs } from "dayjs";
+import { Link as RouterLink } from "react-router";
 
 import { getCalendar, type HotelCalendarItem, type HotelCalendarRoom } from "../api/hotel";
+import { PAGE_PERMISSIONS } from "../config/accessPermissions";
+import { useCan } from "../hooks/useCan";
 import { useNowMinute } from "../pages/schedule/django/useNowMinute";
 import { useHotelProperty } from "./useHotelProperty";
 import {
   mapStayDisplayStatus,
   hotelStayStatusColor,
   hotelRoomStateColor,
+  HOTEL_ROOM_STATES,
   HOTEL_ROOM_STATE_LABELS,
   HOTEL_STAY_STATUS_LABELS,
   HOTEL_STAY_STATUSES,
@@ -63,7 +67,7 @@ import {
   MONTH_NOM_RU,
   WEEKDAY_SHORT_RU,
 } from "./mockDemoData";
-import { barLabelMode, barLabelText } from "./roomBookingBars";
+import { barFillAlpha, barLabelMode, barLabelText } from "./roomBookingBars";
 import { clampSelectionEnd, selectionBounds } from "./roomBookingSelection";
 import { RoomDetailsDialog } from "./RoomDetailsDialog";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
@@ -86,7 +90,7 @@ const LOAD_MORE_THRESHOLD_PX = 600;
  * (детальнее) до 60. Остальные загруженные дни — правее, за горизонтальной
  * прокруткой; масштаб меняет только ширину колонки и не ходит на бэк.
  */
-const ZOOM_LEVELS = [7, 14, 21, 30, 35, 40, 45, 60];
+const ZOOM_LEVELS = [7, 14, 21, 30, 35, 40, 45, 50, 55, 60];
 /**
  * Ширина левой колонки с номерами: номер (3–4 знака), значок «люкс» и точка состояния.
  * Она же — ширина угла над шапкой с масштабом «− 40 дн. +», поэтому меньше ~90 px не
@@ -101,6 +105,13 @@ const MIN_DAY_COL_WIDTH = 20;
 
 /** Однотонный полупрозрачный слой поверх непрозрачного фона (градиент из одного цвета). */
 const tintOver = (color: string) => `linear-gradient(${color}, ${color})`;
+
+/**
+ * Плавная прокрутка (стрелки «‹ ›», «Сегодня») — только если пользователь не просил
+ * уменьшить анимацию (prefers-reduced-motion): иначе мгновенный переход.
+ */
+const scrollBehavior = (): ScrollBehavior =>
+  typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 
 type RowPlan = { kind: "category"; label: string } | { kind: "room"; room: HotelCalendarRoom };
 
@@ -132,6 +143,8 @@ export const RoomBookingGrid: React.FC = () => {
   // invalidateQueries по нему перечитывают все уже загруженные куски (с их
   // номерами — окно при этом не «уезжает»).
   const queryClient = useQueryClient();
+  // Ссылка «Номера» в пустом состоянии — только тем, у кого есть право на эту страницу.
+  const canManageRooms = useCan(PAGE_PERMISSIONS.hotelRooms);
   const calendarQuery = useInfiniteQuery({
     queryKey: ["hotel", "calendar", property?.id, windowStartStr],
     queryFn: ({ pageParam, signal }) => {
@@ -299,6 +312,26 @@ export const RoomBookingGrid: React.FC = () => {
   const today = dayjs().startOf("day");
   const todayIdx = dates.findIndex((d) => d.isSame(today, "day"));
 
+  // Клавиатура: свободные ячейки — кнопки, и Tab по каждой (номера × дни — тысячи остановок)
+  // не пройти. Поэтому у всех tabIndex=-1, кроме одной входной — первой свободной ночи
+  // первого номера начиная с сегодня; дальше по ячейкам — стрелки (handleGridKeyDown).
+  // Ключ ячейки — "индекс строки:индекс дня" (тот же, что в data-cell).
+  const entryCell = React.useMemo(() => {
+    const start = Math.max(0, todayIdx);
+    for (let r = 0; r < ROWS.length; r++) {
+      const row = ROWS[r];
+      if (row.kind !== "room") continue;
+      const items = itemsByRoomId.get(row.room.id) ?? [];
+      for (let i = start; i < dates.length; i++) {
+        const dateStr = dates[i].format("YYYY-MM-DD");
+        if (!items.some((it) => it.reservationStatus !== "draft" && dateStr >= it.checkIn && dateStr < it.checkOut)) {
+          return `${r}:${i}`;
+        }
+      }
+    }
+    return null;
+  }, [ROWS, dates, itemsByRoomId, todayIdx]);
+
   // Подписи месяцев над днями (row 1) — соседние даты одного месяца схлопываются в одну ячейку.
   const monthSpans: Array<{ label: string; startCol: number; span: number }> = [];
   dates.forEach((d, i) => {
@@ -381,17 +414,89 @@ export const RoomBookingGrid: React.FC = () => {
   // Только когда данных нет совсем: провал подгрузки следующего куска (или фонового
   // перечитывания) status ставит в error, но уже показанную сетку прятать незачем.
   if (calendarQuery.isError && !calendarQuery.data) {
-    return <Alert severity="error">Не удалось загрузить бронирования.</Alert>;
+    return (
+      <Alert
+        severity="error"
+        action={
+          <Button color="inherit" size="small" onClick={() => void calendarQuery.refetch()}>
+            Повторить
+          </Button>
+        }
+      >
+        Не удалось загрузить бронирования.
+      </Alert>
+    );
+  }
+  // Номеров в объекте нет вовсе — вместо шапки без строк объясняем, что делать.
+  if (calendar && calendar.rooms.length === 0) {
+    return (
+      <Alert
+        severity="info"
+        action={
+          canManageRooms ? (
+            <Button color="inherit" size="small" component={RouterLink} to="/rooms">
+              К номерам
+            </Button>
+          ) : undefined
+        }
+      >
+        В этом объекте пока нет номеров. Добавьте их в разделе «Номера» — они сразу появятся в шахматке.
+      </Alert>
+    );
   }
 
+  // Стрелки на свободной ячейке (data-cell="строка:день") двигают фокус к соседней свободной
+  // ячейке в этом направлении — занятые брони перепрыгиваются; Home/End — края строки.
+  // Enter/пробел уже дают быстрый заказ на одну ночь (click с detail === 0, см. ячейки).
+  // Ячейки ключуются по дате, поэтому при подгрузке слева фокус остаётся на том же узле.
+  const handleGridKeyDown = (e: React.KeyboardEvent) => {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !scrollEl) return;
+    const cell = (e.target as HTMLElement).closest<HTMLElement>("[data-cell]");
+    if (!cell) return;
+    const [r, c] = (cell.dataset.cell ?? "").split(":").map(Number);
+    const find = (row: number, col: number) => scrollEl.querySelector<HTMLElement>(`[data-cell="${row}:${col}"]`);
+    const scan = (from: number, step: 1 | -1, limit: number, at: (i: number) => HTMLElement | null) => {
+      for (let i = from; step > 0 ? i < limit : i >= limit; i += step) {
+        const el = at(i);
+        if (el) return el;
+      }
+      return null;
+    };
+    let next: HTMLElement | null;
+    switch (e.key) {
+      case "ArrowRight":
+        next = scan(c + 1, 1, dates.length, (i) => find(r, i));
+        break;
+      case "ArrowLeft":
+        next = scan(c - 1, -1, 0, (i) => find(r, i));
+        break;
+      case "ArrowDown":
+        next = scan(r + 1, 1, ROWS.length, (i) => find(i, c));
+        break;
+      case "ArrowUp":
+        next = scan(r - 1, -1, 0, (i) => find(i, c));
+        break;
+      case "Home":
+        next = scan(0, 1, dates.length, (i) => find(r, i));
+        break;
+      case "End":
+        next = scan(dates.length - 1, -1, 0, (i) => find(r, i));
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    next?.focus();
+  };
+
   // Стрелки «‹ ›»: плавно на неделю; если край рядом, соседний кусок подгрузится сам.
-  const scrollByDays = (days: number) => scrollEl?.scrollBy({ left: days * dayColWidth, behavior: "smooth" });
+  const scrollByDays = (days: number) => scrollEl?.scrollBy({ left: days * dayColWidth, behavior: scrollBehavior() });
   const goToToday = () => {
     setSelectedHotelDate(dayjs().format("YYYY-MM-DD"));
     const anchor = dayjs().subtract(2, "day").startOf("day");
     const idx = anchor.diff(gridStart, "day");
     if (scrollEl && idx >= 0 && idx < dates.length) {
-      scrollEl.scrollTo({ left: idx * dayColWidth, behavior: "smooth" });
+      scrollEl.scrollTo({ left: idx * dayColWidth, behavior: scrollBehavior() });
       return;
     }
     // Окно уехало далеко от сегодняшнего дня — начинаем с чистого листа: первый
@@ -457,12 +562,16 @@ export const RoomBookingGrid: React.FC = () => {
       <Box
         ref={setScrollEl}
         onScroll={handleScroll}
+        onKeyDown={handleGridKeyDown}
         sx={{
           border: "1px solid",
           borderColor: "divider",
           borderRadius: "14px",
           overflow: "auto",
           maxHeight: 440,
+          // Фокус с клавиатуры не должен уезжать под липкую колонку номеров и шапку.
+          scrollPaddingLeft: `${ROOM_COL_WIDTH}px`,
+          scrollPaddingTop: "80px",
           // Позицию при добавлении кусков слева выставляем сами (leftDayRef); встроенная
           // «якорная» прокрутка браузера сдвигала бы её второй раз.
           overflowAnchor: "none",
@@ -500,7 +609,13 @@ export const RoomBookingGrid: React.FC = () => {
           >
             <Tooltip title="Показывать меньше дней в ширину окна (до 1 недели)">
               <span>
-                <IconButton size="small" sx={{ p: 0.25 }} onClick={() => setZoomIndex((i) => Math.max(0, i - 1))} disabled={!canZoomIn}>
+                <IconButton
+                  size="small"
+                  sx={{ p: 0.25 }}
+                  aria-label="Показывать меньше дней в ширину окна"
+                  onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
+                  disabled={!canZoomIn}
+                >
                   <RemoveOutlined fontSize="small" />
                 </IconButton>
               </span>
@@ -510,7 +625,13 @@ export const RoomBookingGrid: React.FC = () => {
             </Typography>
             <Tooltip title="Показывать больше дней в ширину окна (до 60)">
               <span>
-                <IconButton size="small" sx={{ p: 0.25 }} onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))} disabled={!canZoomOut}>
+                <IconButton
+                  size="small"
+                  sx={{ p: 0.25 }}
+                  aria-label="Показывать больше дней в ширину окна"
+                  onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))}
+                  disabled={!canZoomOut}
+                >
                   <AddOutlined fontSize="small" />
                 </IconButton>
               </span>
@@ -586,7 +707,7 @@ export const RoomBookingGrid: React.FC = () => {
                   {d.date()}
                 </Typography>
                 <Stack direction="row" alignItems="center" gap={0.375}>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.65rem" }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
                     {WEEKDAY_SHORT_RU[(d.day() + 6) % 7]}
                   </Typography>
                   {/* Отдельная от выбора отметка «сегодня» — не гасится кликом по другой дате. */}
@@ -728,6 +849,9 @@ export const RoomBookingGrid: React.FC = () => {
                         key={`${room.id}-${dateStr}`}
                         component={isFree ? "button" : "div"}
                         type={isFree ? "button" : undefined}
+                        data-cell={isFree ? `${rowIdx}:${i}` : undefined}
+                        tabIndex={isFree ? (`${rowIdx}:${i}` === entryCell ? 0 : -1) : undefined}
+                        aria-label={isFree ? `Быстрая бронь: номер ${room.number}, ${d.format("D MMMM")}` : undefined}
                         // Мышь: нажатие — «от», отпускание (обработчик на window) — «до».
                         onMouseDown={isFree ? (e: React.MouseEvent) => startSelection(e, room, i) : undefined}
                         onMouseEnter={dragSel ? () => extendSelection(room.id, i, freeMask) : undefined}
@@ -765,6 +889,9 @@ export const RoomBookingGrid: React.FC = () => {
                             ? theme.palette.action.hover
                             : "transparent",
                           "&:hover": isFree && !inSelection ? { bgcolor: alpha(theme.palette.primary.main, 0.12) } : undefined,
+                          // Фокус с клавиатуры: 2 px цвета темы внутрь ячейки (стандартная 1 px чёрная
+                          // рамка на колонке в 20 px почти теряется).
+                          "&:focus-visible": isFree ? { outline: "2px solid", outlineColor: "primary.main", outlineOffset: "-2px" } : undefined,
                         }}
                       />
                     );
@@ -789,18 +916,25 @@ export const RoomBookingGrid: React.FC = () => {
               const color = it.isOverbooking ? theme.palette.warning.main : hotelStayStatusColor(status, theme);
               const nights = nightsBetween(it.checkIn, it.checkOut);
               const isDraft = it.reservationStatus === "draft";
-              const textColor = theme.palette.mode === "dark" ? "#fff" : color;
+              // Цвет статуса — в заливке и рамке, а подпись text.primary (у «Завершена» —
+              // text.secondary): цвет статуса как цвет текста давал 2.6–4.1:1 в светлой теме, а
+              // так на любой заливке ≥ 4.6:1 (проверено расчётом WCAG в обеих темах).
+              const textColor = status === "completed" ? theme.palette.text.secondary : theme.palette.text.primary;
               const label = it.customerName || `Бронь №${it.reservationNumber}`;
               // Ширина бара — колонки × ширина дня минус отступы по 3 px. Чем уже бар, тем
               // короче подпись: имя → инициалы → одна буква (полное имя — в подсказке бара).
               const labelMode = barLabelMode((endCol - startCol) * dayColWidth - 6);
+              // Полное описание — и для скринридера (в баре может быть только «АД»), и для
+              // подсказки: статус не должен зависеть от одного цвета.
+              const barDescription = `${label} · №${row.room.number} · ${nights} ноч. · ${HOTEL_STAY_STATUS_LABELS[status]}${it.isOverbooking ? " · Овербукинг" : ""}${isDraft ? " · Черновик" : ""}`;
               return (
                 <Box
                   key={it.itemId}
                   component="button"
                   type="button"
                   onClick={() => setSelectedReservationId(it.reservationId)}
-                  title={`${label} · №${row.room.number} · ${nights} ноч. · ${HOTEL_STAY_STATUS_LABELS[status]}${it.isOverbooking ? " · Овербукинг" : ""} — показать бронь`}
+                  aria-label={barDescription}
+                  title={`${barDescription} — показать бронь`}
                   sx={{
                     gridRow,
                     gridColumn: `${startCol + 2} / ${endCol + 2}`,
@@ -809,7 +943,7 @@ export const RoomBookingGrid: React.FC = () => {
                     mx: "3px",
                     px: labelMode === "name" ? 1 : 0,
                     borderRadius: "8px",
-                    bgcolor: alpha(color, theme.palette.mode === "dark" ? 0.3 : 0.16),
+                    bgcolor: alpha(color, barFillAlpha(status, theme.palette.mode === "dark")),
                     border: isDraft ? "1px dashed" : "1px solid",
                     borderColor: alpha(color, 0.6),
                     display: "flex",
@@ -870,7 +1004,7 @@ export const RoomBookingGrid: React.FC = () => {
                   width: 16,
                   height: 10,
                   borderRadius: "3px",
-                  bgcolor: alpha(color, theme.palette.mode === "dark" ? 0.3 : 0.16),
+                  bgcolor: alpha(color, barFillAlpha(status, theme.palette.mode === "dark")),
                   border: "1px solid",
                   borderColor: alpha(color, 0.6),
                 }}
@@ -882,19 +1016,38 @@ export const RoomBookingGrid: React.FC = () => {
           );
         })}
         <Stack direction="row" alignItems="center" gap={0.5}>
-          <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: theme.palette.warning.main }} />
+          {/* Овербукинг — тоже образец бара, только оранжевый. */}
+          <Box
+            sx={{
+              width: 16,
+              height: 10,
+              borderRadius: "3px",
+              bgcolor: alpha(theme.palette.warning.main, barFillAlpha("confirmed", theme.palette.mode === "dark")),
+              border: "1px solid",
+              borderColor: alpha(theme.palette.warning.main, 0.6),
+            }}
+          />
           <Typography variant="caption" color="text.secondary">
             Овербукинг
           </Typography>
         </Stack>
-        <Stack direction="row" alignItems="center" gap={0.5}>
-          <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: theme.palette.success.main }} />
+        {/* Точка у номера — состояние уборки; четыре цвета, «Ремонт» серый (оранжевый — овербукинг). */}
+        <Stack direction="row" alignItems="center" gap={1.25} flexWrap="wrap">
           <Typography variant="caption" color="text.secondary">
-            Точка у номера — статус уборки
+            Точка у номера:
           </Typography>
+          {HOTEL_ROOM_STATES.map((state) => (
+            <Stack key={state} direction="row" alignItems="center" gap={0.5}>
+              <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: hotelRoomStateColor(state, theme) }} />
+              <Typography variant="caption" color="text.secondary">
+                {HOTEL_ROOM_STATE_LABELS[state]}
+              </Typography>
+            </Stack>
+          ))}
         </Stack>
         <Typography variant="caption" color="text.secondary">
-          Быстрая бронь: клик по свободной ячейке — одна ночь, зажмите и протяните — несколько ночей
+          Быстрая бронь: клик по свободной ячейке — одна ночь, зажмите и протяните — несколько ночей. С клавиатуры:
+          Tab к ячейке, стрелки — между ячейками, Enter — одна ночь.
         </Typography>
       </Stack>
 
