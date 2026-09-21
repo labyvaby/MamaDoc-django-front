@@ -39,8 +39,8 @@ const IntakeSection: React.FC<IntakeSectionProps> = ({
   children,
 }) => (
   <Card variant="outlined" sx={{ bgcolor: "background.paper" }}>
-    <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
-      <Stack spacing={2}>
+    <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
+      <Stack spacing={1.25}>
         <Stack
           direction="row"
           justifyContent="space-between"

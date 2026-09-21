@@ -1,5 +1,5 @@
 import React from "react";
-import { TextField } from "@mui/material";
+import { Button, TextField } from "@mui/material";
 
 import ChatBubbleOutlineOutlined from "@mui/icons-material/ChatBubbleOutlineOutlined";
 
@@ -24,19 +24,41 @@ type Props = {
  * уезжает (свободный текст заказа ЛИС занят направившим врачом — см.
  * `order_to_dto` на бэкенде).
  */
-const CommentSection: React.FC<Props> = ({ value, disabled, onChange }) => (
-  <IntakeSection title="Комментарий к заказу" icon={<ChatBubbleOutlineOutlined />}>
-    <TextField
-      size="small"
-      fullWidth
-      multiline
-      minRows={2}
-      placeholder="Необязательно"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      disabled={disabled}
-    />
-  </IntakeSection>
-);
+const CommentSection: React.FC<Props> = ({ value, disabled, onChange }) => {
+  // Поле нужно в одном приёме из десяти — пока пусто, секция не занимает
+  // экран двумя строками, а показывает одну кнопку.
+  const [expanded, setExpanded] = React.useState(false);
+  const open = expanded || value.trim() !== "";
+
+  if (!open) {
+    return (
+      <Button
+        size="small"
+        variant="text"
+        startIcon={<ChatBubbleOutlineOutlined />}
+        disabled={disabled}
+        onClick={() => setExpanded(true)}
+        sx={{ alignSelf: "flex-start", textTransform: "none" }}
+      >
+        Добавить комментарий к заказу
+      </Button>
+    );
+  }
+  return (
+    <IntakeSection title="Комментарий к заказу" icon={<ChatBubbleOutlineOutlined />}>
+      <TextField
+        size="small"
+        fullWidth
+        multiline
+        minRows={2}
+        autoFocus={expanded}
+        placeholder="Необязательно"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+      />
+    </IntakeSection>
+  );
+};
 
 export default CommentSection;

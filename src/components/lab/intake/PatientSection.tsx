@@ -226,31 +226,31 @@ const PatientSection: React.FC<Props> = ({
           из карты (orderDTO.@receiver_sms), письмо — на почту, которой в
           карте пациента нет, поэтому она спрашивается при приёме. */}
       {patient && (
-        <Stack spacing={1}>
-          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-            Уведомления о готовности результата
-          </Typography>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          alignItems={{ sm: "center" }}
+          gap={1}
+        >
           <FormControlLabel
-            sx={{ alignItems: "flex-start", ml: 0 }}
+            sx={{ ml: 0, mr: 0, flex: 1, minWidth: 0 }}
             control={
               <Checkbox
                 size="small"
                 checked={receiverSms && !!patient.phone}
                 onChange={(event) => onReceiverSmsChange(event.target.checked)}
                 disabled={disabled || !patient.phone}
-                sx={{ pt: 0.25 }}
+                sx={{ py: 0.25 }}
               />
             }
             label={
-              <Typography variant="body2">
-                SMS от лаборатории
-                {patient.phone ? ` на ${patient.phone}` : " — в карте нет телефона"}
+              <Typography variant="body2" noWrap>
+                SMS о готовности
+                {patient.phone ? ` на ${patient.phone}` : " — нет телефона"}
               </Typography>
             }
           />
           <TextField
             size="small"
-            fullWidth
             type="email"
             label="Результаты на почту"
             placeholder="необязательно"
@@ -258,6 +258,7 @@ const PatientSection: React.FC<Props> = ({
             onChange={(event) => onResultEmailChange(event.target.value)}
             disabled={disabled}
             slotProps={{ inputLabel: { shrink: true } }}
+            sx={{ flex: 1, minWidth: 0 }}
           />
         </Stack>
       )}

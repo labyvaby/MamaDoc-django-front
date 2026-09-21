@@ -718,7 +718,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       PaperProps={{ sx: { width: { xs: "100%", sm: 520, md: 620, lg: 680 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
     >
       {/* Шапка */}
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5, flexShrink: 0 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2, py: 1, flexShrink: 0 }}>
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="h6" fontWeight={600} sx={{ lineHeight: 1.25 }}>
             Приём анализов
@@ -747,8 +747,8 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       <Divider />
 
       {/* Содержимое */}
-      <Box sx={{ p: 2.5, flex: 1, overflowY: "auto" }}>
-        <Stack spacing={2.5}>
+      <Box sx={{ p: 1.5, flex: 1, overflowY: "auto" }}>
+        <Stack spacing={1.5}>
           {/* Раздел не настроен у организации — регистратор должен узнать
               об этом до того, как соберёт корзину и введёт оплату, а не из
               загадочного отказа на кнопке приёма (см. отчёт по задаче
@@ -976,7 +976,7 @@ const LabIntakeDrawer: React.FC<LabIntakeDrawerProps> = ({ open, onClose, initia
       <Divider />
 
       {/* Подвал */}
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5, flexShrink: 0 }} gap={2}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2, py: 1, flexShrink: 0 }} gap={2}>
         {/* Сумма всегда на виду, пока форма прокручивается: регистратор
             называет её пациенту и вводит оплату, глядя сюда, а не в низ
             секции «Оплата». Причина блокировки — под суммой, а не вместо. */}
