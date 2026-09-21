@@ -126,7 +126,29 @@
     "lastActivity": "касание {{value}}",
     "chatOpen": "Открыть чат",
     "chatHide": "Свернуть чат",
-    "chatOpenExternal": "Открыть в Chatwoot (новая вкладка)"
+    "chatOpenExternal": "Открыть в Chatwoot (новая вкладка)",
+    "leadInfo": "О лиде",
+    "username": "Никнейм",
+    "usernameOpen": "Открыть профиль",
+    "copyPhone": "Скопировать номер",
+    "copied": "Скопировано",
+    "client": "Клиент",
+    "clientNone": "Карта клиента не привязана",
+    "clientOpen": "Открыть карту",
+    "clientUnlink": "Отвязать",
+    "clientLink": "Привязать",
+    "clientCandidates": "Похоже, это клиент",
+    "clientSearch": "Найти клиента по имени или телефону",
+    "clientLinked": "Клиент привязан",
+    "assigneeAuto": "Назначится тому, кто первым начнёт работу с лидом",
+    "nextTouch": "Следующее касание",
+    "nextTouchHint": "Подставлено по настройке воронки: через {{hours}} ч",
+    "addActivityShort": "Записать",
+    "stagesAria": "Этапы воронки — нажмите, чтобы перенести",
+    "stageCurrent": "Текущий этап",
+    "stageLocked": "Вернуть в работу может только руководитель",
+    "sourceLabel": "Источник",
+    "changedAssigneeAuto": "Ответственный назначен автоматически: {{to}}"
   },
   "activity": {
     "call": "Звонок",
@@ -225,7 +247,9 @@
     "botCreated": "Бот создан — выпустите ему ключ",
     "close": "Закрыть",
     "save": "Сохранить",
-    "cancel": "Отмена"
+    "cancel": "Отмена",
+    "pipelineNextTouch": "Следующее касание через, ч",
+    "pipelineNextTouchHint": "При записи касания в карточке дата следующего подставляется на столько часов вперёд; 0 — не подставлять."
   },
   "kind": {
     "open": "В работе",

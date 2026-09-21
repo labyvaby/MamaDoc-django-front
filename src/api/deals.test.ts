@@ -24,6 +24,7 @@ function deal(over: Partial<Deal> = {}): Deal {
     stageName: "Новое обращение",
     stageKind: "open",
     contactName: "Тест",
+    contactUsername: "",
     phone: "+996700000001",
     comment: "",
     patientId: null,
