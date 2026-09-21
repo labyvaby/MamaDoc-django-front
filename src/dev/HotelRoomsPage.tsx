@@ -51,11 +51,13 @@ import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate } from "react-router";
+import { useSnackbar } from "notistack";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
 import { getHotelCatalogs, listRoomTypes, listRooms, createRoom, updateRoom, deleteRoom, type HotelRoom } from "../api/hotel";
 import { ApiError, getErrorMessage } from "../api/client";
+import { HOTEL_ROOM_STATE_LABELS, hotelRoomStateColor, type HotelRoomState } from "./hotelDisplay";
 
 export const HotelRoomsPage: React.FC = () => {
   usePageTitle("Номера");
@@ -63,6 +65,7 @@ export const HotelRoomsPage: React.FC = () => {
   const navigate = useNavigate();
   const { property } = useHotelProperty();
   const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
 
   const catalogsQuery = useQuery({
     queryKey: ["hotel", "catalogs", property?.id],
@@ -103,7 +106,13 @@ export const HotelRoomsPage: React.FC = () => {
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const [deleteError, setDeleteError] = React.useState<string | null>(null);
+  // Удаление: сначала подтверждение. Если номер уже фигурировал в бронях (HAS_DEPENDENTS),
+  // второй шаг предлагает снять его с продажи — раньше это делалось молча, хотя человек
+  // нажал «удалить». Ошибки показываем внутри диалога, рядом с действием.
+  type DeleteStep = "confirm" | "deactivate" | "blocked";
+  const [deleteTarget, setDeleteTarget] = React.useState<{ room: HotelRoom; step: DeleteStep } | null>(null);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
+  const [deleteDialogError, setDeleteDialogError] = React.useState<string | null>(null);
 
   const openAdd = () => {
     setRoomTypeId(roomTypes[0]?.id ?? "");
@@ -134,28 +143,62 @@ export const HotelRoomsPage: React.FC = () => {
     }
   };
 
-  const handleDeleteRoom = async (room: HotelRoom) => {
-    setDeleteError(null);
+  const askDelete = (room: HotelRoom) => {
+    setDeleteDialogError(null);
+    setDeleteTarget({ room, step: "confirm" });
+  };
+  const closeDelete = () => {
+    if (!deleteBusy) setDeleteTarget(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const { room } = deleteTarget;
+    setDeleteBusy(true);
+    setDeleteDialogError(null);
     try {
       await deleteRoom(room.id);
       invalidateRooms();
       invalidateRoomTypes();
+      setDeleteTarget(null);
+      enqueueSnackbar(`Номер ${room.number} удалён`, { variant: "success" });
     } catch (err) {
       if (err instanceof ApiError && err.code === "HAS_DEPENDENTS") {
-        // Номер уже фигурирует в бронях — удалить нельзя, снимаем с продажи вместо этого.
-        try {
-          await updateRoom(room.id, { status: "out_of_service" });
-          invalidateRooms();
-        } catch (err2) {
-          setDeleteError(getErrorMessage(err2, "Не удалось изменить статус номера"));
-        }
+        // Номер уже в бронях — удалить нельзя. Уже снятому с продажи предлагать нечего.
+        setDeleteTarget({ room, step: room.status === "out_of_service" ? "blocked" : "deactivate" });
       } else {
-        setDeleteError(getErrorMessage(err, "Не удалось удалить номер"));
+        setDeleteDialogError(getErrorMessage(err, "Не удалось удалить номер"));
       }
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const confirmDeactivate = async () => {
+    if (!deleteTarget) return;
+    const { room } = deleteTarget;
+    setDeleteBusy(true);
+    setDeleteDialogError(null);
+    try {
+      await updateRoom(room.id, { status: "out_of_service" });
+      invalidateRooms();
+      setDeleteTarget(null);
+      enqueueSnackbar(`Номер ${room.number} снят с продажи`, { variant: "success" });
+    } catch (err) {
+      setDeleteDialogError(getErrorMessage(err, "Не удалось снять номер с продажи"));
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
   const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading || roomsQuery.isLoading;
+  // Ошибку загрузки не выдаём за «пусто»: иначе при сбое сети список выглядит как «Номеров пока нет».
+  const loadError = catalogsQuery.isError || roomTypesQuery.isError || roomsQuery.isError;
+  const retryLoad = () => {
+    void catalogsQuery.refetch();
+    void roomTypesQuery.refetch();
+    void roomsQuery.refetch();
+  };
 
   return (
     <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
@@ -186,16 +229,10 @@ export const HotelRoomsPage: React.FC = () => {
       <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
         Номера Viva, сгруппированные по категориям. Новый номер сразу появляется в шахматке броней и в
         списке выбора при создании брони; нажмите на номер — откроется страница его редактирования
-        (категория, код, питание, состояние, продажа); ✕ на чипе — удаляет номер (если он уже
-        фигурирует в бронях — просто снимается с продажи). Сами категории, их цены и
+        (категория, код, питание, состояние, продажа); ✕ на чипе — удаляет номер после подтверждения
+        (если он уже фигурирует в бронях, предложат снять его с продажи). Сами категории, их цены и
         характеристики — в разделе «Категории и тарифы».
       </Alert>
-
-      {deleteError && (
-        <Alert severity="error" variant="outlined" sx={{ fontSize: "0.8rem" }} onClose={() => setDeleteError(null)}>
-          {deleteError}
-        </Alert>
-      )}
 
       {loading ? (
         <Stack alignItems="center" sx={{ py: 4 }}>
@@ -204,6 +241,18 @@ export const HotelRoomsPage: React.FC = () => {
       ) : !property ? (
         <Alert severity="warning" variant="outlined">
           Не найден объект размещения для текущего филиала.
+        </Alert>
+      ) : loadError ? (
+        <Alert
+          severity="error"
+          variant="outlined"
+          action={
+            <Button color="inherit" size="small" onClick={retryLoad}>
+              Повторить
+            </Button>
+          }
+        >
+          Не удалось загрузить номера.
         </Alert>
       ) : (
         <Stack gap={2} sx={{ maxWidth: 640 }}>
@@ -232,19 +281,40 @@ export const HotelRoomsPage: React.FC = () => {
                     </Typography>
                   )}
                   {rooms.map((room) => {
+                    const offSale = room.status === "out_of_service";
+                    const stateLabel = HOTEL_ROOM_STATE_LABELS[room.state as HotelRoomState] ?? room.state;
                     const chip = (
                       <Chip
                         key={room.id}
-                        label={room.number}
+                        // Состояние — цветная точка (те же цвета, что в шахматке), «снят с продажи» —
+                        // ещё и словом «снят» (зачёркнут только номер, слово — нет).
+                        label={
+                          <Stack component="span" direction="row" alignItems="center" gap={0.75}>
+                            <Box
+                              component="span"
+                              sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: hotelRoomStateColor(room.state, theme), flexShrink: 0 }}
+                            />
+                            <Box component="span" sx={offSale ? { textDecoration: "line-through" } : undefined}>
+                              {room.number}
+                            </Box>
+                            {offSale && (
+                              <Typography component="span" variant="caption" color="text.secondary">
+                                снят
+                              </Typography>
+                            )}
+                          </Stack>
+                        }
+                        aria-label={`Номер ${room.number}, ${stateLabel}${offSale ? ", снят с продажи" : ""}. Нажмите, чтобы открыть редактирование; Delete — удалить`}
                         size="small"
                         onClick={() => navigate(`/rooms/${room.id}`)}
-                        onDelete={() => void handleDeleteRoom(room)}
-                        sx={room.status === "out_of_service" ? { opacity: 0.5, textDecoration: "line-through" } : undefined}
+                        onDelete={() => askDelete(room)}
+                        sx={offSale ? { opacity: 0.75 } : undefined}
                       />
                     );
                     const mealLabels = room.mealOptions.map((mo) => mealOptionChoices.find((c) => c.value === mo)?.label ?? mo);
                     const tooltipTitle =
-                      (room.status === "out_of_service" ? "Снят с продажи · " : "") +
+                      `${stateLabel} · ` +
+                      (offSale ? "Снят с продажи · " : "") +
                       (mealLabels.length === 0 ? "Нажмите, чтобы изменить" : `Питание: ${mealLabels.join(", ")} · нажмите, чтобы изменить`);
                     return (
                       <Tooltip key={room.id} title={tooltipTitle}>
@@ -331,6 +401,44 @@ export const HotelRoomsPage: React.FC = () => {
           <Button variant="contained" disabled={!roomNumber.trim() || saving} onClick={() => void submitAdd()}>
             {saving ? "Добавляем…" : "Добавить"}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={deleteTarget != null} onClose={closeDelete} maxWidth="xs" fullWidth>
+        <DialogTitle>
+          {deleteTarget?.step === "confirm" && `Удалить номер ${deleteTarget.room.number}?`}
+          {deleteTarget?.step === "deactivate" && `Номер ${deleteTarget.room.number} есть в бронях`}
+          {deleteTarget?.step === "blocked" && `Номер ${deleteTarget.room.number} нельзя удалить`}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            {deleteTarget?.step === "confirm" &&
+              "Номер будет удалён из объекта и пропадёт из шахматки. Если он уже фигурирует в бронях, удалить его нельзя — тогда вам предложат снять его с продажи."}
+            {deleteTarget?.step === "deactivate" &&
+              "Удалить нельзя: номер уже фигурирует в бронях. Снять его с продажи вместо удаления? Существующие брони не пострадают, вернуть номер в продажу можно на странице номера."}
+            {deleteTarget?.step === "blocked" &&
+              "Номер уже фигурирует в бронях, поэтому удалить его нельзя. Он уже снят с продажи."}
+          </Typography>
+          {deleteDialogError && (
+            <Alert severity="error" variant="outlined" sx={{ mt: 2, fontSize: "0.8rem" }}>
+              {deleteDialogError}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={closeDelete} disabled={deleteBusy}>
+            {deleteTarget?.step === "blocked" ? "Закрыть" : "Отмена"}
+          </Button>
+          {deleteTarget?.step === "confirm" && (
+            <Button color="error" variant="contained" disabled={deleteBusy} onClick={() => void confirmDelete()}>
+              {deleteBusy ? "Удаляем…" : "Удалить"}
+            </Button>
+          )}
+          {deleteTarget?.step === "deactivate" && (
+            <Button variant="contained" disabled={deleteBusy} onClick={() => void confirmDeactivate()}>
+              {deleteBusy ? "Снимаем…" : "Снять с продажи"}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
       </Stack>

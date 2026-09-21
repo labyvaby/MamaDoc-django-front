@@ -114,7 +114,7 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, ro
                 Редактировать
               </Button>
             )}
-            <IconButton onClick={onClose} sx={{ position: "absolute", right: 12, top: 12 }}>
+            <IconButton onClick={onClose} aria-label="Закрыть" sx={{ position: "absolute", right: 12, top: 12 }}>
               <CloseOutlined fontSize="small" />
             </IconButton>
           </DialogTitle>

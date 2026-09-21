@@ -50,6 +50,12 @@ export const HotelRoomCategoriesPage: React.FC = () => {
   const roomTypes = roomTypesQuery.data ?? [];
 
   const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading;
+  // Ошибку загрузки не выдаём за «Категорий пока нет»: при сбое сети это увело бы человека заводить дубли.
+  const loadError = catalogsQuery.isError || roomTypesQuery.isError;
+  const retryLoad = () => {
+    void catalogsQuery.refetch();
+    void roomTypesQuery.refetch();
+  };
 
   return (
     <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
@@ -86,6 +92,18 @@ export const HotelRoomCategoriesPage: React.FC = () => {
         <Alert severity="warning" variant="outlined">
           Не найден объект размещения для текущего филиала.
         </Alert>
+      ) : loadError ? (
+        <Alert
+          severity="error"
+          variant="outlined"
+          action={
+            <Button color="inherit" size="small" onClick={retryLoad}>
+              Повторить
+            </Button>
+          }
+        >
+          Не удалось загрузить категории.
+        </Alert>
       ) : (
         <Stack gap={2} sx={{ maxWidth: 640 }}>
           {roomTypes.length === 0 && (
@@ -98,24 +116,40 @@ export const HotelRoomCategoriesPage: React.FC = () => {
             const basePrice = Number(cat.basePrice);
             return (
               <Paper key={cat.id} elevation={0} variant="outlined" sx={{ p: 1.75 }}>
-                <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={0.5} sx={{ mb: cat.amenities.length > 0 ? 1 : 0 }}>
-                  <Stack direction="row" alignItems="baseline" gap={1} flexWrap="wrap">
-                    <Typography variant="body2" fontWeight={600}>
+                <Stack direction="row" alignItems="flex-start" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: cat.amenities.length > 0 ? 1.25 : 0 }}>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="subtitle2" fontWeight={700}>
                       {cat.name}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {totalPrice.toLocaleString("ru-RU")} сом/ночь
-                      {totalPrice !== basePrice && ` (база ${basePrice.toLocaleString("ru-RU")})`} · до {cat.capacity} гостей
+                      до {cat.capacity} гостей
                     </Typography>
+                  </Box>
+                  {/* Цена за ночь (тариф) — главное значение карточки, поэтому крупно, а не мелким серым. */}
+                  <Stack direction="row" alignItems="center" gap={1.5}>
+                    <Box sx={{ textAlign: "right" }}>
+                      <Typography variant="subtitle1" fontWeight={700} sx={{ lineHeight: 1.2 }}>
+                        {totalPrice.toLocaleString("ru-RU")} сом
+                        <Typography component="span" variant="caption" color="text.secondary">
+                          {" "}
+                          / ночь
+                        </Typography>
+                      </Typography>
+                      {totalPrice !== basePrice && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          база {basePrice.toLocaleString("ru-RU")}
+                        </Typography>
+                      )}
+                    </Box>
+                    <Button
+                      size="small"
+                      startIcon={<EditOutlined fontSize="small" />}
+                      component={RouterLink}
+                      to={`/room-categories/${cat.id}`}
+                    >
+                      Изменить
+                    </Button>
                   </Stack>
-                  <Button
-                    size="small"
-                    startIcon={<EditOutlined fontSize="small" />}
-                    component={RouterLink}
-                    to={`/room-categories/${cat.id}`}
-                  >
-                    Изменить
-                  </Button>
                 </Stack>
                 {cat.amenities.length > 0 && (
                   <Stack direction="row" flexWrap="wrap" gap={0.5}>
@@ -123,7 +157,7 @@ export const HotelRoomCategoriesPage: React.FC = () => {
                       const def = amenitiesCatalog.find((a) => a.key === key);
                       const extra = def ? Number(def.extraPrice) : 0;
                       const label = def ? (extra > 0 ? `${def.label} +${extra.toLocaleString("ru-RU")}` : def.label) : key;
-                      return <Chip key={key} label={label} size="small" variant="outlined" sx={{ height: 20, fontSize: "0.7rem" }} />;
+                      return <Chip key={key} label={label} size="small" variant="outlined" sx={{ height: 22, fontSize: "0.75rem" }} />;
                     })}
                   </Stack>
                 )}
