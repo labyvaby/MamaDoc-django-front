@@ -16,6 +16,13 @@ import { useChatwootLoginFailed } from "../../pages/chats/useChatwootSession";
 const SSO_SETTLE_MS = 2500;
 /** Пауза после `load` разговора, чтобы Chatwoot успел отрисовать SPA. */
 const REVEAL_DELAY_MS = 400;
+/**
+ * Масштаб содержимого iframe. Панель узкая (~400px), а интерфейс Chatwoot
+ * рассчитан на телефон в 100%: ужимаем через transform, чтобы в ту же ширину
+ * влезало больше переписки. `zoom` на iframe браузеры трактуют по-разному,
+ * transform — одинаково везде.
+ */
+const CHAT_SCALE = 0.85;
 
 type Phase =
   /** Ведём iframe на разговор: сессия Чат-центра обычно уже есть. */
@@ -157,7 +164,7 @@ const ChatFrame: React.FC<{
   }, [settleMs]);
 
   return (
-    <Box sx={{ position: "relative", height: "100%", bgcolor: "background.paper" }}>
+    <Box sx={{ position: "relative", height: "100%", overflow: "hidden", bgcolor: "background.paper" }}>
       <Box
         component="iframe"
         src={src}
@@ -167,8 +174,11 @@ const ChatFrame: React.FC<{
         // ломается его собственная авторизация и WebSocket.
         allow="clipboard-write; microphone; camera; autoplay"
         sx={{
-          width: "100%",
-          height: "100%",
+          // Рисуем фрейм крупнее и ужимаем: 100/0.85 ≈ 117.6% в обе стороны.
+          width: `${100 / CHAT_SCALE}%`,
+          height: `${100 / CHAT_SCALE}%`,
+          transform: `scale(${CHAT_SCALE})`,
+          transformOrigin: "0 0",
           border: 0,
           display: "block",
           opacity: revealed ? 1 : 0,
