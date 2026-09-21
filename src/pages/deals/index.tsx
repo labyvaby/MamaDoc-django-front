@@ -464,7 +464,6 @@ const DealsPage: React.FC = () => {
         onClose={() => setOpenDealId(null)}
         onError={(text) => setToast({ text, severity: "error" })}
         onNotify={(text) => setToast({ text, severity: "success" })}
-        sources={sourcesQuery.data ?? []}
         stages={activePipeline?.stages ?? []}
         lostReasons={lostReasonsQuery.data ?? []}
         canUpdate={canUpdate}

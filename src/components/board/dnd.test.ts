@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cardDndId, columnDndId, columnOfCard, resolveDrop } from "./dnd";
+import { cardDndId, columnDndId, columnOfCard, moveCard, resolveDrop } from "./dnd";
 
 const columns = [
   { key: columnDndId("new"), ids: [cardDndId(1), cardDndId(2), cardDndId(3)] },
@@ -62,5 +62,25 @@ describe("columnOfCard", () => {
   it("находит колонку карточки", () => {
     expect(columnOfCard(cardDndId(9), columns)).toBe(columnDndId("done"));
     expect(columnOfCard(cardDndId(42), columns)).toBeNull();
+  });
+});
+
+describe("moveCard", () => {
+  const cols = [
+    { key: "col:a", ids: ["card:1", "card:2"] },
+    { key: "col:b", ids: ["card:3"] },
+  ];
+
+  it("переносит карточку в другую колонку на указанное место, не трогая исходник", () => {
+    const next = moveCard(cols, "card:1", "col:b", 0);
+    expect(next).toEqual([
+      { key: "col:a", ids: ["card:2"] },
+      { key: "col:b", ids: ["card:1", "card:3"] },
+    ]);
+    expect(cols[0].ids).toEqual(["card:1", "card:2"]);
+  });
+
+  it("индекс за пределами — в конец", () => {
+    expect(moveCard(cols, "card:1", "col:b", 9)[1].ids).toEqual(["card:3", "card:1"]);
   });
 });
