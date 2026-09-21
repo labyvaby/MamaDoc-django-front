@@ -26,6 +26,7 @@
       "cashlessMethods": "Способы безнала",
       "expenseCategories": "Категории расходов",
       "diagnoses": "{{diagnosis.nomPl, capitalize}}",
+      "roomCategories": "Категории и тарифы",
       "rooms": "Номера",
       "integrations": "Интеграции",
       "conclusionForms": "Бланки заключений",

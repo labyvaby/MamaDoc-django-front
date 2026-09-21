@@ -43,6 +43,7 @@ import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 import PercentOutlined from "@mui/icons-material/PercentOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
+import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
 import HubOutlined from "@mui/icons-material/HubOutlined";
 
@@ -181,6 +182,12 @@ const TAB_DEFS: TabDef[] = [
     group: "catalogs",
   },
   {
+    key: "roomCategories",
+    to: "/settings/room-categories",
+    icon: <CategoryOutlined fontSize="small" />,
+    group: "catalogs",
+  },
+  {
     key: "rooms",
     to: "/settings/rooms",
     icon: <HotelOutlined fontSize="small" />,
@@ -278,6 +285,7 @@ export function useVisibleSettingsTabs(): TabDef[] {
     }
     if (tab.key === "productAttributes" && activeOrganization?.vertical !== "retail") return false;
     if (tab.key === "clients" && activeOrganization?.vertical !== "retail") return false;
+    if (tab.key === "roomCategories" && activeOrganization?.vertical !== "hotel") return false;
     if (tab.key === "rooms" && activeOrganization?.vertical !== "hotel") return false;
     if (tab.key === "integrations" && activeOrganization?.vertical !== "hotel") return false;
     // Справочник способов безнала: на бэке эндпоинта ещё нет — вкладку

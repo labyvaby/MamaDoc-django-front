@@ -109,6 +109,9 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // vertical==="hotel" (см. useVisibleSettingsTabs в SettingsLayout.tsx),
   // право то же, что общее управление отелем (hotel-viva-frontend-api.md §3).
   rooms: "hotel.manage",
+  // Категории (тарифы) номеров Viva — отдельная от «Номеров» вкладка, право то же
+  // (заводятся и правятся /hotel/room-types/ и характеристики — hotel.manage).
+  roomCategories: "hotel.manage",
   // Каналы продаж Viva (Booking.com и др.) — вкладка видна только
   // vertical==="hotel", как «Номера»; подключить/отключить канал бэк
   // разрешает по hotel.channels.manage (hotel-viva-frontend-api.md §3.1).
