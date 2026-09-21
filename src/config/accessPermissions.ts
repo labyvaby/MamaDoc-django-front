@@ -113,16 +113,11 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // менять эти настройки бэк разрешает по одному и тому же коду, поэтому
   // «смотреть, но не править» на странице нет.
   odoctor: "odoctor.manage",
-  // Номера/категории/характеристики фонда Viva — вкладка видна только
-  // vertical==="hotel" (см. useVisibleSettingsTabs в SettingsLayout.tsx),
-  // право то же, что общее управление отелем (hotel-viva-frontend-api.md §3).
-  rooms: "hotel.manage",
-  // Категории (тарифы) номеров Viva — отдельная от «Номеров» вкладка, право то же
-  // (заводятся и правятся /hotel/room-types/ и характеристики — hotel.manage).
-  roomCategories: "hotel.manage",
   // Каналы продаж Viva (Booking.com и др.) — вкладка видна только
-  // vertical==="hotel", как «Номера»; подключить/отключить канал бэк
-  // разрешает по hotel.channels.manage (hotel-viva-frontend-api.md §3.1).
+  // vertical==="hotel" (см. useVisibleSettingsTabs в SettingsLayout.tsx);
+  // подключить/отключить канал бэк разрешает по hotel.channels.manage
+  // (hotel-viva-frontend-api.md §3.1). «Номера» и «Категории и тарифы» —
+  // не вкладки настроек, их права в PAGE_PERMISSIONS (hotelRooms, hotelRoomCategories).
   integrations: "hotel.channels.manage",
 } satisfies Record<string, string | string[]>;
 
