@@ -119,6 +119,9 @@ export const RoomBookingGrid: React.FC = () => {
   // что было раньше с фиксированным NUM_DAYS: оба месяца видны сразу.
   const [zoomIndex, setZoomIndex] = React.useState(ZOOM_LEVELS.length - 1);
   const numVisibleDays = ZOOM_LEVELS[zoomIndex];
+  // «Приблизить» = меньше дней в ширину окна, «отдалить» = больше. Кнопки в углу
+  // сетки — по числу дней, не как на карте: «+» показывает БОЛЬШЕ дней (отдаляет),
+  // «−» — МЕНЬШЕ (приближает).
   const canZoomIn = zoomIndex > 0;
   const canZoomOut = zoomIndex < ZOOM_LEVELS.length - 1;
 
@@ -475,7 +478,8 @@ export const RoomBookingGrid: React.FC = () => {
           }}
         >
           {/* Угол над шапкой — sticky по обеим осям, перекрывает содержимое под собой при
-              скролле; раньше пустовал, теперь несёт масштаб +/- (7 дней … 2 месяца). */}
+              скролле; раньше пустовал, теперь несёт масштаб «−»/«+» (7 дней … 2 месяца):
+              «−» — меньше дней в ширину окна, «+» — больше. */}
           <Box
             sx={{
               gridRow: "1 / 3",
@@ -494,9 +498,9 @@ export const RoomBookingGrid: React.FC = () => {
               gap: 0.25,
             }}
           >
-            <Tooltip title="Показывать больше дней в ширину окна (до 60)">
+            <Tooltip title="Показывать меньше дней в ширину окна (до 1 недели)">
               <span>
-                <IconButton size="small" sx={{ p: 0.25 }} onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))} disabled={!canZoomOut}>
+                <IconButton size="small" sx={{ p: 0.25 }} onClick={() => setZoomIndex((i) => Math.max(0, i - 1))} disabled={!canZoomIn}>
                   <RemoveOutlined fontSize="small" />
                 </IconButton>
               </span>
@@ -504,9 +508,9 @@ export const RoomBookingGrid: React.FC = () => {
             <Typography variant="caption" color="text.secondary" sx={{ minWidth: 30, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
               {numVisibleDays} дн.
             </Typography>
-            <Tooltip title="Показывать меньше дней в ширину окна (до 1 недели)">
+            <Tooltip title="Показывать больше дней в ширину окна (до 60)">
               <span>
-                <IconButton size="small" sx={{ p: 0.25 }} onClick={() => setZoomIndex((i) => Math.max(0, i - 1))} disabled={!canZoomIn}>
+                <IconButton size="small" sx={{ p: 0.25 }} onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))} disabled={!canZoomOut}>
                   <AddOutlined fontSize="small" />
                 </IconButton>
               </span>
