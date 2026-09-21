@@ -421,11 +421,30 @@ const LoginPage: React.FC = () => {
     <AuthLayout>
       <AuthCard>
         <Box sx={{ mb: 3 }}>
-          <Typography variant="h5" fontWeight={600} sx={{ mb: 0.5 }}>
-            Вход в систему
+          {/* Шапка формы — как в макете erkinai-login-variants: надзаголовок,
+              крупное приветствие, подпись. */}
+          <Typography
+            variant="caption"
+            component="div"
+            sx={{ color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.14em", fontWeight: 700, fontSize: 12 }}
+          >
+            Личный кабинет
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-            Рады видеть вас снова
+          <Typography
+            component="h1"
+            sx={{
+              fontFamily: '"Manrope", "Inter", system-ui, sans-serif',
+              fontWeight: 800,
+              fontSize: "clamp(34px, 3.1vw, 48px)",
+              lineHeight: 1.05,
+              letterSpacing: "-0.05em",
+              m: "11px 0 12px",
+            }}
+          >
+            С возвращением
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, fontSize: 15 }}>
+            Войдите, чтобы продолжить работу в CRM.
           </Typography>
 
           {/* Сегмент-контрол: способ входа. Логика через тот же handleMethodChange. */}
