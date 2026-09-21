@@ -58,6 +58,14 @@ export const PAGE_PERMISSIONS = {
   ecommerce: "ecommerce.view",
   targets: "targets.view",
   messaging: "messaging.view",
+  // Номера и категории (тарифы) Viva — самостоятельные страницы отеля, не
+  // вкладки «Настроек»: свои пункты сайдбара и роуты /rooms, /room-categories.
+  // Право то же, что общее управление отелем (hotel-viva-frontend-api.md §3):
+  // номера правятся /hotel/rooms/, категории и характеристики —
+  // /hotel/room-types/ и /hotel/catalogs/amenities/. Видны только vertical==="hotel"
+  // (сайдбар гейтит isHotelOrg).
+  hotelRooms: "hotel.manage",
+  hotelRoomCategories: "hotel.manage",
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {

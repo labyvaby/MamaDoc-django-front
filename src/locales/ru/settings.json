@@ -827,6 +827,8 @@
         "patients": "{{patient.nomPl, capitalize}}",
         "vaccinations": "{{vaccine.nomPl, capitalize}}",
         "services": "{{service.nomPl, capitalize}}",
+        "hotelRooms": "Номера",
+        "hotelRoomCategories": "Категории и тарифы",
         "products": "Товары",
         "sales": "Продажи товаров",
         "warehouses": "Остатки",

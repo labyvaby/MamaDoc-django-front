@@ -1,13 +1,14 @@
 /**
- * «Настройки» → «Категории и тарифы» для Viva — вкладка рельса SettingsLayout.tsx,
- * видна только vertical==="hotel" (useVisibleSettingsTabs), маршрут
- * /settings/room-categories гейтит hotel.manage (см. App.tsx, accessPermissions.ts).
- * Вынесена из «Номера» (HotelRoomsSettingsPage.tsx): там остались только сами
- * номера, а категории — типы номеров с ценой за ночь, которые в интерфейсе
- * называют тарифами, — смотрятся здесь.
+ * «Категории и тарифы» Viva — самостоятельная страница отеля: пункт сайдбара во
+ * вкладке «Организация», а не раздел «Настроек» (рельса SettingsLayout здесь нет).
+ * Маршрут /room-categories гейтит hotel.manage (PAGE_PERMISSIONS.hotelRoomCategories,
+ * см. App.tsx, accessPermissions.ts).
+ * Вынесена из «Номера» (HotelRoomsPage.tsx): там остались только сами номера, а
+ * категории — типы номеров с ценой за ночь, которые в интерфейсе называют
+ * тарифами, — смотрятся здесь.
  *
- * Здесь только список. Добавление («Добавить категорию» → /settings/room-categories/new)
- * и правка («Изменить» → /settings/room-categories/:categoryId) — отдельная страница-форма
+ * Здесь только список. Добавление («Добавить категорию» → /room-categories/new)
+ * и правка («Изменить» → /room-categories/:categoryId) — отдельная страница-форма
  * HotelRoomCategoryFormPage.tsx, а не диалог.
  *
  * Реальный бэкенд (src/api/hotel.ts): GET /hotel/room-types/ и справочник
@@ -16,7 +17,7 @@
  * характеристик) — фронт его не пересчитывает.
  */
 import React from "react";
-import { Alert, Button, Chip, CircularProgress, Paper, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, CircularProgress, Paper, Stack, Typography, useTheme } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
@@ -24,12 +25,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router";
 
 import { usePageTitle } from "../hooks/usePageTitle";
-import { SettingsLayout } from "../pages/settings/SettingsLayout";
 import { useHotelProperty } from "./useHotelProperty";
 import { getHotelCatalogs, listRoomTypes } from "../api/hotel";
 
-export const HotelRoomCategoriesSettingsPage: React.FC = () => {
+export const HotelRoomCategoriesPage: React.FC = () => {
   usePageTitle("Категории и тарифы");
+  const theme = useTheme();
   const { property } = useHotelProperty();
 
   const catalogsQuery = useQuery({
@@ -49,8 +50,8 @@ export const HotelRoomCategoriesSettingsPage: React.FC = () => {
   const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading;
 
   return (
-    <SettingsLayout>
-      <Stack spacing={2} sx={{ height: "100%" }}>
+    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
+      <Stack spacing={2}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
         <Stack direction="row" alignItems="center" gap={1}>
           <CategoryOutlined color="action" />
@@ -63,7 +64,7 @@ export const HotelRoomCategoriesSettingsPage: React.FC = () => {
           variant="contained"
           startIcon={<AddOutlined />}
           component={RouterLink}
-          to="/settings/room-categories/new"
+          to="/room-categories/new"
           disabled={!property}
         >
           Добавить категорию
@@ -112,7 +113,7 @@ export const HotelRoomCategoriesSettingsPage: React.FC = () => {
                     size="small"
                     startIcon={<EditOutlined fontSize="small" />}
                     component={RouterLink}
-                    to={`/settings/room-categories/${cat.id}`}
+                    to={`/room-categories/${cat.id}`}
                   >
                     Изменить
                   </Button>
@@ -133,8 +134,8 @@ export const HotelRoomCategoriesSettingsPage: React.FC = () => {
         </Stack>
       )}
       </Stack>
-    </SettingsLayout>
+    </Box>
   );
 };
 
-export default HotelRoomCategoriesSettingsPage;
+export default HotelRoomCategoriesPage;

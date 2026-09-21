@@ -118,8 +118,8 @@ const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
 const HotelIntegrationsPage = lazy(() => import("./dev/HotelIntegrationsPage"));
 const HotelKitchenPage = lazy(() => import("./dev/HotelKitchenPage"));
-const HotelRoomsSettingsPage = lazy(() => import("./dev/HotelRoomsSettingsPage"));
-const HotelRoomCategoriesSettingsPage = lazy(() => import("./dev/HotelRoomCategoriesSettingsPage"));
+const HotelRoomsPage = lazy(() => import("./dev/HotelRoomsPage"));
+const HotelRoomCategoriesPage = lazy(() => import("./dev/HotelRoomCategoriesPage"));
 const HotelRoomCategoryFormPage = lazy(() => import("./dev/HotelRoomCategoryFormPage"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
@@ -661,6 +661,52 @@ function App() {
                             </Suspense>
                           }
                         />
+                        {/* Номера и категории (тарифы) Viva — самостоятельные
+                            страницы отеля, к «Настройкам» не относятся. Раньше
+                            жили под /settings/* — старые ссылки не ломаем. */}
+                        <Route path="settings/rooms" element={<Navigate to="/rooms" replace />} />
+                        <Route path="settings/room-categories" element={<Navigate to="/room-categories" replace />} />
+                        <Route
+                          path="rooms"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelRooms}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelRoomsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="room-categories"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelRoomCategories}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelRoomCategoriesPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        {/* Форма категории — одна страница на создание (/new) и правку (/:categoryId). */}
+                        <Route
+                          path="room-categories/new"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelRoomCategories}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelRoomCategoryFormPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="room-categories/:categoryId"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelRoomCategories}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelRoomCategoryFormPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
                         <Route
                           path="expenses"
                           element={
@@ -1030,47 +1076,6 @@ function App() {
                                 <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.clients}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <ClientsSettingsPage />
-                                  </Suspense>
-                                </RequirePermission>
-                              }
-                            />
-                            <Route
-                              path="settings/room-categories"
-                              element={
-                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.roomCategories}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <HotelRoomCategoriesSettingsPage />
-                                  </Suspense>
-                                </RequirePermission>
-                              }
-                            />
-                            {/* Форма категории — одна страница на создание (/new) и правку (/:categoryId). */}
-                            <Route
-                              path="settings/room-categories/new"
-                              element={
-                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.roomCategories}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <HotelRoomCategoryFormPage />
-                                  </Suspense>
-                                </RequirePermission>
-                              }
-                            />
-                            <Route
-                              path="settings/room-categories/:categoryId"
-                              element={
-                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.roomCategories}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <HotelRoomCategoryFormPage />
-                                  </Suspense>
-                                </RequirePermission>
-                              }
-                            />
-                            <Route
-                              path="settings/rooms"
-                              element={
-                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.rooms}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <HotelRoomsSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }
