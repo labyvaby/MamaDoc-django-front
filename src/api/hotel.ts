@@ -59,38 +59,16 @@ export interface HotelAmenityUpdateData {
 
 /**
  * Строка catalogs.paymentMethods — 4 платформенных способа + свои у объекта
- * (§3.4 контракта). Для выпадающих списков хватает value/label, isCustom/id
- * нужны только экрану настроек.
+ * (§3.4 контракта). Формам оплаты хватает value/label. Экрана управления
+ * «своими» способами объекта во фронте нет: способы безнала ведутся в
+ * «Настройки → Способы безнала» (/settings/cashless-methods), поэтому CRUD
+ * /v2/hotel/catalogs/payment-methods/ здесь не подключён.
  */
 export interface HotelPaymentMethodChoice extends HotelChoice {
-  /** true — способ добавлен объектом (можно переименовать/удалить), false — платформенный. */
+  /** true — способ заведён на бэкенде для объекта, false — платформенный. */
   isCustom: boolean;
-  /** id записи для PATCH/DELETE — только у своих способов, у платформенных null. */
+  /** id записи способа объекта; у платформенных null. */
   id: number | null;
-}
-
-/** Свой способ оплаты объекта — справочник объекта (propertyId), как характеристики, но без цены. */
-export interface HotelPaymentMethod {
-  id: number;
-  propertyId: number;
-  /** Стабильный идентификатор: это `value` в catalogs.paymentMethods и `method` в addPayment. */
-  key: string;
-  label: string;
-  sortOrder: number;
-}
-
-export interface HotelPaymentMethodCreateData {
-  propertyId: number;
-  /** ≤120 символов; уникален в объекте без учёта регистра и не совпадает с платформенным («Наличные» → 400). */
-  label: string;
-  /** Если не передан — бэкенд сам выдаёт `custom-xxxxxxxx`. Платформенные ключи (cash/card/transfer/online) заняты. */
-  key?: string;
-  sortOrder?: number;
-}
-
-export interface HotelPaymentMethodUpdateData {
-  label?: string;
-  sortOrder?: number;
 }
 
 export interface HotelCatalogs {
@@ -182,26 +160,6 @@ export function deleteAmenity(id: number): Promise<void> {
   return apiRequest<void>(`/v2/hotel/catalogs/amenities/${id}/`, { method: "DELETE" });
 }
 
-/** GET /v2/hotel/catalogs/payment-methods/?propertyId= — только СВОИ способы объекта; платформенные + свои вместе — catalogs.paymentMethods. Право hotel.view. */
-export function listPaymentMethods(propertyId: number, signal?: AbortSignal): Promise<HotelPaymentMethod[]> {
-  const qs = buildQuery({ propertyId });
-  return apiRequest<HotelPaymentMethod[]>(`/v2/hotel/catalogs/payment-methods/${qs}`, { signal });
-}
-
-/** Право hotel.manage. Дубль label или совпадение с платформенным — 400 details.fields.label. */
-export function createPaymentMethod(data: HotelPaymentMethodCreateData): Promise<HotelPaymentMethod> {
-  return apiRequest<HotelPaymentMethod>("/v2/hotel/catalogs/payment-methods/", { method: "POST", body: data });
-}
-
-/** Переименование сразу меняет methodLabel у старых оплат — в них хранится ключ, не название. */
-export function updatePaymentMethod(id: number, data: HotelPaymentMethodUpdateData): Promise<HotelPaymentMethod> {
-  return apiRequest<HotelPaymentMethod>(`/v2/hotel/catalogs/payment-methods/${id}/`, { method: "PATCH", body: data });
-}
-
-/** 409 HAS_DEPENDENTS, если этим способом уже принимали оплаты — история не должна терять название. */
-export function deletePaymentMethod(id: number): Promise<void> {
-  return apiRequest<void>(`/v2/hotel/catalogs/payment-methods/${id}/`, { method: "DELETE" });
-}
 
 // ── Объекты размещения (Property) ────────────────────────────────────────────
 

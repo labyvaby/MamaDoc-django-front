@@ -27,8 +27,8 @@
  * отдельно от boardType брони (что выбрано на конкретный заезд, см.
  * CreateBookingButton).
  *
- * Внизу страницы — «Способы оплаты» объекта (HotelPaymentMethodsSection):
- * такой же справочник объекта, как характеристики, только без цены.
+ * Способов оплаты здесь нет: их справочник ведётся в «Настройки → Способы
+ * безнала» (/settings/cashless-methods), а не отдельным списком объекта.
  */
 import React from "react";
 import {
@@ -59,7 +59,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { SettingsLayout } from "../pages/settings/SettingsLayout";
 import { useHotelProperty } from "./useHotelProperty";
-import { HotelPaymentMethodsSection } from "./HotelPaymentMethodsSection";
 import {
   getHotelCatalogs,
   listRoomTypes,
@@ -499,13 +498,6 @@ export const HotelRoomsSettingsPage: React.FC = () => {
             );
           })}
         </Stack>
-      )}
-
-      {/* Способы оплаты — тоже справочник объекта, право то же (hotel.manage). */}
-      {!loading && property && (
-        <Box sx={{ maxWidth: 640, pt: 1, pb: 2 }}>
-          <HotelPaymentMethodsSection propertyId={property.id} methods={catalogsQuery.data?.paymentMethods ?? []} />
-        </Box>
       )}
 
       <Dialog open={addOpen} onClose={() => setAddOpen(false)} maxWidth="xs" fullWidth>
