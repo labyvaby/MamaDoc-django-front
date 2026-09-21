@@ -15,6 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { getCashboxShiftSummary } from "../../../../api/cashboxShifts";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../../api/queryKeys";
+import { useApiOrgId } from "../../../../hooks/useApiOrgId";
 import type { CashboxShift } from "../../../../api/cashboxShifts";
 import CashlessMethodBreakdown, {
   cashboxBreakdownItems,
@@ -55,9 +56,10 @@ type Props = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const ShiftSummaryDialog: React.FC<Props> = ({ open, shift, onClose }) => {
+  const orgId = useApiOrgId();
   const summaryQuery = useQuery({
     queryKey: shift ? djangoQueryKeys.shifts.summary(shift.id) : ["noop"],
-    queryFn: ({ signal }) => getCashboxShiftSummary(shift!.id, signal),
+    queryFn: ({ signal }) => getCashboxShiftSummary(shift!.id, orgId, signal),
     enabled: open && shift !== null,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
   });

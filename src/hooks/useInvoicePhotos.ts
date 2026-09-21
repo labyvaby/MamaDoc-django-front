@@ -50,6 +50,13 @@ export interface UseInvoicePhotosOptions {
    * до перезагрузки — выглядело бы как «удаление не сработало».
    */
   onLegacyPhotoRemoved?: () => void;
+  /**
+   * Фото сущности добавлено или удалено на сервере (не отложенный файл до
+   * создания). Список расходов держит свой счётчик фото (`photosCount`) —
+   * по этому сигналу страница его перечитывает, иначе метка «нет фото» в
+   * строке висит до следующего обновления.
+   */
+  onPhotosChanged?: () => void;
 }
 
 export interface UseInvoicePhotosResult {
@@ -88,6 +95,7 @@ export function useInvoicePhotos({
   open,
   canManage = true,
   onLegacyPhotoRemoved,
+  onPhotosChanged,
 }: UseInvoicePhotosOptions): UseInvoicePhotosResult {
   const queryClient = useQueryClient();
   const [pending, setPending] = React.useState<PendingInvoicePhoto[]>([]);
@@ -171,6 +179,7 @@ export function useInvoicePhotos({
             try {
               const uploaded = await uploadInvoicePhoto(target, entityId, prepared, organizationId);
               queryClient.setQueryData<InvoicePhoto[]>(queryKey, (prev) => [...(prev ?? []), uploaded]);
+              onPhotosChanged?.();
             } catch (e) {
               setError(errText(e, "Не удалось загрузить фото"));
             }
@@ -189,7 +198,7 @@ export function useInvoicePhotos({
         setBusy(false);
       }
     },
-    [entityId, organizationId, queryClient, queryKey, target, total],
+    [entityId, onPhotosChanged, organizationId, queryClient, queryKey, target, total],
   );
 
   const removePending = React.useCallback(
@@ -215,13 +224,14 @@ export function useInvoicePhotos({
           (prev ?? []).filter((p) => p.id !== photoId),
         );
         if (wasLegacy) onLegacyPhotoRemoved?.();
+        onPhotosChanged?.();
       } catch (e) {
         setError(errText(e, "Не удалось удалить фото"));
       } finally {
         setBusy(false);
       }
     },
-    [entityId, onLegacyPhotoRemoved, organizationId, queryClient, queryKey, target],
+    [entityId, onLegacyPhotoRemoved, onPhotosChanged, organizationId, queryClient, queryKey, target],
   );
 
   const flush = React.useCallback(

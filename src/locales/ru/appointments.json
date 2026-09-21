@@ -17,6 +17,7 @@
   },
   "chips": {
     "undoArrived": "Отменить отметку «{{patient.nom, capitalize}} здесь»",
+    "undoConfirm": "Отменить подтверждение — вернуть в «Ожидаем»",
     "debt": "Долг {{amount}}",
     "debtOfTotal": "Долг {{amount}} из {{total}}",
     "discountPercent": "Скидка {{percent}}%",

@@ -43,9 +43,21 @@ export type ListRow = { /** Над этим рядом рисуется лини
  * но ряд рвётся перед окном, над которым стоит линия: иначе она оказалась бы
  * и над уже прошедшими окнами того же ряда.
  */
-export function buildListRows(items: RenderItem[], nowTs: number | null, mergeGaps: boolean): ListRow[] {
+export function buildListRows(
+  items: RenderItem[],
+  nowTs: number | null,
+  mergeGaps: boolean,
+  /**
+   * Какие элементы вообще могут нести линию «сейчас». По умолчанию — любые.
+   * Панель исключает отменённые приёмы: они уведены в конец группы, и линия
+   * «сейчас» над отменённой строкой внизу ленты указывала бы не на то место дня.
+   */
+  isNowLineEligible: (item: RenderItem) => boolean = () => true,
+): ListRow[] {
   const nowLineItemId =
-    nowTs == null ? null : (items.find((item) => itemStartTs(item) >= nowTs)?.id ?? null);
+    nowTs == null
+      ? null
+      : (items.find((item) => isNowLineEligible(item) && itemStartTs(item) >= nowTs)?.id ?? null);
   const rows: ListRow[] = [];
   for (const item of items) {
     const nowLine = item.id === nowLineItemId;

@@ -9,7 +9,7 @@ import { type Dayjs } from "dayjs";
 import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
 import type { ScheduleException } from "../../../api/scheduling";
-import { absenceCountLabel, buildAbsenceIndex } from "./absenceRows";
+import { absenceCountLabel, absencesOfDay, buildAbsenceIndex, buildAbsenceMarks } from "./absenceRows";
 import { lunchNote, shiftTimeLabel, type DayOccurrence } from "./occurrences";
 import { segmentLunch, segmentWorkSpans } from "./monthTimeline";
 import { employeeColorHex, lunchFill } from "./employeeColors";
@@ -95,17 +95,31 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
     [exceptions, absenceDayEmployees, dateStr],
   );
 
-  // Строку получает и тот, у кого смен нет, но остались записанные пациенты:
-  // иначе выходной прячет врача вместе с его приёмами.
+  // Отпуск и выходной сами по себе, без оглядки на оставшиеся записи: иначе в
+  // сетке день отсутствия ничем не отличался от дня без смены по графику.
+  const marks = React.useMemo(() => buildAbsenceMarks(exceptions), [exceptions]);
+  const dayMarks = React.useMemo(() => absencesOfDay(exceptions, dateStr), [exceptions, dateStr]);
+
+  // Строку получает и тот, у кого смен нет: и отсутствующий (чтобы отпуск было
+  // видно), и тот, у кого остались записанные пациенты — иначе выходной прячет
+  // врача вместе с его приёмами.
   const rowEmployeeIds = React.useMemo(
-    () => new Set([...occurrences.map((o) => o.employeeId), ...absence.employeeIds]),
-    [occurrences, absence],
+    () =>
+      new Set([
+        ...occurrences.map((o) => o.employeeId),
+        ...absence.employeeIds,
+        ...dayMarks.map((m) => m.employeeId),
+      ]),
+    [occurrences, absence, dayMarks],
   );
   const namesById = React.useMemo(() => {
     const map = namesFromOccurrences(occurrences);
     for (const [id, name] of absence.names) if (!map.has(id)) map.set(id, name);
+    for (const mark of dayMarks) if (mark.employeeName && !map.has(mark.employeeId)) {
+      map.set(mark.employeeId, mark.employeeName);
+    }
     return map;
-  }, [occurrences, absence]);
+  }, [occurrences, absence, dayMarks]);
   const groups = useResourceGroups(employees, rowEmployeeIds, namesById);
 
   const colorOf = React.useCallback(
@@ -384,6 +398,10 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                   const rowOccs = occurrencesOf(occurrences, employee.id);
                   const c = colorOf(employee.id);
                   const absent = absence.cells.get(`${dateStr}_${employee.id}`);
+                  const mark = marks.get(`${dateStr}_${employee.id}`);
+                  // Подпись строки: вид отсутствия знает исключение, а при
+                  // конфликте без загруженного исключения — индекс записей.
+                  const absenceLabel = mark?.label ?? absent?.label ?? null;
                   return (
                     <React.Fragment key={employee.id}>
                       {/* Липкая колонка имени */}
@@ -410,24 +428,32 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                           name={employee.fullName}
                           src={employee.photoUrl}
                           size={24}
-                          // Отсутствующий приглушён: строка есть только ради
-                          // записей, работать в этот день он не будет.
-                          sx={absent ? { opacity: 0.55 } : undefined}
+                          // Отсутствующий приглушён: в этот день он не работает
+                          // (а строка осталась ради отпуска и его записей).
+                          sx={absenceLabel && rowOccs.length === 0 ? { opacity: 0.55 } : undefined}
                         />
                         <Box sx={{ minWidth: 0 }}>
                           <Typography
                             variant="body2"
                             noWrap
-                            color={absent ? "text.secondary" : "text.primary"}
+                            color={
+                              absenceLabel && rowOccs.length === 0 ? "text.secondary" : "text.primary"
+                            }
                           >
                             {employee.fullName}
                           </Typography>
-                          {absent && (
+                          {absenceLabel && (
                             <Typography
                               noWrap
                               sx={{ fontSize: "0.62rem", lineHeight: 1.1, color: "text.disabled" }}
                             >
-                              {absent.label}
+                              {/* Частичное отсутствие — с часами: «Выходной
+                                  14:00–17:00» читается как закрытый кусок дня,
+                                  а не как пропущенная смена. */}
+                              {mark?.startTime && mark.endTime
+                                ? `${absenceLabel} ${mark.startTime}–${mark.endTime}`
+                                : absenceLabel}
+                              {mark?.comment ? ` · ${mark.comment}` : ""}
                             </Typography>
                           )}
                         </Box>
@@ -447,22 +473,40 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                         {/* Отсутствие: штриховка на всю дорожку (плотная заливка
                             читалась бы как ещё одна смена) и маркер записей,
                             которые никто не разобрал. */}
-                        {absent && rowOccs.length === 0 && (
-                          <Box
-                            sx={{
-                              position: "absolute",
-                              left: 0,
-                              right: 0,
-                              top: 5,
-                              bottom: 5,
-                              borderRadius: "4px",
-                              backgroundImage: `repeating-linear-gradient(45deg, transparent 0 3px, ${alpha(
-                                theme.palette.text.primary,
-                                0.12,
-                              )} 3px 6px)`,
-                              pointerEvents: "none",
-                            }}
-                          />
+                        {absenceLabel && (rowOccs.length === 0 || mark?.startTime) && (
+                          <Tooltip
+                            title={`${absenceLabel}${
+                              mark?.startTime && mark.endTime
+                                ? ` ${mark.startTime}–${mark.endTime}`
+                                : ""
+                            }${mark?.comment ? `: ${mark.comment}` : ""}`}
+                            arrow
+                            followCursor
+                          >
+                            <Box
+                              sx={{
+                                position: "absolute",
+                                // Частичное отсутствие закрывает свой интервал,
+                                // полное — всю дорожку.
+                                ...(mark?.startTime && mark.endTime
+                                  ? {
+                                      left: leftPx(parseTimeToMinutes(mark.startTime)),
+                                      width:
+                                        leftPx(parseTimeToMinutes(mark.endTime)) -
+                                        leftPx(parseTimeToMinutes(mark.startTime)),
+                                    }
+                                  : { left: 0, right: 0 }),
+                                top: 5,
+                                bottom: 5,
+                                borderRadius: "4px",
+                                backgroundImage: `repeating-linear-gradient(45deg, transparent 0 3px, ${alpha(
+                                  theme.palette.text.primary,
+                                  0.12,
+                                )} 3px 6px)`,
+                                zIndex: 2,
+                              }}
+                            />
+                          </Tooltip>
                         )}
                         {absent && (
                           <Tooltip
