@@ -29,6 +29,7 @@
       "expenseCategories": "Категории расходов",
       "diagnoses": "{{diagnosis.nomPl, capitalize}}",
       "rooms": "Номера",
+      "integrations": "Интеграции",
       "conclusionForms": "Бланки заключений",
       "tasks": "Задачи",
       "deals": "Воронка продаж",

@@ -125,6 +125,10 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // vertical==="hotel" (см. useVisibleSettingsTabs в SettingsLayout.tsx),
   // право то же, что общее управление отелем (hotel-viva-frontend-api.md §3).
   rooms: "hotel.manage",
+  // Каналы продаж Viva (Booking.com и др.) — вкладка видна только
+  // vertical==="hotel", как «Номера»; подключить/отключить канал бэк
+  // разрешает по hotel.channels.manage (hotel-viva-frontend-api.md §3.1).
+  integrations: "hotel.channels.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

@@ -61,7 +61,6 @@ import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlin
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
-import ExtensionOutlined from "@mui/icons-material/ExtensionOutlined";
 import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
@@ -874,19 +873,9 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
-        {/* Интеграции (каналы продаж) — только Viva, у медицинской вертикали
-            своего права на это нет, поэтому гейт прямо по isHotelOrg, а
-            не через can_. */}
-        {show("org") && isHotelOrg && (
-          <SidebarMenuItem
-            to="/integrations"
-            icon={<ExtensionOutlined />}
-            label="Интеграции"
-            collapsed={siderCollapsed}
-          />
-        )}
-
-        {/* Кухня (меню/закупка) — только Viva, тот же принцип, что «Интеграции». */}
+        {/* Кухня (меню/закупка) — только Viva, у медицинской вертикали своего
+            права на это нет, поэтому гейт прямо по isHotelOrg, а не через
+            can_. «Интеграции» (каналы продаж) переехали в «Настройки». */}
         {show("org") && isHotelOrg && (
           <SidebarMenuItem
             to="/kitchen"
@@ -1035,15 +1024,15 @@ type SidebarMenuItemProps = {
 /**
  * На Viva в навигации остаются только страницы, реально переделанные под
  * отель (см. src/dev/*.tsx): «Расписание» — шахматка броней
- * (RoomBookingGrid), «Все гости» — HotelGuestsPage, «Интеграции» —
- * HotelIntegrationsPage, «Отчёты» — HotelReportsPage, «Кухня» —
- * HotelKitchenPage, «Настройки» — реальный SettingsIndexPage/SettingsLayout
- * (рельс сам показывает только доступные по правам разделы + «Номера»).
+ * (RoomBookingGrid), «Все гости» — HotelGuestsPage, «Отчёты» —
+ * HotelReportsPage, «Кухня» — HotelKitchenPage, «Настройки» — реальный
+ * SettingsIndexPage/SettingsLayout (рельс сам показывает только доступные по
+ * правам разделы + «Номера» и «Интеграции» — каналы продаж живут там).
  * Остальные ~30 пунктов (Вакцины, СКУД, Кабинет врача и т.п.) ведут либо на
  * несуществующие для синтетической организации данные, либо просто не
  * имеют отношения к отелю.
  */
-const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/integrations", "/reports", "/kitchen", "/settings"];
+const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/reports", "/kitchen", "/settings"];
 
 const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   to,

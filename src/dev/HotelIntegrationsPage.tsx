@@ -1,8 +1,10 @@
 /**
- * «Интеграции» — каналы продаж отеля (Viva). Новый раздел, аналога в
- * медицинской вертикали нет, поэтому у него своя страница и свой маршрут
- * (см. App.tsx), а не переиспользование существующей (как /patients у
- * HotelGuestsPage). Реальный бэкенд — GET/POST /hotel/channels/... (см.
+ * «Настройки» → «Интеграции» — каналы продаж отеля (Viva). Вкладка рельса
+ * SettingsLayout.tsx, видна только vertical==="hotel" (useVisibleSettingsTabs),
+ * маршрут /settings/integrations гейтит hotel.channels.manage (см. App.tsx,
+ * accessPermissions.ts); старый /integrations редиректит сюда. Аналога в
+ * медицинской вертикали нет, поэтому своя страница, а не переиспользование
+ * существующей. Реальный бэкенд — GET/POST /hotel/channels/... (см.
  * src/api/hotel.ts): список из четырёх площадок фиксирован бэкендом,
  * «Подключить»/«Отключить» — настоящий тумблер состояния объекта, реальной
  * синхронизации брони/цен с площадками нет (см. hotel-viva-frontend-api.md §4.9).
@@ -21,11 +23,13 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import HubOutlined from "@mui/icons-material/HubOutlined";
 import LinkOffOutlined from "@mui/icons-material/LinkOffOutlined";
 import { Navigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { usePageTitle } from "../hooks/usePageTitle";
+import { SettingsLayout } from "../pages/settings/SettingsLayout";
 import { formatHotelDateTime, initialsOf, useIsVivaActive } from "./mockDemoData";
 import { useHotelProperty } from "./useHotelProperty";
 import { listChannels, connectChannel, disconnectChannel, type HotelChannel } from "../api/hotel";
@@ -70,11 +74,14 @@ export const HotelIntegrationsPage: React.FC = () => {
   };
 
   return (
-    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-        <Typography variant="h6" fontWeight={700}>
-          Интеграции
-        </Typography>
+    <SettingsLayout>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+        <Stack direction="row" alignItems="center" gap={1}>
+          <HubOutlined color="action" />
+          <Typography variant="h6" fontWeight={600}>
+            Интеграции
+          </Typography>
+        </Stack>
         {channels.length > 0 && (
           <Typography variant="body2" color="text.secondary">
             Подключено: {channels.filter((c) => c.isConnected).length} из {channels.length}
@@ -176,7 +183,7 @@ export const HotelIntegrationsPage: React.FC = () => {
           {toast}
         </Alert>
       </Snackbar>
-    </Box>
+    </SettingsLayout>
   );
 };
 

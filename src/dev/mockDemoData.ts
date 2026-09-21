@@ -1455,27 +1455,31 @@ export function findGuestsByPhone(phone: string, excludeName?: string): HotelGue
   return getHotelGuests().filter((g) => g.name !== excludeName && phoneTail(g.phone) === tail);
 }
 
-// ── Быстрая бронь — клик по свободной ячейке шахматки (RoomBookingGrid.tsx),
-// кнопка «Добавить» на странице «Гости» (HotelGuestsPage) ──────────────────
+// ── Быстрая бронь — выделение в шахматке (RoomBookingGrid.tsx), кнопка
+// «Добавить» на странице «Гости» (HotelGuestsPage) ──────────────────────────
 //
 // Грид/страница гостей и CreateBookingButton — соседние, не родитель-потомок
 // компоненты (тот же расклад, что у customBookings/selectedHotelDate выше):
-// клик по пустой ячейке кладёт сюда номер+дату, CreateBookingButton подписан
-// и открывает форму с уже подставленными Номер/Заезд; «Добавить» на «Гостях»
-// зовёт без аргументов — просто «открой пустую форму», без подстановки.
+// выделение на пустых ячейках кладёт сюда номер+даты, CreateBookingButton
+// подписан и открывает форму с уже подставленными Номер/Заезд/Выезд; простой
+// клик по ячейке даёт только заезд (выезд форма ставит на следующий день —
+// бронь на одну ночь), «Добавить» на «Гостях» зовёт без аргументов — просто
+// «открой пустую форму», без подстановки.
 // Не персистится — это одноразовый сигнал, не состояние просмотра.
 
 export interface QuickBookingRequest {
   room?: string;
   /** YYYY-MM-DD. */
   checkIn?: string;
+  /** YYYY-MM-DD — только когда период выделен протяжкой; без него выезд = заезд + 1 день. */
+  checkOut?: string;
 }
 
 let quickBookingRequest: QuickBookingRequest | null = null;
 const quickBookingListeners = new Set<() => void>();
 
-export function requestQuickBooking(room?: string, checkIn?: string): void {
-  quickBookingRequest = { room, checkIn };
+export function requestQuickBooking(room?: string, checkIn?: string, checkOut?: string): void {
+  quickBookingRequest = { room, checkIn, checkOut };
   quickBookingListeners.forEach((fn) => fn());
 }
 
