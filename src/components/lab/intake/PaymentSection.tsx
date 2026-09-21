@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Chip,
   InputAdornment,
   MenuItem,
   Stack,
@@ -11,6 +12,8 @@ import { CashlessMethodSelect } from "../../ui";
 import type { DjangoCashlessMethod } from "../../../api/cashlessMethods";
 import type { LabClientType } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+
 import IntakeSection from "./IntakeSection";
 
 export interface PaidTube {
@@ -133,7 +136,7 @@ const PaymentSection: React.FC<Props> = ({
   const diff = round2(total - paid);
 
   return (
-    <IntakeSection title="Оплата">
+    <IntakeSection title="Оплата" icon={<PaymentsOutlined />}>
 
         <Stack direction="row" spacing={2}>
           <Stack flex={1} spacing={0.5}>
@@ -175,6 +178,33 @@ const PaymentSection: React.FC<Props> = ({
             />
           </Stack>
         </Stack>
+
+        {/* Кассир почти всегда берёт всю сумму одним способом — два клика
+            вместо набора «1330» с клавиатуры. Смешанная оплата — руками. */}
+        {total > 0 && (
+          <Stack direction="row" gap={1} flexWrap="wrap" useFlexGap>
+            <Chip
+              size="small"
+              variant={paid === total && cash === total ? "filled" : "outlined"}
+              label={`Всё наличными · ${formatKGS(total)}`}
+              disabled={disabled}
+              onClick={() => {
+                onCashChange(String(total));
+                onCardChange("0");
+              }}
+            />
+            <Chip
+              size="small"
+              variant={paid === total && card === total ? "filled" : "outlined"}
+              label={`Всё картой · ${formatKGS(total)}`}
+              disabled={disabled}
+              onClick={() => {
+                onCashChange("0");
+                onCardChange(String(total));
+              }}
+            />
+          </Stack>
+        )}
 
         {/* Способ безнала нужен только когда есть сумма картой — как в оплате
             продаж и расходов. */}

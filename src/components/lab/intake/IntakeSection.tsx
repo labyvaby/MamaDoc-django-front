@@ -11,6 +11,8 @@ import {
 interface IntakeSectionProps {
   /** Заголовок секции — приглушённый, как в форме приёма. */
   title: string;
+  /** Пиктограмма перед заголовком — глазу проще найти нужный блок в длинном дровере. */
+  icon?: React.ReactNode;
   /** Крутилка в шапке вместо действия, пока секция грузится. */
   loading?: boolean;
   /** Действие справа в шапке: счётчик, кнопка, что угодно. */
@@ -31,6 +33,7 @@ interface IntakeSectionProps {
  */
 const IntakeSection: React.FC<IntakeSectionProps> = ({
   title,
+  icon,
   loading = false,
   action,
   children,
@@ -44,13 +47,24 @@ const IntakeSection: React.FC<IntakeSectionProps> = ({
           alignItems="center"
           gap={1}
         >
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ fontWeight: 500 }}
-          >
-            {title}
-          </Typography>
+          <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+            {icon && (
+              <Stack
+                alignItems="center"
+                justifyContent="center"
+                sx={{ color: "text.secondary", "& svg": { fontSize: 18 } }}
+              >
+                {icon}
+              </Stack>
+            )}
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ fontWeight: 500 }}
+            >
+              {title}
+            </Typography>
+          </Stack>
           {loading ? <CircularProgress size={14} /> : action}
         </Stack>
 

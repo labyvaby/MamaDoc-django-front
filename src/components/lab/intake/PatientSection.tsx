@@ -15,6 +15,8 @@ import dayjs from "dayjs";
 
 import { CustomDatePicker } from "../../ui";
 import type { DjangoPatient } from "../../../api/patients";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
+
 import IntakeSection from "./IntakeSection";
 
 type Props = {
@@ -99,7 +101,7 @@ const PatientSection: React.FC<Props> = ({
   const needsAnything = needsInn || needsBirthDate || needsGender;
 
   return (
-    <IntakeSection title="Пациент">
+    <IntakeSection title="Пациент" icon={<PersonOutlineOutlined />}>
 
         <Autocomplete
           options={options}

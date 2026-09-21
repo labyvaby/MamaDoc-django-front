@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Box,
+  Button,
   IconButton,
   InputAdornment,
   Link,
@@ -17,6 +18,7 @@ import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
+import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 
 import { resolveSelectedLines, stepCount, type BasketLine } from "./basketCatalog";
@@ -79,6 +81,7 @@ const BasketSection: React.FC<Props> = ({
   return (
     <IntakeSection
       title="Анализы"
+      icon={<ScienceOutlined />}
       loading={loading}
       action={
         selected.length > 0 ? (
@@ -116,9 +119,32 @@ const BasketSection: React.FC<Props> = ({
           <Skeleton variant="rounded" height={44} />
         </Stack>
       ) : selectedLines.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
-          Анализы не выбраны — откройте каталог строкой выше
-        </Typography>
+        <Stack
+          alignItems="center"
+          spacing={1}
+          sx={{
+            py: 3,
+            px: 2,
+            border: "1px dashed",
+            borderColor: "divider",
+            borderRadius: 1.5,
+            textAlign: "center",
+          }}
+        >
+          <ScienceOutlined sx={{ fontSize: 28, color: "text.disabled" }} />
+          <Typography variant="body2" color="text.secondary">
+            Анализы ещё не выбраны
+          </Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<SearchOutlined />}
+            disabled={disabled}
+            onClick={() => setPickerOpen(true)}
+          >
+            Открыть каталог
+          </Button>
+        </Stack>
       ) : (
         <Stack divider={<Box sx={{ borderTop: 1, borderColor: "divider" }} />}>
           {selectedLines.map((line) => {
