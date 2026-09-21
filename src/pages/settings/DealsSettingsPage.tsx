@@ -140,7 +140,7 @@ const DealsSettingsPage: React.FC = () => {
   const pipelineMutation = useMutation({
     mutationFn: async (action:
       | { kind: "create"; name: string }
-      | { kind: "update"; id: number; payload: { name?: string; isDefault?: boolean; isActive?: boolean; code?: string; clearCode?: boolean } }
+      | { kind: "update"; id: number; payload: { name?: string; isDefault?: boolean; isActive?: boolean; code?: string; clearCode?: boolean; nextTouchHours?: number } }
       | { kind: "delete"; id: number }): Promise<void> => {
       if (action.kind === "create") {
         await createPipeline({ name: action.name }, orgId);
@@ -329,6 +329,26 @@ const DealsSettingsPage: React.FC = () => {
                   }}
                   sx={{ width: 160 }}
                 />
+                <Tooltip title={t("settings.pipelineNextTouchHint")}>
+                  <TextField
+                    size="small"
+                    type="number"
+                    label={t("settings.pipelineNextTouch")}
+                    defaultValue={activePipeline.nextTouchHours}
+                    key={`touch-${activePipeline.id}`}
+                    inputProps={{ min: 0, max: 24 * 90, step: 1 }}
+                    onBlur={(e) => {
+                      const hours = Number(e.target.value);
+                      if (!Number.isInteger(hours) || hours < 0 || hours === activePipeline.nextTouchHours) return;
+                      pipelineMutation.mutate({
+                        kind: "update",
+                        id: activePipeline.id,
+                        payload: { nextTouchHours: hours },
+                      });
+                    }}
+                    sx={{ width: 190 }}
+                  />
+                </Tooltip>
                 <Stack direction="row" alignItems="center" gap={0.5}>
                   <Switch
                     size="small"

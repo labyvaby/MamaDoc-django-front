@@ -60,6 +60,8 @@ export interface DealPipeline {
   isDefault: boolean;
   isActive: boolean;
   order: number;
+  /** На сколько часов вперёд карточка подставляет «следующее касание» при записи касания. */
+  nextTouchHours: number;
   stages: DealStage[];
 }
 
@@ -81,6 +83,8 @@ export interface Deal {
   stageName: string;
   stageKind: DealStageKind;
   contactName: string;
+  /** Логин в мессенджере (Instagram/Telegram) без «@»; пусто, если лид пришёл по телефону. */
+  contactUsername: string;
   phone: string;
   comment: string;
   patientId: number | null;
@@ -342,6 +346,7 @@ export interface CreateDealPayload {
  */
 export interface UpdateDealPayload {
   contactName?: string;
+  contactUsername?: string;
   phone?: string;
   comment?: string;
   patientId?: number;
@@ -563,6 +568,7 @@ export function updatePipeline(
     order?: number;
     code?: string;
     clearCode?: boolean;
+    nextTouchHours?: number;
   },
   organizationId?: number,
 ): Promise<DealPipeline> {
@@ -930,13 +936,42 @@ export async function getDealActivities(
 
 export function addDealActivity(
   dealId: number,
-  payload: { type: DealActivityType; note?: string; occurredAt?: string },
+  payload: {
+    type: DealActivityType;
+    note?: string;
+    occurredAt?: string;
+    /** Перепланировать следующее касание тем же запросом. */
+    nextActionAt?: string;
+    clearNextAction?: boolean;
+  },
   organizationId?: number,
 ): Promise<DealActivity> {
   return apiRequest<DealActivity>(withOrg(`/deals/${dealId}/activities/`, organizationId), {
     method: "POST",
     body: payload,
   });
+}
+
+/** Карта клиента, похожая на этого лида (совпадение по телефону). */
+export interface DealPatientCandidate {
+  id: number;
+  fullName: string;
+  phone: string;
+  birthDate: string | null;
+  matchedBy: "phone";
+}
+
+/** Кандидаты на привязку: клиенты организации с тем же номером, до пяти. */
+export async function getDealPatientCandidates(
+  dealId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<DealPatientCandidate[]> {
+  const body = await apiRequest<{ results: DealPatientCandidate[] }>(
+    withOrg(`/deals/${dealId}/patient-candidates/`, organizationId),
+    { signal },
+  );
+  return body.results;
 }
 
 export async function getDealChangelog(

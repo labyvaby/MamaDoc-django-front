@@ -34,7 +34,9 @@ import { AppButton, ConfirmDialog, CustomDateTimePicker, SegmentedTabs } from ".
 import ChannelIcon from "./ChannelIcon";
 import DealChatPane from "./DealChatPane";
 import LostReasonDialog from "./LostReasonDialog";
+import StageStepper from "./StageStepper";
 import StageTimeline from "./StageTimeline";
+import LeadInfoCard from "./LeadInfoCard";
 import { buildStageSegments } from "./stageSegments";
 import CreateTaskDrawer from "../tasks/CreateTaskDrawer";
 import DjangoAddAppointmentDrawer from "../../pages/appointments/DjangoAddAppointmentDrawer";
@@ -92,6 +94,8 @@ type DealDetailDrawerProps = {
   canManage: boolean;
   /** Право правки суммы уже выигранной сделки (`deals.amount_override`). */
   canOverrideAmount: boolean;
+  /** Интервал воронки: на сколько часов вперёд подставлять следующее касание. */
+  nextTouchHours?: number;
 };
 
 const ACTIVITY_TYPES: DealActivityType[] = ["call", "message", "visit", "note"];
@@ -132,6 +136,7 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   canUpdate,
   canManage,
   canOverrideAmount,
+  nextTouchHours = 24,
 }) => {
   const { t } = useT("deals");
   const orgId = useApiOrgId();
@@ -189,6 +194,11 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   const [comment, setComment] = React.useState("");
   const [activityType, setActivityType] = React.useState<DealActivityType>("call");
   const [activityNote, setActivityNote] = React.useState("");
+  /* Следующее касание рядом с вводом: подставляется «сейчас + интервал
+     воронки», если у сделки оно не назначено или уже прошло; сотрудник может
+     поправить до записи. Уходит одним запросом с касанием. */
+  const [nextTouchAt, setNextTouchAt] = React.useState<Dayjs | null>(null);
+  const [nextTouchSuggested, setNextTouchSuggested] = React.useState(false);
   const [serviceQuery, setServiceQuery] = React.useState("");
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   /** Перенос в этап потери ждёт причину: без неё бэк отклонит запрос (400). */
@@ -208,6 +218,24 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
     setAmount(loadedAmount ?? "");
     setComment(loadedComment ?? "");
   }, [loadedId, loadedAmount, loadedComment]);
+  const loadedNextAction = deal?.nextActionAt ?? null;
+  React.useEffect(() => {
+    if (loadedId == null) return;
+    const planned = loadedNextAction ? dayjs(loadedNextAction) : null;
+    if (planned && planned.isAfter(dayjs())) {
+      setNextTouchAt(planned);
+      setNextTouchSuggested(false);
+      return;
+    }
+    setNextTouchAt(nextTouchHours > 0 ? dayjs().add(nextTouchHours, "hour") : null);
+    setNextTouchSuggested(nextTouchHours > 0);
+  }, [loadedId, loadedNextAction, nextTouchHours]);
+
+  /** Имя сотрудника по id из лога правок (там хранятся только id). */
+  const employeeName = (value: string | null) => {
+    if (!value) return "—";
+    return employees.find((e) => String(e.id) === value)?.fullName ?? value;
+  };
 
   const invalidate = React.useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.deals.all });
@@ -245,7 +273,19 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
   const activityMutation = useMutation({
     mutationFn: () =>
-      addDealActivity(dealId as number, { type: activityType, note: activityNote.trim() }, orgId),
+      addDealActivity(
+        dealId as number,
+        {
+          type: activityType,
+          note: activityNote.trim(),
+          ...(nextTouchAt && nextTouchAt.isValid()
+            ? { nextActionAt: nextTouchAt.toISOString() }
+            : deal?.nextActionAt
+              ? { clearNextAction: true }
+              : {}),
+        },
+        orgId,
+      ),
     onSuccess: () => {
       setActivityNote("");
       invalidate();
@@ -311,15 +351,6 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
   const setSource = (value: number | "") => {
     patchMutation.mutate(value === "" ? { clearSource: true } : { sourceId: value });
-  };
-
-  const setNextAction = (value: Dayjs | null) => {
-    if (value == null) {
-      patchMutation.mutate({ clearNextAction: true });
-      return;
-    }
-    if (!value.isValid()) return;
-    patchMutation.mutate({ nextActionAt: value.toISOString() });
   };
 
   /**
@@ -465,8 +496,15 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
               {t("loadError")}
             </Alert>
           ) : (
-            <Stack gap={2.5}>
-              <StageTimeline segments={segments} />
+            <Stack gap={2.25}>
+              {/* Этапы воронки по порядку: нажатие переносит сделку. */}
+              <StageStepper
+                stages={stages}
+                currentStageId={deal.stageId}
+                canMoveTo={canMoveTo}
+                onSelect={startStageChange}
+                disabled={moveMutation.isPending}
+              />
 
               {deal.lostReasonName ? (
                 <Alert severity="warning" variant="outlined">
@@ -474,96 +512,34 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                 </Alert>
               ) : null}
 
-              <Stack gap={1.5}>
-                {deal.phone ? (
-                  <Typography variant="body2">{formatPhoneDisplay(deal.phone)}</Typography>
-                ) : null}
+              {/* Кто написал: имя, никнейм, телефон, связь с картой клиента. */}
+              <LeadInfoCard
+                deal={deal}
+                orgId={orgId}
+                canUpdate={canUpdate}
+                busy={patchMutation.isPending}
+                onLinkPatient={(patientId) => patchMutation.mutate({ patientId })}
+                onUnlinkPatient={() => patchMutation.mutate({ clearPatient: true })}
+                onNotify={onNotify}
+              />
 
-                <TextField
-                  select
-                  size="small"
-                  label={t("detail.stage")}
-                  value={deal.stageId}
-                  onChange={(e) => startStageChange(Number(e.target.value))}
-                  disabled={moveMutation.isPending}
-                  fullWidth
-                >
-                  {stages
-                    .filter((s) => s.isActive || s.id === deal.stageId)
-                    .map((s) => (
-                      <MenuItem key={s.id} value={s.id} disabled={!canMoveTo(s.id)}>
-                        {s.name}
-                      </MenuItem>
-                    ))}
-                </TextField>
-
-                <TextField
-                  size="small"
-                  label={t("detail.amount")}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  onBlur={saveAmount}
-                  disabled={!amountEditable || patchMutation.isPending}
-                  helperText={amountHint}
-                  inputProps={{ inputMode: "decimal" }}
-                  fullWidth
-                />
-
-                <TextField
-                  select
-                  size="small"
-                  label={t("detail.assignee")}
-                  value={deal.assigneeId ?? ""}
-                  onChange={(e) => setAssignee(e.target.value === "" ? "" : Number(e.target.value))}
-                  disabled={!canUpdate || patchMutation.isPending}
-                  fullWidth
-                >
-                  <MenuItem value="">—</MenuItem>
-                  {employees.map((e) => (
-                    <MenuItem key={e.id} value={e.id}>
-                      {e.fullName}
-                    </MenuItem>
-                  ))}
-                </TextField>
-
-                <TextField
-                  select
-                  size="small"
-                  label={t("detail.source")}
-                  value={deal.sourceId ?? ""}
-                  onChange={(e) => setSource(e.target.value === "" ? "" : Number(e.target.value))}
-                  disabled={!canUpdate || patchMutation.isPending}
-                  fullWidth
-                >
-                  <MenuItem value="">—</MenuItem>
-                  {sources
-                    .filter((s) => s.isActive || s.id === deal.sourceId)
-                    .map((s) => (
-                      <MenuItem key={s.id} value={s.id}>
-                        {s.name}
-                      </MenuItem>
-                    ))}
-                </TextField>
-
-                <CustomDateTimePicker
-                  label={t("detail.nextAction")}
-                  value={deal.nextActionAt ? dayjs(deal.nextActionAt) : null}
-                  onChange={setNextAction}
-                  disabled={!canUpdate || closed}
-                />
-
-                <TextField
-                  size="small"
-                  label={t("detail.comment")}
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  onBlur={saveComment}
-                  disabled={!canUpdate}
-                  multiline
-                  minRows={2}
-                  fullWidth
-                />
-              </Stack>
+              <TextField
+                select
+                size="small"
+                label={t("detail.assignee")}
+                value={deal.assigneeId ?? ""}
+                onChange={(e) => setAssignee(e.target.value === "" ? "" : Number(e.target.value))}
+                disabled={!canUpdate || patchMutation.isPending}
+                helperText={deal.assigneeId == null ? t("detail.assigneeAuto") : " "}
+                fullWidth
+              >
+                <MenuItem value="">—</MenuItem>
+                {employees.map((e) => (
+                  <MenuItem key={e.id} value={e.id}>
+                    {e.fullName}
+                  </MenuItem>
+                ))}
+              </TextField>
 
               {/* Действия в остальную CRM: обращение доводится до записи, не
                   выходя из карточки. */}
@@ -615,11 +591,67 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
               <Divider />
 
-              {/* Услуги: цена — снимок прайса на момент добавления. */}
+              {/* Услуги и сумма — в одну строку: сумма считается по позициям,
+                  а пока их нет, вводится руками. Цена — снимок прайса. */}
               <Stack gap={1}>
-                <Stack direction="row" alignItems="center" justifyContent="space-between">
-                  <Typography variant="subtitle2">{t("detail.items")}</Typography>
-                  <Typography variant="subtitle2">{formatKGS(deal.amount)}</Typography>
+                <Stack direction="row" alignItems="flex-start" gap={1}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    {canUpdate && !closed ? (
+                      <Autocomplete<Service>
+                        size="small"
+                        options={servicesQuery.data ?? []}
+                        loading={servicesQuery.isFetching}
+                        getOptionLabel={(s) => s.name}
+                        value={null}
+                        /* Поле контролируемое, чтобы после добавления оно очищалось:
+                           иначе название добавленной услуги остаётся в строке и
+                           фильтрует список для следующей. */
+                        inputValue={serviceQuery}
+                        onChange={(_e, service) => {
+                          if (service) {
+                            itemMutation.mutate({ kind: "add", service });
+                            setServiceQuery("");
+                          }
+                        }}
+                        onInputChange={(_e, value, reason) => {
+                          if (reason !== "reset") setServiceQuery(value);
+                        }}
+                        renderInput={(props) => (
+                          <TextField
+                            {...props}
+                            label={t("detail.items")}
+                            placeholder={t("detail.addItem")}
+                            InputProps={{
+                              ...props.InputProps,
+                              startAdornment: <AddOutlined fontSize="small" sx={{ mr: 0.5 }} />,
+                            }}
+                          />
+                        )}
+                      />
+                    ) : (
+                      <Typography variant="subtitle2" sx={{ pt: 1 }}>
+                        {t("detail.items")}
+                      </Typography>
+                    )}
+                  </Box>
+                  <TextField
+                    size="small"
+                    label={t("detail.amount")}
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    onBlur={saveAmount}
+                    disabled={!amountEditable || patchMutation.isPending}
+                    helperText={amountHint.trim() ? amountHint : undefined}
+                    inputProps={{ inputMode: "decimal", style: { textAlign: "right", fontWeight: 600 } }}
+                    InputProps={{
+                      endAdornment: (
+                        <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                          {deal.currency}
+                        </Typography>
+                      ),
+                    }}
+                    sx={{ width: 168, flexShrink: 0 }}
+                  />
                 </Stack>
 
                 {detail.items.map((item) => (
@@ -655,77 +687,72 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                     ) : null}
                   </Stack>
                 ))}
-
-                {canUpdate && !closed ? (
-                  <Autocomplete<Service>
-                    size="small"
-                    options={servicesQuery.data ?? []}
-                    loading={servicesQuery.isFetching}
-                    getOptionLabel={(s) => s.name}
-                    value={null}
-                    /* Поле контролируемое, чтобы после добавления оно очищалось:
-                       иначе название добавленной услуги остаётся в строке и
-                       фильтрует список для следующей. */
-                    inputValue={serviceQuery}
-                    onChange={(_e, service) => {
-                      if (service) {
-                        itemMutation.mutate({ kind: "add", service });
-                        setServiceQuery("");
-                      }
-                    }}
-                    onInputChange={(_e, value, reason) => {
-                      if (reason !== "reset") setServiceQuery(value);
-                    }}
-                    renderInput={(props) => (
-                      <TextField
-                        {...props}
-                        label={t("detail.addItem")}
-                        InputProps={{
-                          ...props.InputProps,
-                          startAdornment: <AddOutlined fontSize="small" sx={{ mr: 0.5 }} />,
-                        }}
-                      />
-                    )}
-                  />
-                ) : null}
               </Stack>
 
               <Divider />
 
-              {/* Касания: лента и быстрый ввод. */}
-              <Stack gap={1}>
+              {/* Касания: быстрый ввод, рядом — следующее касание, уже
+                  подставленное по интервалу воронки; лента ниже. */}
+              <Stack gap={1.25}>
                 <Typography variant="subtitle2">{t("detail.activities")}</Typography>
 
                 {canUpdate ? (
-                  <Stack direction="row" gap={1} alignItems="flex-start">
-                    <TextField
-                      select
-                      size="small"
-                      value={activityType}
-                      onChange={(e) => setActivityType(e.target.value as DealActivityType)}
-                      sx={{ width: 130 }}
-                    >
-                      {ACTIVITY_TYPES.map((type) => (
-                        <MenuItem key={type} value={type}>
-                          {DEAL_ACTIVITY_META[type].label}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                    <TextField
-                      size="small"
-                      placeholder={t("detail.activityNote")}
-                      value={activityNote}
-                      onChange={(e) => setActivityNote(e.target.value)}
-                      fullWidth
-                    />
-                    <AppButton
-                      size="small"
-                      onClick={() => activityMutation.mutate()}
-                      loading={activityMutation.isPending}
-                      disabled={!activityNote.trim()}
-                    >
-                      {t("detail.addActivity")}
-                    </AppButton>
+                  <Stack gap={1}>
+                    <Stack direction="row" gap={1} alignItems="center">
+                      <TextField
+                        select
+                        size="small"
+                        value={activityType}
+                        onChange={(e) => setActivityType(e.target.value as DealActivityType)}
+                        sx={{ width: 150, flexShrink: 0 }}
+                        SelectProps={{ renderValue: (v) => DEAL_ACTIVITY_META[v as DealActivityType].label }}
+                      >
+                        {ACTIVITY_TYPES.map((type) => (
+                          <MenuItem key={type} value={type}>
+                            {DEAL_ACTIVITY_META[type].label}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                      <TextField
+                        size="small"
+                        placeholder={t("detail.activityNote")}
+                        value={activityNote}
+                        onChange={(e) => setActivityNote(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && activityNote.trim() && !activityMutation.isPending) {
+                            e.preventDefault();
+                            activityMutation.mutate();
+                          }
+                        }}
+                        fullWidth
+                        sx={{ flex: 1, minWidth: 0 }}
+                      />
+                      <AppButton
+                        size="small"
+                        variant="contained"
+                        onClick={() => activityMutation.mutate()}
+                        loading={activityMutation.isPending}
+                        disabled={!activityNote.trim()}
+                        sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                      >
+                        {t("detail.addActivityShort")}
+                      </AppButton>
+                    </Stack>
+                    <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+                      <Box sx={{ flex: "1 1 240px", minWidth: 0 }}>
+                        <CustomDateTimePicker
+                          label={t("detail.nextTouch")}
+                          value={nextTouchAt}
+                          onChange={setNextTouchAt}
+                          disabled={closed}
+                        />
+                      </Box>
+                      {nextTouchSuggested && nextTouchHours > 0 ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ flex: "1 1 160px" }}>
+                          {t("detail.nextTouchHint", { hours: nextTouchHours })}
+                        </Typography>
+                      ) : null}
+                    </Stack>
                   </Stack>
                 ) : null}
 
@@ -747,11 +774,57 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
               <Divider />
 
-              {/* История этапов: длительность считает бэк (дробные часы). */}
-              <Stack gap={1}>
+              {/* Комментарий и история — рядом: заметка о лиде читается вместе
+                  с тем, откуда он пришёл и как двигался. */}
+              <Stack gap={1.5}>
+                <TextField
+                  size="small"
+                  label={t("detail.comment")}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  onBlur={saveComment}
+                  disabled={!canUpdate}
+                  multiline
+                  minRows={2}
+                  fullWidth
+                />
+
                 <Stack direction="row" alignItems="center" gap={0.75}>
                   <HistoryOutlined fontSize="small" sx={{ color: "text.secondary" }} />
                   <Typography variant="subtitle2">{t("detail.history")}</Typography>
+                </Stack>
+
+                <StageTimeline segments={segments} />
+
+                {/* Источник у автолида выставляет интеграция; правится тут же,
+                    но не занимает место среди рабочих полей. */}
+                <Stack direction="row" alignItems="center" gap={1}>
+                  <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
+                    {t("detail.sourceLabel")}
+                  </Typography>
+                  <TextField
+                    select
+                    size="small"
+                    variant="standard"
+                    value={deal.sourceId ?? ""}
+                    onChange={(e) => setSource(e.target.value === "" ? "" : Number(e.target.value))}
+                    disabled={!canUpdate || patchMutation.isPending}
+                    sx={{ minWidth: 140 }}
+                  >
+                    <MenuItem value="">—</MenuItem>
+                    {sources
+                      .filter((s) => s.isActive || s.id === deal.sourceId)
+                      .map((s) => (
+                        <MenuItem key={s.id} value={s.id}>
+                          {s.name}
+                        </MenuItem>
+                      ))}
+                  </TextField>
+                  {deal.inboxName ? (
+                    <Typography variant="caption" color="text.disabled" noWrap sx={{ minWidth: 0 }}>
+                      · {deal.inboxName}
+                    </Typography>
+                  ) : null}
                 </Stack>
 
                 {detail.stageLog.map((log) => (
@@ -784,10 +857,12 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                                 from: formatKGS(log.oldValue ?? "0"),
                                 to: formatKGS(log.newValue ?? "0"),
                               })
-                            : t("detail.changedAssignee", {
-                                from: log.oldValue || "—",
-                                to: log.newValue || "—",
-                              })}
+                            : !log.oldValue && log.actorId != null && String(log.actorId) === log.newValue
+                              ? t("detail.changedAssigneeAuto", { to: employeeName(log.newValue) })
+                              : t("detail.changedAssignee", {
+                                  from: employeeName(log.oldValue),
+                                  to: employeeName(log.newValue),
+                                })}
                         </Typography>
                         <Typography variant="caption" color="text.disabled" noWrap>
                           {log.actorName ?? ""} {exactMoment(log.createdAt)}
