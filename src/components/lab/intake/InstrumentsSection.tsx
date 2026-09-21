@@ -87,7 +87,7 @@ const TubeRow: React.FC<{ item: LabInstrument; chargeTubes: boolean }> = ({
   const look = tubeAppearance(item.title, item.instruction);
   const tests = item.tests ?? [];
   return (
-    <Stack direction="row" alignItems="center" gap={1.25} sx={{ py: 1 }}>
+    <Stack direction="row" alignItems="center" gap={1.25} sx={{ py: 0.75 }}>
       {service ? <ServiceGlyph /> : <TubeGlyph look={look} />}
 
       <Box sx={{ flex: 1, minWidth: 0 }}>

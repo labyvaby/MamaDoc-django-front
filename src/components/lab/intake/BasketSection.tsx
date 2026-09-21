@@ -157,7 +157,7 @@ const BasketSection: React.FC<Props> = ({
                 direction="row"
                 alignItems="center"
                 gap={1}
-                sx={{ py: 1 }}
+                sx={{ py: 0.75 }}
               >
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   {line.test ? (
