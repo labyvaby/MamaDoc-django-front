@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import BoltOutlined from "@mui/icons-material/BoltOutlined";
+import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
@@ -22,7 +23,6 @@ import { resolveSelectedLines, stepCount, type BasketLine } from "./basketCatalo
 import type { LabTest } from "../../../api/lab";
 import { formatKGS } from "../../../utility/format";
 import IntakeSection from "./IntakeSection";
-import PreparationPopover from "./PreparationPopover";
 import TestDetailsDialog from "./TestDetailsDialog";
 import TestPickerDialog from "./TestPickerDialog";
 
@@ -158,8 +158,20 @@ const BasketSection: React.FC<Props> = ({
                   )}
                 </Box>
 
-                {line.test?.hasPreparation && (
-                  <PreparationPopover testId={line.testId} title={line.test.title} />
+                {/* Та же карточка анализа, что по клику на название и из
+                    каталога: описание, подготовка, пробирки — одним окном,
+                    а не отдельным попапом только с подготовкой. */}
+                {line.test && (
+                  <Tooltip title="Карточка анализа">
+                    <IconButton
+                      size="small"
+                      aria-label={`Карточка анализа: ${line.test.title}`}
+                      onClick={() => setDetailsId(line.testId)}
+                      sx={{ flexShrink: 0, color: "action.active" }}
+                    >
+                      <MenuBookOutlined fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 )}
 
                 <Stack
