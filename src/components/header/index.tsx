@@ -32,6 +32,7 @@ import { Employee } from "../../features/employees/types";
 import { UserAvatar } from "../ui";
 import { subtleBg } from "../../theme";
 import { InstallAppButton } from "../../pwa";
+import SetPasswordButton from "./SetPasswordButton";
 
 /** Строка-инфо в стандартном стиле: плиточная иконка + подпись/значение. */
 const ProfileInfoRow: React.FC<{
@@ -266,6 +267,9 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
           >
             <RefreshOutlined sx={{ fontSize: { xs: 18, sm: 20 } }} />
           </IconButton>
+
+          {/* Пока пароля нет — «Установить пароль»; после установки исчезает. */}
+          <SetPasswordButton />
 
           {(displayAvatar || displayName) && (
             <Stack
