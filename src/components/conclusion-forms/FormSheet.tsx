@@ -2,10 +2,13 @@ import React from "react";
 import { Box } from "@mui/material";
 
 import {
+  fieldCaption,
   REQUIRED_BLOCK_LABELS,
   resolveMargins,
   sheetSizeMm,
   sheetTypography,
+  startsOnNewLine,
+  stripLeadingBlankLines,
   type ConclusionFormTemplate,
   type ConclusionFormPayload,
   type FormField,
@@ -136,6 +139,13 @@ const SheetField: React.FC<{
   highlighted: boolean;
 }> = ({ field, value, highlighted }) => {
   const multiline = field.type === "multiline";
+  // Двоеточие ровно одно: в бланках его часто пишут прямо в подписи.
+  const caption = fieldCaption(field.label);
+  // Пустые строки в начале значения печать не тянет (в старых заключениях они
+  // сохранены вместе с нормой), а «с новой строки под подписью» решает норма
+  // поля — так её задумал администратор, ставя перенос первым символом.
+  const stripped = stripLeadingBlankLines(value);
+  const shown = multiline && stripped && startsOnNewLine(field) ? `\n${stripped}` : stripped;
   return (
     <Box
       data-print-block
@@ -153,13 +163,13 @@ const SheetField: React.FC<{
           {/* Пробел после двоеточия — иначе текст врача прилипает к подписи
               («Семейный анамнез:без особенностей»), и администратору
               приходилось дописывать пробел в саму подпись поля. */}
-          {field.label.trim() && <Label>{field.label}: </Label>}
-          <FieldValue value={value} multiline rows={field.rows ?? 3} />
+          {caption && <Label>{caption} </Label>}
+          <FieldValue value={shown} multiline rows={field.rows ?? 3} />
         </>
       ) : (
         <Box sx={{ display: "flex", alignItems: "baseline", gap: "2mm" }}>
-          {field.label.trim() && <Label>{field.label}:</Label>}
-          <FieldValue value={value} />
+          {caption && <Label>{caption}</Label>}
+          <FieldValue value={shown} />
         </Box>
       )}
     </Box>

@@ -683,6 +683,10 @@ export async function uploadConclusionFormBackground(
  *   4. все филиалы + любая услуга,
  *   5. запасной бланк (`isDefault`).
  *
+ * На уровнях 3–4 бланк берётся, только если он там один (или среди нескольких
+ * есть запасной): общий бланк подходит к любой услуге, и выбирать между
+ * несколькими такими наугад нельзя.
+ *
  * Услуга важнее филиала намеренно: она определяет, ЧТО за документ печатают
  * («Протокол УЗИ ОБП»), а филиал — лишь где. Общий бланк филиала не должен
  * подменять протокол конкретного исследования.
@@ -698,21 +702,67 @@ export function resolveFormForScope(
     scope.serviceId != null && form.serviceIds.includes(scope.serviceId);
   const anyService = (form: ConclusionFormTemplate) => form.serviceIds.length === 0;
 
-  const levels: ((form: ConclusionFormTemplate) => boolean)[] = [
+  const serviceLevels: ((form: ConclusionFormTemplate) => boolean)[] = [
     (form) => inBranch(form) && forService(form),
     (form) => anyBranch(form) && forService(form),
-    (form) => inBranch(form) && anyService(form),
-    (form) => anyBranch(form) && anyService(form),
-    // Запасной бланк — только доступный в этом филиале: бланк чужого филиала
-    // не должен всплывать по фолбэку там, где его печатать не на чем.
-    (form) => form.isDefault && (anyBranch(form) || inBranch(form)),
   ];
-
-  for (const matches of levels) {
+  for (const matches of serviceLevels) {
     const found = forms.find(matches);
     if (found) return found;
   }
-  return null;
+
+  // Бланк без привязки к услуге подходит к ЛЮБОЙ услуге, и если таких
+  // несколько, выбор между ними — угадывание. Раньше брался первый по списку:
+  // в клинике с пятью непривязанными бланками (карта гинеколога, дневник
+  // беременной, протоколы УЗИ) каждое новое заключение, включая УЗИ,
+  // открывалось с картой гинеколога (прод, 21.09.2026). Поэтому общий бланк
+  // подставляем, только когда он однозначен — единственный на своём уровне
+  // или отмеченный запасным; иначе врач выбирает сам.
+  const generalLevels: ((form: ConclusionFormTemplate) => boolean)[] = [
+    (form) => inBranch(form) && anyService(form),
+    (form) => anyBranch(form) && anyService(form),
+  ];
+  for (const matches of generalLevels) {
+    const candidates = forms.filter(matches);
+    if (candidates.length === 1) return candidates[0];
+    const preferred = candidates.find((form) => form.isDefault);
+    if (preferred) return preferred;
+  }
+
+  // Запасной бланк — только доступный в этом филиале: бланк чужого филиала
+  // не должен всплывать по фолбэку там, где его печатать не на чем.
+  return forms.find((form) => form.isDefault && (anyBranch(form) || inBranch(form))) ?? null;
+}
+
+/**
+ * Подпись поля бланка с двоеточием — ровно одним.
+ *
+ * Бланки собирают, копируя бумажную форму, и двоеточие часто уже стоит в
+ * самой подписи («Жалобы:», «DS:»). Мы дописывали своё, и на печати выходило
+ * «Жалобы::» (прод, 21.09.2026). Пустая подпись остаётся пустой.
+ */
+export function fieldCaption(label: string): string {
+  const bare = label.trim().replace(/[\s:：]+$/u, "");
+  return bare ? `${bare}:` : "";
+}
+
+/**
+ * Значение поля без пустых строк в начале.
+ *
+ * Администраторы ставят в норму поля перенос строки первым символом, чтобы на
+ * бумаге список («1. Вредные привычки –…») начинался под подписью, а не
+ * сразу за двоеточием. В поле ввода этот перенос — пустая строка над текстом,
+ * в которую врач первым делом и попадает курсором (прод, карта гинеколога,
+ * 21.09.2026). Поэтому в значение он не идёт; намерение «с новой строки»
+ * печать берёт из самой нормы — см. startsOnNewLine.
+ */
+export function stripLeadingBlankLines(value: string): string {
+  return value.replace(/^(?:[ \t]*\r?\n)+/, "");
+}
+
+/** Печатать ли значение под подписью, а не за ней: так задумано нормой поля. */
+export function startsOnNewLine(field: Pick<FormField, "defaultValue">): boolean {
+  return /^[ \t]*\r?\n/.test(field.defaultValue ?? "");
 }
 
 // ── Сборка текста из заполненного бланка ───────────────────────────────────────
@@ -743,13 +793,13 @@ export function renderFilledForm(
     if (field.slot) continue; // значение живёт в своей колонке заключения
     const value = (values[field.id] ?? "").trim();
     if (!value) continue;
-    const label = field.label.trim();
+    const label = fieldCaption(field.label);
     if (!label) {
       lines.push(value);
     } else if (field.type === "multiline" || value.includes("\n")) {
-      lines.push(`${label}:`, value);
+      lines.push(label, value);
     } else {
-      lines.push(`${label}: ${value}`);
+      lines.push(`${label} ${value}`);
     }
   }
 

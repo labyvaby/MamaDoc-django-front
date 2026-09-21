@@ -87,6 +87,7 @@ import {
   getConclusionForms,
   renderFilledForm,
   resolveFormForScope,
+  stripLeadingBlankLines,
   type ConclusionFormTemplate,
   type FormFieldSlot,
   type FormTarget,
@@ -702,7 +703,15 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           // Бланк заключения приходит с сервера в `formData`: врач видит те же
           // строки протокола, что заполнял, а не собранный из них текст.
           formId: savedForm?.formId ?? null,
-          formValues: savedForm?.values ?? {},
+          // Пустые строки в начале — перенос из нормы поля (см.
+          // stripLeadingBlankLines); в старых заключениях он сохранён вместе
+          // со значением. Чистим до baseline, чтобы это не считалось правкой.
+          formValues: Object.fromEntries(
+            Object.entries(savedForm?.values ?? {}).map(([id, value]) => [
+              id,
+              stripLeadingBlankLines(value),
+            ]),
+          ),
           formManual: savedForm?.manual ?? "",
           formSnapshot: savedForm?.snapshot ?? null,
         }
@@ -805,7 +814,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   /** Значения по умолчанию бланка — то, что уже стоит в его строках как норма. */
   const formDefaults = React.useCallback(
     (form: ConclusionFormTemplate) =>
-      Object.fromEntries(form.fields.map((field) => [field.id, field.defaultValue ?? ""])),
+      Object.fromEntries(
+        form.fields.map((field) => [field.id, stripLeadingBlankLines(field.defaultValue ?? "")]),
+      ),
     [],
   );
 
@@ -823,13 +834,20 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     const defaults = formDefaults(defaultForm);
     setFormId(defaultForm.id);
     setFormValues(defaults);
+    dropPrefilledComplaints(defaultForm);
 
     // Прикрепление и нормы — не правка врача: без этого автосейв счёл бы их
     // изменением и создавал черновик на каждом просто открытом заключении.
+    // Снятый перенос жалоб — тоже не правка.
     try {
       const baseline = JSON.parse(baselineRef.current) as ConclusionDraftBody;
+      const complaintsDropped =
+        !defaultForm.fields.some((field) => field.slot === "complaints") &&
+        patientComplaintsText !== "" &&
+        (baseline.complaints ?? "").trim() === patientComplaintsText;
       baselineRef.current = JSON.stringify({
         ...baseline,
+        ...(complaintsDropped ? { complaints: "" } : {}),
         formId: defaultForm.id,
         formValues: defaults,
         [targetField(defaultForm.target)]: renderFilledForm(defaultForm, defaults),
@@ -1148,14 +1166,100 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
    */
   const slotFree = (slot: FormFieldSlot) => !attachedSlots.has(slot);
 
-  /** Степперы, которые бланк не забрал, — остаются в своей карточке. */
+  /**
+   * Поле, которое собирает бланк. Врач его не правит: текст — проекция
+   * значений полей выше, и правку пришлось бы разбирать обратно в поля, а
+   * такой разбор врёт на любой вольности формулировки. Вместо поля ввода на
+   * его месте стоит сворачиваемый итог (projectionNode).
+   *
+   * ⚠ Стоит выше standardShown/freeVitals по той же причине, что и slotFree.
+   */
+  const managedByForm = (field: FormTarget) =>
+    attachedForm != null && attachedForm.target === field;
+
+  /** Текущее значение штатной колонки — чтобы знать, есть ли что прятать. */
+  const columnValue: Record<FormFieldSlot, string> = {
+    complaints,
+    anamnesis,
+    objective,
+    diagnosis: selectedDiagnoses.length > 0 ? "есть" : "",
+    conclusion: conclusionText,
+    heightCm,
+    weightKg,
+    temperature,
+  };
+
+  /**
+   * Нужные бланку штатные колонки, которые приходится оставлять под ним.
+   *
+   * Прикреплённый бланк — это и есть документ: что администратор собрал в
+   * конструкторе, то врач и заполняет, и только это уходит на бумагу. Раньше
+   * под бланком стояли все штатные поля (жалобы, анамнез, объективно, рост,
+   * вес, температура), хотя в бланке уже были свои «Жалобы:» и «Объективные
+   * данные» — врачи писали то туда, то сюда, а печать допечатывала штатные
+   * колонки хвостом под листом (прод, клиника 21, 21.09.2026).
+   *
+   * Диагноз МКБ подчиняется тому же правилу (решение 21.09.2026: на протоколах
+   * УЗИ и в дневнике беременной он печатался лишним). Бланку, которому нужны
+   * коды МКБ, администратор привязывает строку к колонке «Диагноз (МКБ)» —
+   * тогда выбор диагноза встаёт в поток бланка.
+   *
+   * Исключения:
+   *  - «Заключение» — если бланк собирает текст не в него (карта гинеколога
+   *    пишет в «Анамнез»): поле обязательное, и без него врачу негде записать
+   *    назначения.
+   *  - Колонка, в которой уже есть текст, — прятать данные нельзя: они всё
+   *    равно ушли бы в печать, а врач их не видел бы. Стёр — поле исчезает.
+   */
+  const standardShown = (slot: FormFieldSlot) => {
+    if (!slotFree(slot)) return false; // стоит в потоке полей бланка
+    if (!attachedForm) return true;
+    if (slot === "conclusion") return true;
+    if (slot === "anamnesis" || slot === "objective") {
+      if (managedByForm(slot)) return true; // итог бланка (projectionNode)
+    }
+    return columnValue[slot].trim() !== "";
+  };
+
+  /** Видит ли врач колонку хоть где-то: своим полем или строкой бланка. */
+  const columnVisible = (slot: FormFieldSlot) => !slotFree(slot) || standardShown(slot);
+
+  /** Степперы, которые бланк не забрал и которые не спрятаны под бланком. */
   const freeVitals = (Object.keys(VITAL_PROPS) as VitalKind[]).filter((kind) =>
-    slotFree(kind),
+    standardShown(kind),
   );
+
+  /**
+   * Перенесённые с регистрации жалобы под бланком без строки жалоб: поле
+   * спрятано, но текст ушёл бы в печать отдельным «Жалобы» под листом.
+   * Снимаем только нетронутый перенос — то, что врач написал сам, остаётся
+   * (и потому остаётся видимым). Первичная запись при этом не теряется: блок
+   * «Жалобы пациента» снова показывается, как только поле разошлось с ней.
+   */
+  const dropPrefilledComplaints = (form: ConclusionFormTemplate) => {
+    if (form.fields.some((field) => field.slot === "complaints")) return;
+    const prefill = patientComplaintsText;
+    if (!prefill) return;
+    // Функциональное обновление: при подстановке бланка по умолчанию эффект
+    // может сработать в одном проходе с гидратацией, и `complaints` из
+    // замыкания ещё пустое.
+    setComplaints((prev) => (prev.trim() === prefill ? "" : prev));
+  };
 
   const handleSelectForm = (nextId: number) => {
     const next = selectableForms.find((form) => form.id === nextId);
     if (!next) return;
+    // Колонка, которую собирал прежний бланк, — его проекция, а не текст
+    // врача (руками она не правится, хвост врача живёт в manualText). Если
+    // новый бланк собирает текст в другую колонку, прежняя осталась бы с
+    // заготовкой чужого бланка и напечаталась бы под листом: так на протоколы
+    // УЗИ попадал «Анамнез» из карты гинеколога (прод, 21.09.2026).
+    if (attachedForm && attachedForm.target !== next.target) {
+      if (attachedForm.target === "anamnesis") setAnamnesis("");
+      else if (attachedForm.target === "objective") setObjective("");
+      else setConclusionText("");
+    }
+    dropPrefilledComplaints(next);
     setFormId(next.id);
     setFormValues(formDefaults(next));
     // Врач выбрал другой бланк — снапшот прежнего заполнения больше не при
@@ -1165,15 +1269,6 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     // Хвост не сбрасываем: это вывод врача, а не часть протокола — он
     // остаётся при смене бланка и снова попадёт в конец проекции.
   };
-
-  /**
-   * Поле, которое собирает бланк. Врач его не правит: текст — проекция
-   * значений полей выше, и правку пришлось бы разбирать обратно в поля, а
-   * такой разбор врёт на любой вольности формулировки. Вместо поля ввода на
-   * его месте стоит сворачиваемый итог (projectionNode).
-   */
-  const managedByForm = (field: FormTarget) =>
-    attachedForm != null && attachedForm.target === field;
 
   /**
    * Поля, по которым одна кнопка «Помощь AI» просит подсказку, — текущий
@@ -1186,17 +1281,23 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     text: string;
     apply: (text: string) => void;
   }> => {
-    const editable = (field: FormTarget) => !slotFree(field) || !managedByForm(field);
-    const targets: Array<{ field: AiAssistField; text: string; apply: (text: string) => void }> = [
-      { field: "complaints", text: complaints, apply: setComplaints },
-    ];
+    // Спрятанную под бланком колонку не предлагаем: подсказка легла бы в
+    // поле, которого врач не видит, и ушла бы в печать мимо него.
+    const editable = (field: FormTarget) =>
+      columnVisible(field) && (!slotFree(field) || !managedByForm(field));
+    const targets: Array<{ field: AiAssistField; text: string; apply: (text: string) => void }> =
+      columnVisible("complaints")
+        ? [{ field: "complaints", text: complaints, apply: setComplaints }]
+        : [];
     if (editable("anamnesis")) targets.push({ field: "anamnesis", text: anamnesis, apply: setAnamnesis });
     if (editable("objective")) targets.push({ field: "objective", text: objective, apply: setObjective });
-    targets.push({
-      field: "diagnosis",
-      text: diagnosesAsText(selectedDiagnoses),
-      apply: (text) => void applyDiagnosisSuggestion(text),
-    });
+    if (columnVisible("diagnosis")) {
+      targets.push({
+        field: "diagnosis",
+        text: diagnosesAsText(selectedDiagnoses),
+        apply: (text) => void applyDiagnosisSuggestion(text),
+      });
+    }
     if (editable("conclusion")) {
       targets.push({ field: "conclusion", text: conclusionText, apply: setConclusionText });
     }
@@ -1343,7 +1444,13 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   );
 
   const requestSave = (targetStatus: ConclusionStatus, print: boolean) => {
-    if (targetStatus === "completed" && selectedDiagnoses.length === 0) {
+    // Бланк без диагноза (протокол УЗИ) — диагноз здесь не ставят, и спросить
+    // про него значило бы спросить про поле, которого врач не видит.
+    if (
+      targetStatus === "completed" &&
+      selectedDiagnoses.length === 0 &&
+      columnVisible("diagnosis")
+    ) {
       // Остальные проверки — до вопроса: незачем спрашивать про диагноз, если
       // форма всё равно не пройдёт валидацию.
       if (!vitals.validate() || !completion.validate()) return;
@@ -2136,14 +2243,16 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
 
           {/* ── doctor complaints ── */}
           {/* Поле, забранное бланком, здесь не рисуем: оно стоит в потоке его
-              полей (slotNodes) — иначе врач вводил бы жалобы дважды. */}
-          {slotFree("complaints") &&
+              полей (slotNodes) — иначе врач вводил бы жалобы дважды. Под
+              бланком без такой строки штатного поля тоже нет (standardShown):
+              документ — это поля бланка. */}
+          {standardShown("complaints") &&
             textFieldNode(t("conclusion.doctorComplaints"), complaints, setComplaints, {
               aiField: "complaints",
             })}
 
           {/* ── anamnesis ── */}
-          {slotFree("anamnesis") &&
+          {standardShown("anamnesis") &&
             (managedByForm("anamnesis")
               ? projectionNode(t("conclusion.anamnesis"), anamnesis, null)
               : textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
@@ -2152,7 +2261,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 }))}
 
           {/* ── objective ── */}
-          {slotFree("objective") &&
+          {standardShown("objective") &&
             (managedByForm("objective")
               ? projectionNode(t("conclusion.objectively"), objective, null)
               : textFieldNode(t("conclusion.objectively"), objective, setObjective, {
@@ -2163,7 +2272,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {/* ── diagnosis (catalog multi-select + free text) ── */}
           {/* Поле, забранное бланком, здесь не рисуем: оно стоит в потоке его
               полей (slotNodes) — иначе врач выбирал бы диагноз дважды. */}
-          {slotFree("diagnosis") && diagnosisNode()}
+          {standardShown("diagnosis") && diagnosisNode()}
 
           {/* ── conclusion (main) ── */}
           {/* Забрать заключение в поток бланка можно (slot "conclusion"), но
@@ -2302,7 +2411,10 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           )}
 
           {/* ── status select (only when editing) ── */}
-          {!readOnly && (
+          {/* При бланке не показываем: статус и так задают кнопки «Сохранить
+              черновик» / «Завершить» внизу, а под протоколом селект читался
+              как ещё одно поле документа (решение 21.09.2026). */}
+          {!readOnly && !attachedForm && (
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
                 {t("conclusion.status")}
