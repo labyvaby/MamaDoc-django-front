@@ -119,6 +119,7 @@ const ClientsPage = lazy(() => import("./pages/clients"));
 const HotelIntegrationsPage = lazy(() => import("./dev/HotelIntegrationsPage"));
 const HotelKitchenPage = lazy(() => import("./dev/HotelKitchenPage"));
 const HotelRoomsPage = lazy(() => import("./dev/HotelRoomsPage"));
+const HotelRoomFormPage = lazy(() => import("./dev/HotelRoomFormPage"));
 const HotelRoomCategoriesPage = lazy(() => import("./dev/HotelRoomCategoriesPage"));
 const HotelRoomCategoryFormPage = lazy(() => import("./dev/HotelRoomCategoryFormPage"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
@@ -672,6 +673,18 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.hotelRooms}>
                               <Suspense fallback={<LinearProgress />}>
                                 <HotelRoomsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        {/* Страница одного номера — сюда ведут клик по номеру в списке и
+                            «Редактировать» в карточке номера в шахматке. */}
+                        <Route
+                          path="rooms/:roomId"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelRooms}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelRoomFormPage />
                               </Suspense>
                             </RequirePermission>
                           }
