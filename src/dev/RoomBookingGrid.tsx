@@ -9,13 +9,17 @@
  * (группировка строк + бейдж «люкс»), номера (со state уборки) и плоские
  * позиции броней; см. hotel-viva-frontend-api.md §4.3. Черновики
  * (reservationStatus: "draft") приходят, но номер не занимают — рисуются
- * пунктиром. Даты листаются горизонтально и подгружаются кусками по 60 дней
- * (лимит бэка на запрос — 62): первый грузится сразу, следующие — когда
- * прокрутка подходит к правому краю (useInfiniteQuery, см. CHUNK_DAYS ниже).
- * Стрелки «‹ ›» сдвигают окно на неделю, «Сегодня» возвращает к текущей дате.
- * Масштаб +/- в углу над шапкой — сколько дней помещается в ширину окна
- * (7…60), без похода на бэк за каждый клик — см. ZOOM_LEVELS ниже. Красная
- * линия на колонке сегодняшнего дня — «сейчас», как в расписании клиники.
+ * пунктиром. Подпись бара зависит от его ширины: имя гостя, в узком баре —
+ * инициалы, в совсем узком — одна буква (roomBookingBars.ts); иконки статуса на
+ * барах нет — статус виден по цвету и в подсказке. Даты листаются горизонтально в
+ * обе стороны и подгружаются кусками
+ * по 60 дней (лимит бэка на запрос — 62): первый грузится сразу, соседние —
+ * когда прокрутка подходит к левому или правому краю (useInfiniteQuery, см.
+ * CHUNK_DAYS и MAX_CHUNKS ниже). Стрелки «‹ ›» прокручивают на неделю,
+ * «Сегодня» возвращает к текущей дате. Масштаб +/- в углу над шапкой — сколько
+ * дней помещается в ширину окна (7…60), без похода на бэк за каждый клик —
+ * см. ZOOM_LEVELS ниже. Красная линия на колонке сегодняшнего дня — «сейчас»,
+ * как в расписании клиники.
  *
  * Клик по номеру открывает RoomDetailsDialog (тариф, вместимость,
  * доступность), клик по бару — ReservationDetailsDialog (реальные детали
@@ -28,7 +32,7 @@
  * с уже подставленными Номер/Заезд/Выезд.
  */
 import React from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Box, Button, CircularProgress, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
@@ -48,7 +52,6 @@ import {
   HOTEL_ROOM_STATE_LABELS,
   HOTEL_STAY_STATUS_LABELS,
   HOTEL_STAY_STATUSES,
-  HOTEL_STAY_STATUS_ICONS,
 } from "./hotelDisplay";
 import {
   getSelectedHotelDate,
@@ -60,16 +63,20 @@ import {
   MONTH_NOM_RU,
   WEEKDAY_SHORT_RU,
 } from "./mockDemoData";
+import { barLabelMode, barLabelText } from "./roomBookingBars";
 import { clampSelectionEnd, selectionBounds } from "./roomBookingSelection";
 import { RoomDetailsDialog } from "./RoomDetailsDialog";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 
 /**
  * Даты подгружаются кусками по CHUNK_DAYS дней (лимит бэка на один запрос
- * календаря — 62): первый кусок грузится сразу, следующие — когда прокрутка
- * подходит к правому краю (LOAD_MORE_THRESHOLD_PX), и так до MAX_CHUNKS
- * (≈ год вперёд). Колонки рисуем только для уже загруженных кусков — иначе
- * незагруженные дни выглядели бы «свободными».
+ * календаря — 62): первый кусок (номер 0, от «сегодня − 2») грузится сразу,
+ * соседние — когда прокрутка подходит к левому или правому краю
+ * (LOAD_MORE_THRESHOLD_PX). В памяти держим не больше MAX_CHUNKS кусков
+ * (≈ год): дальше окно скользит — с одной стороны кусок добавляется, с
+ * противоположной самый дальний отбрасывается (maxPages), и число колонок в DOM
+ * не растёт, сколько ни листай. Колонки рисуем только для загруженных кусков —
+ * иначе незагруженные дни выглядели бы «свободными».
  */
 const CHUNK_DAYS = 60;
 const MAX_CHUNKS = 6;
@@ -79,13 +86,21 @@ const LOAD_MORE_THRESHOLD_PX = 600;
  * (детальнее) до 60. Остальные загруженные дни — правее, за горизонтальной
  * прокруткой; масштаб меняет только ширину колонки и не ходит на бэк.
  */
-const ZOOM_LEVELS = [7, 14, 21, 30, 45, 60];
-const ROOM_COL_WIDTH = 148;
+const ZOOM_LEVELS = [7, 14, 21, 30, 35, 40, 45, 60];
+/**
+ * Ширина левой колонки с номерами: номер (3–4 знака), значок «люкс» и точка состояния.
+ * Она же — ширина угла над шапкой с масштабом «− 40 дн. +», поэтому меньше ~90 px не
+ * делаем. Вычитается из ширины окна при расчёте ширины колонки дня.
+ */
+const ROOM_COL_WIDTH = 92;
 /**
  * Минимальная ширина колонки дня: при мелком масштабе на узком окне колонки не
  * сжимаются до нечитаемых полосок вместо номеров/статусов, а уходят в прокрутку.
  */
 const MIN_DAY_COL_WIDTH = 20;
+
+/** Однотонный полупрозрачный слой поверх непрозрачного фона (градиент из одного цвета). */
+const tintOver = (color: string) => `linear-gradient(${color}, ${color})`;
 
 type RowPlan = { kind: "category"; label: string } | { kind: "room"; room: HotelCalendarRoom };
 
@@ -108,9 +123,12 @@ export const RoomBookingGrid: React.FC = () => {
   const canZoomOut = zoomIndex < ZOOM_LEVELS.length - 1;
 
   const windowStartStr = windowStart.format("YYYY-MM-DD");
-  // Один запрос = один кусок в CHUNK_DAYS дней; pageParam — номер куска. Ключ с
-  // префиксом ["hotel","calendar"], поэтому любые invalidateQueries по нему
-  // перечитывают все уже загруженные куски.
+  // Один запрос = один кусок в CHUNK_DAYS дней; pageParam — номер куска
+  // относительно windowStart: 0 — первый, отрицательные — прошлое, положительные —
+  // будущее. Ключ с префиксом ["hotel","calendar"], поэтому любые
+  // invalidateQueries по нему перечитывают все уже загруженные куски (с их
+  // номерами — окно при этом не «уезжает»).
+  const queryClient = useQueryClient();
   const calendarQuery = useInfiniteQuery({
     queryKey: ["hotel", "calendar", property?.id, windowStartStr],
     queryFn: ({ pageParam, signal }) => {
@@ -125,18 +143,27 @@ export const RoomBookingGrid: React.FC = () => {
       );
     },
     initialPageParam: 0,
-    getNextPageParam: (_last, pages) => (pages.length < MAX_CHUNKS ? pages.length : undefined),
+    getNextPageParam: (_last, _pages, lastParam) => lastParam + 1,
+    getPreviousPageParam: (_first, _pages, firstParam) => firstParam - 1,
+    maxPages: MAX_CHUNKS,
     enabled: property != null,
   });
   const pages = calendarQuery.data?.pages;
   // Номера и категории одинаковы во всех кусках — берём из первого.
   const calendar = pages?.[0];
   const loadedChunks = pages?.length ?? 0;
+  // Куски идут подряд, поэтому начало сетки — по номеру самого левого из них. В типах
+  // TanStack pageParams — unknown[]; номера куска задаём только мы (числа).
+  const firstChunkIdx = calendarQuery.data?.pageParams[0] as number | undefined;
+  const gridStart = React.useMemo(
+    () => windowStart.add((firstChunkIdx ?? 0) * CHUNK_DAYS, "day"),
+    [windowStart, firstChunkIdx],
+  );
 
   // Колонки — только для уже загруженных кусков; ширина колонки зависит от масштаба (ниже).
   const dates = React.useMemo(
-    () => Array.from({ length: loadedChunks * CHUNK_DAYS }, (_, i) => windowStart.add(i, "day")),
-    [windowStart, loadedChunks],
+    () => Array.from({ length: loadedChunks * CHUNK_DAYS }, (_, i) => gridStart.add(i, "day")),
+    [gridStart, loadedChunks],
   );
 
   const roomTypes = calendar?.roomTypes ?? [];
@@ -192,19 +219,74 @@ export const RoomBookingGrid: React.FC = () => {
   const dayColWidth =
     viewportWidth > 0 ? Math.max(MIN_DAY_COL_WIDTH, (viewportWidth - ROOM_COL_WIDTH) / numVisibleDays) : MIN_DAY_COL_WIDTH;
 
-  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = calendarQuery;
+  // Выделение периода зажатием мыши (подробнее — ниже, у startSelection). Объявлено
+  // здесь: пока идёт протяжка, подгрузку кусков откладываем — индексы выделения
+  // это позиции в dates, а слева или справа они сдвинулись бы.
+  const [dragSel, setDragSel] = React.useState<{
+    roomId: number;
+    roomNumber: string;
+    startIdx: number;
+    endIdx: number;
+  } | null>(null);
+
+  // День у левого края области дат — в днях от windowStart (0 = windowStart, «сегодня − 2»).
+  // Запоминаем именно дату, а не пиксели: пиксельная позиция «уплывает», когда слева
+  // добавляется/справа отбрасывается кусок, меняется масштаб или ширина окна, а дата
+  // остаётся той же — по ней scrollLeft и восстанавливается (эффект ниже).
+  const leftDayRef = React.useRef(0);
+  const firstIdx = firstChunkIdx ?? 0;
+  React.useLayoutEffect(() => {
+    if (!scrollEl || firstChunkIdx == null || viewportWidth === 0) return;
+    const target = (leftDayRef.current - firstChunkIdx * CHUNK_DAYS) * dayColWidth;
+    if (Math.abs(scrollEl.scrollLeft - target) > 1) scrollEl.scrollLeft = target;
+  }, [scrollEl, firstChunkIdx, dayColWidth, viewportWidth]);
+
+  const {
+    hasNextPage,
+    hasPreviousPage,
+    isFetching,
+    isFetchingNextPage,
+    isFetchingPreviousPage,
+    isFetchNextPageError,
+    isFetchPreviousPageError,
+    fetchNextPage,
+    fetchPreviousPage,
+  } = calendarQuery;
   const loadMoreIfNeeded = React.useCallback(() => {
-    if (!scrollEl || !hasNextPage || isFetchingNextPage || isFetchNextPageError) return;
-    if (scrollEl.scrollWidth - scrollEl.scrollLeft - scrollEl.clientWidth < LOAD_MORE_THRESHOLD_PX) {
+    // Пока идёт другой запрос (в том числе фоновое перечитывание после действий с
+    // бронью) новый не начинаем: fetchNextPage/fetchPreviousPage по умолчанию
+    // отменяют запрос в полёте. После его завершения этот колбэк меняется, и эффект
+    // ниже проверяет края заново.
+    if (!scrollEl || isFetching || dragSel) return;
+    const { scrollLeft, scrollWidth, clientWidth } = scrollEl;
+    if (hasNextPage && !isFetchNextPageError && scrollWidth - scrollLeft - clientWidth < LOAD_MORE_THRESHOLD_PX) {
       void fetchNextPage();
+    } else if (hasPreviousPage && !isFetchPreviousPageError && scrollLeft < LOAD_MORE_THRESHOLD_PX) {
+      void fetchPreviousPage();
     }
-  }, [scrollEl, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
+  }, [
+    scrollEl,
+    isFetching,
+    dragSel,
+    hasNextPage,
+    hasPreviousPage,
+    isFetchNextPageError,
+    isFetchPreviousPageError,
+    fetchNextPage,
+    fetchPreviousPage,
+  ]);
+  const handleScroll = () => {
+    if (scrollEl && dayColWidth > 0) leftDayRef.current = firstIdx * CHUNK_DAYS + scrollEl.scrollLeft / dayColWidth;
+    loadMoreIfNeeded();
+  };
   // Не только по скроллу: при крупном окне и мелком масштабе все загруженные дни
-  // могут уместиться без прокрутки — тогда следующий кусок нужен сразу, а после
-  // каждой загрузки проверяем снова (хватает ли запаса справа).
+  // могут уместиться без прокрутки — тогда соседний кусок нужен сразу; при первом
+  // показе слева вообще нечего прокручивать (scrollLeft = 0), поэтому кусок в
+  // прошлом подгружается сам, а позиция удерживается на «сегодня − 2». После
+  // каждой загрузки проверяем края снова.
   React.useEffect(() => {
     loadMoreIfNeeded();
-  }, [loadMoreIfNeeded, loadedChunks, dayColWidth]);
+  }, [loadMoreIfNeeded, loadedChunks, dayColWidth, firstChunkIdx]);
 
   // Красная линия «сейчас» — как в расписании клиники (ScheduleDayTimeline): на
   // колонке сегодняшнего дня, по времени суток; обновляется раз в минуту.
@@ -228,13 +310,8 @@ export const RoomBookingGrid: React.FC = () => {
   // ночь, как раньше. Ячейка = ночь: выделенные ячейки и есть ночи брони,
   // выезд — день после последней. Диапазон живёт в одной строке-номере и не
   // тянется через чужие брони (roomBookingSelection.ts). Хуки — выше ранних
-  // return (Rules of Hooks).
-  const [dragSel, setDragSel] = React.useState<{
-    roomId: number;
-    roomNumber: string;
-    startIdx: number;
-    endIdx: number;
-  } | null>(null);
+  // return (Rules of Hooks). Само состояние dragSel объявлено выше, рядом с
+  // подгрузкой кусков.
 
   // Слушатели на window и только пока идёт выделение: кнопку можно отпустить
   // где угодно, не только над сеткой. useLayoutEffect и перерегистрация на каждое
@@ -304,21 +381,38 @@ export const RoomBookingGrid: React.FC = () => {
     return <Alert severity="error">Не удалось загрузить бронирования.</Alert>;
   }
 
+  // Стрелки «‹ ›»: плавно на неделю; если край рядом, соседний кусок подгрузится сам.
+  const scrollByDays = (days: number) => scrollEl?.scrollBy({ left: days * dayColWidth, behavior: "smooth" });
+  const goToToday = () => {
+    setSelectedHotelDate(dayjs().format("YYYY-MM-DD"));
+    const anchor = dayjs().subtract(2, "day").startOf("day");
+    const idx = anchor.diff(gridStart, "day");
+    if (scrollEl && idx >= 0 && idx < dates.length) {
+      scrollEl.scrollTo({ left: idx * dayColWidth, behavior: "smooth" });
+      return;
+    }
+    // Окно уехало далеко от сегодняшнего дня — начинаем с чистого листа: первый
+    // кусок снова от «сегодня − 2» (сбрасываем и запрос, если ключ не изменился).
+    leftDayRef.current = 0;
+    setWindowStart(anchor);
+    void queryClient.resetQueries({
+      queryKey: ["hotel", "calendar", property?.id, anchor.format("YYYY-MM-DD")],
+      exact: true,
+    });
+  };
+
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1, flexShrink: 0 }}>
       <Stack direction="row" alignItems="center" gap={0.5}>
-        <IconButton size="small" onClick={() => setWindowStart((d) => d.subtract(7, "day"))}>
+        <IconButton size="small" onClick={() => scrollByDays(-7)} aria-label="Неделя назад">
           <ChevronLeftOutlined fontSize="small" />
         </IconButton>
-        <IconButton size="small" onClick={() => setWindowStart((d) => d.add(7, "day"))}>
+        <IconButton size="small" onClick={() => scrollByDays(7)} aria-label="Неделя вперёд">
           <ChevronRightOutlined fontSize="small" />
         </IconButton>
         <Box
           component="button"
-          onClick={() => {
-            setWindowStart(dayjs().subtract(2, "day").startOf("day"));
-            setSelectedHotelDate(dayjs().format("YYYY-MM-DD"));
-          }}
+          onClick={goToToday}
           sx={{
             font: "inherit",
             fontSize: "0.8rem",
@@ -337,7 +431,7 @@ export const RoomBookingGrid: React.FC = () => {
             {dragHint}
           </Typography>
         )}
-        {isFetchingNextPage && (
+        {(isFetchingNextPage || isFetchingPreviousPage) && (
           <Stack direction="row" alignItems="center" gap={0.75} sx={{ ml: "auto", pr: 1 }}>
             <CircularProgress size={14} />
             <Typography variant="caption" color="text.secondary">
@@ -345,12 +439,12 @@ export const RoomBookingGrid: React.FC = () => {
             </Typography>
           </Stack>
         )}
-        {isFetchNextPageError && (
+        {(isFetchNextPageError || isFetchPreviousPageError) && (
           <Stack direction="row" alignItems="center" gap={0.75} sx={{ ml: "auto", pr: 1 }}>
             <Typography variant="caption" color="warning.main">
-              Не удалось подгрузить следующие даты
+              Не удалось подгрузить {isFetchNextPageError ? "следующие" : "предыдущие"} даты
             </Typography>
-            <Button size="small" onClick={() => void fetchNextPage()}>
+            <Button size="small" onClick={() => void (isFetchNextPageError ? fetchNextPage() : fetchPreviousPage())}>
               Повторить
             </Button>
           </Stack>
@@ -359,13 +453,16 @@ export const RoomBookingGrid: React.FC = () => {
 
       <Box
         ref={setScrollEl}
-        onScroll={loadMoreIfNeeded}
+        onScroll={handleScroll}
         sx={{
           border: "1px solid",
           borderColor: "divider",
           borderRadius: "14px",
           overflow: "auto",
           maxHeight: 440,
+          // Позицию при добавлении кусков слева выставляем сами (leftDayRef); встроенная
+          // «якорная» прокрутка браузера сдвигала бы её второй раз.
+          overflowAnchor: "none",
         }}
       >
         <Box
@@ -399,7 +496,7 @@ export const RoomBookingGrid: React.FC = () => {
           >
             <Tooltip title="Показывать больше дней в ширину окна (до 60)">
               <span>
-                <IconButton size="small" onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))} disabled={!canZoomOut}>
+                <IconButton size="small" sx={{ p: 0.25 }} onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))} disabled={!canZoomOut}>
                   <RemoveOutlined fontSize="small" />
                 </IconButton>
               </span>
@@ -409,7 +506,7 @@ export const RoomBookingGrid: React.FC = () => {
             </Typography>
             <Tooltip title="Показывать меньше дней в ширину окна (до 1 недели)">
               <span>
-                <IconButton size="small" onClick={() => setZoomIndex((i) => Math.max(0, i - 1))} disabled={!canZoomIn}>
+                <IconButton size="small" sx={{ p: 0.25 }} onClick={() => setZoomIndex((i) => Math.max(0, i - 1))} disabled={!canZoomIn}>
                   <AddOutlined fontSize="small" />
                 </IconButton>
               </span>
@@ -566,21 +663,25 @@ export const RoomBookingGrid: React.FC = () => {
                     position: "sticky",
                     left: 0,
                     zIndex: 1,
-                    bgcolor: luxury ? alpha("#d4af37", theme.palette.mode === "dark" ? 0.14 : 0.1) : "background.paper",
+                    // Фон колонки номеров — непрозрачный: под ней при прокрутке проезжают бары
+                    // (в том числе из прошлого слева), и полупрозрачный оттенок «люкса» их просвечивал
+                    // бы. Оттенок и подсветка наведения — градиентом поверх бумажного фона.
+                    bgcolor: "background.paper",
+                    backgroundImage: luxury ? tintOver(alpha("#d4af37", theme.palette.mode === "dark" ? 0.14 : 0.1)) : undefined,
                     borderRight: 1,
                     borderBottom: 1,
                     borderColor: "divider",
                     display: "flex",
                     alignItems: "center",
                     gap: 0.5,
-                    px: 1.5,
+                    px: 1,
                     height: 44,
                     font: "inherit",
                     color: "inherit",
                     border: 0,
                     textAlign: "left",
                     cursor: "pointer",
-                    "&:hover": { bgcolor: (t) => alpha(t.palette.primary.main, 0.08) },
+                    "&:hover": { backgroundImage: tintOver(alpha(theme.palette.primary.main, 0.08)) },
                   }}
                 >
                   {luxury && (
@@ -588,7 +689,7 @@ export const RoomBookingGrid: React.FC = () => {
                       sx={{ fontSize: 16, color: theme.palette.mode === "dark" ? "#e9c766" : "#8a6d1a" }}
                     />
                   )}
-                  <Typography variant="body2" fontWeight={600}>
+                  <Typography variant="body2" fontWeight={600} noWrap sx={{ minWidth: 0 }}>
                     {room.number}
                   </Typography>
                   <Tooltip title={`Статус номера: ${HOTEL_ROOM_STATE_LABELS[room.state as keyof typeof HOTEL_ROOM_STATE_LABELS] ?? room.state}`}>
@@ -620,7 +721,7 @@ export const RoomBookingGrid: React.FC = () => {
                     const inSelection = selection != null && i >= selection[0] && i <= selection[1];
                     return (
                       <Box
-                        key={`${room.id}-${i}`}
+                        key={`${room.id}-${dateStr}`}
                         component={isFree ? "button" : "div"}
                         type={isFree ? "button" : undefined}
                         // Мышь: нажатие — «от», отпускание (обработчик на window) — «до».
@@ -675,8 +776,8 @@ export const RoomBookingGrid: React.FC = () => {
             const gridRow = rowIdx + 3;
             const roomItems = itemsByRoomId.get(row.room.id) ?? [];
             return roomItems.map((it) => {
-              const rawStart = dayjs(it.checkIn).diff(windowStart, "day");
-              const rawEnd = dayjs(it.checkOut).diff(windowStart, "day");
+              const rawStart = dayjs(it.checkIn).diff(gridStart, "day");
+              const rawEnd = dayjs(it.checkOut).diff(gridStart, "day");
               const startCol = Math.max(0, rawStart);
               const endCol = Math.min(dates.length, rawEnd);
               if (endCol <= startCol) return null;
@@ -684,9 +785,11 @@ export const RoomBookingGrid: React.FC = () => {
               const color = it.isOverbooking ? theme.palette.warning.main : hotelStayStatusColor(status, theme);
               const nights = nightsBetween(it.checkIn, it.checkOut);
               const isDraft = it.reservationStatus === "draft";
-              const StatusIcon = HOTEL_STAY_STATUS_ICONS[status];
-              const iconColor = theme.palette.mode === "dark" ? "#fff" : color;
+              const textColor = theme.palette.mode === "dark" ? "#fff" : color;
               const label = it.customerName || `Бронь №${it.reservationNumber}`;
+              // Ширина бара — колонки × ширина дня минус отступы по 3 px. Чем уже бар, тем
+              // короче подпись: имя → инициалы → одна буква (полное имя — в подсказке бара).
+              const labelMode = barLabelMode((endCol - startCol) * dayColWidth - 6);
               return (
                 <Box
                   key={it.itemId}
@@ -700,23 +803,22 @@ export const RoomBookingGrid: React.FC = () => {
                     alignSelf: "center",
                     height: 28,
                     mx: "3px",
-                    px: 1,
+                    px: labelMode === "name" ? 1 : 0,
                     borderRadius: "8px",
                     bgcolor: alpha(color, theme.palette.mode === "dark" ? 0.3 : 0.16),
                     border: isDraft ? "1px dashed" : "1px solid",
                     borderColor: alpha(color, 0.6),
                     display: "flex",
                     alignItems: "center",
-                    gap: 0.5,
+                    justifyContent: labelMode === "name" ? "flex-start" : "center",
                     overflow: "hidden",
                     font: "inherit",
                     cursor: "pointer",
                     "&:hover": { borderColor: color },
                   }}
                 >
-                  <StatusIcon sx={{ fontSize: 14, color: iconColor, flexShrink: 0 }} />
-                  <Typography variant="caption" noWrap sx={{ color: iconColor, fontWeight: 600 }}>
-                    {label}
+                  <Typography variant="caption" noWrap sx={{ color: textColor, fontWeight: 600 }}>
+                    {barLabelText(labelMode, it.customerName, it.reservationNumber)}
                   </Typography>
                 </Box>
               );
@@ -755,10 +857,20 @@ export const RoomBookingGrid: React.FC = () => {
 
       <Stack direction="row" gap={2} flexWrap="wrap">
         {HOTEL_STAY_STATUSES.map((status) => {
-          const StatusIcon = HOTEL_STAY_STATUS_ICONS[status];
+          const color = hotelStayStatusColor(status, theme);
           return (
             <Stack key={status} direction="row" alignItems="center" gap={0.5}>
-              <StatusIcon sx={{ fontSize: 14, color: hotelStayStatusColor(status, theme) }} />
+              {/* Образец бара — та же заливка и рамка, что у брони этого статуса (иконок на барах нет). */}
+              <Box
+                sx={{
+                  width: 16,
+                  height: 10,
+                  borderRadius: "3px",
+                  bgcolor: alpha(color, theme.palette.mode === "dark" ? 0.3 : 0.16),
+                  border: "1px solid",
+                  borderColor: alpha(color, 0.6),
+                }}
+              />
               <Typography variant="caption" color="text.secondary">
                 {HOTEL_STAY_STATUS_LABELS[status]}
               </Typography>

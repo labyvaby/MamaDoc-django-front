@@ -4,11 +4,18 @@
  * не запрашиваем), доступность на ближайшие 45 дней — GET
  * /hotel/rooms/{id}/availability/ (items + свободные окна уже посчитаны
  * бэкендом, см. hotel-viva-frontend-api.md §4.2).
+ *
+ * Состояние номера в шапке — не просто чип: по клику его можно сменить
+ * (RoomStateControl), в том числе вернуть номер из «Ремонта». Кнопка
+ * «Редактировать» ведёт на страницу номера /rooms/:id (HotelRoomFormPage) — только
+ * тем, у кого есть право на неё (hotel.manage, как у самого роута).
  */
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "react-router";
 import {
   Box,
+  Button,
   Chip,
   Dialog,
   DialogContent,
@@ -20,20 +27,22 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import dayjs from "dayjs";
 
 import { getRoomAvailability, type HotelRoomType } from "../api/hotel";
+import { PAGE_PERMISSIONS } from "../config/accessPermissions";
+import { useCan } from "../hooks/useCan";
 import {
   mapStayDisplayStatus,
   HOTEL_STAY_STATUS_LABELS,
   hotelStayStatusColor,
-  HOTEL_ROOM_STATE_LABELS,
-  hotelRoomStateColor,
   HOTEL_BOARD_TYPE_LABELS,
 } from "./hotelDisplay";
 import { formatHotelDateRange, nightsBetween } from "./mockDemoData";
+import { RoomStateControl } from "./RoomStateControl";
 
 const AVAILABILITY_WINDOW_DAYS = 45;
 
@@ -49,6 +58,9 @@ export interface RoomDetailsDialogProps {
 
 export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, roomTypes, onClose, onReservationClick }) => {
   const theme = useTheme();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const canEditRoom = useCan(PAGE_PERMISSIONS.hotelRooms);
   const today = dayjs().startOf("day");
   const from = today.format("YYYY-MM-DD");
   const to = today.add(AVAILABILITY_WINDOW_DAYS, "day").format("YYYY-MM-DD");
@@ -70,7 +82,7 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, ro
     <Dialog open={roomId != null} onClose={onClose} maxWidth="sm" fullWidth>
       {roomId != null && availability && (
         <>
-          <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1.5, pr: 6 }}>
+          <DialogTitle sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1.5, pr: 6 }}>
             <Typography variant="h6" component="span" fontWeight={700}>
               Номер {availability.room.number}
             </Typography>
@@ -86,15 +98,22 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, ro
                 }}
               />
             )}
-            <Chip
-              label={HOTEL_ROOM_STATE_LABELS[availability.room.state as keyof typeof HOTEL_ROOM_STATE_LABELS] ?? availability.room.state}
-              size="small"
-              sx={{
-                bgcolor: alpha(hotelRoomStateColor(availability.room.state, theme), theme.palette.mode === "dark" ? 0.25 : 0.14),
-                color: hotelRoomStateColor(availability.room.state, theme),
-                fontWeight: 600,
-              }}
-            />
+            <RoomStateControl roomId={roomId} state={availability.room.state} />
+            {canEditRoom && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<EditOutlined fontSize="small" />}
+                onClick={() => {
+                  onClose();
+                  // from — куда вернуться после сохранения (страница номера читает его из state).
+                  navigate(`/rooms/${roomId}`, { state: { from: `${location.pathname}${location.search}` } });
+                }}
+                sx={{ ml: "auto" }}
+              >
+                Редактировать
+              </Button>
+            )}
             <IconButton onClick={onClose} sx={{ position: "absolute", right: 12, top: 12 }}>
               <CloseOutlined fontSize="small" />
             </IconButton>

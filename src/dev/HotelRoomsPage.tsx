@@ -15,7 +15,9 @@
  * Номера сгруппированы по категориям, как в RoomBookingGrid и
  * RoomDetailsDialog. «Добавить номер» создаёт номер в выбранной категории;
  * шахматка и форма создания брони подхватывают его сразу же (react-query
- * invalidate), без reload.
+ * invalidate), без reload. Клик по номеру ведёт на страницу его редактирования
+ * (HotelRoomFormPage.tsx, /rooms/:roomId) — той же, куда ведёт «Редактировать» в
+ * карточке номера в шахматке.
  *
  * «Питание» при добавлении номера — HotelRoom.mealOptions, ключи из
  * catalogs.mealOptions (какое питание доступно физически в этом номере) —
@@ -48,7 +50,7 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link as RouterLink } from "react-router";
+import { Link as RouterLink, useNavigate } from "react-router";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
@@ -58,6 +60,7 @@ import { ApiError, getErrorMessage } from "../api/client";
 export const HotelRoomsPage: React.FC = () => {
   usePageTitle("Номера");
   const theme = useTheme();
+  const navigate = useNavigate();
   const { property } = useHotelProperty();
   const queryClient = useQueryClient();
 
@@ -100,15 +103,6 @@ export const HotelRoomsPage: React.FC = () => {
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Редактирование уже созданного номера — категорию/номер/питание можно
-  // поправить без удаления и создания заново.
-  const [editRoom, setEditRoom] = React.useState<HotelRoom | null>(null);
-  const [editRoomTypeId, setEditRoomTypeId] = React.useState<number | "">("");
-  const [editRoomNumber, setEditRoomNumber] = React.useState("");
-  const [editMeals, setEditMeals] = React.useState<string[]>([]);
-  const [editSaving, setEditSaving] = React.useState(false);
-  const [editError, setEditError] = React.useState<string | null>(null);
-
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
   const openAdd = () => {
@@ -137,35 +131,6 @@ export const HotelRoomsPage: React.FC = () => {
       setError(getErrorMessage(err, "Не удалось добавить номер"));
     } finally {
       setSaving(false);
-    }
-  };
-
-  const openEditRoom = (room: HotelRoom) => {
-    setEditRoom(room);
-    setEditRoomTypeId(room.roomTypeId);
-    setEditRoomNumber(room.number);
-    setEditMeals(room.mealOptions);
-    setEditError(null);
-  };
-
-  const submitEditRoom = async () => {
-    if (!editRoom) return;
-    const trimmed = editRoomNumber.trim();
-    if (!trimmed) {
-      setEditError("Введите номер комнаты");
-      return;
-    }
-    setEditSaving(true);
-    setEditError(null);
-    try {
-      await updateRoom(editRoom.id, { roomTypeId: editRoomTypeId || undefined, number: trimmed, mealOptions: editMeals });
-      invalidateRooms();
-      invalidateRoomTypes();
-      setEditRoom(null);
-    } catch (err) {
-      setEditError(getErrorMessage(err, "Не удалось сохранить номер"));
-    } finally {
-      setEditSaving(false);
     }
   };
 
@@ -220,9 +185,10 @@ export const HotelRoomsPage: React.FC = () => {
 
       <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
         Номера Viva, сгруппированные по категориям. Новый номер сразу появляется в шахматке броней и в
-        списке выбора при создании брони; нажмите на номер, чтобы изменить его категорию, код или
-        питание; ✕ на чипе — удаляет номер (если он уже фигурирует в бронях — просто снимается с
-        продажи). Сами категории, их цены и характеристики — в разделе «Категории и тарифы».
+        списке выбора при создании брони; нажмите на номер — откроется страница его редактирования
+        (категория, код, питание, состояние, продажа); ✕ на чипе — удаляет номер (если он уже
+        фигурирует в бронях — просто снимается с продажи). Сами категории, их цены и
+        характеристики — в разделе «Категории и тарифы».
       </Alert>
 
       {deleteError && (
@@ -271,7 +237,7 @@ export const HotelRoomsPage: React.FC = () => {
                         key={room.id}
                         label={room.number}
                         size="small"
-                        onClick={() => openEditRoom(room)}
+                        onClick={() => navigate(`/rooms/${room.id}`)}
                         onDelete={() => void handleDeleteRoom(room)}
                         sx={room.status === "out_of_service" ? { opacity: 0.5, textDecoration: "line-through" } : undefined}
                       />
@@ -364,80 +330,6 @@ export const HotelRoomsPage: React.FC = () => {
           </Button>
           <Button variant="contained" disabled={!roomNumber.trim() || saving} onClick={() => void submitAdd()}>
             {saving ? "Добавляем…" : "Добавить"}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog open={editRoom != null} onClose={() => setEditRoom(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Номер {editRoom?.number}</DialogTitle>
-        <DialogContent>
-          <Stack gap={2} sx={{ mt: 0.5 }}>
-            <TextField
-              select
-              label="Категория"
-              value={editRoomTypeId}
-              onChange={(e) => setEditRoomTypeId(Number(e.target.value))}
-              disabled={editSaving}
-              fullWidth
-            >
-              {roomTypes.map((cat) => (
-                <MenuItem key={cat.id} value={cat.id}>
-                  {cat.name}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              label="Номер"
-              value={editRoomNumber}
-              onChange={(e) => {
-                setEditRoomNumber(e.target.value);
-                setEditError(null);
-              }}
-              autoFocus
-              disabled={editSaving}
-              fullWidth
-            />
-            <TextField
-              select
-              label="Питание"
-              value={editMeals}
-              onChange={(e) => {
-                const v = e.target.value;
-                setEditMeals(typeof v === "string" ? v.split(",") : v);
-              }}
-              disabled={editSaving}
-              SelectProps={{
-                multiple: true,
-                renderValue: (selected) => (
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                    {(selected as string[]).map((key) => (
-                      <Chip key={key} label={mealOptionChoices.find((c) => c.value === key)?.label ?? key} size="small" sx={{ height: 20, borderRadius: "6px" }} />
-                    ))}
-                  </Box>
-                ),
-              }}
-              helperText="Необязательно — какое питание доступно в этом номере"
-              fullWidth
-            >
-              {mealOptionChoices.map((c) => (
-                <MenuItem key={c.value} value={c.value}>
-                  {c.label}
-                </MenuItem>
-              ))}
-            </TextField>
-            {editError && (
-              <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-                {editError}
-              </Alert>
-            )}
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setEditRoom(null)} disabled={editSaving}>
-            Отмена
-          </Button>
-          <Button variant="contained" disabled={!editRoomNumber.trim() || editSaving} onClick={() => void submitEditRoom()}>
-            {editSaving ? "Сохраняем…" : "Сохранить"}
           </Button>
         </DialogActions>
       </Dialog>

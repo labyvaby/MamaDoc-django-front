@@ -66,6 +66,9 @@ export const HOTEL_ROOM_STATE_LABELS: Record<HotelRoomState, string> = {
   repair: "Ремонт",
 };
 
+/** Порядок пунктов в меню смены состояния номера (RoomStateControl). */
+export const HOTEL_ROOM_STATES: HotelRoomState[] = ["clean", "dirty", "inspected", "repair"];
+
 export function hotelRoomStateColor(state: string, theme: Theme): string {
   switch (state) {
     case "dirty":
