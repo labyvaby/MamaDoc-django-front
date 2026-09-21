@@ -8,6 +8,7 @@ import {
   Drawer,
   IconButton,
   MenuItem,
+  Slide,
   Stack,
   TextField,
   Tooltip,
@@ -20,6 +21,8 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
+import ForumOutlined from "@mui/icons-material/ForumOutlined";
+import KeyboardDoubleArrowRightOutlined from "@mui/icons-material/KeyboardDoubleArrowRightOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import SmartToyOutlined from "@mui/icons-material/SmartToyOutlined";
 import { useTheme } from "@mui/material/styles";
@@ -66,6 +69,15 @@ import {
   stageAgeLabel,
   stageDurationLabel,
 } from "../../pages/deals/meta";
+
+/** Ширина дровера без чата — как у остальных карточек CRM. */
+const DRAWER_WIDTH = 520;
+/** Колонка сделки, когда рядом открыт чат: чуть шире обычного, чтобы поля не сжимались. */
+const DEAL_COLUMN_WIDTH = 560;
+/** Дровер с чатом: сделка + ~460px на разговор Chatwoot. */
+const DRAWER_WIDTH_WITH_CHAT = 1020;
+/** Длительность выезда панели чата и расширения дровера — одна, чтобы шли синхронно. */
+const CHAT_SLIDE_MS = 300;
 
 type DealDetailDrawerProps = {
   dealId: number | null;
@@ -149,9 +161,29 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   /* Чат показываем только тем, кому открыт раздел «Чаты»: iframe всё равно
      потребует учётку в Чат-центре, а без права незачем и пытаться. */
   const withChat = Boolean(deal?.chatUrl) && can("chatwoot.view");
+  /* Панель чата закрыта по умолчанию и выезжает справа по кнопке в карточке:
+     iframe Chatwoot тяжёлый, а переписку читают реже, чем правят сделку.
+     Закрытие дровера и переход к другой сделке её сворачивают. */
+  const [chatOpen, setChatOpen] = React.useState(false);
+  const showChat = withChat && chatOpen;
   React.useEffect(() => {
-    if (!open) setPane("deal");
+    if (!open) {
+      setPane("deal");
+      setChatOpen(false);
+    }
   }, [open]);
+  React.useEffect(() => {
+    setChatOpen(false);
+    setPane("deal");
+  }, [dealId]);
+  const openChat = () => {
+    setChatOpen(true);
+    setPane("chat");
+  };
+  const hideChat = () => {
+    setChatOpen(false);
+    setPane("deal");
+  };
 
   const [amount, setAmount] = React.useState("");
   const [comment, setComment] = React.useState("");
@@ -341,7 +373,17 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
       anchor="right"
       open={open}
       onClose={onClose}
-      PaperProps={{ sx: { width: { xs: "100%", sm: withChat ? 1100 : 520 }, maxWidth: "100%" } }}
+      PaperProps={{
+        sx: {
+          /* Карточке — 560, чату — остаток (~460): панель уже, чем у раздела
+             «Чаты», зато полям сделки хватает места. Ширина анимируется вместе
+             с выездом панели. */
+          width: { xs: "100%", sm: showChat ? DRAWER_WIDTH_WITH_CHAT : DRAWER_WIDTH },
+          maxWidth: "100%",
+          transition: (theme) => theme.transitions.create("width", { duration: CHAT_SLIDE_MS }),
+          overflowX: "hidden",
+        },
+      }}
     >
       <Stack sx={{ height: "100%" }}>
         <Stack
@@ -389,7 +431,7 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
         </Stack>
         <Divider />
 
-        {withChat && isNarrow ? (
+        {showChat && isNarrow ? (
           <Box sx={{ px: 2, pt: 1 }}>
             <SegmentedTabs<"deal" | "chat">
               tabs={[
@@ -406,12 +448,12 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
         <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
         <Box
           sx={{
-            flex: withChat && !isNarrow ? "0 0 520px" : 1,
+            flex: showChat && !isNarrow ? `0 0 ${DEAL_COLUMN_WIDTH}px` : 1,
             minWidth: 0,
             overflowY: "auto",
             px: 2,
             py: 2,
-            display: withChat && isNarrow && pane === "chat" ? "none" : "block",
+            display: showChat && isNarrow && pane === "chat" ? "none" : "block",
           }}
         >
           {detailQuery.isLoading ? (
@@ -525,8 +567,19 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
               {/* Действия в остальную CRM: обращение доводится до записи, не
                   выходя из карточки. */}
-              {canCreateTask || canCreateAppointment ? (
+              {canCreateTask || canCreateAppointment || withChat ? (
                 <Stack direction="row" gap={1} flexWrap="wrap">
+                  {withChat && !chatOpen ? (
+                    <AppButton
+                      size="small"
+                      variant="contained"
+                      startIcon={<ForumOutlined />}
+                      onClick={openChat}
+                    >
+                      {t("detail.chatOpen")}
+                    </AppButton>
+                  ) : null}
+
                   {canCreateTask ? (
                     <AppButton
                       size="small"
@@ -771,31 +824,45 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
         </Box>
 
         {withChat && deal?.chatUrl && (!isNarrow || pane === "chat") ? (
-          <>
-            {!isNarrow ? <Divider orientation="vertical" flexItem /> : null}
-            <Stack sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-              <Stack
-                direction="row"
-                alignItems="center"
-                gap={1}
-                sx={{ px: 2, py: 1, borderBottom: 1, borderColor: "divider" }}
-              >
-                <ChannelIcon channel={deal.channel} size={16} />
-                <Typography variant="subtitle2" noWrap sx={{ flex: 1, minWidth: 0 }}>
-                  {t("detail.chat")}
-                  {deal.inboxName ? ` · ${deal.inboxName}` : ""}
-                </Typography>
-                <Tooltip title={t("detail.chatOpenInChats")}>
-                  <IconButton size="small" component="a" href="/chats" target="_blank" rel="noopener">
-                    <OpenInNewOutlined fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+          <Slide
+            in={showChat}
+            direction="left"
+            timeout={CHAT_SLIDE_MS}
+            mountOnEnter
+            unmountOnExit
+            appear
+          >
+            <Stack direction="row" sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+              {!isNarrow ? <Divider orientation="vertical" flexItem /> : null}
+              <Stack sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  gap={1}
+                  sx={{ px: 2, py: 1, borderBottom: 1, borderColor: "divider" }}
+                >
+                  <ChannelIcon channel={deal.channel} size={16} />
+                  <Typography variant="subtitle2" noWrap sx={{ flex: 1, minWidth: 0 }}>
+                    {t("detail.chat")}
+                    {deal.inboxName ? ` · ${deal.inboxName}` : ""}
+                  </Typography>
+                  <Tooltip title={t("detail.chatOpenInChats")}>
+                    <IconButton size="small" component="a" href="/chats" target="_blank" rel="noopener">
+                      <OpenInNewOutlined fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title={t("detail.chatHide")}>
+                    <IconButton size="small" onClick={hideChat} aria-label={t("detail.chatHide")}>
+                      <KeyboardDoubleArrowRightOutlined fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
+                <Box sx={{ flex: 1, minHeight: 0 }}>
+                  <DealChatPane chatUrl={deal.chatUrl} />
+                </Box>
               </Stack>
-              <Box sx={{ flex: 1, minHeight: 0 }}>
-                <DealChatPane chatUrl={deal.chatUrl} />
-              </Box>
             </Stack>
-          </>
+          </Slide>
         ) : null}
         </Stack>
       </Stack>
