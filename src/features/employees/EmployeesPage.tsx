@@ -45,10 +45,15 @@ const EmployeesPage: React.FC = () => {
   const canStaffCreate = useCan("staff.create");
   const canStaffUpdate = useCan("staff.update");
   const canStaffDelete = useCan("staff.delete"); // "уволить"
-  const canMembershipsCreate = useCan("rbac.memberships.create");
-  const canMembershipsUpdate = useCan("rbac.memberships.update");
 
-  const canOnboard = canStaffCreate && (canMembershipsCreate || canMembershipsUpdate);
+  // Кнопка «Создать» держится на одном праве домена — staff.create. Раньше к
+  // нему добавлялось rbac.memberships.create/update, потому что онбординг
+  // заводит ещё и членство. Это соглашение фронта, а не требование бэка, и
+  // оно молча прятало кнопку у ролей, которым создание сотрудников выдали:
+  // коды rbac.* режутся вдобавок модулем "rbac" (utils/moduleMapping), а он
+  // включён не в каждой организации. Право на членство проверяет сам
+  // POST /staff/employees/onboard/ — его отказ дровер показывает текстом.
+  const canOnboard = canStaffCreate;
   const canEdit = canStaffUpdate;
   const canFire = canStaffDelete;
   const handleAddClick = canOnboard ? () => setOnboardOpen(true) : undefined;
