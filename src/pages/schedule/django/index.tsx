@@ -1271,10 +1271,10 @@ const SCHEDULE_TABS: { id: ScheduleTab; label: string; icon: React.ElementType }
 // ── Страница ──────────────────────────────────────────────────────────────────
 
 const DjangoSchedulePage: React.FC = () => {
-  // "Шахматка броней" на Viva — тот же экран, что и обычное расписание, просто
+  // "Бронирования" на Viva — тот же экран, что и обычное расписание, просто
   // с другим заголовком для демонстрации отельного применения (см. useIsVivaActive).
   const vivaActive = useIsVivaActive();
-  usePageTitle(vivaActive ? "Шахматка броней" : "Расписание");
+  usePageTitle(vivaActive ? "Бронирования" : "Расписание");
   const theme = useTheme();
   const canManage = useCan("schedule.manage");
   // «Создать бронь» на Viva — отдельное право (hotel.reservations.manage),
