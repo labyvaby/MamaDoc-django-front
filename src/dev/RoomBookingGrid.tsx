@@ -213,9 +213,9 @@ export const RoomBookingGrid: React.FC = () => {
   // что было раньше с фиксированным NUM_DAYS: оба месяца видны сразу.
   const [zoomIndex, setZoomIndex] = React.useState(ZOOM_LEVELS.length - 1);
   const numVisibleDays = ZOOM_LEVELS[zoomIndex];
-  // «Приблизить» = меньше дней в ширину окна, «отдалить» = больше. Кнопки в тулбаре —
-  // по числу дней, не как на карте: «+» показывает БОЛЬШЕ дней (отдаляет),
-  // «−» — МЕНЬШЕ (приближает).
+  // «Приблизить» (+) = меньше дней в ширину окна, крупнее каждый; «отдалить» (−) —
+  // больше дней, мельче. Тот же смысл, что у зума карты/картинки: «+» — ближе и
+  // подробнее, «−» — дальше и обзорнее.
   const canZoomIn = zoomIndex > 0;
   const canZoomOut = zoomIndex < ZOOM_LEVELS.length - 1;
 
@@ -645,22 +645,6 @@ export const RoomBookingGrid: React.FC = () => {
 
             {/* Масштаб: та же пилюля, что была в углу над шапкой — перенесена в тулбар. */}
             <Stack direction="row" alignItems="center" gap={0.25} sx={{ border: 1, borderColor: "divider", borderRadius: "8px", px: 0.5 }}>
-              <Tooltip title="Показывать меньше дней в ширину окна (до 1 недели)">
-                <span>
-                  <IconButton
-                    size="small"
-                    sx={{ p: 0.25 }}
-                    aria-label="Показывать меньше дней в ширину окна"
-                    onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
-                    disabled={!canZoomIn}
-                  >
-                    <RemoveOutlined fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 34, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
-                {numVisibleDays} дн.
-              </Typography>
               <Tooltip title="Показывать больше дней в ширину окна (до 60)">
                 <span>
                   <IconButton
@@ -669,6 +653,22 @@ export const RoomBookingGrid: React.FC = () => {
                     aria-label="Показывать больше дней в ширину окна"
                     onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))}
                     disabled={!canZoomOut}
+                  >
+                    <RemoveOutlined fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 34, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
+                {numVisibleDays} дн.
+              </Typography>
+              <Tooltip title="Показывать меньше дней в ширину окна (до 1 недели)">
+                <span>
+                  <IconButton
+                    size="small"
+                    sx={{ p: 0.25 }}
+                    aria-label="Показывать меньше дней в ширину окна"
+                    onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
+                    disabled={!canZoomIn}
                   >
                     <AddOutlined fontSize="small" />
                   </IconButton>
