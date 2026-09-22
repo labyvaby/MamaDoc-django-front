@@ -22,7 +22,7 @@ import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { PdfResultView } from "./PdfResultView";
 import { ConclusionDocumentView } from "./DocumentViews";
 import { formatQuantity } from "../../utility/format";
-import { loadDjangoPrintData } from "./djangoPrintData";
+import { loadDjangoPrintData, readPrintTarget } from "./djangoPrintData";
 
 /**
  * Печать заключения — единственное место, где документ собирается.
@@ -55,8 +55,8 @@ export const ConclusionPrintPage: React.FC = () => {
     let active = true;
     (async () => {
       try {
-        const lineIdRaw = new URLSearchParams(window.location.search).get("lineId");
-        const d = await loadDjangoPrintData(Number(id), lineIdRaw ? Number(lineIdRaw) : null);
+        const target = readPrintTarget();
+        const d = await loadDjangoPrintData(Number(id), target.lineId, target.conclusionId);
         const c = d.conclusion;
 
         // Прочерк ставит документ, а не данные. Пустое привязанное поле на
