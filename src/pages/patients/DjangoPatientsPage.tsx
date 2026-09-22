@@ -12,7 +12,6 @@ import { motion } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
-import { useNavigate } from "react-router";
 
 dayjs.locale("ru");
 
@@ -93,7 +92,6 @@ const DjangoPatientsPage: React.FC = () => {
   // (usePermissions().canAccess уже сверяет оба условия по moduleMapping.ts).
   const canViewLab = useCan("lab.view");
   const defaultBranchId = activeBranch?.id ?? null;
-  const navigate = useNavigate();
 
   // ── List data ──────────────────────────────────────────────────────────────
   const [patients, setPatients] = React.useState<DjangoPatient[]>([]);
