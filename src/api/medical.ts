@@ -70,9 +70,9 @@ export function conclusionCanEdit(slot: ConclusionSlot, doc: MedicalConclusion |
 }
 
 /**
- * Можно ли печатать документ. Бэк 22.09.2026: печатается только завершённый
- * документ — у слотового `canPrint` статуса документа нет, поэтому без
- * собственного флага документа проверяем статус сами.
+ * Можно ли печатать документ. Печатается только завершённый (бэк, 22.09.2026).
+ * Свой флаг документа важнее; у старого бэка его нет, а слотовый `canPrint`
+ * относится к строке целиком — тогда проверяем статус сами.
  */
 export function conclusionCanPrint(slot: ConclusionSlot, doc: MedicalConclusion | null): boolean {
   if (!doc) return false;
@@ -80,10 +80,9 @@ export function conclusionCanPrint(slot: ConclusionSlot, doc: MedicalConclusion 
 }
 
 /**
- * Состояние строки для показа. Бэк переводит строку в `completed`, как
- * только врач завершил любой её документ (ответ 22.09.2026), а общего
- * статуса «готовы все документы» нет. Поэтому при нескольких документах
- * считаем сами: «завершено» — только когда завершены все.
+ * Состояние строки для показа: при нескольких документах «завершено» —
+ * только когда завершены все (так же сводит бэк, 22.09.2026). Считаем по
+ * документам, чтобы не зависеть от версии бэка на стенде.
  */
 export function slotDisplayState(slot: ConclusionSlot): ConclusionState {
   const docs = slotConclusions(slot);
@@ -177,9 +176,9 @@ export interface MedicalConclusion {
   /** Заполненный бланк; null — заключение написано свободным текстом. */
   formData: ConclusionFormData | null;
   /**
-   * Права на этот документ. Бэк 22.09.2026: canEdit/canPrint отдаются на
-   * каждый документ, а не на строку. Нет поля — берём флаг слота
-   * (`conclusionCanEdit` / `conclusionCanPrint`).
+   * Права на этот документ (бэк отдаёт их внутри `conclusions[]` с
+   * 22.09.2026); флаги слота относятся к строке целиком. Нет поля — старый
+   * бэк, берём флаг слота (`conclusionCanEdit` / `conclusionCanPrint`).
    */
   canEdit?: boolean;
   canPrint?: boolean;
@@ -512,6 +511,14 @@ export function updateConclusion(
     method: "PATCH",
     body: payload,
   });
+}
+
+/**
+ * DELETE /api/medical/conclusions/<id>/ — только черновик. Завершённый —
+ * 409 `CONCLUSION_COMPLETED`; право `medical.conclusions.delete`.
+ */
+export function deleteConclusion(id: number): Promise<void> {
+  return apiRequest<void>(`/medical/conclusions/${id}/`, { method: "DELETE" });
 }
 
 /**

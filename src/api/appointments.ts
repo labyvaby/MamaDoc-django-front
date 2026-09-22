@@ -347,6 +347,9 @@ export interface AppointmentServiceLine {
   conclusionId?: number | null;
   /** Все заключения строки — их может быть несколько (с 22.09.2026). */
   conclusionIds?: number[];
+  /** Сколько документов у строки и сколько из них завершено — для «1 из 2». */
+  conclusionsTotal?: number;
+  conclusionsCompleted?: number;
   /**
    * Разрешает ли справочник менять цену этой услуги. В отличие от
    * `priceOverrideLocked` приёма («уже нельзя — деньги приняты») это свойство

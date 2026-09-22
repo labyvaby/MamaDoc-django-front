@@ -68,6 +68,7 @@ import { useAppointmentReceipt } from "../../../components/appointments/useAppoi
 import { PaymentInfoBlock } from "../../../components/ui";
 import { useT } from "../../../i18n/VerticalProvider";
 import { tt } from "../../../i18n/t";
+import { paymentMethodLabel } from "../../../utility/paymentMethodLabel";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
 import { useAuthUserNames } from "../../../hooks/useAuthUserNames";
@@ -425,6 +426,17 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const balancePaid = pay?.payments?.reduce((s, p) => p.method === "balance" ? s + Number(p.amount) : s, 0) ?? 0;
   const bonusesPaid = pay?.payments?.reduce((s, p) => p.method === "bonus" ? s + Number(p.amount) : s, 0) ?? 0;
   const insurancePaid = pay?.payments?.reduce((s, p) => p.method === "insurance" ? s + Number(p.amount) : s, 0) ?? 0;
+  // Откуда ушли деньги возврата: по способу оплаты, у безнала — с названием
+  // способа из справочника («Карта · Мбанк»). Несколько возвратов с одного
+  // источника складываем в одну строку.
+  const refundSources = React.useMemo(() => {
+    const bySource = new Map<string, number>();
+    for (const r of pay?.refunds ?? []) {
+      const label = paymentMethodLabel(r.method, r.cashlessMethodName);
+      bySource.set(label, (bySource.get(label) ?? 0) + Number(r.amount || 0));
+    }
+    return [...bySource].map(([label, amount]) => ({ label, amount }));
+  }, [pay?.refunds]);
   // Метаданные страховки из первой insurance-строки журнала.
   const insurancePayment = pay?.payments?.find((p) => p.method === "insurance");
 
@@ -556,6 +568,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         durationMinutes: sl.durationMinutes,
         amount: som(lineAmount),
         conclusionState: sl.conclusionState,
+        conclusionsTotal: sl.conclusionsTotal,
+        conclusionsCompleted: sl.conclusionsCompleted,
         action:
           canOverridePrice &&
           !appt.priceOverrideLocked &&
@@ -1093,10 +1107,40 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     </Button>
                   )
                 )}
-                {hasRefund && (
+                {hasRefund && refundSources.length === 0 && (
                   <Typography variant="caption" color="error.main" fontWeight={600} display="block">
                     {t("details.refundLabel", { amount: som(refundedTotal) })}
                   </Typography>
+                )}
+                {hasRefund && refundSources.length > 0 && (
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                      {t("details.refundTitle")}
+                    </Typography>
+                    {refundSources.map((r) => (
+                      <Stack key={r.label} direction="row" justifyContent="space-between" spacing={1}>
+                        <Typography variant="caption" color="text.secondary">{r.label}</Typography>
+                        <Typography variant="caption" color="error.main" fontWeight={600} sx={{ flexShrink: 0 }}>
+                          −{som(r.amount)}
+                        </Typography>
+                      </Stack>
+                    ))}
+                    <Divider sx={{ my: 0.25 }} />
+                    <Stack direction="row" justifyContent="space-between" spacing={1}>
+                      <Typography variant="caption" fontWeight={600}>{t("details.refundTotal")}</Typography>
+                      <Typography variant="caption" color="error.main" fontWeight={700} sx={{ flexShrink: 0 }}>
+                        −{som(refundedTotal)}
+                      </Typography>
+                    </Stack>
+                    {pay?.paidNet != null && (
+                      <Stack direction="row" justifyContent="space-between" spacing={1}>
+                        <Typography variant="caption" fontWeight={600}>{t("details.refundNetPaid")}</Typography>
+                        <Typography variant="caption" fontWeight={700} sx={{ flexShrink: 0 }}>
+                          {som(pay.paidNet)}
+                        </Typography>
+                      </Stack>
+                    )}
+                  </Stack>
                 )}
                 <Divider />
               </>

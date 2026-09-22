@@ -22,6 +22,11 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Divider,
   IconButton,
   Stack,
@@ -33,12 +38,15 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
+import { useNotification } from "@refinedev/core";
 
 import {
   canAddConclusion,
   conclusionCanEdit,
   conclusionCanPrint,
   slotDisplayState,
+  deleteConclusion,
   getConclusionSlots,
   slotConclusions,
   type ConclusionSlot,
@@ -47,6 +55,7 @@ import {
 } from "../../api/medical";
 import { parseConclusionFormData } from "../../api/conclusionFormData";
 import { useCan } from "../../hooks/useCan";
+import { getErrorCode } from "../../api/client";
 import {
   djangoQueryKeys,
   DJANGO_DETAIL_STALE_TIME_MS,
@@ -121,7 +130,9 @@ const DocumentBar: React.FC<{
   canAdd: boolean;
   /** Переключение запрещено (идёт правка в колонке). */
   locked?: boolean;
-}> = ({ slot, active, onSelect, canAdd, locked = false }) => {
+  /** Удалить черновик; нет — крестика на чипах нет. */
+  onDelete?: (doc: MedicalConclusion, label: string) => void;
+}> = ({ slot, active, onSelect, canAdd, locked = false, onDelete }) => {
   const { t } = useT("appointments");
   const docs = slotConclusions(slot);
   const activeId = active === "new" ? null : active ?? docs[0]?.id ?? null;
@@ -135,15 +146,26 @@ const DocumentBar: React.FC<{
     >
       {docs.map((doc, index) => {
         const selected = doc.id === activeId;
+        const label = documentLabel(doc, index);
+        // Удаляется только черновик (завершённый бэк не отдаст: 409), и только
+        // тем, кто может править этот документ.
+        const deletable =
+          onDelete && !locked && doc.status === "draft" && conclusionCanEdit(slot, doc);
         return (
           <Chip
             key={doc.id}
             size="small"
-            label={documentLabel(doc, index)}
+            label={label}
             title={stateLabel(doc.status)}
             color={selected ? "primary" : "default"}
             variant={selected ? "filled" : "outlined"}
             onClick={selected || locked ? undefined : () => onSelect(doc.id)}
+            onDelete={deletable ? () => onDelete(doc, label) : undefined}
+            deleteIcon={
+              <Tooltip title={t("conclusionSlots.deleteDraft")}>
+                <DeleteOutlined />
+              </Tooltip>
+            }
             icon={
               <Box
                 component="span"
@@ -231,6 +253,94 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
   // Inline single-slot edit toggle (просмотр ↔ редактирование в колонке).
   const [editingInline, setEditingInline] = React.useState(false);
   const [inlineDoc, setInlineDoc] = React.useState<DocKey>(null);
+  const canDelete = useCan("medical.conclusions.delete");
+  const { open: notify } = useNotification();
+  const [deleteTarget, setDeleteTarget] = React.useState<{
+    doc: MedicalConclusion;
+    label: string;
+  } | null>(null);
+  const [deleting, setDeleting] = React.useState(false);
+  const requestDelete = canDelete
+    ? (doc: MedicalConclusion, label: string) => setDeleteTarget({ doc, label })
+    : undefined;
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const { doc } = deleteTarget;
+    setDeleting(true);
+    try {
+      await deleteConclusion(doc.id);
+      queryClient.setQueryData<ConclusionSlot[]>(queryKey, (prev = []) =>
+        prev.map((slot) => {
+          if (slot.serviceLineId !== doc.serviceLineId) return slot;
+          const next = slotConclusions(slot).filter((c) => c.id !== doc.id);
+          const state: ConclusionState =
+            next.length === 0
+              ? "not_created"
+              : next.some((c) => c.status === "completed")
+                ? "completed"
+                : "draft";
+          return { ...slot, state, conclusion: next[0] ?? null, conclusions: next };
+        }),
+      );
+      // Удалённый документ был открыт — возвращаемся к первому.
+      if (inlineDoc === doc.id) {
+        setInlineDoc(null);
+        setEditingInline(false);
+      }
+      if (drawerDoc === doc.id) setDrawerDoc(null);
+      notify?.({ type: "success", message: t("conclusionSlots.deleted") });
+      setDeleteTarget(null);
+      void queryClient.invalidateQueries({ queryKey });
+    } catch (err) {
+      notify?.({
+        type: "error",
+        message:
+          getErrorCode(err) === "CONCLUSION_COMPLETED"
+            ? t("conclusionSlots.deleteCompleted")
+            : err instanceof Error
+              ? err.message
+              : String(err),
+      });
+      // Документ мог завершиться в другой вкладке — подтягиваем свежий статус.
+      if (getErrorCode(err) === "CONCLUSION_COMPLETED") {
+        setDeleteTarget(null);
+        void queryClient.invalidateQueries({ queryKey });
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const deleteDialog = (
+    <Dialog
+      open={deleteTarget !== null}
+      onClose={deleting ? undefined : () => setDeleteTarget(null)}
+      fullWidth
+      PaperProps={{ sx: { maxWidth: 440 } }}
+    >
+      <DialogTitle>{t("conclusionSlots.deleteTitle")}</DialogTitle>
+      <DialogContent>
+        <DialogContentText>
+          {t("conclusionSlots.deleteText", { name: deleteTarget?.label ?? "" })}
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setDeleteTarget(null)} disabled={deleting}>
+          {t("conclusionSlots.deleteCancel")}
+        </Button>
+        <Button
+          color="error"
+          variant="contained"
+          onClick={() => void confirmDelete()}
+          disabled={deleting}
+          startIcon={deleting ? <CircularProgress size={16} color="inherit" /> : <DeleteOutlined />}
+        >
+          {t("conclusionSlots.deleteConfirm")}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
   // Колонка переживает смену приёма — начатый «новый документ» не должен
   // переехать в чужой приём.
   React.useEffect(() => {
@@ -276,6 +386,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
     // Новый документ правит тот, кому можно создавать в строке.
     const docCanEdit = doc.createAsNew ? onlySlot.canEdit : conclusionCanEdit(onlySlot, doc.conclusion);
     return (
+      <>
       <DjangoConclusionDrawer
         open
         inline
@@ -300,6 +411,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
               // к другому документу.
               locked={editing}
               canAdd={onlySlot.canEdit && canAddConclusion(onlySlot)}
+              onDelete={requestDelete}
               onSelect={(key) => {
                 setInlineDoc(key);
                 setEditingInline(key === "new");
@@ -325,6 +437,8 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
           if (inlineDoc === "new") setInlineDoc(saved.id);
         }}
       />
+      {deleteDialog}
+      </>
     );
   }
 
@@ -401,8 +515,10 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
           branchId={branchId}
           onClose={() => setDrawerSlot(null)}
           onSaved={handleSaved}
+          onDeleteDoc={requestDelete}
         />
       )}
+      {deleteDialog}
     </Box>
   );
 };
@@ -417,7 +533,8 @@ const SlotDrawer: React.FC<{
   branchId?: number | null;
   onClose: () => void;
   onSaved: (saved: MedicalConclusion) => void;
-}> = ({ slot, doc, onSelectDoc, appointmentId, branchId, onClose, onSaved }) => {
+  onDeleteDoc?: (doc: MedicalConclusion, label: string) => void;
+}> = ({ slot, doc, onSelectDoc, appointmentId, branchId, onClose, onSaved, onDeleteDoc }) => {
   const resolved = resolveDoc(slot, doc);
   return (
     <DjangoConclusionDrawer
@@ -434,6 +551,7 @@ const SlotDrawer: React.FC<{
             // Черновик каждого документа пишется в браузер по своему ключу,
             // поэтому переключаться посреди правки не страшно.
             canAdd={slot.canEdit && canAddConclusion(slot)}
+            onDelete={onDeleteDoc}
             onSelect={onSelectDoc}
           />
         ) : undefined

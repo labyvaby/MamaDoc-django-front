@@ -174,6 +174,9 @@
     "createdAt": "Создан: {{when}}{{author}}",
     "updatedAt": "Изм: {{when}}{{author}}",
     "refundLabel": "Возврат: {{amount}}",
+    "refundTitle": "Возврат",
+    "refundTotal": "Итого возвращено",
+    "refundNetPaid": "Оплачено с учётом возврата",
     "recordSelected": "Ввести выбранные ({{count}})",
     "vaccineDose": "{{vaccine}} · доза {{dose}}",
     "vaccineLine": "Вакцина",
@@ -241,7 +244,8 @@
   },
   "serviceLine": {
     "conclusionReady": "{{conclusion.nom, capitalize}}: готово",
-    "conclusionDraft": "{{conclusion.nom, capitalize}}: черновик"
+    "conclusionDraft": "{{conclusion.nom, capitalize}}: черновик",
+    "conclusionsProgress": "{{conclusion.nomPl, capitalize}}: готово {{done}} из {{count}}"
   },
   "serviceRow": {
     "addSpecialist": "+ Добавить {{specialist.acc}}",
@@ -569,6 +573,13 @@
     "documentsCount_one": "{{count}} документ",
     "documentsCount_few": "{{count}} документа",
     "documentsCount_many": "{{count}} документов",
+    "deleteDraft": "Удалить черновик",
+    "deleteTitle": "Удалить черновик?",
+    "deleteText": "Черновик «{{name}}» удалится без возможности восстановления. Завершённые документы удалить нельзя.",
+    "deleteConfirm": "Удалить",
+    "deleteCancel": "Отмена",
+    "deleted": "Черновик удалён",
+    "deleteCompleted": "Документ уже завершён — удалить его нельзя",
     "state": {
       "none": "Не создано",
       "draft": "Черновик",
