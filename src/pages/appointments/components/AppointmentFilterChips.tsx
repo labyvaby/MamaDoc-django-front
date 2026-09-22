@@ -14,8 +14,21 @@
  * листа фильтров — отсюда `wrap`, единственное отличие раскладки.
  */
 import React from "react";
-import { Box, Chip, Divider, Stack, useTheme, alpha } from "@mui/material";
+import {
+  Box,
+  Checkbox,
+  Chip,
+  Divider,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Stack,
+  useTheme,
+  alpha,
+} from "@mui/material";
 import ClearIcon from "@mui/icons-material/CloseOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 import TrendingDownOutlined from "@mui/icons-material/TrendingDownOutlined";
 import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
@@ -87,6 +100,7 @@ const AppointmentFilterChips: React.FC<Props> = ({
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
+  const [priceMenuAnchor, setPriceMenuAnchor] = React.useState<HTMLElement | null>(null);
 
   // Показываем только то, что в выборке действительно есть: пустой чип
   // «Неявка · 0» занимал бы место и ничего не сообщал.
@@ -99,10 +113,21 @@ const AppointmentFilterChips: React.FC<Props> = ({
     moneyCounts && onToggleMoneyFlag
       ? MONEY_FLAG_OPTIONS.filter((flag) => (moneyCounts.get(flag) ?? 0) > 0)
       : [];
+  // Причина — уточнение «Отменено», а не самостоятельная ось: без выбранного
+  // статуса четыре чипа причин висели в ряду при любой отмене за день. Пока
+  // какая-то причина выбрана, чипы не прячем — иначе её нечем было бы снять
+  // (сбрасывать причины вместе со статусом нельзя: два setSearchParams подряд
+  // перетирают друг друга, см. useReceptionFilters).
+  const reasonAxisOpen = selectedStatuses.includes("canceled") || selectedReasons.length > 0;
   const reasonChips =
-    reasonCounts && onToggleReason
+    reasonCounts && onToggleReason && reasonAxisOpen
       ? CANCEL_REASON_OPTIONS.filter((reason) => (reasonCounts.get(reason) ?? 0) > 0)
       : [];
+  // Ось цены — фильтр разбора денег, а не работы стойки: в шапке сворачиваем
+  // её в один чип-меню. Одиночный флаг оставляем чипом — меню ради одного
+  // пункта добавило бы клик и не сэкономило места. В мобильном листе места
+  // хватает, там чипы развёрнуты.
+  const collapsePrice = !wrap && priceChips.length >= 2;
 
   const hasActive =
     selectedStatuses.length > 0 ||
@@ -203,6 +228,110 @@ const AppointmentFilterChips: React.FC<Props> = ({
     </Stack>
   );
 
+  /**
+   * Свёрнутая ось цены: один чип, по клику — меню с мультивыбором.
+   *
+   * На чипе видно, что выбрано: один флаг — его название и значок (как у
+   * развёрнутого чипа), несколько — «Цена» и число выбранных. Без выбора
+   * счётчика нет: флаги пересекаются (скидка и снижение в одном чеке), и сумма
+   * по ним не означала бы число записей.
+   */
+  const renderPriceMenu = () => {
+    const selected = priceChips.filter((flag) => selectedMoneyFlags.includes(flag));
+    const active = selected.length > 0;
+    const single = selected.length === 1 ? selected[0] : null;
+    const accent = single === "discount" ? getStatusAccent("discounted", theme) : null;
+    const Icon = single ? PRICE_FLAG_ICON[single] : LocalOfferOutlined;
+    const label = single
+      ? t(`registry.moneyFilter.${MONEY_FLAG_LABEL_KEY[single]}`)
+      : t("registry.moneyFilter.menu");
+    return (
+      <>
+        <Chip
+          size="small"
+          clickable
+          aria-haspopup="menu"
+          aria-expanded={priceMenuAnchor ? true : undefined}
+          onClick={(e) => setPriceMenuAnchor(e.currentTarget)}
+          label={
+            <Stack direction="row" alignItems="center" gap={0.75}>
+              <Icon
+                sx={{ fontSize: 14, flexShrink: 0, color: active ? "inherit" : "text.disabled" }}
+              />
+              <Box component="span">{label}</Box>
+              {selected.length > 1 && (
+                <Box
+                  component="span"
+                  sx={{
+                    fontSize: 11,
+                    lineHeight: "16px",
+                    minWidth: 16,
+                    px: 0.5,
+                    borderRadius: "6px",
+                    textAlign: "center",
+                    fontVariantNumeric: "tabular-nums",
+                    bgcolor: alpha(theme.palette.primary.main, 0.24),
+                  }}
+                >
+                  {selected.length}
+                </Box>
+              )}
+              <ExpandMoreOutlined
+                sx={{
+                  fontSize: 16,
+                  ml: -0.5,
+                  flexShrink: 0,
+                  transform: priceMenuAnchor ? "rotate(180deg)" : "none",
+                  transition: "transform .15s ease",
+                }}
+              />
+            </Stack>
+          }
+          sx={chipSx(accent, active)}
+        />
+        <Menu
+          anchorEl={priceMenuAnchor}
+          open={Boolean(priceMenuAnchor)}
+          onClose={() => setPriceMenuAnchor(null)}
+          slotProps={{ paper: { variant: "outlined", elevation: 0, sx: { mt: 0.5 } } }}
+        >
+          {/* Меню не закрывается по клику: выбор множественный, как у чипов. */}
+          {priceChips.map((flag) => {
+            const FlagIcon = PRICE_FLAG_ICON[flag];
+            const checked = selectedMoneyFlags.includes(flag);
+            return (
+              <MenuItem
+                key={flag}
+                dense
+                onClick={() => onToggleMoneyFlag?.(flag)}
+                sx={{ gap: 1, pr: 1.5 }}
+              >
+                <Checkbox size="small" checked={checked} disableRipple sx={{ p: 0 }} />
+                <ListItemIcon sx={{ minWidth: 0 }}>
+                  <FlagIcon sx={{ fontSize: 16 }} />
+                </ListItemIcon>
+                <ListItemText
+                  primary={t(`registry.moneyFilter.${MONEY_FLAG_LABEL_KEY[flag]}`)}
+                />
+                <Box
+                  component="span"
+                  sx={{
+                    ml: 1.5,
+                    fontSize: 12,
+                    color: "text.secondary",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {moneyCounts?.get(flag) ?? 0}
+                </Box>
+              </MenuItem>
+            );
+          })}
+        </Menu>
+      </>
+    );
+  };
+
   return (
     <Stack
       direction="row"
@@ -236,7 +365,9 @@ const AppointmentFilterChips: React.FC<Props> = ({
       {/* Ось цены идёт следом за оплатой без разделителя: это тоже про деньги,
           отдельная черта дробила бы ряд на три стайки. Различаются значком, а
           не цветом — цвет в списке приёмов занят статусами (см. CLAUDE.md). */}
-      {priceChips.map((flag) => {
+      {collapsePrice && renderPriceMenu()}
+
+      {!collapsePrice && priceChips.map((flag) => {
         const active = selectedMoneyFlags.includes(flag);
         // Скидка — единственный флаг со своим статусным цветом: он совпадает с
         // чипом «Со скидкой» в строке приёма, и расхождение бросалось бы в глаза.

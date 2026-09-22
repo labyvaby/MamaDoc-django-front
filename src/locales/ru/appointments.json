@@ -900,7 +900,8 @@
     "moneyFilter": {
       "discount": "Со скидкой",
       "priceUp": "Цена повышена",
-      "priceDown": "Цена снижена"
+      "priceDown": "Цена снижена",
+      "menu": "Цена"
     },
     "filters": {
       "title": "Фильтры",
