@@ -17,6 +17,7 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import { useModulesCatalog } from "../../hooks/useModulesCatalog";
 import { MODULE_SETTINGS_ROUTE, moduleIcon } from "../../config/moduleCatalogMeta";
 import { CATEGORY_LABELS, groupByCategory } from "../../config/moduleCatalogGrouping";
+import { SettingsLayout } from "./SettingsLayout";
 
 const ModulesCatalogPage: React.FC = () => {
   const navigate = useNavigate();
@@ -29,22 +30,26 @@ const ModulesCatalogPage: React.FC = () => {
 
   if (isLoading) {
     return (
-      <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
-        <CircularProgress />
-      </Box>
+      <SettingsLayout>
+        <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+          <CircularProgress />
+        </Box>
+      </SettingsLayout>
     );
   }
   if (isError) {
     return (
-      <Alert severity="error" sx={{ m: 2 }}>
-        Не удалось загрузить каталог модулей. Обновите страницу.
-      </Alert>
+      <SettingsLayout>
+        <Alert severity="error">
+          Не удалось загрузить каталог модулей. Обновите страницу.
+        </Alert>
+      </SettingsLayout>
     );
   }
 
   return (
-    <Box sx={{ height: "100%", overflowY: "auto", minHeight: 0 }}>
-    <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 900, mx: "auto" }}>
+    <SettingsLayout>
+    <Box sx={{ maxWidth: 900, mx: "auto" }}>
       <Typography variant="h5" sx={{ fontWeight: 500 }}>
         Модули
       </Typography>
@@ -138,7 +143,7 @@ const ModulesCatalogPage: React.FC = () => {
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       />
     </Box>
-    </Box>
+    </SettingsLayout>
   );
 };
 
