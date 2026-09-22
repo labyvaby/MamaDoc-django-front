@@ -52,12 +52,20 @@ import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
-import BedOutlined from "@mui/icons-material/BedOutlined";
-import KingBedOutlined from "@mui/icons-material/KingBedOutlined";
 import SingleBedOutlined from "@mui/icons-material/SingleBedOutlined";
+import ChairOutlined from "@mui/icons-material/ChairOutlined";
+import KingBedOutlined from "@mui/icons-material/KingBedOutlined";
+import BedOutlined from "@mui/icons-material/BedOutlined";
+import RoomPreferencesOutlined from "@mui/icons-material/RoomPreferencesOutlined";
 import BedroomParentOutlined from "@mui/icons-material/BedroomParentOutlined";
-import WeekendOutlined from "@mui/icons-material/WeekendOutlined";
-import VillaOutlined from "@mui/icons-material/VillaOutlined";
+import MeetingRoomOutlined from "@mui/icons-material/MeetingRoomOutlined";
+import DoorFrontOutlined from "@mui/icons-material/DoorFrontOutlined";
+import CribOutlined from "@mui/icons-material/CribOutlined";
+import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
+import CottageOutlined from "@mui/icons-material/CottageOutlined";
+import HolidayVillageOutlined from "@mui/icons-material/HolidayVillageOutlined";
+import CastleOutlined from "@mui/icons-material/CastleOutlined";
+import HouseOutlined from "@mui/icons-material/HouseOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import dayjs, { type Dayjs } from "dayjs";
@@ -140,12 +148,20 @@ const scrollBehavior = (): ScrollBehavior =>
 /** Компоненты иконок по ключу из roomCategoryIcons.ts — сам модуль без JSX, для тестов. */
 const ROOM_CATEGORY_ICON_COMPONENTS: Record<RoomCategoryIconKey, React.ElementType> = {
   luxury: WorkspacePremiumOutlined,
-  bed: BedOutlined,
-  kingBed: KingBedOutlined,
   singleBed: SingleBedOutlined,
+  chair: ChairOutlined,
+  kingBed: KingBedOutlined,
+  bed: BedOutlined,
+  roomPreferences: RoomPreferencesOutlined,
   bedroomParent: BedroomParentOutlined,
-  weekend: WeekendOutlined,
-  villa: VillaOutlined,
+  meetingRoom: MeetingRoomOutlined,
+  doorFront: DoorFrontOutlined,
+  crib: CribOutlined,
+  groups: GroupsOutlined,
+  cottage: CottageOutlined,
+  holidayVillage: HolidayVillageOutlined,
+  castle: CastleOutlined,
+  house: HouseOutlined,
 };
 
 type RowPlan = { kind: "floor"; floor: string; count: number } | { kind: "room"; room: HotelCalendarRoom };
@@ -253,8 +269,10 @@ export const RoomBookingGrid: React.FC = () => {
   // получался бы новый пустой массив, и categoryIconKeys ниже пересчитывался бы зря
   // (react-hooks/exhaustive-deps верно на это указывает).
   const roomTypes = React.useMemo(() => calendar?.roomTypes ?? [], [calendar]);
-  // Иконка категории у номера (см. roomCategoryIcons.ts) — по порядку категорий
-  // объекта, устойчива, пока их порядок не меняется.
+  // Иконка категории у номера (см. roomCategoryIcons.ts) — от вместимости категории
+  // (capacity/childrenCapacity), а не порядкового номера, поэтому у похожих по смыслу
+  // категорий похожие иконки; категории с одинаковой вместимостью всё равно получают
+  // разные иконки — по кругу в порядке sortOrder внутри своей группы.
   const categoryIconKeys = React.useMemo(() => buildRoomCategoryIconKeys(roomTypes), [roomTypes]);
   const ROWS: RowPlan[] = React.useMemo(() => {
     if (!calendar) return [];
