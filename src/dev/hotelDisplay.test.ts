@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatGuestMatchedBy } from "./hotelDisplay";
+import { formatGuestMatchedBy, formatHotelTime } from "./hotelDisplay";
 
 describe("formatGuestMatchedBy", () => {
   it("превращает matchedBy строки поиска в текст для «совпадение по …»", () => {
@@ -14,5 +14,24 @@ describe("formatGuestMatchedBy", () => {
     expect(formatGuestMatchedBy(["passport"])).toBe("passport");
     expect(formatGuestMatchedBy([])).toBe("");
     expect(formatGuestMatchedBy(undefined)).toBe("");
+  });
+});
+
+describe("formatHotelTime", () => {
+  it("обрезает секунды", () => {
+    expect(formatHotelTime("14:00:00")).toBe("14:00");
+  });
+
+  it("уже HH:mm — не трогает", () => {
+    expect(formatHotelTime("09:05")).toBe("09:05");
+  });
+
+  it("дополняет час до двух цифр", () => {
+    expect(formatHotelTime("9:05:00")).toBe("09:05");
+  });
+
+  it("неожиданный формат — как есть", () => {
+    expect(formatHotelTime("")).toBe("");
+    expect(formatHotelTime("noon")).toBe("noon");
   });
 });

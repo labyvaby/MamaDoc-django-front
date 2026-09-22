@@ -135,6 +135,17 @@ export function formatGuestMatchedBy(matchedBy: string[] | undefined): string {
   return (matchedBy ?? []).map((m) => HOTEL_GUEST_MATCH_LABELS[m] ?? m).join(" и ");
 }
 
+/**
+ * «14:00:00» / «14:00» → «14:00» — HotelProperty.checkInTime/checkOutTime (footer
+ * шахматки, RoomBookingGrid.tsx). Формат поля бэкенд не документирует явно, поэтому
+ * отрезаем секунды регэкспом, а не парсим как дату: неожиданный формат остаётся как
+ * есть, не пропадает и не падает.
+ */
+export function formatHotelTime(raw: string): string {
+  const m = raw.match(/^(\d{1,2}):(\d{2})/);
+  return m ? `${m[1].padStart(2, "0")}:${m[2]}` : raw;
+}
+
 export const HOTEL_VISIT_PURPOSE_LABELS: Record<string, string> = {
   tourism: "Туризм",
   business: "Бизнес",
