@@ -36,8 +36,59 @@ export interface ConclusionSlot {
   state: ConclusionState;
   /** Full conclusion object — null when state is not_created */
   conclusion: MedicalConclusion | null;
+  /**
+   * Все заключения строки по порядку создания (первое — то же, что
+   * `conclusion`). С 22.09.2026 строка услуги несёт несколько документов:
+   * врач на одном приёме пишет и карту осмотра, и протокол УЗИ, каждый на
+   * своём бланке. Нет поля — бэк старый, у строки только `conclusion`.
+   */
+  conclusions?: MedicalConclusion[];
+  /** Можно ли добавить строке ещё один документ (лимит бэка — 10). */
+  canCreate?: boolean;
   canEdit: boolean;
   canPrint: boolean;
+}
+
+/** Документы строки услуги; у старого бэка без `conclusions` — только `conclusion`. */
+export function slotConclusions(slot: ConclusionSlot): MedicalConclusion[] {
+  if (slot.conclusions) return slot.conclusions;
+  return slot.conclusion ? [slot.conclusion] : [];
+}
+
+/**
+ * Можно ли добавить строке ещё документ. Только по явному `canCreate`: без
+ * него бэк не знает ручки `conclusions/` (404), и кнопка всегда падала бы.
+ * Первый документ создаётся как раньше — кнопкой «Создать» строки.
+ */
+export function canAddConclusion(slot: ConclusionSlot): boolean {
+  return slot.canCreate === true && slotConclusions(slot).length > 0;
+}
+
+/** Можно ли править документ: его собственный флаг, иначе флаг строки. */
+export function conclusionCanEdit(slot: ConclusionSlot, doc: MedicalConclusion | null): boolean {
+  return doc?.canEdit ?? slot.canEdit;
+}
+
+/**
+ * Можно ли печатать документ. Бэк 22.09.2026: печатается только завершённый
+ * документ — у слотового `canPrint` статуса документа нет, поэтому без
+ * собственного флага документа проверяем статус сами.
+ */
+export function conclusionCanPrint(slot: ConclusionSlot, doc: MedicalConclusion | null): boolean {
+  if (!doc) return false;
+  return doc.canPrint ?? (slot.canPrint && doc.status === "completed");
+}
+
+/**
+ * Состояние строки для показа. Бэк переводит строку в `completed`, как
+ * только врач завершил любой её документ (ответ 22.09.2026), а общего
+ * статуса «готовы все документы» нет. Поэтому при нескольких документах
+ * считаем сами: «завершено» — только когда завершены все.
+ */
+export function slotDisplayState(slot: ConclusionSlot): ConclusionState {
+  const docs = slotConclusions(slot);
+  if (docs.length <= 1) return slot.state;
+  return docs.every((c) => c.status === "completed") ? "completed" : "draft";
 }
 
 // ── Diagnosis data ─────────────────────────────────────────────────────────────
@@ -125,6 +176,13 @@ export interface MedicalConclusion {
   status: ConclusionStatus;
   /** Заполненный бланк; null — заключение написано свободным текстом. */
   formData: ConclusionFormData | null;
+  /**
+   * Права на этот документ. Бэк 22.09.2026: canEdit/canPrint отдаются на
+   * каждый документ, а не на строку. Нет поля — берём флаг слота
+   * (`conclusionCanEdit` / `conclusionCanPrint`).
+   */
+  canEdit?: boolean;
+  canPrint?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -383,6 +441,22 @@ export function upsertConclusion(
 ): Promise<MedicalConclusion> {
   return apiRequest<MedicalConclusion>(
     `/appointments/service-lines/${lineId}/conclusion/`,
+    { method: "POST", body: payload },
+  );
+}
+
+/**
+ * POST /api/appointments/service-lines/<lineId>/conclusions/
+ * Всегда создаёт новое заключение строки — ещё один документ, в отличие от
+ * upsert выше, который правит первое. Тело то же, ответ 201. Лимит — 10 на
+ * строку (400), без `medical.conclusions.create` — 403.
+ */
+export function createAdditionalConclusion(
+  lineId: number,
+  payload: MedicalConclusionPayload,
+): Promise<MedicalConclusion> {
+  return apiRequest<MedicalConclusion>(
+    `/appointments/service-lines/${lineId}/conclusions/`,
     { method: "POST", body: payload },
   );
 }

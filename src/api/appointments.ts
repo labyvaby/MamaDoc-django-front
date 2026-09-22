@@ -343,8 +343,10 @@ export interface AppointmentServiceLine {
   requiresConclusion?: boolean;
   /** Состояние заключения по строке: not_required | not_created | draft | completed. */
   conclusionState?: "not_required" | "not_created" | "draft" | "completed";
-  /** id заключения, если оно создано. */
+  /** id заключения, если оно создано (первого, если их несколько). */
   conclusionId?: number | null;
+  /** Все заключения строки — их может быть несколько (с 22.09.2026). */
+  conclusionIds?: number[];
   /**
    * Разрешает ли справочник менять цену этой услуги. В отличие от
    * `priceOverrideLocked` приёма («уже нельзя — деньги приняты») это свойство
