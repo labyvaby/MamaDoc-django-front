@@ -17,6 +17,12 @@ export type CashlessBreakdownItem = {
   muted?: boolean;
   /** Подпись под именем строки (почему способа нет). */
   hint?: string;
+  /**
+   * Из чего сложилась сумма — мелко под именем, видна без наведения
+   * («оплачено 1 001 · возврат −300»). Нужна на телефоне и при сверке смены
+   * с отчётом терминала: тултип там не открыть.
+   */
+  note?: string;
 };
 
 type Props = {
@@ -36,6 +42,9 @@ const num = (s: string | null | undefined): number => {
   const n = parseFloat(s ?? "0");
   return Number.isNaN(n) ? 0 : n;
 };
+
+/** «1 001» — без валюты: она уже в колонке суммы. */
+const plain = (n: number): string => n.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 
 /**
  * Кассовый разрез → строки списка. Сумма строки — нетто способа
@@ -59,6 +68,19 @@ export function cashboxBreakdownItems(
       hint:
         r.cashlessMethodId == null
           ? "Безнал до появления справочника или проведённый мимо него"
+          : undefined,
+      // Пояснение нужно, только когда сумма — не просто приход: был возврат,
+      // расход или закупка по этому терминалу.
+      note:
+        refunds !== 0 || expenses !== 0 || supplies !== 0
+          ? [
+              `оплачено ${plain(income)}`,
+              refunds !== 0 && `возврат −${plain(refunds)}`,
+              expenses !== 0 && `расходы −${plain(expenses)}`,
+              supplies !== 0 && `закупки −${plain(supplies)}`,
+            ]
+              .filter(Boolean)
+              .join(" · ")
           : undefined,
       details: [
         { label: "Приход", amount: income },
@@ -155,6 +177,11 @@ const CashlessMethodBreakdown: React.FC<Props> = ({
                   {item.hint && (
                     <Typography variant="caption" color="text.disabled" noWrap display="block">
                       {item.hint}
+                    </Typography>
+                  )}
+                  {item.note && (
+                    <Typography variant="caption" color="text.disabled" noWrap display="block">
+                      {item.note}
                     </Typography>
                   )}
                 </Box>

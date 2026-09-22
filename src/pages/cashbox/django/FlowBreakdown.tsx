@@ -27,6 +27,11 @@ export type FlowSubRow = {
   muted?: boolean;
   /** Пояснение рядом с названием — показывается иконкой с тултипом. */
   hint?: string;
+  /**
+   * Мелкая строка под названием — из чего сложилась сумма
+   * («оплачено 1 001 · возврат −300»).
+   */
+  note?: string;
 };
 
 export type FlowBreakdownRow = {
@@ -186,16 +191,29 @@ const SubRows: React.FC<{ rows: FlowSubRow[]; direction: 1 | -1; accent: string 
         spacing={1}
         sx={{ py: 0.4, minWidth: 0 }}
       >
-        <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
-          <Typography
-            variant="caption"
-            color={sub.muted ? "text.disabled" : "text.secondary"}
-            noWrap
-          >
-            {sub.label}
-          </Typography>
-          {sub.hint && <Hint text={sub.hint} />}
-        </Stack>
+        <Box sx={{ minWidth: 0 }}>
+          <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+            <Typography
+              variant="caption"
+              color={sub.muted ? "text.disabled" : "text.secondary"}
+              noWrap
+            >
+              {sub.label}
+            </Typography>
+            {sub.hint && <Hint text={sub.hint} />}
+          </Stack>
+          {sub.note && (
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              noWrap
+              display="block"
+              sx={{ fontSize: "0.6875rem", lineHeight: 1.3 }}
+            >
+              {sub.note}
+            </Typography>
+          )}
+        </Box>
         <Amount
           value={sub.amount}
           direction={sub.direction ?? direction}

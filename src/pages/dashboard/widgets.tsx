@@ -18,7 +18,7 @@ import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
 
 import { AppCard, AppButton } from "../../components/ui";
 import { getDayCounts } from "../../api/appointments";
-import { getCashboxSummary } from "../../api/cashbox";
+import { getCashboxSummary, type CashboxSummary } from "../../api/cashbox";
 import { getMonthlyReport } from "../../api/reports";
 import { getReviewStats } from "../../api/reviews";
 import { getTasksSummary } from "../../api/tasks";
@@ -189,6 +189,20 @@ export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, sc
 };
 
 // ── Деньги ────────────────────────────────────────────────────────────────────
+
+/** Откуда ушли возвраты: «нал 1 000 с · безнал 300 с» — нулевые источники не пишем. */
+function refundSourcesHint(s: CashboxSummary): string | undefined {
+  const parts = [
+    ["нал", num(s.cashRefunds)],
+    ["безнал", num(s.cardRefunds)],
+    ["на баланс", num(s.balanceRefunds)],
+  ] as const;
+  const text = parts
+    .filter(([, amount]) => amount > 0)
+    .map(([label, amount]) => `${label} ${formatKGS(amount)}`)
+    .join(" · ");
+  return text || undefined;
+}
 
 /** Доля наличных и безнала одной полосой — структура прихода без круговых диаграмм. */
 const PaymentMix: React.FC<{ cash: number; card: number }> = ({ cash, card }) => {
@@ -386,10 +400,10 @@ export const MoneyWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
                   true,
                 )}
                 hint={
-                  s && num(s.insuranceIncome) > 0
-                    ? `страховые ${formatKGS(num(s.insuranceIncome))} — вне итогов`
-                    : s?.refundCount
-                      ? `${s.refundCount} операций`
+                  s && num(s.refundedTotal) > 0
+                    ? refundSourcesHint(s)
+                    : s && num(s.insuranceIncome) > 0
+                      ? `страховые ${formatKGS(num(s.insuranceIncome))} — вне итогов`
                       : undefined
                 }
               />
