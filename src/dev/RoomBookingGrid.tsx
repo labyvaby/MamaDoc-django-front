@@ -892,8 +892,10 @@ export const RoomBookingGrid: React.FC = () => {
                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
                       {WEEKDAY_SHORT_RU[(d.day() + 6) % 7]}
                     </Typography>
-                    {/* Стрелка-указатель «сейчас» на нижней кромке шапки — та же, что в расписании клиники;
-                        дальше вниз её продолжает красная линия поверх строк (ниже). */}
+                    {/* Метка «сейчас»: красное время + стрелка на нижней кромке шапки — та же подпись,
+                        что в расписании клиники (ScheduleDayTimeline.tsx), а не только в title по
+                        наведению: текущий момент должен быть виден сразу, без поиска глазами.
+                        Дальше вниз её продолжает красная линия поверх строк (ниже). */}
                     {isToday && (
                       <Box
                         sx={{
@@ -901,14 +903,38 @@ export const RoomBookingGrid: React.FC = () => {
                           left: `${nowFraction * 100}%`,
                           top: "100%",
                           transform: "translateX(-50%)",
-                          width: 0,
-                          height: 0,
-                          borderLeft: "5px solid transparent",
-                          borderRight: "5px solid transparent",
-                          borderTop: `6px solid ${theme.palette.error.main}`,
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
                           pointerEvents: "none",
+                          zIndex: 1,
                         }}
-                      />
+                      >
+                        <Typography
+                          sx={{
+                            px: 0.5,
+                            borderRadius: "4px",
+                            bgcolor: "error.main",
+                            color: "error.contrastText",
+                            fontSize: "0.62rem",
+                            fontWeight: 700,
+                            lineHeight: 1.35,
+                            fontVariantNumeric: "tabular-nums",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {now.format("HH:mm")}
+                        </Typography>
+                        <Box
+                          sx={{
+                            width: 0,
+                            height: 0,
+                            borderLeft: "5px solid transparent",
+                            borderRight: "5px solid transparent",
+                            borderTop: `6px solid ${theme.palette.error.main}`,
+                          }}
+                        />
+                      </Box>
                     )}
                   </Box>
                 );
