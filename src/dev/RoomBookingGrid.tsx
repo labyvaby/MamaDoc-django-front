@@ -52,12 +52,20 @@ import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
-import BedOutlined from "@mui/icons-material/BedOutlined";
-import KingBedOutlined from "@mui/icons-material/KingBedOutlined";
 import SingleBedOutlined from "@mui/icons-material/SingleBedOutlined";
+import ChairOutlined from "@mui/icons-material/ChairOutlined";
+import KingBedOutlined from "@mui/icons-material/KingBedOutlined";
+import BedOutlined from "@mui/icons-material/BedOutlined";
+import RoomPreferencesOutlined from "@mui/icons-material/RoomPreferencesOutlined";
 import BedroomParentOutlined from "@mui/icons-material/BedroomParentOutlined";
-import WeekendOutlined from "@mui/icons-material/WeekendOutlined";
-import VillaOutlined from "@mui/icons-material/VillaOutlined";
+import MeetingRoomOutlined from "@mui/icons-material/MeetingRoomOutlined";
+import DoorFrontOutlined from "@mui/icons-material/DoorFrontOutlined";
+import CribOutlined from "@mui/icons-material/CribOutlined";
+import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
+import CottageOutlined from "@mui/icons-material/CottageOutlined";
+import HolidayVillageOutlined from "@mui/icons-material/HolidayVillageOutlined";
+import CastleOutlined from "@mui/icons-material/CastleOutlined";
+import HouseOutlined from "@mui/icons-material/HouseOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import dayjs, { type Dayjs } from "dayjs";
@@ -140,12 +148,20 @@ const scrollBehavior = (): ScrollBehavior =>
 /** Компоненты иконок по ключу из roomCategoryIcons.ts — сам модуль без JSX, для тестов. */
 const ROOM_CATEGORY_ICON_COMPONENTS: Record<RoomCategoryIconKey, React.ElementType> = {
   luxury: WorkspacePremiumOutlined,
-  bed: BedOutlined,
-  kingBed: KingBedOutlined,
   singleBed: SingleBedOutlined,
+  chair: ChairOutlined,
+  kingBed: KingBedOutlined,
+  bed: BedOutlined,
+  roomPreferences: RoomPreferencesOutlined,
   bedroomParent: BedroomParentOutlined,
-  weekend: WeekendOutlined,
-  villa: VillaOutlined,
+  meetingRoom: MeetingRoomOutlined,
+  doorFront: DoorFrontOutlined,
+  crib: CribOutlined,
+  groups: GroupsOutlined,
+  cottage: CottageOutlined,
+  holidayVillage: HolidayVillageOutlined,
+  castle: CastleOutlined,
+  house: HouseOutlined,
 };
 
 type RowPlan = { kind: "floor"; floor: string; count: number } | { kind: "room"; room: HotelCalendarRoom };
@@ -197,9 +213,9 @@ export const RoomBookingGrid: React.FC = () => {
   // что было раньше с фиксированным NUM_DAYS: оба месяца видны сразу.
   const [zoomIndex, setZoomIndex] = React.useState(ZOOM_LEVELS.length - 1);
   const numVisibleDays = ZOOM_LEVELS[zoomIndex];
-  // «Приблизить» = меньше дней в ширину окна, «отдалить» = больше. Кнопки в тулбаре —
-  // по числу дней, не как на карте: «+» показывает БОЛЬШЕ дней (отдаляет),
-  // «−» — МЕНЬШЕ (приближает).
+  // «Приблизить» (+) = меньше дней в ширину окна, крупнее каждый; «отдалить» (−) —
+  // больше дней, мельче. Тот же смысл, что у зума карты/картинки: «+» — ближе и
+  // подробнее, «−» — дальше и обзорнее.
   const canZoomIn = zoomIndex > 0;
   const canZoomOut = zoomIndex < ZOOM_LEVELS.length - 1;
 
@@ -253,8 +269,10 @@ export const RoomBookingGrid: React.FC = () => {
   // получался бы новый пустой массив, и categoryIconKeys ниже пересчитывался бы зря
   // (react-hooks/exhaustive-deps верно на это указывает).
   const roomTypes = React.useMemo(() => calendar?.roomTypes ?? [], [calendar]);
-  // Иконка категории у номера (см. roomCategoryIcons.ts) — по порядку категорий
-  // объекта, устойчива, пока их порядок не меняется.
+  // Иконка категории у номера (см. roomCategoryIcons.ts) — от вместимости категории
+  // (capacity/childrenCapacity), а не порядкового номера, поэтому у похожих по смыслу
+  // категорий похожие иконки; категории с одинаковой вместимостью всё равно получают
+  // разные иконки — по кругу в порядке sortOrder внутри своей группы.
   const categoryIconKeys = React.useMemo(() => buildRoomCategoryIconKeys(roomTypes), [roomTypes]);
   const ROWS: RowPlan[] = React.useMemo(() => {
     if (!calendar) return [];
@@ -627,22 +645,6 @@ export const RoomBookingGrid: React.FC = () => {
 
             {/* Масштаб: та же пилюля, что была в углу над шапкой — перенесена в тулбар. */}
             <Stack direction="row" alignItems="center" gap={0.25} sx={{ border: 1, borderColor: "divider", borderRadius: "8px", px: 0.5 }}>
-              <Tooltip title="Показывать меньше дней в ширину окна (до 1 недели)">
-                <span>
-                  <IconButton
-                    size="small"
-                    sx={{ p: 0.25 }}
-                    aria-label="Показывать меньше дней в ширину окна"
-                    onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
-                    disabled={!canZoomIn}
-                  >
-                    <RemoveOutlined fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 34, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
-                {numVisibleDays} дн.
-              </Typography>
               <Tooltip title="Показывать больше дней в ширину окна (до 60)">
                 <span>
                   <IconButton
@@ -651,6 +653,22 @@ export const RoomBookingGrid: React.FC = () => {
                     aria-label="Показывать больше дней в ширину окна"
                     onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))}
                     disabled={!canZoomOut}
+                  >
+                    <RemoveOutlined fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 34, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
+                {numVisibleDays} дн.
+              </Typography>
+              <Tooltip title="Показывать меньше дней в ширину окна (до 1 недели)">
+                <span>
+                  <IconButton
+                    size="small"
+                    sx={{ p: 0.25 }}
+                    aria-label="Показывать меньше дней в ширину окна"
+                    onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
+                    disabled={!canZoomIn}
                   >
                     <AddOutlined fontSize="small" />
                   </IconButton>
