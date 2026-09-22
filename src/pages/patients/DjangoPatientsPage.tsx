@@ -87,6 +87,7 @@ const DjangoPatientsPage: React.FC = () => {
   const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
   const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
   const canViewPrograms = canAccess("enrollments.view");
+  const canManageEnrollments = canAccess("enrollments.manage");
   // canAccess (не hasPermission) — так панель истории анализов исчезает и без
   // права, и при выключенном у организации модуле lab, одной проверкой
   // (usePermissions().canAccess уже сверяет оба условия по moduleMapping.ts).
@@ -405,7 +406,10 @@ const DjangoPatientsPage: React.FC = () => {
       onFace={canUpdate ? handleFace : undefined}
       showProgramStatus={canViewPrograms}
       onOpenProgram={
-        canViewPrograms && (selected?.programStatus?.activeCount ?? 0) > 0
+        // The first enrollment is created before activeCount becomes positive.
+        // Managers therefore need to reach the book even for a new patient.
+        canViewPrograms
+        && (canManageEnrollments || (selected?.programStatus?.activeCount ?? 0) > 0)
           ? () => navigate(`/patients/${selected!.id}/program`)
           : undefined
       }
