@@ -31,14 +31,17 @@ import SendOutlined from "@mui/icons-material/SendOutlined";
 import {
   MAX_DELAY_MINUTES,
   MAX_INTERVAL_DAYS,
+  MAX_RECIPIENTS,
   createAutomation,
   testAutomation,
   updateAutomation,
   variableLabel,
+  whatsappCatalog,
   type Automation,
   type AutomationCatalog,
   type AutomationCatalogEvent,
   type AutomationStatus,
+  type AutomationTestActionPreview,
   type AutomationTestResult,
 } from "../../../api/automations";
 import { getErrorFields } from "../../../api/client";
@@ -47,13 +50,16 @@ import { useT } from "../../../i18n/VerticalProvider";
 import { ConditionBuilder } from "./ConditionBuilder";
 import { FieldValueInput } from "./FieldValueInput";
 import { PhonePayloadInput } from "./PhonePayloadInput";
+import { RecipientsEditor } from "./RecipientsEditor";
 import { ScheduleEditor } from "./ScheduleEditor";
+import { WhatsAppActionFields } from "./WhatsAppActionFields";
 import {
   automationToForm,
   defaultRecipientField,
   emptyForm,
   hasErrors,
   isScheduledForm,
+  isWhatsAppAction,
   makeAction,
   supportsTitle,
   relevantPayloadFields,
@@ -124,6 +130,8 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
   /** Правило по расписанию: вместо условий — периодичность, вместо
       переменной-получателя — введённый номер телефона. */
   const scheduled = isScheduledForm(form);
+  /** Подключение WhatsApp организации и зеркало её шаблонов из каталога. */
+  const whatsapp = useMemo(() => whatsappCatalog(catalog), [catalog]);
 
   /**
    * Форма берётся из пропсов ровно один раз — при открытии диалога.
@@ -191,7 +199,21 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
         max: MAX_INTERVAL_DAYS,
       }),
       timeRequired: t("automations.schedule.timeRequired"),
-      phoneRequired: t("automations.action.phoneRequired"),
+      recipientRequired: t("automations.recipients.required"),
+      recipientLimit: t("automations.recipients.limit", { max: MAX_RECIPIENTS }),
+      phoneInvalid: t("automations.action.phoneInvalid"),
+      templateRequired: t("automations.whatsapp.templateRequired"),
+      templateNotFound: t("automations.whatsapp.templateNotFound"),
+      activationBlocked: (reason: string) =>
+        t("automations.whatsapp.activationBlocked", { reason }),
+      parameterCount: (expected: number, actual: number) =>
+        t("automations.whatsapp.parameterCount", { expected, actual }),
+      parameterFieldRequired: (index: number) =>
+        t("automations.whatsapp.parameterFieldRequired", { index }),
+      parameterValueRequired: (index: number) =>
+        t("automations.whatsapp.parameterValueRequired", { index }),
+      parameterFieldUnknown: (index: number, field: string) =>
+        t("automations.whatsapp.parameterFieldUnknown", { index, field }),
     }),
     [t],
   );
@@ -200,8 +222,8 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
   // название в только что открытом «Создать» — шум.
   useEffect(() => {
     if (!submitted) return;
-    setErrors(validateForm(form, event, validationLabels));
-  }, [form, event, submitted, validationLabels]);
+    setErrors(validateForm(form, event, validationLabels, whatsapp));
+  }, [form, event, submitted, validationLabels, whatsapp]);
 
   const update = (patch: Partial<AutomationForm>) => {
     setDirty(true);
@@ -309,7 +331,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
    */
   const runTest = () => {
     setSubmitted(true);
-    const nextErrors = validateForm(form, event, validationLabels);
+    const nextErrors = validateForm(form, event, validationLabels, whatsapp);
     setErrors(nextErrors);
     if (hasErrors(nextErrors)) {
       setTestResult(null);
@@ -322,7 +344,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
 
   const submit = () => {
     setSubmitted(true);
-    const nextErrors = validateForm(form, event, validationLabels);
+    const nextErrors = validateForm(form, event, validationLabels, whatsapp);
     setErrors(nextErrors);
     if (hasErrors(nextErrors)) {
       setSaveError(t("automations.validation.fixErrors"));
@@ -458,6 +480,11 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                       update({ branchId: e.target.value === "" ? null : Number(e.target.value) })
                     }
                     disabled={busy}
+                    // «Все филиалы» хранится пустой строкой, а Select без
+                    // displayEmpty пустое значение не рисует — поле выглядело
+                    // пустым, хотя вариант был выбран.
+                    SelectProps={{ displayEmpty: true }}
+                    InputLabelProps={{ shrink: true }}
                     sx={{ maxWidth: 420 }}
                   >
                     <MenuItem value="">{t("automations.editor.branchAll")}</MenuItem>
@@ -566,71 +593,21 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                           }
                           sx={{ minWidth: 200 }}
                         />
-
-                        {/* У расписания payload нет — номер вводится руками.
-                            Тем же полем, что и в карточке пациента: код
-                            страны, маска, проверка длины. */}
-                        {scheduled && (
-                          <Box sx={{ minWidth: 240, flex: 1 }}>
-                            <PhonePayloadInput
-                              label={t("automations.action.phoneLabel")}
-                              helperText={
-                                errors.actionFields[action.key]?.recipientPhone ??
-                                t("automations.action.phoneHint")
-                              }
-                              value={action.recipientPhone}
-                              onChange={(phone) =>
-                                updateAction(action.key, { recipientPhone: phone })
-                              }
-                              disabled={busy}
-                            />
-                          </Box>
-                        )}
-
-                        {/* Выбор получателя показываем, только когда выбирать
-                            действительно есть из чего. У всех текущих событий
-                            телефон ровно один — спрашивать «откуда взять
-                            номер» бессмысленно, достаточно назвать источник. */}
-                        {!scheduled &&
-                          recipientChoices(event, action.recipientField).length > 1 && (
-                          <TextField
-                            select
-                            size="small"
-                            label={t("automations.action.recipientLabel")}
-                            value={
-                              (event?.variables ?? []).includes(action.recipientField)
-                                ? action.recipientField
-                                : defaultRecipientField(event)
-                            }
-                            onChange={(e) =>
-                              updateAction(action.key, { recipientField: e.target.value })
-                            }
-                            disabled={busy}
-                            error={!action.recipientField.includes("phone")}
-                            helperText={
-                              action.recipientField.includes("phone")
-                                ? undefined
-                                : t("automations.action.recipientNotPhone")
-                            }
-                            sx={{ minWidth: 220, flex: 1 }}
-                          >
-                            {recipientChoices(event, action.recipientField).map((variable) => (
-                              <MenuItem key={variable} value={variable}>
-                                {variableLabel(event, variable)}
-                              </MenuItem>
-                            ))}
-                          </TextField>
-                        )}
                       </Stack>
 
-                      {!scheduled &&
-                        recipientChoices(event, action.recipientField).length <= 1 && (
-                        <Typography variant="caption" color="text.secondary">
-                          {t("automations.action.recipientFixed", {
-                            name: variableLabel(event, action.recipientField),
-                          })}
-                        </Typography>
-                      )}
+                      <Divider />
+
+                      <RecipientsEditor
+                        action={action}
+                        event={event}
+                        scheduled={scheduled}
+                        options={catalog.recipientOptions}
+                        errors={errors.actionFields[action.key]}
+                        onChange={(patch) => updateAction(action.key, patch)}
+                        disabled={busy}
+                      />
+
+                      <Divider />
 
                       {/* Заголовок есть только у push: в шторке телефона он
                           отдельная строка. У SMS и WhatsApp такой строки нет,
@@ -649,46 +626,62 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                         />
                       )}
 
-                      <TextField
-                        required
-                        fullWidth
-                        multiline
-                        rows={3}
-                        size="small"
-                        label={t("automations.action.bodyLabel")}
-                        value={action.body}
-                        onChange={(e) => updateAction(action.key, { body: e.target.value })}
-                        disabled={busy}
-                        inputRef={(el) => {
-                          bodyRefs.current[action.key] = el;
-                        }}
-                        error={Boolean(errors.actionFields[action.key]?.body)}
-                        helperText={
-                          errors.actionFields[action.key]?.body ??
-                          t("automations.action.bodyHint")
-                        }
-                      />
+                      {/* WhatsApp — не текст, а одобренный Meta шаблон из
+                          каталога организации и привязки его параметров. */}
+                      {isWhatsAppAction(action) ? (
+                        <WhatsAppActionFields
+                          action={action}
+                          event={event}
+                          scheduled={scheduled}
+                          whatsapp={whatsapp}
+                          errors={errors.actionFields[action.key] ?? {}}
+                          disabled={busy}
+                          onChange={(patch) => updateAction(action.key, patch)}
+                        />
+                      ) : (
+                        <>
+                          <TextField
+                            required
+                            fullWidth
+                            multiline
+                            rows={3}
+                            size="small"
+                            label={t("automations.action.bodyLabel")}
+                            value={action.body}
+                            onChange={(e) => updateAction(action.key, { body: e.target.value })}
+                            disabled={busy}
+                            inputRef={(el) => {
+                              bodyRefs.current[action.key] = el;
+                            }}
+                            error={Boolean(errors.actionFields[action.key]?.body)}
+                            helperText={
+                              errors.actionFields[action.key]?.body ??
+                              t("automations.action.bodyHint")
+                            }
+                          />
 
-                      <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center" }}>
-                        <Typography variant="caption" color="text.secondary">
-                          {t("automations.action.variablesLabel")}
-                        </Typography>
-                        {(event?.variables ?? []).map((variable) => (
-                          // Показываем подпись, вставляем код: пользователю
-                          // «Телефон клиента» понятнее, чем {{client_phone}},
-                          // а в тексте шаблона движку нужен именно код.
-                          <Tooltip key={variable} title={`{{${variable}}}`}>
-                            <Chip
-                              size="small"
-                              variant="outlined"
-                              label={variableLabel(event, variable)}
-                              onClick={() => insertVariable(action, variable)}
-                              disabled={busy}
-                              sx={{ cursor: "pointer" }}
-                            />
-                          </Tooltip>
-                        ))}
-                      </Box>
+                          <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center" }}>
+                            <Typography variant="caption" color="text.secondary">
+                              {t("automations.action.variablesLabel")}
+                            </Typography>
+                            {(event?.variables ?? []).map((variable) => (
+                              // Показываем подпись, вставляем код: пользователю
+                              // «Телефон клиента» понятнее, чем {{client_phone}},
+                              // а в тексте шаблона движку нужен именно код.
+                              <Tooltip key={variable} title={`{{${variable}}}`}>
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  label={variableLabel(event, variable)}
+                                  onClick={() => insertVariable(action, variable)}
+                                  disabled={busy}
+                                  sx={{ cursor: "pointer" }}
+                                />
+                              </Tooltip>
+                            ))}
+                          </Box>
+                        </>
+                      )}
                     </Stack>
                   </Paper>
                 ))}
@@ -806,14 +799,20 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                             // отправлены» рядом с пустым получателем нельзя.
                             testResult.actions.some((preview) => !preview.recipient)
                             ? "warning"
-                            : "success"
+                            : // То же с WhatsApp: бэк перечислил, что помешает
+                              // отправке (подключение, модерация, пустой параметр).
+                              testResult.actions.some((preview) => preview.errors?.length)
+                              ? "warning"
+                              : "success"
                       }
                     >
                       {!testResult.matched
                         ? t("automations.test.notMatched")
                         : testResult.actions.some((preview) => !preview.recipient)
                           ? t("automations.test.matchedNoRecipient")
-                          : t("automations.test.matched")}
+                          : testResult.actions.some((preview) => preview.errors?.length)
+                            ? t("automations.test.matchedWithProblems")
+                            : t("automations.test.matched")}
                     </Alert>
                     {testResult.actions.length > 0 && (
                       <Typography variant="caption" color="text.secondary">
@@ -830,9 +829,19 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                             {" · "}
                             {t("automations.test.resultRecipient")}:{" "}
                             {preview.recipient || t("automations.test.recipientMissing")}
+                            {/* Чей это номер: сотрудник по имени, держатель
+                                роли — иначе список из пяти одинаковых
+                                сообщений не отличить друг от друга. */}
+                            {preview.recipientLabel ? ` (${preview.recipientLabel})` : ""}
                             {" · "}
                             {t("automations.test.resultDelay", { count: preview.delayMinutes })}
                           </Typography>
+                          {/* У WhatsApp есть отправитель и шаблон; а список
+                              причин, по которым реальная отправка не пройдёт,
+                              бэк отдаёт готовыми подписями. */}
+                          {isWhatsAppPreview(preview) && (
+                            <WhatsAppPreviewDetails preview={preview} />
+                          )}
                           {/* Заголовок показываем отдельной строкой ровно
                               так, как его увидят в шторке телефона. */}
                           {supportsTitle(preview.channel) && (
@@ -912,25 +921,6 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
 };
 
 /**
- * Переменные, которые имеет смысл предлагать как получателя.
- *
- * Бэк разрешает любую переменную события, но в списке «кому отправить» ФИО
- * или дата — мусор: адресат SMS и WhatsApp это всегда телефон. Оставляем
- * телефонные переменные плюс уже сохранённое значение (иначе редактирование
- * старого правила молча подменило бы получателя). Если телефонных переменных
- * у события нет вовсе, показываем полный список — выбрать всё равно надо.
- */
-function recipientChoices(
-  event: AutomationCatalogEvent | undefined,
-  current: string,
-): string[] {
-  const variables = event?.variables ?? [];
-  const phones = variables.filter((variable) => variable.includes("phone"));
-  if (phones.length === 0) return variables;
-  return phones.includes(current) ? phones : [...phones, current].filter(Boolean);
-}
-
-/**
  * Похоже ли значение на телефон: плюс и не меньше девяти цифр.
  *
  * Провайдер принимает только номер, поэтому получатель вроде «123123» —
@@ -940,6 +930,66 @@ function recipientChoices(
 function looksLikePhone(value: string): boolean {
   return /^\+?\d[\d\s()-]{8,}$/.test(value.trim());
 }
+
+/** Прогон WhatsApp-действия: бэк заполняет отправителя, шаблон и `errors`. */
+function isWhatsAppPreview(preview: AutomationTestActionPreview): boolean {
+  return preview.channel === "whatsapp";
+}
+
+/**
+ * Детали прогона WhatsApp: с какого номера, каким шаблоном, с какими
+ * значениями — и что помешает настоящей отправке. `errors` показываем
+ * предупреждением, а не ошибкой: прогон удался, это отправка не пройдёт.
+ */
+const WhatsAppPreviewDetails: React.FC<{ preview: AutomationTestActionPreview }> = ({
+  preview,
+}) => {
+  const { t } = useT("settings");
+  const parameters = preview.parameters ?? [];
+  const errors = preview.errors ?? [];
+  return (
+    <Stack spacing={0.5}>
+      <Typography variant="caption" color="text.secondary">
+        {t("automations.test.whatsappSender")}:{" "}
+        {preview.senderPhone || t("automations.test.whatsappSenderMissing")}
+        {" · "}
+        {t("automations.test.whatsappTemplate")}:{" "}
+        {preview.templateName
+          ? `${preview.templateName} (${preview.language})`
+          : t("automations.test.whatsappTemplateMissing")}
+      </Typography>
+      {parameters.length > 0 && (
+        <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center" }}>
+          <Typography variant="caption" color="text.secondary">
+            {t("automations.test.whatsappParameters")}:
+          </Typography>
+          {parameters.map((value, index) => (
+            <Chip
+              key={index}
+              size="small"
+              variant="outlined"
+              color={value ? "default" : "warning"}
+              label={`{{${index + 1}}} = ${value || t("automations.test.whatsappParameterEmpty")}`}
+              sx={{ fontFamily: "monospace" }}
+            />
+          ))}
+        </Box>
+      )}
+      {errors.length > 0 && (
+        <Alert severity="warning" sx={{ py: 0 }}>
+          <Typography variant="caption" display="block" fontWeight={600}>
+            {t("automations.test.whatsappErrors")}
+          </Typography>
+          {errors.map((error) => (
+            <Typography key={error.code} variant="caption" display="block">
+              • {error.label || error.code}
+            </Typography>
+          ))}
+        </Alert>
+      )}
+    </Stack>
+  );
+};
 
 /** Название действия из каталога — «Отправить сообщение», а не код. */
 function actionLabel(catalog: AutomationCatalog, actionType: string): string {

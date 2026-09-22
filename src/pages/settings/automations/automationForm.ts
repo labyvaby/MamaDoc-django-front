@@ -1,20 +1,28 @@
 import {
   MAX_DELAY_MINUTES,
   MAX_INTERVAL_DAYS,
+  MAX_RECIPIENTS,
   PROFICHAT_PUSH_CHANNEL,
+  WHATSAPP_CHANNEL,
   OPERATORS_WITHOUT_VALUE,
   OPERATORS_WITH_LIST_VALUE,
   isConditionGroup,
   isEmptyConditions,
   isScheduledEvent,
   type Automation,
+  type AutomationAction,
+  type AutomationRecipient,
   type AutomationSchedule,
   type AutomationCatalogEvent,
   type AutomationConditionNode,
   type AutomationConditions,
   type AutomationSaveInput,
   type AutomationStatus,
+  type AutomationWhatsAppCatalog,
+  type WhatsAppParameterBinding,
+  type WhatsAppParameterSourceCode,
 } from "../../../api/automations";
+import type { WhatsAppTemplate } from "../../../api/whatsapp";
 
 /**
  * Модель формы конструктора автоматизаций.
@@ -48,17 +56,50 @@ export interface ConditionGroupForm {
 
 export type ConditionNodeForm = ConditionLeafForm | ConditionGroupForm;
 
+/**
+ * Привязка одного позиционного параметра WhatsApp-шаблона в форме.
+ *
+ * Оба поля хранятся всегда: переключение источника туда-обратно не должно
+ * терять введённое. На бэк уходит только поле выбранного источника.
+ */
+export interface ParameterForm {
+  source: WhatsAppParameterSourceCode;
+  /** Переменная события — для `source: "event"`. */
+  field: string;
+  /** Постоянная строка — для `source: "constant"`. */
+  value: string;
+}
+
 export interface ActionForm {
   key: string;
   actionType: string;
   delayMinutes: string;
   channel: string;
-  recipientField: string;
-  /** Телефон получателя у правила по расписанию; иначе не используется. */
+  /**
+   * Получатели, разложенные по типу: так каждой группе достаётся свой
+   * контрол (чипы переменных, выбор сотрудников, выбор ролей, номер), а в
+   * `recipients` API они собираются обратно при отправке.
+   */
+  /** Телефонные переменные события — клиент, сотрудник записи. */
+  recipientFields: string[];
+  recipientEmployeeIds: number[];
+  recipientRoleIds: number[];
+  /** Фиксированный номер; пусто — не отправлять на номер. */
   recipientPhone: string;
   /** Заголовок push-уведомления. Для SMS и WhatsApp не используется. */
   title: string;
+  /**
+   * Текст SMS и push. У WhatsApp на бэк не уходит: там сообщение — шаблон.
+   * В форме поле остаётся, чтобы смена канала туда-обратно не теряла текст,
+   * а у старого WhatsApp-правила показать, что в нём было написано.
+   */
   body: string;
+  /** WhatsApp: ID шаблона Raven из каталога организации. */
+  templateId: string;
+  /** WhatsApp: язык выбранного шаблона — фиксируется при выборе. */
+  language: string;
+  /** WhatsApp: по одной привязке на `{{1}}..{{n}}` выбранного шаблона. */
+  parameters: ParameterForm[];
 }
 
 /**
@@ -111,11 +152,63 @@ export function makeAction(recipientField: string): ActionForm {
     actionType: "send_message",
     delayMinutes: "0",
     channel: "sms",
-    recipientField,
+    recipientFields: recipientField ? [recipientField] : [],
+    recipientEmployeeIds: [],
+    recipientRoleIds: [],
     recipientPhone: "",
     title: "",
     body: "",
+    templateId: "",
+    language: "",
+    parameters: [],
   };
+}
+
+/** Пустая привязка параметра: источник задан, значение ещё не выбрано. */
+export function makeParameter(source: WhatsAppParameterSourceCode): ParameterForm {
+  return { source, field: "", value: "" };
+}
+
+/** Действие отправляет WhatsApp — значит, вместо текста нужен шаблон. */
+export function isWhatsAppAction(action: Pick<ActionForm, "channel">): boolean {
+  return action.channel === WHATSAPP_CHANNEL;
+}
+
+/**
+ * Старое WhatsApp-правило с произвольным текстом: шаблон не выбран, а текст
+ * есть. Движок такое не отправляет (`needsTemplateSetup` в API); форма
+ * должна попросить выбрать шаблон и показать старый текст как подсказку.
+ */
+export function needsTemplateSetup(action: ActionForm): boolean {
+  return isWhatsAppAction(action) && !action.templateId && action.body.trim() !== "";
+}
+
+/**
+ * Привязки под выбранный шаблон: ровно `parameterCount` штук.
+ *
+ * Уже заполненные позиции сохраняются — смена шаблона на похожий не должна
+ * заставлять выбирать всё заново. Новые позиции у правила по расписанию
+ * получают «постоянное значение»: данных события там нет, и «поле события»
+ * предлагало бы четыре служебные переменные как будто их больше.
+ */
+export function fitParameters(
+  parameters: ParameterForm[],
+  template: WhatsAppTemplate | undefined,
+  scheduled: boolean,
+): ParameterForm[] {
+  const count = template?.parameterCount ?? 0;
+  const kept = parameters.slice(0, count);
+  while (kept.length < count) kept.push(makeParameter(scheduled ? "constant" : "event"));
+  return kept;
+}
+
+/** Шаблон каталога по ID, если он есть в зеркале этой организации. */
+export function findTemplate(
+  whatsapp: AutomationWhatsAppCatalog | undefined,
+  templateId: string,
+): WhatsAppTemplate | undefined {
+  if (!templateId) return undefined;
+  return whatsapp?.templates.find((template) => template.id === templateId);
 }
 
 /** Пустая форма для «Создать автоматизацию». */
@@ -131,14 +224,90 @@ export function emptyForm(event: AutomationCatalogEvent | undefined): Automation
   };
 }
 
-/** Получатель по умолчанию: `client_phone`, если событие такую переменную даёт. */
+/**
+ * Получатель по умолчанию: `client_phone`, если событие такую переменную
+ * даёт, иначе первая телефонная переменная. У расписания — пусто: данных
+ * события там нет, брать номер неоткуда.
+ */
 export function defaultRecipientField(
   event: AutomationCatalogEvent | undefined,
 ): string {
   if (!event) return "client_phone";
+  if (isScheduledEvent(event.code)) return "";
   return event.variables.includes("client_phone")
     ? "client_phone"
-    : event.variables[0] ?? "";
+    : phoneVariables(event)[0] ?? "";
+}
+
+/**
+ * Переменные события, которые могут быть адресатом.
+ *
+ * Бэк разрешает любую переменную, но получатель SMS и WhatsApp — всегда
+ * телефон: ФИО или дата в этом списке — мусор.
+ */
+export function phoneVariables(event: AutomationCatalogEvent | undefined): string[] {
+  return (event?.variables ?? []).filter((variable) => variable.includes("phone"));
+}
+
+/**
+ * Получатели сохранённого действия в форму.
+ *
+ * Правила, сохранённые до появления списка, хранят одиночный
+ * `recipientField` или `recipientPhone` — читаем и их, иначе открытие
+ * старого правила показало бы пустых получателей и сохранение молча
+ * оставило бы его без адресата.
+ */
+function recipientsToForm(
+  config: AutomationAction["config"],
+): Pick<
+  ActionForm,
+  "recipientFields" | "recipientEmployeeIds" | "recipientRoleIds" | "recipientPhone"
+> {
+  const out = {
+    recipientFields: [] as string[],
+    recipientEmployeeIds: [] as number[],
+    recipientRoleIds: [] as number[],
+    recipientPhone: "",
+  };
+  if (Array.isArray(config.recipients)) {
+    for (const item of config.recipients) {
+      if (item.type === "payload" && item.field) out.recipientFields.push(item.field);
+      else if (item.type === "employee") out.recipientEmployeeIds.push(Number(item.employeeId));
+      else if (item.type === "role") out.recipientRoleIds.push(Number(item.roleId));
+      else if (item.type === "phone" && item.phone && !out.recipientPhone) {
+        out.recipientPhone = String(item.phone);
+      }
+    }
+    return out;
+  }
+  if (config.recipientPhone) out.recipientPhone = String(config.recipientPhone);
+  else out.recipientFields = [String(config.recipientField ?? "client_phone")];
+  return out;
+}
+
+/** Получатели формы в список для API — в порядке контролов формы. */
+export function toRecipients(
+  action: ActionForm,
+  scheduled: boolean,
+): AutomationRecipient[] {
+  const recipients: AutomationRecipient[] = [];
+  // У расписания payload нет вовсе: переменные-получатели туда не уходят,
+  // даже если остались в форме после смены события.
+  if (!scheduled) {
+    for (const field of action.recipientFields) recipients.push({ type: "payload", field });
+  }
+  for (const employeeId of action.recipientEmployeeIds) {
+    recipients.push({ type: "employee", employeeId });
+  }
+  for (const roleId of action.recipientRoleIds) recipients.push({ type: "role", roleId });
+  const phone = action.recipientPhone.trim();
+  if (phone) recipients.push({ type: "phone", phone });
+  return recipients;
+}
+
+/** Сколько получателей выбрано — для проверки «хотя бы один». */
+export function recipientCount(action: ActionForm, scheduled: boolean): number {
+  return toRecipients(action, scheduled).length;
 }
 
 function conditionsToForm(node: AutomationConditionNode): ConditionNodeForm {
@@ -176,12 +345,40 @@ export function automationToForm(automation: Automation): AutomationForm {
       actionType: action.actionType,
       delayMinutes: String(action.delayMinutes),
       channel: String(action.config.channel ?? "sms"),
-      recipientField: String(action.config.recipientField ?? "client_phone"),
-      recipientPhone: String(action.config.recipientPhone ?? ""),
+      ...recipientsToForm(action.config),
       title: String(action.config.title ?? ""),
       body: String(action.config.body ?? ""),
+      templateId: String(action.config.templateId ?? ""),
+      language: String(action.config.language ?? ""),
+      parameters: parametersToForm(action.config.parameters),
     })),
   };
+}
+
+/**
+ * Привязки из API в форму. Неизвестный источник считаем константой с пустым
+ * значением: валидация подсветит позицию, а не молча выбросит её — число
+ * параметров обязано совпадать с шаблоном.
+ */
+function parametersToForm(raw: unknown): ParameterForm[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item) => {
+    const binding = (item ?? {}) as Partial<WhatsAppParameterBinding>;
+    const source: WhatsAppParameterSourceCode =
+      binding.source === "event" ? "event" : "constant";
+    return {
+      source,
+      field: binding.field == null ? "" : String(binding.field),
+      value: binding.value == null ? "" : String(binding.value),
+    };
+  });
+}
+
+/** Привязка формы в тело запроса: только поле выбранного источника. */
+function parameterToApi(parameter: ParameterForm): WhatsAppParameterBinding {
+  return parameter.source === "event"
+    ? { source: "event", field: parameter.field }
+    : { source: "constant", value: parameter.value };
 }
 
 /**
@@ -262,13 +459,16 @@ export function toSaveInput(
       delayMinutes: Number(action.delayMinutes) || 0,
       config: {
         channel: action.channel,
-        // Получатель у расписания — конкретный номер, у события — переменная
-        // payload. Класть в конфиг оба ключа незачем: бэк читает ровно тот,
-        // что соответствует типу правила.
-        ...(isScheduledForm(form)
-          ? { recipientPhone: action.recipientPhone }
-          : { recipientField: action.recipientField }),
-        body: action.body,
+        recipients: toRecipients(action, isScheduledForm(form)),
+        // WhatsApp — шаблон и привязки, без текста: бэк отклоняет `body`
+        // у этого канала, текст сообщения живёт в WhatsApp Manager.
+        ...(isWhatsAppAction(action)
+          ? {
+              templateId: action.templateId,
+              ...(action.language ? { language: action.language } : {}),
+              parameters: action.parameters.map(parameterToApi),
+            }
+          : { body: action.body }),
         // Заголовок хранится только там, где он есть: у SMS и WhatsApp его
         // нет вовсе, и пустой ключ в конфиге лишь путал бы при чтении правила.
         ...(supportsTitle(action.channel) ? { title: action.title } : {}),
@@ -301,18 +501,43 @@ export interface ValidationLabels {
   weekdaysRequired: string;
   intervalRange: string;
   timeRequired: string;
-  phoneRequired: string;
+  recipientRequired: string;
+  recipientLimit: string;
+  phoneInvalid: string;
+  /** WhatsApp: шаблон не выбран. */
+  templateRequired: string;
+  /** WhatsApp: выбранного шаблона нет в каталоге организации. */
+  templateNotFound: string;
+  /** WhatsApp: активному правилу нужны рабочее подключение и одобренный шаблон. */
+  activationBlocked: (reason: string) => string;
+  /** WhatsApp: число привязок не совпадает с числом `{{n}}` шаблона. */
+  parameterCount: (expected: number, actual: number) => string;
+  /** WhatsApp: у `{{index}}` не выбрано поле события. */
+  parameterFieldRequired: (index: number) => string;
+  /** WhatsApp: у `{{index}}` пустое постоянное значение. */
+  parameterValueRequired: (index: number) => string;
+  /** WhatsApp: поле события `{{index}}` недоступно у этого события. */
+  parameterFieldUnknown: (index: number, field: string) => string;
+}
+
+/** Ключ ошибки конкретной привязки в `FormErrors.actionFields[action]`. */
+export function parameterErrorKey(index: number): string {
+  return `parameter${index}`;
 }
 
 /**
  * Локальная проверка перед отправкой. Бэк проверяет то же самое и вернёт
  * `VALIDATION_ERROR`, но пользователю дешевле увидеть ошибку под полем, чем
  * получить общий тост после круга по сети.
+ *
+ * `whatsapp` — WhatsApp-часть каталога: без неё проверяется только то, что
+ * шаблон выбран; число параметров и одобрение сверить не с чем.
  */
 export function validateForm(
   form: AutomationForm,
   event: AutomationCatalogEvent | undefined,
   labels: ValidationLabels,
+  whatsapp?: AutomationWhatsAppCatalog,
 ): FormErrors {
   const errors: FormErrors = { conditions: {}, actionFields: {} };
 
@@ -344,10 +569,22 @@ export function validateForm(
 
   for (const action of form.actions) {
     const fieldErrors: Record<string, string> = {};
-    if (!action.body.trim()) fieldErrors.body = labels.bodyRequired;
-    if (scheduled && !action.recipientPhone.trim()) {
-      fieldErrors.recipientPhone = labels.phoneRequired;
+    if (isWhatsAppAction(action)) {
+      Object.assign(
+        fieldErrors,
+        validateWhatsAppAction(action, event, form.status, labels, whatsapp),
+      );
+    } else if (!action.body.trim()) {
+      fieldErrors.body = labels.bodyRequired;
     }
+    const count = recipientCount(action, scheduled);
+    if (count === 0) {
+      fieldErrors.recipients = labels.recipientRequired;
+    } else if (count > MAX_RECIPIENTS) {
+      fieldErrors.recipients = labels.recipientLimit;
+    }
+    const phone = action.recipientPhone.trim();
+    if (phone && !PHONE_RE.test(phone)) fieldErrors.recipientPhone = labels.phoneInvalid;
     const delay = Number(action.delayMinutes);
     if (
       action.delayMinutes.trim() === "" ||
@@ -361,6 +598,68 @@ export function validateForm(
     if (Object.keys(fieldErrors).length) errors.actionFields[action.key] = fieldErrors;
   }
 
+  return errors;
+}
+
+/** Та же нестрогая проверка, что и на бэке: плюс и 9–15 цифр. */
+const PHONE_RE = /^\+?\d{9,15}$/;
+
+/**
+ * Проверка WhatsApp-действия — те же правила, что у бэка
+ * (`automations/whatsapp.py: validate_action`).
+ *
+ * Структура проверяется всегда: шаблон выбран и есть в каталоге, привязок
+ * ровно столько, сколько `{{n}}` в шаблоне, поля событий существуют,
+ * константы непусты. Подключение и одобрение шаблона — только для
+ * `status: active`: черновик с шаблоном на модерации сохранять можно, это
+ * нормальный сценарий.
+ */
+function validateWhatsAppAction(
+  action: ActionForm,
+  event: AutomationCatalogEvent | undefined,
+  status: AutomationStatus,
+  labels: ValidationLabels,
+  whatsapp: AutomationWhatsAppCatalog | undefined,
+): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!action.templateId) {
+    errors.templateId = labels.templateRequired;
+    return errors;
+  }
+  const template = findTemplate(whatsapp, action.templateId);
+  if (whatsapp && !template) {
+    errors.templateId = labels.templateNotFound;
+    return errors;
+  }
+  if (status === "active" && whatsapp && template) {
+    if (!whatsapp.connection.usable) {
+      errors.templateId = labels.activationBlocked(whatsapp.connection.problemLabel);
+    } else if (template.problem) {
+      errors.templateId = labels.activationBlocked(template.problemLabel);
+    }
+  }
+  if (template && action.parameters.length !== template.parameterCount) {
+    errors.parameters = labels.parameterCount(
+      template.parameterCount,
+      action.parameters.length,
+    );
+  }
+  const variables = new Set(event?.variables ?? []);
+  action.parameters.forEach((parameter, position) => {
+    const index = position + 1;
+    if (parameter.source === "event") {
+      if (!parameter.field) {
+        errors[parameterErrorKey(position)] = labels.parameterFieldRequired(index);
+      } else if (event && !variables.has(parameter.field)) {
+        errors[parameterErrorKey(position)] = labels.parameterFieldUnknown(
+          index,
+          parameter.field,
+        );
+      }
+    } else if (!parameter.value.trim()) {
+      errors[parameterErrorKey(position)] = labels.parameterValueRequired(index);
+    }
+  });
   return errors;
 }
 
@@ -463,9 +762,32 @@ export function retargetForm(
   const conditions = form.conditions ? prune(form.conditions) : null;
   const fallbackRecipient = defaultRecipientField(event);
   const actions = form.actions.map((action) => {
-    if (variables.has(action.recipientField)) return action;
-    changed = true;
-    return { ...action, recipientField: fallbackRecipient };
+    let next = action;
+    const kept = action.recipientFields.filter((field) => variables.has(field));
+    if (kept.length !== action.recipientFields.length) {
+      changed = true;
+      // Все переменные-получатели отвалились — подставляем получателя по
+      // умолчанию нового события (у расписания его нет: остаётся пусто).
+      next = {
+        ...next,
+        recipientFields: kept.length > 0 ? kept : fallbackRecipient ? [fallbackRecipient] : [],
+      };
+    }
+    // Привязки параметров WhatsApp к полям, которых у нового события нет,
+    // сбрасываем до «не выбрано»: бэк отклонил бы сохранение целиком, а сама
+    // позиция параметра у шаблона остаётся — её нужно заполнить заново.
+    if (next.parameters.some((p) => p.source === "event" && p.field && !variables.has(p.field))) {
+      changed = true;
+      next = {
+        ...next,
+        parameters: next.parameters.map((p) =>
+          p.source === "event" && p.field && !variables.has(p.field)
+            ? { ...p, field: "" }
+            : p,
+        ),
+      };
+    }
+    return next;
   });
 
   return {
@@ -566,7 +888,14 @@ export function relevantPayloadFields(
   for (const action of form.actions) {
     // У расписания получатель — введённый номер, а не поле payload: в форме
     // прогона ему делать нечего.
-    if (!scheduled) add(action.recipientField, "recipient");
+    if (!scheduled) action.recipientFields.forEach((field) => add(field, "recipient"));
+    if (isWhatsAppAction(action)) {
+      // У WhatsApp текста нет — в шаблон подставляются привязанные поля.
+      for (const parameter of action.parameters) {
+        if (parameter.source === "event") add(parameter.field, "template");
+      }
+      continue;
+    }
     templateVariables(action.body).forEach((code) => add(code, "template"));
     if (supportsTitle(action.channel)) {
       templateVariables(action.title).forEach((code) => add(code, "template"));

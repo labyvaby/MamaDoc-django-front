@@ -37,7 +37,6 @@ import LostReasonDialog from "./LostReasonDialog";
 import StageStepper from "./StageStepper";
 import StageTimeline from "./StageTimeline";
 import LeadInfoCard from "./LeadInfoCard";
-import DealCustomFields from "./DealCustomFields";
 import { buildStageSegments } from "./stageSegments";
 import CreateTaskDrawer from "../tasks/CreateTaskDrawer";
 import DjangoAddAppointmentDrawer from "../../pages/appointments/DjangoAddAppointmentDrawer";
@@ -60,10 +59,7 @@ import {
   updateDeal,
   updateDealItem,
   moveDealTo,
-  DEAL_CARD_ACTIONS,
   type DealActivityType,
-  type DealCardAction,
-  type DealCustomField,
   type DealDictionaryItem,
   type DealStage,
   type UpdateDealPayload,
@@ -90,6 +86,7 @@ type DealDetailDrawerProps = {
   onClose: () => void;
   onError: (message: string) => void;
   onNotify: (message: string) => void;
+  sources: DealDictionaryItem[];
   /** Этапы воронки сделки: смена этапа прямо из карточки. */
   stages: DealStage[];
   lostReasons: DealDictionaryItem[];
@@ -99,36 +96,9 @@ type DealDetailDrawerProps = {
   canOverrideAmount: boolean;
   /** Интервал воронки: на сколько часов вперёд подставлять следующее касание. */
   nextTouchHours?: number;
-  /** Какие кнопки действий показывать (настройка воронки). */
-  cardActions?: DealCardAction[];
-  /** Схема дополнительных полей воронки. */
-  customFields?: DealCustomField[];
 };
 
 const ACTIVITY_TYPES: DealActivityType[] = ["call", "message", "visit", "note"];
-
-/** Запись единой ленты истории: касание, переход этапа, правка или создание. */
-interface HistoryEntry {
-  key: string;
-  at: string;
-  label: string;
-  text?: string;
-  /** Справа мелким: например, сколько сделка пробыла в этапе. */
-  meta?: string;
-  actorName: string | null;
-  actorKind: "employee" | "bot" | null;
-  actorColor: string | null;
-}
-
-/** Шаг минут у пикера даты-времени: значение вне сетки он подсвечивает как ошибку. */
-const TOUCH_MINUTES_STEP = 15;
-
-/** «Сейчас + интервал», округлённое вверх до сетки пикера. */
-function suggestNextTouch(hours: number): Dayjs {
-  const raw = dayjs().add(hours, "hour").second(0).millisecond(0);
-  const rest = raw.minute() % TOUCH_MINUTES_STEP;
-  return rest === 0 ? raw : raw.add(TOUCH_MINUTES_STEP - rest, "minute");
-}
 
 /**
  * Карточка обращения: деньги, ответственный, касания, история этапов.
@@ -160,14 +130,13 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   onClose,
   onError,
   onNotify,
+  sources,
   stages,
   lostReasons,
   canUpdate,
   canManage,
   canOverrideAmount,
   nextTouchHours = 24,
-  cardActions = DEAL_CARD_ACTIONS,
-  customFields = [],
 }) => {
   const { t } = useT("deals");
   const orgId = useApiOrgId();
@@ -180,10 +149,8 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
   /* Действия ведут в чужие модули, поэтому и права спрашиваем их: у
      регистратора может быть deals.update без tasks.create. */
-  const actionOn = (action: DealCardAction) => cardActions.includes(action);
-  const canCreateTask = actionOn("task") && (can("tasks.create") || can("tasks.manage"));
-  const canCreateAppointment =
-    actionOn("appointment") && (can("appointments.create") || can("appointments.manage"));
+  const canCreateTask = can("tasks.create") || can("tasks.manage");
+  const canCreateAppointment = can("appointments.create") || can("appointments.manage");
 
   const open = dealId != null;
 
@@ -198,7 +165,7 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
   /* Чат показываем только тем, кому открыт раздел «Чаты»: iframe всё равно
      потребует учётку в Чат-центре, а без права незачем и пытаться. */
-  const withChat = actionOn("chat") && Boolean(deal?.chatUrl) && can("chatwoot.view");
+  const withChat = Boolean(deal?.chatUrl) && can("chatwoot.view");
   /* Панель чата закрыта по умолчанию и выезжает справа по кнопке в карточке:
      iframe Chatwoot тяжёлый, а переписку читают реже, чем правят сделку.
      Закрытие дровера и переход к другой сделке её сворачивают. */
@@ -224,6 +191,7 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   };
 
   const [amount, setAmount] = React.useState("");
+  const [comment, setComment] = React.useState("");
   const [activityType, setActivityType] = React.useState<DealActivityType>("call");
   const [activityNote, setActivityNote] = React.useState("");
   /* Следующее касание рядом с вводом: подставляется «сейчас + интервал
@@ -244,10 +212,12 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
      пользователь набирает прямо сейчас. */
   const loadedId = deal?.id;
   const loadedAmount = deal?.amount;
+  const loadedComment = deal?.comment;
   React.useEffect(() => {
     if (loadedId == null) return;
     setAmount(loadedAmount ?? "");
-  }, [loadedId, loadedAmount]);
+    setComment(loadedComment ?? "");
+  }, [loadedId, loadedAmount, loadedComment]);
   const loadedNextAction = deal?.nextActionAt ?? null;
   React.useEffect(() => {
     if (loadedId == null) return;
@@ -257,86 +227,15 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
       setNextTouchSuggested(false);
       return;
     }
-    setNextTouchAt(nextTouchHours > 0 ? suggestNextTouch(nextTouchHours) : null);
+    setNextTouchAt(nextTouchHours > 0 ? dayjs().add(nextTouchHours, "hour") : null);
     setNextTouchSuggested(nextTouchHours > 0);
   }, [loadedId, loadedNextAction, nextTouchHours]);
 
-  /** Сотрудник поправил дату руками — сохраняем сразу, не дожидаясь касания. */
-  const changeNextTouch = (value: Dayjs | null) => {
-    setNextTouchAt(value);
-    setNextTouchSuggested(false);
-    if (value == null) {
-      if (deal?.nextActionAt) patchMutation.mutate({ clearNextAction: true });
-      return;
-    }
-    if (!value.isValid()) return;
-    patchMutation.mutate({ nextActionAt: value.toISOString() });
-  };
-
   /** Имя сотрудника по id из лога правок (там хранятся только id). */
-  const employeeName = React.useCallback(
-    (value: string | null) => {
-      if (!value) return "—";
-      return employees.find((e) => String(e.id) === value)?.fullName ?? value;
-    },
-    [employees],
-  );
-
-  /* Единая лента истории: касания, переходы этапов, правки и создание сделки
-     сшиваются по времени. Раздельные списки заставляли искать «что было» в
-     трёх местах. */
-  const feed = React.useMemo<HistoryEntry[]>(() => {
-    if (!detail || !deal) return [];
-    const entries: HistoryEntry[] = [];
-    for (const a of detail.activities) {
-      entries.push({
-        key: `a-${a.id}`,
-        at: a.occurredAt,
-        label: DEAL_ACTIVITY_META[a.type]?.label ?? a.type,
-        text: a.note,
-        actorName: a.actorName,
-        actorKind: a.actorKind,
-        actorColor: a.actorColor,
-      });
-    }
-    for (const log of detail.stageLog) {
-      const first = log.fromStageName == null;
-      entries.push({
-        key: `s-${log.id}`,
-        at: log.enteredAt,
-        label: first ? t("detail.feedCreated") : t("detail.feedStage"),
-        text: first ? log.toStageName : `${log.fromStageName} → ${log.toStageName}`,
-        meta: stageDurationLabel(log.durationHours) ?? undefined,
-        actorName: log.actorName ?? (first ? deal.createdByName : null),
-        actorKind: log.actorKind ?? (first ? deal.actorKind : null),
-        actorColor: log.actorColor ?? (first ? deal.actorColor : null),
-      });
-    }
-    for (const log of detail.changeLog) {
-      const auto = !log.oldValue && log.actorId != null && String(log.actorId) === log.newValue;
-      entries.push({
-        key: `c-${log.id}`,
-        at: log.createdAt,
-        label: log.field === "amount" ? t("detail.feedAmount") : t("detail.feedAssignee"),
-        text:
-          log.field === "amount"
-            ? t("detail.changedAmount", {
-                from: formatKGS(log.oldValue ?? "0"),
-                to: formatKGS(log.newValue ?? "0"),
-              })
-            : auto
-              ? t("detail.changedAssigneeAuto", { to: employeeName(log.newValue) })
-              : t("detail.changedAssignee", {
-                  from: employeeName(log.oldValue),
-                  to: employeeName(log.newValue),
-                }),
-        actorName: log.actorName,
-        actorKind: log.actorKind,
-        actorColor: log.actorColor,
-      });
-    }
-    return entries.sort((x, y) => dayjs(y.at).valueOf() - dayjs(x.at).valueOf());
-  }, [detail, deal, t, employeeName]);
+  const employeeName = (value: string | null) => {
+    if (!value) return "—";
+    return employees.find((e) => String(e.id) === value)?.fullName ?? value;
+  };
 
   const invalidate = React.useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.deals.all });
@@ -440,9 +339,18 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
     patchMutation.mutate({ amount: normalized });
   };
 
+  const saveComment = () => {
+    if (!deal || comment === (deal.comment ?? "")) return;
+    patchMutation.mutate({ comment });
+  };
+
   const setAssignee = (value: number | "") => {
     // Очистка — только явным флагом: null бэк читает как «поле не присылали».
     patchMutation.mutate(value === "" ? { clearAssignee: true } : { assigneeId: value });
+  };
+
+  const setSource = (value: number | "") => {
+    patchMutation.mutate(value === "" ? { clearSource: true } : { sourceId: value });
   };
 
   /**
@@ -615,26 +523,23 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                 onNotify={onNotify}
               />
 
-              {/* Сотрудников десятки — вместо меню на весь экран поиск по
-                  имени и список ограниченной высоты. */}
-              <Autocomplete
+              <TextField
+                select
                 size="small"
-                options={employees}
-                getOptionLabel={(e) => e.fullName}
-                isOptionEqualToValue={(a, b) => a.id === b.id}
-                value={employees.find((e) => e.id === deal.assigneeId) ?? null}
-                onChange={(_e, employee) => setAssignee(employee ? employee.id : "")}
+                label={t("detail.assignee")}
+                value={deal.assigneeId ?? ""}
+                onChange={(e) => setAssignee(e.target.value === "" ? "" : Number(e.target.value))}
                 disabled={!canUpdate || patchMutation.isPending}
-                ListboxProps={{ style: { maxHeight: 280 } }}
-                noOptionsText="—"
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label={t("detail.assignee")}
-                    helperText={deal.assigneeId == null ? t("detail.assigneeAuto") : " "}
-                  />
-                )}
-              />
+                helperText={deal.assigneeId == null ? t("detail.assigneeAuto") : " "}
+                fullWidth
+              >
+                <MenuItem value="">—</MenuItem>
+                {employees.map((e) => (
+                  <MenuItem key={e.id} value={e.id}>
+                    {e.fullName}
+                  </MenuItem>
+                ))}
+              </TextField>
 
               {/* Действия в остальную CRM: обращение доводится до записи, не
                   выходя из карточки. */}
@@ -684,20 +589,6 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                 </Stack>
               ) : null}
 
-              {customFields.length > 0 ? (
-                <>
-                  <Divider />
-                  <DealCustomFields
-                    fields={customFields}
-                    values={deal.customValues ?? {}}
-                    disabled={!canUpdate || patchMutation.isPending}
-                    onChange={(patch) => patchMutation.mutate({ customValues: patch })}
-                  />
-                </>
-              ) : null}
-
-              {actionOn("services") ? (
-              <>
               <Divider />
 
               {/* Услуги и сумма — в одну строку: сумма считается по позициям,
@@ -797,8 +688,6 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                   </Stack>
                 ))}
               </Stack>
-              </>
-              ) : null}
 
               <Divider />
 
@@ -854,8 +743,8 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                         <CustomDateTimePicker
                           label={t("detail.nextTouch")}
                           value={nextTouchAt}
-                          onChange={changeNextTouch}
-                          disabled={closed || patchMutation.isPending}
+                          onChange={setNextTouchAt}
+                          disabled={closed}
                         />
                       </Box>
                       {nextTouchSuggested && nextTouchHours > 0 ? (
@@ -867,14 +756,39 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                   </Stack>
                 ) : null}
 
+                {detail.activities.map((a) => (
+                  <Stack key={a.id} gap={0.25} sx={{ py: 0.5 }}>
+                    <Stack direction="row" alignItems="baseline" gap={1}>
+                      <Typography variant="caption" fontWeight={600}>
+                        {DEAL_ACTIVITY_META[a.type]?.label ?? a.type}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {exactMoment(a.occurredAt)}
+                      </Typography>
+                      <ActorLabel name={a.actorName} kind={a.actorKind} color={a.actorColor} />
+                    </Stack>
+                    {a.note ? <Typography variant="body2">{a.note}</Typography> : null}
+                  </Stack>
+                ))}
               </Stack>
 
               <Divider />
 
-              {/* История: свежее сверху. Заметки пишутся касанием типа
-                  «Заметка», отдельного поля комментария нет; старый комментарий,
-                  если был, показываем здесь же. */}
+              {/* Комментарий и история — рядом: заметка о лиде читается вместе
+                  с тем, откуда он пришёл и как двигался. */}
               <Stack gap={1.5}>
+                <TextField
+                  size="small"
+                  label={t("detail.comment")}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  onBlur={saveComment}
+                  disabled={!canUpdate}
+                  multiline
+                  minRows={2}
+                  fullWidth
+                />
+
                 <Stack direction="row" alignItems="center" gap={0.75}>
                   <HistoryOutlined fontSize="small" sx={{ color: "text.secondary" }} />
                   <Typography variant="subtitle2">{t("detail.history")}</Typography>
@@ -882,54 +796,92 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
 
                 <StageTimeline segments={segments} />
 
-                {/* Источник — факт о том, откуда пришёл лид; его выставляет
-                    интеграция, и руками он не меняется. */}
-                <Stack direction="row" alignItems="baseline" gap={1} sx={{ minWidth: 0 }}>
+                {/* Источник у автолида выставляет интеграция; правится тут же,
+                    но не занимает место среди рабочих полей. */}
+                <Stack direction="row" alignItems="center" gap={1}>
                   <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
                     {t("detail.sourceLabel")}
                   </Typography>
-                  <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
-                    {deal.sourceName ?? "—"}
-                    {deal.inboxName ? ` · ${deal.inboxName}` : ""}
-                  </Typography>
+                  <TextField
+                    select
+                    size="small"
+                    variant="standard"
+                    value={deal.sourceId ?? ""}
+                    onChange={(e) => setSource(e.target.value === "" ? "" : Number(e.target.value))}
+                    disabled={!canUpdate || patchMutation.isPending}
+                    sx={{ minWidth: 140 }}
+                  >
+                    <MenuItem value="">—</MenuItem>
+                    {sources
+                      .filter((s) => s.isActive || s.id === deal.sourceId)
+                      .map((s) => (
+                        <MenuItem key={s.id} value={s.id}>
+                          {s.name}
+                        </MenuItem>
+                      ))}
+                  </TextField>
+                  {deal.inboxName ? (
+                    <Typography variant="caption" color="text.disabled" noWrap sx={{ minWidth: 0 }}>
+                      · {deal.inboxName}
+                    </Typography>
+                  ) : null}
                 </Stack>
 
-                {deal.comment ? (
-                  <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-                    <Typography component="span" variant="body2" color="text.secondary">
-                      {t("detail.comment")}:{" "}
+                {detail.stageLog.map((log) => (
+                  <Stack key={log.id} direction="row" alignItems="baseline" gap={1}>
+                    <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                      {log.fromStageName ? `${log.fromStageName} → ${log.toStageName}` : log.toStageName}
                     </Typography>
-                    {deal.comment}
-                  </Typography>
-                ) : null}
-
-                {/* Единая лента: касания, переходы этапов, правки и создание —
-                    по времени, свежее сверху. */}
-                {feed.map((entry) => (
-                  <Stack key={entry.key} gap={0.25} sx={{ py: 0.5 }}>
-                    <Stack direction="row" alignItems="baseline" gap={1} sx={{ minWidth: 0 }}>
-                      <Typography variant="caption" fontWeight={600} sx={{ whiteSpace: "nowrap" }}>
-                        {entry.label}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
-                        {exactMoment(entry.at)}
-                      </Typography>
-                      <ActorLabel name={entry.actorName} kind={entry.actorKind} color={entry.actorColor} />
-                      {entry.meta ? (
-                        <Typography variant="caption" color="text.disabled" noWrap sx={{ ml: "auto" }}>
-                          {entry.meta}
-                        </Typography>
-                      ) : null}
-                    </Stack>
-                    {entry.text ? (
-                      <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-                        {entry.text}
+                    {stageDurationLabel(log.durationHours) ? (
+                      <Typography variant="caption" color="text.secondary" noWrap>
+                        {stageDurationLabel(log.durationHours)}
                       </Typography>
                     ) : null}
+                    <ActorLabel name={log.actorName} kind={log.actorKind} color={log.actorColor} />
+                    <Typography variant="caption" color="text.disabled" noWrap>
+                      {exactMoment(log.enteredAt)}
+                    </Typography>
                   </Stack>
                 ))}
 
-                <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 0.5 }}>
+                {detail.changeLog.length > 0 ? (
+                  <>
+                    <Typography variant="subtitle2" sx={{ mt: 1 }}>
+                      {t("detail.changes")}
+                    </Typography>
+                    {detail.changeLog.map((log) => (
+                      <Stack key={log.id} direction="row" alignItems="baseline" gap={1}>
+                        <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                          {log.field === "amount"
+                            ? t("detail.changedAmount", {
+                                from: formatKGS(log.oldValue ?? "0"),
+                                to: formatKGS(log.newValue ?? "0"),
+                              })
+                            : !log.oldValue && log.actorId != null && String(log.actorId) === log.newValue
+                              ? t("detail.changedAssigneeAuto", { to: employeeName(log.newValue) })
+                              : t("detail.changedAssignee", {
+                                  from: employeeName(log.oldValue),
+                                  to: employeeName(log.newValue),
+                                })}
+                        </Typography>
+                        <Typography variant="caption" color="text.disabled" noWrap>
+                          {log.actorName ?? ""} {exactMoment(log.createdAt)}
+                        </Typography>
+                      </Stack>
+                    ))}
+                  </>
+                ) : null}
+
+                <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 1 }}>
+                  <Stack direction="row" alignItems="center" gap={0.5}>
+                    {deal.actorKind === "bot" ? (
+                      <SmartToyOutlined sx={{ fontSize: 13, color: deal.actorColor ?? "text.disabled" }} />
+                    ) : null}
+                    <Typography variant="caption" color="text.disabled">
+                      {t("detail.createdBy", { name: deal.createdByName ?? "—" })},{" "}
+                      {exactMoment(deal.createdAt)}
+                    </Typography>
+                  </Stack>
                   {deal.wonAt ? (
                     <Typography variant="caption" color="success.main">
                       {t("detail.wonAt", { value: exactMoment(deal.wonAt) })}

@@ -1,7 +1,6 @@
 import React from "react";
 import {
   Alert,
-  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -34,9 +33,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { SettingsLayout } from "./SettingsLayout";
 import {
-  getChatwootAgents,
   getChatwootLeadSettings,
-  saveChatwootAgentLinks,
   rotateChatwootLeadSecret,
   saveChatwootLeadSettings,
   suggestInboxRule,
@@ -68,8 +65,6 @@ import { useT } from "../../i18n/VerticalProvider";
 
 type Form = {
   enabled: boolean;
-  chatsEnabled: boolean;
-  accountId: string;
   apiToken: string;
   apiTokenClear: boolean;
   pipelineCode: string;
@@ -103,8 +98,6 @@ function codeOf(item: DealPipeline | DealStage): string {
 function toForm(settings: ChatwootLeadSettings): Form {
   return {
     enabled: settings.enabled,
-    chatsEnabled: settings.chatsEnabled,
-    accountId: settings.accountId == null ? "" : String(settings.accountId),
     apiToken: "",
     apiTokenClear: false,
     pipelineCode: settings.pipelineCode,
@@ -156,29 +149,6 @@ export default function ChatwootLeadsSettingsPage() {
   React.useEffect(() => {
     if (settingsQuery.data) setForm(toForm(settingsQuery.data));
   }, [settingsQuery.data]);
-
-  /* Кто из сотрудников попадёт в «Чаты»: сопоставление по email с агентами
-     аккаунта. Грузим, когда аккаунт задан; ошибка сети — не ошибка страницы. */
-  const agentsKey = ["django", "chatwoot", "agents", orgId ?? null] as const;
-  const agentsQuery = useQuery({
-    queryKey: agentsKey,
-    queryFn: ({ signal }) => getChatwootAgents(signal, { organizationId: orgId }),
-    enabled: !!settingsQuery.data && settingsQuery.data.accountId != null,
-    staleTime: 5 * 60 * 1000,
-  });
-  const [linkBusy, setLinkBusy] = React.useState<number | null>(null);
-  const linkAgent = async (agentId: number, employeeId: number | null) => {
-    setLinkBusy(agentId);
-    try {
-      const next = await saveChatwootAgentLinks([{ agentId, employeeId }], { organizationId: orgId });
-      queryClient.setQueryData(agentsKey, next);
-      setSnack(t("chatwoot.chats.linkSaved"));
-    } catch (error) {
-      setSaveError(errorMessage(error, t("chatwoot.chats.agentsTitle")));
-    } finally {
-      setLinkBusy(null);
-    }
-  };
 
   const pipelinesQuery = useQuery({
     queryKey: ["django", "deals", "pipelines", orgId ?? null, "chatwoot-settings"] as const,
@@ -274,11 +244,8 @@ export default function ChatwootLeadsSettingsPage() {
     setBusy(true);
     setSaveError(null);
     try {
-      const accountId = form.accountId.trim() === "" ? null : Number(form.accountId);
       const saved = await saveChatwootLeadSettings({
         enabled: form.enabled,
-        chatsEnabled: form.chatsEnabled,
-        ...(accountId != null && Number.isInteger(accountId) && accountId > 0 ? { accountId } : {}),
         chatwootApiToken: form.apiToken,
         chatwootApiTokenClear: form.apiTokenClear,
         pipelineCode: form.pipelineCode,
@@ -364,118 +331,6 @@ export default function ChatwootLeadsSettingsPage() {
 
         {form && settings && (
           <>
-            {/* Раздел «Чаты»: встроенный Chatwoot и кто из сотрудников в него попадёт. */}
-            <Paper variant="outlined" sx={{ p: 2 }}>
-              <Stack spacing={2}>
-                <Typography variant="subtitle1" fontWeight={600}>
-                  {t("chatwoot.chats.title")}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {t("chatwoot.chats.description")}
-                </Typography>
-                <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={form.chatsEnabled}
-                        onChange={(e) => patch({ chatsEnabled: e.target.checked })}
-                        disabled={busy}
-                      />
-                    }
-                    label={t("chatwoot.chats.enabled")}
-                  />
-                  <TextField
-                    size="small"
-                    label={t("chatwoot.chats.accountId")}
-                    value={form.accountId}
-                    onChange={(e) => patch({ accountId: e.target.value.replace(/[^0-9]/g, "") })}
-                    disabled={busy || !isSuper}
-                    helperText={isSuper ? t("chatwoot.chats.accountHelper") : t("chatwoot.chats.accountLocked")}
-                    inputProps={{ inputMode: "numeric" }}
-                    sx={{ width: 220 }}
-                  />
-                </Stack>
-
-                {settings.accountId != null ? (
-                  <Box>
-                    <Typography variant="subtitle2" gutterBottom>
-                      {t("chatwoot.chats.agentsTitle")}
-                    </Typography>
-                    {agentsQuery.isLoading ? (
-                      <CircularProgress size={18} />
-                    ) : agentsQuery.data && !agentsQuery.data.ok ? (
-                      <Alert severity="warning">{agentsQuery.data.error}</Alert>
-                    ) : agentsQuery.data ? (
-                      <>
-                        <Typography variant="caption" color="text.secondary">
-                          {t("chatwoot.chats.agentsSummary", {
-                            linked: agentsQuery.data.results.filter((r) => r.matchedBy === "link").length,
-                            total: agentsQuery.data.results.length,
-                          })}
-                        </Typography>
-                        <Table size="small" sx={{ mt: 1 }}>
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>{t("chatwoot.chats.colAgent")}</TableCell>
-                              <TableCell>{t("chatwoot.chats.colAgentEmail")}</TableCell>
-                              <TableCell sx={{ width: 320 }}>{t("chatwoot.chats.colEmployee")}</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {agentsQuery.data.results.map((row) => (
-                              <TableRow key={row.agentId}>
-                                <TableCell>{row.agentName || `#${row.agentId}`}</TableCell>
-                                <TableCell sx={{ color: "text.secondary" }}>{row.agentEmail}</TableCell>
-                                <TableCell>
-                                  <Stack direction="row" alignItems="center" spacing={1}>
-                                    <Autocomplete
-                                      size="small"
-                                      fullWidth
-                                      options={employees}
-                                      getOptionLabel={(e) => e.fullName}
-                                      isOptionEqualToValue={(a, b) => a.id === b.id}
-                                      value={employees.find((e) => e.id === row.employeeId) ?? null}
-                                      onChange={(_e, employee) => void linkAgent(row.agentId, employee ? employee.id : null)}
-                                      disabled={linkBusy === row.agentId}
-                                      ListboxProps={{ style: { maxHeight: 280 } }}
-                                      noOptionsText="—"
-                                      renderInput={(params) => (
-                                        <TextField
-                                          {...params}
-                                          placeholder={t("chatwoot.chats.pickEmployee")}
-                                          color={row.matchedBy === "email" ? "warning" : undefined}
-                                          focused={row.matchedBy === "email" ? true : undefined}
-                                        />
-                                      )}
-                                    />
-                                    {row.matchedBy === "email" ? (
-                                      <Tooltip title={t("chatwoot.chats.suggestedHint")}>
-                                        <Button
-                                          size="small"
-                                          variant="outlined"
-                                          onClick={() => void linkAgent(row.agentId, row.employeeId)}
-                                          disabled={linkBusy === row.agentId}
-                                          sx={{ whiteSpace: "nowrap" }}
-                                        >
-                                          {t("chatwoot.chats.confirm")}
-                                        </Button>
-                                      </Tooltip>
-                                    ) : row.matchedBy === "link" ? (
-                                      <Chip size="small" color="success" variant="outlined" label={t("chatwoot.chats.linked")} />
-                                    ) : null}
-                                  </Stack>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </>
-                    ) : null}
-                  </Box>
-                ) : null}
-              </Stack>
-            </Paper>
-
             <Box>
               <FormControlLabel
                 control={

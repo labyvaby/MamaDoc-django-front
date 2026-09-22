@@ -75,6 +75,7 @@ const DjangoProductsPage = lazy(() => import("./pages/products/django"));
 const DjangoInventoryPage = lazy(() => import("./pages/inventory/django"));
 const ProcurementInvoicesPage = lazy(() => import("./pages/procurement"));
 const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
+const DjangoLabPage = lazy(() => import("./pages/lab/django"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
 const DjangoSchedulePage = lazy(() => import("./pages/schedule/django"));
 const DjangoWorkShiftsPage = lazy(() => import("./pages/work-shifts/django"));
@@ -113,12 +114,19 @@ const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/Expens
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
 const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
 const ConclusionFormsSettingsPage = lazy(() => import("./pages/settings/ConclusionFormsSettingsPage"));
-const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
+const DjangoReportsPage = lazy(() => import("./pages/reports/django/ReportsRouter"));
 const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
 const PatientProgramPage = lazy(() => import("./pages/patient-program"));
+const HotelIntegrationsPage = lazy(() => import("./dev/HotelIntegrationsPage"));
+const HotelKitchenPage = lazy(() => import("./dev/HotelKitchenPage"));
+const HotelRoomsPage = lazy(() => import("./dev/HotelRoomsPage"));
+const HotelRoomFormPage = lazy(() => import("./dev/HotelRoomFormPage"));
+const HotelRoomCategoriesPage = lazy(() => import("./dev/HotelRoomCategoriesPage"));
+const HotelRoomCategoryFormPage = lazy(() => import("./dev/HotelRoomCategoryFormPage"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
+const WhatsAppSettingsPage = lazy(() => import("./pages/settings/WhatsAppSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
 const OrganizationSettingsPage = lazy(() => import("./pages/settings/OrganizationSettingsPage"));
 const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSettingsPage"));
@@ -135,6 +143,7 @@ const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSetting
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
 const OdoctorSettingsPage = lazy(() => import("./pages/settings/OdoctorSettingsPage"));
 const ChatwootLeadsSettingsPage = lazy(() => import("./pages/settings/ChatwootLeadsSettingsPage"));
+const LabSettingsPage = lazy(() => import("./pages/settings/LabSettingsPage"));
 const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const ClientsSettingsPage = lazy(() => import("./pages/settings/ClientsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
@@ -329,6 +338,11 @@ function App() {
                         name: "sales",
                         list: "/sales",
                         meta: { label: "Продажи" }
+                      },
+                      {
+                        name: "lab",
+                        list: "/lab",
+                        meta: { label: "Лаборатория" }
                       },
                       {
                         name: "storage",
@@ -623,7 +637,11 @@ function App() {
                         <Route
                           path="patients"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.patients}>
+                            // clients.view — тот же код, что видит вертикаль retail: реальный
+                            // бэкенд выдаёт его и организациям vertical="hotel" (Viva), у
+                            // которых своего patients.view нет (там «гости», не «пациенты»,
+                            // см. PatientsPage → HotelGuestsPage).
+                            <RequirePermission permission={[PAGE_PERMISSIONS.patients, PAGE_PERMISSIONS.clients]}>
                               <Suspense fallback={<LinearProgress />}>
                                 <PatientsPage />
                               </Suspense>
@@ -636,6 +654,78 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.clients}>
                               <Suspense fallback={<LinearProgress />}>
                                 <ClientsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        {/* Интеграции (каналы продаж) переехали в «Настройки»
+                            (/settings/integrations) — старую ссылку не ломаем. */}
+                        <Route path="integrations" element={<Navigate to="/settings/integrations" replace />} />
+                        {/* Кухня (меню/закупка) — пока только Viva: своего
+                            права в PAGE_PERMISSIONS нет, страница сама
+                            редиректит на "/", если открыта не из Viva. */}
+                        <Route
+                          path="kitchen"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <HotelKitchenPage />
+                            </Suspense>
+                          }
+                        />
+                        {/* Номера и категории (тарифы) Viva — самостоятельные
+                            страницы отеля, к «Настройкам» не относятся. Раньше
+                            жили под /settings/* — старые ссылки не ломаем. */}
+                        <Route path="settings/rooms" element={<Navigate to="/rooms" replace />} />
+                        <Route path="settings/room-categories" element={<Navigate to="/room-categories" replace />} />
+                        <Route
+                          path="rooms"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelRooms}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelRoomsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        {/* Страница одного номера — сюда ведут клик по номеру в списке и
+                            «Редактировать» в карточке номера в шахматке. */}
+                        <Route
+                          path="rooms/:roomId"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelRooms}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelRoomFormPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="room-categories"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelRoomCategories}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelRoomCategoriesPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        {/* Форма категории — одна страница на создание (/new) и правку (/:categoryId). */}
+                        <Route
+                          path="room-categories/new"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelRoomCategories}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelRoomCategoryFormPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="room-categories/:categoryId"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelRoomCategories}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelRoomCategoryFormPage />
                               </Suspense>
                             </RequirePermission>
                           }
@@ -806,6 +896,16 @@ function App() {
                           }
                         />
                         <Route
+                          path="lab"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.lab}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoLabPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="cashbox"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.cashbox}>
@@ -866,6 +966,16 @@ function App() {
                           }
                         />
                         <Route
+                          path="settings/whatsapp"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.whatsapp}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <WhatsAppSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="settings/odoctor"
                           element={
                             <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.odoctor}>
@@ -881,6 +991,16 @@ function App() {
                             <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.chatwoot}>
                               <Suspense fallback={<LinearProgress />}>
                                 <ChatwootLeadsSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="settings/lab"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.lab}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <LabSettingsPage />
                               </Suspense>
                             </RequirePermission>
                           }
@@ -1032,6 +1152,16 @@ function App() {
                                 <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.clients}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <ClientsSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/integrations"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.integrations}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <HotelIntegrationsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

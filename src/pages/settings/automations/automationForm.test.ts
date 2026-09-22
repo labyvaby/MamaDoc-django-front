@@ -3,14 +3,19 @@ import { describe, expect, it } from "vitest";
 import {
   PROFICHAT_PUSH_CHANNEL,
   SCHEDULE_EVENT_CODE,
+  WHATSAPP_CHANNEL,
   type Automation,
   type AutomationCatalogEvent,
+  type AutomationWhatsAppCatalog,
 } from "../../../api/automations";
+import type { WhatsAppTemplate } from "../../../api/whatsapp";
 import {
   automationToForm,
   emptySchedule,
+  fitParameters,
   makeGroup,
   makeLeaf,
+  needsTemplateSetup,
   nodeDepth,
   relevantPayloadFields,
   removeNode,
@@ -21,6 +26,7 @@ import {
   templateVariables,
   toSaveInput,
   validateForm,
+  type ActionForm,
   type AutomationForm,
 } from "./automationForm";
 
@@ -90,7 +96,16 @@ const LABELS = {
   weekdaysRequired: "weekdays",
   intervalRange: "interval",
   timeRequired: "time",
-  phoneRequired: "phone",
+  recipientRequired: "recipient",
+  recipientLimit: "recipient-limit",
+  phoneInvalid: "phone-invalid",
+  templateRequired: "template",
+  templateNotFound: "template-missing",
+  activationBlocked: (reason: string) => `blocked:${reason}`,
+  parameterCount: (expected: number, actual: number) => `count:${expected}/${actual}`,
+  parameterFieldRequired: (index: number) => `field:${index}`,
+  parameterValueRequired: (index: number) => `value:${index}`,
+  parameterFieldUnknown: (index: number, field: string) => `unknown-field:${index}:${field}`,
 };
 
 function baseForm(overrides: Partial<AutomationForm> = {}): AutomationForm {
@@ -107,10 +122,15 @@ function baseForm(overrides: Partial<AutomationForm> = {}): AutomationForm {
         actionType: "send_message",
         delayMinutes: "10",
         channel: "sms",
-        recipientField: "client_phone",
+        recipientFields: ["client_phone"],
+        recipientEmployeeIds: [],
+        recipientRoleIds: [],
         recipientPhone: "",
         title: "",
         body: "Здравствуйте, {{client_name}}!",
+        templateId: "",
+        language: "",
+        parameters: [],
       },
     ],
     ...overrides,
@@ -163,10 +183,32 @@ describe("toSaveInput", () => {
       delayMinutes: 10,
       config: {
         channel: "sms",
-        recipientField: "client_phone",
+        recipients: [{ type: "payload", field: "client_phone" }],
         body: "Здравствуйте, {{client_name}}!",
       },
     });
+  });
+
+  it("собирает получателей всех типов в порядке контролов", () => {
+    const form = baseForm();
+    form.actions[0].recipientFields = ["client_phone", "employee_phone"];
+    form.actions[0].recipientEmployeeIds = [12];
+    form.actions[0].recipientRoleIds = [3];
+    form.actions[0].recipientPhone = "+996700000001";
+
+    expect(toSaveInput(form).actions[0].config.recipients).toEqual([
+      { type: "payload", field: "client_phone" },
+      { type: "payload", field: "employee_phone" },
+      { type: "employee", employeeId: 12 },
+      { type: "role", roleId: 3 },
+      { type: "phone", phone: "+996700000001" },
+    ]);
+  });
+
+  it("не отправляет устаревшие одиночные ключи получателя", () => {
+    const config = toSaveInput(baseForm()).actions[0].config;
+    expect(config).not.toHaveProperty("recipientField");
+    expect(config).not.toHaveProperty("recipientPhone");
   });
 });
 
@@ -208,6 +250,56 @@ describe("automationToForm", () => {
     const automation = { conditions: {}, actions: [], status: "draft" } as unknown as Automation;
     expect(automationToForm(automation).conditions).toBeNull();
   });
+
+  it("раскладывает список получателей по типам", () => {
+    const automation = {
+      conditions: {},
+      status: "draft",
+      actions: [
+        {
+          id: 1,
+          position: 0,
+          actionType: "send_message",
+          delayMinutes: 0,
+          config: {
+            channel: "sms",
+            recipients: [
+              { type: "payload", field: "employee_phone" },
+              { type: "employee", employeeId: 12 },
+              { type: "role", roleId: 3 },
+              { type: "phone", phone: "+996700000001" },
+            ],
+            body: "текст",
+          },
+        },
+      ],
+    } as unknown as Automation;
+
+    expect(automationToForm(automation).actions[0]).toMatchObject({
+      recipientFields: ["employee_phone"],
+      recipientEmployeeIds: [12],
+      recipientRoleIds: [3],
+      recipientPhone: "+996700000001",
+    });
+  });
+
+  it("читает получателя правила старого формата", () => {
+    const legacy = (config: Record<string, unknown>) =>
+      automationToForm({
+        conditions: {},
+        status: "draft",
+        actions: [{ id: 1, position: 0, actionType: "send_message", delayMinutes: 0, config }],
+      } as unknown as Automation).actions[0];
+
+    expect(legacy({ channel: "sms", recipientField: "employee_phone", body: "т" })).toMatchObject({
+      recipientFields: ["employee_phone"],
+      recipientPhone: "",
+    });
+    expect(legacy({ channel: "sms", recipientPhone: "+996700000001", body: "т" })).toMatchObject({
+      recipientFields: [],
+      recipientPhone: "+996700000001",
+    });
+  });
 });
 
 describe("retargetForm", () => {
@@ -220,9 +312,19 @@ describe("retargetForm", () => {
     expect(result.form.eventCode).toBe("client.created");
   });
 
-  it("подменяет получателя, если такой переменной у события нет", () => {
+  it("убирает переменные-получатели, которых у события нет", () => {
     const result = retargetForm(baseForm(), CLIENT_EVENT);
-    expect(result.form.actions[0].recipientField).toBe("client_name");
+    expect(result.changed).toBe(true);
+    // У события нет ни одной телефонной переменной — подставлять нечего.
+    expect(result.form.actions[0].recipientFields).toEqual([]);
+  });
+
+  it("сохраняет оставшиеся переменные-получатели", () => {
+    const form = baseForm();
+    form.actions[0].recipientFields = ["client_phone", "client_email"];
+    const result = retargetForm(form, APPOINTMENT_EVENT);
+    expect(result.changed).toBe(true);
+    expect(result.form.actions[0].recipientFields).toEqual(["client_phone"]);
   });
 
   it("совместимую форму оставляет без изменений", () => {
@@ -288,6 +390,24 @@ describe("validateForm", () => {
     form.actions[0].body = "   ";
     expect(validateForm(form, APPOINTMENT_EVENT, LABELS).actionFields.a1.body).toBe("body");
   });
+
+  it("требует хотя бы одного получателя", () => {
+    const form = baseForm();
+    form.actions[0].recipientFields = [];
+    expect(validateForm(form, APPOINTMENT_EVENT, LABELS).actionFields.a1.recipients).toBe(
+      "recipient",
+    );
+    form.actions[0].recipientRoleIds = [3];
+    expect(validateForm(form, APPOINTMENT_EVENT, LABELS).actionFields.a1).toBeUndefined();
+  });
+
+  it("проверяет формат дополнительного номера", () => {
+    const form = baseForm();
+    form.actions[0].recipientPhone = "123";
+    expect(
+      validateForm(form, APPOINTMENT_EVENT, LABELS).actionFields.a1.recipientPhone,
+    ).toBe("phone-invalid");
+  });
 });
 
 describe("дерево условий", () => {
@@ -322,12 +442,15 @@ describe("templateVariables", () => {
 });
 
 describe("relevantPayloadFields", () => {
-  it("собирает поля условий, получателя и переменные текста", () => {
+  it("собирает поля условий, получателей и переменные текста", () => {
     const leaf = makeLeaf("status", "eq");
     leaf.value = "confirmed";
-    const roles = relevantPayloadFields(baseForm({ conditions: leaf }));
+    const form = baseForm({ conditions: leaf });
+    form.actions[0].recipientFields = ["client_phone", "employee_phone"];
+    const roles = relevantPayloadFields(form);
     expect(roles.get("status")).toEqual(["condition"]);
     expect(roles.get("client_phone")).toEqual(["recipient"]);
+    expect(roles.get("employee_phone")).toEqual(["recipient"]);
     expect(roles.get("client_name")).toEqual(["template"]);
   });
 
@@ -416,7 +539,7 @@ describe("канал ProfiChat push", () => {
           delayMinutes: 0,
           config: {
             channel: PROFICHAT_PUSH_CHANNEL,
-            recipientField: "client_phone",
+            recipients: [{ type: "payload", field: "client_phone" }],
             title: "Запись создана",
             body: "Ждём вас",
           },
@@ -449,16 +572,23 @@ describe("правило по расписанию", () => {
           actionType: "send_message",
           delayMinutes: "0",
           channel: "sms",
-          recipientField: "client_phone",
+          // Осталась от события до переключения на расписание: уйти на бэк
+          // не должна — payload у расписания нет.
+          recipientFields: ["client_phone"],
+          recipientEmployeeIds: [],
+          recipientRoleIds: [],
           recipientPhone: "+996700000001",
           title: "",
           body: "Планёрка.",
+          templateId: "",
+          language: "",
+          parameters: [],
         },
       ],
       ...overrides,
     });
 
-  it("отправляет периодичность и телефон вместо переменной получателя", () => {
+  it("отправляет периодичность и телефон, но не переменную получателя", () => {
     const input = toSaveInput(scheduled());
 
     expect(input.schedule).toEqual({
@@ -466,8 +596,9 @@ describe("правило по расписанию", () => {
       time: "10:00",
       weekdays: [0],
     });
-    expect(input.actions[0].config.recipientPhone).toBe("+996700000001");
-    expect(input.actions[0].config.recipientField).toBeUndefined();
+    expect(input.actions[0].config.recipients).toEqual([
+      { type: "phone", phone: "+996700000001" },
+    ]);
   });
 
   it("интервальное повторение уходит числом", () => {
@@ -491,7 +622,7 @@ describe("правило по расписанию", () => {
     expect(toSaveInput(scheduled({ conditions: leaf })).conditions).toEqual({});
   });
 
-  it("требует день недели и телефон", () => {
+  it("требует день недели и хотя бы одного получателя", () => {
     const errors = validateForm(
       scheduled({
         schedule: { ...emptySchedule(), weekdays: [] },
@@ -501,10 +632,15 @@ describe("правило по расписанию", () => {
             actionType: "send_message",
             delayMinutes: "0",
             channel: "sms",
-            recipientField: "client_phone",
+            recipientFields: ["client_phone"],
+            recipientEmployeeIds: [],
+            recipientRoleIds: [],
             recipientPhone: "",
             title: "",
             body: "Планёрка.",
+            templateId: "",
+            language: "",
+            parameters: [],
           },
         ],
       }),
@@ -513,7 +649,8 @@ describe("правило по расписанию", () => {
     );
 
     expect(errors.schedule).toBe("weekdays");
-    expect(errors.actionFields.a1.recipientPhone).toBe("phone");
+    // Переменная события у расписания не считается получателем.
+    expect(errors.actionFields.a1.recipients).toBe("recipient");
   });
 
   it("проверяет границы интервала", () => {
@@ -526,5 +663,300 @@ describe("правило по расписанию", () => {
     );
 
     expect(errors.schedule).toBe("interval");
+  });
+});
+
+// ── WhatsApp: шаблон вместо текста ───────────────────────────────────────────
+
+const REMINDER_TEMPLATE: WhatsAppTemplate = {
+  id: "tpl-1",
+  metaTemplateId: "1001",
+  name: "appointment_reminder",
+  language: "ru",
+  category: "UTILITY",
+  status: "APPROVED",
+  bodyText: "Здравствуйте, {{1}}! Ждём вас {{2}}.",
+  parameterCount: 2,
+  supported: true,
+  unsupportedReason: "",
+  rejectionReason: "",
+  available: true,
+  sendable: true,
+  problem: "",
+  problemLabel: "",
+  syncedAt: "2026-09-13T09:05:00Z",
+};
+
+const PENDING_TEMPLATE: WhatsAppTemplate = {
+  ...REMINDER_TEMPLATE,
+  id: "tpl-2",
+  name: "promo",
+  status: "PENDING",
+  bodyText: "Акция для {{1}}",
+  parameterCount: 1,
+  sendable: false,
+  problem: "template_not_approved",
+  problemLabel: "Шаблон не одобрен Meta.",
+};
+
+const WHATSAPP_CATALOG: AutomationWhatsAppCatalog = {
+  connection: {
+    configured: true,
+    usable: true,
+    problem: "",
+    problemLabel: "",
+    displayPhoneNumber: "+996700000099",
+  },
+  templates: [REMINDER_TEMPLATE, PENDING_TEMPLATE],
+  parameterSources: [
+    { code: "event", label: "Поле события" },
+    { code: "constant", label: "Постоянное значение" },
+  ],
+};
+
+function whatsappAction(overrides: Partial<ActionForm> = {}): ActionForm {
+  return {
+    key: "w1",
+    actionType: "send_message",
+    delayMinutes: "0",
+    channel: WHATSAPP_CHANNEL,
+    recipientFields: ["client_phone"],
+    recipientEmployeeIds: [],
+    recipientRoleIds: [],
+    recipientPhone: "",
+    title: "",
+    body: "",
+    templateId: "tpl-1",
+    language: "ru",
+    parameters: [
+      { source: "event", field: "client_name", value: "" },
+      { source: "constant", field: "", value: "завтра" },
+    ],
+    ...overrides,
+  };
+}
+
+describe("WhatsApp-действие", () => {
+  it("уходит шаблоном и привязками, без текста", () => {
+    const input = toSaveInput(baseForm({ actions: [whatsappAction({ body: "старый текст" })] }));
+
+    expect(input.actions[0].config).toEqual({
+      channel: WHATSAPP_CHANNEL,
+      recipients: [{ type: "payload", field: "client_phone" }],
+      templateId: "tpl-1",
+      language: "ru",
+      parameters: [
+        { source: "event", field: "client_name" },
+        { source: "constant", value: "завтра" },
+      ],
+    });
+    expect(input.actions[0].config).not.toHaveProperty("body");
+  });
+
+  it("читает шаблон и привязки из сохранённого правила", () => {
+    const automation = {
+      id: 1,
+      organizationId: 1,
+      branchId: null,
+      branchName: null,
+      name: "wa",
+      eventCode: "appointment.created",
+      eventLabel: "Запись создана",
+      status: "draft",
+      conditions: {},
+      schedule: {},
+      nextRunAt: null,
+      lastRunAt: null,
+      createdAt: "",
+      updatedAt: "",
+      actions: [
+        {
+          id: 5,
+          position: 0,
+          actionType: "send_message",
+          delayMinutes: 0,
+          config: {
+            channel: WHATSAPP_CHANNEL,
+            templateId: "tpl-1",
+            language: "ru",
+            recipientField: "client_phone",
+            parameters: [
+              { source: "event", field: "client_name" },
+              { source: "constant", value: "завтра" },
+            ],
+          },
+        },
+      ],
+    } as unknown as Automation;
+
+    const action = automationToForm(automation).actions[0];
+    expect(action.templateId).toBe("tpl-1");
+    expect(action.language).toBe("ru");
+    expect(action.parameters).toEqual([
+      { source: "event", field: "client_name", value: "" },
+      { source: "constant", field: "", value: "завтра" },
+    ]);
+    expect(needsTemplateSetup(action)).toBe(false);
+  });
+
+  it("старое правило с текстом без шаблона требует настройки", () => {
+    expect(
+      needsTemplateSetup(whatsappAction({ templateId: "", body: "Здравствуйте!" })),
+    ).toBe(true);
+    expect(needsTemplateSetup(whatsappAction({ templateId: "", body: "" }))).toBe(false);
+  });
+
+  it("fitParameters подгоняет привязки под число параметров шаблона", () => {
+    const kept = fitParameters(
+      [{ source: "constant", field: "", value: "x" }],
+      REMINDER_TEMPLATE,
+      false,
+    );
+    expect(kept).toEqual([
+      { source: "constant", field: "", value: "x" },
+      { source: "event", field: "", value: "" },
+    ]);
+    // У расписания новые позиции — константами: данных события там нет.
+    expect(fitParameters([], PENDING_TEMPLATE, true)).toEqual([
+      { source: "constant", field: "", value: "" },
+    ]);
+    expect(fitParameters(kept, undefined, false)).toEqual([]);
+  });
+
+  it("валидная привязка проходит проверку", () => {
+    const errors = validateForm(
+      baseForm({ actions: [whatsappAction()] }),
+      APPOINTMENT_EVENT,
+      LABELS,
+      WHATSAPP_CATALOG,
+    );
+    expect(errors.actionFields).toEqual({});
+  });
+
+  it("требует шаблон и не требует текст", () => {
+    const errors = validateForm(
+      baseForm({ actions: [whatsappAction({ templateId: "", parameters: [] })] }),
+      APPOINTMENT_EVENT,
+      LABELS,
+      WHATSAPP_CATALOG,
+    );
+    expect(errors.actionFields.w1).toEqual({ templateId: "template" });
+  });
+
+  it("ловит шаблон, пропавший из каталога", () => {
+    const errors = validateForm(
+      baseForm({ actions: [whatsappAction({ templateId: "tpl-gone" })] }),
+      APPOINTMENT_EVENT,
+      LABELS,
+      WHATSAPP_CATALOG,
+    );
+    expect(errors.actionFields.w1.templateId).toBe("template-missing");
+  });
+
+  it("сверяет число привязок и заполненность каждой", () => {
+    const errors = validateForm(
+      baseForm({
+        actions: [
+          whatsappAction({
+            parameters: [
+              { source: "event", field: "", value: "" },
+              { source: "constant", field: "", value: "  " },
+              { source: "event", field: "client_email", value: "" },
+            ],
+          }),
+        ],
+      }),
+      APPOINTMENT_EVENT,
+      LABELS,
+      WHATSAPP_CATALOG,
+    );
+    expect(errors.actionFields.w1).toEqual({
+      parameters: "count:2/3",
+      parameter0: "field:1",
+      parameter1: "value:2",
+      parameter2: "unknown-field:3:client_email",
+    });
+  });
+
+  it("активное правило требует одобренный шаблон и рабочее подключение", () => {
+    const pending = whatsappAction({
+      templateId: "tpl-2",
+      parameters: [{ source: "event", field: "client_name", value: "" }],
+    });
+    const active = validateForm(
+      baseForm({ status: "active", actions: [pending] }),
+      APPOINTMENT_EVENT,
+      LABELS,
+      WHATSAPP_CATALOG,
+    );
+    expect(active.actionFields.w1.templateId).toBe("blocked:Шаблон не одобрен Meta.");
+
+    // Черновик с шаблоном на модерации — нормальный сценарий.
+    const draft = validateForm(
+      baseForm({ status: "draft", actions: [pending] }),
+      APPOINTMENT_EVENT,
+      LABELS,
+      WHATSAPP_CATALOG,
+    );
+    expect(draft.actionFields).toEqual({});
+
+    const offline: AutomationWhatsAppCatalog = {
+      ...WHATSAPP_CATALOG,
+      connection: {
+        configured: true,
+        usable: false,
+        problem: "connection_disabled",
+        problemLabel: "Подключение WhatsApp отключено.",
+      },
+    };
+    const blocked = validateForm(
+      baseForm({ status: "active", actions: [whatsappAction()] }),
+      APPOINTMENT_EVENT,
+      LABELS,
+      offline,
+    );
+    expect(blocked.actionFields.w1.templateId).toBe("blocked:Подключение WhatsApp отключено.");
+  });
+
+  it("без каталога проверяет только выбор шаблона", () => {
+    const errors = validateForm(
+      baseForm({ status: "active", actions: [whatsappAction({ templateId: "tpl-gone" })] }),
+      APPOINTMENT_EVENT,
+      LABELS,
+    );
+    expect(errors.actionFields).toEqual({});
+  });
+
+  it("привязанные поля события попадают в форму пробного прогона", () => {
+    const roles = relevantPayloadFields(baseForm({ actions: [whatsappAction()] }));
+    expect(roles.get("client_name")).toEqual(["template"]);
+    expect(roles.get("client_phone")).toEqual(["recipient"]);
+    expect(roles.has("завтра")).toBe(false);
+  });
+
+  it("смена события сбрасывает привязки к пропавшим полям", () => {
+    const result = retargetForm(
+      baseForm({ actions: [whatsappAction({ recipientFields: ["client_name"] })] }),
+      CLIENT_EVENT,
+    );
+    // client_name есть у обоих событий: и получатель, и привязка остаются.
+    expect(result.changed).toBe(false);
+    expect(result.form.actions[0].parameters[0].field).toBe("client_name");
+
+    const gone = retargetForm(
+      baseForm({
+        actions: [
+          whatsappAction({
+            recipientFields: ["client_name"],
+            parameters: [{ source: "event", field: "appointment_date", value: "" }],
+          }),
+        ],
+      }),
+      CLIENT_EVENT,
+    );
+    expect(gone.changed).toBe(true);
+    expect(gone.form.actions[0].parameters).toEqual([
+      { source: "event", field: "", value: "" },
+    ]);
   });
 });

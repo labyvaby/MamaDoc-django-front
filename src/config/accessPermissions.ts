@@ -27,6 +27,7 @@ export const PAGE_PERMISSIONS = {
   products: ["warehouse.view", "warehouse.sales.view"],
   warehouses: "warehouse.view",
   sales: ["warehouse.sales.view", "warehouse.view"],
+  lab: "lab.view",
   schedule: "schedule.view",
   attendance: "attendance.view",
   attendanceSettings: "attendance.manage",
@@ -59,6 +60,14 @@ export const PAGE_PERMISSIONS = {
   ecommerce: "ecommerce.view",
   targets: "targets.view",
   messaging: "messaging.view",
+  // Номера и категории (тарифы) Viva — самостоятельные страницы отеля, не
+  // вкладки «Настроек»: свои пункты сайдбара и роуты /rooms, /room-categories.
+  // Право то же, что общее управление отелем (hotel-viva-frontend-api.md §3):
+  // номера правятся /hotel/rooms/, категории и характеристики —
+  // /hotel/room-types/ и /hotel/catalogs/amenities/. Видны только vertical==="hotel"
+  // (сайдбар гейтит isHotelOrg).
+  hotelRooms: "hotel.manage",
+  hotelRoomCategories: "hotel.manage",
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {
@@ -99,6 +108,11 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // же notifications.manage, что и настройки уведомлений — своего кода прав
   // у модуля нет (docs/automations-api.md §2).
   automations: PAGE_PERMISSIONS.notifications,
+  // Подключение WhatsApp и каталог шаблонов: на бэке те же
+  // notifications.manage (docs/whatsapp-templates-mvp.md §1.1). Привязка к
+  // подключению Raven внутри страницы — только суперадмину, это проверяет
+  // сам бэк.
+  whatsapp: PAGE_PERMISSIONS.notifications,
   productAttributes: "warehouse.manage",
   // Настройки раздела (статусы, раскладка карточки) бэк закрывает clients.update.
   clients: "clients.update",
@@ -111,6 +125,14 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // (chatwoot.manage), отдельное от chatwoot.view — видеть чаты и
   // настраивать секрет приёмника не одно и то же.
   chatwoot: "chatwoot.manage",
+  // Подключение ЛИС: код организации, точки регистрации филиалов.
+  lab: "lab.settings.manage",
+  // Каналы продаж Viva (Booking.com и др.) — вкладка видна только
+  // vertical==="hotel" (см. useVisibleSettingsTabs в SettingsLayout.tsx);
+  // подключить/отключить канал бэк разрешает по hotel.channels.manage
+  // (hotel-viva-frontend-api.md §3.1). «Номера» и «Категории и тарифы» —
+  // не вкладки настроек, их права в PAGE_PERMISSIONS (hotelRooms, hotelRoomCategories).
+  integrations: "hotel.channels.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

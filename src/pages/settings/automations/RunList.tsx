@@ -1,8 +1,10 @@
 import React from "react";
-import { Alert, Box, Chip, Paper, Stack, Typography } from "@mui/material";
+import { Alert, Box, Chip, Paper, Stack, Tooltip, Typography } from "@mui/material";
 import dayjs from "dayjs";
 
 import type {
+  AutomationDeliveryStatus,
+  AutomationJob,
   AutomationJobStatus,
   AutomationRun,
   AutomationRunStatus,
@@ -21,6 +23,21 @@ const JOB_COLOR: Record<AutomationJobStatus, "default" | "success" | "error" | "
   sent: "success",
   failed: "error",
   cancelled: "default",
+};
+
+/**
+ * Доставка отдельно от выполнения: `sent` у Job значит «передано Raven», а
+ * дошло ли до телефона — говорит эта шкала (вебхуки Raven и досверка).
+ */
+const DELIVERY_COLOR: Record<
+  AutomationDeliveryStatus,
+  "default" | "info" | "success" | "error"
+> = {
+  accepted: "default",
+  sent: "info",
+  delivered: "success",
+  read: "success",
+  failed: "error",
 };
 
 export interface RunListProps {
@@ -88,23 +105,60 @@ export const RunList: React.FC<RunListProps> = ({ runs, showAutomationName = fal
                       color={JOB_COLOR[job.status] ?? "default"}
                       sx={{ fontWeight: 600 }}
                     />
+                    <DeliveryChip job={job} />
+                    {job.channel && (
+                      <Typography variant="caption" color="text.secondary">
+                        {t(`automations.channels.${job.channel}`, {
+                          defaultValue: job.channel,
+                        })}
+                      </Typography>
+                    )}
                     <Typography variant="caption" color="text.secondary">
                       {t("automations.runs.scheduledFor")}:{" "}
                       {dayjs(job.scheduledFor).format("DD.MM.YYYY HH:mm")}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {job.recipient || "—"}
+                      {/* Чей номер: сотрудник по имени, держатель роли. */}
+                      {job.recipientLabel ? ` (${job.recipientLabel})` : ""}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {t("automations.runs.attempts", { count: job.attemptsCount })}
                     </Typography>
                   </Stack>
+                  {/* Снимок шаблона WhatsApp: правило можно было переписать
+                      после постановки в очередь, а отправилось то, что видел
+                      автор. */}
+                  {job.whatsappTemplateName && (
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                      {t("automations.runs.template")}: {job.whatsappTemplateName}
+                      {job.whatsappLanguage ? ` (${job.whatsappLanguage})` : ""}
+                      {(job.resolvedParameters ?? []).length > 0 && (
+                        <>
+                          {" · "}
+                          {t("automations.runs.parameters")}:{" "}
+                          {(job.resolvedParameters ?? [])
+                            .map((value, index) => `{{${index + 1}}} = ${value || "—"}`)
+                            .join(", ")}
+                        </>
+                      )}
+                    </Typography>
+                  )}
                   <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", mt: 0.5 }}>
                     {job.renderedBody}
                   </Typography>
                   {job.error && (
-                    <Typography variant="caption" color="error">
+                    <Typography variant="caption" color="error" display="block">
                       {job.error}
+                    </Typography>
+                  )}
+                  {job.deliveryStatus === "failed" && (
+                    <Typography variant="caption" color="error" display="block">
+                      {t("automations.runs.deliveryFailed")}:{" "}
+                      {job.deliveryError || job.deliveryErrorCode || "—"}
+                      {job.deliveryError && job.deliveryErrorCode
+                        ? ` (${job.deliveryErrorCode})`
+                        : ""}
                     </Typography>
                   )}
                 </Box>
@@ -135,6 +189,38 @@ export const RunList: React.FC<RunListProps> = ({ runs, showAutomationName = fal
       ))}
     </Stack>
   );
+};
+
+/**
+ * Метка доставки. Пусто, пока Raven ничего не сообщил, и у каналов без
+ * статусов доставки — тогда метки нет вовсе, а не «неизвестно».
+ */
+const DeliveryChip: React.FC<{ job: AutomationJob }> = ({ job }) => {
+  const { t } = useT("settings");
+  const status = job.deliveryStatus;
+  if (!status) return null;
+  const updated = job.deliveryUpdatedAt
+    ? dayjs(job.deliveryUpdatedAt).format("DD.MM.YYYY HH:mm")
+    : "";
+  const title = [
+    updated ? `${t("automations.runs.deliveryUpdatedAt")}: ${updated}` : "",
+    job.providerMessageId ? `wamid: ${job.providerMessageId}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const chip = (
+    <Chip
+      size="small"
+      variant="outlined"
+      label={`${t("automations.runs.delivery")}: ${t(
+        `automations.runs.deliveryStatus.${status}`,
+        { defaultValue: status },
+      )}`}
+      color={DELIVERY_COLOR[status] ?? "default"}
+      sx={{ fontWeight: 600 }}
+    />
+  );
+  return title ? <Tooltip title={title}>{chip}</Tooltip> : chip;
 };
 
 export default RunList;

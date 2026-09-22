@@ -45,6 +45,8 @@ export const PREVIEW_SECTIONS: PreviewSection[] = [
   { key: "patients", permissions: asList(PAGE_PERMISSIONS.patients) },
   { key: "vaccinations", permissions: asList(PAGE_PERMISSIONS.vaccinations) },
   { key: "services", permissions: asList(PAGE_PERMISSIONS.services) },
+  { key: "hotelRooms", permissions: asList(PAGE_PERMISSIONS.hotelRooms) },
+  { key: "hotelRoomCategories", permissions: asList(PAGE_PERMISSIONS.hotelRoomCategories) },
   { key: "products", permissions: asList(PAGE_PERMISSIONS.products) },
   { key: "sales", permissions: asList(PAGE_PERMISSIONS.sales) },
   { key: "warehouses", permissions: asList(PAGE_PERMISSIONS.warehouses) },

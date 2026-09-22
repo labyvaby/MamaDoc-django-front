@@ -26,21 +26,24 @@ import OrganizationBrand from "../brand/OrganizationBrand";
 import { useAppVersion } from "../../api/appVersion";
 import { fetchChatwootCounts } from "../../api/chatwoot";
 import { useT } from "../../i18n/VerticalProvider";
+import { useIsVivaActive } from "../../dev/mockDemoData";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
+import HotelOutlined from "@mui/icons-material/HotelOutlined";
+import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
+import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import PointOfSaleOutlined from "@mui/icons-material/PointOfSaleOutlined";
 // import BlockOutlined from "@mui/icons-material/BlockOutlined";
-// import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
@@ -48,7 +51,7 @@ import MenuOutlined from "@mui/icons-material/MenuOutlined";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
 import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
-import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
+import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ReviewsOutlined from "@mui/icons-material/ReviewsOutlined";
 import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
@@ -60,6 +63,7 @@ import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlin
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
@@ -374,6 +378,7 @@ const SidebarSecondary: React.FC = () => {
   const activeBranchId = useActiveScope().branchId;
   const isSuper = isSuperAdmin();
   const isRetail = activeOrganization?.vertical === "retail";
+  const isHotelOrg = activeOrganization?.vertical === "hotel";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -404,6 +409,10 @@ const SidebarSecondary: React.FC = () => {
     chats: !isRetail && (isSuper || can(PAGE_PERMISSIONS.chats)),
     doctorRoom: !isRetail && (isSuper || can(PAGE_PERMISSIONS.doctorRoom)),
     nurseRoom: !isRetail && (isSuper || can(PAGE_PERMISSIONS.nurseRoom)),
+    // Клинический раздел: ретейлу приём анализов не нужен, поэтому под тем
+    // же !isRetail, что и остальные медицинские пункты. Отдельной проверки
+    // модуля не нужно — `can` уже сверяется с картой префикс→модуль.
+    lab: !isRetail && (isSuper || can(PAGE_PERMISSIONS.lab)),
     schedule: !isRetail && (isSuper || can(PAGE_PERMISSIONS.schedule)),
     skud: isSuper || can(PAGE_PERMISSIONS.attendance),
     cleaning: moduleGate("cleaning"),
@@ -426,6 +435,10 @@ const SidebarSecondary: React.FC = () => {
     allProcedures: !isRetail && (isSuper || can(PAGE_PERMISSIONS.allProcedures)),
     services: !isRetail && can(PAGE_PERMISSIONS.services),
     documents: moduleGate("documents"),
+    // Структура отеля Viva — самостоятельные страницы, к «Настройкам» не
+    // относятся (право hotel.manage, см. PAGE_PERMISSIONS).
+    hotelRooms: isHotelOrg && can(PAGE_PERMISSIONS.hotelRooms),
+    hotelRoomCategories: isHotelOrg && can(PAGE_PERMISSIONS.hotelRoomCategories),
     // СКЛАДЫ
     pos: can(PAGE_PERMISSIONS.pos),
     products: can(PAGE_PERMISSIONS.products),
@@ -601,11 +614,17 @@ const SidebarSecondary: React.FC = () => {
     (bookingsOverdueQuery.data?.count ?? 0) > 0 ? "error" : "primary";
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
+  // На Viva SidebarMenuItem сам прячет все пункты кроме отельных
+  // (см. HOTEL_ONLY_NAV_PATHS) — "storage" и "management" целиком состоят из
+  // скрытых пунктов и превратились бы в пустую вкладку; "my-work" и "org"
+  // остаются видимыми ("my-work" — Бронирования, "org" — Гости, Кухня, Номера,
+  // Категории и тарифы, Отчёты, Настройки).
+  const hotelOnly = isHotelOrg;
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
-    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
-    "storage": can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement,
-    "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
+    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
+    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents || can_.hotelRooms || can_.hotelRoomCategories,
+    "storage": !hotelOnly && (can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement),
+    "management": !hotelOnly && (can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings),
   };
 
   // Если активная группа стала недоступной — сбросить на "all"
@@ -772,9 +791,14 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
         )}
 
-        {/* Расписание */}
+        {/* Лаборатория */}
+        {show("my-work") && can_.lab && (
+          <SidebarMenuItem to="/lab" icon={<ScienceOutlined />} label="Лаборатория" collapsed={siderCollapsed} />
+        )}
+
+        {/* Расписание — у Viva это шахматка броней, не расписание смен, поэтому своя подпись. */}
         {show("my-work") && can_.schedule && (
-          <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Расписание" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label={hotelOnly ? "Бронирования" : "Расписание"} collapsed={siderCollapsed} />
         )}
 
         {/* СКУД */}
@@ -856,6 +880,28 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
+        {/* Кухня (меню/закупка) — только Viva, у медицинской вертикали своего
+            права на это нет, поэтому гейт прямо по isHotelOrg, а не через
+            can_. «Интеграции» (каналы продаж) переехали в «Настройки». */}
+        {show("org") && isHotelOrg && (
+          <SidebarMenuItem
+            to="/kitchen"
+            icon={<RestaurantOutlined />}
+            label="Кухня"
+            collapsed={siderCollapsed}
+          />
+        )}
+
+        {/* Номера и категории (тарифы) Viva — самостоятельные страницы, не
+            вкладки «Настроек». Форма категории (/room-categories/new и
+            /:categoryId) подсвечивает «Категории и тарифы» по префиксу. */}
+        {show("org") && can_.hotelRooms && (
+          <SidebarMenuItem to="/rooms" icon={<HotelOutlined />} label="Номера" collapsed={siderCollapsed} />
+        )}
+        {show("org") && can_.hotelRoomCategories && (
+          <SidebarMenuItem to="/room-categories" icon={<CategoryOutlined />} label="Категории и тарифы" collapsed={siderCollapsed} />
+        )}
+
         {/* Все приемы */}
         {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label={t("allAppointments")} collapsed={siderCollapsed} />
@@ -918,8 +964,12 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/salary-reports" icon={<AccountBalanceWalletOutlined />} label="Отчет по ЗП" collapsed={siderCollapsed} />
         )}
 
-        {/* Отчеты */}
-        {show("management") && can_.reports && (
+        {/* Отчеты — единственный пункт на /reports, а не пара «реальный +
+            отдельный для Viva»: у отеля "management" целиком спрятан
+            (!hotelOnly, groupVisible выше), поэтому для Viva показываем тот
+            же пункт через "org". ReportsRouter.tsx на самом /reports сам
+            решает, что рендерить — DjangoReportsPage или HotelReportsPage. */}
+        {((hotelOnly && show("org")) || (!hotelOnly && show("management") && can_.reports)) && (
           <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчеты" collapsed={siderCollapsed} />
         )}
 
@@ -938,20 +988,28 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/admin/load" icon={<AnalyticsOutlined />} label="Нагрузка" collapsed={siderCollapsed} />
         )}
 
-        {/* Уведомления */}
+        {/* Автоматизация: правила, история и переключатели уведомлений.
+            Пункт «Уведомления» (конструктор напоминаний о приёмах) остался
+            в разделе настроек — в сайдбаре ему места нет, главный экран
+            рассылок теперь этот. */}
         {show("management") && can_.notifications && (
-          <SidebarMenuItem to="/settings/notifications" icon={<NotificationsOutlined />} label="Уведомления" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/settings/automations" icon={<BoltOutlined />} label="Автоматизация" collapsed={siderCollapsed} />
         )}
 
-        {/* Настройки (Django-mode only) */}
-        {show("management") && can_.settings && (
+        {/* Настройки — единственный пункт на /settings, тот же принцип
+            консолидации, что «Отчеты» выше: у отеля "management" целиком
+            спрятан, поэтому для Viva показываем тот же пункт через "org".
+            Тот же реальный SettingsIndexPage/SettingsLayout, что у клиники —
+            рельс сам скрывает клиническую специфику и показывает «Интеграции»
+            по vertical==="hotel" (см. useVisibleSettingsTabs). */}
+        {((hotelOnly && show("org")) || (!hotelOnly && show("management") && can_.settings)) && (
           <SidebarMenuItem
             to="/settings"
             icon={<TuneOutlined />}
             label="Настройки"
             collapsed={siderCollapsed}
             excludePaths={
-              ["/settings/notifications"]
+              ["/settings/automations"]
             }
           />
         )}
@@ -975,10 +1033,25 @@ type SidebarMenuItemProps = {
    * Child paths that belong to a *different* menu item and must not light
    * this one up. Used by a parent route (e.g. "/settings") so it stays
    * inactive on sub-pages that have their own sidebar entry
-   * (e.g. "/settings/notifications").
+   * (e.g. "/settings/automations").
    */
   excludePaths?: string[];
 };
+
+/**
+ * На Viva в навигации остаются только страницы, реально переделанные под
+ * отель (см. src/dev/*.tsx): «Расписание» — шахматка броней
+ * (RoomBookingGrid), «Все гости» — HotelGuestsPage, «Отчёты» —
+ * HotelReportsPage, «Кухня» — HotelKitchenPage, «Настройки» — реальный
+ * SettingsIndexPage/SettingsLayout (рельс сам показывает только доступные по
+ * правам разделы + «Интеграции» — каналы продаж живут там). «Номера»
+ * (HotelRoomsPage) и «Категории и тарифы» (HotelRoomCategoriesPage) — свои
+ * страницы, не «Настройки».
+ * Остальные ~30 пунктов (Вакцины, СКУД, Кабинет врача и т.п.) ведут либо на
+ * несуществующие для синтетической организации данные, либо просто не
+ * имеют отношения к отелю.
+ */
+const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/reports", "/kitchen", "/rooms", "/room-categories", "/settings"];
 
 const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   to,
@@ -993,6 +1066,14 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const vivaActive = useIsVivaActive();
+
+  // После хуков (Rules of Hooks): сайдбар не перемонтируется при смене
+  // организации (DjangoContextRemount оборачивает только <Outlet/>), поэтому
+  // vivaActive может поменяться между рендерами ОДНОГО и того же
+  // смонтированного экземпляра — ранний return обязан идти после всех хуков.
+  if (vivaActive && !HOTEL_ONLY_NAV_PATHS.includes(to)) return null;
+
   const collapsedFinal = (collapsed ?? false) && !isMobile;
   const hasBadge = badgeCount > 0;
   const badgeLabel = badgeCount > 99 ? "99+" : String(badgeCount);

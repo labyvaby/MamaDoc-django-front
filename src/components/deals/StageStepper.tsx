@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, ButtonBase, Stack, Tooltip, Typography } from "@mui/material";
-import { alpha, keyframes } from "@mui/material/styles";
+import { alpha } from "@mui/material/styles";
+import CheckRounded from "@mui/icons-material/CheckRounded";
 
 import type { DealStage } from "../../api/deals";
 import { useT } from "../../i18n/VerticalProvider";
@@ -14,25 +15,19 @@ interface StageStepperProps {
   disabled?: boolean;
 }
 
-/** Толщина полосы — как у линии пути этапов в истории. */
-const BAR_HEIGHT = 8;
-/** Зона нажатия выше полосы, чтобы в неё можно было попасть. */
-const HIT_HEIGHT = 22;
-
-/** Текущий сегмент дышит — сделка в работе, здесь она сейчас. */
-const pulse = keyframes`
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-`;
+/** Высота ступени; шеврон вырезается clip-path по этой же высоте. */
+const STEP_HEIGHT = 34;
+/** Глубина «стрелки» шеврона. */
+const NOTCH = 9;
 
 /**
- * Полоса этапов воронки в шапке карточки.
+ * Полоса этапов воронки в шапке карточки: ступени-шевроны в порядке воронки.
  *
- * Тонкая линия из сегментов по порядку воронки: пройденные и текущий залиты
- * цветом своего этапа, будущие — пустые. Каждый сегмент — кнопка: нажатие
- * переносит сделку (тот же `move/`, что на доске), название — в тултипе.
- * Закрытые этапы (выиграна/проиграна) идут в хвосте; когда сделка в одном из
- * них, залита вся полоса до него. Под полосой — текущий этап и номер шага.
+ * Пройденные этапы залиты своим цветом приглушённо, текущий — ярко и с галочкой,
+ * будущие — контуром. Нажатие переносит сделку (тот же `move/`, что на доске);
+ * этап «потеряна» вынесен в конец и в дровере запрашивает причину, как раньше.
+ * Форма шеврона задана `clip-path`, поэтому ступени наезжают друг на друга
+ * на глубину стрелки и читаются как один путь, а не как ряд кнопок.
  */
 const StageStepper: React.FC<StageStepperProps> = ({
   stages,
@@ -44,6 +39,7 @@ const StageStepper: React.FC<StageStepperProps> = ({
   const { t } = useT("deals");
   const visible = React.useMemo(() => {
     const active = stages.filter((s) => s.isActive || s.id === currentStageId);
+    // Открытые — по порядку воронки, закрытые (выиграна/проиграна) — в хвосте.
     const open = active.filter((s) => s.kind === "open").sort((a, b) => a.order - b.order);
     const won = active.filter((s) => s.kind === "won");
     const lost = active.filter((s) => s.kind === "lost");
@@ -52,86 +48,99 @@ const StageStepper: React.FC<StageStepperProps> = ({
 
   const currentIndex = visible.findIndex((s) => s.id === currentStageId);
   const current = visible[currentIndex];
-  const openCount = visible.filter((s) => s.kind === "open").length;
 
   return (
-    <Stack gap={0.5}>
+    <Stack gap={0.75}>
       <Stack
         direction="row"
         role="group"
         aria-label={t("detail.stagesAria")}
-        sx={{ gap: "2px", height: HIT_HEIGHT, alignItems: "center" }}
+        sx={{
+          overflowX: "auto",
+          scrollbarWidth: "none",
+          "&::-webkit-scrollbar": { display: "none" },
+          // Шевроны наезжают друг на друга — компенсируем, чтобы первый не обрезался.
+          mx: -0.25,
+          px: 0.25,
+        }}
       >
         {visible.map((stage, index) => {
           const isCurrent = stage.id === currentStageId;
-          const isPast = currentIndex >= 0 && index < currentIndex;
+          const isPast = currentIndex >= 0 && index < currentIndex && stage.kind === "open";
           const allowed = !disabled && !isCurrent && canMoveTo(stage.id);
           const first = index === 0;
           const last = index === visible.length - 1;
+          const clip = [
+            `polygon(0 0, calc(100% - ${last ? 0 : NOTCH}px) 0, 100% 50%,`,
+            `calc(100% - ${last ? 0 : NOTCH}px) 100%, 0 100%,`,
+            `${first ? 0 : NOTCH}px 50%)`,
+          ].join(" ");
           const tooltip = isCurrent
-            ? `${stage.name} · ${t("detail.stageCurrent")}`
+            ? t("detail.stageCurrent")
             : !allowed && !disabled
-              ? `${stage.name} · ${t("detail.stageLocked")}`
+              ? t("detail.stageLocked")
               : stage.name;
           return (
-            <Tooltip key={stage.id} title={tooltip} placement="top" enterDelay={300}>
-              <ButtonBase
-                disabled={!allowed}
-                onClick={() => onSelect(stage.id)}
-                aria-current={isCurrent ? "step" : undefined}
-                aria-label={stage.name}
-                sx={(theme) => {
-                  const color = stage.color || theme.palette.primary.main;
-                  return {
-                    flex: "1 1 0",
-                    minWidth: 0,
-                    height: HIT_HEIGHT,
-                    alignItems: "center",
-                    borderRadius: 1,
-                    "&.Mui-disabled": { opacity: 1 },
-                    "&.Mui-focusVisible .bar": { outline: `2px solid ${alpha(color, 0.7)}`, outlineOffset: 2 },
-                    "&:hover:not(.Mui-disabled) .bar": {
-                      bgcolor: alpha(color, isPast || isCurrent ? 1 : 0.45),
-                      transform: "scaleY(1.35)",
-                    },
-                  };
-                }}
-              >
-                <Box
-                  className="bar"
+            <Tooltip key={stage.id} title={tooltip} placement="top" enterDelay={400}>
+              <Box component="span" sx={{ flex: "1 1 0", minWidth: 0, ml: first ? 0 : `-${NOTCH - 2}px` }}>
+                <ButtonBase
+                  disabled={!allowed}
+                  onClick={() => onSelect(stage.id)}
+                  aria-current={isCurrent ? "step" : undefined}
+                  aria-label={stage.name}
                   sx={(theme) => {
                     const color = stage.color || theme.palette.primary.main;
+                    const fill = isCurrent
+                      ? color
+                      : isPast
+                        ? alpha(color, theme.palette.mode === "dark" ? 0.32 : 0.22)
+                        : alpha(theme.palette.text.primary, 0.05);
                     return {
                       width: "100%",
-                      height: BAR_HEIGHT,
-                      borderRadius: `${first ? BAR_HEIGHT / 2 : 1}px ${last ? BAR_HEIGHT / 2 : 1}px ${last ? BAR_HEIGHT / 2 : 1}px ${first ? BAR_HEIGHT / 2 : 1}px`,
-                      bgcolor: isCurrent
-                        ? color
+                      height: STEP_HEIGHT,
+                      clipPath: clip,
+                      bgcolor: fill,
+                      color: isCurrent
+                        ? theme.palette.getContrastText(color)
                         : isPast
-                          ? alpha(color, 0.55)
-                          : alpha(theme.palette.text.primary, theme.palette.mode === "dark" ? 0.12 : 0.08),
-                      animation: isCurrent && stage.kind === "open" ? `${pulse} 2.4s ease-in-out infinite` : "none",
-                      transition: theme.transitions.create(["background-color", "transform"], { duration: 160 }),
-                      "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+                          ? theme.palette.text.primary
+                          : theme.palette.text.secondary,
+                      pl: first ? 1.25 : `${NOTCH + 6}px`,
+                      pr: last ? 1.25 : `${NOTCH + 4}px`,
+                      justifyContent: "flex-start",
+                      textAlign: "left",
+                      transition: theme.transitions.create(["background-color", "color"], { duration: 200 }),
+                      "&.Mui-disabled": { opacity: isCurrent ? 1 : 0.55 },
+                      "&:hover:not(.Mui-disabled)": {
+                        bgcolor: alpha(color, isPast ? 0.5 : 0.28),
+                        color: theme.palette.text.primary,
+                      },
+                      "&.Mui-focusVisible": { outline: `2px solid ${alpha(color, 0.7)}`, outlineOffset: -2 },
                     };
                   }}
-                />
-              </ButtonBase>
+                >
+                  <Stack direction="row" alignItems="center" gap={0.5} sx={{ minWidth: 0 }}>
+                    {isCurrent ? <CheckRounded sx={{ fontSize: 15, flexShrink: 0 }} /> : null}
+                    <Typography
+                      variant="caption"
+                      component="span"
+                      noWrap
+                      sx={{ fontWeight: isCurrent ? 700 : 500, letterSpacing: 0.1, lineHeight: 1 }}
+                    >
+                      {stage.name}
+                    </Typography>
+                  </Stack>
+                </ButtonBase>
+              </Box>
             </Tooltip>
           );
         })}
       </Stack>
       {current ? (
-        <Stack direction="row" alignItems="baseline" gap={0.75} sx={{ minWidth: 0 }}>
-          <Typography variant="body2" fontWeight={600} noWrap sx={{ minWidth: 0 }}>
-            {current.name}
-          </Typography>
-          {current.kind === "open" ? (
-            <Typography variant="caption" color="text.disabled" noWrap>
-              {currentIndex + 1}/{openCount}
-            </Typography>
-          ) : null}
-        </Stack>
+        <Typography variant="caption" color="text.secondary" sx={{ px: 0.25 }}>
+          {current.name}
+          {currentIndex >= 0 && current.kind === "open" ? ` · ${currentIndex + 1}/${visible.filter((s) => s.kind === "open").length}` : ""}
+        </Typography>
       ) : null}
     </Stack>
   );

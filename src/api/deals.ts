@@ -52,26 +52,6 @@ export interface DealStage {
   isActive: boolean;
 }
 
-/** Кнопки-действия в карточке сделки; набор включённых настраивается у воронки. */
-export type DealCardAction = "services" | "chat" | "task" | "appointment";
-export const DEAL_CARD_ACTIONS: DealCardAction[] = ["services", "chat", "task", "appointment"];
-
-/** Тип дополнительного поля воронки. */
-export type DealCustomFieldType = "text" | "number" | "date" | "select" | "checkbox";
-export const DEAL_CUSTOM_FIELD_TYPES: DealCustomFieldType[] = ["text", "number", "date", "select", "checkbox"];
-
-/** Схема одного дополнительного поля карточки (настройка воронки). */
-export interface DealCustomField {
-  code: string;
-  label: string;
-  type: DealCustomFieldType;
-  options: string[];
-  required: boolean;
-}
-
-/** Значения дополнительных полей сделки: ключ — code поля. */
-export type DealCustomValues = Record<string, string | number | boolean | null>;
-
 export interface DealPipeline {
   id: number;
   name: string;
@@ -82,10 +62,6 @@ export interface DealPipeline {
   order: number;
   /** На сколько часов вперёд карточка подставляет «следующее касание» при записи касания. */
   nextTouchHours: number;
-  /** Какие кнопки показывать в карточке сделок этой воронки (порядок канонический). */
-  cardActions: DealCardAction[];
-  /** Дополнительные поля карточки этой воронки. */
-  customFields: DealCustomField[];
   stages: DealStage[];
 }
 
@@ -110,8 +86,6 @@ export interface Deal {
   /** Логин в мессенджере (Instagram/Telegram) без «@»; пусто, если лид пришёл по телефону. */
   contactUsername: string;
   phone: string;
-  /** Значения дополнительных полей по схеме воронки. */
-  customValues: DealCustomValues;
   comment: string;
   patientId: number | null;
   patientName: string | null;
@@ -375,8 +349,6 @@ export interface UpdateDealPayload {
   contactUsername?: string;
   phone?: string;
   comment?: string;
-  /** Частичное обновление дополнительных полей; null очищает. */
-  customValues?: DealCustomValues;
   patientId?: number;
   assigneeId?: number;
   sourceId?: number;
@@ -597,8 +569,6 @@ export function updatePipeline(
     code?: string;
     clearCode?: boolean;
     nextTouchHours?: number;
-    cardActions?: DealCardAction[];
-    customFields?: DealCustomField[];
   },
   organizationId?: number,
 ): Promise<DealPipeline> {

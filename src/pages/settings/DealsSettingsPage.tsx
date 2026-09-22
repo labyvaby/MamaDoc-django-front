@@ -54,11 +54,7 @@ import {
   type DealPipeline,
   type DealStage,
   type DealStageKind,
-  DEAL_CARD_ACTIONS,
-  type DealCardAction,
-  type DealCustomField,
 } from "../../api/deals";
-import CustomFieldsEditor from "../../components/deals/CustomFieldsEditor";
 import { dealsErrorMessage } from "../deals/meta";
 import BotsSection from "./deals/BotsSection";
 
@@ -144,7 +140,7 @@ const DealsSettingsPage: React.FC = () => {
   const pipelineMutation = useMutation({
     mutationFn: async (action:
       | { kind: "create"; name: string }
-      | { kind: "update"; id: number; payload: { name?: string; isDefault?: boolean; isActive?: boolean; code?: string; clearCode?: boolean; nextTouchHours?: number; cardActions?: DealCardAction[]; customFields?: DealCustomField[] } }
+      | { kind: "update"; id: number; payload: { name?: string; isDefault?: boolean; isActive?: boolean; code?: string; clearCode?: boolean; nextTouchHours?: number } }
       | { kind: "delete"; id: number }): Promise<void> => {
       if (action.kind === "create") {
         await createPipeline({ name: action.name }, orgId);
@@ -353,36 +349,6 @@ const DealsSettingsPage: React.FC = () => {
                     sx={{ width: 190 }}
                   />
                 </Tooltip>
-                {/* Действия в карточке: у салона нет «записать на приём», у
-                    колл-центра — чата; набор кнопок задаётся на воронку. */}
-                <Stack direction="row" alignItems="center" gap={0.5} flexWrap="wrap">
-                  <Typography variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
-                    {t("settings.cardActions")}
-                  </Typography>
-                  {DEAL_CARD_ACTIONS.map((action) => {
-                    const enabled = activePipeline.cardActions.includes(action);
-                    return (
-                      <Chip
-                        key={action}
-                        size="small"
-                        label={t(`settings.cardAction_${action}`)}
-                        color={enabled ? "primary" : "default"}
-                        variant={enabled ? "filled" : "outlined"}
-                        onClick={() =>
-                          pipelineMutation.mutate({
-                            kind: "update",
-                            id: activePipeline.id,
-                            payload: {
-                              cardActions: enabled
-                                ? activePipeline.cardActions.filter((a) => a !== action)
-                                : [...activePipeline.cardActions, action],
-                            },
-                          })
-                        }
-                      />
-                    );
-                  })}
-                </Stack>
                 <Stack direction="row" alignItems="center" gap={0.5}>
                   <Switch
                     size="small"
@@ -429,21 +395,6 @@ const DealsSettingsPage: React.FC = () => {
               </Stack>
             ) : null}
           </Stack>
-
-          {activePipeline ? (
-            <>
-              <Divider />
-              {/* Свои поля карточки для этой воронки. */}
-              <CustomFieldsEditor
-                key={`fields-${activePipeline.id}`}
-                fields={activePipeline.customFields}
-                saving={pipelineMutation.isPending}
-                onSave={(customFields) =>
-                  pipelineMutation.mutate({ kind: "update", id: activePipeline.id, payload: { customFields } })
-                }
-              />
-            </>
-          ) : null}
 
           <Divider />
 

@@ -42,8 +42,6 @@ export interface ChatwootLeadSettings {
   enabled: boolean;
   /** Аккаунт Chatwoot организации (из подключения «Чаты»); null — не настроен. */
   accountId: number | null;
-  /** Раздел «Чаты» (встроенный Chatwoot) включён для организации. */
-  chatsEnabled: boolean;
   /** Готовая ссылка приёмника с секретом; пустая, пока настройки ни разу не сохранены. */
   webhookUrl: string;
   apiTokenConfigured: boolean;
@@ -56,9 +54,6 @@ export interface ChatwootLeadSettings {
 
 export interface ChatwootLeadSettingsInput {
   enabled: boolean;
-  /** Раздел «Чаты» и аккаунт: не передавать — не трогать. */
-  chatsEnabled?: boolean;
-  accountId?: number | null;
   chatwootApiToken: string;
   chatwootApiTokenClear: boolean;
   pipelineCode: string;
@@ -158,40 +153,4 @@ export function suggestInboxRule(inbox: ChatwootInbox): ChatwootInboxRule {
     return { source: "Сайт", identity: "username", channel: "web" };
   }
   return { source: inbox.name, identity: "phone", channel: "" };
-}
-
-/** Агент Chatwoot и сотрудник CRM, к которому он привязан. */
-export interface ChatwootAgent {
-  agentId: number;
-  agentName: string;
-  agentEmail: string;
-  employeeId: number | null;
-  employeeName: string;
-  /** link — сохранённая связь; email — подсказка по совпадению; "" — нет. */
-  matchedBy: "link" | "email" | "";
-}
-
-export interface ChatwootAgents {
-  ok: boolean;
-  error: string;
-  results: ChatwootAgent[];
-}
-
-export function getChatwootAgents(
-  signal?: AbortSignal,
-  opts?: { organizationId?: number },
-): Promise<ChatwootAgents> {
-  const qs = opts?.organizationId != null ? `?organizationId=${opts.organizationId}` : "";
-  return apiRequest<ChatwootAgents>(`/chatwoot/agents/${qs}`, { signal });
-}
-
-/** Сохранить привязки агент → сотрудник (employeeId null — отвязать). */
-export function saveChatwootAgentLinks(
-  links: { agentId: number; employeeId: number | null }[],
-  opts?: { organizationId?: number },
-): Promise<ChatwootAgents> {
-  return apiRequest<ChatwootAgents>("/chatwoot/agents/links/", {
-    method: "PUT",
-    body: { links, organizationId: opts?.organizationId },
-  });
 }

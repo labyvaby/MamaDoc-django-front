@@ -11,6 +11,7 @@ import {
   Paper,
   Snackbar,
   Stack,
+  Switch,
   Tab,
   Table,
   TableBody,
@@ -25,11 +26,14 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import BoltOutlined from "@mui/icons-material/BoltOutlined";
+import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import MoreVertOutlined from "@mui/icons-material/MoreVertOutlined";
+import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import dayjs from "dayjs";
 
 import {
+  deleteAutomation,
   getAutomationCatalog,
   getAutomations,
   isScheduledEvent,
@@ -37,12 +41,15 @@ import {
   type Automation,
   type AutomationStatus,
 } from "../../../api/automations";
+import { getNotificationSwitches } from "../../../api/notifications";
 import {
   djangoQueryKeys,
+  DJANGO_DETAIL_STALE_TIME_MS,
   DJANGO_LIST_STALE_TIME_MS,
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../../api/queryKeys";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
+import { ConfirmDialog } from "../../../components/ui";
 import { useCan } from "../../../hooks/useCan";
 import { useActiveScope } from "../../../hooks/useActiveScope";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -53,9 +60,11 @@ import { SettingsLayout } from "../SettingsLayout";
 import { AutomationEditorDialog } from "./AutomationEditorDialog";
 import { AutomationHistoryTab } from "./AutomationHistoryTab";
 import { AutomationRunsDialog } from "./AutomationRunsDialog";
+import { AutomationSwitchesTab } from "./AutomationSwitchesTab";
 import { automationToForm, toSaveInput } from "./automationForm";
+import { switchesWarning } from "./notificationSwitches";
 
-type TabKey = "rules" | "history";
+type TabKey = "rules" | "history" | "switches";
 
 const STATUS_COLOR: Record<AutomationStatus, "default" | "success" | "warning"> = {
   draft: "default",
@@ -85,6 +94,7 @@ const AutomationsSettingsPage: React.FC = () => {
   const [editing, setEditing] = useState<Automation | null>(null);
   const [runsFor, setRunsFor] = useState<Automation | null>(null);
   const [menu, setMenu] = useState<{ anchor: HTMLElement; item: Automation } | null>(null);
+  const [deleting, setDeleting] = useState<Automation | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(
     null,
   );
@@ -102,6 +112,18 @@ const AutomationsSettingsPage: React.FC = () => {
     enabled,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
+
+  // Переключатели отправки нужны и над списком правил: выключенная
+  // организация или филиал — самая частая причина «правило есть, а
+  // сообщений нет», и лучше сказать это здесь, чем оставить на историю
+  // с кодом notifications_disabled. Вкладка «Настройки» читает тот же ключ.
+  const switchesQuery = useQuery({
+    queryKey: djangoQueryKeys.notifications.switches(organizationId ?? null),
+    queryFn: ({ signal }) => getNotificationSwitches({ organizationId }, signal),
+    enabled,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  });
+  const warning = switchesQuery.data ? switchesWarning(switchesQuery.data) : null;
 
   /**
    * Включение и пауза идут тем же полным `PUT`, что и редактор: `PATCH` у
@@ -126,7 +148,34 @@ const AutomationsSettingsPage: React.FC = () => {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (item: Automation) => deleteAutomation(item.id, { organizationId }),
+    onSuccess: () => {
+      setDeleting(null);
+      invalidateAutomations();
+      setMessage({ type: "success", text: t("automations.delete.success") });
+    },
+    onError: (err) => {
+      setDeleting(null);
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : t("automations.delete.error"),
+      });
+    },
+  });
+
   const rows = useMemo(() => listQuery.data ?? [], [listQuery.data]);
+
+  /**
+   * Тумблер в строке: включено = `active`, выключено = `paused`. Черновик
+   * включается тем же движением — статус `draft` отличается от паузы только
+   * тем, что правило ещё ни разу не включали.
+   */
+  const toggle = (item: Automation) =>
+    toggleMutation.mutate({
+      item,
+      status: item.status === "active" ? "paused" : "active",
+    });
 
   /**
    * Обновить список и историю после записи. Каталог намеренно не трогаем:
@@ -201,6 +250,12 @@ const AutomationsSettingsPage: React.FC = () => {
             iconPosition="start"
             label={t("automations.tabs.history")}
           />
+          <Tab
+            value="switches"
+            icon={<TuneOutlined fontSize="small" />}
+            iconPosition="start"
+            label={t("automations.tabs.switches")}
+          />
         </Tabs>
 
       {needsOrg ? (
@@ -211,6 +266,12 @@ const AutomationsSettingsPage: React.FC = () => {
           organizationId={organizationId}
           enabled={enabled}
         />
+      ) : tab === "switches" ? (
+        <AutomationSwitchesTab
+          organizationId={organizationId}
+          enabled={enabled}
+          onMessage={setMessage}
+        />
       ) : catalogQuery.isError ? (
         <Alert severity="error">{t("automations.catalogError")}</Alert>
       ) : listQuery.isError ? (
@@ -219,7 +280,23 @@ const AutomationsSettingsPage: React.FC = () => {
         <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
           <CircularProgress />
         </Box>
-      ) : rows.length === 0 ? (
+      ) : (
+        <>
+        {warning && (
+          <Alert
+            severity={warning.kind === "branches" ? "info" : "warning"}
+            action={
+              <Button color="inherit" size="small" onClick={() => setTab("switches")}>
+                {t("automations.switches.open")}
+              </Button>
+            }
+          >
+            {warning.kind === "branches"
+              ? t("automations.switches.banner.branches", { names: warning.names.join(", ") })
+              : t(`automations.switches.banner.${warning.kind}`)}
+          </Alert>
+        )}
+        {rows.length === 0 ? (
         <Paper variant="outlined" sx={{ borderRadius: 2, py: 8, textAlign: "center" }}>
           <Stack alignItems="center" spacing={1} sx={{ color: "text.secondary" }}>
             <BoltOutlined fontSize="large" />
@@ -227,7 +304,7 @@ const AutomationsSettingsPage: React.FC = () => {
             <Typography variant="body2">{t("automations.emptyHint")}</Typography>
           </Stack>
         </Paper>
-      ) : (
+        ) : (
         <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
           <Table size="small">
             <TableHead sx={{ bgcolor: "action.hover" }}>
@@ -274,22 +351,57 @@ const AutomationsSettingsPage: React.FC = () => {
                     {t("automations.actionsCount", { count: item.actions.length })}
                   </TableCell>
                   <TableCell>
-                    <Tooltip title={t(`automations.statusHint.${item.status}`)}>
-                      <Chip
-                        size="small"
-                        label={t(`automations.status.${item.status}`)}
-                        color={STATUS_COLOR[item.status] ?? "default"}
-                        variant="outlined"
-                        sx={{ fontWeight: 600 }}
-                      />
-                    </Tooltip>
+                    <Stack direction="row" alignItems="center" spacing={0.5} flexWrap="wrap">
+                      <Tooltip
+                        title={t(
+                          item.status === "active"
+                            ? "automations.rowMenu.pause"
+                            : "automations.rowMenu.activate",
+                        )}
+                      >
+                        <span>
+                          <Switch
+                            size="small"
+                            color="success"
+                            checked={item.status === "active"}
+                            onChange={() => toggle(item)}
+                            disabled={toggleMutation.isPending}
+                            inputProps={{
+                              "aria-label": t(`automations.status.${item.status}`),
+                            }}
+                          />
+                        </span>
+                      </Tooltip>
+                      <Tooltip title={t(`automations.statusHint.${item.status}`)}>
+                        <Chip
+                          size="small"
+                          label={t(`automations.status.${item.status}`)}
+                          color={STATUS_COLOR[item.status] ?? "default"}
+                          variant="outlined"
+                          sx={{ fontWeight: 600 }}
+                        />
+                      </Tooltip>
+                      {/* Старое WhatsApp-правило с текстом: движок его не
+                          отправляет, пока не выбран шаблон — видно из списка,
+                          а не только по ошибкам в истории. */}
+                      {item.needsTemplateSetup && (
+                        <Tooltip title={t("automations.needsTemplateSetupHint")}>
+                          <Chip
+                            size="small"
+                            label={t("automations.needsTemplateSetup")}
+                            color="warning"
+                            sx={{ fontWeight: 600 }}
+                          />
+                        </Tooltip>
+                      )}
+                    </Stack>
                   </TableCell>
                   <TableCell>{dayjs(item.updatedAt).format("DD.MM.YYYY HH:mm")}</TableCell>
                   <TableCell align="right">
                     <IconButton
                       size="small"
                       onClick={(e) => setMenu({ anchor: e.currentTarget, item })}
-                      disabled={toggleMutation.isPending}
+                      disabled={toggleMutation.isPending || deleteMutation.isPending}
                     >
                       <MoreVertOutlined fontSize="small" />
                     </IconButton>
@@ -299,6 +411,8 @@ const AutomationsSettingsPage: React.FC = () => {
             </TableBody>
           </Table>
         </TableContainer>
+        )}
+        </>
       )}
       </Stack>
 
@@ -330,10 +444,7 @@ const AutomationsSettingsPage: React.FC = () => {
         <MenuItem
           onClick={() => {
             if (!menu) return;
-            toggleMutation.mutate({
-              item: menu.item,
-              status: menu.item.status === "active" ? "paused" : "active",
-            });
+            toggle(menu.item);
             setMenu(null);
           }}
         >
@@ -341,7 +452,34 @@ const AutomationsSettingsPage: React.FC = () => {
             ? t("automations.rowMenu.pause")
             : t("automations.rowMenu.activate")}
         </MenuItem>
+        <MenuItem
+          onClick={() => {
+            if (!menu) return;
+            setDeleting(menu.item);
+            setMenu(null);
+          }}
+          sx={{ color: "error.main" }}
+        >
+          <DeleteOutlineOutlined fontSize="small" sx={{ mr: 1 }} />
+          {t("automations.rowMenu.delete")}
+        </MenuItem>
       </Menu>
+
+      {/* Удаление уносит и историю запусков — поэтому с подтверждением. */}
+      <ConfirmDialog
+        open={deleting != null}
+        title={t("automations.delete.title")}
+        message={t("automations.delete.text", { name: deleting?.name ?? "" })}
+        variant="error"
+        confirmText={t("automations.rowMenu.delete")}
+        loading={deleteMutation.isPending}
+        onClose={() => {
+          if (!deleteMutation.isPending) setDeleting(null);
+        }}
+        onConfirm={() => {
+          if (deleting) deleteMutation.mutate(deleting);
+        }}
+      />
 
       {catalogQuery.data && (
         <AutomationEditorDialog

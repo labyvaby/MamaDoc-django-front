@@ -25,7 +25,6 @@ describe("chatwootLeads api", () => {
       respond({
         enabled: false,
         accountId: 3,
-    chatsEnabled: true,
         webhookUrl: "",
         apiTokenConfigured: false,
         pipelineCode: "",
@@ -50,7 +49,6 @@ describe("chatwootLeads api", () => {
       respond({
         enabled: true,
         accountId: 3,
-    chatsEnabled: true,
         webhookUrl: "https://crm/api/chatwoot/webhook/?token=s",
         apiTokenConfigured: true,
         pipelineCode: "sales",
