@@ -43,10 +43,18 @@ export function planStatusSave(
  * сможет войти и не будет стоять ни на одной услуге.
  */
 export function restoreOutcomeMessage(
-  result: Pick<RestoreEmployeeResult, "fromJournal" | "accessRestored" | "servicesRestored">,
+  result: Pick<
+    RestoreEmployeeResult,
+    "alreadyActive" | "fromJournal" | "accessRestored" | "servicesRestored"
+  >,
   name: string,
 ): { type: "success"; message: string } {
   const who = name ? `Сотрудник ${name}` : "Сотрудник";
+  // Не был уволен — восстанавливать было нечего; текст «уволили до журнала»
+  // тут был бы неправдой.
+  if (result.alreadyActive) {
+    return { type: "success", message: `${who} уже в штате.` };
+  }
   if (!result.fromJournal) {
     return {
       type: "success",

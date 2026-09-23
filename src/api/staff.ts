@@ -511,6 +511,8 @@ export function restoreEmployee(
  */
 export interface RestoreEmployeeResult {
   employee: DjangoEmployee;
+  /** Сотрудник уже не был уволен (вернули в другой вкладке, повторный клик). */
+  alreadyActive: boolean;
   fromJournal: boolean;
   accessRestored: boolean;
   servicesRestored: number;

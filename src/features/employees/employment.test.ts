@@ -76,7 +76,7 @@ describe("formatFiredNote — подпись «кем и когда уволен
 describe("restoreOutcomeMessage — уведомление ровно о том, что вернулось", () => {
   it("уволен до журнала — честно просим выдать доступ и услуги вручную", () => {
     const m = restoreOutcomeMessage(
-      { fromJournal: false, accessRestored: false, servicesRestored: 0 },
+      { alreadyActive: false, fromJournal: false, accessRestored: false, servicesRestored: 0 },
       "Максатбеков Нурзат",
     );
     expect(m.message).toContain("вручную");
@@ -85,7 +85,7 @@ describe("restoreOutcomeMessage — уведомление ровно о том,
 
   it("по журналу — перечисляем, что вернулось", () => {
     const m = restoreOutcomeMessage(
-      { fromJournal: true, accessRestored: true, servicesRestored: 3 },
+      { alreadyActive: false, fromJournal: true, accessRestored: true, servicesRestored: 3 },
       "Иванова",
     );
     expect(m.message).toBe(
@@ -95,9 +95,20 @@ describe("restoreOutcomeMessage — уведомление ровно о том,
 
   it("по журналу, но возвращать было нечего — без выдуманных подробностей", () => {
     const m = restoreOutcomeMessage(
-      { fromJournal: true, accessRestored: false, servicesRestored: 0 },
+      { alreadyActive: false, fromJournal: true, accessRestored: false, servicesRestored: 0 },
       "",
     );
     expect(m.message).toBe("Сотрудник восстановлен.");
+  });
+});
+
+describe("restoreOutcomeMessage — уже в штате", () => {
+  it("повторное сохранение / другая вкладка — без ложного «до журнала»", () => {
+    const m = restoreOutcomeMessage(
+      { alreadyActive: true, fromJournal: false, accessRestored: false, servicesRestored: 0 },
+      "Иванова",
+    );
+    expect(m.message).toBe("Сотрудник Иванова уже в штате.");
+    expect(m.message).not.toContain("вручную");
   });
 });

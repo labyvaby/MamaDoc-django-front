@@ -37,11 +37,7 @@ const EmployeesPage: React.FC = () => {
     (fresh: DjangoEmployee) => {
       const id = String(fresh.id);
       state.setItems((prev) =>
-        prev.map((x) =>
-          x.id === id
-            ? { ...x, status: fresh.status, updated_at: fresh.updatedAt }
-            : x,
-        ),
+        prev.map((x) => (x.id === id ? mapDjangoFullToRow(fresh, x) : x)),
       );
       if (state.detailsOpen?.id === id) {
         state.setDetailsOpen((prev) =>

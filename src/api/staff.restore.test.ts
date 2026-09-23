@@ -36,6 +36,7 @@ describe("restoreEmployee — возврат уволенного в штат", 
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
         employee: employeeResponse(),
+        alreadyActive: false,
         fromJournal: true,
         accessRestored: true,
         servicesRestored: 2,

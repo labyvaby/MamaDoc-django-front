@@ -289,6 +289,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [email, setEmail] = React.useState("");
   const [status, setStatus] = React.useState<EmployeeStatusValue>("active");
   const canRestore = useCan("staff.delete");
+  const serverStatusRef = React.useRef<EmployeeStatusValue>("active");
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
   // Видимость на витрине онлайн-записи. Дефолт true — как миграция бэка у врачей;
   // на окружении без поля сотрудник считается видимым (флаг ничего не скрывает).
@@ -473,6 +474,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setPhoneLocal(parsed.local);
     setEmail(record.email || "");
     setStatus(toStatusValue(record.status));
+    serverStatusRef.current = toStatusValue(record.status);
     setClinicalRole(
       record.clinicalRole === "doctor" || record.clinicalRole === "nurse"
         ? record.clinicalRole
@@ -827,12 +829,15 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       // включает обратно членство в организации и услуги, снятые увольнением.
       // PATCH статуса бэк на этом переходе отклоняет — иначе человек остался
       // бы «Активным» в карточке и без доступа в систему.
-      const statusPlan = planStatusSave(toStatusValue(record.status), status);
+      // Статус на сервере, а не из пропа: если прошлое «Сохранить» уже вернуло
+      // сотрудника, а упало на полях, второй раз восстанавливать нечего.
+      const statusPlan = planStatusSave(serverStatusRef.current, status);
       // Восстановление возвращает статус, что был до увольнения; PATCH нужен,
       // только если выбрали другой.
       let patchStatus = statusPlan.patchStatus;
       if (statusPlan.restore) {
         const result = await restoreEmployee(empId);
+        serverStatusRef.current = toStatusValue(result.employee.status);
         if (patchStatus === result.employee.status) patchStatus = undefined;
         restoredEarly = true;
         notify?.(restoreOutcomeMessage(result, record.full_name ?? ""));
