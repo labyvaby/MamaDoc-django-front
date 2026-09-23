@@ -40,6 +40,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { ActiveContextSwitcher } from "../../components/sidebar/ActiveContextSwitcher";
 import { PosClientFooter } from "./ClientFooter";
 import { PosHoldReceiptDialog } from "./HoldReceiptDialog";
+import { PosConfirmDialog, type PosConfirmRequest } from "./ConfirmDialog";
 import { PosProductCards } from "./ProductCards";
 import { PosReceipt } from "./Receipt";
 import { PosTopBar } from "./TopBar";
@@ -236,6 +237,8 @@ export default function LivePosPage() {
   const attempt = React.useRef({ fingerprint: "", key: "" });
   const [error, setError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState<PosSavedReceipt | null>(null);
+  const [confirmRequest, setConfirmRequest] =
+    React.useState<PosConfirmRequest | null>(null);
   const [returnTarget, setReturnTarget] =
     React.useState<PosSavedReceipt | null>(null);
   const [reason, setReason] = React.useState("");
@@ -444,11 +447,18 @@ export default function LivePosPage() {
   };
   const newReceipt = () => {
     if (sending.current) return;
-    if (
-      !rows.length ||
-      window.confirm("Начать новый чек? Несохранённая корзина будет очищена.")
-    )
+    if (!rows.length) {
       reset();
+      return;
+    }
+    setConfirmRequest({
+      title: "Начать новый чек?",
+      message: held
+        ? "Отложенный чек закроется и останется в списке отложенных."
+        : "Несохранённая корзина будет очищена.",
+      confirmLabel: "Новый чек",
+      onConfirm: reset,
+    });
   };
   const invalidate = () => {
     void cache.invalidateQueries({ queryKey: prefix });
@@ -604,15 +614,20 @@ export default function LivePosPage() {
       setSaved(receipt);
       invalidate();
     });
-  const restore = (receipt: PosSavedReceipt) =>
+  const restore = (receipt: PosSavedReceipt) => {
+    if (!rows.length) {
+      void openHeld(receipt);
+      return;
+    }
+    setConfirmRequest({
+      title: "Открыть отложенный чек?",
+      message: "Текущая корзина будет очищена.",
+      confirmLabel: "Открыть",
+      onConfirm: () => void openHeld(receipt),
+    });
+  };
+  const openHeld = (receipt: PosSavedReceipt) =>
     act(async () => {
-      if (
-        rows.length &&
-        !window.confirm(
-          "Открыть отложенный чек? Текущая корзина будет очищена."
-        )
-      )
-        return;
       setHeld(receipt);
       setWarehouseChoice(receipt.warehouseId);
       setBenefits(emptyBenefits);
@@ -634,6 +649,36 @@ export default function LivePosPage() {
           },
         }))
       );
+      // Строка чека хранит только снимок названия и цены — фото подтягиваем
+      // из каталога. Не вышло — чек всё равно открыт, просто без картинок.
+      const productIds = [...new Set(receipt.lines.map((line) => line.productId))];
+      if (productIds.length)
+        getPosProducts(scope, {
+          warehouseId: receipt.warehouseId,
+          ids: productIds.join(","),
+          limit: 100,
+        })
+          .then((result) => {
+            const photos = new Map(
+              result.results.map((product) => [product.id, product])
+            );
+            setRows((previous) =>
+              previous.map((row) => {
+                const found = photos.get(row.product.id);
+                return found
+                  ? {
+                      ...row,
+                      product: {
+                        ...row.product,
+                        imageUrl: found.imageUrl,
+                        imageThumbnailUrl: found.imageThumbnailUrl,
+                      },
+                    }
+                  : row;
+              })
+            );
+          })
+          .catch(() => undefined);
       if (receipt.clientId && actions.clients) {
         const result = await posRequest<PosClient[]>(
           scope,
@@ -964,6 +1009,10 @@ export default function LivePosPage() {
           discountMode={discountMode}
         />
       </Box>
+      <PosConfirmDialog
+        request={confirmRequest}
+        onClose={() => setConfirmRequest(null)}
+      />
       <PosHoldReceiptDialog
         open={holdOpen}
         onClose={() => setHoldOpen(false)}
@@ -1041,21 +1090,23 @@ export default function LivePosPage() {
                   <Button
                     color="error"
                     disabled={pending}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          "Отменить чек и освободить резерв товара?"
-                        )
-                      )
-                        void act(async () => {
-                          await posRequest(
-                            scope,
-                            `receipts/${receipt.id}/cancel/`,
-                            { method: "POST" }
-                          );
-                          invalidate();
-                        });
-                    }}
+                    onClick={() =>
+                      setConfirmRequest({
+                        title: "Отменить чек?",
+                        message: "Резерв товара будет освобождён.",
+                        confirmLabel: "Отменить чек",
+                        danger: true,
+                        onConfirm: () =>
+                          void act(async () => {
+                            await posRequest(
+                              scope,
+                              `receipts/${receipt.id}/cancel/`,
+                              { method: "POST" }
+                            );
+                            invalidate();
+                          }),
+                      })
+                    }
                   >
                     Отменить
                   </Button>
