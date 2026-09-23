@@ -1,13 +1,14 @@
 import React from "react";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
   CircularProgress,
   Divider,
   FormControlLabel,
-  MenuItem,
+  Link,
   Paper,
   Stack,
   Switch,
@@ -28,18 +29,66 @@ import { AccessDenied } from "../../components/rbac/AccessDenied";
 import {
   getReviewSettings,
   updateReviewSettings,
-  type ReviewChannel,
   type ReviewSettings,
   type ReviewSettingsPatch,
 } from "../../api/reviews";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
-import { CHANNEL_LABELS } from "./meta";
 import { useT } from "../../i18n/VerticalProvider";
+import { MAP_META } from "./meta";
 
-const CHANNEL_OPTIONS: ReviewChannel[] = ["whatsapp", "sms", "whatsapp_then_sms"];
+type FormState = Pick<
+  ReviewSettings,
+  | "enabled"
+  | "delayMinutes"
+  | "expireHours"
+  | "quietFrom"
+  | "quietTo"
+  | "minDaysBetween"
+  | "positiveTags"
+  | "negativeTags"
+>;
 
-// Editable subset of settings (organizationId/variables are read-only).
-type FormState = Omit<ReviewSettings, "organizationId" | "variables">;
+const FORM_KEYS: (keyof FormState)[] = [
+  "enabled",
+  "delayMinutes",
+  "expireHours",
+  "quietFrom",
+  "quietTo",
+  "minDaysBetween",
+  "positiveTags",
+  "negativeTags",
+];
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+const pick = (s: ReviewSettings): FormState =>
+  Object.fromEntries(FORM_KEYS.map((k) => [k, s[k]])) as FormState;
+
+const TagEditor: React.FC<{
+  label: string;
+  value: string[];
+  onChange: (tags: string[]) => void;
+  color: "success" | "error";
+}> = ({ label, value, onChange, color }) => (
+  <Autocomplete
+    multiple
+    freeSolo
+    options={[] as string[]}
+    value={value}
+    onChange={(_, tags) =>
+      onChange([...new Set(tags.map((t) => t.trim()).filter(Boolean))].map((t) => t.slice(0, 60)))
+    }
+    renderTags={(tags, getTagProps) =>
+      tags.map((tag, index) => {
+        const { key, ...rest } = getTagProps({ index });
+        return <Chip key={key} label={tag} size="small" color={color} variant="outlined" {...rest} />;
+      })
+    }
+    renderInput={(params) => (
+      <TextField {...params} size="small" label={label} placeholder="Новый тег + Enter" />
+    )}
+  />
+);
 
 const ReviewsSettingsPage: React.FC = () => {
   const { t } = useT("reviews");
@@ -62,13 +111,8 @@ const ReviewsSettingsPage: React.FC = () => {
   });
 
   const [form, setForm] = React.useState<FormState | null>(null);
-
-  // Seed local form from the loaded settings.
   React.useEffect(() => {
-    if (query.data) {
-      const { organizationId: _o, variables: _v, ...rest } = query.data;
-      setForm(rest);
-    }
+    if (query.data) setForm(pick(query.data));
   }, [query.data]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
@@ -80,40 +124,23 @@ const ReviewsSettingsPage: React.FC = () => {
       queryClient.setQueryData(djangoQueryKeys.reviews.settings(orgKey), data);
       notify?.({ type: "success", message: "Настройки сохранены" });
     },
-    onError: (e) =>
-      notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка" }),
+    onError: (e) => notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка" }),
   });
 
   if (!permLoading && !canManage) return <AccessDenied />;
 
-  // Only send fields that actually changed (PATCH is partial).
+  const original = query.data;
+  const dirty = !!form && !!original && FORM_KEYS.some((k) => !same(form[k], original[k]));
+
   const handleSave = () => {
-    if (!form || !query.data) return;
-    const original = query.data;
+    if (!form || !original) return;
     const patch: ReviewSettingsPatch = {};
-    (Object.keys(form) as (keyof FormState)[]).forEach((key) => {
-      if (form[key] !== original[key]) {
-        // @ts-expect-error keys of FormState are a subset of ReviewSettingsPatch
-        patch[key] = form[key];
-      }
+    FORM_KEYS.forEach((k) => {
+      if (!same(form[k], original[k])) Object.assign(patch, { [k]: form[k] });
     });
-    if (Object.keys(patch).length === 0) {
-      notify?.({ type: "success", message: "Нет изменений" });
-      return;
-    }
     if (isSuper && organizationId != null) patch.organizationId = organizationId;
     mutation.mutate(patch);
   };
-
-  const dirty =
-    !!form &&
-    !!query.data &&
-    (Object.keys(form) as (keyof FormState)[]).some((k) => form[k] !== query.data![k]);
-
-  const variables = query.data?.variables ?? [];
-  const placeholdersHint = variables.length
-    ? `Плейсхолдеры: ${variables.map((v) => `{${v}}`).join(", ")}`
-    : undefined;
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -122,166 +149,144 @@ const ReviewsSettingsPage: React.FC = () => {
         showTitle={false}
         showSearch={false}
         leftActions={
-          <Button
-            size="small"
-            startIcon={<ArrowBackOutlined />}
-            component={RouterLink}
-            to="/reviews"
-          >
+          <Button size="small" startIcon={<ArrowBackOutlined />} component={RouterLink} to="/reviews">
             К отзывам
           </Button>
         }
       />
 
-      <Box
-        sx={{
-          flex: 1,
-          overflow: "auto",
-          px: theme.appLayout.page.paddingX,
-          pb: 4,
-          maxWidth: 720,
-        }}
-      >
-        {query.isLoading || !form ? (
-          <Stack alignItems="center" sx={{ py: 6 }}>
-            <CircularProgress />
-          </Stack>
-        ) : query.error ? (
+      <Box sx={{ flex: 1, overflow: "auto", px: theme.appLayout.page.paddingX, pb: 4, maxWidth: 760 }}>
+        {query.error ? (
           <Alert severity="error" sx={{ mt: 2 }}>
             {query.error instanceof Error ? query.error.message : "Ошибка загрузки"}
           </Alert>
+        ) : query.isLoading || !form || !original ? (
+          <Stack alignItems="center" sx={{ py: 6 }}>
+            <CircularProgress />
+          </Stack>
         ) : (
           <Stack spacing={3} sx={{ mt: 2 }}>
-            {/* ── Основное ── */}
             <Paper variant="outlined" sx={{ p: 2.5, borderRadius: "14px" }}>
               <Typography variant="subtitle1" fontWeight={700} gutterBottom>
                 Автоматическая рассылка
               </Typography>
+              {!original.platformEnabled && (
+                <Alert severity="info" sx={{ mb: 1.5 }}>
+                  Автоматическая рассылка на платформе пока не включена. Ручной запрос из карточки приёма
+                  работает.
+                </Alert>
+              )}
               <FormControlLabel
-                control={
-                  <Switch
-                    checked={form.enabled}
-                    onChange={(e) => set("enabled", e.target.checked)}
-                  />
-                }
-                label="Включить авторассылку запросов отзыва"
+                control={<Switch checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} />}
+                label="Спрашивать отзыв после каждого завершённого приёма"
               />
               <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-                {t("settings.pollerHint")}
+                {t("settings.pollerHint")} Сообщение уходит в WhatsApp, если не доставлено — SMS.
               </Typography>
 
               <Divider sx={{ my: 2 }} />
 
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} flexWrap="wrap">
-                <TextField
-                  select
-                  size="small"
-                  label="Канал"
-                  value={form.channel}
-                  onChange={(e) => set("channel", e.target.value as ReviewChannel)}
-                  sx={{ minWidth: 200 }}
-                >
-                  {CHANNEL_OPTIONS.map((c) => (
-                    <MenuItem key={c} value={c}>
-                      {CHANNEL_LABELS[c]}
-                    </MenuItem>
-                  ))}
-                </TextField>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} flexWrap="wrap" useFlexGap>
                 <TextField
                   type="number"
                   size="small"
                   label={t("settings.delayLabel")}
                   value={form.delayMinutes}
-                  onChange={(e) => set("delayMinutes", Number(e.target.value))}
+                  onChange={(e) => set("delayMinutes", Math.max(0, Number(e.target.value)))}
+                  inputProps={{ min: 0 }}
+                  sx={{ width: 240 }}
+                />
+                <TextField
+                  type="time"
+                  size="small"
+                  label="Не писать с"
+                  value={form.quietFrom}
+                  onChange={(e) => set("quietFrom", e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ width: 140 }}
+                />
+                <TextField
+                  type="time"
+                  size="small"
+                  label="до"
+                  value={form.quietTo}
+                  onChange={(e) => set("quietTo", e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ width: 140 }}
+                />
+                <TextField
+                  type="number"
+                  size="small"
+                  label="Не чаще раза в N дней"
+                  helperText="На одного пациента или номер"
+                  value={form.minDaysBetween}
+                  onChange={(e) => set("minDaysBetween", Math.max(0, Number(e.target.value)))}
                   inputProps={{ min: 0 }}
                   sx={{ width: 220 }}
                 />
                 <TextField
                   type="number"
                   size="small"
-                  label="Срок ответа (часы)"
+                  label="Ссылка действует, часов"
+                  helperText="Сколько можно ответить и исправить ответ"
                   value={form.expireHours}
-                  onChange={(e) => set("expireHours", Number(e.target.value))}
+                  onChange={(e) => set("expireHours", Math.max(1, Number(e.target.value)))}
                   inputProps={{ min: 1 }}
-                  sx={{ width: 180 }}
+                  sx={{ width: 240 }}
                 />
-                <TextField
-                  select
-                  size="small"
-                  label="Порог негатива"
-                  value={String(form.negativeThreshold)}
-                  onChange={(e) => set("negativeThreshold", Number(e.target.value))}
-                  helperText="Оценка ниже порога — негатив"
-                  sx={{ width: 180 }}
-                >
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <MenuItem key={n} value={String(n)}>
-                      {n}
-                    </MenuItem>
-                  ))}
-                </TextField>
               </Stack>
-
-              <TextField
-                fullWidth
-                size="small"
-                label="Ссылка 2ГИС"
-                value={form.gisUrl}
-                onChange={(e) => set("gisUrl", e.target.value)}
-                placeholder="https://2gis.kg/..."
-                sx={{ mt: 2 }}
-              />
             </Paper>
 
-            {/* ── Шаблоны ── */}
             <Paper variant="outlined" sx={{ p: 2.5, borderRadius: "14px" }}>
               <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-                Шаблоны сообщений
+                Теги на странице отзыва
               </Typography>
-              {placeholdersHint && (
-                <Stack direction="row" flexWrap="wrap" gap={0.5} sx={{ mb: 2 }}>
-                  {variables.map((v) => (
-                    <Chip key={v} label={`{${v}}`} size="small" variant="outlined" />
-                  ))}
-                </Stack>
-              )}
               <Stack spacing={2}>
-                <TextField
-                  fullWidth
-                  multiline
-                  minRows={2}
-                  size="small"
-                  label="Приглашение (со ссылкой на оценку)"
-                  value={form.templateInvite}
-                  onChange={(e) => set("templateInvite", e.target.value)}
+                <TagEditor
+                  label="Что понравилось (при 5★)"
+                  value={form.positiveTags}
+                  onChange={(tags) => set("positiveTags", tags)}
+                  color="success"
                 />
-                <TextField
-                  fullWidth
-                  multiline
-                  minRows={2}
-                  size="small"
-                  label="Запрос комментария (оценка ниже порога)"
-                  value={form.templateAskComment}
-                  onChange={(e) => set("templateAskComment", e.target.value)}
+                <TagEditor
+                  label="Что было не так (ниже 5★)"
+                  value={form.negativeTags}
+                  onChange={(tags) => set("negativeTags", tags)}
+                  color="error"
                 />
-                <TextField
-                  fullWidth
-                  multiline
-                  minRows={2}
-                  size="small"
-                  label="Благодарность за высокую оценку (со ссылкой 2ГИС)"
-                  value={form.templateThanks5}
-                  onChange={(e) => set("templateThanks5", e.target.value)}
-                />
-                <TextField
-                  fullWidth
-                  multiline
-                  minRows={2}
-                  size="small"
-                  label="Благодарность за низкую оценку"
-                  value={form.templateThanksLow}
-                  onChange={(e) => set("templateThanksLow", e.target.value)}
-                />
+              </Stack>
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: "14px" }}>
+              <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+                Карты для отзывов с 5★
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.5 }}>
+                Ссылки берутся из настроек филиала. Кнопки карт видит только пациент, который поставил 5★ с
+                первого раза и ещё не оставлял подтверждённый отзыв.
+              </Typography>
+              <Stack spacing={1.5}>
+                {original.branchMaps.map((b) => (
+                  <Box key={b.branchId}>
+                    <Typography variant="body2" fontWeight={600}>
+                      {b.branchName}
+                    </Typography>
+                    {b.maps.length === 0 ? (
+                      <Alert severity="warning" sx={{ mt: 0.5 }}>
+                        Нет ссылок на карты — пациенты с 5★ не получат кнопки. Заполните их в настройках
+                        филиала.
+                      </Alert>
+                    ) : (
+                      <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 0.5 }}>
+                        {b.maps.map((m) => (
+                          <Link key={m.platform} href={m.url} target="_blank" rel="noopener" underline="none">
+                            <Chip label={MAP_META[m.platform]} size="small" clickable variant="outlined" />
+                          </Link>
+                        ))}
+                      </Stack>
+                    )}
+                  </Box>
+                ))}
               </Stack>
             </Paper>
 

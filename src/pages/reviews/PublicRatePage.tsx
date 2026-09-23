@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Paper,
   Rating,
@@ -15,16 +16,27 @@ import StarBorderRounded from "@mui/icons-material/StarBorderRounded";
 import OpenInNewRounded from "@mui/icons-material/OpenInNewRounded";
 import { useParams } from "react-router";
 
-import { getRateContext, postRate, type RateContext } from "../../api/reviews";
+import {
+  getRateContext,
+  postMapClick,
+  postRate,
+  type MapPlatform,
+  type RateContext,
+} from "../../api/reviews";
 import { ApiError } from "../../api/client";
-import { useFormValidation } from "../../hooks/useFormValidation";
 import { useT } from "../../i18n/VerticalProvider";
+import { canSubmit, initialForm, tagOptions, toSubmit, type RateForm } from "./rateForm";
+
+const MAP_LABELS: Record<MapPlatform, string> = {
+  "2gis": "2ГИС",
+  yandex: "Яндекс Картах",
+  google: "Google Maps",
+};
 
 const Shell: React.FC<React.PropsWithChildren> = ({ children }) => (
   <Box
     sx={{
       minHeight: "100dvh",
-      width: "100%",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -34,104 +46,107 @@ const Shell: React.FC<React.PropsWithChildren> = ({ children }) => (
   >
     <Paper
       variant="outlined"
-      sx={{ p: { xs: 3, sm: 4 }, borderRadius: "14px", width: "100%", maxWidth: 440 }}
+      sx={{ p: { xs: 2.5, sm: 4 }, borderRadius: "14px", width: "100%", maxWidth: 460 }}
     >
       {children}
     </Paper>
   </Box>
 );
 
+const Stars: React.FC<{
+  label: string;
+  value: number | null;
+  onChange: (v: number | null) => void;
+  large?: boolean;
+}> = ({ label, value, onChange, large = false }) => (
+  <Stack spacing={0.5} alignItems="center">
+    <Typography variant={large ? "subtitle1" : "body2"} fontWeight={600} textAlign="center">
+      {label}
+    </Typography>
+    <Rating
+      value={value}
+      onChange={(_, v) => onChange(v)}
+      icon={<StarRounded fontSize="inherit" />}
+      emptyIcon={<StarBorderRounded fontSize="inherit" />}
+      sx={{ fontSize: large ? 48 : 34 }}
+    />
+  </Stack>
+);
+
+type Screen = "loading" | "missing" | "failed" | "form" | "done";
+
 const PublicRatePage: React.FC = () => {
   const { t } = useT("reviews");
   const { token = "" } = useParams<{ token: string }>();
-
   const [ctx, setCtx] = React.useState<RateContext | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [notFound, setNotFound] = React.useState(false);
+  const [form, setForm] = React.useState<RateForm | null>(null);
+  const [screen, setScreen] = React.useState<Screen>("loading");
+  const [editing, setEditing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [comment, setComment] = React.useState("");
-  const [submitting, setSubmitting] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-    setLoading(true);
-    getRateContext(token, controller.signal)
+    const ctrl = new AbortController();
+    getRateContext(token, ctrl.signal)
       .then((data) => {
-        if (!cancelled) setCtx(data);
+        setCtx(data);
+        setForm(initialForm(data));
+        setScreen(data.answered ? "done" : "form");
       })
       .catch((e) => {
-        if (cancelled) return;
-        if (e instanceof ApiError && e.status === 404) setNotFound(true);
-        else setError(e instanceof Error ? e.message : "Ошибка загрузки");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (ctrl.signal.aborted) return;
+        if (e instanceof ApiError && e.status === 404) {
+          setScreen("missing");
+          return;
+        }
+        setError(e instanceof Error ? e.message : "Ошибка загрузки");
+        setScreen("failed");
       });
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
+    return () => ctrl.abort();
   }, [token]);
 
-  const submitRating = async (value: number) => {
-    if (submitting) return;
-    setSubmitting(true);
+  const set = <K extends keyof RateForm>(key: K, value: RateForm[K]) =>
+    setForm((f) => (f ? { ...f, [key]: value } : f));
+
+  const submit = async () => {
+    if (!ctx || !form || !canSubmit(form)) return;
+    setSaving(true);
     setError(null);
     try {
-      const next = await postRate(token, { rating: value });
+      const next = await postRate(token, toSubmit(ctx, form));
       setCtx(next);
+      setForm(initialForm(next));
+      setEditing(false);
+      setScreen("done");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось сохранить оценку");
+      setError(e instanceof Error ? e.message : "Не удалось отправить");
     } finally {
-      setSubmitting(false);
+      setSaving(false);
     }
   };
 
-  const v = useFormValidation({
-    comment: comment.trim() ? null : "Напишите, что можно улучшить",
-  });
-
-  const submitComment = async () => {
-    if (submitting) return;
-    if (!v.validate()) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const next = await postRate(token, { comment: comment.trim() });
-      setCtx(next);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось отправить комментарий");
-    } finally {
-      setSubmitting(false);
-    }
+  const openMap = (platform: MapPlatform, url: string) => {
+    postMapClick(token, platform).catch(() => undefined);
+    window.open(url, "_blank", "noopener");
   };
 
-  // ── Render states ──
-  if (loading) {
+  if (screen === "loading") {
     return (
       <Shell>
-        <Stack alignItems="center" sx={{ py: 4 }}>
+        <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
           <CircularProgress />
-        </Stack>
+        </Box>
       </Shell>
     );
   }
-
-  if (notFound) {
+  if (screen === "missing") {
     return (
       <Shell>
-        <Typography variant="h6" fontWeight={700} gutterBottom>
-          Ссылка недействительна
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Возможно, отзыв уже оставлен или срок действия ссылки истёк.
-        </Typography>
+        <Alert severity="info">Ссылка недействительна или устарела.</Alert>
       </Shell>
     );
   }
-
-  if (!ctx) {
+  if (screen === "failed" || !ctx || !form) {
     return (
       <Shell>
         <Alert severity="error">{error ?? "Ошибка загрузки"}</Alert>
@@ -139,127 +154,122 @@ const PublicRatePage: React.FC = () => {
     );
   }
 
-  const header = (
-    <Box sx={{ textAlign: "center", mb: 3 }}>
-      <Typography variant="h6" fontWeight={700}>
-        {ctx.clinicName}
-      </Typography>
-      {ctx.doctorName && (
-        <Typography variant="body2" color="text.secondary">
-          {t("public.visitLabel", { name: ctx.doctorName })}
-        </Typography>
-      )}
-    </Box>
-  );
-
-  // Завершено / промоутер → благодарность (+ кнопка 2ГИС).
-  if (ctx.completed) {
+  if (screen === "done" && !editing) {
+    const happy = ctx.rating === 5;
     return (
       <Shell>
-        {header}
-        <Box sx={{ textAlign: "center" }}>
-          {ctx.rating != null && (
-            <Rating value={ctx.rating} readOnly size="large" sx={{ mb: 2 }} />
-          )}
-          <Typography variant="h6" fontWeight={700} gutterBottom>
+        <Stack spacing={2} alignItems="center" textAlign="center">
+          <Typography variant="h6" fontWeight={700}>
             Спасибо за отзыв!
           </Typography>
-          {ctx.redirectTo2Gis && ctx.gisUrl && (
-            <>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Будем благодарны, если поделитесь оценкой на 2ГИС.
-              </Typography>
-              <Button
-                variant="contained"
-                size="large"
-                href={ctx.gisUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                endIcon={<OpenInNewRounded />}
-              >
-                Оставить отзыв на 2ГИС
-              </Button>
-            </>
+          <Typography color="text.secondary">
+            {happy
+              ? ctx.maps.length > 0
+                ? "Нам очень приятно. Будем рады, если вы поделитесь впечатлением на картах:"
+                : "Нам очень приятно. Ждём вас снова!"
+              : "Нам жаль, что не всё прошло хорошо. Мы обязательно разберёмся."}
+          </Typography>
+          {ctx.maps.map((m) => (
+            <Button
+              key={m.platform}
+              fullWidth
+              size="large"
+              variant="contained"
+              endIcon={<OpenInNewRounded />}
+              onClick={() => openMap(m.platform, m.url)}
+            >
+              Оставить отзыв в {MAP_LABELS[m.platform]}
+            </Button>
+          ))}
+          {ctx.canEdit && (
+            <Button variant="text" onClick={() => setEditing(true)}>
+              Изменить ответ
+            </Button>
           )}
-        </Box>
+        </Stack>
       </Shell>
     );
   }
 
-  // Шаг 2 — комментарий (оценка ниже порога).
-  if (ctx.needComment) {
+  if (!ctx.canEdit) {
     return (
       <Shell>
-        {header}
-        <Box sx={{ textAlign: "center", mb: 2 }}>
-          {ctx.rating != null && (
-            <Rating value={ctx.rating} readOnly size="large" sx={{ mb: 1 }} />
-          )}
-          <Typography variant="subtitle1" fontWeight={700}>
-            Что мы могли бы улучшить?
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Ваш отзыв поможет нам стать лучше.
-          </Typography>
-        </Box>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        <TextField
-          fullWidth
-          multiline
-          minRows={4}
-          placeholder="Расскажите, что пошло не так..."
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          disabled={submitting}
-          sx={{ mb: 2 }}
-          {...v.field("comment")}
-        />
-        <Button
-          fullWidth
-          variant="contained"
-          size="large"
-          onClick={submitComment}
-          disabled={submitting}
-          startIcon={submitting ? <CircularProgress size={18} /> : undefined}
-        >
-          Отправить
-        </Button>
+        <Alert severity="info">Срок ответа по этой ссылке истёк.</Alert>
       </Shell>
     );
   }
 
-  // Шаг 1 — оценка звёздами.
+  const options = tagOptions(ctx, form.rating);
+  const low = form.rating != null && form.rating < 5;
   return (
     <Shell>
-      {header}
-      <Box sx={{ textAlign: "center" }}>
-        <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-          {t("public.rateYourVisit")}
-        </Typography>
-        {error && (
-          <Alert severity="error" sx={{ my: 2 }}>
-            {error}
-          </Alert>
+      <Stack spacing={2.5}>
+        <Box textAlign="center">
+          <Typography variant="h6" fontWeight={700}>
+            {t("public.rateYourVisit")}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {ctx.clinicName}
+          </Typography>
+        </Box>
+        <Stars label="Общая оценка" value={form.rating} onChange={(v) => set("rating", v)} large />
+        {ctx.hasDoctor && (
+          <Stars
+            label={ctx.doctorName ? `${t("public.doctorLabel")} ${ctx.doctorName}` : t("public.doctorLabel")}
+            value={form.doctorRating}
+            onChange={(v) => set("doctorRating", v)}
+          />
         )}
-        <Rating
-          size="large"
-          value={ctx.rating ?? null}
-          disabled={submitting}
-          onChange={(_, value) => value && submitRating(value)}
-          icon={<StarRounded fontSize="inherit" />}
-          emptyIcon={<StarBorderRounded fontSize="inherit" />}
-          sx={{ fontSize: "3rem", mt: 1 }}
+        <Stars
+          label={t("public.registryLabel")}
+          value={form.registryRating}
+          onChange={(v) => set("registryRating", v)}
         />
-        {submitting && (
-          <Box sx={{ mt: 2 }}>
-            <CircularProgress size={22} />
+        {options.length > 0 && (
+          <Box>
+            <Typography variant="body2" fontWeight={600} gutterBottom>
+              {low ? t("public.wrongLabel") : t("public.likedLabel")}
+            </Typography>
+            <Stack direction="row" flexWrap="wrap" gap={1}>
+              {options.map((tag) => {
+                const on = form.tags.includes(tag);
+                return (
+                  <Chip
+                    key={tag}
+                    label={tag}
+                    clickable
+                    color={on ? "primary" : "default"}
+                    variant={on ? "filled" : "outlined"}
+                    onClick={() =>
+                      set("tags", on ? form.tags.filter((x) => x !== tag) : [...form.tags, tag])
+                    }
+                  />
+                );
+              })}
+            </Stack>
           </Box>
         )}
-      </Box>
+        {form.rating != null && (
+          <TextField
+            multiline
+            minRows={3}
+            fullWidth
+            value={form.comment}
+            onChange={(e) => set("comment", e.target.value)}
+            label={low ? "Что было не так?" : "Комментарий (необязательно)"}
+            inputProps={{ maxLength: 2000 }}
+          />
+        )}
+        {error && <Alert severity="error">{error}</Alert>}
+        <Button
+          size="large"
+          variant="contained"
+          disabled={!canSubmit(form) || saving}
+          onClick={submit}
+        >
+          {saving ? <CircularProgress size={22} color="inherit" /> : "Отправить"}
+        </Button>
+      </Stack>
     </Shell>
   );
 };

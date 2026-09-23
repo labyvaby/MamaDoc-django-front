@@ -188,6 +188,12 @@ export const djangoQueryKeys = {
       ["django", "reviews", "settings", organizationId ?? null] as const,
     byAppointment: (appointmentId: number) =>
       ["django", "reviews", "appointment", appointmentId] as const,
+    staff: (params: Record<string, unknown>) =>
+      ["django", "reviews", "staff", params] as const,
+    tags: (params: Record<string, unknown>) =>
+      ["django", "reviews", "tags", params] as const,
+    mapClicks: (params: Record<string, unknown>) =>
+      ["django", "reviews", "map-clicks", params] as const,
   },
 
   tasks: {

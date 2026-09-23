@@ -6,11 +6,15 @@
     "specialistColumn": "{{specialist.nom, capitalize}}"
   },
   "settings": {
-    "pollerHint": "Поллер найдёт завершённые {{visit.nomPl}} и отправит приглашение через заданную задержку. Глобальный рубильник также должен быть включён на сервере.",
-    "delayLabel": "Задержка после {{visit.gen}} (мин)"
+    "pollerHint": "Запрос уйдёт через заданное время после завершения {{visit.gen}}, но не в тихие часы — тогда утром. Одному человеку (или номеру) — не чаще заданного числа дней.",
+    "delayLabel": "Через сколько минут после {{visit.gen}}"
   },
   "public": {
     "visitLabel": "{{visit.nom, capitalize}}: {{name}}",
-    "rateYourVisit": "Оцените ваш {{visit.acc}}"
+    "rateYourVisit": "Оцените ваш {{visit.acc}}",
+    "doctorLabel": "Как вам {{specialist.nom}}?",
+    "registryLabel": "Администратор и запись",
+    "likedLabel": "Что понравилось?",
+    "wrongLabel": "Что было не так?"
   }
 }
