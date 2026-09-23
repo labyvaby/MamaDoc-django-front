@@ -15,6 +15,7 @@ import OnboardEmployeeDrawer from "./components/OnboardEmployeeDrawer";
 import EmployeeServicesDrawer from "./components/EmployeeServicesDrawer";
 import DjangoEditEmployeeDrawer from "./components/DjangoEditEmployeeDrawer";
 import DjangoFireEmployeeDialog from "./components/DjangoFireEmployeeDialog";
+import DjangoRestoreEmployeeDialog from "./components/DjangoRestoreEmployeeDialog";
 import { useEmployeesPageState } from "./hooks/useEmployeesPage";
 import { AppBottomSheet, PageHeader } from "../../components/ui";
 import { useCan } from "../../hooks/useCan";
@@ -25,6 +26,7 @@ const EmployeesPage: React.FC = () => {
   usePageTitle(t("page.title"));
   const state = useEmployeesPageState();
   const [onboardOpen, setOnboardOpen] = React.useState(false);
+  const [restoreOpen, setRestoreOpen] = React.useState<EmployesRow | null>(null);
   const [servicesDrawer, setServicesDrawer] = React.useState<{
     open: boolean;
     employeeId: number;
@@ -130,6 +132,7 @@ const EmployeesPage: React.FC = () => {
               onSelect={(e) => state.setDetailsOpen(e)}
               onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
               onDelete={canFire ? (e) => state.setDeleteOpen(e) : undefined}
+              onRestore={canFire ? (e) => setRestoreOpen(e) : undefined}
               listRef={listRef}
               onScroll={state.loadMore}
               loading={state.loading}
@@ -158,6 +161,7 @@ const EmployeesPage: React.FC = () => {
                   <EmployeeCard
                     emp={state.detailsOpen}
                     onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
+                    onRestore={canFire ? (e) => setRestoreOpen(e) : undefined}
                     onOpenServices={
                       (id, name) => openServicesDrawer(id, name)
                     }
@@ -194,6 +198,7 @@ const EmployeesPage: React.FC = () => {
             <EmployeeCard
               emp={state.detailsOpen}
               onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
+              onRestore={canFire ? (e) => setRestoreOpen(e) : undefined}
               onOpenServices={
                 (id, name) => openServicesDrawer(id, name)
               }
@@ -257,6 +262,25 @@ const EmployeesPage: React.FC = () => {
               );
             }
             state.setDeleteOpen(null);
+          }}
+        />
+
+      <DjangoRestoreEmployeeDialog
+          record={restoreOpen}
+          onClose={() => setRestoreOpen(null)}
+          onRestored={(id) => {
+            // Как и при увольнении, строка остаётся на месте — меняется статус.
+            state.setItems((prev) =>
+              prev.map((x) =>
+                x.id === id ? { ...x, status: "active" } : x,
+              ),
+            );
+            if (state.detailsOpen?.id === id) {
+              state.setDetailsOpen((prev) =>
+                prev ? { ...prev, status: "active" } : prev,
+              );
+            }
+            setRestoreOpen(null);
           }}
         />
 

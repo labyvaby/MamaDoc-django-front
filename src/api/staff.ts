@@ -97,6 +97,19 @@ export interface DjangoEmployee {
   operationalBranches: DjangoEmployeeBranch[];
   createdAt: string;
   updatedAt: string;
+  /**
+   * Кто и когда уволил / восстановил. `null` — сотрудника ни разу не
+   * увольняли; `undefined` — бэк без этого релиза.
+   */
+  employment?: DjangoEmploymentInfo | null;
+}
+
+/** Кто закончил работу сотрудника и кто вернул. */
+export interface DjangoEmploymentInfo {
+  firedAt: string | null;
+  firedBy: string;
+  restoredAt: string | null;
+  restoredBy: string;
 }
 
 /** Compact list item (GET /employees/) */
@@ -471,6 +484,21 @@ export function fireEmployee(
   employeeId: number,
 ): Promise<DjangoEmployee> {
   return apiRequest<DjangoEmployee>(`/staff/employees/${employeeId}/fire/`, {
+    method: "POST",
+    body: { confirm: true },
+  }).then(normalizeEmployee);
+}
+
+/**
+ * Вернуть уволенного в штат — зеркало `fireEmployee`: бэк ставит статус
+ * обратно, включает членство в организации и те услуги, что выключило
+ * увольнение. Отдельная ручка, а не PATCH статуса: PATCH вернул бы только
+ * надпись «Активный», оставив человека без доступа в панель.
+ */
+export function restoreEmployee(
+  employeeId: number,
+): Promise<DjangoEmployee> {
+  return apiRequest<DjangoEmployee>(`/staff/employees/${employeeId}/restore/`, {
     method: "POST",
     body: { confirm: true },
   }).then(normalizeEmployee);

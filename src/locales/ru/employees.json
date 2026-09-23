@@ -17,6 +17,7 @@
     "noSystemAccessGroup": "Без доступа в систему",
     "passportUploaded": "Паспорт загружен",
     "fireTooltip": "Уволить",
+    "restoreTooltip": "Восстановить",
     "noName": "Без имени"
   },
   "card": {

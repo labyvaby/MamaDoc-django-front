@@ -34,6 +34,7 @@ import dayjs from "dayjs";
 import DrawerBase from "./DrawerBase";
 import {
   updateEmployee,
+  restoreEmployee,
   getDjangoEmployee,
   uploadEmployeePhoto,
   uploadEmployeeElqr,
@@ -67,6 +68,7 @@ import DjangoSalarySettings, {
   type SalarySettingsValue,
 } from "./DjangoSalarySettings";
 import type { EmployesRow } from "../types";
+import { planStatusSave } from "../employment";
 import { swapHomeInOperational } from "../homeBranch";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -817,6 +819,15 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setServerError(null);
 
     try {
+      // 0. Возврат уволенного идёт отдельной ручкой: вместе со статусом она
+      // включает обратно членство в организации и услуги, снятые увольнением.
+      // PATCH статуса бэк на этом переходе отклоняет — иначе человек остался
+      // бы «Активным» в карточке и без доступа в систему.
+      const statusPlan = planStatusSave(toStatusValue(record.status), status);
+      if (statusPlan.restore) {
+        await restoreEmployee(empId);
+      }
+
       // 1. Update basic fields
       await updateEmployee(empId, {
         // Повторно нормализуем: отправить можно по Enter, не уходя из поля.
@@ -824,9 +835,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         nickname: nickname.trim() || null,
         phone: composePhone(phoneCountry, phoneLocal),
         email: email.trim() || null,
-        // Статус — только при изменении: иначе сохранение карточки уволенного
-        // вернуло бы его в штат (раньше всё, кроме inactive, уходило как active).
-        ...(status !== toStatusValue(record.status) && { status }),
+        // Статус — только при изменении (см. planStatusSave): сохранение
+        // карточки уволенного не должно возвращать его в штат само по себе.
+        ...(statusPlan.patchStatus ? { status: statusPlan.patchStatus } : {}),
         clinicalRole,
         // Только если бэк знает поле (см. onlineBookingSupported).
         ...(onlineBookingSupported && { onlineBookingEnabled }),

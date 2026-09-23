@@ -3,6 +3,7 @@ import { Stack, Typography, IconButton, Box, Chip } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
+import HowToRegOutlined from "@mui/icons-material/HowToRegOutlined";
 import type { EmployesRow } from "../types";
 import { UserAvatar } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
@@ -14,6 +15,8 @@ export type EmployeeListProps = {
   onSelect: (e: EmployesRow) => void;
   onEdit?: (e: EmployesRow) => void;
   onDelete?: (e: EmployesRow) => void;
+  /** Вернуть уволенного в штат. Без права «уволить» — не передаётся. */
+  onRestore?: (e: EmployesRow) => void;
   listRef: React.RefObject<HTMLDivElement | null>;
   onScroll: () => void;
   loading?: boolean;
@@ -46,6 +49,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
   onSelect,
   onEdit,
   onDelete,
+  onRestore,
   listRef,
   onScroll,
   loading,
@@ -180,7 +184,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
 
         <StatusPill status={e.status} />
 
-        {(onEdit || onDelete) && (
+        {(onEdit || onDelete || (isFired && onRestore)) && (
           <Stack
             direction="row"
             spacing={0.5}
@@ -206,7 +210,31 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
                 <EditOutlined sx={{ fontSize: 16 }} />
               </IconButton>
             )}
-            {onDelete && (
+            {isFired && onRestore && (
+              <IconButton
+                size="small"
+                aria-label={t("list.restoreTooltip")}
+                data-testid="employee-restore-button"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  onRestore(e);
+                }}
+                sx={(t) => ({
+                  border: 1,
+                  borderColor: "divider",
+                  borderRadius: "8px",
+                  color: "text.secondary",
+                  "&:hover": {
+                    color: t.palette.success.main,
+                    borderColor: alpha(t.palette.success.main, 0.4),
+                    bgcolor: alpha(t.palette.success.main, 0.1),
+                  },
+                })}
+              >
+                <HowToRegOutlined sx={{ fontSize: 16 }} />
+              </IconButton>
+            )}
+            {onDelete && !isFired && (
               <IconButton
                 size="small"
                 aria-label={t("list.fireTooltip")}
