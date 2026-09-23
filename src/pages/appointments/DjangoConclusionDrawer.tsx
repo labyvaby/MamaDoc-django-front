@@ -106,6 +106,7 @@ import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/query
 
 import {
   upsertConclusion,
+  createAdditionalConclusion,
   updateConclusion,
   getConclusionSlots,
   findReplacementSlot,
@@ -129,9 +130,25 @@ import {
 export type DjangoConclusionDrawerProps = {
   open: boolean;
   onClose: () => void;
-  /** null = creating new via upsert */
+  /** null = creating new via upsert (or a new document, see createAsNew) */
   conclusion: MedicalConclusion | null;
   serviceLineId: number;
+  /**
+   * Новое заключение — ещё один документ строки, а не первое. Сохраняется
+   * через `POST …/conclusions/` (всегда создаёт); upsert переписал бы первый
+   * документ — ровно та потеря бланка приёма, на которую жаловалась клиника
+   * 22.09.2026, когда следом открывали УЗИ.
+   */
+  createAsNew?: boolean;
+  /**
+   * Черновик в localStorage живёт по строке услуги. Документов у строки может
+   * быть несколько, и без различителя черновик УЗИ ложился бы в карту осмотра.
+   * Первый документ идёт без него — так не теряются черновики, начатые до
+   * появления нескольких документов.
+   */
+  draftScope?: string;
+  /** Переключатель документов строки — под шапкой (см. DjangoConclusionSlotsPanel). */
+  documentBar?: React.ReactNode;
   serviceName: string;
   /**
    * Услуга строки. Нужна, чтобы найти строку заново, если её пересоздали
@@ -162,12 +179,15 @@ export type DjangoConclusionDrawerProps = {
 };
 
 // ── localStorage draft persistence ─────────────────────────────────────────────
-// Черновик заключения хранится локально: 1 заключение (строка услуги) =
-// 1 запись в localStorage. Восстанавливается при повторном открытии и
-// удаляется после успешного сохранения на сервере.
+// Черновик заключения хранится локально: 1 документ = 1 запись в
+// localStorage. Ключ — строка услуги, для второго и следующих документов
+// строки ещё и различитель (см. draftScope). Восстанавливается при повторном
+// открытии и удаляется после успешного сохранения на сервере.
 
-const conclusionDraftKey = (serviceLineId: number) =>
-  `conclusion_draft_${serviceLineId}`;
+const conclusionDraftKey = (draftId: string) => `conclusion_draft_${draftId}`;
+
+const conclusionDraftId = (serviceLineId: number, draftScope?: string) =>
+  draftScope ? `${serviceLineId}_${draftScope}` : String(serviceLineId);
 
 type ConclusionDraftBody = {
   complaints: string;
@@ -208,19 +228,19 @@ const targetField = (target: FormTarget): keyof ConclusionDraftBody =>
 
 type ConclusionDraft = ConclusionDraftBody & { savedAt: string };
 
-function readConclusionDraft(serviceLineId: number): ConclusionDraft | null {
+function readConclusionDraft(draftId: string): ConclusionDraft | null {
   try {
-    const raw = window.localStorage.getItem(conclusionDraftKey(serviceLineId));
+    const raw = window.localStorage.getItem(conclusionDraftKey(draftId));
     return raw ? (JSON.parse(raw) as ConclusionDraft) : null;
   } catch {
     return null;
   }
 }
 
-function writeConclusionDraft(serviceLineId: number, body: ConclusionDraftBody) {
+function writeConclusionDraft(draftId: string, body: ConclusionDraftBody) {
   try {
     window.localStorage.setItem(
-      conclusionDraftKey(serviceLineId),
+      conclusionDraftKey(draftId),
       JSON.stringify({ ...body, savedAt: new Date().toISOString() }),
     );
   } catch {
@@ -228,9 +248,9 @@ function writeConclusionDraft(serviceLineId: number, body: ConclusionDraftBody) 
   }
 }
 
-function clearConclusionDraft(serviceLineId: number) {
+function clearConclusionDraft(draftId: string) {
   try {
-    window.localStorage.removeItem(conclusionDraftKey(serviceLineId));
+    window.localStorage.removeItem(conclusionDraftKey(draftId));
   } catch {
     /* ignore */
   }
@@ -418,6 +438,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   onClose,
   conclusion,
   serviceLineId,
+  createAsNew = false,
+  draftScope,
+  documentBar,
   serviceName,
   serviceId,
   doctorName,
@@ -433,6 +456,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
 }) => {
   const { t, term } = useT("appointments");
   const { open: notify } = useNotification();
+  // Черновик и гидратация — по документу: у строки их может быть несколько.
+  const draftId = conclusionDraftId(serviceLineId, draftScope);
   const theme = useTheme();
   // Телефон: шапка и кнопки формы ужимаются, иначе на ввод остаётся полоска.
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -557,7 +582,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   React.useEffect(() => {
     ai.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, serviceLineId]);
+  }, [open, draftId]);
 
   /**
    * Блок-подсказку «жалобы при регистрации» показываем только когда врач
@@ -606,7 +631,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const hydrationKey = [
     open ? "open" : "closed",
     readOnly ? "ro" : "rw",
-    serviceLineId,
+    draftId,
     conclusion?.id ?? 0,
     conclusion?.updatedAt ?? "",
   ].join("|");
@@ -616,7 +641,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     if (!open) {
       // Закрыли до срабатывания отложенной записи — дописываем черновик.
       if (hydratedRef.current && pendingDraftRef.current) {
-        writeConclusionDraft(serviceLineId, pendingDraftRef.current);
+        writeConclusionDraft(draftId, pendingDraftRef.current);
       }
       pendingDraftRef.current = null;
       applyDraftBody({
@@ -643,13 +668,13 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
 
     // Несохранённый черновик из localStorage приоритетнее серверных данных,
     // если он свежее последнего сохранения на сервере.
-    const draft = readOnly ? null : readConclusionDraft(serviceLineId);
+    const draft = readOnly ? null : readConclusionDraft(draftId);
     const draftIsFresh =
       !!draft &&
       (!conclusion?.updatedAt ||
         !draft.savedAt ||
         dayjs(draft.savedAt).isAfter(dayjs(conclusion.updatedAt)));
-    if (draft && !draftIsFresh) clearConclusionDraft(serviceLineId);
+    if (draft && !draftIsFresh) clearConclusionDraft(draftId);
 
     if (draft && draftIsFresh) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -825,11 +850,11 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
 
   // Прикрепление дефолтного бланка. Ждём гидратацию: иначе поля легли бы в
   // форму до того, как её перезапишет пустое тело нового заключения.
-  const attachedForLineRef = React.useRef<number | null>(null);
+  const attachedForLineRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (!defaultForm || !hydratedRef.current) return;
-    if (attachedForLineRef.current === serviceLineId) return;
-    attachedForLineRef.current = serviceLineId;
+    if (attachedForLineRef.current === draftId) return;
+    attachedForLineRef.current = draftId;
     // Восстановленный черновик уже несёт свой бланк (или сознательно ни один)
     // — не перебиваем его дефолтом.
     if (formId != null || restoredWithFormRef.current) return;
@@ -859,7 +884,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       /* baseline ещё не собран — следующая гидратация его перезапишет */
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultForm, serviceLineId, hydrationKey]);
+  }, [defaultForm, draftId, hydrationKey]);
 
   // Закрыли дровер — метку снимаем: следующее открытие снова подставит бланк.
   React.useEffect(() => {
@@ -1608,7 +1633,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const openPrint = () => {
     if (!conclusion) return;
     window.open(
-      `/print/conclusion/${conclusion.appointmentId}?lineId=${serviceLineId}`,
+      `/print/conclusion/${conclusion.appointmentId}?lineId=${serviceLineId}&conclusionId=${conclusion.id}`,
       "_blank",
       "noopener",
     );
@@ -1717,7 +1742,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       // hydratedRef сбрасывается после сохранения на сервер — отложенная
       // запись не должна воскресить уже удалённый черновик.
       if (hydratedRef.current) {
-        writeConclusionDraft(serviceLineId, body);
+        writeConclusionDraft(draftId, body);
         pendingDraftRef.current = null;
       }
     }, 400);
@@ -1725,7 +1750,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   }, [
     open,
     readOnly,
-    serviceLineId,
+    draftId,
     complaints,
     anamnesis,
     objective,
@@ -1748,11 +1773,11 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   React.useEffect(() => {
     return () => {
       if (hydratedRef.current && pendingDraftRef.current) {
-        writeConclusionDraft(serviceLineId, pendingDraftRef.current);
+        writeConclusionDraft(draftId, pendingDraftRef.current);
         pendingDraftRef.current = null;
       }
     };
-  }, [serviceLineId]);
+  }, [draftId]);
 
   // ── load diagnosis catalog when drawer opens / search changes ─────────────
   // Каталог МКБ-10 большой (тысячи записей); тянуть его целиком и фильтровать на
@@ -1881,18 +1906,25 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const createConclusionForLine = async (
     payload: MedicalConclusionPayload,
   ): Promise<MedicalConclusion> => {
+    // Новый документ — только через «всегда создаёт»: upsert переписал бы первый.
+    const create = createAsNew ? createAdditionalConclusion : upsertConclusion;
     try {
-      return await upsertConclusion(serviceLineId, payload);
+      return await create(serviceLineId, payload);
     } catch (err: unknown) {
       if (!isServiceLineGoneError(err) || appointmentId == null) throw err;
       const slots = await getConclusionSlots(appointmentId);
       const fresh = findReplacementSlot(slots, { serviceLineId, serviceId, doctorId });
       // Услуги в приёме больше нет — сохранять некуда, дальше ветка ошибки.
       if (!fresh) throw err;
-      const saved = fresh.conclusion?.id
-        ? await updateConclusion(fresh.conclusion.id, payload)
-        : await upsertConclusion(fresh.serviceLineId, payload);
-      clearConclusionDraft(fresh.serviceLineId);
+      // Новый документ на пересозданной строке — снова новый документ: у
+      // свежей строки уже может быть свой первый, и его не трогаем.
+      const saved =
+        createAsNew && fresh.conclusion?.id
+          ? await createAdditionalConclusion(fresh.serviceLineId, payload)
+          : fresh.conclusion?.id
+          ? await updateConclusion(fresh.conclusion.id, payload)
+          : await upsertConclusion(fresh.serviceLineId, payload);
+      clearConclusionDraft(conclusionDraftId(fresh.serviceLineId, draftScope));
       return saved;
     }
   };
@@ -1948,7 +1980,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         saved = await createConclusionForLine(payload);
       }
       // Заключение на сервере — локальный черновик больше не нужен.
-      clearConclusionDraft(serviceLineId);
+      clearConclusionDraft(draftId);
       hydratedRef.current = false;
       pendingDraftRef.current = null;
       notify?.({
@@ -2095,6 +2127,14 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       </Stack>
       <Divider />
 
+      {/* ── документы строки услуги (если их несколько или можно добавить) ── */}
+      {documentBar && (
+        <>
+          {documentBar}
+          <Divider />
+        </>
+      )}
+
       {/* ── подсказки AI: массовые действия, пока есть неразобранные ── */}
       {canAiAssist && ai.suggestedFields.length > 0 && (
         <>
@@ -2146,7 +2186,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   startIcon={<ArticleOutlined />}
                   onClick={() =>
                     window.open(
-                      `/print/certificate/${conclusion.appointmentId}?lineId=${serviceLineId}`,
+                      `/print/certificate/${conclusion.appointmentId}?lineId=${serviceLineId}&conclusionId=${conclusion.id}`,
                       "_blank",
                       "noopener",
                     )
@@ -2735,7 +2775,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 variant="outlined"
                 onClick={() =>
                   window.open(
-                    `/print/certificate/${conclusion.appointmentId}?lineId=${serviceLineId}`,
+                    `/print/certificate/${conclusion.appointmentId}?lineId=${serviceLineId}&conclusionId=${conclusion.id}`,
                     "_blank",
                     "noopener",
                   )

@@ -241,7 +241,8 @@
   },
   "serviceLine": {
     "conclusionReady": "{{conclusion.nom, capitalize}}: готово",
-    "conclusionDraft": "{{conclusion.nom, capitalize}}: черновик"
+    "conclusionDraft": "{{conclusion.nom, capitalize}}: черновик",
+    "conclusionsProgress": "{{conclusion.nomPl, capitalize}}: готово {{done}} из {{count}}"
   },
   "serviceRow": {
     "addSpecialist": "+ Добавить {{specialist.acc}}",
@@ -561,6 +562,21 @@
     "certificate": "Справка",
     "printConclusion": "Печать {{conclusion.gen}} (PDF)",
     "printCertificate": "Печать справки (PDF)",
+    "documentN": "{{conclusion.nom, capitalize}} {{n}}",
+    "newDocument": "Новый документ",
+    "addDocument": "Ещё документ",
+    "addDocumentHint": "Отдельный документ по этой же услуге — со своим бланком и печатью",
+    "documents": "Документы услуги",
+    "documentsCount_one": "{{count}} документ",
+    "documentsCount_few": "{{count}} документа",
+    "documentsCount_many": "{{count}} документов",
+    "deleteDraft": "Удалить черновик",
+    "deleteTitle": "Удалить черновик?",
+    "deleteText": "Черновик «{{name}}» удалится без возможности восстановления. Завершённые документы удалить нельзя.",
+    "deleteConfirm": "Удалить",
+    "deleteCancel": "Отмена",
+    "deleted": "Черновик удалён",
+    "deleteCompleted": "Документ уже завершён — удалить его нельзя",
     "state": {
       "none": "Не создано",
       "draft": "Черновик",
@@ -892,7 +908,8 @@
     "moneyFilter": {
       "discount": "Со скидкой",
       "priceUp": "Цена повышена",
-      "priceDown": "Цена снижена"
+      "priceDown": "Цена снижена",
+      "menu": "Цена"
     },
     "filters": {
       "title": "Фильтры",

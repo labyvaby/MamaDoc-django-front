@@ -556,6 +556,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         durationMinutes: sl.durationMinutes,
         amount: som(lineAmount),
         conclusionState: sl.conclusionState,
+        conclusionsTotal: sl.conclusionsTotal,
+        conclusionsCompleted: sl.conclusionsCompleted,
         action:
           canOverridePrice &&
           !appt.priceOverrideLocked &&

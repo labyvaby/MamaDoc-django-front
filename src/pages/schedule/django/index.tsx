@@ -620,11 +620,17 @@ const RuleFormDrawer: React.FC<{
             />
           </Stack>
 
-          {error && <Alert severity="error">{error}</Alert>}
         </Stack>
       </Box>
 
       <Box sx={{ p: 2, borderTop: "1px solid", borderColor: "divider" }}>
+        {/* Ошибка сохранения — в футере, рядом с кнопкой: внизу прокручиваемой
+            формы её не видно, и отказ бэка выглядит как «кнопка не работает». */}
+        {error && (
+          <Alert severity="error" sx={{ mb: 1.5 }}>
+            {error}
+          </Alert>
+        )}
         <Button
           fullWidth
           variant="contained"
@@ -1222,11 +1228,17 @@ const ExceptionDrawer: React.FC<{
               inputProps={{ maxLength: 255 }}
             />
           </Stack>
-          {error && <Alert severity="error">{error}</Alert>}
         </Stack>
       </Box>
 
       <Box sx={{ p: 2, borderTop: "1px solid", borderColor: "divider" }}>
+        {/* Ошибка сохранения — в футере, рядом с кнопкой: внизу прокручиваемой
+            формы её не видно, и отказ бэка выглядит как «кнопка не работает». */}
+        {error && (
+          <Alert severity="error" sx={{ mb: 1.5 }}>
+            {error}
+          </Alert>
+        )}
         <Button
           fullWidth
           variant="contained"

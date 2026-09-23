@@ -26,6 +26,13 @@ export interface ServiceGroupLine {
    * какой ещё нет — раньше это было только в логике кнопок шапки.
    */
   conclusionState?: "not_required" | "not_created" | "draft" | "completed";
+  /**
+   * Документов у строки и завершённых из них. Бэк сводит `conclusionState`
+   * по всем документам, но «черновик» при одном готовом из двух не говорит,
+   * сколько осталось, — при нескольких документах показываем «1/2».
+   */
+  conclusionsTotal?: number;
+  conclusionsCompleted?: number;
   /** Дополнительное действие строки, например однократная правка цены. */
   action?: React.ReactNode;
 }
@@ -45,9 +52,34 @@ export interface ServiceEmployeeGroup {
  * «не создано» не помечаем: первое — шум, второе видно по отсутствию значка.
  */
 function conclusionMark(
-  state: ServiceGroupLine["conclusionState"],
-  t: (key: string) => string,
+  line: ServiceGroupLine,
+  t: (key: string, options?: Record<string, unknown>) => string,
 ): React.ReactNode {
+  const state = line.conclusionState;
+  const total = line.conclusionsTotal ?? 0;
+  if (total > 1) {
+    const done = Math.min(line.conclusionsCompleted ?? 0, total);
+    const allDone = done === total;
+    return (
+      <Tooltip title={t("serviceLine.conclusionsProgress", { done, count: total })}>
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={0.25}
+          sx={{ flexShrink: 0, color: allDone ? "success.main" : "warning.main" }}
+        >
+          {allDone ? (
+            <TaskAltOutlined sx={{ fontSize: 15 }} />
+          ) : (
+            <EditNoteOutlined sx={{ fontSize: 16 }} />
+          )}
+          <Typography component="span" variant="caption" fontWeight={600} lineHeight={1}>
+            {done}/{total}
+          </Typography>
+        </Stack>
+      </Tooltip>
+    );
+  }
   if (state === "completed") {
     return (
       <Tooltip title={t("serviceLine.conclusionReady")}>
@@ -242,7 +274,7 @@ const ServiceEmployeeGroups: React.FC<ServiceEmployeeGroupsProps> = ({
                             {line.name}
                           </Typography>
                         </Tooltip>
-                        {conclusionMark(line.conclusionState, t)}
+                        {conclusionMark(line, t)}
                       </Stack>
                       {(line.quantity > 1 || line.durationMinutes) && (
                         <Typography variant="caption" color="text.secondary">

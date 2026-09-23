@@ -6,7 +6,7 @@ import { generateCertificatePDF, pdfFileName } from "../../utility/pdfGenerator"
 import type { CertificatePDFData } from "../../utility/pdfGenerator";
 import { PdfResultView } from "./PdfResultView";
 import { CertificateDocumentView } from "./DocumentViews";
-import { loadDjangoPrintData } from "./djangoPrintData";
+import { loadDjangoPrintData, readPrintTarget } from "./djangoPrintData";
 import { usePermissions } from "../../hooks/usePermissions";
 
 export const CertificatePrintPage: React.FC = () => {
@@ -24,8 +24,8 @@ export const CertificatePrintPage: React.FC = () => {
     let active = true;
     (async () => {
       try {
-        const lineIdRaw = new URLSearchParams(window.location.search).get("lineId");
-        const data = await loadDjangoPrintData(Number(id), lineIdRaw ? Number(lineIdRaw) : null);
+        const target = readPrintTarget();
+        const data = await loadDjangoPrintData(Number(id), target.lineId, target.conclusionId);
         const pdfData: CertificatePDFData = {
           patientFio: data.patientFio,
           patientDob: data.patientDob,
