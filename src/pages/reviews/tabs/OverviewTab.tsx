@@ -124,7 +124,7 @@ const OverviewTab: React.FC<TabProps> = ({ period }) => {
         />
         <StatCard
           label="Перешли в карты"
-          value={s?.redirectedTo2gis ?? "—"}
+          value={s?.redirectedTo2Gis ?? "—"}
           color={theme.palette.success.main}
           hint={s ? `Подтверждено отзывов: ${s.confirmedPublicReviews}` : undefined}
         />

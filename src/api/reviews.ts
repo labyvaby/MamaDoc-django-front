@@ -71,7 +71,7 @@ export interface ReviewStats {
   negativeCount: number;
   promoterCount: number;
   /** Сколько отзывов с переходом в карты. */
-  redirectedTo2gis: number;
+  redirectedTo2Gis: number;
   deliveredWhatsapp: number;
   deliveredSms: number;
   avgDoctorRating: string | null;

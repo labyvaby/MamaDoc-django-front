@@ -66,6 +66,7 @@ const Stars: React.FC<{
     <Rating
       value={value}
       onChange={(_, v) => onChange(v)}
+      getLabelText={(v) => `${label}: ${v} из 5`}
       icon={<StarRounded fontSize="inherit" />}
       emptyIcon={<StarBorderRounded fontSize="inherit" />}
       sx={{ fontSize: large ? 48 : 34 }}
