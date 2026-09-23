@@ -25,6 +25,8 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
+import AutoAwesomeRounded from "@mui/icons-material/AutoAwesomeRounded";
+import DocumentScannerOutlined from "@mui/icons-material/DocumentScannerOutlined";
 import AddAPhotoOutlined from "@mui/icons-material/AddAPhotoOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
@@ -138,9 +140,21 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
   const [error, setError] = React.useState<string | null>(null);
 
   const [recognizing, setRecognizing] = React.useState(false);
+  const [recognitionStage, setRecognitionStage] = React.useState(0);
   const [recognition, setRecognition] = React.useState<RecognitionResult | null>(null);
   const [recognitionError, setRecognitionError] = React.useState<string | null>(null);
   const cameraRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (!recognizing) {
+      setRecognitionStage(0);
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      setRecognitionStage((stage) => (stage + 1) % 3);
+    }, 2200);
+    return () => window.clearInterval(timer);
+  }, [recognizing]);
 
   const photos = useInvoicePhotos({ target: "goodsReceipt", entityId: null, organizationId: scope.organizationId ?? null, open });
 
@@ -283,6 +297,7 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
     // Фото — к накладной в любом случае; распознавание — если разрешено.
     await photos.pick(files);
     if (!recognitionEnabled) return;
+    setRecognitionStage(0);
     setRecognizing(true);
     try {
       const result = await recognizeReceiptPhoto(file, scope);
@@ -374,35 +389,69 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
         {/* Распознавание по фото */}
         <Box
           sx={(t) => ({
-            p: 1.5,
+            p: recognizing ? 2 : 1.5,
             borderRadius: "10px",
             border: "1px dashed",
-            borderColor: recognition ? alpha(t.palette.success.main, 0.5) : alpha(t.palette.primary.main, 0.4),
-            bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.08 : 0.04),
+            borderColor: recognizing
+              ? alpha(t.palette.primary.main, 0.72)
+              : recognition
+                ? alpha(t.palette.success.main, 0.5)
+                : alpha(t.palette.primary.main, 0.4),
+            background: recognizing
+              ? `linear-gradient(135deg, ${alpha(t.palette.primary.main, 0.2)}, ${alpha(t.palette.secondary.main, 0.12)} 50%, ${alpha(t.palette.primary.main, 0.08)})`
+              : alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.08 : 0.04),
+            position: "relative",
+            overflow: "hidden",
+            transition: "all .35s ease",
+            "@keyframes invoiceScan": {
+              "0%": { transform: "translateX(-120%)", opacity: 0 },
+              "20%": { opacity: 0.8 },
+              "80%": { opacity: 0.8 },
+              "100%": { transform: "translateX(420%)", opacity: 0 },
+            },
+            "@keyframes invoicePulse": {
+              "0%, 100%": { transform: "scale(1)", boxShadow: `0 0 0 0 ${alpha(t.palette.primary.main, 0.35)}` },
+              "50%": { transform: "scale(1.06)", boxShadow: `0 0 0 10px ${alpha(t.palette.primary.main, 0)}` },
+            },
           })}
         >
+          {recognizing && (
+            <Box
+              aria-hidden
+              sx={(t) => ({
+                position: "absolute",
+                inset: 0,
+                width: "28%",
+                background: `linear-gradient(90deg, transparent, ${alpha(t.palette.common.white, 0.3)}, transparent)`,
+                transform: "skewX(-18deg)",
+                animation: "invoiceScan 2.4s ease-in-out infinite",
+                pointerEvents: "none",
+              })}
+            />
+          )}
           <Stack direction="row" spacing={1.5} alignItems="center">
             <Box
               sx={(t) => ({
-                width: 40,
-                height: 40,
-                borderRadius: "10px",
+                width: recognizing ? 48 : 40,
+                height: recognizing ? 48 : 40,
+                borderRadius: recognizing ? "50%" : "10px",
                 display: "grid",
                 placeItems: "center",
                 flexShrink: 0,
                 color: "primary.onSurface",
-                bgcolor: alpha(t.palette.primary.main, 0.12),
+                bgcolor: alpha(t.palette.primary.main, recognizing ? 0.22 : 0.12),
+                animation: recognizing ? "invoicePulse 1.8s ease-in-out infinite" : "none",
               })}
             >
-              {recognizing ? <CircularProgress size={20} /> : <AutoAwesomeOutlined />}
+              {recognizing ? <AutoAwesomeRounded sx={{ fontSize: 25 }} /> : <AutoAwesomeOutlined />}
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                {recognizing ? "Распознаём накладную…" : recognition ? "Накладная распознана" : "Заполнить по фото или PDF"}
+                {recognizing ? "AI разбирает накладную…" : recognition ? "Накладная распознана" : "Заполнить по фото или PDF"}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 {recognizing
-                  ? "Обычно 10–30 секунд. Файл уже прикреплён к накладной."
+                  ? ["Сканируем документ и читаем текст…", "Находим поставщика, номер и дату…", "Сопоставляем товары со складом…"][recognitionStage]
                   : recognition
                     ? `${recognition.totals.linesCount} поз., сопоставлено ${recognition.totals.matchedCount} · уверенность ${Math.round(recognition.confidence * 100)}%`
                     : recognitionEnabled
@@ -428,7 +477,32 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
               {recognition ? "Ещё файл" : "Фото / PDF"}
             </Button>
           </Stack>
-          {recognizing && <LinearProgress sx={{ mt: 1.5, borderRadius: 1 }} />}
+          {recognizing && (
+            <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 1.5, position: "relative" }}>
+              {["Фото", "Документ", "Товары"].map((label, index) => (
+                <React.Fragment key={label}>
+                  {index > 0 && <Box sx={{ flex: 1, height: 1, bgcolor: "divider" }} />}
+                  <Chip
+                    size="small"
+                    icon={index === 0 ? <AddAPhotoOutlined /> : <DocumentScannerOutlined />}
+                    label={label}
+                    sx={{
+                      height: 26,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      bgcolor: index <= recognitionStage ? alpha(theme.palette.primary.main, 0.18) : "transparent",
+                      color: index <= recognitionStage ? "primary.main" : "text.secondary",
+                      border: "1px solid",
+                      borderColor: index <= recognitionStage ? alpha(theme.palette.primary.main, 0.35) : "divider",
+                      transition: "all .35s ease",
+                      "& .MuiChip-icon": { fontSize: 15 },
+                    }}
+                  />
+                </React.Fragment>
+              ))}
+            </Stack>
+          )}
+          {recognizing && <LinearProgress sx={{ mt: 1, borderRadius: 1, height: 5 }} />}
           {recognitionError && (
             <Alert severity="warning" sx={{ mt: 1.5 }} onClose={() => setRecognitionError(null)}>
               {recognitionError}

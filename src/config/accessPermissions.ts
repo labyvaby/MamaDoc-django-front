@@ -97,6 +97,11 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // Автоматизации продолжают работать по notifications.manage; отдельное
   // notifications.page.view управляет только доступностью экрана уведомлений.
   automations: "notifications.manage",
+  // Подключение WhatsApp и каталог шаблонов: на бэке те же
+  // notifications.manage (docs/whatsapp-templates-mvp.md §1.1). Привязка к
+  // подключению Raven внутри страницы — только суперадмину, это проверяет
+  // сам бэк.
+  whatsapp: "notifications.manage",
   productAttributes: "warehouse.manage",
   // Настройки раздела (статусы, раскладка карточки) бэк закрывает clients.update.
   clients: "clients.update",

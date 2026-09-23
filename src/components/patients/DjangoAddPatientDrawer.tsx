@@ -36,7 +36,7 @@ import GirlOutlined from "@mui/icons-material/GirlOutlined";
 import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import { motion } from "framer-motion";
 import { useNotification } from "@refinedev/core";
-import { CustomDatePicker, PhoneCountryCodeSelect, UserAvatar, cascadeContainer, cascadeItem } from "../ui";
+import { CustomDatePicker, PhoneNumberField, UserAvatar, cascadeContainer, cascadeItem } from "../ui";
 import dayjs from "dayjs";
 import { formatPatientAge } from "../../utility/age";
 import { capitalizeFullName } from "../../utility/name";
@@ -44,13 +44,9 @@ import {
   composePhone,
   isPhoneLocalComplete,
   parsePhone,
-  formatPhoneLocalDisplay,
   DEFAULT_PHONE_COUNTRY_CODE,
-  getPhoneLocalMaxLength,
-  handlePhonePaste,
   type PhoneCountryCode,
 } from "../../utility/phone";
-import { usePhoneLocalInput } from "../../hooks/usePhoneLocalInput";
 import { useCan } from "../../hooks/useCan";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import {
@@ -161,13 +157,6 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   const [phone, setPhone] = React.useState("");
   const [phoneCountryCode, setPhoneCountryCode] =
     React.useState<PhoneCountryCode>(DEFAULT_PHONE_COUNTRY_CODE);
-  // Правка в середине номера не должна выбрасывать курсор в конец.
-  const phoneInput = usePhoneLocalInput(
-    phoneCountryCode,
-    phone,
-    setPhone,
-    setPhoneCountryCode,
-  );
   const [birth, setBirth] = React.useState("");
   const [gender, setGender] = React.useState<PatientGender>("unknown");
   const [address, setAddress] = React.useState("");
@@ -514,54 +503,15 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
 
             {/* ── Телефон ── */}
             <MotionBox variants={cascadeItem}>
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  {t("form.phone")}
-                </Typography>
-                <TextField
-                  value={formatPhoneLocalDisplay(phoneCountryCode, phone)}
-                  inputRef={phoneInput.inputRef}
-                  onChange={phoneInput.onChange}
-                  onPaste={(e) =>
-                    handlePhonePaste(e, phoneCountryCode, (code, local) => {
-                      setPhoneCountryCode(code);
-                      setPhone(local);
-                    })
-                  }
-                  onKeyDown={(e) => {
-                    phoneInput.onKeyDown(e);
-                    submitOnEnter(e);
-                  }}
-                  fullWidth
-                  size="small"
-                  disabled={busy}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start" sx={{ mr: 1, ml: "-14px" }}>
-                        <PhoneCountryCodeSelect
-                          value={phoneCountryCode}
-                          onChange={(code) => setPhoneCountryCode(code)}
-                        />
-                      </InputAdornment>
-                    ),
-                    endAdornment:
-                      phone.length === getPhoneLocalMaxLength(phoneCountryCode) ? (
-                        <InputAdornment position="end">
-                          <CheckCircleOutlined fontSize="small" color="success" />
-                        </InputAdornment>
-                      ) : undefined,
-                  }}
-                  inputProps={{
-                    inputMode: "tel",
-                    pattern: "[0-9]*",
-                  }}
-                  placeholder={
-                    getPhoneLocalMaxLength(phoneCountryCode) === 10
-                      ? "XXX XXX XXXX"
-                      : "XXX XXX XXX"
-                  }
-                />
-              </Stack>
+              <PhoneNumberField
+                label={t("form.phone")}
+                countryCode={phoneCountryCode}
+                phone={phone}
+                onCountryCodeChange={setPhoneCountryCode}
+                onPhoneChange={setPhone}
+                disabled={busy}
+                onEnter={submitOnEnter}
+              />
             </MotionBox>
 
             {/* ── О пациенте ── */}
