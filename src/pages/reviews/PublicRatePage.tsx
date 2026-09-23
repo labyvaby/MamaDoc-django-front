@@ -1,19 +1,20 @@
 import React from "react";
 import {
-  Alert,
   Box,
   Button,
-  Chip,
   CircularProgress,
-  Paper,
-  Rating,
+  Divider,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
+import { ThemeProvider } from "@mui/material/styles";
 import StarRounded from "@mui/icons-material/StarRounded";
-import StarBorderRounded from "@mui/icons-material/StarBorderRounded";
-import OpenInNewRounded from "@mui/icons-material/OpenInNewRounded";
+import FavoriteRounded from "@mui/icons-material/FavoriteRounded";
+import HandshakeRounded from "@mui/icons-material/HandshakeRounded";
+import LinkOffRounded from "@mui/icons-material/LinkOffRounded";
+import ScheduleRounded from "@mui/icons-material/ScheduleRounded";
+import LockOutlined from "@mui/icons-material/LockOutlined";
 import { useParams } from "react-router";
 
 import {
@@ -25,58 +26,80 @@ import {
 } from "../../api/reviews";
 import { ApiError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
-import { canSubmit, initialForm, tagOptions, toSubmit, type RateForm } from "./rateForm";
-
-const MAP_LABELS: Record<MapPlatform, string> = {
-  "2gis": "2ГИС",
-  yandex: "Яндекс Картах",
-  google: "Google Maps",
-};
-
-const Shell: React.FC<React.PropsWithChildren> = ({ children }) => (
-  <Box
-    sx={{
-      minHeight: "100dvh",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      p: 2,
-      bgcolor: "background.default",
-    }}
-  >
-    <Paper
-      variant="outlined"
-      sx={{ p: { xs: 2.5, sm: 4 }, borderRadius: "14px", width: "100%", maxWidth: 460 }}
-    >
-      {children}
-    </Paper>
-  </Box>
-);
-
-const Stars: React.FC<{
-  label: string;
-  value: number | null;
-  onChange: (v: number | null) => void;
-  large?: boolean;
-}> = ({ label, value, onChange, large = false }) => (
-  <Stack spacing={0.5} alignItems="center">
-    <Typography variant={large ? "subtitle1" : "body2"} fontWeight={600} textAlign="center">
-      {label}
-    </Typography>
-    <Rating
-      value={value}
-      onChange={(_, v) => onChange(v)}
-      getLabelText={(v) => `${label}: ${v} из 5`}
-      icon={<StarRounded fontSize="inherit" />}
-      emptyIcon={<StarBorderRounded fontSize="inherit" />}
-      sx={{ fontSize: large ? 48 : 34 }}
-    />
-  </Stack>
-);
+import {
+  canSubmit,
+  initialForm,
+  tagOptions,
+  toSubmit,
+  type RateForm,
+} from "./rateForm";
+import {
+  CARD,
+  CLAY,
+  LINE,
+  MUTED,
+  PAPER,
+  TEAL,
+  rateTheme,
+  useRateFonts,
+} from "./public/theme";
+import {
+  Card,
+  Display,
+  Eyebrow,
+  MapCard,
+  Medallion,
+  RatingRow,
+  Reveal,
+  SectionTitle,
+  Shell,
+  StarPicker,
+  TagPill,
+} from "./public/ui";
 
 type Screen = "loading" | "missing" | "failed" | "form" | "done";
 
+/** Короткий экран-сообщение: медаль, заголовок, текст. */
+const Notice: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  text?: string;
+  tone?: "happy" | "calm" | "quiet";
+}> = ({ icon, title, text, tone = "quiet" }) => (
+  <Shell>
+    <Stack
+      spacing={2.5}
+      alignItems="center"
+      textAlign="center"
+      sx={{ my: "auto", py: 6 }}
+    >
+      <Medallion tone={tone} icon={icon} />
+      <Reveal order={2}>
+        <Display size={28} center>
+          {title}
+        </Display>
+      </Reveal>
+      {text && (
+        <Reveal order={3}>
+          <Typography sx={{ color: MUTED, fontSize: 16, maxWidth: 340 }}>
+            {text}
+          </Typography>
+        </Reveal>
+      )}
+    </Stack>
+  </Shell>
+);
+
 const PublicRatePage: React.FC = () => {
+  useRateFonts();
+  return (
+    <ThemeProvider theme={rateTheme}>
+      <RateFlow />
+    </ThemeProvider>
+  );
+};
+
+const RateFlow: React.FC = () => {
   const { t } = useT("reviews");
   const { token = "" } = useParams<{ token: string }>();
   const [ctx, setCtx] = React.useState<RateContext | null>(null);
@@ -85,6 +108,7 @@ const PublicRatePage: React.FC = () => {
   const [editing, setEditing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
+  const [opened, setOpened] = React.useState<MapPlatform[]>([]);
 
   React.useEffect(() => {
     const ctrl = new AbortController();
@@ -119,6 +143,7 @@ const PublicRatePage: React.FC = () => {
       setForm(initialForm(next));
       setEditing(false);
       setScreen("done");
+      window.scrollTo({ top: 0 });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось отправить");
     } finally {
@@ -127,66 +152,121 @@ const PublicRatePage: React.FC = () => {
   };
 
   const openMap = (platform: MapPlatform, url: string) => {
-    postMapClick(token, platform).catch(() => undefined);
+    // Окно открываем синхронно по нажатию — иначе iOS его заблокирует.
     window.open(url, "_blank", "noopener");
+    setOpened((list) => (list.includes(platform) ? list : [...list, platform]));
+    postMapClick(token, platform).catch(() => undefined);
   };
 
   if (screen === "loading") {
     return (
       <Shell>
-        <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
-          <CircularProgress />
+        <Box sx={{ my: "auto", display: "flex", justifyContent: "center" }}>
+          <CircularProgress sx={{ color: TEAL }} />
         </Box>
       </Shell>
     );
   }
   if (screen === "missing") {
     return (
-      <Shell>
-        <Alert severity="info">Ссылка недействительна или устарела.</Alert>
-      </Shell>
+      <Notice
+        icon={<LinkOffRounded />}
+        title="Ссылка не найдена"
+        text="Возможно, она устарела или в ней опечатка. Попросите прислать новую ссылку."
+      />
     );
   }
   if (screen === "failed" || !ctx || !form) {
     return (
-      <Shell>
-        <Alert severity="error">{error ?? "Ошибка загрузки"}</Alert>
-      </Shell>
+      <Notice
+        icon={<LinkOffRounded />}
+        title="Не получилось открыть"
+        text={error ?? "Проверьте интернет и обновите страницу."}
+      />
     );
   }
 
+  const editLink = ctx.canEdit && (
+    <Button
+      variant="text"
+      onClick={() => setEditing(true)}
+      sx={{ color: TEAL, fontSize: 15 }}
+    >
+      Изменить ответ
+    </Button>
+  );
+
   if (screen === "done" && !editing) {
     const happy = ctx.rating === 5;
+    if (happy) {
+      return (
+        <Shell>
+          <Stack spacing={2.5} textAlign="center" sx={{ my: "auto", py: 4 }}>
+            <Medallion tone="happy" icon={<StarRounded />} />
+            <Reveal order={2}>
+              <Display size={30} center>
+                Спасибо, это очень приятно!
+              </Display>
+            </Reveal>
+            <Reveal order={3}>
+              <Typography sx={{ color: MUTED, fontSize: 16 }}>
+                {ctx.maps.length > 0
+                  ? "Расскажите о нас на картах — одна минута, а другим проще сделать выбор."
+                  : "Будем рады видеть вас снова."}
+              </Typography>
+            </Reveal>
+            {ctx.maps.length > 0 && (
+              <Stack spacing={1.25} sx={{ pt: 1 }}>
+                {ctx.maps.map((m, i) => (
+                  <Reveal key={m.platform} order={4 + i}>
+                    <MapCard
+                      platform={m.platform}
+                      opened={opened.includes(m.platform)}
+                      onOpen={() => openMap(m.platform, m.url)}
+                    />
+                  </Reveal>
+                ))}
+              </Stack>
+            )}
+            <Reveal order={8}>{editLink}</Reveal>
+          </Stack>
+        </Shell>
+      );
+    }
     return (
       <Shell>
-        <Stack spacing={2} alignItems="center" textAlign="center">
-          <Typography variant="h6" fontWeight={700}>
-            Спасибо за отзыв!
-          </Typography>
-          <Typography color="text.secondary">
-            {happy
-              ? ctx.maps.length > 0
-                ? "Нам очень приятно. Будем рады, если вы поделитесь впечатлением на картах:"
-                : "Нам очень приятно. Ждём вас снова!"
-              : "Нам жаль, что не всё прошло хорошо. Мы обязательно разберёмся."}
-          </Typography>
-          {ctx.maps.map((m) => (
-            <Button
-              key={m.platform}
-              fullWidth
-              size="large"
-              variant="contained"
-              endIcon={<OpenInNewRounded />}
-              onClick={() => openMap(m.platform, m.url)}
+        <Stack
+          spacing={2.5}
+          alignItems="center"
+          textAlign="center"
+          sx={{ my: "auto", py: 4 }}
+        >
+          <Medallion tone="calm" icon={<HandshakeRounded />} />
+          <Reveal order={2}>
+            <Display size={30} center>
+              Спасибо, что рассказали
+            </Display>
+          </Reveal>
+          <Reveal order={3}>
+            <Typography sx={{ color: MUTED, fontSize: 16, maxWidth: 360 }}>
+              Нам жаль, что не всё прошло хорошо. Ответ уже у нас — мы
+              разберёмся.
+            </Typography>
+          </Reveal>
+          <Reveal order={4}>
+            <Stack
+              direction="row"
+              spacing={0.75}
+              alignItems="center"
+              sx={{ color: MUTED }}
             >
-              Оставить отзыв в {MAP_LABELS[m.platform]}
-            </Button>
-          ))}
-          {ctx.canEdit && (
-            <Button variant="text" onClick={() => setEditing(true)}>
-              Изменить ответ
-            </Button>
-          )}
+              <LockOutlined sx={{ fontSize: 16 }} />
+              <Typography sx={{ fontSize: 13 }}>
+                Ваш ответ не публикуется
+              </Typography>
+            </Stack>
+          </Reveal>
+          <Reveal order={5}>{editLink}</Reveal>
         </Stack>
       </Shell>
     );
@@ -194,83 +274,201 @@ const PublicRatePage: React.FC = () => {
 
   if (!ctx.canEdit) {
     return (
-      <Shell>
-        <Alert severity="info">Срок ответа по этой ссылке истёк.</Alert>
-      </Shell>
+      <Notice
+        icon={<ScheduleRounded />}
+        title="Срок ответа истёк"
+        text="По этой ссылке ответить уже нельзя. Спасибо, что заглянули!"
+      />
     );
   }
 
   const options = tagOptions(ctx, form.rating);
-  const low = form.rating != null && form.rating < 5;
-  return (
-    <Shell>
-      <Stack spacing={2.5}>
-        <Box textAlign="center">
-          <Typography variant="h6" fontWeight={700}>
-            {t("public.rateYourVisit")}
+  const picked = form.rating != null;
+  const tone = form.rating === 5 ? "good" : "bad";
+  const tagsTitle =
+    form.rating === 5
+      ? t("public.likedLabel")
+      : form.rating === 4
+      ? t("public.improveLabel")
+      : t("public.wrongLabel");
+  const ready = canSubmit(form);
+
+  const stickyBar = (
+    <Box
+      sx={{
+        position: "sticky",
+        bottom: 0,
+        zIndex: 2,
+        px: 2.5,
+        pt: 3,
+        pb: "calc(16px + env(safe-area-inset-bottom))",
+        background: `linear-gradient(to top, ${PAPER} 62%, rgba(245,239,230,0))`,
+      }}
+    >
+      <Box sx={{ maxWidth: 440, mx: "auto" }}>
+        {error && (
+          <Typography
+            role="alert"
+            sx={{ color: CLAY, fontSize: 14, mb: 1, textAlign: "center" }}
+          >
+            {error}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {ctx.clinicName}
-          </Typography>
-        </Box>
-        <Stars label="Общая оценка" value={form.rating} onChange={(v) => set("rating", v)} large />
-        {ctx.hasDoctor && (
-          <Stars
-            label={ctx.doctorName ? `${t("public.doctorLabel")} ${ctx.doctorName}` : t("public.doctorLabel")}
-            value={form.doctorRating}
-            onChange={(v) => set("doctorRating", v)}
-          />
         )}
-        <Stars
-          label={t("public.registryLabel")}
-          value={form.registryRating}
-          onChange={(v) => set("registryRating", v)}
-        />
-        {options.length > 0 && (
-          <Box>
-            <Typography variant="body2" fontWeight={600} gutterBottom>
-              {low ? t("public.wrongLabel") : t("public.likedLabel")}
-            </Typography>
-            <Stack direction="row" flexWrap="wrap" gap={1}>
-              {options.map((tag) => {
-                const on = form.tags.includes(tag);
-                return (
-                  <Chip
-                    key={tag}
-                    label={tag}
-                    clickable
-                    color={on ? "primary" : "default"}
-                    variant={on ? "filled" : "outlined"}
-                    onClick={() =>
-                      set("tags", on ? form.tags.filter((x) => x !== tag) : [...form.tags, tag])
-                    }
-                  />
-                );
-              })}
-            </Stack>
-          </Box>
-        )}
-        {form.rating != null && (
-          <TextField
-            multiline
-            minRows={3}
-            fullWidth
-            value={form.comment}
-            onChange={(e) => set("comment", e.target.value)}
-            label={low ? "Что было не так?" : "Комментарий (необязательно)"}
-            inputProps={{ maxLength: 2000 }}
-          />
-        )}
-        {error && <Alert severity="error">{error}</Alert>}
         <Button
+          fullWidth
           size="large"
           variant="contained"
-          disabled={!canSubmit(form) || saving}
+          disabled={!ready || saving}
           onClick={submit}
+          sx={{
+            py: 1.6,
+            fontSize: 17,
+            boxShadow: ready ? "0 14px 28px -14px rgba(30,91,85,0.9)" : "none",
+            "&.Mui-disabled": { bgcolor: "#E7DFD2", color: "#9A9186" },
+          }}
         >
-          {saving ? <CircularProgress size={22} color="inherit" /> : "Отправить"}
+          {saving ? (
+            <CircularProgress size={24} color="inherit" />
+          ) : ready ? (
+            editing ? (
+              "Сохранить"
+            ) : (
+              "Отправить"
+            )
+          ) : (
+            "Сначала поставьте оценку"
+          )}
         </Button>
-      </Stack>
+      </Box>
+    </Box>
+  );
+
+  return (
+    <Shell footer={stickyBar}>
+      <Reveal>
+        <Eyebrow>{ctx.clinicName}</Eyebrow>
+      </Reveal>
+      <Reveal order={1}>
+        <Box sx={{ mt: 1.5 }}>
+          <Display>{t("public.howWasVisit")}</Display>
+        </Box>
+      </Reveal>
+      <Reveal order={2}>
+        <Box sx={{ mt: 3.5 }}>
+          <StarPicker
+            label="Общая оценка"
+            value={form.rating}
+            onChange={(v) => set("rating", v)}
+            size={52}
+            showWord
+          />
+        </Box>
+      </Reveal>
+
+      {picked && (
+        <Stack spacing={3.5} sx={{ mt: 4 }}>
+          <Reveal>
+            <Card>
+              {ctx.hasDoctor && (
+                <>
+                  <RatingRow
+                    title={t("public.doctorShort")}
+                    caption={ctx.doctorName}
+                    value={form.doctorRating}
+                    onChange={(v) => set("doctorRating", v)}
+                  />
+                  <Divider sx={{ borderColor: LINE }} />
+                </>
+              )}
+              <RatingRow
+                title={t("public.registryLabel")}
+                value={form.registryRating}
+                onChange={(v) => set("registryRating", v)}
+              />
+            </Card>
+          </Reveal>
+
+          {options.length > 0 && (
+            <Reveal order={1}>
+              <SectionTitle>{tagsTitle}</SectionTitle>
+              <Stack direction="row" flexWrap="wrap" gap={1}>
+                {options.map((tag) => {
+                  const on = form.tags.includes(tag);
+                  return (
+                    <TagPill
+                      key={tag}
+                      label={tag}
+                      on={on}
+                      tone={tone}
+                      onToggle={() =>
+                        set(
+                          "tags",
+                          on
+                            ? form.tags.filter((x) => x !== tag)
+                            : [...form.tags, tag]
+                        )
+                      }
+                    />
+                  );
+                })}
+              </Stack>
+            </Reveal>
+          )}
+
+          <Reveal order={2}>
+            <TextField
+              multiline
+              minRows={3}
+              fullWidth
+              value={form.comment}
+              onChange={(e) => set("comment", e.target.value)}
+              placeholder={
+                form.rating === 5
+                  ? "Пара слов от вас — по желанию"
+                  : "Расскажите, что случилось"
+              }
+              inputProps={{ maxLength: 2000, "aria-label": "Комментарий" }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  bgcolor: CARD,
+                  borderRadius: "18px",
+                  fontSize: 16,
+                  "& fieldset": { borderColor: LINE },
+                },
+              }}
+            />
+            {form.rating !== 5 && (
+              <Stack
+                direction="row"
+                spacing={0.75}
+                alignItems="center"
+                sx={{ mt: 1, color: MUTED }}
+              >
+                <LockOutlined sx={{ fontSize: 15 }} />
+                <Typography sx={{ fontSize: 13 }}>
+                  Ответ не публикуется — его прочитают только сотрудники
+                </Typography>
+              </Stack>
+            )}
+          </Reveal>
+        </Stack>
+      )}
+
+      {!picked && (
+        <Reveal order={3}>
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            sx={{ mt: 5, color: MUTED }}
+          >
+            <FavoriteRounded sx={{ fontSize: 16, color: "#D98F7A" }} />
+            <Typography sx={{ fontSize: 14 }}>
+              Это займёт меньше минуты
+            </Typography>
+          </Stack>
+        </Reveal>
+      )}
     </Shell>
   );
 };

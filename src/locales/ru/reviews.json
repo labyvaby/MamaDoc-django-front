@@ -12,9 +12,13 @@
   "public": {
     "visitLabel": "{{visit.nom, capitalize}}: {{name}}",
     "rateYourVisit": "Оцените ваш {{visit.acc}}",
+    "howWasVisit": "Как прошёл ваш {{visit.nom}}?",
+    "specialistCaption": "Ваш {{specialist.nom}}",
+    "doctorShort": "{{specialist.nom, capitalize}}",
     "doctorLabel": "Как вам {{specialist.nom}}?",
     "registryLabel": "Администратор и запись",
     "likedLabel": "Что понравилось?",
-    "wrongLabel": "Что было не так?"
+    "wrongLabel": "Что было не так?",
+    "improveLabel": "Что можно улучшить?"
   }
 }
