@@ -292,6 +292,16 @@ export default function LivePosPage() {
     }, 250);
     return () => window.clearTimeout(id);
   }, [search]);
+
+  // Поиск клиента запускается после короткой паузы в наборе: отдельная кнопка
+  // «Найти» в кассе не нужна, а запрос на каждый символ создавал бы лишнюю
+  // нагрузку на API.
+  React.useEffect(() => {
+    const id = window.setTimeout(() => {
+      setClientSearch(clientQuery.trim());
+    }, 250);
+    return () => window.clearTimeout(id);
+  }, [clientQuery]);
   const typedSearch = search.trim();
   const debouncedSearch = debounced.trim();
   const isSearchPending = typedSearch !== debouncedSearch;
@@ -357,7 +367,7 @@ export default function LivePosPage() {
         `clients/?search=${encodeURIComponent(clientSearch)}`,
         { signal }
       ),
-    enabled: ready && !!actions.clients && !held,
+    enabled: ready && !!actions.clients && !held && Boolean(clientSearch),
   });
   const receipts = useQuery({
     queryKey: [...prefix, list, listOffset, historyClient],
@@ -786,8 +796,8 @@ export default function LivePosPage() {
       }))
     : [];
   const checkoutBenefits = [
-    { label: "Бонусы", value: Number(quote?.bonuses ?? 0), positive: true },
-    { label: "Сертификат", value: Number(quote?.certificateAmount ?? 0), positive: true },
+    { label: "Бонусы", value: Number(quote?.bonuses ?? 0), tone: "bonus" as const },
+    { label: "Сертификат", value: Number(quote?.certificateAmount ?? 0), tone: "certificate" as const },
   ].filter((item) => item.value > 0);
 
   return (
@@ -958,10 +968,11 @@ export default function LivePosPage() {
                 client={client}
                 query={clientQuery}
                 onQueryChange={setClientQuery}
-                onSearch={() => setClientSearch(clientQuery)}
                 results={clientSearch ? clients.data ?? [] : null}
                 onSelectClient={(value) => {
                   setClient(value);
+                  setClientQuery("");
+                  setClientSearch("");
                   setBenefits(emptyBenefits);
                 }}
                 canRegister={actions.client_create}
@@ -977,11 +988,15 @@ export default function LivePosPage() {
                       }
                     );
                     setClient(result);
+                    setClientQuery("");
+                    setClientSearch("");
                     invalidate();
                   })
                 }
                 onChangeClient={() => {
                   setClient(null);
+                  setClientQuery("");
+                  setClientSearch("");
                   setBenefits(emptyBenefits);
                 }}
                 onOpenHistory={() => {

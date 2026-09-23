@@ -15,7 +15,6 @@ import {
   TextField,
   Tooltip,
   Typography,
-  useMediaQuery,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -48,6 +47,7 @@ import { getProducts, getWarehouses, type DjangoProduct, type DjangoWarehouse } 
 import { useInvoicePhotos } from "../../hooks/useInvoicePhotos";
 import { INVOICE_DOCUMENT_ACCEPT } from "../../utility/imageCompression";
 import { CustomDateTimePicker, CustomDatePicker, InvoicePhotosField } from "../ui";
+import { CloseGuardDialog } from "../common/CloseGuardDialog";
 import { formatMoney } from "./meta";
 
 const CURRENCIES = ["KGS", "USD", "RUB", "KZT", "EUR", "CNY"];
@@ -122,7 +122,6 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
   onCreateSupplier,
 }) => {
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
 
@@ -143,6 +142,7 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
   const [recognitionStage, setRecognitionStage] = React.useState(0);
   const [recognition, setRecognition] = React.useState<RecognitionResult | null>(null);
   const [recognitionError, setRecognitionError] = React.useState<string | null>(null);
+  const [closeConfirmOpen, setCloseConfirmOpen] = React.useState(false);
   const cameraRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -156,7 +156,7 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
     return () => window.clearInterval(timer);
   }, [recognizing]);
 
-  const photos = useInvoicePhotos({ target: "goodsReceipt", entityId: null, organizationId: scope.organizationId ?? null, open });
+  const photos = useInvoicePhotos({ target: "goodsReceipt", entityId: null, organizationId: scope.organizationId ?? null, open, preservePendingOnClose: true });
 
   const orgId = scope.organizationId ?? undefined;
 
@@ -201,24 +201,6 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
 
   const warehouses = React.useMemo<DjangoWarehouse[]>(() => warehousesQuery.data ?? [], [warehousesQuery.data]);
 
-  // Сброс при открытии + дефолты: номер по счётчику, основной склад филиала.
-  React.useEffect(() => {
-    if (!open) return;
-    setSupplierId("");
-    setNumber("");
-    setSupplierNumber("");
-    setReceivedAt(roundToStep(dayjs()));
-    setDueAt(null);
-    setCurrency("KGS");
-    setExchangeRate("1");
-    setComment("");
-    setLines([newLine()]);
-    setError(null);
-    setRecognition(null);
-    setRecognitionError(null);
-    setRecognizing(false);
-  }, [open]);
-
   React.useEffect(() => {
     if (open && nextNumberQuery.data?.number) setNumber((prev) => prev || nextNumberQuery.data.number);
   }, [open, nextNumberQuery.data]);
@@ -245,6 +227,52 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
   const total = lines.reduce((sum, l) => sum + lineTotal(l), 0);
   const filledLines = lines.filter((l) => l.product && toNumber(l.quantity) > 0);
   const unmatched = lines.filter((l) => l.recognized && !l.product);
+
+  const hasLineDraft = lines.some((line) =>
+    Boolean(line.product || line.quantity || line.price || line.lotNumber || line.expiresAt || line.recognized),
+  );
+  const isDirty = Boolean(
+    supplierId !== "" ||
+    supplierNumber.trim() ||
+    number.trim() !== (nextNumberQuery.data?.number ?? "") ||
+    dueAt ||
+    currency !== "KGS" ||
+    exchangeRate !== "1" ||
+    comment.trim() ||
+    hasLineDraft ||
+    recognition ||
+    photos.pending.length,
+  );
+
+  const resetForm = React.useCallback(() => {
+    setSupplierId("");
+    setWarehouseId("");
+    setNumber("");
+    setSupplierNumber("");
+    setReceivedAt(roundToStep(dayjs()));
+    setDueAt(null);
+    setCurrency("KGS");
+    setExchangeRate("1");
+    setComment("");
+    setLines([newLine()]);
+    setError(null);
+    setRecognition(null);
+    setRecognitionError(null);
+    setRecognizing(false);
+    photos.reset();
+  }, [photos]);
+
+  const requestClose = React.useCallback(() => {
+    if (saving || recognizing) return;
+    if (isDirty) setCloseConfirmOpen(true);
+    else onClose();
+  }, [isDirty, onClose, recognizing, saving]);
+
+  const discardAndClose = React.useCallback(() => {
+    setCloseConfirmOpen(false);
+    resetForm();
+    onClose();
+  }, [onClose, resetForm]);
 
   const isValid = supplierId !== "" && warehouseId !== "" && filledLines.length > 0 && lines.every((l) => !l.product || toNumber(l.quantity) > 0);
 
@@ -350,6 +378,7 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
         type: failed ? "error" : "success",
         message: failed ? `Накладная ${created.number} проведена, но ${failed} фото не загрузилось` : `Накладная ${created.number} проведена`,
       });
+      resetForm();
       onCreated(created);
     } catch (e) {
       setError(getErrorMessage(e, "Не удалось провести накладную"));
@@ -367,10 +396,11 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
   );
 
   return (
-    <Drawer
+    <>
+      <Drawer
       anchor="right"
       open={open}
-      onClose={busy ? undefined : onClose}
+      onClose={requestClose}
       PaperProps={{ sx: { width: { xs: "100%", sm: 560 }, maxWidth: "100%", display: "flex", flexDirection: "column" } }}
     >
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5, borderBottom: 1, borderColor: "divider" }}>
@@ -380,7 +410,7 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
             Приход от поставщика · себестоимость партий зафиксируется по курсу дня
           </Typography>
         </Box>
-        <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
+        <IconButton onClick={requestClose} disabled={busy} aria-label="Закрыть">
           <CloseOutlined />
         </IconButton>
       </Box>
@@ -655,10 +685,14 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                 <Box
                   key={line.key}
                   sx={(t) => ({
-                    p: 1.25,
-                    borderRadius: "10px",
-                    border: 1,
+                    p: { xs: 1.25, sm: 1.5 },
+                    borderRadius: "16px",
+                    border: "1px solid",
                     borderColor: line.recognized && !line.product ? alpha(t.palette.warning.main, 0.5) : "divider",
+                    background: line.recognized && !line.product
+                      ? `linear-gradient(145deg, ${alpha(t.palette.warning.main, 0.08)}, ${alpha(t.palette.background.paper, 0.92)})`
+                      : `linear-gradient(145deg, ${alpha(t.palette.primary.main, 0.055)}, ${alpha(t.palette.background.paper, 0.96)})`,
+                    boxShadow: `0 8px 24px ${alpha(t.palette.common.black, 0.12)}`,
                   })}
                 >
                   {line.recognized && (
@@ -668,7 +702,7 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                       ) : (
                         <ErrorOutlineOutlined sx={{ fontSize: 16, color: "warning.main" }} />
                       )}
-                      <Typography variant="caption" color="text.secondary" noWrap sx={{ flex: 1 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         В документе: «{line.recognized.name}»
                         {[line.recognized.modelCode, line.recognized.color, line.recognized.size]
                           .filter(Boolean)
@@ -678,7 +712,14 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                       </Typography>
                     </Stack>
                   )}
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "flex-start" }}>
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: { xs: "minmax(0, 1fr) minmax(0, 1fr)", sm: "minmax(0, 1fr) 88px 104px auto" },
+                      gap: 1,
+                      alignItems: "start",
+                    }}
+                  >
                     <Autocomplete<ProductOption, false, false, false>
                       options={options}
                       value={line.product}
@@ -687,7 +728,7 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                       isOptionEqualToValue={(a, b) => a.id === b.id}
                       loading={productsQuery.isLoading}
                       size="small"
-                      sx={{ flex: 1, minWidth: 0 }}
+                      sx={{ minWidth: 0, gridColumn: { xs: "1 / -1", sm: "auto" } }}
                       renderOption={(props, option) => {
                         const score = scoreOf(option.id);
                         return (
@@ -708,54 +749,28 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                       }}
                       renderInput={(params) => <TextField {...params} placeholder={`Товар ${index + 1}`} />}
                     />
-                    <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
-                      <TextField
-                        size="small"
-                        value={line.quantity}
-                        onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
-                        placeholder="Кол-во"
-                        inputProps={{ inputMode: "decimal", style: { textAlign: "right" } }}
-                        sx={{ width: { xs: "50%", sm: 88 } }}
-                        InputProps={{ endAdornment: line.product ? <Typography variant="caption" color="text.secondary">{line.product.unit}</Typography> : undefined }}
-                      />
-                      <TextField
-                        size="small"
-                        value={line.price}
-                        onChange={(e) => updateLine(line.key, { price: e.target.value })}
-                        placeholder="Цена"
-                        inputProps={{ inputMode: "decimal", style: { textAlign: "right" } }}
-                        sx={{ width: { xs: "50%", sm: 104 } }}
-                      />
-                      {!isMobile && (
-                        <IconButton size="small" onClick={() => removeLine(line.key)} aria-label="Удалить позицию" sx={{ mt: 0.25 }}>
-                          <DeleteOutlineOutlined fontSize="small" />
-                        </IconButton>
-                      )}
-                    </Stack>
-                  </Stack>
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 0.75 }}>
                     <TextField
                       size="small"
-                      value={line.lotNumber}
-                      onChange={(e) => updateLine(line.key, { lotNumber: e.target.value })}
-                      placeholder="Партия"
-                      sx={{ flex: 1, "& .MuiInputBase-root": { minHeight: 34 } }}
+                      value={line.quantity}
+                      onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
+                      placeholder="Количество"
+                      inputProps={{ inputMode: "decimal", style: { textAlign: "right" } }}
+                      InputProps={{ endAdornment: line.product ? <Typography variant="caption" color="text.secondary">{line.product.unit}</Typography> : undefined }}
                     />
-                    <CustomDatePicker
-                      value={line.expiresAt}
-                      onChange={(v) => updateLine(line.key, { expiresAt: v as Dayjs | null })}
-                      shortYearMode="future"
-                      slotProps={{ textField: { size: "small", placeholder: "Годен до", sx: { flex: 1, "& .MuiInputBase-root": { minHeight: 34 } } } }}
+                    <TextField
+                      size="small"
+                      value={line.price}
+                      onChange={(e) => updateLine(line.key, { price: e.target.value })}
+                      placeholder="Цена"
+                      inputProps={{ inputMode: "decimal", style: { textAlign: "right" } }}
                     />
-                    <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 90, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                    <Typography variant="body2" sx={{ fontWeight: 800, minWidth: { xs: 0, sm: 90 }, gridColumn: { xs: "1 / 2", sm: "auto" }, alignSelf: "center", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "primary.main" }}>
                       {lineTotal(line) > 0 ? formatMoney(lineTotal(line)) : "—"}
                     </Typography>
-                    {isMobile && (
-                      <IconButton size="small" onClick={() => removeLine(line.key)} aria-label="Удалить позицию">
-                        <DeleteOutlineOutlined fontSize="small" />
-                      </IconButton>
-                    )}
-                  </Stack>
+                    <IconButton size="small" onClick={() => removeLine(line.key)} aria-label="Удалить позицию" sx={{ justifySelf: "end", alignSelf: "center" }}>
+                      <DeleteOutlineOutlined fontSize="small" />
+                    </IconButton>
+                  </Box>
                 </Box>
               );
             })}
@@ -795,14 +810,21 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
       </Stack>
 
       <Box sx={{ p: 2, borderTop: 1, borderColor: "divider", display: "flex", gap: 1, flexDirection: { xs: "column-reverse", sm: "row" }, justifyContent: "flex-end" }}>
-        <Button variant="outlined" color="inherit" onClick={onClose} disabled={busy} sx={{ borderColor: "divider" }}>
+        <Button variant="outlined" color="inherit" onClick={requestClose} disabled={busy} sx={{ borderColor: "divider" }}>
           Отмена
         </Button>
         <Button variant="contained" onClick={handleSubmit} disabled={!isValid || busy} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <CheckCircleOutlined />}>
           Провести приход
         </Button>
       </Box>
-    </Drawer>
+      </Drawer>
+      <CloseGuardDialog
+        open={closeConfirmOpen}
+        title="накладную"
+        onCancel={() => setCloseConfirmOpen(false)}
+        onConfirm={discardAndClose}
+      />
+    </>
   );
 };
 

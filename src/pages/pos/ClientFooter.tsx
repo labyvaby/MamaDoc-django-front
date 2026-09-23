@@ -1,10 +1,12 @@
 import React from "react";
 import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
+import IconButton from "@mui/material/IconButton";
 import InputBase from "@mui/material/InputBase";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
+import ClearOutlined from "@mui/icons-material/ClearOutlined";
 
 import { POS_RADIUS, posColors } from "./layout";
 import type { PosClient, PosClientSearchResult } from "./types";
@@ -16,7 +18,8 @@ type Props = {
   client: PosClient | null;
   query: string;
   onQueryChange: (value: string) => void;
-  onSearch: () => void;
+  /** Оставляем Enter совместимым со старым сценарием; поиск запускается и автоматически. */
+  onSearch?: () => void;
   /** null — поиск ещё не запускали; пустой массив — клиент не найден. */
   results: PosClientSearchResult[] | null;
   onSelectClient: (client: PosClientSearchResult) => void;
@@ -32,7 +35,7 @@ const initials = (name: string): string =>
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
 
-/** Кнопка футера: «История покупок», «Сменить клиента», «Найти». */
+/** Кнопка футера: «История покупок», «Сменить клиента». */
 const FooterButton: React.FC<{ label: string; onClick: () => void; muted?: boolean; height?: number }> = ({
   label,
   onClick,
@@ -315,13 +318,22 @@ export const PosClientFooter: React.FC<Props> = ({
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") onSearch();
+                if (event.key === "Enter") onSearch?.();
               }}
               placeholder="Телефон или имя"
+              endAdornment={query ? (
+                <IconButton
+                  aria-label="Очистить поиск клиента"
+                  size="small"
+                  onClick={() => onQueryChange("")}
+                  sx={{ color: c.textDim, mr: "-8px" }}
+                >
+                  <ClearOutlined sx={{ fontSize: 18 }} />
+                </IconButton>
+              ) : null}
               sx={{ flex: 1, fontSize: 14, color: c.text, "& input::placeholder": { color: c.textDim, opacity: 1 } }}
             />
           </Box>
-          <FooterButton label="Найти" onClick={onSearch} height={42} />
         </Stack>
       </Stack>
 
@@ -333,7 +345,7 @@ export const PosClientFooter: React.FC<Props> = ({
         <Stack gap="8px">
           {results === null ? (
             <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>
-              Введите имя или телефон клиента и нажмите «Найти».
+              Введите имя или телефон клиента — поиск начнётся автоматически.
             </Typography>
           ) : (
             <>
