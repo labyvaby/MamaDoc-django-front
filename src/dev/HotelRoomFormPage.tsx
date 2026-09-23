@@ -1,20 +1,29 @@
 /**
- * Страница редактирования одного номера — /rooms/:roomId, гейт hotel.manage
- * (PAGE_PERMISSIONS.hotelRooms, см. App.tsx, accessPermissions.ts). Сюда ведут
- * клик по номеру в списке «Номера» (HotelRoomsPage.tsx) и кнопка «Редактировать»
- * в карточке номера в шахматке (RoomDetailsDialog.tsx). Откуда пришли — лежит в
- * location.state.from: после «Сохранить»/«Отмена» возвращаем туда (иначе — в список).
+ * Форма номера — одна страница на создание (/rooms/new) и правку (/rooms/:roomId),
+ * гейт hotel.manage (PAGE_PERMISSIONS.hotelRooms, см. App.tsx, accessPermissions.ts).
+ * Сюда ведут «Добавить номер» и клик по номеру в списке «Номера» (HotelRoomsPage.tsx),
+ * а также кнопка «Редактировать» в карточке номера в шахматке (RoomDetailsDialog.tsx).
+ * Откуда пришли — лежит в location.state.from: после «Сохранить»/«Отмена» возвращаем
+ * туда (иначе — в список).
  *
- * Реальный бэкенд (src/api/hotel.ts): правка — PATCH /hotel/rooms/{id}/
- * (категория, номер, этаж, питание, примечание, status), состояние — PATCH
- * /hotel/rooms/{id}/housekeeping/ (RoomStateControl). Одного номера в API нет
- * (getRoom), поэтому берём его из списка GET /hotel/rooms/ — тот же ключ кэша,
- * что у списка «Номера», так что после открытия из списка данные уже есть.
+ * Реальный бэкенд (src/api/hotel.ts): создание — POST /hotel/rooms/, правка — PATCH
+ * /hotel/rooms/{id}/ (категория, номер, этаж, питание, примечание, status, физические
+ * характеристики), состояние — PATCH /hotel/rooms/{id}/housekeeping/ (RoomStateControl,
+ * только при правке — у ещё не созданного номера состояния нет). Одного номера в API
+ * нет (getRoom), поэтому при правке берём его из списка GET /hotel/rooms/ — тот же
+ * ключ кэша, что у списка «Номера», так что после открытия из списка данные уже есть.
  *
  * Два разных «статуса», не путать: «В продаже» (status: active / out_of_service —
  * снят ли номер с продажи; так же номер снимается при «удалении», если он уже
  * фигурировал в бронях) и «Состояние» (убрано/грязно/проверено/ремонт). Первое
  * сохраняется общей кнопкой, второе применяется сразу.
+ *
+ * Физические характеристики (площадь, высота потолков, санузлы и т.д., раздел «Доп.
+ * характеристики» ниже) — все необязательные, добавлены поверх исходных полей номера
+ * по образцу карточки квартиры в CRM продаж недвижимости. В PATCH площадь/высоту/
+ * санузлы/комнаты нельзя очистить пустым значением (null там значит «не прислали») —
+ * для очистки отправляется отдельный флаг (clearArea и т.п., см. HotelRoomUpdateData);
+ * текстовые поля (сторона света, вид, планировка) чистятся пустой строкой как обычно.
  *
  * Перенос в другую категорию при будущих бронях бэк отклоняет (409
  * INVALID_TRANSITION) — показываем его сообщение как есть.
@@ -29,6 +38,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -54,7 +64,16 @@ import { useSnackbar } from "notistack";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
-import { getHotelCatalogs, listRoomTypes, listRooms, updateRoom, type HotelRoom, type HotelRoomType } from "../api/hotel";
+import {
+  getHotelCatalogs,
+  listRoomTypes,
+  listRooms,
+  createRoom,
+  updateRoom,
+  type HotelRoom,
+  type HotelRoomType,
+  type HotelRoomUpdateData,
+} from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 import { RoomStateControl } from "./RoomStateControl";
 
@@ -74,6 +93,34 @@ interface RoomFormState {
   note: string;
   /** false — номер снят с продажи (status: out_of_service). */
   onSale: boolean;
+  area: string;
+  ceilingHeight: string;
+  windowSide: string;
+  view: string;
+  isCorner: boolean;
+  bathrooms: string;
+  roomsCount: string;
+  layoutDescription: string;
+}
+
+const EMPTY_FORM: Omit<RoomFormState, "roomTypeId"> = {
+  number: "",
+  floor: "",
+  meals: [],
+  note: "",
+  onSale: true,
+  area: "",
+  ceilingHeight: "",
+  windowSide: "",
+  view: "",
+  isCorner: false,
+  bathrooms: "",
+  roomsCount: "",
+  layoutDescription: "",
+};
+
+function emptyForm(roomTypes: HotelRoomType[]): RoomFormState {
+  return { ...EMPTY_FORM, roomTypeId: roomTypes[0]?.id ?? "" };
 }
 
 function toForm(room: HotelRoom): RoomFormState {
@@ -84,12 +131,21 @@ function toForm(room: HotelRoom): RoomFormState {
     meals: room.mealOptions,
     note: room.note ?? "",
     onSale: room.status !== "out_of_service",
+    area: room.area ?? "",
+    ceilingHeight: room.ceilingHeight ?? "",
+    windowSide: room.windowSide ?? "",
+    view: room.view ?? "",
+    isCorner: room.isCorner ?? false,
+    bathrooms: room.bathrooms != null ? String(room.bathrooms) : "",
+    roomsCount: room.roomsCount != null ? String(room.roomsCount) : "",
+    layoutDescription: room.layoutDescription ?? "",
   };
 }
 
 interface RoomFormProps {
   propertyId: number;
-  room: HotelRoom;
+  /** null — создание нового номера, иначе правящийся. */
+  editing: HotelRoom | null;
   roomTypes: HotelRoomType[];
   mealChoices: { value: string; label: string }[];
   backPath: string;
@@ -99,24 +155,32 @@ interface RoomFormProps {
   onLeave: (path: string) => void;
 }
 
-/** Сама форма: монтируется, когда номер уже загружен, поэтому состояние берётся из него без эффекта. */
-const RoomForm: React.FC<RoomFormProps> = ({ propertyId, room, roomTypes, mealChoices, backPath, onDirtyChange, onLeave }) => {
+/** Сама форма: монтируется, когда данные уже загружены, поэтому состояние берётся без эффекта. */
+const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mealChoices, backPath, onDirtyChange, onLeave }) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
-  const [form, setForm] = React.useState<RoomFormState>(() => toForm(room));
+  const [form, setForm] = React.useState<RoomFormState>(() => (editing ? toForm(editing) : emptyForm(roomTypes)));
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const patchForm = (patch: Partial<RoomFormState>) => setForm((prev) => ({ ...prev, ...patch }));
 
   // Снимок при открытии: «грязная» форма — та, что от него отличается.
-  const initial = React.useRef(toForm(room)).current;
+  const initial = React.useRef(editing ? toForm(editing) : emptyForm(roomTypes)).current;
   const isDirty =
     form.roomTypeId !== initial.roomTypeId ||
     form.number !== initial.number ||
     form.floor !== initial.floor ||
     form.note !== initial.note ||
     form.onSale !== initial.onSale ||
+    form.area !== initial.area ||
+    form.ceilingHeight !== initial.ceilingHeight ||
+    form.windowSide !== initial.windowSide ||
+    form.view !== initial.view ||
+    form.isCorner !== initial.isCorner ||
+    form.bathrooms !== initial.bathrooms ||
+    form.roomsCount !== initial.roomsCount ||
+    form.layoutDescription !== initial.layoutDescription ||
     form.meals.length !== initial.meals.length ||
     form.meals.some((m) => !initial.meals.includes(m));
   React.useEffect(() => {
@@ -134,33 +198,82 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, room, roomTypes, mealCh
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
+  const invalidateAfterSave = () => {
+    // Номер виден в списке «Номера», в шахматке, в карточке номера и в счётчиках категорий.
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "rooms", propertyId] });
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "roomTypes", propertyId] });
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "calendar"] });
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "room-availability"] });
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "dashboard"] });
+  };
+
   const submit = async () => {
     const number = form.number.trim();
     if (!number) {
       setError("Введите номер комнаты");
       return;
     }
+    if (form.roomTypeId === "") {
+      setError("Выберите категорию");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      await updateRoom(room.id, {
-        roomTypeId: form.roomTypeId || undefined,
-        number,
-        floor: form.floor.trim(),
-        mealOptions: form.meals,
-        note: form.note.trim(),
-        status: form.onSale ? "active" : "out_of_service",
-      });
-      // Номер виден в списке «Номера», в шахматке, в карточке номера и в счётчиках категорий.
-      void queryClient.invalidateQueries({ queryKey: ["hotel", "rooms", propertyId] });
-      void queryClient.invalidateQueries({ queryKey: ["hotel", "roomTypes", propertyId] });
-      void queryClient.invalidateQueries({ queryKey: ["hotel", "calendar"] });
-      void queryClient.invalidateQueries({ queryKey: ["hotel", "room-availability"] });
-      void queryClient.invalidateQueries({ queryKey: ["hotel", "dashboard"] });
-      enqueueSnackbar(`Номер ${number} сохранён`, { variant: "success" });
+      if (editing) {
+        const patch: HotelRoomUpdateData = {
+          roomTypeId: form.roomTypeId,
+          number,
+          floor: form.floor.trim(),
+          mealOptions: form.meals,
+          note: form.note.trim(),
+          status: form.onSale ? "active" : "out_of_service",
+          windowSide: form.windowSide.trim(),
+          view: form.view.trim(),
+          isCorner: form.isCorner,
+          layoutDescription: form.layoutDescription.trim(),
+        };
+        // area/ceilingHeight/bathrooms/roomsCount: null в PATCH значит «не прислали» —
+        // очистка идёт отдельным флагом, только если поле реально было заполнено.
+        const area = form.area.trim();
+        if (area) patch.area = area;
+        else if (initial.area.trim()) patch.clearArea = true;
+        const ceilingHeight = form.ceilingHeight.trim();
+        if (ceilingHeight) patch.ceilingHeight = ceilingHeight;
+        else if (initial.ceilingHeight.trim()) patch.clearCeilingHeight = true;
+        const bathrooms = form.bathrooms.trim();
+        if (bathrooms) patch.bathrooms = Number(bathrooms);
+        else if (initial.bathrooms.trim()) patch.clearBathrooms = true;
+        const roomsCount = form.roomsCount.trim();
+        if (roomsCount) patch.roomsCount = Number(roomsCount);
+        else if (initial.roomsCount.trim()) patch.clearRoomsCount = true;
+
+        await updateRoom(editing.id, patch);
+        invalidateAfterSave();
+        enqueueSnackbar(`Номер ${number} сохранён`, { variant: "success" });
+      } else {
+        await createRoom({
+          propertyId,
+          roomTypeId: form.roomTypeId,
+          number,
+          floor: form.floor.trim() || undefined,
+          mealOptions: form.meals,
+          note: form.note.trim() || undefined,
+          area: form.area.trim() || undefined,
+          ceilingHeight: form.ceilingHeight.trim() || undefined,
+          windowSide: form.windowSide.trim() || undefined,
+          view: form.view.trim() || undefined,
+          isCorner: form.isCorner || undefined,
+          bathrooms: form.bathrooms.trim() ? Number(form.bathrooms) : undefined,
+          roomsCount: form.roomsCount.trim() ? Number(form.roomsCount) : undefined,
+          layoutDescription: form.layoutDescription.trim() || undefined,
+        });
+        invalidateAfterSave();
+        enqueueSnackbar(`Номер ${number} добавлен`, { variant: "success" });
+      }
       navigate(backPath);
     } catch (err) {
-      setError(getErrorMessage(err, "Не удалось сохранить номер"));
+      setError(getErrorMessage(err, editing ? "Не удалось сохранить номер" : "Не удалось добавить номер"));
     } finally {
       setSaving(false);
     }
@@ -190,11 +303,13 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, room, roomTypes, mealCh
           <Stack direction="row" flexWrap="wrap" gap={2}>
             <TextField
               label="Номер"
+              placeholder={editing ? undefined : "Например, 205"}
               value={form.number}
               onChange={(e) => {
                 patchForm({ number: e.target.value });
                 setError(null);
               }}
+              autoFocus={!editing}
               disabled={saving}
               sx={{ flex: "1 1 200px" }}
             />
@@ -247,28 +362,112 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, room, roomTypes, mealCh
       </Paper>
 
       <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
-        <Stack gap={1.5}>
+        <Stack gap={2}>
           <Typography variant="subtitle2" fontWeight={600}>
-            Продажа и состояние
+            Доп. характеристики
           </Typography>
-          <Box>
-            <FormControlLabel
-              control={<Switch checked={form.onSale} onChange={(e) => patchForm({ onSale: e.target.checked })} disabled={saving} />}
-              label="Номер в продаже"
+          <Typography variant="body2" color="text.secondary">
+            Необязательно — только для этого конкретного номера, поверх общих характеристик категории.
+          </Typography>
+          <Stack direction="row" flexWrap="wrap" gap={2}>
+            <TextField
+              label="Площадь, м²"
+              type="number"
+              value={form.area}
+              onChange={(e) => patchForm({ area: e.target.value })}
+              slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+              disabled={saving}
+              sx={{ flex: "1 1 160px" }}
             />
-            <Typography variant="caption" color="text.secondary" display="block">
-              Выключите, чтобы снять номер с продажи. Сохраняется кнопкой «Сохранить».
-            </Typography>
-          </Box>
-          <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
-            <Typography variant="body2">Состояние:</Typography>
-            <RoomStateControl roomId={room.id} state={room.state} />
-            <Typography variant="caption" color="text.secondary">
-              Убрано, грязно, проверено или ремонт. Меняется сразу, без кнопки «Сохранить».
-            </Typography>
+            <TextField
+              label="Высота потолков, м"
+              type="number"
+              value={form.ceilingHeight}
+              onChange={(e) => patchForm({ ceilingHeight: e.target.value })}
+              slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+              disabled={saving}
+              sx={{ flex: "1 1 160px" }}
+            />
+            <TextField
+              label="Санузлов"
+              type="number"
+              value={form.bathrooms}
+              onChange={(e) => patchForm({ bathrooms: e.target.value })}
+              slotProps={{ htmlInput: { min: 0, step: 1 } }}
+              disabled={saving}
+              sx={{ flex: "1 1 130px" }}
+            />
+            <TextField
+              label="Жилых комнат"
+              type="number"
+              value={form.roomsCount}
+              onChange={(e) => patchForm({ roomsCount: e.target.value })}
+              slotProps={{ htmlInput: { min: 0, step: 1 } }}
+              disabled={saving}
+              sx={{ flex: "1 1 130px" }}
+            />
           </Stack>
+          <Stack direction="row" flexWrap="wrap" gap={2}>
+            <TextField
+              label="Сторона света"
+              placeholder="Юг, Северо-Восток…"
+              value={form.windowSide}
+              onChange={(e) => patchForm({ windowSide: e.target.value })}
+              disabled={saving}
+              sx={{ flex: "1 1 200px" }}
+            />
+            <TextField
+              label="Вид из окна этого номера"
+              placeholder="Двор, Улица, Горы…"
+              helperText="Если отличается от вида категории"
+              value={form.view}
+              onChange={(e) => patchForm({ view: e.target.value })}
+              disabled={saving}
+              sx={{ flex: "1 1 220px" }}
+            />
+          </Stack>
+          <FormControlLabel
+            control={<Checkbox checked={form.isCorner} onChange={(e) => patchForm({ isCorner: e.target.checked })} disabled={saving} />}
+            label="Угловой номер"
+          />
+          <TextField
+            label="Описание планировки"
+            placeholder="Необязательно"
+            value={form.layoutDescription}
+            onChange={(e) => patchForm({ layoutDescription: e.target.value })}
+            disabled={saving}
+            multiline
+            minRows={2}
+            fullWidth
+          />
         </Stack>
       </Paper>
+
+      {editing && (
+        <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+          <Stack gap={1.5}>
+            <Typography variant="subtitle2" fontWeight={600}>
+              Продажа и состояние
+            </Typography>
+            <Box>
+              <FormControlLabel
+                control={<Switch checked={form.onSale} onChange={(e) => patchForm({ onSale: e.target.checked })} disabled={saving} />}
+                label="Номер в продаже"
+              />
+              <Typography variant="caption" color="text.secondary" display="block">
+                Выключите, чтобы снять номер с продажи. Сохраняется кнопкой «Сохранить».
+              </Typography>
+            </Box>
+            <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+              <Typography variant="body2">Состояние:</Typography>
+              <RoomStateControl roomId={editing.id} state={editing.state} />
+              <Typography variant="caption" color="text.secondary">
+                Убрано, грязно, проверено или ремонт. Меняется сразу, без кнопки «Сохранить».
+              </Typography>
+            </Stack>
+          </Stack>
+        </Paper>
+      )}
 
       {error && (
         <Alert severity="error" variant="outlined" sx={{ fontSize: "0.8rem" }}>
@@ -290,8 +489,8 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, room, roomTypes, mealCh
         >
           Отмена
         </Button>
-        <Button variant="contained" disabled={!form.number.trim() || saving} onClick={() => void submit()}>
-          {saving ? "Сохраняем…" : "Сохранить"}
+        <Button variant="contained" disabled={!form.number.trim() || form.roomTypeId === "" || saving} onClick={() => void submit()}>
+          {saving ? "Сохраняем…" : editing ? "Сохранить" : "Добавить"}
         </Button>
       </Stack>
     </Stack>
@@ -300,7 +499,8 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, room, roomTypes, mealCh
 
 export const HotelRoomFormPage: React.FC = () => {
   const { roomId } = useParams();
-  usePageTitle("Номер");
+  const isEdit = roomId != null;
+  usePageTitle(isEdit ? "Номер" : "Новый номер");
   const theme = useTheme();
   const location = useLocation();
   const { property } = useHotelProperty();
@@ -316,20 +516,21 @@ export const HotelRoomFormPage: React.FC = () => {
     queryFn: ({ signal }) => listRoomTypes(property!.id, {}, signal),
     enabled: property != null,
   });
+  const roomTypes = roomTypesQuery.data ?? [];
   const roomsQuery = useQuery({
     queryKey: ["hotel", "rooms", property?.id],
     queryFn: ({ signal }) => listRooms({ propertyId: property!.id }, signal),
-    enabled: property != null,
+    enabled: property != null && isEdit,
   });
 
-  const room = (roomsQuery.data ?? []).find((r) => String(r.id) === roomId) ?? null;
-  const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading || roomsQuery.isLoading;
+  const room = isEdit ? (roomsQuery.data ?? []).find((r) => String(r.id) === roomId) ?? null : null;
+  const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading || (isEdit && roomsQuery.isLoading);
   // Ошибку загрузки не выдаём за «Номер не найден»: при сбое сети это ввело бы в заблуждение.
-  const loadError = catalogsQuery.isError || roomTypesQuery.isError || roomsQuery.isError;
+  const loadError = catalogsQuery.isError || roomTypesQuery.isError || (isEdit && roomsQuery.isError);
   const retryLoad = () => {
     void catalogsQuery.refetch();
     void roomTypesQuery.refetch();
-    void roomsQuery.refetch();
+    if (isEdit) void roomsQuery.refetch();
   };
 
   // Защита от потери правок: форма сообщает, что она «грязная»; «Назад»/«Отмена» тогда
@@ -360,7 +561,7 @@ export const HotelRoomFormPage: React.FC = () => {
           </Tooltip>
           <HotelOutlined color="action" />
           <Typography variant="h6" fontWeight={600}>
-            {room ? `Номер ${room.number}` : "Номер"}
+            {isEdit ? (room ? `Номер ${room.number}` : "Номер") : "Новый номер"}
           </Typography>
         </Stack>
 
@@ -384,7 +585,7 @@ export const HotelRoomFormPage: React.FC = () => {
           >
             Не удалось загрузить номер.
           </Alert>
-        ) : !room ? (
+        ) : isEdit && !room ? (
           <Alert
             severity="warning"
             variant="outlined"
@@ -396,12 +597,24 @@ export const HotelRoomFormPage: React.FC = () => {
           >
             Номер не найден — возможно, его уже удалили.
           </Alert>
+        ) : !isEdit && roomTypes.length === 0 ? (
+          <Alert
+            severity="warning"
+            variant="outlined"
+            action={
+              <Button color="inherit" size="small" component={RouterLink} to="/room-categories">
+                К категориям
+              </Button>
+            }
+          >
+            Категорий пока нет — сначала заведите их в разделе «Категории и тарифы», затем добавляйте номера.
+          </Alert>
         ) : (
           <RoomForm
-            key={room.id}
+            key={room?.id ?? "new"}
             propertyId={property.id}
-            room={room}
-            roomTypes={roomTypesQuery.data ?? []}
+            editing={room}
+            roomTypes={roomTypes}
             mealChoices={catalogsQuery.data?.mealOptions ?? []}
             backPath={backPath}
             onDirtyChange={setDirty}
@@ -414,7 +627,9 @@ export const HotelRoomFormPage: React.FC = () => {
         <DialogTitle>Выйти без сохранения?</DialogTitle>
         <DialogContent>
           <Typography variant="body2">
-            Изменения номера, которые вы не сохранили, будут потеряны. Состояние номера уже применено и не откатится.
+            {isEdit
+              ? "Изменения номера, которые вы не сохранили, будут потеряны. Состояние номера уже применено и не откатится."
+              : "Новый номер не будет создан."}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>

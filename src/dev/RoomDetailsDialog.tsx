@@ -32,7 +32,7 @@ import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlin
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import dayjs from "dayjs";
 
-import { getRoomAvailability, type HotelRoomType } from "../api/hotel";
+import { getRoomAvailability, type HotelRoom, type HotelRoomType } from "../api/hotel";
 import { PAGE_PERMISSIONS } from "../config/accessPermissions";
 import { useCan } from "../hooks/useCan";
 import {
@@ -45,6 +45,57 @@ import { formatHotelDateRange, nightsBetween } from "./mockDemoData";
 import { RoomStateControl } from "./RoomStateControl";
 
 const AVAILABILITY_WINDOW_DAYS = 45;
+
+interface RoomCharacteristicsProps {
+  room: HotelRoom;
+}
+
+/**
+ * Физические характеристики ЭТОГО номера (площадь, санузлы и т.п.) — поверх общих
+ * характеристик категории выше. Все поля необязательные (см. api/hotel.ts,
+ * HotelRoomFormPage.tsx) — секция скрыта целиком, если ни одно не заполнено (у
+ * старых номеров, заведённых до 23.09.2026, так и есть).
+ */
+const RoomCharacteristics: React.FC<RoomCharacteristicsProps> = ({ room }) => {
+  const rows: { label: string; value: string }[] = [];
+  if (room.area) rows.push({ label: "Площадь", value: `${room.area} м²` });
+  if (room.ceilingHeight) rows.push({ label: "Высота потолков", value: `${room.ceilingHeight} м` });
+  if (room.bathrooms != null) rows.push({ label: "Санузлов", value: String(room.bathrooms) });
+  if (room.roomsCount != null) rows.push({ label: "Жилых комнат", value: String(room.roomsCount) });
+  if (room.windowSide) rows.push({ label: "Сторона света", value: room.windowSide });
+  if (room.view) rows.push({ label: "Вид из окна", value: room.view });
+  if (room.isCorner) rows.push({ label: "Угловой номер", value: "да" });
+
+  if (rows.length === 0 && !room.layoutDescription) return null;
+
+  return (
+    <>
+      <Divider sx={{ mb: 2 }} />
+      <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+        Характеристики номера
+      </Typography>
+      {rows.length > 0 && (
+        <Stack direction="row" gap={3} flexWrap="wrap" sx={{ mb: room.layoutDescription ? 1.5 : 2.5 }}>
+          {rows.map((r) => (
+            <Box key={r.label}>
+              <Typography variant="caption" color="text.secondary" display="block">
+                {r.label}
+              </Typography>
+              <Typography variant="body2" fontWeight={600}>
+                {r.value}
+              </Typography>
+            </Box>
+          ))}
+        </Stack>
+      )}
+      {room.layoutDescription && (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, whiteSpace: "pre-wrap" }}>
+          {room.layoutDescription}
+        </Typography>
+      )}
+    </>
+  );
+};
 
 export interface RoomDetailsDialogProps {
   /** Id номера или null — диалог закрыт. */
@@ -198,6 +249,8 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, ro
                 )}
               </>
             )}
+
+            <RoomCharacteristics room={availability.room} />
 
             <Divider sx={{ mb: 2 }} />
 

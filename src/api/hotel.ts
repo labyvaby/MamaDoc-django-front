@@ -312,6 +312,19 @@ export interface HotelRoom {
   /** Ключи из HotelCatalogs.mealOptions — какое питание доступно в этом номере. */
   mealOptions: string[];
   note: string;
+  /** Физические характеристики номера (см. §6 контракта, доп. поля от 23.09.2026) — все необязательные. */
+  /** Площадь, м² — десятичная строка ("24.5") либо не указана. */
+  area: string | null;
+  /** Высота потолков, м. */
+  ceilingHeight: string | null;
+  /** Сторона света окон — свободный текст ("юг", "северо-восток"…). "" — не указана. */
+  windowSide: string;
+  /** Вид из окна ЭТОГО номера — отдельно от view категории (там вид общий для всех номеров категории). */
+  view: string;
+  isCorner: boolean;
+  bathrooms: number | null;
+  roomsCount: number | null;
+  layoutDescription: string;
 }
 
 export interface HotelRoomListParams {
@@ -327,6 +340,14 @@ export interface HotelRoomCreateData {
   floor?: string;
   mealOptions?: string[];
   note?: string;
+  area?: string | null;
+  ceilingHeight?: string | null;
+  windowSide?: string;
+  view?: string;
+  isCorner?: boolean;
+  bathrooms?: number | null;
+  roomsCount?: number | null;
+  layoutDescription?: string;
 }
 
 export interface HotelRoomUpdateData {
@@ -336,6 +357,19 @@ export interface HotelRoomUpdateData {
   status?: "active" | "out_of_service";
   mealOptions?: string[];
   note?: string;
+  area?: string | null;
+  ceilingHeight?: string | null;
+  windowSide?: string;
+  view?: string;
+  isCorner?: boolean;
+  bathrooms?: number | null;
+  roomsCount?: number | null;
+  layoutDescription?: string;
+  /** null у area/ceilingHeight/bathrooms/roomsCount значит «поле не прислали» — для очистки шлём этот флаг. */
+  clearArea?: boolean;
+  clearCeilingHeight?: boolean;
+  clearBathrooms?: boolean;
+  clearRoomsCount?: boolean;
 }
 
 export function listRooms(params: HotelRoomListParams, signal?: AbortSignal): Promise<HotelRoom[]> {
