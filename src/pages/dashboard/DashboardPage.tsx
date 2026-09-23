@@ -54,6 +54,8 @@ import {
 } from "./operationsWidgets";
 import { exportDashboardXlsx } from "./exportDashboardXlsx";
 import { StaffWidget } from "./StaffWidget";
+import { PulseWidget } from "./PulseWidget";
+import { AttentionWidget } from "./AttentionWidget";
 import type { WidgetProps } from "./widgetKit";
 
 const PERIOD_STORAGE_KEY = "mamadoc:dashboard:period";
@@ -61,6 +63,8 @@ const PERIOD_STORAGE_KEY = "mamadoc:dashboard:period";
 const MotionGrid = motion(Grid);
 
 const WIDGET_COMPONENT: Record<WidgetId, React.FC<WidgetProps>> = {
+  pulse: PulseWidget,
+  attention: AttentionWidget,
   money: MoneyWidget,
   appointments: AppointmentsWidget,
   availability: AvailabilityWidget,
@@ -206,7 +210,7 @@ export const DashboardPage: React.FC = () => {
     // Свой скролл-контейнер обязателен: лейаут приложения (`childrenBoxProps`
     // в App.tsx) фиксирует высоту и ставит `overflow: hidden`, поэтому страница
     // без него просто обрезается — на «Месяце» нижние карточки были недоступны.
-    <Box sx={{ height: "100%", overflowY: "auto", overflowX: "hidden", pr: { md: 0.5 } }}>
+    <Box sx={{ height: "100%", overflowY: "auto", overflowX: "hidden", pr: { md: 0.5 }, pb: 2 }}>
       <PageHeader
         title="Сводка"
         actions={
@@ -268,9 +272,14 @@ export const DashboardPage: React.FC = () => {
         </Alert>
       )}
 
-      {scopeLabel && !editing && (
-        <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
-          {scopeLabel}
+      {!editing && (
+        <Typography variant="body2" sx={{ color: "text.secondary", mb: 1.5, mt: -0.5 }}>
+          {/* Дата с днём недели: у бизнеса разный поток по дням, и «сегодня»
+              без неё читается хуже. */}
+          <Box component="span" sx={{ color: "text.primary", fontWeight: 500 }}>
+            {dayjs().format("dddd, D MMMM")}
+          </Box>
+          {scopeLabel ? ` · ${scopeLabel}` : ""}
         </Typography>
       )}
 
@@ -288,7 +297,7 @@ export const DashboardPage: React.FC = () => {
         // без микро-анимаций внутри плиток.
         <MotionGrid
           container
-          spacing={2}
+          spacing={1.5}
           alignItems="stretch"
           variants={cascadeContainer}
           initial={animateOnMount ? "hidden" : false}
@@ -301,7 +310,9 @@ export const DashboardPage: React.FC = () => {
                 item
                 key={w.id}
                 xs={12}
-                md={resolveSpan(w, layout) === 12 ? 12 : 6}
+                // На среднем экране «две трети» — это уже вся ширина: 8 из 12
+                // рядом с половинкой не помещается.
+                md={resolveSpan(w, layout) >= 8 ? 12 : 6}
                 lg={resolveSpan(w, layout)}
                 variants={cascadeItem}
               >

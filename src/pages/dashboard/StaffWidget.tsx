@@ -1,15 +1,14 @@
 import React from "react";
-import { Box, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, Skeleton, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
-import { AppCard } from "../../components/ui";
 import { getPayrollReport } from "../../api/payroll";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
-import { WidgetError, type WidgetProps } from "./widgetKit";
+import { DashCard, WidgetError, type WidgetProps } from "./widgetKit";
 import { num } from "./widgetUtils";
 
 /** Сколько строк показываем: длинный список превращает сводку в отчёт. */
@@ -25,8 +24,7 @@ const TOP_SIZE = 5;
  *
  * ⚠ Поле `paidCount` в этом отчёте бэк НЕ заполняет — приходит 0 у всех строк
  * (проверено на живом API 25.08.2026), хотя `totalCount` и `appointmentsCount`
- * заполнены. Поэтому считаем по приёмам исполнителя: сортировка по `paidCount`
- * дала бы случайный порядок и пустые полосы.
+ * заполнены. Поэтому считаем по приёмам исполнителя.
  *
  * Отчёт месячный по своей природе, поэтому виджет не зависит от выбранного
  * периода и всегда показывает текущий месяц — это написано в подзаголовке.
@@ -55,82 +53,134 @@ export const StaffWidget: React.FC<WidgetProps> = ({ range, scope }) => {
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
   });
 
-  const rows = React.useMemo(() => {
-    const all = query.data?.rows ?? [];
-    return [...all]
-      .filter((r) => r.appointmentsCount > 0 || num(r.earnings) > 0)
-      .sort(
-        (a, b) =>
-          b.appointmentsCount - a.appointmentsCount || num(b.earnings) - num(a.earnings),
-      )
-      .slice(0, TOP_SIZE);
-  }, [query.data]);
+  const active = React.useMemo(
+    () =>
+      (query.data?.rows ?? []).filter((r) => r.appointmentsCount > 0 || num(r.earnings) > 0),
+    [query.data],
+  );
+
+  const rows = React.useMemo(
+    () =>
+      [...active]
+        .sort(
+          (a, b) =>
+            b.appointmentsCount - a.appointmentsCount || num(b.earnings) - num(a.earnings),
+        )
+        .slice(0, TOP_SIZE),
+    [active],
+  );
 
   const best = rows.reduce((max, r) => Math.max(max, r.appointmentsCount), 0);
+  const totalAppointments = active.reduce((acc, r) => acc + r.appointmentsCount, 0);
 
   return (
-    <AppCard
-      variant="outlined"
-      elevation={0}
+    <DashCard
       title="Сотрудники"
-      subheader={`${month.format("MMMM YYYY")} · по приёмам исполнителя`}
+      subheader={`${month.format("MMMM")} · топ по приёмам`}
+      href="/salary-reports"
     >
       {query.isError ? (
         <WidgetError error={query.error} />
+      ) : query.isLoading ? (
+        <Stack spacing={1}>
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} variant="text" height={28} />
+          ))}
+        </Stack>
       ) : rows.length === 0 ? (
         <Typography variant="body2" sx={{ color: "text.secondary" }}>
-          {query.isLoading ? "Загружаем…" : "За месяц пока нет приёмов"}
+          За месяц пока нет приёмов
         </Typography>
       ) : (
-        <Stack spacing={1}>
-          {rows.map((r) => (
-            <Box
+        <Stack spacing={0.25}>
+          {rows.map((r, i) => (
+            <Stack
               key={r.employeeId}
+              direction="row"
+              alignItems="center"
+              spacing={1.25}
               sx={(t) => ({
-                p: 1.25,
-                borderRadius: "10px",
-                border: 1,
-                borderColor: "divider",
-                bgcolor: subtleBg(t),
+                px: 1,
+                py: 0.75,
+                borderRadius: "8px",
+                "&:hover": { bgcolor: subtleBg(t) },
               })}
             >
-              <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mb: 0.75 }}>
-                <Typography sx={{ fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>
+              <Typography
+                sx={{
+                  width: 16,
+                  flexShrink: 0,
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  color: i === 0 ? "primary.onSurface" : "text.disabled",
+                  textAlign: "center",
+                }}
+              >
+                {i + 1}
+              </Typography>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                   {r.fullName}
                 </Typography>
-                <Tooltip title="Приёмы, где сотрудник указан исполнителем" arrow>
-                  <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                    {r.appointmentsCount}
-                  </Typography>
-                </Tooltip>
-                <Tooltip title="Начислено за месяц: проценты, часы, надбавки" arrow>
-                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                    {formatKGS(num(r.earnings))}
-                  </Typography>
-                </Tooltip>
-              </Stack>
-              <Box
-                sx={(t) => ({
-                  height: 5,
-                  borderRadius: "6px",
-                  bgcolor: subtleBg(t, true),
-                  overflow: "hidden",
-                })}
-              >
                 <Box
                   sx={(t) => ({
-                    width: `${best > 0 ? Math.round((r.appointmentsCount / best) * 100) : 0}%`,
-                    height: "100%",
-                    bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.8 : 0.55),
-                    transition: "width .3s ease",
+                    mt: 0.5,
+                    height: 4,
+                    borderRadius: "4px",
+                    bgcolor: subtleBg(t, true),
+                    overflow: "hidden",
                   })}
-                />
+                >
+                  <Box
+                    sx={(t) => ({
+                      width: `${best > 0 ? Math.round((r.appointmentsCount / best) * 100) : 0}%`,
+                      height: "100%",
+                      borderRadius: "4px",
+                      bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.8 : 0.6),
+                      transition: "width .3s ease",
+                    })}
+                  />
+                </Box>
               </Box>
-            </Box>
+              <Tooltip
+                title={
+                  totalAppointments > 0
+                    ? `Приёмов исполнителем · ${Math.round((r.appointmentsCount / totalAppointments) * 100)}% от всех`
+                    : "Приёмов исполнителем"
+                }
+                arrow
+              >
+                <Typography
+                  sx={{
+                    width: 44,
+                    textAlign: "right",
+                    fontWeight: 700,
+                    fontSize: "0.9rem",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {r.appointmentsCount}
+                </Typography>
+              </Tooltip>
+              <Tooltip title="Начислено за месяц: проценты, часы, надбавки" arrow>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    width: 92,
+                    textAlign: "right",
+                    color: "text.secondary",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                  noWrap
+                >
+                  {formatKGS(num(r.earnings))}
+                </Typography>
+              </Tooltip>
+            </Stack>
           ))}
         </Stack>
       )}
-    </AppCard>
+    </DashCard>
   );
 };
 

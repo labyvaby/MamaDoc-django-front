@@ -38,9 +38,6 @@ const TONE_COLOR: Record<MetricTone, "primary" | "success" | "warning" | "error"
   error: "error",
 };
 
-/** Числа выравниваем по разрядам: иначе значения в соседних плитках «пляшут». */
-const TABULAR = { fontVariantNumeric: "tabular-nums" } as const;
-
 const DIRECTION_ICON: Record<DeltaDirection, React.ReactNode> = {
   up: <ArrowUpwardOutlined />,
   down: <ArrowDownwardOutlined />,
@@ -49,9 +46,13 @@ const DIRECTION_ICON: Record<DeltaDirection, React.ReactNode> = {
 
 // ── Чип изменения ─────────────────────────────────────────────────────────────
 
-const DeltaChip: React.FC<{ delta: MetricDelta }> = ({ delta }) => {
+export const DeltaChip: React.FC<{ delta: MetricDelta; size?: "sm" | "md" }> = ({
+  delta,
+  size = "sm",
+}) => {
   const view = describeDelta(delta);
   if (!view) return null;
+  const md = size === "md";
 
   return (
     <Tooltip title={view.title} arrow placement="top">
@@ -60,8 +61,8 @@ const DeltaChip: React.FC<{ delta: MetricDelta }> = ({ delta }) => {
         alignItems="center"
         spacing={0.25}
         sx={(t) => ({
-          height: 22,
-          px: 0.75,
+          height: md ? 26 : 20,
+          px: md ? 1 : 0.625,
           borderRadius: "7px",
           flexShrink: 0,
           bgcolor:
@@ -74,11 +75,17 @@ const DeltaChip: React.FC<{ delta: MetricDelta }> = ({ delta }) => {
               : t.palette.mode === "dark"
                 ? t.palette[view.tone].light
                 : t.palette[view.tone].dark,
-          "& .MuiSvgIcon-root": { fontSize: 13 },
+          "& .MuiSvgIcon-root": { fontSize: md ? 15 : 12 },
         })}
       >
         {DIRECTION_ICON[view.direction]}
-        <Typography sx={{ fontSize: "0.72rem", fontWeight: 600, ...TABULAR }}>
+        <Typography
+          sx={{
+            fontSize: md ? "0.8rem" : "0.7rem",
+            fontWeight: 600,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
           {view.text}
         </Typography>
       </Stack>
@@ -89,12 +96,12 @@ const DeltaChip: React.FC<{ delta: MetricDelta }> = ({ delta }) => {
 // ── Плитка ────────────────────────────────────────────────────────────────────
 
 /**
- * Плитка одной метрики: подпись, крупное значение, чип изменения и приглушённое
+ * Плитка одной метрики: подпись, значение, чип изменения и приглушённое
  * пояснение. Плоская, как весь новый UI (docs/ui-style-guide.md §5.2) — глубина
  * только тонкой гранью и едва заметной подложкой, без теней и градиентов.
  *
- * Отличие от InfoTile: там значение справочное и мелкое, здесь оно — главное
- * на плитке, потому что дашборд читают глазами по числам, а не по подписям.
+ * Компактная намеренно: крупной на сводке бывает одна цифра — выручка в
+ * «Пульсе». Если каждая плитка кричит 26-м кеглем, глазу не за что зацепиться.
  */
 export const MetricTile: React.FC<MetricTileProps> = ({
   label,
@@ -115,7 +122,8 @@ export const MetricTile: React.FC<MetricTileProps> = ({
     <Box
       {...linkProps}
       sx={(t) => ({
-        p: 2,
+        px: 1.5,
+        py: 1.25,
         borderRadius: "10px",
         border: 1,
         borderColor: "divider",
@@ -135,20 +143,20 @@ export const MetricTile: React.FC<MetricTileProps> = ({
         "&:hover .metric-tile-go": { opacity: 1 },
       })}
     >
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+      <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.5 }}>
         {icon && (
           <Box
             sx={(t) => ({
-              width: 28,
-              height: 28,
-              borderRadius: "8px",
+              width: 22,
+              height: 22,
+              borderRadius: "6px",
               flexShrink: 0,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               color: `${palette}.main`,
               bgcolor: alpha(t.palette[palette].main, t.palette.mode === "dark" ? 0.16 : 0.1),
-              "& .MuiSvgIcon-root": { fontSize: 17 },
+              "& .MuiSvgIcon-root": { fontSize: 14 },
             })}
           >
             {icon}
@@ -157,6 +165,7 @@ export const MetricTile: React.FC<MetricTileProps> = ({
         <Typography
           variant="caption"
           sx={{ color: "text.secondary", fontWeight: 600, lineHeight: 1.2, minWidth: 0 }}
+          noWrap
         >
           {label}
         </Typography>
@@ -164,8 +173,8 @@ export const MetricTile: React.FC<MetricTileProps> = ({
           <NorthEastOutlined
             className="metric-tile-go"
             sx={{
-              ml: "auto",
-              fontSize: 15,
+              ml: "auto !important",
+              fontSize: 14,
               color: "text.secondary",
               opacity: 0,
               transition: "opacity .15s ease",
@@ -175,18 +184,17 @@ export const MetricTile: React.FC<MetricTileProps> = ({
       </Stack>
 
       {loading ? (
-        <Skeleton variant="text" width="60%" height={34} />
+        <Skeleton variant="text" width="60%" height={30} />
       ) : (
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ flexWrap: "wrap" }}>
+        <Stack direction="row" alignItems="center" spacing={0.75} sx={{ flexWrap: "wrap" }}>
           <Typography
             sx={{
-              fontSize: 26,
+              fontSize: 21,
               fontWeight: 700,
-              lineHeight: 1.15,
+              lineHeight: 1.2,
               letterSpacing: "-0.02em",
               color: tone === "neutral" ? "text.primary" : `${palette}.main`,
               overflowWrap: "anywhere",
-              ...TABULAR,
             }}
           >
             {value ?? "—"}
@@ -196,7 +204,10 @@ export const MetricTile: React.FC<MetricTileProps> = ({
       )}
 
       {hint && !loading && (
-        <Typography variant="caption" sx={{ color: "text.secondary", display: "block", mt: 0.5 }}>
+        <Typography
+          variant="caption"
+          sx={{ color: "text.secondary", display: "block", mt: 0.25, lineHeight: 1.35 }}
+        >
           {hint}
         </Typography>
       )}
