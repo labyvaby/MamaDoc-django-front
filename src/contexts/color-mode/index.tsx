@@ -1,4 +1,4 @@
-import { ThemeProvider } from "@mui/material/styles";
+import { ThemeProvider, createTheme } from "@mui/material/styles";
 import {
   getAppTheme,
   DEFAULT_CARD_SKIN,
@@ -139,6 +139,7 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
 }) => {
   const { activeOrganization } = usePermissions();
   const themeConfig = activeOrganization?.themeConfig;
+  const vertical = activeOrganization?.vertical;
 
   // Миграция со старого ключа "colorMode" (light/dark) на "colorScheme".
   const storedScheme =
@@ -172,6 +173,8 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
   const [personalCount, setPersonalCount] = useState(overridesRef.current.size);
   /** Последняя применённая палитра организации (по значению, не по ссылке). */
   const appliedConfigRef = useRef<string | null>(null);
+  /** true — акцент «Чернильная» подставлен автоматически для вертикали «отель», не сотрудником. */
+  const hotelAccentAppliedRef = useRef(false);
 
   const markOverride = useCallback((field: ThemeField) => {
     if (overridesRef.current.has(field)) return;
@@ -237,6 +240,33 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       setSidebarDensityState(themeConfig.sidebarDensity as SidebarDensity);
     }
   }, [themeConfig]);
+
+  // Вертикаль «отель» по умолчанию — нейтральный акцент «Чернильная»
+  // (демонстрационный вид Viva: shadcnuikit.com/dashboard/hotel), если
+  // сотрудник или организация не выбрали свой акцент явно. Отдельный,
+  // независимый от эффекта выше хук — клинику/бьюти не задевает вовсе.
+  //
+  // hotelAccentAppliedRef помнит, что «Чернильную» подставили МЫ (а не
+  // сотрудник) — суперадмин с доступом и к отелю, и к клинике при
+  // переключении организации внутри сессии должен вернуться к обычному
+  // акценту клиники, а не застрять на отельном.
+  useEffect(() => {
+    if (overridesRef.current.has("accentId")) {
+      hotelAccentAppliedRef.current = false;
+      return;
+    }
+    const orgAccent = themeConfig?.accentId || themeConfig?.primaryColor;
+    const hasOrgAccent = Boolean(orgAccent && typeof orgAccent === "string");
+    if (vertical === "hotel" && !hasOrgAccent) {
+      hotelAccentAppliedRef.current = true;
+      setAccentIdState("ink");
+      return;
+    }
+    if (hotelAccentAppliedRef.current) {
+      hotelAccentAppliedRef.current = false;
+      setAccentIdState(hasOrgAccent ? resolveAccentId(orgAccent as string) : DEFAULT_ACCENT_ID);
+    }
+  }, [vertical, themeConfig]);
 
   // Следим за системной темой, когда выбрана схема «системная».
   useEffect(() => {
@@ -386,19 +416,30 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     ],
   );
 
-  const theme = useMemo(
-    () =>
-      // Тема — одна связка токенов: цвет заливки, текст на ней, подложка
-      // активных состояний, фон страницы, карточки и границы. Отдельного
-      // выбора фона нет: сочетание задано пресетом (theme/accentPalette).
-      getAppTheme(mode, {
-        accent: accentTokens,
-        cardSkin,
-        uiScale,
-        sidebarDensity,
-      }),
-    [mode, accentTokens, cardSkin, uiScale, sidebarDensity],
-  );
+  const theme = useMemo(() => {
+    // Тема — одна связка токенов: цвет заливки, текст на ней, подложка
+    // активных состояний, фон страницы, карточки и границы. Отдельного
+    // выбора фона нет: сочетание задано пресетом (theme/accentPalette).
+    const base = getAppTheme(mode, {
+      accent: accentTokens,
+      cardSkin,
+      uiScale,
+      sidebarDensity,
+    });
+    // Отель: плоская заливка primary-кнопки вместо глянцевого градиента —
+    // ближе к референсу (shadcnuikit.com/dashboard/hotel). Только косметика
+    // поверх готовой темы, остальные компоненты не переопределяются.
+    if (vertical !== "hotel") return base;
+    return createTheme(base, {
+      components: {
+        MuiButton: {
+          styleOverrides: {
+            containedPrimary: { backgroundImage: "none" },
+          },
+        },
+      },
+    });
+  }, [mode, accentTokens, cardSkin, uiScale, sidebarDensity, vertical]);
 
   return (
     <ColorModeContext.Provider value={value}>

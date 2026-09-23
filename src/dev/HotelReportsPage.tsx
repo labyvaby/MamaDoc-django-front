@@ -25,8 +25,13 @@ import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
+import PieChartOutlined from "@mui/icons-material/PieChartOutlined";
+import MeetingRoomOutlined from "@mui/icons-material/MeetingRoomOutlined";
+import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { useQuery } from "@tanstack/react-query";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 
 import { CustomDatePicker } from "../components/ui";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -35,26 +40,7 @@ import { mapStayDisplayStatus, hotelStayStatusColor, HOTEL_STAY_STATUS_LABELS } 
 import { useHotelProperty } from "./useHotelProperty";
 import { getDailyReport, type HotelDailyReportRow } from "../api/hotel";
 import { exportHotelDailyReportXlsx } from "./exportHotelDailyReportXlsx";
-
-const StatCard: React.FC<{ label: string; value: React.ReactNode; hint?: string }> = ({
-  label,
-  value,
-  hint,
-}) => (
-  <Paper elevation={0} variant="outlined" sx={{ p: 1.75, minWidth: 0 }}>
-    <Typography variant="caption" color="text.secondary" display="block">
-      {label}
-    </Typography>
-    <Typography variant="h6" fontWeight={700} sx={{ fontVariantNumeric: "tabular-nums" }}>
-      {value}
-    </Typography>
-    {hint && (
-      <Typography variant="caption" color="text.secondary">
-        {hint}
-      </Typography>
-    )}
-  </Paper>
-);
+import { HotelStatCard } from "./HotelStatCard";
 
 export const HotelReportsPage: React.FC = () => {
   usePageTitle("Отчёты");
@@ -73,6 +59,18 @@ export const HotelReportsPage: React.FC = () => {
     enabled: property != null,
   });
   const report = reportQuery.data;
+
+  // Выручка занятых номеров за день, сгруппированная по категории — те же строки
+  // report.rows, что уже в таблице ниже, без дополнительного запроса.
+  const revenueByCategory = React.useMemo(() => {
+    if (!report) return [];
+    const map = new Map<string, number>();
+    for (const row of report.rows) {
+      if (row.occupancy !== "occupied" || !row.nightPrice) continue;
+      map.set(row.roomTypeName, (map.get(row.roomTypeName) ?? 0) + Number(row.nightPrice));
+    }
+    return Array.from(map, ([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  }, [report]);
 
   const rowStatus = (row: HotelDailyReportRow) => {
     if (row.occupancy === "occupied" && row.stayStatus) {
@@ -148,19 +146,60 @@ export const HotelReportsPage: React.FC = () => {
               mb: 2.5,
             }}
           >
-            <StatCard
+            <HotelStatCard
               label="Загрузка"
               value={`${report.occupancyPercent}%`}
               hint={`${report.occupiedRooms} занято из ${report.totalRooms}`}
+              icon={<PieChartOutlined fontSize="small" />}
+              tint="info"
             />
-            <StatCard label="Свободно номеров" value={report.freeRooms} />
-            <StatCard label="Заездов / выездов" value={`${report.arrivals} / ${report.departures}`} />
-            <StatCard
+            <HotelStatCard
+              label="Свободно номеров"
+              value={report.freeRooms}
+              icon={<MeetingRoomOutlined fontSize="small" />}
+              tint="success"
+            />
+            <HotelStatCard
+              label="Заездов / выездов"
+              value={`${report.arrivals} / ${report.departures}`}
+              icon={<SwapHorizOutlined fontSize="small" />}
+              tint="warning"
+            />
+            <HotelStatCard
               label="Выручка за ночь"
               value={`${Number(report.revenue).toLocaleString("ru-RU")} ${report.currency}`}
               hint="по тарифам занятых номеров"
+              icon={<PaymentsOutlined fontSize="small" />}
+              tint="primary"
             />
           </Box>
+
+          {revenueByCategory.length > 0 && (
+            <Paper elevation={0} variant="outlined" sx={{ p: 2, mb: 2.5 }}>
+              <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
+                Выручка по категориям номеров
+              </Typography>
+              <Box sx={{ height: 220 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={revenueByCategory} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
+                    <XAxis dataKey="name" tick={{ fontSize: 12, fill: theme.palette.text.secondary }} />
+                    <YAxis tick={{ fontSize: 12, fill: theme.palette.text.secondary }} width={56} allowDecimals={false} />
+                    <RechartsTooltip
+                      contentStyle={{
+                        borderRadius: 10,
+                        border: `1px solid ${theme.palette.divider}`,
+                        backgroundColor: theme.palette.background.paper,
+                        color: theme.palette.text.primary,
+                      }}
+                      formatter={(value?: number) => [`${(value ?? 0).toLocaleString("ru-RU")} ${report.currency}`, "Выручка"]}
+                    />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]} fill={theme.palette.primary.main} maxBarSize={48} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Box>
+            </Paper>
+          )}
 
           <Paper elevation={0} variant="outlined" sx={{ overflow: "hidden" }}>
             <Box sx={{ overflowX: "auto" }}>

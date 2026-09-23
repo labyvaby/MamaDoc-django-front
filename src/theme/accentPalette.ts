@@ -213,10 +213,21 @@ export const TINTED_PRESETS: AccentPreset[] = [
  * знал — сочетание собирал сам пользователь, часто мимо. Теперь это готовые
  * темы со своим приглушённым акцентом, и выбор снова в один клик.
  *
- * Их 12 против 24 цветных: на рабочем экране, где цветом говорят статусы
+ * Их 13 против 24 цветных: на рабочем экране, где цветом говорят статусы
  * приёма, спокойный фон нужен чаще яркого.
  */
 export const CALM_PRESETS: AccentPreset[] = [
+  {
+    // Акцент из референса «режима отеля» (shadcnuikit.com/dashboard/hotel):
+    // их --primary — lab(7.78% 0 0), чистый нейтральный серый без оттенка
+    // (0 хромы), что в sRGB даёт #171717 — Tailwind neutral-900, тот же цвет,
+    // что у их кнопки «+ Add New». Стоит первым в списке спокойных тем, чтобы
+    // его было легко найти в кастомайзере (там же — свежая метка на свотче).
+    id: "anthracite",
+    name: "Антрацитовая",
+    light: { accent: "#171717", accentBg: "#EBEBEB", accentFg: "#FFFFFF", page: "#F7F7F7", surface: "#FFFFFF", border: "#E5E5E5" },
+    dark: { accent: "#D4D4D4", accentBg: "#292929", accentFg: "#101010", page: "#0A0A0A", surface: "#171717", border: "#2E2E2E" },
+  },
   {
     id: "graphite",
     name: "Графитовая",
@@ -358,6 +369,13 @@ const REMOVED_ACCENTS: Record<string, string> = {
  * ушёл: он почти совпадал со статусом «частично оплачено» (ΔE 8).
  */
 export const DEFAULT_ACCENT_ID = "sapphire";
+
+/**
+ * Ключ акцента «Антрацитовая» (см. CALM_PRESETS выше) — не дефолт, просто
+ * стабильная ссылка на него для UI, который хочет его найти/подсветить
+ * (см. ThemeCustomizer.tsx). Меняйте hex самого пресета, а не этот id.
+ */
+export const REFERENCE_ACCENT_ID = "anthracite";
 
 const BY_ID = new Map(ACCENT_PRESETS.map((p) => [p.id, p]));
 
