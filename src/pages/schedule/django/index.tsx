@@ -1,38 +1,29 @@
 import React from "react";
 import {
   Alert,
-  Autocomplete,
   Box,
   Button,
   ButtonBase,
   Chip,
   CircularProgress,
-  createFilterOptions,
   Divider,
   Drawer,
+  Fab,
   IconButton,
+  ListItemIcon,
+  Menu,
   MenuItem,
+  useMediaQuery,
   Paper,
   Stack,
   Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   TextField,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { motion } from "framer-motion";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import DeleteOutline from "@mui/icons-material/DeleteOutline";
-import DeleteSweepOutlined from "@mui/icons-material/DeleteSweepOutlined";
-import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
-import EditOutlined from "@mui/icons-material/EditOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
@@ -45,11 +36,10 @@ import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { ConfirmDialog, CustomDatePicker } from "../../../components/ui";
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../../api/staff";
-import { useAllActiveEmployees } from "../../../hooks/useAllActiveEmployees";
 import {
   getScheduleRules,
+  getScheduleConflicts,
   createScheduleRule,
-  updateScheduleRule,
   deleteScheduleRule,
   getScheduleExceptions,
   createScheduleException,
@@ -60,7 +50,6 @@ import {
   parseShiftOverlapConflict,
   PARTIAL_ABSENCE_ENABLED,
   SCHEDULE_RULE_ONLINE_BOOKING_ENABLED,
-  isRuleOnlineBookingEnabled,
   type ScheduleRule,
   type ScheduleException,
   type ScheduleExceptionKind,
@@ -80,6 +69,24 @@ import { isAbsenceKind, useAbsenceConflicts } from "./useAbsenceConflicts";
 import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
 import { absencesOfDay, type AbsenceMark } from "./absenceRows";
 import { useEmployeeColorMap } from "./employeeColors";
+import EmployeePicker from "./EmployeePicker";
+import ScheduleSettingsMatrix, { MatrixToolbar, type MatrixFilter } from "./ScheduleSettingsMatrix";
+import EmployeePanel from "./EmployeePanel";
+import RuleForm from "./RuleForm";
+import AbsenceForm from "./AbsenceForm";
+import { SheetHandle } from "./scheduleUi";
+import { buildEmployeeSchedules, weekdaysShort, type EmployeeSchedule } from "./scheduleSettingsModel";
+import {
+  appointmentLine,
+  appointmentsLosingCoverage,
+  buildWeekCells,
+  employeeIssue,
+  visitsOutOfSchedule,
+  mondayOf,
+  type EmployeeIssue,
+  type EmployeeRef,
+  type RuleFormMode,
+} from "./scheduleMatrixModel";
 
 const WEEKDAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
@@ -90,10 +97,6 @@ const KIND_LABELS: Record<ScheduleExceptionKind, string> = {
   override: "Замена смены",
 };
 
-function weekdaysLabel(weekdays: number[]): string {
-  return [...weekdays].sort((a, b) => a - b).map((d) => WEEKDAY_LABELS[d]).join(", ");
-}
-
 /** dayjs считает 0=Вс, а бэкенд расписания — 0=Пн. */
 function toRuleWeekday(date: Dayjs): number {
   return (date.day() + 6) % 7;
@@ -101,10 +104,6 @@ function toRuleWeekday(date: Dayjs): number {
 
 function pluralDays(n: number): string {
   return pluralRu(n, ["день", "дня", "дней"]);
-}
-
-function pluralVisits(n: number): string {
-  return pluralRu(n, ["запись", "записи", "записей"]);
 }
 
 // ── Мелкие общие блоки форм ───────────────────────────────────────────────────
@@ -196,463 +195,6 @@ const SegmentToggle = <T extends string>({
   </Stack>
 );
 
-// ── Employee autocomplete (общий для форм) ────────────────────────────────────
-
-/**
- * Фильтр опций пикера — локальный, по всему справочнику. Стрингифай включает
- * специализацию: серверный поиск знал только ФИО/телефон/почту, поэтому набрать
- * «офтальмолог» и найти врача было нельзя ни при каком вводе. matchFrom по
- * умолчанию (`any`) — иначе подстрока в середине строки не совпадёт.
- */
-const employeeFilter = createFilterOptions<DjangoEmployeeListItem>({
-  stringify: (o) =>
-    [o.fullName, o.nickname, o.phone, (o.specializations ?? []).map((s) => s.name).join(" ")]
-      .filter(Boolean)
-      .join(" "),
-});
-
-const EmployeePicker: React.FC<{
-  value: DjangoEmployeeListItem | null;
-  onChange: (v: DjangoEmployeeListItem | null) => void;
-  disabled?: boolean;
-}> = ({ value, onChange, disabled }) => {
-  // Весь справочник активных сотрудников разом (см. useAllActiveEmployees):
-  // список больше не обрезается на 20 первых по алфавиту и не перезапрашивается
-  // на каждую набранную букву.
-  const { employees, isLoading } = useAllActiveEmployees();
-  // При редактировании известны только id+ФИО сотрудника, а сам он может быть
-  // уже не активен (или из другого филиала) и в справочник не попасть — держим
-  // его в опциях, иначе Autocomplete сбросит value.
-  const options = React.useMemo(
-    () =>
-      value && !employees.some((o) => o.id === value.id) ? [value, ...employees] : employees,
-    [employees, value],
-  );
-  return (
-    <Autocomplete
-      options={options}
-      loading={isLoading}
-      value={value}
-      getOptionLabel={(o) => o.fullName}
-      isOptionEqualToValue={(a, b) => a.id === b.id}
-      onChange={(_, v) => onChange(v)}
-      filterOptions={employeeFilter}
-      disabled={disabled}
-      renderOption={(props, o) => {
-        const specs = (o.specializations ?? []).map((s) => s.name).join(", ");
-        return (
-          <li {...props} key={o.id}>
-            <Stack sx={{ minWidth: 0 }}>
-              <Typography variant="body2" noWrap>
-                {o.fullName}
-              </Typography>
-              {specs && (
-                <Typography variant="caption" color="text.secondary" noWrap>
-                  {specs}
-                </Typography>
-              )}
-            </Stack>
-          </li>
-        );
-      }}
-      renderInput={(params) => (
-        <TextField {...params} size="small" placeholder="Имя или специализация..." />
-      )}
-      loadingText="Загрузка сотрудников…"
-      noOptionsText="Сотрудники не найдены"
-    />
-  );
-};
-
-// ── Форма правила ─────────────────────────────────────────────────────────────
-
-const RuleFormDrawer: React.FC<{
-  open: boolean;
-  onClose: () => void;
-  rule: ScheduleRule | null; // null → создание
-  organizationId?: number;
-  /** Активный филиал — новое правило создаётся в нём, а не «общим». */
-  branchId?: number;
-  onSaved: () => void;
-}> = ({ open, onClose, rule, organizationId, branchId, onSaved }) => {
-  const isEdit = rule !== null;
-  const [employee, setEmployee] = React.useState<DjangoEmployeeListItem | null>(null);
-  const [dateFrom, setDateFrom] = React.useState<Dayjs>(dayjs());
-  const [dateTo, setDateTo] = React.useState<Dayjs>(dayjs().add(1, "year"));
-  const [weekdays, setWeekdays] = React.useState<number[]>([0, 1, 2, 3, 4]);
-  const [startTime, setStartTime] = React.useState("09:00");
-  const [endTime, setEndTime] = React.useState("17:00");
-  const [hasLunch, setHasLunch] = React.useState(true);
-  const [lunchStart, setLunchStart] = React.useState("13:00");
-  const [lunchEnd, setLunchEnd] = React.useState("14:00");
-  const [comment, setComment] = React.useState("");
-  // Онлайн-запись у смены: выключенная смена работает внутри CRM, но её окна
-  // не показываются на витрине (см. SCHEDULE_RULE_ONLINE_BOOKING_ENABLED).
-  const [onlineBooking, setOnlineBooking] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
-  const [busy, setBusy] = React.useState(false);
-  // Пересечение смен одного сотрудника в режиме «warn»: бэк отвечает 409 со
-  // списком, сохранение повторяется с allowOverlap.
-  const [overlap, setOverlap] = React.useState<ShiftOverlapConflict | null>(null);
-  // Филиал правила: null — «общее», такое правило видно во всех филиалах
-  // (бэкенд отдаёт «правила филиала ИЛИ branchId=null»).
-  const [ruleBranchId, setRuleBranchId] = React.useState<number | null>(branchId ?? null);
-  const { activeMembership } = usePermissions();
-  const branches = activeMembership?.branches ?? [];
-
-  React.useEffect(() => {
-    if (!open) return;
-    setError(null);
-    setBusy(false);
-    setOverlap(null);
-    if (rule) {
-      setEmployee({ id: rule.employeeId, fullName: rule.employeeName } as DjangoEmployeeListItem);
-      setDateFrom(dayjs(rule.dateFrom));
-      setDateTo(dayjs(rule.dateTo));
-      setWeekdays(rule.weekdays);
-      setStartTime(rule.startTime);
-      setEndTime(rule.endTime);
-      setHasLunch(rule.lunchStart != null);
-      setLunchStart(rule.lunchStart ?? "13:00");
-      setLunchEnd(rule.lunchEnd ?? "14:00");
-      setComment(rule.comment);
-      setOnlineBooking(isRuleOnlineBookingEnabled(rule));
-      setRuleBranchId(rule.branchId);
-    } else {
-      setEmployee(null);
-      setDateFrom(dayjs());
-      setDateTo(dayjs().add(1, "year"));
-      setWeekdays([0, 1, 2, 3, 4]);
-      setStartTime("09:00");
-      setEndTime("17:00");
-      setHasLunch(true);
-      setLunchStart("13:00");
-      setLunchEnd("14:00");
-      setComment("");
-      setOnlineBooking(true);
-      setRuleBranchId(branchId ?? null);
-    }
-  }, [open, rule, branchId]);
-
-  const toggleWeekday = (d: number) =>
-    setWeekdays((prev) =>
-      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b),
-    );
-
-  // Порядок ключей = порядок полей: в первое проблемное уйдёт фокус.
-  const form = useFormValidation({
-    employee: isEdit || employee ? null : "Выберите сотрудника",
-    period:
-      !dateFrom.isValid() || !dateTo.isValid()
-        ? "Укажите период действия"
-        : dateFrom.isAfter(dateTo)
-          ? "Начало периода позже его конца"
-          : null,
-    weekdays: weekdays.length > 0 ? null : "Выберите хотя бы один день недели",
-    hours: startTime < endTime ? null : "Начало смены должно быть раньше конца",
-    lunch:
-      !hasLunch || lunchStart < lunchEnd
-        ? null
-        : "Начало обеда должно быть раньше его конца",
-  });
-
-  const handleSubmit = async (allowOverlap = false) => {
-    if (!form.validate()) return;
-    setError(null);
-    setBusy(true);
-    try {
-      if (isEdit) {
-        await updateScheduleRule(rule.id, {
-          ...(allowOverlap ? { allowOverlap: true } : {}),
-          dateFrom: dateFrom.format("YYYY-MM-DD"),
-          dateTo: dateTo.format("YYYY-MM-DD"),
-          weekdays,
-          startTime,
-          endTime,
-          ...(hasLunch ? { lunchStart, lunchEnd } : { clearLunch: true }),
-          // tri-state: null в JSON филиал не очищает — только явный clearBranch.
-          ...(ruleBranchId == null ? { clearBranch: true } : { branchId: ruleBranchId }),
-          comment: comment.trim(),
-          // Поля нет на бэке без выкладки, а неизвестное поле роняет весь PATCH.
-          ...(SCHEDULE_RULE_ONLINE_BOOKING_ENABLED
-            ? { onlineBookingEnabled: onlineBooking }
-            : {}),
-        });
-      } else {
-        await createScheduleRule({
-          employeeId: employee!.id,
-          ...(allowOverlap ? { allowOverlap: true } : {}),
-          dateFrom: dateFrom.format("YYYY-MM-DD"),
-          dateTo: dateTo.format("YYYY-MM-DD"),
-          weekdays,
-          startTime,
-          endTime,
-          lunchStart: hasLunch ? lunchStart : undefined,
-          lunchEnd: hasLunch ? lunchEnd : undefined,
-          comment: comment.trim(),
-          organizationId,
-          branchId: ruleBranchId,
-          ...(SCHEDULE_RULE_ONLINE_BOOKING_ENABLED
-            ? { onlineBookingEnabled: onlineBooking }
-            : {}),
-        });
-      }
-      setOverlap(null);
-      onSaved();
-      onClose();
-    } catch (e) {
-      // Режим «warn»: смена накладывается на другую смену того же сотрудника —
-      // показываем список и ждём подтверждения, а не сырую ошибку.
-      const conflict = parseShiftOverlapConflict(e);
-      if (conflict && !allowOverlap) {
-        setOverlap(conflict);
-        return;
-      }
-      setError(parseBackendError(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Drawer
-      anchor="right"
-      open={open}
-      onClose={busy ? undefined : onClose}
-      PaperProps={{
-        sx: {
-          width: { xs: "100%", sm: 440 },
-          maxWidth: "100%",
-          display: "flex",
-          flexDirection: "column",
-        },
-      }}
-    >
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2.5, py: 1.5 }}>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <CalendarMonthOutlined color="primary" />
-          <Typography variant="h6" fontWeight={600}>
-            {isEdit ? "Правило расписания" : "Новое правило расписания"}
-          </Typography>
-        </Stack>
-        <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть" edge="end">
-          <CloseOutlined />
-        </IconButton>
-      </Box>
-      <Divider />
-
-      <Box sx={{ p: 2.5, flex: 1, overflowY: "auto" }}>
-        <Stack spacing={2.5}>
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Сотрудник *
-            </Typography>
-            <Box ref={form.anchor("employee")}>
-              <EmployeePicker value={employee} onChange={setEmployee} disabled={busy || isEdit} />
-            </Box>
-            {form.errorOf("employee") && (
-              <Typography variant="caption" color="error">{form.errorOf("employee")}</Typography>
-            )}
-          </Stack>
-
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Период действия
-            </Typography>
-            <Stack ref={form.anchor("period")} direction="row" spacing={1}>
-              <CustomDatePicker shortYearMode="nearest"
-                value={dateFrom}
-                onChange={(v) => v && setDateFrom(v)}
-                slotProps={{ textField: { size: "small", sx: { flex: 1, minWidth: 0 } } }}
-              />
-              <CustomDatePicker shortYearMode="nearest"
-                value={dateTo}
-                onChange={(v) => v && setDateTo(v)}
-                slotProps={{ textField: { size: "small", sx: { flex: 1, minWidth: 0 } } }}
-              />
-            </Stack>
-          </Stack>
-
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Дни недели *
-            </Typography>
-            <Box ref={form.anchor("weekdays")}>
-              <WeekdayChips value={weekdays} onToggle={toggleWeekday} />
-            </Box>
-          </Stack>
-
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Филиал
-            </Typography>
-            {/* «none» вместо "" — MUI не рисует выбранный MenuItem с пустым value. */}
-            <TextField
-              select
-              size="small"
-              value={ruleBranchId == null ? "none" : String(ruleBranchId)}
-              onChange={(e) =>
-                setRuleBranchId(e.target.value === "none" ? null : Number(e.target.value))
-              }
-              disabled={busy}
-            >
-              <MenuItem value="none">Общее (все филиалы)</MenuItem>
-              {branches.map((b) => (
-                <MenuItem key={b.id} value={String(b.id)}>
-                  {b.name}
-                </MenuItem>
-              ))}
-            </TextField>
-            {ruleBranchId == null && (
-              <Typography variant="caption" color="text.disabled">
-                Правило без филиала показывается в расписании всех филиалов.
-              </Typography>
-            )}
-          </Stack>
-
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Рабочие часы *
-            </Typography>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <TextField
-                type="time"
-                size="small"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                sx={{ flex: 1 }}
-                disabled={busy}
-                error={Boolean(form.errorOf("hours"))}
-                helperText={form.errorOf("hours")}
-                ref={form.anchor("hours")}
-              />
-              <Typography color="text.secondary">—</Typography>
-              <TextField
-                type="time"
-                size="small"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                sx={{ flex: 1 }}
-                disabled={busy}
-              />
-            </Stack>
-          </Stack>
-
-          <Stack spacing={0.5}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Обед
-              </Typography>
-              <Button
-                size="small"
-                variant="text"
-                onClick={() => setHasLunch((v) => !v)}
-                sx={{ textTransform: "none", fontSize: "0.75rem" }}
-                disabled={busy}
-              >
-                {hasLunch ? "Убрать обед" : "Добавить обед"}
-              </Button>
-            </Stack>
-            {hasLunch && (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <TextField
-                  type="time"
-                  size="small"
-                  value={lunchStart}
-                  onChange={(e) => setLunchStart(e.target.value)}
-                  sx={{ flex: 1 }}
-                  disabled={busy}
-                />
-                <Typography color="text.secondary">—</Typography>
-                <TextField
-                  type="time"
-                  size="small"
-                  value={lunchEnd}
-                  onChange={(e) => setLunchEnd(e.target.value)}
-                  sx={{ flex: 1 }}
-                  disabled={busy}
-                />
-              </Stack>
-            )}
-          </Stack>
-
-          {SCHEDULE_RULE_ONLINE_BOOKING_ENABLED && (
-            <Paper
-              elevation={0}
-              variant="outlined"
-              sx={{
-                p: 1,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 1,
-              }}
-            >
-              <Stack spacing={0.25}>
-                <Typography variant="body2">Онлайн-запись</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Показывать окна этой смены на сайте записи. Выключите, чтобы
-                  перестать принимать брони в этом филиале, — смены сотрудника в
-                  других филиалах останутся открытыми, а регистратура запишет
-                  пациента как обычно.
-                </Typography>
-              </Stack>
-              <Switch
-                checked={onlineBooking}
-                onChange={(e) => setOnlineBooking(e.target.checked)}
-                disabled={busy}
-              />
-            </Paper>
-          )}
-
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Комментарий
-            </Typography>
-            <TextField
-              size="small"
-              fullWidth
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder="Необязательно"
-              disabled={busy}
-              inputProps={{ maxLength: 255 }}
-            />
-          </Stack>
-
-        </Stack>
-      </Box>
-
-      <Box sx={{ p: 2, borderTop: "1px solid", borderColor: "divider" }}>
-        {/* Ошибка сохранения — в футере, рядом с кнопкой: внизу прокручиваемой
-            формы её не видно, и отказ бэка выглядит как «кнопка не работает». */}
-        {error && (
-          <Alert severity="error" sx={{ mb: 1.5 }}>
-            {error}
-          </Alert>
-        )}
-        <Button
-          fullWidth
-          variant="contained"
-          size="large"
-          disabled={busy}
-          onClick={() => void handleSubmit()}
-          startIcon={busy ? <CircularProgress size={20} color="inherit" /> : undefined}
-        >
-          {busy ? "Сохранение…" : isEdit ? "Сохранить" : "Добавить правило"}
-        </Button>
-      </Box>
-
-      <ShiftOverlapDialog
-        conflict={overlap}
-        saving={busy}
-        onCancel={() => setOverlap(null)}
-        onConfirm={() => void handleSubmit(true)}
-      />
-    </Drawer>
-  );
-};
-
 // ── Форма исключения (правый сайдбар) ─────────────────────────────────────────
 
 const ExceptionDrawer: React.FC<{
@@ -690,7 +232,7 @@ const ExceptionDrawer: React.FC<{
   const [comment, setComment] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
-  // См. RuleFormDrawer: пересечение смен подтверждается тем же диалогом.
+  // См. RuleForm: пересечение смен подтверждается тем же диалогом.
   // Выходной и отпуск бэк не проверяет — они ничего не занимают.
   const [overlap, setOverlap] = React.useState<ShiftOverlapConflict | null>(null);
   // Повтор: разовая смена уходит в исключения, «по дням недели» — в недельный
@@ -1276,6 +818,11 @@ const SCHEDULE_TABS: { id: ScheduleTab; label: string; icon: React.ElementType }
   { id: "settings", label: "Настройка", icon: TuneOutlined },
 ];
 
+/** Форма в правой панели «Настройки». */
+type PanelForm =
+  | { type: "rule"; mode: RuleFormMode; rule: ScheduleRule | null; employee: EmployeeRef | null }
+  | { type: "absence"; employee: EmployeeRef | null };
+
 // ── Страница ──────────────────────────────────────────────────────────────────
 
 const DjangoSchedulePage: React.FC = () => {
@@ -1290,9 +837,25 @@ const DjangoSchedulePage: React.FC = () => {
   const [tab, setTab] = React.useState<ScheduleTab>("calendar");
   const [month, setMonth] = React.useState<Dayjs>(dayjs());
 
-  const [employeeFilter, setEmployeeFilter] = React.useState<DjangoEmployeeListItem | null>(null);
-  const [ruleFormOpen, setRuleFormOpen] = React.useState(false);
-  const [editingRule, setEditingRule] = React.useState<ScheduleRule | null>(null);
+  // Телефон: действия уходят в плавающую кнопку, табы — на всю ширину.
+  // Брейкпоинт md: sm в теме = 360px, и телефон попадает в sm.
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const [fabMenuAnchor, setFabMenuAnchor] = React.useState<HTMLElement | null>(null);
+
+  // «Настройка»: неделя матрицы (всегда с понедельника) и правая панель —
+  // сотрудник и/или открытая в ней форма. «Назад» из формы возвращает к
+  // сотруднику, «закрыть» сбрасывает оба.
+  const [weekStart, setWeekStart] = React.useState<Dayjs>(() => mondayOf(dayjs()));
+  // Поиск и фильтр матрицы: тулбар стоит в шапке страницы рядом с табами.
+  const [matrixSearch, setMatrixSearch] = React.useState("");
+  const [matrixFilter, setMatrixFilter] = React.useState<MatrixFilter>("all");
+  const [panel, setPanel] = React.useState<{ employeeId: number | null; form: PanelForm | null } | null>(null);
+  // Ключ формы: каждое открытие монтирует её заново с чистыми полями.
+  const formSeq = React.useRef(0);
+  // Удаление — только через подтверждение: правило одним промахом мимо
+  // карандаша стирало график врача на месяцы вперёд вместе с окнами записи.
+  const [ruleToDelete, setRuleToDelete] = React.useState<ScheduleRule | null>(null);
+  const [exceptionToDelete, setExceptionToDelete] = React.useState<ScheduleException | null>(null);
   // Одна и та же форма исключения работает в разных режимах (см. openExceptionDialog):
   // «Добавить смену» → kind "extra", «Исключение» → kind "day_off".
   const [exceptionDialog, setExceptionDialog] = React.useState<{
@@ -1324,15 +887,17 @@ const DjangoSchedulePage: React.FC = () => {
   // API 20.07.2026. Суперадмин без активного филиала не фильтрует.
   const branchId = activeBranch?.id ?? undefined;
 
-  const rulesParams = { employeeId: employeeFilter?.id ?? null, branchId: branchId ?? null, orgId: orgId ?? null };
+  // Сотрудника на вкладке «Настройка» ищут локально по карточкам — правила и
+  // исключения грузим целиком по филиалу.
+  const rulesParams = { employeeId: null, branchId: branchId ?? null, orgId: orgId ?? null };
   const rulesQuery = useQuery({
     queryKey: djangoQueryKeys.scheduling.rules(rulesParams),
     queryFn: ({ signal }) =>
-      getScheduleRules({ employeeId: employeeFilter?.id, branchId, organizationId: orgId }, signal),
+      getScheduleRules({ branchId, organizationId: orgId }, signal),
   });
 
   const exceptionsParams = {
-    employeeId: employeeFilter?.id ?? null,
+    employeeId: null,
     from: dayjs().format("YYYY-MM-DD"),
     branchId: branchId ?? null,
     orgId: orgId ?? null,
@@ -1342,7 +907,6 @@ const DjangoSchedulePage: React.FC = () => {
     queryFn: ({ signal }) =>
       getScheduleExceptions(
         {
-          employeeId: employeeFilter?.id,
           dateFrom: dayjs().format("YYYY-MM-DD"),
           branchId,
           organizationId: orgId,
@@ -1370,11 +934,44 @@ const DjangoSchedulePage: React.FC = () => {
     enabled: tab === "calendar",
   });
 
+  // Исключения недели матрицы «Настройки»: неделю можно листать и назад, а
+  // exceptionsQuery грузит только с сегодняшнего дня.
+  const weekRange = {
+    dateFrom: weekStart.format("YYYY-MM-DD"),
+    dateTo: weekStart.add(6, "day").format("YYYY-MM-DD"),
+  };
+  const weekExceptionsQuery = useQuery({
+    queryKey: djangoQueryKeys.scheduling.exceptions({
+      ...weekRange,
+      branchId: branchId ?? null,
+      orgId: orgId ?? null,
+    }),
+    queryFn: ({ signal }) =>
+      getScheduleExceptions({ ...weekRange, branchId, organizationId: orgId }, signal),
+    enabled: tab === "settings",
+  });
+
+  // Смены сотрудников в других филиалах (`allBranches`): в матрице дни их
+  // работы в соседнем филиале иначе выглядели свободными. Только для справки —
+  // править чужой филиал отсюда нельзя.
+  const allBranchRulesQuery = useQuery({
+    queryKey: djangoQueryKeys.scheduling.rules({ employeeId: null, branchId: "all", orgId: orgId ?? null }),
+    queryFn: ({ signal }) => getScheduleRules({ allBranches: true, organizationId: orgId }, signal),
+    enabled: tab === "settings" && branchId != null,
+  });
+  const allBranchWeekExceptionsQuery = useQuery({
+    queryKey: djangoQueryKeys.scheduling.exceptions({ ...weekRange, branchId: "all", orgId: orgId ?? null }),
+    queryFn: ({ signal }) =>
+      getScheduleExceptions({ ...weekRange, allBranches: true, organizationId: orgId }, signal),
+    enabled: tab === "settings" && branchId != null,
+  });
+
   const employeesQuery = useQuery({
     queryKey: [...djangoQueryKeys.reference.employees, branchId ?? null, orgId ?? null],
     queryFn: ({ signal }) =>
       getDjangoEmployees({ pageSize: 200, branchId, organizationId: orgId }, signal),
-    enabled: tab === "calendar",
+    // Нужен и «Настройке»: врачи филиала без графика показываются карточкой
+    // «Действующего графика нет».
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
@@ -1389,11 +986,25 @@ const DjangoSchedulePage: React.FC = () => {
 
   const deleteRuleMutation = useMutation({
     mutationFn: (id: number) => deleteScheduleRule(id),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate();
+      setRuleToDelete(null);
+      // Удаляли из формы «Изменить график» — возвращаемся к сотруднику.
+      setPanel((p) => (p?.form?.type === "rule" ? (p.employeeId != null ? { ...p, form: null } : null) : p));
+      notify?.({ type: "success", message: "Правило удалено" });
+    },
+    onError: (e) =>
+      notify?.({ type: "error", message: "Ошибка", description: parseBackendError(e) }),
   });
   const deleteExceptionMutation = useMutation({
     mutationFn: (id: number) => deleteScheduleException(id),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate();
+      setExceptionToDelete(null);
+      notify?.({ type: "success", message: "Исключение удалено" });
+    },
+    onError: (e) =>
+      notify?.({ type: "error", message: "Ошибка", description: parseBackendError(e) }),
   });
 
   // Отпуск, поставленный периодом, снимается целиком: пачка живёт как N
@@ -1470,6 +1081,168 @@ const DjangoSchedulePage: React.FC = () => {
       branchId: exc.branchId,
     });
   };
+  // Строки вкладки «Настройка»: все, у кого есть правила или исключения, плюс
+  // врачи филиала без графика — к ним нельзя записаться, это проблема. Медсёстрам
+  // график здесь почти не ставят (23.09: у 1 из 9, онлайн-записи ни у одной),
+  // поэтому без графика их не показываем — иначе 8 ложных «Графика нет».
+  const today = dayjs().format("YYYY-MM-DD");
+  const employeeSchedules = React.useMemo(
+    () =>
+      buildEmployeeSchedules(
+        rules,
+        exceptions,
+        today,
+        employees.filter(
+          (e) => e.status === "active" && e.clinicalRole === "doctor",
+        ),
+      ),
+    [rules, exceptions, today, employees],
+  );
+  const absenceCountFor = React.useCallback(
+    (item: { days: ScheduleException[] }) =>
+      item.days.length === 0
+        ? 0
+        : absenceConflicts.countForDays(
+            item.days[0].employeeId,
+            item.days.map((d) => d.date),
+          ),
+    [absenceConflicts],
+  );
+
+  // Удаление правила: какие записи останутся без смены. Та же ручка, что у
+  // разбора отсутствий; бэк записи не трогает, поэтому предупреждаем заранее.
+  const ruleDeleteLostQuery = useQuery({
+    queryKey: ["scheduling", "rule-delete-lost", ruleToDelete?.id ?? null, orgId ?? null],
+    enabled: ruleToDelete !== null && canViewAppointments && ruleToDelete.dateTo >= today,
+    queryFn: async ({ signal }) => {
+      const rule = ruleToDelete!;
+      const from = rule.dateFrom > today ? rule.dateFrom : today;
+      const appointments = await getScheduleConflicts(
+        { employeeId: rule.employeeId, dateFrom: from, dateTo: rule.dateTo, organizationId: orgId },
+        signal,
+      );
+      const before = rules.filter((r) => r.employeeId === rule.employeeId);
+      return appointmentsLosingCoverage(
+        appointments,
+        before,
+        before.filter((r) => r.id !== rule.id),
+        exceptions.filter((e) => e.employeeId === rule.employeeId),
+      );
+    },
+    staleTime: 0,
+  });
+  const ruleDeleteLostNote = !ruleToDelete
+    ? ""
+    : ruleDeleteLostQuery.isFetching
+      ? " Проверяем записи…"
+      : ruleDeleteLostQuery.data && ruleDeleteLostQuery.data.length > 0
+        ? ` ${visitsOutOfSchedule(ruleDeleteLostQuery.data.length)}, ближайшая — ${appointmentLine(ruleDeleteLostQuery.data[0])}. Записи не отменятся: предупредите пациентов или перенесите их.`
+        : "";
+
+  // Матрица: ячейки недели, одна проблема на сотрудника, его основной филиал.
+  const weekExceptions = React.useMemo(() => weekExceptionsQuery.data ?? [], [weekExceptionsQuery.data]);
+  // Правила других филиалов: без общих (branchId=null) — те уже в своих.
+  const otherBranchRules = React.useMemo(
+    () =>
+      branchId == null
+        ? []
+        : (allBranchRulesQuery.data ?? []).filter(
+            (r) => r.branchId != null && r.branchId !== branchId && r.dateTo >= today,
+          ),
+    [allBranchRulesQuery.data, branchId, today],
+  );
+  // Отсутствие в своём филиале чужую смену не снимает — берём только чужие и общие.
+  const otherBranchWeekExceptions = React.useMemo(
+    () => (allBranchWeekExceptionsQuery.data ?? []).filter((e) => e.branchId !== branchId),
+    [allBranchWeekExceptionsQuery.data, branchId],
+  );
+  const weekCells = React.useMemo(
+    () =>
+      buildWeekCells(weekStart, rules, weekExceptions, {
+        rules: otherBranchRules,
+        exceptions: otherBranchWeekExceptions,
+      }),
+    [weekStart, rules, weekExceptions, otherBranchRules, otherBranchWeekExceptions],
+  );
+  const worksElsewhereIds = React.useMemo(
+    () => new Set(otherBranchRules.map((r) => r.employeeId)),
+    [otherBranchRules],
+  );
+  const issues = React.useMemo(() => {
+    const worksElsewhere = worksElsewhereIds;
+    return new Map(
+      employeeSchedules.map((s) => {
+        const issue = employeeIssue(s, absenceCountFor);
+        // «Графика нет — записаться нельзя» неправда, если график есть в другом
+        // филиале: сотрудник просто работает не здесь.
+        return [s.employeeId, issue?.tone === "neutral" && worksElsewhere.has(s.employeeId) ? null : issue];
+      }),
+    );
+  }, [employeeSchedules, absenceCountFor, worksElsewhereIds]);
+  const issueOf = React.useCallback((id: number) => issues.get(id) ?? null, [issues]);
+  // Филиалы из карточки сотрудника (основной + дополнительные), текущий первым —
+  // подпись для тех, у кого графика нет нигде. Один основной филиал врал: у
+  // сотрудницы «Плюса» с основным «Мама Доктор» в «Плюсе» стояло «Мама Доктор».
+  const employeeBranch = React.useMemo(
+    () =>
+      new Map(
+        employees.flatMap((e) => {
+          const list = [...(e.branch ? [e.branch] : []), ...(e.operationalBranches ?? [])];
+          const unique = [...new Map(list.map((b) => [b.id, b])).values()].sort(
+            (a, b) => Number(b.id === branchId) - Number(a.id === branchId),
+          );
+          return unique.length > 0 ? [[e.id, unique.map((b) => b.name).join(", ")] as const] : [];
+        }),
+      ),
+    [employees, branchId],
+  );
+  /** Филиалы, где у сотрудника есть график (активный первым); без графика — основной из карточки. */
+  const branchLabelOf = (s: EmployeeSchedule) => {
+    const names = [
+      ...new Set(
+        [...s.liveRules, ...otherBranchRules.filter((r) => r.employeeId === s.employeeId)]
+          .filter((r) => r.branchName)
+          .sort((a, b) => Number(b.branchId === branchId) - Number(a.branchId === branchId))
+          .map((r) => r.branchName as string),
+      ),
+    ];
+    return names.length > 0 ? names.join(", ") : employeeBranch.get(s.employeeId) ?? null;
+  };
+  const panelSchedule =
+    panel?.employeeId != null ? employeeSchedules.find((s) => s.employeeId === panel.employeeId) ?? null : null;
+
+  // ── Панель сотрудника и формы в ней ──
+  const openEmployee = (employeeId: number) => setPanel({ employeeId, form: null });
+  const closePanel = () => setPanel(null);
+  const openPanelForm = (form: PanelForm, employeeId: number | null = panel?.employeeId ?? null) => {
+    formSeq.current += 1;
+    setPanel({ employeeId, form });
+  };
+  const openRuleForm = (mode: RuleFormMode, rule: ScheduleRule | null, employee: EmployeeRef | null) =>
+    openPanelForm({ type: "rule", mode, rule, employee }, employee?.id ?? null);
+  const openAbsenceForm = (employee: EmployeeRef | null) =>
+    openPanelForm({ type: "absence", employee }, employee?.id ?? null);
+  const refOf = (s: EmployeeSchedule): EmployeeRef => ({ id: s.employeeId, fullName: s.employeeName });
+  /** Правила сотрудника с тем же концом — «Продлить вместе с ним». */
+  const siblingsOf = (rule: ScheduleRule) =>
+    rules.filter((r) => r.employeeId === rule.employeeId && r.id !== rule.id && r.dateTo === rule.dateTo);
+
+  const handleIssueAction = (employeeId: number, issue: EmployeeIssue) => {
+    const s = employeeSchedules.find((x) => x.employeeId === employeeId);
+    if (!s) return;
+    if (issue.action.kind === "review") openAbsenceReview(issue.action.exception);
+    else if (issue.action.kind === "extend") openRuleForm("extend", issue.action.rule, refOf(s));
+    else openRuleForm("create", null, refOf(s));
+  };
+
+  const handlePanelSaved = (employeeId: number, message: string, absence?: AbsenceSpan) => {
+    invalidate();
+    notify?.({ type: "success", message });
+    // После сохранения — к панели сотрудника; отсутствие сразу поднимает разбор записей.
+    setPanel({ employeeId, form: null });
+    if (absence) setAbsenceReview(absence);
+  };
+
   // Пул цветов — сотрудники со сменами в отображаемом периоде (месяц + 2
   // недели, как monthRange). Раньше нумерация шла по всему справочнику, и
   // соседние строки календаря часто делили один оттенок. Карта одна на
@@ -1654,6 +1427,56 @@ const DjangoSchedulePage: React.FC = () => {
     }
   };
 
+  // Сегмент-табы по гайду §5.7; на телефоне на всю ширину, половинки под палец.
+  const tabsNode = (
+    <Stack
+      direction="row"
+      sx={{
+        p: 0.5,
+        gap: 0.25,
+        border: 1,
+        borderColor: "divider",
+        borderRadius: "10px",
+        bgcolor: "background.paper",
+        width: isMobile ? "100%" : "fit-content",
+      }}
+    >
+      {SCHEDULE_TABS.map(({ id, label, icon: Icon }) => {
+        const active = tab === id;
+        return (
+          <ButtonBase
+            key={id}
+            onClick={() => setTab(id)}
+            sx={{
+              position: "relative",
+              flex: isMobile ? 1 : "0 0 auto",
+              px: 1.5,
+              py: isMobile ? 1 : 0.75,
+              borderRadius: "7px",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              color: active ? "primary.contrastText" : "text.secondary",
+              transition: "color .15s ease",
+            }}
+          >
+            {active && (
+              <Box
+                component={motion.span}
+                layoutId="schedule-tab-bg"
+                transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                sx={{ position: "absolute", inset: 0, borderRadius: "7px", bgcolor: "primary.main" }}
+              />
+            )}
+            <Stack direction="row" alignItems="center" gap={0.75} sx={{ position: "relative" }}>
+              <Icon sx={{ fontSize: 17 }} />
+              <span>{label}</span>
+            </Stack>
+          </ButtonBase>
+        );
+      })}
+    </Stack>
+  );
+
   return (
     <Box
       sx={(t) => ({
@@ -1667,34 +1490,14 @@ const DjangoSchedulePage: React.FC = () => {
         overflow: "hidden",
       })}
     >
-      {/* Строка-хедер: кнопка действия слева (как на других экранах), переключатель справа */}
+      {/* Строка-хедер на обеих вкладках: действия слева, табы справа. Слоты
+          стоят в одном порядке — табы не пересоздаются при переключении, и
+          подсветка скользит только вбок (раньше на «Настройке» табы жили в
+          тулбаре матрицы и при смене вкладки прилетали снизу-сбоку). На
+          телефоне действия — в плавающей кнопке, тулбар — в самой матрице. */}
       <Box sx={{ px: theme.appLayout.page.paddingX, pt: 0, pb: 1.5 }}>
         <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap" useFlexGap>
-          {/* Действия слева — зависят от активной вкладки */}
-          {canManage && tab === "settings" && (
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={<AddOutlined />}
-                onClick={() => {
-                  setEditingRule(null);
-                  setRuleFormOpen(true);
-                }}
-              >
-                Добавить правило
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<EventBusyOutlined />}
-                onClick={() => openExceptionDialog({ kind: "day_off" })}
-              >
-                Исключение
-              </Button>
-            </Stack>
-          )}
-          {canManage && tab === "calendar" && (
+          {canManage && !isMobile && tab === "calendar" && (
             <Button
               size="small"
               variant="contained"
@@ -1706,55 +1509,29 @@ const DjangoSchedulePage: React.FC = () => {
               Добавить смену
             </Button>
           )}
-
-          <Box sx={{ flex: 1 }} />
-
-          {/* Переключатель вкладок справа — сегмент-табы по гайду §5.7 */}
-          <Stack
-            direction="row"
-            sx={{
-              p: 0.5,
-              gap: 0.25,
-              border: 1,
-              borderColor: "divider",
-              borderRadius: "10px",
-              bgcolor: "background.paper",
-              width: "fit-content",
-            }}
-          >
-            {SCHEDULE_TABS.map(({ id, label, icon: Icon }) => {
-              const active = tab === id;
-              return (
-                <ButtonBase
-                  key={id}
-                  onClick={() => setTab(id)}
-                  sx={{
-                    position: "relative",
-                    px: 1.5,
-                    py: 0.75,
-                    borderRadius: "7px",
-                    fontSize: "0.85rem",
-                    fontWeight: 500,
-                    color: active ? "primary.contrastText" : "text.secondary",
-                    transition: "color .15s ease",
-                  }}
-                >
-                  {active && (
-                    <Box
-                      component={motion.span}
-                      layoutId="schedule-tab-bg"
-                      transition={{ type: "spring", stiffness: 480, damping: 38 }}
-                      sx={{ position: "absolute", inset: 0, borderRadius: "7px", bgcolor: "primary.main" }}
-                    />
-                  )}
-                  <Stack direction="row" alignItems="center" gap={0.75} sx={{ position: "relative" }}>
-                    <Icon sx={{ fontSize: 17 }} />
-                    <span>{label}</span>
-                  </Stack>
-                </ButtonBase>
-              );
-            })}
-          </Stack>
+          {!isMobile && tab === "settings" && (
+            <MatrixToolbar
+              schedules={employeeSchedules}
+              issueOf={issueOf}
+              search={matrixSearch}
+              filter={matrixFilter}
+              onSearch={setMatrixSearch}
+              onFilter={setMatrixFilter}
+              isMobile={false}
+              worksElsewhere={worksElsewhereIds}
+            />
+          )}
+          {!isMobile && <Box sx={{ flex: 1 }} />}
+          {canManage && !isMobile && tab === "settings" && (
+            <Button
+              variant="contained"
+              startIcon={<AddOutlined />}
+              onClick={() => openRuleForm("create", null, null)}
+            >
+              График
+            </Button>
+          )}
+          {tabsNode}
         </Stack>
       </Box>
 
@@ -1814,287 +1591,120 @@ const DjangoSchedulePage: React.FC = () => {
 
         {tab === "settings" && (
           <>
-            {/* Фильтр по сотруднику */}
-            <Box sx={{ maxWidth: 360 }}>
-              <EmployeePicker value={employeeFilter} onChange={setEmployeeFilter} />
-            </Box>
-
-            {rulesQuery.isError && (
-              <Alert severity="error">{parseBackendError(rulesQuery.error)}</Alert>
+            {(rulesQuery.isError || exceptionsQuery.isError || weekExceptionsQuery.isError) && (
+              <Alert severity="error">
+                {parseBackendError(rulesQuery.error ?? exceptionsQuery.error ?? weekExceptionsQuery.error)}
+              </Alert>
             )}
-
-            {/* Правила */}
-        <Box
-          sx={{
-            border: "1px solid",
-            borderColor: "divider",
-            borderRadius: "14px",
-            bgcolor: "background.paper",
-            overflow: "hidden",
-            // Карточка с overflow:hidden теряет min-height:auto и в flex-колонке
-            // сжимается, обрезая таблицу и убивая скролл контейнера.
-            flexShrink: 0,
-          }}
-        >
-          <Typography variant="subtitle2" fontWeight={600} sx={{ px: 2, py: 1.5 }}>
-            Недельные шаблоны
-          </Typography>
-          <Divider />
-          {rulesQuery.isLoading ? (
-            <Stack alignItems="center" py={4}>
-              <CircularProgress size={24} />
-            </Stack>
-          ) : rules.length === 0 ? (
-            <Typography variant="body2" color="text.disabled" sx={{ p: 3, textAlign: "center" }}>
-              Правил пока нет — добавьте график сотрудника
-            </Typography>
-          ) : (
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ fontWeight: 600 }}>Сотрудник</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Период</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Дни</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Филиал</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Часы</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Обед</TableCell>
-                    {SCHEDULE_RULE_ONLINE_BOOKING_ENABLED && (
-                      <TableCell sx={{ fontWeight: 600 }}>Онлайн-запись</TableCell>
-                    )}
-                    {canManage && (
-                      <TableCell sx={{ fontWeight: 600 }} align="right">
-                        Действия
-                      </TableCell>
-                    )}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {rules.map((rule) => (
-                    <TableRow key={rule.id} hover>
-                      <TableCell>{rule.employeeName}</TableCell>
-                      <TableCell>
-                        {dayjs(rule.dateFrom).format("DD.MM.YY")} —{" "}
-                        {dayjs(rule.dateTo).format("DD.MM.YY")}
-                      </TableCell>
-                      <TableCell>{weekdaysLabel(rule.weekdays)}</TableCell>
-                      <TableCell>
-                        {rule.branchName ? (
-                          rule.branchName
-                        ) : (
-                          <Tooltip title="Правило без филиала — видно в расписании всех филиалов">
-                            <Chip label="Общее" size="small" variant="outlined" color="warning" />
-                          </Tooltip>
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ fontFamily: "monospace" }}>
-                        {rule.startTime}–{rule.endTime}
-                      </TableCell>
-                      <TableCell sx={{ fontFamily: "monospace" }}>
-                        {rule.lunchStart ? `${rule.lunchStart}–${rule.lunchEnd}` : "—"}
-                      </TableCell>
-                      {SCHEDULE_RULE_ONLINE_BOOKING_ENABLED && (
-                        <TableCell>
-                          {isRuleOnlineBookingEnabled(rule) ? (
-                            <Typography variant="body2" color="text.secondary">
-                              Принимает
-                            </Typography>
-                          ) : (
-                            <Tooltip title="Окна этой смены не показываются на сайте записи">
-                              <Chip
-                                label="Выключена"
-                                size="small"
-                                variant="outlined"
-                                color="warning"
-                              />
-                            </Tooltip>
-                          )}
-                        </TableCell>
-                      )}
-                      {canManage && (
-                        <TableCell align="right">
-                          <Tooltip title="Редактировать">
-                            <IconButton
-                              size="small"
-                              onClick={() => {
-                                setEditingRule(rule);
-                                setRuleFormOpen(true);
-                              }}
-                            >
-                              <EditOutlined fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Удалить">
-                            <IconButton
-                              size="small"
-                              onClick={() => deleteRuleMutation.mutate(rule.id)}
-                              disabled={deleteRuleMutation.isPending}
-                            >
-                              <DeleteOutline fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </Box>
-
-        {/* Исключения */}
-        <Box
-          sx={{
-            border: "1px solid",
-            borderColor: "divider",
-            borderRadius: "14px",
-            bgcolor: "background.paper",
-            overflow: "hidden",
-            // Карточка с overflow:hidden теряет min-height:auto и в flex-колонке
-            // сжимается, обрезая таблицу и убивая скролл контейнера.
-            flexShrink: 0,
-          }}
-        >
-          <Typography variant="subtitle2" fontWeight={600} sx={{ px: 2, py: 1.5 }}>
-            Исключения (с сегодняшнего дня)
-          </Typography>
-          <Divider />
-          {exceptionsQuery.isLoading ? (
-            <Stack alignItems="center" py={3}>
-              <CircularProgress size={22} />
-            </Stack>
-          ) : exceptions.length === 0 ? (
-            <Typography variant="body2" color="text.disabled" sx={{ p: 3, textAlign: "center" }}>
-              Исключений нет
-            </Typography>
-          ) : (
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ fontWeight: 600 }}>Сотрудник</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Дата</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Тип</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Интервал</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Комментарий</TableCell>
-                    {canManage && (
-                      <TableCell sx={{ fontWeight: 600 }} align="right">
-                        Действия
-                      </TableCell>
-                    )}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {exceptions.map((exc) => (
-                    <TableRow key={exc.id} hover>
-                      <TableCell>{exc.employeeName}</TableCell>
-                      <TableCell>{dayjs(exc.date).format("DD.MM.YYYY")}</TableCell>
-                      <TableCell>
-                        <Stack direction="row" spacing={0.5} alignItems="center">
-                          <Chip
-                            label={KIND_LABELS[exc.kind]}
-                            size="small"
-                            variant="outlined"
-                            color={exc.kind === "extra" || exc.kind === "override" ? "success" : "default"}
-                          />
-                          {exc.groupId && (
-                            <Chip
-                              label={`Период · ${periodSizes.get(exc.groupId) ?? 1} ${pluralDays(periodSizes.get(exc.groupId) ?? 1)}`}
-                              size="small"
-                              variant="outlined"
-                            />
-                          )}
-                          {isAbsenceKind(exc.kind) &&
-                            (() => {
-                              // Записанные пациенты в этот день (или во все дни
-                              // пачки) — та самая дыра, из-за которой человек
-                              // приезжает к отсутствующему врачу.
-                              const dates = exc.groupId
-                                ? periodDates.get(exc.groupId) ?? [exc.date]
-                                : [exc.date];
-                              const count = absenceConflicts.countForDays(
-                                exc.employeeId,
-                                dates,
-                              );
-                              if (count === 0) return null;
-                              return (
-                                <Chip
-                                  label={`${count} ${pluralVisits(count)} без разбора`}
-                                  size="small"
-                                  color="error"
-                                  variant="outlined"
-                                  clickable
-                                  onClick={() => openAbsenceReview(exc)}
-                                />
-                              );
-                            })()}
-                        </Stack>
-                      </TableCell>
-                      <TableCell>
-                        {exc.startTime ? (
-                          <Box component="span" sx={{ fontFamily: "monospace" }}>
-                            {exc.startTime}–{exc.endTime}
-                          </Box>
-                        ) : (
-                          <Typography variant="body2" color="text.secondary">
-                            {isAbsenceKind(exc.kind) ? "весь день" : "—"}
-                          </Typography>
-                        )}
-                      </TableCell>
-                      <TableCell>{exc.comment || "—"}</TableCell>
-                      {canManage && (
-                        <TableCell align="right">
-                          <Stack direction="row" spacing={0.25} justifyContent="flex-end">
-                            {isAbsenceKind(exc.kind) && canViewAppointments && (
-                              <Tooltip title="Разобрать записи: отменить, передать коллеге, перенести или оставить как есть">
-                                <IconButton size="small" onClick={() => openAbsenceReview(exc)}>
-                                  <GroupsOutlined fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                            <Tooltip title={exc.groupId ? "Удалить только этот день" : "Удалить"}>
-                              <IconButton
-                                size="small"
-                                onClick={() => deleteExceptionMutation.mutate(exc.id)}
-                                disabled={deleteExceptionMutation.isPending}
-                              >
-                                <DeleteOutline fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            {exc.groupId && (
-                              <Tooltip title="Снять весь период">
-                                <IconButton
-                                  size="small"
-                                  onClick={() => setPeriodToDelete(exc)}
-                                  disabled={deletePeriodMutation.isPending}
-                                >
-                                  <DeleteSweepOutlined fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                          </Stack>
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-              )}
+            <Box sx={{ pb: { xs: 10, md: 0 } }}>
+              <ScheduleSettingsMatrix
+                schedules={employeeSchedules}
+                issueOf={issueOf}
+                cells={weekCells}
+                weekStart={weekStart}
+                onWeekChange={setWeekStart}
+                today={today}
+                loading={rulesQuery.isLoading || exceptionsQuery.isLoading}
+                isMobile={isMobile}
+                canManage={canManage}
+                employeeBranch={employeeBranch}
+                absenceCount={absenceCountFor}
+                otherBranchRules={otherBranchRules}
+                activeBranchId={branchId}
+                search={matrixSearch}
+                filter={matrixFilter}
+                onSearch={setMatrixSearch}
+                onFilter={setMatrixFilter}
+                showToolbar={isMobile}
+                onOpenEmployee={openEmployee}
+                onIssueAction={handleIssueAction}
+                onExtend={(rule) =>
+                  openRuleForm("extend", rule, { id: rule.employeeId, fullName: rule.employeeName })
+                }
+                onAddAbsence={() => openAbsenceForm(null)}
+              />
             </Box>
           </>
         )}
       </Box>
 
-      <RuleFormDrawer
-        open={ruleFormOpen}
-        onClose={() => setRuleFormOpen(false)}
-        rule={editingRule}
-        organizationId={orgId}
-        branchId={branchId}
-        onSaved={invalidate}
-      />
+      {/* Правая панель «Настройки»: сотрудник, а поверх — формы графика и
+          отсутствия. На телефоне — на всю ширину. */}
+      <Drawer
+        anchor={isMobile ? "bottom" : "right"}
+        open={panel !== null && (panel.form !== null || panelSchedule !== null)}
+        onClose={closePanel}
+        PaperProps={{
+          sx: (t) => ({
+            display: "flex",
+            flexDirection: "column",
+            ...(isMobile
+              ? {
+                  // Телефон: лист снизу — до кнопок дотягивается большой палец.
+                  height: t.appLayout.drawer.bottomSheet.height,
+                  borderTopLeftRadius: 16,
+                  borderTopRightRadius: 16,
+                }
+              : { width: 440, maxWidth: "100%" }),
+          }),
+        }}
+      >
+        {isMobile && <SheetHandle onClose={closePanel} />}
+        {panel?.form?.type === "rule" && (
+          <RuleForm
+            key={formSeq.current}
+            mode={panel.form.mode}
+            rule={panel.form.rule}
+            employee={panel.form.employee}
+            siblings={
+              panel.form.mode === "extend" && panel.form.rule
+                ? siblingsOf(panel.form.rule)
+                : []
+            }
+            organizationId={orgId}
+            branchId={branchId}
+            onBack={panelSchedule ? () => setPanel({ employeeId: panel.employeeId, form: null }) : undefined}
+            onClose={closePanel}
+            onSaved={(employeeId, message) => handlePanelSaved(employeeId, message)}
+            onDelete={setRuleToDelete}
+            allRules={rules}
+            exceptions={exceptions}
+            canCheckAppointments={canViewAppointments}
+          />
+        )}
+        {panel?.form?.type === "absence" && (
+          <AbsenceForm
+            key={formSeq.current}
+            employee={panel.form.employee}
+            rules={rules}
+            exceptions={exceptions}
+            organizationId={orgId}
+            branchId={branchId}
+            onBack={panelSchedule ? () => setPanel({ employeeId: panel.employeeId, form: null }) : undefined}
+            onClose={closePanel}
+            onSaved={handlePanelSaved}
+          />
+        )}
+        {panel && !panel.form && panelSchedule && (
+          <EmployeePanel
+            schedule={panelSchedule}
+            issue={issueOf(panelSchedule.employeeId)}
+            branchLabel={branchLabelOf(panelSchedule)}
+            otherRules={otherBranchRules.filter((r) => r.employeeId === panelSchedule.employeeId)}
+            canManage={canManage}
+            absenceCount={absenceCountFor}
+            onIssueAction={(issue) => handleIssueAction(panelSchedule.employeeId, issue)}
+            onEditRule={(rule) => openRuleForm("edit", rule, refOf(panelSchedule))}
+            onAddRule={() => openRuleForm("create", null, refOf(panelSchedule))}
+            onAddAbsence={() => openAbsenceForm(refOf(panelSchedule))}
+            onDeleteException={(item) =>
+              item.groupId ? setPeriodToDelete(item.days[0]) : setExceptionToDelete(item.days[0])
+            }
+            onClose={closePanel}
+          />
+        )}
+      </Drawer>
+
       <ExceptionDrawer
         open={exceptionDialog.open}
         onClose={closeExceptionDialog}
@@ -2150,6 +1760,93 @@ const DjangoSchedulePage: React.FC = () => {
         variant="warning"
         loading={deletePeriodMutation.isPending}
       />
+      <ConfirmDialog
+        open={ruleToDelete !== null}
+        onClose={() => (deleteRuleMutation.isPending ? undefined : setRuleToDelete(null))}
+        onConfirm={() => ruleToDelete && deleteRuleMutation.mutate(ruleToDelete.id)}
+        title="Удалить правило расписания"
+        message={
+          ruleToDelete
+            ? `${ruleToDelete.employeeName}: ${weekdaysShort(ruleToDelete.weekdays)}, ${ruleToDelete.startTime}–${ruleToDelete.endTime}, ${dayjs(ruleToDelete.dateFrom).format("DD.MM.YY")} — ${dayjs(ruleToDelete.dateTo).format("DD.MM.YY")}. Смены по этому правилу пропадут из расписания, а окна — из онлайн-записи.${ruleDeleteLostNote}`
+            : ""
+        }
+        confirmText="Удалить"
+        variant="error"
+        loading={deleteRuleMutation.isPending}
+      />
+      <ConfirmDialog
+        open={exceptionToDelete !== null}
+        onClose={() => (deleteExceptionMutation.isPending ? undefined : setExceptionToDelete(null))}
+        onConfirm={() => exceptionToDelete && deleteExceptionMutation.mutate(exceptionToDelete.id)}
+        title={exceptionToDelete?.groupId ? "Удалить день из периода" : "Удалить исключение"}
+        message={
+          exceptionToDelete
+            ? `${exceptionToDelete.employeeName}: ${KIND_LABELS[exceptionToDelete.kind].toLowerCase()} ${dayjs(exceptionToDelete.date).format("DD.MM.YYYY")}.${
+                exceptionToDelete.groupId ? " Остальные дни периода останутся." : ""
+              }`
+            : ""
+        }
+        confirmText="Удалить"
+        variant="warning"
+        loading={deleteExceptionMutation.isPending}
+      />
+
+      {/* Телефон: действия вкладки в плавающей кнопке. На «Настройке» — выбор
+          «график / отсутствие», в календаре — сразу смена. */}
+      {isMobile && canManage && (
+        <>
+          <Fab
+            color="primary"
+            aria-label={tab === "calendar" ? "Добавить смену" : "Добавить"}
+            onClick={(e) =>
+              tab === "calendar"
+                ? openExceptionDialog({ kind: "extra", title: "Добавить смену", date: dayjs() })
+                : setFabMenuAnchor(e.currentTarget)
+            }
+            sx={{
+              position: "fixed",
+              right: 16,
+              bottom: "calc(24px + env(safe-area-inset-bottom))",
+              boxShadow: "none",
+              zIndex: (t) => t.zIndex.fab,
+            }}
+          >
+            <AddOutlined />
+          </Fab>
+          <Menu
+            anchorEl={fabMenuAnchor}
+            open={fabMenuAnchor !== null}
+            onClose={() => setFabMenuAnchor(null)}
+            anchorOrigin={{ vertical: "top", horizontal: "right" }}
+            transformOrigin={{ vertical: "bottom", horizontal: "right" }}
+          >
+            <MenuItem
+              sx={{ minHeight: 48 }}
+              onClick={() => {
+                setFabMenuAnchor(null);
+                openRuleForm("create", null, null);
+              }}
+            >
+              <ListItemIcon>
+                <CalendarMonthOutlined fontSize="small" />
+              </ListItemIcon>
+              График
+            </MenuItem>
+            <MenuItem
+              sx={{ minHeight: 48 }}
+              onClick={() => {
+                setFabMenuAnchor(null);
+                openAbsenceForm(null);
+              }}
+            >
+              <ListItemIcon>
+                <EventBusyOutlined fontSize="small" />
+              </ListItemIcon>
+              Отсутствие или разовая смена
+            </MenuItem>
+          </Menu>
+        </>
+      )}
 
       <ShiftOverlapDialog
         conflict={pointOverlap?.conflict ?? null}

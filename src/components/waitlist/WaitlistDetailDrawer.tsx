@@ -2,7 +2,6 @@ import React from "react";
 import {
   Alert,
   Box,
-  Chip,
   Divider,
   Drawer,
   IconButton,
@@ -54,6 +53,8 @@ export interface WaitlistDetailDrawerProps {
   /** Строка списка: шапка рисуется сразу, история звонков догружается. */
   entry: WaitlistEntry | null;
   organizationId?: number;
+  /** Остаток вакцины записи на складе активного филиала; null — неизвестен. */
+  vaccineStock?: number | null;
   canCreate: boolean;
   canManage: boolean;
   onClose: () => void;
@@ -68,6 +69,7 @@ const SECTION_SX = { fontWeight: 600, fontSize: "0.8125rem", color: "text.second
 const WaitlistDetailDrawer: React.FC<WaitlistDetailDrawerProps> = ({
   entry: listEntry,
   organizationId,
+  vaccineStock = null,
   canCreate,
   canManage,
   onClose,
@@ -154,14 +156,6 @@ const WaitlistDetailDrawer: React.FC<WaitlistDetailDrawerProps> = ({
             <WaitlistStatusChip status={entry.status} />
             <WaitlistPriorityChip priority={entry.priority} />
             <WaitlistSourceChip source={entry.source} />
-            {entry.vaccine && (
-              <Chip
-                size="small"
-                icon={<VaccinesOutlined sx={{ fontSize: 15 }} />}
-                label={entry.vaccine.name}
-                sx={{ height: 22 }}
-              />
-            )}
           </Stack>
 
           {/* ── Действия ── */}
@@ -205,6 +199,33 @@ const WaitlistDetailDrawer: React.FC<WaitlistDetailDrawerProps> = ({
             <Box sx={{ gridColumn: "1 / -1" }}>
               <InfoTile icon={<PersonOutlineOutlined />} label={t("detail.specialist")} value={waitingForLabel(entry)} />
             </Box>
+            {entry.vaccine && (
+              <Box sx={{ gridColumn: "1 / -1" }}>
+                <InfoTile
+                  icon={<VaccinesOutlined />}
+                  label={t("detail.vaccine")}
+                  value={
+                    <>
+                      {entry.vaccine.name}
+                      {vaccineStock != null && (
+                        <Box
+                          component="span"
+                          sx={{
+                            ml: 1,
+                            fontWeight: 500,
+                            color: vaccineStock > 0 ? "success.main" : "text.secondary",
+                          }}
+                        >
+                          {vaccineStock > 0
+                            ? t("vaccineDemand.inStock", { count: vaccineStock })
+                            : t("vaccineDemand.outOfStock")}
+                        </Box>
+                      )}
+                    </>
+                  }
+                />
+              </Box>
+            )}
             <Box sx={{ gridColumn: "1 / -1" }}>
               <InfoTile
                 icon={<MedicalServicesOutlined />}
