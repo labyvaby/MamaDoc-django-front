@@ -47,6 +47,22 @@ const STATUS_KEYS: Record<string, string> = {
   no_show: "my.statusNoShow",
 };
 
+/**
+ * Что статус значит для пациента и что будет дальше — одним предложением под
+ * чипом. Голый чип «Ожидает подтверждения» вопросов больше ставил, чем снимал:
+ * пациент не знал, ждать ли звонка и нужно ли что-то делать (заказчик,
+ * 24.09.2026). Обещаем только то, что реально происходит: уведомлений о
+ * подтверждении нет ни у одной организации, подтверждает администратор
+ * звонком. У `awaiting_payment` пояснения нет — его даёт блок оплаты ниже.
+ */
+const STATUS_HINT_KEYS: Record<string, string> = {
+  pending: "byCode.statusHintPending",
+  confirmed: "byCode.statusHintConfirmed",
+  cancelled: "byCode.statusHintCancelled",
+  completed: "byCode.statusHintCompleted",
+  no_show: "byCode.statusHintNoShow",
+};
+
 const STATUS_COLOR: Record<string, "default" | "success" | "warning" | "error" | "info"> = {
   pending: "warning",
   confirmed: "success",
@@ -278,12 +294,19 @@ const BookingByCodePage: React.FC = () => {
             sx={{ p: { xs: 2, md: 2.5 }, borderRadius: BOOKING_RADIUS, boxShadow: BOOKING_SHADOW }}
           >
             <Stack spacing={2}>
-              <Chip
-                size="small"
-                label={STATUS_KEYS[booking.status] ? t(STATUS_KEYS[booking.status]) : booking.status}
-                color={STATUS_COLOR[booking.status] ?? "default"}
-                sx={{ alignSelf: "flex-start" }}
-              />
+              <Stack spacing={0.75}>
+                <Chip
+                  size="small"
+                  label={STATUS_KEYS[booking.status] ? t(STATUS_KEYS[booking.status]) : booking.status}
+                  color={STATUS_COLOR[booking.status] ?? "default"}
+                  sx={{ alignSelf: "flex-start" }}
+                />
+                {STATUS_HINT_KEYS[booking.status] && (
+                  <Typography sx={{ fontSize: 14, lineHeight: 1.45, color: MUTED }}>
+                    {t(STATUS_HINT_KEYS[booking.status])}
+                  </Typography>
+                )}
+              </Stack>
 
               {/* ── Онлайн-предоплата: главный экран для неоплаченной брони ── */}
               {booking.payment && (
