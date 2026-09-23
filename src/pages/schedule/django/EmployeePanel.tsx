@@ -168,7 +168,9 @@ const EmployeePanel: React.FC<EmployeePanelProps> = ({
                   color: "text.secondary",
                 }}
               >
-                Графика нет — окон для онлайн-записи не будет
+                {otherRules.length > 0
+                  ? "В этом филиале графика нет — сотрудник работает в другом"
+                  : "Графика нет — окон для онлайн-записи не будет"}
               </Box>
             ) : (
               schedule.liveRules.map((rule) => (

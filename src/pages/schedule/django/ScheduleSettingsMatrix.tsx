@@ -68,12 +68,14 @@ const MATRIX_PILLS: { id: MatrixFilter; label: string }[] = [
 
 function matrixPredicates(
   issueOf: (employeeId: number) => EmployeeIssue | null,
+  worksElsewhere: Set<number>,
 ): Record<MatrixFilter, (s: EmployeeSchedule) => boolean> {
   return {
     all: () => true,
     today: (s) => s.worksToday,
     attention: (s) => issueOf(s.employeeId) !== null,
-    none: (s) => s.noActiveRules,
+    // С графиком в другом филиале сотрудник не «без графика»: он работает, просто не здесь.
+    none: (s) => s.noActiveRules && !worksElsewhere.has(s.employeeId),
   };
 }
 
@@ -94,9 +96,9 @@ export interface ScheduleSettingsMatrixProps {
   isMobile: boolean;
   canManage: boolean;
   /**
-   * Основной филиал из карточки сотрудника — подпись только для тех, у кого
-   * графика нет. У остальных подписываем филиалы, где есть график: основной
-   * филиал бывает «Мама Доктор», а работает человек в «Плюсе».
+   * Филиалы из карточки сотрудника (основной и дополнительные, текущий первым) —
+   * подпись только для тех, у кого графика нет. У остальных — филиалы, где есть
+   * график: основной бывает «Мама Доктор», а работает человек в «Плюсе».
    */
   employeeBranch: Map<number, string>;
   /** Действующие правила сотрудников в других филиалах (`allBranches`). */
@@ -218,8 +220,10 @@ export const MatrixToolbar: React.FC<{
   onSearch: (v: string) => void;
   onFilter: (f: MatrixFilter) => void;
   isMobile: boolean;
-}> = ({ schedules, issueOf, search, filter, onSearch, onFilter, isMobile }) => {
-  const predicates = matrixPredicates(issueOf);
+  /** Сотрудники с графиком в другом филиале — не считаются «без графика». */
+  worksElsewhere: Set<number>;
+}> = ({ schedules, issueOf, search, filter, onSearch, onFilter, isMobile, worksElsewhere }) => {
+  const predicates = matrixPredicates(issueOf, worksElsewhere);
   return (
     <Stack direction="row" alignItems="center" gap={1.25} flexWrap="wrap" useFlexGap sx={{ minWidth: 0 }}>
       <TextField
@@ -314,7 +318,8 @@ const ScheduleSettingsMatrix: React.FC<ScheduleSettingsMatrixProps> = (props) =>
   const motionFor = (i: number) =>
     cascading ? rowMotion(i) : { initial: false as const, animate: rowMotion(i).animate };
 
-  const predicates = matrixPredicates(issueOf);
+  const worksElsewhere = React.useMemo(() => new Set(otherBranchRules.map((r) => r.employeeId)), [otherBranchRules]);
+  const predicates = matrixPredicates(issueOf, worksElsewhere);
 
   const query = search.trim().toLocaleLowerCase("ru");
   const visible = schedules
@@ -362,6 +367,14 @@ const ScheduleSettingsMatrix: React.FC<ScheduleSettingsMatrixProps> = (props) =>
   };
 
   const daysLeft = (s: EmployeeSchedule) => (s.until ? dayjs(s.until).diff(dayjs(today), "day") : null);
+  /** Здесь графика нет, но есть в другом филиале: его самый поздний конец и филиал. */
+  const elsewhereUntil = (s: EmployeeSchedule) => {
+    if (s.until) return null;
+    const other = otherByEmployee.get(s.employeeId) ?? [];
+    if (other.length === 0) return null;
+    const latest = other.reduce((a, b) => (b.dateTo > a.dateTo ? b : a));
+    return { dateTo: latest.dateTo, branch: latest.branchName ?? "другой филиал" };
+  };
 
   const toolbar = showToolbar ? (
     <MatrixToolbar
@@ -372,6 +385,7 @@ const ScheduleSettingsMatrix: React.FC<ScheduleSettingsMatrixProps> = (props) =>
       onSearch={onSearch}
       onFilter={onFilter}
       isMobile={isMobile}
+      worksElsewhere={worksElsewhere}
     />
   ) : null;
 
@@ -551,9 +565,24 @@ const ScheduleSettingsMatrix: React.FC<ScheduleSettingsMatrixProps> = (props) =>
                         {s.weeklyMinutes > 0 ? formatWeeklyHours(s.weeklyMinutes) : "—"}
                       </Box>
                       <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", px: 1.5 }}>
-                        <Typography sx={{ fontSize: 14, fontVariantNumeric: "tabular-nums" }}>
-                          {s.until ? dayjs(s.until).format("DD.MM.YY") : "—"}
+                        <Typography
+                          sx={{
+                            fontSize: 14,
+                            fontVariantNumeric: "tabular-nums",
+                            color: elsewhereUntil(s) ? "text.secondary" : undefined,
+                          }}
+                        >
+                          {s.until
+                            ? dayjs(s.until).format("DD.MM.YY")
+                            : elsewhereUntil(s)
+                              ? dayjs(elsewhereUntil(s)!.dateTo).format("DD.MM.YY")
+                              : "—"}
                         </Typography>
+                        {elsewhereUntil(s) && (
+                          <Typography sx={{ fontSize: 12, color: "text.secondary" }} noWrap>
+                            {elsewhereUntil(s)!.branch}
+                          </Typography>
+                        )}
                         {left !== null && left <= RULE_EXPIRING_DAYS && (
                           <Typography sx={(t) => ({ fontSize: 12, fontWeight: 500, color: warningFg(t) })}>
                             {left === 0 ? "сегодня" : `через ${left} ${pluralDays(left)}`}
@@ -628,7 +657,9 @@ const ScheduleSettingsMatrix: React.FC<ScheduleSettingsMatrixProps> = (props) =>
                     <Typography sx={{ fontSize: 12, color: "text.secondary" }} noWrap>
                       {s.until
                         ? `${formatWeeklyHours(s.weeklyMinutes).replace(" ч", " ч/нед")} · до ${dayjs(s.until).format("DD.MM.YY")}`
-                        : branchLine(s) || "Графика нет"}
+                        : elsewhereUntil(s)
+                          ? `${branchLine(s)} · до ${dayjs(elsewhereUntil(s)!.dateTo).format("DD.MM.YY")}`
+                          : branchLine(s) || "Графика нет"}
                     </Typography>
                   </Box>
                   <ChevronRightOutlined sx={{ color: "text.disabled" }} />

@@ -1081,8 +1081,10 @@ const DjangoSchedulePage: React.FC = () => {
       branchId: exc.branchId,
     });
   };
-  // Карточки вкладки «Настройка»: правила и исключения по сотрудникам, плюс
-  // врачи/медсёстры филиала без единого правила — их иначе просто не видно.
+  // Строки вкладки «Настройка»: все, у кого есть правила или исключения, плюс
+  // врачи филиала без графика — к ним нельзя записаться, это проблема. Медсёстрам
+  // график здесь почти не ставят (23.09: у 1 из 9, онлайн-записи ни у одной),
+  // поэтому без графика их не показываем — иначе 8 ложных «Графика нет».
   const today = dayjs().format("YYYY-MM-DD");
   const employeeSchedules = React.useMemo(
     () =>
@@ -1091,7 +1093,7 @@ const DjangoSchedulePage: React.FC = () => {
         exceptions,
         today,
         employees.filter(
-          (e) => e.status === "active" && (e.clinicalRole === "doctor" || e.clinicalRole === "nurse"),
+          (e) => e.status === "active" && e.clinicalRole === "doctor",
         ),
       ),
     [rules, exceptions, today, employees],
@@ -1162,8 +1164,12 @@ const DjangoSchedulePage: React.FC = () => {
       }),
     [weekStart, rules, weekExceptions, otherBranchRules, otherBranchWeekExceptions],
   );
+  const worksElsewhereIds = React.useMemo(
+    () => new Set(otherBranchRules.map((r) => r.employeeId)),
+    [otherBranchRules],
+  );
   const issues = React.useMemo(() => {
-    const worksElsewhere = new Set(otherBranchRules.map((r) => r.employeeId));
+    const worksElsewhere = worksElsewhereIds;
     return new Map(
       employeeSchedules.map((s) => {
         const issue = employeeIssue(s, absenceCountFor);
@@ -1172,11 +1178,23 @@ const DjangoSchedulePage: React.FC = () => {
         return [s.employeeId, issue?.tone === "neutral" && worksElsewhere.has(s.employeeId) ? null : issue];
       }),
     );
-  }, [employeeSchedules, absenceCountFor, otherBranchRules]);
+  }, [employeeSchedules, absenceCountFor, worksElsewhereIds]);
   const issueOf = React.useCallback((id: number) => issues.get(id) ?? null, [issues]);
+  // Филиалы из карточки сотрудника (основной + дополнительные), текущий первым —
+  // подпись для тех, у кого графика нет нигде. Один основной филиал врал: у
+  // сотрудницы «Плюса» с основным «Мама Доктор» в «Плюсе» стояло «Мама Доктор».
   const employeeBranch = React.useMemo(
-    () => new Map(employees.flatMap((e) => (e.branch ? [[e.id, e.branch.name] as const] : []))),
-    [employees],
+    () =>
+      new Map(
+        employees.flatMap((e) => {
+          const list = [...(e.branch ? [e.branch] : []), ...(e.operationalBranches ?? [])];
+          const unique = [...new Map(list.map((b) => [b.id, b])).values()].sort(
+            (a, b) => Number(b.id === branchId) - Number(a.id === branchId),
+          );
+          return unique.length > 0 ? [[e.id, unique.map((b) => b.name).join(", ")] as const] : [];
+        }),
+      ),
+    [employees, branchId],
   );
   /** Филиалы, где у сотрудника есть график (активный первым); без графика — основной из карточки. */
   const branchLabelOf = (s: EmployeeSchedule) => {
@@ -1500,6 +1518,7 @@ const DjangoSchedulePage: React.FC = () => {
               onSearch={setMatrixSearch}
               onFilter={setMatrixFilter}
               isMobile={false}
+              worksElsewhere={worksElsewhereIds}
             />
           )}
           {!isMobile && <Box sx={{ flex: 1 }} />}
