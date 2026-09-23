@@ -14,14 +14,15 @@ import {
 import HowToRegOutlined from "@mui/icons-material/HowToRegOutlined";
 import { useNotification } from "@refinedev/core";
 import { AppButton } from "../../../components/ui";
-import { restoreEmployee } from "../../../api/staff";
+import { restoreEmployee, type DjangoEmployee } from "../../../api/staff";
 import type { EmployesRow } from "../types";
+import { restoreOutcomeMessage } from "../employment";
 
 export type DjangoRestoreEmployeeDialogProps = {
   record: EmployesRow | null;
   onClose: () => void;
-  /** Called after a successful restore. Receives the employee's id. */
-  onRestored: (id: string) => void;
+  /** Called after a successful restore with the fresh card from the backend. */
+  onRestored: (employee: DjangoEmployee) => void;
 };
 
 /**
@@ -54,12 +55,9 @@ const DjangoRestoreEmployeeDialog: React.FC<DjangoRestoreEmployeeDialogProps> = 
     setBusy(true);
     setError(null);
     try {
-      await restoreEmployee(empId);
-      notify?.({
-        type: "success",
-        message: `Сотрудник ${record.full_name} восстановлен`,
-      });
-      onRestored(record.id);
+      const result = await restoreEmployee(empId);
+      notify?.(restoreOutcomeMessage(result, record.full_name ?? ""));
+      onRestored(result.employee);
       onClose();
     } catch (e: unknown) {
       const msg =
@@ -85,9 +83,10 @@ const DjangoRestoreEmployeeDialog: React.FC<DjangoRestoreEmployeeDialogProps> = 
             Вернуть сотрудника «{record?.full_name || record?.id}» в штат?
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Статус снова станет «Активный», доступ в систему и услуги, снятые
-            при увольнении, вернутся. Услуги, отключённые до увольнения,
-            останутся отключёнными.
+            Вернётся статус, который был до увольнения, а также доступ в
+            систему и услуги, снятые при увольнении. Если сотрудника уволили
+            до появления журнала увольнений, система не знает, что именно
+            выключалось, — тогда доступ и услуги нужно будет выдать вручную.
           </Typography>
         </Stack>
       </DialogContent>

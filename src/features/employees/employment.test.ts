@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { formatFiredNote, planStatusSave } from "./employment";
+import {
+  formatFiredNote,
+  planStatusSave,
+  restoreOutcomeMessage,
+} from "./employment";
 
 /**
  * Уволенного возвращают отдельной ручкой: PATCH одного статуса оставлял бы
@@ -8,14 +12,16 @@ import { formatFiredNote, planStatusSave } from "./employment";
  * увольнение и оказалось необратимым.
  */
 describe("planStatusSave — что делать со статусом при сохранении", () => {
-  it("уволенного переводят в «Работает» → восстановление, статус не шлём", () => {
+  it("уволенного переводят в «Работает» → восстановление, желаемый статус передаём", () => {
+    // Досылать ли его PATCH-ем, решает форма по ответу восстановления:
+    // бэк возвращает статус, что был до увольнения.
     expect(planStatusSave("fired", "active")).toEqual({
       restore: true,
-      patchStatus: undefined,
+      patchStatus: "active",
     });
   });
 
-  it("уволенного переводят в «Не работает» → восстановление + PATCH inactive", () => {
+  it("уволенного переводят в «Не работает» → восстановление + желаемый inactive", () => {
     expect(planStatusSave("fired", "inactive")).toEqual({
       restore: true,
       patchStatus: "inactive",
@@ -64,5 +70,34 @@ describe("formatFiredNote — подпись «кем и когда уволен
   it("журнала нет вовсе — подписи нет", () => {
     expect(formatFiredNote(null)).toBe("");
     expect(formatFiredNote(undefined)).toBe("");
+  });
+});
+
+describe("restoreOutcomeMessage — уведомление ровно о том, что вернулось", () => {
+  it("уволен до журнала — честно просим выдать доступ и услуги вручную", () => {
+    const m = restoreOutcomeMessage(
+      { fromJournal: false, accessRestored: false, servicesRestored: 0 },
+      "Максатбеков Нурзат",
+    );
+    expect(m.message).toContain("вручную");
+    expect(m.message).toContain("Максатбеков Нурзат");
+  });
+
+  it("по журналу — перечисляем, что вернулось", () => {
+    const m = restoreOutcomeMessage(
+      { fromJournal: true, accessRestored: true, servicesRestored: 3 },
+      "Иванова",
+    );
+    expect(m.message).toBe(
+      "Сотрудник Иванова восстановлен: вернулись доступ в систему и услуги (3).",
+    );
+  });
+
+  it("по журналу, но возвращать было нечего — без выдуманных подробностей", () => {
+    const m = restoreOutcomeMessage(
+      { fromJournal: true, accessRestored: false, servicesRestored: 0 },
+      "",
+    );
+    expect(m.message).toBe("Сотрудник восстановлен.");
   });
 });

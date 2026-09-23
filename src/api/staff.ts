@@ -497,11 +497,23 @@ export function fireEmployee(
  */
 export function restoreEmployee(
   employeeId: number,
-): Promise<DjangoEmployee> {
-  return apiRequest<DjangoEmployee>(`/staff/employees/${employeeId}/restore/`, {
+): Promise<RestoreEmployeeResult> {
+  return apiRequest<RestoreEmployeeResult>(`/staff/employees/${employeeId}/restore/`, {
     method: "POST",
     body: { confirm: true },
-  }).then(normalizeEmployee);
+  }).then((result) => ({ ...result, employee: normalizeEmployee(result.employee) }));
+}
+
+/**
+ * Что восстановление реально вернуло. `fromJournal: false` — сотрудника
+ * уволили до появления журнала: вернулся только статус, доступ и услуги
+ * нужно выдать вручную (бэк не знает, что именно выключало увольнение).
+ */
+export interface RestoreEmployeeResult {
+  employee: DjangoEmployee;
+  fromJournal: boolean;
+  accessRestored: boolean;
+  servicesRestored: number;
 }
 
 export function onboardEmployee(

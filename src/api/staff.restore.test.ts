@@ -34,7 +34,12 @@ afterEach(() => {
 describe("restoreEmployee — возврат уволенного в штат", () => {
   it("POST на свою ручку с подтверждением, а не PATCH статуса", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(employeeResponse()), {
+      new Response(JSON.stringify({
+        employee: employeeResponse(),
+        fromJournal: true,
+        accessRestored: true,
+        servicesRestored: 2,
+      }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -47,8 +52,9 @@ describe("restoreEmployee — возврат уволенного в штат", 
     expect(String(url)).toContain("/staff/employees/739/restore/");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({ confirm: true });
-    expect(updated.status).toBe("active");
-    expect(updated.employment?.firedBy).toBe("Бахтибаева Нуржан");
+    expect(updated.employee.status).toBe("active");
+    expect(updated.employee.employment?.firedBy).toBe("Бахтибаева Нуржан");
+    expect(updated.fromJournal).toBe(true);
   });
 
   it("отказ бэка пробрасывается — «восстановлено» без восстановления не бывает", async () => {

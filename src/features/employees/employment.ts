@@ -1,3 +1,4 @@
+import type { RestoreEmployeeResult } from "../../api/staff";
 import { formatDateRu } from "../../utility/format";
 import type { DjangoEmploymentInfoLocal } from "./types";
 
@@ -25,11 +26,44 @@ export function planStatusSave(
 ): StatusSavePlan {
   if (recordStatus === "fired") {
     if (selected === "fired") return { restore: false };
-    // restore_employee всегда делает сотрудника активным.
-    return { restore: true, patchStatus: selected === "inactive" ? "inactive" : undefined };
+    // Восстановление вернёт статус, что был до увольнения; выбранный статус
+    // досылается PATCH-ем, если он окажется другим (решает вызывающий код,
+    // сравнив с ответом ручки восстановления).
+    return { restore: true, patchStatus: selected };
   }
   if (selected === recordStatus) return { restore: false };
   return { restore: false, patchStatus: selected };
+}
+
+/**
+ * Уведомление после восстановления — ровно о том, что вернулось.
+ *
+ * Для уволенных до журнала бэк возвращает только статус, и обещать «доступ
+ * и услуги вернутся» было бы неправдой: человек окажется «Активным», но не
+ * сможет войти и не будет стоять ни на одной услуге.
+ */
+export function restoreOutcomeMessage(
+  result: Pick<RestoreEmployeeResult, "fromJournal" | "accessRestored" | "servicesRestored">,
+  name: string,
+): { type: "success"; message: string } {
+  const who = name ? `Сотрудник ${name}` : "Сотрудник";
+  if (!result.fromJournal) {
+    return {
+      type: "success",
+      message:
+        `${who} снова в штате. Его уволили до появления журнала, поэтому ` +
+        "доступ в систему и услуги нужно выдать вручную.",
+    };
+  }
+  const parts: string[] = [];
+  if (result.accessRestored) parts.push("доступ в систему");
+  if (result.servicesRestored > 0) parts.push(`услуги (${result.servicesRestored})`);
+  return {
+    type: "success",
+    message: parts.length
+      ? `${who} восстановлен: вернулись ${parts.join(" и ")}.`
+      : `${who} восстановлен.`,
+  };
 }
 
 /**

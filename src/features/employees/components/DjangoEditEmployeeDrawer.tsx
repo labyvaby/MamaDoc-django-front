@@ -68,7 +68,7 @@ import DjangoSalarySettings, {
   type SalarySettingsValue,
 } from "./DjangoSalarySettings";
 import type { EmployesRow } from "../types";
-import { planStatusSave } from "../employment";
+import { planStatusSave, restoreOutcomeMessage } from "../employment";
 import { swapHomeInOperational } from "../homeBranch";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -288,6 +288,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [phoneLocal, setPhoneLocal] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [status, setStatus] = React.useState<EmployeeStatusValue>("active");
+  const canRestore = useCan("staff.delete");
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
   // Видимость на витрине онлайн-записи. Дефолт true — как миграция бэка у врачей;
   // на окружении без поля сотрудник считается видимым (флаг ничего не скрывает).
@@ -818,14 +819,29 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setBusy(true);
     setServerError(null);
 
+    // Возврат уже прошёл, а сохранение остальных полей упало: на бэке
+    // сотрудник в штате — список и карточка не должны показывать «Уволен».
+    let restoredEarly = false;
     try {
       // 0. Возврат уволенного идёт отдельной ручкой: вместе со статусом она
       // включает обратно членство в организации и услуги, снятые увольнением.
       // PATCH статуса бэк на этом переходе отклоняет — иначе человек остался
       // бы «Активным» в карточке и без доступа в систему.
       const statusPlan = planStatusSave(toStatusValue(record.status), status);
+      // Восстановление возвращает статус, что был до увольнения; PATCH нужен,
+      // только если выбрали другой.
+      let patchStatus = statusPlan.patchStatus;
       if (statusPlan.restore) {
-        await restoreEmployee(empId);
+        const result = await restoreEmployee(empId);
+        if (patchStatus === result.employee.status) patchStatus = undefined;
+        restoredEarly = true;
+        notify?.(restoreOutcomeMessage(result, record.full_name ?? ""));
+        onUpdated({
+          ...record,
+          status: result.employee.status,
+          updated_at: result.employee.updatedAt,
+          _employment: result.employee.employment ?? null,
+        });
       }
 
       // 1. Update basic fields
@@ -837,7 +853,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         email: email.trim() || null,
         // Статус — только при изменении (см. planStatusSave): сохранение
         // карточки уволенного не должно возвращать его в штат само по себе.
-        ...(statusPlan.patchStatus ? { status: statusPlan.patchStatus } : {}),
+        ...(patchStatus ? { status: patchStatus } : {}),
         clinicalRole,
         // Только если бэк знает поле (см. onlineBookingSupported).
         ...(onlineBookingSupported && { onlineBookingEnabled }),
@@ -1008,6 +1024,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         _djangoRole: updated.role ?? null,
         _djangoSpecializations: updated.specializations ?? [],
         _djangoOperationalBranches: updated.operationalBranches ?? [],
+        _employment: updated.employment ?? null,
         _fullDetailsLoaded: true,
       };
 
@@ -1017,7 +1034,11 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       onClose();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Не удалось сохранить изменения";
-      setServerError(msg);
+      setServerError(
+        restoredEarly
+          ? `Сотрудник восстановлен, но остальные изменения не сохранились: ${msg}`
+          : msg,
+      );
     } finally {
       setBusy(false);
     }
@@ -1254,9 +1275,13 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                       onChange={setStatus}
                       // «Уволен» в выборе — только у уволенного: увольняют отдельным
                       // диалогом (он же закрывает доступ), а отсюда можно лишь вернуть.
+                      // Вернуть в штат может тот же, кто увольняет (staff.delete);
+                      // без этого права уволенному виден только его статус.
                       options={
                         toStatusValue(record?.status) === "fired"
-                          ? ["fired", "active", "inactive"]
+                          ? canRestore
+                            ? ["fired", "active", "inactive"]
+                            : ["fired"]
                           : ["active", "inactive"]
                       }
                       disabled={busy}
