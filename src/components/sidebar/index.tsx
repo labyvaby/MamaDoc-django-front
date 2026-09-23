@@ -596,6 +596,13 @@ const SidebarSecondary: React.FC = () => {
   const chatsBadgeColor: "error" | "primary" =
     (chatsCounts?.mine ?? 0) > 0 ? "error" : "primary";
 
+  // «Сводка»: срочное из блока «Требует внимания» — просроченные задачи и
+  // заявки без ответа с прошедшей датой. Оба счётчика сайдбар уже опрашивает
+  // для своих пунктов, поэтому бейдж не стоит ни одного нового запроса. Минус
+  // в кассе сюда не входит: ради него пришлось бы опрашивать кассу со всех
+  // страниц приложения.
+  const dashboardUrgentCount = tasksOverdue + (bookingsOverdueQuery.data?.count ?? 0);
+
   const bookingsBadgeCount = bookingsPendingQuery.data?.count ?? 0;
   const bookingsBadgeColor: "error" | "primary" =
     (bookingsOverdueQuery.data?.count ?? 0) > 0 ? "error" : "primary";
@@ -712,6 +719,8 @@ const SidebarSecondary: React.FC = () => {
             icon={<InsightsOutlined />}
             label="Сводка"
             collapsed={siderCollapsed}
+            badgeCount={dashboardUrgentCount}
+            badgeColor="error"
           />
         )}
 

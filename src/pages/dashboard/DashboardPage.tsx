@@ -10,7 +10,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useIsFetching, useQuery } from "@tanstack/react-query";
+import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
@@ -52,10 +52,17 @@ import {
   BranchesWidget,
 } from "./operationsWidgets";
 import { exportDashboardXlsx } from "./exportDashboardXlsx";
+import { planScopeKey, readRevenuePlans, resolvePlan } from "./revenuePlan";
+import { DEALS_MODULE_ENABLED } from "../../api/deals";
 import { StaffWidget } from "./StaffWidget";
 import { PulseWidget } from "./PulseWidget";
 import { AttentionWidget } from "./AttentionWidget";
 import type { WidgetProps } from "./widgetKit";
+
+// Глобальной русской локали dayjs в приложении нет: её включают страницы
+// побочным эффектом импорта. Сводка — главная после входа, и при прямом
+// заходе даты и месяцы выходили по-английски («Wednesday», «september»).
+dayjs.locale("ru");
 
 const PERIOD_STORAGE_KEY = "mamadoc:dashboard:period";
 
@@ -107,6 +114,7 @@ const headerButtonSx = {
  */
 export const DashboardPage: React.FC = () => {
   const { can, loading: permsLoading } = useCanChecker();
+  const queryClient = useQueryClient();
   const { activeOrganization, activeBranch } = usePermissions();
   const scope = useActiveScope();
 
@@ -120,7 +128,22 @@ export const DashboardPage: React.FC = () => {
     localStorage.setItem(PERIOD_STORAGE_KEY, key);
   };
 
-  const range = React.useMemo(() => resolvePeriod(period), [period]);
+  // Сводку держат открытой сутками: без смены даты в полночь «Сегодня»
+  // утром показывало бы вчерашний день. Проверяем раз в минуту — дешевле,
+  // чем таймер на точную полночь с учётом сна ноутбука.
+  const [dayKey, setDayKey] = React.useState(() => dayjs().format("YYYY-MM-DD"));
+  React.useEffect(() => {
+    const id = window.setInterval(() => {
+      const now = dayjs().format("YYYY-MM-DD");
+      setDayKey((prev) => (prev === now ? prev : now));
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // dayKey — зависимость-триггер: сам в расчёт не входит, resolvePeriod
+  // берёт текущую дату.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const range = React.useMemo(() => resolvePeriod(period), [period, dayKey]);
 
   // Каскад проигрываем только если вкладка видима на момент монтирования.
   // В фоновой вкладке браузер замораживает requestAnimationFrame, анимация не
@@ -174,6 +197,12 @@ export const DashboardPage: React.FC = () => {
     setExportError(null);
     try {
       await exportDashboardXlsx({
+        queryClient,
+        plan: resolvePlan(
+          readRevenuePlans(activeOrganization?.themeConfig),
+          planScopeKey(scope.branchId),
+          resolvePeriod("month", dayjs(range.dateTo)).month,
+        )?.amount,
         range,
         periodKey: period,
         scope,
@@ -187,10 +216,13 @@ export const DashboardPage: React.FC = () => {
           appointments: can(PAGE_PERMISSIONS.appointments),
           reports: can(PAGE_PERMISSIONS.reports),
           tasks: can(PAGE_PERMISSIONS.tasks),
-          // Воронки в выгрузке нет: xlsx собирает деньги, записи и отчёты,
-          // а ретроспектива обращений живёт во вкладке аналитики.
           reviews: can(PAGE_PERMISSIONS.reviews),
           branches: can(PAGE_PERMISSIONS.cashbox) && (branchesQuery.data?.length ?? 0) > 1,
+          bookings: can(PAGE_PERMISSIONS.bookings),
+          // Воронка ждёт бэкенда на проде — тот же флаг, что у страницы.
+          deals: DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals),
+          schedule: can(PAGE_PERMISSIONS.schedule),
+          payroll: can(PAGE_PERMISSIONS.payroll),
         },
       });
     } catch (e) {
@@ -257,13 +289,21 @@ export const DashboardPage: React.FC = () => {
           )}
         </Stack>
 
-        <Stack direction="row" alignItems="center" spacing={1.25}>
+        {/* На телефоне управление уходит на свою строку во всю ширину: период
+            и две кнопки не помещаются рядом с заголовком. ⚠ Брейкпоинт sm в
+            теме = 360px, телефон попадает в sm — переключаемся по md. */}
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1.25}
+          sx={{ width: { xs: "100%", md: "auto" }, justifyContent: { xs: "space-between", md: "flex-start" } }}
+        >
           {updatedAt && !editing && (
             <Stack
               direction="row"
               alignItems="center"
               spacing={0.75}
-              sx={{ display: { xs: "none", sm: "flex" } }}
+              sx={{ display: { xs: "none", md: "flex" } }}
             >
               <Box
                 sx={{
@@ -280,12 +320,14 @@ export const DashboardPage: React.FC = () => {
             </Stack>
           )}
           {!editing && (
+            <Box sx={{ flex: { xs: 1, md: "none" }, minWidth: 0 }}>
             <SegmentedTabs
               tabs={PERIOD_TABS}
               value={period}
               onChange={handlePeriod}
               layoutId="dashboard-period"
             />
+            </Box>
           )}
           {!editing && (
             <Tooltip title="Выгрузить в Excel" arrow>

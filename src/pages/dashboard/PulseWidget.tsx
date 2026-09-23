@@ -13,8 +13,11 @@ import { AppCard } from "../../components/ui";
 import { formatKGS } from "../../utility/format";
 import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
 import { useCanChecker } from "../../hooks/useCan";
+import { usePermissions } from "../../hooks/usePermissions";
 import { DeltaChip } from "./MetricTile";
 import { WidgetError, type WidgetProps } from "./widgetKit";
+import { PlanDialog } from "./PlanDialog";
+import { planProgress, planScopeKey, readRevenuePlans, resolvePlan } from "./revenuePlan";
 import { num } from "./widgetUtils";
 import { previousRange, resolvePeriod, sumDayCounts, type PeriodRange } from "./period";
 import {
@@ -157,6 +160,9 @@ const DriverCell: React.FC<{
  */
 export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) => {
   const { can } = useCanChecker();
+  const { activeOrganization, activeBranch } = usePermissions();
+  const canEditPlan = can("organization.update");
+  const [planOpen, setPlanOpen] = React.useState(false);
   const canAppointments = can(PAGE_PERMISSIONS.appointments);
   const canSchedule = can(PAGE_PERMISSIONS.schedule);
   const canReports = can(PAGE_PERMISSIONS.reports);
@@ -170,8 +176,13 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
         : undefined;
 
   const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
-  const monthRange = React.useMemo(() => resolvePeriod("month"), []);
-  const lastMonth = React.useMemo(() => previousFullMonth(), []);
+  // От даты периода, а не «один раз при монтировании»: после полуночи
+  // страница пересчитывает range, и месяц должен переехать вместе с ним.
+  const monthRange = React.useMemo(
+    () => resolvePeriod("month", dayjs(range.dateTo)),
+    [range.dateTo],
+  );
+  const lastMonth = React.useMemo(() => previousFullMonth(dayjs(range.dateTo)), [range.dateTo]);
 
   const cash = useQuery(cashboxSummaryQuery(scope, range));
   const prevCash = useQuery(cashboxSummaryQuery(scope, prev));
@@ -209,9 +220,21 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
       : null;
   // Шкала — до большего из «оценка к концу месяца» и «прошлый месяц целиком»:
   // заливка = сколько уже набрали, отметка = где финишировал прошлый месяц.
-  const scaleMax = Math.max(pace ?? 0, lastMonthIncome ?? 0, monthIncome, 1);
+  // ── План месяца (themeConfig.dashboard.plans, см. revenuePlan.ts) ──
+  const scopeKey = planScopeKey(scope.branchId);
+  const plan = resolvePlan(
+    readRevenuePlans(activeOrganization?.themeConfig),
+    scopeKey,
+    monthRange.month,
+  );
+  const progress = plan ? planProgress(plan.amount, monthIncome, elapsed, inMonth, pace) : null;
+
+  // Шкала — до большего из «план», «оценка к концу месяца» и «прошлый месяц
+  // целиком»: заливка = сколько уже набрали, отметки — цель и прошлый месяц.
+  const scaleMax = Math.max(plan?.amount ?? 0, pace ?? 0, lastMonthIncome ?? 0, monthIncome, 1);
   const filled = monthIncome / scaleMax;
   const marker = lastMonthIncome ? lastMonthIncome / scaleMax : null;
+  const planMarker = plan ? plan.amount / scaleMax : null;
 
   // ── Приход по дням месяца ──
   // ⚠ Бэк отдаёт daily[] от 31-го к 1-му (см. reports-monthly-api-quirks):
@@ -408,6 +431,21 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
                       />
                     </Tooltip>
                   )}
+                  {planMarker != null && plan && (
+                    <Tooltip arrow title={`План — ${formatKGS(plan.amount)}`}>
+                      <Box
+                        sx={{
+                          position: "absolute",
+                          left: `calc(${(planMarker * 100).toFixed(1)}% - 3px)`,
+                          top: -5,
+                          bottom: -5,
+                          width: 3,
+                          borderRadius: "2px",
+                          bgcolor: "primary.onSurface",
+                        }}
+                      />
+                    </Tooltip>
+                  )}
                 </Box>
 
                 <Stack
@@ -433,6 +471,79 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
                     </Box>
                   )}
                 </Stack>
+
+                {/* План: главный вопрос владельца — «успеваем?». Ответ одной
+                    строкой: сколько нужно в день до конца месяца. */}
+                {(progress || canEditPlan) && (
+                  <Stack
+                    direction="row"
+                    alignItems="baseline"
+                    sx={{
+                      pt: 1,
+                      borderTop: 1,
+                      borderColor: "divider",
+                      columnGap: 1,
+                      rowGap: 0.25,
+                      flexWrap: "wrap",
+                      fontSize: "0.8125rem",
+                      ...TABULAR,
+                    }}
+                  >
+                    {progress ? (
+                      <>
+                        <Box sx={{ color: "text.secondary" }}>
+                          План {formatKGS(progress.plan)}
+                          {plan?.source === "month" ? ` на ${monthName}` : ""} ·{" "}
+                          <Box component="span" sx={{ color: "text.primary", fontWeight: 600 }}>
+                            {Math.round(progress.done * 100)}%
+                          </Box>
+                        </Box>
+                        <Box sx={{ flex: 1 }} />
+                        <Box
+                          sx={{
+                            fontWeight: 600,
+                            color:
+                              progress.remaining === 0 || progress.onTrack
+                                ? "success.onSurface"
+                                : progress.onTrack === false
+                                  ? "warning.onSurface"
+                                  : "text.primary",
+                          }}
+                        >
+                          {progress.remaining === 0
+                            ? "план выполнен"
+                            : progress.perDayNeeded == null
+                              ? `не хватает ${formatKGS(progress.remaining)}`
+                              : `нужно ≈ ${formatKGS(progress.perDayNeeded)} в день`}
+                        </Box>
+                      </>
+                    ) : (
+                      <Box sx={{ color: "text.secondary", flex: 1 }}>
+                        Плана на месяц нет — задайте цель, и здесь будет видно, сколько нужно в день.
+                      </Box>
+                    )}
+                    {canEditPlan && activeOrganization && (
+                      <Box
+                        component="button"
+                        type="button"
+                        onClick={() => setPlanOpen(true)}
+                        sx={{
+                          border: 0,
+                          p: 0,
+                          bgcolor: "transparent",
+                          cursor: "pointer",
+                          font: "inherit",
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                          color: "text.secondary",
+                          "&:hover": { color: "primary.onSurface" },
+                        }}
+                      >
+                        {progress ? "изменить" : "задать план"}
+                      </Box>
+                    )}
+                  </Stack>
+                )}
               </Stack>
             )}
 
@@ -483,7 +594,7 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
                 <Stack direction="row" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
                   <Box>приход по дням, {monthName}</Box>
                   <Box sx={{ flex: 1 }} />
-                  <Box sx={{ display: { xs: "none", sm: "block" } }}>
+                  <Box sx={{ display: { xs: "none", md: "block" } }}>
                     выходные светлее · сегодня выделено
                   </Box>
                 </Stack>
@@ -559,6 +670,21 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
             )}
           </Box>
         </Box>
+      )}
+      {activeOrganization && canEditPlan && (
+        <PlanDialog
+          open={planOpen}
+          onClose={() => setPlanOpen(false)}
+          organizationId={activeOrganization.id}
+          scopeKey={scopeKey}
+          scopeLabel={
+            scope.branchId != null && activeBranch
+              ? `Филиал «${activeBranch.name}»`
+              : `Вся организация «${activeOrganization.name}»`
+          }
+          month={monthRange.month}
+          themeConfig={activeOrganization.themeConfig as Record<string, unknown> | null}
+        />
       )}
     </AppCard>
   );

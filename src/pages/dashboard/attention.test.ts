@@ -17,7 +17,7 @@ describe("Требует внимания", () => {
       deals: { overdueActions: 0, todayActions: 0 },
       reviews: { negative: 0 },
       cash: { netCashFlow: 1000, grossIncome: 1000, refundedTotal: 0, refundCount: 0 },
-      month: { waitingCount: 0, debtSum: 0 },
+      month: { debtSum: 0 },
       staff: { total: 5, free: 0 },
     });
     expect(items).toEqual([]);

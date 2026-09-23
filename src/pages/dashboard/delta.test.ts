@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { describeDelta } from "./delta";
-import { previousRange, resolvePeriod, sumDayCounts, toDailySeries } from "./period";
+import {
+  baselineWindow,
+  previousRange,
+  resolvePeriod,
+  sumDayCounts,
+  toDailySeries,
+  weekdayBaseline,
+} from "./period";
 import dayjs from "dayjs";
 import {
   WIDGETS,
@@ -206,5 +213,23 @@ describe("перенос перетаскиванием", () => {
       "staff",
       "money",
     ]);
+  });
+});
+
+describe("обычный уровень дня недели", () => {
+  it("окно истории покрывает 4 прошлые недели одним запросом", () => {
+    const w = baselineWindow({ dateFrom: "2026-09-10", dateTo: "2026-09-23", month: "2026-09", label: "" });
+    expect(w.dateFrom).toBe("2026-08-13");
+    expect(w.dateTo).toBe("2026-09-16");
+  });
+
+  it("среднее по тому же дню недели, пропуски — ноль", () => {
+    const history = { "2026-09-16": 10, "2026-09-09": 6, "2026-09-02": 8 };
+    // 23.09 — среда; прошлые среды 16, 9, 2 сентября и 26 августа (нет данных).
+    expect(weekdayBaseline(history, "2026-09-23")).toBe(6);
+  });
+
+  it("без истории линии нет", () => {
+    expect(weekdayBaseline(undefined, "2026-09-23")).toBeNull();
   });
 });

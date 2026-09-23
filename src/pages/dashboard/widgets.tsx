@@ -14,7 +14,14 @@ import { useCanChecker } from "../../hooks/useCan";
 import { DeltaChip, MetricTile } from "./MetricTile";
 import { DashCard, WidgetError, type WidgetProps } from "./widgetKit";
 import { delta, num } from "./widgetUtils";
-import { previousRange, sumDayCounts, toDailySeries, type PeriodRange } from "./period";
+import {
+  baselineWindow,
+  previousRange,
+  sumDayCounts,
+  toDailySeries,
+  weekdayBaseline,
+  type PeriodRange,
+} from "./period";
 import { cashboxSummaryQuery, dayCountsQuery, monthlyReportQuery } from "./queries";
 
 // ── Записи ────────────────────────────────────────────────────────────────────
@@ -67,6 +74,8 @@ export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, sc
   const prevQuery = useQuery(dayCountsQuery(scope, prev));
   // На «Неделе» и «Месяце» окно графика совпадает с периодом — тот же запрос.
   const chartQuery = useQuery(dayCountsQuery(scope, chartRange));
+  // «Обычно в этот день недели» — одним запросом на 4 прошлые недели.
+  const baselineQuery = useQuery(dayCountsQuery(scope, baselineWindow(chartRange)));
 
   const total = sumDayCounts(query.data);
   const prevTotal = prevQuery.data ? sumDayCounts(prevQuery.data) : undefined;
@@ -75,7 +84,12 @@ export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, sc
   const peak = periodSeries.reduce((max, d) => Math.max(max, d.count), 0);
   const busiest = periodSeries.find((d) => d.count === peak && peak > 0);
   const perDay = periodSeries.length ? Math.round((total / periodSeries.length) * 10) / 10 : 0;
-  const chartMax = series.reduce((max, d) => Math.max(max, d.count), 0);
+  const baselines = series.map((d) => weekdayBaseline(baselineQuery.data, d.date));
+  const chartMax = Math.max(
+    series.reduce((max, d) => Math.max(max, d.count), 0),
+    ...baselines.map((b) => b ?? 0),
+  );
+  const barPx = (v: number) => (chartMax ? Math.max(4, (v / chartMax) * 72) : 4);
 
   const hint =
     periodKey === "today"
@@ -126,6 +140,17 @@ export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, sc
             <Box sx={{ flex: 1 }} />
             <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{hint}</Typography>
           </Stack>
+          {baselineQuery.data && series.length > 1 && (
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={0.75}
+              sx={{ mt: "-6px !important", fontSize: "0.6875rem", color: "text.secondary" }}
+            >
+              <Box sx={{ width: 12, height: 2, borderRadius: "1px", bgcolor: "text.secondary", opacity: 0.7 }} />
+              <span>обычно в этот день недели — среднее за 4 прошлые недели</span>
+            </Stack>
+          )}
 
           {chartQuery.isLoading ? (
             <Skeleton variant="rounded" height={110} sx={{ borderRadius: "10px" }} />
@@ -145,12 +170,15 @@ export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, sc
                   const isWeekend = day.day() === 0 || day.day() === 6;
                   const isToday = d.date === range.dateTo;
                   const label = barLabel(d.date, i);
+                  const usual = baselines[i];
                   return (
                     <Tooltip
                       key={d.date}
                       arrow
                       placement="top"
-                      title={`${day.format("dd, D MMMM")} — ${d.count}`}
+                      title={`${day.format("dd, D MMMM")} — ${d.count}${
+                        usual != null ? ` · обычно ≈ ${(Math.round(usual * 10) / 10).toLocaleString("ru-RU")}` : ""
+                      }`}
                     >
                       <Box
                         component={RouterLink}
@@ -185,8 +213,9 @@ export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, sc
                           sx={(t) => {
                             const dark = t.palette.mode === "dark";
                             return {
+                              position: "relative",
                               width: "100%",
-                              height: chartMax ? Math.max(4, (d.count / chartMax) * 72) : 4,
+                              height: barPx(d.count),
                               borderRadius: "4px 4px 1px 1px",
                               transition: "opacity .15s ease",
                               bgcolor: isToday
@@ -199,7 +228,25 @@ export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, sc
                                     ),
                             };
                           }}
-                        />
+                        >
+                          {/* Засечка «обычно в этот день недели»: столбик ниже
+                              неё — день слабее обычного, выше — сильнее. */}
+                          {usual != null && usual > 0 && (
+                            <Box
+                              sx={{
+                                position: "absolute",
+                                left: -1,
+                                right: -1,
+                                bottom: barPx(usual) - 1,
+                                height: 2,
+                                borderRadius: "1px",
+                                bgcolor: "text.secondary",
+                                opacity: 0.7,
+                                pointerEvents: "none",
+                              }}
+                            />
+                          )}
+                        </Box>
                         <Typography
                           sx={{
                             fontSize: "0.6875rem",
@@ -513,7 +560,6 @@ export const MonthWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               value={sum?.apptTotalCount ?? 0}
               loading={loading}
               delta={delta(sum?.apptTotalCount ?? 0, prevSum?.apptTotalCount, prevLabel)}
-              hint={sum ? `процедур — ${sum.procTotalCount}` : undefined}
               title="Месячный отчёт считает приёмы и процедуры раздельно; карточка «Записи» — вместе"
             />
           </Grid>
@@ -529,15 +575,16 @@ export const MonthWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               title="Оплаченными считаются приёмы в статусе paid или discounted"
             />
           </Grid>
+          {/* «Ждут оплаты» (summary.waitingCount) здесь было и убрано: на проде
+              статус приёма почти не переходит в «оплачен», и плитка считала
+              неоплаченными почти все записи месяца. См. тикет по сводке. */}
           <Grid item xs={6} sm={4} lg={2}>
             <MetricTile
-              label="Ждут оплаты"
+              label="Процедур"
               href="/reports"
-              value={sum?.waitingCount ?? 0}
-              tone={sum && sum.waitingCount > 0 ? "warning" : "neutral"}
+              value={sum?.procTotalCount ?? 0}
               loading={loading}
-              delta={delta(sum?.waitingCount ?? 0, prevSum?.waitingCount, prevLabel, true)}
-              title="Записи месяца в статусе ожидания оплаты — незакрытые чеки"
+              delta={delta(sum?.procTotalCount ?? 0, prevSum?.procTotalCount, prevLabel)}
             />
           </Grid>
           <Grid item xs={6} sm={4} lg={2}>

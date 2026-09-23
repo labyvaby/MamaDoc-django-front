@@ -45,7 +45,13 @@ export interface AttentionInput {
     refundedTotal: number;
     refundCount: number;
   };
-  month?: { waitingCount: number; debtSum: number };
+  /**
+   * ⚠ Числа «ждут оплаты» (`summary.waitingCount`) здесь нет намеренно: на
+   * проде статус приёма почти не переходит в «оплачен» при оплате, и отчёт
+   * считал «неоплаченными» почти все записи месяца (1585 из 1765 при 1491
+   * оплате, 23.09.2026). Надёжный источник — тикет бэку по сводке.
+   */
+  month?: { debtSum: number };
   staff?: { total: number; free: number };
 }
 
@@ -151,19 +157,6 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
         severity: "today",
         value: formatKGS(m.debtSum),
         text: "долгов с начала месяца — по месячному отчёту",
-        href: "/reports",
-      });
-    }
-    if (m.waitingCount > 0) {
-      add({
-        id: "month-waiting",
-        severity: "today",
-        value: String(m.waitingCount),
-        text: pluralRu(m.waitingCount, [
-          "запись с начала месяца так и не оплачена",
-          "записи с начала месяца так и не оплачены",
-          "записей с начала месяца так и не оплачены",
-        ]),
         href: "/reports",
       });
     }

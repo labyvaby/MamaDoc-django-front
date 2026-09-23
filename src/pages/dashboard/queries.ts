@@ -25,6 +25,21 @@ import type { PeriodRange } from "./period";
 
 type Signal = { signal?: AbortSignal };
 
+/**
+ * Автообновление сводки. Экран держат открытым (ресепшен, телефон владельца),
+ * и без опроса «сегодня» замирало на моменте открытия. Три минуты — компромисс
+ * между свежестью и нагрузкой: на экране ~20 запросов.
+ *
+ * Опрашиваем только то, что может измениться: периоды, которые включают
+ * сегодня, и состояния «сейчас» (брони, задачи, загрузка). Прошлые периоды —
+ * база сравнения — не меняются, их не дёргаем. В фоновой вкладке react-query
+ * опрос сам останавливает (refetchIntervalInBackground = false).
+ */
+export const LIVE_REFRESH_MS = 3 * 60 * 1000;
+
+const todayKey = () => dayjs().format("YYYY-MM-DD");
+const liveIf = (isLive: boolean) => (isLive ? LIVE_REFRESH_MS : (false as const));
+
 export const cashboxSummaryQuery = (scope: ActiveScope, r: PeriodRange, enabled = true) => ({
   queryKey: djangoQueryKeys.cashbox.summary({
     view: "dashboard",
@@ -45,6 +60,7 @@ export const cashboxSummaryQuery = (scope: ActiveScope, r: PeriodRange, enabled 
     ),
   enabled: scope.orgReady && enabled,
   staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  refetchInterval: liveIf(r.dateTo >= todayKey()),
 });
 
 export const dayCountsQuery = (scope: ActiveScope, r: PeriodRange, enabled = true) => ({
@@ -59,6 +75,7 @@ export const dayCountsQuery = (scope: ActiveScope, r: PeriodRange, enabled = tru
     getDayCounts({ dateFrom: r.dateFrom, dateTo: r.dateTo, branchId: scope.branchId }, signal),
   enabled: scope.orgReady && enabled,
   staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  refetchInterval: liveIf(r.dateTo >= todayKey()),
 });
 
 export const monthlyReportQuery = (scope: ActiveScope, month: string, enabled = true) => ({
@@ -75,6 +92,7 @@ export const monthlyReportQuery = (scope: ActiveScope, month: string, enabled = 
     ),
   enabled: scope.orgReady && enabled,
   staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  refetchInterval: liveIf(month === todayKey().slice(0, 7)),
 });
 
 /** Загрузка специалистов на сегодня — вопрос всегда про «сейчас», периода нет. */
@@ -94,6 +112,7 @@ export const availabilityTodayQuery = (scope: ActiveScope, enabled = true) => {
       ),
     enabled: scope.orgReady && enabled,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+    refetchInterval: LIVE_REFRESH_MS,
   };
 };
 
@@ -138,6 +157,7 @@ export const pendingBookingsQuery = (
       ),
     enabled: scope.orgReady && enabled,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+    refetchInterval: LIVE_REFRESH_MS,
   };
 };
 
@@ -146,6 +166,7 @@ export const tasksSummaryQuery = (scope: ActiveScope, enabled = true) => ({
   queryFn: ({ signal }: Signal) => getTasksSummary(scope.organizationId, signal),
   enabled: scope.orgReady && enabled,
   staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  refetchInterval: LIVE_REFRESH_MS,
 });
 
 export const dealsSummaryQuery = (scope: ActiveScope, enabled = true) => ({
@@ -154,6 +175,7 @@ export const dealsSummaryQuery = (scope: ActiveScope, enabled = true) => ({
     getDealsSummary({ organizationId: scope.organizationId }, signal),
   enabled: scope.orgReady && enabled,
   staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  refetchInterval: LIVE_REFRESH_MS,
 });
 
 export const reviewStatsQuery = (scope: ActiveScope, r: PeriodRange, enabled = true) => ({
@@ -167,4 +189,5 @@ export const reviewStatsQuery = (scope: ActiveScope, r: PeriodRange, enabled = t
     getReviewStats({ from: r.dateFrom, to: r.dateTo, organizationId: scope.organizationId }, signal),
   enabled: scope.orgReady && enabled,
   staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  refetchInterval: liveIf(r.dateTo >= todayKey()),
 });

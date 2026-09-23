@@ -3,6 +3,7 @@ import { Box, Skeleton, Stack, Typography } from "@mui/material";
 import { alpha, type Theme } from "@mui/material/styles";
 import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router";
+import dayjs from "dayjs";
 
 import TaskAltOutlined from "@mui/icons-material/TaskAltOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
@@ -58,7 +59,10 @@ export const AttentionWidget: React.FC<WidgetProps> = ({ range, scope }) => {
   const canReports = can(PAGE_PERMISSIONS.reports);
   const canSchedule = can(PAGE_PERMISSIONS.schedule);
 
-  const month = React.useMemo(() => resolvePeriod("month").month, []);
+  const month = React.useMemo(
+    () => resolvePeriod("month", dayjs(range.dateTo)).month,
+    [range.dateTo],
+  );
 
   const pending = useQuery(pendingBookingsQuery(scope, "pending", canBookings));
   const overdue = useQuery(pendingBookingsQuery(scope, "overdue", canBookings));
@@ -102,7 +106,6 @@ export const AttentionWidget: React.FC<WidgetProps> = ({ range, scope }) => {
           : undefined,
         month: report.data
           ? {
-              waitingCount: report.data.summary?.waitingCount ?? 0,
               debtSum: (report.data.daily ?? []).reduce((acc, d) => acc + num(d.debtSum), 0),
             }
           : undefined,
