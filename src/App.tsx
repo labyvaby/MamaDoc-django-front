@@ -687,8 +687,19 @@ function App() {
                             </RequirePermission>
                           }
                         />
-                        {/* Страница одного номера — сюда ведут клик по номеру в списке и
-                            «Редактировать» в карточке номера в шахматке. */}
+                        {/* Форма номера — одна страница на создание (/new) и правку (/:roomId), как
+                            у категорий. Сюда же ведут клик по номеру в списке и «Редактировать» в
+                            карточке номера в шахматке. */}
+                        <Route
+                          path="rooms/new"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelRooms}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelRoomFormPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
                         <Route
                           path="rooms/:roomId"
                           element={

@@ -13,16 +13,16 @@
  * тут они показаны справочно, как группы, в которые входят номера.
  *
  * Номера сгруппированы по категориям, как в RoomBookingGrid и
- * RoomDetailsDialog. «Добавить номер» создаёт номер в выбранной категории;
- * шахматка и форма создания брони подхватывают его сразу же (react-query
- * invalidate), без reload. Клик по номеру ведёт на страницу его редактирования
- * (HotelRoomFormPage.tsx, /rooms/:roomId) — той же, куда ведёт «Редактировать» в
- * карточке номера в шахматке.
+ * RoomDetailsDialog. «Добавить номер» ведёт на страницу создания номера
+ * (HotelRoomFormPage.tsx, /rooms/new — там же питание, площадь и другие
+ * необязательные характеристики); шахматка и форма создания брони подхватывают
+ * новый номер сразу же (react-query invalidate), без reload. Клик по номеру
+ * ведёт на страницу его редактирования (/rooms/:roomId) — той же, куда ведёт
+ * «Редактировать» в карточке номера в шахматке.
  *
- * «Питание» при добавлении номера — HotelRoom.mealOptions, ключи из
- * catalogs.mealOptions (какое питание доступно физически в этом номере) —
- * отдельно от boardType брони (что выбрано на конкретный заезд, см.
- * CreateBookingButton).
+ * «Питание» номера — HotelRoom.mealOptions, ключи из catalogs.mealOptions
+ * (какое питание доступно физически в этом номере) — отдельно от boardType
+ * брони (что выбрано на конкретный заезд, см. CreateBookingButton).
  *
  * Способов оплаты здесь нет: их справочник ведётся в «Настройки → Способы
  * безнала» (/settings/cashless-methods), а не отдельным списком объекта.
@@ -38,10 +38,8 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  MenuItem,
   Paper,
   Stack,
-  TextField,
   Tooltip,
   Typography,
   useTheme,
@@ -55,7 +53,7 @@ import { useSnackbar } from "notistack";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
-import { getHotelCatalogs, listRoomTypes, listRooms, createRoom, updateRoom, deleteRoom, type HotelRoom } from "../api/hotel";
+import { getHotelCatalogs, listRoomTypes, listRooms, updateRoom, deleteRoom, type HotelRoom } from "../api/hotel";
 import { ApiError, getErrorMessage } from "../api/client";
 import { HOTEL_ROOM_STATE_LABELS, hotelRoomStateColor, type HotelRoomState } from "./hotelDisplay";
 
@@ -99,13 +97,6 @@ export const HotelRoomsPage: React.FC = () => {
   const invalidateRoomTypes = () => void queryClient.invalidateQueries({ queryKey: ["hotel", "roomTypes", property?.id] });
   const invalidateRooms = () => void queryClient.invalidateQueries({ queryKey: ["hotel", "rooms", property?.id] });
 
-  const [addOpen, setAddOpen] = React.useState(false);
-  const [roomTypeId, setRoomTypeId] = React.useState<number | "">("");
-  const [roomNumber, setRoomNumber] = React.useState("");
-  const [meals, setMeals] = React.useState<string[]>([]);
-  const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
   // Удаление: сначала подтверждение. Если номер уже фигурировал в бронях (HAS_DEPENDENTS),
   // второй шаг предлагает снять его с продажи — раньше это делалось молча, хотя человек
   // нажал «удалить». Ошибки показываем внутри диалога, рядом с действием.
@@ -113,35 +104,6 @@ export const HotelRoomsPage: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = React.useState<{ room: HotelRoom; step: DeleteStep } | null>(null);
   const [deleteBusy, setDeleteBusy] = React.useState(false);
   const [deleteDialogError, setDeleteDialogError] = React.useState<string | null>(null);
-
-  const openAdd = () => {
-    setRoomTypeId(roomTypes[0]?.id ?? "");
-    setRoomNumber("");
-    setMeals([]);
-    setError(null);
-    setAddOpen(true);
-  };
-
-  const submitAdd = async () => {
-    const trimmed = roomNumber.trim();
-    if (!trimmed) {
-      setError("Введите номер комнаты");
-      return;
-    }
-    if (!property || roomTypeId === "") return;
-    setSaving(true);
-    setError(null);
-    try {
-      await createRoom({ propertyId: property.id, roomTypeId, number: trimmed, mealOptions: meals });
-      invalidateRooms();
-      invalidateRoomTypes();
-      setAddOpen(false);
-    } catch (err) {
-      setError(getErrorMessage(err, "Не удалось добавить номер"));
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const askDelete = (room: HotelRoom) => {
     setDeleteDialogError(null);
@@ -220,7 +182,14 @@ export const HotelRoomsPage: React.FC = () => {
           >
             Категории и тарифы
           </Button>
-          <Button size="small" variant="contained" startIcon={<AddOutlined />} onClick={openAdd} disabled={!property || roomTypes.length === 0}>
+          <Button
+            size="small"
+            variant="contained"
+            startIcon={<AddOutlined />}
+            component={RouterLink}
+            to="/rooms/new"
+            disabled={!property || roomTypes.length === 0}
+          >
             Добавить номер
           </Button>
         </Stack>
@@ -229,9 +198,9 @@ export const HotelRoomsPage: React.FC = () => {
       <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
         Номера Viva, сгруппированные по категориям. Новый номер сразу появляется в шахматке броней и в
         списке выбора при создании брони; нажмите на номер — откроется страница его редактирования
-        (категория, код, питание, состояние, продажа); ✕ на чипе — удаляет номер после подтверждения
-        (если он уже фигурирует в бронях, предложат снять его с продажи). Сами категории, их цены и
-        характеристики — в разделе «Категории и тарифы».
+        (категория, код, питание, площадь и другие характеристики, состояние, продажа); ✕ на чипе —
+        удаляет номер после подтверждения (если он уже фигурирует в бронях, предложат снять его с
+        продажи). Сами категории, их цены и характеристики — в разделе «Категории и тарифы».
       </Alert>
 
       {loading ? (
@@ -328,81 +297,6 @@ export const HotelRoomsPage: React.FC = () => {
           })}
         </Stack>
       )}
-
-      <Dialog open={addOpen} onClose={() => setAddOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Новый номер</DialogTitle>
-        <DialogContent>
-          <Stack gap={2} sx={{ mt: 0.5 }}>
-            <TextField
-              select
-              label="Категория"
-              value={roomTypeId}
-              onChange={(e) => setRoomTypeId(Number(e.target.value))}
-              disabled={saving}
-              fullWidth
-            >
-              {roomTypes.map((cat) => (
-                <MenuItem key={cat.id} value={cat.id}>
-                  {cat.name}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              label="Номер"
-              placeholder="Например, 205"
-              value={roomNumber}
-              onChange={(e) => {
-                setRoomNumber(e.target.value);
-                setError(null);
-              }}
-              autoFocus
-              disabled={saving}
-              fullWidth
-            />
-            <TextField
-              select
-              label="Питание"
-              value={meals}
-              onChange={(e) => {
-                const v = e.target.value;
-                setMeals(typeof v === "string" ? v.split(",") : v);
-              }}
-              disabled={saving}
-              SelectProps={{
-                multiple: true,
-                renderValue: (selected) => (
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                    {(selected as string[]).map((key) => (
-                      <Chip key={key} label={mealOptionChoices.find((c) => c.value === key)?.label ?? key} size="small" sx={{ height: 20, borderRadius: "6px" }} />
-                    ))}
-                  </Box>
-                ),
-              }}
-              helperText="Необязательно — какое питание доступно в этом номере"
-              fullWidth
-            >
-              {mealOptionChoices.map((c) => (
-                <MenuItem key={c.value} value={c.value}>
-                  {c.label}
-                </MenuItem>
-              ))}
-            </TextField>
-            {error && (
-              <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-                {error}
-              </Alert>
-            )}
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setAddOpen(false)} disabled={saving}>
-            Отмена
-          </Button>
-          <Button variant="contained" disabled={!roomNumber.trim() || saving} onClick={() => void submitAdd()}>
-            {saving ? "Добавляем…" : "Добавить"}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <Dialog open={deleteTarget != null} onClose={closeDelete} maxWidth="xs" fullWidth>
         <DialogTitle>
