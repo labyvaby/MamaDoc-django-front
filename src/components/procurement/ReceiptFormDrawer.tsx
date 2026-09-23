@@ -72,6 +72,9 @@ interface FormLine {
   };
 }
 
+/** Колонки позиции на sm+: товар, кол-во, цена, сумма, удаление. Шапка и строки — по одной сетке. */
+const LINE_COLUMNS = "minmax(0, 1fr) 88px 100px 84px 32px";
+
 const newLine = (): FormLine => ({
   key: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
   product: null,
@@ -415,7 +418,9 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
         </IconButton>
       </Box>
 
-      <Stack spacing={2.5} sx={{ p: 2, flex: 1, overflowY: "auto", minHeight: 0 }}>
+      {/* Блоки не сжимаются под высоту окна — иначе карточка распознавания
+          с overflow:hidden сплющивается вместо прокрутки. */}
+      <Stack spacing={2.5} sx={{ p: 2, flex: 1, overflowY: "auto", minHeight: 0, "& > *": { flexShrink: 0 } }}>
         {/* Распознавание по фото */}
         <Box
           sx={(t) => ({
@@ -671,7 +676,30 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
             )}
           </Stack>
           {productsQuery.isLoading && <LinearProgress sx={{ mb: 1, borderRadius: 1 }} />}
-          <Stack spacing={1}>
+          <Box sx={{ border: 1, borderColor: "divider", borderRadius: "12px", overflow: "hidden" }}>
+            <Box
+              sx={{
+                display: { xs: "none", sm: "grid" },
+                gridTemplateColumns: LINE_COLUMNS,
+                gap: 1,
+                px: 1.25,
+                py: 0.75,
+                borderBottom: 1,
+                borderColor: "divider",
+                bgcolor: "action.hover",
+              }}
+            >
+              {["Товар", "Кол-во", "Цена", "Сумма", ""].map((label, i) => (
+                <Typography
+                  key={i}
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontWeight: 600, textAlign: i === 0 ? "left" : "right" }}
+                >
+                  {label}
+                </Typography>
+              ))}
+            </Box>
             {lines.map((line, index) => {
               const candidateIds = new Set((line.recognized?.candidates ?? []).map((c) => c.id));
               const options = line.recognized
@@ -685,14 +713,18 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                 <Box
                   key={line.key}
                   sx={(t) => ({
-                    p: { xs: 1.25, sm: 1.5 },
-                    borderRadius: "16px",
-                    border: "1px solid",
-                    borderColor: line.recognized && !line.product ? alpha(t.palette.warning.main, 0.5) : "divider",
-                    background: line.recognized && !line.product
-                      ? `linear-gradient(145deg, ${alpha(t.palette.warning.main, 0.08)}, ${alpha(t.palette.background.paper, 0.92)})`
-                      : `linear-gradient(145deg, ${alpha(t.palette.primary.main, 0.055)}, ${alpha(t.palette.background.paper, 0.96)})`,
-                    boxShadow: `0 8px 24px ${alpha(t.palette.common.black, 0.12)}`,
+                    px: 1.25,
+                    py: 1,
+                    borderBottom: 1,
+                    borderColor: "divider",
+                    // Строка из документа, которой не нашлось товара, — акцент
+                    // полосой слева, а не отдельной карточкой.
+                    ...(line.recognized && !line.product
+                      ? {
+                          bgcolor: alpha(t.palette.warning.main, 0.06),
+                          boxShadow: `inset 3px 0 0 ${t.palette.warning.main}`,
+                        }
+                      : {}),
                   })}
                 >
                   {line.recognized && (
@@ -715,9 +747,13 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                   <Box
                     sx={{
                       display: "grid",
-                      gridTemplateColumns: { xs: "minmax(0, 1fr) minmax(0, 1fr)", sm: "minmax(0, 1fr) 88px 104px auto" },
+                      gridTemplateColumns: { xs: "minmax(0, 1fr) minmax(0, 1fr) auto 32px", sm: LINE_COLUMNS },
+                      gridTemplateAreas: {
+                        xs: '"product product product product" "qty price total del"',
+                        sm: '"product qty price total del"',
+                      },
                       gap: 1,
-                      alignItems: "start",
+                      alignItems: "center",
                     }}
                   >
                     <Autocomplete<ProductOption, false, false, false>
@@ -728,7 +764,7 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                       isOptionEqualToValue={(a, b) => a.id === b.id}
                       loading={productsQuery.isLoading}
                       size="small"
-                      sx={{ minWidth: 0, gridColumn: { xs: "1 / -1", sm: "auto" } }}
+                      sx={{ minWidth: 0, gridArea: "product" }}
                       renderOption={(props, option) => {
                         const score = scoreOf(option.id);
                         return (
@@ -753,42 +789,77 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                       size="small"
                       value={line.quantity}
                       onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
-                      placeholder="Количество"
-                      inputProps={{ inputMode: "decimal", style: { textAlign: "right" } }}
-                      InputProps={{ endAdornment: line.product ? <Typography variant="caption" color="text.secondary">{line.product.unit}</Typography> : undefined }}
+                      placeholder="Кол-во"
+                      sx={{ gridArea: "qty", minWidth: 0 }}
+                      inputProps={{ inputMode: "decimal", style: { textAlign: "right" }, "aria-label": "Количество" }}
+                      InputProps={{
+                        endAdornment: line.product?.unit ? (
+                          <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                            {line.product.unit}
+                          </Typography>
+                        ) : undefined,
+                      }}
                     />
                     <TextField
                       size="small"
                       value={line.price}
                       onChange={(e) => updateLine(line.key, { price: e.target.value })}
                       placeholder="Цена"
-                      inputProps={{ inputMode: "decimal", style: { textAlign: "right" } }}
+                      sx={{ gridArea: "price", minWidth: 0 }}
+                      inputProps={{ inputMode: "decimal", style: { textAlign: "right" }, "aria-label": "Цена" }}
                     />
-                    <Typography variant="body2" sx={{ fontWeight: 800, minWidth: { xs: 0, sm: 90 }, gridColumn: { xs: "1 / 2", sm: "auto" }, alignSelf: "center", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "primary.main" }}>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        gridArea: "total",
+                        fontWeight: 700,
+                        textAlign: "right",
+                        fontVariantNumeric: "tabular-nums",
+                        whiteSpace: "nowrap",
+                        color: lineTotal(line) > 0 ? "text.primary" : "text.disabled",
+                      }}
+                    >
                       {lineTotal(line) > 0 ? formatMoney(lineTotal(line)) : "—"}
                     </Typography>
-                    <IconButton size="small" onClick={() => removeLine(line.key)} aria-label="Удалить позицию" sx={{ justifySelf: "end", alignSelf: "center" }}>
+                    <IconButton
+                      size="small"
+                      onClick={() => removeLine(line.key)}
+                      aria-label="Удалить позицию"
+                      sx={{ gridArea: "del", justifySelf: "end", color: "text.secondary", "&:hover": { color: "error.main" } }}
+                    >
                       <DeleteOutlineOutlined fontSize="small" />
                     </IconButton>
                   </Box>
                 </Box>
               );
             })}
-          </Stack>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: 1 }} flexWrap="wrap" gap={1}>
-            <Button variant="text" size="small" startIcon={<AddOutlined />} onClick={() => setLines((prev) => [...prev, newLine()])}>
-              Добавить позицию
-            </Button>
-            <Typography variant="body2" sx={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-              Итого: {formatMoney(total)} {currency}
-              {currency !== "KGS" && (
-                <Typography component="span" variant="caption" color="text.secondary">
-                  {" "}
-                  ≈ {formatMoney(total * rate)} сом
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
+              flexWrap="wrap"
+              gap={1}
+              sx={{ px: 1.25, py: 0.75, bgcolor: "action.hover" }}
+            >
+              <Button variant="text" size="small" startIcon={<AddOutlined />} onClick={() => setLines((prev) => [...prev, newLine()])}>
+                Добавить позицию
+              </Button>
+              <Typography variant="body2" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                <Typography component="span" variant="body2" color="text.secondary">
+                  Итого{" "}
                 </Typography>
-              )}
-            </Typography>
-          </Stack>
+                <Typography component="span" sx={{ fontWeight: 800 }}>
+                  {formatMoney(total)} {currency}
+                </Typography>
+                {currency !== "KGS" && (
+                  <Typography component="span" variant="caption" color="text.secondary">
+                    {" "}
+                    ≈ {formatMoney(total * rate)} сом
+                  </Typography>
+                )}
+              </Typography>
+            </Stack>
+          </Box>
         </Box>
 
         <Divider />
