@@ -185,14 +185,20 @@
     "addToCalendar": "Добавить в календарь",
     "payExpiresIn": "Ссылка действует ещё {{minutes}} мин",
     "payChecking": "Проверяем оплату…",
-    "payPaid": "Предоплата получена.",
+    "payPaid": "Предоплата получена",
+    "payPaidAmount": "{{amount}} · оплачено онлайн",
     "payExpired": "Время оплаты истекло, {{record.nom}} снята. Запишитесь заново.",
     "payFailed": "Банк отклонил оплату, {{record.nom}} снята. Попробуйте записаться ещё раз.",
-    "statusHintPending": "Заявка получена, но {{record.nom}} ещё не окончательная: администратор перезвонит на ваш номер, чтобы подтвердить {{visit.acc}}. Если планы изменились — сообщите в {{org.acc}}.",
-    "statusHintConfirmed": "{{record.nom, capitalize}} подтверждена — ждём вас в назначенное время. Если не сможете прийти, предупредите заранее.",
-    "statusHintCancelled": "Эта {{record.nom}} отменена, время освобождено. Можно записаться заново.",
-    "statusHintCompleted": "{{visit.nom, capitalize}} состоялся. Спасибо, что выбрали нас!",
-    "statusHintNoShow": "{{visit.nom, capitalize}} отмечен как пропущенный. Чтобы прийти в другое время, запишитесь заново."
+    "statusTitlePending": "Ожидает подтверждения администратора",
+    "statusHintPending": "Заявка получена. Администратор перезвонит на ваш номер, чтобы подтвердить {{visit.acc}}. Если планы изменились — сообщите в {{org.acc}}.",
+    "statusTitleConfirmed": "{{record.nom, capitalize}} подтверждена",
+    "statusHintConfirmed": "Ждём вас в назначенное время. Если не сможете прийти, предупредите заранее.",
+    "statusTitleCancelled": "{{record.nom, capitalize}} отменена",
+    "statusHintCancelled": "Время освобождено. Можно записаться заново.",
+    "statusTitleCompleted": "{{visit.nom, capitalize}} состоялся",
+    "statusHintCompleted": "Спасибо, что выбрали нас!",
+    "statusTitleNoShow": "{{visit.nom, capitalize}} пропущен",
+    "statusHintNoShow": "Чтобы прийти в другое время, запишитесь заново."
   },
 
   "auth": {

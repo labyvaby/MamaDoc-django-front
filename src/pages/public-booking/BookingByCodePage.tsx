@@ -1,14 +1,21 @@
 import React from "react";
-import { Alert, Box, Button, Chip, Paper, Skeleton, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, Paper, Skeleton, Stack, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
+import CheckRounded from "@mui/icons-material/CheckRounded";
+import CloseRounded from "@mui/icons-material/CloseRounded";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
+import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
 import MapOutlined from "@mui/icons-material/MapOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
+import SupportAgentOutlined from "@mui/icons-material/SupportAgentOutlined";
+import TaskAltRounded from "@mui/icons-material/TaskAltRounded";
 import QRCode from "react-qr-code";
 import { useParams } from "react-router";
 
@@ -38,38 +45,160 @@ const CALENDAR_ELIGIBLE_STATUSES = new Set(["pending", "confirmed", "awaiting_pa
  * карточку.
  */
 
-const STATUS_KEYS: Record<string, string> = {
-  pending: "my.statusPending",
-  confirmed: "my.statusConfirmed",
-  awaiting_payment: "my.statusAwaitingPayment",
-  cancelled: "my.statusCancelled",
-  completed: "my.statusCompleted",
-  no_show: "my.statusNoShow",
-};
-
 /**
- * Что статус значит для пациента и что будет дальше — одним предложением под
- * чипом. Голый чип «Ожидает подтверждения» вопросов больше ставил, чем снимал:
- * пациент не знал, ждать ли звонка и нужно ли что-то делать (заказчик,
- * 24.09.2026). Обещаем только то, что реально происходит: уведомлений о
- * подтверждении нет ни у одной организации, подтверждает администратор
- * звонком. У `awaiting_payment` пояснения нет — его даёт блок оплаты ниже.
+ * Статус записи — не голый чип, а карточка: заголовок говорит, что происходит,
+ * пояснение — что будет дальше. Голый чип «Ожидает подтверждения» вопросов
+ * больше ставил, чем снимал: пациент не знал, ждать ли звонка и нужно ли что-то
+ * делать (заказчик, 24.09.2026). Обещаем только то, что реально происходит:
+ * уведомлений о подтверждении нет ни у одной организации, подтверждает
+ * администратор звонком. У `awaiting_payment` пояснения нет — его даёт блок
+ * оплаты ниже.
+ *
+ * Палитра светлая, как у всей витрины (тёмной темы у /book нет): мягкая
+ * подложка, рамка тем же тоном и сплошной кружок с иконкой.
  */
-const STATUS_HINT_KEYS: Record<string, string> = {
-  pending: "byCode.statusHintPending",
-  confirmed: "byCode.statusHintConfirmed",
-  cancelled: "byCode.statusHintCancelled",
-  completed: "byCode.statusHintCompleted",
-  no_show: "byCode.statusHintNoShow",
+interface StatusTone {
+  bg: string;
+  border: string;
+  solid: string;
+  text: string;
+}
+
+const TONE: Record<"amber" | "green" | "red" | "blue" | "gray", StatusTone> = {
+  amber: { bg: "#FFF6EA", border: "#FFE0B8", solid: "#F57C00", text: "#B54708" },
+  green: { bg: "#ECFDF3", border: "#ABEFC6", solid: "#16A34A", text: "#067647" },
+  red: { bg: "#FEF3F2", border: "#FECDCA", solid: "#D92D20", text: "#B42318" },
+  blue: { bg: "#EAF3FF", border: "#DCEBFF", solid: BOOKING_PRIMARY, text: "#175CD3" },
+  gray: { bg: "#F2F4F7", border: "#E4E7EC", solid: "#98A2B3", text: "#344054" },
 };
 
-const STATUS_COLOR: Record<string, "default" | "success" | "warning" | "error" | "info"> = {
-  pending: "warning",
-  confirmed: "success",
-  awaiting_payment: "warning",
-  cancelled: "error",
-  completed: "info",
-  no_show: "default",
+/** Текст пояснения под заголовком — читаемый серый, а не бледная MUTED-подпись. */
+const STATUS_BODY_COLOR = "#475467";
+
+interface StatusView {
+  tone: StatusTone;
+  icon: React.ReactNode;
+  titleKey: string;
+  hintKey?: string;
+  /** «Идёт процесс» — пульс вокруг иконки: запись ждёт действия клиники. */
+  live?: boolean;
+}
+
+const STATUS_VIEW: Record<string, StatusView> = {
+  pending: {
+    tone: TONE.amber,
+    icon: <SupportAgentOutlined />,
+    titleKey: "byCode.statusTitlePending",
+    hintKey: "byCode.statusHintPending",
+    live: true,
+  },
+  awaiting_payment: {
+    tone: TONE.amber,
+    icon: <PaymentsOutlined />,
+    titleKey: "my.statusAwaitingPayment",
+  },
+  confirmed: {
+    tone: TONE.green,
+    icon: <EventAvailableOutlined />,
+    titleKey: "byCode.statusTitleConfirmed",
+    hintKey: "byCode.statusHintConfirmed",
+  },
+  cancelled: {
+    tone: TONE.red,
+    icon: <CloseRounded />,
+    titleKey: "byCode.statusTitleCancelled",
+    hintKey: "byCode.statusHintCancelled",
+  },
+  completed: {
+    tone: TONE.blue,
+    icon: <TaskAltRounded />,
+    titleKey: "byCode.statusTitleCompleted",
+    hintKey: "byCode.statusHintCompleted",
+  },
+  no_show: {
+    tone: TONE.gray,
+    icon: <EventBusyOutlined />,
+    titleKey: "byCode.statusTitleNoShow",
+    hintKey: "byCode.statusHintNoShow",
+  },
+};
+
+/** Кружок с иконкой статуса; `live` — мягкий пульс, пока ждём клинику. */
+const StatusIcon: React.FC<{ tone: StatusTone; live?: boolean; children: React.ReactNode }> = ({
+  tone,
+  live,
+  children,
+}) => (
+  <Box
+    sx={{
+      position: "relative",
+      flexShrink: 0,
+      width: 44,
+      height: 44,
+      borderRadius: "50%",
+      bgcolor: tone.solid,
+      color: "#FFFFFF",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      boxShadow: `0 6px 14px ${alpha(tone.solid, 0.3)}`,
+      "& svg": { fontSize: 24 },
+      ...(live && {
+        "&::after": {
+          content: '""',
+          position: "absolute",
+          inset: 0,
+          borderRadius: "50%",
+          border: `2px solid ${tone.solid}`,
+          animation: "bookingStatusPulse 2.2s ease-out infinite",
+        },
+        "@keyframes bookingStatusPulse": {
+          "0%": { transform: "scale(1)", opacity: 0.55 },
+          "100%": { transform: "scale(1.55)", opacity: 0 },
+        },
+        "@media (prefers-reduced-motion: reduce)": {
+          "&::after": { animation: "none", opacity: 0 },
+        },
+      }),
+    }}
+  >
+    {children}
+  </Box>
+);
+
+const StatusCard: React.FC<{
+  status: string;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}> = ({ status, t }) => {
+  const view = STATUS_VIEW[status];
+  // Незнакомый статус — показываем как есть, нейтрально, но не прячем.
+  const tone = view?.tone ?? TONE.gray;
+  // Заголовок — рядом с иконкой, пояснение — под ними на всю ширину: в колонке
+  // справа от кружка на телефоне оно рвалось на слова по одному в строке.
+  return (
+    <Box
+      sx={{
+        p: 2,
+        borderRadius: BOOKING_RADIUS,
+        bgcolor: tone.bg,
+        border: `1px solid ${tone.border}`,
+      }}
+    >
+      <Stack direction="row" spacing={1.5} alignItems="center">
+        <StatusIcon tone={tone} live={view?.live}>
+          {view?.icon ?? <EventOutlined />}
+        </StatusIcon>
+        <Typography sx={{ minWidth: 0, fontSize: 17, fontWeight: 700, lineHeight: 1.3, color: tone.text }}>
+          {view ? t(view.titleKey) : status}
+        </Typography>
+      </Stack>
+      {view?.hintKey && (
+        <Typography sx={{ mt: 1.5, fontSize: 14, lineHeight: 1.55, color: STATUS_BODY_COLOR }}>
+          {t(view.hintKey)}
+        </Typography>
+      )}
+    </Box>
+  );
 };
 
 function formatDate(date: string): string {
@@ -102,7 +231,54 @@ export const PaymentBlock: React.FC<{
   compact?: boolean;
 }> = ({ payment, t, compact }) => {
   if (payment.status === "paid") {
-    return <Alert severity="success">{t("byCode.payPaid")}</Alert>;
+    // Деньги дошли — главная хорошая новость экрана: крупно и зелёным, с суммой,
+    // а не строкой-алертом, которую глаз пропускает.
+    return (
+      <Stack
+        direction="row"
+        spacing={1.75}
+        alignItems="center"
+        sx={{
+          p: 2,
+          borderRadius: BOOKING_RADIUS,
+          border: `1px solid ${TONE.green.border}`,
+          background: "linear-gradient(135deg, #F0FBF4 0%, #DCF5E5 100%)",
+        }}
+      >
+        <Box
+          sx={{
+            flexShrink: 0,
+            width: 48,
+            height: 48,
+            borderRadius: "50%",
+            bgcolor: TONE.green.solid,
+            color: "#FFFFFF",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: `0 8px 18px ${alpha(TONE.green.solid, 0.35)}`,
+            // Только масштаб и без fill-mode: если анимация не отыграет (фоновая
+            // вкладка), кружок всё равно останется сплошным, а не прозрачным.
+            animation: "bookingPaidPop 420ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+            "@keyframes bookingPaidPop": {
+              "0%": { transform: "scale(0.6)" },
+              "100%": { transform: "scale(1)" },
+            },
+            "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+          }}
+        >
+          <CheckRounded sx={{ fontSize: 30 }} />
+        </Box>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontSize: 18, fontWeight: 800, lineHeight: 1.25, color: TONE.green.text }}>
+            {t("byCode.payPaid")}
+          </Typography>
+          <Typography sx={{ mt: 0.25, fontSize: 14, fontWeight: 500, color: "#2E7D4F" }}>
+            {t("byCode.payPaidAmount", { amount: formatPrice(Number(payment.amount)) })}
+          </Typography>
+        </Box>
+      </Stack>
+    );
   }
   if (payment.status === "expired") {
     return <Alert severity="warning">{t("byCode.payExpired")}</Alert>;
@@ -294,19 +470,7 @@ const BookingByCodePage: React.FC = () => {
             sx={{ p: { xs: 2, md: 2.5 }, borderRadius: BOOKING_RADIUS, boxShadow: BOOKING_SHADOW }}
           >
             <Stack spacing={2}>
-              <Stack spacing={0.75}>
-                <Chip
-                  size="small"
-                  label={STATUS_KEYS[booking.status] ? t(STATUS_KEYS[booking.status]) : booking.status}
-                  color={STATUS_COLOR[booking.status] ?? "default"}
-                  sx={{ alignSelf: "flex-start" }}
-                />
-                {STATUS_HINT_KEYS[booking.status] && (
-                  <Typography sx={{ fontSize: 14, lineHeight: 1.45, color: MUTED }}>
-                    {t(STATUS_HINT_KEYS[booking.status])}
-                  </Typography>
-                )}
-              </Stack>
+              <StatusCard status={booking.status} t={t} />
 
               {/* ── Онлайн-предоплата: главный экран для неоплаченной брони ── */}
               {booking.payment && (
