@@ -71,10 +71,10 @@ const STATUS_COLORS = {
 } as const;
 
 describe("акцентная палитра", () => {
-  it("24 цветных темы и 12 спокойных", () => {
+  it("24 цветных темы и 13 спокойных", () => {
     expect(TINTED_PRESETS).toHaveLength(24);
-    expect(CALM_PRESETS).toHaveLength(12);
-    expect(ACCENT_PRESETS).toHaveLength(36);
+    expect(CALM_PRESETS).toHaveLength(13);
+    expect(ACCENT_PRESETS).toHaveLength(37);
   });
 
   // Спокойные темы — замена прежнему отдельному выбору фона: их смысл в том,

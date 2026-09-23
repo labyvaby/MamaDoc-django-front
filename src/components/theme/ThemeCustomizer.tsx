@@ -33,11 +33,13 @@ import DensityLargeOutlined from "@mui/icons-material/DensityLargeOutlined";
 import ViewAgendaOutlined from "@mui/icons-material/ViewAgendaOutlined";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
+import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 
 import { ColorModeContext, type ColorScheme } from "../../contexts/color-mode";
 import {
   ACCENT_PRESETS,
   DEFAULT_ACCENT_ID,
+  REFERENCE_ACCENT_ID,
   getAccentPreset,
   type AccentPreset,
 } from "../../theme/accentPalette";
@@ -108,10 +110,12 @@ const AccentSwatch: React.FC<{
   mode: "light" | "dark";
   selected: boolean;
   onSelect: () => void;
-}> = ({ preset, mode, selected, onSelect }) => {
+  /** Метка-искра в углу — чтобы конкретный пресет (см. REFERENCE_ACCENT_ID) было видно в сетке сразу, не наводя мышь. */
+  badge?: boolean;
+}> = ({ preset, mode, selected, onSelect, badge }) => {
   const t = preset[mode];
   return (
-    <Tooltip title={preset.name}>
+    <Tooltip title={badge ? `${preset.name} — из референса «Отель»` : preset.name}>
       <Box
         component="button"
         type="button"
@@ -119,6 +123,7 @@ const AccentSwatch: React.FC<{
         aria-label={preset.name}
         aria-pressed={selected}
         sx={{
+          position: "relative",
           cursor: "pointer",
           p: "3px",
           height: 40,
@@ -136,6 +141,28 @@ const AccentSwatch: React.FC<{
           "&:active": { transform: "scale(0.94)" },
         }}
       >
+        {badge && (
+          <Box
+            sx={{
+              position: "absolute",
+              top: -6,
+              right: -6,
+              width: 16,
+              height: 16,
+              borderRadius: "50%",
+              bgcolor: "warning.main",
+              color: "warning.contrastText",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              // Обводка кружка — цветом фона попап-панели (не жёстким белым),
+              // чтобы метка не «сливалась» с соседними свотчами.
+              boxShadow: (t) => `0 0 0 2px ${t.palette.background.paper}`,
+            }}
+          >
+            <AutoAwesomeOutlined sx={{ fontSize: 10 }} />
+          </Box>
+        )}
         {/* «Карточка» на фоне страницы: в ней активный пункт и акцент. */}
         <Box
           sx={{
@@ -193,6 +220,7 @@ const AccentGrid: React.FC<{
         mode={mode}
         selected={preset.id === selected}
         onSelect={() => onSelect(preset.id)}
+        badge={preset.id === REFERENCE_ACCENT_ID}
       />
     ))}
   </Box>

@@ -17,26 +17,46 @@
  */
 import React from "react";
 import { Box, CircularProgress, Paper, Stack, Typography } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import dayjs from "dayjs";
 import { useQuery } from "@tanstack/react-query";
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 
 import { getSelectedHotelDate, subscribeSelectedHotelDate, useIsVivaActive, formatHotelDate } from "./mockDemoData";
 import { useHotelProperty } from "./useHotelProperty";
 import { getDashboard, listHousekeepingTasks } from "../api/hotel";
 
-const CardShell: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <Paper
-    elevation={0}
-    variant="outlined"
-    sx={{ p: 1.75, display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}
-  >
-    <Typography variant="subtitle2" fontWeight={600} color="text.secondary">
-      {title}
-    </Typography>
-    {children}
-  </Paper>
-);
+/**
+ * `tint` — мягкая цветная подложка карточки (по образцу пастельных KPI-карточек
+ * референс-дизайна), необязательна: не задана — карточка нейтральная, как раньше.
+ * Принимает либо готовый цвет (для «Загрузки», где цвет зависит от процента),
+ * либо ничего — тогда просто обычная белая карточка.
+ */
+const CardShell: React.FC<{ title: string; tint?: string; children: React.ReactNode }> = ({ title, tint, children }) => {
+  const theme = useTheme();
+  const dark = theme.palette.mode === "dark";
+  return (
+    <Paper
+      elevation={0}
+      variant="outlined"
+      sx={{
+        p: 1.75,
+        display: "flex",
+        flexDirection: "column",
+        gap: 1,
+        minWidth: 0,
+        ...(tint
+          ? { bgcolor: alpha(tint, dark ? 0.16 : 0.1), borderColor: alpha(tint, dark ? 0.32 : 0.18) }
+          : {}),
+      }}
+    >
+      <Typography variant="subtitle2" fontWeight={600} color="text.secondary">
+        {title}
+      </Typography>
+      {children}
+    </Paper>
+  );
+};
 
 const Dot: React.FC<{ color: string }> = ({ color }) => (
   <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: color, flexShrink: 0 }} />
@@ -123,7 +143,10 @@ export const HotelOccupancyBanner: React.FC = () => {
     ["Проверено", p.info.main, dashboard.roomState.inspected],
     ["Ремонт", p.warning.main, dashboard.roomState.repair],
   ];
-  const maxRoomStatus = Math.max(1, ...roomStatusRows.map(([, , v]) => v));
+  const roomStatusTotal = roomStatusRows.reduce((sum, [, , v]) => sum + v, 0);
+  // Донат рисуем только по ненулевым срезам — нулевой value рисует Recharts как
+  // невидимую дугу нулевой длины, но легенду справа показываем по всем строкам.
+  const roomStatusPie = roomStatusRows.filter(([, , v]) => v > 0).map(([label, color, value]) => ({ label, color, value }));
 
   return (
     <Box
@@ -134,7 +157,7 @@ export const HotelOccupancyBanner: React.FC = () => {
         flexShrink: 0,
       }}
     >
-      <CardShell title={`Загрузка на ${dateSuffix}`}>
+      <CardShell title={`Загрузка на ${dateSuffix}`} tint={occupancyColor}>
         <Stack direction="row" alignItems="center" gap={1.5}>
           <Box
             sx={{
@@ -164,7 +187,7 @@ export const HotelOccupancyBanner: React.FC = () => {
         </Stack>
       </CardShell>
 
-      <CardShell title={isToday ? "Гости сегодня" : `Гости на ${dateSuffix}`}>
+      <CardShell title={isToday ? "Гости сегодня" : `Гости на ${dateSuffix}`} tint={p.info.main}>
         <Box>
           <StatRow color={p.success.main} label="Заезды / уже заехало" value={`${dashboard.arrivals} / ${dashboard.arrived}`} />
           <StatRow color={p.error.main} label="Выезды / уже выехало" value={`${dashboard.departures} / ${dashboard.departed}`} />
@@ -174,7 +197,7 @@ export const HotelOccupancyBanner: React.FC = () => {
         </Box>
       </CardShell>
 
-      <CardShell title="Задачи уборки">
+      <CardShell title="Задачи уборки" tint={p.warning.main}>
         <Box>
           <StatRow color={p.warning.main} label="Запланировано на сегодня" value={taskBuckets.scheduledToday} />
           <StatRow color={p.error.main} label="Просрочено" value={taskBuckets.overdue} />
@@ -184,29 +207,59 @@ export const HotelOccupancyBanner: React.FC = () => {
       </CardShell>
 
       <CardShell title="Состояние номеров">
-        <Stack gap={0.875}>
-          {roomStatusRows.map(([label, color, value]) => (
-            <Box key={label}>
-              <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.375 }}>
-                <Typography variant="caption" color="text.secondary">
+        <Stack direction="row" alignItems="center" gap={1.5}>
+          {/* Донат вместо плоских полосок — по образцу карточки «Reservations» в референсе. */}
+          <Box sx={{ position: "relative", width: 84, height: 84, flexShrink: 0 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={roomStatusPie}
+                  dataKey="value"
+                  nameKey="label"
+                  innerRadius={26}
+                  outerRadius={40}
+                  paddingAngle={roomStatusPie.length > 1 ? 2 : 0}
+                  stroke="none"
+                  isAnimationActive={false}
+                >
+                  {roomStatusPie.map((slice) => (
+                    <Cell key={slice.label} fill={slice.color} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            <Box
+              sx={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                pointerEvents: "none",
+              }}
+            >
+              <Typography variant="subtitle2" fontWeight={700} sx={{ lineHeight: 1 }}>
+                {roomStatusTotal}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6rem" }}>
+                номеров
+              </Typography>
+            </Box>
+          </Box>
+          <Stack gap={0.5} sx={{ flex: 1, minWidth: 0 }}>
+            {roomStatusRows.map(([label, color, value]) => (
+              <Stack key={label} direction="row" alignItems="center" gap={0.75}>
+                <Dot color={color} />
+                <Typography variant="caption" color="text.secondary" sx={{ flex: 1, minWidth: 0 }} noWrap>
                   {label}
                 </Typography>
-                <Typography variant="caption" fontWeight={600}>
+                <Typography variant="caption" fontWeight={600} sx={{ fontVariantNumeric: "tabular-nums" }}>
                   {value}
                 </Typography>
               </Stack>
-              <Box sx={{ height: 6, borderRadius: 3, bgcolor: theme.palette.action.hover, overflow: "hidden" }}>
-                <Box
-                  sx={{
-                    height: "100%",
-                    width: `${(value / maxRoomStatus) * 100}%`,
-                    bgcolor: color,
-                    borderRadius: 3,
-                  }}
-                />
-              </Box>
-            </Box>
-          ))}
+            ))}
+          </Stack>
         </Stack>
       </CardShell>
     </Box>

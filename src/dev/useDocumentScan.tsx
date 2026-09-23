@@ -18,6 +18,7 @@
  * «заполните вручную») — в `notice`.
  */
 import React from "react";
+import { LinearProgress } from "@mui/material";
 
 import { useCan } from "../hooks/useCan";
 import { ApiError, getErrorMessage, isAbortError } from "../api/client";
@@ -99,28 +100,71 @@ function describeScanError(err: unknown): DocumentScanNotice {
   return { severity: code === "RECOGNITION_UNAVAILABLE" ? "info" : "warning", text, warnings: [] };
 }
 
+/**
+ * Ожидаемая длительность распознавания (контракт §4.4: обычно 3–8 с) — база
+ * для имитации прогресса ниже. Настоящего процента бэкенд не отдаёт: ответ
+ * приходит одним куском, поэтому полоска растёт сама по себе.
+ */
+const EXPECTED_SCAN_MS = 6000;
+/** Полоска никогда не доходит до имитируемого предела сама — только по ответу бэкенда. */
+const SCAN_PROGRESS_CEILING = 92;
+
 export function useDocumentScan() {
   const canReadDocuments = useCan("hotel.guests.documents");
   const providerDown = React.useSyncExternalStore(subscribeProviderUnavailable, getProviderUnavailableSnapshot);
   const [scanning, setScanning] = React.useState(false);
+  // Имитация прогресса: быстрый старт, плавное замедление к SCAN_PROGRESS_CEILING —
+  // «дошло» до 100% только когда реально пришёл ответ (см. finishScan ниже).
+  const [scanProgress, setScanProgress] = React.useState(0);
   const [notice, setNotice] = React.useState<DocumentScanNotice | null>(null);
+  const progressTimerRef = React.useRef<number | null>(null);
+
+  const stopProgressTimer = React.useCallback(() => {
+    if (progressTimerRef.current != null) {
+      window.clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+  }, []);
+
+  // Таймер не должен пережить размонтированную форму (закрыли дровер посреди скана).
+  React.useEffect(() => stopProgressTimer, [stopProgressTimer]);
 
   const scan = React.useCallback(async (file: File): Promise<HotelGuestDocumentScan | null> => {
     setScanning(true);
     setNotice(null);
+    setScanProgress(6); // стартовый рывок — ощущается отзывчивее, чем ровный ноль
+    const startedAt = Date.now();
+    stopProgressTimer();
+    progressTimerRef.current = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const eased = SCAN_PROGRESS_CEILING * (1 - Math.exp(-elapsed / EXPECTED_SCAN_MS));
+      setScanProgress(Math.max(6, eased));
+    }, 120);
+
+    // Полоска добегает до 100% на реальном ответе, задержка перед скрытием —
+    // чтобы «100%» было видно, а не мигало сразу тем же кадром.
+    const finishScan = (notice: DocumentScanNotice) => {
+      stopProgressTimer();
+      setScanProgress(100);
+      setNotice(notice);
+      window.setTimeout(() => setScanning(false), 350);
+    };
+
     try {
       const result = await scanGuestDocument(file);
-      setNotice(describeScan(result));
+      finishScan(describeScan(result));
       return result;
     } catch (err) {
-      if (isAbortError(err)) return null;
+      if (isAbortError(err)) {
+        stopProgressTimer();
+        setScanning(false);
+        return null;
+      }
       if (err instanceof ApiError && err.code === "RECOGNITION_UNAVAILABLE") markProviderUnavailable();
-      setNotice(describeScanError(err));
+      finishScan(describeScanError(err));
       return null;
-    } finally {
-      setScanning(false);
     }
-  }, []);
+  }, [stopProgressTimer]);
 
   const clearNotice = React.useCallback(() => setNotice(null), []);
 
@@ -128,8 +172,25 @@ export function useDocumentScan() {
     /** Есть смысл пробовать распознавание: право есть и провайдер ещё не отвечал 503. */
     available: canReadDocuments && !providerDown,
     scanning,
+    /** 0–100, имитация — см. комментарий у EXPECTED_SCAN_MS. Смысл есть, только пока scanning. */
+    scanProgress,
     notice,
     clearNotice,
     scan,
   };
 }
+
+/** Полоска прогресса распознавания — общая для AddGuestDrawer и CreateBookingButton. */
+export const ScanProgressBar: React.FC<{ value: number }> = ({ value }) => (
+  <LinearProgress
+    variant="determinate"
+    value={value}
+    aria-label="Распознаём документ"
+    sx={{
+      width: 96,
+      height: 6,
+      borderRadius: 3,
+      "& .MuiLinearProgress-bar": { borderRadius: 3, transition: "transform .15s linear" },
+    }}
+  />
+);

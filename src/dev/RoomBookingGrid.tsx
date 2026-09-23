@@ -47,10 +47,11 @@
  */
 import React from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Box, Button, CircularProgress, IconButton, Paper, Stack, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, Button, CircularProgress, ClickAwayListener, IconButton, Paper, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
+import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
 import SingleBedOutlined from "@mui/icons-material/SingleBedOutlined";
 import ChairOutlined from "@mui/icons-material/ChairOutlined";
@@ -167,12 +168,21 @@ const ROOM_CATEGORY_ICON_COMPONENTS: Record<RoomCategoryIconKey, React.ElementTy
 type RowPlan = { kind: "floor"; floor: string; count: number } | { kind: "room"; room: HotelCalendarRoom };
 
 /**
- * Карточка-рамка шахматки («доска» — заголовок «Шахматка номеров» + опциональный
- * подзаголовок с текущим месяцем) вокруг содержимого. Используется и в рабочем
- * состоянии, и в состояниях загрузки/ошибки/пусто — так рамка не «мигает» между
- * разными обёртками при смене состояния запроса.
+ * Карточка-рамка шахматки («доска» — заголовок «Шахматка номеров», справа —
+ * необязательный тулбар) вокруг содержимого. Используется и в рабочем
+ * состоянии, и в состояниях загрузки/ошибки/пусто — так рамка не «мигает»
+ * между разными обёртками при смене состояния запроса (в этих состояниях
+ * actions не передаём, и место справа от заголовка просто пустует).
+ *
+ * Раньше рядом с заголовком был подзаголовок с месяцем/годом — брался из
+ * monthSpans[0], то есть из самого ЛЕВОГО загруженного куска дат, а не из
+ * того, что видно после прокрутки: после скролла показывал не тот месяц.
+ * Корректная подпись месяца уже есть внутри самой сетки (строка над датами,
+ * едет вместе с прокруткой) — здесь её просто убрали как лишнюю и неверную.
+ * Освободившееся место справа теперь занимает тулбар (период/масштаб) — он
+ * раньше был отдельной строкой над сеткой и просто добавлял высоту.
  */
-const BoardShell: React.FC<{ subtitle?: string; children: React.ReactNode }> = ({ subtitle, children }) => (
+const BoardShell: React.FC<{ actions?: React.ReactNode; children: React.ReactNode }> = ({ actions, children }) => (
   <Paper elevation={0} variant="outlined" sx={{ borderRadius: "14px", overflow: "hidden" }}>
     <Stack
       direction="row"
@@ -185,14 +195,7 @@ const BoardShell: React.FC<{ subtitle?: string; children: React.ReactNode }> = (
       <Typography variant="subtitle1" fontWeight={700}>
         Шахматка номеров
       </Typography>
-      {subtitle && (
-        <Stack direction="row" alignItems="center" gap={0.75}>
-          <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "primary.main", flexShrink: 0 }} />
-          <Typography variant="caption" color="text.secondary">
-            {subtitle}
-          </Typography>
-        </Stack>
-      )}
+      {actions}
     </Stack>
     <Box sx={{ p: 2 }}>{children}</Box>
   </Paper>
@@ -206,6 +209,9 @@ export const RoomBookingGrid: React.FC = () => {
   );
   const [selectedRoomId, setSelectedRoomId] = React.useState<number | null>(null);
   const [selectedReservationId, setSelectedReservationId] = React.useState<number | null>(null);
+  // Подсказка по управлению (клик/протяжка/клавиатура) — по умолчанию свёрнута
+  // под иконку info: раньше текст всегда висел строкой в легенде, занимая место.
+  const [helpOpen, setHelpOpen] = React.useState(false);
   // Общий с HotelOccupancyBanner стор — клик по числу ниже сразу двигает
   // карточки «Загрузка»/«Гости» сверху страницы.
   const selectedDate = React.useSyncExternalStore(subscribeSelectedHotelDate, getSelectedHotelDate);
@@ -612,154 +618,100 @@ export const RoomBookingGrid: React.FC = () => {
 
   const totalRooms = calendar?.rooms.length ?? 0;
 
+  // Тулбар (период + масштаб + статус подгрузки) — раньше отдельной строкой
+  // НАД сеткой, съедал высоту. Теперь уходит в шапку BoardShell, в пустое
+  // место справа от «Шахматка номеров» (см. actions).
+  const toolbar = (
+    <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" useFlexGap>
+      {/* Период: пилюля с прокруткой на неделю и возвратом к сегодня — стиль тулбара макета. */}
+      <Stack direction="row" alignItems="center" sx={{ border: 1, borderColor: "divider", borderRadius: "8px" }}>
+        <IconButton size="small" onClick={() => scrollByDays(-7)} aria-label="Неделя назад">
+          <ChevronLeftOutlined fontSize="small" />
+        </IconButton>
+        <IconButton size="small" onClick={() => scrollByDays(7)} aria-label="Неделя вперёд">
+          <ChevronRightOutlined fontSize="small" />
+        </IconButton>
+        <Box
+          component="button"
+          onClick={goToToday}
+          sx={{
+            font: "inherit",
+            fontSize: "0.8rem",
+            fontWeight: 600,
+            color: "primary.main",
+            border: 0,
+            bgcolor: "transparent",
+            cursor: "pointer",
+            px: 1.25,
+          }}
+        >
+          Сегодня
+        </Box>
+      </Stack>
+
+      {/* Масштаб: та же пилюля, что была в углу над шапкой — перенесена в тулбар. */}
+      <Stack direction="row" alignItems="center" gap={0.25} sx={{ border: 1, borderColor: "divider", borderRadius: "8px", px: 0.5 }}>
+        <Tooltip title="Показывать больше дней в ширину окна (до 60)">
+          <span>
+            <IconButton
+              size="small"
+              sx={{ p: 0.25 }}
+              aria-label="Показывать больше дней в ширину окна"
+              onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))}
+              disabled={!canZoomOut}
+            >
+              <RemoveOutlined fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 34, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
+          {numVisibleDays} дн.
+        </Typography>
+        <Tooltip title="Показывать меньше дней в ширину окна (до 1 недели)">
+          <span>
+            <IconButton
+              size="small"
+              sx={{ p: 0.25 }}
+              aria-label="Показывать меньше дней в ширину окна"
+              onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
+              disabled={!canZoomIn}
+            >
+              <AddOutlined fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Stack>
+
+      {dragHint && (
+        <Typography variant="caption" color="primary.main" fontWeight={600}>
+          {dragHint}
+        </Typography>
+      )}
+      {(isFetchingNextPage || isFetchingPreviousPage) && (
+        <Stack direction="row" alignItems="center" gap={0.75}>
+          <CircularProgress size={14} />
+          <Typography variant="caption" color="text.secondary">
+            Подгружаем даты…
+          </Typography>
+        </Stack>
+      )}
+      {(isFetchNextPageError || isFetchPreviousPageError) && (
+        <Stack direction="row" alignItems="center" gap={0.75}>
+          <Typography variant="caption" color="warning.main">
+            Не удалось подгрузить {isFetchNextPageError ? "следующие" : "предыдущие"} даты
+          </Typography>
+          <Button size="small" onClick={() => void (isFetchNextPageError ? fetchNextPage() : fetchPreviousPage())}>
+            Повторить
+          </Button>
+        </Stack>
+      )}
+    </Stack>
+  );
+
   return (
     <Box sx={{ flexShrink: 0 }}>
-      <BoardShell subtitle={monthSpans[0]?.label}>
+      <BoardShell actions={toolbar}>
         <Stack gap={1.5}>
-          <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" useFlexGap>
-            {/* Период: пилюля с прокруткой на неделю и возвратом к сегодня — стиль тулбара макета. */}
-            <Stack direction="row" alignItems="center" sx={{ border: 1, borderColor: "divider", borderRadius: "8px" }}>
-              <IconButton size="small" onClick={() => scrollByDays(-7)} aria-label="Неделя назад">
-                <ChevronLeftOutlined fontSize="small" />
-              </IconButton>
-              <IconButton size="small" onClick={() => scrollByDays(7)} aria-label="Неделя вперёд">
-                <ChevronRightOutlined fontSize="small" />
-              </IconButton>
-              <Box
-                component="button"
-                onClick={goToToday}
-                sx={{
-                  font: "inherit",
-                  fontSize: "0.8rem",
-                  fontWeight: 600,
-                  color: "primary.main",
-                  border: 0,
-                  bgcolor: "transparent",
-                  cursor: "pointer",
-                  px: 1.25,
-                }}
-              >
-                Сегодня
-              </Box>
-            </Stack>
-
-            {/* Масштаб: та же пилюля, что была в углу над шапкой — перенесена в тулбар. */}
-            <Stack direction="row" alignItems="center" gap={0.25} sx={{ border: 1, borderColor: "divider", borderRadius: "8px", px: 0.5 }}>
-              <Tooltip title="Показывать больше дней в ширину окна (до 60)">
-                <span>
-                  <IconButton
-                    size="small"
-                    sx={{ p: 0.25 }}
-                    aria-label="Показывать больше дней в ширину окна"
-                    onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))}
-                    disabled={!canZoomOut}
-                  >
-                    <RemoveOutlined fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 34, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
-                {numVisibleDays} дн.
-              </Typography>
-              <Tooltip title="Показывать меньше дней в ширину окна (до 1 недели)">
-                <span>
-                  <IconButton
-                    size="small"
-                    sx={{ p: 0.25 }}
-                    aria-label="Показывать меньше дней в ширину окна"
-                    onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
-                    disabled={!canZoomIn}
-                  >
-                    <AddOutlined fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </Stack>
-
-            {dragHint && (
-              <Typography variant="caption" color="primary.main" fontWeight={600}>
-                {dragHint}
-              </Typography>
-            )}
-            {(isFetchingNextPage || isFetchingPreviousPage) && (
-              <Stack direction="row" alignItems="center" gap={0.75} sx={{ ml: "auto" }}>
-                <CircularProgress size={14} />
-                <Typography variant="caption" color="text.secondary">
-                  Подгружаем даты…
-                </Typography>
-              </Stack>
-            )}
-            {(isFetchNextPageError || isFetchPreviousPageError) && (
-              <Stack direction="row" alignItems="center" gap={0.75} sx={{ ml: "auto" }}>
-                <Typography variant="caption" color="warning.main">
-                  Не удалось подгрузить {isFetchNextPageError ? "следующие" : "предыдущие"} даты
-                </Typography>
-                <Button size="small" onClick={() => void (isFetchNextPageError ? fetchNextPage() : fetchPreviousPage())}>
-                  Повторить
-                </Button>
-              </Stack>
-            )}
-          </Stack>
-
-          {/* Легенда — над сеткой, как в макете (была под ней). */}
-          <Stack direction="row" gap={2} rowGap={0.5} flexWrap="wrap" alignItems="center">
-            {HOTEL_STAY_STATUSES.map((status) => {
-              const color = hotelStayStatusColor(status, theme);
-              return (
-                <Stack key={status} direction="row" alignItems="center" gap={0.5}>
-                  {/* Образец бара — та же заливка и левый акцент, что у брони этого статуса (иконок на барах нет). */}
-                  <Box
-                    sx={{
-                      width: 16,
-                      height: 10,
-                      borderRadius: "3px",
-                      bgcolor: alpha(color, barFillAlpha(status, theme.palette.mode === "dark")),
-                      borderLeft: "3px solid",
-                      borderLeftColor: color,
-                    }}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    {HOTEL_STAY_STATUS_LABELS[status]}
-                  </Typography>
-                </Stack>
-              );
-            })}
-            <Stack direction="row" alignItems="center" gap={0.5}>
-              {/* Овербукинг — тоже образец бара, только оранжевый. */}
-              <Box
-                sx={{
-                  width: 16,
-                  height: 10,
-                  borderRadius: "3px",
-                  bgcolor: alpha(theme.palette.warning.main, barFillAlpha("confirmed", theme.palette.mode === "dark")),
-                  borderLeft: "3px solid",
-                  borderLeftColor: "warning.main",
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                Овербукинг
-              </Typography>
-            </Stack>
-            {/* Точка у номера — состояние уборки; четыре цвета, «Ремонт» серый (оранжевый — овербукинг). */}
-            <Stack direction="row" alignItems="center" gap={1.25} flexWrap="wrap">
-              <Typography variant="caption" color="text.secondary">
-                Точка у номера:
-              </Typography>
-              {HOTEL_ROOM_STATES.map((state) => (
-                <Stack key={state} direction="row" alignItems="center" gap={0.5}>
-                  <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: hotelRoomStateColor(state, theme) }} />
-                  <Typography variant="caption" color="text.secondary">
-                    {HOTEL_ROOM_STATE_LABELS[state]}
-                  </Typography>
-                </Stack>
-              ))}
-            </Stack>
-            <Typography variant="caption" color="text.secondary" sx={{ ml: "auto" }}>
-              Клик по свободной ячейке — одна ночь, зажмите и протяните — несколько. С клавиатуры: Tab к ячейке,
-              стрелки — между ячейками, Enter — одна ночь.
-            </Typography>
-          </Stack>
-
           <Box
             ref={setScrollEl}
             onScroll={handleScroll}
@@ -961,17 +913,15 @@ export const RoomBookingGrid: React.FC = () => {
                           bgcolor: floorTint,
                           borderBottom: 1,
                           borderColor: "divider",
-                          height: 30,
+                          height: 34,
                         }}
                       />
                       <Box
                         sx={{
                           gridRow,
                           gridColumn: 1,
-                          // «1 этаж» + «3 номера» вместе шире узкой колонки номеров (92px, специально
-                          // сужена по прошлой просьбе). Не сжимаем текст в ней, а даём подписи выйти за
-                          // трек: у строки этажа справа всё равно только фон того же цвета (заливка
-                          // выше, gridColumn:1/-1) — заехать на него нечем и незачем клипать.
+                          // «1 этаж» и «3 номера» — в два ряда (номер под этажом), а не в одну строку:
+                          // так подпись строки этажа не спорит по ширине с узкой колонкой номеров (92px).
                           width: "max-content",
                           position: "sticky",
                           left: 0,
@@ -979,9 +929,9 @@ export const RoomBookingGrid: React.FC = () => {
                           bgcolor: floorTint,
                           px: 1.5,
                           display: "flex",
-                          alignItems: "baseline",
-                          gap: 1,
-                          height: 30,
+                          flexDirection: "column",
+                          justifyContent: "center",
+                          height: 34,
                         }}
                       >
                         <Typography
@@ -989,11 +939,11 @@ export const RoomBookingGrid: React.FC = () => {
                           fontWeight={700}
                           color="text.secondary"
                           noWrap
-                          sx={{ textTransform: "uppercase", letterSpacing: "0.04em" }}
+                          sx={{ textTransform: "uppercase", letterSpacing: "0.04em", lineHeight: 1.25 }}
                         >
                           {floorGroupLabel(row.floor)}
                         </Typography>
-                        <Typography variant="caption" color="text.disabled" noWrap>
+                        <Typography variant="caption" color="text.disabled" noWrap sx={{ lineHeight: 1.25, fontSize: "0.68rem" }}>
                           {row.count} {pluralRooms(row.count)}
                         </Typography>
                       </Box>
@@ -1220,6 +1170,36 @@ export const RoomBookingGrid: React.FC = () => {
                 });
               })}
 
+              {/* Граница между месяцами — серая вертикальная линия по левому краю первого дня
+                  месяца, во всю высоту строк (без шапки: там смену месяца и так видно по подписи).
+                  Раньше её не было вовсе, и на глаз было не понять, где кончается один месяц и
+                  начинается следующий. Тем же приёмом, что и красная линия «сейчас» ниже — отдельный
+                  элемент на всю колонку, pointerEvents: none, чтобы не мешать клику/протяжке. */}
+              {ROWS.length > 0 &&
+                monthSpans.slice(1).map((m) => (
+                  <Box
+                    key={`month-divider-${m.startCol}`}
+                    aria-hidden
+                    sx={{
+                      gridColumn: m.startCol + 2,
+                      gridRow: `3 / ${ROWS.length + 3}`,
+                      position: "relative",
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        position: "absolute",
+                        top: 0,
+                        bottom: 0,
+                        left: 0,
+                        width: "1px",
+                        bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === "dark" ? 0.18 : 0.14),
+                      }}
+                    />
+                  </Box>
+                ))}
+
               {/* Красная линия «сейчас»: один элемент на все строки колонки сегодняшнего дня, после
                   баров в DOM — значит поверх них и поверх полос этажей (не рвётся). Ниже sticky-
                   шапки и колонки номеров по z-index, а pointerEvents: none пропускает клики и
@@ -1250,16 +1230,95 @@ export const RoomBookingGrid: React.FC = () => {
             </Box>
           </Box>
 
-          {/* Подвал — как в макете: сколько номеров показано и часы заезда/выезда объекта. */}
-          <Stack direction="row" justifyContent="space-between" flexWrap="wrap" gap={1}>
-            <Typography variant="caption" color="text.secondary">
-              Показано {totalRooms} {pluralRooms(totalRooms)}
-            </Typography>
-            {property.checkInTime && property.checkOutTime && (
+          {/* Подвал — легенда состояний и статусов + сколько номеров показано и часы
+              заезда/выезда объекта. Легенда раньше висела отдельной строкой над сеткой и
+              занимала место в шапке — перенесена сюда, чтобы верх шахматки был компактнее. */}
+          <Stack gap={1}>
+            <Stack direction="row" gap={2} rowGap={0.5} flexWrap="wrap" alignItems="center">
+              {HOTEL_STAY_STATUSES.map((status) => {
+                const color = hotelStayStatusColor(status, theme);
+                return (
+                  <Stack key={status} direction="row" alignItems="center" gap={0.5}>
+                    {/* Образец бара — та же заливка и левый акцент, что у брони этого статуса (иконок на барах нет). */}
+                    <Box
+                      sx={{
+                        width: 16,
+                        height: 10,
+                        borderRadius: "3px",
+                        bgcolor: alpha(color, barFillAlpha(status, theme.palette.mode === "dark")),
+                        borderLeft: "3px solid",
+                        borderLeftColor: color,
+                      }}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      {HOTEL_STAY_STATUS_LABELS[status]}
+                    </Typography>
+                  </Stack>
+                );
+              })}
+              <Stack direction="row" alignItems="center" gap={0.5}>
+                {/* Овербукинг — тоже образец бара, только оранжевый. */}
+                <Box
+                  sx={{
+                    width: 16,
+                    height: 10,
+                    borderRadius: "3px",
+                    bgcolor: alpha(theme.palette.warning.main, barFillAlpha("confirmed", theme.palette.mode === "dark")),
+                    borderLeft: "3px solid",
+                    borderLeftColor: "warning.main",
+                  }}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  Овербукинг
+                </Typography>
+              </Stack>
+              {/* Точка у номера — состояние уборки; четыре цвета, «Ремонт» серый (оранжевый — овербукинг). */}
+              <Stack direction="row" alignItems="center" gap={1.25} flexWrap="wrap">
+                <Typography variant="caption" color="text.secondary">
+                  Точка у номера:
+                </Typography>
+                {HOTEL_ROOM_STATES.map((state) => (
+                  <Stack key={state} direction="row" alignItems="center" gap={0.5}>
+                    <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: hotelRoomStateColor(state, theme) }} />
+                    <Typography variant="caption" color="text.secondary">
+                      {HOTEL_ROOM_STATE_LABELS[state]}
+                    </Typography>
+                  </Stack>
+                ))}
+              </Stack>
+              {/* Подсказка по управлению — свёрнута под иконку, раскрывается по клику (не по наведению). */}
+              <ClickAwayListener onClickAway={() => setHelpOpen(false)}>
+                <Tooltip
+                  title="Клик по свободной ячейке — одна ночь, зажмите и протяните — несколько. С клавиатуры: Tab к ячейке, стрелки — между ячейками, Enter — одна ночь."
+                  open={helpOpen}
+                  onClose={() => setHelpOpen(false)}
+                  disableFocusListener
+                  disableHoverListener
+                  disableTouchListener
+                  placement="bottom-end"
+                >
+                  <IconButton
+                    size="small"
+                    onClick={() => setHelpOpen((o) => !o)}
+                    aria-label="Подсказка по управлению шахматкой"
+                    sx={{ ml: "auto" }}
+                  >
+                    <InfoOutlined fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </ClickAwayListener>
+            </Stack>
+
+            <Stack direction="row" justifyContent="space-between" flexWrap="wrap" gap={1}>
               <Typography variant="caption" color="text.secondary">
-                Заезд с {formatHotelTime(property.checkInTime)} · Выезд до {formatHotelTime(property.checkOutTime)}
+                Показано {totalRooms} {pluralRooms(totalRooms)}
               </Typography>
-            )}
+              {property.checkInTime && property.checkOutTime && (
+                <Typography variant="caption" color="text.secondary">
+                  Заезд с {formatHotelTime(property.checkInTime)} · Выезд до {formatHotelTime(property.checkOutTime)}
+                </Typography>
+              )}
+            </Stack>
           </Stack>
         </Stack>
       </BoardShell>
