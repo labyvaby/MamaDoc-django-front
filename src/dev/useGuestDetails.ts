@@ -21,12 +21,16 @@ import {
   type HotelReservation,
 } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
+import { CASHLESS_METHODS_ENABLED } from "../api/cashlessMethods";
+import { useCashlessMethods } from "../hooks/useCashlessMethods";
 
 export interface PaymentEditState {
   reservation: HotelReservation;
   method: string;
   amount: string;
   note: string;
+  /** Способ безнала — актуален, только пока method не "cash" (см. GuestPaymentDialog). */
+  cashlessMethodId: number | "";
 }
 
 export function useGuestDetails(clientId: number | null) {
@@ -61,6 +65,7 @@ export function useGuestDetails(clientId: number | null) {
   const paymentMethods = catalogsQuery.data?.paymentMethods ?? [];
 
   const [paymentEdit, setPaymentEdit] = React.useState<PaymentEditState | null>(null);
+  const cashlessState = useCashlessMethods(paymentEdit != null, { branchId: property?.branchId ?? null });
   const [paymentError, setPaymentError] = React.useState<string | null>(null);
   const [savingPayment, setSavingPayment] = React.useState(false);
   const [blacklistReasonDraft, setBlacklistReasonDraft] = React.useState("");
@@ -72,7 +77,7 @@ export function useGuestDetails(clientId: number | null) {
     // доплата при заезде обычно закрывают именно недостающую часть, не всю
     // сумму заново (hotel-viva-frontend-api.md §4.5).
     const suggested = Number(reservation.balanceDue) > 0 ? reservation.balanceDue : reservation.totalAmount;
-    setPaymentEdit({ reservation, method: "cash", amount: suggested, note: "" });
+    setPaymentEdit({ reservation, method: "cash", amount: suggested, note: "", cashlessMethodId: "" });
   };
 
   const invalidateGuest = () => {
@@ -95,6 +100,10 @@ export function useGuestDetails(clientId: number | null) {
         method: paymentEdit.method,
         amount: String(amount),
         note: paymentEdit.note.trim() || undefined,
+        cashlessMethodId:
+          CASHLESS_METHODS_ENABLED && paymentEdit.method !== "cash" && paymentEdit.cashlessMethodId !== ""
+            ? paymentEdit.cashlessMethodId
+            : undefined,
       });
       setPaymentEdit(null);
       invalidateGuest();
@@ -136,6 +145,7 @@ export function useGuestDetails(clientId: number | null) {
     reservations,
     reservationsLoading: reservationsQuery.isLoading,
     paymentMethods,
+    cashlessState,
     paymentEdit,
     setPaymentEdit,
     openPaymentEdit,
