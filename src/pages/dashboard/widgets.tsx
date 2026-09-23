@@ -5,13 +5,6 @@ import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { Link as RouterLink } from "react-router";
 
-import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
-import StarBorderOutlined from "@mui/icons-material/StarBorderOutlined";
-import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
-import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
-import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
-import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
-
 import { AppButton } from "../../components/ui";
 import type { CashboxSummary } from "../../api/cashbox";
 import { formatKGS } from "../../utility/format";
@@ -21,22 +14,24 @@ import { useCanChecker } from "../../hooks/useCan";
 import { DeltaChip, MetricTile } from "./MetricTile";
 import { DashCard, WidgetError, type WidgetProps } from "./widgetKit";
 import { delta, num } from "./widgetUtils";
-import { previousRange, sumDayCounts, toDailySeries } from "./period";
-import {
-  cashboxSummaryQuery,
-  dayCountsQuery,
-  dealsSummaryQuery,
-  monthlyReportQuery,
-  reviewStatsQuery,
-  tasksSummaryQuery,
-} from "./queries";
+import { previousRange, sumDayCounts, toDailySeries, type PeriodRange } from "./period";
+import { cashboxSummaryQuery, dayCountsQuery, monthlyReportQuery } from "./queries";
 
 // ── Записи ────────────────────────────────────────────────────────────────────
+
+/** Окно графика на «Сегодня»: один столбик ничего не говорит, нужен фон. */
+const TODAY_CHART_DAYS = 14;
 
 /**
  * Записи за период по дням. Источник — `/appointments/day-counts/`: он отдаёт
  * ровно карту «дата → количество», поэтому окно любой длины стоит один запрос,
  * а не выгрузку самих приёмов (месяц списком — около 3 МБ).
+ *
+ * График зависит от периода:
+ * - «Сегодня» — последние 14 дней с выделенным сегодня (число — за сегодня);
+ * - «Неделя» — 7 дней периода с днём недели в подписи;
+ * - «Месяц» — дни с 1-го по сегодня, подписи через день, без чисел над
+ *   столбиками (на 30 столбиках они слипаются).
  *
  * ⚠ Считаются ВСЕ записи периода, независимо от статуса и вида: приёмы и
  * процедуры здесь вместе. Разделение даёт месячный отчёт (виджет «Месяц»).
@@ -47,90 +42,182 @@ export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, sc
   // «главную по правам» (resolveHomeRoute) здесь брать нельзя — она может
   // вернуть /cleaning или /profile. Нет ни одного из трёх прав — без перехода.
   const { can } = useCanChecker();
-  const workspacePath = can(PAGE_PERMISSIONS.appointmentsRegistry)
-    ? "/appointments"
+  const workspace = can(PAGE_PERMISSIONS.appointmentsRegistry)
+    ? { href: "/appointments", label: "Регистратура" }
     : can(PAGE_PERMISSIONS.doctorRoom)
-    ? "/doctor"
-    : can(PAGE_PERMISSIONS.nurseRoom)
-    ? "/nurse"
-    : undefined;
+      ? { href: "/doctor", label: "Кабинет врача" }
+      : can(PAGE_PERMISSIONS.nurseRoom)
+        ? { href: "/nurse", label: "Процедурный" }
+        : undefined;
+
+  const chartRange = React.useMemo<PeriodRange>(
+    () =>
+      periodKey === "today"
+        ? {
+            ...range,
+            dateFrom: dayjs(range.dateTo)
+              .subtract(TODAY_CHART_DAYS - 1, "day")
+              .format("YYYY-MM-DD"),
+          }
+        : range,
+    [range, periodKey],
+  );
 
   const query = useQuery(dayCountsQuery(scope, range));
   const prevQuery = useQuery(dayCountsQuery(scope, prev));
+  // На «Неделе» и «Месяце» окно графика совпадает с периодом — тот же запрос.
+  const chartQuery = useQuery(dayCountsQuery(scope, chartRange));
 
   const total = sumDayCounts(query.data);
   const prevTotal = prevQuery.data ? sumDayCounts(prevQuery.data) : undefined;
-  const series = toDailySeries(query.data, range);
-  const peak = series.reduce((max, d) => Math.max(max, d.count), 0);
-  const busiest = series.find((d) => d.count === peak && peak > 0);
-  const perDay = series.length ? Math.round((total / series.length) * 10) / 10 : 0;
+  const periodSeries = toDailySeries(query.data, range);
+  const series = toDailySeries(chartQuery.data, chartRange);
+  const peak = periodSeries.reduce((max, d) => Math.max(max, d.count), 0);
+  const busiest = periodSeries.find((d) => d.count === peak && peak > 0);
+  const perDay = periodSeries.length ? Math.round((total / periodSeries.length) * 10) / 10 : 0;
+  const chartMax = series.reduce((max, d) => Math.max(max, d.count), 0);
+
+  const hint =
+    periodKey === "today"
+      ? "приёмы и процедуры, все статусы"
+      : `≈ ${perDay.toLocaleString("ru-RU")} в день${busiest ? ` · пик ${peak} — ${dayjs(busiest.date).format(periodKey === "week" ? "dd" : "D MMM")}` : ""}`;
+
+  const barLabel = (date: string, index: number) => {
+    const day = dayjs(date);
+    if (date === range.dateTo && periodKey === "today") return "сегодня";
+    if (periodKey === "week") return day.format("dd D");
+    if (periodKey === "month") return index % 2 === 0 ? day.format("D") : "";
+    return day.format("D");
+  };
 
   return (
-    <DashCard title="Записи" subheader={range.label} href={workspacePath}>
+    <DashCard
+      title="Записи"
+      subheader={periodKey === "today" ? `последние ${TODAY_CHART_DAYS} дней` : range.label}
+      href={workspace?.href}
+      linkLabel={workspace?.label}
+    >
       {query.isError ? (
         <WidgetError error={query.error} />
       ) : (
-        <Stack spacing={1.5}>
-          <Stack direction="row" alignItems="center" spacing={1} sx={{ flexWrap: "wrap" }}>
+        <Stack spacing={1.75} sx={{ height: "100%" }}>
+          <Stack direction="row" alignItems="center" spacing={1.25} sx={{ flexWrap: "wrap" }}>
             {query.isLoading ? (
-              <Skeleton variant="text" width={80} height={36} />
+              <Skeleton variant="text" width={80} height={38} />
             ) : (
-              <Typography sx={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em" }}>
+              <Typography
+                sx={{
+                  fontSize: 28,
+                  fontWeight: 700,
+                  letterSpacing: "-0.02em",
+                  lineHeight: 1.15,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
                 {total}
               </Typography>
             )}
             {prevTotal !== undefined && !query.isLoading && (
-              <DeltaChip delta={{ current: total, previous: prevTotal, baselineLabel: prev.label }} />
+              <DeltaChip
+                size="md"
+                delta={{ current: total, previous: prevTotal, baselineLabel: prev.label }}
+              />
             )}
-            <Typography variant="caption" sx={{ color: "text.secondary", ml: "auto !important" }}>
-              {series.length > 1 ? `≈ ${perDay} в день` : "приёмы и процедуры"}
-              {busiest && series.length > 1
-                ? ` · пик ${peak} — ${dayjs(busiest.date).format("D MMM")}`
-                : ""}
-            </Typography>
+            <Box sx={{ flex: 1 }} />
+            <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{hint}</Typography>
           </Stack>
 
-          {/* Столбики по дням от пика периода. Выходные приглушены, пик выделен,
-              клик — в регистратуру на этот день. */}
-          {series.length > 1 && !query.isLoading && (
-            <Box sx={{ display: "flex", alignItems: "flex-end", gap: "2px", height: 64 }}>
-              {series.map((d) => {
-                const day = dayjs(d.date);
-                const isWeekend = day.day() === 0 || day.day() === 6;
-                const isPeak = peak > 0 && d.count === peak;
-                return (
-                  <Tooltip
-                    key={d.date}
-                    arrow
-                    placement="top"
-                    title={`${day.format("dd, D MMMM")} — ${d.count}`}
-                  >
-                    <Box
-                      component={RouterLink}
-                      to={`/appointments?date=${d.date}`}
-                      sx={(t) => {
-                        const dark = t.palette.mode === "dark";
-                        return {
-                          display: "block",
+          {chartQuery.isLoading ? (
+            <Skeleton variant="rounded" height={110} sx={{ borderRadius: "10px" }} />
+          ) : (
+            series.length > 1 && (
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "flex-end",
+                  gap: periodKey === "month" ? "3px" : "4px",
+                  flex: 1,
+                  minHeight: 110,
+                }}
+              >
+                {series.map((d, i) => {
+                  const day = dayjs(d.date);
+                  const isWeekend = day.day() === 0 || day.day() === 6;
+                  const isToday = d.date === range.dateTo;
+                  const label = barLabel(d.date, i);
+                  return (
+                    <Tooltip
+                      key={d.date}
+                      arrow
+                      placement="top"
+                      title={`${day.format("dd, D MMMM")} — ${d.count}`}
+                    >
+                      <Box
+                        component={RouterLink}
+                        to={`/appointments?date=${d.date}`}
+                        sx={{
                           flex: 1,
-                          minWidth: 3,
-                          height: `${peak ? Math.max(5, (d.count / peak) * 100) : 5}%`,
-                          borderRadius: "4px 4px 1px 1px",
-                          transition: "background-color .15s ease",
-                          bgcolor: !d.count
-                            ? subtleBg(t, true)
-                            : alpha(
-                                t.palette.primary.main,
-                                isPeak ? (dark ? 0.9 : 0.75) : isWeekend ? (dark ? 0.3 : 0.2) : dark ? 0.55 : 0.4,
-                              ),
-                          "&:hover": { bgcolor: t.palette.primary.main },
-                        };
-                      }}
-                    />
-                  </Tooltip>
-                );
-              })}
-            </Box>
+                          minWidth: 0,
+                          height: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "flex-end",
+                          gap: "5px",
+                          textDecoration: "none",
+                          "&:hover .appt-bar": { opacity: 0.8 },
+                        }}
+                      >
+                        {periodKey !== "month" && (
+                          <Typography
+                            sx={{
+                              fontSize: "0.6875rem",
+                              fontWeight: 600,
+                              color: "text.secondary",
+                              fontVariantNumeric: "tabular-nums",
+                            }}
+                          >
+                            {d.count}
+                          </Typography>
+                        )}
+                        <Box
+                          className="appt-bar"
+                          sx={(t) => {
+                            const dark = t.palette.mode === "dark";
+                            return {
+                              width: "100%",
+                              height: chartMax ? Math.max(4, (d.count / chartMax) * 72) : 4,
+                              borderRadius: "4px 4px 1px 1px",
+                              transition: "opacity .15s ease",
+                              bgcolor: isToday
+                                ? t.palette.primary.main
+                                : d.count === 0
+                                  ? subtleBg(t, true)
+                                  : alpha(
+                                      t.palette.primary.main,
+                                      isWeekend ? (dark ? 0.3 : 0.18) : dark ? 0.6 : 0.38,
+                                    ),
+                            };
+                          }}
+                        />
+                        <Typography
+                          sx={{
+                            fontSize: "0.6875rem",
+                            lineHeight: 1.2,
+                            minHeight: "1.2em",
+                            whiteSpace: "nowrap",
+                            fontWeight: isToday ? 700 : 400,
+                            color: isToday ? "primary.onSurface" : "text.secondary",
+                          }}
+                        >
+                          {label}
+                        </Typography>
+                      </Box>
+                    </Tooltip>
+                  );
+                })}
+              </Box>
+            )
           )}
         </Stack>
       )}
@@ -144,41 +231,27 @@ export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, sc
 const FlowRow: React.FC<{
   label: string;
   amount: number;
-  sign: "+" | "−" | "=";
+  sign: "+" | "−";
   hint?: string;
-  share?: number;
-  total?: boolean;
-  tone?: "error" | "success";
-}> = ({ label, amount, sign, hint, share, total = false, tone }) => (
-  <Stack
-    direction="row"
-    alignItems="center"
-    spacing={1}
+  /** Доля от самой крупной строки, 0..1. */
+  share: number;
+}> = ({ label, amount, sign, hint, share }) => (
+  <Box
     sx={{
-      py: total ? 1 : 0.625,
-      borderTop: total ? 1 : 0,
-      borderColor: "divider",
-      mt: total ? 0.5 : 0,
+      display: "grid",
+      gridTemplateColumns: "16px minmax(0,1fr) auto",
+      alignItems: "center",
+      columnGap: 1.25,
+      py: 0.75,
     }}
   >
     <Typography
-      sx={{
-        width: 14,
-        flexShrink: 0,
-        color: "text.disabled",
-        fontWeight: 600,
-        fontSize: "0.85rem",
-        textAlign: "center",
-      }}
+      sx={{ fontSize: "0.875rem", fontWeight: 600, color: "text.disabled", textAlign: "center" }}
     >
       {sign}
     </Typography>
-    <Box sx={{ flex: 1, minWidth: 0 }}>
-      <Typography
-        variant="body2"
-        sx={{ fontWeight: total ? 650 : 400, color: total ? "text.primary" : "text.secondary" }}
-        noWrap
-      >
+    <Box sx={{ minWidth: 0 }}>
+      <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }} noWrap>
         {label}
         {hint && (
           <Box component="span" sx={{ color: "text.disabled", ml: 0.75, fontSize: "0.75rem" }}>
@@ -186,67 +259,43 @@ const FlowRow: React.FC<{
           </Box>
         )}
       </Typography>
-      {share != null && share > 0 && (
+      <Box
+        sx={(t) => ({
+          mt: 0.5,
+          height: 4,
+          borderRadius: "2px",
+          bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.12 : 0.07),
+        })}
+      >
         <Box
           sx={(t) => ({
-            mt: 0.375,
-            height: 3,
-            borderRadius: "3px",
+            height: "100%",
+            borderRadius: "2px",
             width: `${Math.min(100, Math.max(2, share * 100))}%`,
-            bgcolor: alpha(
-              sign === "−" ? t.palette.text.secondary : t.palette.primary.main,
-              t.palette.mode === "dark" ? 0.45 : 0.3,
-            ),
+            // Приход — акцентом, расход — нейтральным: расход не «плохой
+            // цвет», это просто другая сторона движения.
+            bgcolor:
+              sign === "−"
+                ? alpha(t.palette.text.primary, 0.28)
+                : alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.7 : 0.5),
           })}
         />
-      )}
+      </Box>
     </Box>
     <Typography
       sx={{
-        fontWeight: total ? 700 : 600,
-        fontSize: total ? "1.05rem" : "0.875rem",
+        minWidth: 110,
+        textAlign: "right",
+        fontSize: "0.875rem",
+        fontWeight: 600,
         fontVariantNumeric: "tabular-nums",
-        color: tone ? `${tone}.main` : "text.primary",
         whiteSpace: "nowrap",
       }}
     >
       {formatKGS(amount)}
     </Typography>
-  </Stack>
+  </Box>
 );
-
-/** Доля наличных и безнала одной полосой — структура прихода без круговых диаграмм. */
-const PaymentMix: React.FC<{ cash: number; card: number }> = ({ cash, card }) => {
-  const total = cash + card;
-  if (total <= 0) return null;
-  const cashShare = Math.round((cash / total) * 100);
-
-  return (
-    <Box>
-      <Box sx={{ display: "flex", height: 6, borderRadius: "6px", overflow: "hidden", gap: "2px" }}>
-        <Tooltip title={`Наличные — ${formatKGS(cash)}`} arrow>
-          <Box
-            sx={(t) => ({
-              width: `${cashShare}%`,
-              bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.85 : 0.65),
-            })}
-          />
-        </Tooltip>
-        <Tooltip title={`Безнал — ${formatKGS(card)}`} arrow>
-          <Box
-            sx={(t) => ({
-              flex: 1,
-              bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.32 : 0.22),
-            })}
-          />
-        </Tooltip>
-      </Box>
-      <Typography variant="caption" sx={{ color: "text.secondary" }}>
-        наличные {cashShare}% · безнал {100 - cashShare}%
-      </Typography>
-    </Box>
-  );
-};
 
 /** Откуда ушли возвраты: «нал 1 000 с · безнал 300 с» — нулевые источники не пишем. */
 function refundSourcesHint(s: CashboxSummary): string | undefined {
@@ -271,13 +320,9 @@ function refundSourcesHint(s: CashboxSummary): string | undefined {
  * Все суммы приходят строками-decimal — считаем через Number. Страховое
  * покрытие в gross/net НЕ входит и показано отдельной подписью.
  */
-export const MoneyWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) => {
-  const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
+export const MoneyWidget: React.FC<WidgetProps> = ({ range, scope }) => {
   const query = useQuery(cashboxSummaryQuery(scope, range));
-  const prevQuery = useQuery(cashboxSummaryQuery(scope, prev));
-
   const s = query.data;
-  const p = prevQuery.data;
 
   const gross = num(s?.grossIncome);
   const refunds = num(s?.refundedTotal);
@@ -288,29 +333,23 @@ export const MoneyWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
   // Полосы — от самой крупной строки, чтобы пропорции читались глазом.
   const scale = Math.max(gross, sales, expenses, supply, refunds, 1);
 
+  const cash = num(s?.cashIncome);
+  const card = num(s?.cardIncome);
+  const cashShare = cash + card > 0 ? Math.round((cash / (cash + card)) * 100) : null;
+  const insurance = num(s?.insuranceIncome);
+
   return (
-    <DashCard
-      title="Движение денег"
-      subheader={range.label}
-      href="/cashbox"
-      action={
-        p && s ? (
-          <DeltaChip
-            delta={{ current: flow, previous: num(p.netCashFlow), baselineLabel: prev.label }}
-          />
-        ) : undefined
-      }
-    >
+    <DashCard title="Движение денег" subheader={range.label} href="/cashbox" linkLabel="Касса">
       {query.isError ? (
         <WidgetError error={query.error} />
       ) : query.isLoading || !s ? (
         <Stack spacing={1}>
           {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} variant="text" height={26} />
+            <Skeleton key={i} variant="text" height={28} />
           ))}
         </Stack>
       ) : (
-        <Stack spacing={1.25}>
+        <Stack spacing={1.5}>
           <Box>
             <FlowRow
               sign="+"
@@ -347,19 +386,78 @@ export const MoneyWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
             {supply > 0 && (
               <FlowRow sign="−" label="Закупки" amount={supply} share={supply / scale} />
             )}
-            <FlowRow
-              sign="="
-              label="Осталось"
-              amount={flow}
-              total
-              tone={flow < 0 ? "error" : undefined}
-            />
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: "16px minmax(0,1fr) auto",
+                alignItems: "center",
+                columnGap: 1.25,
+                pt: 1.25,
+                mt: 0.5,
+                borderTop: 1,
+                borderColor: "divider",
+              }}
+            >
+              <Typography
+                sx={{
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  color: "text.disabled",
+                  textAlign: "center",
+                }}
+              >
+                =
+              </Typography>
+              <Typography sx={{ fontSize: "0.875rem", fontWeight: 650 }}>Осталось</Typography>
+              <Typography
+                sx={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  textAlign: "right",
+                  fontVariantNumeric: "tabular-nums",
+                  color: flow < 0 ? "error.onSurface" : "text.primary",
+                }}
+              >
+                {formatKGS(flow)}
+              </Typography>
+            </Box>
           </Box>
-          <PaymentMix cash={num(s.cashIncome)} card={num(s.cardIncome)} />
-          {num(s.insuranceIncome) > 0 && (
-            <Typography variant="caption" sx={{ color: "text.secondary" }}>
-              страховые {formatKGS(num(s.insuranceIncome))} — вне итогов
-            </Typography>
+
+          {(cashShare != null || insurance > 0) && (
+            <Stack spacing={0.75}>
+              {cashShare != null && (
+                <Box sx={{ display: "flex", height: 6, gap: "2px", borderRadius: "3px", overflow: "hidden" }}>
+                  <Tooltip title={`Наличные — ${formatKGS(cash)}`} arrow>
+                    <Box
+                      sx={(t) => ({
+                        width: `${cashShare}%`,
+                        bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.85 : 0.7),
+                      })}
+                    />
+                  </Tooltip>
+                  <Tooltip title={`Безнал — ${formatKGS(card)}`} arrow>
+                    <Box
+                      sx={(t) => ({
+                        flex: 1,
+                        bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.32 : 0.22),
+                      })}
+                    />
+                  </Tooltip>
+                </Box>
+              )}
+              <Stack
+                direction="row"
+                sx={{ fontSize: "0.75rem", color: "text.secondary", flexWrap: "wrap", columnGap: 1 }}
+              >
+                {cashShare != null && (
+                  <Box>
+                    наличные {cashShare}% · безнал {100 - cashShare}%
+                  </Box>
+                )}
+                <Box sx={{ flex: 1 }} />
+                {insurance > 0 && <Box>страховые {formatKGS(insurance)} — вне итогов</Box>}
+              </Stack>
+            </Stack>
           )}
         </Stack>
       )}
@@ -399,6 +497,7 @@ export const MonthWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
       title="Месяц целиком"
       subheader={dayjs(range.month + "-01").format("MMMM YYYY")}
       href="/reports"
+      linkLabel="Отчёты"
     >
       {query.isError ? (
         <WidgetError error={query.error} />
@@ -407,7 +506,7 @@ export const MonthWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
           {/* Приёмы и процедуры разведены намеренно: карточка «Записи» считает
               и то и другое (day-counts не различает), а месячный отчёт даёт их
               порознь. */}
-          <Grid item xs={6} sm={4}>
+          <Grid item xs={6} sm={4} lg={2}>
             <MetricTile
               label="Приёмов"
               href="/reports"
@@ -418,7 +517,7 @@ export const MonthWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               title="Месячный отчёт считает приёмы и процедуры раздельно; карточка «Записи» — вместе"
             />
           </Grid>
-          <Grid item xs={6} sm={4}>
+          <Grid item xs={6} sm={4} lg={2}>
             <MetricTile
               label="Оплачено"
               href="/reports"
@@ -430,7 +529,7 @@ export const MonthWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               title="Оплаченными считаются приёмы в статусе paid или discounted"
             />
           </Grid>
-          <Grid item xs={6} sm={4}>
+          <Grid item xs={6} sm={4} lg={2}>
             <MetricTile
               label="Ждут оплаты"
               href="/reports"
@@ -441,7 +540,7 @@ export const MonthWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               title="Записи месяца в статусе ожидания оплаты — незакрытые чеки"
             />
           </Grid>
-          <Grid item xs={6} sm={4}>
+          <Grid item xs={6} sm={4} lg={2}>
             <MetricTile
               label="Отменено"
               href="/reports"
@@ -458,7 +557,7 @@ export const MonthWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               title="Отмены и неявки — разные статусы; здесь только отмены"
             />
           </Grid>
-          <Grid item xs={6} sm={4}>
+          <Grid item xs={6} sm={4} lg={2}>
             <MetricTile
               label="Скидки"
               href="/reports"
@@ -473,7 +572,7 @@ export const MonthWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               hint={sum?.discountedCount ? `${sum.discountedCount} приёмов` : undefined}
             />
           </Grid>
-          <Grid item xs={6} sm={4}>
+          <Grid item xs={6} sm={4} lg={2}>
             <MetricTile
               label="Долги"
               href="/reports"
@@ -481,169 +580,6 @@ export const MonthWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               tone={debt > 0 ? "warning" : "neutral"}
               loading={loading}
               title="Сумма колонки «Долг» месячного отчёта по всем дням месяца"
-            />
-          </Grid>
-        </Grid>
-      )}
-    </DashCard>
-  );
-};
-
-// ── Задачи ────────────────────────────────────────────────────────────────────
-
-/** Сводка задач организации. Периода не имеет: это состояние «прямо сейчас». */
-export const TasksWidget: React.FC<WidgetProps> = ({ scope }) => {
-  const query = useQuery(tasksSummaryQuery(scope));
-  const s = query.data;
-  const loading = query.isLoading;
-
-  return (
-    <DashCard title="Задачи" subheader="сейчас" href="/tasks">
-      {query.isError ? (
-        <WidgetError error={query.error} />
-      ) : (
-        <Grid container spacing={1.25}>
-          <Grid item xs={6}>
-            <MetricTile
-              label="Просрочено"
-              href="/tasks"
-              value={s?.overdue ?? 0}
-              icon={<WarningAmberOutlined />}
-              tone={s && s.overdue > 0 ? "error" : "neutral"}
-              loading={loading}
-              hint={s && s.awaitingApproval > 0 ? `ждут приёмки — ${s.awaitingApproval}` : undefined}
-            />
-          </Grid>
-          <Grid item xs={6}>
-            <MetricTile
-              label="В работе"
-              href="/tasks"
-              value={s?.inProgress ?? 0}
-              icon={<AssignmentOutlined />}
-              loading={loading}
-              hint={s?.new ? `новых — ${s.new}` : undefined}
-            />
-          </Grid>
-        </Grid>
-      )}
-    </DashCard>
-  );
-};
-
-// ── Воронка продаж ────────────────────────────────────────────────────────────
-
-/**
- * Обращения в работе и то, что мешает им двигаться.
- *
- * Периода не имеет: вопрос всегда про «сейчас» — сколько денег в воронке и
- * кому надо позвонить сегодня. Ретроспектива живёт во вкладке аналитики.
- */
-export const DealsWidget: React.FC<WidgetProps> = ({ scope }) => {
-  const query = useQuery(dealsSummaryQuery(scope));
-  const s = query.data;
-  const loading = query.isLoading;
-
-  return (
-    <DashCard title="Воронка продаж" subheader="сейчас" href="/deals">
-      {query.isError ? (
-        <WidgetError error={query.error} />
-      ) : (
-        <Grid container spacing={1.25}>
-          <Grid item xs={6}>
-            <MetricTile
-              label="В работе"
-              href="/deals"
-              value={s?.openCount ?? 0}
-              icon={<FilterAltOutlined />}
-              hint={s ? formatKGS(s.openAmount) : undefined}
-              loading={loading}
-            />
-          </Grid>
-          <Grid item xs={6}>
-            <MetricTile
-              label="Выиграно"
-              href="/deals?tab=analytics"
-              value={s?.wonCount ?? 0}
-              icon={<TrendingUpOutlined />}
-              tone={s && s.wonCount > 0 ? "success" : "neutral"}
-              hint={s ? formatKGS(s.wonAmount) : undefined}
-              loading={loading}
-            />
-          </Grid>
-          <Grid item xs={6}>
-            {/* Просроченное касание — то, из-за чего лиды умирают молча. */}
-            <MetricTile
-              label="Просрочено касаний"
-              href="/deals?action=overdue"
-              value={s?.overdueActionsCount ?? 0}
-              icon={<WarningAmberOutlined />}
-              tone={s && s.overdueActionsCount > 0 ? "error" : "neutral"}
-              loading={loading}
-            />
-          </Grid>
-          <Grid item xs={6}>
-            <MetricTile
-              label="На сегодня"
-              href="/deals?action=today"
-              value={s?.todayActionsCount ?? 0}
-              icon={<AccessTimeOutlined />}
-              loading={loading}
-            />
-          </Grid>
-        </Grid>
-      )}
-    </DashCard>
-  );
-};
-
-// ── Отзывы ────────────────────────────────────────────────────────────────────
-
-/** Оценки за период: средняя, отклик и число негативных — их разбирают вручную. */
-export const ReviewsWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) => {
-  const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
-  const query = useQuery(reviewStatsQuery(scope, range));
-  const prevQuery = useQuery(reviewStatsQuery(scope, prev));
-
-  const s = query.data;
-  const p = prevQuery.data;
-  const loading = query.isLoading;
-  const responsePercent = s ? Math.round(num(s.responseRate) * 100) : null;
-  // Без единого отправленного запроса бэк отдаёт avgRating "0.0". Показать
-  // ноль значило бы соврать: это не плохая оценка, а отсутствие оценок.
-  const hasReviews = !!s && s.sent > 0;
-  const prevHasReviews = !!p && p.sent > 0;
-
-  return (
-    <DashCard title="Отзывы" subheader={range.label} href="/reviews">
-      {query.isError ? (
-        <WidgetError error={query.error} />
-      ) : (
-        <Grid container spacing={1.25}>
-          <Grid item xs={6}>
-            <MetricTile
-              label="Средняя оценка"
-              href="/reviews"
-              value={hasReviews ? s!.avgRating : "—"}
-              icon={<StarBorderOutlined />}
-              tone={hasReviews ? (num(s!.avgRating) < 4 ? "warning" : "success") : "neutral"}
-              loading={loading}
-              delta={
-                hasReviews && prevHasReviews
-                  ? { current: num(s!.avgRating), previous: num(p!.avgRating), baselineLabel: prev.label }
-                  : undefined
-              }
-              hint={hasReviews ? `${s!.answered} из ${s!.sent}` : "запросов не было"}
-            />
-          </Grid>
-          <Grid item xs={6}>
-            <MetricTile
-              label="Негативных"
-              href="/reviews"
-              value={s?.negativeCount ?? 0}
-              tone={s && s.negativeCount > 0 ? "error" : "neutral"}
-              loading={loading}
-              delta={delta(s?.negativeCount ?? 0, p?.negativeCount, prev.label, true)}
-              hint={hasReviews && responsePercent != null ? `отклик ${responsePercent}%` : undefined}
             />
           </Grid>
         </Grid>

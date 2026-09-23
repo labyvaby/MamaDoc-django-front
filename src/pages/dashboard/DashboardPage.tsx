@@ -19,7 +19,7 @@ import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 
-import { PageHeader, SegmentedTabs, cascadeContainer, cascadeItem } from "../../components/ui";
+import { SegmentedTabs, cascadeContainer, cascadeItem } from "../../components/ui";
 import { getBranches } from "../../api/organization";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { useCanChecker } from "../../hooks/useCan";
@@ -33,6 +33,7 @@ import {
   loadLayout,
   resolveSpan,
   saveLayout,
+  stretchRows,
   visibleWidgets,
   type DashboardLayout,
   type WidgetId,
@@ -43,10 +44,8 @@ import {
   EmptyDashboard,
   MonthWidget,
   MoneyWidget,
-  ReviewsWidget,
-  TasksWidget,
-  DealsWidget,
 } from "./widgets";
+import { OpsWidget } from "./OpsWidget";
 import {
   AvailabilityWidget,
   BookingsWidget,
@@ -72,10 +71,21 @@ const WIDGET_COMPONENT: Record<WidgetId, React.FC<WidgetProps>> = {
   branches: BranchesWidget,
   month: MonthWidget,
   staff: StaffWidget,
-  tasks: TasksWidget,
-  deals: DealsWidget,
-  reviews: ReviewsWidget,
+  ops: OpsWidget,
 };
+
+/** Иконка-кнопка шапки: 36px, тонкая грань, как сегмент периода рядом. */
+const headerButtonSx = {
+  width: 36,
+  height: 36,
+  borderRadius: "10px",
+  border: 1,
+  borderColor: "divider",
+  bgcolor: "background.paper",
+  color: "text.secondary",
+  "&:hover": { color: "text.primary", bgcolor: "background.paper" },
+  "& .MuiSvgIcon-root": { fontSize: 20 },
+} as const;
 
 /**
  * Сводка — общий главный экран.
@@ -206,60 +216,104 @@ export const DashboardPage: React.FC = () => {
 
   const widgetProps = { range, periodKey: period, scope };
 
+  // Ряды растягиваются, если соседа нет по правам или он спрятан: иначе в
+  // сетке оставалась бы дыра. На среднем экране «две трети» — уже вся ширина:
+  // 8 из 12 рядом с половинкой не помещается, остальное — половинки.
+  const lgSpans = stretchRows(shown.map((w) => resolveSpan(w, layout)));
+  const mdSpans = stretchRows(shown.map((w) => (resolveSpan(w, layout) >= 8 ? 12 : 6)));
+
   return (
     // Свой скролл-контейнер обязателен: лейаут приложения (`childrenBoxProps`
     // в App.tsx) фиксирует высоту и ставит `overflow: hidden`, поэтому страница
     // без него просто обрезается — на «Месяце» нижние карточки были недоступны.
     <Box sx={{ height: "100%", overflowY: "auto", overflowX: "hidden", pr: { md: 0.5 }, pb: 2 }}>
-      <PageHeader
-        title="Сводка"
-        actions={
-          <Stack direction="row" alignItems="center" spacing={1.5}>
-            {updatedAt && !editing && (
-              <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                обновлено в {updatedAt}
-              </Typography>
-            )}
-            {!editing && (
-              <SegmentedTabs
-                tabs={PERIOD_TABS}
-                value={period}
-                onChange={handlePeriod}
-                layoutId="dashboard-period"
+      {/* Шапка в одну строку: заголовок с датой и скоупом слева, управление
+          справа. Отдельная строка с датой над сеткой съедала высоту экрана. */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        sx={{ flexWrap: "wrap", columnGap: 1.5, rowGap: 1, mb: 1.75, pt: 0.5 }}
+      >
+        <Stack
+          direction="row"
+          alignItems="baseline"
+          sx={{ flex: 1, minWidth: 0, columnGap: 1.5, flexWrap: "wrap" }}
+        >
+          <Typography
+            component="h1"
+            sx={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.3 }}
+          >
+            Сводка
+          </Typography>
+          {!editing && (
+            <Typography sx={{ fontSize: "0.875rem", color: "text.secondary", minWidth: 0 }} noWrap>
+              {/* Дата с днём недели: у бизнеса разный поток по дням, и
+                  «сегодня» без неё читается хуже. */}
+              <Box component="span" sx={{ color: "text.primary", fontWeight: 500 }}>
+                {dayjs().format("dddd, D MMMM")}
+              </Box>
+              {scopeLabel ? ` · ${scopeLabel}` : ""}
+            </Typography>
+          )}
+        </Stack>
+
+        <Stack direction="row" alignItems="center" spacing={1.25}>
+          {updatedAt && !editing && (
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={0.75}
+              sx={{ display: { xs: "none", sm: "flex" } }}
+            >
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  // Точка — «данные живые»: серая, пока что-то грузится.
+                  bgcolor: fetching > 0 ? "text.disabled" : "success.main",
+                }}
               />
-            )}
-            {!editing && (
-              <Tooltip title="Выгрузить в Excel" arrow>
-                {/* span — чтобы подсказка работала и на выключенной кнопке:
-                    MUI не вешает события на disabled-элемент. */}
-                <span>
-                  <IconButton
-                    onClick={handleExport}
-                    disabled={exporting || !hasAnything}
-                    sx={{ borderRadius: "10px" }}
-                    aria-label="Выгрузить сводку в Excel"
-                  >
-                    {exporting ? (
-                      <CircularProgress size={20} />
-                    ) : (
-                      <FileDownloadOutlined />
-                    )}
-                  </IconButton>
-                </span>
-              </Tooltip>
-            )}
-            <Tooltip title={editing ? "Готово" : "Настроить состав"} arrow>
-              <IconButton
-                onClick={() => setEditing((v) => !v)}
-                sx={{ borderRadius: "10px" }}
-                aria-label={editing ? "Завершить настройку" : "Настроить состав блоков"}
-              >
-                {editing ? <CheckOutlined /> : <TuneOutlined />}
-              </IconButton>
+              <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
+                {fetching > 0 ? "обновляем…" : `обновлено в ${updatedAt}`}
+              </Typography>
+            </Stack>
+          )}
+          {!editing && (
+            <SegmentedTabs
+              tabs={PERIOD_TABS}
+              value={period}
+              onChange={handlePeriod}
+              layoutId="dashboard-period"
+            />
+          )}
+          {!editing && (
+            <Tooltip title="Выгрузить в Excel" arrow>
+              {/* span — чтобы подсказка работала и на выключенной кнопке:
+                  MUI не вешает события на disabled-элемент. */}
+              <span>
+                <IconButton
+                  onClick={handleExport}
+                  disabled={exporting || !hasAnything}
+                  sx={headerButtonSx}
+                  aria-label="Выгрузить сводку в Excel"
+                >
+                  {exporting ? <CircularProgress size={18} /> : <FileDownloadOutlined />}
+                </IconButton>
+              </span>
             </Tooltip>
-          </Stack>
-        }
-      />
+          )}
+          <Tooltip title={editing ? "Готово" : "Настроить состав"} arrow>
+            <IconButton
+              onClick={() => setEditing((v) => !v)}
+              sx={headerButtonSx}
+              aria-label={editing ? "Завершить настройку" : "Настроить состав блоков"}
+            >
+              {editing ? <CheckOutlined /> : <TuneOutlined />}
+            </IconButton>
+          </Tooltip>
+        </Stack>
+      </Stack>
 
       {exportError && (
         <Alert
@@ -270,17 +324,6 @@ export const DashboardPage: React.FC = () => {
         >
           {exportError}
         </Alert>
-      )}
-
-      {!editing && (
-        <Typography variant="body2" sx={{ color: "text.secondary", mb: 1.5, mt: -0.5 }}>
-          {/* Дата с днём недели: у бизнеса разный поток по дням, и «сегодня»
-              без неё читается хуже. */}
-          <Box component="span" sx={{ color: "text.primary", fontWeight: 500 }}>
-            {dayjs().format("dddd, D MMMM")}
-          </Box>
-          {scopeLabel ? ` · ${scopeLabel}` : ""}
-        </Typography>
       )}
 
       {editing ? (
@@ -303,17 +346,15 @@ export const DashboardPage: React.FC = () => {
           initial={animateOnMount ? "hidden" : false}
           animate="show"
         >
-          {shown.map((w) => {
+          {shown.map((w, i) => {
             const Widget = WIDGET_COMPONENT[w.id];
             return (
               <MotionGrid
                 item
                 key={w.id}
                 xs={12}
-                // На среднем экране «две трети» — это уже вся ширина: 8 из 12
-                // рядом с половинкой не помещается.
-                md={resolveSpan(w, layout) >= 8 ? 12 : 6}
-                lg={resolveSpan(w, layout)}
+                md={mdSpans[i]}
+                lg={lgSpans[i]}
                 variants={cascadeItem}
               >
                 <Widget {...widgetProps} />

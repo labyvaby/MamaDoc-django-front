@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildAttentionItems } from "./attention";
-import { normalizeLayout, WIDGETS } from "./layout";
+import { normalizeLayout, stretchRows, WIDGETS } from "./layout";
 
 const base = { periodLabel: "сегодня" };
 
@@ -30,7 +30,7 @@ describe("Требует внимания", () => {
       reviews: { negative: 1 },
       tasks: { overdue: 2, awaitingApproval: 0 },
     });
-    expect(items.map((i) => i.severity)).toEqual(["critical", "warning", "info"]);
+    expect(items.map((i) => i.severity)).toEqual(["urgent", "today", "opportunity"]);
     expect(items[0].id).toBe("tasks-overdue");
   });
 
@@ -46,10 +46,10 @@ describe("Требует внимания", () => {
       cash: { netCashFlow: -500, grossIncome: 1000, refundedTotal: 0, refundCount: 0 },
     });
     expect(item.id).toBe("cash-negative");
-    expect(item.severity).toBe("critical");
+    expect(item.severity).toBe("urgent");
   });
 
-  it("мелкие возвраты — фон, крупные — сигнал", () => {
+  it("мелкие возвраты в список не попадают, крупные — «сегодня»", () => {
     const small = buildAttentionItems({
       ...base,
       cash: { netCashFlow: 1, grossIncome: 10000, refundedTotal: 100, refundCount: 1 },
@@ -58,8 +58,8 @@ describe("Требует внимания", () => {
       ...base,
       cash: { netCashFlow: 1, grossIncome: 10000, refundedTotal: 1500, refundCount: 3 },
     });
-    expect(small[0].severity).toBe("info");
-    expect(big[0].severity).toBe("warning");
+    expect(small).toEqual([]);
+    expect(big[0].severity).toBe("today");
   });
 
   it("свободные окна подсказываются только при низкой загрузке", () => {
@@ -79,11 +79,11 @@ describe("Требует внимания", () => {
 
 describe("новые блоки в сохранённой раскладке", () => {
   it("«Пульс» и «Требует внимания» встают перед «Деньгами», а не в конец", () => {
-    const layout = normalizeLayout({ order: ["tasks", "money", "reviews"], hidden: [] });
+    const layout = normalizeLayout({ order: ["ops", "money", "staff"], hidden: [] });
     const i = (id: string) => layout.order.indexOf(id as never);
     expect(i("pulse")).toBeLessThan(i("money"));
     expect(i("attention")).toBe(i("pulse") + 1);
-    expect(layout.order[0]).toBe("tasks");
+    expect(layout.order[0]).toBe("ops");
     expect(layout.order).toHaveLength(WIDGETS.length);
   });
 
@@ -96,5 +96,32 @@ describe("новые блоки в сохранённой раскладке", (
   it("выбор пользователя «ничего не прятать» не перетирается умолчанием", () => {
     const layout = normalizeLayout({ order: ["money"], hidden: [] });
     expect(layout.hidden).toEqual([]);
+  });
+});
+
+describe("ряды сетки растягиваются", () => {
+  it("полные ряды не трогаем", () => {
+    expect(stretchRows([8, 4, 6, 6, 7, 5, 12])).toEqual([8, 4, 6, 6, 7, 5, 12]);
+  });
+
+  it("одинокий блок в ряду — во всю ширину", () => {
+    // Пульс без «Внимания» (нет прав) и «Операции» без «Сотрудников».
+    expect(stretchRows([8, 6, 6, 7])).toEqual([12, 6, 6, 12]);
+  });
+
+  it("неполный ряд делится пропорционально", () => {
+    expect(stretchRows([4, 4])).toEqual([6, 6]);
+    expect(stretchRows([6, 4, 12])).toEqual([7, 5, 12]);
+  });
+});
+
+describe("старая раскладка с задачами, воронкой и отзывами", () => {
+  it("исчезнувшие блоки заменяются одной карточкой «Операции»", () => {
+    const layout = normalizeLayout({
+      order: ["money", "tasks", "deals", "reviews"] as never,
+      hidden: [],
+    });
+    expect(layout.order).toContain("ops");
+    expect(layout.order).not.toContain("tasks" as never);
   });
 });

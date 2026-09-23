@@ -20,11 +20,13 @@ export type WidgetId =
   | "branches"
   | "month"
   | "staff"
-  | "tasks"
-  | "deals"
-  | "reviews";
+  | "ops";
 
-export type WidgetSpan = 4 | 6 | 8 | 12;
+/**
+ * 5 и 7 — только ширины по умолчанию (ряд «Операции 7 + Сотрудники 5» из
+ * макета). В настройках пользователь выбирает из SPAN_OPTIONS.
+ */
+export type WidgetSpan = 4 | 5 | 6 | 7 | 8 | 12;
 
 export interface WidgetMeta {
   id: WidgetId;
@@ -45,7 +47,10 @@ export interface WidgetMeta {
  * 1. «Пульс» — сколько заработали и куда идёт месяц (единственная крупная цифра);
  * 2. «Требует внимания» — что решить сегодня, из всех разделов одним списком;
  * 3. разбор денег и потока записей — почему цифра такая;
- * 4. справочное: филиалы, месяц, люди, задачи, воронка, отзывы.
+ * 4. операционка «сейчас» (задачи, воронка, отзывы) и люди;
+ * 5. справочное: филиалы, месяц целиком.
+ *
+ * Ряды на широком экране: 8+4 · 6+6 · 7+5 · 12 · 12.
  */
 export const WIDGETS: WidgetMeta[] = [
   { id: "pulse", label: "Пульс: выручка и темп", permission: PAGE_PERMISSIONS.cashbox, span: 8 },
@@ -72,6 +77,20 @@ export const WIDGETS: WidgetMeta[] = [
     span: 6,
   },
   {
+    id: "ops",
+    label: "Задачи, воронка, отзывы",
+    // Секции внутри гейтятся каждая своим правом; карточка нужна, если есть
+    // хотя бы одна.
+    permission: [PAGE_PERMISSIONS.tasks, ...PAGE_PERMISSIONS.deals, ...PAGE_PERMISSIONS.reviews],
+    span: 7,
+  },
+  {
+    id: "staff",
+    label: "Сотрудники",
+    permission: PAGE_PERMISSIONS.payroll,
+    span: 5,
+  },
+  {
     id: "branches",
     label: "Филиалы",
     permission: PAGE_PERMISSIONS.cashbox,
@@ -82,18 +101,9 @@ export const WIDGETS: WidgetMeta[] = [
     id: "month",
     label: "Месяц целиком",
     permission: PAGE_PERMISSIONS.reports,
-    span: 6,
+    span: 12,
     onlyPeriod: "month",
   },
-  {
-    id: "staff",
-    label: "Сотрудники",
-    permission: PAGE_PERMISSIONS.payroll,
-    span: 6,
-  },
-  { id: "tasks", label: "Задачи", permission: PAGE_PERMISSIONS.tasks, span: 4 },
-  { id: "deals", label: "Воронка продаж", permission: PAGE_PERMISSIONS.deals, span: 4 },
-  { id: "reviews", label: "Отзывы", permission: PAGE_PERMISSIONS.reviews, span: 4 },
   // Подробности того, что уже есть в «Пульсе» (загрузка) и «Требует внимания»
   // (заявки). По умолчанию спрятаны, но их можно вернуть в настройках состава.
   {
@@ -268,9 +278,15 @@ export interface VisibilityContext {
  */
 export function availableWidgets(ctx: VisibilityContext): WidgetMeta[] {
   return WIDGETS.filter((w) => {
-    // Воронка продаж ждёт бэкенда на проде: блок убираем тем же флагом, что и
-    // страницу с пунктом меню — иначе сводка встречает ошибкой загрузки.
-    if (w.id === "deals" && !DEALS_MODULE_ENABLED) return false;
+    // Воронка ждёт бэкенда на проде и скрыта флагом. Если воронка — всё, что
+    // есть у пользователя в «Операциях», карточка была бы пустой рамкой.
+    if (
+      w.id === "ops" &&
+      !ctx.can([PAGE_PERMISSIONS.tasks, ...PAGE_PERMISSIONS.reviews]) &&
+      !(DEALS_MODULE_ENABLED && ctx.can(PAGE_PERMISSIONS.deals))
+    ) {
+      return false;
+    }
     if (!ctx.can(w.permission)) return false;
     if (w.onlyPeriod && w.onlyPeriod !== ctx.period) return false;
     if (w.needsManyBranches && ctx.branchCount < 2) return false;
@@ -288,4 +304,34 @@ export function visibleWidgets(
     .filter((id) => available.has(id) && !layout.hidden.includes(id))
     .map((id) => WIDGET_BY_ID.get(id)!)
     .filter(Boolean);
+}
+
+/**
+ * Растянуть блоки так, чтобы каждый ряд сетки был заполнен.
+ *
+ * Раскладка задана рядами (8+4, 6+6, 7+5), но блок соседа может быть скрыт
+ * правами или пользователем — тогда в ряду оставалась бы дыра. Раскладываем
+ * блоки по рядам слева направо и недостающие колонки делим между блоками
+ * ряда пропорционально их ширине: «Пульс» без «Внимания» становится во всю
+ * ширину, две трети без трети — тоже.
+ */
+export function stretchRows(spans: number[], columns = 12): number[] {
+  const out: number[] = [];
+  let row: number[] = [];
+  const flush = () => {
+    if (!row.length) return;
+    const sum = row.reduce((a, b) => a + b, 0);
+    const scaled = row.map((span) => Math.floor((span * columns) / sum));
+    // Остаток от округления — последнему в ряду, чтобы сумма была ровно 12.
+    scaled[scaled.length - 1] += columns - scaled.reduce((a, b) => a + b, 0);
+    out.push(...scaled);
+    row = [];
+  };
+  for (const raw of spans) {
+    const span = Math.min(columns, Math.max(1, raw));
+    if (row.reduce((a, b) => a + b, 0) + span > columns) flush();
+    row.push(span);
+  }
+  flush();
+  return out;
 }

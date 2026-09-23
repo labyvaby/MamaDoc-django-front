@@ -3,8 +3,8 @@ import { Box, Skeleton, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router";
 import NorthEastOutlined from "@mui/icons-material/NorthEastOutlined";
-import ArrowDownwardOutlined from "@mui/icons-material/ArrowDownwardOutlined";
-import ArrowUpwardOutlined from "@mui/icons-material/ArrowUpwardOutlined";
+import TrendingDownOutlined from "@mui/icons-material/TrendingDownOutlined";
+import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import { subtleBg } from "../../theme/uiHelpers";
 import { describeDelta, type DeltaDirection, type MetricDelta } from "./delta";
@@ -39,8 +39,8 @@ const TONE_COLOR: Record<MetricTone, "primary" | "success" | "warning" | "error"
 };
 
 const DIRECTION_ICON: Record<DeltaDirection, React.ReactNode> = {
-  up: <ArrowUpwardOutlined />,
-  down: <ArrowDownwardOutlined />,
+  up: <TrendingUpOutlined />,
+  down: <TrendingDownOutlined />,
   flat: <RemoveOutlined />,
 };
 
@@ -59,29 +59,32 @@ export const DeltaChip: React.FC<{ delta: MetricDelta; size?: "sm" | "md" }> = (
       <Stack
         direction="row"
         alignItems="center"
-        spacing={0.25}
         sx={(t) => ({
-          height: md ? 26 : 20,
+          height: md ? 24 : 20,
           px: md ? 1 : 0.625,
+          gap: md ? "3px" : "2px",
           borderRadius: "7px",
           flexShrink: 0,
           bgcolor:
             view.tone === "muted"
               ? subtleBg(t, true)
-              : alpha(t.palette[view.tone].main, t.palette.mode === "dark" ? 0.2 : 0.14),
+              : alpha(
+                t.palette[view.tone].main,
+                t.palette.mode === "dark" ? 0.2 : view.tone === "error" ? 0.08 : 0.1,
+              ),
           color:
             view.tone === "muted"
               ? "text.secondary"
               : t.palette.mode === "dark"
                 ? t.palette[view.tone].light
                 : t.palette[view.tone].dark,
-          "& .MuiSvgIcon-root": { fontSize: md ? 15 : 12 },
+          "& .MuiSvgIcon-root": { fontSize: md ? 16 : 13 },
         })}
       >
         {DIRECTION_ICON[view.direction]}
         <Typography
           sx={{
-            fontSize: md ? "0.8rem" : "0.7rem",
+            fontSize: md ? "0.75rem" : "0.7rem",
             fontWeight: 600,
             fontVariantNumeric: "tabular-nums",
           }}
@@ -195,6 +198,7 @@ export const MetricTile: React.FC<MetricTileProps> = ({
               letterSpacing: "-0.02em",
               color: tone === "neutral" ? "text.primary" : `${palette}.main`,
               overflowWrap: "anywhere",
+              fontVariantNumeric: "tabular-nums",
             }}
           >
             {value ?? "—"}

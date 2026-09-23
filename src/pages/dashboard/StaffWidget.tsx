@@ -76,8 +76,9 @@ export const StaffWidget: React.FC<WidgetProps> = ({ range, scope }) => {
   return (
     <DashCard
       title="Сотрудники"
-      subheader={`${month.format("MMMM")} · топ по приёмам`}
+      subheader={`${month.format("MMMM")} · по приёмам`}
       href="/salary-reports"
+      linkLabel="Зарплата"
     >
       {query.isError ? (
         <WidgetError error={query.error} />
@@ -92,7 +93,17 @@ export const StaffWidget: React.FC<WidgetProps> = ({ range, scope }) => {
           За месяц пока нет приёмов
         </Typography>
       ) : (
-        <Stack spacing={0.25}>
+        <Stack spacing={0.25} sx={{ mx: -1 }}>
+          <Stack
+            direction="row"
+            spacing={1.25}
+            sx={{ px: 1, fontSize: "0.6875rem", color: "text.secondary" }}
+          >
+            <Box sx={{ width: 16 }} />
+            <Box sx={{ flex: 1 }} />
+            <Box sx={{ width: 44, textAlign: "right" }}>приёмы</Box>
+            <Box sx={{ width: 92, textAlign: "right" }}>начислено</Box>
+          </Stack>
           {rows.map((r, i) => (
             <Stack
               key={r.employeeId}
@@ -112,14 +123,14 @@ export const StaffWidget: React.FC<WidgetProps> = ({ range, scope }) => {
                   flexShrink: 0,
                   fontSize: "0.75rem",
                   fontWeight: 700,
-                  color: i === 0 ? "primary.onSurface" : "text.disabled",
+                  color: "text.disabled",
                   textAlign: "center",
                 }}
               >
                 {i + 1}
               </Typography>
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600 }} noWrap>
                   {r.fullName}
                 </Typography>
                 <Box
@@ -127,7 +138,7 @@ export const StaffWidget: React.FC<WidgetProps> = ({ range, scope }) => {
                     mt: 0.5,
                     height: 4,
                     borderRadius: "4px",
-                    bgcolor: subtleBg(t, true),
+                    bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.14 : 0.08),
                     overflow: "hidden",
                   })}
                 >
@@ -136,7 +147,7 @@ export const StaffWidget: React.FC<WidgetProps> = ({ range, scope }) => {
                       width: `${best > 0 ? Math.round((r.appointmentsCount / best) * 100) : 0}%`,
                       height: "100%",
                       borderRadius: "4px",
-                      bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.8 : 0.6),
+                      bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.75 : 0.55),
                       transition: "width .3s ease",
                     })}
                   />
@@ -155,7 +166,7 @@ export const StaffWidget: React.FC<WidgetProps> = ({ range, scope }) => {
                     width: 44,
                     textAlign: "right",
                     fontWeight: 700,
-                    fontSize: "0.9rem",
+                    fontSize: "0.875rem",
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >

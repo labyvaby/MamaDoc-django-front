@@ -1,23 +1,19 @@
 import React from "react";
 import { Box, Skeleton, Stack, Typography } from "@mui/material";
-import { alpha } from "@mui/material/styles";
+import { alpha, type Theme } from "@mui/material/styles";
 import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router";
 
-import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
-import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
-import LightbulbOutlined from "@mui/icons-material/LightbulbOutlined";
 import TaskAltOutlined from "@mui/icons-material/TaskAltOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
 import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
 import { useCanChecker } from "../../hooks/useCan";
-import { subtleBg } from "../../theme/uiHelpers";
 import { DashCard, type WidgetProps } from "./widgetKit";
 import { num } from "./widgetUtils";
 import { resolvePeriod } from "./period";
-import { buildAttentionItems, type AttentionSeverity } from "./attention";
+import { ATTENTION_GROUPS, buildAttentionItems, type AttentionSeverity } from "./attention";
 import {
   availabilityTodayQuery,
   cashboxSummaryQuery,
@@ -28,17 +24,20 @@ import {
   tasksSummaryQuery,
 } from "./queries";
 
-const SEVERITY_VIEW: Record<
-  AttentionSeverity,
-  { color: "error" | "warning" | "info"; icon: React.ReactNode; label: string }
-> = {
-  critical: { color: "error", icon: <ErrorOutlineOutlined />, label: "Срочно" },
-  warning: { color: "warning", icon: <WarningAmberOutlined />, label: "Сегодня" },
-  info: { color: "info", icon: <LightbulbOutlined />, label: "Возможность" },
-};
+/**
+ * Цвет группы как ТЕКСТ — `onSurface` из темы: тот же статус, но с
+ * гарантированным контрастом на карточке в обеих темах (мелкий капс в основном
+ * тоне на светлом фоне читался бы плохо).
+ */
+const groupInk = (t: Theme, severity: AttentionSeverity): string =>
+  severity === "urgent"
+    ? t.palette.error.onSurface
+    : severity === "today"
+      ? t.palette.warning.onSurface
+      : t.palette.primary.onSurface;
 
 /** Сколько строк без прокрутки: длинный список — это уже не «внимание», а шум. */
-const MAX_ROWS = 7;
+const MAX_ROWS = 8;
 
 /**
  * «Требует внимания» — одна лента того, что владелец должен решить сегодня,
@@ -127,20 +126,31 @@ export const AttentionWidget: React.FC<WidgetProps> = ({ range, scope }) => {
     ],
   );
 
-  const urgent = items.filter((i) => i.severity !== "info").length;
+  const toDecide = items.filter((i) => i.severity !== "opportunity").length;
+  // Лимит строк — на весь блок, а не на группу: срочное идёт первым и не
+  // вытесняется возможностями.
   const shown = items.slice(0, MAX_ROWS);
+  const groups = ATTENTION_GROUPS.map((g) => ({
+    ...g,
+    items: shown.filter((i) => i.severity === g.severity),
+    total: items.filter((i) => i.severity === g.severity).length,
+  })).filter((g) => g.items.length > 0);
 
   return (
     <DashCard
       title="Требует внимания"
       subheader={
-        items.length > 0 ? (urgent > 0 ? `${urgent} к решению` : "только возможности") : undefined
+        items.length > 0
+          ? toDecide > 0
+            ? `${toDecide} к решению`
+            : "только возможности"
+          : undefined
       }
     >
       {items.length === 0 && loading ? (
         <Stack spacing={1}>
           {[0, 1, 2].map((i) => (
-            <Skeleton key={i} variant="rounded" height={40} sx={{ borderRadius: "10px" }} />
+            <Skeleton key={i} variant="rounded" height={36} sx={{ borderRadius: "9px" }} />
           ))}
         </Stack>
       ) : items.length === 0 ? (
@@ -158,89 +168,94 @@ export const AttentionWidget: React.FC<WidgetProps> = ({ range, scope }) => {
           })}
         >
           <TaskAltOutlined />
-          <Typography sx={{ fontWeight: 600, color: "text.primary" }}>
-            Всё под контролем
-          </Typography>
+          <Typography sx={{ fontWeight: 600, color: "text.primary" }}>Всё под контролем</Typography>
           <Typography variant="caption" sx={{ color: "text.secondary", px: 2 }}>
             Просрочек, заявок без ответа и минуса в кассе нет
           </Typography>
         </Stack>
       ) : (
-        <Stack spacing={0.5}>
-          {shown.map((item) => {
-            const view = SEVERITY_VIEW[item.severity];
-            return (
-              <Box
-                key={item.id}
-                component={RouterLink}
-                to={item.href}
+        <Stack spacing={1.5} sx={{ mx: -0.75 }}>
+          {groups.map((g) => (
+            <Box key={g.severity}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={0.75}
                 sx={(t) => ({
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1.25,
                   px: 1,
-                  py: 0.875,
-                  borderRadius: "10px",
-                  color: "inherit",
-                  textDecoration: "none",
-                  transition: "background-color .15s ease",
-                  bgcolor:
-                    item.severity === "critical"
-                      ? alpha(t.palette.error.main, t.palette.mode === "dark" ? 0.1 : 0.05)
-                      : "transparent",
-                  "&:hover": { bgcolor: subtleBg(t, true) },
-                  "&:hover .attention-go": { opacity: 1 },
+                  pb: 0.5,
+                  fontSize: "0.6875rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  color: groupInk(t, g.severity),
                 })}
               >
                 <Box
-                  title={view.label}
                   sx={(t) => ({
-                    width: 26,
-                    height: 26,
-                    flexShrink: 0,
-                    borderRadius: "7px",
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    bgcolor: groupInk(t, g.severity),
+                  })}
+                />
+                <span>{g.label}</span>
+                <Box component="span" sx={{ color: "text.disabled" }}>
+                  {g.total}
+                </Box>
+              </Stack>
+              {g.items.map((item) => (
+                <Box
+                  key={item.id}
+                  component={RouterLink}
+                  to={item.href}
+                  sx={(t) => ({
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    color: `${view.color}.main`,
-                    bgcolor: alpha(
-                      t.palette[view.color].main,
-                      t.palette.mode === "dark" ? 0.18 : 0.12,
-                    ),
-                    "& .MuiSvgIcon-root": { fontSize: 16 },
+                    gap: 1.25,
+                    p: 1,
+                    borderRadius: "9px",
+                    color: "inherit",
+                    textDecoration: "none",
+                    transition: "background-color .15s ease",
+                    "&:hover": {
+                      bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.12 : 0.06),
+                    },
                   })}
                 >
-                  {view.icon}
-                </Box>
-                <Typography variant="body2" sx={{ minWidth: 0, flex: 1, lineHeight: 1.35 }}>
-                  <Box
-                    component="span"
-                    sx={{
+                  <Typography
+                    sx={(t) => ({
+                      minWidth: 44,
+                      fontSize: "0.875rem",
                       fontWeight: 700,
-                      color: item.severity === "info" ? "text.primary" : `${view.color}.main`,
-                      mr: 0.5,
-                    }}
+                      fontVariantNumeric: "tabular-nums",
+                      whiteSpace: "nowrap",
+                      color:
+                        item.severity === "opportunity"
+                          ? "text.primary"
+                          : groupInk(t, item.severity),
+                    })}
                   >
                     {item.value}
-                  </Box>
-                  <Box component="span" sx={{ color: "text.secondary" }}>
+                  </Typography>
+                  <Typography
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: "0.8125rem",
+                      lineHeight: 1.35,
+                      color: "text.secondary",
+                    }}
+                  >
                     {item.text}
-                  </Box>
-                </Typography>
-                <ChevronRightOutlined
-                  className="attention-go"
-                  sx={{
-                    fontSize: 18,
-                    color: "text.secondary",
-                    opacity: 0.35,
-                    transition: "opacity .15s ease",
-                  }}
-                />
-              </Box>
-            );
-          })}
+                  </Typography>
+                  <ChevronRightOutlined sx={{ fontSize: 18, color: "text.disabled" }} />
+                </Box>
+              ))}
+            </Box>
+          ))}
           {items.length > MAX_ROWS && (
-            <Typography variant="caption" sx={{ color: "text.secondary", px: 1, pt: 0.5 }}>
+            <Typography variant="caption" sx={{ color: "text.secondary", px: 1 }}>
               и ещё {items.length - MAX_ROWS}
             </Typography>
           )}

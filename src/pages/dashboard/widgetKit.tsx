@@ -24,8 +24,10 @@ export type DashCardProps = {
   title: React.ReactNode;
   /** Период или пояснение — одной строкой рядом с заголовком, не отдельной. */
   subheader?: React.ReactNode;
-  /** Куда ведёт «Открыть» в шапке: весь раздел, а не отдельная цифра. */
+  /** Куда ведёт ссылка в шапке: весь раздел, а не отдельная цифра. */
   href?: string;
+  /** Подпись ссылки — названием раздела («Касса», «Зарплата»), не «Открыть». */
+  linkLabel?: string;
   /** Своё действие справа — рядом со ссылкой (например, чип изменения). */
   action?: React.ReactNode;
   children: React.ReactNode;
@@ -43,6 +45,7 @@ export const DashCard: React.FC<DashCardProps> = ({
   title,
   subheader,
   href,
+  linkLabel = "Открыть",
   action,
   children,
 }) => (
@@ -56,9 +59,9 @@ export const DashCard: React.FC<DashCardProps> = ({
       direction="row"
       alignItems="center"
       spacing={1}
-      sx={{ px: 2, pt: 1.5, pb: 1, minHeight: 44 }}
+      sx={{ px: 2, pt: 1.75, pb: 1, minHeight: 44 }}
     >
-      <Typography sx={{ fontWeight: 650, fontSize: "0.95rem", letterSpacing: "-0.01em" }}>
+      <Typography sx={{ fontWeight: 650, fontSize: "0.9375rem", letterSpacing: "-0.01em" }}>
         {title}
       </Typography>
       {subheader && (
@@ -89,7 +92,7 @@ export const DashCard: React.FC<DashCardProps> = ({
               "&:hover": { color: "primary.onSurface" },
             }}
           >
-            Открыть
+            {linkLabel}
             <ChevronRightOutlined sx={{ fontSize: 16 }} />
           </Box>
         )}

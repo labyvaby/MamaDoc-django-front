@@ -35,7 +35,7 @@ export const AvailabilityWidget: React.FC<WidgetProps> = ({ scope }) => {
   const loadPercent = total > 0 ? Math.round((busy / total) * 100) : null;
 
   return (
-    <DashCard title="Свободны сегодня" subheader="на текущий день" href="/schedule">
+    <DashCard title="Свободны сегодня" subheader="на текущий день" href="/schedule" linkLabel="Расписание">
       {query.isError ? (
         <WidgetError error={query.error} />
       ) : (
@@ -84,7 +84,7 @@ export const BookingsWidget: React.FC<WidgetProps> = ({ scope }) => {
   const overdue = overdueQuery.data?.count ?? 0;
 
   return (
-    <DashCard title="Заявки с витрины" subheader="ждут ответа" href="/bookings">
+    <DashCard title="Заявки с витрины" subheader="ждут ответа" href="/bookings" linkLabel="Онлайн-запись">
       {pendingQuery.isError ? (
         <WidgetError error={pendingQuery.error} />
       ) : (
@@ -171,6 +171,7 @@ export const BranchesWidget: React.FC<WidgetProps> = ({ range, scope }) => {
       title="Филиалы"
       subheader={`${range.label} · всего ${formatKGS(totalIncome)}`}
       href="/cashbox"
+      linkLabel="Касса"
     >
       {branchesQuery.isError ? (
         <WidgetError error={branchesQuery.error} />

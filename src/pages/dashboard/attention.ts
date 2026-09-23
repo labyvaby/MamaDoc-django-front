@@ -5,13 +5,20 @@ import { formatKGS } from "../../utility/format";
  * Правила блока «Требует внимания» — отдельно от разметки: они и есть суть
  * блока (что считать проблемой и насколько она срочная), и покрыты тестами.
  *
- * Срочность:
- * - `critical` — деньги или люди теряются прямо сейчас (заявке никто не
- *   ответил, а дата прошла; задачи просрочены; расходы больше прихода);
- * - `warning`  — надо разобрать сегодня, иначе станет critical;
- * - `info`     — возможность, а не проблема (свободные окна, касания на сегодня).
+ * Группы (так они и показаны на экране — заголовками, а не иконкой на строке):
+ * - `urgent`      «Срочно» — деньги или люди теряются прямо сейчас (заявке
+ *   никто не ответил, а дата прошла; задачи просрочены; расходы больше прихода);
+ * - `today`       «Сегодня» — надо разобрать сегодня, иначе станет срочным;
+ * - `opportunity` «Возможности» — не проблема, а шанс заработать (свободные
+ *   окна, касания по сделкам на сегодня).
  */
-export type AttentionSeverity = "critical" | "warning" | "info";
+export type AttentionSeverity = "urgent" | "today" | "opportunity";
+
+export const ATTENTION_GROUPS: { severity: AttentionSeverity; label: string }[] = [
+  { severity: "urgent", label: "Срочно" },
+  { severity: "today", label: "Сегодня" },
+  { severity: "opportunity", label: "Возможности" },
+];
 
 export interface AttentionItem {
   id: string;
@@ -42,9 +49,9 @@ export interface AttentionInput {
   staff?: { total: number; free: number };
 }
 
-const SEVERITY_ORDER: Record<AttentionSeverity, number> = { critical: 0, warning: 1, info: 2 };
+const SEVERITY_ORDER: Record<AttentionSeverity, number> = { urgent: 0, today: 1, opportunity: 2 };
 
-/** Доля возвратов в приходе, после которой это уже сигнал, а не фон. */
+/** Доля возвратов в приходе, ниже которой это фон, а не сигнал. */
 export const REFUND_WARNING_SHARE = 0.05;
 
 /** Загрузка ниже этой доли — много непроданных окон на сегодня. */
@@ -59,7 +66,7 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
     if (b.overdue > 0) {
       add({
         id: "bookings-overdue",
-        severity: "critical",
+        severity: "urgent",
         value: String(b.overdue),
         text: `${pluralRu(b.overdue, ["заявка", "заявки", "заявок"])} без ответа — дата визита уже прошла`,
         href: "/bookings",
@@ -69,7 +76,7 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
     if (fresh > 0) {
       add({
         id: "bookings-pending",
-        severity: "warning",
+        severity: "today",
         value: String(fresh),
         text: `${pluralRu(fresh, ["заявка", "заявки", "заявок"])} с онлайн-записи ждут подтверждения`,
         href: "/bookings",
@@ -81,7 +88,7 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
   if (c && c.netCashFlow < 0) {
     add({
       id: "cash-negative",
-      severity: "critical",
+      severity: "urgent",
       value: formatKGS(Math.abs(c.netCashFlow)),
       text: `расходы и закупки превысили приход ${input.periodLabel}`,
       href: "/cashbox",
@@ -93,7 +100,7 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
     if (t.overdue > 0) {
       add({
         id: "tasks-overdue",
-        severity: "critical",
+        severity: "urgent",
         value: String(t.overdue),
         text: `${pluralRu(t.overdue, ["задача просрочена", "задачи просрочены", "задач просрочено"])}`,
         href: "/tasks",
@@ -102,7 +109,7 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
     if (t.awaitingApproval > 0) {
       add({
         id: "tasks-approval",
-        severity: "warning",
+        severity: "today",
         value: String(t.awaitingApproval),
         text: `${pluralRu(t.awaitingApproval, ["задача ждёт", "задачи ждут", "задач ждут"])} приёмки`,
         href: "/tasks",
@@ -114,18 +121,20 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
   if (r && r.negative > 0) {
     add({
       id: "reviews-negative",
-      severity: "warning",
+      severity: "today",
       value: String(r.negative),
       text: `${pluralRu(r.negative, ["негативный отзыв", "негативных отзыва", "негативных отзывов"])} ${input.periodLabel} — стоит связаться`,
       href: "/reviews",
     });
   }
 
-  if (c && c.refundedTotal > 0) {
-    const share = c.grossIncome > 0 ? c.refundedTotal / c.grossIncome : 1;
+  // Мелкие возвраты — фон работы, а не повод реагировать: в список не идут.
+  // «Возможностью» они тоже не являются, так что третьей группы для них нет.
+  const share = c && c.grossIncome > 0 ? c.refundedTotal / c.grossIncome : 1;
+  if (c && c.refundedTotal > 0 && share >= REFUND_WARNING_SHARE) {
     add({
       id: "cash-refunds",
-      severity: share >= REFUND_WARNING_SHARE ? "warning" : "info",
+      severity: "today",
       value: formatKGS(c.refundedTotal),
       text: `${c.refundCount} ${pluralRu(c.refundCount, ["возврат", "возврата", "возвратов"])} ${input.periodLabel}${
         c.grossIncome > 0 ? ` — ${Math.round(share * 100)}% прихода` : ""
@@ -139,7 +148,7 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
     if (m.debtSum > 0) {
       add({
         id: "month-debt",
-        severity: "warning",
+        severity: "today",
         value: formatKGS(m.debtSum),
         text: "долгов с начала месяца — по месячному отчёту",
         href: "/reports",
@@ -148,7 +157,7 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
     if (m.waitingCount > 0) {
       add({
         id: "month-waiting",
-        severity: "warning",
+        severity: "today",
         value: String(m.waitingCount),
         text: pluralRu(m.waitingCount, [
           "запись с начала месяца так и не оплачена",
@@ -165,7 +174,7 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
     if (d.overdueActions > 0) {
       add({
         id: "deals-overdue",
-        severity: "warning",
+        severity: "today",
         value: String(d.overdueActions),
         text: `${pluralRu(d.overdueActions, ["просроченное касание", "просроченных касания", "просроченных касаний"])} в воронке продаж`,
         href: "/deals?action=overdue",
@@ -174,9 +183,9 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
     if (d.todayActions > 0) {
       add({
         id: "deals-today",
-        severity: "info",
+        severity: "opportunity",
         value: String(d.todayActions),
-        text: `${pluralRu(d.todayActions, ["касание", "касания", "касаний"])} в воронке запланировано на сегодня`,
+        text: `${pluralRu(d.todayActions, ["касание", "касания", "касаний"])} по сделкам на сегодня`,
         href: "/deals?action=today",
       });
     }
@@ -186,9 +195,13 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
   if (s && s.total > 0 && s.free > 0 && (s.total - s.free) / s.total < LOW_LOAD_SHARE) {
     add({
       id: "staff-free",
-      severity: "info",
-      value: `${s.free} из ${s.total}`,
-      text: "специалистов со свободными окнами сегодня — их можно продать",
+      severity: "opportunity",
+      value: String(s.free),
+      text: `${pluralRu(s.free, [
+        "специалист свободен",
+        "специалиста свободны",
+        "специалистов свободны",
+      ])} сегодня — окна можно продать`,
       href: "/schedule",
     });
   }

@@ -100,9 +100,9 @@ describe("раскладка блоков", () => {
   const ctx = { can: () => true, period: "month" as const, branchCount: 3 };
 
   it("новый блок из кода доезжает до сохранённой раскладки", () => {
-    const saved = normalizeLayout({ order: ["tasks", "money"], hidden: [] });
-    expect(saved.order[0]).toBe("tasks");
-    expect(saved.order).toContain("reviews");
+    const saved = normalizeLayout({ order: ["ops", "money"], hidden: [] });
+    expect(saved.order[0]).toBe("ops");
+    expect(saved.order).toContain("staff");
     expect(saved.order).toHaveLength(WIDGETS.length);
   });
 
@@ -116,9 +116,9 @@ describe("раскладка блоков", () => {
   });
 
   it("спрятанные блоки не попадают в отрисовку, порядок сохраняется", () => {
-    const layout = normalizeLayout({ order: ["reviews", "money"], hidden: ["money"] });
+    const layout = normalizeLayout({ order: ["staff", "money"], hidden: ["money"] });
     const ids = visibleWidgets(layout, ctx).map((w) => w.id);
-    expect(ids[0]).toBe("reviews");
+    expect(ids[0]).toBe("staff");
     expect(ids).not.toContain("money");
   });
 
@@ -142,10 +142,10 @@ describe("раскладка блоков", () => {
   });
 
   it("перестановка не выходит за границы списка", () => {
-    const order = ["money", "tasks", "reviews"] as const;
+    const order = ["money", "ops", "staff"] as const;
     expect(moveWidget([...order], "money", -1)).toEqual([...order]);
-    expect(moveWidget([...order], "reviews", 1)).toEqual([...order]);
-    expect(moveWidget([...order], "money", 1)).toEqual(["tasks", "money", "reviews"]);
+    expect(moveWidget([...order], "staff", 1)).toEqual([...order]);
+    expect(moveWidget([...order], "money", 1)).toEqual(["ops", "money", "staff"]);
   });
 
   it("переключатель видимости работает в обе стороны", () => {
@@ -184,14 +184,14 @@ describe("ширина блоков", () => {
 });
 
 describe("перенос перетаскиванием", () => {
-  const order = ["money", "appointments", "tasks", "reviews"] as const;
+  const order = ["money", "appointments", "ops", "staff"] as const;
 
   it("переносит через несколько позиций, а не меняет местами соседей", () => {
-    expect(reorderWidget([...order], "reviews", 0)).toEqual([
-      "reviews",
+    expect(reorderWidget([...order], "staff", 0)).toEqual([
+      "staff",
       "money",
       "appointments",
-      "tasks",
+      "ops",
     ]);
   });
 
@@ -202,8 +202,8 @@ describe("перенос перетаскиванием", () => {
   it("индекс за границами прижимается к краю", () => {
     expect(reorderWidget([...order], "money", 99)).toEqual([
       "appointments",
-      "tasks",
-      "reviews",
+      "ops",
+      "staff",
       "money",
     ]);
   });
