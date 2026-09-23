@@ -32,6 +32,7 @@ import { Employee } from "../../features/employees/types";
 import { UserAvatar } from "../ui";
 import { subtleBg } from "../../theme";
 import { InstallAppButton } from "../../pwa";
+import SetPasswordButton from "./SetPasswordButton";
 
 /** Строка-инфо в стандартном стиле: плиточная иконка + подпись/значение. */
 const ProfileInfoRow: React.FC<{
@@ -164,11 +165,20 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
       }}
       elevation={0}
     >
+      {/* С md — сетка «лево — заголовок — право»: боковые колонки не уже своего
+          содержимого, заголовок живёт в средней и центрирован в ней. Пока правый
+          блок (обновить, «Установить пароль», аватар) помещается в треть —
+          заголовок ровно по центру шапки; когда шире — сдвигается, но не
+          наезжает и при нехватке места режется многоточием. На телефоне —
+          прежнее абсолютное центрирование. */}
       <Toolbar
         sx={{
           minHeight: { xs: 56, sm: 64 },
           px: { xs: 1, sm: 2 },
           gap: { xs: 0.5, sm: 1 },
+          display: { xs: "flex", md: "grid" },
+          gridTemplateColumns: "minmax(max-content, 1fr) minmax(0, 1fr) minmax(max-content, 1fr)",
+          alignItems: "center",
         }}
       >
         {/* Левая часть: Бургер-меню + Компактный логотип */}
@@ -202,14 +212,15 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
 
         {/* Центр: Заголовок страницы */}
         <Box sx={{
-          position: "absolute",
-          left: "50%",
-          transform: "translateX(-50%)",
+          position: { xs: "absolute", md: "static" },
+          left: { xs: "50%", md: "auto" },
+          transform: { xs: "translateX(-50%)", md: "none" },
+          maxWidth: { xs: "50%", md: "none" },
+          minWidth: 0,
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
           pointerEvents: "none", // Чтобы не мешать кликам если что
-          maxWidth: { xs: "50%", md: "60%" },
         }}>
           <Typography
             variant="subtitle1"
@@ -217,6 +228,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
               fontWeight: 700,
               fontSize: "1.5rem",
               color: "text.primary",
+              minWidth: 0,
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -228,15 +240,15 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
           </Typography>
         </Box>
 
-        {/* Spacer to push right content if needed, but absolute positioning handles center */}
-        <Box sx={{ flex: 1 }} />
+        {/* Распорка только для flex-режима (xs/sm); в сетке колонки заданы явно. */}
+        <Box sx={{ flex: 1, display: { xs: "block", md: "none" } }} />
 
         {/* Правая часть: Refresh + Avatar */}
         <Stack
           direction="row"
           alignItems="center"
           spacing={{ xs: 0.5, sm: 1 }}
-          sx={{ ml: "auto" }}
+          sx={{ ml: "auto", justifySelf: "end", minWidth: 0 }}
         >
           <IconButton
             color="inherit"
@@ -267,6 +279,9 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
             <RefreshOutlined sx={{ fontSize: { xs: 18, sm: 20 } }} />
           </IconButton>
 
+          {/* Пока пароля нет — «Установить пароль»; после установки исчезает. */}
+          <SetPasswordButton />
+
           {(displayAvatar || displayName) && (
             <Stack
               direction="row"
@@ -277,7 +292,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
                 cursor: "pointer",
                 ml: 0.5,
                 borderRadius: "999px",
-                pr: { xs: 0, md: 1.5 },
+                pr: { xs: 0, lg: 1.5 },
                 py: 0.5,
                 transition: 'background-color 0.2s',
                 '&:hover': {
@@ -290,7 +305,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
                 variant="subtitle2"
                 noWrap
                 sx={{
-                  display: { xs: "none", md: "block" },
+                  display: { xs: "none", lg: "block" },
                   maxWidth: 200,
                   fontWeight: 600,
                   color: 'text.primary'

@@ -126,3 +126,43 @@ export function toDailySeries(
   }
   return out;
 }
+
+/** Сколько прошлых недель берём в «обычный» уровень дня недели. */
+export const BASELINE_WEEKS = 4;
+
+/**
+ * Окно истории для базовой линии: от (начало − 4 недели) до (конец − 1 неделя).
+ * Одним запросом покрывает «тот же день недели» для каждого дня графика.
+ */
+export function baselineWindow(range: PeriodRange, weeks = BASELINE_WEEKS): PeriodRange {
+  const from = dayjs(range.dateFrom).subtract(weeks * 7, "day");
+  const to = dayjs(range.dateTo).subtract(7, "day");
+  return {
+    dateFrom: from.format("YYYY-MM-DD"),
+    dateTo: to.format("YYYY-MM-DD"),
+    month: from.format("YYYY-MM"),
+    label: `тот же день недели, ${weeks} нед.`,
+  };
+}
+
+/**
+ * «Обычно в этот день недели»: среднее по тому же дню недели за прошлые
+ * недели. Понедельник сравнивается с понедельниками, а не со средним по
+ * неделе — у бизнеса поток сильно зависит от дня недели.
+ *
+ * Дни без записи в истории считаются нулём (выходной — тоже данные), но если
+ * истории нет вовсе (карта не пришла), линия не рисуется: null.
+ */
+export function weekdayBaseline(
+  history: Record<string, number> | undefined,
+  date: string,
+  weeks = BASELINE_WEEKS,
+): number | null {
+  if (!history) return null;
+  let sum = 0;
+  for (let w = 1; w <= weeks; w++) {
+    const key = dayjs(date).subtract(w * 7, "day").format("YYYY-MM-DD");
+    sum += Number(history[key] ?? 0);
+  }
+  return sum / weeks;
+}

@@ -52,6 +52,26 @@ export interface DealStage {
   isActive: boolean;
 }
 
+/** Кнопки-действия в карточке сделки; набор включённых настраивается у воронки. */
+export type DealCardAction = "services" | "chat" | "task" | "appointment";
+export const DEAL_CARD_ACTIONS: DealCardAction[] = ["services", "chat", "task", "appointment"];
+
+/** Тип дополнительного поля воронки. */
+export type DealCustomFieldType = "text" | "number" | "date" | "select" | "checkbox";
+export const DEAL_CUSTOM_FIELD_TYPES: DealCustomFieldType[] = ["text", "number", "date", "select", "checkbox"];
+
+/** Схема одного дополнительного поля карточки (настройка воронки). */
+export interface DealCustomField {
+  code: string;
+  label: string;
+  type: DealCustomFieldType;
+  options: string[];
+  required: boolean;
+}
+
+/** Значения дополнительных полей сделки: ключ — code поля. */
+export type DealCustomValues = Record<string, string | number | boolean | null>;
+
 export interface DealPipeline {
   id: number;
   name: string;
@@ -60,6 +80,12 @@ export interface DealPipeline {
   isDefault: boolean;
   isActive: boolean;
   order: number;
+  /** На сколько часов вперёд карточка подставляет «следующее касание» при записи касания. */
+  nextTouchHours: number;
+  /** Какие кнопки показывать в карточке сделок этой воронки (порядок канонический). */
+  cardActions: DealCardAction[];
+  /** Дополнительные поля карточки этой воронки. */
+  customFields: DealCustomField[];
   stages: DealStage[];
 }
 
@@ -81,7 +107,11 @@ export interface Deal {
   stageName: string;
   stageKind: DealStageKind;
   contactName: string;
+  /** Логин в мессенджере (Instagram/Telegram) без «@»; пусто, если лид пришёл по телефону. */
+  contactUsername: string;
   phone: string;
+  /** Значения дополнительных полей по схеме воронки. */
+  customValues: DealCustomValues;
   comment: string;
   patientId: number | null;
   patientName: string | null;
@@ -342,8 +372,11 @@ export interface CreateDealPayload {
  */
 export interface UpdateDealPayload {
   contactName?: string;
+  contactUsername?: string;
   phone?: string;
   comment?: string;
+  /** Частичное обновление дополнительных полей; null очищает. */
+  customValues?: DealCustomValues;
   patientId?: number;
   assigneeId?: number;
   sourceId?: number;
@@ -563,6 +596,9 @@ export function updatePipeline(
     order?: number;
     code?: string;
     clearCode?: boolean;
+    nextTouchHours?: number;
+    cardActions?: DealCardAction[];
+    customFields?: DealCustomField[];
   },
   organizationId?: number,
 ): Promise<DealPipeline> {
@@ -930,13 +966,42 @@ export async function getDealActivities(
 
 export function addDealActivity(
   dealId: number,
-  payload: { type: DealActivityType; note?: string; occurredAt?: string },
+  payload: {
+    type: DealActivityType;
+    note?: string;
+    occurredAt?: string;
+    /** Перепланировать следующее касание тем же запросом. */
+    nextActionAt?: string;
+    clearNextAction?: boolean;
+  },
   organizationId?: number,
 ): Promise<DealActivity> {
   return apiRequest<DealActivity>(withOrg(`/deals/${dealId}/activities/`, organizationId), {
     method: "POST",
     body: payload,
   });
+}
+
+/** Карта клиента, похожая на этого лида (совпадение по телефону). */
+export interface DealPatientCandidate {
+  id: number;
+  fullName: string;
+  phone: string;
+  birthDate: string | null;
+  matchedBy: "phone";
+}
+
+/** Кандидаты на привязку: клиенты организации с тем же номером, до пяти. */
+export async function getDealPatientCandidates(
+  dealId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<DealPatientCandidate[]> {
+  const body = await apiRequest<{ results: DealPatientCandidate[] }>(
+    withOrg(`/deals/${dealId}/patient-candidates/`, organizationId),
+    { signal },
+  );
+  return body.results;
 }
 
 export async function getDealChangelog(

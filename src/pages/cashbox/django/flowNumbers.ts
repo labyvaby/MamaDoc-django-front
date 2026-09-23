@@ -78,12 +78,63 @@ function paymentsRow(payments: number, refunds: number, children: FlowSubRow[]):
 
 // ── Безнал ────────────────────────────────────────────────────────────────────
 
+/** «1 001» — сумма для пояснения под строкой, без валюты: она уже в колонке. */
+const plain = (n: number): string => n.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+
+/**
+ * Разрез оплат безнала по способам — нетто: сумма способа уже за вычетом его
+ * возвратов, а под ней пояснение «оплачено 1 001 · возврат −300». Возврат
+ * стоит рядом со своим терминалом, столбец складывается в строку оплат, а
+ * цифра сходится с выпиской банка по терминалу.
+ *
+ * Возвраты, которые разрез не покрыл (бэк не отдал `byCashlessMethod` или
+ * суммы разошлись), идут общей строкой «Возвраты» — иначе итог не сойдётся.
+ */
+function cardPaymentSubRows(
+  rows: CashlessMethodBreakdownRow[] | undefined,
+  refunds: number,
+): FlowSubRow[] {
+  const byMethod = (rows ?? [])
+    .filter((r) => num(r.income) !== 0 || num(r.refunds) !== 0)
+    .map((r) => {
+      const income = num(r.income);
+      const refunded = num(r.refunds);
+      const net = income - refunded;
+      const noMethod = r.cashlessMethodId == null;
+      return {
+        net,
+        row: {
+          key: `income-${r.cashlessMethodId ?? "none"}`,
+          label: r.cashlessMethodName ?? NO_METHOD_LABEL,
+          amount: Math.abs(net),
+          direction: net < 0 ? -1 : 1,
+          muted: noMethod,
+          hint: noMethod ? NO_METHOD_HINT : undefined,
+          note:
+            refunded !== 0
+              ? `оплачено ${plain(income)} · возврат −${plain(refunded)}`
+              : undefined,
+        } satisfies FlowSubRow,
+      };
+    })
+    // «Без способа» — всегда последним: это остаток, а не способ.
+    .sort((a, b) => Number(a.row.muted) - Number(b.row.muted) || b.net - a.net)
+    .map(({ row }): FlowSubRow => row);
+
+  const covered = (rows ?? []).reduce((acc, r) => acc + num(r.refunds), 0);
+  const rest = Math.round((refunds - covered) * 100) / 100;
+  if (rest > 0) {
+    byMethod.push({ key: "payment-refunds", label: REFUNDS_LABEL, amount: rest, direction: -1 });
+  }
+  return byMethod;
+}
+
 /**
  * Разбивка безналичного потока по типам операций.
  *
  * Возвраты живут внутри оплат: возвращают всегда конкретный платёж, и отдельной
  * строкой расхода они читались бы как самостоятельные деньги. Поэтому строка
- * оплат — нетто, а возврат виден в её разрезе; итог карточки от этого не
+ * оплат — нетто, а возврат виден у своего способа (`cardPaymentSubRows`); итог карточки от этого не
  * меняется, но «Приход» в шапке секции сходится с суммой строк под ним.
  */
 export function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
@@ -101,12 +152,7 @@ export function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
     inflow: payments - refunds + sales,
     outflow: expenses + supplies,
     breakdown: [
-      paymentsRow(payments, refunds, [
-        ...methodSubRows(methods, "income"),
-        ...(refunds !== 0
-          ? [{ key: "payment-refunds", label: REFUNDS_LABEL, amount: refunds, direction: -1 as const }]
-          : []),
-      ]),
+      paymentsRow(payments, refunds, cardPaymentSubRows(methods, refunds)),
       {
         key: "sale",
         label: "Продажи товаров",

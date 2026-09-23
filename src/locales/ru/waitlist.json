@@ -38,7 +38,8 @@
   "vaccineDemand": {
     "title": "Ждут вакцину",
     "inStock": "на складе {{count}}",
-    "outOfStock": "нет в наличии"
+    "outOfStock": "нет в наличии",
+    "stockUnknown": "Остаток на складе неизвестен"
   },
 
   "kpi": {
@@ -70,6 +71,7 @@
     "wish": "Чего ждёт",
     "specialist": "{{specialist.nom, capitalize}}",
     "services": "Услуги",
+    "vaccine": "Вакцина",
     "branch": "Филиал",
     "period": "Период",
     "time": "Время",
@@ -100,6 +102,7 @@
     "closed": "Закрытые",
     "reset": "Сбросить",
     "fromSite": "С сайта",
+    "vaccine": "Вакцина",
     "allEmployees": "Все"
   },
 

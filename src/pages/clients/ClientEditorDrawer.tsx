@@ -20,17 +20,13 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import dayjs from "dayjs";
-import { CustomDatePicker, PhoneCountryCodeSelect } from "../../components/ui";
+import { CustomDatePicker, PhoneNumberField } from "../../components/ui";
 import {
   composePhone,
   DEFAULT_PHONE_COUNTRY_CODE,
-  formatPhoneLocalDisplay,
-  getPhoneLocalMaxLength,
-  handlePhonePaste,
   parsePhone,
   type PhoneCountryCode,
 } from "../../utility/phone";
-import { usePhoneLocalInput } from "../../hooks/usePhoneLocalInput";
 import { formatPatientAge } from "../../utility/age";
 import {
   createClient,
@@ -131,13 +127,6 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
   };
-
-  const phoneInput = usePhoneLocalInput(
-    draft.phoneCountryCode,
-    draft.phone,
-    (value) => set("phone", value),
-    (value) => set("phoneCountryCode", value),
-  );
 
   React.useEffect(() => {
     if (!open) return;
@@ -263,23 +252,15 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
 
             <Divider />
             <SectionLabel>Контакты</SectionLabel>
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>Телефон *</Typography>
-              <TextField
-                value={formatPhoneLocalDisplay(draft.phoneCountryCode, draft.phone)}
-                inputRef={phoneInput.inputRef}
-                onChange={phoneInput.onChange}
-                onKeyDown={phoneInput.onKeyDown}
-                onPaste={(event) => handlePhonePaste(event, draft.phoneCountryCode, (code, local) => { set("phoneCountryCode", code); set("phone", local); })}
-                fullWidth
-                size="small"
-                disabled={busy || Boolean(client)}
-                helperText={client ? "Телефон нельзя изменить в этой форме" : undefined}
-                InputProps={{ startAdornment: <PhoneCountryCodeSelect value={draft.phoneCountryCode} onChange={(code) => set("phoneCountryCode", code)} /> }}
-                inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
-                placeholder={getPhoneLocalMaxLength(draft.phoneCountryCode) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
-              />
-            </Stack>
+            <PhoneNumberField
+              label="Телефон *"
+              countryCode={draft.phoneCountryCode}
+              phone={draft.phone}
+              onCountryCodeChange={(value) => set("phoneCountryCode", value)}
+              onPhoneChange={(value) => set("phone", value)}
+              disabled={busy || Boolean(client)}
+              helperText={client ? "Телефон нельзя изменить в этой форме" : undefined}
+            />
             <TextField label="Email" placeholder="client@example.com" value={draft.email} onChange={(event) => set("email", event.target.value)} fullWidth />
 
             {draft.clientType === "individual" && (

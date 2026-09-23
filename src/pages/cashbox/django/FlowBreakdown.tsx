@@ -27,6 +27,11 @@ export type FlowSubRow = {
   muted?: boolean;
   /** Пояснение рядом с названием — показывается иконкой с тултипом. */
   hint?: string;
+  /**
+   * Мелкая строка под названием — из чего сложилась сумма
+   * («оплачено 1 001 · возврат −300»).
+   */
+  note?: string;
 };
 
 export type FlowBreakdownRow = {
@@ -186,16 +191,29 @@ const SubRows: React.FC<{ rows: FlowSubRow[]; direction: 1 | -1; accent: string 
         spacing={1}
         sx={{ py: 0.4, minWidth: 0 }}
       >
-        <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
-          <Typography
-            variant="caption"
-            color={sub.muted ? "text.disabled" : "text.secondary"}
-            noWrap
-          >
-            {sub.label}
-          </Typography>
-          {sub.hint && <Hint text={sub.hint} />}
-        </Stack>
+        <Box sx={{ minWidth: 0 }}>
+          <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+            <Typography
+              variant="caption"
+              color={sub.muted ? "text.disabled" : "text.secondary"}
+              noWrap
+            >
+              {sub.label}
+            </Typography>
+            {sub.hint && <Hint text={sub.hint} />}
+          </Stack>
+          {sub.note && (
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              noWrap
+              display="block"
+              sx={{ fontSize: "0.6875rem", lineHeight: 1.3 }}
+            >
+              {sub.note}
+            </Typography>
+          )}
+        </Box>
         <Amount
           value={sub.amount}
           direction={sub.direction ?? direction}
@@ -256,8 +274,12 @@ export const FlowBreakdownBlock: React.FC<Props> = ({
     // Единственная подгруппа, равная родителю, ничего не объясняет — шеврон на
     // ней был бы кликом в никуда. А вот одна подгруппа с другой суммой смысл
     // несёт: так выглядят наличные оплаты с возвратом, где способов нет.
+    // Подгруппа с пояснением тоже не схлопывается: у безнала с одним
+    // способом сумма нетто совпадает с родителем, и возврат виден только в
+    // её «оплачено · возврат».
     const sameAsRow =
       subRows.length === 1 &&
+      !subRows[0].note &&
       Math.abs(
         subRows[0].amount * (subRows[0].direction ?? row.direction) - row.amount * row.direction,
       ) < 0.005;

@@ -185,9 +185,20 @@
     "addToCalendar": "Добавить в календарь",
     "payExpiresIn": "Ссылка действует ещё {{minutes}} мин",
     "payChecking": "Проверяем оплату…",
-    "payPaid": "Оплата получена — {{record.nom}} подтверждается клиникой.",
+    "payPaid": "Предоплата получена",
+    "payPaidAmount": "{{amount}} · оплачено онлайн",
     "payExpired": "Время оплаты истекло, {{record.nom}} снята. Запишитесь заново.",
-    "payFailed": "Банк отклонил оплату, {{record.nom}} снята. Попробуйте записаться ещё раз."
+    "payFailed": "Банк отклонил оплату, {{record.nom}} снята. Попробуйте записаться ещё раз.",
+    "statusTitlePending": "Ожидает подтверждения администратора",
+    "statusHintPending": "Заявка получена. Администратор перезвонит на ваш номер, чтобы подтвердить {{visit.acc}}. Если планы изменились — сообщите в {{org.acc}}.",
+    "statusTitleConfirmed": "{{record.nom, capitalize}} подтверждена",
+    "statusHintConfirmed": "Ждём вас в назначенное время. Если не сможете прийти, предупредите заранее.",
+    "statusTitleCancelled": "{{record.nom, capitalize}} отменена",
+    "statusHintCancelled": "Время освобождено. Можно записаться заново.",
+    "statusTitleCompleted": "{{visit.nom, capitalize}} состоялся",
+    "statusHintCompleted": "Спасибо, что выбрали нас!",
+    "statusTitleNoShow": "{{visit.nom, capitalize}} пропущен",
+    "statusHintNoShow": "Чтобы прийти в другое время, запишитесь заново."
   },
 
   "auth": {

@@ -71,7 +71,6 @@ import { tt } from "../../../i18n/t";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
 import { useAuthUserNames } from "../../../hooks/useAuthUserNames";
-import { useAppointmentWorkflow } from "../../../hooks/useAppointmentWorkflow";
 import DjangoConclusionDrawer from "../DjangoConclusionDrawer";
 import { getConclusionSlots, type ConclusionSlot } from "../../../api/medical";
 import PatientQuickViewDrawer from "../../../components/patients/DjangoPatientQuickViewDrawer";
@@ -184,9 +183,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const theme = useTheme();
   const orgId = useApiOrgId();
   const { isDoctor, isNurse, activeEmployee } = usePermissions();
-  // Шаг «Подтверждён» организация может выключить в настройках — тогда
-  // действие не показываем, а уже подтверждённые приёмы не трогаем.
-  const { confirmStep } = useAppointmentWorkflow();
   // Каждое действие заключения проверяет ровно то право, которое требует API.
   // Объединять view/create/update нельзя: иначе фронт показывает действие,
   // которое сервер затем корректно отклоняет с 403.
@@ -556,6 +552,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         durationMinutes: sl.durationMinutes,
         amount: som(lineAmount),
         conclusionState: sl.conclusionState,
+        conclusionsTotal: sl.conclusionsTotal,
+        conclusionsCompleted: sl.conclusionsCompleted,
         action:
           canOverridePrice &&
           !appt.priceOverrideLocked &&
@@ -666,14 +664,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const actions: HeaderAction[] = [];
 
   // Подтвердить — пациент подтвердил визит по телефону, но ещё не пришёл.
-  // Шаг выключается на организацию (Настройки → Организация → Ход приёма).
-  if (
-    confirmStep &&
-    canUpdate &&
-    onConfirmVisit &&
-    appt.status === "scheduled" &&
-    !isPaymentAccepted
-  ) {
+  if (canUpdate && onConfirmVisit && appt.status === "scheduled" && !isPaymentAccepted) {
     actions.push({
       key: "confirm",
       label: t("details.confirm"),

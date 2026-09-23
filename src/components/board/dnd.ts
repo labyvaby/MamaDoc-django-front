@@ -57,3 +57,23 @@ export function resolveDrop(
 export function columnOfCard(cardId: string, columns: readonly DndColumn[]): string | null {
   return columns.find((c) => c.ids.includes(cardId))?.key ?? null;
 }
+
+/**
+ * Раскладка, в которой `cardId` переехала в колонку `columnKey` на место
+ * `index` (0-based, без учёта самой карточки). Чистая: исходные массивы не
+ * меняются. Нужна на время drag — чтобы целевая колонка «знала» о карточке
+ * и её соседи раздвинулись.
+ */
+export function moveCard(
+  columns: readonly DndColumn[],
+  cardId: string,
+  columnKey: string,
+  index: number,
+): DndColumn[] {
+  return columns.map((column) => {
+    const ids = column.ids.filter((id) => id !== cardId);
+    if (column.key !== columnKey) return { key: column.key, ids };
+    const at = Math.max(0, Math.min(index, ids.length));
+    return { key: column.key, ids: [...ids.slice(0, at), cardId, ...ids.slice(at)] };
+  });
+}

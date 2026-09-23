@@ -13,6 +13,8 @@ import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
 import { AppCard } from "../../components/ui";
 import { AppButton } from "../../components/ui/AppButton";
 import { changePassword } from "../../api/auth";
+import { markPasswordSet, usePermissions } from "../../hooks/usePermissions";
+import PasswordLoginHint from "./PasswordLoginHint";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { ApiError } from "../../api/client";
 
@@ -40,7 +42,11 @@ const ChangePasswordCard: React.FC = () => {
 
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [success, setSuccess] = React.useState(false);
+  // Текст успеха фиксируем в момент отправки: после markPasswordSet() режим
+  // «первая установка» сразу сменится на «изменение».
+  const [success, setSuccess] = React.useState<string | null>(null);
+  const { hasPassword } = usePermissions();
+  const firstTime = hasPassword === false;
 
   const mismatch = confirm.length > 0 && next !== confirm;
   const tooShort = next.length > 0 && next.length < MIN_LENGTH;
@@ -61,10 +67,11 @@ const ChangePasswordCard: React.FC = () => {
     if (!form.validate()) return;
     setBusy(true);
     setError(null);
-    setSuccess(false);
+    setSuccess(null);
     try {
       await changePassword(next);
-      setSuccess(true);
+      setSuccess(firstTime ? "Пароль установлен." : "Пароль изменён.");
+      markPasswordSet();
       reset();
     } catch (err) {
       setError(extractErrorMessage(err));
@@ -83,8 +90,8 @@ const ChangePasswordCard: React.FC = () => {
             </Alert>
           )}
           {success && (
-            <Alert severity="success" onClose={() => setSuccess(false)}>
-              Пароль изменён.
+            <Alert severity="success" onClose={() => setSuccess(null)}>
+              {success}
             </Alert>
           )}
 
@@ -145,10 +152,15 @@ const ChangePasswordCard: React.FC = () => {
               disabled={busy}
               loading={busy}
             >
-              {busy ? "Сохранение…" : "Изменить пароль"}
+              {busy ? "Сохранение…" : firstTime ? "Установить пароль" : "Изменить пароль"}
             </AppButton>
           </Box>
         </Stack>
+      </Box>
+
+      {/* Зачем пароль и как им входить — сюда ведёт кнопка из шапки. */}
+      <Box sx={{ mt: 3 }}>
+        <PasswordLoginHint />
       </Box>
     </AppCard>
   );

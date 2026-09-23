@@ -32,7 +32,7 @@ export const PAGE_PERMISSIONS = {
   cashbox: "finance.view",
   reports: "reports.view",
   payroll: ["payroll.view", "payroll.view_own"],
-  notifications: "notifications.manage",
+  notifications: "notifications.page.view",
   reviews: ["reviews.view", "reviews.manage"],
   bookings: ["bookings.view", "bookings.manage"],
   // Раздел «Чаты» — встроенный Chatwoot. Право выдаётся ролям в редакторе
@@ -97,10 +97,14 @@ export const SETTINGS_TAB_PERMISSIONS = {
   skud: PAGE_PERMISSIONS.attendanceSettings,
   announcements: PAGE_PERMISSIONS.announcements,
   notifications: PAGE_PERMISSIONS.notifications,
-  // Конструктор автоматизаций отправляет SMS/WhatsApp и на бэке гейтится тем
-  // же notifications.manage, что и настройки уведомлений — своего кода прав
-  // у модуля нет (docs/automations-api.md §2).
-  automations: PAGE_PERMISSIONS.notifications,
+  // Автоматизации продолжают работать по notifications.manage; отдельное
+  // notifications.page.view управляет только доступностью экрана уведомлений.
+  automations: "notifications.manage",
+  // Подключение WhatsApp и каталог шаблонов: на бэке те же
+  // notifications.manage (docs/whatsapp-templates-mvp.md §1.1). Привязка к
+  // подключению Raven внутри страницы — только суперадмину, это проверяет
+  // сам бэк.
+  whatsapp: "notifications.manage",
   productAttributes: "warehouse.manage",
   // Настройки раздела (статусы, раскладка карточки) бэк закрывает clients.update.
   clients: "clients.update",

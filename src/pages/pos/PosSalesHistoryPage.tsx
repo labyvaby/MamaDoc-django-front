@@ -16,7 +16,6 @@ import dayjs from "dayjs";
 import { useNavigate } from "react-router";
 
 import PointOfSaleOutlined from "@mui/icons-material/PointOfSaleOutlined";
-import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
@@ -589,21 +588,6 @@ export default function PosSalesHistoryPage() {
           loading={list.isFetching}
           actions={
             <>
-              <Tooltip title="Обновить">
-                <span>
-                  <IconButton
-                    onClick={() => {
-                      void list.refetch();
-                      void summary.refetch();
-                    }}
-                    disabled={!ready || list.isFetching}
-                    sx={{ border: 1, borderColor: "divider", borderRadius: "10px" }}
-                    aria-label="Обновить"
-                  >
-                    <RefreshOutlined fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
               {isMobile ? (
                 <Tooltip title="Открыть кассу">
                   <IconButton onClick={() => navigate("/pos")} color="primary" sx={{ border: 1, borderColor: "divider", borderRadius: "10px" }} aria-label="Открыть кассу">

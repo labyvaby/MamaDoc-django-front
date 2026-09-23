@@ -177,20 +177,6 @@ export const PosTopBar: React.FC<Props> = ({
               ))}
             </Select>
           )}
-          <Box
-            sx={{
-              flexShrink: 0,
-              px: "6px",
-              py: "4px",
-              border: `1px solid ${c.outline}`,
-              borderRadius: `${POS_RADIUS.chip}px`,
-              fontSize: 10,
-              lineHeight: 0.9,
-              color: c.textDim,
-            }}
-          >
-            F2
-          </Box>
         </Box>
       </Stack>
 
