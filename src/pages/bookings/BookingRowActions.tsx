@@ -117,7 +117,10 @@ export const ClaimControl: React.FC<{
             height: size === "medium" ? 28 : 24,
             borderRadius: "7px",
             fontWeight: 500,
-            maxWidth: 170,
+            // Не шире контейнера: в таблице ячейка «В работе» узкая, и при
+            // фиксированном maxWidth правый край чипа с крестиком «снять»
+            // обрезался. Имя усечётся, но крестик останется в клетке.
+            maxWidth: "100%",
             color: "text.primary",
             bgcolor: subtleBg(t, true),
           })}
