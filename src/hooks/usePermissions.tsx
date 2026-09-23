@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getCurrentUser, switchAuthContext, userHasPassword } from "../api";
 import type { MeResponse, RbacMembership, RbacOrganization, RbacBranch, ActiveEmployee, SwitchContextPayload } from "../api/auth";
 import { ApiError } from "../api/client";
+import { accessEndedMessage, rememberAccessEnded } from "../api/accessEnded";
 import type { Role, Permission, UserPermissions, RoleName, PermissionCheck, AuthStatus } from "../types/rbac";
 import { getModuleCodeForPermission } from "../utils/moduleMapping";
 
@@ -108,6 +109,9 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       if (epoch !== authEpoch) return;
       const status = error instanceof ApiError ? error.status : -1;
       if (status === 401) {
+        // Сессию закрыли из-за увольнения — объяснение ждёт на странице входа.
+        const ended = accessEndedMessage(error);
+        if (ended) rememberAccessEnded(ended);
         setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null });
       } else {
         const message = error instanceof ApiError ? `Сервер недоступен (${status || "сеть"})` : "Сетевая ошибка";
