@@ -79,7 +79,8 @@ const DjangoFireEmployeeDialog: React.FC<DjangoFireEmployeeDialogProps> = ({
           <Typography variant="body2" color="text.secondary">
             Сотрудник будет переведён в статус «Уволен», его членство в
             организации будет деактивировано. История приёмов и медицинские
-            записи сохранятся.
+            записи сохранятся. Если это ошибка, сотрудника можно вернуть
+            кнопкой «Восстановить» в его строке.
           </Typography>
         </Stack>
       </DialogContent>
