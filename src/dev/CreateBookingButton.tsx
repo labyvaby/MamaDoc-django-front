@@ -36,6 +36,7 @@ import {
   CardContent,
   Checkbox,
   CircularProgress,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -65,7 +66,7 @@ import { CustomDatePicker } from "../components/ui";
 import { INVOICE_DOCUMENT_ACCEPT } from "../utility/imageCompression";
 import { useHotelProperty } from "./useHotelProperty";
 import { formatGuestMatchedBy } from "./hotelDisplay";
-import { isDocumentFile, prepareDocumentFile, useDocumentScan } from "./useDocumentScan";
+import { isDocumentFile, prepareDocumentFile, useDocumentScan, ScanProgressBar } from "./useDocumentScan";
 import {
   getHotelCatalogs,
   listRooms,
@@ -143,6 +144,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
 
   // Документ
   const [guestType, setGuestType] = React.useState<GuestType>("resident");
+  // Поля документа скрыты, пока не пришёл ответ распознавания (тогда уже
+  // заполненные) или пока не нажали «Заполнить вручную».
+  const [documentFieldsVisible, setDocumentFieldsVisible] = React.useState(false);
   const [idNumber, setIdNumber] = React.useState("");
   const [inn, setInn] = React.useState("");
   const [citizenship, setCitizenship] = React.useState("");
@@ -168,6 +172,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const {
     available: scanAvailable,
     scanning,
+    scanProgress,
     notice: scanNotice,
     clearNotice: clearScanNotice,
     scan: runDocumentScan,
@@ -195,6 +200,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setGuaranteeMethod("");
     setBoardType("");
     setGuestType("resident");
+    setDocumentFieldsVisible(false);
     setIdNumber("");
     setInn("");
     setCitizenship("");
@@ -345,6 +351,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     if (scan.registrationAddress) setRegistrationAddress(scan.registrationAddress);
     if (scan.citizenship) setCitizenship(scan.citizenship);
     if (scan.passportCountry) setPassportCountry(scan.passportCountry);
+    setDocumentFieldsVisible(true);
   };
 
   /** Прикрепляет фото документа и, если распознавание доступно, подставляет реквизиты в поля. */
@@ -373,10 +380,17 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setPassportPhotoFile(prepared);
     setPassportPhotoPreview(prepared.type.startsWith("image/") ? URL.createObjectURL(prepared) : null);
 
-    if (!scanAvailable) return;
+    if (!scanAvailable) {
+      // Распознавания нет — фото просто прикреплено, поля открываем сразу для ручного ввода.
+      setDocumentFieldsVisible(true);
+      return;
+    }
     const scan = await runDocumentScan(prepared);
     // Форму закрыли (и сбросили) пока шло распознавание — чужие поля в новую не подставляем.
-    if (scan && generation === scanGenerationRef.current) applyScan(scan);
+    if (generation !== scanGenerationRef.current) return;
+    if (scan) applyScan(scan);
+    // Не распознало (404/503 и т.п.) — notice уже объясняет «заполните вручную», открываем поля.
+    else setDocumentFieldsVisible(true);
   };
 
   const removePhoto = () => {
@@ -728,140 +742,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                     </Typography>
                     <Divider />
 
-                    <ToggleButtonGroup
-                      value={guestType}
-                      exclusive
-                      size="small"
-                      onChange={(_, value: GuestType | null) => {
-                        if (!value) return;
-                        setGuestType(value);
-                        // Тип документа, прочитанный со старого скана, к новому типу гостя не относится.
-                        setScannedDocumentType(null);
-                      }}
-                    >
-                      {(catalogs?.guestTypes ?? []).map((c) => (
-                        <ToggleButton key={c.value} value={c.value}>
-                          {c.label}
-                        </ToggleButton>
-                      ))}
-                    </ToggleButtonGroup>
-
-                    {/* Общее для обоих типов документа — то, что реально несёт любой скан
-                        паспорта/ID-карты независимо от гражданства. */}
-                    <Stack direction="row" gap={2}>
-                      <TextField
-                        select
-                        label="Пол"
-                        value={gender}
-                        onChange={(e) => setGender(e.target.value)}
-                        sx={{ flex: 1 }}
-                      >
-                        <MenuItem value="">Не указан</MenuItem>
-                        {(catalogs?.genders ?? []).map((c) => (
-                          <MenuItem key={c.value} value={c.value}>
-                            {c.label}
-                          </MenuItem>
-                        ))}
-                      </TextField>
-                      <TextField
-                        label="Место рождения"
-                        value={placeOfBirth}
-                        onChange={(e) => setPlaceOfBirth(e.target.value)}
-                        sx={{ flex: 1 }}
-                      />
-                    </Stack>
-                    <Stack direction="row" gap={2}>
-                      <CustomDatePicker label="Дата выдачи" value={issueDate} onChange={setIssueDate} sx={{ flex: 1 }} />
-                      <CustomDatePicker
-                        label="Действителен до"
-                        value={documentExpiry}
-                        onChange={setDocumentExpiry}
-                        sx={{ flex: 1 }}
-                      />
-                    </Stack>
-                    <TextField
-                      label="Орган, выдавший документ"
-                      value={issuingAuthority}
-                      onChange={(e) => setIssuingAuthority(e.target.value)}
-                      fullWidth
-                    />
-
-                    {guestType === "resident" ? (
-                      <Stack gap={2}>
-                        <Stack direction="row" gap={2}>
-                          <TextField
-                            label="Паспорт (ID-карта)"
-                            value={idNumber}
-                            onChange={(e) => setIdNumber(e.target.value)}
-                            sx={{ flex: 1 }}
-                          />
-                          <TextField label="ИНН" value={inn} onChange={(e) => setInn(e.target.value)} sx={{ flex: 1 }} />
-                        </Stack>
-                        <TextField
-                          label="Адрес регистрации"
-                          value={registrationAddress}
-                          onChange={(e) => setRegistrationAddress(e.target.value)}
-                          fullWidth
-                        />
-                      </Stack>
-                    ) : (
-                      <Stack gap={2}>
-                        <Stack direction="row" gap={2}>
-                          <TextField
-                            label="Гражданство"
-                            value={citizenship}
-                            onChange={(e) => setCitizenship(e.target.value)}
-                            sx={{ flex: 1 }}
-                          />
-                          <TextField
-                            label="Номер загранпаспорта"
-                            value={passportNumber}
-                            onChange={(e) => setPassportNumber(e.target.value)}
-                            sx={{ flex: 1 }}
-                          />
-                        </Stack>
-                        <Stack direction="row" gap={2}>
-                          <TextField
-                            label="Страна выдачи"
-                            value={passportCountry}
-                            onChange={(e) => setPassportCountry(e.target.value)}
-                            sx={{ flex: 1 }}
-                          />
-                          <CustomDatePicker
-                            label="Дата въезда в КР"
-                            value={entryDate}
-                            onChange={setEntryDate}
-                            disableFuture
-                            sx={{ flex: 1 }}
-                          />
-                        </Stack>
-                        <Stack direction="row" gap={2}>
-                          <TextField
-                            label="Номер миграционной карты"
-                            value={migrationCardNumber}
-                            onChange={(e) => setMigrationCardNumber(e.target.value)}
-                            sx={{ flex: 1 }}
-                          />
-                          <TextField
-                            select
-                            label="Цель визита"
-                            value={visitPurpose}
-                            onChange={(e) => setVisitPurpose(e.target.value)}
-                            sx={{ flex: 1 }}
-                          >
-                            <MenuItem value="">Не указана</MenuItem>
-                            {(catalogs?.visitPurposes ?? []).map((c) => (
-                              <MenuItem key={c.value} value={c.value}>
-                                {c.label}
-                              </MenuItem>
-                            ))}
-                          </TextField>
-                        </Stack>
-                      </Stack>
-                    )}
-
-                    {/* Фото документа: прикрепляется всегда, реквизиты подставляются, если доступно распознавание. */}
-                    <Stack direction="row" alignItems="center" gap={1.5}>
+                    {/* Фото — первым делом: поля ниже появляются только после него (или
+                        ручного «Заполнить вручную»), заполненные тем, что распознали. */}
+                    <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
                       <Button
                         component="label"
                         size="small"
@@ -877,6 +760,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                           onChange={(e) => void handlePhotoChange(e)}
                         />
                       </Button>
+                      {scanning && <ScanProgressBar value={scanProgress} />}
                       {scanAvailable && !passportPhotoFile && !scanning && (
                         <Typography variant="caption" color="text.secondary">
                           Реквизиты подставятся по фото автоматически
@@ -896,6 +780,11 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                             Убрать
                           </Button>
                         </Stack>
+                      )}
+                      {!documentFieldsVisible && (
+                        <Button size="small" color="inherit" onClick={() => setDocumentFieldsVisible(true)}>
+                          Заполнить вручную
+                        </Button>
                       )}
                     </Stack>
                     {photoError && (
@@ -920,6 +809,142 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         )}
                       </Alert>
                     )}
+
+                    <Collapse in={documentFieldsVisible}>
+                      <Stack spacing={2}>
+                        <ToggleButtonGroup
+                          value={guestType}
+                          exclusive
+                          size="small"
+                          onChange={(_, value: GuestType | null) => {
+                            if (!value) return;
+                            setGuestType(value);
+                            // Тип документа, прочитанный со старого скана, к новому типу гостя не относится.
+                            setScannedDocumentType(null);
+                          }}
+                        >
+                          {(catalogs?.guestTypes ?? []).map((c) => (
+                            <ToggleButton key={c.value} value={c.value}>
+                              {c.label}
+                            </ToggleButton>
+                          ))}
+                        </ToggleButtonGroup>
+
+                        {/* Общее для обоих типов документа — то, что реально несёт любой скан
+                            паспорта/ID-карты независимо от гражданства. */}
+                        <Stack direction="row" gap={2}>
+                          <TextField
+                            select
+                            label="Пол"
+                            value={gender}
+                            onChange={(e) => setGender(e.target.value)}
+                            sx={{ flex: 1 }}
+                          >
+                            <MenuItem value="">Не указан</MenuItem>
+                            {(catalogs?.genders ?? []).map((c) => (
+                              <MenuItem key={c.value} value={c.value}>
+                                {c.label}
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                          <TextField
+                            label="Место рождения"
+                            value={placeOfBirth}
+                            onChange={(e) => setPlaceOfBirth(e.target.value)}
+                            sx={{ flex: 1 }}
+                          />
+                        </Stack>
+                        <Stack direction="row" gap={2}>
+                          <CustomDatePicker label="Дата выдачи" value={issueDate} onChange={setIssueDate} sx={{ flex: 1 }} />
+                          <CustomDatePicker
+                            label="Действителен до"
+                            value={documentExpiry}
+                            onChange={setDocumentExpiry}
+                            sx={{ flex: 1 }}
+                          />
+                        </Stack>
+                        <TextField
+                          label="Орган, выдавший документ"
+                          value={issuingAuthority}
+                          onChange={(e) => setIssuingAuthority(e.target.value)}
+                          fullWidth
+                        />
+
+                        {guestType === "resident" ? (
+                          <Stack gap={2}>
+                            <Stack direction="row" gap={2}>
+                              <TextField
+                                label="Паспорт (ID-карта)"
+                                value={idNumber}
+                                onChange={(e) => setIdNumber(e.target.value)}
+                                sx={{ flex: 1 }}
+                              />
+                              <TextField label="ИНН" value={inn} onChange={(e) => setInn(e.target.value)} sx={{ flex: 1 }} />
+                            </Stack>
+                            <TextField
+                              label="Адрес регистрации"
+                              value={registrationAddress}
+                              onChange={(e) => setRegistrationAddress(e.target.value)}
+                              fullWidth
+                            />
+                          </Stack>
+                        ) : (
+                          <Stack gap={2}>
+                            <Stack direction="row" gap={2}>
+                              <TextField
+                                label="Гражданство"
+                                value={citizenship}
+                                onChange={(e) => setCitizenship(e.target.value)}
+                                sx={{ flex: 1 }}
+                              />
+                              <TextField
+                                label="Номер загранпаспорта"
+                                value={passportNumber}
+                                onChange={(e) => setPassportNumber(e.target.value)}
+                                sx={{ flex: 1 }}
+                              />
+                            </Stack>
+                            <Stack direction="row" gap={2}>
+                              <TextField
+                                label="Страна выдачи"
+                                value={passportCountry}
+                                onChange={(e) => setPassportCountry(e.target.value)}
+                                sx={{ flex: 1 }}
+                              />
+                              <CustomDatePicker
+                                label="Дата въезда в КР"
+                                value={entryDate}
+                                onChange={setEntryDate}
+                                disableFuture
+                                sx={{ flex: 1 }}
+                              />
+                            </Stack>
+                            <Stack direction="row" gap={2}>
+                              <TextField
+                                label="Номер миграционной карты"
+                                value={migrationCardNumber}
+                                onChange={(e) => setMigrationCardNumber(e.target.value)}
+                                sx={{ flex: 1 }}
+                              />
+                              <TextField
+                                select
+                                label="Цель визита"
+                                value={visitPurpose}
+                                onChange={(e) => setVisitPurpose(e.target.value)}
+                                sx={{ flex: 1 }}
+                              >
+                                <MenuItem value="">Не указана</MenuItem>
+                                {(catalogs?.visitPurposes ?? []).map((c) => (
+                                  <MenuItem key={c.value} value={c.value}>
+                                    {c.label}
+                                  </MenuItem>
+                                ))}
+                              </TextField>
+                            </Stack>
+                          </Stack>
+                        )}
+                      </Stack>
+                    </Collapse>
 
                     <Divider />
                     <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
