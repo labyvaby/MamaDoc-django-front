@@ -28,7 +28,10 @@ export class LoginPage {
     await this.page.waitForURL((url) => !url.pathname.startsWith("/login"), {
       timeout: 20_000,
     });
-    // Боковое меню CRM — landmark navigation; на логине его нет.
-    await expect(this.page.getByRole("navigation").first()).toBeVisible();
+    // После входа CRM может показать диалог выбора филиала, поэтому проверяем
+    // стабильный элемент шапки, а не landmark бокового меню.
+    await expect(this.page.getByText("e2e-admin", { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
   }
 }
