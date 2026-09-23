@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { describeDelta } from "./delta";
-import { previousRange, resolvePeriod, sumDayCounts, toDailySeries } from "./period";
+import {
+  baselineWindow,
+  previousRange,
+  resolvePeriod,
+  sumDayCounts,
+  toDailySeries,
+  weekdayBaseline,
+} from "./period";
 import dayjs from "dayjs";
 import {
   WIDGETS,
@@ -100,9 +107,9 @@ describe("раскладка блоков", () => {
   const ctx = { can: () => true, period: "month" as const, branchCount: 3 };
 
   it("новый блок из кода доезжает до сохранённой раскладки", () => {
-    const saved = normalizeLayout({ order: ["tasks", "money"], hidden: [] });
-    expect(saved.order[0]).toBe("tasks");
-    expect(saved.order).toContain("reviews");
+    const saved = normalizeLayout({ order: ["ops", "money"], hidden: [] });
+    expect(saved.order[0]).toBe("ops");
+    expect(saved.order).toContain("staff");
     expect(saved.order).toHaveLength(WIDGETS.length);
   });
 
@@ -116,9 +123,9 @@ describe("раскладка блоков", () => {
   });
 
   it("спрятанные блоки не попадают в отрисовку, порядок сохраняется", () => {
-    const layout = normalizeLayout({ order: ["reviews", "money"], hidden: ["money"] });
+    const layout = normalizeLayout({ order: ["staff", "money"], hidden: ["money"] });
     const ids = visibleWidgets(layout, ctx).map((w) => w.id);
-    expect(ids[0]).toBe("reviews");
+    expect(ids[0]).toBe("staff");
     expect(ids).not.toContain("money");
   });
 
@@ -142,10 +149,10 @@ describe("раскладка блоков", () => {
   });
 
   it("перестановка не выходит за границы списка", () => {
-    const order = ["money", "tasks", "reviews"] as const;
+    const order = ["money", "ops", "staff"] as const;
     expect(moveWidget([...order], "money", -1)).toEqual([...order]);
-    expect(moveWidget([...order], "reviews", 1)).toEqual([...order]);
-    expect(moveWidget([...order], "money", 1)).toEqual(["tasks", "money", "reviews"]);
+    expect(moveWidget([...order], "staff", 1)).toEqual([...order]);
+    expect(moveWidget([...order], "money", 1)).toEqual(["ops", "money", "staff"]);
   });
 
   it("переключатель видимости работает в обе стороны", () => {
@@ -184,14 +191,14 @@ describe("ширина блоков", () => {
 });
 
 describe("перенос перетаскиванием", () => {
-  const order = ["money", "appointments", "tasks", "reviews"] as const;
+  const order = ["money", "appointments", "ops", "staff"] as const;
 
   it("переносит через несколько позиций, а не меняет местами соседей", () => {
-    expect(reorderWidget([...order], "reviews", 0)).toEqual([
-      "reviews",
+    expect(reorderWidget([...order], "staff", 0)).toEqual([
+      "staff",
       "money",
       "appointments",
-      "tasks",
+      "ops",
     ]);
   });
 
@@ -202,9 +209,27 @@ describe("перенос перетаскиванием", () => {
   it("индекс за границами прижимается к краю", () => {
     expect(reorderWidget([...order], "money", 99)).toEqual([
       "appointments",
-      "tasks",
-      "reviews",
+      "ops",
+      "staff",
       "money",
     ]);
+  });
+});
+
+describe("обычный уровень дня недели", () => {
+  it("окно истории покрывает 4 прошлые недели одним запросом", () => {
+    const w = baselineWindow({ dateFrom: "2026-09-10", dateTo: "2026-09-23", month: "2026-09", label: "" });
+    expect(w.dateFrom).toBe("2026-08-13");
+    expect(w.dateTo).toBe("2026-09-16");
+  });
+
+  it("среднее по тому же дню недели, пропуски — ноль", () => {
+    const history = { "2026-09-16": 10, "2026-09-09": 6, "2026-09-02": 8 };
+    // 23.09 — среда; прошлые среды 16, 9, 2 сентября и 26 августа (нет данных).
+    expect(weekdayBaseline(history, "2026-09-23")).toBe(6);
+  });
+
+  it("без истории линии нет", () => {
+    expect(weekdayBaseline(undefined, "2026-09-23")).toBeNull();
   });
 });

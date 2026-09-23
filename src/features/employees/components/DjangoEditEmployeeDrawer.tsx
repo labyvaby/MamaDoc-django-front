@@ -67,6 +67,7 @@ import DjangoSalarySettings, {
   type SalarySettingsValue,
 } from "./DjangoSalarySettings";
 import type { EmployesRow } from "../types";
+import { swapHomeInOperational } from "../homeBranch";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useT } from "../../../i18n/VerticalProvider";
@@ -75,7 +76,15 @@ import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeS
 import SpecializationBlock from "./SpecializationBlock";
 import DocumentsBlock from "./DocumentsBlock";
 import { OdoctorEmployeeToggle } from "./OdoctorEmployeeToggle";
-import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader, StatusBadge } from "./drawerKit";
+import {
+  SectionLabel,
+  Field,
+  Grid2,
+  PhotoHero,
+  ElqrUploader,
+  StatusBadge,
+  type EmployeeStatusValue,
+} from "./drawerKit";
 import {
   parsePhone,
   composePhone,
@@ -173,13 +182,18 @@ const serializeBranchIds = (list: DjangoEmployeeBranch[]) =>
 
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
 
+/** Статус из строки списка; неизвестное значение считаем «работает». */
+function toStatusValue(s: string | null | undefined): EmployeeStatusValue {
+  return s === "inactive" || s === "fired" ? s : "active";
+}
+
 type EditableDraftFields = {
   fullName: string;
   nickname: string;
   phoneCountry: PhoneCountryCode;
   phoneLocal: string;
   email: string;
-  status: "active" | "inactive";
+  status: EmployeeStatusValue;
   clinicalRole: "doctor" | "nurse" | "other";
   onlineBookingEnabled: boolean;
   prepaymentRequired: boolean;
@@ -195,6 +209,8 @@ type EditableDraftFields = {
   notes: string;
   bank: string;
   bik: string;
+  /** Основной филиал (`Employee.branch`); `null` — не задан. */
+  homeBranch: DjangoEmployeeBranch | null;
   operationalBranches: DjangoEmployeeBranch[];
 };
 
@@ -227,6 +243,7 @@ function sameAsBaseline(a: EditableDraftFields, b: EditableDraftFields): boolean
     a.notes === b.notes &&
     a.bank === b.bank &&
     a.bik === b.bik &&
+    (a.homeBranch?.id ?? null) === (b.homeBranch?.id ?? null) &&
     serializeBranchIds(a.operationalBranches) === serializeBranchIds(b.operationalBranches)
   );
 }
@@ -268,7 +285,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [phoneCountry, setPhoneCountry] = React.useState<PhoneCountryCode>("+996");
   const [phoneLocal, setPhoneLocal] = React.useState("");
   const [email, setEmail] = React.useState("");
-  const [status, setStatus] = React.useState<"active" | "inactive">("active");
+  const [status, setStatus] = React.useState<EmployeeStatusValue>("active");
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
   // Видимость на витрине онлайн-записи. Дефолт true — как миграция бэка у врачей;
   // на окружении без поля сотрудник считается видимым (флаг ничего не скрывает).
@@ -321,6 +338,11 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const branchScoped = activeBranch != null;
   const [allBranches, setAllBranches] = React.useState<DjangoEmployeeBranch[]>([]);
   const [operationalBranches, setOperationalBranches] = React.useState<DjangoEmployeeBranch[]>([]);
+  // Основной филиал. Переносить бэк разрешает, как и операционный набор, только
+  // из режима «все филиалы» (из филиального контекста — 404 «Нельзя перенести
+  // сотрудника в другой филиал…», test 23.09.2026). Шлём только при изменении.
+  const [homeBranch, setHomeBranch] = React.useState<DjangoEmployeeBranch | null>(null);
+  const initialHomeBranchIdRef = React.useRef<number | null>(null);
   // Исходный набор id — чтобы не слать поле, если его не трогали.
   const initialBranchIdsRef = React.useRef<string>("[]");
 
@@ -447,7 +469,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setPhoneCountry(parsed.countryCode);
     setPhoneLocal(parsed.local);
     setEmail(record.email || "");
-    setStatus(record.status === "inactive" ? "inactive" : "active");
+    setStatus(toStatusValue(record.status));
     setClinicalRole(
       record.clinicalRole === "doctor" || record.clinicalRole === "nurse"
         ? record.clinicalRole
@@ -477,6 +499,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setSpecializations(record._djangoSpecializations ?? []);
     setOperationalBranches(record._djangoOperationalBranches ?? []);
     initialBranchIdsRef.current = serializeBranchIds(record._djangoOperationalBranches ?? []);
+    setHomeBranch(null);
+    initialHomeBranchIdRef.current = null;
     setServerError(null);
     setTouched({});
     setSubmitAttempted(false);
@@ -521,6 +545,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         setSpecializations(full.specializations ?? []);
         setOperationalBranches(full.operationalBranches ?? []);
         initialBranchIdsRef.current = serializeBranchIds(full.operationalBranches ?? []);
+        const fullHome = full.branch ? { id: full.branch.id, name: full.branch.name } : null;
+        setHomeBranch(fullHome);
+        initialHomeBranchIdRef.current = fullHome?.id ?? null;
         const parsedFull = parsePhone(full.phone || "");
         setPhoneCountry(parsedFull.countryCode);
         setPhoneLocal(parsedFull.local);
@@ -534,7 +561,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           phoneCountry: parsedFull.countryCode,
           phoneLocal: parsedFull.local,
           email: record.email || "",
-          status: record.status === "inactive" ? "inactive" : "active",
+          status: toStatusValue(record.status),
           clinicalRole: full.clinicalRole ?? "other",
           onlineBookingEnabled: full.onlineBookingEnabled !== false,
           prepaymentRequired: full.prepaymentRequired === true,
@@ -550,6 +577,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           notes: full.notes || "",
           bank: full.bank || "",
           bik: full.bik || "",
+          homeBranch: fullHome,
           operationalBranches: full.operationalBranches ?? [],
         };
         baselineRef.current = baseline;
@@ -580,6 +608,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           setNotes(draft.notes);
           setBank(draft.bank);
           setBik(draft.bik);
+          // Черновик мог быть записан до появления поля — тогда филиал из карточки.
+          if (draft.homeBranch !== undefined) setHomeBranch(draft.homeBranch);
           setOperationalBranches(draft.operationalBranches);
           setDraftRestored(true);
         } else {
@@ -713,6 +743,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       notes,
       bank,
       bik,
+      homeBranch,
       operationalBranches,
     };
     const key = draftKeyFor(empId);
@@ -733,7 +764,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   }, [
     record, fullName, nickname, phoneCountry, phoneLocal, email, status, clinicalRole,
     onlineBookingEnabled, prepaymentRequired, prepaymentAmount, slotMinutes, telegramId, instagram, birthDate, hiredAt, bankAccountNumber,
-    inn, address, notes, bank, bik, operationalBranches,
+    inn, address, notes, bank, bik, homeBranch, operationalBranches,
   ]);
 
   const handleClose = () => {
@@ -768,6 +799,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       setNotes(b.notes);
       setBank(b.bank);
       setBik(b.bik);
+      setHomeBranch(b.homeBranch);
       setOperationalBranches(b.operationalBranches);
     }
     setDraftRestored(false);
@@ -792,7 +824,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         nickname: nickname.trim() || null,
         phone: composePhone(phoneCountry, phoneLocal),
         email: email.trim() || null,
-        status,
+        // Статус — только при изменении: иначе сохранение карточки уволенного
+        // вернуло бы его в штат (раньше всё, кроме inactive, уходило как active).
+        ...(status !== toStatusValue(record.status) && { status }),
         clinicalRole,
         // Только если бэк знает поле (см. onlineBookingSupported).
         ...(onlineBookingSupported && { onlineBookingEnabled }),
@@ -816,6 +850,10 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           address: address.trim() || null,
           bank: bank.trim() || null,
           bik: bik.trim() || null,
+        }),
+        // Перенос в другой основной филиал — только при изменении.
+        ...(homeBranch && homeBranch.id !== initialHomeBranchIdRef.current && {
+          branchId: homeBranch.id,
         }),
         // Набор операционных филиалов шлём только при изменении: в режиме
         // конкретного филиала бэкенд отклоняет это поле целиком.
@@ -1203,7 +1241,13 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                     <StatusBadge
                       value={status}
                       onChange={setStatus}
-                      options={["active", "inactive"]}
+                      // «Уволен» в выборе — только у уволенного: увольняют отдельным
+                      // диалогом (он же закрывает доступ), а отсюда можно лишь вернуть.
+                      options={
+                        toStatusValue(record?.status) === "fired"
+                          ? ["fired", "active", "inactive"]
+                          : ["active", "inactive"]
+                      }
                       disabled={busy}
                     />
                   </Box>
@@ -1578,6 +1622,36 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                   </MenuItem>
                 ))}
               </TextField>
+            </Field>
+
+            {/* ── Основной филиал ── */}
+            <Field
+              label="Основной филиал"
+              hint={
+                branchScoped
+                  ? "Меняется только в режиме «все филиалы»"
+                  : "Где сотрудник числится: здесь он в списках и в расписании"
+              }
+            >
+              <Autocomplete
+                size="small"
+                options={allBranches}
+                value={homeBranch}
+                disableClearable={homeBranch != null}
+                disabled={busy || branchScoped}
+                getOptionLabel={(b) => b.name}
+                isOptionEqualToValue={(a, b) => a.id === b.id}
+                onChange={(_, v) => {
+                  if (!v) return;
+                  setOperationalBranches((prev) =>
+                    swapHomeInOperational(prev, homeBranch?.id ?? null, v),
+                  );
+                  setHomeBranch(v);
+                }}
+                renderInput={(params) => (
+                  <TextField {...params} placeholder={homeBranch ? undefined : "Не задан"} />
+                )}
+              />
             </Field>
 
             {/* ── Операционные филиалы ── */}

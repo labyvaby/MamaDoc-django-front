@@ -83,6 +83,7 @@ import {
   WaitlistPriorityChip,
   WaitlistSourceChip,
   WaitlistStatusChip,
+  WaitlistVaccineChip,
 } from "../../components/waitlist/WaitlistChips";
 import {
   displayName,
@@ -568,7 +569,12 @@ const WaitlistPage: React.FC = () => {
     queryFn: ({ signal }) =>
       getProducts(signal, { organizationId: orgId, isVaccine: true, branchId: scope.branchId ?? undefined }),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
-    enabled: enabled && WAITLIST_VACCINE_LIVE && vaccineDemand.length > 0,
+    // Нужен и блоку «Ждут вакцину», и чипам в строках: по цвету чипа видно,
+    // кому можно звонить — препарат уже на складе.
+    enabled:
+      enabled &&
+      WAITLIST_VACCINE_LIVE &&
+      (vaccineDemand.length > 0 || (query.data?.results ?? []).some((e) => e.vaccine != null)),
   });
   const vaccineStock = React.useMemo(() => {
     const map = new Map<number, number>();
@@ -650,6 +656,14 @@ const WaitlistPage: React.FC = () => {
   // Открытая карточка берёт свежую строку из списка после фонового обновления.
   const detailRow = detailEntry ? (rows.find((r) => r.id === detailEntry.id) ?? detailEntry) : null;
 
+  const vaccineFilterName =
+    vaccineId === ""
+      ? null
+      : (vaccineDemand.find((v) => v.id === vaccineId)?.name ??
+        rows.find((r) => r.vaccine?.id === vaccineId)?.vaccine?.name ??
+        vaccineStockQuery.data?.find((p) => p.id === vaccineId)?.name ??
+        null);
+
   const hasActiveFilters =
     employeeId !== "" || vaccineId !== "" || urgent || fromSite || search !== "";
   const resetFilters = () => {
@@ -693,10 +707,17 @@ const WaitlistPage: React.FC = () => {
           <Typography variant="body2" noWrap>
             {waitingForLabel(row)}
           </Typography>
-          {row.services.length > 0 && (
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {row.services.map((s) => s.name).join(", ")}
-            </Typography>
+          {(row.vaccine || row.services.length > 0) && (
+            <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+              {row.vaccine && (
+                <WaitlistVaccineChip name={row.vaccine.name} stock={vaccineStock.get(row.vaccine.id) ?? null} />
+              )}
+              {row.services.length > 0 && (
+                <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
+                  {row.services.map((s) => s.name).join(", ")}
+                </Typography>
+              )}
+            </Stack>
           )}
         </Stack>
       ),
@@ -946,6 +967,21 @@ const WaitlistPage: React.FC = () => {
             onClick={() => patch({ fromSite: !fromSite })}
             sx={(th) => ({ ...pillSx(th, fromSite), "& .MuiChip-icon": { fontSize: 15, color: "inherit", ml: 0 } })}
           />
+          {/* Фильтр по вакцине включается кликом в блоке «Ждут вакцину» — здесь
+              он виден рядом с остальными и снимается крестиком. */}
+          {vaccineId !== "" && (
+            <Chip
+              label={vaccineFilterName ?? t("filters.vaccine")}
+              icon={<VaccinesOutlined />}
+              onDelete={() => patch({ vaccineId: "" })}
+              sx={(th) => ({
+                ...pillSx(th, true),
+                maxWidth: 260,
+                "& .MuiChip-icon": { fontSize: 15, color: "inherit", ml: 0 },
+                "& .MuiChip-deleteIcon": { fontSize: 16, color: "inherit", mr: -0.5, ml: 0.5 },
+              })}
+            />
+          )}
           {hasActiveFilters && (
             <AppButton
               size="small"
@@ -1016,6 +1052,12 @@ const WaitlistPage: React.FC = () => {
                         <WaitlistStatusChip status={row.status} />
                       </Stack>
                       <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ mt: 1 }}>
+                        {row.vaccine && (
+                          <WaitlistVaccineChip
+                            name={row.vaccine.name}
+                            stock={vaccineStock.get(row.vaccine.id) ?? null}
+                          />
+                        )}
                         <WaitlistPriorityChip priority={row.priority} />
                         <WaitlistSourceChip source={row.source} />
                         <Typography variant="caption" color="text.secondary">
@@ -1160,6 +1202,7 @@ const WaitlistPage: React.FC = () => {
       <WaitlistDetailDrawer
         entry={detailRow}
         organizationId={orgId}
+        vaccineStock={detailRow?.vaccine ? (vaccineStock.get(detailRow.vaccine.id) ?? null) : null}
         canCreate={canCreate}
         canManage={canManage}
         onClose={() => setDetailEntry(null)}

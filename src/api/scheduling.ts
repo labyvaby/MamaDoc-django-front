@@ -345,6 +345,11 @@ export function getScheduleRules(
     employeeId?: number;
     includeInactive?: boolean;
     branchId?: number;
+    /**
+     * Правила всех филиалов организации (`allBranches=1`, на проде с 03.09.2026):
+     * смены сотрудника в соседнем филиале. Побеждает `branchId` — его не шлём.
+     */
+    allBranches?: boolean;
     organizationId?: number;
   } = {},
   signal?: AbortSignal,
@@ -352,7 +357,8 @@ export function getScheduleRules(
   const q = new URLSearchParams();
   if (params.employeeId != null) q.set("employeeId", String(params.employeeId));
   if (params.includeInactive) q.set("includeInactive", "1");
-  if (params.branchId != null) q.set("branchId", String(params.branchId));
+  if (params.allBranches) q.set("allBranches", "1");
+  else if (params.branchId != null) q.set("branchId", String(params.branchId));
   if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
   const qs = q.toString();
   return apiRequest<ScheduleRule[]>(`/scheduling/rules/${qs ? `?${qs}` : ""}`, { signal });
@@ -382,6 +388,8 @@ export function getScheduleExceptions(
     dateFrom?: string;
     dateTo?: string;
     branchId?: number;
+    /** Исключения всех филиалов — см. getScheduleRules. */
+    allBranches?: boolean;
     organizationId?: number;
   } = {},
   signal?: AbortSignal,
@@ -390,7 +398,8 @@ export function getScheduleExceptions(
   if (params.employeeId != null) q.set("employeeId", String(params.employeeId));
   if (params.dateFrom) q.set("dateFrom", params.dateFrom);
   if (params.dateTo) q.set("dateTo", params.dateTo);
-  if (params.branchId != null) q.set("branchId", String(params.branchId));
+  if (params.allBranches) q.set("allBranches", "1");
+  else if (params.branchId != null) q.set("branchId", String(params.branchId));
   if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
   const qs = q.toString();
   return apiRequest<ScheduleException[]>(`/scheduling/exceptions/${qs ? `?${qs}` : ""}`, {

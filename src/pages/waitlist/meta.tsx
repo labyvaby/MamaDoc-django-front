@@ -160,15 +160,16 @@ export function displayName(entry: WaitlistEntry): string {
   return entry.patientName || entry.contactName;
 }
 
-/** «Иванова М. П.» / «Любой педиатр» / «—». */
+/**
+ * «Иванова М. П.» / «Любой специалист · Педиатр». Вакцину сюда не подмешиваем:
+ * у неё своё место (`WaitlistVaccineChip`), иначе препарат читается как ФИО
+ * врача, а при указанном враче пропадает совсем.
+ */
 export function waitingForLabel(entry: WaitlistEntry): string {
   if (entry.employeeName) return entry.employeeName;
   if (entry.specializationName) {
     return `${tt("waitlist:anySpecialist")} · ${entry.specializationName}`;
   }
-  // Запись «жду Пентаксим, врач любой»: ориентир — препарат, и писать
-  // «любой специалист» вместо него бессмысленно.
-  if (entry.vaccine) return entry.vaccine.name;
   return tt("waitlist:anySpecialist");
 }
 
