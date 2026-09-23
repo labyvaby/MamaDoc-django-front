@@ -461,20 +461,6 @@ export const PosPaymentPanel: React.FC<Props> = ({
             }}
           >
             Принять оплату
-            <Box
-              sx={{
-                px: "6px",
-                py: "4px",
-                borderRadius: `${POS_RADIUS.chip}px`,
-                border: "1px solid currentColor",
-                opacity: 0.6,
-                fontSize: 12,
-                fontWeight: 400,
-                lineHeight: 0.9,
-              }}
-            >
-              F5
-            </Box>
           </ButtonBase>
         </Stack>
       </Stack>
