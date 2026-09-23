@@ -29,7 +29,7 @@ import {
   pluralVisits,
   type EmployeeIssue,
 } from "./scheduleMatrixModel";
-import { PanelHeader } from "./scheduleUi";
+import { PanelHeader, SwipeToDelete } from "./scheduleUi";
 import { accentFg, absenceBg, errorFg, warningFg } from "./scheduleTones";
 
 export interface EmployeePanelProps {
@@ -45,6 +45,11 @@ export interface EmployeePanelProps {
   onAddAbsence: () => void;
   onDeleteException: (item: ExceptionItem) => void;
   onClose: () => void;
+  /**
+   * Действующие правила сотрудника в других филиалах — только для справки:
+   * править их можно, переключившись на тот филиал.
+   */
+  otherRules: ScheduleRule[];
 }
 
 const fmtShort = (d: string) => dayjs(d).format("DD.MM.YY");
@@ -99,6 +104,7 @@ const EmployeePanel: React.FC<EmployeePanelProps> = ({
   onAddAbsence,
   onDeleteException,
   onClose,
+  otherRules,
 }) => {
   const subtitle = [
     branchLabel,
@@ -219,6 +225,28 @@ const EmployeePanel: React.FC<EmployeePanelProps> = ({
             )}
           </Box>
 
+          {otherRules.length > 0 && (
+            <Box>
+              <Caption>В других филиалах</Caption>
+              {otherRules.map((rule) => (
+                <Box key={rule.id} sx={{ py: 1.25, borderTop: 1, borderColor: "divider" }}>
+                  <Stack direction="row" alignItems="baseline" gap={1} flexWrap="wrap" useFlexGap>
+                    <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{weekdaysShort(rule.weekdays)}</Typography>
+                    <Typography sx={{ fontSize: 14, fontVariantNumeric: "tabular-nums" }}>
+                      {rule.startTime}–{rule.endTime}
+                    </Typography>
+                  </Stack>
+                  <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                    {[rule.branchName, `до ${fmtShort(rule.dateTo)}`].filter(Boolean).join(" · ")}
+                  </Typography>
+                </Box>
+              ))}
+              <Typography sx={{ fontSize: 12, color: "text.disabled", mt: 0.5 }}>
+                Изменить — переключитесь на этот филиал
+              </Typography>
+            </Box>
+          )}
+
           <Box>
             <Caption>Отсутствия и разовые смены</Caption>
             {schedule.exceptions.length === 0 ? (
@@ -234,58 +262,65 @@ const EmployeePanel: React.FC<EmployeePanelProps> = ({
                   .filter(Boolean)
                   .join(" · ");
                 return (
-                  <Stack
+                  // Телефон: свайп влево → «Удалить» (иконка справа остаётся).
+                  <SwipeToDelete
                     key={item.key}
-                    direction="row"
-                    alignItems="center"
-                    gap={1.5}
-                    sx={{ py: 1.25, borderTop: 1, borderColor: "divider" }}
+                    enabled={canManage}
+                    label={item.groupId ? "Снять" : "Удалить"}
+                    onDelete={() => onDeleteException(item)}
                   >
-                    <Box
-                      component="span"
-                      sx={(t) => ({
-                        fontSize: 12,
-                        fontWeight: 600,
-                        px: 1,
-                        py: 0.5,
-                        borderRadius: "7px",
-                        whiteSpace: "nowrap",
-                        flexShrink: 0,
-                        ...(absence
-                          ? { bgcolor: absenceBg(t), color: warningFg(t) }
-                          : { border: "1px dashed", borderColor: "primary.main", color: accentFg(t) }),
-                      })}
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      gap={1.5}
+                      sx={{ py: 1.25, borderTop: 1, borderColor: "divider" }}
                     >
-                      {exceptionKindTitle(item.kind)}
-                    </Box>
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography sx={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-                        {exceptionWhen(item)}
-                      </Typography>
-                      {sub && (
-                        <Typography
-                          sx={(t) => ({
-                            fontSize: 12,
-                            color: conflicts > 0 ? errorFg(t) : "text.secondary",
-                            wordBreak: "break-word",
-                          })}
-                        >
-                          {sub}
+                      <Box
+                        component="span"
+                        sx={(t) => ({
+                          fontSize: 12,
+                          fontWeight: 600,
+                          px: 1,
+                          py: 0.5,
+                          borderRadius: "7px",
+                          whiteSpace: "nowrap",
+                          flexShrink: 0,
+                          ...(absence
+                            ? { bgcolor: absenceBg(t), color: warningFg(t) }
+                            : { border: "1px dashed", borderColor: "primary.main", color: accentFg(t) }),
+                        })}
+                      >
+                        {exceptionKindTitle(item.kind)}
+                      </Box>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                          {exceptionWhen(item)}
                         </Typography>
+                        {sub && (
+                          <Typography
+                            sx={(t) => ({
+                              fontSize: 12,
+                              color: conflicts > 0 ? errorFg(t) : "text.secondary",
+                              wordBreak: "break-word",
+                            })}
+                          >
+                            {sub}
+                          </Typography>
+                        )}
+                      </Box>
+                      {canManage && (
+                        <Tooltip title={item.groupId ? "Снять весь период" : "Удалить"}>
+                          <IconButton
+                            onClick={() => onDeleteException(item)}
+                            aria-label={item.groupId ? "Снять весь период" : "Удалить"}
+                            sx={{ width: 40, height: 40 }}
+                          >
+                            <DeleteOutline fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                       )}
-                    </Box>
-                    {canManage && (
-                      <Tooltip title={item.groupId ? "Снять весь период" : "Удалить"}>
-                        <IconButton
-                          onClick={() => onDeleteException(item)}
-                          aria-label={item.groupId ? "Снять весь период" : "Удалить"}
-                          sx={{ width: 40, height: 40 }}
-                        >
-                          <DeleteOutline fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </Stack>
+                    </Stack>
+                  </SwipeToDelete>
                 );
               })
             )}

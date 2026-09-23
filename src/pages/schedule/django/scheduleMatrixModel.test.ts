@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import dayjs from "dayjs";
-import type { ScheduleException, ScheduleRule } from "../../../api/scheduling";
+import type { ScheduleConflictAppointment, ScheduleException, ScheduleRule } from "../../../api/scheduling";
 import {
+  appointmentsLosingCoverage,
   buildWeekCells,
   cellsOf,
   employeeIssue,
   exceptionDetails,
   exceptionWhen,
   hh,
+  hourPresets,
   issueRank,
   mondayOf,
   periodPresets,
   shortName,
+  visitsOutOfSchedule,
   workingDaysInRange,
 } from "./scheduleMatrixModel";
 import { buildEmployeeSchedules, groupExceptions } from "./scheduleSettingsModel";
@@ -98,6 +101,20 @@ describe("buildWeekCells", () => {
     expect(row[1].label).toBe("Отпуск");
   });
 
+  it("смены другого филиала заполняют только пустые дни", () => {
+    const own = rule({ weekdays: [0, 1], branchId: 13, branchName: "Мама Доктор Плюс" });
+    const other = rule({ id: 2, weekdays: [1, 2], startTime: "10:00", endTime: "16:00", lunchStart: null, lunchEnd: null, branchId: 1, branchName: "Мама Доктор" });
+    const row = cellsOf(
+      buildWeekCells(MONDAY, [own], [exc({ date: "2026-09-24", branchId: 13 })], { rules: [other], exceptions: [] }),
+      10,
+      MONDAY,
+    );
+    expect(row[1].variant).toBe("shift"); // вт: своя смена важнее
+    expect(row[2]).toMatchObject({ variant: "elsewhere", label: "10–16", sub: "Мама Доктор" });
+    expect(row[3].variant).toBe("absence"); // чт: свой выходной
+    expect(row[2].aria).toBe("Среда 23.09: 10:00–16:00, в филиале «Мама Доктор»");
+  });
+
   it("сотрудник без смен — пустая неделя", () => {
     expect(cellsOf(new Map(), 99, MONDAY).every((c) => c.variant === "empty")).toBe(true);
   });
@@ -179,5 +196,85 @@ describe("workingDaysInRange", () => {
       "2026-09-29",
     ]);
     expect(workingDaysInRange(11, "2026-09-25", "2026-09-29", [rule()], [])).toEqual([]);
+  });
+});
+
+describe("hourPresets", () => {
+  it("частые часы организации впереди, добивка типовыми без повторов", () => {
+    const presets = hourPresets([
+      rule({ startTime: "08:00", endTime: "17:00" }),
+      rule({ id: 2, startTime: "10:00", endTime: "19:00" }),
+      rule({ id: 3, startTime: "10:00", endTime: "19:00" }),
+    ]);
+    // 10–19 у двух правил — частые; 08–17 у одного — идёт уже как типовой.
+    expect(presets).toEqual([
+      { start: "10:00", end: "19:00" },
+      { start: "09:00", end: "18:00" },
+      { start: "08:00", end: "17:00" },
+      { start: "09:00", end: "17:00" },
+    ]);
+  });
+});
+
+describe("appointmentsLosingCoverage", () => {
+  const appt = (startsAt: string, over: Partial<ScheduleConflictAppointment> = {}): ScheduleConflictAppointment => ({
+    id: 1,
+    startsAt,
+    endsAt: startsAt,
+    status: "scheduled",
+    branchId: 1,
+    branchName: "Центр",
+    patientId: 5,
+    patientName: "Иванова Анна",
+    patientPhone: "",
+    services: [],
+    paidTotal: "0",
+    isPerformerPrimary: true,
+    absenceReviewedAt: null,
+    absenceReviewedBy: null,
+    ...over,
+  });
+
+  it("сузили часы — вечерние записи выпадают, утренние нет", () => {
+    const before = [rule()]; // 09–17
+    const after = [rule({ endTime: "14:00" })];
+    const lost = appointmentsLosingCoverage(
+      [appt("2026-09-24T10:00:00"), appt("2026-09-24T15:30:00", { id: 2 })],
+      before,
+      after,
+      [],
+    );
+    expect(lost.map((a) => a.id)).toEqual([2]);
+  });
+
+  it("убрали день и удалили правило", () => {
+    const thu = appt("2026-09-24T10:00:00");
+    expect(appointmentsLosingCoverage([thu], [rule()], [rule({ weekdays: [0, 1, 2, 4] })], [])).toHaveLength(1);
+    expect(appointmentsLosingCoverage([thu], [rule()], [], [])).toHaveLength(1);
+  });
+
+  it("запись, которая и так была вне графика, не считается", () => {
+    const sat = appt("2026-09-26T10:00:00");
+    expect(appointmentsLosingCoverage([sat], [rule()], [], [])).toEqual([]);
+  });
+
+  it("перенос правила в другой филиал оставляет записи старого вне графика", () => {
+    const a = appt("2026-09-24T10:00:00", { branchId: 1 });
+    expect(appointmentsLosingCoverage([a], [rule()], [rule({ branchId: 2 })], [])).toHaveLength(1);
+    expect(appointmentsLosingCoverage([a], [rule()], [rule({ branchId: null })], [])).toHaveLength(0);
+  });
+
+  it("разовая смена того дня продолжает покрывать запись", () => {
+    const a = appt("2026-09-24T10:00:00");
+    const extra = exc({ date: "2026-09-24", kind: "extra", startTime: "09:00", endTime: "13:00" });
+    expect(appointmentsLosingCoverage([a], [rule()], [], [extra])).toEqual([]);
+  });
+});
+
+describe("visitsOutOfSchedule", () => {
+  it("глагол согласуется с числом", () => {
+    expect(visitsOutOfSchedule(1)).toBe("1 запись окажется вне графика");
+    expect(visitsOutOfSchedule(3)).toBe("3 записи окажутся вне графика");
+    expect(visitsOutOfSchedule(11)).toBe("11 записей окажутся вне графика");
   });
 });

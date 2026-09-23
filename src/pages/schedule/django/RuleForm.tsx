@@ -1,15 +1,33 @@
 import React from "react";
-import { Alert, Box, Button, ButtonBase, CircularProgress, MenuItem, Stack, TextField, Typography } from "@mui/material";
+import {
+  Alert,
+  Autocomplete,
+  Box,
+  Button,
+  ButtonBase,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  MenuItem,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import ArrowForwardOutlined from "@mui/icons-material/ArrowForwardOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import {
   createScheduleRule,
+  getScheduleConflicts,
   updateScheduleRule,
   parseShiftOverlapConflict,
   SCHEDULE_RULE_ONLINE_BOOKING_ENABLED,
   isRuleOnlineBookingEnabled,
+  type ScheduleConflictAppointment,
+  type ScheduleException,
   type ScheduleRule,
   type ShiftOverlapConflict,
 } from "../../../api/scheduling";
@@ -21,7 +39,17 @@ import { useFormValidation } from "../../../hooks/useFormValidation";
 import EmployeePicker from "./EmployeePicker";
 import ShiftOverlapDialog from "./ShiftOverlapDialog";
 import { WEEKDAY_SHORT, formatWeeklyHours, ruleWeeklyMinutes, weekdaysShort } from "./scheduleSettingsModel";
-import { periodPresets, pluralDays, type EmployeeRef, type RuleFormMode } from "./scheduleMatrixModel";
+import {
+  appointmentLine,
+  appointmentsLosingCoverage,
+  hourPresets,
+  periodPresets,
+  pluralDays,
+  shortName,
+  visitsOutOfSchedule,
+  type EmployeeRef,
+  type RuleFormMode,
+} from "./scheduleMatrixModel";
 import { FullSegment, PanelHeader, PresetPill, SectionLabel, SwitchCard, SwitchLine, TimeRange } from "./scheduleUi";
 import { accentFg } from "./scheduleTones";
 
@@ -30,6 +58,10 @@ const ALL_BRANCHES = "all";
 const SEGMENT_MAX_OPTIONS = 3;
 const fmtShort = (d: Dayjs | string) => dayjs(d).format("DD.MM.YY");
 const iso = (d: Dayjs) => d.format("YYYY-MM-DD");
+
+/** «Пн–Пт 09:00–17:00 · Центр» — строка правила в «Как у коллеги». */
+const ruleLabel = (r: ScheduleRule) =>
+  weekdaysShort(r.weekdays) + " " + r.startTime + "–" + r.endTime + " · " + (r.branchName ?? "все филиалы");
 
 const QUICK_DAYS: { label: string; days: number[] }[] = [
   { label: "Будни", days: [0, 1, 2, 3, 4] },
@@ -56,6 +88,15 @@ export interface RuleFormProps {
   onSaved: (employeeId: number, message: string) => void;
   /** Edit: удаление — через подтверждение на странице. */
   onDelete?: (rule: ScheduleRule) => void;
+  /**
+   * Все правила филиала: частые часы организации для пресетов, «Как у
+   * коллеги» и расчёт записей, выпадающих из графика после правки.
+   */
+  allRules: ScheduleRule[];
+  /** Исключения с сегодняшнего дня — отпуск и так снимает смену. */
+  exceptions: ScheduleException[];
+  /** Есть право видеть приёмы — без него проверку записей не делаем. */
+  canCheckAppointments: boolean;
 }
 
 /**
@@ -74,6 +115,9 @@ const RuleForm: React.FC<RuleFormProps> = ({
   onClose,
   onSaved,
   onDelete,
+  allRules,
+  exceptions,
+  canCheckAppointments,
 }) => {
   const { activeMembership } = usePermissions();
   const today = dayjs().startOf("day");
@@ -106,6 +150,9 @@ const RuleForm: React.FC<RuleFormProps> = ({
   const [error, setError] = React.useState<string | null>(null);
   // Пересечение смен в режиме «warn»: 409 со списком → подтверждение и повтор.
   const [overlap, setOverlap] = React.useState<ShiftOverlapConflict | null>(null);
+  // Записи, которые после правки окажутся вне графика, — показываем до сохранения.
+  const [lostAppointments, setLostAppointments] = React.useState<ScheduleConflictAppointment[] | null>(null);
+  const [copiedFrom, setCopiedFrom] = React.useState<ScheduleRule | null>(null);
 
   const branchOptions = React.useMemo(() => {
     const list = (activeMembership?.branches ?? []).map((b) => ({ id: String(b.id), label: b.name }));
@@ -153,10 +200,84 @@ const RuleForm: React.FC<RuleFormProps> = ({
   const toggleWeekday = (d: number) =>
     setWeekdays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b)));
 
-  const handleSubmit = async (allowOverlap = false) => {
+  const hours = React.useMemo(() => hourPresets(allRules), [allRules]);
+  // Действующие правила команды — источник для «Как у коллеги».
+  const todayIso = iso(today);
+  const copyOptions = React.useMemo(
+    () =>
+      allRules
+        .filter((r) => r.dateTo >= todayIso)
+        .sort(
+          (a, b) =>
+            a.employeeName.localeCompare(b.employeeName, "ru") || a.startTime.localeCompare(b.startTime),
+        ),
+    [allRules, todayIso],
+  );
+  const applyRule = (r: ScheduleRule) => {
+    setWeekdays([...r.weekdays]);
+    setStartTime(r.startTime);
+    setEndTime(r.endTime);
+    setHasLunch(r.lunchStart != null);
+    setLunchStart(r.lunchStart ?? "13:00");
+    setLunchEnd(r.lunchEnd ?? "14:00");
+    setRuleBranchId(r.branchId);
+    setOnline(isRuleOnlineBookingEnabled(r));
+  };
+
+  /** Правило с текущими значениями формы — для сравнения «до / после». */
+  const draftRule = (base: ScheduleRule): ScheduleRule => ({
+    ...base,
+    dateFrom: iso(dateFrom),
+    dateTo: iso(dateTo),
+    weekdays,
+    startTime,
+    endTime,
+    lunchStart: hasLunch ? lunchStart : null,
+    lunchEnd: hasLunch ? lunchEnd : null,
+    branchId: ruleBranchId,
+  });
+
+  /**
+   * Приёмы, которые правка выбросит из графика: сузили часы, убрали день,
+   * укоротили срок, перенесли в другой филиал. Бэк их не отменяет, поэтому
+   * предупреждаем до сохранения. Смотрим только в пределах старого срока с
+   * сегодняшнего дня — дальше графика и так не было.
+   */
+  const findLostAppointments = async (): Promise<ScheduleConflictAppointment[]> => {
+    if (!rule || !canCheckAppointments) return [];
+    const from = rule.dateFrom > todayIso ? rule.dateFrom : todayIso;
+    if (rule.dateTo < from) return [];
+    const appointments = await getScheduleConflicts({
+      employeeId: rule.employeeId,
+      dateFrom: from,
+      dateTo: rule.dateTo,
+      organizationId,
+    });
+    const before = allRules.filter((r) => r.employeeId === rule.employeeId);
+    const extendedSiblings = new Set(mode === "extend" && extendAll ? siblings.map((x) => x.id) : []);
+    const after = before.map((r) =>
+      r.id === rule.id ? draftRule(r) : extendedSiblings.has(r.id) ? { ...r, dateTo: iso(dateTo) } : r,
+    );
+    const ownExceptions = exceptions.filter((e) => e.employeeId === rule.employeeId);
+    return appointmentsLosingCoverage(appointments, before, after, ownExceptions);
+  };
+
+  const handleSubmit = async (allowOverlap = false, coverageChecked = false) => {
     if (!form.validate()) return;
     setError(null);
     setBusy(true);
+    if (!coverageChecked) {
+      try {
+        const lost = await findLostAppointments();
+        if (lost.length > 0) {
+          setBusy(false);
+          setLostAppointments(lost);
+          return;
+        }
+      } catch {
+        // Проверка — подсказка, а не условие: без неё сохранение всё равно идёт.
+      }
+    }
     const common = {
       ...(allowOverlap ? { allowOverlap: true } : {}),
       dateFrom: iso(dateFrom),
@@ -221,6 +342,7 @@ const RuleForm: React.FC<RuleFormProps> = ({
     );
   };
 
+  const lostCount = lostAppointments?.length ?? 0;
   const title = { create: "Новый график", edit: "Изменить график", extend: "Продлить график" }[mode];
   const saveLabel = {
     create: "Добавить график",
@@ -299,6 +421,31 @@ const RuleForm: React.FC<RuleFormProps> = ({
                   {form.errorOf("employee")}
                 </Typography>
               )}
+            </Box>
+          )}
+
+          {/* «Как у коллеги»: новый врач обычно работает так же, как кто-то из
+              команды, — берём дни, часы, обед, филиал и онлайн-запись. Срок свой. */}
+          {mode === "create" && copyOptions.length > 0 && (
+            <Box>
+              <SectionLabel>Как у коллеги</SectionLabel>
+              <Autocomplete
+                size="small"
+                options={copyOptions}
+                value={copiedFrom}
+                onChange={(_, r) => {
+                  setCopiedFrom(r);
+                  if (r) applyRule(r);
+                }}
+                groupBy={(r) => shortName(r.employeeName)}
+                getOptionLabel={(r) => ruleLabel(r)}
+                isOptionEqualToValue={(a, b) => a.id === b.id}
+                renderInput={(params) => (
+                  <TextField {...params} placeholder="Скопировать график сотрудника…" />
+                )}
+                noOptionsText="Не найдено"
+                disabled={busy}
+              />
             </Box>
           )}
 
@@ -419,6 +566,21 @@ const RuleForm: React.FC<RuleFormProps> = ({
               anchorRef={form.anchor("hours")}
               labels={["Начало смены", "Конец смены"]}
             />
+            <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
+              <Typography sx={{ fontSize: 12, color: "text.secondary", mr: 0.25 }}>Часто</Typography>
+              {hours.map((h) => (
+                <PresetPill
+                  key={h.start + "-" + h.end}
+                  active={startTime === h.start && endTime === h.end}
+                  onClick={() => {
+                    setStartTime(h.start);
+                    setEndTime(h.end);
+                  }}
+                >
+                  {h.start}–{h.end}
+                </PresetPill>
+              ))}
+            </Stack>
             <Box sx={{ mt: 1 }} ref={form.anchor("lunch")}>
               <SwitchLine checked={hasLunch} onChange={setHasLunch} label="Обед" disabled={busy} />
               {hasLunch && (
@@ -527,11 +689,49 @@ const RuleForm: React.FC<RuleFormProps> = ({
         </Stack>
       </Box>
 
+      <Dialog
+        open={lostAppointments !== null}
+        onClose={() => setLostAppointments(null)}
+        PaperProps={{ sx: { width: 440, maxWidth: "calc(100% - 32px)", borderRadius: "14px" } }}
+      >
+        <DialogTitle sx={{ fontSize: 17, fontWeight: 600, pb: 1 }}>
+          {visitsOutOfSchedule(lostCount)}
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 14, color: "text.secondary", mb: 1.5 }}>
+            Записи не отменятся, но в это время у врача не будет смены. Предупредите пациентов или
+            перенесите записи.
+          </Typography>
+          <Stack gap={0.5}>
+            {lostAppointments?.slice(0, 5).map((a) => (
+              <Typography key={a.id} sx={{ fontSize: 14, fontVariantNumeric: "tabular-nums" }}>
+                {appointmentLine(a)}
+              </Typography>
+            ))}
+            {lostCount > 5 && (
+              <Typography sx={{ fontSize: 13, color: "text.secondary" }}>и ещё {lostCount - 5}</Typography>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setLostAppointments(null)}>Вернуться</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              setLostAppointments(null);
+              void handleSubmit(false, true);
+            }}
+          >
+            Сохранить всё равно
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <ShiftOverlapDialog
         conflict={overlap}
         saving={busy}
         onCancel={() => setOverlap(null)}
-        onConfirm={() => void handleSubmit(true)}
+        onConfirm={() => void handleSubmit(true, true)}
       />
     </>
   );

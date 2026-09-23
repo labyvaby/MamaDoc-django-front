@@ -38,6 +38,7 @@ import { ConfirmDialog, CustomDatePicker } from "../../../components/ui";
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../../api/staff";
 import {
   getScheduleRules,
+  getScheduleConflicts,
   createScheduleRule,
   deleteScheduleRule,
   getScheduleExceptions,
@@ -69,14 +70,18 @@ import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
 import { absencesOfDay, type AbsenceMark } from "./absenceRows";
 import { useEmployeeColorMap } from "./employeeColors";
 import EmployeePicker from "./EmployeePicker";
-import ScheduleSettingsMatrix from "./ScheduleSettingsMatrix";
+import ScheduleSettingsMatrix, { MatrixToolbar, type MatrixFilter } from "./ScheduleSettingsMatrix";
 import EmployeePanel from "./EmployeePanel";
 import RuleForm from "./RuleForm";
 import AbsenceForm from "./AbsenceForm";
+import { SheetHandle } from "./scheduleUi";
 import { buildEmployeeSchedules, weekdaysShort, type EmployeeSchedule } from "./scheduleSettingsModel";
 import {
+  appointmentLine,
+  appointmentsLosingCoverage,
   buildWeekCells,
   employeeIssue,
+  visitsOutOfSchedule,
   mondayOf,
   type EmployeeIssue,
   type EmployeeRef,
@@ -841,6 +846,9 @@ const DjangoSchedulePage: React.FC = () => {
   // сотрудник и/или открытая в ней форма. «Назад» из формы возвращает к
   // сотруднику, «закрыть» сбрасывает оба.
   const [weekStart, setWeekStart] = React.useState<Dayjs>(() => mondayOf(dayjs()));
+  // Поиск и фильтр матрицы: тулбар стоит в шапке страницы рядом с табами.
+  const [matrixSearch, setMatrixSearch] = React.useState("");
+  const [matrixFilter, setMatrixFilter] = React.useState<MatrixFilter>("all");
   const [panel, setPanel] = React.useState<{ employeeId: number | null; form: PanelForm | null } | null>(null);
   // Ключ формы: каждое открытие монтирует её заново с чистыми полями.
   const formSeq = React.useRef(0);
@@ -941,6 +949,21 @@ const DjangoSchedulePage: React.FC = () => {
     queryFn: ({ signal }) =>
       getScheduleExceptions({ ...weekRange, branchId, organizationId: orgId }, signal),
     enabled: tab === "settings",
+  });
+
+  // Смены сотрудников в других филиалах (`allBranches`): в матрице дни их
+  // работы в соседнем филиале иначе выглядели свободными. Только для справки —
+  // править чужой филиал отсюда нельзя.
+  const allBranchRulesQuery = useQuery({
+    queryKey: djangoQueryKeys.scheduling.rules({ employeeId: null, branchId: "all", orgId: orgId ?? null }),
+    queryFn: ({ signal }) => getScheduleRules({ allBranches: true, organizationId: orgId }, signal),
+    enabled: tab === "settings" && branchId != null,
+  });
+  const allBranchWeekExceptionsQuery = useQuery({
+    queryKey: djangoQueryKeys.scheduling.exceptions({ ...weekRange, branchId: "all", orgId: orgId ?? null }),
+    queryFn: ({ signal }) =>
+      getScheduleExceptions({ ...weekRange, allBranches: true, organizationId: orgId }, signal),
+    enabled: tab === "settings" && branchId != null,
   });
 
   const employeesQuery = useQuery({
@@ -1084,21 +1107,89 @@ const DjangoSchedulePage: React.FC = () => {
     [absenceConflicts],
   );
 
+  // Удаление правила: какие записи останутся без смены. Та же ручка, что у
+  // разбора отсутствий; бэк записи не трогает, поэтому предупреждаем заранее.
+  const ruleDeleteLostQuery = useQuery({
+    queryKey: ["scheduling", "rule-delete-lost", ruleToDelete?.id ?? null, orgId ?? null],
+    enabled: ruleToDelete !== null && canViewAppointments && ruleToDelete.dateTo >= today,
+    queryFn: async ({ signal }) => {
+      const rule = ruleToDelete!;
+      const from = rule.dateFrom > today ? rule.dateFrom : today;
+      const appointments = await getScheduleConflicts(
+        { employeeId: rule.employeeId, dateFrom: from, dateTo: rule.dateTo, organizationId: orgId },
+        signal,
+      );
+      const before = rules.filter((r) => r.employeeId === rule.employeeId);
+      return appointmentsLosingCoverage(
+        appointments,
+        before,
+        before.filter((r) => r.id !== rule.id),
+        exceptions.filter((e) => e.employeeId === rule.employeeId),
+      );
+    },
+    staleTime: 0,
+  });
+  const ruleDeleteLostNote = !ruleToDelete
+    ? ""
+    : ruleDeleteLostQuery.isFetching
+      ? " Проверяем записи…"
+      : ruleDeleteLostQuery.data && ruleDeleteLostQuery.data.length > 0
+        ? ` ${visitsOutOfSchedule(ruleDeleteLostQuery.data.length)}, ближайшая — ${appointmentLine(ruleDeleteLostQuery.data[0])}. Записи не отменятся: предупредите пациентов или перенесите их.`
+        : "";
+
   // Матрица: ячейки недели, одна проблема на сотрудника, его основной филиал.
   const weekExceptions = React.useMemo(() => weekExceptionsQuery.data ?? [], [weekExceptionsQuery.data]);
+  // Правила других филиалов: без общих (branchId=null) — те уже в своих.
+  const otherBranchRules = React.useMemo(
+    () =>
+      branchId == null
+        ? []
+        : (allBranchRulesQuery.data ?? []).filter(
+            (r) => r.branchId != null && r.branchId !== branchId && r.dateTo >= today,
+          ),
+    [allBranchRulesQuery.data, branchId, today],
+  );
+  // Отсутствие в своём филиале чужую смену не снимает — берём только чужие и общие.
+  const otherBranchWeekExceptions = React.useMemo(
+    () => (allBranchWeekExceptionsQuery.data ?? []).filter((e) => e.branchId !== branchId),
+    [allBranchWeekExceptionsQuery.data, branchId],
+  );
   const weekCells = React.useMemo(
-    () => buildWeekCells(weekStart, rules, weekExceptions),
-    [weekStart, rules, weekExceptions],
+    () =>
+      buildWeekCells(weekStart, rules, weekExceptions, {
+        rules: otherBranchRules,
+        exceptions: otherBranchWeekExceptions,
+      }),
+    [weekStart, rules, weekExceptions, otherBranchRules, otherBranchWeekExceptions],
   );
-  const issues = React.useMemo(
-    () => new Map(employeeSchedules.map((s) => [s.employeeId, employeeIssue(s, absenceCountFor)])),
-    [employeeSchedules, absenceCountFor],
-  );
+  const issues = React.useMemo(() => {
+    const worksElsewhere = new Set(otherBranchRules.map((r) => r.employeeId));
+    return new Map(
+      employeeSchedules.map((s) => {
+        const issue = employeeIssue(s, absenceCountFor);
+        // «Графика нет — записаться нельзя» неправда, если график есть в другом
+        // филиале: сотрудник просто работает не здесь.
+        return [s.employeeId, issue?.tone === "neutral" && worksElsewhere.has(s.employeeId) ? null : issue];
+      }),
+    );
+  }, [employeeSchedules, absenceCountFor, otherBranchRules]);
   const issueOf = React.useCallback((id: number) => issues.get(id) ?? null, [issues]);
   const employeeBranch = React.useMemo(
     () => new Map(employees.flatMap((e) => (e.branch ? [[e.id, e.branch.name] as const] : []))),
     [employees],
   );
+  /** Филиалы, где у сотрудника есть график (активный первым); без графика — основной из карточки. */
+  const branchLabelOf = (s: EmployeeSchedule) => {
+    const names = [
+      ...new Set(
+        [...s.liveRules, ...otherBranchRules.filter((r) => r.employeeId === s.employeeId)]
+          .filter((r) => r.branchName)
+          .sort((a, b) => Number(b.branchId === branchId) - Number(a.branchId === branchId))
+          .map((r) => r.branchName as string),
+      ),
+    ];
+    return names.length > 0 ? names.join(", ") : employeeBranch.get(s.employeeId) ?? null;
+  };
   const panelSchedule =
     panel?.employeeId != null ? employeeSchedules.find((s) => s.employeeId === panel.employeeId) ?? null : null;
 
@@ -1381,31 +1472,49 @@ const DjangoSchedulePage: React.FC = () => {
         overflow: "hidden",
       })}
     >
-      {/* Строка-хедер: кнопка действия слева (как на других экранах), переключатель
-          справа. На десктопной «Настройке» её нет — табы и «График» живут в
-          тулбаре матрицы. */}
-      {(tab === "calendar" || isMobile) && (
-        <Box sx={{ px: theme.appLayout.page.paddingX, pt: 0, pb: 1.5 }}>
-          <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap" useFlexGap>
-            {/* На телефоне действия — в плавающей кнопке: в шапке переносились
-                на вторую строку. */}
-            {canManage && !isMobile && (
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={<AddOutlined />}
-                onClick={() =>
-                  openExceptionDialog({ kind: "extra", title: "Добавить смену", date: dayjs() })
-                }
-              >
-                Добавить смену
-              </Button>
-            )}
-            {!isMobile && <Box sx={{ flex: 1 }} />}
-            {tabsNode}
-          </Stack>
-        </Box>
-      )}
+      {/* Строка-хедер на обеих вкладках: действия слева, табы справа. Слоты
+          стоят в одном порядке — табы не пересоздаются при переключении, и
+          подсветка скользит только вбок (раньше на «Настройке» табы жили в
+          тулбаре матрицы и при смене вкладки прилетали снизу-сбоку). На
+          телефоне действия — в плавающей кнопке, тулбар — в самой матрице. */}
+      <Box sx={{ px: theme.appLayout.page.paddingX, pt: 0, pb: 1.5 }}>
+        <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap" useFlexGap>
+          {canManage && !isMobile && tab === "calendar" && (
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<AddOutlined />}
+              onClick={() =>
+                openExceptionDialog({ kind: "extra", title: "Добавить смену", date: dayjs() })
+              }
+            >
+              Добавить смену
+            </Button>
+          )}
+          {!isMobile && tab === "settings" && (
+            <MatrixToolbar
+              schedules={employeeSchedules}
+              issueOf={issueOf}
+              search={matrixSearch}
+              filter={matrixFilter}
+              onSearch={setMatrixSearch}
+              onFilter={setMatrixFilter}
+              isMobile={false}
+            />
+          )}
+          {!isMobile && <Box sx={{ flex: 1 }} />}
+          {canManage && !isMobile && tab === "settings" && (
+            <Button
+              variant="contained"
+              startIcon={<AddOutlined />}
+              onClick={() => openRuleForm("create", null, null)}
+            >
+              График
+            </Button>
+          )}
+          {tabsNode}
+        </Stack>
+      </Box>
 
       <Box
         sx={{
@@ -1481,22 +1590,13 @@ const DjangoSchedulePage: React.FC = () => {
                 canManage={canManage}
                 employeeBranch={employeeBranch}
                 absenceCount={absenceCountFor}
-                trailing={
-                  isMobile ? undefined : (
-                    <>
-                      {tabsNode}
-                      {canManage && (
-                        <Button
-                          variant="contained"
-                          startIcon={<AddOutlined />}
-                          onClick={() => openRuleForm("create", null, null)}
-                        >
-                          График
-                        </Button>
-                      )}
-                    </>
-                  )
-                }
+                otherBranchRules={otherBranchRules}
+                activeBranchId={branchId}
+                search={matrixSearch}
+                filter={matrixFilter}
+                onSearch={setMatrixSearch}
+                onFilter={setMatrixFilter}
+                showToolbar={isMobile}
                 onOpenEmployee={openEmployee}
                 onIssueAction={handleIssueAction}
                 onExtend={(rule) =>
@@ -1512,13 +1612,25 @@ const DjangoSchedulePage: React.FC = () => {
       {/* Правая панель «Настройки»: сотрудник, а поверх — формы графика и
           отсутствия. На телефоне — на всю ширину. */}
       <Drawer
-        anchor="right"
+        anchor={isMobile ? "bottom" : "right"}
         open={panel !== null && (panel.form !== null || panelSchedule !== null)}
         onClose={closePanel}
         PaperProps={{
-          sx: { width: { xs: "100%", sm: 440 }, maxWidth: "100%", display: "flex", flexDirection: "column" },
+          sx: (t) => ({
+            display: "flex",
+            flexDirection: "column",
+            ...(isMobile
+              ? {
+                  // Телефон: лист снизу — до кнопок дотягивается большой палец.
+                  height: t.appLayout.drawer.bottomSheet.height,
+                  borderTopLeftRadius: 16,
+                  borderTopRightRadius: 16,
+                }
+              : { width: 440, maxWidth: "100%" }),
+          }),
         }}
       >
+        {isMobile && <SheetHandle onClose={closePanel} />}
         {panel?.form?.type === "rule" && (
           <RuleForm
             key={formSeq.current}
@@ -1536,6 +1648,9 @@ const DjangoSchedulePage: React.FC = () => {
             onClose={closePanel}
             onSaved={(employeeId, message) => handlePanelSaved(employeeId, message)}
             onDelete={setRuleToDelete}
+            allRules={rules}
+            exceptions={exceptions}
+            canCheckAppointments={canViewAppointments}
           />
         )}
         {panel?.form?.type === "absence" && (
@@ -1555,11 +1670,8 @@ const DjangoSchedulePage: React.FC = () => {
           <EmployeePanel
             schedule={panelSchedule}
             issue={issueOf(panelSchedule.employeeId)}
-            branchLabel={
-              employeeBranch.get(panelSchedule.employeeId) ??
-              panelSchedule.liveRules.find((r) => r.branchName)?.branchName ??
-              null
-            }
+            branchLabel={branchLabelOf(panelSchedule)}
+            otherRules={otherBranchRules.filter((r) => r.employeeId === panelSchedule.employeeId)}
             canManage={canManage}
             absenceCount={absenceCountFor}
             onIssueAction={(issue) => handleIssueAction(panelSchedule.employeeId, issue)}
@@ -1636,7 +1748,7 @@ const DjangoSchedulePage: React.FC = () => {
         title="Удалить правило расписания"
         message={
           ruleToDelete
-            ? `${ruleToDelete.employeeName}: ${weekdaysShort(ruleToDelete.weekdays)}, ${ruleToDelete.startTime}–${ruleToDelete.endTime}, ${dayjs(ruleToDelete.dateFrom).format("DD.MM.YY")} — ${dayjs(ruleToDelete.dateTo).format("DD.MM.YY")}. Смены по этому правилу пропадут из расписания, а окна — из онлайн-записи.`
+            ? `${ruleToDelete.employeeName}: ${weekdaysShort(ruleToDelete.weekdays)}, ${ruleToDelete.startTime}–${ruleToDelete.endTime}, ${dayjs(ruleToDelete.dateFrom).format("DD.MM.YY")} — ${dayjs(ruleToDelete.dateTo).format("DD.MM.YY")}. Смены по этому правилу пропадут из расписания, а окна — из онлайн-записи.${ruleDeleteLostNote}`
             : ""
         }
         confirmText="Удалить"

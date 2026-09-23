@@ -1,5 +1,6 @@
 import dayjs, { type Dayjs } from "dayjs";
 import type {
+  ScheduleConflictAppointment,
   ScheduleException,
   ScheduleExceptionKind,
   ScheduleRule,
@@ -23,6 +24,11 @@ export function pluralDays(n: number): string {
 
 export function pluralVisits(n: number): string {
   return pluralRu(n, ["запись", "записи", "записей"]);
+}
+
+/** «1 запись окажется», «3 записи окажутся» — глагол согласуется с числом. */
+export function visitsOutOfSchedule(n: number): string {
+  return `${n} ${pluralVisits(n)} ${pluralRu(n, ["окажется", "окажутся", "окажутся"])} вне графика`;
 }
 
 /** dayjs считает 0=Вс, а бэкенд расписания — 0=Пн. */
@@ -56,13 +62,15 @@ const WEEKDAY_FULL = ["Понедельник", "Вторник", "Среда", 
  * - `shift` — смена по недельному правилу (плашка в тон акцента);
  * - `oneoff` — только разовая смена или замена (пунктир);
  * - `absence` — выходной/отпуск на весь день;
+ * - `elsewhere` — здесь смены нет, но сотрудник работает в другом филиале
+ *   (иначе день выглядел свободным, хотя врач занят в соседнем филиале);
  * - `empty` — смены нет.
  */
 export interface DayCell {
-  variant: "shift" | "oneoff" | "absence" | "empty";
+  variant: "shift" | "oneoff" | "absence" | "elsewhere" | "empty";
   /** Первая строка: «09–17», «09–13 · 15–18», «Отпуск», «—». */
   label: string;
-  /** Вторая строка: «обед 13», «разово», «замена». */
+  /** Вторая строка: «обед 13», «разово», «замена», название другого филиала. */
   sub: string | null;
   /** Телефон: «09\n17» / «отп.» — ячейка шириной в седьмую часть экрана. */
   compact: string;
@@ -85,11 +93,16 @@ function emptyCell(weekStart: Dayjs, d: number): DayCell {
  * Смены дня — из computeDayOccurrences, той же логики, что у календаря: отпуск
  * гасит правило, замена подменяет, частичное отсутствие режет смену.
  * Сотрудника без смен и отсутствий в неделе в карте нет — см. `cellsOf`.
+ *
+ * `elsewhere` — правила и исключения других филиалов: ими заполняются только
+ * пустые дни (своя смена и своё отсутствие важнее), а часы и проблемы по ним
+ * не считаются — это чужой график, здесь он только для справки.
  */
 export function buildWeekCells(
   weekStart: Dayjs,
   rules: ScheduleRule[],
   exceptions: ScheduleException[],
+  elsewhere?: { rules: ScheduleRule[]; exceptions: ScheduleException[] },
 ): Map<number, DayCell[]> {
   const result = new Map<number, DayCell[]>();
   for (let i = 0; i < 7; i += 1) {
@@ -148,6 +161,34 @@ export function buildWeekCells(
           `${ariaDay}: ${occs.map((o) => `${o.startTime}–${o.endTime}`).join(", ")}` +
           (lunch ? `, обед ${lunch.start}–${lunch.end}` : "") +
           (byRule ? "" : `, ${sub}`),
+      };
+    }
+
+    if (!elsewhere || elsewhere.rules.length === 0) continue;
+    const branchOf = new Map(elsewhere.rules.map((r) => [r.id, r.branchName]));
+    const other = new Map<number, DayOccurrence[]>();
+    for (const occ of computeDayOccurrences(day, elsewhere.rules, elsewhere.exceptions)) {
+      // Разовые смены чужого филиала сюда не попадают: берём только его правила.
+      if (occ.kind !== "rule") continue;
+      const list = other.get(occ.employeeId) ?? [];
+      list.push(occ);
+      other.set(occ.employeeId, list);
+    }
+    for (const [id, occs] of other) {
+      let row = result.get(id);
+      if (!row) {
+        row = Array.from({ length: 7 }, (_, d) => emptyCell(weekStart, d));
+        result.set(id, row);
+      }
+      if (row[i].variant !== "empty") continue;
+      occs.sort((a, b) => a.startTime.localeCompare(b.startTime));
+      const branch = branchOf.get(occs[0].sourceId) ?? "другой филиал";
+      row[i] = {
+        variant: "elsewhere",
+        label: occs.map((o) => `${hh(o.startTime)}–${hh(o.endTime)}`).join(" · "),
+        sub: branch,
+        compact: `${hh(occs[0].startTime)}\n${hh(occs[occs.length - 1].endTime)}`,
+        aria: `${ariaDay}: ${occs.map((o) => `${o.startTime}–${o.endTime}`).join(", ")}, в филиале «${branch}»`,
       };
     }
   }
@@ -300,4 +341,82 @@ export function workingDaysInRange(
     if (computeDayOccurrences(d, own, ownExc).length > 0) result.push(d.format("YYYY-MM-DD"));
   }
   return result;
+}
+
+// ── Пресеты часов ────────────────────────────────────────────────────────────
+
+const DEFAULT_HOURS: [string, string][] = [
+  ["09:00", "18:00"],
+  ["08:00", "17:00"],
+  ["09:00", "17:00"],
+  ["14:00", "20:00"],
+];
+
+/**
+ * Пресеты часов смены: сначала частые в правилах организации (так
+ * работает эта клиника), добиваем типовыми. Не больше `limit`, без повторов.
+ */
+export function hourPresets(rules: ScheduleRule[], limit = 4): { start: string; end: string }[] {
+  const counts = new Map<string, number>();
+  for (const r of rules) {
+    const key = `${r.startTime}-${r.endTime}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  // «Частые» — хотя бы у двух правил: разовые часы одного врача пресетом не станут.
+  const popular = [...counts.entries()]
+    .filter(([, n]) => n >= 2)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([key]) => key);
+  const keys = [...new Set([...popular.slice(0, 3), ...DEFAULT_HOURS.map(([a, b]) => `${a}-${b}`)])];
+  return keys.slice(0, limit).map((key) => {
+    const [start, end] = key.split("-");
+    return { start, end };
+  });
+}
+
+// ── Записи, которые выпадут из графика ───────────────────────────────────────
+
+/**
+ * Покрывает ли график приём: в день приёма у сотрудника есть смена, в которую
+ * попадает начало приёма, и смена по правилу — в филиале приёма (правило без
+ * филиала покрывает любой). Обед не учитываем: запись на обед — не «вне
+ * графика», а осознанное решение регистратуры.
+ */
+function isCovered(
+  appt: ScheduleConflictAppointment,
+  rules: ScheduleRule[],
+  exceptions: ScheduleException[],
+): boolean {
+  const start = dayjs(appt.startsAt);
+  if (!start.isValid()) return true;
+  const time = start.format("HH:mm");
+  const rulesById = new Map(rules.map((r) => [r.id, r]));
+  return computeDayOccurrences(start, rules, exceptions).some((occ) => {
+    if (time < occ.startTime || time >= occ.endTime) return false;
+    if (occ.kind !== "rule") return true;
+    const branchId = rulesById.get(occ.sourceId)?.branchId ?? null;
+    return branchId == null || appt.branchId == null || appt.branchId === branchId;
+  });
+}
+
+/**
+ * Приёмы, которые были внутри графика, а после изменения окажутся вне его.
+ * Приём не отменяется — бэк его не трогает, — но пациент придёт к врачу, у
+ * которого по графику смены нет. Сравниваем «до» и «после», чтобы не пугать
+ * записями, которые и так были вне графика.
+ */
+export function appointmentsLosingCoverage(
+  appointments: ScheduleConflictAppointment[],
+  before: ScheduleRule[],
+  after: ScheduleRule[],
+  exceptions: ScheduleException[],
+): ScheduleConflictAppointment[] {
+  return appointments
+    .filter((a) => isCovered(a, before, exceptions) && !isCovered(a, after, exceptions))
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+}
+
+/** «25.09 10:30 · Иванова А.» — строка списка в предупреждении. */
+export function appointmentLine(a: ScheduleConflictAppointment): string {
+  return `${dayjs(a.startsAt).format("DD.MM HH:mm")} · ${a.patientName}`;
 }

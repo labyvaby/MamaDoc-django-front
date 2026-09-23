@@ -57,7 +57,25 @@ const rowMotion = (i: number) => ({
   transition: { delay: Math.min(i, 10) * 0.06, duration: 0.4, ease: [0.22, 1, 0.36, 1] as const },
 });
 
-type MatrixFilter = "all" | "today" | "attention" | "none";
+export type MatrixFilter = "all" | "today" | "attention" | "none";
+
+const MATRIX_PILLS: { id: MatrixFilter; label: string }[] = [
+  { id: "all", label: "Все" },
+  { id: "today", label: "Работают сегодня" },
+  { id: "attention", label: "Требуют внимания" },
+  { id: "none", label: "Без графика" },
+];
+
+function matrixPredicates(
+  issueOf: (employeeId: number) => EmployeeIssue | null,
+): Record<MatrixFilter, (s: EmployeeSchedule) => boolean> {
+  return {
+    all: () => true,
+    today: (s) => s.worksToday,
+    attention: (s) => issueOf(s.employeeId) !== null,
+    none: (s) => s.noActiveRules,
+  };
+}
 
 const GRID = "230px repeat(7, minmax(0, 1fr)) 80px 124px";
 /** Ниже этой ширины колонки дней сжимаются в нечитаемое — таблица листается вбок внутри карточки. */
@@ -75,11 +93,24 @@ export interface ScheduleSettingsMatrixProps {
   loading: boolean;
   isMobile: boolean;
   canManage: boolean;
-  /** Основной филиал сотрудника из справочника — для подстроки. */
+  /**
+   * Основной филиал из карточки сотрудника — подпись только для тех, у кого
+   * графика нет. У остальных подписываем филиалы, где есть график: основной
+   * филиал бывает «Мама Доктор», а работает человек в «Плюсе».
+   */
   employeeBranch: Map<number, string>;
+  /** Действующие правила сотрудников в других филиалах (`allBranches`). */
+  otherBranchRules: ScheduleRule[];
+  /** Активный филиал — его название в подписи идёт первым. */
+  activeBranchId?: number;
   absenceCount: (item: ExceptionItem) => number;
-  /** Десктоп: сегмент-табы и кнопка «График» справа в тулбаре. */
-  trailing?: React.ReactNode;
+  /** Поиск и фильтр живут на странице: тулбар стоит в её шапке рядом с табами. */
+  search: string;
+  filter: MatrixFilter;
+  onSearch: (v: string) => void;
+  onFilter: (f: MatrixFilter) => void;
+  /** Телефон: тулбар рисуем здесь, в шапке страницы только табы. */
+  showToolbar: boolean;
   onOpenEmployee: (employeeId: number) => void;
   onIssueAction: (employeeId: number, issue: EmployeeIssue) => void;
   onExtend: (rule: ScheduleRule) => void;
@@ -96,6 +127,9 @@ const cellTone = (t: Theme, variant: DayCell["variant"]) => {
       return { bgcolor: "transparent", color: accentFg(t), border: `1px dashed ${t.palette.primary.main}` };
     case "absence":
       return { bgcolor: absenceBg(t), color: warningFg(t), border: "1px solid transparent" };
+    case "elsewhere":
+      // Нейтрально и приглушённо: сотрудник занят, но не у нас — смена не наша.
+      return { bgcolor: subtleBg(t, true), color: t.palette.text.secondary, border: `1px solid ${t.palette.divider}` };
     default:
       return { bgcolor: "transparent", color: alpha(t.palette.text.primary, 0.25), border: "1px solid transparent" };
   }
@@ -169,81 +203,29 @@ const onKeyActivate = (fn: () => void) => (e: React.KeyboardEvent) => {
   }
 };
 
-// ── Матрица ───────────────────────────────────────────────────────────────────
+// ── Тулбар ────────────────────────────────────────────────────────────────────
 
-const ScheduleSettingsMatrix: React.FC<ScheduleSettingsMatrixProps> = (props) => {
-  const {
-    schedules,
-    issueOf,
-    cells,
-    weekStart,
-    onWeekChange,
-    today,
-    loading,
-    isMobile,
-    canManage,
-    employeeBranch,
-    absenceCount,
-    trailing,
-    onOpenEmployee,
-    onIssueAction,
-    onExtend,
-    onAddAbsence,
-  } = props;
-  const [search, setSearch] = React.useState("");
-  const [filter, setFilter] = React.useState<MatrixFilter>("all");
-  const [showAllUpcoming, setShowAllUpcoming] = React.useState(false);
-
-  const predicates: Record<MatrixFilter, (s: EmployeeSchedule) => boolean> = {
-    all: () => true,
-    today: (s) => s.worksToday,
-    attention: (s) => issueOf(s.employeeId) !== null,
-    none: (s) => s.noActiveRules,
-  };
-  const pills: { id: MatrixFilter; label: string }[] = [
-    { id: "all", label: "Все" },
-    { id: "today", label: "Работают сегодня" },
-    { id: "attention", label: "Требуют внимания" },
-    { id: "none", label: "Без графика" },
-  ];
-
-  const query = search.trim().toLocaleLowerCase("ru");
-  const visible = schedules
-    .filter((s) => predicates[filter](s) && (!query || s.employeeName.toLocaleLowerCase("ru").includes(query)))
-    .sort(
-      (a, b) =>
-        issueRank(issueOf(a.employeeId)) - issueRank(issueOf(b.employeeId)) ||
-        a.employeeName.localeCompare(b.employeeName, "ru"),
-    );
-
-  const days = Array.from({ length: 7 }, (_, i) => weekStart.add(i, "day"));
-  const todayIdx = days.findIndex((d) => d.format("YYYY-MM-DD") === today);
-  const isCurrentWeek = mondayOf(dayjs(today)).isSame(weekStart, "day");
-
-  /** Подстрока строки: филиал + общие смены + «не на сайте». */
-  const branchLine = (s: EmployeeSchedule) => {
-    const live = s.liveRules;
-    const own = employeeBranch.get(s.employeeId) ?? live.find((r) => r.branchName)?.branchName ?? null;
-    return [
-      own,
-      live.some((r) => r.branchId == null) ? "часть смен — все филиалы" : null,
-      SCHEDULE_RULE_ONLINE_BOOKING_ENABLED && live.some((r) => !isRuleOnlineBookingEnabled(r))
-        ? "не на сайте записи"
-        : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  };
-
-  const daysLeft = (s: EmployeeSchedule) => (s.until ? dayjs(s.until).diff(dayjs(today), "day") : null);
-
-  // ── Тулбар ──
-  const toolbar = (
-    <Stack direction="row" alignItems="center" gap={1.25} flexWrap="wrap" useFlexGap>
+/**
+ * Поиск и пилюли-фильтры. На десктопе страница ставит его в свою шапку слева
+ * от табов «Календарь / Настройка» — так табы не переезжают между вкладками и
+ * подсветка скользит только вбок.
+ */
+export const MatrixToolbar: React.FC<{
+  schedules: EmployeeSchedule[];
+  issueOf: (employeeId: number) => EmployeeIssue | null;
+  search: string;
+  filter: MatrixFilter;
+  onSearch: (v: string) => void;
+  onFilter: (f: MatrixFilter) => void;
+  isMobile: boolean;
+}> = ({ schedules, issueOf, search, filter, onSearch, onFilter, isMobile }) => {
+  const predicates = matrixPredicates(issueOf);
+  return (
+    <Stack direction="row" alignItems="center" gap={1.25} flexWrap="wrap" useFlexGap sx={{ minWidth: 0 }}>
       <TextField
         size="small"
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={(e) => onSearch(e.target.value)}
         placeholder="Поиск сотрудника"
         sx={{ width: isMobile ? "100%" : 260, flexShrink: 0 }}
         InputProps={{
@@ -267,12 +249,12 @@ const ScheduleSettingsMatrix: React.FC<ScheduleSettingsMatrixProps> = (props) =>
           "&::-webkit-scrollbar": { display: "none" },
         }}
       >
-        {pills.map((p) => {
+        {MATRIX_PILLS.map((p) => {
           const count = schedules.filter(predicates[p.id]).length;
           return (
             <ButtonBase
               key={p.id}
-              onClick={() => setFilter(p.id === filter ? "all" : p.id)}
+              onClick={() => onFilter(p.id === filter ? "all" : p.id)}
               sx={(t) => ({ ...pillSx(t, filter === p.id), gap: 0.75, whiteSpace: "nowrap" })}
             >
               {p.label}
@@ -283,14 +265,115 @@ const ScheduleSettingsMatrix: React.FC<ScheduleSettingsMatrixProps> = (props) =>
           );
         })}
       </Stack>
-      {trailing && (
-        <>
-          <Box sx={{ flex: 1 }} />
-          {trailing}
-        </>
-      )}
     </Stack>
   );
+};
+
+// ── Матрица ───────────────────────────────────────────────────────────────────
+
+const ScheduleSettingsMatrix: React.FC<ScheduleSettingsMatrixProps> = (props) => {
+  const {
+    schedules,
+    issueOf,
+    cells,
+    weekStart,
+    onWeekChange,
+    today,
+    loading,
+    isMobile,
+    canManage,
+    employeeBranch,
+    otherBranchRules,
+    activeBranchId,
+    absenceCount,
+    search,
+    filter,
+    onSearch,
+    onFilter,
+    showToolbar,
+    onOpenEmployee,
+    onIssueAction,
+    onExtend,
+    onAddAbsence,
+  } = props;
+  const [showAllUpcoming, setShowAllUpcoming] = React.useState(false);
+
+  // Каскад проигрывается целиком — при первой загрузке и при смене фильтра.
+  // Строки ключуются вместе с фильтром, поэтому пересоздаются все разом:
+  // раньше оставшиеся в списке строки стояли, а новые въезжали со своей
+  // задержкой, и смена чипа выглядела рвано. Строки, появившиеся без смены
+  // фильтра (набор в поиске), встают без анимации.
+  const cascadeKey = `${filter}|${loading ? 1 : 0}`;
+  const playedCascade = React.useRef<string | null>(null);
+  const cascading = playedCascade.current !== cascadeKey;
+  React.useEffect(() => {
+    playedCascade.current = cascadeKey;
+  });
+  // Цель анимации передаём всегда: без `animate` повторный рендер посреди
+  // каскада (рефетч, поиск) останавливал въезжающие строки на opacity 0.
+  const motionFor = (i: number) =>
+    cascading ? rowMotion(i) : { initial: false as const, animate: rowMotion(i).animate };
+
+  const predicates = matrixPredicates(issueOf);
+
+  const query = search.trim().toLocaleLowerCase("ru");
+  const visible = schedules
+    .filter((s) => predicates[filter](s) && (!query || s.employeeName.toLocaleLowerCase("ru").includes(query)))
+    .sort(
+      (a, b) =>
+        issueRank(issueOf(a.employeeId)) - issueRank(issueOf(b.employeeId)) ||
+        a.employeeName.localeCompare(b.employeeName, "ru"),
+    );
+
+  const days = Array.from({ length: 7 }, (_, i) => weekStart.add(i, "day"));
+  const todayIdx = days.findIndex((d) => d.format("YYYY-MM-DD") === today);
+  const isCurrentWeek = mondayOf(dayjs(today)).isSame(weekStart, "day");
+
+  const otherByEmployee = React.useMemo(() => {
+    const map = new Map<number, ScheduleRule[]>();
+    for (const r of otherBranchRules) {
+      const list = map.get(r.employeeId) ?? [];
+      list.push(r);
+      map.set(r.employeeId, list);
+    }
+    return map;
+  }, [otherBranchRules]);
+
+  /**
+   * Подстрока строки: филиалы, где у сотрудника есть действующий график
+   * (активный первым), + общие смены + «не на сайте». Основной филиал из
+   * карточки — только когда графика нет нигде.
+   */
+  const branchLine = (s: EmployeeSchedule) => {
+    const live = s.liveRules;
+    const withGraph = [...live, ...(otherByEmployee.get(s.employeeId) ?? [])]
+      .filter((r) => r.branchName)
+      .sort((a, b) => Number(b.branchId === activeBranchId) - Number(a.branchId === activeBranchId));
+    const names = [...new Set(withGraph.map((r) => r.branchName as string))];
+    return [
+      names.length > 0 ? names.join(", ") : employeeBranch.get(s.employeeId) ?? null,
+      live.some((r) => r.branchId == null) ? "часть смен — все филиалы" : null,
+      SCHEDULE_RULE_ONLINE_BOOKING_ENABLED && live.some((r) => !isRuleOnlineBookingEnabled(r))
+        ? "не на сайте записи"
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  };
+
+  const daysLeft = (s: EmployeeSchedule) => (s.until ? dayjs(s.until).diff(dayjs(today), "day") : null);
+
+  const toolbar = showToolbar ? (
+    <MatrixToolbar
+      schedules={schedules}
+      issueOf={issueOf}
+      search={search}
+      filter={filter}
+      onSearch={onSearch}
+      onFilter={onFilter}
+      isMobile={isMobile}
+    />
+  ) : null;
 
   // ── Навигация по неделям ──
   const weekNav = (
@@ -423,8 +506,8 @@ const ScheduleSettingsMatrix: React.FC<ScheduleSettingsMatrixProps> = (props) =>
                 const left = daysLeft(s);
                 return (
                   <MotionBox
-                    key={s.employeeId}
-                    {...rowMotion(idx)}
+                    key={`${filter}-${s.employeeId}`}
+                    {...motionFor(idx)}
                     role="button"
                     tabIndex={0}
                     aria-label={`${s.employeeName}: открыть графики`}
@@ -500,6 +583,7 @@ const ScheduleSettingsMatrix: React.FC<ScheduleSettingsMatrixProps> = (props) =>
             ["shift", "смена по графику"],
             ["oneoff", "разовая смена или замена"],
             ["absence", "отсутствие"],
+            ...(otherBranchRules.length > 0 ? ([["elsewhere", "смена в другом филиале"]] as const) : []),
           ] as const
         ).map(([variant, label]) => (
           <Stack key={variant} direction="row" alignItems="center" gap={0.75}>
@@ -525,7 +609,7 @@ const ScheduleSettingsMatrix: React.FC<ScheduleSettingsMatrixProps> = (props) =>
           const rowCells = cellsOf(cells, s.employeeId, weekStart);
           const issue = issueOf(s.employeeId);
           return (
-            <MotionBox key={s.employeeId} {...rowMotion(idx)}>
+            <MotionBox key={`${filter}-${s.employeeId}`} {...motionFor(idx)}>
               <AppCard
                 variant="outlined"
                 disableContentPadding

@@ -229,3 +229,125 @@ export const PanelHeader: React.FC<{
     </IconButton>
   </Stack>
 );
+
+// ── Телефон: лист снизу и свайп ──────────────────────────────────────────────
+
+/**
+ * Ручка листа снизу: видно, что панель тянется, и её можно смахнуть вниз
+ * (порог 60px). Жест только на ручке — внутри формы свайп вниз прокручивает.
+ */
+export const SheetHandle: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const startY = React.useRef<number | null>(null);
+  return (
+    <Box
+      onPointerDown={(e) => {
+        startY.current = e.clientY;
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerUp={(e) => {
+        if (startY.current !== null && e.clientY - startY.current > 60) onClose();
+        startY.current = null;
+      }}
+      onPointerCancel={() => {
+        startY.current = null;
+      }}
+      sx={{ pt: 1.25, pb: 0.5, display: "flex", justifyContent: "center", flexShrink: 0, touchAction: "none", cursor: "grab" }}
+    >
+      <Box
+        sx={(t) => ({
+          width: t.appLayout.drawer.bottomSheet.handleWidth,
+          height: t.appLayout.drawer.bottomSheet.handleHeight,
+          borderRadius: t.appLayout.drawer.bottomSheet.handleRadius,
+          bgcolor: "divider",
+        })}
+      />
+    </Box>
+  );
+};
+
+const SWIPE_REVEAL = 96;
+
+/**
+ * Строка со свайпом влево → «Удалить» (только касанием; мышью — иконка в
+ * строке). Pointer Events, а не touch-обработчики: те рвутся нативным drag.
+ * Вертикальное движение отдаём прокрутке (`touch-action: pan-y`).
+ */
+export const SwipeToDelete: React.FC<{
+  enabled: boolean;
+  label?: string;
+  onDelete: () => void;
+  children: React.ReactNode;
+}> = ({ enabled, label = "Удалить", onDelete, children }) => {
+  const [dx, setDx] = React.useState(0);
+  const [dragging, setDragging] = React.useState(false);
+  const gesture = React.useRef<{ x: number; y: number; from: number; axis: "h" | "v" | null } | null>(null);
+
+  if (!enabled) return <>{children}</>;
+
+  return (
+    <Box sx={{ position: "relative", overflow: "hidden" }}>
+      <ButtonBase
+        onClick={() => {
+          setDx(0);
+          onDelete();
+        }}
+        tabIndex={dx === 0 ? -1 : 0}
+        sx={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: SWIPE_REVEAL,
+          bgcolor: "error.main",
+          color: "error.contrastText",
+          fontSize: 14,
+          fontWeight: 600,
+        }}
+      >
+        {label}
+      </ButtonBase>
+      <Box
+        onPointerDown={(e) => {
+          if (e.pointerType !== "touch") return;
+          gesture.current = { x: e.clientX, y: e.clientY, from: dx, axis: null };
+        }}
+        onPointerMove={(e) => {
+          const g = gesture.current;
+          if (!g) return;
+          const ddx = e.clientX - g.x;
+          const ddy = e.clientY - g.y;
+          if (g.axis === null) {
+            if (Math.abs(ddx) > 8 && Math.abs(ddx) > Math.abs(ddy)) {
+              g.axis = "h";
+              setDragging(true);
+              e.currentTarget.setPointerCapture(e.pointerId);
+            } else if (Math.abs(ddy) > 8) {
+              gesture.current = null;
+              return;
+            }
+          }
+          if (g.axis === "h") setDx(Math.max(-SWIPE_REVEAL, Math.min(0, g.from + ddx)));
+        }}
+        onPointerUp={() => {
+          if (gesture.current?.axis === "h") setDx((v) => (v < -SWIPE_REVEAL / 2 ? -SWIPE_REVEAL : 0));
+          gesture.current = null;
+          setDragging(false);
+        }}
+        onPointerCancel={() => {
+          gesture.current = null;
+          setDragging(false);
+          setDx(0);
+        }}
+        sx={{
+          position: "relative",
+          bgcolor: "background.paper",
+          transform: `translateX(${dx}px)`,
+          transition: dragging ? "none" : "transform .2s ease",
+          touchAction: "pan-y",
+        }}
+      >
+        {children}
+      </Box>
+    </Box>
+  );
+};
