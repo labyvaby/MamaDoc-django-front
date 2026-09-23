@@ -20,6 +20,8 @@ import {
   Typography,
 } from "@mui/material";
 
+import { CASHLESS_METHODS_ENABLED } from "../api/cashlessMethods";
+import { CashlessMethodSelect } from "../components/ui";
 import { formatHotelDateRange, nightsBetween } from "./mockDemoData";
 import type { GuestDetailsState } from "./useGuestDetails";
 
@@ -28,8 +30,9 @@ export interface GuestPaymentDialogProps {
 }
 
 export const GuestPaymentDialog: React.FC<GuestPaymentDialogProps> = ({ state }) => {
-  const { employee, paymentMethods, paymentEdit, setPaymentEdit, savePayment, savingPayment, paymentError } = state;
+  const { employee, paymentMethods, cashlessState, paymentEdit, setPaymentEdit, savePayment, savingPayment, paymentError } = state;
   const item = paymentEdit?.reservation.items[0];
+  const paymentIsCashless = paymentEdit != null && paymentEdit.method !== "" && paymentEdit.method !== "cash";
 
   return (
     <Dialog open={paymentEdit != null} onClose={() => setPaymentEdit(null)} maxWidth="xs" fullWidth>
@@ -48,7 +51,17 @@ export const GuestPaymentDialog: React.FC<GuestPaymentDialogProps> = ({ state })
                 select
                 label="Способ оплаты"
                 value={paymentEdit.method}
-                onChange={(e) => setPaymentEdit({ ...paymentEdit, method: e.target.value })}
+                onChange={(e) => {
+                  const method = e.target.value;
+                  const nowCashless = method !== "" && method !== "cash";
+                  setPaymentEdit({
+                    ...paymentEdit,
+                    method,
+                    cashlessMethodId: nowCashless
+                      ? paymentEdit.cashlessMethodId || cashlessState.defaultMethodId
+                      : "",
+                  });
+                }}
                 fullWidth
               >
                 {paymentMethods.map((c) => (
@@ -57,6 +70,16 @@ export const GuestPaymentDialog: React.FC<GuestPaymentDialogProps> = ({ state })
                   </MenuItem>
                 ))}
               </TextField>
+              {CASHLESS_METHODS_ENABLED && paymentIsCashless && (
+                <CashlessMethodSelect
+                  methods={cashlessState.methods}
+                  value={paymentEdit.cashlessMethodId}
+                  onChange={(cashlessMethodId) => setPaymentEdit({ ...paymentEdit, cashlessMethodId })}
+                  loading={cashlessState.isLoading}
+                  loadFailed={cashlessState.isError}
+                  disabled={savingPayment}
+                />
+              )}
               <TextField
                 label="Сумма, сом"
                 type="number"

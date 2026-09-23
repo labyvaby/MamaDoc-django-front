@@ -861,6 +861,10 @@ export interface HotelPayment {
   amount: Money;
   currency: string;
   note: string;
+  /** Способ безнала (тот же справочник, что у оплаты приёма, «Настройки → Способы безнала») — null, если не указан. */
+  cashlessMethodId: number | null;
+  /** Название способа на момент платежа — для показа, даже если способ потом скрыли. */
+  cashlessMethodName: string;
   acceptedById: number | null;
   acceptedByName: string;
   acceptedAt: string;
@@ -884,6 +888,8 @@ export interface HotelPaymentCreateData {
   kind?: "payment" | "refund";
   note?: string;
   acceptedAt?: string;
+  /** Необязательно — тот же справочник, что у оплаты приёма. Для refund без явного значения наследуется способ последнего платежа. */
+  cashlessMethodId?: number | null;
 }
 
 export function listPayments(reservationId: number, signal?: AbortSignal): Promise<HotelPaymentList> {

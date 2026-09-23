@@ -60,6 +60,10 @@ import {
   addPayment,
 } from "../api/hotel";
 import { ApiError, getErrorMessage } from "../api/client";
+import { CASHLESS_METHODS_ENABLED } from "../api/cashlessMethods";
+import { CashlessMethodSelect } from "../components/ui";
+import { useCashlessMethods } from "../hooks/useCashlessMethods";
+import { useHotelProperty } from "./useHotelProperty";
 import {
   mapStayDisplayStatus,
   HOTEL_STAY_STATUS_LABELS,
@@ -70,6 +74,11 @@ import {
   HOTEL_GUARANTEE_METHOD_LABELS,
 } from "./hotelDisplay";
 import { formatHotelDateRange, nightsBetween } from "./mockDemoData";
+
+/** "cash" — единственный способ, для которого не уточняем конкретный безналичный канал. */
+function isCashlessPaymentMethod(method: string): boolean {
+  return method !== "" && method !== "cash";
+}
 
 const CANCELLABLE_STATUSES = new Set(["draft", "hold", "confirmed"]);
 
@@ -86,6 +95,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const canManageStays = useCan("hotel.stays.manage");
   const canForceCheckIn = useCan("hotel.stays.force_checkin");
   const canManagePayments = useCan("hotel.payments.manage");
+  const { property } = useHotelProperty();
 
   const query = useQuery({
     queryKey: ["hotel", "reservation", reservationId],
@@ -123,8 +133,11 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const [paymentMethod, setPaymentMethod] = React.useState("");
   const [paymentAmount, setPaymentAmount] = React.useState("");
   const [paymentNote, setPaymentNote] = React.useState("");
+  const [cashlessMethodId, setCashlessMethodId] = React.useState<number | "">("");
   const [paymentSaving, setPaymentSaving] = React.useState(false);
   const [paymentError, setPaymentError] = React.useState<string | null>(null);
+  const paymentIsCashless = isCashlessPaymentMethod(paymentMethod);
+  const cashlessState = useCashlessMethods(paymentFormOpen, { branchId: property?.branchId ?? null });
 
   // Сброс формочек при смене/закрытии брони — иначе при открытии другой
   // причина отмены/недосохранённая оплата от предыдущей брони осталась бы видна.
@@ -139,8 +152,22 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setPaymentMethod("");
     setPaymentAmount("");
     setPaymentNote("");
+    setCashlessMethodId("");
     setPaymentError(null);
   }, [reservationId]);
+
+  // Способ безнала — только пока выбран небезналовый метод; смена метода
+  // обратно на «Наличные» сбрасывает выбор, иначе он молча уедет в payload.
+  React.useEffect(() => {
+    if (!paymentIsCashless) {
+      setCashlessMethodId("");
+      return;
+    }
+    if (cashlessMethodId === "" && cashlessState.defaultMethodId !== "") {
+      setCashlessMethodId(cashlessState.defaultMethodId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentIsCashless, cashlessState.defaultMethodId]);
 
   const invalidateReservation = () => {
     void queryClient.invalidateQueries({ queryKey: ["hotel", "reservation", reservationId] });
@@ -242,11 +269,14 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
         method: paymentMethod,
         amount: String(amountNum),
         note: paymentNote.trim() || undefined,
+        cashlessMethodId:
+          CASHLESS_METHODS_ENABLED && paymentIsCashless && cashlessMethodId !== "" ? cashlessMethodId : undefined,
       });
       setPaymentFormOpen(false);
       setPaymentMethod("");
       setPaymentAmount("");
       setPaymentNote("");
+      setCashlessMethodId("");
       void queryClient.invalidateQueries({ queryKey: ["hotel", "reservation", reservationId, "payments"] });
       invalidateReservation();
     } catch (err) {
@@ -570,6 +600,16 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                         disabled={paymentSaving}
                       />
                     </Stack>
+                    {CASHLESS_METHODS_ENABLED && paymentIsCashless && (
+                      <CashlessMethodSelect
+                        methods={cashlessState.methods}
+                        value={cashlessMethodId}
+                        onChange={setCashlessMethodId}
+                        loading={cashlessState.isLoading}
+                        loadFailed={cashlessState.isError}
+                        disabled={paymentSaving}
+                      />
+                    )}
                     <TextField
                       label="Комментарий"
                       placeholder="Необязательно"
@@ -610,6 +650,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                           <Typography variant="body2" fontWeight={600} color={p.kind === "refund" ? "error.main" : undefined}>
                             {p.kind === "refund" ? "− " : ""}
                             {Number(p.amount).toLocaleString("ru-RU")} {p.currency} · {p.methodLabel || p.method}
+                            {p.cashlessMethodName ? ` · ${p.cashlessMethodName}` : ""}
                           </Typography>
                           {p.note && (
                             <Typography variant="caption" color="text.secondary">
