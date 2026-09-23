@@ -4,7 +4,7 @@ import { groupByCategory } from "../../config/moduleCatalogGrouping";
 import type { CatalogModule } from "../../api/tenancy";
 
 function mod(code: string, category: string, isEnabled = false): CatalogModule {
-  return { code, name: code, description: "", category, tier: "shared", isEnabled };
+  return { code, name: code, description: "", category, tier: "shared", isEnabled, requires: [] };
 }
 
 describe("groupByCategory", () => {

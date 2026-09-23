@@ -13,6 +13,8 @@ export interface CatalogModule {
   category: string;
   tier: string;
   isEnabled: boolean;
+  /** Прямые требования модуля (коды), граф — tenancy.dependencies на бэке. */
+  requires: string[];
 }
 
 export function getModulesCatalog(): Promise<CatalogModule[]> {
