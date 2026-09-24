@@ -35,7 +35,6 @@ import {
   Card,
   CardContent,
   Checkbox,
-  CircularProgress,
   Collapse,
   Dialog,
   DialogActions,
@@ -59,14 +58,13 @@ import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
-import UploadOutlined from "@mui/icons-material/UploadOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker } from "../components/ui";
-import { INVOICE_DOCUMENT_ACCEPT } from "../utility/imageCompression";
 import { useHotelProperty } from "./useHotelProperty";
 import { formatGuestMatchedBy } from "./hotelDisplay";
-import { isDocumentFile, prepareDocumentFile, useDocumentScan, ScanProgressBar } from "./useDocumentScan";
+import { isDocumentFile, prepareDocumentFile, useDocumentScan } from "./useDocumentScan";
+import { DocumentDropzone } from "./DocumentDropzone";
 import {
   getHotelCatalogs,
   listRooms,
@@ -74,6 +72,7 @@ import {
   getGuest,
   createReservation,
   uploadStayDocumentPhoto,
+  uploadStayDocumentPhotoBack,
   getReservationConflicts,
   isOverbookingConfirmable,
   type HotelRoom,
@@ -168,6 +167,11 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [visitPurpose, setVisitPurpose] = React.useState("");
   const [passportPhotoFile, setPassportPhotoFile] = React.useState<File | null>(null);
   const [passportPhotoPreview, setPassportPhotoPreview] = React.useState<string | null>(null);
+  // Оборотная сторона ID-карты (только guestType === "resident") — грузится отдельным
+  // PUT-ом после создания брони/гостя (uploadStayDocumentPhotoBack, contract v2.3), тем
+  // же best-effort принципом, что и лицевая. Не распознаётся.
+  const [backPhotoFile, setBackPhotoFile] = React.useState<File | null>(null);
+  const [backPhotoPreview, setBackPhotoPreview] = React.useState<string | null>(null);
   const [photoError, setPhotoError] = React.useState<string | null>(null);
   const {
     available: scanAvailable,
@@ -218,6 +222,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setVisitPurpose("");
     setPassportPhotoFile(null);
     setPassportPhotoPreview(null);
+    setBackPhotoFile(null);
+    setBackPhotoPreview(null);
     setPhotoError(null);
     scanGenerationRef.current += 1;
     clearScanNotice();
@@ -355,10 +361,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   };
 
   /** Прикрепляет фото документа и, если распознавание доступно, подставляет реквизиты в поля. */
-  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // позволяет выбрать тот же файл ещё раз
-    if (!file) return;
+  const handlePhotoChange = async (file: File) => {
     if (!isDocumentFile(file)) {
       setPhotoError("Нужен файл изображения или PDF");
       return;
@@ -398,6 +401,38 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setPassportPhotoFile(null);
     setPassportPhotoPreview(null);
     clearScanNotice();
+    // Крестик мог убрать фото прямо во время распознавания — отбрасываем его результат,
+    // когда он всё же придёт (та же защита, что и при сбросе формы).
+    scanGenerationRef.current += 1;
+  };
+
+  /** Оборотная сторона ID-карты — просто прикрепляется, без распознавания (см. комментарий у backPhotoFile). */
+  const handleBackPhotoChange = async (file: File) => {
+    if (!isDocumentFile(file)) {
+      setPhotoError("Нужен файл изображения или PDF");
+      return;
+    }
+    const generation = scanGenerationRef.current;
+    const prepared = await prepareDocumentFile(file);
+    if (generation !== scanGenerationRef.current) return;
+    if (!prepared) {
+      setPhotoError("Не удалось прочитать изображение");
+      return;
+    }
+    if (prepared.size > MAX_PHOTO_BYTES) {
+      setPhotoError("Файл больше 10 МБ");
+      return;
+    }
+    setPhotoError(null);
+    if (backPhotoPreview) URL.revokeObjectURL(backPhotoPreview);
+    setBackPhotoFile(prepared);
+    setBackPhotoPreview(prepared.type.startsWith("image/") ? URL.createObjectURL(prepared) : null);
+  };
+
+  const removeBackPhoto = () => {
+    if (backPhotoPreview) URL.revokeObjectURL(backPhotoPreview);
+    setBackPhotoFile(null);
+    setBackPhotoPreview(null);
   };
 
   /**
@@ -468,6 +503,15 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           await uploadStayDocumentPhoto(reservation.id, createdGuestId, passportPhotoFile);
         } catch {
           // Бронь уже создана — молча пропускаем сбой загрузки фото, не откатываем бронь.
+        }
+      }
+      // Оборотная сторона — только у ID-карты резидента (contract v2.3); для загранпаспорта
+      // backPhotoFile всегда null, так как поле скрыто и очищается при смене guestType.
+      if (backPhotoFile && createdGuestId != null) {
+        try {
+          await uploadStayDocumentPhotoBack(reservation.id, createdGuestId, backPhotoFile);
+        } catch {
+          // no-op
         }
       }
 
@@ -742,44 +786,76 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                     </Typography>
                     <Divider />
 
-                    {/* Фото — первым делом: поля ниже появляются только после него (или
-                        ручного «Заполнить вручную»), заполненные тем, что распознали. */}
-                    <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
-                      <Button
-                        component="label"
-                        size="small"
-                        variant="outlined"
-                        startIcon={scanning ? <CircularProgress size={14} /> : <UploadOutlined />}
-                        disabled={scanning}
-                      >
-                        {scanning ? "Распознаём…" : "Фото паспорта"}
-                        <input
-                          type="file"
-                          accept={INVOICE_DOCUMENT_ACCEPT}
-                          hidden
-                          onChange={(e) => void handlePhotoChange(e)}
+                    {/* Тип документа — выбираем ДО фото: от него зависит, сколько сторон грузить
+                        (ID-карта резидента — лицевая и оборотная, загранпаспорт иностранца — один
+                        разворот). Подпись «ID карта» — только здесь: список/карточка гостя всё ещё
+                        показывают «Гражданин КР» из каталога, тот лейбл не трогаем. */}
+                    <ToggleButtonGroup
+                      value={guestType}
+                      exclusive
+                      size="small"
+                      onChange={(_, value: GuestType | null) => {
+                        if (!value) return;
+                        setGuestType(value);
+                        // Тип документа, прочитанный со старого скана, к новому типу гостя не относится.
+                        setScannedDocumentType(null);
+                        if (value === "foreign") {
+                          // Оборотной стороны у загранпаспорта нет — убираем, если уже прикрепляли.
+                          if (backPhotoPreview) URL.revokeObjectURL(backPhotoPreview);
+                          setBackPhotoFile(null);
+                          setBackPhotoPreview(null);
+                        }
+                      }}
+                    >
+                      {(catalogs?.guestTypes ?? []).map((c) => (
+                        <ToggleButton key={c.value} value={c.value}>
+                          {c.value === "resident" ? "ID карта" : c.label}
+                        </ToggleButton>
+                      ))}
+                    </ToggleButtonGroup>
+
+                    {/* Фото — drag-and-drop зоны: у резидента две (лицевая/оборотная, по 50%
+                        ширины), у иностранца одна на всю ширину. Лицевая (или единственная у
+                        иностранца) распознаётся и грузится как раньше — поля ниже появляются
+                        только после неё (или ручного «Заполнить вручную»). */}
+                    {guestType === "resident" ? (
+                      <Stack direction="row" gap={1.5}>
+                        <DocumentDropzone
+                          file={passportPhotoFile}
+                          preview={passportPhotoPreview}
+                          scanning={scanning}
+                          scanProgress={scanProgress}
+                          label="Перетащите лицевую сторону сюда либо нажмите и выберите файл"
+                          onFile={(file) => void handlePhotoChange(file)}
+                          onRemove={removePhoto}
+                          sx={{ flex: 1 }}
                         />
-                      </Button>
-                      {scanning && <ScanProgressBar value={scanProgress} />}
+                        <DocumentDropzone
+                          file={backPhotoFile}
+                          preview={backPhotoPreview}
+                          label="Перетащите оборотную сторону сюда либо нажмите и выберите файл"
+                          onFile={(file) => void handleBackPhotoChange(file)}
+                          onRemove={removeBackPhoto}
+                          sx={{ flex: 1 }}
+                        />
+                      </Stack>
+                    ) : (
+                      <DocumentDropzone
+                        file={passportPhotoFile}
+                        preview={passportPhotoPreview}
+                        scanning={scanning}
+                        scanProgress={scanProgress}
+                        label="Перетащите паспорт сюда либо нажмите и выберите нужный файл"
+                        onFile={(file) => void handlePhotoChange(file)}
+                        onRemove={removePhoto}
+                      />
+                    )}
+
+                    <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
                       {scanAvailable && !passportPhotoFile && !scanning && (
                         <Typography variant="caption" color="text.secondary">
                           Реквизиты подставятся по фото автоматически
                         </Typography>
-                      )}
-                      {passportPhotoFile && (
-                        <Stack direction="row" alignItems="center" gap={1}>
-                          {passportPhotoPreview && (
-                            <Box
-                              component="img"
-                              src={passportPhotoPreview}
-                              alt="Фото паспорта"
-                              sx={{ width: 40, height: 40, borderRadius: "6px", objectFit: "cover" }}
-                            />
-                          )}
-                          <Button size="small" color="inherit" startIcon={<CloseOutlined fontSize="small" />} onClick={removePhoto}>
-                            Убрать
-                          </Button>
-                        </Stack>
                       )}
                       {!documentFieldsVisible && (
                         <Button size="small" color="inherit" onClick={() => setDocumentFieldsVisible(true)}>
@@ -787,6 +863,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         </Button>
                       )}
                     </Stack>
+
                     {photoError && (
                       <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
                         {photoError}
@@ -812,23 +889,6 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
 
                     <Collapse in={documentFieldsVisible}>
                       <Stack spacing={2}>
-                        <ToggleButtonGroup
-                          value={guestType}
-                          exclusive
-                          size="small"
-                          onChange={(_, value: GuestType | null) => {
-                            if (!value) return;
-                            setGuestType(value);
-                            // Тип документа, прочитанный со старого скана, к новому типу гостя не относится.
-                            setScannedDocumentType(null);
-                          }}
-                        >
-                          {(catalogs?.guestTypes ?? []).map((c) => (
-                            <ToggleButton key={c.value} value={c.value}>
-                              {c.label}
-                            </ToggleButton>
-                          ))}
-                        </ToggleButtonGroup>
 
                         {/* Общее для обоих типов документа — то, что реально несёт любой скан
                             паспорта/ID-карты независимо от гражданства. */}

@@ -122,6 +122,8 @@ const HotelRoomsPage = lazy(() => import("./dev/HotelRoomsPage"));
 const HotelRoomFormPage = lazy(() => import("./dev/HotelRoomFormPage"));
 const HotelRoomCategoriesPage = lazy(() => import("./dev/HotelRoomCategoriesPage"));
 const HotelRoomCategoryFormPage = lazy(() => import("./dev/HotelRoomCategoryFormPage"));
+const HotelPricingRulesPage = lazy(() => import("./dev/HotelPricingRulesPage"));
+const HotelPricingRuleFormPage = lazy(() => import("./dev/HotelPricingRuleFormPage"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
@@ -727,6 +729,38 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.hotelRoomCategories}>
                               <Suspense fallback={<LinearProgress />}>
                                 <HotelRoomCategoryFormPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        {/* «Ценообразование» — правила динамических цен, рядом с «Категории и
+                            тарифы»; форма на отдельной странице, как у категорий. */}
+                        <Route
+                          path="pricing-rules"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelPricingRules}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelPricingRulesPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="pricing-rules/new"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelPricingRules}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelPricingRuleFormPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="pricing-rules/:ruleId"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelPricingRules}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelPricingRuleFormPage />
                               </Suspense>
                             </RequirePermission>
                           }
