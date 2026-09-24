@@ -216,6 +216,14 @@ export function updateHotelProperty(id: number, data: HotelPropertyUpdateData): 
 }
 
 // ── Категории номеров (RoomType) ─────────────────────────────────────────────
+//
+// Поля default* (defaultArea…defaultMealOptions) — ПРЕДЛОЖЕНИЕ фронта, бэком
+// ЕЩЁ НЕ ПОДТВЕРЖДЕНО: просьба хранить на категории значения по умолчанию для
+// «Доп. характеристик» номера, чтобы при массовом заведении номеров одной
+// категории не перезабивать одно и то же в каждой форме. Пока это не
+// выложено, POST/PATCH .../room-types/ с этими ключами либо получит 400
+// (если бэк тоже держит forbid_unknown_fields), либо тихо их проигнорирует —
+// см. черновик сообщения бек-разработчику в HotelRoomCategoryFormPage.tsx.
 
 export interface HotelRoomType {
   id: number;
@@ -239,7 +247,24 @@ export interface HotelRoomType {
   totalPrice: Money;
   sortOrder: number;
   isActive: boolean;
+  /** Сколько номеров этой категории уже заведено — только чтение. Не путать с defaultRoomsCount ниже. */
   roomsCount: number;
+  // ── Значения по умолчанию для «Доп. характеристик» нового номера этой категории.
+  // ПРЕДЛОЖЕНИЕ, бэком ещё не подтверждено — см. комментарий у createRoomType
+  // ниже. Подставляются в форму /rooms/new при выборе категории (HotelRoomFormPage.tsx)
+  // и правятся тут же (HotelRoomCategoryFormPage.tsx); сам номер эти поля потом
+  // хранит независимо — смена дефолта категории задним числом не трогает уже
+  // созданные номера, только форму создания следующего.
+  defaultArea: string | null;
+  defaultCeilingHeight: string | null;
+  /** Не путать с roomsCount выше (счётчик номеров категории) — это «жилых комнат внутри номера» по умолчанию. */
+  defaultRoomsCount: number | null;
+  defaultBathrooms: number | null;
+  defaultWindowSide: string;
+  defaultIsCorner: boolean;
+  defaultLayoutDescription: string;
+  /** Ключи из HotelCatalogs.mealOptions. */
+  defaultMealOptions: string[];
 }
 
 export interface HotelRoomTypeCreateData {
@@ -256,6 +281,14 @@ export interface HotelRoomTypeCreateData {
   description?: string;
   basePrice?: Money;
   sortOrder?: number;
+  defaultArea?: string | null;
+  defaultCeilingHeight?: string | null;
+  defaultRoomsCount?: number | null;
+  defaultBathrooms?: number | null;
+  defaultWindowSide?: string;
+  defaultIsCorner?: boolean;
+  defaultLayoutDescription?: string;
+  defaultMealOptions?: string[];
 }
 
 export interface HotelRoomTypeUpdateData {
@@ -272,6 +305,14 @@ export interface HotelRoomTypeUpdateData {
   basePrice?: Money;
   sortOrder?: number;
   isActive?: boolean;
+  defaultArea?: string | null;
+  defaultCeilingHeight?: string | null;
+  defaultRoomsCount?: number | null;
+  defaultBathrooms?: number | null;
+  defaultWindowSide?: string;
+  defaultIsCorner?: boolean;
+  defaultLayoutDescription?: string;
+  defaultMealOptions?: string[];
 }
 
 export function listRoomTypes(
@@ -298,83 +339,128 @@ export function deleteRoomType(id: number): Promise<void> {
 
 // ── Динамическое ценообразование (PricingRule) ───────────────────────────────
 //
-// Контракт ПОДТВЕРЖДЁН бек-разработчиком 24.09.2026 (bb43a99b, «Динамические
-// цены отеля» — уже на test.crm, тот же путь /v2/hotel/pricing-rules/, но не
-// то тело, что предлагал фронт первым сообщением). Подробности — в ответе от
-// бек-разработчика; ключевое:
+// Контракт — «Ответ бэкенда: динамическое ценообразование отеля (Viva)»,
+// 24.09.2026, ветка feat/hotel-dynamic-pricing (от test), миграция
+// hotel.0006_dynamic_pricing. Финальная, полная версия — заменяет более
+// раннюю (сезон/событие + только даты, без остальных условий), под которую
+// были заведены первые HotelPricingRulesPage.tsx/HotelPricingRuleFormPage.tsx.
+// Ключевое:
 // — payload объявлен с forbid_unknown_fields=True — лишний ключ верхнего
-//   уровня (например, старое "label" вместо "name") даёт 400, а не молча
-//   игнорируется;
-// — период и повтор — внутри conditions, а не на верхнем уровне;
+//   уровня или внутри conditions (например, "occupancyTO") даёт 400, а не
+//   молча игнорируется;
 // — GET без includeInactive=true отдаёт только активные правила — выключенное
 //   переключателем правило пропало бы из списка;
 // — запись требует hotel.rates.manage (не hotel.manage), чтение — hotel.view;
 //   у «Ресепшена» права на запись нет — см. useCan("hotel.rates.manage") в
 //   HotelPricingRulesPage.tsx/HotelPricingRuleFormPage.tsx;
 // — PATCH сверяет version с текущей — расхождение → 409 VERSION_CONFLICT;
-// — при нескольких подходящих правилах на одну дату+категорию они применяются
-//   по priority (проценты перемножаются, не складываются); exclusiveGroup —
-//   взаимоисключающая группа, где срабатывает только первое подходящее.
-//   Ни priority, ни exclusiveGroup эта версия фронта не выставляет и не
-//   показывает — бэк берёт их по умолчанию, править их из формы не просили.
-// — процент считается от totalPrice (с наценками характеристик), затем
-//   ограничивается minPrice/maxPrice категории; ручная цена на дату
-//   заменяет результат правил целиком.
+//   conditions при PATCH заменяется целиком, не сливается с прежним;
+// — правила применяются последовательно в порядке priority (не перемножаются
+//   вслепую) — порядок значим; exclusiveGroup — из правил этой группы на
+//   ночь применяется только первое подходящее (иначе «загрузка > 80%» и
+//   «загрузка > 90%» сработали бы вместе);
+// — category — только подпись для интерфейса, на расчёт не влияет: логику
+//   определяют исключительно conditions;
+// — stage ("night"/"booking") решает бэк сам по составу conditions: правило с
+//   leadTime/nights или привязкой к тарифу — этапа брони, иначе — этапа ночи;
+// — поправка "percent" — со знаком от −99 до 1000 (проценты от totalPrice
+//   категории), "amount" — сумма за ночь со знаком в валюте объекта; цена
+//   не уходит ниже нуля.
 //
-// Проценты нигде на фронте не пересчитываются — ни здесь, ни в форме: для
-// предпросчёта есть simulatePricingRule (POST .../simulate/), который учитывает
-// остальные действующие правила; локальная арифметика дала бы неверную
-// картину при пересечении правил.
+// Проценты/суммы нигде на фронте не пересчитываются — ни здесь, ни в форме:
+// для предпросчёта есть simulatePricingRule (POST .../simulate/), который
+// учитывает остальные действующие правила; локальная арифметика дала бы
+// неверную картину при пересечении правил.
 
 export interface HotelPricingRuleConditions {
-  /** YYYY-MM-DD, включительно. */
-  dateFrom: string;
+  /** Загрузка НОЧИ ≥ значения, % (0–100). Категории — свои, если заданы roomTypeIds правила, иначе всего объекта. */
+  occupancyFrom?: number;
+  /** Загрузка ночи < значения, % (0–100) — не включая, ступени без пересечений. */
+  occupancyTo?: number;
+  /** Дней от сегодня (часовой пояс объекта) до заезда, включительно, 0–730. */
+  leadTimeFrom?: number;
+  leadTimeTo?: number;
+  /** Ночей в брони, включительно, 1–365. */
+  nightsFrom?: number;
+  nightsTo?: number;
+  /** День недели НОЧИ, ключи EN нижним регистром. */
+  daysOfWeek?: Array<"monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday">;
   /** YYYY-MM-DD, включительно; равна dateFrom для правила на один день. */
-  dateTo: string;
+  dateFrom?: string;
+  dateTo?: string;
   /**
    * Действует в эти же dateFrom/dateTo каждый год, без учёта года. Диапазон
    * через Новый год (например, 31.12–02.01) бэк переходит корректно — сам
    * год в датах фронт не подгоняет.
    */
-  recurringAnnually: boolean;
+  recurringAnnually?: boolean;
 }
 
-/** Только подпись для списка ("Сезон"/"Событие") — на расчёт цены не влияет. */
-export type HotelPricingRuleCategory = "season" | "event";
+/** Только подпись для интерфейса — группировка/подсказка мастера, на расчёт не влияет (см. conditions). */
+export type HotelPricingRuleCategory =
+  | "occupancy"
+  | "last_minute"
+  | "early_bird"
+  | "weekday"
+  | "season"
+  | "event"
+  | "length_of_stay"
+  | "custom";
 
 export interface HotelPricingRule {
   id: number;
   propertyId: number;
   name: string;
-  adjustmentType: "percent";
-  /** Знак важен: "20" — дороже на 20%, "-15" — скидка 15%. От −99 до 1000, десятичная строка. */
+  adjustmentType: "percent" | "amount";
+  /** "percent": знак важен, "20"/"-15", от −99 до 1000. "amount": сумма за ночь со знаком, "500"/"-300". */
   adjustmentValue: string;
   conditions: HotelPricingRuleConditions;
   /** Категории (HotelRoomType.id). Пустой массив — все категории объекта, включая заведённые позже. */
   roomTypeIds: number[];
+  /** Тарифы (RatePlan.id). Пустой массив — все тарифы. */
+  ratePlanIds: number[];
+  /** Порядок применения при нескольких подходящих правилах — меньше значит раньше. */
+  priority: number;
+  /** Правила одной непустой группы — на ночь применяется только первое подходящее по priority. "" — вне групп. */
+  exclusiveGroup: string;
   category: HotelPricingRuleCategory;
   /** Выключенное правило не влияет на цену, но не удаляется — например, сняли наценку на праздники. */
   isActive: boolean;
+  /** Этап расчёта — решает бэк по составу conditions/ratePlanIds, фронт не выставляет. */
+  stage: "night" | "booking";
   /** Отправлять обратно в PATCH — расхождение → 409 VERSION_CONFLICT. */
   version: number;
+  createdById: number | null;
+  createdByName: string;
+  updatedById: number | null;
+  updatedByName: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface HotelPricingRuleCreateData {
   propertyId: number;
   name: string;
-  adjustmentType: "percent";
+  adjustmentType: "percent" | "amount";
   adjustmentValue: string;
   conditions: HotelPricingRuleConditions;
   roomTypeIds: number[];
+  ratePlanIds?: number[];
+  priority?: number;
+  exclusiveGroup?: string;
   category: HotelPricingRuleCategory;
   isActive?: boolean;
 }
 
 export interface HotelPricingRuleUpdateData {
   name?: string;
+  adjustmentType?: "percent" | "amount";
   adjustmentValue?: string;
   conditions?: HotelPricingRuleConditions;
   roomTypeIds?: number[];
+  ratePlanIds?: number[];
+  priority?: number;
+  exclusiveGroup?: string;
   category?: HotelPricingRuleCategory;
   isActive?: boolean;
   /** Обязательно на любой PATCH — см. комментарий у HotelPricingRule.version. */
@@ -405,7 +491,7 @@ export function deletePricingRule(id: number): Promise<void> {
  * класть НЕЛЬЗЯ (400), они не часть черновика для расчёта.
  */
 export interface HotelPricingRuleSimulateRuleDraft {
-  adjustmentType: "percent";
+  adjustmentType: "percent" | "amount";
   adjustmentValue: string;
   conditions?: HotelPricingRuleConditions;
   /** По умолчанию 100, если не передать. */
@@ -444,13 +530,20 @@ export interface HotelPricingRuleSimulateNight {
   /** Может быть отрицательной ("-900.00"). */
   delta: Money;
   /**
-   * true — черновик сработал на этой ночи. false при delta !== "0.00" — цену
-   * изменило что-то другое (например, правка заменила собой старое правило).
-   * false и delta "0.00" — на дату стоит ручная цена ЛИБО черновик проиграл в
-   * своём exclusiveGroup; отдельного признака для этих двух случаев нет.
-   * true и delta "0.00" — цену упёрло в minPrice/maxPrice категории.
+   * true — черновик сработал на этой ночи (напрямую или через правила этапа
+   * брони — срок до заезда/длительность/тариф — поверх ручной цены).
+   * false + delta "0.00" — черновик не сработал: не подошли условия/категория
+   * либо проиграл в своём exclusiveGroup (isManualOverride тут false).
+   * true + delta "0.00" — цену упёрло в minPrice/maxPrice категории.
    */
   ruleApplied: boolean;
+  /**
+   * true — на эту дату стоит ручная цена; правила ночи её не меняют (booking-
+   * этапные могут донастроить поверх — тогда возможны И isManualOverride, И
+   * ruleApplied одновременно, это норма). Добавлено 24.09.2026, isManualOverride
+   * на test.crm.
+   */
+  isManualOverride: boolean;
 }
 
 export interface HotelPricingRuleSimulateRoomType {
@@ -1363,6 +1456,86 @@ export function connectChannel(channel: string, propertyId: number): Promise<Hot
 export function disconnectChannel(channel: string, propertyId: number): Promise<HotelChannel> {
   const qs = buildQuery({ propertyId });
   return apiRequest<HotelChannel>(`/v2/hotel/channels/${channel}/disconnect/${qs}`, { method: "POST" });
+}
+
+// ── Channex.io (настоящий канал-менеджер: Booking.com/Airbnb/Expedia) ──────
+// hotel-channex-integration.md, 24.09.2026. Экран «Каналы» первого этапа
+// (выше) остаётся фолбэком на случай 409 CHANNEX_DISABLED — после реального
+// подключения фронт показывает экран Channex вместо переключателей.
+
+export interface HotelChannexPush {
+  kind: string;
+  status: string;
+  isFullSync: boolean;
+  valuesCount: number;
+  dateFrom: string | null;
+  dateTo: string | null;
+  taskIds: string[];
+  warningsCount: number;
+  error: string | null;
+  createdAt: string;
+}
+
+export interface HotelChannexAttentionItem {
+  id: number;
+  state: string;
+  status: string;
+  otaName: string;
+  otaReservationCode: string | null;
+  arrivalDate: string | null;
+  departureDate: string | null;
+  reservationId: number | null;
+  reservationNumber: string | null;
+  message: string;
+}
+
+export interface HotelChannexStatus {
+  propertyId: number;
+  enabled: boolean;
+  connected: boolean;
+  state: "connecting" | "active" | "paused" | "error" | null;
+  channexPropertyId: string | null;
+  lastPushAt: string | null;
+  fullSyncAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  pendingChanges: number;
+  mappedRoomTypes: number;
+  mappedRatePlans: number;
+  recentPushes: HotelChannexPush[];
+  attention: HotelChannexAttentionItem[];
+}
+
+/** 409 CHANNEX_DISABLED — Channex ещё не подключён объекту, показывать старый экран каналов. */
+export function getChannexStatus(propertyId: number, signal?: AbortSignal): Promise<HotelChannexStatus> {
+  return apiRequest<HotelChannexStatus>(`/v2/hotel/properties/${propertyId}/channex/`, { signal });
+}
+
+export function connectChannex(propertyId: number): Promise<HotelChannexStatus> {
+  return apiRequest<HotelChannexStatus>(`/v2/hotel/properties/${propertyId}/channex/connect/`, { method: "POST" });
+}
+
+export function pauseChannex(propertyId: number): Promise<HotelChannexStatus> {
+  return apiRequest<HotelChannexStatus>(`/v2/hotel/properties/${propertyId}/channex/pause/`, { method: "POST" });
+}
+
+/** 409 FULL_SYNC_TOO_OFTEN — details.availableAt подсказывает, когда можно повторить. */
+export function fullSyncChannex(propertyId: number): Promise<HotelChannexStatus> {
+  return apiRequest<HotelChannexStatus>(`/v2/hotel/properties/${propertyId}/channex/full-sync/`, { method: "POST" });
+}
+
+/** Ссылка на встраиваемую в iframe страницу маппинга номеров/тарифов Channex. 502 CHANNEX_UNAVAILABLE возможен. */
+export function createChannexChannelsSession(propertyId: number): Promise<{ url: string; expiresAt: string }> {
+  return apiRequest<{ url: string; expiresAt: string }>(
+    `/v2/hotel/properties/${propertyId}/channex/channels-session/`,
+    { method: "POST" },
+  );
+}
+
+export function retryChannexRevision(propertyId: number, revisionId: number): Promise<void> {
+  return apiRequest<void>(`/v2/hotel/properties/${propertyId}/channex/revisions/${revisionId}/retry/`, {
+    method: "POST",
+  });
 }
 
 // ── Отчёты и дашборд ──────────────────────────────────────────────────────
