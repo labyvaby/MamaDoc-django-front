@@ -25,6 +25,7 @@ import ContactPageOutlined from "@mui/icons-material/ContactPageOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import WorkOutlined from "@mui/icons-material/WorkOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import HowToRegOutlined from "@mui/icons-material/HowToRegOutlined";
 import InstagramIcon from "@mui/icons-material/Instagram";
 import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
 import QrCode2Outlined from "@mui/icons-material/QrCode2Outlined";
@@ -42,6 +43,7 @@ import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 import type { EmployesRow } from "../types";
+import { formatFiredNote } from "../employment";
 import { getEmployeePosition } from "../position";
 
 import { formatDateRu } from "../../../utility/format";
@@ -80,6 +82,8 @@ export type EmployeeCardProps = {
   onOpenServices?: (employeeId: number, employeeName: string) => void;
   /** Открыть редактирование карточки */
   onEdit?: (emp: EmployesRow) => void;
+  /** Вернуть уволенного в штат. Без права «уволить» — не передаётся. */
+  onRestore?: (emp: EmployesRow) => void;
 };
 
 type TFunc = (key: string, options?: Record<string, unknown>) => string;
@@ -235,6 +239,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   emp,
   onOpenServices,
   onEdit,
+  onRestore,
 }) => {
   const { t } = useT("employees");
   const [related, setRelated] = useState<RelatedModalType>(null);
@@ -393,6 +398,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   const status = emp?.status;
   const isActive = status === "active";
   const isFired = status === "fired";
+  const firedNote = isFired ? formatFiredNote(emp?._employment) : "";
   const statusText = isActive
     ? t("list.status.active")
     : status === "inactive"
@@ -444,6 +450,45 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
       <CardContent sx={{ flex: 1, overflowY: { xs: "visible", md: "auto" }, pb: 3, "&:last-child": { pb: 3 } }}>
         {emp ? (
           <Stack spacing={3}>
+            {/* Уволен — и кем: красный чип без объяснений каждый раз
+                заканчивался разбором по логам сервера. */}
+            {isFired && (
+              <Box
+                data-testid="employee-fired-banner"
+                sx={(th) => ({
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1.5,
+                  flexWrap: "wrap",
+                  p: 1.5,
+                  borderRadius: "12px",
+                  border: 1,
+                  borderColor: alpha(th.palette.error.main, 0.35),
+                  bgcolor: alpha(th.palette.error.main, th.palette.mode === "dark" ? 0.16 : 0.08),
+                })}
+              >
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography variant="body2" fontWeight={600}>
+                    {t("list.status.fired")}
+                  </Typography>
+                  {firedNote && (
+                    <Typography variant="caption" color="text.secondary">
+                      {firedNote}
+                    </Typography>
+                  )}
+                </Box>
+                {emp && onRestore && (
+                  <AppButton
+                    size="small"
+                    startIcon={<HowToRegOutlined fontSize="small" />}
+                    onClick={() => onRestore(emp)}
+                    data-testid="employee-card-restore"
+                  >
+                    {t("list.restoreTooltip")}
+                  </AppButton>
+                )}
+              </Box>
+            )}
             {/* Hero: аватар-плашка + имя + ник + чипы */}
             <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
               <Box sx={{ position: "relative", flexShrink: 0 }}>

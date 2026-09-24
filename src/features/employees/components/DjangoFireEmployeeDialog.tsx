@@ -14,14 +14,14 @@ import {
 import PersonRemoveOutlined from "@mui/icons-material/PersonRemoveOutlined";
 import { useNotification } from "@refinedev/core";
 import { AppButton } from "../../../components/ui";
-import { fireEmployee } from "../../../api/staff";
+import { fireEmployee, type DjangoEmployee } from "../../../api/staff";
 import type { EmployesRow } from "../types";
 
 export type DjangoFireEmployeeDialogProps = {
   record: EmployesRow | null;
   onClose: () => void;
-  /** Called after successful fire. Receives the fired employee's id. */
-  onFired: (id: string) => void;
+  /** Called after successful fire with the fresh card from the backend. */
+  onFired: (employee: DjangoEmployee) => void;
 };
 
 const DjangoFireEmployeeDialog: React.FC<DjangoFireEmployeeDialogProps> = ({
@@ -46,12 +46,12 @@ const DjangoFireEmployeeDialog: React.FC<DjangoFireEmployeeDialogProps> = ({
     setBusy(true);
     setError(null);
     try {
-      await fireEmployee(empId);
+      const fired = await fireEmployee(empId);
       notify?.({
         type: "success",
         message: `Сотрудник ${record.full_name} уволен`,
       });
-      onFired(record.id);
+      onFired(fired);
       onClose();
     } catch (e: unknown) {
       const msg =
@@ -79,7 +79,8 @@ const DjangoFireEmployeeDialog: React.FC<DjangoFireEmployeeDialogProps> = ({
           <Typography variant="body2" color="text.secondary">
             Сотрудник будет переведён в статус «Уволен», его членство в
             организации будет деактивировано. История приёмов и медицинские
-            записи сохранятся.
+            записи сохранятся. Если это ошибка, сотрудника можно вернуть
+            кнопкой «Восстановить» в его строке.
           </Typography>
         </Stack>
       </DialogContent>
