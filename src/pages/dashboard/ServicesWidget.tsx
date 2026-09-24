@@ -3,9 +3,9 @@ import { Box, Skeleton, Stack, Typography } from "@mui/material";
 
 import { formatKGS } from "../../utility/format";
 import { DashCard, WidgetError, type WidgetProps } from "./widgetKit";
-import { num } from "./widgetUtils";
+import { num, othersOf } from "./widgetUtils";
 import { useDashboardData } from "./DashboardData";
-import { RankRow, type RankRowData } from "./RankRow";
+import { RankOthers, RankRow, type RankRowData } from "./RankRow";
 
 /** Сколько строк: бэк отдаёт до 10, на сводке хватает половины. */
 const TOP_SIZE = 5;
@@ -16,12 +16,15 @@ const TOP_SIZE = 5;
  * количество − скидка строки); частично оплаченные визиты, закрытые скидкой
  * целиком и отменённые строки не входят (ответ бэка 24.09.2026).
  *
- * Есть только на агрегате v2: на прежних ручках посчитать это можно было лишь
- * выгрузкой всех строк приёмов, поэтому там блока нет вовсе (см. layout.ts).
+ * Под топом — «прочие»: остаток от `topServicesTotal` (вся выручка периода).
  */
 export const ServicesWidget: React.FC<WidgetProps> = ({ range }) => {
   const data = useDashboardData();
   const top = data.sections.appointments?.topServices;
+  const others = othersOf(
+    data.sections.appointments?.topServicesTotal,
+    (top ?? []).slice(0, TOP_SIZE),
+  );
   const loading = data.isLoading("appointments");
   const error = data.error("appointments");
 
@@ -34,7 +37,7 @@ export const ServicesWidget: React.FC<WidgetProps> = ({ range }) => {
         main: formatKGS(num(s.amount)),
         mainTitle: `Выручка оплаченных визитов · ${Math.round(num(s.share))}% от всей`,
         side: String(s.count),
-        sideTitle: "Сколько раз оказана в оплаченных визитах",
+        sideTitle: "Оплаченных визитов с этой услугой",
       })),
     [top],
   );
@@ -68,12 +71,13 @@ export const ServicesWidget: React.FC<WidgetProps> = ({ range }) => {
           >
             <Box sx={{ width: 16 }} />
             <Box sx={{ flex: 1 }} />
-            <Box sx={{ width: 44, textAlign: "right" }}>раз</Box>
+            <Box sx={{ width: 44, textAlign: "right" }}>визитов</Box>
             <Box sx={{ width: 100, textAlign: "right" }}>выручка</Box>
           </Stack>
           {rows.map((r, i) => (
             <RankRow key={r.id} row={r} index={i} best={best} />
           ))}
+          {others && <RankOthers {...others} label="прочие услуги" />}
         </Stack>
       )}
     </DashCard>

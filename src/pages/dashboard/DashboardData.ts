@@ -1,8 +1,6 @@
 import React from "react";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import dayjs from "dayjs";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ApiError } from "../../api/client";
 import {
   DASHBOARD_ALL_SECTIONS,
   DASHBOARD_LIVE_SECTIONS,
@@ -10,65 +8,30 @@ import {
   isDashboardSummaryV2,
   type DashboardBranchRow,
   type DashboardSections,
-  type DashboardSummary,
 } from "../../api/dashboard";
-import { DEALS_MODULE_ENABLED } from "../../api/deals";
-import { getBranches } from "../../api/organization";
-import {
-  djangoQueryKeys,
-  DJANGO_DETAIL_STALE_TIME_MS,
-  DJANGO_REFERENCE_STALE_TIME_MS,
-} from "../../api/queryKeys";
-import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
+import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
 import type { ActiveScope } from "../../hooks/useActiveScope";
-import {
-  baselineWindow,
-  chartRangeFor,
-  previousFullMonth,
-  previousRange,
-  resolvePeriod,
-  type PeriodKey,
-  type PeriodRange,
-} from "./period";
-import {
-  availabilityTodayQuery,
-  cashboxSummaryQuery,
-  dayCountsQuery,
-  dealsSummaryQuery,
-  monthlyReportQuery,
-  payrollReportQuery,
-  pendingBookingsQuery,
-  reviewStatsQuery,
-  tasksSummaryQuery,
-} from "./queries";
-import {
-  legacyAppointments,
-  legacyBookings,
-  legacyBranch,
-  legacyDeals,
-  legacyLoad,
-  legacyMoney,
-  legacyMonth,
-  legacyReviews,
-  legacyStaff,
-  legacyTasks,
-} from "./legacyData";
+import { chartRangeFor, previousRange, type PeriodKey, type PeriodRange } from "./period";
 import { FULL_REFRESH_MS, LIVE_REFRESH_MS } from "./refresh";
 
 type SectionKey = keyof DashboardSections | "branches";
 
+/** Сервер отвечает первой версией агрегата — показывать её данные нельзя. */
+export const DASHBOARD_OUTDATED_MESSAGE =
+  "Сервер отдаёт устаревшую версию сводки. Обновите бэкенд — данные появятся без перезагрузки фронта.";
+
 /**
- * Данные сводки для всех блоков разом.
- *
- * Источник — агрегат `/dashboard/summary/` (один запрос на экран). Если сервер
- * отвечает первой версией агрегата (прод на 24.09.2026) или не знает ручку
- * вовсе, те же данные в том же формате собираются из прежних ручек
- * (`legacyData.ts`). Блоки не знают, откуда пришли цифры: чего нет — того не
- * показывают.
+ * Данные сводки для всех блоков разом — агрегат `/dashboard/summary/` v2,
+ * один запрос на экран. Блоки читают его из контекста и своих запросов не
+ * делают; раздела без права сервер не отдаёт, и блок его не рисует.
  */
 export interface DashboardData {
-  /** `pending` — ещё не понятно, какой агрегат на сервере. */
-  source: "aggregate" | "legacy" | "pending";
+  /**
+   * `pending` — ответа ещё нет; `outdated` — на сервере первая версия
+   * агрегата (86d4563b): фронт выкладывается на прод только после бэка v2, но
+   * если порядок нарушат, блоки покажут ошибку, а не цифры другой формы.
+   */
+  source: "aggregate" | "pending" | "outdated";
   range: PeriodRange;
   periodKey: PeriodKey;
   /** База сравнения — её подпись («тот же день неделю назад») идёт в дельты. */
@@ -76,11 +39,10 @@ export interface DashboardData {
   /** Окно графика записей. */
   chartRange: PeriodRange;
   sections: DashboardSections;
-  /** Срез по филиалам; на прежних ручках — первые 8 филиалов, без базы. */
+  /** Срез по всем доступным филиалам — от активного филиала не зависит. */
   branches?: DashboardBranchRow[];
-  /** Всего филиалов у пользователя (на прежних ручках список может быть длиннее среза). */
   branchTotal: number;
-  /** Время расчёта на сервере — только у агрегата. */
+  /** Время расчёта на сервере. */
   generatedAt?: string;
   isLoading: (section: SectionKey) => boolean;
   error: (section: SectionKey) => unknown;
@@ -94,23 +56,16 @@ export function useDashboardData(): DashboardData {
   return ctx;
 }
 
-/** Ручки нет вовсе (стенд без агрегата) — тогда тоже прежние ручки. */
-const isMissingEndpoint = (err: unknown) =>
-  err instanceof ApiError && (err.status === 404 || err.status === 405);
-
-/** Сколько филиалов берём в срез на прежних ручках: по запросу на каждый. */
-const LEGACY_BRANCH_LIMIT = 8;
+const EMPTY: DashboardSections = {};
 
 export function useDashboardDataSource({
   range,
   periodKey,
   scope,
-  can,
 }: {
   range: PeriodRange;
   periodKey: PeriodKey;
   scope: ActiveScope;
-  can: (permission: string | string[]) => boolean;
 }): DashboardData {
   const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
   const chartRange = React.useMemo(() => chartRangeFor(range, periodKey), [range, periodKey]);
@@ -128,7 +83,6 @@ export function useDashboardDataSource({
     organizationId: scope.organizationId ?? null,
   };
 
-  // ── Агрегат ──────────────────────────────────────────────────────────────
   const queryClient = useQueryClient();
   const liveKey = djangoQueryKeys.dashboard.summary({ ...params, sections: "live" });
   const full = useQuery({
@@ -142,15 +96,11 @@ export function useDashboardDataSource({
     },
     enabled: scope.orgReady,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-    // Первую версию агрегата не опрашиваем: её данные не используются.
-    refetchInterval: (q) =>
-      q.state.data && !isDashboardSummaryV2(q.state.data) ? false : FULL_REFRESH_MS,
-    retry: (count, err) => !isMissingEndpoint(err) && count < 2,
+    refetchInterval: FULL_REFRESH_MS,
   });
 
   const isV2 = !!full.data && isDashboardSummaryV2(full.data);
-  const legacy = (!!full.data && !isV2) || (full.isError && isMissingEndpoint(full.error));
-  const source: DashboardData["source"] = isV2 ? "aggregate" : legacy ? "legacy" : "pending";
+  const source: DashboardData["source"] = isV2 ? "aggregate" : full.data ? "outdated" : "pending";
 
   // «Живые» разделы — отдельным лёгким запросом. Кэш засеян полным ответом
   // (см. queryFn выше), поэтому при открытии лишнего запроса нет: первый
@@ -164,81 +114,10 @@ export function useDashboardDataSource({
     refetchInterval: LIVE_REFRESH_MS,
   });
 
-  // Срез по филиалам. ⚠ С branchId агрегат кладёт в branches[] только этот
-  // филиал (тест, 24.09.2026), хотя ответ бэка обещает «все доступные». А
-  // сравнивать надо все: при выбранном филиале берём срез отдельным лёгким
-  // запросом без branchId.
-  const branchesAll = useQuery({
-    queryKey: djangoQueryKeys.dashboard.summary({ ...params, branchId: null, sections: "branches" }),
-    queryFn: ({ signal }) =>
-      getDashboardSummary({ ...params, branchId: null, sections: ["branches"] }, signal),
-    enabled: scope.orgReady && isV2 && scope.branchId != null && can(PAGE_PERMISSIONS.cashbox),
-    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-    refetchInterval: FULL_REFRESH_MS,
-  });
-  const aggregateBranches =
-    scope.branchId != null ? branchesAll.data?.branches : full.data?.branches;
+  const aggregate = isV2 ? full.data : undefined;
 
-  // ── Прежние ручки (только в режиме legacy) ────────────────────────────────
-  const monthRange = React.useMemo(
-    () => resolvePeriod("month", dayjs(range.dateTo)),
-    [range.dateTo],
-  );
-  const lastMonth = React.useMemo(() => previousFullMonth(dayjs(range.dateTo)), [range.dateTo]);
-  const historyRange = React.useMemo(() => baselineWindow(chartRange), [chartRange]);
-
-  const canCash = legacy && can(PAGE_PERMISSIONS.cashbox);
-  const canAppts = legacy && can(PAGE_PERMISSIONS.appointments);
-  const canReports = legacy && can(PAGE_PERMISSIONS.reports);
-  const canBookings = legacy && can(PAGE_PERMISSIONS.bookings);
-  const canTasks = legacy && can(PAGE_PERMISSIONS.tasks);
-  const canDeals = legacy && DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals);
-  const canReviews = legacy && can(PAGE_PERMISSIONS.reviews);
-  const canPayroll = legacy && can(PAGE_PERMISSIONS.payroll);
-  const canSchedule = legacy && can(PAGE_PERMISSIONS.schedule);
-
-  const cash = useQuery(cashboxSummaryQuery(scope, range, canCash));
-  const cashPrev = useQuery(cashboxSummaryQuery(scope, prev, canCash));
-  const cashMonth = useQuery(cashboxSummaryQuery(scope, monthRange, canCash));
-  const cashLastMonth = useQuery(cashboxSummaryQuery(scope, lastMonth, canCash));
-  const report = useQuery(monthlyReportQuery(scope, monthRange.month, canCash && canReports));
-  const counts = useQuery(dayCountsQuery(scope, range, canAppts));
-  const countsPrev = useQuery(dayCountsQuery(scope, prev, canAppts));
-  const countsChart = useQuery(dayCountsQuery(scope, chartRange, canAppts));
-  const countsHistory = useQuery(dayCountsQuery(scope, historyRange, canAppts));
-  const pending = useQuery(pendingBookingsQuery(scope, "pending", canBookings));
-  const overdue = useQuery(pendingBookingsQuery(scope, "overdue", canBookings));
-  const tasks = useQuery(tasksSummaryQuery(scope, canTasks));
-  const deals = useQuery(dealsSummaryQuery(scope, canDeals));
-  const reviews = useQuery(reviewStatsQuery(scope, range, canReviews));
-  const reviewsPrev = useQuery(reviewStatsQuery(scope, prev, canReviews));
-  const payroll = useQuery(payrollReportQuery(scope, monthRange.month, canPayroll));
-  const availability = useQuery(availabilityTodayQuery(scope, canSchedule));
-
-  const branchList = useQuery({
-    queryKey: [...djangoQueryKeys.organization.branches, scope.organizationId ?? null],
-    queryFn: () => getBranches(scope.organizationId),
-    enabled: scope.orgReady && canCash,
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-  });
-  const legacyBranchList = React.useMemo(
-    () =>
-      (branchList.data?.length ?? 0) > 1
-        ? branchList.data!.slice(0, LEGACY_BRANCH_LIMIT)
-        : [],
-    [branchList.data],
-  );
-  const branchCash = useQueries({
-    queries: legacyBranchList.map((b) =>
-      cashboxSummaryQuery({ ...scope, branchId: b.id }, range, canCash),
-    ),
-  });
-
-  // ── Сборка ───────────────────────────────────────────────────────────────
-  const aggregate: DashboardSummary | undefined = isV2 ? full.data : undefined;
-
-  const aggregateSections = React.useMemo<DashboardSections>(() => {
-    if (!aggregate) return {};
+  const sections = React.useMemo<DashboardSections>(() => {
+    if (!aggregate) return EMPTY;
     const liveData = live.data;
     // Свежие «живые» разделы поверх полного ответа. Раздел, которого в живом
     // ответе нет (нет права), остаётся из полного — там его тоже нет.
@@ -253,92 +132,7 @@ export function useDashboardDataSource({
     return merged;
   }, [aggregate, live.data, live.dataUpdatedAt, full.dataUpdatedAt]);
 
-  const legacySections = React.useMemo<DashboardSections>(() => {
-    if (!legacy) return {};
-    const s: DashboardSections = {};
-    if (cash.data) s.money = legacyMoney(cash.data, cashPrev.data);
-    if (cashMonth.data) {
-      s.month = legacyMonth(monthRange, cashMonth.data, cashLastMonth.data, lastMonth, report.data);
-    }
-    if (counts.data) {
-      s.appointments = legacyAppointments(
-        counts.data,
-        countsPrev.data,
-        chartRange,
-        countsChart.data,
-        countsHistory.data,
-      );
-    }
-    if (pending.data && overdue.data) {
-      s.bookings = legacyBookings(pending.data.count ?? 0, overdue.data.count ?? 0);
-    }
-    if (tasks.data) s.tasks = legacyTasks(tasks.data);
-    if (deals.data) s.deals = legacyDeals(deals.data);
-    if (reviews.data) s.reviews = legacyReviews(reviews.data, reviewsPrev.data);
-    if (payroll.data) s.staff = legacyStaff(payroll.data);
-    if (availability.data) s.load = legacyLoad(availability.data);
-    return s;
-  }, [
-    legacy,
-    cash.data,
-    cashPrev.data,
-    cashMonth.data,
-    cashLastMonth.data,
-    report.data,
-    counts.data,
-    countsPrev.data,
-    countsChart.data,
-    countsHistory.data,
-    pending.data,
-    overdue.data,
-    tasks.data,
-    deals.data,
-    reviews.data,
-    reviewsPrev.data,
-    payroll.data,
-    availability.data,
-    monthRange,
-    lastMonth,
-    chartRange,
-  ]);
-
-  // Без memo: useQueries отдаёт новый массив на каждый рендер, а строк не больше восьми.
-  const legacyBranches: DashboardBranchRow[] | undefined =
-    legacy && legacyBranchList.length > 0
-      ? legacyBranchList.flatMap((b, i) => {
-          const s = branchCash[i]?.data;
-          return s ? [legacyBranch(b, scope.organizationId ?? 0, s)] : [];
-        })
-      : undefined;
-
-  // ── Состояние разделов ───────────────────────────────────────────────────
-  const legacyQueries: Record<SectionKey, { isLoading: boolean; error: unknown }[]> = {
-    money: [cash, cashPrev],
-    month: [cashMonth, cashLastMonth, report],
-    appointments: [counts, countsPrev, countsChart],
-    bookings: [pending, overdue],
-    tasks: [tasks],
-    deals: [deals],
-    reviews: [reviews],
-    staff: [payroll],
-    load: [availability],
-    branches: [branchList, ...branchCash],
-  };
-
-  const aggregateQueries: Partial<Record<SectionKey, { isLoading: boolean; error: unknown }>> = {
-    branches: scope.branchId != null ? branchesAll : undefined,
-  };
-
-  const isLoading = (section: SectionKey) => {
-    if (source === "pending") return !full.isError;
-    if (source === "aggregate") return aggregateQueries[section]?.isLoading ?? false;
-    return legacyQueries[section].some((q) => q.isLoading);
-  };
-  const error = (section: SectionKey) => {
-    if (source === "pending") return full.isError ? full.error : undefined;
-    if (source === "aggregate") return aggregateQueries[section]?.error ?? undefined;
-    return legacyQueries[section].find((q) => q.error)?.error;
-  };
+  const outdatedError = React.useMemo(() => new Error(DASHBOARD_OUTDATED_MESSAGE), []);
 
   return {
     source,
@@ -346,14 +140,12 @@ export function useDashboardDataSource({
     periodKey,
     prev,
     chartRange,
-    sections: source === "aggregate" ? aggregateSections : legacySections,
-    branches: source === "aggregate" ? aggregateBranches : legacyBranches,
-    branchTotal:
-      source === "aggregate"
-        ? (aggregateBranches?.length ?? 1)
-        : (branchList.data?.length ?? 1),
+    sections,
+    branches: aggregate?.branches,
+    branchTotal: aggregate?.branches?.length ?? 1,
     generatedAt: aggregate?.generatedAt,
-    isLoading,
-    error,
+    isLoading: () => source === "pending" && !full.isError,
+    error: () =>
+      source === "outdated" ? outdatedError : full.isError && !full.data ? full.error : undefined,
   };
 }

@@ -53,9 +53,8 @@ export const AttentionWidget: React.FC<WidgetProps> = ({ range }) => {
   // Пока грузится хоть что-то и лента пуста — скелет, а не преждевременное
   // «всё под контролем».
   const loading = sections.some((k) => data.isLoading(k));
-  // Ошибка агрегата — одна на все разделы; на прежних ручках раздел с ошибкой
-  // просто молчит, как раньше.
-  const error = data.source === "legacy" ? undefined : data.error("money");
+  // Ошибка агрегата — одна на все разделы.
+  const error = data.error("money");
 
   const items = React.useMemo(
     () => buildAttentionItems(attentionInputFromSections(data.sections, range.label)),

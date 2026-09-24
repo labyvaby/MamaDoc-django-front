@@ -32,7 +32,7 @@ import { useDashboardData } from "./DashboardData";
  *
  * ⚠ Главное число — ВСЕ записи периода, независимо от статуса и вида: приёмы и
  * процедуры вместе (как day-counts). Под ним — из чего оно сложилось: визиты,
- * отмены, неявки, повторные (только агрегат v2).
+ * отмены, неявки, повторные.
  */
 export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey }) => {
   const data = useDashboardData();
@@ -367,7 +367,7 @@ function refundSourcesHint(s: DashboardMoneyScalars): string | undefined {
  * а не совпадение, движения баланса в неё не входят (ответ бэка 24.09.2026).
  *
  * Внизу — деньги, которые заработали, но не получили: недоплата по прошедшим
- * визитам периода и остаток долга на сейчас (только агрегат v2).
+ * визитам периода и остаток долга на сейчас.
  */
 export const MoneyWidget: React.FC<WidgetProps> = ({ range }) => {
   const data = useDashboardData();

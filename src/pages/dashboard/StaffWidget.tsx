@@ -4,9 +4,9 @@ import dayjs from "dayjs";
 
 import { formatKGS } from "../../utility/format";
 import { DashCard, WidgetError, type WidgetProps } from "./widgetKit";
-import { num } from "./widgetUtils";
+import { num, othersOf } from "./widgetUtils";
 import { useDashboardData } from "./DashboardData";
-import { RankRow, type RankRowData } from "./RankRow";
+import { RankOthers, RankRow, type RankRowData } from "./RankRow";
 
 /** Сколько строк показываем: длинный список превращает сводку в отчёт. */
 const TOP_SIZE = 5;
@@ -17,7 +17,7 @@ const TOP_SIZE = 5;
  * оплаченных визитов (цена × количество − скидка строки); частично оплаченные
  * и закрытые скидкой целиком не входят (ответ бэка 24.09.2026).
  *
- * Без выручки (нет finance.view или сводка на прежних ручках) — как раньше,
+ * Без выручки (нет finance.view — сервер не отдаёт topByRevenue) — как раньше,
  * по ведомости зарплаты за месяц: приёмы исполнителем и начислено.
  *
  * ⚠ Выручка и «начислено» (`payroll.earnings`) — разные величины, бэк развёл
@@ -30,6 +30,9 @@ export const StaffWidget: React.FC<WidgetProps> = ({ range }) => {
   const error = data.error("staff");
 
   const byRevenue = staff?.topByRevenue;
+  const others = byRevenue
+    ? othersOf(staff?.topByRevenueTotal, byRevenue.slice(0, TOP_SIZE))
+    : null;
   const payroll = staff?.payroll;
 
   const rows = React.useMemo<RankRowData[]>(() => {
@@ -41,7 +44,7 @@ export const StaffWidget: React.FC<WidgetProps> = ({ range }) => {
         main: formatKGS(num(r.amount)),
         mainTitle: `Выручка оплаченных визитов · ${Math.round(num(r.share))}% от всей`,
         side: String(r.count),
-        sideTitle: "Оплаченных услуг исполнителем",
+        sideTitle: "Оплаченных визитов с участием сотрудника",
       }));
     }
     return (payroll?.rows ?? [])
@@ -96,12 +99,13 @@ export const StaffWidget: React.FC<WidgetProps> = ({ range }) => {
           >
             <Box sx={{ width: 16 }} />
             <Box sx={{ flex: 1 }} />
-            <Box sx={{ width: 44, textAlign: "right" }}>{byRevenue ? "услуг" : "приёмы"}</Box>
+            <Box sx={{ width: 44, textAlign: "right" }}>{byRevenue ? "визитов" : "приёмы"}</Box>
             <Box sx={{ width: 100, textAlign: "right" }}>{byRevenue ? "выручка" : "начислено"}</Box>
           </Stack>
           {rows.map((r, i) => (
             <RankRow key={r.id} row={r} index={i} best={best} />
           ))}
+          {others && <RankOthers {...others} label="остальные сотрудники" />}
         </Stack>
       )}
     </DashCard>

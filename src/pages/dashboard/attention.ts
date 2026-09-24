@@ -207,7 +207,7 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
 
 /**
  * Снимок для правил из разделов сводки. Раздел, которого нет (нет права, ещё
- * грузится, или на прежних ручках такой метрики нет), остаётся undefined.
+ * грузится), остаётся undefined.
  */
 export function attentionInputFromSections(
   sections: DashboardSections,

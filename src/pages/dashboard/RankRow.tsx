@@ -3,6 +3,7 @@ import { Box, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 
 import { subtleBg } from "../../theme/uiHelpers";
+import { formatKGS } from "../../utility/format";
 
 /** Строка рейтинга сводки: сотрудники, услуги. */
 export interface RankRowData {
@@ -102,3 +103,31 @@ export const RankRow: React.FC<{ row: RankRowData; index: number; best: number }
   </Stack>
 );
 
+
+/**
+ * «Прочие» под топом: сколько выручки пришлось на всё, что в топ не попало.
+ * Считается от знаменателя бэка (`topServicesTotal` / `topByRevenueTotal`);
+ * пока его нет в ответе, строка не рисуется.
+ */
+export const RankOthers: React.FC<{ amount: number; share: number; label: string }> = ({
+  amount,
+  share,
+  label,
+}) =>
+  amount > 0 ? (
+    <Stack
+      direction="row"
+      alignItems="center"
+      spacing={1.25}
+      sx={{ px: 1, pt: 0.75, fontSize: "0.75rem", color: "text.secondary" }}
+    >
+      <Box sx={{ width: 16 }} />
+      <Box sx={{ flex: 1, minWidth: 0 }}>{label}</Box>
+      <Box sx={{ width: 44, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+        {Math.round(share)}%
+      </Box>
+      <Box sx={{ width: 100, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+        {formatKGS(amount)}
+      </Box>
+    </Stack>
+  ) : null;

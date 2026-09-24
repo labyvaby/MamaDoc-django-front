@@ -19,10 +19,11 @@ import { apiRequest } from "./client";
  *   (`previousRange` в pages/dashboard/period.ts); применённые даты приходят
  *   в `compareFrom`/`compareTo`.
  *
- * ⚠ На проде 24.09.2026 стоит ПЕРВАЯ версия агрегата (86d4563b): нет month,
- * deals, load, у записей нет visits/noShow/daily. Её узнаёт
- * `isDashboardSummaryV2`, и тогда сводка собирается из прежних ручек
- * (pages/dashboard/legacyData.ts).
+ * ⚠ Фронт рассчитан на исправленный v2 (ответ бэка на замечания 24.09.2026:
+ * доли топов от всей выручки, refunded вне paid, branches[] без фильтра по
+ * branchId) и выкладывается на прод только после бэка. Первую версию агрегата
+ * (86d4563b) узнаёт `isDashboardSummaryV2` — тогда сводка показывает ошибку,
+ * а не цифры другой формы.
  */
 
 export type DashboardSectionName =
@@ -98,23 +99,19 @@ export interface DashboardMoneyScalars {
   supplyCount: number;
   /** netIncome + salesTotal − totalExpenses − supplyTotal (формула бэка). */
   netCashFlow: string;
-  /**
-   * Долг по приёмам периода по дате приёма, включая будущие.
-   * ⚠ Поля долгов и неоплаченных визитов — только из агрегата v2; сводка на
-   * прежних ручках их не знает, поэтому они необязательные.
-   */
-  debtTotal?: string;
-  debtAppointments?: number;
+  /** Долг по приёмам периода по дате приёма, включая будущие. */
+  debtTotal: string;
+  debtAppointments: number;
   /** Прошедшие визиты периода, оплаченные не полностью (по журналу платежей, не по статусу). */
-  unpaidPastCount?: number;
+  unpaidPastCount: number;
   /** Сколько по ним осталось получить. */
-  unpaidPastAmount?: string;
+  unpaidPastAmount: string;
 }
 
 export interface DashboardMoney extends DashboardMoneyScalars {
-  byCashlessMethod?: DashboardCashlessRow[];
+  byCashlessMethod: DashboardCashlessRow[];
   /** Остаток непогашенного долга на сейчас по всем прошедшим визитам — от периода не зависит. */
-  debtOutstanding?: string;
+  debtOutstanding: string;
   baseline: DashboardMoneyScalars | null;
 }
 
@@ -150,37 +147,39 @@ export interface DashboardCanceledBy {
 export interface DashboardAppointmentsScalars {
   /** Все записи периода любого статуса и вида (как /appointments/day-counts/). */
   total: number;
-  /** ⚠ Поля ниже — только из агрегата v2. */
   /** Без отменённых и неявок. */
-  visits?: number;
-  /** Оплачено полностью, со скидкой или хотя бы частично. */
-  paid?: number;
+  visits: number;
+  /** Оплачено полностью, со скидкой или хотя бы частично; полностью возвращённые не входят. */
+  paid: number;
   /** Отменённые — без неявок. */
-  canceled?: number;
-  noShow?: number;
-  canceledBy?: DashboardCanceledBy;
+  canceled: number;
+  noShow: number;
+  canceledBy: DashboardCanceledBy;
   /** Визиты карт, у которых раньше уже был визит в организации. */
-  repeatVisits?: number;
+  repeatVisits: number;
   /** repeatVisits / visits × 100, строка "0.00"–"100.00". */
-  repeatShare?: string;
-  debtAppointments?: number;
+  repeatShare: string;
+  debtAppointments: number;
 }
 
 export interface DashboardTopService {
   serviceId: number;
   serviceName: string;
   amount: string;
+  /** Число визитов, в которых есть эта услуга (не строки и не quantity). */
   count: number;
-  /** Доля в %, строка. */
+  /** Доля в % от выручки ВСЕХ оплаченных строк услуг за период (не от топа). */
   share: string;
 }
 
 export interface DashboardAppointments extends DashboardAppointmentsScalars {
   /** По окну графика (chartFrom…chartTo). */
-  daily?: { date: string; count: number }[];
+  daily: { date: string; count: number }[];
   /** Среднее число записей в тот же день недели за 4 прошлые недели, по дням daily. */
-  weekdayBaseline?: { date: string; average: string }[];
-  topServices?: DashboardTopService[];
+  weekdayBaseline: { date: string; average: string }[];
+  topServices: DashboardTopService[];
+  /** Знаменатель долей: выручка всех оплаченных строк услуг за период. */
+  topServicesTotal: string;
   baseline: DashboardAppointmentsScalars | null;
 }
 
@@ -189,12 +188,13 @@ export interface DashboardBookingsScalars {
   pendingCount: number;
   /** Ждут подтверждения, а время уже прошло — на сейчас. */
   overdueCount: number;
-  /** ⚠ Воронка брони — только из агрегата v2. Брони на даты периода. */
-  total?: number;
-  materialized?: number;
-  paid?: number;
+  /** Брони на даты периода. */
+  total: number;
+  materialized: number;
+  /** Приём оплачен; полностью возвращённые не входят. */
+  paid: number;
   /** paid / total × 100, строка с двумя знаками. */
-  conversionRate?: string;
+  conversionRate: string;
 }
 
 export interface DashboardBookings extends DashboardBookingsScalars {
@@ -242,7 +242,9 @@ export interface DashboardStaffRevenueRow {
   employeeName: string;
   /** Выручка, которую принёс сотрудник: строки услуг полностью оплаченных визитов. */
   amount: string;
+  /** Число визитов с участием сотрудника. */
   count: number;
+  /** Доля в % от всей выручки периода. */
   share: string;
 }
 
@@ -256,10 +258,12 @@ export interface DashboardPayrollRow {
 }
 
 export interface DashboardStaff {
-  activeCount?: number;
-  newCount?: number;
+  activeCount: number;
+  newCount: number;
   /** Нужен finance.view — без него ключа нет. */
   topByRevenue?: DashboardStaffRevenueRow[];
+  /** Знаменатель долей топа сотрудников; приходит вместе с topByRevenue. */
+  topByRevenueTotal?: string;
   /** Нужны payroll.view и staff.related.payroll.view. Месяц — по dateTo. */
   payroll?: { year: number; month: number; status: string; rows: DashboardPayrollRow[] };
   baseline: { activeCount: number; newCount: number } | null;
@@ -293,8 +297,8 @@ export interface DashboardBranchRow {
   organizationId: number;
   branchName: string;
   money: DashboardBranchMoneyScalars & {
-    unpaidPastCount?: number;
-    unpaidPastAmount?: string;
+    unpaidPastCount: number;
+    unpaidPastAmount: string;
     debtOutstanding?: string;
     baseline: DashboardBranchMoneyScalars | null;
   };

@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeDelta } from "./delta";
-import {
-  baselineWindow,
-  previousRange,
-  resolvePeriod,
-  sumDayCounts,
-  toDailySeries,
-  weekdayBaseline,
-} from "./period";
+import { chartRangeFor, previousRange, resolvePeriod, toDailySeries } from "./period";
 import dayjs from "dayjs";
 import {
   WIDGETS,
@@ -91,10 +84,9 @@ describe("previousRange", () => {
 });
 
 describe("ряд по дням", () => {
-  it("считает сумму и достраивает пустые дни", () => {
+  it("достраивает пустые дни", () => {
     const range = resolvePeriod("week", dayjs("2026-08-25"));
     const counts = { "2026-08-25": 3, "2026-08-20": 2 };
-    expect(sumDayCounts(counts)).toBe(5);
 
     const series = toDailySeries(counts, range);
     expect(series).toHaveLength(7);
@@ -104,7 +96,7 @@ describe("ряд по дням", () => {
 });
 
 describe("раскладка блоков", () => {
-  const ctx = { can: () => true, period: "month" as const, branchCount: 3, aggregate: true };
+  const ctx = { can: () => true, period: "month" as const, branchCount: 3 };
 
   it("новый блок из кода доезжает до сохранённой раскладки", () => {
     const saved = normalizeLayout({ order: ["ops", "money"], hidden: [] });
@@ -143,15 +135,6 @@ describe("раскладка блоков", () => {
     expect(availableWidgets({ ...ctx, period: "today" }).map((w) => w.id)).toContain("month");
   });
 
-  it("на прежних ручках: «Месяц целиком» только на «Месяце» и с reports.view, услуг нет", () => {
-    const legacy = { ...ctx, aggregate: false };
-    expect(availableWidgets({ ...legacy, period: "week" }).map((w) => w.id)).not.toContain("month");
-    expect(availableWidgets(legacy).map((w) => w.id)).toContain("month");
-    const noReports = { ...legacy, can: (p: string | string[]) => !String(p).includes("reports") };
-    expect(availableWidgets(noReports).map((w) => w.id)).not.toContain("month");
-    expect(availableWidgets(legacy).map((w) => w.id)).not.toContain("services");
-    expect(availableWidgets(ctx).map((w) => w.id)).toContain("services");
-  });
 
   it("без прав блок недоступен", () => {
     const noMoney = { ...ctx, can: (p: string | string[]) => !String(p).includes("finance") };
@@ -226,20 +209,15 @@ describe("перенос перетаскиванием", () => {
   });
 });
 
-describe("обычный уровень дня недели", () => {
-  it("окно истории покрывает 4 прошлые недели одним запросом", () => {
-    const w = baselineWindow({ dateFrom: "2026-09-10", dateTo: "2026-09-23", month: "2026-09", label: "" });
-    expect(w.dateFrom).toBe("2026-08-13");
-    expect(w.dateTo).toBe("2026-09-16");
+describe("окно графика записей", () => {
+  it("на «Сегодня» — 14 дней, заканчивая сегодняшним", () => {
+    const w = chartRangeFor(resolvePeriod("today", dayjs("2026-09-24")), "today");
+    expect(w.dateFrom).toBe("2026-09-11");
+    expect(w.dateTo).toBe("2026-09-24");
   });
 
-  it("среднее по тому же дню недели, пропуски — ноль", () => {
-    const history = { "2026-09-16": 10, "2026-09-09": 6, "2026-09-02": 8 };
-    // 23.09 — среда; прошлые среды 16, 9, 2 сентября и 26 августа (нет данных).
-    expect(weekdayBaseline(history, "2026-09-23")).toBe(6);
-  });
-
-  it("без истории линии нет", () => {
-    expect(weekdayBaseline(undefined, "2026-09-23")).toBeNull();
+  it("на «Неделе» и «Месяце» совпадает с периодом", () => {
+    const month = resolvePeriod("month", dayjs("2026-09-24"));
+    expect(chartRangeFor(month, "month")).toBe(month);
   });
 });

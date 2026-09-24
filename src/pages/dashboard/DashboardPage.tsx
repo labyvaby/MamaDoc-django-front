@@ -37,7 +37,6 @@ import {
 } from "./layout";
 import { LayoutEditor } from "./LayoutEditor";
 import { AppointmentsWidget, EmptyDashboard, MoneyWidget, ResultsWidget } from "./widgets";
-import { LegacyMonthWidget } from "./LegacyMonthWidget";
 import { ServicesWidget } from "./ServicesWidget";
 import { DashboardDataContext, useDashboardDataSource } from "./DashboardData";
 import { OpsWidget } from "./OpsWidget";
@@ -76,12 +75,6 @@ const WIDGET_COMPONENT: Record<WidgetId, React.FC<WidgetProps>> = {
   ops: OpsWidget,
 };
 
-/** На прежних ручках (прод до выкладки агрегата v2) — старый «Месяц целиком». */
-const LEGACY_WIDGET_COMPONENT: Record<WidgetId, React.FC<WidgetProps>> = {
-  ...WIDGET_COMPONENT,
-  month: LegacyMonthWidget,
-};
-
 /** Иконка-кнопка шапки: 36px, тонкая грань, как сегмент периода рядом. */
 const headerButtonSx = {
   width: 36,
@@ -109,8 +102,7 @@ const headerButtonSx = {
  *
  * Данные — один агрегат `/dashboard/summary/` на весь экран (DashboardData.ts):
  * блоки читают его из контекста и своих запросов не делают. Раздел без права
- * сервер не отдаёт, и блок его не рисует. Пока на проде первая версия
- * агрегата, те же данные собираются из прежних ручек (legacyData.ts).
+ * сервер не отдаёт, и блок его не рисует.
  */
 export const DashboardPage: React.FC = () => {
   const { can, loading: permsLoading } = useCanChecker();
@@ -162,7 +154,7 @@ export const DashboardPage: React.FC = () => {
     if (fetching === 0) setUpdatedAt(dayjs().format("HH:mm"));
   }, [fetching]);
 
-  const data = useDashboardDataSource({ range, periodKey: period, scope, can });
+  const data = useDashboardDataSource({ range, periodKey: period, scope });
 
   const [layout, setLayout] = React.useState<DashboardLayout>(() => loadLayout());
   const [editing, setEditing] = React.useState(false);
@@ -174,15 +166,9 @@ export const DashboardPage: React.FC = () => {
 
   // Блок сравнения филиалов не имеет смысла при единственной точке.
   const ctx = React.useMemo(
-    () => ({
-      can,
-      period,
-      branchCount: data.branchTotal,
-      aggregate: data.source !== "legacy",
-    }),
-    [can, period, data.branchTotal, data.source],
+    () => ({ can, period, branchCount: data.branchTotal }),
+    [can, period, data.branchTotal],
   );
-  const components = data.source === "legacy" ? LEGACY_WIDGET_COMPONENT : WIDGET_COMPONENT;
 
   const shown = visibleWidgets(layout, ctx);
   const available = availableWidgets(ctx);
@@ -371,7 +357,7 @@ export const DashboardPage: React.FC = () => {
           animate="show"
         >
           {shown.map((w, i) => {
-            const Widget = components[w.id];
+            const Widget = WIDGET_COMPONENT[w.id];
             return (
               <MotionGrid
                 item

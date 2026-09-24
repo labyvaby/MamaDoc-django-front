@@ -151,7 +151,7 @@ export function collectRows(input: DashboardExportInput): Row[] {
   if (appts?.topServices?.length) {
     rows.push([`Что продаётся — топ услуг по выручке (${range.label})`, null]);
     for (const s of appts.topServices) {
-      rows.push([s.serviceName, num(s.amount), `раз: ${s.count} · доля ${num(s.share)}%`]);
+      rows.push([s.serviceName, num(s.amount), `визитов: ${s.count} · доля ${num(s.share)}%`]);
     }
     blank();
   }
@@ -202,7 +202,7 @@ export function collectRows(input: DashboardExportInput): Row[] {
   if (staff?.topByRevenue?.length) {
     rows.push([`Сотрудники — топ по выручке (${range.label})`, null]);
     for (const r of staff.topByRevenue) {
-      rows.push([r.employeeName, num(r.amount), `раз: ${r.count} · доля ${num(r.share)}%`]);
+      rows.push([r.employeeName, num(r.amount), `визитов: ${r.count} · доля ${num(r.share)}%`]);
     }
     blank();
   }

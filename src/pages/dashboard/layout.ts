@@ -41,11 +41,6 @@ export interface WidgetMeta {
   onlyPeriod?: PeriodKey;
   /** Блоку нужно больше одного филиала — иначе сравнивать не с чем. */
   needsManyBranches?: boolean;
-  /**
-   * Метрики блока есть только в агрегате `/dashboard/summary/` v2 — на
-   * прежних ручках (прод до его выкладки) блока нет вовсе.
-   */
-  needsAggregate?: boolean;
 }
 
 /**
@@ -102,7 +97,6 @@ export const WIDGETS: WidgetMeta[] = [
     label: "Что продаётся",
     permission: PAGE_PERMISSIONS.appointments,
     span: 6,
-    needsAggregate: true,
   },
   {
     id: "branches",
@@ -285,11 +279,6 @@ export interface VisibilityContext {
   can: (permission: string | string[]) => boolean;
   period: PeriodKey;
   branchCount: number;
-  /**
-   * Сводка идёт на агрегате v2 (или ещё выясняет это). false — на прежних
-   * ручках: прод до выкладки агрегата, см. DashboardData.ts.
-   */
-  aggregate: boolean;
 }
 
 /**
@@ -306,12 +295,6 @@ export function availableWidgets(ctx: VisibilityContext): WidgetMeta[] {
       !(DEALS_MODULE_ENABLED && ctx.can(PAGE_PERMISSIONS.deals))
     ) {
       return false;
-    }
-    if (w.needsAggregate && !ctx.aggregate) return false;
-    // На прежних ручках вместо «Итогов» — старый «Месяц целиком» на месячном
-    // отчёте: он требует reports.view и умеет только календарный месяц.
-    if (w.id === "month" && !ctx.aggregate) {
-      return ctx.can(PAGE_PERMISSIONS.reports) && ctx.period === "month";
     }
     if (!ctx.can(w.permission)) return false;
     if (w.onlyPeriod && w.onlyPeriod !== ctx.period) return false;
