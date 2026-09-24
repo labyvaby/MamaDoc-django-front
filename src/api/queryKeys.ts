@@ -79,6 +79,11 @@ export const djangoQueryKeys = {
     // Keyed by page params — use for individual page queries.
     transactionsPage: (patientId: number, params: { page: number; pageSize: number }) =>
       ["django", "patients", patientId, "balance-transactions", params] as const,
+    // Представители ребёнка и дети взрослого — учёт детей.
+    representatives: (patientId: number) =>
+      ["django", "patients", patientId, "representatives"] as const,
+    represented: (patientId: number) =>
+      ["django", "patients", patientId, "represented"] as const,
   },
 
   programs: {
@@ -94,6 +99,15 @@ export const djangoQueryKeys = {
       ["django", "programs", "upcoming", enrollmentId, scope] as const,
     notifications: (enrollmentId: number, scope: unknown) =>
       ["django", "programs", "notifications", enrollmentId, scope] as const,
+    // Учёт детей: реестр, периоды с оплатами, документы, бланки.
+    registry: (scope: unknown, params: unknown) =>
+      ["django", "programs", "registry", scope, params] as const,
+    termPayments: (enrollmentId: number, termId: number, scope: unknown) =>
+      ["django", "programs", "term-payments", enrollmentId, termId, scope] as const,
+    documents: (enrollmentId: number, scope: unknown) =>
+      ["django", "programs", "documents", enrollmentId, scope] as const,
+    blankTemplates: (scope: unknown) =>
+      ["django", "programs", "blank-templates", scope] as const,
   },
 
   cashbox: {
