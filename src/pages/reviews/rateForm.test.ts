@@ -15,6 +15,9 @@ const ctx: RateContext = {
   registryRating: null,
   tags: [],
   comment: "",
+  publishConsent: "private",
+  publicName: "",
+  publicationStatus: null,
   positiveTags: ["Быстро"],
   negativeTags: ["Долго"],
   canEdit: true,
@@ -40,12 +43,54 @@ describe("rateForm", () => {
 
   it("без врача не шлёт оценку врача", () => {
     const noDoc = { ...ctx, hasDoctor: false };
-    const body = toSubmit(noDoc, { ...initialForm(noDoc), rating: 5, doctorRating: 5 });
+    const body = toSubmit(noDoc, {
+      ...initialForm(noDoc),
+      rating: 5,
+      doctorRating: 5,
+    });
     expect(body.doctorRating).toBeNull();
   });
 
+  it("по умолчанию не публикуем, «с именем» требует подпись", () => {
+    const form = { ...initialForm(ctx), rating: 5 };
+    expect(toSubmit(ctx, form)).toMatchObject({
+      publishConsent: "private",
+      publicName: "",
+    });
+    const named = {
+      ...form,
+      publishConsent: "named" as const,
+      publicName: " ",
+    };
+    expect(canSubmit(named)).toBe(false);
+    expect(canSubmit({ ...named, publicName: "Айгуль" })).toBe(true);
+  });
+
+  it("анонимно не отправляет подпись", () => {
+    const form = {
+      ...initialForm(ctx),
+      rating: 4,
+      publishConsent: "anonymous" as const,
+      publicName: "Айгуль",
+    };
+    expect(toSubmit(ctx, form)).toMatchObject({
+      publishConsent: "anonymous",
+      publicName: "",
+    });
+  });
+
   it("правка стартует с прежнего ответа", () => {
-    const answered = { ...ctx, answered: true, rating: 4, tags: ["Долго"], comment: "x" };
-    expect(initialForm(answered)).toMatchObject({ rating: 4, tags: ["Долго"], comment: "x" });
+    const answered = {
+      ...ctx,
+      answered: true,
+      rating: 4,
+      tags: ["Долго"],
+      comment: "x",
+    };
+    expect(initialForm(answered)).toMatchObject({
+      rating: 4,
+      tags: ["Долго"],
+      comment: "x",
+    });
   });
 });

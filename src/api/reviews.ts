@@ -20,6 +20,11 @@ export type ReviewRequestStatus =
 
 export type MapPlatform = "2gis" | "yandex" | "google";
 export type CaseStatus = "" | "new" | "in_progress" | "resolved";
+/** Что разрешил пациент: не публиковать, анонимно, с подписью. */
+export type PublishConsent = "private" | "anonymous" | "named";
+export type PublicationStatus = "pending" | "published" | "hidden";
+/** Фильтр списка: queue — пациент разрешил, ещё не проверено. */
+export type PublicationFilter = "queue" | "published" | "hidden";
 export type StaffGroup = "doctor" | "registrar" | "cashier";
 
 export interface MapLink {
@@ -51,6 +56,10 @@ export interface Review {
   caseAssigneeId: number | null;
   mapsOffered: boolean;
   mapClicks: MapPlatform[];
+  publishConsent: PublishConsent;
+  publicName: string;
+  publicationStatus: PublicationStatus;
+  publishedAt: string | null;
 }
 
 export interface ReviewsResponse {
@@ -157,6 +166,9 @@ export interface RateContext {
   registryRating: number | null;
   tags: string[];
   comment: string;
+  publishConsent: PublishConsent;
+  publicName: string;
+  publicationStatus: PublicationStatus | null;
   positiveTags: string[];
   negativeTags: string[];
   canEdit: boolean;
@@ -169,6 +181,8 @@ export interface RateSubmit {
   registryRating?: number | null;
   tags?: string[];
   comment?: string;
+  publishConsent?: PublishConsent;
+  publicName?: string;
 }
 
 export interface StaffStatsRow {
@@ -226,6 +240,7 @@ export interface ReviewsFilters extends ReviewStatsFilters {
   sentiment?: ReviewSentiment;
   doctorId?: number;
   caseStatus?: "open" | CaseStatus;
+  publication?: PublicationFilter;
   page?: number;
   pageSize?: number;
 }
@@ -233,30 +248,41 @@ export interface ReviewsFilters extends ReviewStatsFilters {
 function periodQuery(f: ReviewStatsFilters): URLSearchParams {
   const q = new URLSearchParams({ from: f.from, to: f.to });
   if (f.branchId != null) q.set("branchId", String(f.branchId));
-  if (f.organizationId != null) q.set("organizationId", String(f.organizationId));
+  if (f.organizationId != null)
+    q.set("organizationId", String(f.organizationId));
   return q;
 }
 
 // ── API functions (под авторизацией) ────────────────────────────────────────
 
-export function getReviews(filters: ReviewsFilters, signal?: AbortSignal): Promise<ReviewsResponse> {
+export function getReviews(
+  filters: ReviewsFilters,
+  signal?: AbortSignal
+): Promise<ReviewsResponse> {
   const q = periodQuery(filters);
   if (filters.rating != null) q.set("rating", String(filters.rating));
   if (filters.sentiment) q.set("sentiment", filters.sentiment);
   if (filters.doctorId != null) q.set("doctorId", String(filters.doctorId));
   if (filters.caseStatus) q.set("caseStatus", filters.caseStatus);
+  if (filters.publication) q.set("publication", filters.publication);
   if (filters.page != null) q.set("page", String(filters.page));
   if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
   return apiRequest<ReviewsResponse>(`/reviews/?${q.toString()}`, { signal });
 }
 
-export function getReviewStats(filters: ReviewStatsFilters, signal?: AbortSignal): Promise<ReviewStats> {
-  return apiRequest<ReviewStats>(`/reviews/stats/?${periodQuery(filters).toString()}`, { signal });
+export function getReviewStats(
+  filters: ReviewStatsFilters,
+  signal?: AbortSignal
+): Promise<ReviewStats> {
+  return apiRequest<ReviewStats>(
+    `/reviews/stats/?${periodQuery(filters).toString()}`,
+    { signal }
+  );
 }
 
 export function getStaffStats(
   filters: ReviewStatsFilters & { group: StaffGroup },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<{ group: StaffGroup; results: StaffStatsRow[] }> {
   const q = periodQuery(filters);
   q.set("group", filters.group);
@@ -265,15 +291,22 @@ export function getStaffStats(
 
 export function getTagStats(
   filters: ReviewStatsFilters,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<{ positive: TagCount[]; negative: TagCount[] }> {
-  return apiRequest(`/reviews/tag-stats/?${periodQuery(filters).toString()}`, { signal });
+  return apiRequest(`/reviews/tag-stats/?${periodQuery(filters).toString()}`, {
+    signal,
+  });
 }
 
 export function getMapClicks(
   filters: ReviewStatsFilters & { page?: number },
-  signal?: AbortSignal,
-): Promise<{ count: number; next: string | null; previous: string | null; results: MapClickRow[] }> {
+  signal?: AbortSignal
+): Promise<{
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: MapClickRow[];
+}> {
   const q = periodQuery(filters);
   if (filters.page != null) q.set("page", String(filters.page));
   return apiRequest(`/reviews/map-clicks/?${q.toString()}`, { signal });
@@ -281,9 +314,28 @@ export function getMapClicks(
 
 export function updateCase(
   reviewId: number,
-  body: { status?: CaseStatus; assigneeUserId?: number; clearAssignee?: boolean; note?: string },
+  body: {
+    status?: CaseStatus;
+    assigneeUserId?: number;
+    clearAssignee?: boolean;
+    note?: string;
+  }
 ): Promise<Review> {
-  return apiRequest<Review>(`/reviews/${reviewId}/case/`, { method: "PATCH", body });
+  return apiRequest<Review>(`/reviews/${reviewId}/case/`, {
+    method: "PATCH",
+    body,
+  });
+}
+
+/** PATCH /api/reviews/<id>/publication/ — опубликовать на сайте, скрыть или вернуть на проверку. */
+export function setPublication(
+  reviewId: number,
+  status: PublicationStatus
+): Promise<Review> {
+  return apiRequest<Review>(`/reviews/${reviewId}/publication/`, {
+    method: "PATCH",
+    body: { status },
+  });
 }
 
 export function confirmPublicReview(body: {
@@ -293,14 +345,19 @@ export function confirmPublicReview(body: {
   url?: string;
   note?: string;
 }): Promise<Confirmation> {
-  return apiRequest<Confirmation>("/reviews/confirmations/", { method: "POST", body });
+  return apiRequest<Confirmation>("/reviews/confirmations/", {
+    method: "POST",
+    body,
+  });
 }
 
 /**
  * POST /api/reviews/requests/ — инициировать / переотправить запрос.
  * Активный запрос уже есть или пациент уже ответил → 409. Ответ 201.
  */
-export function createReviewRequest(appointmentId: number): Promise<ReviewRequest> {
+export function createReviewRequest(
+  appointmentId: number
+): Promise<ReviewRequest> {
   return apiRequest<ReviewRequest>("/reviews/requests/", {
     method: "POST",
     body: { appointmentId },
@@ -310,40 +367,67 @@ export function createReviewRequest(appointmentId: number): Promise<ReviewReques
 /** GET /api/reviews/requests/?appointmentId= — запросы по приёму (новые первыми). */
 export function getReviewRequestsByAppointment(
   appointmentId: number,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<ReviewRequest[]> {
   const q = new URLSearchParams({ appointmentId: String(appointmentId) });
-  return apiRequest<ReviewRequest[]>(`/reviews/requests/?${q.toString()}`, { signal });
+  return apiRequest<ReviewRequest[]>(`/reviews/requests/?${q.toString()}`, {
+    signal,
+  });
 }
 
-export function getReviewSettings(organizationId?: number, signal?: AbortSignal): Promise<ReviewSettings> {
+export function getReviewSettings(
+  organizationId?: number,
+  signal?: AbortSignal
+): Promise<ReviewSettings> {
   const q = new URLSearchParams();
   if (organizationId != null) q.set("organizationId", String(organizationId));
   const qs = q.toString();
-  return apiRequest<ReviewSettings>(`/reviews/settings/${qs ? `?${qs}` : ""}`, { signal });
+  return apiRequest<ReviewSettings>(`/reviews/settings/${qs ? `?${qs}` : ""}`, {
+    signal,
+  });
 }
 
-export function updateReviewSettings(patch: ReviewSettingsPatch): Promise<ReviewSettings> {
-  return apiRequest<ReviewSettings>("/reviews/settings/", { method: "PATCH", body: patch });
+export function updateReviewSettings(
+  patch: ReviewSettingsPatch
+): Promise<ReviewSettings> {
+  return apiRequest<ReviewSettings>("/reviews/settings/", {
+    method: "PATCH",
+    body: patch,
+  });
 }
 
 // ── Публичная страница отзыва (без авторизации) ──────────────────────────────
 
 /** GET /api/reviews/rate/<token>/ — контекст страницы. Неизвестный токен → 404. */
-export function getRateContext(token: string, signal?: AbortSignal): Promise<RateContext> {
-  return apiRequest<RateContext>(`/reviews/rate/${encodeURIComponent(token)}/`, { signal });
+export function getRateContext(
+  token: string,
+  signal?: AbortSignal
+): Promise<RateContext> {
+  return apiRequest<RateContext>(
+    `/reviews/rate/${encodeURIComponent(token)}/`,
+    { signal }
+  );
 }
 
 /** POST /api/reviews/rate/<token>/ — отправка или правка ответа. Ссылка закрыта → 409 REVIEW_CLOSED. */
-export function postRate(token: string, body: RateSubmit): Promise<RateContext> {
-  return apiRequest<RateContext>(`/reviews/rate/${encodeURIComponent(token)}/`, {
-    method: "POST",
-    body,
-  });
+export function postRate(
+  token: string,
+  body: RateSubmit
+): Promise<RateContext> {
+  return apiRequest<RateContext>(
+    `/reviews/rate/${encodeURIComponent(token)}/`,
+    {
+      method: "POST",
+      body,
+    }
+  );
 }
 
 /** POST /api/reviews/rate/<token>/click/ — пациент нажал «Оставить отзыв в …». */
-export function postMapClick(token: string, platform: MapPlatform): Promise<{ ok: boolean }> {
+export function postMapClick(
+  token: string,
+  platform: MapPlatform
+): Promise<{ ok: boolean }> {
   return apiRequest(`/reviews/rate/${encodeURIComponent(token)}/click/`, {
     method: "POST",
     body: { platform },

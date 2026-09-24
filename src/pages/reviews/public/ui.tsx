@@ -399,3 +399,103 @@ export const Medallion: React.FC<{
     </Box>
   );
 };
+
+export interface ChoiceOption<T extends string> {
+  value: T;
+  title: string;
+  caption: string;
+  icon: React.ReactNode;
+}
+
+/** Карточки-варианты с одной выбранной (radiogroup). */
+export function ChoiceCards<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: ChoiceOption<T>[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <Stack role="radiogroup" aria-label={label} spacing={1}>
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <ButtonBase
+            key={o.value}
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(o.value)}
+            sx={{
+              width: "100%",
+              justifyContent: "flex-start",
+              gap: 1.5,
+              p: 1.5,
+              pr: 2,
+              textAlign: "left",
+              borderRadius: "16px",
+              border: `1.5px solid ${on ? TEAL : LINE}`,
+              bgcolor: on ? TEAL_SOFT : CARD,
+              transition: "all 160ms ease",
+              "&:hover": { borderColor: TEAL },
+              "&.Mui-focusVisible": {
+                outline: `2px solid ${TEAL}`,
+                outlineOffset: 2,
+              },
+            }}
+          >
+            <Box
+              aria-hidden
+              sx={{
+                width: 40,
+                height: 40,
+                flexShrink: 0,
+                borderRadius: "12px",
+                display: "grid",
+                placeItems: "center",
+                bgcolor: on ? TEAL : PAPER,
+                color: on ? "#FFFFFF" : MUTED,
+                transition: "all 160ms ease",
+                "& svg": { fontSize: 22 },
+              }}
+            >
+              {o.icon}
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography sx={{ fontWeight: 600, fontSize: 15, color: INK }}>
+                {o.title}
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: MUTED, lineHeight: 1.3 }}>
+                {o.caption}
+              </Typography>
+            </Box>
+            <Box
+              aria-hidden
+              sx={{
+                width: 20,
+                height: 20,
+                flexShrink: 0,
+                borderRadius: "50%",
+                border: `2px solid ${on ? TEAL : STAR_EMPTY}`,
+                display: "grid",
+                placeItems: "center",
+                "&::after": {
+                  content: '""',
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  bgcolor: TEAL,
+                  transform: on ? "scale(1)" : "scale(0)",
+                  transition: "transform 160ms ease",
+                },
+              }}
+            />
+          </ButtonBase>
+        );
+      })}
+    </Stack>
+  );
+}

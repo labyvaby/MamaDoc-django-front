@@ -15,6 +15,8 @@ import HandshakeRounded from "@mui/icons-material/HandshakeRounded";
 import LinkOffRounded from "@mui/icons-material/LinkOffRounded";
 import ScheduleRounded from "@mui/icons-material/ScheduleRounded";
 import LockOutlined from "@mui/icons-material/LockOutlined";
+import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
+import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import { useParams } from "react-router";
 
 import {
@@ -22,6 +24,7 @@ import {
   postMapClick,
   postRate,
   type MapPlatform,
+  type PublishConsent,
   type RateContext,
 } from "../../api/reviews";
 import { ApiError } from "../../api/client";
@@ -29,6 +32,8 @@ import { useT } from "../../i18n/VerticalProvider";
 import {
   canSubmit,
   initialForm,
+  PUBLIC_NAME_MAX,
+  publicNameValid,
   tagOptions,
   toSubmit,
   type RateForm,
@@ -45,6 +50,8 @@ import {
 } from "./public/theme";
 import {
   Card,
+  ChoiceCards,
+  type ChoiceOption,
   Display,
   Eyebrow,
   MapCard,
@@ -56,6 +63,57 @@ import {
   StarPicker,
   TagPill,
 } from "./public/ui";
+
+const CONSENT_OPTIONS: ChoiceOption<PublishConsent>[] = [
+  {
+    value: "private",
+    title: "Не публиковать",
+    caption: "Ответ увидят только сотрудники",
+    icon: <LockOutlined />,
+  },
+  {
+    value: "anonymous",
+    title: "Анонимно",
+    caption: "Подпишем «Пациент»",
+    icon: <VisibilityOffOutlined />,
+  },
+  {
+    value: "named",
+    title: "С именем",
+    caption: "Подпишем так, как вы укажете",
+    icon: <BadgeOutlined />,
+  },
+];
+
+/** Строка про публикацию на финальных экранах. */
+function publishNote(ctx: RateContext): string {
+  if (ctx.publishConsent === "private") return "Ваш ответ не публикуется";
+  if (ctx.publicationStatus === "published")
+    return "Отзыв опубликован на сайте";
+  return "Отзыв появится на сайте после проверки";
+}
+
+const PublishNote: React.FC<{ ctx: RateContext }> = ({ ctx }) => (
+  <Stack
+    direction="row"
+    spacing={0.75}
+    alignItems="center"
+    justifyContent="center"
+    sx={{ color: MUTED }}
+  >
+    {ctx.publishConsent === "private" ? (
+      <LockOutlined sx={{ fontSize: 16 }} />
+    ) : (
+      <VisibilityOffOutlined
+        sx={{
+          fontSize: 16,
+          display: ctx.publishConsent === "anonymous" ? "block" : "none",
+        }}
+      />
+    )}
+    <Typography sx={{ fontSize: 13 }}>{publishNote(ctx)}</Typography>
+  </Stack>
+);
 
 type Screen = "loading" | "missing" | "failed" | "form" | "done";
 
@@ -228,6 +286,9 @@ const RateFlow: React.FC = () => {
                 ))}
               </Stack>
             )}
+            <Reveal order={7}>
+              <PublishNote ctx={ctx} />
+            </Reveal>
             <Reveal order={8}>{editLink}</Reveal>
           </Stack>
         </Shell>
@@ -254,17 +315,7 @@ const RateFlow: React.FC = () => {
             </Typography>
           </Reveal>
           <Reveal order={4}>
-            <Stack
-              direction="row"
-              spacing={0.75}
-              alignItems="center"
-              sx={{ color: MUTED }}
-            >
-              <LockOutlined sx={{ fontSize: 16 }} />
-              <Typography sx={{ fontSize: 13 }}>
-                Ваш ответ не публикуется
-              </Typography>
-            </Stack>
+            <PublishNote ctx={ctx} />
           </Reveal>
           <Reveal order={5}>{editLink}</Reveal>
         </Stack>
@@ -335,8 +386,12 @@ const RateFlow: React.FC = () => {
             ) : (
               "Отправить"
             )
-          ) : (
+          ) : !picked ? (
             "Сначала поставьте оценку"
+          ) : !publicNameValid(form) ? (
+            "Укажите, как подписать отзыв"
+          ) : (
+            "Отправить"
           )}
         </Button>
       </Box>
@@ -437,19 +492,50 @@ const RateFlow: React.FC = () => {
                 },
               }}
             />
-            {form.rating !== 5 && (
-              <Stack
-                direction="row"
-                spacing={0.75}
-                alignItems="center"
-                sx={{ mt: 1, color: MUTED }}
-              >
-                <LockOutlined sx={{ fontSize: 15 }} />
-                <Typography sx={{ fontSize: 13 }}>
-                  Ответ не публикуется — его прочитают только сотрудники
-                </Typography>
-              </Stack>
+          </Reveal>
+
+          <Reveal order={3}>
+            <SectionTitle>Можно опубликовать ваш отзыв?</SectionTitle>
+            <ChoiceCards
+              label="Публикация отзыва"
+              value={form.publishConsent}
+              options={CONSENT_OPTIONS}
+              onChange={(v) => set("publishConsent", v)}
+            />
+            {form.publishConsent === "named" && (
+              <TextField
+                fullWidth
+                autoFocus
+                value={form.publicName}
+                onChange={(e) => set("publicName", e.target.value)}
+                label="Как подписать отзыв"
+                placeholder="Например: Айгуль, мама Алана"
+                inputProps={{ maxLength: PUBLIC_NAME_MAX }}
+                helperText="Подпись увидят все — фамилию можно не указывать"
+                sx={{
+                  mt: 1.5,
+                  "& .MuiOutlinedInput-root": {
+                    bgcolor: CARD,
+                    borderRadius: "14px",
+                    fontSize: 16,
+                    "& fieldset": { borderColor: LINE },
+                  },
+                }}
+              />
             )}
+            <Stack
+              direction="row"
+              spacing={0.75}
+              alignItems="flex-start"
+              sx={{ mt: 1.25, color: MUTED }}
+            >
+              <LockOutlined sx={{ fontSize: 15, mt: "2px" }} />
+              <Typography sx={{ fontSize: 13 }}>
+                {form.publishConsent === "private"
+                  ? "Ответ прочитают только сотрудники."
+                  : "Перед публикацией отзыв проверят. Телефон и данные из карты не публикуются."}
+              </Typography>
+            </Stack>
           </Reveal>
         </Stack>
       )}

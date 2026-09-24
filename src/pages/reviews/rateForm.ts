@@ -1,4 +1,11 @@
-import type { RateContext, RateSubmit } from "../../api/reviews";
+import type {
+  PublishConsent,
+  RateContext,
+  RateSubmit,
+} from "../../api/reviews";
+
+export const PUBLIC_NAME_MIN = 2;
+export const PUBLIC_NAME_MAX = 40;
 
 export interface RateForm {
   rating: number | null;
@@ -6,6 +13,8 @@ export interface RateForm {
   registryRating: number | null;
   tags: string[];
   comment: string;
+  publishConsent: PublishConsent;
+  publicName: string;
 }
 
 export function initialForm(ctx: RateContext): RateForm {
@@ -15,6 +24,8 @@ export function initialForm(ctx: RateContext): RateForm {
     registryRating: ctx.registryRating,
     tags: ctx.tags ?? [],
     comment: ctx.comment ?? "",
+    publishConsent: ctx.publishConsent ?? "private",
+    publicName: ctx.publicName ?? "",
   };
 }
 
@@ -24,8 +35,20 @@ export function tagOptions(ctx: RateContext, rating: number | null): string[] {
   return rating === 5 ? ctx.positiveTags : ctx.negativeTags;
 }
 
+/** Подпись нужна только при публикации «с именем». */
+export function publicNameValid(form: RateForm): boolean {
+  if (form.publishConsent !== "named") return true;
+  const name = form.publicName.trim().replace(/\s+/g, " ");
+  return name.length >= PUBLIC_NAME_MIN && name.length <= PUBLIC_NAME_MAX;
+}
+
 export function canSubmit(form: RateForm): boolean {
-  return form.rating != null && form.rating >= 1 && form.rating <= 5;
+  return (
+    form.rating != null &&
+    form.rating >= 1 &&
+    form.rating <= 5 &&
+    publicNameValid(form)
+  );
 }
 
 export function toSubmit(ctx: RateContext, form: RateForm): RateSubmit {
@@ -36,5 +59,7 @@ export function toSubmit(ctx: RateContext, form: RateForm): RateSubmit {
     registryRating: form.registryRating,
     tags: form.tags.filter((t) => allowed.has(t)),
     comment: form.comment.trim(),
+    publishConsent: form.publishConsent,
+    publicName: form.publishConsent === "named" ? form.publicName.trim() : "",
   };
 }
