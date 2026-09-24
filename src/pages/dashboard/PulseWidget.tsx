@@ -1,7 +1,6 @@
 import React from "react";
 import { Box, Skeleton, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { Link as RouterLink } from "react-router";
 
@@ -19,28 +18,11 @@ import { WidgetError, type WidgetProps } from "./widgetKit";
 import { PlanDialog } from "./PlanDialog";
 import { planProgress, planScopeKey, readRevenuePlans, resolvePlan } from "./revenuePlan";
 import { num } from "./widgetUtils";
-import { previousRange, resolvePeriod, sumDayCounts, type PeriodRange } from "./period";
-import {
-  availabilityTodayQuery,
-  cashboxSummaryQuery,
-  dayCountsQuery,
-  monthlyReportQuery,
-} from "./queries";
+import { useDashboardData } from "./DashboardData";
 
 const TABULAR = { fontVariantNumeric: "tabular-nums" } as const;
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
-/** Прошлый календарный месяц целиком — отметка на шкале темпа. */
-function previousFullMonth(now = dayjs()): PeriodRange {
-  const m = now.subtract(1, "month");
-  return {
-    dateFrom: m.startOf("month").format("YYYY-MM-DD"),
-    dateTo: m.endOf("month").format("YYYY-MM-DD"),
-    month: m.format("YYYY-MM"),
-    label: m.format("MMMM"),
-  };
-}
 
 /**
  * «к августу», «к июню», «к маю» — дательный падеж названия месяца. Все
@@ -155,17 +137,14 @@ const DriverCell: React.FC<{
  * Единственная крупная цифра на экране — выручка. «Осталось после расходов»
  * здесь намеренно нет: это итог «Движения денег», дубль размывал бы главное.
  *
- * Ключи запросов общие с остальными блоками (`queries.ts`), поэтому своих
- * обращений к бэку у «Пульса» почти нет — только прошлый месяц целиком.
+ * Данные — разделы `money`, `month`, `appointments` и `load` агрегата
+ * сводки (DashboardData.ts); своих запросов у «Пульса» нет.
  */
-export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) => {
+export const PulseWidget: React.FC<WidgetProps> = ({ range, scope }) => {
   const { can } = useCanChecker();
   const { activeOrganization, activeBranch } = usePermissions();
   const canEditPlan = can("organization.update");
   const [planOpen, setPlanOpen] = React.useState(false);
-  const canAppointments = can(PAGE_PERMISSIONS.appointments);
-  const canSchedule = can(PAGE_PERMISSIONS.schedule);
-  const canReports = can(PAGE_PERMISSIONS.reports);
 
   const workspacePath = can(PAGE_PERMISSIONS.appointmentsRegistry)
     ? "/appointments"
@@ -175,43 +154,31 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
         ? "/nurse"
         : undefined;
 
-  const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
-  // От даты периода, а не «один раз при монтировании»: после полуночи
-  // страница пересчитывает range, и месяц должен переехать вместе с ним.
-  const monthRange = React.useMemo(
-    () => resolvePeriod("month", dayjs(range.dateTo)),
-    [range.dateTo],
-  );
-  const lastMonth = React.useMemo(() => previousFullMonth(dayjs(range.dateTo)), [range.dateTo]);
+  const data = useDashboardData();
+  const { prev } = data;
+  const s = data.sections.money;
+  const p = s?.baseline ?? undefined;
+  const m = data.sections.month;
+  const cashLoading = data.isLoading("money");
+  const cashError = data.error("money");
 
-  const cash = useQuery(cashboxSummaryQuery(scope, range));
-  const prevCash = useQuery(cashboxSummaryQuery(scope, prev));
-  // Месяц нужен всегда — даже на «Сегодня» владелец хочет видеть, куда идёт
-  // месяц. На периоде «Месяц» это тот же запрос, что и основной: кэш.
-  const monthCash = useQuery(cashboxSummaryQuery(scope, monthRange));
-  const lastMonthCash = useQuery(cashboxSummaryQuery(scope, lastMonth));
-  const counts = useQuery(dayCountsQuery(scope, range, canAppointments));
-  const prevCounts = useQuery(dayCountsQuery(scope, prev, canAppointments));
-  const availability = useQuery(availabilityTodayQuery(scope, canSchedule));
-  const report = useQuery(monthlyReportQuery(scope, monthRange.month, canReports));
-
-  const s = cash.data;
-  const p = prevCash.data;
   const income = num(s?.netIncome);
   const avgCheck = s && s.paymentCount > 0 ? income / s.paymentCount : 0;
   const prevAvgCheck = p && p.paymentCount > 0 ? num(p.netIncome) / p.paymentCount : undefined;
 
-  // ── Темп месяца ──
-  const today = dayjs(monthRange.dateTo);
-  const elapsed = today.date();
-  const inMonth = today.daysInMonth();
-  const monthIncome = num(monthCash.data?.netIncome);
-  const lastMonthIncome = lastMonthCash.data ? num(lastMonthCash.data.netIncome) : null;
+  // ── Темп месяца ── месяц — по dateTo периода, его считает бэк.
+  const monthStart = dayjs(m?.dateFrom ?? range.dateTo).startOf("month");
+  const monthKey = monthStart.format("YYYY-MM");
+  const monthTo = m?.dateTo ?? range.dateTo;
+  const elapsed = m?.daysElapsed ?? dayjs(range.dateTo).date();
+  const inMonth = m?.daysInMonth ?? dayjs(range.dateTo).daysInMonth();
+  const monthIncome = num(m?.netIncome);
+  const lastMonthIncome = m?.previousMonth ? num(m.previousMonth.netIncome) : null;
   /**
    * Оценка по темпу: сколько выйдет к концу месяца, если дальше пойдёт как
-   * шло. Не «прогноз» — линейная экстраполяция не знает про выходные и сезон,
-   * поэтому в первые два дня (мало данных) её не показываем. Ноль выручки —
-   * не темп, а отсутствие данных.
+   * шло. Не «прогноз» — линейная экстраполяция не знает про выходные и сезон
+   * (прогноза на бэке нет, ответ 24.09.2026), поэтому в первые два дня (мало
+   * данных) её не показываем. Ноль выручки — не темп, а отсутствие данных.
    */
   const pace = elapsed >= 3 && monthIncome > 0 ? (monthIncome / elapsed) * inMonth : null;
   const paceVsLast =
@@ -225,7 +192,7 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
   const plan = resolvePlan(
     readRevenuePlans(activeOrganization?.themeConfig),
     scopeKey,
-    monthRange.month,
+    monthKey,
   );
   const progress = plan ? planProgress(plan.amount, monthIncome, elapsed, inMonth, pace) : null;
 
@@ -237,40 +204,42 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
   const planMarker = plan ? plan.amount / scaleMax : null;
 
   // ── Приход по дням месяца ──
-  // ⚠ Бэк отдаёт daily[] от 31-го к 1-му (см. reports-monthly-api-quirks):
-  // строим карту по дате и идём по календарю сами — порядок ответа не важен,
-  // а дни без строки становятся нулём, а не пропадают.
+  // Ряд агрегата идёт с 1-го по dateTo и в сумме равен выручке с 1-го числа.
+  // Идём по календарю сами: дни после сегодня рисуются пустыми рамками.
   const monthBars = React.useMemo(() => {
-    if (!report.data) return [];
-    const byDate = new Map(
-      (report.data.daily ?? []).map((d) => [d.date, num(d.cashSum) + num(d.cardSum)]),
-    );
-    const start = dayjs(monthRange.dateFrom);
-    return Array.from({ length: start.daysInMonth() }, (_, i) => {
-      const day = start.add(i, "day");
+    if (!m?.daily?.length) return [];
+    const byDate = new Map(m.daily.map((d) => [d.date, num(d.netIncome)]));
+    return Array.from({ length: monthStart.daysInMonth() }, (_, i) => {
+      const day = monthStart.add(i, "day");
       const key = day.format("YYYY-MM-DD");
       return {
         key,
         day,
         value: byDate.get(key) ?? 0,
-        isToday: key === monthRange.dateTo,
-        isFuture: key > monthRange.dateTo,
+        isToday: key === monthTo,
+        isFuture: key > monthTo,
         isWeekend: day.day() === 0 || day.day() === 6,
       };
     });
-  }, [report.data, monthRange.dateFrom, monthRange.dateTo]);
+    // monthStart выводится из m.dateFrom — отдельной зависимостью не нужен.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [m, monthTo]);
   const barMax = monthBars.reduce((m, b) => Math.max(m, b.value), 0);
 
-  const records = sumDayCounts(counts.data);
-  const prevRecords = prevCounts.data ? sumDayCounts(prevCounts.data) : undefined;
+  const appts = data.sections.appointments;
+  const records = appts?.total ?? 0;
+  const prevRecords = appts?.baseline?.total;
 
-  const av = availability.data;
+  const av = data.sections.load;
+  // Раздела нет в ответе — нет права: ячейку не рисуем, а не показываем ноль.
+  const showRecords = !!appts || data.isLoading("appointments");
+  const showLoad = !!av || data.isLoading("load");
   const staffTotal = av?.overallEmployeeCount ?? 0;
   const staffFree = av?.overallFreeEmployeeCount ?? 0;
   const load = staffTotal > 0 ? (staffTotal - staffFree) / staffTotal : null;
 
-  const monthName = today.format("MMMM");
-  const lastMonthName = lastMonth.label;
+  const monthName = monthStart.format("MMMM");
+  const lastMonthName = monthStart.subtract(1, "month").format("MMMM");
 
   return (
     <AppCard
@@ -279,9 +248,9 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
       disableContentPadding
       sx={{ height: "100%", display: "flex" }}
     >
-      {cash.isError ? (
+      {cashError ? (
         <Box sx={{ p: 2 }}>
-          <WidgetError error={cash.error} />
+          <WidgetError error={cashError} />
         </Box>
       ) : (
         <Box
@@ -298,7 +267,7 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, color: "text.secondary" }}>
                 Выручка · {range.label}
               </Typography>
-              {cash.isLoading ? (
+              {cashLoading ? (
                 <Skeleton variant="text" width="60%" height={56} />
               ) : (
                 <Stack
@@ -337,7 +306,7 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
             {/* Темп месяца — шкала, а не две цифры: сразу видно, обгоняем ли
                 прошлый месяц. Показывается на любом периоде: «сегодня хорошо»
                 мало значит, если месяц идёт ниже прошлого. */}
-            {monthCash.data && (
+            {m && (
               <Stack
                 spacing={1}
                 sx={(t) => ({
@@ -612,13 +581,13 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               borderColor: { xs: "divider", md: "divider" },
             }}
           >
-            {canAppointments && (
+            {showRecords && (
               <DriverCell
                 icon={<EventAvailableOutlined />}
                 label="Записи"
                 href={workspacePath}
                 value={records}
-                loading={counts.isLoading}
+                loading={data.isLoading("appointments")}
                 delta={
                   prevRecords !== undefined ? (
                     <DeltaChip
@@ -636,7 +605,7 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               label="Средний чек"
               href="/cashbox"
               value={formatKGS(avgCheck)}
-              loading={cash.isLoading}
+              loading={cashLoading}
               delta={
                 prevAvgCheck !== undefined ? (
                   <DeltaChip
@@ -647,15 +616,15 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               }
               hint={s ? `${s.paymentCount} оплат` : undefined}
               title="Выручка ÷ число оплат. Чек на оплату, а не на визит: визит бывает оплачен частями."
-              last={!canSchedule}
+              last={!showLoad}
             />
-            {canSchedule && (
+            {showLoad && (
               <DriverCell
                 icon={<GroupsOutlined />}
                 label="Загрузка сегодня"
                 href="/schedule"
                 value={load == null ? "—" : `${Math.round(load * 100)}%`}
-                loading={availability.isLoading}
+                loading={data.isLoading("load")}
                 bar={load}
                 hint={
                   staffTotal
@@ -682,7 +651,7 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) 
               ? `Филиал «${activeBranch.name}»`
               : `Вся организация «${activeOrganization.name}»`
           }
-          month={monthRange.month}
+          month={monthKey}
           themeConfig={activeOrganization.themeConfig as Record<string, unknown> | null}
         />
       )}

@@ -1,29 +1,19 @@
 import React from "react";
 import { Box, Skeleton, Stack, Typography } from "@mui/material";
 import { alpha, type Theme } from "@mui/material/styles";
-import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router";
-import dayjs from "dayjs";
 
 import TaskAltOutlined from "@mui/icons-material/TaskAltOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 
-import { DEALS_MODULE_ENABLED } from "../../api/deals";
-import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
-import { useCanChecker } from "../../hooks/useCan";
-import { DashCard, type WidgetProps } from "./widgetKit";
-import { num } from "./widgetUtils";
-import { resolvePeriod } from "./period";
-import { ATTENTION_GROUPS, buildAttentionItems, type AttentionSeverity } from "./attention";
+import { DashCard, WidgetError, type WidgetProps } from "./widgetKit";
 import {
-  availabilityTodayQuery,
-  cashboxSummaryQuery,
-  dealsSummaryQuery,
-  monthlyReportQuery,
-  pendingBookingsQuery,
-  reviewStatsQuery,
-  tasksSummaryQuery,
-} from "./queries";
+  ATTENTION_GROUPS,
+  attentionInputFromSections,
+  buildAttentionItems,
+  type AttentionSeverity,
+} from "./attention";
+import { useDashboardData } from "./DashboardData";
 
 /**
  * Цвет группы как ТЕКСТ — `onSurface` из темы: тот же статус, но с
@@ -47,86 +37,29 @@ const MAX_ROWS = 8;
  * он читает готовый список, отсортированный по срочности, и кликает в раздел.
  *
  * Правила «что считать проблемой» — в `attention.ts` (с тестами). Раздел без
- * прав или ещё не загруженный молчит, а не рисует ложный ноль.
+ * прав, ещё не загруженный или без нужной метрики молчит, а не рисует ложный
+ * ноль.
  */
-export const AttentionWidget: React.FC<WidgetProps> = ({ range, scope }) => {
-  const { can } = useCanChecker();
-  const canBookings = can(PAGE_PERMISSIONS.bookings);
-  const canTasks = can(PAGE_PERMISSIONS.tasks);
-  const canDeals = DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals);
-  const canReviews = can(PAGE_PERMISSIONS.reviews);
-  const canCash = can(PAGE_PERMISSIONS.cashbox);
-  const canReports = can(PAGE_PERMISSIONS.reports);
-  const canSchedule = can(PAGE_PERMISSIONS.schedule);
-
-  const month = React.useMemo(
-    () => resolvePeriod("month", dayjs(range.dateTo)).month,
-    [range.dateTo],
-  );
-
-  const pending = useQuery(pendingBookingsQuery(scope, "pending", canBookings));
-  const overdue = useQuery(pendingBookingsQuery(scope, "overdue", canBookings));
-  const tasks = useQuery(tasksSummaryQuery(scope, canTasks));
-  const deals = useQuery(dealsSummaryQuery(scope, canDeals));
-  const reviews = useQuery(reviewStatsQuery(scope, range, canReviews));
-  const cash = useQuery(cashboxSummaryQuery(scope, range, canCash));
-  const report = useQuery(monthlyReportQuery(scope, month, canReports));
-  const availability = useQuery(availabilityTodayQuery(scope, canSchedule));
-
-  const all = [pending, overdue, tasks, deals, reviews, cash, report, availability];
-  // Пока грузится хоть что-то из разрешённого и лента пуста — скелет, а не
-  // преждевременное «всё под контролем».
-  const loading = all.some((q) => q.isLoading);
+export const AttentionWidget: React.FC<WidgetProps> = ({ range }) => {
+  const data = useDashboardData();
+  const sections = [
+    "bookings",
+    "tasks",
+    "deals",
+    "reviews",
+    "money",
+    "load",
+  ] as const;
+  // Пока грузится хоть что-то и лента пуста — скелет, а не преждевременное
+  // «всё под контролем».
+  const loading = sections.some((k) => data.isLoading(k));
+  // Ошибка агрегата — одна на все разделы; на прежних ручках раздел с ошибкой
+  // просто молчит, как раньше.
+  const error = data.source === "legacy" ? undefined : data.error("money");
 
   const items = React.useMemo(
-    () =>
-      buildAttentionItems({
-        periodLabel: range.label,
-        bookings:
-          pending.data && overdue.data
-            ? { pending: pending.data.count ?? 0, overdue: overdue.data.count ?? 0 }
-            : undefined,
-        tasks: tasks.data
-          ? { overdue: tasks.data.overdue, awaitingApproval: tasks.data.awaitingApproval }
-          : undefined,
-        deals: deals.data
-          ? {
-              overdueActions: deals.data.overdueActionsCount,
-              todayActions: deals.data.todayActionsCount,
-            }
-          : undefined,
-        reviews: reviews.data ? { negative: reviews.data.negativeCount } : undefined,
-        cash: cash.data
-          ? {
-              netCashFlow: num(cash.data.netCashFlow),
-              grossIncome: num(cash.data.grossIncome),
-              refundedTotal: num(cash.data.refundedTotal),
-              refundCount: cash.data.refundCount,
-            }
-          : undefined,
-        month: report.data
-          ? {
-              debtSum: (report.data.daily ?? []).reduce((acc, d) => acc + num(d.debtSum), 0),
-            }
-          : undefined,
-        staff: availability.data
-          ? {
-              total: availability.data.overallEmployeeCount,
-              free: availability.data.overallFreeEmployeeCount,
-            }
-          : undefined,
-      }),
-    [
-      range.label,
-      pending.data,
-      overdue.data,
-      tasks.data,
-      deals.data,
-      reviews.data,
-      cash.data,
-      report.data,
-      availability.data,
-    ],
+    () => buildAttentionItems(attentionInputFromSections(data.sections, range.label)),
+    [data.sections, range.label],
   );
 
   const toDecide = items.filter((i) => i.severity !== "opportunity").length;
@@ -150,7 +83,9 @@ export const AttentionWidget: React.FC<WidgetProps> = ({ range, scope }) => {
           : undefined
       }
     >
-      {items.length === 0 && loading ? (
+      {error && items.length === 0 ? (
+        <WidgetError error={error} />
+      ) : items.length === 0 && loading ? (
         <Stack spacing={1}>
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} variant="rounded" height={36} sx={{ borderRadius: "9px" }} />

@@ -102,6 +102,34 @@ export function previousRange(range: PeriodRange, key: PeriodKey): PeriodRange {
   };
 }
 
+/** Окно графика на «Сегодня»: один столбик ничего не говорит, нужен фон. */
+export const TODAY_CHART_DAYS = 14;
+
+/**
+ * Окно графика записей. На «Неделе» и «Месяце» совпадает с периодом, на
+ * «Сегодня» — последние 14 дней с сегодняшним в конце.
+ */
+export function chartRangeFor(range: PeriodRange, key: PeriodKey): PeriodRange {
+  if (key !== "today") return range;
+  return {
+    ...range,
+    dateFrom: dayjs(range.dateTo)
+      .subtract(TODAY_CHART_DAYS - 1, "day")
+      .format("YYYY-MM-DD"),
+  };
+}
+
+/** Прошлый календарный месяц целиком — отметка на шкале темпа. */
+export function previousFullMonth(now = dayjs()): PeriodRange {
+  const m = now.subtract(1, "month");
+  return {
+    dateFrom: m.startOf("month").format("YYYY-MM-DD"),
+    dateTo: m.endOf("month").format("YYYY-MM-DD"),
+    month: m.format("YYYY-MM"),
+    label: m.format("MMMM"),
+  };
+}
+
 /** Сумма значений карты «дата → количество» по всем дням периода. */
 export function sumDayCounts(counts: Record<string, number> | undefined): number {
   if (!counts) return 0;

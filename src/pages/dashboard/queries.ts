@@ -8,12 +8,18 @@ import { getMonthlyReport } from "../../api/reports";
 import { getReviewStats } from "../../api/reviews";
 import { getAvailabilitySummary } from "../../api/scheduling";
 import { getTasksSummary } from "../../api/tasks";
+import { getPayrollReport } from "../../api/payroll";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import type { PeriodRange } from "./period";
+import { LIVE_REFRESH_MS } from "./refresh";
 
 /**
- * Описания запросов сводки — в одном месте.
+ * Описания запросов сводки на прежних ручках — в одном месте.
+ *
+ * ⚠ Используются, только пока на сервере нет агрегата `/dashboard/summary/` v2
+ * (см. DashboardData.tsx и legacyData.ts). После его выкладки на прод файл
+ * удаляется.
  *
  * Одни и те же данные нужны нескольким блокам: «Пульс» берёт кассу и записи,
  * «Требует внимания» — брони, задачи, отзывы и кассу. Если бы каждый блок
@@ -25,18 +31,11 @@ import type { PeriodRange } from "./period";
 
 type Signal = { signal?: AbortSignal };
 
-/**
- * Автообновление сводки. Экран держат открытым (ресепшен, телефон владельца),
- * и без опроса «сегодня» замирало на моменте открытия. Три минуты — компромисс
- * между свежестью и нагрузкой: на экране ~20 запросов.
- *
+/*
  * Опрашиваем только то, что может измениться: периоды, которые включают
  * сегодня, и состояния «сейчас» (брони, задачи, загрузка). Прошлые периоды —
- * база сравнения — не меняются, их не дёргаем. В фоновой вкладке react-query
- * опрос сам останавливает (refetchIntervalInBackground = false).
+ * база сравнения — не меняются, их не дёргаем.
  */
-export const LIVE_REFRESH_MS = 3 * 60 * 1000;
-
 const todayKey = () => dayjs().format("YYYY-MM-DD");
 const liveIf = (isLive: boolean) => (isLive ? LIVE_REFRESH_MS : (false as const));
 
@@ -191,3 +190,28 @@ export const reviewStatsQuery = (scope: ActiveScope, r: PeriodRange, enabled = t
   staleTime: DJANGO_DETAIL_STALE_TIME_MS,
   refetchInterval: liveIf(r.dateTo >= todayKey()),
 });
+
+/** Ведомость зарплаты за месяц периода — «кто сколько принял». */
+export const payrollReportQuery = (scope: ActiveScope, month: string, enabled = true) => {
+  const m = dayjs(month + "-01");
+  return {
+    queryKey: djangoQueryKeys.payroll.report({
+      view: "dashboard",
+      organizationId: scope.organizationId ?? null,
+      branchId: scope.branchId ?? null,
+      month,
+    }),
+    queryFn: ({ signal }: Signal) =>
+      getPayrollReport(
+        {
+          year: m.year(),
+          month: m.month() + 1,
+          organizationId: scope.organizationId,
+          branchId: scope.branchId,
+        },
+        signal,
+      ),
+    enabled: scope.orgReady && enabled,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  };
+};

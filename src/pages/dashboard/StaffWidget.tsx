@@ -1,88 +1,83 @@
 import React from "react";
-import { Box, Skeleton, Stack, Tooltip, Typography } from "@mui/material";
-import { alpha } from "@mui/material/styles";
-import { useQuery } from "@tanstack/react-query";
+import { Box, Skeleton, Stack, Typography } from "@mui/material";
 import dayjs from "dayjs";
 
-import { getPayrollReport } from "../../api/payroll";
-import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
-import { subtleBg } from "../../theme/uiHelpers";
 import { DashCard, WidgetError, type WidgetProps } from "./widgetKit";
 import { num } from "./widgetUtils";
+import { useDashboardData } from "./DashboardData";
+import { RankRow, type RankRowData } from "./RankRow";
 
 /** Сколько строк показываем: длинный список превращает сводку в отчёт. */
 const TOP_SIZE = 5;
 
 /**
- * Кто сколько сделал за месяц — по данным ведомости зарплаты.
+ * Кто приносит деньги — топ сотрудников по выручке за период (`staff.topByRevenue`
+ * агрегата, нужен finance.view). Выручка — сумма строк услуг полностью
+ * оплаченных визитов (цена × количество − скидка строки); частично оплаченные
+ * и закрытые скидкой целиком не входят (ответ бэка 24.09.2026).
  *
- * ⚠ Здесь НЕ «сколько денег принёс сотрудник»: такой метрики в CRM нет.
- * `appointmentsCount` — приёмы, где он исполнитель, `earnings` — что ему
- * начислено. Второе связано с первым, но это разные величины, и подменять
- * одно другим на экране владельца нельзя.
+ * Без выручки (нет finance.view или сводка на прежних ручках) — как раньше,
+ * по ведомости зарплаты за месяц: приёмы исполнителем и начислено.
  *
- * ⚠ Поле `paidCount` в этом отчёте бэк НЕ заполняет — приходит 0 у всех строк
- * (проверено на живом API 25.08.2026), хотя `totalCount` и `appointmentsCount`
- * заполнены. Поэтому считаем по приёмам исполнителя.
- *
- * Отчёт месячный по своей природе, поэтому виджет не зависит от выбранного
- * периода и всегда показывает текущий месяц — это написано в подзаголовке.
+ * ⚠ Выручка и «начислено» (`payroll.earnings`) — разные величины, бэк развёл
+ * их по разным полям; подменять одно другим на экране владельца нельзя.
  */
-export const StaffWidget: React.FC<WidgetProps> = ({ range, scope }) => {
-  const month = dayjs(range.month + "-01");
+export const StaffWidget: React.FC<WidgetProps> = ({ range }) => {
+  const data = useDashboardData();
+  const staff = data.sections.staff;
+  const loading = data.isLoading("staff");
+  const error = data.error("staff");
 
-  const query = useQuery({
-    queryKey: djangoQueryKeys.payroll.report({
-      view: "dashboard",
-      organizationId: scope.organizationId ?? null,
-      branchId: scope.branchId ?? null,
-      month: range.month,
-    }),
-    queryFn: ({ signal }) =>
-      getPayrollReport(
-        {
-          year: month.year(),
-          month: month.month() + 1,
-          organizationId: scope.organizationId,
-          branchId: scope.branchId,
-        },
-        signal,
-      ),
-    enabled: scope.orgReady,
-    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-  });
+  const byRevenue = staff?.topByRevenue;
+  const payroll = staff?.payroll;
 
-  const active = React.useMemo(
-    () =>
-      (query.data?.rows ?? []).filter((r) => r.appointmentsCount > 0 || num(r.earnings) > 0),
-    [query.data],
-  );
+  const rows = React.useMemo<RankRowData[]>(() => {
+    if (byRevenue) {
+      return byRevenue.slice(0, TOP_SIZE).map((r) => ({
+        id: r.employeeId,
+        name: r.employeeName,
+        weight: num(r.amount),
+        main: formatKGS(num(r.amount)),
+        mainTitle: `Выручка оплаченных визитов · ${Math.round(num(r.share))}% от всей`,
+        side: String(r.count),
+        sideTitle: "Оплаченных услуг исполнителем",
+      }));
+    }
+    return (payroll?.rows ?? [])
+      .filter((r) => r.appointmentsCount > 0 || num(r.earnings) > 0)
+      .sort((a, b) => b.appointmentsCount - a.appointmentsCount || num(b.earnings) - num(a.earnings))
+      .slice(0, TOP_SIZE)
+      .map((r) => ({
+        id: r.employeeId,
+        name: r.fullName,
+        weight: r.appointmentsCount,
+        main: formatKGS(num(r.earnings)),
+        mainTitle: "Начислено за месяц: проценты, часы, надбавки",
+        side: String(r.appointmentsCount),
+        sideTitle: "Приёмов исполнителем",
+      }));
+  }, [byRevenue, payroll]);
 
-  const rows = React.useMemo(
-    () =>
-      [...active]
-        .sort(
-          (a, b) =>
-            b.appointmentsCount - a.appointmentsCount || num(b.earnings) - num(a.earnings),
-        )
-        .slice(0, TOP_SIZE),
-    [active],
-  );
-
-  const best = rows.reduce((max, r) => Math.max(max, r.appointmentsCount), 0);
-  const totalAppointments = active.reduce((acc, r) => acc + r.appointmentsCount, 0);
+  const best = rows.reduce((max, r) => Math.max(max, r.weight), 0);
+  const payrollMonth = payroll
+    ? dayjs(`${payroll.year}-${String(payroll.month).padStart(2, "0")}-01`)
+    : dayjs(range.dateTo);
 
   return (
     <DashCard
       title="Сотрудники"
-      subheader={`${month.format("MMMM")} · по приёмам`}
+      subheader={
+        byRevenue
+          ? `${range.label} · по выручке`
+          : `${payrollMonth.format("MMMM")} · по приёмам`
+      }
       href="/salary-reports"
       linkLabel="Зарплата"
     >
-      {query.isError ? (
-        <WidgetError error={query.error} />
-      ) : query.isLoading ? (
+      {error ? (
+        <WidgetError error={error} />
+      ) : loading ? (
         <Stack spacing={1}>
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} variant="text" height={28} />
@@ -90,7 +85,7 @@ export const StaffWidget: React.FC<WidgetProps> = ({ range, scope }) => {
         </Stack>
       ) : rows.length === 0 ? (
         <Typography variant="body2" sx={{ color: "text.secondary" }}>
-          За месяц пока нет приёмов
+          {byRevenue ? "За период нет оплаченных визитов" : "За месяц пока нет приёмов"}
         </Typography>
       ) : (
         <Stack spacing={0.25} sx={{ mx: -1 }}>
@@ -101,93 +96,11 @@ export const StaffWidget: React.FC<WidgetProps> = ({ range, scope }) => {
           >
             <Box sx={{ width: 16 }} />
             <Box sx={{ flex: 1 }} />
-            <Box sx={{ width: 44, textAlign: "right" }}>приёмы</Box>
-            <Box sx={{ width: 92, textAlign: "right" }}>начислено</Box>
+            <Box sx={{ width: 44, textAlign: "right" }}>{byRevenue ? "услуг" : "приёмы"}</Box>
+            <Box sx={{ width: 100, textAlign: "right" }}>{byRevenue ? "выручка" : "начислено"}</Box>
           </Stack>
           {rows.map((r, i) => (
-            <Stack
-              key={r.employeeId}
-              direction="row"
-              alignItems="center"
-              spacing={1.25}
-              sx={(t) => ({
-                px: 1,
-                py: 0.75,
-                borderRadius: "8px",
-                "&:hover": { bgcolor: subtleBg(t) },
-              })}
-            >
-              <Typography
-                sx={{
-                  width: 16,
-                  flexShrink: 0,
-                  fontSize: "0.75rem",
-                  fontWeight: 700,
-                  color: "text.disabled",
-                  textAlign: "center",
-                }}
-              >
-                {i + 1}
-              </Typography>
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600 }} noWrap>
-                  {r.fullName}
-                </Typography>
-                <Box
-                  sx={(t) => ({
-                    mt: 0.5,
-                    height: 4,
-                    borderRadius: "4px",
-                    bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.14 : 0.08),
-                    overflow: "hidden",
-                  })}
-                >
-                  <Box
-                    sx={(t) => ({
-                      width: `${best > 0 ? Math.round((r.appointmentsCount / best) * 100) : 0}%`,
-                      height: "100%",
-                      borderRadius: "4px",
-                      bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.75 : 0.55),
-                      transition: "width .3s ease",
-                    })}
-                  />
-                </Box>
-              </Box>
-              <Tooltip
-                title={
-                  totalAppointments > 0
-                    ? `Приёмов исполнителем · ${Math.round((r.appointmentsCount / totalAppointments) * 100)}% от всех`
-                    : "Приёмов исполнителем"
-                }
-                arrow
-              >
-                <Typography
-                  sx={{
-                    width: 44,
-                    textAlign: "right",
-                    fontWeight: 700,
-                    fontSize: "0.875rem",
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  {r.appointmentsCount}
-                </Typography>
-              </Tooltip>
-              <Tooltip title="Начислено за месяц: проценты, часы, надбавки" arrow>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    width: 92,
-                    textAlign: "right",
-                    color: "text.secondary",
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                  noWrap
-                >
-                  {formatKGS(num(r.earnings))}
-                </Typography>
-              </Tooltip>
-            </Stack>
+            <RankRow key={r.id} row={r} index={i} best={best} />
           ))}
         </Stack>
       )}

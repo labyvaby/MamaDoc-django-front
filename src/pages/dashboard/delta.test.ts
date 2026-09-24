@@ -104,7 +104,7 @@ describe("ряд по дням", () => {
 });
 
 describe("раскладка блоков", () => {
-  const ctx = { can: () => true, period: "month" as const, branchCount: 3 };
+  const ctx = { can: () => true, period: "month" as const, branchCount: 3, aggregate: true };
 
   it("новый блок из кода доезжает до сохранённой раскладки", () => {
     const saved = normalizeLayout({ order: ["ops", "money"], hidden: [] });
@@ -138,9 +138,19 @@ describe("раскладка блоков", () => {
     );
   });
 
-  it("месячный блок показывается только на периоде «Месяц»", () => {
-    expect(availableWidgets({ ...ctx, period: "week" }).map((w) => w.id)).not.toContain("month");
-    expect(availableWidgets(ctx).map((w) => w.id)).toContain("month");
+  it("итоги на агрегате — на любом периоде", () => {
+    expect(availableWidgets({ ...ctx, period: "week" }).map((w) => w.id)).toContain("month");
+    expect(availableWidgets({ ...ctx, period: "today" }).map((w) => w.id)).toContain("month");
+  });
+
+  it("на прежних ручках: «Месяц целиком» только на «Месяце» и с reports.view, услуг нет", () => {
+    const legacy = { ...ctx, aggregate: false };
+    expect(availableWidgets({ ...legacy, period: "week" }).map((w) => w.id)).not.toContain("month");
+    expect(availableWidgets(legacy).map((w) => w.id)).toContain("month");
+    const noReports = { ...legacy, can: (p: string | string[]) => !String(p).includes("reports") };
+    expect(availableWidgets(noReports).map((w) => w.id)).not.toContain("month");
+    expect(availableWidgets(legacy).map((w) => w.id)).not.toContain("services");
+    expect(availableWidgets(ctx).map((w) => w.id)).toContain("services");
   });
 
   it("без прав блок недоступен", () => {
