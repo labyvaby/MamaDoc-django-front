@@ -84,6 +84,7 @@ export function mapDjangoFullToRow(
     _djangoRole: d.role ?? null,
     _djangoSpecializations: d.specializations ?? [],
     _djangoOperationalBranches: d.operationalBranches ?? [],
+    _employment: d.employment ?? null,
     _fullDetailsLoaded: true,
   };
 }

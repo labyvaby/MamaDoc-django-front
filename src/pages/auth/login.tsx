@@ -29,6 +29,7 @@ import {
 import { applyMeResponse, refreshAuthContext, usePermissions } from "../../hooks/usePermissions";
 import { markBranchPickerPending } from "../../components/auth/BranchPickerDialog";
 import { ApiError } from "../../api/client";
+import { clearAccessEnded, peekAccessEnded } from "../../api/accessEnded";
 import AuthLayout from "../../components/auth/AuthLayout";
 import AuthCard from "../../components/auth/AuthCard";
 import OtpCodeInput from "../../components/auth/OtpCodeInput";
@@ -194,7 +195,9 @@ const LoginPage: React.FC = () => {
 
   // -- COMMON --
   const [loading, setLoading] = React.useState(false);
-  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  // Сюда уводит закрытая из-за увольнения сессия — показываем почему.
+  const [errorMsg, setErrorMsg] = React.useState<string | null>(() => peekAccessEnded());
+  React.useEffect(() => clearAccessEnded(), []);
   const [infoMsg, setInfoMsg] = React.useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = React.useState(0);
   const [redirecting, setRedirecting] = React.useState(false);
