@@ -1,22 +1,8 @@
 import dayjs from "dayjs";
-import type { QueryClient } from "@tanstack/react-query";
 
-import { getPayrollReport } from "../../api/payroll";
-import { getBranches } from "../../api/organization";
-import type { ActiveScope } from "../../hooks/useActiveScope";
-import { buildAttentionItems, ATTENTION_GROUPS } from "./attention";
-import { previousRange, resolvePeriod, sumDayCounts, type PeriodKey, type PeriodRange } from "./period";
+import type { DashboardData } from "./DashboardData";
+import { attentionInputFromSections, buildAttentionItems, ATTENTION_GROUPS } from "./attention";
 import { planProgress } from "./revenuePlan";
-import {
-  availabilityTodayQuery,
-  cashboxSummaryQuery,
-  dayCountsQuery,
-  dealsSummaryQuery,
-  monthlyReportQuery,
-  pendingBookingsQuery,
-  reviewStatsQuery,
-  tasksSummaryQuery,
-} from "./queries";
 
 /**
  * Выгрузка сводки в .xlsx.
@@ -25,121 +11,35 @@ import {
  * в момент выгрузки; в основной бандл её тянуть незачем (тот же приём, что в
  * платёжной ведомости `features/payroll/statement`).
  *
- * Данные берутся через `queryClient.fetchQuery` с теми же описаниями запросов,
- * что у экрана (`queries.ts`): свежий кэш отдаётся сразу, поэтому в файле ровно
- * те цифры, что на экране, а выгрузка не повторяет два десятка запросов. Состав
- * файла не зависит от того, какие блоки пользователь спрятал — только от прав.
+ * Данные — те же, что на экране (`DashboardData`): в файле ровно те цифры, что
+ * видит пользователь, и выгрузка не делает ни одного запроса. Состав файла не
+ * зависит от того, какие блоки спрятаны — только от того, что отдал сервер
+ * (раздел без права он не отдаёт).
  */
 
 const num = (v: string | number | null | undefined): number => Number(v ?? 0);
 
 export interface DashboardExportInput {
-  queryClient: QueryClient;
-  range: PeriodRange;
-  periodKey: PeriodKey;
-  scope: ActiveScope;
+  data: DashboardData;
   organizationName: string;
   branchName?: string;
   /** План выручки на текущий месяц для этого скоупа (см. revenuePlan.ts). */
   plan?: number | null;
-  /** Что пользователю разрешено видеть — лишние разделы в файл не попадают. */
-  allow: {
-    money: boolean;
-    appointments: boolean;
-    reports: boolean;
-    tasks: boolean;
-    reviews: boolean;
-    branches: boolean;
-    bookings: boolean;
-    deals: boolean;
-    schedule: boolean;
-    payroll: boolean;
-  };
 }
 
 type Row = [string, string | number | null, string?];
 
-/** Прошлый календарный месяц целиком — база для темпа. */
-function previousFullMonth(now: dayjs.Dayjs): PeriodRange {
-  const m = now.subtract(1, "month");
-  return {
-    dateFrom: m.startOf("month").format("YYYY-MM-DD"),
-    dateTo: m.endOf("month").format("YYYY-MM-DD"),
-    month: m.format("YYYY-MM"),
-    label: m.format("MMMM"),
-  };
-}
-
 /** Собирает строки отчёта; вынесено из записи файла, чтобы читалось линейно. */
-async function collectRows(input: DashboardExportInput): Promise<Row[]> {
-  const { queryClient: qc, range, periodKey, scope, allow } = input;
-  const prev = previousRange(range, periodKey);
-  const monthRange = resolvePeriod("month", dayjs(range.dateTo));
-  const lastMonth = previousFullMonth(dayjs(range.dateTo));
+export function collectRows(input: DashboardExportInput): Row[] {
+  const { data } = input;
+  const { range, prev, sections } = data;
+  const { money, month, appointments: appts, bookings, tasks, deals, reviews, staff, load } =
+    sections;
   const rows: Row[] = [];
   const blank = () => rows.push([" ", null]);
 
-  // Всё независимое — параллельно: раздел без прав не запрашивается вовсе.
-  const skip = Promise.resolve(undefined);
-  const [
-    cash,
-    cashPrev,
-    cashMonth,
-    cashLastMonth,
-    counts,
-    countsPrev,
-    report,
-    tasks,
-    reviews,
-    bookingsPending,
-    bookingsOverdue,
-    deals,
-    availability,
-  ] = await Promise.all([
-    allow.money ? qc.fetchQuery(cashboxSummaryQuery(scope, range)) : skip,
-    allow.money ? qc.fetchQuery(cashboxSummaryQuery(scope, prev)) : skip,
-    allow.money ? qc.fetchQuery(cashboxSummaryQuery(scope, monthRange)) : skip,
-    allow.money ? qc.fetchQuery(cashboxSummaryQuery(scope, lastMonth)) : skip,
-    allow.appointments ? qc.fetchQuery(dayCountsQuery(scope, range)) : skip,
-    allow.appointments ? qc.fetchQuery(dayCountsQuery(scope, prev)) : skip,
-    allow.reports ? qc.fetchQuery(monthlyReportQuery(scope, monthRange.month)) : skip,
-    allow.tasks ? qc.fetchQuery(tasksSummaryQuery(scope)) : skip,
-    allow.reviews ? qc.fetchQuery(reviewStatsQuery(scope, range)) : skip,
-    allow.bookings ? qc.fetchQuery(pendingBookingsQuery(scope, "pending")) : skip,
-    allow.bookings ? qc.fetchQuery(pendingBookingsQuery(scope, "overdue")) : skip,
-    allow.deals ? qc.fetchQuery(dealsSummaryQuery(scope)) : skip,
-    allow.schedule ? qc.fetchQuery(availabilityTodayQuery(scope)) : skip,
-  ]);
-
   // ── Требует внимания — первым, как на экране ──
-  const attention = buildAttentionItems({
-    periodLabel: range.label,
-    bookings:
-      bookingsPending && bookingsOverdue
-        ? { pending: bookingsPending.count ?? 0, overdue: bookingsOverdue.count ?? 0 }
-        : undefined,
-    tasks: tasks ? { overdue: tasks.overdue, awaitingApproval: tasks.awaitingApproval } : undefined,
-    deals: deals
-      ? { overdueActions: deals.overdueActionsCount, todayActions: deals.todayActionsCount }
-      : undefined,
-    reviews: reviews ? { negative: reviews.negativeCount } : undefined,
-    cash: cash
-      ? {
-          netCashFlow: num(cash.netCashFlow),
-          grossIncome: num(cash.grossIncome),
-          refundedTotal: num(cash.refundedTotal),
-          refundCount: cash.refundCount,
-        }
-      : undefined,
-    month: report
-      ? {
-          debtSum: (report.daily ?? []).reduce((acc, d) => acc + num(d.debtSum), 0),
-        }
-      : undefined,
-    staff: availability
-      ? { total: availability.overallEmployeeCount, free: availability.overallFreeEmployeeCount }
-      : undefined,
-  });
+  const attention = buildAttentionItems(attentionInputFromSections(sections, range.label));
   rows.push(["Требует внимания", null]);
   if (attention.length === 0) rows.push(["Всё под контролем", "—"]);
   for (const g of ATTENTION_GROUPS) {
@@ -150,59 +50,95 @@ async function collectRows(input: DashboardExportInput): Promise<Row[]> {
   blank();
 
   // ── Выручка и темп месяца ──
-  if (cash && cashPrev && cashMonth) {
-    const income = num(cash.netIncome);
-    const monthIncome = num(cashMonth.netIncome);
-    const day = dayjs(monthRange.dateTo);
-    const elapsed = day.date();
-    const inMonth = day.daysInMonth();
-    const pace = elapsed >= 3 && monthIncome > 0 ? (monthIncome / elapsed) * inMonth : null;
-
+  if (money) {
+    const income = num(money.netIncome);
     rows.push(["Выручка", null]);
-    rows.push([`Выручка ${range.label}`, income, `${prev.label}: ${num(cashPrev.netIncome)}`]);
-    rows.push(["С начала месяца", monthIncome, `день ${elapsed} из ${inMonth}`]);
-    if (pace != null) rows.push(["По темпу к концу месяца", Math.round(pace), "линейная оценка"]);
-    if (cashLastMonth) rows.push([`${lastMonth.label} целиком`, num(cashLastMonth.netIncome)]);
-    if (input.plan) {
-      const p = planProgress(input.plan, monthIncome, elapsed, inMonth, pace);
-      rows.push(["План на месяц", input.plan, `выполнено ${Math.round(p.done * 100)}%`]);
-      rows.push([
-        "Нужно в день до конца месяца",
-        p.perDayNeeded == null ? "—" : Math.round(p.perDayNeeded),
-        p.remaining === 0 ? "план выполнен" : `осталось ${Math.round(p.remaining)}`,
-      ]);
+    rows.push([
+      `Выручка ${range.label}`,
+      income,
+      money.baseline ? `${prev.label}: ${num(money.baseline.netIncome)}` : undefined,
+    ]);
+    if (month) {
+      const monthIncome = num(month.netIncome);
+      const elapsed = month.daysElapsed;
+      const inMonth = month.daysInMonth;
+      const pace = elapsed >= 3 && monthIncome > 0 ? (monthIncome / elapsed) * inMonth : null;
+      rows.push(["С начала месяца", monthIncome, `день ${elapsed} из ${inMonth}`]);
+      if (pace != null) rows.push(["По темпу к концу месяца", Math.round(pace), "линейная оценка"]);
+      if (month.previousMonth) {
+        rows.push([
+          `${dayjs(month.previousMonth.dateFrom).format("MMMM")} целиком`,
+          num(month.previousMonth.netIncome),
+        ]);
+      }
+      if (input.plan) {
+        const p = planProgress(input.plan, monthIncome, elapsed, inMonth, pace);
+        rows.push(["План на месяц", input.plan, `выполнено ${Math.round(p.done * 100)}%`]);
+        rows.push([
+          "Нужно в день до конца месяца",
+          p.perDayNeeded == null ? "—" : Math.round(p.perDayNeeded),
+          p.remaining === 0 ? "план выполнен" : `осталось ${Math.round(p.remaining)}`,
+        ]);
+      }
     }
     rows.push([
       "Средний чек",
-      cash.paymentCount > 0 ? Math.round(income / cash.paymentCount) : 0,
-      `оплат: ${cash.paymentCount}`,
+      money.paymentCount > 0 ? Math.round(income / money.paymentCount) : 0,
+      `оплат: ${money.paymentCount}`,
     ]);
     blank();
 
     rows.push([`Движение денег (${range.label})`, null]);
-    rows.push(["+ Оплаты", num(cash.grossIncome), `наличные ${num(cash.cashIncome)} · безнал ${num(cash.cardIncome)}`]);
-    rows.push(["− Возвраты", num(cash.refundedTotal), `операций: ${cash.refundCount}`]);
-    rows.push(["+ Продажи товаров", num(cash.salesTotal), `продаж: ${cash.saleCount}`]);
-    rows.push(["− Расходы", num(cash.totalExpenses), `операций: ${cash.expenseCount}`]);
-    rows.push(["− Закупки", num(cash.supplyTotal)]);
-    rows.push(["= Осталось", num(cash.netCashFlow)]);
-    if (num(cash.insuranceIncome) > 0) {
-      rows.push(["Страховые (вне итогов)", num(cash.insuranceIncome)]);
+    rows.push([
+      "+ Оплаты",
+      num(money.grossIncome),
+      `наличные ${num(money.cashIncome)} · безнал ${num(money.cardIncome)}`,
+    ]);
+    rows.push(["− Возвраты", num(money.refundedTotal), `операций: ${money.refundCount}`]);
+    rows.push(["+ Продажи товаров", num(money.salesTotal), `продаж: ${money.saleCount}`]);
+    rows.push(["− Расходы", num(money.totalExpenses), `операций: ${money.expenseCount}`]);
+    rows.push(["− Закупки", num(money.supplyTotal)]);
+    rows.push(["= Осталось", num(money.netCashFlow)]);
+    if (num(money.insuranceIncome) > 0) {
+      rows.push(["Страховые (вне итогов)", num(money.insuranceIncome)]);
+    }
+    if (money.unpaidPastCount != null) {
+      rows.push([
+        "Не получено за прошедшие визиты",
+        num(money.unpaidPastAmount),
+        `визитов: ${money.unpaidPastCount}`,
+      ]);
+    }
+    if (money.debtOutstanding != null) {
+      rows.push(["Долг пациентов на сейчас", num(money.debtOutstanding), "все прошедшие визиты"]);
     }
     blank();
   }
 
   // ── Записи ──
-  if (counts && countsPrev) {
+  if (appts) {
+    const b = appts.baseline;
     rows.push(["Записи", null]);
     rows.push([
       `Всего записей ${range.label}`,
-      sumDayCounts(counts),
-      `${prev.label}: ${sumDayCounts(countsPrev)}`,
+      appts.total,
+      b ? `${prev.label}: ${b.total}` : undefined,
     ]);
-    if (availability) {
-      const total = availability.overallEmployeeCount;
-      const free = availability.overallFreeEmployeeCount;
+    if (appts.visits != null) {
+      rows.push(["Визитов (без отмен и неявок)", appts.visits, b ? `${prev.label}: ${b.visits}` : undefined]);
+      rows.push(["Оплачено", appts.paid ?? 0]);
+      const by = appts.canceledBy;
+      rows.push([
+        "Отмены",
+        appts.canceled ?? 0,
+        by ? `пациент ${by.patient} · клиника ${by.clinic} · неизвестно ${by.unknown}` : undefined,
+      ]);
+      rows.push(["Неявки", appts.noShow ?? 0]);
+      rows.push(["Повторные визиты, %", num(appts.repeatShare), `визитов: ${appts.repeatVisits ?? 0}`]);
+    }
+    if (load) {
+      const total = load.overallEmployeeCount;
+      const free = load.overallFreeEmployeeCount;
       rows.push([
         "Загрузка сегодня, %",
         total > 0 ? Math.round(((total - free) / total) * 100) : "—",
@@ -212,17 +148,25 @@ async function collectRows(input: DashboardExportInput): Promise<Row[]> {
     blank();
   }
 
-  // ── Месяц целиком ──
-  if (report) {
-    const s = report.summary;
-    const debt = (report.daily ?? []).reduce((acc, d) => acc + num(d.debtSum), 0);
-    rows.push([`Месяц целиком (${dayjs(monthRange.month + "-01").format("MMMM YYYY")})`, null]);
-    rows.push(["Приёмов", s.apptTotalCount]);
-    rows.push(["Процедур", s.procTotalCount]);
-    rows.push(["Оплачено приёмов", s.apptPaidCount]);
-    rows.push(["Отменено", s.apptCancelledCount]);
-    rows.push(["Скидки", num(s.discountSum), `приёмов со скидкой: ${s.discountedCount}`]);
-    rows.push(["Долги", debt, "сумма колонки «Долг» месячного отчёта"]);
+  if (appts?.topServices?.length) {
+    rows.push([`Что продаётся — топ услуг по выручке (${range.label})`, null]);
+    for (const s of appts.topServices) {
+      rows.push([s.serviceName, num(s.amount), `визитов: ${s.count} · доля ${num(s.share)}%`]);
+    }
+    blank();
+  }
+
+  if (bookings) {
+    rows.push(["Онлайн-запись", null]);
+    rows.push(["Ждут подтверждения (сейчас)", bookings.pendingCount]);
+    rows.push(["Из них просрочено", bookings.overdueCount]);
+    if (bookings.total != null) {
+      rows.push([
+        `Брони на даты периода`,
+        bookings.total,
+        `в приём ${bookings.materialized ?? 0} · оплачено ${bookings.paid ?? 0} · конверсия ${num(bookings.conversionRate)}%`,
+      ]);
+    }
     blank();
   }
 
@@ -249,26 +193,27 @@ async function collectRows(input: DashboardExportInput): Promise<Row[]> {
     rows.push([`Отзывы (${range.label})`, null]);
     rows.push(["Запросов отправлено", reviews.sent]);
     rows.push(["Ответов", reviews.answered]);
-    rows.push(["Средняя оценка", reviews.sent > 0 ? num(reviews.avgRating) : "—"]);
-    rows.push(["Негативных", reviews.negativeCount]);
+    rows.push(["Средняя оценка", reviews.sent > 0 ? num(reviews.averageRating) : "—"]);
+    rows.push(["Негативных", reviews.negative]);
     blank();
   }
 
   // ── Люди ──
-  if (allow.payroll) {
-    const month = dayjs(monthRange.month + "-01");
-    const payroll = await getPayrollReport({
-      year: month.year(),
-      month: month.month() + 1,
-      organizationId: scope.organizationId,
-      branchId: scope.branchId,
-    });
-    const top = [...(payroll.rows ?? [])]
+  if (staff?.topByRevenue?.length) {
+    rows.push([`Сотрудники — топ по выручке (${range.label})`, null]);
+    for (const r of staff.topByRevenue) {
+      rows.push([r.employeeName, num(r.amount), `визитов: ${r.count} · доля ${num(r.share)}%`]);
+    }
+    blank();
+  }
+  if (staff?.payroll) {
+    const top = [...staff.payroll.rows]
       .filter((r) => r.appointmentsCount > 0)
       .sort((a, b) => b.appointmentsCount - a.appointmentsCount)
       .slice(0, 10);
     if (top.length) {
-      rows.push([`Сотрудники — топ по приёмам (${month.format("MMMM")})`, null]);
+      const m = dayjs(`${staff.payroll.year}-${String(staff.payroll.month).padStart(2, "0")}-01`);
+      rows.push([`Сотрудники — топ по приёмам (${m.format("MMMM")})`, null]);
       for (const r of top) {
         rows.push([r.fullName, r.appointmentsCount, `начислено ${num(r.earnings)}`]);
       }
@@ -277,31 +222,30 @@ async function collectRows(input: DashboardExportInput): Promise<Row[]> {
   }
 
   // ── Филиалы ──
-  if (allow.branches && allow.money) {
-    const branches = (await getBranches(scope.organizationId)).slice(0, 8);
-    if (branches.length > 1) {
-      const summaries = await Promise.all(
-        branches.map((b) => qc.fetchQuery(cashboxSummaryQuery({ ...scope, branchId: b.id }, range))),
-      );
-      rows.push([`Филиалы (${range.label})`, null]);
-      branches
-        .map((b, i) => ({ b, s: summaries[i] }))
-        .sort((x, y) => num(y.s.netIncome) - num(x.s.netIncome))
-        .forEach(({ b, s }) => {
-          rows.push([
-            b.name,
-            num(s.netIncome),
-            `оплат: ${s.paymentCount} · осталось после расходов ${num(s.netCashFlow)}`,
-          ]);
-        });
-    }
+  if (data.branches && data.branches.length > 1) {
+    rows.push([`Филиалы (${range.label})`, null]);
+    [...data.branches]
+      .sort((x, y) => num(y.money.netIncome) - num(x.money.netIncome))
+      .forEach((b) => {
+        const base = b.money.baseline;
+        rows.push([
+          b.branchName,
+          num(b.money.netIncome),
+          [
+            `оплат: ${b.money.paymentCount}`,
+            base ? `${prev.label}: ${num(base.netIncome)}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        ]);
+      });
   }
 
   return rows;
 }
 
 export async function exportDashboardXlsx(input: DashboardExportInput): Promise<void> {
-  const rows = await collectRows(input);
+  const rows = collectRows(input);
 
   const ExcelJS = await import("exceljs");
   const wb = new ExcelJS.Workbook();
@@ -317,7 +261,7 @@ export async function exportDashboardXlsx(input: DashboardExportInput): Promise<
   const title = ws.addRow([`Сводка — ${scopeLine}`]);
   title.font = { bold: true, size: 14 };
   ws.addRow([
-    `Период: ${input.range.dateFrom} — ${input.range.dateTo} (${input.range.label})`,
+    `Период: ${input.data.range.dateFrom} — ${input.data.range.dateTo} (${input.data.range.label})`,
   ]);
   ws.addRow([`Выгружено: ${dayjs().format("DD.MM.YYYY HH:mm")}`]);
   ws.addRow([]);
@@ -337,7 +281,7 @@ export async function exportDashboardXlsx(input: DashboardExportInput): Promise<
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `Сводка ${input.range.dateFrom}—${input.range.dateTo}.xlsx`;
+  a.download = `Сводка ${input.data.range.dateFrom}—${input.data.range.dateTo}.xlsx`;
   document.body.appendChild(a);
   a.click();
   a.remove();
