@@ -52,6 +52,10 @@ import FaceCaptureDrawer from "./components/FaceCaptureDrawer";
 import PatientOldConclusionsPanel from "./components/PatientOldConclusionsPanel";
 import OldConclusionDetailsCard from "./components/OldConclusionDetailsCard";
 import { useOldConclusions } from "./useOldConclusions";
+import { PatientRegistryBlock } from "../../components/patients/PatientRegistryBlock";
+import { IntakeWizard } from "../registry/intake/IntakeWizard";
+import type { ExistingPerson } from "../registry/intake/intakeState";
+import { toExistingPerson } from "../registry/registryConstants";
 import type { OldConclusion } from "./useOldConclusions";
 
 // ── Main page ────────────────────────────────────────────────────────────────
@@ -77,6 +81,7 @@ const DjangoPatientsPage: React.FC = () => {
     loading: permLoading,
     activeBranch,
     activeMembership,
+    activeOrganization,
   } = usePermissions();
 
   const canView = isSuperAdmin() || hasPermission("patients.view");
@@ -88,6 +93,8 @@ const DjangoPatientsPage: React.FC = () => {
   const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
   const canViewPrograms = canAccess("enrollments.view");
   const canManageEnrollments = canAccess("enrollments.manage");
+  // Учёт детей — только клиника: у салона и отеля нет педиатрического сопровождения.
+  const isClinic = activeOrganization?.vertical === "clinic";
   // canAccess (не hasPermission) — так панель истории анализов исчезает и без
   // права, и при выключенном у организации модуле lab, одной проверкой
   // (usePermissions().canAccess уже сверяет оба условия по moduleMapping.ts).
@@ -110,6 +117,9 @@ const DjangoPatientsPage: React.FC = () => {
   }, [search]);
 
   const [selected, setSelected] = React.useState<DjangoPatient | null>(null);
+  // Мастер постановки получает снимок карточки на момент открытия: список
+  // пациентов обновляется и подменяет объект selected, мастер бы сбросился.
+  const [intakePatient, setIntakePatient] = React.useState<ExistingPerson | null>(null);
 
   // Архивные заключения загружаются по телефону и id выбранной карточки.
   // Телефон сохраняет совместимость с историей старых систем, а id покрывает
@@ -405,6 +415,18 @@ const DjangoPatientsPage: React.FC = () => {
       onMerge={canUpdate ? handleMerge : undefined}
       onFace={canUpdate ? handleFace : undefined}
       showProgramStatus={canViewPrograms}
+      extraSections={
+        selected && isClinic && canViewPrograms ? (
+          <PatientRegistryBlock
+            patient={selected}
+            scope={scope}
+            canManageEnrollments={canManageEnrollments}
+            canEditPatients={canUpdate}
+            canCreatePatients={canCreate}
+            onIntake={canManageEnrollments ? () => setIntakePatient(toExistingPerson(selected)) : undefined}
+          />
+        ) : undefined
+      }
       onOpenProgram={
         // The first enrollment is created before activeCount becomes positive.
         // Managers therefore need to reach the book even for a new patient.
@@ -728,6 +750,23 @@ const DjangoPatientsPage: React.FC = () => {
           </Box>
         )}
       </Drawer>
+
+      {/* Постановка ребёнка на учёт из карточки */}
+      <IntakeWizard
+        open={intakePatient != null}
+        scope={scope}
+        initialPatient={intakePatient}
+        onClose={() => setIntakePatient(null)}
+        onDone={() => {
+          const id = intakePatient?.id;
+          setIntakePatient(null);
+          if (id != null) {
+            void getPatient(id).then((fresh) => {
+              setSelected((current) => (current?.id === fresh.id ? fresh : current));
+            });
+          }
+        }}
+      />
 
       {/* Объединение дублей пациентов */}
       <MergePatientDrawer

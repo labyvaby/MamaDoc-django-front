@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type { CancelReason, EnrollmentTerm, PaymentState } from "./registry";
 import { Scope, scopeParams } from "./scope";
 
 export type ProgramState = "draft" | "active" | "archived";
@@ -24,6 +25,11 @@ export interface Program {
   isEnabled: boolean;
   grantsVip: boolean;
   settings: Record<string, unknown>;
+  /** Услуга-взнос: медицинская программа с ней — учётная. */
+  feeServiceId: number | null;
+  feeServiceName: string | null;
+  defaultTermMonths: number;
+  memberDiscountPercent: number;
   modules: Array<EffectiveProgramModule & { isEnabled: boolean }>;
   createdAt: string;
   updatedAt: string;
@@ -61,8 +67,43 @@ export interface ProgramEnrollment {
   isEffectivelyActive: boolean;
   isVip: boolean;
   enabledModules: EffectiveProgramModule[];
+  responsibleEmployee: { id: number; fullName: string } | null;
+  onboardingCompletedAt: string | null;
+  cancelReason: CancelReason | "";
+  cancelComment: string;
+  terms: EnrollmentTerm[];
+  currentTerm: EnrollmentTerm | null;
+  paymentState: PaymentState;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Учётная программа: медицинская и продаётся через услугу-взнос. */
+export function isRegistryProgram(program: Pick<Program, "businessDomain" | "feeServiceId">): boolean {
+  return program.businessDomain === "medical" && program.feeServiceId != null;
+}
+
+export type ProgramUpdatePayload = Partial<
+  Pick<
+    Program,
+    | "name"
+    | "description"
+    | "status"
+    | "isEnabled"
+    | "grantsVip"
+    | "settings"
+    | "feeServiceId"
+    | "defaultTermMonths"
+    | "memberDiscountPercent"
+  >
+>;
+
+export function updateProgram(scope: Scope, programId: number, payload: ProgramUpdatePayload): Promise<Program> {
+  const query = scopeParams(scope).toString();
+  return apiRequest<Program>(`/programs/${programId}/${query ? `?${query}` : ""}`, {
+    method: "PATCH",
+    body: payload,
+  });
 }
 
 export interface ProgramEnrollmentList {

@@ -1,0 +1,268 @@
+{
+  "page": {
+    "title": "Учёт",
+    "subtitle": "{{patient.nomPl, capitalize}} на сопровождении: кто ждёт осмотра, у кого не оплачено, у кого истекает срок",
+    "intake": "Поставить на учёт",
+    "search": "ФИО, номер карты или телефон",
+    "mine": "Мои",
+    "empty": "В этой вкладке пусто",
+    "branch": "{{branch.nom, capitalize}}",
+    "allBranches": "Все",
+    "ageFrom": "Возраст от, мес.",
+    "ageTo": "до, мес."
+  },
+  "tabs": {
+    "active": "На учёте",
+    "onboarding": "Ожидают осмотра",
+    "unpaid": "Не оплачено",
+    "expiring": "Истекают",
+    "cancelled": "Сняты"
+  },
+  "columns": {
+    "patient": "{{patient.nom, capitalize}}",
+    "contact": "Контакт",
+    "program": "Программа",
+    "doctor": "{{specialist.nom, capitalize}}",
+    "term": "Срок",
+    "payment": "Оплата",
+    "lastTouch": "Последнее касание",
+    "actions": "Действия"
+  },
+  "payment": {
+    "none": "Нет периода",
+    "unpaid": "Не оплачено",
+    "partial": "Частично",
+    "paid": "Оплачено",
+    "due": "Остаток {{amount}} сом"
+  },
+  "status": {
+    "onboardingPending": "Ожидает осмотра",
+    "cancelled": "Снят: {{reason}}",
+    "paused": "Приостановлен",
+    "lapsed": "Срок истёк"
+  },
+  "cancelReasons": {
+    "moved": "Выбыл",
+    "refused": "Отказ",
+    "aged_out": "Исполнилось 18",
+    "transferred": "Другая клиника",
+    "other": "Другое"
+  },
+  "relations": {
+    "mother": "Мама",
+    "father": "Папа",
+    "guardian": "Опекун",
+    "grandmother": "Бабушка",
+    "grandfather": "Дедушка",
+    "other": "Другое"
+  },
+  "channels": {
+    "call": "Звонок",
+    "sms": "SMS",
+    "whatsapp": "WhatsApp",
+    "in_person": "Лично",
+    "note": "Заметка"
+  },
+  "actions": {
+    "pay": "Принять оплату",
+    "renew": "Продлить",
+    "markExamined": "Осмотр проведён",
+    "unmarkExamined": "Снять отметку осмотра",
+    "book": "Записать на {{visit.acc}}",
+    "call": "Отметить звонок",
+    "changeDoctor": "Сменить {{specialist.acc}}",
+    "cancel": "Снять с учёта",
+    "openBook": "Открыть книжку",
+    "menu": "Действия"
+  },
+  "wizard": {
+    "title": "Постановка на учёт",
+    "steps": {
+      "child": "{{patient.nom, capitalize}}",
+      "representatives": "Представители",
+      "program": "Программа и {{specialist.nom}}",
+      "payment": "Оплата",
+      "documents": "Документы"
+    },
+    "child": {
+      "existing": "Уже есть в базе",
+      "new": "Новый",
+      "search": "Найти по ФИО или телефону",
+      "fullName": "ФИО",
+      "fullNameRequired": "Укажите ФИО",
+      "phone": "Телефон",
+      "phoneHint": "Можно не заполнять — возьмём телефон основного контакта",
+      "birthDate": "Дата рождения",
+      "birthDateRequired": "Для постановки нужна дата рождения",
+      "gender": "Пол",
+      "genderRequired": "Для постановки нужен пол",
+      "male": "Мальчик",
+      "female": "Девочка",
+      "cardNumber": "Номер карты",
+      "cardNumberHint": "Предложен следующий свободный, можно изменить",
+      "pickRequired": "Выберите карточку из базы"
+    },
+    "representatives": {
+      "add": "Добавить представителя",
+      "remove": "Убрать",
+      "existing": "Найти в базе",
+      "new": "Новый",
+      "search": "Телефон или ФИО",
+      "fullName": "ФИО",
+      "phone": "Телефон",
+      "relation": "Кто ребёнку",
+      "legal": "Законный представитель",
+      "primary": "Основной контакт",
+      "notify": "Получает напоминания",
+      "joinFamily": "Включить в семью ребёнка",
+      "needLegal": "Нужен хотя бы один законный представитель с телефоном",
+      "onePrimary": "Основной контакт может быть только один",
+      "fillPerson": "Укажите ФИО и телефон или выберите карточку",
+      "empty": "Добавьте маму, папу или опекуна"
+    },
+    "program": {
+      "program": "Программа",
+      "programRequired": "Выберите программу",
+      "branch": "{{branch.nom, capitalize}}",
+      "branchRequired": "Выберите {{branch.acc}}",
+      "doctor": "Закреплённый {{specialist.nom}}",
+      "noDoctor": "Не назначен",
+      "term": "Срок, мес.",
+      "termInvalid": "Срок — от 1 до 60 месяцев",
+      "startsOn": "Начало периода",
+      "startsOnHint": "Для детей, которые уже наблюдаются, можно указать прошлую дату",
+      "price": "Взнос, сом",
+      "priceHint": "По умолчанию — цена услуги «{{service}}»",
+      "noPrograms": "Нет учётных программ: задайте услугу-взнос в настройках программы"
+    },
+    "payment": {
+      "now": "Принять сейчас",
+      "later": "Оплата позже",
+      "laterHint": "Ребёнок встанет на учёт, период будет во вкладке «Не оплачено»",
+      "cash": "Наличные, сом",
+      "card": "Карта, сом",
+      "cashlessMethod": "Способ безнала",
+      "total": "К оплате: {{amount}} сом",
+      "overpaid": "Сумма больше взноса",
+      "empty": "Введите сумму или выберите «Оплата позже»",
+      "noZReport": "Оплата попадёт в «Доходы» (статья «Программы»), в кассовую смену — нет"
+    },
+    "documents": {
+      "intro": "{{patient.nom, capitalize}} на учёте. Напечатайте договор и согласия или загрузите подписанные скан-копии.",
+      "print": "Напечатать",
+      "upload": "Загрузить подписанный",
+      "skip": "Готово",
+      "kind": "Вид документа",
+      "title": "Название",
+      "file": "Файл",
+      "chooseFile": "Выбрать файл",
+      "signedOn": "Дата подписания",
+      "signedBy": "Подписал",
+      "noTemplates": "Бланки не настроены или нет права их видеть — документы можно загрузить позже",
+      "uploaded": "Документ загружен",
+      "list": "Загружено",
+      "kinds": {
+        "contract": "Договор",
+        "consent_treatment": "Согласие на вмешательство",
+        "consent_personal_data": "Согласие на персональные данные",
+        "birth_certificate": "Свидетельство о рождении",
+        "other": "Другое"
+      }
+    },
+    "finish": "Поставить на учёт",
+    "done": "{{patient.nom, capitalize}} поставлен на учёт",
+    "back": "Назад",
+    "next": "Далее",
+    "close": "Закрыть"
+  },
+  "pay": {
+    "title": "Оплата периода",
+    "term": "Период {{from}} — {{to}}",
+    "price": "Взнос {{amount}} сом",
+    "paid": "Оплачено {{amount}} сом",
+    "cash": "Наличные, сом",
+    "card": "Карта, сом",
+    "cashlessMethod": "Способ безнала",
+    "paidOn": "Дата оплаты",
+    "submit": "Принять",
+    "done": "Оплата принята",
+    "history": "Платежи",
+    "void": "Аннулировать",
+    "voidReason": "Причина аннулирования",
+    "voided": "Аннулирован: {{reason}}",
+    "voidDone": "Оплата аннулирована",
+    "noTerm": "У подключения нет периода — сначала продлите",
+    "nothingDue": "Период оплачен полностью"
+  },
+  "renew": {
+    "title": "Продлить учёт",
+    "months": "Срок, мес.",
+    "startsOn": "Начало",
+    "startsOnHint": "Пусто — сразу после текущего периода или сегодня, если он истёк",
+    "price": "Взнос, сом",
+    "priceHint": "Пусто — цена услуги-взноса",
+    "submit": "Продлить",
+    "done": "Период добавлен",
+    "terms": "Периоды",
+    "delete": "Удалить ошибочный период",
+    "deleted": "Период удалён"
+  },
+  "cancel": {
+    "title": "Снять с учёта",
+    "reason": "Причина",
+    "comment": "Комментарий",
+    "commentRequired": "Для причины «Другое» нужен комментарий",
+    "submit": "Снять",
+    "done": "Снят с учёта"
+  },
+  "doctor": {
+    "title": "Сменить {{specialist.acc}}",
+    "field": "{{specialist.nom, capitalize}}",
+    "none": "Не назначен",
+    "submit": "Сохранить",
+    "done": "{{specialist.nom, capitalize}} изменён"
+  },
+  "onboarding": {
+    "done": "Осмотр отмечен",
+    "undone": "Отметка осмотра снята"
+  },
+  "interaction": {
+    "title": "Касание",
+    "channel": "Канал",
+    "outcome": "Результат",
+    "subject": "Тема",
+    "notes": "Заметка",
+    "submit": "Сохранить",
+    "done": "Касание записано",
+    "outcomes": {
+      "answered": "Связались",
+      "no_answer": "Не ответил",
+      "callback": "Перезвонить",
+      "scheduled": "Записан",
+      "informed": "Проинформирован"
+    }
+  },
+  "card": {
+    "onRegistry": "На учёте: {{program}}",
+    "until": "до {{date}}",
+    "doctor": "{{specialist.nom, capitalize}}: {{name}}",
+    "representatives": "Представители",
+    "children": "Дети",
+    "addRepresentative": "Добавить",
+    "intake": "Поставить на учёт",
+    "primary": "Основной контакт",
+    "makePrimary": "Сделать основным контактом",
+    "notifyOn": "Получает напоминания",
+    "notifyOff": "Не получает напоминания",
+    "legal": "Законный представитель",
+    "remove": "Отвязать",
+    "removeConfirm": "Отвязать {{name}} от {{patient.gen}}? Карточки останутся.",
+    "openRegistry": "Открыть в учёте",
+    "emptyRepresentatives": "Представителей нет",
+    "cardNumber": "Карта № {{number}}"
+  },
+  "errors": {
+    "load": "Не удалось загрузить реестр",
+    "intake": "Не удалось поставить на учёт"
+  }
+}

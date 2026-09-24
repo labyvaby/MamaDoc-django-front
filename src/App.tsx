@@ -118,6 +118,7 @@ const DjangoReportsPage = lazy(() => import("./pages/reports/django/ReportsRoute
 const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
 const PatientProgramPage = lazy(() => import("./pages/patient-program"));
+const RegistryPage = lazy(() => import("./pages/registry"));
 const HotelIntegrationsPage = lazy(() => import("./dev/HotelIntegrationsPage"));
 const HotelKitchenPage = lazy(() => import("./dev/HotelKitchenPage"));
 const HotelRoomsPage = lazy(() => import("./dev/HotelRoomsPage"));
@@ -750,6 +751,16 @@ function App() {
                             >
                               <Suspense fallback={<LinearProgress />}>
                                 <PatientProgramPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="registry"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.registry}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <RegistryPage />
                               </Suspense>
                             </RequirePermission>
                           }

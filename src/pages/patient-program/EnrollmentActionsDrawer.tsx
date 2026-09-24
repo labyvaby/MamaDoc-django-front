@@ -13,6 +13,7 @@ import {
 import { AppButton } from "../../components/ui";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import { subtleBg } from "../../theme/uiHelpers";
+import { CancelEnrollmentDialog } from "../registry/dialogs/CancelEnrollmentDialog";
 
 interface EnrollmentActionsDrawerProps {
   open: boolean;
@@ -29,12 +30,14 @@ export const EnrollmentActionsDrawer: React.FC<EnrollmentActionsDrawerProps> = (
   onClose,
   onUpdated,
 }) => {
-  const [cancelArmed, setCancelArmed] = React.useState(false);
+  // Снятие — отдельным диалогом с причиной: для учётных программ бэк без
+  // причины не снимает, а в реестре причина видна во вкладке «Сняты».
+  const [cancelOpen, setCancelOpen] = React.useState(false);
   React.useEffect(() => {
-    if (open) setCancelArmed(false);
+    if (open) setCancelOpen(false);
   }, [open]);
   const mutation = useMutation({
-    mutationFn: (action: "pause" | "resume" | "cancel") => (
+    mutationFn: (action: "pause" | "resume") => (
       transitionProgramEnrollment(scope, enrollment.id, action)
     ),
     onSuccess: onUpdated,
@@ -71,11 +74,6 @@ export const EnrollmentActionsDrawer: React.FC<EnrollmentActionsDrawerProps> = (
       </Stack>
       <Divider />
       <Stack gap={1} sx={{ px: 2.5, py: 1.5 }}>
-        {cancelArmed && (
-          <Alert severity="warning">
-            Подтвердите отмену. История сохранится, но возобновить это подключение будет нельзя.
-          </Alert>
-        )}
         {enrollment.status === "active" && (
           <AppButton
             variant="outlined"
@@ -100,14 +98,25 @@ export const EnrollmentActionsDrawer: React.FC<EnrollmentActionsDrawerProps> = (
           <AppButton
             color="error"
             startIcon={<CancelOutlined />}
-            loading={mutation.isPending && mutation.variables === "cancel"}
-            onClick={() => cancelArmed ? mutation.mutate("cancel") : setCancelArmed(true)}
+            disabled={mutation.isPending}
+            onClick={() => setCancelOpen(true)}
           >
-            {cancelArmed ? "Подтвердить отмену" : "Отменить подключение"}
+            Отменить подключение
           </AppButton>
         )}
         <AppButton onClick={onClose} disabled={mutation.isPending}>Закрыть</AppButton>
       </Stack>
+      <CancelEnrollmentDialog
+        open={cancelOpen}
+        scope={scope}
+        enrollmentId={enrollment.id}
+        patientName={enrollment.patient.fullName}
+        onClose={() => setCancelOpen(false)}
+        onDone={(updated) => {
+          setCancelOpen(false);
+          onUpdated(updated);
+        }}
+      />
     </Drawer>
   );
 };

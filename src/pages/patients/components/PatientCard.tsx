@@ -166,6 +166,8 @@ type Props = {
   lastDateTime?: string;
   lastService?: string;
   lastComplaints?: string;
+  /** Дополнительные блоки после «Семьи» (учёт детей: подключение, представители). */
+  extraSections?: React.ReactNode;
 };
 
 const PatientCard: React.FC<Props> = ({
@@ -180,6 +182,7 @@ const PatientCard: React.FC<Props> = ({
   lastDateTime,
   lastService,
   lastComplaints,
+  extraSections,
 }) => {
   const { t } = useT("patients");
   const [menuAnchor, setMenuAnchor] = React.useState<null | HTMLElement>(null);
@@ -320,6 +323,9 @@ const PatientCard: React.FC<Props> = ({
                     <Typography variant="h6" fontWeight={700} noWrap sx={{ letterSpacing: -0.2, lineHeight: 1.25 }}>
                       {patient.fullName}
                     </Typography>
+                    {patient.cardNumber && (
+                      <Chip size="small" variant="outlined" label={`№ ${patient.cardNumber}`} sx={{ height: 24 }} />
+                    )}
                     {showProgramStatus && patient.programStatus?.isVip && (
                       <Chip
                         size="small"
@@ -402,6 +408,8 @@ const PatientCard: React.FC<Props> = ({
                   </Typography>
                 </FactBlock>
               )}
+
+              {extraSections}
 
               {/* Счёт пациента */}
               <FactBlock icon={<AccountBalanceWalletOutlined />} title={t("card.account")}>

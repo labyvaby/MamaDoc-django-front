@@ -55,12 +55,16 @@ export interface DjangoPatient {
   source: string | null;
   photoUrl: string | null;
   inn: string;
+  /** Номер карты: уникален в организации, пустая строка — не выдан. */
+  cardNumber?: string;
   isBlacklisted: boolean;
   blacklistReason: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
   programStatus?: PatientProgramStatus;
+  /** Кому звонить о ребёнке: основной контакт или первый законный представитель. */
+  primaryContact?: { id: number; fullName: string; phone: string; relation: string } | null;
 }
 
 // ── Payloads ───────────────────────────────────────────────────────────────
@@ -78,6 +82,7 @@ export interface CreatePatientPayload {
   notes?: string | null;
   source?: string | null;
   inn?: string;
+  cardNumber?: string;
   isBlacklisted?: boolean;
   blacklistReason?: string;
   isActive?: boolean;
