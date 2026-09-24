@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { canSubmit, initialForm, tagOptions, toSubmit } from "./rateForm";
+import {
+  canSubmit,
+  fiveStarSubmit,
+  initialForm,
+  tagOptions,
+  toSubmit,
+} from "./rateForm";
 import type { RateContext } from "../../api/reviews";
 
 const ctx: RateContext = {
@@ -92,5 +98,21 @@ describe("rateForm", () => {
       tags: ["Долго"],
       comment: "x",
     });
+  });
+});
+
+describe("fiveStarSubmit", () => {
+  it("5★ уходит без вопросов, врачу и администратору — те же 5", () => {
+    expect(fiveStarSubmit(ctx)).toEqual({
+      rating: 5,
+      doctorRating: 5,
+      registryRating: 5,
+      tags: [],
+      comment: "",
+    });
+    expect(
+      fiveStarSubmit({ ...ctx, hasDoctor: false }).doctorRating
+    ).toBeNull();
+    expect(fiveStarSubmit(ctx)).not.toHaveProperty("publishConsent");
   });
 });

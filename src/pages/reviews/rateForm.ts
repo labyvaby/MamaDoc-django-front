@@ -51,6 +51,22 @@ export function canSubmit(form: RateForm): boolean {
   );
 }
 
+/**
+ * 5★ отправляется сразу, без вопросов: пациента ведём на карты.
+ * Врачу и администратору ставим те же 5 — иначе средние по сотрудникам
+ * считались бы только по оценкам ниже пяти. Согласие на публикацию не шлём:
+ * остаётся прежним (по умолчанию «не публиковать»).
+ */
+export function fiveStarSubmit(ctx: RateContext): RateSubmit {
+  return {
+    rating: 5,
+    doctorRating: ctx.hasDoctor ? 5 : null,
+    registryRating: 5,
+    tags: [],
+    comment: "",
+  };
+}
+
 export function toSubmit(ctx: RateContext, form: RateForm): RateSubmit {
   const allowed = new Set(tagOptions(ctx, form.rating));
   return {

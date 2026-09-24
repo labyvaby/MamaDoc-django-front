@@ -31,6 +31,7 @@ import { ApiError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
 import {
   canSubmit,
+  fiveStarSubmit,
   initialForm,
   PUBLIC_NAME_MAX,
   publicNameValid,
@@ -191,12 +192,15 @@ const RateFlow: React.FC = () => {
   const set = <K extends keyof RateForm>(key: K, value: RateForm[K]) =>
     setForm((f) => (f ? { ...f, [key]: value } : f));
 
-  const submit = async () => {
-    if (!ctx || !form || !canSubmit(form)) return;
+  const submit = async (five = false) => {
+    if (!ctx || !form || (!five && !canSubmit(form))) return;
     setSaving(true);
     setError(null);
     try {
-      const next = await postRate(token, toSubmit(ctx, form));
+      const next = await postRate(
+        token,
+        five ? fiveStarSubmit(ctx) : toSubmit(ctx, form)
+      );
       setCtx(next);
       setForm(initialForm(next));
       setEditing(false);
@@ -286,9 +290,11 @@ const RateFlow: React.FC = () => {
                 ))}
               </Stack>
             )}
-            <Reveal order={7}>
-              <PublishNote ctx={ctx} />
-            </Reveal>
+            {ctx.publishConsent !== "private" && (
+              <Reveal order={7}>
+                <PublishNote ctx={ctx} />
+              </Reveal>
+            )}
             <Reveal order={8}>{editLink}</Reveal>
           </Stack>
         </Shell>
@@ -334,7 +340,8 @@ const RateFlow: React.FC = () => {
   }
 
   const options = tagOptions(ctx, form.rating);
-  const picked = form.rating != null;
+  // Подробности спрашиваем только при оценке ниже пяти.
+  const picked = form.rating != null && form.rating < 5;
   const tone = form.rating === 5 ? "good" : "bad";
   const tagsTitle =
     form.rating === 5
@@ -370,7 +377,7 @@ const RateFlow: React.FC = () => {
           size="large"
           variant="contained"
           disabled={!ready || saving}
-          onClick={submit}
+          onClick={() => submit(form.rating === 5)}
           sx={{
             py: 1.6,
             fontSize: 17,
@@ -413,7 +420,11 @@ const RateFlow: React.FC = () => {
           <StarPicker
             label="Общая оценка"
             value={form.rating}
-            onChange={(v) => set("rating", v)}
+            onChange={(v) => {
+              set("rating", v);
+              // 5★ — без вопросов сразу на экран с картами.
+              if (v === 5) void submit(true);
+            }}
             size={52}
             showWord
           />
