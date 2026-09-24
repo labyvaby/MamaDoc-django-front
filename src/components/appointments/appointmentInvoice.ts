@@ -205,6 +205,11 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
   const discount = num(summary?.discountAmount ?? appointment.discountAmount);
   const payable = num(summary?.payableAmount ?? appointment.payableAmount) || Math.max(0, total - discount);
   const paid = num(summary?.paidNet ?? summary?.paidTotal ?? appointment.paidTotal);
+  // Чек печатается только после оплаты (`hasAcceptedPayment`), поэтому его
+  // итог — принятые деньги: жирная строка и сумма прописью. Остаток идёт
+  // отдельной строкой и только когда он есть: бланк достался от счёта к оплате,
+  // и «Сумма к оплате 0,00» / «Ноль сомов» за оплаченный приём пациенты
+  // читали как чек на ноль.
   const due = summary ? num(summary.debt) : Math.max(0, payable - paid);
 
   const invoiceNumber = String(appointment.id);
@@ -276,7 +281,8 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
       .words { flex:1; font-style:italic; }
       .sums { min-width:${px(200)}; }
       .sum-row { display:flex; justify-content:space-between; gap:${px(16)}; padding:${px(2)} 0; }
-      .sum-row.due { border-top:1px solid #999; margin-top:${px(4)}; padding-top:${px(5)}; font-weight:700; font-size:${px(14)}; }
+      .sum-row.paid { border-top:1px solid #999; margin-top:${px(4)}; padding-top:${px(5)}; font-weight:700; font-size:${px(14)}; }
+      .sum-row.due { font-weight:600; }
       .pays { margin-top:${px(10)}; }
       .pays h2 { font-size:${px(9)}; text-transform:uppercase; letter-spacing:.4px; color:#555; margin:0 0 ${px(4)}; }
       .pay-row { display:flex; justify-content:space-between; gap:${px(16)}; max-width:${px(200)}; padding:${px(1)} 0; }
@@ -324,13 +330,17 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
       <tbody>${rowsHtml}</tbody>
     </table>
     <div class="totals">
-      <div class="words">${esc(amountInWordsKgs(due))}</div>
+      <div class="words">${esc(amountInWordsKgs(paid))}</div>
       <div class="sums">
         <div class="sum-row"><span>${esc(tt("appointments:invoice.total"))}</span><span>${money(total)}</span></div>
         <div class="sum-row"><span>${esc(tt("appointments:invoice.discount"))}</span><span>${money(discount)}</span></div>
         <div class="sum-row"><span>${esc(tt("appointments:invoice.withDiscount"))}</span><span>${money(payable)}</span></div>
-        <div class="sum-row"><span>${esc(tt("appointments:invoice.paid"))}</span><span>${money(paid)}</span></div>
-        <div class="sum-row due"><span>${esc(tt("appointments:invoice.due"))}</span><span>${money(due)}</span></div>
+        <div class="sum-row paid"><span>${esc(tt("appointments:invoice.paid"))}</span><span>${money(paid)}</span></div>${
+          due > 0
+            ? `
+        <div class="sum-row due"><span>${esc(tt("appointments:invoice.due"))}</span><span>${money(due)}</span></div>`
+            : ""
+        }
       </div>
     </div>
     ${
