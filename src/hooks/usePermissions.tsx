@@ -24,6 +24,9 @@ type GlobalState = {
   authError: string | null;
   /** Есть ли у пользователя пароль (из /auth/me/); null — бэк не прислал поле. */
   hasPassword: boolean | null;
+  /** Суперпользователь платформы (user.isSuperuser из /auth/me/). Не путать с
+   *  ролью «superadmin» внутри организации: модули переключает только он. */
+  isPlatformAdmin: boolean;
 };
 
 let globalState: GlobalState = {
@@ -31,6 +34,7 @@ let globalState: GlobalState = {
   lastFetchedAt: 0, employeeId: null, memberships: [], activeMembership: null,
   activeOrganization: null, activeBranch: null, activeEmployee: null,
   switching: false, enabledModules: [], authStatus: "loading", authError: null, hasPassword: null,
+  isPlatformAdmin: false,
 };
 let inFlight: Promise<void> | null = null;
 const listeners = new Set<(state: GlobalState) => void>();
@@ -71,6 +75,7 @@ function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
     activeEmployee: meData.activeEmployee ?? null,
     enabledModules: meData.enabledModules ?? [], authStatus: "authenticated" as AuthStatus, authError: null,
     hasPassword: userHasPassword(user),
+    isPlatformAdmin: Boolean(user.isSuperuser),
   };
 }
 
@@ -100,7 +105,7 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       const meData = await getCurrentUser();
       if (epoch !== authEpoch) return;
       if (!meData?.user) {
-        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null });
+        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false });
       } else {
         setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
       }
@@ -108,7 +113,7 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       if (epoch !== authEpoch) return;
       const status = error instanceof ApiError ? error.status : -1;
       if (status === 401) {
-        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null });
+        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false });
       } else {
         const message = error instanceof ApiError ? `Сервер недоступен (${status || "сеть"})` : "Сетевая ошибка";
         const authenticated = globalState.authStatus === "authenticated";
@@ -212,6 +217,7 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
     switching: state.switching, switchContext, enabledModules: state.enabledModules, hasModule, canAccess,
     authStatus: state.authStatus, authError: state.authError, retryAuth,
     hasPassword: state.hasPassword,
+    isPlatformAdmin: state.isPlatformAdmin,
   };
 };
 

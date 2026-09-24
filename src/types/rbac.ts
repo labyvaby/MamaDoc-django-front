@@ -118,6 +118,9 @@ export interface UserPermissions {
   /** Есть ли у пользователя пароль (из /auth/me/): false → в шапке кнопка
    *  «Установить пароль»; null — бэк поля не прислал (Django-режим). */
   hasPassword?: boolean | null;
+  /** Суперпользователь платформы (Django is_superuser). Не путать с ролью
+   *  «superadmin» организации (`isSuperAdmin`). */
+  isPlatformAdmin?: boolean;
 }
 
 // Конфигурация защищенного маршрута
