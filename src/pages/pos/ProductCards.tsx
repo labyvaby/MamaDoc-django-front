@@ -271,15 +271,17 @@ export const PosProductCards: React.FC<Props> = ({ items, onAdd, disabled = fals
             <Box
               sx={{
                 width: 78,
+                height: 78,
                 flexShrink: 0,
                 borderRadius: `${POS_RADIUS.tile}px`,
                 bgcolor: c.tile,
                 border: `1px solid ${c.hairline}`,
                 display: "grid",
                 placeItems: "center",
+                overflow: "hidden",
               }}
             >
-              {item.imageUrl ? <Box component="img" src={item.imageUrl} alt="" sx={{ width: 78, height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} /> : <ImageOutlined sx={{ fontSize: 28, color: c.textDim, opacity: 0.6 }} />}
+              {item.imageUrl ? <Box component="img" src={item.imageUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit", display: "block" }} /> : <ImageOutlined sx={{ fontSize: 28, color: c.textDim, opacity: 0.6 }} />}
             </Box>
 
             <Stack gap="8px" sx={{ flex: 1, minWidth: 0 }}>

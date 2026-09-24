@@ -95,6 +95,7 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
     const variantsCount = colors.length * sizes.length;
     const selectedUnit = units.find((unit) => unit.id === values.unitId) ?? null;
     const selectableUnits = units.filter((unit) => unit.isActive || unit.id === values.unitId);
+    const completedSteps = [true, Boolean(category), values.price > 0];
     const clinicUnitOptions = React.useMemo(
         () => [...new Set([...CLINIC_UNITS, ...units.map((unit) => unit.shortName), product?.unit ?? ""].filter(Boolean))],
         [units, product?.unit],
@@ -327,8 +328,8 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                                 <Chip
                                     size="small"
                                     label={step}
-                                    color={index === 0 || (index === 1 && category) ? "primary" : "default"}
-                                    variant={index === 0 || (index === 1 && category) ? "filled" : "outlined"}
+                                    color={completedSteps[index] ? "primary" : "default"}
+                                    variant={completedSteps[index] ? "filled" : "outlined"}
                                     sx={{ borderRadius: 1.5, fontWeight: 700 }}
                                 />
                                 {index < 2 && (

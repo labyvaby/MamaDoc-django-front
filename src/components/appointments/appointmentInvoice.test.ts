@@ -117,7 +117,7 @@ describe("счёт к оплате", () => {
     const out = html().replace(/ /g, " ");
     expect(out).toContain("1 550,00"); // сумма
     expect(out).toContain("1 500,00"); // со скидкой / оплачено
-    expect(out).toContain("Ноль сомов 00 тыйынов"); // сумма к оплате прописью
+    expect(out).toContain("Одна тысяча пятьсот сомов 00 тыйынов"); // оплачено прописью
   });
 
   it("показывает способы оплаты с названием безнала", () => {
@@ -140,13 +140,49 @@ describe("счёт к оплате", () => {
 
   it("без сводки считает итоги из полей приёма", () => {
     const out = buildAppointmentInvoiceHtml({
-      appointment,
+      appointment: { ...appointment, paidTotal: "1000.00" } as DjangoAppointment,
       summary: null,
       patient: null,
       organizationName: "Клиника",
-    });
-    // Оплат нет → вся сумма приёма к оплате.
-    expect(out).toContain("Одна тысяча пятьсот пятьдесят сомов 00 тыйынов");
+    }).replace(/ /g, " ");
+    // Внесено 1000 из 1550 → остаток 550.
+    expect(out).toContain("Одна тысяча сомов 00 тыйынов");
+    expect(out).toMatch(/Итого оплачено<\/span><span>1 000,00</);
+    expect(out).toMatch(/Остаток к оплате<\/span><span>550,00</);
+  });
+});
+
+describe("итог чека — принятые деньги, а не остаток", () => {
+  // Чек печатается только после оплаты, поэтому остаток на нём почти всегда
+  // ноль. Когда жирным шрифтом и прописью шёл остаток, пациент видел
+  // «Сумма к оплате 0,00» и «Ноль сомов» за оплаченные 2000.
+  it("оплаченный приём: жирная строка — «Итого оплачено», строки остатка нет", () => {
+    const out = html().replace(/ /g, " ");
+    expect(out).toContain(
+      '<div class="sum-row paid"><span>Итого оплачено</span><span>1 500,00</span></div>',
+    );
+    expect(out).not.toContain("Ноль сомов");
+    expect(out).not.toContain("Сумма к оплате");
+    expect(out).not.toContain("Остаток к оплате");
+  });
+
+  it("частичная оплата: остаток отдельной строкой под оплаченным", () => {
+    const out = buildAppointmentInvoiceHtml({
+      appointment,
+      summary: {
+        ...summary,
+        paidTotal: "500.00",
+        debt: "1000.00",
+        paymentStatus: "partial",
+        payments: [{ id: 1, method: "cash", amount: "500.00", createdAt: "", cashDate: "2026-07-30" }],
+      },
+      patient: null,
+      organizationName: "Клиника",
+    }).replace(/ /g, " ");
+    expect(out).toContain("Пятьсот сомов 00 тыйынов");
+    expect(out).toMatch(
+      /Итого оплачено<\/span><span>500,00<\/span><\/div>\s*<div class="sum-row due"><span>Остаток к оплате<\/span><span>1 000,00</,
+    );
   });
 });
 

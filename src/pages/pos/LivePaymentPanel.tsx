@@ -256,12 +256,13 @@ const CodeField: React.FC<{
 };
 
 /** Строка блока итогов. */
-const SummaryLine: React.FC<{ label: string; value: React.ReactNode; tone?: "accent" | "positive" }> = ({ label, value, tone }) => {
+const SummaryLine: React.FC<{ label: string; value: React.ReactNode; tone?: "discount" | "bonus" | "cashback" | "certificate" }> = ({ label, value, tone }) => {
   const c = posColors(useTheme());
+  const toneColor = tone === "discount" ? c.discount : tone === "bonus" ? c.bonus : tone === "cashback" ? c.cashback : tone === "certificate" ? c.certificate : c.textSoft;
   return (
     <Stack direction="row" alignItems="center" justifyContent="space-between">
       <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>{label}</Typography>
-      <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: tone === "positive" ? c.positive : tone === "accent" ? c.accentText : c.textSoft }}>
+      <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: toneColor }}>
         {value}
       </Typography>
     </Stack>
@@ -323,9 +324,9 @@ export function LivePaymentPanel({
   } as const;
 
   const summary = [
-    { label: "Скидка", value: amount(quote?.discount) },
-    { label: "Бонусы", value: amount(quote?.bonuses), tone: "accent" as const },
-    { label: "Сертификат", value: amount(quote?.certificateAmount), tone: "positive" as const },
+    { label: "Скидка", value: amount(quote?.discount), tone: "discount" as const },
+    { label: "Бонусы", value: amount(quote?.bonuses), tone: "bonus" as const },
+    { label: "Сертификат", value: amount(quote?.certificateAmount), tone: "certificate" as const },
   ].filter((line) => line.value > 0);
 
   return (
