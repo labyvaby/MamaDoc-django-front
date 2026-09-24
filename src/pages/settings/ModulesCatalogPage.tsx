@@ -7,28 +7,67 @@ import {
   Card,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Snackbar,
   Stack,
   Typography,
 } from "@mui/material";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { type CatalogModule, setOrganizationModule } from "../../api/tenancy";
 import { useModulesCatalog } from "../../hooks/useModulesCatalog";
+import { usePermissions } from "../../hooks/usePermissions";
 import { MODULE_SETTINGS_ROUTE, moduleIcon } from "../../config/moduleCatalogMeta";
 import { CATEGORY_LABELS, groupByCategory } from "../../config/moduleCatalogGrouping";
+import { catalogActions } from "../../config/moduleCatalogActions";
 import { missingRequirements } from "../../config/moduleCatalogRequirements";
 import { SettingsLayout } from "./SettingsLayout";
 
+type PendingToggle = { module: CatalogModule; enable: boolean };
+type Notice = { severity: "success" | "error"; text: string };
+
 const ModulesCatalogPage: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data, isLoading, isError } = useModulesCatalog();
+  const { isPlatformAdmin, activeOrganization } = usePermissions();
   const [stubOpen, setStubOpen] = useState(false);
+  const [pending, setPending] = useState<PendingToggle | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
 
   const catalog = useMemo(() => data ?? [], [data]);
   const groups = useMemo(() => groupByCategory(catalog), [catalog]);
   const connectedCount = catalog.filter((m) => m.isEnabled).length;
   const availableCount = catalog.length - connectedCount;
+  // Переключает модули только суперпользователь платформы (не роль
+  // «superadmin» клиники); без активной организации переключать нечего.
+  const canToggle = Boolean(isPlatformAdmin && activeOrganization);
+  const orgName = activeOrganization?.name ?? "организации";
+
+  const toggle = useMutation({
+    mutationFn: ({ code, enable }: { code: string; enable: boolean }) =>
+      setOrganizationModule(activeOrganization!.id, code, enable),
+    onSuccess: (row) => {
+      queryClient.invalidateQueries({ queryKey: ["tenancy", "catalog"] });
+      setNotice({
+        severity: "success",
+        text: `«${row.moduleName}» ${row.isEnabled ? "подключён" : "отключён"}.`,
+      });
+    },
+    onError: (error) => {
+      setNotice({
+        severity: "error",
+        text: error instanceof Error ? error.message : "Не удалось переключить модуль.",
+      });
+    },
+    onSettled: () => setPending(null),
+  });
 
   if (isLoading) {
     return (
@@ -80,6 +119,10 @@ const ModulesCatalogPage: React.FC = () => {
               {modules.map((m) => {
                 const settingsRoute = MODULE_SETTINGS_ROUTE[m.code];
                 const missing = m.isEnabled ? [] : missingRequirements(m, catalog);
+                const actions = catalogActions(m, {
+                  isPlatformAdmin: canToggle,
+                  hasSettingsRoute: Boolean(settingsRoute),
+                });
                 return (
                   <Card
                     key={m.code}
@@ -130,21 +173,40 @@ const ModulesCatalogPage: React.FC = () => {
                         </Typography>
                       )}
 
-                      {m.isEnabled ? (
-                        settingsRoute ? (
+                      <Stack direction="row" spacing={0.5}>
+                        {actions.includes("configure") && settingsRoute && (
                           <Button size="small" onClick={() => navigate(settingsRoute)}>
                             Настроить
                           </Button>
-                        ) : null
-                      ) : (
-                        <Button
-                          size="small"
-                          startIcon={<AddOutlined />}
-                          onClick={() => setStubOpen(true)}
-                        >
-                          Подключить
-                        </Button>
-                      )}
+                        )}
+                        {actions.includes("disable") && (
+                          <Button
+                            size="small"
+                            color="error"
+                            onClick={() => setPending({ module: m, enable: false })}
+                          >
+                            Отключить
+                          </Button>
+                        )}
+                        {actions.includes("enable") && (
+                          <Button
+                            size="small"
+                            startIcon={<AddOutlined />}
+                            onClick={() => setPending({ module: m, enable: true })}
+                          >
+                            Подключить
+                          </Button>
+                        )}
+                        {actions.includes("request") && (
+                          <Button
+                            size="small"
+                            startIcon={<AddOutlined />}
+                            onClick={() => setStubOpen(true)}
+                          >
+                            Подключить
+                          </Button>
+                        )}
+                      </Stack>
                     </Stack>
                   </Card>
                 );
@@ -161,6 +223,50 @@ const ModulesCatalogPage: React.FC = () => {
           anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
         />
       </Stack>
+
+      <Dialog
+        open={pending !== null}
+        onClose={() => {
+          if (!toggle.isPending) setPending(null);
+        }}
+      >
+        <DialogTitle>{pending?.enable ? "Подключить модуль?" : "Отключить модуль?"}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {pending?.enable
+              ? `Подключить «${pending.module.name}» для «${orgName}»? Модуль появится в CRM клиники.`
+              : `Отключить «${pending?.module.name ?? ""}» у «${orgName}»? Разделы модуля пропадут у сотрудников клиники. Права в ролях сохранятся и вернутся при подключении.`}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPending(null)} disabled={toggle.isPending}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            color={pending?.enable ? "primary" : "error"}
+            disabled={toggle.isPending}
+            onClick={() => {
+              if (pending) toggle.mutate({ code: pending.module.code, enable: pending.enable });
+            }}
+          >
+            {pending?.enable ? "Подключить" : "Отключить"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {notice && (
+        <Snackbar
+          open
+          autoHideDuration={notice.severity === "error" ? 10000 : 4000}
+          onClose={() => setNotice(null)}
+          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        >
+          <Alert severity={notice.severity} onClose={() => setNotice(null)} sx={{ maxWidth: 560 }}>
+            {notice.text}
+          </Alert>
+        </Snackbar>
+      )}
     </SettingsLayout>
   );
 };
