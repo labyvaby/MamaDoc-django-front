@@ -62,6 +62,7 @@ import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
+import AssignmentIndOutlined from "@mui/icons-material/AssignmentIndOutlined";
 import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
 import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 
@@ -379,6 +380,7 @@ const SidebarSecondary: React.FC = () => {
   const isSuper = isSuperAdmin();
   const isRetail = activeOrganization?.vertical === "retail";
   const isHotelOrg = activeOrganization?.vertical === "hotel";
+  const isClinic = activeOrganization?.vertical === "clinic";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -420,6 +422,8 @@ const SidebarSecondary: React.FC = () => {
     // Лист ожидания и воронка ждут бэкенда на проде — гейт по правам их не
     // прикрывает: роль superadmin проходит любую проверку прав.
     waitlist: WAITLIST_MODULE_ENABLED && can(PAGE_PERMISSIONS.waitlist),
+    // Учёт детей — сопровождение по программам; только клиника.
+    registry: isClinic && can(PAGE_PERMISSIONS.registry),
     deals: DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals),
     expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
@@ -628,7 +632,7 @@ const SidebarSecondary: React.FC = () => {
   // Категории и тарифы, Отчёты, Настройки).
   const hotelOnly = isHotelOrg;
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
+    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.registry || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents || can_.hotelRooms || can_.hotelRoomCategories,
     "storage": !hotelOnly && (can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement),
     "management": !hotelOnly && (can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings),
@@ -776,6 +780,17 @@ const SidebarSecondary: React.FC = () => {
             collapsed={siderCollapsed}
             badgeCount={waitlistBadgeCount}
             badgeColor={waitlistBadgeColor}
+          />
+        )}
+
+        {/* Учёт детей: кто на сопровождении, кто ждёт осмотра, у кого
+            не оплачено или истекает срок. Только клиника. */}
+        {show("my-work") && can_.registry && (
+          <SidebarMenuItem
+            to="/registry"
+            icon={<AssignmentIndOutlined />}
+            label={t("registry")}
+            collapsed={siderCollapsed}
           />
         )}
 
