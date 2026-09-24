@@ -9,8 +9,7 @@ import { cancelEnrollment, type CancelReason } from "../../../api/registry";
 import { AppButton } from "../../../components/ui";
 import type { ActiveScope } from "../../../hooks/useActiveScope";
 import { useT } from "../../../i18n/VerticalProvider";
-
-export const CANCEL_REASONS: CancelReason[] = ["moved", "refused", "aged_out", "transferred", "other"];
+import { CANCEL_REASONS } from "../registryConstants";
 
 interface CancelEnrollmentDialogProps {
   open: boolean;
