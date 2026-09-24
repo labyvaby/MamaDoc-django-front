@@ -8,7 +8,6 @@ import {
   CircularProgress,
   Divider,
   FormControlLabel,
-  Link,
   Paper,
   Stack,
   Switch,
@@ -32,9 +31,18 @@ import {
   type ReviewSettings,
   type ReviewSettingsPatch,
 } from "../../api/reviews";
-import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
+import {
+  djangoQueryKeys,
+  DJANGO_DETAIL_STALE_TIME_MS,
+} from "../../api/queryKeys";
 import { useT } from "../../i18n/VerticalProvider";
-import { MAP_META } from "./meta";
+import ReviewLinksEditor from "./ReviewLinksEditor";
+import {
+  changedLinks,
+  isReviewUrl,
+  linksDraft,
+  type LinksDraft,
+} from "./reviewLinks";
 
 type FormState = Pick<
   ReviewSettings,
@@ -59,7 +67,8 @@ const FORM_KEYS: (keyof FormState)[] = [
   "negativeTags",
 ];
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const same = (a: unknown, b: unknown) =>
+  JSON.stringify(a) === JSON.stringify(b);
 
 const pick = (s: ReviewSettings): FormState =>
   Object.fromEntries(FORM_KEYS.map((k) => [k, s[k]])) as FormState;
@@ -76,16 +85,34 @@ const TagEditor: React.FC<{
     options={[] as string[]}
     value={value}
     onChange={(_, tags) =>
-      onChange([...new Set(tags.map((t) => t.trim()).filter(Boolean))].map((t) => t.slice(0, 60)))
+      onChange(
+        [...new Set(tags.map((t) => t.trim()).filter(Boolean))].map((t) =>
+          t.slice(0, 60)
+        )
+      )
     }
     renderTags={(tags, getTagProps) =>
       tags.map((tag, index) => {
         const { key, ...rest } = getTagProps({ index });
-        return <Chip key={key} label={tag} size="small" color={color} variant="outlined" {...rest} />;
+        return (
+          <Chip
+            key={key}
+            label={tag}
+            size="small"
+            color={color}
+            variant="outlined"
+            {...rest}
+          />
+        );
       })
     }
     renderInput={(params) => (
-      <TextField {...params} size="small" label={label} placeholder="Новый тег + Enter" />
+      <TextField
+        {...params}
+        size="small"
+        label={label}
+        placeholder="Новый тег + Enter"
+      />
     )}
   />
 );
@@ -95,9 +122,15 @@ const ReviewsSettingsPage: React.FC = () => {
   usePageTitle("Настройки отзывов");
   const theme = useTheme();
   const canManage = useCan("reviews.manage");
-  const { isSuperAdmin, activeOrganization, loading: permLoading } = usePermissions();
+  const {
+    isSuperAdmin,
+    activeOrganization,
+    loading: permLoading,
+  } = usePermissions();
   const isSuper = isSuperAdmin();
-  const organizationId = isSuper ? activeOrganization?.id ?? undefined : undefined;
+  const organizationId = isSuper
+    ? activeOrganization?.id ?? undefined
+    : undefined;
   const orgKey = isSuper ? activeOrganization?.id ?? null : null;
 
   const queryClient = useQueryClient();
@@ -111,8 +144,12 @@ const ReviewsSettingsPage: React.FC = () => {
   });
 
   const [form, setForm] = React.useState<FormState | null>(null);
+  const [links, setLinks] = React.useState<LinksDraft>({});
   React.useEffect(() => {
-    if (query.data) setForm(pick(query.data));
+    if (query.data) {
+      setForm(pick(query.data));
+      setLinks(linksDraft(query.data.branchMaps));
+    }
   }, [query.data]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
@@ -124,13 +161,25 @@ const ReviewsSettingsPage: React.FC = () => {
       queryClient.setQueryData(djangoQueryKeys.reviews.settings(orgKey), data);
       notify?.({ type: "success", message: "Настройки сохранены" });
     },
-    onError: (e) => notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка" }),
+    onError: (e) =>
+      notify?.({
+        type: "error",
+        message: e instanceof Error ? e.message : "Ошибка",
+      }),
   });
 
   if (!permLoading && !canManage) return <AccessDenied />;
 
   const original = query.data;
-  const dirty = !!form && !!original && FORM_KEYS.some((k) => !same(form[k], original[k]));
+  const linkChanges = original ? changedLinks(original.branchMaps, links) : [];
+  const linksInvalid = linkChanges.some(
+    (c) => c.url !== "" && !isReviewUrl(c.url)
+  );
+  const dirty =
+    !!form &&
+    !!original &&
+    (FORM_KEYS.some((k) => !same(form[k], original[k])) ||
+      linkChanges.length > 0);
 
   const handleSave = () => {
     if (!form || !original) return;
@@ -138,7 +187,9 @@ const ReviewsSettingsPage: React.FC = () => {
     FORM_KEYS.forEach((k) => {
       if (!same(form[k], original[k])) Object.assign(patch, { [k]: form[k] });
     });
-    if (isSuper && organizationId != null) patch.organizationId = organizationId;
+    if (linkChanges.length > 0) patch.branchReviewLinks = linkChanges;
+    if (isSuper && organizationId != null)
+      patch.organizationId = organizationId;
     mutation.mutate(patch);
   };
 
@@ -149,16 +200,31 @@ const ReviewsSettingsPage: React.FC = () => {
         showTitle={false}
         showSearch={false}
         leftActions={
-          <Button size="small" startIcon={<ArrowBackOutlined />} component={RouterLink} to="/reviews">
+          <Button
+            size="small"
+            startIcon={<ArrowBackOutlined />}
+            component={RouterLink}
+            to="/reviews"
+          >
             К отзывам
           </Button>
         }
       />
 
-      <Box sx={{ flex: 1, overflow: "auto", px: theme.appLayout.page.paddingX, pb: 4, maxWidth: 760 }}>
+      <Box
+        sx={{
+          flex: 1,
+          overflow: "auto",
+          px: theme.appLayout.page.paddingX,
+          pb: 4,
+          maxWidth: 760,
+        }}
+      >
         {query.error ? (
           <Alert severity="error" sx={{ mt: 2 }}>
-            {query.error instanceof Error ? query.error.message : "Ошибка загрузки"}
+            {query.error instanceof Error
+              ? query.error.message
+              : "Ошибка загрузки"}
           </Alert>
         ) : query.isLoading || !form || !original ? (
           <Stack alignItems="center" sx={{ py: 6 }}>
@@ -172,27 +238,44 @@ const ReviewsSettingsPage: React.FC = () => {
               </Typography>
               {!original.platformEnabled && (
                 <Alert severity="info" sx={{ mb: 1.5 }}>
-                  Автоматическая рассылка на платформе пока не включена. Ручной запрос из карточки приёма
-                  работает.
+                  Автоматическая рассылка на платформе пока не включена. Ручной
+                  запрос из карточки приёма работает.
                 </Alert>
               )}
               <FormControlLabel
-                control={<Switch checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} />}
+                control={
+                  <Switch
+                    checked={form.enabled}
+                    onChange={(e) => set("enabled", e.target.checked)}
+                  />
+                }
                 label="Спрашивать отзыв после каждого завершённого приёма"
               />
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-                {t("settings.pollerHint")} Сообщение уходит в WhatsApp, если не доставлено — SMS.
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block" }}
+              >
+                {t("settings.pollerHint")} Сообщение уходит в WhatsApp, если не
+                доставлено — SMS.
               </Typography>
 
               <Divider sx={{ my: 2 }} />
 
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} flexWrap="wrap" useFlexGap>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={2}
+                flexWrap="wrap"
+                useFlexGap
+              >
                 <TextField
                   type="number"
                   size="small"
                   label={t("settings.delayLabel")}
                   value={form.delayMinutes}
-                  onChange={(e) => set("delayMinutes", Math.max(0, Number(e.target.value)))}
+                  onChange={(e) =>
+                    set("delayMinutes", Math.max(0, Number(e.target.value)))
+                  }
                   inputProps={{ min: 0 }}
                   sx={{ width: 240 }}
                 />
@@ -220,7 +303,9 @@ const ReviewsSettingsPage: React.FC = () => {
                   label="Не чаще раза в N дней"
                   helperText="На одного пациента или номер"
                   value={form.minDaysBetween}
-                  onChange={(e) => set("minDaysBetween", Math.max(0, Number(e.target.value)))}
+                  onChange={(e) =>
+                    set("minDaysBetween", Math.max(0, Number(e.target.value)))
+                  }
                   inputProps={{ min: 0 }}
                   sx={{ width: 220 }}
                 />
@@ -230,7 +315,9 @@ const ReviewsSettingsPage: React.FC = () => {
                   label="Ссылка действует, часов"
                   helperText="Сколько можно ответить и исправить ответ"
                   value={form.expireHours}
-                  onChange={(e) => set("expireHours", Math.max(1, Number(e.target.value)))}
+                  onChange={(e) =>
+                    set("expireHours", Math.max(1, Number(e.target.value)))
+                  }
                   inputProps={{ min: 1 }}
                   sx={{ width: 240 }}
                 />
@@ -257,45 +344,22 @@ const ReviewsSettingsPage: React.FC = () => {
               </Stack>
             </Paper>
 
-            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: "14px" }}>
-              <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-                Карты для отзывов с 5★
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.5 }}>
-                Ссылки берутся из настроек филиала. Кнопки карт видит только пациент, который поставил 5★ с
-                первого раза и ещё не оставлял подтверждённый отзыв.
-              </Typography>
-              <Stack spacing={1.5}>
-                {original.branchMaps.map((b) => (
-                  <Box key={b.branchId}>
-                    <Typography variant="body2" fontWeight={600}>
-                      {b.branchName}
-                    </Typography>
-                    {b.maps.length === 0 ? (
-                      <Alert severity="warning" sx={{ mt: 0.5 }}>
-                        Нет ссылок на карты — пациенты с 5★ не получат кнопки. Заполните их в настройках
-                        филиала.
-                      </Alert>
-                    ) : (
-                      <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 0.5 }}>
-                        {b.maps.map((m) => (
-                          <Link key={m.platform} href={m.url} target="_blank" rel="noopener" underline="none">
-                            <Chip label={MAP_META[m.platform]} size="small" clickable variant="outlined" />
-                          </Link>
-                        ))}
-                      </Stack>
-                    )}
-                  </Box>
-                ))}
-              </Stack>
-            </Paper>
+            <ReviewLinksEditor
+              branches={original.branchMaps}
+              draft={links}
+              onChange={(key, url) => setLinks((d) => ({ ...d, [key]: url }))}
+            />
 
             <Box>
               <Button
                 variant="contained"
                 onClick={handleSave}
-                disabled={!dirty || mutation.isPending}
-                startIcon={mutation.isPending ? <CircularProgress size={16} /> : undefined}
+                disabled={!dirty || linksInvalid || mutation.isPending}
+                startIcon={
+                  mutation.isPending ? (
+                    <CircularProgress size={16} />
+                  ) : undefined
+                }
               >
                 Сохранить
               </Button>

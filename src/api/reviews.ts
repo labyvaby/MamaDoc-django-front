@@ -110,7 +110,19 @@ export interface ReviewRequest {
 export interface BranchMaps {
   branchId: number;
   branchName: string;
+  /** Что увидит пациент: ссылка на отзыв, иначе ссылка карты филиала. */
   maps: MapLink[];
+  /** Ссылки на отзыв, заданные в настройках отзывов. */
+  reviewLinks: MapLink[];
+  /** Ссылки из карточки филиала (они же «как добраться» в онлайн-записи). */
+  branchLinks: MapLink[];
+}
+
+export interface BranchReviewLinkPatch {
+  branchId: number;
+  platform: MapPlatform;
+  /** Пустая строка — удалить, вернуться к ссылке филиала. */
+  url: string;
 }
 
 /** Настройки модуля. */
@@ -148,6 +160,7 @@ export interface ReviewSettingsPatch {
   minDaysBetween?: number;
   positiveTags?: string[];
   negativeTags?: string[];
+  branchReviewLinks?: BranchReviewLinkPatch[];
   /** Суперадмин может адресовать чужую организацию. */
   organizationId?: number;
 }
