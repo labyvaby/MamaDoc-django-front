@@ -7,18 +7,20 @@
  * useCan("hotel.rates.manage") — у «Ресепшена» его нет, страница для них
  * только читается.
  *
- * Правило меняет цену выбранных категорий номеров на процент (положительный —
- * дороже, отрицательный — скидка) на заданный период: одна дата (dateFrom ===
- * dateTo) или диапазон, опционально «Каждый год» — повторяется в эти же
- * числа без привязки к году. Выключить правило можно переключателем прямо в
- * списке, не удаляя его — например, снять наценку на праздники в этом году.
+ * Правило меняет цену выбранных категорий номеров на процент или сумму за ночь
+ * (положительное — дороже, отрицательное — скидка) при выполнении её условий:
+ * даты, загрузка, срок до заезда, длительность, день недели — любая
+ * комбинация одновременно, см. describeConditions ниже и комментарий в
+ * HotelPricingRuleFormPage.tsx. Выключить правило можно переключателем прямо
+ * в списке, не удаляя его — например, снять наценку на праздники в этом году.
  * Добавление («Добавить правило» → /pricing-rules/new) и правка («Изменить» →
  * /pricing-rules/:ruleId) — отдельная страница-форма HotelPricingRuleFormPage.tsx.
  *
- * Контракт подтверждён бек-разработчиком 24.09.2026 (см. развёрнутый комментарий
- * над HotelPricingRule в src/api/hotel.ts) — уже на test.crm. Сама цена
- * (totalPrice/nightPrice) по-прежнему считается бэкендом — фронт проценты не
- * пересчитывает нигде, кроме живого предпросчёта в форме (simulatePricingRule).
+ * Контракт — «Ответ бэкенда: динамическое ценообразование отеля (Viva)»,
+ * 24.09.2026 (см. развёрнутый комментарий над HotelPricingRule в
+ * src/api/hotel.ts) — уже на test.crm. Сама цена (totalPrice/nightPrice)
+ * по-прежнему считается бэкендом — фронт проценты/суммы не пересчитывает
+ * нигде, кроме живого предпросчёта в форме (simulatePricingRule).
  */
 import React from "react";
 import { Alert, Box, Button, Chip, CircularProgress, Paper, Stack, Switch, Typography, useTheme } from "@mui/material";
@@ -36,6 +38,10 @@ import { formatHotelDate } from "./mockDemoData";
 import { listRoomTypes, listPricingRules, updatePricingRule, type HotelPricingRule } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 
+const DAY_LABELS_RU: Record<string, string> = {
+  monday: "Пн", tuesday: "Вт", wednesday: "Ср", thursday: "Чт", friday: "Пт", saturday: "Сб", sunday: "Вс",
+};
+
 /** «1 – 10 августа» / «21 марта» — dateTo здесь ВКЛЮЧИТЕЛЬНО, в отличие от formatHotelDateRange (бронь). */
 function formatRuleRange(dateFrom: string, dateTo: string): string {
   if (dateFrom === dateTo) return formatHotelDate(dateFrom);
@@ -45,6 +51,28 @@ function formatRuleRange(dateFrom: string, dateTo: string): string {
     return `${from.date()} – ${formatHotelDate(dateTo)}`;
   }
   return `${formatHotelDate(dateFrom)} – ${formatHotelDate(dateTo)}`;
+}
+
+/** Короткие подписи всех включённых условий правила — для чипов в списке. */
+function describeConditions(rule: HotelPricingRule): string[] {
+  const c = rule.conditions;
+  const parts: string[] = [];
+  if (c.dateFrom && c.dateTo) {
+    parts.push(formatRuleRange(c.dateFrom, c.dateTo) + (c.recurringAnnually ? " · каждый год" : ""));
+  }
+  if (c.occupancyFrom != null || c.occupancyTo != null) {
+    parts.push(`Загрузка ${c.occupancyFrom ?? 0}–${c.occupancyTo ?? 100}%`);
+  }
+  if (c.leadTimeFrom != null || c.leadTimeTo != null) {
+    parts.push(`До заезда ${c.leadTimeFrom ?? 0}–${c.leadTimeTo ?? "∞"} дн.`);
+  }
+  if (c.nightsFrom != null || c.nightsTo != null) {
+    parts.push(`${c.nightsFrom ?? 1}–${c.nightsTo ?? "∞"} ноч.`);
+  }
+  if (c.daysOfWeek && c.daysOfWeek.length > 0) {
+    parts.push(c.daysOfWeek.map((d) => DAY_LABELS_RU[d] ?? d).join(", "));
+  }
+  return parts;
 }
 
 export const HotelPricingRulesPage: React.FC = () => {
@@ -120,8 +148,8 @@ export const HotelPricingRulesPage: React.FC = () => {
         </Stack>
 
         <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-          Правило меняет цену выбранных категорий на процент в заданный период — один день или диапазон,
-          с необязательным повтором «Каждый год». {canManageRates
+          Правило меняет цену выбранных категорий на процент или сумму за ночь при выполнении условий —
+          даты, загрузка, срок до заезда, длительность, день недели, любая комбинация сразу. {canManageRates
             ? "Переключатель ниже выключает правило, не удаляя его — например, чтобы на праздники в этом году цена осталась обычной."
             : "Изменение правил недоступно вашей роли — здесь только просмотр."}
         </Alert>
@@ -165,11 +193,12 @@ export const HotelPricingRulesPage: React.FC = () => {
               </Typography>
             )}
             {rules.map((rule) => {
-              const percent = Number(rule.adjustmentValue);
-              const isDiscount = percent < 0;
+              const amount = Number(rule.adjustmentValue);
+              const isDiscount = amount < 0;
               // Пустой roomTypeIds — не «ни одной категории», а «все категории объекта,
               // включая заведённые позже» (см. комментарий у HotelPricingRule.roomTypeIds).
               const allCategories = rule.roomTypeIds.length === 0;
+              const conditionChips = describeConditions(rule);
               return (
                 <Paper
                   key={rule.id}
@@ -183,16 +212,19 @@ export const HotelPricingRulesPage: React.FC = () => {
                         <Typography variant="subtitle2" fontWeight={700}>
                           {rule.name}
                         </Typography>
-                        {rule.conditions.recurringAnnually && (
-                          <Chip label="Каждый год" size="small" variant="outlined" sx={{ height: 20, fontSize: "0.7rem" }} />
-                        )}
                         {!rule.isActive && (
                           <Chip label="Выключено" size="small" color="default" sx={{ height: 20, fontSize: "0.7rem" }} />
                         )}
                       </Stack>
-                      <Typography variant="caption" color="text.secondary">
-                        {formatRuleRange(rule.conditions.dateFrom, rule.conditions.dateTo)}
-                      </Typography>
+                      {conditionChips.length === 0 ? (
+                        <Typography variant="caption" color="text.secondary">
+                          Действует всегда
+                        </Typography>
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">
+                          {conditionChips.join(" · ")}
+                        </Typography>
+                      )}
                     </Box>
                     <Stack direction="row" alignItems="center" gap={1}>
                       <Typography
@@ -201,8 +233,9 @@ export const HotelPricingRulesPage: React.FC = () => {
                         color={isDiscount ? "success.main" : "text.primary"}
                         sx={{ fontVariantNumeric: "tabular-nums" }}
                       >
-                        {percent > 0 ? "+" : ""}
-                        {percent}%
+                        {amount > 0 ? "+" : ""}
+                        {amount}
+                        {rule.adjustmentType === "percent" ? "%" : " сом"}
                       </Typography>
                       <Switch
                         size="small"

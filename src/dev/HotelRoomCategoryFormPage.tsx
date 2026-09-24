@@ -25,6 +25,14 @@
  * категорий объекта и сразу отметится у текущей; наценка уже существующей
  * правится там же (updateAmenity, коммитится по onBlur, не на каждый символ —
  * это настоящий PATCH, а не запись в localStorage).
+ *
+ * «Значения по умолчанию для номеров» — просьба владельца: при массовом
+ * заведении номеров одной категории неудобно каждый раз перезабивать одни и
+ * те же «Доп. характеристики» (площадь, санузлы и т.п. — см. HotelRoomFormPage.tsx).
+ * Задаются здесь один раз на категорию, HotelRoomFormPage подставляет их в
+ * форму нового номера при выборе категории — сотрудник правит только то, что
+ * отличается. КОНТРАКТ (default* поля HotelRoomType) ПРЕДЛОЖЕН, бэком ещё не
+ * подтверждён — см. комментарий над HotelRoomType в src/api/hotel.ts.
  */
 import React from "react";
 import {
@@ -38,6 +46,7 @@ import {
   FormControlLabel,
   IconButton,
   InputAdornment,
+  MenuItem,
   Paper,
   Stack,
   TextField,
@@ -81,6 +90,15 @@ interface CategoryFormState {
   description: string;
   amenities: Set<string>;
   luxury: boolean;
+  // ── Значения по умолчанию для «Доп. характеристик» нового номера — см. шапку файла.
+  defaultArea: string;
+  defaultCeilingHeight: string;
+  defaultBathrooms: string;
+  defaultRoomsCount: string;
+  defaultWindowSide: string;
+  defaultIsCorner: boolean;
+  defaultLayoutDescription: string;
+  defaultMeals: string[];
 }
 
 const EMPTY_FORM: CategoryFormState = {
@@ -94,6 +112,14 @@ const EMPTY_FORM: CategoryFormState = {
   description: "",
   amenities: new Set(),
   luxury: false,
+  defaultArea: "",
+  defaultCeilingHeight: "",
+  defaultBathrooms: "",
+  defaultRoomsCount: "",
+  defaultWindowSide: "",
+  defaultIsCorner: false,
+  defaultLayoutDescription: "",
+  defaultMeals: [],
 };
 
 function toForm(cat: HotelRoomType): CategoryFormState {
@@ -108,6 +134,14 @@ function toForm(cat: HotelRoomType): CategoryFormState {
     description: cat.description,
     amenities: new Set(cat.amenities),
     luxury: cat.isLuxury,
+    defaultArea: cat.defaultArea ?? "",
+    defaultCeilingHeight: cat.defaultCeilingHeight ?? "",
+    defaultBathrooms: cat.defaultBathrooms != null ? String(cat.defaultBathrooms) : "",
+    defaultRoomsCount: cat.defaultRoomsCount != null ? String(cat.defaultRoomsCount) : "",
+    defaultWindowSide: cat.defaultWindowSide ?? "",
+    defaultIsCorner: cat.defaultIsCorner ?? false,
+    defaultLayoutDescription: cat.defaultLayoutDescription ?? "",
+    defaultMeals: cat.defaultMealOptions ?? [],
   };
 }
 
@@ -192,13 +226,14 @@ interface CategoryFormProps {
   /** null — создание новой категории, иначе правящаяся. */
   editing: HotelRoomType | null;
   amenitiesCatalog: HotelAmenity[];
+  mealChoices: { value: string; label: string }[];
 }
 
 /**
  * Сама форма. Монтируется только когда данные уже загружены (см. страницу ниже),
  * поэтому начальное состояние берётся прямо из editing, без эффекта-заполнения.
  */
-const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenitiesCatalog }) => {
+const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenitiesCatalog, mealChoices }) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
@@ -309,6 +344,14 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
         description: form.description.trim(),
         amenities: [...form.amenities],
         isLuxury: form.luxury,
+        defaultArea: form.defaultArea.trim() || null,
+        defaultCeilingHeight: form.defaultCeilingHeight.trim() || null,
+        defaultBathrooms: form.defaultBathrooms.trim() ? Number(form.defaultBathrooms) : null,
+        defaultRoomsCount: form.defaultRoomsCount.trim() ? Number(form.defaultRoomsCount) : null,
+        defaultWindowSide: form.defaultWindowSide.trim(),
+        defaultIsCorner: form.defaultIsCorner,
+        defaultLayoutDescription: form.defaultLayoutDescription.trim(),
+        defaultMealOptions: form.defaultMeals,
       };
       if (editing) await updateRoomType(editing.id, patch);
       else await createRoomType({ propertyId, ...patch });
@@ -435,6 +478,107 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
             multiline
             minRows={2}
             disabled={saving}
+            fullWidth
+          />
+        </Stack>
+      </Paper>
+
+      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+        <Stack gap={2}>
+          <Typography variant="subtitle2" fontWeight={600}>
+            Значения по умолчанию для номеров
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Подставятся в форму нового номера этой категории (раздел «Доп. характеристики») — при
+            заведении сразу нескольких номеров останется поправить только то, что отличается.
+          </Typography>
+          <Stack direction="row" flexWrap="wrap" gap={2}>
+            <TextField
+              label="Площадь, м²"
+              type="number"
+              value={form.defaultArea}
+              onChange={(e) => patchForm({ defaultArea: e.target.value })}
+              slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+              disabled={saving}
+              sx={{ flex: "1 1 160px" }}
+            />
+            <TextField
+              label="Высота потолков, м"
+              type="number"
+              value={form.defaultCeilingHeight}
+              onChange={(e) => patchForm({ defaultCeilingHeight: e.target.value })}
+              slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+              disabled={saving}
+              sx={{ flex: "1 1 160px" }}
+            />
+            <TextField
+              label="Санузлов"
+              type="number"
+              value={form.defaultBathrooms}
+              onChange={(e) => patchForm({ defaultBathrooms: e.target.value })}
+              slotProps={{ htmlInput: { min: 0, step: 1 } }}
+              disabled={saving}
+              sx={{ flex: "1 1 130px" }}
+            />
+            <TextField
+              label="Жилых комнат"
+              type="number"
+              value={form.defaultRoomsCount}
+              onChange={(e) => patchForm({ defaultRoomsCount: e.target.value })}
+              slotProps={{ htmlInput: { min: 0, step: 1 } }}
+              disabled={saving}
+              sx={{ flex: "1 1 130px" }}
+            />
+          </Stack>
+          <Stack direction="row" flexWrap="wrap" gap={2} alignItems="flex-start">
+            <TextField
+              label="Сторона света"
+              placeholder="Юг, Северо-Восток…"
+              value={form.defaultWindowSide}
+              onChange={(e) => patchForm({ defaultWindowSide: e.target.value })}
+              disabled={saving}
+              sx={{ flex: "1 1 200px" }}
+            />
+            <TextField
+              select
+              label="Питание"
+              value={form.defaultMeals}
+              onChange={(e) => {
+                const v = e.target.value as unknown;
+                patchForm({ defaultMeals: typeof v === "string" ? v.split(",") : (v as string[]) });
+              }}
+              disabled={saving}
+              SelectProps={{
+                multiple: true,
+                renderValue: (selected) => (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {(selected as string[]).map((key) => (
+                      <Chip key={key} label={mealChoices.find((c) => c.value === key)?.label ?? key} size="small" sx={{ height: 20, borderRadius: "6px" }} />
+                    ))}
+                  </Box>
+                ),
+              }}
+              sx={{ flex: "1 1 220px" }}
+            >
+              {mealChoices.map((c) => (
+                <MenuItem key={c.value} value={c.value}>
+                  {c.label}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Stack>
+          <FormControlLabel
+            control={<Checkbox checked={form.defaultIsCorner} onChange={(e) => patchForm({ defaultIsCorner: e.target.checked })} disabled={saving} />}
+            label="Угловой номер"
+          />
+          <TextField
+            label="Описание планировки"
+            placeholder="Необязательно"
+            value={form.defaultLayoutDescription}
+            onChange={(e) => patchForm({ defaultLayoutDescription: e.target.value })}
+            disabled={saving}
+            multiline
+            minRows={2}
             fullWidth
           />
         </Stack>
@@ -716,6 +860,7 @@ export const HotelRoomCategoryFormPage: React.FC = () => {
             propertyId={property.id}
             editing={editing}
             amenitiesCatalog={catalogsQuery.data?.amenities ?? []}
+            mealChoices={catalogsQuery.data?.mealOptions ?? []}
           />
         )}
       </Stack>

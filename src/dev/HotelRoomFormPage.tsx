@@ -119,8 +119,28 @@ const EMPTY_FORM: Omit<RoomFormState, "roomTypeId"> = {
   layoutDescription: "",
 };
 
+/**
+ * «Доп. характеристики» по умолчанию для категории (см. HotelRoomCategoryFormPage.tsx) —
+ * подставляются при выборе категории у НОВОГО номера, чтобы при заведении сразу
+ * нескольких номеров одной категории не перезабивать одно и то же. У уже
+ * существующего номера (правка) значения свои, дефолты категории их не трогают.
+ */
+function categoryDefaults(cat: HotelRoomType | undefined): Pick<RoomFormState, "meals" | "area" | "ceilingHeight" | "windowSide" | "isCorner" | "bathrooms" | "roomsCount" | "layoutDescription"> {
+  return {
+    meals: cat?.defaultMealOptions ?? [],
+    area: cat?.defaultArea ?? "",
+    ceilingHeight: cat?.defaultCeilingHeight ?? "",
+    windowSide: cat?.defaultWindowSide ?? "",
+    isCorner: cat?.defaultIsCorner ?? false,
+    bathrooms: cat?.defaultBathrooms != null ? String(cat.defaultBathrooms) : "",
+    roomsCount: cat?.defaultRoomsCount != null ? String(cat.defaultRoomsCount) : "",
+    layoutDescription: cat?.defaultLayoutDescription ?? "",
+  };
+}
+
 function emptyForm(roomTypes: HotelRoomType[]): RoomFormState {
-  return { ...EMPTY_FORM, roomTypeId: roomTypes[0]?.id ?? "" };
+  const firstType = roomTypes[0];
+  return { ...EMPTY_FORM, ...categoryDefaults(firstType), roomTypeId: firstType?.id ?? "" };
 }
 
 function toForm(room: HotelRoom): RoomFormState {
@@ -290,7 +310,14 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
             select
             label="Категория"
             value={form.roomTypeId}
-            onChange={(e) => patchForm({ roomTypeId: Number(e.target.value) })}
+            onChange={(e) => {
+              const id = Number(e.target.value);
+              // Дефолты категории подставляем только у нового номера: у уже
+              // существующего (правка) его «Доп. характеристики» — свои,
+              // смена категории их переписывать не должна.
+              if (editing) patchForm({ roomTypeId: id });
+              else patchForm({ roomTypeId: id, ...categoryDefaults(roomTypes.find((rt) => rt.id === id)) });
+            }}
             disabled={saving}
             fullWidth
           >
@@ -368,6 +395,7 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Необязательно — только для этого конкретного номера, поверх общих характеристик категории.
+            {!editing && " Поля ниже подставлены по умолчанию для выбранной категории — поменяйте, что отличается у этого номера."}
           </Typography>
           <Stack direction="row" flexWrap="wrap" gap={2}>
             <TextField
