@@ -36,6 +36,7 @@ import { djangoQueryKeys } from "../../api/queryKeys";
 import { AppButton } from "../../components/ui";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import { subtleBg } from "../../theme/uiHelpers";
+import { ProgramProductSettings } from "./ProgramProductSettings";
 
 const FIELD_TYPES: Array<{ value: NonNullable<ProgramFieldDefinition["type"]>; label: string }> = [
   { value: "text", label: "Строка" },
@@ -255,6 +256,17 @@ export const ProgramConstructorDrawer: React.FC<Props> = ({
               control={<Switch checked={Boolean(schema.program.grantsVip)} onChange={(event) => setSchema({ ...schema, program: { ...schema.program, grantsVip: event.target.checked } })} />}
               label="Программа присваивает VIP-статус"
             />
+            {program && (
+              <ProgramProductSettings
+                program={program}
+                scope={scope}
+                onSaved={() => {
+                  void queryClient.invalidateQueries({ queryKey: ["program-constructor", "programs"] });
+                  void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.programs.all });
+                  onChanged();
+                }}
+              />
+            )}
 
             <Stack direction="row" justifyContent="space-between" alignItems="center">
               <Box>
