@@ -36,6 +36,19 @@ describe("missingRequirements", () => {
     expect(missingRequirements(pos, [warehouse, pos])).toEqual([]);
   });
 
+  it("does not walk through a connected requirement", () => {
+    // Касса подключена, хотя без Склада (старое нарушение): для Лояльности
+    // не хватает только Клиентов, чужие пробелы не показываем.
+    const warehouse = mod("warehouse");
+    const pos = mod("pos", ["warehouse"], true);
+    const clients = mod("clients");
+    const loyalty = mod("loyalty", ["pos", "clients"]);
+
+    expect(missingRequirements(loyalty, [warehouse, pos, clients, loyalty])).toEqual([
+      { code: "clients", name: "CLIENTS" },
+    ]);
+  });
+
   it("names a requirement missing from the catalog by its code", () => {
     const orphan = mod("orphan", ["ghost"]);
     expect(missingRequirements(orphan, [orphan])).toEqual([{ code: "ghost", name: "ghost" }]);

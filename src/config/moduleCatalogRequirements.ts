@@ -4,7 +4,9 @@ import type { CatalogModule } from "../api/tenancy";
  * Что ещё нужно подключить, чтобы подключить модуль: требуемые модули с учётом
  * цепочки, которые не подключены, в порядке подключения — сначала то, что
  * нужно остальным. Граф приходит с бэка в `requires` (прямые требования);
- * модуль, которого нет в каталоге, называем по коду.
+ * модуль, которого нет в каталоге, называем по коду. Через подключённый модуль
+ * цепочку не проходим: его пробелы (старые нарушения) — не про этот модуль,
+ * так же считает отказ на бэке (tenancy.dependencies.explain_enable).
  */
 export function missingRequirements(
   module: CatalogModule,
@@ -20,9 +22,10 @@ export function missingRequirements(
     for (const required of requiresOf(code)) {
       if (seen.has(required)) continue;
       seen.add(required);
-      visit(required);
       const entry = byCode.get(required);
-      if (!entry?.isEnabled) missing.push({ code: required, name: entry?.name ?? required });
+      if (entry?.isEnabled) continue;
+      visit(required);
+      missing.push({ code: required, name: entry?.name ?? required });
     }
   };
 
