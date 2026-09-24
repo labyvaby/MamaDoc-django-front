@@ -153,7 +153,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
   const method = (init?.method || "GET").toUpperCase();
 
-  if (url.includes("/v2/hotel/properties/") && method === "GET") return json([PROPERTY]);
+  if (/\/v2\/hotel\/properties\/(\?.*)?$/.test(url) && method === "GET") return json([PROPERTY]);
 
   if (/\/channex\/channels-session\/?$/.test(url) && method === "POST") {
     if (scenario === "unavailable") return errorEnvelope("CHANNEX_UNAVAILABLE", "Channex временно недоступен");
