@@ -68,6 +68,13 @@ export const PAGE_PERMISSIONS = {
   // (сайдбар гейтит isHotelOrg).
   hotelRooms: "hotel.manage",
   hotelRoomCategories: "hotel.manage",
+  // «Ценообразование» — правила динамических цен (см. HotelPricingRulesPage.tsx),
+  // свой пункт сайдбара, не «Настройки». Право страницы (чтение) — hotel.view,
+  // но не hotel.manage, как у категорий/номеров: бэк развёл чтение и запись —
+  // запись (создание/правка/переключатель) требует отдельного hotel.rates.manage,
+  // которого нет у «Ресепшена». Страницы проверяют его сами через
+  // useCan("hotel.rates.manage"), не через PAGE_PERMISSIONS.
+  hotelPricingRules: "hotel.view",
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {

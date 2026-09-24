@@ -296,6 +296,152 @@ export function deleteRoomType(id: number): Promise<void> {
   return apiRequest<void>(`/v2/hotel/room-types/${id}/`, { method: "DELETE" });
 }
 
+// ── Динамическое ценообразование (PricingRule) ───────────────────────────────
+//
+// Контракт ПОДТВЕРЖДЁН бек-разработчиком 24.09.2026 (bb43a99b, «Динамические
+// цены отеля» — уже на test.crm, тот же путь /v2/hotel/pricing-rules/, но не
+// то тело, что предлагал фронт первым сообщением). Подробности — в ответе от
+// бек-разработчика; ключевое:
+// — payload объявлен с forbid_unknown_fields=True — лишний ключ верхнего
+//   уровня (например, старое "label" вместо "name") даёт 400, а не молча
+//   игнорируется;
+// — период и повтор — внутри conditions, а не на верхнем уровне;
+// — GET без includeInactive=true отдаёт только активные правила — выключенное
+//   переключателем правило пропало бы из списка;
+// — запись требует hotel.rates.manage (не hotel.manage), чтение — hotel.view;
+//   у «Ресепшена» права на запись нет — см. useCan("hotel.rates.manage") в
+//   HotelPricingRulesPage.tsx/HotelPricingRuleFormPage.tsx;
+// — PATCH сверяет version с текущей — расхождение → 409 VERSION_CONFLICT;
+// — при нескольких подходящих правилах на одну дату+категорию они применяются
+//   по priority (проценты перемножаются, не складываются); exclusiveGroup —
+//   взаимоисключающая группа, где срабатывает только первое подходящее.
+//   Ни priority, ни exclusiveGroup эта версия фронта не выставляет и не
+//   показывает — бэк берёт их по умолчанию, править их из формы не просили.
+// — процент считается от totalPrice (с наценками характеристик), затем
+//   ограничивается minPrice/maxPrice категории; ручная цена на дату
+//   заменяет результат правил целиком.
+//
+// Проценты нигде на фронте не пересчитываются — ни здесь, ни в форме: для
+// предпросчёта есть simulatePricingRule (POST .../simulate/), который учитывает
+// остальные действующие правила; локальная арифметика дала бы неверную
+// картину при пересечении правил.
+
+export interface HotelPricingRuleConditions {
+  /** YYYY-MM-DD, включительно. */
+  dateFrom: string;
+  /** YYYY-MM-DD, включительно; равна dateFrom для правила на один день. */
+  dateTo: string;
+  /**
+   * Действует в эти же dateFrom/dateTo каждый год, без учёта года. Диапазон
+   * через Новый год (например, 31.12–02.01) бэк переходит корректно — сам
+   * год в датах фронт не подгоняет.
+   */
+  recurringAnnually: boolean;
+}
+
+/** Только подпись для списка ("Сезон"/"Событие") — на расчёт цены не влияет. */
+export type HotelPricingRuleCategory = "season" | "event";
+
+export interface HotelPricingRule {
+  id: number;
+  propertyId: number;
+  name: string;
+  adjustmentType: "percent";
+  /** Знак важен: "20" — дороже на 20%, "-15" — скидка 15%. От −99 до 1000, десятичная строка. */
+  adjustmentValue: string;
+  conditions: HotelPricingRuleConditions;
+  /** Категории (HotelRoomType.id). Пустой массив — все категории объекта, включая заведённые позже. */
+  roomTypeIds: number[];
+  category: HotelPricingRuleCategory;
+  /** Выключенное правило не влияет на цену, но не удаляется — например, сняли наценку на праздники. */
+  isActive: boolean;
+  /** Отправлять обратно в PATCH — расхождение → 409 VERSION_CONFLICT. */
+  version: number;
+}
+
+export interface HotelPricingRuleCreateData {
+  propertyId: number;
+  name: string;
+  adjustmentType: "percent";
+  adjustmentValue: string;
+  conditions: HotelPricingRuleConditions;
+  roomTypeIds: number[];
+  category: HotelPricingRuleCategory;
+  isActive?: boolean;
+}
+
+export interface HotelPricingRuleUpdateData {
+  name?: string;
+  adjustmentValue?: string;
+  conditions?: HotelPricingRuleConditions;
+  roomTypeIds?: number[];
+  category?: HotelPricingRuleCategory;
+  isActive?: boolean;
+  /** Обязательно на любой PATCH — см. комментарий у HotelPricingRule.version. */
+  version: number;
+}
+
+/** includeInactive всегда true — иначе выключенные переключателем правила пропадут из списка. */
+export function listPricingRules(propertyId: number, signal?: AbortSignal): Promise<HotelPricingRule[]> {
+  const qs = buildQuery({ propertyId, includeInactive: true });
+  return apiRequest<HotelPricingRule[]>(`/v2/hotel/pricing-rules/${qs}`, { signal });
+}
+
+export function createPricingRule(data: HotelPricingRuleCreateData): Promise<HotelPricingRule> {
+  return apiRequest<HotelPricingRule>("/v2/hotel/pricing-rules/", { method: "POST", body: data });
+}
+
+export function updatePricingRule(id: number, data: HotelPricingRuleUpdateData): Promise<HotelPricingRule> {
+  return apiRequest<HotelPricingRule>(`/v2/hotel/pricing-rules/${id}/`, { method: "PATCH", body: data });
+}
+
+export function deletePricingRule(id: number): Promise<void> {
+  return apiRequest<void>(`/v2/hotel/pricing-rules/${id}/`, { method: "DELETE" });
+}
+
+export interface HotelPricingRuleSimulateDraft {
+  propertyId: number;
+  adjustmentType: "percent";
+  adjustmentValue: string;
+  conditions: HotelPricingRuleConditions;
+  roomTypeIds: number[];
+  category: HotelPricingRuleCategory;
+}
+
+export interface HotelPricingRuleSimulateNight {
+  date: string;
+  roomTypeId: number;
+  roomTypeName: string;
+  before: Money;
+  after: Money;
+}
+
+/**
+ * ФОРМА ОТВЕТА НЕ ПОДТВЕРЖДЕНА бек-разработчиком — уточнить перед тем, как
+ * полагаться на конкретные поля; это лучшее предположение по описанию «цены
+ * по ночам и категориям, было → стало». HotelPricingRuleFormPage.tsx разбирает
+ * ответ защитно и просто прячет предпросчёт, если форма не совпала.
+ */
+export interface HotelPricingRuleSimulateResult {
+  nights: HotelPricingRuleSimulateNight[];
+}
+
+/**
+ * Живой предпросчёт черновика правила — цены «было → стало» с учётом остальных
+ * действующих правил (порядок по priority, exclusiveGroup и т.п.). Ничего не
+ * сохраняет. Право — то же, что на чтение правил (hotel.view).
+ */
+export function simulatePricingRule(
+  draft: HotelPricingRuleSimulateDraft,
+  signal?: AbortSignal,
+): Promise<HotelPricingRuleSimulateResult> {
+  return apiRequest<HotelPricingRuleSimulateResult>("/v2/hotel/pricing-rules/simulate/", {
+    method: "POST",
+    body: draft,
+    signal,
+  });
+}
+
 // ── Номера (Room) ─────────────────────────────────────────────────────────
 
 export interface HotelRoom {
@@ -538,6 +684,8 @@ export interface HotelReservationGuest {
   /** null без права hotel.guests.documents. */
   document: HotelStayDocument | null;
   documentPhotoUrl: string | null;
+  /** Оборотная сторона ID-карты резидента (contract v2.3). null без права или если ещё не загружена. */
+  documentPhotoBackUrl: string | null;
 }
 
 export interface HotelReservationNight {
@@ -848,6 +996,30 @@ export function deleteStayDocumentPhoto(reservationId: number, guestId: number):
   });
 }
 
+/**
+ * Оборотная сторона ID-карты резидента на брони (contract v2.3) — только хранится,
+ * для загранпаспорта иностранца не шлём. Право hotel.guests.documents.
+ */
+export function uploadStayDocumentPhotoBack(
+  reservationId: number,
+  guestId: number,
+  file: File,
+): Promise<HotelReservationGuest> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequest<HotelReservationGuest>(
+    `/v2/hotel/reservations/${reservationId}/guests/${guestId}/document-photo-back/`,
+    { method: "PUT", formData },
+  );
+}
+
+export function deleteStayDocumentPhotoBack(reservationId: number, guestId: number): Promise<HotelReservationGuest> {
+  return apiRequest<HotelReservationGuest>(
+    `/v2/hotel/reservations/${reservationId}/guests/${guestId}/document-photo-back/`,
+    { method: "DELETE" },
+  );
+}
+
 // ── Оплата проживания (append-only список) ───────────────────────────────────
 
 export interface HotelPayment {
@@ -938,6 +1110,8 @@ export interface HotelGuest {
   issuingAuthority: string | null;
   registrationAddress: string | null;
   documentPhotoUrl: string | null;
+  /** Оборотная сторона ID-карты резидента (contract v2.3). null без права hotel.guests.documents или если ещё не загружена. */
+  documentPhotoBackUrl: string | null;
 }
 
 /** По какому полю совпал запрос: name | phone | document | inn (см. HOTEL_GUEST_MATCH_LABELS). */
@@ -1090,6 +1264,21 @@ export function uploadGuestDocumentPhoto(clientId: number, file: File): Promise<
   const formData = new FormData();
   formData.append("file", file);
   return apiRequest<HotelGuest>(`/v2/hotel/guests/${clientId}/document-photo/`, { method: "PUT", formData });
+}
+
+/**
+ * Оборотная сторона ID-карты резидента (contract v2.3) — только хранится, scan-document/
+ * её не распознаёт, поэтому для загранпаспорта иностранца эти вызовы не шлём. Право
+ * hotel.guests.documents, лицевая сторона (document-photo/) при этом не трогается.
+ */
+export function uploadGuestDocumentPhotoBack(clientId: number, file: File): Promise<HotelGuest> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequest<HotelGuest>(`/v2/hotel/guests/${clientId}/document-photo-back/`, { method: "PUT", formData });
+}
+
+export function deleteGuestDocumentPhotoBack(clientId: number): Promise<HotelGuest> {
+  return apiRequest<HotelGuest>(`/v2/hotel/guests/${clientId}/document-photo-back/`, { method: "DELETE" });
 }
 
 export function deleteGuestDocumentPhoto(clientId: number): Promise<void> {

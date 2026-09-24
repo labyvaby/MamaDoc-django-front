@@ -598,6 +598,49 @@ export const RoomBookingGrid: React.FC = () => {
 
   // Стрелки «‹ ›»: плавно на неделю; если край рядом, соседний кусок подгрузится сам.
   const scrollByDays = (days: number) => scrollEl?.scrollBy({ left: days * dayColWidth, behavior: scrollBehavior() });
+
+  /**
+   * Протяжка зажатой мышью по шапке дат (подписи месяцев и сами числа) — та же
+   * область, где стрелки ниже. Только шапка, не тело сетки: там зажатие уже
+   * занято быстрой бронью (startSelection) — тянуть шахматку за номер/бар/
+   * свободную ячейку означало бы отобрать у них клик.
+   *
+   * Порог в 4px отличает клик (перейти на эту дату) от протяжки: пока сдвиг
+   * меньше — это ещё потенциальный клик, событие не трогаем. Как только
+   * перешли порог — считаем это протяжкой и глотаем ОДИН следующий click
+   * (одноразовый capture-слушатель на window): иначе тот же mouseup родил бы
+   * ещё и клик по дате, под которой отпустили мышь.
+   */
+  const startHeaderPan = (e: React.MouseEvent) => {
+    if (e.button !== 0 || !scrollEl) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startScrollLeft = scrollEl.scrollLeft;
+    let moved = false;
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      if (!moved && Math.abs(dx) > 4) {
+        moved = true;
+        document.body.style.cursor = "grabbing";
+      }
+      if (moved) scrollEl.scrollLeft = startScrollLeft - dx;
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      if (moved) {
+        const swallowClick = (ce: MouseEvent) => {
+          ce.stopPropagation();
+          ce.preventDefault();
+        };
+        window.addEventListener("click", swallowClick, { capture: true, once: true });
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   const goToToday = () => {
     setSelectedHotelDate(dayjs().format("YYYY-MM-DD"));
     const anchor = dayjs().subtract(2, "day").startOf("day");
@@ -712,476 +755,508 @@ export const RoomBookingGrid: React.FC = () => {
     <Box sx={{ flexShrink: 0 }}>
       <BoardShell actions={toolbar}>
         <Stack gap={1.5}>
-          <Box
-            ref={setScrollEl}
-            onScroll={handleScroll}
-            onKeyDown={handleGridKeyDown}
-            sx={{
-              overflow: "auto",
-              maxHeight: 440,
-              // Фокус с клавиатуры не должен уезжать под липкую колонку номеров и шапку.
-              scrollPaddingLeft: `${ROOM_COL_WIDTH}px`,
-              scrollPaddingTop: "80px",
-              // Позицию при добавлении кусков слева выставляем сами (leftDayRef); встроенная
-              // «якорная» прокрутка браузера сдвигала бы её второй раз.
-              overflowAnchor: "none",
-            }}
-          >
+          {/* relative-обёртка нужна только затем, чтобы стрелки ниже (position: absolute)
+              позиционировались от видимой области грида, а не от края документа. */}
+          <Box sx={{ position: "relative" }}>
             <Box
+              ref={setScrollEl}
+              onScroll={handleScroll}
+              onKeyDown={handleGridKeyDown}
               sx={{
-                display: "grid",
-                gridTemplateColumns: `${ROOM_COL_WIDTH}px repeat(${dates.length}, ${dayColWidth}px)`,
-                width: ROOM_COL_WIDTH + dates.length * dayColWidth,
-                // Пока тянем период, браузер не должен выделять текст под курсором.
-                userSelect: dragSel ? "none" : undefined,
+                overflow: "auto",
+                maxHeight: 440,
+                // Фокус с клавиатуры не должен уезжать под липкую колонку номеров и шапку.
+                scrollPaddingLeft: `${ROOM_COL_WIDTH}px`,
+                scrollPaddingTop: "80px",
+                // Позицию при добавлении кусков слева выставляем сами (leftDayRef); встроенная
+                // «якорная» прокрутка браузера сдвигала бы её второй раз.
+                overflowAnchor: "none",
               }}
             >
-              {/* Угол над шапкой — sticky по обеим осям, перекрывает содержимое под собой при
-                  скролле; подпись колонки, как в макете («Номер»); масштаб теперь в тулбаре выше. */}
               <Box
                 sx={{
-                  gridRow: "1 / 3",
-                  gridColumn: 1,
-                  position: "sticky",
-                  left: 0,
-                  top: 0,
-                  zIndex: 3,
-                  bgcolor: "background.paper",
-                  borderRight: 1,
-                  borderTop: 1,
-                  borderBottom: 1,
-                  borderColor: "divider",
-                  display: "flex",
-                  alignItems: "center",
-                  px: 1.5,
+                  display: "grid",
+                  gridTemplateColumns: `${ROOM_COL_WIDTH}px repeat(${dates.length}, ${dayColWidth}px)`,
+                  width: ROOM_COL_WIDTH + dates.length * dayColWidth,
+                  // Пока тянем период, браузер не должен выделять текст под курсором.
+                  userSelect: dragSel ? "none" : undefined,
                 }}
               >
-                <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                  Номер
-                </Typography>
-              </Box>
-
-              {monthSpans.map((m) => (
+                {/* Угол над шапкой — sticky по обеим осям, перекрывает содержимое под собой при
+                    скролле; подпись колонки, как в макете («Номер»); масштаб теперь в тулбаре выше. */}
                 <Box
-                  key={`${m.label}-${m.startCol}`}
                   sx={{
-                    gridRow: 1,
-                    gridColumn: `${m.startCol + 2} / ${m.startCol + 2 + m.span}`,
+                    gridRow: "1 / 3",
+                    gridColumn: 1,
                     position: "sticky",
+                    left: 0,
                     top: 0,
-                    zIndex: 2,
+                    zIndex: 3,
                     bgcolor: "background.paper",
+                    borderRight: 1,
                     borderTop: 1,
                     borderBottom: 1,
                     borderColor: "divider",
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    height: 26,
+                    px: 1.5,
                   }}
                 >
-                  <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                    {m.label}
+                  <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    Номер
                   </Typography>
                 </Box>
-              ))}
 
-              {dates.map((d, i) => {
-                const dateStr = d.format("YYYY-MM-DD");
-                const isToday = i === todayIdx;
-                const isSelected = dateStr === selectedDate;
-                const isWeekend = d.day() === 0 || d.day() === 6;
-                return (
+                {monthSpans.map((m) => (
                   <Box
-                    key={dateStr}
-                    component="button"
-                    type="button"
-                    onClick={() => setSelectedHotelDate(dateStr)}
-                    title={
-                      isToday
-                        ? `Сегодня, сейчас ${now.format("HH:mm")} — показать загрузку и гостей на эту дату`
-                        : "Показать загрузку и гостей на эту дату"
-                    }
+                    key={`${m.label}-${m.startCol}`}
+                    onMouseDown={startHeaderPan}
                     sx={{
-                      gridRow: 2,
-                      gridColumn: i + 2,
+                      gridRow: 1,
+                      gridColumn: `${m.startCol + 2} / ${m.startCol + 2 + m.span}`,
                       position: "sticky",
-                      top: 26,
+                      top: 0,
                       zIndex: 2,
-                      bgcolor: isSelected ? alpha(theme.palette.primary.main, 0.14) : "background.paper",
-                      borderRight: 1,
+                      bgcolor: "background.paper",
+                      borderTop: 1,
                       borderBottom: 1,
                       borderColor: "divider",
                       display: "flex",
-                      flexDirection: "column",
                       alignItems: "center",
                       justifyContent: "center",
-                      py: 0.5,
-                      font: "inherit",
-                      border: 0,
-                      cursor: "pointer",
-                      "&:hover": { bgcolor: isSelected ? undefined : alpha(theme.palette.primary.main, 0.06) },
+                      height: 26,
+                      cursor: "grab",
                     }}
                   >
-                    {/* Сегодня — залитый кружок, как в макете; выбранная (для карточек «Загрузка»/«Гости»
-                        выше) дата — просто цветной жирный номер, если это не сегодня. */}
-                    <Box
-                      sx={{
-                        width: 26,
-                        height: 26,
-                        borderRadius: "8px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        bgcolor: isToday ? "primary.main" : "transparent",
-                        color: isToday ? "primary.contrastText" : isSelected ? "primary.main" : isWeekend ? "text.secondary" : "text.primary",
-                        fontWeight: isToday || isSelected ? 700 : 500,
-                        fontSize: "0.875rem",
-                      }}
-                    >
-                      {d.date()}
-                    </Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
-                      {WEEKDAY_SHORT_RU[(d.day() + 6) % 7]}
+                    <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                      {m.label}
                     </Typography>
-                    {/* Метка «сейчас»: красное время + стрелка на нижней кромке шапки — та же подпись,
-                        что в расписании клиники (ScheduleDayTimeline.tsx), а не только в title по
-                        наведению: текущий момент должен быть виден сразу, без поиска глазами.
-                        Дальше вниз её продолжает красная линия поверх строк (ниже). */}
-                    {isToday && (
-                      <Box
-                        sx={{
-                          position: "absolute",
-                          left: `${nowFraction * 100}%`,
-                          top: "100%",
-                          transform: "translateX(-50%)",
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          pointerEvents: "none",
-                          zIndex: 1,
-                        }}
-                      >
-                        <Typography
-                          sx={{
-                            px: 0.5,
-                            borderRadius: "4px",
-                            bgcolor: "error.main",
-                            color: "error.contrastText",
-                            fontSize: "0.62rem",
-                            fontWeight: 700,
-                            lineHeight: 1.35,
-                            fontVariantNumeric: "tabular-nums",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {now.format("HH:mm")}
-                        </Typography>
-                        <Box
-                          sx={{
-                            width: 0,
-                            height: 0,
-                            borderLeft: "5px solid transparent",
-                            borderRight: "5px solid transparent",
-                            borderTop: `6px solid ${theme.palette.error.main}`,
-                          }}
-                        />
-                      </Box>
-                    )}
                   </Box>
-                );
-              })}
+                ))}
 
-              {/* Этажи/номера + фоновые ячейки сетки под барами */}
-              {ROWS.map((row, rowIdx) => {
-                const gridRow = rowIdx + 3;
-                if (row.kind === "floor") {
-                  const floorTint = theme.palette.mode === "dark" ? alpha("#fff", 0.04) : alpha("#000", 0.03);
+                {dates.map((d, i) => {
+                  const dateStr = d.format("YYYY-MM-DD");
+                  const isToday = i === todayIdx;
+                  const isSelected = dateStr === selectedDate;
+                  const isWeekend = d.day() === 0 || d.day() === 6;
                   return (
-                    <React.Fragment key={`floor-${row.floor}`}>
-                      {/* Заливка строки на всю ширину — обычный, не sticky блок: он и так растянут
-                          на весь grid (gridColumn:1/-1), поэтому в любой позиции прокрутки закрывает
-                          собой всю видимую полосу. position:sticky тут не нужен и, что важнее,
-                          НЕ РАБОТАЕТ на элементе такой ширины (проверено: left:0 не держит позицию,
-                          подпись съезжает вместе с прокруткой) — сама подпись поэтому вынесена в
-                          отдельный узкий (gridColumn:1) sticky-блок ниже, тем же приёмом, что и
-                          прилипающая колонка номеров. */}
-                      <Box
-                        sx={{
-                          gridRow,
-                          gridColumn: "1 / -1",
-                          bgcolor: floorTint,
-                          borderBottom: 1,
-                          borderColor: "divider",
-                          height: 34,
-                        }}
-                      />
-                      <Box
-                        sx={{
-                          gridRow,
-                          gridColumn: 1,
-                          // «1 этаж» и «3 номера» — в два ряда (номер под этажом), а не в одну строку:
-                          // так подпись строки этажа не спорит по ширине с узкой колонкой номеров (92px).
-                          width: "max-content",
-                          position: "sticky",
-                          left: 0,
-                          zIndex: 1,
-                          bgcolor: floorTint,
-                          px: 1.5,
-                          display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "center",
-                          height: 34,
-                        }}
-                      >
-                        <Typography
-                          variant="caption"
-                          fontWeight={700}
-                          color="text.secondary"
-                          noWrap
-                          sx={{ textTransform: "uppercase", letterSpacing: "0.04em", lineHeight: 1.25 }}
-                        >
-                          {floorGroupLabel(row.floor)}
-                        </Typography>
-                        <Typography variant="caption" color="text.disabled" noWrap sx={{ lineHeight: 1.25, fontSize: "0.68rem" }}>
-                          {row.count} {pluralRooms(row.count)}
-                        </Typography>
-                      </Box>
-                    </React.Fragment>
-                  );
-                }
-                const room = row.room;
-                const roomType = roomTypes.find((rt) => rt.id === room.roomTypeId);
-                const luxury = roomType?.isLuxury;
-                const categoryIconKey = categoryIconKeys.get(room.roomTypeId);
-                const CategoryIcon = categoryIconKey ? ROOM_CATEGORY_ICON_COMPONENTS[categoryIconKey] : null;
-                const stateColor = hotelRoomStateColor(room.state, theme);
-                const roomItems = itemsByRoomId.get(room.id) ?? [];
-                return (
-                  <React.Fragment key={room.id}>
                     <Box
+                      key={dateStr}
                       component="button"
                       type="button"
-                      onClick={() => setSelectedRoomId(room.id)}
-                      title="Показать детали номера"
+                      onMouseDown={startHeaderPan}
+                      onClick={() => setSelectedHotelDate(dateStr)}
+                      title={
+                        isToday
+                          ? `Сегодня, сейчас ${now.format("HH:mm")} — показать загрузку и гостей на эту дату`
+                          : "Показать загрузку и гостей на эту дату"
+                      }
                       sx={{
-                        gridRow,
-                        gridColumn: 1,
+                        gridRow: 2,
+                        gridColumn: i + 2,
                         position: "sticky",
-                        left: 0,
-                        zIndex: 1,
-                        // Фон колонки номеров — непрозрачный: под ней при прокрутке проезжают бары
-                        // (в том числе из прошлого слева), и полупрозрачный оттенок «люкса» их просвечивал
-                        // бы. Оттенок и подсветка наведения — градиентом поверх бумажного фона.
-                        bgcolor: "background.paper",
-                        backgroundImage: luxury ? tintOver(alpha("#d4af37", theme.palette.mode === "dark" ? 0.14 : 0.1)) : undefined,
+                        top: 26,
+                        zIndex: 2,
+                        bgcolor: isSelected ? alpha(theme.palette.primary.main, 0.14) : "background.paper",
                         borderRight: 1,
                         borderBottom: 1,
                         borderColor: "divider",
                         display: "flex",
+                        flexDirection: "column",
                         alignItems: "center",
-                        gap: 0.5,
-                        px: 1,
-                        height: 48,
+                        justifyContent: "center",
+                        py: 0.5,
                         font: "inherit",
-                        color: "inherit",
                         border: 0,
-                        textAlign: "left",
-                        cursor: "pointer",
-                        "&:hover": { backgroundImage: tintOver(alpha(theme.palette.primary.main, 0.08)) },
+                        cursor: "grab",
+                        "&:hover": { bgcolor: isSelected ? undefined : alpha(theme.palette.primary.main, 0.06) },
                       }}
                     >
-                      {CategoryIcon && (
-                        <Tooltip title={roomType?.name ?? "Категория"}>
-                          <CategoryIcon
+                      {/* Сегодня — залитый кружок, как в макете; выбранная (для карточек «Загрузка»/«Гости»
+                          выше) дата — просто цветной жирный номер, если это не сегодня. */}
+                      <Box
+                        sx={{
+                          width: 26,
+                          height: 26,
+                          borderRadius: "8px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          bgcolor: isToday ? "primary.main" : "transparent",
+                          color: isToday ? "primary.contrastText" : isSelected ? "primary.main" : isWeekend ? "text.secondary" : "text.primary",
+                          fontWeight: isToday || isSelected ? 700 : 500,
+                          fontSize: "0.875rem",
+                        }}
+                      >
+                        {d.date()}
+                      </Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
+                        {WEEKDAY_SHORT_RU[(d.day() + 6) % 7]}
+                      </Typography>
+                      {/* Метка «сейчас»: красное время + стрелка на нижней кромке шапки — та же подпись,
+                          что в расписании клиники (ScheduleDayTimeline.tsx), а не только в title по
+                          наведению: текущий момент должен быть виден сразу, без поиска глазами.
+                          Дальше вниз её продолжает красная линия поверх строк (ниже). */}
+                      {isToday && (
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            left: `${nowFraction * 100}%`,
+                            top: "100%",
+                            transform: "translateX(-50%)",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            pointerEvents: "none",
+                            zIndex: 1,
+                          }}
+                        >
+                          <Typography
                             sx={{
-                              fontSize: 16,
+                              px: 0.5,
+                              borderRadius: "4px",
+                              bgcolor: "error.main",
+                              color: "error.contrastText",
+                              fontSize: "0.62rem",
+                              fontWeight: 700,
+                              lineHeight: 1.35,
+                              fontVariantNumeric: "tabular-nums",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {now.format("HH:mm")}
+                          </Typography>
+                          <Box
+                            sx={{
+                              width: 0,
+                              height: 0,
+                              borderLeft: "5px solid transparent",
+                              borderRight: "5px solid transparent",
+                              borderTop: `6px solid ${theme.palette.error.main}`,
+                            }}
+                          />
+                        </Box>
+                      )}
+                    </Box>
+                  );
+                })}
+
+                {/* Этажи/номера + фоновые ячейки сетки под барами */}
+                {ROWS.map((row, rowIdx) => {
+                  const gridRow = rowIdx + 3;
+                  if (row.kind === "floor") {
+                    const floorTint = theme.palette.mode === "dark" ? alpha("#fff", 0.04) : alpha("#000", 0.03);
+                    return (
+                      <React.Fragment key={`floor-${row.floor}`}>
+                        {/* Заливка строки на всю ширину — обычный, не sticky блок: он и так растянут
+                            на весь grid (gridColumn:1/-1), поэтому в любой позиции прокрутки закрывает
+                            собой всю видимую полосу. position:sticky тут не нужен и, что важнее,
+                            НЕ РАБОТАЕТ на элементе такой ширины (проверено: left:0 не держит позицию,
+                            подпись съезжает вместе с прокруткой) — сама подпись поэтому вынесена в
+                            отдельный узкий (gridColumn:1) sticky-блок ниже, тем же приёмом, что и
+                            прилипающая колонка номеров. */}
+                        <Box
+                          sx={{
+                            gridRow,
+                            gridColumn: "1 / -1",
+                            bgcolor: floorTint,
+                            borderBottom: 1,
+                            borderColor: "divider",
+                            height: 34,
+                          }}
+                        />
+                        <Box
+                          sx={{
+                            gridRow,
+                            gridColumn: 1,
+                            // «1 этаж» и «3 номера» — в два ряда (номер под этажом), а не в одну строку:
+                            // так подпись строки этажа не спорит по ширине с узкой колонкой номеров (92px).
+                            width: "max-content",
+                            position: "sticky",
+                            left: 0,
+                            zIndex: 1,
+                            bgcolor: floorTint,
+                            px: 1.5,
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "center",
+                            height: 34,
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            fontWeight={700}
+                            color="text.secondary"
+                            noWrap
+                            sx={{ textTransform: "uppercase", letterSpacing: "0.04em", lineHeight: 1.25 }}
+                          >
+                            {floorGroupLabel(row.floor)}
+                          </Typography>
+                          <Typography variant="caption" color="text.disabled" noWrap sx={{ lineHeight: 1.25, fontSize: "0.68rem" }}>
+                            {row.count} {pluralRooms(row.count)}
+                          </Typography>
+                        </Box>
+                      </React.Fragment>
+                    );
+                  }
+                  const room = row.room;
+                  const roomType = roomTypes.find((rt) => rt.id === room.roomTypeId);
+                  const luxury = roomType?.isLuxury;
+                  const categoryIconKey = categoryIconKeys.get(room.roomTypeId);
+                  const CategoryIcon = categoryIconKey ? ROOM_CATEGORY_ICON_COMPONENTS[categoryIconKey] : null;
+                  const stateColor = hotelRoomStateColor(room.state, theme);
+                  const roomItems = itemsByRoomId.get(room.id) ?? [];
+                  return (
+                    <React.Fragment key={room.id}>
+                      <Box
+                        component="button"
+                        type="button"
+                        onClick={() => setSelectedRoomId(room.id)}
+                        title="Показать детали номера"
+                        sx={{
+                          gridRow,
+                          gridColumn: 1,
+                          position: "sticky",
+                          left: 0,
+                          zIndex: 1,
+                          // Фон колонки номеров — непрозрачный: под ней при прокрутке проезжают бары
+                          // (в том числе из прошлого слева), и полупрозрачный оттенок «люкса» их просвечивал
+                          // бы. Оттенок и подсветка наведения — градиентом поверх бумажного фона.
+                          bgcolor: "background.paper",
+                          backgroundImage: luxury ? tintOver(alpha("#d4af37", theme.palette.mode === "dark" ? 0.14 : 0.1)) : undefined,
+                          borderRight: 1,
+                          borderBottom: 1,
+                          borderColor: "divider",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 0.5,
+                          px: 1,
+                          height: 48,
+                          font: "inherit",
+                          color: "inherit",
+                          border: 0,
+                          textAlign: "left",
+                          cursor: "pointer",
+                          "&:hover": { backgroundImage: tintOver(alpha(theme.palette.primary.main, 0.08)) },
+                        }}
+                      >
+                        {CategoryIcon && (
+                          <Tooltip title={roomType?.name ?? "Категория"}>
+                            <CategoryIcon
+                              sx={{
+                                fontSize: 16,
+                                flexShrink: 0,
+                                color:
+                                  categoryIconKey === "luxury"
+                                    ? theme.palette.mode === "dark"
+                                      ? "#e9c766"
+                                      : "#8a6d1a"
+                                    : "text.secondary",
+                              }}
+                            />
+                          </Tooltip>
+                        )}
+                        <Typography variant="body2" fontWeight={600} noWrap sx={{ minWidth: 0 }}>
+                          {room.number}
+                        </Typography>
+                        <Tooltip title={`Статус номера: ${HOTEL_ROOM_STATE_LABELS[room.state as keyof typeof HOTEL_ROOM_STATE_LABELS] ?? room.state}`}>
+                          <Box
+                            sx={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: "50%",
+                              bgcolor: stateColor,
+                              ml: "auto",
                               flexShrink: 0,
-                              color:
-                                categoryIconKey === "luxury"
-                                  ? theme.palette.mode === "dark"
-                                    ? "#e9c766"
-                                    : "#8a6d1a"
-                                  : "text.secondary",
                             }}
                           />
                         </Tooltip>
-                      )}
-                      <Typography variant="body2" fontWeight={600} noWrap sx={{ minWidth: 0 }}>
-                        {room.number}
-                      </Typography>
-                      <Tooltip title={`Статус номера: ${HOTEL_ROOM_STATE_LABELS[room.state as keyof typeof HOTEL_ROOM_STATE_LABELS] ?? room.state}`}>
-                        <Box
-                          sx={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: "50%",
-                            bgcolor: stateColor,
-                            ml: "auto",
-                            flexShrink: 0,
-                          }}
-                        />
-                      </Tooltip>
-                    </Box>
-                    {(() => {
-                      // Черновики (reservationStatus: "draft") номер не занимают — только подтверждённые/hold считаются на занятость.
-                      const occupying = roomItems.filter((it) => it.reservationStatus !== "draft");
-                      // Свободна ли каждая видимая ночь — и для рисования ячеек, и чтобы выделение не тянулось через чужую бронь.
-                      const freeMask = dates.map((d) => {
-                        const dateStr = d.format("YYYY-MM-DD");
-                        return !occupying.some((it) => dateStr >= it.checkIn && dateStr < it.checkOut);
-                      });
-                      const selection =
-                        dragSel && dragSel.roomId === room.id ? selectionBounds(dragSel.startIdx, dragSel.endIdx) : null;
-                      return dates.map((d, i) => {
-                        const dateStr = d.format("YYYY-MM-DD");
-                        const isFree = freeMask[i];
-                        const inSelection = selection != null && i >= selection[0] && i <= selection[1];
-                        return (
-                          <Box
-                            key={`${room.id}-${dateStr}`}
-                            component={isFree ? "button" : "div"}
-                            type={isFree ? "button" : undefined}
-                            data-cell={isFree ? `${rowIdx}:${i}` : undefined}
-                            tabIndex={isFree ? (`${rowIdx}:${i}` === entryCell ? 0 : -1) : undefined}
-                            aria-label={isFree ? `Быстрая бронь: номер ${room.number}, ${d.format("D MMMM")}` : undefined}
-                            // Мышь: нажатие — «от», отпускание (обработчик на window) — «до».
-                            onMouseDown={isFree ? (e: React.MouseEvent) => startSelection(e, room, i) : undefined}
-                            onMouseEnter={dragSel ? () => extendSelection(room.id, i, freeMask) : undefined}
-                            // Клавиатура (Enter/Space на ячейке) даёт click с detail === 0 — одна ночь;
-                            // click от мыши (detail ≥ 1) уже обработан нажатием/отпусканием выше.
-                            onClick={
-                              isFree
-                                ? (e: React.MouseEvent) => {
-                                    if (e.detail === 0) requestQuickBooking(room.number, dateStr);
-                                  }
-                                : undefined
-                            }
-                            title={
-                              isFree
-                                ? `Быстрая бронь — №${room.number}, ${d.format("D MMMM")}. Клик — одна ночь, зажмите и протяните — период`
-                                : undefined
-                            }
-                            sx={{
-                              gridRow,
-                              gridColumn: i + 2,
-                              height: 48,
-                              borderRight: 1,
-                              borderBottom: 1,
-                              borderColor: "divider",
-                              border: 0,
-                              font: "inherit",
-                              p: 0,
-                              textAlign: "left",
-                              cursor: isFree ? "pointer" : "default",
-                              bgcolor: inSelection
-                                ? alpha(theme.palette.primary.main, 0.34)
-                                : i === todayIdx
-                                ? alpha(theme.palette.primary.main, 0.06)
-                                : d.day() === 0 || d.day() === 6
-                                ? theme.palette.action.hover
-                                : "transparent",
-                              "&:hover": isFree && !inSelection ? { bgcolor: alpha(theme.palette.primary.main, 0.12) } : undefined,
-                              // Свободная ячейка узнаваема сразу, как в макете — «+» проступает на
-                              // наведении/фокусе, а не висит всегда (тысячи иконок захламили бы сетку).
-                              "&:hover .rbg-plus, &:focus-visible .rbg-plus": { opacity: 0.6 },
-                              // Фокус с клавиатуры: 2 px цвета темы внутрь ячейки (стандартная 1 px чёрная
-                              // рамка на колонке в 20 px почти теряется).
-                              "&:focus-visible": isFree ? { outline: "2px solid", outlineColor: "primary.main", outlineOffset: "-2px" } : undefined,
-                            }}
-                          >
-                            {isFree && dayColWidth >= CELL_PLUS_MIN_WIDTH && (
-                              <AddOutlined
-                                className="rbg-plus"
-                                sx={{ fontSize: 14, color: "primary.main", opacity: 0, display: "block", mx: "auto", pointerEvents: "none" }}
-                              />
-                            )}
-                          </Box>
-                        );
-                      });
-                    })()}
-                  </React.Fragment>
-                );
-              })}
+                      </Box>
+                      {(() => {
+                        // Черновики (reservationStatus: "draft") номер не занимают — только подтверждённые/hold считаются на занятость.
+                        const occupying = roomItems.filter((it) => it.reservationStatus !== "draft");
+                        // Свободна ли каждая видимая ночь — и для рисования ячеек, и чтобы выделение не тянулось через чужую бронь.
+                        const freeMask = dates.map((d) => {
+                          const dateStr = d.format("YYYY-MM-DD");
+                          return !occupying.some((it) => dateStr >= it.checkIn && dateStr < it.checkOut);
+                        });
+                        const selection =
+                          dragSel && dragSel.roomId === room.id ? selectionBounds(dragSel.startIdx, dragSel.endIdx) : null;
+                        return dates.map((d, i) => {
+                          const dateStr = d.format("YYYY-MM-DD");
+                          const isFree = freeMask[i];
+                          const inSelection = selection != null && i >= selection[0] && i <= selection[1];
+                          return (
+                            <Box
+                              key={`${room.id}-${dateStr}`}
+                              component={isFree ? "button" : "div"}
+                              type={isFree ? "button" : undefined}
+                              data-cell={isFree ? `${rowIdx}:${i}` : undefined}
+                              tabIndex={isFree ? (`${rowIdx}:${i}` === entryCell ? 0 : -1) : undefined}
+                              aria-label={isFree ? `Быстрая бронь: номер ${room.number}, ${d.format("D MMMM")}` : undefined}
+                              // Мышь: нажатие — «от», отпускание (обработчик на window) — «до».
+                              onMouseDown={isFree ? (e: React.MouseEvent) => startSelection(e, room, i) : undefined}
+                              onMouseEnter={dragSel ? () => extendSelection(room.id, i, freeMask) : undefined}
+                              // Клавиатура (Enter/Space на ячейке) даёт click с detail === 0 — одна ночь;
+                              // click от мыши (detail ≥ 1) уже обработан нажатием/отпусканием выше.
+                              onClick={
+                                isFree
+                                  ? (e: React.MouseEvent) => {
+                                      if (e.detail === 0) requestQuickBooking(room.number, dateStr);
+                                    }
+                                  : undefined
+                              }
+                              title={
+                                isFree
+                                  ? `Быстрая бронь — №${room.number}, ${d.format("D MMMM")}. Клик — одна ночь, зажмите и протяните — период`
+                                  : undefined
+                              }
+                              sx={{
+                                gridRow,
+                                gridColumn: i + 2,
+                                height: 48,
+                                borderRight: 1,
+                                borderBottom: 1,
+                                borderColor: "divider",
+                                border: 0,
+                                font: "inherit",
+                                p: 0,
+                                textAlign: "left",
+                                cursor: isFree ? "pointer" : "default",
+                                bgcolor: inSelection
+                                  ? alpha(theme.palette.primary.main, 0.34)
+                                  : i === todayIdx
+                                  ? alpha(theme.palette.primary.main, 0.06)
+                                  : d.day() === 0 || d.day() === 6
+                                  ? theme.palette.action.hover
+                                  : "transparent",
+                                "&:hover": isFree && !inSelection ? { bgcolor: alpha(theme.palette.primary.main, 0.12) } : undefined,
+                                // Свободная ячейка узнаваема сразу, как в макете — «+» проступает на
+                                // наведении/фокусе, а не висит всегда (тысячи иконок захламили бы сетку).
+                                "&:hover .rbg-plus, &:focus-visible .rbg-plus": { opacity: 0.6 },
+                                // Фокус с клавиатуры: 2 px цвета темы внутрь ячейки (стандартная 1 px чёрная
+                                // рамка на колонке в 20 px почти теряется).
+                                "&:focus-visible": isFree ? { outline: "2px solid", outlineColor: "primary.main", outlineOffset: "-2px" } : undefined,
+                              }}
+                            >
+                              {isFree && dayColWidth >= CELL_PLUS_MIN_WIDTH && (
+                                <AddOutlined
+                                  className="rbg-plus"
+                                  sx={{ fontSize: 14, color: "primary.main", opacity: 0, display: "block", mx: "auto", pointerEvents: "none" }}
+                                />
+                              )}
+                            </Box>
+                          );
+                        });
+                      })()}
+                    </React.Fragment>
+                  );
+                })}
 
-              {/* Бары броней — та же сетка, поверх фоновых ячеек по порядку в DOM */}
-              {ROWS.map((row, rowIdx) => {
-                if (row.kind !== "room") return null;
-                const gridRow = rowIdx + 3;
-                const roomItems = itemsByRoomId.get(row.room.id) ?? [];
-                return roomItems.map((it) => {
-                  const rawStart = dayjs(it.checkIn).diff(gridStart, "day");
-                  const rawEnd = dayjs(it.checkOut).diff(gridStart, "day");
-                  const startCol = Math.max(0, rawStart);
-                  const endCol = Math.min(dates.length, rawEnd);
-                  if (endCol <= startCol) return null;
-                  const status = mapStayDisplayStatus(it.stayStatus);
-                  const color = it.isOverbooking ? theme.palette.warning.main : hotelStayStatusColor(status, theme);
-                  const nights = nightsBetween(it.checkIn, it.checkOut);
-                  const isDraft = it.reservationStatus === "draft";
-                  // Цвет статуса — в заливке и левом акценте (как в макете), а подпись text.primary
-                  // (у «Завершена» — text.secondary): цвет статуса как цвет текста давал 2.6–4.1:1
-                  // в светлой теме, а так на любой заливке ≥ 4.6:1 (проверено расчётом WCAG в обеих темах).
-                  const textColor = status === "completed" ? theme.palette.text.secondary : theme.palette.text.primary;
-                  const label = it.customerName || `Бронь №${it.reservationNumber}`;
-                  // Ширина бара — колонки × ширина дня минус отступы по 3 px. Чем уже бар, тем
-                  // короче подпись: имя → инициалы → одна буква (полное имя — в подсказке бара).
-                  const labelMode = barLabelMode((endCol - startCol) * dayColWidth - 6);
-                  // Полное описание — и для скринридера (в баре может быть только «АД»), и для
-                  // подсказки: статус не должен зависеть от одного цвета.
-                  const barDescription = `${label} · №${row.room.number} · ${nights} ноч. · ${HOTEL_STAY_STATUS_LABELS[status]}${it.isOverbooking ? " · Овербукинг" : ""}${isDraft ? " · Черновик" : ""}`;
-                  // Черновик — весь контур пунктиром (виден отдельно от статуса); подтверждённая
-                  // бронь — только левый цветной акцент 3 px, как в макете «Терра».
-                  const barBorderSx = isDraft
-                    ? { border: "1px dashed", borderColor: alpha(color, 0.6) }
-                    : { border: 0, borderLeft: "3px solid", borderLeftColor: color };
-                  return (
+                {/* Бары броней — та же сетка, поверх фоновых ячеек по порядку в DOM */}
+                {ROWS.map((row, rowIdx) => {
+                  if (row.kind !== "room") return null;
+                  const gridRow = rowIdx + 3;
+                  const roomItems = itemsByRoomId.get(row.room.id) ?? [];
+                  return roomItems.map((it) => {
+                    const rawStart = dayjs(it.checkIn).diff(gridStart, "day");
+                    const rawEnd = dayjs(it.checkOut).diff(gridStart, "day");
+                    const startCol = Math.max(0, rawStart);
+                    const endCol = Math.min(dates.length, rawEnd);
+                    if (endCol <= startCol) return null;
+                    const status = mapStayDisplayStatus(it.stayStatus);
+                    const color = it.isOverbooking ? theme.palette.warning.main : hotelStayStatusColor(status, theme);
+                    const nights = nightsBetween(it.checkIn, it.checkOut);
+                    const isDraft = it.reservationStatus === "draft";
+                    // Цвет статуса — в заливке и левом акценте (как в макете), а подпись text.primary
+                    // (у «Завершена» — text.secondary): цвет статуса как цвет текста давал 2.6–4.1:1
+                    // в светлой теме, а так на любой заливке ≥ 4.6:1 (проверено расчётом WCAG в обеих темах).
+                    const textColor = status === "completed" ? theme.palette.text.secondary : theme.palette.text.primary;
+                    const label = it.customerName || `Бронь №${it.reservationNumber}`;
+                    // Ширина бара — колонки × ширина дня минус отступы по 3 px. Чем уже бар, тем
+                    // короче подпись: имя → инициалы → одна буква (полное имя — в подсказке бара).
+                    const labelMode = barLabelMode((endCol - startCol) * dayColWidth - 6);
+                    // Полное описание — и для скринридера (в баре может быть только «АД»), и для
+                    // подсказки: статус не должен зависеть от одного цвета.
+                    const barDescription = `${label} · №${row.room.number} · ${nights} ноч. · ${HOTEL_STAY_STATUS_LABELS[status]}${it.isOverbooking ? " · Овербукинг" : ""}${isDraft ? " · Черновик" : ""}`;
+                    // Черновик — весь контур пунктиром (виден отдельно от статуса); подтверждённая
+                    // бронь — только левый цветной акцент 3 px, как в макете «Терра».
+                    const barBorderSx = isDraft
+                      ? { border: "1px dashed", borderColor: alpha(color, 0.6) }
+                      : { border: 0, borderLeft: "3px solid", borderLeftColor: color };
+                    return (
+                      <Box
+                        key={it.itemId}
+                        component="button"
+                        type="button"
+                        onClick={() => setSelectedReservationId(it.reservationId)}
+                        aria-label={barDescription}
+                        title={`${barDescription} — показать бронь`}
+                        sx={{
+                          gridRow,
+                          gridColumn: `${startCol + 2} / ${endCol + 2}`,
+                          alignSelf: "center",
+                          height: 30,
+                          mx: "3px",
+                          px: labelMode === "name" ? 1 : 0,
+                          borderRadius: "8px",
+                          bgcolor: alpha(color, barFillAlpha(status, theme.palette.mode === "dark")),
+                          ...barBorderSx,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: labelMode === "name" ? "flex-start" : "center",
+                          overflow: "hidden",
+                          font: "inherit",
+                          cursor: "pointer",
+                          "&:hover": { borderLeftColor: isDraft ? undefined : color, borderColor: isDraft ? color : undefined },
+                        }}
+                      >
+                        <Typography variant="caption" noWrap sx={{ color: textColor, fontWeight: 600 }}>
+                          {barLabelText(labelMode, it.customerName, it.reservationNumber)}
+                        </Typography>
+                      </Box>
+                    );
+                  });
+                })}
+
+                {/* Граница между месяцами — серая вертикальная линия по левому краю первого дня
+                    месяца, во всю высоту строк (без шапки: там смену месяца и так видно по подписи).
+                    Раньше её не было вовсе, и на глаз было не понять, где кончается один месяц и
+                    начинается следующий. Тем же приёмом, что и красная линия «сейчас» ниже — отдельный
+                    элемент на всю колонку, pointerEvents: none, чтобы не мешать клику/протяжке. */}
+                {ROWS.length > 0 &&
+                  monthSpans.slice(1).map((m) => (
                     <Box
-                      key={it.itemId}
-                      component="button"
-                      type="button"
-                      onClick={() => setSelectedReservationId(it.reservationId)}
-                      aria-label={barDescription}
-                      title={`${barDescription} — показать бронь`}
+                      key={`month-divider-${m.startCol}`}
+                      aria-hidden
                       sx={{
-                        gridRow,
-                        gridColumn: `${startCol + 2} / ${endCol + 2}`,
-                        alignSelf: "center",
-                        height: 30,
-                        mx: "3px",
-                        px: labelMode === "name" ? 1 : 0,
-                        borderRadius: "8px",
-                        bgcolor: alpha(color, barFillAlpha(status, theme.palette.mode === "dark")),
-                        ...barBorderSx,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: labelMode === "name" ? "flex-start" : "center",
-                        overflow: "hidden",
-                        font: "inherit",
-                        cursor: "pointer",
-                        "&:hover": { borderLeftColor: isDraft ? undefined : color, borderColor: isDraft ? color : undefined },
+                        gridColumn: m.startCol + 2,
+                        gridRow: `3 / ${ROWS.length + 3}`,
+                        position: "relative",
+                        pointerEvents: "none",
                       }}
                     >
-                      <Typography variant="caption" noWrap sx={{ color: textColor, fontWeight: 600 }}>
-                        {barLabelText(labelMode, it.customerName, it.reservationNumber)}
-                      </Typography>
+                      <Box
+                        sx={{
+                          position: "absolute",
+                          top: 0,
+                          bottom: 0,
+                          left: 0,
+                          width: "1px",
+                          bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === "dark" ? 0.18 : 0.14),
+                        }}
+                      />
                     </Box>
-                  );
-                });
-              })}
+                  ))}
 
-              {/* Граница между месяцами — серая вертикальная линия по левому краю первого дня
-                  месяца, во всю высоту строк (без шапки: там смену месяца и так видно по подписи).
-                  Раньше её не было вовсе, и на глаз было не понять, где кончается один месяц и
-                  начинается следующий. Тем же приёмом, что и красная линия «сейчас» ниже — отдельный
-                  элемент на всю колонку, pointerEvents: none, чтобы не мешать клику/протяжке. */}
-              {ROWS.length > 0 &&
-                monthSpans.slice(1).map((m) => (
+                {/* Красная линия «сейчас»: один элемент на все строки колонки сегодняшнего дня, после
+                    баров в DOM — значит поверх них и поверх полос этажей (не рвётся). Ниже sticky-
+                    шапки и колонки номеров по z-index, а pointerEvents: none пропускает клики и
+                    протяжку периода сквозь неё к ячейкам. */}
+                {todayIdx >= 0 && ROWS.length > 0 && (
                   <Box
-                    key={`month-divider-${m.startCol}`}
-                    aria-hidden
                     sx={{
-                      gridColumn: m.startCol + 2,
+                      gridColumn: todayIdx + 2,
                       gridRow: `3 / ${ROWS.length + 3}`,
                       position: "relative",
                       pointerEvents: "none",
@@ -1192,42 +1267,60 @@ export const RoomBookingGrid: React.FC = () => {
                         position: "absolute",
                         top: 0,
                         bottom: 0,
-                        left: 0,
-                        width: "1px",
-                        bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === "dark" ? 0.18 : 0.14),
+                        left: `${nowFraction * 100}%`,
+                        ml: "-1px",
+                        width: "2px",
+                        bgcolor: "error.main",
+                        opacity: 0.85,
                       }}
                     />
                   </Box>
-                ))}
-
-              {/* Красная линия «сейчас»: один элемент на все строки колонки сегодняшнего дня, после
-                  баров в DOM — значит поверх них и поверх полос этажей (не рвётся). Ниже sticky-
-                  шапки и колонки номеров по z-index, а pointerEvents: none пропускает клики и
-                  протяжку периода сквозь неё к ячейкам. */}
-              {todayIdx >= 0 && ROWS.length > 0 && (
-                <Box
-                  sx={{
-                    gridColumn: todayIdx + 2,
-                    gridRow: `3 / ${ROWS.length + 3}`,
-                    position: "relative",
-                    pointerEvents: "none",
-                  }}
-                >
-                  <Box
-                    sx={{
-                      position: "absolute",
-                      top: 0,
-                      bottom: 0,
-                      left: `${nowFraction * 100}%`,
-                      ml: "-1px",
-                      width: "2px",
-                      bgcolor: "error.main",
-                      opacity: 0.85,
-                    }}
-                  />
-                </Box>
-              )}
+                )}
+              </Box>
             </Box>
+
+          {/* Стрелки на краях шапки дат — то же самое, что «‹ ›» в тулбаре выше, но
+              рядом с самими датами: не нужно тянуться к шапке карточки. Левая стоит
+              сразу после липкой колонки номеров, правая — у правого края видимой
+              области; обе поверх шапки (zIndex выше её sticky-ячеек). */}
+          <IconButton
+            size="small"
+            onClick={() => scrollByDays(-7)}
+            aria-label="Дни назад"
+            sx={{
+              position: "absolute",
+              top: 26,
+              left: ROOM_COL_WIDTH + 4,
+              height: 35,
+              zIndex: 5,
+              bgcolor: "background.paper",
+              border: 1,
+              borderColor: "divider",
+              boxShadow: 1,
+              "&:hover": { bgcolor: "action.hover" },
+            }}
+          >
+            <ChevronLeftOutlined fontSize="small" />
+          </IconButton>
+          <IconButton
+            size="small"
+            onClick={() => scrollByDays(7)}
+            aria-label="Дни вперёд"
+            sx={{
+              position: "absolute",
+              top: 26,
+              right: 4,
+              height: 35,
+              zIndex: 5,
+              bgcolor: "background.paper",
+              border: 1,
+              borderColor: "divider",
+              boxShadow: 1,
+              "&:hover": { bgcolor: "action.hover" },
+            }}
+          >
+            <ChevronRightOutlined fontSize="small" />
+          </IconButton>
           </Box>
 
           {/* Подвал — легенда состояний и статусов + сколько номеров показано и часы

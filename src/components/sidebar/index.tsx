@@ -35,6 +35,7 @@ import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
+import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
@@ -439,6 +440,7 @@ const SidebarSecondary: React.FC = () => {
     // относятся (право hotel.manage, см. PAGE_PERMISSIONS).
     hotelRooms: isHotelOrg && can(PAGE_PERMISSIONS.hotelRooms),
     hotelRoomCategories: isHotelOrg && can(PAGE_PERMISSIONS.hotelRoomCategories),
+    hotelPricingRules: isHotelOrg && can(PAGE_PERMISSIONS.hotelPricingRules),
     // СКЛАДЫ
     pos: can(PAGE_PERMISSIONS.pos),
     products: can(PAGE_PERMISSIONS.products),
@@ -629,7 +631,7 @@ const SidebarSecondary: React.FC = () => {
   const hotelOnly = isHotelOrg;
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
-    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents || can_.hotelRooms || can_.hotelRoomCategories,
+    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents || can_.hotelRooms || can_.hotelRoomCategories || can_.hotelPricingRules,
     "storage": !hotelOnly && (can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement),
     "management": !hotelOnly && (can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings),
   };
@@ -910,6 +912,9 @@ const SidebarSecondary: React.FC = () => {
         {show("org") && can_.hotelRoomCategories && (
           <SidebarMenuItem to="/room-categories" icon={<CategoryOutlined />} label="Категории и тарифы" collapsed={siderCollapsed} />
         )}
+        {show("org") && can_.hotelPricingRules && (
+          <SidebarMenuItem to="/pricing-rules" icon={<PriceChangeOutlined />} label="Ценообразование" collapsed={siderCollapsed} />
+        )}
 
         {/* Все приемы */}
         {show("org") && can_.allAppointments && (
@@ -1054,13 +1059,13 @@ type SidebarMenuItemProps = {
  * HotelReportsPage, «Кухня» — HotelKitchenPage, «Настройки» — реальный
  * SettingsIndexPage/SettingsLayout (рельс сам показывает только доступные по
  * правам разделы + «Интеграции» — каналы продаж живут там). «Номера»
- * (HotelRoomsPage) и «Категории и тарифы» (HotelRoomCategoriesPage) — свои
- * страницы, не «Настройки».
+ * (HotelRoomsPage), «Категории и тарифы» (HotelRoomCategoriesPage) и
+ * «Ценообразование» (HotelPricingRulesPage) — свои страницы, не «Настройки».
  * Остальные ~30 пунктов (Вакцины, СКУД, Кабинет врача и т.п.) ведут либо на
  * несуществующие для синтетической организации данные, либо просто не
  * имеют отношения к отелю.
  */
-const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/reports", "/kitchen", "/rooms", "/room-categories", "/settings"];
+const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/reports", "/kitchen", "/rooms", "/room-categories", "/pricing-rules", "/settings"];
 
 const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   to,
