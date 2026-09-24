@@ -72,7 +72,7 @@ export const ConclusionPrintPage: React.FC = () => {
           heightCm: quantity(c?.heightCm),
           weightKg: quantity(c?.weightKg),
           temperature: quantity(c?.temperature),
-          complaints: c?.complaints ?? d.appt.doctorComplaints ?? "",
+          complaints: c?.complaints ?? d.visit.doctorComplaints ?? "",
           diagnosis: formatDiagnoses(c?.diagnosisData ?? []),
           anamnesis: c?.anamnesis ?? "",
           objective: c?.objective ?? "",
@@ -84,13 +84,13 @@ export const ConclusionPrintPage: React.FC = () => {
         const screenData: ConclusionPDFData = {
           patientFio: d.patientFio,
           patientDob: d.patientDob,
-          appointmentDate: d.appt.scheduledAt
-            ? dayjs(d.appt.scheduledAt).format("DD.MM.YYYY HH:mm")
+          appointmentDate: d.visit.startsAt
+            ? dayjs(d.visit.startsAt).format("DD.MM.YYYY HH:mm")
             : "—",
           height: columns.heightCm,
           weight: columns.weightKg,
           temperature: columns.temperature,
-          complaints: d.appt.complaints ?? "—",
+          complaints: d.visit.complaints ?? "—",
           doctorComplaints: columns.complaints || "—",
           diagnosis: columns.diagnosis || "—",
           anamnesis: columns.anamnesis,
@@ -219,8 +219,8 @@ async function printWithSheet(
   const context: SheetContext = {
     patientFio: d.patientFio,
     patientDob: d.patientDob,
-    appointmentDateTime: d.appt.scheduledAt
-      ? dayjs(d.appt.scheduledAt).format("DD.MM.YYYY HH:mm")
+    appointmentDateTime: d.visit.startsAt
+      ? dayjs(d.visit.startsAt).format("DD.MM.YYYY HH:mm")
       : "—",
     doctorFio: d.doctorFio,
     clinicName: organization?.name ?? "",
