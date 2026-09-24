@@ -195,7 +195,8 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
   const isDiscount = percentValue < 0;
   const selectedRoomTypes = form.allCategories ? roomTypes : roomTypes.filter((rt) => form.roomTypeIds.includes(rt.id));
 
-  // ── Живой предпросчёт с бэка (simulatePricingRule) — см. комментарий в шапке файла.
+  // ── Живой предпросчёт с бэка (simulatePricingRule) — см. комментарий в шапке файла
+  // и у HotelPricingRuleSimulateRequest в api/hotel.ts (контракт подтверждён 24.09.2026).
   const [simResult, setSimResult] = React.useState<HotelPricingRuleSimulateResult | null>(null);
   const [simLoading, setSimLoading] = React.useState(false);
   React.useEffect(() => {
@@ -203,29 +204,46 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
       setSimResult(null);
       return;
     }
-    const dateFrom = form.dateFrom;
-    const dateTo = form.dateTo;
+    const conditionsFrom = form.dateFrom;
+    let conditionsTo = form.dateTo;
+    // «Каждый год» с переходом через Новый год (31.12→02.01): conditions.dateTo
+    // легитимно раньше conditions.dateFrom по числу месяца — само правило это
+    // хранит как есть, но ОКНО РАСЧЁТА simulate/ обязано быть положительным
+    // (dateTo > dateFrom, иначе 400), поэтому здесь (и только здесь) сдвигаем
+    // на год вперёд.
+    if (form.recurringYearly && conditionsTo.isBefore(conditionsFrom, "day")) {
+      conditionsTo = conditionsTo.add(1, "year");
+    }
+    // Верхнеуровневый dateTo окна — НЕ включительно (ночи [dateFrom, dateTo)),
+    // а conditions.dateTo у самого правила — включительно: отсюда +1 день.
+    const windowDateTo = conditionsTo.add(1, "day");
+    const roomTypeIds = form.allCategories ? [] : form.roomTypeIds;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setSimLoading(true);
       simulatePricingRule(
         {
           propertyId,
-          adjustmentType: "percent",
-          adjustmentValue: String(percentValue),
-          conditions: {
-            dateFrom: dateFrom.format("YYYY-MM-DD"),
-            dateTo: dateTo.format("YYYY-MM-DD"),
-            recurringAnnually: form.recurringYearly,
+          dateFrom: conditionsFrom.format("YYYY-MM-DD"),
+          dateTo: windowDateTo.format("YYYY-MM-DD"),
+          rule: {
+            adjustmentType: "percent",
+            adjustmentValue: String(percentValue),
+            conditions: {
+              dateFrom: form.dateFrom!.format("YYYY-MM-DD"),
+              dateTo: form.dateTo!.format("YYYY-MM-DD"),
+              recurringAnnually: form.recurringYearly,
+            },
+            roomTypeIds,
           },
-          roomTypeIds: form.allCategories ? [] : form.roomTypeIds,
-          category: deriveCategory(dateFrom, dateTo),
+          ruleId: editing ? editing.id : null,
+          roomTypeIds,
         },
         controller.signal,
       )
         .then((res) => setSimResult(res))
-        // Форма предпросчёта — необязательное удобство: не смогли получить (сеть, ещё не
-        // подтверждённая форма ответа бэка) — просто прячем блок, не мешаем сохранению.
+        // Предпросчёт — необязательное удобство: сбой сети/запроса не должен мешать
+        // сохранению правила, просто прячем блок.
         .catch((err) => {
           if (!isAbortError(err)) setSimResult(null);
         })
@@ -236,7 +254,7 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
       controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [propertyId, form.dateFrom, form.dateTo, form.percent, form.roomTypeIds, form.allCategories, form.recurringYearly, canSubmit]);
+  }, [propertyId, editing, form.dateFrom, form.dateTo, form.percent, form.roomTypeIds, form.allCategories, form.recurringYearly, canSubmit]);
 
   return (
     <Stack gap={2} sx={{ maxWidth: 720 }}>
@@ -372,24 +390,25 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
           <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem", mt: 2 }}>
             {simLoading && !simResult ? (
               <Typography variant="body2">Считаем…</Typography>
-            ) : simResult && simResult.nights.length > 0 ? (
+            ) : simResult && simResult.roomTypes.length > 0 ? (
               <Stack gap={0.25}>
-                {(() => {
-                  // Группируем по категории — по ночам может быть несколько строк на одну
-                  // категорию (несовпадающие цены внутри периода), берём первую/последнюю ночь.
-                  const byType = new Map<number, { name: string; before: number; after: number }>();
-                  for (const n of simResult.nights) {
-                    if (!byType.has(n.roomTypeId)) {
-                      byType.set(n.roomTypeId, { name: n.roomTypeName, before: Number(n.before), after: Number(n.after) });
-                    }
-                  }
-                  return [...byType.values()].map((rt) => (
-                    <Typography key={rt.name} variant="body2" component="span">
-                      {rt.name}: {rt.before.toLocaleString("ru-RU")} → <strong>{rt.after.toLocaleString("ru-RU")} сом</strong>
-                      {rt.after < rt.before ? " (скидка)" : " (дороже)"}
+                {simResult.roomTypes.map((rt) => {
+                  // Одному правилу без других пересечений цена обычно одна на все ночи —
+                  // берём первую как представительную, а не считаем среднее/диапазон.
+                  const first = rt.nights[0];
+                  if (!first) return null;
+                  const before = Number(first.before);
+                  const after = Number(first.after);
+                  // ruleApplied: false + delta "0.00" — на эту ночь либо стоит ручная цена,
+                  // либо черновик проиграл в своём exclusiveGroup; сам API их не различает.
+                  const overridden = !first.ruleApplied && Number(first.delta) === 0;
+                  return (
+                    <Typography key={rt.roomTypeId} variant="body2" component="span">
+                      {rt.roomTypeName}: {before.toLocaleString("ru-RU")} → <strong>{after.toLocaleString("ru-RU")} сом</strong>
+                      {overridden ? " (не применилось — ручная цена или другое правило)" : after < before ? " (скидка)" : after > before ? " (дороже)" : ""}
                     </Typography>
-                  ));
-                })()}
+                  );
+                })}
               </Stack>
             ) : (
               // Предпросчёт недоступен (сеть, форма ответа бэка ещё не подтверждена) — грубая

@@ -399,45 +399,96 @@ export function deletePricingRule(id: number): Promise<void> {
   return apiRequest<void>(`/v2/hotel/pricing-rules/${id}/`, { method: "DELETE" });
 }
 
-export interface HotelPricingRuleSimulateDraft {
-  propertyId: number;
+/**
+ * Черновик правила, вложенный в запрос simulate/ (payloads.py: PricingRuleDraftPayload).
+ * Лишние ключи верхнего уровня сервер отклоняет — category и isActive сюда
+ * класть НЕЛЬЗЯ (400), они не часть черновика для расчёта.
+ */
+export interface HotelPricingRuleSimulateRuleDraft {
   adjustmentType: "percent";
   adjustmentValue: string;
-  conditions: HotelPricingRuleConditions;
+  conditions?: HotelPricingRuleConditions;
+  /** По умолчанию 100, если не передать. */
+  priority?: number;
+  exclusiveGroup?: string;
+  roomTypeIds?: number[];
+  ratePlanIds?: number[];
+  name?: string;
+}
+
+export interface HotelPricingRuleSimulateRequest {
+  propertyId: number;
+  /**
+   * Окно расчёта — ВЕРХНЕУРОВНЕВЫЕ dateFrom/dateTo, не conditions черновика.
+   * dateTo в окно НЕ входит (ночи [dateFrom, dateTo)): чтобы окно совпало с
+   * периодом правила conditions.dateFrom–conditions.dateTo (включительно),
+   * сюда — conditions.dateTo + 1 день. dateTo <= dateFrom → 400. Не длиннее
+   * 366 дней.
+   */
+  dateFrom: string;
+  dateTo: string;
+  rule: HotelPricingRuleSimulateRuleDraft;
+  /** При правке уже сохранённого правила — черновик заменяет его в расчёте «стало». null/не передавать — для нового. */
+  ruleId?: number | null;
+  /** Категории, которые попадут в ответ — не черновика. Пустой массив — все активные. */
   roomTypeIds: number[];
-  category: HotelPricingRuleCategory;
+  /** Без него расчёт идёт по основному тарифу. */
+  ratePlanId?: number;
 }
 
 export interface HotelPricingRuleSimulateNight {
   date: string;
-  roomTypeId: number;
-  roomTypeName: string;
+  /** Строка-деньги, 2 знака после точки. */
   before: Money;
   after: Money;
+  /** Может быть отрицательной ("-900.00"). */
+  delta: Money;
+  /**
+   * true — черновик сработал на этой ночи. false при delta !== "0.00" — цену
+   * изменило что-то другое (например, правка заменила собой старое правило).
+   * false и delta "0.00" — на дату стоит ручная цена ЛИБО черновик проиграл в
+   * своём exclusiveGroup; отдельного признака для этих двух случаев нет.
+   * true и delta "0.00" — цену упёрло в minPrice/maxPrice категории.
+   */
+  ruleApplied: boolean;
 }
 
-/**
- * ФОРМА ОТВЕТА НЕ ПОДТВЕРЖДЕНА бек-разработчиком — уточнить перед тем, как
- * полагаться на конкретные поля; это лучшее предположение по описанию «цены
- * по ночам и категориям, было → стало». HotelPricingRuleFormPage.tsx разбирает
- * ответ защитно и просто прячет предпросчёт, если форма не совпала.
- */
-export interface HotelPricingRuleSimulateResult {
+export interface HotelPricingRuleSimulateRoomType {
+  roomTypeId: number;
+  roomTypeName: string;
   nights: HotelPricingRuleSimulateNight[];
+}
+
+export interface HotelPricingRuleSimulateResult {
+  propertyId: number;
+  ratePlanId: number | null;
+  dateFrom: string;
+  dateTo: string;
+  /** Сколько пар «ночь × категория» поменяли цену. */
+  changedNights: number;
+  /** На скольких сработал сам черновик. */
+  matchedNights: number;
+  /** null, только если ночей нет. */
+  minAfter: Money | null;
+  maxAfter: Money | null;
+  /** Сгруппировано по категориям — плоского списка ночей нет. */
+  roomTypes: HotelPricingRuleSimulateRoomType[];
 }
 
 /**
  * Живой предпросчёт черновика правила — цены «было → стало» с учётом остальных
- * действующих правил (порядок по priority, exclusiveGroup и т.п.). Ничего не
- * сохраняет. Право — то же, что на чтение правил (hotel.view).
+ * действующих правил (тариф, округление, minPrice/maxPrice — та же цена, что
+ * в pricing/quote/). Бронь считается одноночной: правило с nightsFrom не
+ * сработает на предпросмотре. Ничего не сохраняет. Право hotel.rates.manage
+ * (то же, что на запись правил, — форма уже им гейтит доступ целиком).
  */
 export function simulatePricingRule(
-  draft: HotelPricingRuleSimulateDraft,
+  request: HotelPricingRuleSimulateRequest,
   signal?: AbortSignal,
 ): Promise<HotelPricingRuleSimulateResult> {
   return apiRequest<HotelPricingRuleSimulateResult>("/v2/hotel/pricing-rules/simulate/", {
     method: "POST",
-    body: draft,
+    body: request,
     signal,
   });
 }
