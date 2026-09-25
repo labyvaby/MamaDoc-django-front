@@ -54,6 +54,7 @@ type FormState = Pick<
   | "minDaysBetween"
   | "positiveTags"
   | "negativeTags"
+  | "ravenScenario"
 >;
 
 const FORM_KEYS: (keyof FormState)[] = [
@@ -65,6 +66,7 @@ const FORM_KEYS: (keyof FormState)[] = [
   "minDaysBetween",
   "positiveTags",
   "negativeTags",
+  "ravenScenario",
 ];
 
 const same = (a: unknown, b: unknown) =>
@@ -259,6 +261,28 @@ const ReviewsSettingsPage: React.FC = () => {
                 {t("settings.pollerHint")} Сообщение уходит в WhatsApp, если не
                 доставлено — SMS.
               </Typography>
+
+              <TextField
+                size="small"
+                label="Сценарий Raven"
+                value={form.ravenScenario}
+                onChange={(e) => set("ravenScenario", e.target.value.trim())}
+                placeholder="например, feedback"
+                inputProps={{ maxLength: 64 }}
+                helperText={
+                  original.ravenKey === "own"
+                    ? "Сценарий из проекта Raven вашей клиники (свой ключ): WhatsApp-шаблон, при неудаче SMS."
+                    : "Сценарий из платформенного проекта Raven (своего ключа у клиники нет): WhatsApp-шаблон, при неудаче SMS."
+                }
+                sx={{ mt: 2, maxWidth: 420 }}
+                fullWidth
+              />
+              {!form.ravenScenario && (
+                <Alert severity="warning" sx={{ mt: 1.5 }}>
+                  Сценарий не задан — приглашения не отправляются ни
+                  автоматически, ни кнопкой из карточки приёма.
+                </Alert>
+              )}
 
               <Divider sx={{ my: 2 }} />
 

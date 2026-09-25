@@ -148,6 +148,10 @@ export interface ReviewSettings {
   /** Глобальный флаг авторассылки на платформе. */
   platformEnabled: boolean;
   branchMaps: BranchMaps[];
+  /** Сценарий Raven этой организации; пусто — приглашения не отправляются. */
+  ravenScenario: string;
+  /** Кто отправляет: свой ключ Raven организации или платформенный. */
+  ravenKey: "own" | "platform";
 }
 
 /** Частичное обновление настроек (шлём только меняемые поля). */
@@ -161,6 +165,7 @@ export interface ReviewSettingsPatch {
   positiveTags?: string[];
   negativeTags?: string[];
   branchReviewLinks?: BranchReviewLinkPatch[];
+  ravenScenario?: string;
   /** Суперадмин может адресовать чужую организацию. */
   organizationId?: number;
 }
@@ -410,6 +415,17 @@ export function updateReviewSettings(
 }
 
 // ── Публичная страница отзыва (без авторизации) ──────────────────────────────
+
+/** GET /api/reviews/r/<code>/ — короткая ссылка из сообщения → токен страницы. Нет кода → 404. */
+export function resolveShortLink(
+  code: string,
+  signal?: AbortSignal
+): Promise<{ token: string }> {
+  return apiRequest<{ token: string }>(
+    `/reviews/r/${encodeURIComponent(code)}/`,
+    { signal }
+  );
+}
 
 /** GET /api/reviews/rate/<token>/ — контекст страницы. Неизвестный токен → 404. */
 export function getRateContext(
