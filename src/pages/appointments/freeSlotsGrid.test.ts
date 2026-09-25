@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   createIdentityStamper,
-  sameColumnRange,
+  idsInRange,
+  sameIdSet,
   visibleColumnRange,
 } from "./freeSlotsGrid";
 
@@ -81,10 +82,24 @@ describe("visibleColumnRange", () => {
   });
 });
 
-describe("sameColumnRange", () => {
-  it("сравнивает границы, а не ссылки", () => {
-    expect(sameColumnRange({ from: 1, to: 4 }, { from: 1, to: 4 })).toBe(true);
-    expect(sameColumnRange({ from: 1, to: 4 }, { from: 1, to: 5 })).toBe(false);
+describe("idsInRange", () => {
+  it("врачи колонок диапазона, включая обе границы", () => {
+    expect(idsInRange([10, 11, 12, 13, 14], { from: 1, to: 3 })).toEqual([11, 12, 13]);
+  });
+
+  it("пустой диапазон — никого", () => {
+    expect(idsInRange([10, 11], { from: 0, to: -1 })).toEqual([]);
+  });
+});
+
+describe("sameIdSet", () => {
+  it("тот же состав в любом порядке — то же множество", () => {
+    expect(sameIdSet(new Set([11, 12, 13]), [13, 11, 12])).toBe(true);
+  });
+
+  it("другой состав или размер — другое", () => {
+    expect(sameIdSet(new Set([11, 12, 13]), [11, 12, 14])).toBe(false);
+    expect(sameIdSet(new Set([11, 12]), [11, 12, 13])).toBe(false);
   });
 });
 

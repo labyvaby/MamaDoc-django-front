@@ -46,8 +46,17 @@ export function visibleColumnRange(params: {
   };
 }
 
-export function sameColumnRange(a: ColumnRange, b: ColumnRange): boolean {
-  return a.from === b.from && a.to === b.to;
+/**
+ * Врачи колонок диапазона. Окно отрисовки хранится по врачам, а не по номерам
+ * колонок: при смене дня тот же врач стоит на другой позиции, и окно «по
+ * номерам» сначала рисовало бы чужие колонки, а потом нужные.
+ */
+export function idsInRange(ids: readonly number[], range: ColumnRange): number[] {
+  return range.to < range.from ? [] : ids.slice(range.from, range.to + 1);
+}
+
+export function sameIdSet(current: ReadonlySet<number>, next: readonly number[]): boolean {
+  return current.size === next.length && next.every((id) => current.has(id));
 }
 
 /**

@@ -42,9 +42,9 @@ import {
 import { buildTimeline } from "./freeSlotsTimeline";
 import {
   createIdentityStamper,
-  sameColumnRange,
+  idsInRange,
+  sameIdSet,
   visibleColumnRange,
-  type ColumnRange,
 } from "./freeSlotsGrid";
 import { resampleEmployeeDays } from "./slotGrid";
 import {
@@ -685,6 +685,11 @@ interface DoctorColumnProps {
    * шапку: тело с окнами дня — самая дорогая часть сетки.
    */
   rendered: boolean;
+  /**
+   * Вертикальная прокрутка тел колонок по врачу (общая на сетку). Пока колонка
+   * вне окна отрисовки, её тело пустое — позицию берём отсюда при возврате.
+   */
+  scrollTops: Map<number, number>;
   onSearchDoctor: (fullName: string) => void;
   onBook: DayTimelineProps["onBook"];
   onOpenAppointment?: DayTimelineProps["onOpenAppointment"];
@@ -705,6 +710,7 @@ const DoctorColumn = React.memo(function DoctorColumn({
   absence,
   multi,
   rendered,
+  scrollTops,
   onSearchDoctor,
   onBook,
   onOpenAppointment,
@@ -712,6 +718,32 @@ const DoctorColumn = React.memo(function DoctorColumn({
   dragMovedRef,
 }: DoctorColumnProps) {
   const { t } = useT("appointments");
+
+  // Колонка, прокрученная к 14:00, после ухода из окна отрисовки и возврата
+  // должна стоять там же, как раньше, когда её DOM жил всё время. Флаг — в ref:
+  // событие scroll от опустевшего тела приходит уже после рендера с
+  // rendered=false, и затирать им запомненную позицию нельзя.
+  const bodyRef = React.useRef<HTMLDivElement>(null);
+  const renderedRef = React.useRef(rendered);
+  React.useLayoutEffect(() => {
+    renderedRef.current = rendered;
+    const saved = scrollTops.get(employeeId);
+    if (rendered && saved && bodyRef.current) bodyRef.current.scrollTop = saved;
+  }, [rendered, employeeId, scrollTops]);
+  // Врач ушёл из сетки (другой день без смены, поиск, фильтр) — как и раньше,
+  // при возвращении колонка начинается сверху.
+  React.useEffect(
+    () => () => {
+      scrollTops.delete(employeeId);
+    },
+    [employeeId, scrollTops],
+  );
+  const handleBodyScroll = React.useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      if (renderedRef.current) scrollTops.set(employeeId, e.currentTarget.scrollTop);
+    },
+    [employeeId, scrollTops],
+  );
 
   return (
     <Box
@@ -822,7 +854,11 @@ const DoctorColumn = React.memo(function DoctorColumn({
       </Stack>
 
       {/* Таймлайн окон и приёмов за день */}
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1 }}>
+      <Box
+        ref={bodyRef}
+        onScroll={handleBodyScroll}
+        sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1 }}
+      >
         {!rendered ? null : !day ? (
           <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>
         ) : (
@@ -912,7 +948,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const userPickedDayRef = React.useRef(false);
 
   // Перетаскивание мышкой для горизонтального скролла сетки врачей (drag-to-scroll)
-  const matrixScrollRef = React.useRef<HTMLDivElement>(null);
+  const matrixScrollRef = React.useRef<HTMLDivElement | null>(null);
   // Запоминаем не индекс, а id врача: состав колонок меняется при выборе
   // другой даты, поэтому индекс на новой дате уже может указывать на другого
   // человека.
@@ -937,11 +973,12 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const pagerLastLeftRef = React.useRef(-1);
   const pagerStillFramesRef = React.useRef(0);
 
-  /** Колонки, которым рисуем окна дня: видимые и соседние (freeSlotsGrid.ts). */
-  const [renderRange, setRenderRange] = React.useState<ColumnRange>(() => ({
-    from: 0,
-    to: GRID_FALLBACK_VISIBLE_COLUMNS + GRID_OVERSCAN_COLUMNS - 1,
-  }));
+  /**
+   * Врачи, чьим колонкам рисуем окна дня: видимые и соседние (freeSlotsGrid.ts).
+   * Хранятся врачи, а не номера колонок: при смене дня тот же врач стоит на
+   * другой позиции, и первый рендер нового дня сразу рисует нужные колонки.
+   */
+  const [renderedIds, setRenderedIds] = React.useState<ReadonlySet<number>>(() => new Set());
   /**
    * Пересчитать окно отрисовки по положению сетки. `scrollLeft` передаётся,
    * когда позицию только что выставили программно (смена дня, пейджер).
@@ -950,7 +987,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     const el = matrixScrollRef.current;
     if (!el) return;
     const column = el.firstElementChild as HTMLElement | null;
-    const next = visibleColumnRange({
+    const range = visibleColumnRange({
       scrollLeft: scrollLeft ?? el.scrollLeft,
       viewportWidth: el.clientWidth,
       columnWidth: column?.getBoundingClientRect().width ?? 0,
@@ -958,8 +995,32 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
       overscan: GRID_OVERSCAN_COLUMNS,
       fallbackVisible: GRID_FALLBACK_VISIBLE_COLUMNS,
     });
-    setRenderRange((prev) => (sameColumnRange(prev, next) ? prev : next));
+    const next = idsInRange(activeEmployeeIdsRef.current, range);
+    setRenderedIds((prev) => (sameIdSet(prev, next) ? prev : new Set(next)));
   }, []);
+  /**
+   * Вертикальная прокрутка тел колонок по врачу: тело вне окна отрисовки
+   * пустеет, и без запомненной позиции колонка возвращалась бы к 00:00.
+   */
+  const bodyScrollTopsRef = React.useRef(new Map<number, number>());
+
+  // Сетка то появляется, то сменяется спиннером или заглушкой «нет смен», а
+  // ширину панели меняют окно браузера и боковое меню. Наблюдатель размеров
+  // вешаем на сам элемент сетки через ref-колбэк — он живёт ровно столько же.
+  const matrixResizeObserverRef = React.useRef<ResizeObserver | null>(null);
+  const setMatrixEl = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      matrixScrollRef.current = el;
+      matrixResizeObserverRef.current?.disconnect();
+      matrixResizeObserverRef.current = null;
+      if (el && typeof ResizeObserver !== "undefined") {
+        const observer = new ResizeObserver(() => updateRenderRange());
+        observer.observe(el);
+        matrixResizeObserverRef.current = observer;
+      }
+    },
+    [updateRenderRange],
+  );
 
   /**
    * Ставит трек шапки в ту же точку, где стоит сетка. Прогресс дробный, ширина
@@ -1526,21 +1587,6 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
       pagerTrackRef.current.style.transform = `translate3d(${-progress * 100}%, 0, 0)`;
     }
   }, [selDay, specId, search, activeDocsKey, updateRenderRange]);
-
-  // Ширину панели меняют окно браузера и боковое меню — сколько колонок видно,
-  // пересчитываем. Наблюдать есть за чем, только пока на экране сама сетка,
-  // а не спиннер или заглушка «нет смен».
-  const matrixShown =
-    !((isAvailLoading || summaryQuery.isLoading) && !hasAnyData) &&
-    docs.length > 0 &&
-    activeDocsOnDay.length > 0;
-  React.useEffect(() => {
-    const el = matrixScrollRef.current;
-    if (!matrixShown || !el || typeof ResizeObserver === "undefined") return undefined;
-    const observer = new ResizeObserver(() => updateRenderRange());
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [matrixShown, updateRenderRange]);
 
   const selectedMonth = dayjs(selectedDay?.date ?? selectableDays[0]?.date ?? todayIso);
   const selectedMonthLabel = `${MONTHS_NOMINATIVE[selectedMonth.month()]} ${selectedMonth.year()}`;
@@ -2584,7 +2630,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
 
             return (
               <Box
-                ref={matrixScrollRef}
+                ref={setMatrixEl}
                 onScroll={handleMatrixScroll}
                 onMouseDown={isFinePointer ? handleMouseDown : undefined}
                 onMouseMove={isFinePointer ? handleMouseMove : undefined}
@@ -2607,7 +2653,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                   "&::-webkit-scrollbar": { height: 6 },
                 }}
               >
-                {activeDocsOnDay.map(({ emp, sum }, idx) => {
+                {activeDocsOnDay.map(({ emp, sum }) => {
                   const docDay = emp.days.find((d) => d.date === activeDayDate);
                   const docOffSchedule =
                     docDay != null &&
@@ -2632,7 +2678,8 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       noteFullDay={docNote?.fullDay ?? false}
                       absence={docNote?.absence}
                       multi={activeDocsOnDay.length > 1}
-                      rendered={idx >= renderRange.from && idx <= renderRange.to}
+                      rendered={renderedIds.has(emp.employeeId)}
+                      scrollTops={bodyScrollTopsRef.current}
                       onSearchDoctor={searchByDoctor}
                       onBook={stableOnBook}
                       onOpenAppointment={onOpenAppointment ? stableOnOpenAppointment : undefined}
