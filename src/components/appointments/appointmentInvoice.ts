@@ -8,7 +8,6 @@ import type {
 import { consumptionLineTotal } from "../../api/appointments";
 import type { PaymentStatus, PaymentSummary } from "../../api/payments";
 import type { DjangoPatient } from "../../api/patients";
-import { paymentMethodLabel } from "../../utility/paymentMethodLabel";
 import { amountInWordsKgs } from "../../utility/amountInWords";
 import { barcode128Svg } from "../../utility/barcode128";
 import { tt } from "../../i18n/t";
@@ -209,7 +208,8 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
   // итог — принятые деньги: жирная строка и сумма прописью. Остаток идёт
   // отдельной строкой и только когда он есть: бланк достался от счёта к оплате,
   // и «Сумма к оплате 0,00» / «Ноль сомов» за оплаченный приём пациенты
-  // читали как чек на ноль.
+  // читали как чек на ноль. Способы оплаты («Карта · POS / QR - BAKAI») на
+  // чеке не печатаем по просьбе заказчика (25.09.2026) — только суммы.
   const due = summary ? num(summary.debt) : Math.max(0, payable - paid);
 
   const invoiceNumber = String(appointment.id);
@@ -237,15 +237,6 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
         )
         .join("")
     : `<tr><td colspan="7" class="empty">${esc(tt("appointments:invoice.noServices"))}</td></tr>`;
-
-  const paymentsHtml = (summary?.payments ?? [])
-    .map(
-      (p) => `<div class="pay-row"><span>${esc(
-        paymentMethodLabel(p.method, p.cashlessMethodName) +
-          (p.method === "insurance" && p.insurerName ? ` · ${p.insurerName}` : ""),
-      )}</span><span>${money(num(p.amount))}</span></div>`,
-    )
-    .join("");
 
   const orgLine = branchName
     ? `${organizationName} · ${branchName}`
@@ -283,9 +274,6 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
       .sum-row { display:flex; justify-content:space-between; gap:${px(16)}; padding:${px(2)} 0; }
       .sum-row.paid { border-top:1px solid #999; margin-top:${px(4)}; padding-top:${px(5)}; font-weight:700; font-size:${px(14)}; }
       .sum-row.due { font-weight:600; }
-      .pays { margin-top:${px(10)}; }
-      .pays h2 { font-size:${px(9)}; text-transform:uppercase; letter-spacing:.4px; color:#555; margin:0 0 ${px(4)}; }
-      .pay-row { display:flex; justify-content:space-between; gap:${px(16)}; max-width:${px(200)}; padding:${px(1)} 0; }
       .foot { margin-top:${px(16)}; display:flex; justify-content:space-between; gap:${px(12)}; font-size:${px(9)}; color:#333; }
       .sign { min-width:${px(160)}; }
       .sign .line { margin-top:${px(14)}; border-top:1px solid #999; padding-top:${px(3)}; color:#777; }
@@ -343,11 +331,6 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
         }
       </div>
     </div>
-    ${
-      paymentsHtml
-        ? `<div class="pays"><h2>${esc(tt("appointments:invoice.payments"))}</h2>${paymentsHtml}</div>`
-        : ""
-    }
     <div class="foot">
       <div class="sign">
         <div>${esc(tt("appointments:invoice.createdBy"))}: ${esc(data.createdByName || "—")}</div>
