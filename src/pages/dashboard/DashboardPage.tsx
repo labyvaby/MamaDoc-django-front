@@ -10,7 +10,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsFetching } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
@@ -20,12 +20,9 @@ import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 
 import { SegmentedTabs, cascadeContainer, cascadeItem } from "../../components/ui";
-import { getBranches } from "../../api/organization";
-import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { useCanChecker } from "../../hooks/useCan";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePermissions } from "../../hooks/usePermissions";
-import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
 import { PERIOD_TABS, resolvePeriod, type PeriodKey } from "./period";
 import {
   DEFAULT_LAYOUT,
@@ -39,12 +36,9 @@ import {
   type WidgetId,
 } from "./layout";
 import { LayoutEditor } from "./LayoutEditor";
-import {
-  AppointmentsWidget,
-  EmptyDashboard,
-  MonthWidget,
-  MoneyWidget,
-} from "./widgets";
+import { AppointmentsWidget, EmptyDashboard, MoneyWidget, ResultsWidget } from "./widgets";
+import { ServicesWidget } from "./ServicesWidget";
+import { DashboardDataContext, useDashboardDataSource } from "./DashboardData";
 import { OpsWidget } from "./OpsWidget";
 import {
   AvailabilityWidget,
@@ -53,7 +47,6 @@ import {
 } from "./operationsWidgets";
 import { exportDashboardXlsx } from "./exportDashboardXlsx";
 import { planScopeKey, readRevenuePlans, resolvePlan } from "./revenuePlan";
-import { DEALS_MODULE_ENABLED } from "../../api/deals";
 import { StaffWidget } from "./StaffWidget";
 import { PulseWidget } from "./PulseWidget";
 import { AttentionWidget } from "./AttentionWidget";
@@ -76,8 +69,9 @@ const WIDGET_COMPONENT: Record<WidgetId, React.FC<WidgetProps>> = {
   availability: AvailabilityWidget,
   bookings: BookingsWidget,
   branches: BranchesWidget,
-  month: MonthWidget,
+  month: ResultsWidget,
   staff: StaffWidget,
+  services: ServicesWidget,
   ops: OpsWidget,
 };
 
@@ -106,15 +100,12 @@ const headerButtonSx = {
  * Поверх прав работают личные настройки: любой блок можно спрятать и
  * переставить, выбор хранится в браузере пользователя (задача #232).
  *
- * ⚠ Данные берутся из существующих агрегатов CRM (`/cashbox/summary/`,
- * `/reports/monthly/`, `/appointments/day-counts/`, `/tasks/summary/`,
- * `/reviews/stats/`, `/scheduling/availability/summary/`, `/bookings/`) — ни
- * одной новой ручки на бэке не требуется. Когда появятся вьюхи аналитического
- * слоя, блоки переедут на них по одному.
+ * Данные — один агрегат `/dashboard/summary/` на весь экран (DashboardData.ts):
+ * блоки читают его из контекста и своих запросов не делают. Раздел без права
+ * сервер не отдаёт, и блок его не рисует.
  */
 export const DashboardPage: React.FC = () => {
   const { can, loading: permsLoading } = useCanChecker();
-  const queryClient = useQueryClient();
   const { activeOrganization, activeBranch } = usePermissions();
   const scope = useActiveScope();
 
@@ -163,14 +154,7 @@ export const DashboardPage: React.FC = () => {
     if (fetching === 0) setUpdatedAt(dayjs().format("HH:mm"));
   }, [fetching]);
 
-  // Филиалы нужны, чтобы понять, есть ли что сравнивать: блок сравнения не
-  // имеет смысла при единственной точке.
-  const branchesQuery = useQuery({
-    queryKey: [...djangoQueryKeys.organization.branches, scope.organizationId ?? null],
-    queryFn: () => getBranches(scope.organizationId),
-    enabled: scope.orgReady && can("finance.view"),
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-  });
+  const data = useDashboardDataSource({ range, periodKey: period, scope });
 
   const [layout, setLayout] = React.useState<DashboardLayout>(() => loadLayout());
   const [editing, setEditing] = React.useState(false);
@@ -180,9 +164,10 @@ export const DashboardPage: React.FC = () => {
     saveLayout(next);
   };
 
+  // Блок сравнения филиалов не имеет смысла при единственной точке.
   const ctx = React.useMemo(
-    () => ({ can, period, branchCount: branchesQuery.data?.length ?? 1 }),
-    [can, period, branchesQuery.data],
+    () => ({ can, period, branchCount: data.branchTotal }),
+    [can, period, data.branchTotal],
   );
 
   const shown = visibleWidgets(layout, ctx);
@@ -197,33 +182,15 @@ export const DashboardPage: React.FC = () => {
     setExportError(null);
     try {
       await exportDashboardXlsx({
-        queryClient,
+        data,
         plan: resolvePlan(
           readRevenuePlans(activeOrganization?.themeConfig),
           planScopeKey(scope.branchId),
           resolvePeriod("month", dayjs(range.dateTo)).month,
         )?.amount,
-        range,
-        periodKey: period,
-        scope,
         organizationName: activeOrganization?.name ?? "",
         branchName:
           activeBranch?.name !== activeOrganization?.name ? activeBranch?.name : undefined,
-        // В файл кладём то, на что есть права, а не то, что сейчас на экране:
-        // спрятанный блок — это выбор вида, а не запрет на данные.
-        allow: {
-          money: can(PAGE_PERMISSIONS.cashbox),
-          appointments: can(PAGE_PERMISSIONS.appointments),
-          reports: can(PAGE_PERMISSIONS.reports),
-          tasks: can(PAGE_PERMISSIONS.tasks),
-          reviews: can(PAGE_PERMISSIONS.reviews),
-          branches: can(PAGE_PERMISSIONS.cashbox) && (branchesQuery.data?.length ?? 0) > 1,
-          bookings: can(PAGE_PERMISSIONS.bookings),
-          // Воронка ждёт бэкенда на проде — тот же флаг, что у страницы.
-          deals: DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals),
-          schedule: can(PAGE_PERMISSIONS.schedule),
-          payroll: can(PAGE_PERMISSIONS.payroll),
-        },
       });
     } catch (e) {
       setExportError(e instanceof Error ? e.message : "Не удалось выгрузить файл");
@@ -258,6 +225,7 @@ export const DashboardPage: React.FC = () => {
     // Свой скролл-контейнер обязателен: лейаут приложения (`childrenBoxProps`
     // в App.tsx) фиксирует высоту и ставит `overflow: hidden`, поэтому страница
     // без него просто обрезается — на «Месяце» нижние карточки были недоступны.
+    <DashboardDataContext.Provider value={data}>
     <Box sx={{ height: "100%", overflowY: "auto", overflowX: "hidden", pr: { md: 0.5 }, pb: 2 }}>
       {/* Шапка в одну строку: заголовок с датой и скоупом слева, управление
           справа. Отдельная строка с датой над сеткой съедала высоту экрана. */}
@@ -406,6 +374,7 @@ export const DashboardPage: React.FC = () => {
         </MotionGrid>
       )}
     </Box>
+    </DashboardDataContext.Provider>
   );
 };
 

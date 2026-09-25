@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getCurrentUser, switchAuthContext, userHasPassword } from "../api";
 import type { MeResponse, RbacMembership, RbacOrganization, RbacBranch, ActiveEmployee, SwitchContextPayload } from "../api/auth";
 import { ApiError } from "../api/client";
+import { clearAccessEnded } from "../api/accessEnded";
 import type { Role, Permission, UserPermissions, RoleName, PermissionCheck, AuthStatus } from "../types/rbac";
 import { getModuleCodeForPermission } from "../utils/moduleMapping";
 
@@ -75,6 +76,8 @@ function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
 }
 
 export function applyMeResponse(meData: MeResponse): void {
+  // Вошли — записка «доступа больше нет» от прошлой сессии больше не нужна.
+  clearAccessEnded();
   authEpoch += 1;
   setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
 }

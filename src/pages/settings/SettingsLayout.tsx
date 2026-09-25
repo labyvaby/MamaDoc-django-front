@@ -239,6 +239,7 @@ const TAB_DEFS: TabDef[] = [
     icon: <ForumOutlined fontSize="small" />,
     group: "operations",
   },
+  { key: "altegio", to: "/settings/altegio", icon: <RouterOutlined fontSize="small" />, group: "operations" },
 ];
 
 /**

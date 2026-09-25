@@ -18,7 +18,7 @@ import {
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import { useNotification } from "@refinedev/core";
-import type { OldConclusion } from "../useOldConclusions";
+import { livePrintPath, type OldConclusion } from "../useOldConclusions";
 import { generateConclusionPDF } from "../../../utility/pdfGenerator";
 import dayjs from "dayjs";
 import { getMedicalConclusion } from "../../../api/medical";
@@ -115,12 +115,9 @@ const OldConclusionDetailsCard: React.FC<Props> = ({ item, patientFio, patientDo
         // Живое заключение печатается тем же документом, что из приёма: лист
         // бланка из сохранённых данных. Штатный шаблон ниже положил бы весь
         // протокол под «Анамнез».
-        if (item.source === "current" && item.appointment_id && item.service_line_id) {
-            window.open(
-                `/print/conclusion/${item.appointment_id}?lineId=${item.service_line_id}`,
-                "_blank",
-                "noopener",
-            );
+        const printPath = livePrintPath(item);
+        if (printPath) {
+            window.open(printPath, "_blank", "noopener");
             return;
         }
         setIsPrinting(true);

@@ -423,6 +423,34 @@ export function getConclusionSlots(
   );
 }
 
+/** Шапка документа заключения: пациент, дата приёма, жалобы. Денег в ней нет. */
+export interface ConclusionContext {
+  appointmentId: number;
+  startsAt: string;
+  complaints: string;
+  doctorComplaints: string;
+  /** null — окно забронировали до того, как стал известен пациент. */
+  patient: { id: number; fullName: string; birthDate: string | null } | null;
+}
+
+/**
+ * GET /api/appointments/<appointmentId>/conclusion-context/
+ *
+ * То, что печатается в шапке заключения и справки, под тем же правом, что и
+ * `conclusion-slots`. Карточка приёма (`getAppointment`) для печати не годится:
+ * врач без «видеть все приёмы» получает на приём коллеги 404, хотя заключение
+ * коллеги читать и печатать вправе (24.09.2026).
+ */
+export function getConclusionContext(
+  appointmentId: number,
+  signal?: AbortSignal,
+): Promise<ConclusionContext> {
+  return apiRequest<ConclusionContext>(
+    `/appointments/${appointmentId}/conclusion-context/`,
+    { signal },
+  );
+}
+
 /**
  * GET /api/medical/conclusions/<id>/
  */

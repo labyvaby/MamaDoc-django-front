@@ -44,6 +44,8 @@ export interface UseInvoicePhotosOptions {
   open: boolean;
   /** Право на изменение (загрузка/удаление). Просмотр остаётся доступным. */
   canManage?: boolean;
+  /** Для многошаговых черновиков оставить локальные фото при закрытии формы. */
+  preservePendingOnClose?: boolean;
   /**
    * Удалён старый одиночный чек расхода (`photoUrl`). Форма живёт со своей
    * копией расхода, и без этого сигнала миниатюра в списке осталась бы висеть
@@ -94,6 +96,7 @@ export function useInvoicePhotos({
   organizationId = null,
   open,
   canManage = true,
+  preservePendingOnClose = false,
   onLegacyPhotoRemoved,
   onPhotosChanged,
 }: UseInvoicePhotosOptions): UseInvoicePhotosResult {
@@ -130,10 +133,11 @@ export function useInvoicePhotos({
     setBusy(false);
   }, [releasePending]);
 
-  // Закрыли форму — чистим локальные файлы (сохранённые остаются на сервере).
+  // Большинство форм очищают временные фото при закрытии. Формы с черновиком
+  // могут явно оставить их и восстановить вместе с остальными полями.
   React.useEffect(() => {
-    if (!open) reset();
-  }, [open, reset]);
+    if (!open && !preservePendingOnClose) reset();
+  }, [open, preservePendingOnClose, reset]);
 
   React.useEffect(() => () => setPending((prev) => {
     releasePending(prev);
