@@ -26,7 +26,7 @@ import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOu
 import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { getSpecializations, type DjangoSpecialization } from "../../api/staff";
@@ -43,6 +43,9 @@ import {
 import { buildTimeline } from "./freeSlotsTimeline";
 import {
   createIdentityStamper,
+  doctorDayStatus,
+  freeOnSummaryDay,
+  type DocStatus,
   idsInRange,
   sameIdSet,
   visibleColumnRange,
@@ -165,10 +168,9 @@ function avatarColor(name: string): string {
   return `hsl(${h} 52% 46%)`;
 }
 
-type DocStatus = "free" | "later" | "none";
-
 interface DocSummary {
-  todayFree: number;
+  /** Свободных окон в выбранный день. */
+  dayFree: number;
   nearest: { date: string; start: string } | null;
   status: DocStatus;
   /** Подпись под именем врача. */
@@ -177,19 +179,23 @@ interface DocSummary {
   noSchedule: boolean;
 }
 
-function summarize(emp: EmployeeAvailability, todayIso: string): DocSummary {
-  const today = emp.days.find((d) => d.date === todayIso);
-  const todayFree = today?.freeCount ?? 0;
+/**
+ * Сводка врача: цвет точки — по дню, выбранному в ленте (doctorDayStatus),
+ * подпись — про ближайшее окно начиная с сегодня.
+ */
+function summarize(emp: EmployeeAvailability, dayIso: string, todayIso: string): DocSummary {
+  const dayFree = emp.days.find((d) => d.date === dayIso)?.freeCount ?? 0;
   const nearest = emp.nearestFree;
+  const status = doctorDayStatus(emp, dayIso);
   // «График не задан» — только если в горизонте нет ни рабочего дня, ни
   // выходного/отпуска по исключению (иначе график есть, просто нет окон).
   const noSchedule = !emp.days.some((d) => d.scheduled || d.dayOff);
 
   if (nearest && nearest.date === todayIso) {
     return {
-      todayFree,
+      dayFree,
       nearest,
-      status: "free",
+      status,
       label: tt("appointments:slots.todayNearest", { time: nearest.start }),
       noSchedule,
     };
@@ -201,17 +207,17 @@ function summarize(emp: EmployeeAvailability, todayIso: string): DocSummary {
       ? tt("appointments:slots.tomorrow")
       : `${WEEKDAY_SHORT[mondayIndex(d)]} ${d.date()}`;
     return {
-      todayFree,
+      dayFree,
       nearest,
-      status: "later",
+      status,
       label: tt("appointments:slots.nearest", { when: rel, time: nearest.start }),
       noSchedule,
     };
   }
   return {
-    todayFree,
+    dayFree,
     nearest: null,
-    status: "none",
+    status,
     label: noSchedule
       ? tt("appointments:slots.noScheduleShort")
       : tt("appointments:slots.noFreeSlotsShort"),
@@ -1290,27 +1296,47 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // По умолчанию открываем вид «Все специалисты» (specId === null), а не
   // какую-то конкретную специальность.
 
+  /**
+   * День, про который говорят бейджи специальностей и точки у врачей, — тот
+   * же, что открыт в сетке. Раньше они считались только «на сегодня» и не
+   * менялись при переключении дня. `selDay ?? todayIso` совпадает с
+   * activeDayDate ниже (выбранный день всегда есть в ленте), но известен до
+   * сборки ленты — она сама строится из docs.
+   */
+  const statusDay = selDay ?? todayIso;
+  /** Подсказка бейджа: «Свободны сегодня» или «Свободны 28 сен.». */
+  const badgeTitle =
+    statusDay === todayIso
+      ? t("slots.freeToday")
+      : t("slots.freeOnDate", {
+          date: `${dayjs(statusDay).date()} ${MONTHS_SHORT[dayjs(statusDay).month()]}`,
+        });
+
   // Бейджи всех специальностей приходят одной агрегированной сводкой, без N запросов.
+  // Прежние цифры держим, пока грузятся новые, — иначе бейджи мигали бы при
+  // каждом переключении дня.
   const summaryQuery = useQuery({
     queryKey: djangoQueryKeys.scheduling.availabilitySummary({
-      date: todayIso,
+      date: statusDay,
       branchId: branchId ?? null,
       organizationId: organizationId ?? null,
     }),
     queryFn: ({ signal }) =>
-      getAvailabilitySummary({ date: todayIso, branchId, organizationId }, signal),
+      getAvailabilitySummary({ date: statusDay, branchId, organizationId }, signal),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
   });
   const badgeBySpec = React.useMemo(() => {
     const map = new Map<number, { free: number; total: number }>();
-    summaryQuery.data?.specializations.forEach((specialization) => {
+    const summary = summaryQuery.data;
+    summary?.specializations.forEach((specialization) => {
       map.set(specialization.specializationId, {
-        free: specialization.freeEmployeeCount,
+        free: freeOnSummaryDay(specialization.freeEmployeeCount, summary.date, todayIso),
         total: specialization.employeeCount,
       });
     });
     return map;
-  }, [summaryQuery.data]);
+  }, [summaryQuery.data, todayIso]);
 
   // Загруженный диапазон дат — набор 30-дневных чанков вокруг «сегодня».
   // Каждый чанк — отдельный запрос availability (лимит бэка на один запрос —
@@ -1565,12 +1591,12 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     const list = employeesWithGrid
       .map((emp) => ({
         emp,
-        sum: summarize(emp, todayIso),
+        sum: summarize(emp, statusDay, todayIso),
       }));
     const q = search.trim().toLowerCase();
     const filtered = q ? list.filter((x) => x.emp.fullName.toLowerCase().includes(q)) : list;
     return filtered.sort((a, b) => a.emp.fullName.localeCompare(b.emp.fullName, "ru"));
-  }, [employeesWithGrid, search, todayIso]);
+  }, [employeesWithGrid, search, statusDay, todayIso]);
 
   // Сбрасываем выбор врача только если выбранного врача больше нет в отфильтрованном списке.
   React.useEffect(() => {
@@ -2035,7 +2061,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
               {(() => {
                 const active = specId === null;
                 const overall = summaryQuery.data
-                  ? { free: summaryQuery.data.overallFreeEmployeeCount, total: summaryQuery.data.overallEmployeeCount }
+                  ? {
+                      free: freeOnSummaryDay(
+                        summaryQuery.data.overallFreeEmployeeCount,
+                        summaryQuery.data.date,
+                        todayIso,
+                      ),
+                      total: summaryQuery.data.overallEmployeeCount,
+                    }
                   : undefined;
                 return (
                   <React.Fragment>
@@ -2100,7 +2133,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                               : subtleBg(t, true),
                             ...(t.palette.mode === "dark" && overall.free ? { color: t.palette.success.light } : {}),
                           })}
-                          title={t("slots.freeToday")}
+                          title={badgeTitle}
                         >
                           {overall.free}/{overall.total}
                         </Box>
@@ -2210,7 +2243,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                                 : subtleBg(t, true),
                               ...(t.palette.mode === "dark" && badge.free ? { color: t.palette.success.light } : {}),
                             })}
-                            title={t("slots.freeToday")}
+                            title={badgeTitle}
                           >
                             {badge.free}/{badge.total}
                           </Box>

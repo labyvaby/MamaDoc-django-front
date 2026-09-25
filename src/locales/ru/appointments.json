@@ -709,6 +709,7 @@
     "noFreeSlotsShort": "Свободных окон нет",
     "none": "нет",
     "freeToday": "Свободны сегодня",
+    "freeOnDate": "Свободны {{date}}",
     "searchSpecialist": "Поиск {{specialist.gen}}…",
     "searchClose": "Очистить поиск",
     "freeSlotsCountShort_one": "{{count}} окно",
