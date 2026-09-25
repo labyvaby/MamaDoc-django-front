@@ -47,6 +47,7 @@ import {
   visibleColumnRange,
 } from "./freeSlotsGrid";
 import { resampleEmployeeDays } from "./slotGrid";
+import { specializationsOnShift } from "./specPresence";
 import {
   absenceForDay,
   buildDayAbsences,
@@ -1237,7 +1238,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // Специализация врача для подписи в мобильном пейджере. Прав на справочник
   // сотрудников может не быть (403) — тогда карта пустая и подпись деградирует
   // до общего «Специалист», как было раньше.
-  const { employees: allEmployees } = useAllActiveEmployees();
+  const {
+    employees: allEmployees,
+    isLoading: employeesLoading,
+    isError: employeesError,
+  } = useAllActiveEmployees();
   const specLabelByEmployee = React.useMemo(() => {
     const map = new Map<number, string>();
     allEmployees.forEach((emp) => {
@@ -1479,6 +1484,52 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
         resampleEmployeeDays(emp, slotMinutesByEmployee.get(emp.employeeId)),
       ),
     [mergedEmployees, slotMinutesByEmployee],
+  );
+
+  /**
+   * Специальности со сменами в филиале: пустые рельс не показывает
+   * (specPresence.ts). Считаются по полной выдаче «Все специалисты» — при
+   * выбранной специальности выдача урезана, — поэтому результат запоминается
+   * по организации и филиалу. `undefined` — ещё считается, `null` — состав
+   * неизвестен, и рельс показывает весь справочник, как раньше.
+   */
+  const branchSpecsKey = `${organizationId ?? ""}|${branchId ?? ""}`;
+  const branchSpecsRef = React.useRef<{ key: string; ids: ReadonlySet<number> | null } | null>(
+    null,
+  );
+  // Чанк, который начинается сегодня: смены «с сегодня» берутся из него.
+  const todayChunk = chunkQueries[pastChunks];
+  const todayChunkData = todayChunk?.data;
+  const todayChunkFailed = todayChunk?.isError ?? false;
+  const computedBranchSpecs = React.useMemo<ReadonlySet<number> | null | undefined>(() => {
+    if (specId !== null) return undefined;
+    if (employeesError || todayChunkFailed) return null;
+    if (employeesLoading || !todayChunkData) return undefined;
+    const specsByEmployee = new Map(
+      allEmployees.map((emp) => [emp.id, emp.specializations.map((s) => s.id)] as const),
+    );
+    return specializationsOnShift(mergedEmployees, specsByEmployee, todayIso);
+  }, [
+    specId,
+    employeesError,
+    todayChunkFailed,
+    employeesLoading,
+    todayChunkData,
+    allEmployees,
+    mergedEmployees,
+    todayIso,
+  ]);
+  if (computedBranchSpecs !== undefined) {
+    branchSpecsRef.current = { key: branchSpecsKey, ids: computedBranchSpecs };
+  }
+  const rememberedBranchSpecs =
+    branchSpecsRef.current?.key === branchSpecsKey ? branchSpecsRef.current.ids : undefined;
+  // Специальность уже выбрана, а запомненного состава нет — посчитать нечем.
+  const branchSpecs =
+    rememberedBranchSpecs !== undefined ? rememberedBranchSpecs : specId !== null ? null : undefined;
+  const railSpecs = React.useMemo(
+    () => (branchSpecs ? specs.filter((s) => branchSpecs.has(s.id) || s.id === specId) : specs),
+    [branchSpecs, specs, specId],
   );
 
   const docs = React.useMemo(() => {
@@ -2048,14 +2099,25 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                   </React.Fragment>
                 );
               })()}
-              {specs.length === 0 ? (
+              {/* Пока не известно, у каких специальностей в филиале есть смены,
+                  список не показываем: иначе справочник на секунду вставал бы
+                  целиком и потом схлопывался. */}
+              {branchSpecs === undefined ? (
+                <Stack alignItems="center" py={2}>
+                  <CircularProgress size={16} />
+                </Stack>
+              ) : railSpecs.length === 0 ? (
                 <Typography variant="body2" color="text.disabled" sx={{ px: 2, py: 2 }}>
                   {t("slots.noSpecialities")}
                 </Typography>
               ) : (
-                specs.map((s) => {
+                railSpecs.map((s) => {
                   const active = s.id === specId;
+                  // «0/0» — сегодня в филиале никого из специальности: бейдж про
+                  // сегодня, сказать ему нечего. Сама строка остаётся — врачи
+                  // работают в другие дни (пустые специальности уже скрыты).
                   const badge = badgeBySpec.get(s.id);
+                  const showBadge = badge != null && badge.total > 0;
                   return (
                     <React.Fragment key={s.id}>
                       <Box
@@ -2104,7 +2166,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             transition: "transform .13s ease",
                           }}
                         />
-                        {badge && (
+                        {showBadge && (
                           <Box
                             sx={(t) => ({
                               fontSize: "0.6875rem",
