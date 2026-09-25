@@ -4,7 +4,6 @@ import {
   Alert,
   Box,
   Button,
-  Card,
   Chip,
   CircularProgress,
   Dialog,
@@ -18,101 +17,252 @@ import {
   Switch,
   Typography,
 } from "@mui/material";
-import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { djangoQueryKeys } from "../../api/queryKeys";
-import { type CatalogModule, setOrganizationModule } from "../../api/tenancy";
+import { type CatalogModule, createModuleRequest, setOrganizationModule } from "../../api/tenancy";
 import { useModulesCatalog } from "../../hooks/useModulesCatalog";
+import { useModuleRequests } from "../../hooks/useModuleRequests";
 import { refreshAuthContext, usePermissions } from "../../hooks/usePermissions";
-import { MODULE_SETTINGS_ROUTE, moduleIcon } from "../../config/moduleCatalogMeta";
-import { CATEGORY_LABELS, groupByCategory } from "../../config/moduleCatalogGrouping";
+import { MODULE_SETTINGS_ROUTE } from "../../config/moduleCatalogMeta";
 import { catalogActions } from "../../config/moduleCatalogActions";
-import { missingRequirements } from "../../config/moduleCatalogRequirements";
+import { RECOMMEND_TITLE } from "../../config/moduleStorefront";
+import {
+  buildStorefront,
+  bundleTarget,
+  itemTarget,
+  shelfOrder,
+  type RequestTarget,
+  type StorefrontItem,
+} from "../../config/moduleStorefrontModel";
 import { SettingsLayout } from "./SettingsLayout";
+import { BasePackageBlock } from "./modules/BasePackageBlock";
+import { BundleCard } from "./modules/BundleCard";
+import { ProductCard } from "./modules/ProductCard";
+import { ProductDrawer } from "./modules/ProductDrawer";
+import { RequestDialog, type RequestContact } from "./modules/RequestDialog";
 
-/** Подтверждаемое переключение. Организация фиксируется в момент нажатия:
- *  PATCH уходит именно в неё, даже если активная организация уже сменилась. */
-type PendingToggle = {
-  module: CatalogModule;
-  enable: boolean;
-  organizationId: number;
-  organizationName: string;
-};
+/** Подтверждаемое переключение оператора. Организация фиксируется в момент нажатия. */
+type PendingToggle = { module: CatalogModule; enable: boolean; organizationId: number; organizationName: string };
+/** Заявка клиники — тоже с организацией на момент нажатия. */
+type PendingRequest = RequestTarget & { organizationId: number };
 type Notice = { severity: "success" | "error"; text: string };
 
+/**
+ * Витрина «Модули» (docs/specs/2026-09-26-modules-storefront-design.md): товары
+ * с ценами, подборки «Рекомендуем», «Подробнее» и заявка менеджеру. Суперпользователь
+ * платформы вместо заявки переключает модули сам.
+ */
 const ModulesCatalogPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { data, isLoading, isError } = useModulesCatalog();
+  const catalogQuery = useModulesCatalog();
+  const requestsQuery = useModuleRequests();
   const {
     isPlatformAdmin,
     activeOrganization,
+    activeEmployee,
     organizationModules,
     viewAsOrganization,
     setViewAsOrganization,
   } = usePermissions();
-  const [stubOpen, setStubOpen] = useState(false);
-  // Содержимое окна (pending) живёт до конца анимации закрытия — иначе оно
-  // успевало перерисоваться в «Отключить модуль?» пустым; открытость — отдельно.
+  // Переключает модули только суперпользователь платформы; клиника шлёт заявку.
+  const isOperator = Boolean(isPlatformAdmin && activeOrganization);
+  const orgName = activeOrganization?.name ?? "организации";
+  const vertical = activeOrganization?.vertical ?? "clinic";
+
+  const [filter, setFilter] = useState<string>("all");
+  const [drawerId, setDrawerId] = useState<string | null>(null);
+  const [requestTarget, setRequestTarget] = useState<PendingRequest | null>(null);
+  const [requestOpen, setRequestOpen] = useState(false);
   const [pending, setPending] = useState<PendingToggle | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [toggleOpen, setToggleOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
 
-  // Активная организация сменилась при открытом окне (другая вкладка,
-  // обновление /auth/me/) — подтверждение относилось к прежней, закрываем.
+  const catalog = useMemo(() => catalogQuery.data ?? [], [catalogQuery.data]);
+  const catalogByCode = useMemo(() => new Map(catalog.map((m) => [m.code, m])), [catalog]);
+  const storefront = useMemo(
+    () => buildStorefront({ catalog, vertical, openRequests: requestsQuery.data ?? [] }),
+    [catalog, vertical, requestsQuery.data],
+  );
+  const drawerItem = storefront.items.find((i) => i.product.id === drawerId) ?? null;
+  const shelf = shelfOrder(storefront.items).filter((item) =>
+    filter === "all" ? true : filter === "connected" ? item.status === "connected" : item.product.category === filter,
+  );
+
+  // Организация сменилась при открытом окне — подтверждение относилось к прежней.
   useEffect(() => {
-    if (pending && pending.organizationId !== activeOrganization?.id) setDialogOpen(false);
-  }, [activeOrganization?.id, pending]);
+    const orgId = activeOrganization?.id;
+    if (pending && pending.organizationId !== orgId) setToggleOpen(false);
+    if (requestTarget && requestTarget.organizationId !== orgId) setRequestOpen(false);
+  }, [activeOrganization?.id, pending, requestTarget]);
 
-  const askToggle = (module: CatalogModule, enable: boolean) => {
-    if (!activeOrganization) return;
-    setPending({
-      module,
-      enable,
-      organizationId: activeOrganization.id,
-      organizationName: activeOrganization.name,
-    });
-    setDialogOpen(true);
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tenancy.all });
   };
-
-  const catalog = useMemo(() => data ?? [], [data]);
-  const groups = useMemo(() => groupByCategory(catalog), [catalog]);
-  const connectedCount = catalog.filter((m) => m.isEnabled).length;
-  const availableCount = catalog.length - connectedCount;
-  // Переключает модули только суперпользователь платформы (не роль
-  // «superadmin» клиники); без активной организации переключать нечего.
-  const canToggle = Boolean(isPlatformAdmin && activeOrganization);
-  const orgName = activeOrganization?.name ?? "организации";
 
   const toggle = useMutation({
     mutationFn: (p: PendingToggle) => setOrganizationModule(p.organizationId, p.module.code, p.enable),
-    onSuccess: (row) => {
-      setNotice({
-        severity: "success",
-        text: `«${row.moduleName}» ${row.isEnabled ? "подключён" : "отключён"}.`,
-      });
-    },
-    onError: (error) => {
+    onSuccess: (row) =>
+      setNotice({ severity: "success", text: `«${row.moduleName}» ${row.isEnabled ? "подключён" : "отключён"}.` }),
+    onError: (error) =>
       setNotice({
         severity: "error",
         text: error instanceof Error ? error.message : "Не удалось переключить модуль.",
-      });
-    },
+      }),
     onSettled: () => {
-      // И после ошибки: отказ мог прийти из-за устаревшего экрана, а сетевой
-      // сбой — скрыть уже применённое изменение.
-      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tenancy.all });
-      // organizationModules в /auth/me/ поменялись — в «Меню как у клиники»
-      // меню должно смениться сразу. fresh-запрос: /auth/me/, начатый до
-      // изменения, не годится.
+      // И после ошибки: отказ мог прийти из-за устаревшего экрана.
+      refresh();
+      // organizationModules в /auth/me/ поменялись — «Меню как у клиники» сменится сразу.
       void refreshAuthContext();
-      setDialogOpen(false);
+      setToggleOpen(false);
     },
   });
 
-  if (isLoading) {
+  const sendRequest = useMutation({
+    mutationFn: ({ target, contact }: { target: PendingRequest; contact: RequestContact }) =>
+      createModuleRequest(target.organizationId, {
+        productId: target.productId,
+        productTitle: target.title,
+        moduleCodes: target.modules,
+        contactName: contact.name,
+        contactPhone: contact.phone,
+        comment: contact.comment,
+      }),
+    onSuccess: () => {
+      setNotice({ severity: "success", text: "Заявка отправлена. Менеджер свяжется с вами." });
+      setRequestOpen(false);
+    },
+    onError: (error) =>
+      setNotice({
+        severity: "error",
+        text: error instanceof Error ? error.message : "Не удалось отправить заявку.",
+      }),
+    onSettled: refresh,
+  });
+
+  const askToggle = (module: CatalogModule, enable: boolean) => {
+    if (!activeOrganization) return;
+    setPending({ module, enable, organizationId: activeOrganization.id, organizationName: activeOrganization.name });
+    setToggleOpen(true);
+  };
+  const askRequest = (target: RequestTarget) => {
+    if (!activeOrganization) return;
+    setRequestTarget({ ...target, organizationId: activeOrganization.id });
+    setRequestOpen(true);
+  };
+  const settingsRouteOf = (item: StorefrontItem) =>
+    item.product.modules.map((code) => MODULE_SETTINGS_ROUTE[code]).find(Boolean);
+
+  const clinicAction = (item: StorefrontItem): React.ReactNode => {
+    if (item.status === "available") {
+      return (
+        <Button size="small" variant="contained" startIcon={<AddOutlined />} onClick={() => askRequest(itemTarget(item))}>
+          {item.product.price === null ? "Узнать" : "Подключить"}
+        </Button>
+      );
+    }
+    const route = settingsRouteOf(item);
+    if (item.status === "connected" && route) {
+      return (
+        <Button size="small" onClick={() => navigate(route)}>
+          Настроить
+        </Button>
+      );
+    }
+    return null;
+  };
+
+  const operatorAction = (item: StorefrontItem): React.ReactNode => {
+    const module = item.product.modules.length === 1 ? catalogByCode.get(item.product.modules[0]) : undefined;
+    if (!module) {
+      return (
+        <Button size="small" onClick={() => setDrawerId(item.product.id)}>
+          Управлять
+        </Button>
+      );
+    }
+    const route = MODULE_SETTINGS_ROUTE[module.code];
+    const actions = catalogActions(module, { isPlatformAdmin: true, hasSettingsRoute: Boolean(route) });
+    return (
+      <Stack direction="row" spacing={0.5}>
+        {actions.includes("configure") && route && (
+          <Button size="small" onClick={() => navigate(route)}>
+            Настроить
+          </Button>
+        )}
+        {actions.includes("disable") && (
+          <Button size="small" color="error" onClick={() => askToggle(module, false)}>
+            Отключить
+          </Button>
+        )}
+        {actions.includes("enable") && (
+          <Button size="small" startIcon={<AddOutlined />} onClick={() => askToggle(module, true)}>
+            Подключить
+          </Button>
+        )}
+      </Stack>
+    );
+  };
+
+  const drawerAction = (item: StorefrontItem): React.ReactNode => {
+    if (isOperator) return null;
+    if (item.status === "requested") {
+      return (
+        <Alert severity="warning" variant="outlined">
+          Заявка отправлена — менеджер свяжется с вами.
+        </Alert>
+      );
+    }
+    if (item.status === "available") {
+      return (
+        <Button variant="contained" size="large" fullWidth onClick={() => askRequest(itemTarget(item))}>
+          Отправить заявку
+        </Button>
+      );
+    }
+    const route = settingsRouteOf(item);
+    return route ? (
+      <Button variant="outlined" fullWidth onClick={() => navigate(route)}>
+        Настроить
+      </Button>
+    ) : null;
+  };
+
+  const drawerOperator = (item: StorefrontItem): React.ReactNode =>
+    isOperator ? (
+      <Box>
+        <Typography variant="overline" color="text.secondary">
+          Оператор платформы
+        </Typography>
+        <Stack spacing={1}>
+          {item.product.modules.map((code) => {
+            const module = catalogByCode.get(code);
+            if (!module) return null;
+            return (
+              <Stack key={code} direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+                <Typography variant="body2">
+                  {module.name} — {module.isEnabled ? "включён" : "выключен"}
+                </Typography>
+                {module.isEnabled ? (
+                  <Button size="small" color="error" onClick={() => askToggle(module, false)}>
+                    Отключить
+                  </Button>
+                ) : (
+                  <Button size="small" onClick={() => askToggle(module, true)}>
+                    Подключить
+                  </Button>
+                )}
+              </Stack>
+            );
+          })}
+        </Stack>
+      </Box>
+    ) : null;
+
+  if (catalogQuery.isLoading) {
     return (
       <SettingsLayout>
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
@@ -121,32 +271,47 @@ const ModulesCatalogPage: React.FC = () => {
       </SettingsLayout>
     );
   }
-  if (isError) {
+  if (catalogQuery.isError) {
     return (
       <SettingsLayout>
-        <Alert severity="error">
-          Не удалось загрузить каталог модулей. Обновите страницу.
-        </Alert>
+        <Alert severity="error">Не удалось загрузить каталог модулей. Обновите страницу.</Alert>
       </SettingsLayout>
     );
   }
 
+  const filters = [
+    { id: "all", label: "Все" },
+    ...storefront.categories.map((c) => ({ id: c.id as string, label: c.label })),
+    { id: "connected", label: `Подключённые · ${storefront.connectedCount}` },
+  ];
+
   return (
     <SettingsLayout>
-      <Stack spacing={2} sx={{ maxWidth: 900, mx: "auto", width: "100%" }}>
-        {/* Заголовок размечен как у соседних страниц настроек (Stack + h6):
-            на эту форму рассчитаны мобильные стили SettingsLayout. */}
+      {/* Корень и секции — Stack, последний блок — Card: мобильный SettingsLayout
+          растягивает кнопки в последнем Box-потомке корня. Шапка — Stack + h6,
+          как у соседних страниц настроек. */}
+      <Stack spacing={3} sx={{ maxWidth: 1100, mx: "auto", width: "100%" }}>
         <Stack gap={0.5}>
           <Typography variant="h6" fontWeight={600}>
             Модули
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Всё, что можно подключить к вашей CRM. Подключено {connectedCount} · доступно ещё {availableCount}
+            Подключайте возможности, когда они нужны. Помесячно, без внедрения и переустановки.
           </Typography>
+          <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+            <Chip
+              size="small"
+              variant="outlined"
+              color="success"
+              icon={<CheckCircleOutlined />}
+              label={`Подключено ${storefront.connectedCount}`}
+            />
+            <Chip size="small" variant="outlined" label={`Доступно ${storefront.availableCount}`} />
+          </Stack>
           {/* Только суперпользователю: он видит все модули платформы, а так —
               меню глазами сотрудников выбранной организации. Со старым бэком
               (нет organizationModules) переключателя нет. */}
-          {canToggle && organizationModules != null && (
+          {isOperator && organizationModules != null && (
             <FormControlLabel
               sx={{ mt: 0.5, mr: 0, alignItems: "flex-start" }}
               control={
@@ -160,7 +325,8 @@ const ModulesCatalogPage: React.FC = () => {
                 <Box sx={{ pt: 0.25 }}>
                   <Typography variant="body2">Меню как у клиники</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Показывать только модули, подключённые у «{orgName}», — как их видят сотрудники. Сбросится при перезагрузке страницы.
+                    Показывать только модули, подключённые у «{orgName}», — как их видят сотрудники. Сбросится при
+                    перезагрузке страницы.
                   </Typography>
                 </Box>
               }
@@ -168,132 +334,101 @@ const ModulesCatalogPage: React.FC = () => {
           )}
         </Stack>
 
-        {/* Группы — Stack, а не Box: мобильный SettingsLayout растягивает
-            кнопки в последнем Box-потомке (рассчитан на кнопку «Сохранить»). */}
-        {groups.map(([category, modules]) => (
-          <Stack key={category} spacing={1.5}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
-              {CATEGORY_LABELS[category] ?? category}
+        {storefront.bundles.length > 0 && (
+          <Stack spacing={1.5}>
+            <Typography variant="subtitle1" fontWeight={700}>
+              {RECOMMEND_TITLE[vertical] ?? RECOMMEND_TITLE.clinic}
             </Typography>
-            <Box
-              sx={{
-                display: "grid",
-                gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
-                gap: 1.5,
-              }}
-            >
-              {modules.map((m) => {
-                const settingsRoute = MODULE_SETTINGS_ROUTE[m.code];
-                const missing = m.isEnabled ? [] : missingRequirements(m, catalog);
-                const actions = catalogActions(m, {
-                  isPlatformAdmin: canToggle,
-                  hasSettingsRoute: Boolean(settingsRoute),
-                });
-                return (
-                  <Card
-                    key={m.code}
-                    variant="outlined"
-                    sx={{
-                      p: 2,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 1.5,
-                      bgcolor: m.isEnabled ? "background.paper" : "action.hover",
-                    }}
-                  >
-                    <Stack direction="row" spacing={1.25} alignItems="flex-start">
-                      <Box sx={{ color: m.isEnabled ? "primary.main" : "text.disabled", mt: 0.25 }}>
-                        {moduleIcon(m.code)}
-                      </Box>
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 500 }}>
-                          {m.name}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {m.description}
-                        </Typography>
-                        {missing.length > 0 && (
-                          <Typography
-                            variant="caption"
-                            color="warning.main"
-                            sx={{ display: "block", mt: 0.5 }}
-                          >
-                            Требует: {missing.map((r) => r.name).join(", ")}
-                          </Typography>
-                        )}
-                      </Box>
-                    </Stack>
-
-                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ mt: "auto" }}>
-                      {m.isEnabled ? (
-                        <Chip
-                          size="small"
-                          color="success"
-                          variant="outlined"
-                          icon={<CheckCircleOutlined />}
-                          label="Подключён"
-                        />
-                      ) : (
-                        <Typography variant="caption" color="text.disabled">
-                          Не подключён
-                        </Typography>
-                      )}
-
-                      <Stack direction="row" spacing={0.5}>
-                        {actions.includes("configure") && settingsRoute && (
-                          <Button size="small" onClick={() => navigate(settingsRoute)}>
-                            Настроить
-                          </Button>
-                        )}
-                        {actions.includes("disable") && (
-                          <Button
-                            size="small"
-                            color="error"
-                            onClick={() => askToggle(m, false)}
-                          >
-                            Отключить
-                          </Button>
-                        )}
-                        {actions.includes("enable") && (
-                          <Button
-                            size="small"
-                            startIcon={<AddOutlined />}
-                            onClick={() => askToggle(m, true)}
-                          >
-                            Подключить
-                          </Button>
-                        )}
-                        {actions.includes("request") && (
-                          <Button
-                            size="small"
-                            startIcon={<AddOutlined />}
-                            onClick={() => setStubOpen(true)}
-                          >
-                            Подключить
-                          </Button>
-                        )}
-                      </Stack>
-                    </Stack>
-                  </Card>
-                );
-              })}
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 1.5 }}>
+              {storefront.bundles.map((view, index) => (
+                <BundleCard
+                  key={view.bundle.id}
+                  view={view}
+                  featured={index === 0}
+                  action={
+                    isOperator ? undefined : (
+                      <Button
+                        size="small"
+                        variant={index === 0 ? "contained" : "outlined"}
+                        onClick={() => askRequest(bundleTarget(view))}
+                      >
+                        {view.price === null ? "Узнать" : "Подключить всё"}
+                      </Button>
+                    )
+                  }
+                />
+              ))}
             </Box>
           </Stack>
-        ))}
+        )}
 
-        <Snackbar
-          open={stubOpen}
-          autoHideDuration={4000}
-          onClose={() => setStubOpen(false)}
-          message="Скоро — обратитесь к вашему менеджеру, чтобы подключить модуль"
-          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        />
+        <Stack spacing={1.5}>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{ overflowX: "auto", pb: 0.5, "&::-webkit-scrollbar": { display: "none" } }}
+          >
+            {filters.map((f) => (
+              <Chip
+                key={f.id}
+                label={f.label}
+                clickable
+                color={filter === f.id ? "primary" : "default"}
+                variant={filter === f.id ? "filled" : "outlined"}
+                onClick={() => setFilter(f.id)}
+              />
+            ))}
+          </Stack>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", lg: "repeat(3, minmax(0, 1fr))" },
+              gap: 1.5,
+            }}
+          >
+            {shelf.map((item) => (
+              <ProductCard
+                key={item.product.id}
+                item={item}
+                action={isOperator ? operatorAction(item) : clinicAction(item)}
+                onOpen={() => setDrawerId(item.product.id)}
+              />
+            ))}
+          </Box>
+          {shelf.length === 0 && (
+            <Typography variant="body2" color="text.secondary">
+              В этом разделе пока ничего нет.
+            </Typography>
+          )}
+        </Stack>
+
+        <BasePackageBlock modules={storefront.basePackage} />
       </Stack>
 
+      <ProductDrawer
+        item={drawerItem}
+        onClose={() => setDrawerId(null)}
+        action={drawerItem ? drawerAction(drawerItem) : null}
+        operator={drawerItem ? drawerOperator(drawerItem) : null}
+      />
+
+      <RequestDialog
+        target={requestTarget}
+        open={requestOpen}
+        defaultName={activeEmployee?.fullName ?? ""}
+        defaultPhone={activeEmployee?.phone ?? ""}
+        submitting={sendRequest.isPending}
+        onSubmit={(contact) => {
+          if (requestTarget) sendRequest.mutate({ target: requestTarget, contact });
+        }}
+        onClose={() => setRequestOpen(false)}
+        onExited={() => setRequestTarget(null)}
+      />
+
       <Dialog
-        open={dialogOpen}
+        open={toggleOpen}
         onClose={() => {
-          if (!toggle.isPending) setDialogOpen(false);
+          if (!toggle.isPending) setToggleOpen(false);
         }}
         slotProps={{ transition: { onExited: () => setPending(null) } }}
       >
@@ -306,13 +441,13 @@ const ModulesCatalogPage: React.FC = () => {
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)} disabled={toggle.isPending}>
+          <Button onClick={() => setToggleOpen(false)} disabled={toggle.isPending}>
             Отмена
           </Button>
           <Button
             variant="contained"
             color={pending?.enable ? "primary" : "error"}
-            disabled={toggle.isPending || !dialogOpen}
+            disabled={toggle.isPending || !toggleOpen}
             onClick={() => {
               if (pending) toggle.mutate(pending);
             }}
@@ -325,7 +460,7 @@ const ModulesCatalogPage: React.FC = () => {
       {notice && (
         <Snackbar
           open
-          autoHideDuration={notice.severity === "error" ? 10000 : 4000}
+          autoHideDuration={notice.severity === "error" ? 10000 : 5000}
           onClose={() => setNotice(null)}
           anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
         >

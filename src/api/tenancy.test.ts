@@ -6,7 +6,7 @@ vi.mock("./client", () => ({
   apiRequest: (...args: unknown[]) => apiRequest(...args),
 }));
 
-import { getModulesCatalog, setOrganizationModule } from "./tenancy";
+import { createModuleRequest, getModuleRequests, getModulesCatalog, setOrganizationModule } from "./tenancy";
 
 describe("modules catalog API", () => {
   beforeEach(() => apiRequest.mockReset().mockResolvedValue([]));
@@ -31,6 +31,30 @@ describe("modules catalog API", () => {
     expect(apiRequest).toHaveBeenCalledWith("/tenancy/organizations/8/modules/cleaning/", {
       method: "PATCH",
       body: { isEnabled: false },
+    });
+  });
+});
+
+describe("module requests API", () => {
+  beforeEach(() => apiRequest.mockReset().mockResolvedValue([]));
+
+  it("reads the organization's open requests", async () => {
+    await getModuleRequests(8);
+
+    expect(apiRequest).toHaveBeenCalledWith("/tenancy/module-requests/?organizationId=8");
+  });
+
+  it("sends a request to connect a product", async () => {
+    const body = {
+      productId: "chats", productTitle: "Чаты", moduleCodes: ["chatwoot"],
+      contactName: "Айгуль", contactPhone: "+996700000001", comment: "",
+    };
+
+    await createModuleRequest(8, body);
+
+    expect(apiRequest).toHaveBeenCalledWith("/tenancy/module-requests/?organizationId=8", {
+      method: "POST",
+      body,
     });
   });
 });

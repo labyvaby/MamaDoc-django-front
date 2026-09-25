@@ -24,9 +24,46 @@ export interface CatalogModule {
  * соседняя вкладка могла подсунуть каталог другой клиники. Без id — как раньше,
  * организация сессии.
  */
+const orgQuery = (organizationId?: number | null): string =>
+  organizationId != null ? `?organizationId=${organizationId}` : "";
+
 export function getModulesCatalog(organizationId?: number | null): Promise<CatalogModule[]> {
-  const query = organizationId != null ? `?organizationId=${organizationId}` : "";
-  return apiRequest<CatalogModule[]>(`/tenancy/catalog/${query}`);
+  return apiRequest<CatalogModule[]>(`/tenancy/catalog/${orgQuery(organizationId)}`);
+}
+
+/** Заявка клиники на подключение с витрины (docs/specs/2026-09-26-modules-storefront-design.md). */
+export interface ModuleRequest {
+  id: number;
+  productId: string;
+  productTitle: string;
+  moduleCodes: string[];
+  status: string;
+  createdAt: string;
+}
+
+export interface ModuleRequestInput {
+  productId: string;
+  productTitle: string;
+  moduleCodes: string[];
+  contactName: string;
+  contactPhone: string;
+  comment: string;
+}
+
+/** Открытые заявки организации — карточки показывают «Заявка отправлена». */
+export function getModuleRequests(organizationId?: number | null): Promise<ModuleRequest[]> {
+  return apiRequest<ModuleRequest[]>(`/tenancy/module-requests/${orgQuery(organizationId)}`);
+}
+
+/** Отправить заявку; открытая заявка на тот же товар вернётся та же. */
+export function createModuleRequest(
+  organizationId: number | null | undefined,
+  body: ModuleRequestInput,
+): Promise<ModuleRequest> {
+  return apiRequest<ModuleRequest>(`/tenancy/module-requests/${orgQuery(organizationId)}`, {
+    method: "POST",
+    body,
+  });
 }
 
 /** Строка «модуль организации» из /api/tenancy/organizations/<id>/modules/. */
