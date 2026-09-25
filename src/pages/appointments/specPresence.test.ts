@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { AvailabilityDay, EmployeeAvailability } from "../../api/scheduling";
-import { specializationsOnShift } from "./specPresence";
+import {
+  computeSpecsPresence,
+  railSpecializations,
+  resolveSpecsPresence,
+  specializationsOnShift,
+  type SpecsPresenceInput,
+} from "./specPresence";
 
 const day = (date: string, over: Partial<AvailabilityDay> = {}): AvailabilityDay => ({
   date,
@@ -110,5 +116,94 @@ describe("specializationsOnShift", () => {
       TODAY,
     );
     expect(result).toEqual(new Set());
+  });
+});
+
+describe("computeSpecsPresence", () => {
+  const found = new Set([10]);
+  const ready: SpecsPresenceInput = {
+    specSelected: false,
+    permissionsLoading: false,
+    canViewStaff: true,
+    staffLoading: false,
+    staffFailed: false,
+    todayLoaded: true,
+    todayFailed: false,
+    compute: () => found,
+  };
+
+  it("всё загружено — посчитанный набор", () => {
+    expect(computeSpecsPresence(ready)).toBe(found);
+  });
+
+  it("выбрана специальность — считать нечем, берётся запомненное", () => {
+    expect(computeSpecsPresence({ ...ready, specSelected: true })).toBeUndefined();
+  });
+
+  it("права ещё грузятся — ждём, а не показываем всё и схлопываем", () => {
+    expect(computeSpecsPresence({ ...ready, permissionsLoading: true })).toBeUndefined();
+  });
+
+  it("нет права на справочник сотрудников — сразу весь список, без ожидания", () => {
+    expect(computeSpecsPresence({ ...ready, canViewStaff: false, staffLoading: true })).toBeNull();
+  });
+
+  it("справочник или окна недоступны и данных нет — весь список", () => {
+    expect(computeSpecsPresence({ ...ready, staffFailed: true })).toBeNull();
+    expect(computeSpecsPresence({ ...ready, todayLoaded: false, todayFailed: true })).toBeNull();
+  });
+
+  it("справочник или окна ещё грузятся — ждём", () => {
+    expect(computeSpecsPresence({ ...ready, staffLoading: true })).toBeUndefined();
+    expect(computeSpecsPresence({ ...ready, todayLoaded: false })).toBeUndefined();
+  });
+});
+
+describe("resolveSpecsPresence", () => {
+  const computed = new Set([10]);
+  const remembered = new Set([11]);
+
+  it("посчитанное важнее запомненного", () => {
+    expect(resolveSpecsPresence(computed, remembered, false)).toBe(computed);
+    expect(resolveSpecsPresence(null, remembered, false)).toBeNull();
+  });
+
+  it("не посчитано — запомненное для этого филиала", () => {
+    expect(resolveSpecsPresence(undefined, remembered, true)).toBe(remembered);
+  });
+
+  it("выбрана специальность и ничего не запомнено — весь список", () => {
+    expect(resolveSpecsPresence(undefined, undefined, true)).toBeNull();
+  });
+
+  it("ещё считается и ничего не запомнено — ждём", () => {
+    expect(resolveSpecsPresence(undefined, undefined, false)).toBeUndefined();
+  });
+});
+
+describe("railSpecializations", () => {
+  const specs = [{ id: 10 }, { id: 11 }, { id: 12 }, { id: 13 }];
+  const nobodyToday = () => false;
+
+  it("состав неизвестен — весь справочник", () => {
+    expect(railSpecializations(specs, null, null, nobodyToday)).toBe(specs);
+  });
+
+  it("только специальности со сменами", () => {
+    expect(railSpecializations(specs, new Set([11]), null, nobodyToday)).toEqual([{ id: 11 }]);
+  });
+
+  it("выбранная специальность видна всегда", () => {
+    expect(railSpecializations(specs, new Set([11]), 13, nobodyToday)).toEqual([
+      { id: 11 },
+      { id: 13 },
+    ]);
+  });
+
+  it("кто-то работает сегодня по свежему бейджу — строка видна, даже если справочник устарел", () => {
+    expect(railSpecializations(specs, new Set([11]), null, (id) => id === 12)).toEqual([
+      { id: 11 },
+      { id: 12 },
+    ]);
   });
 });

@@ -32,6 +32,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import { getSpecializations, type DjangoSpecialization } from "../../api/staff";
 import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { useCanChecker } from "../../hooks/useCan";
 import {
   getAvailability,
   getAvailabilitySummary,
@@ -47,7 +48,12 @@ import {
   visibleColumnRange,
 } from "./freeSlotsGrid";
 import { resampleEmployeeDays } from "./slotGrid";
-import { specializationsOnShift } from "./specPresence";
+import {
+  computeSpecsPresence,
+  railSpecializations,
+  resolveSpecsPresence,
+  specializationsOnShift,
+} from "./specPresence";
 import {
   absenceForDay,
   buildDayAbsences,
@@ -1238,11 +1244,15 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // Специализация врача для подписи в мобильном пейджере. Прав на справочник
   // сотрудников может не быть (403) — тогда карта пустая и подпись деградирует
   // до общего «Специалист», как было раньше.
+  // Без права справочник не запрашиваем: отказ 403 с повтором только задержал
+  // бы рельс (его состав считается по справочнику, см. branchSpecs).
+  const { can, loading: permissionsLoading } = useCanChecker();
+  const canViewStaff = can("staff.view");
   const {
     employees: allEmployees,
     isLoading: employeesLoading,
     isError: employeesError,
-  } = useAllActiveEmployees();
+  } = useAllActiveEmployees(canViewStaff);
   const specLabelByEmployee = React.useMemo(() => {
     const map = new Map<number, string>();
     allEmployees.forEach((emp) => {
@@ -1490,46 +1500,65 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
    * Специальности со сменами в филиале: пустые рельс не показывает
    * (specPresence.ts). Считаются по полной выдаче «Все специалисты» — при
    * выбранной специальности выдача урезана, — поэтому результат запоминается
-   * по организации и филиалу. `undefined` — ещё считается, `null` — состав
-   * неизвестен, и рельс показывает весь справочник, как раньше.
+   * по организации и филиалу. `undefined` — ещё считается (в рельсе спиннер),
+   * `null` — состав неизвестен, и рельс показывает весь справочник, как раньше.
    */
   const branchSpecsKey = `${organizationId ?? ""}|${branchId ?? ""}`;
   const branchSpecsRef = React.useRef<{ key: string; ids: ReadonlySet<number> | null } | null>(
     null,
   );
-  // Чанк, который начинается сегодня: смены «с сегодня» берутся из него.
+  // Готовность — по чанку, который начинается сегодня; сами смены берутся из
+  // всех загруженных чанков (mergedEmployees).
   const todayChunk = chunkQueries[pastChunks];
   const todayChunkData = todayChunk?.data;
-  const todayChunkFailed = todayChunk?.isError ?? false;
-  const computedBranchSpecs = React.useMemo<ReadonlySet<number> | null | undefined>(() => {
-    if (specId !== null) return undefined;
-    if (employeesError || todayChunkFailed) return null;
-    if (employeesLoading || !todayChunkData) return undefined;
-    const specsByEmployee = new Map(
-      allEmployees.map((emp) => [emp.id, emp.specializations.map((s) => s.id)] as const),
-    );
-    return specializationsOnShift(mergedEmployees, specsByEmployee, todayIso);
-  }, [
-    specId,
-    employeesError,
-    todayChunkFailed,
-    employeesLoading,
-    todayChunkData,
-    allEmployees,
-    mergedEmployees,
-    todayIso,
-  ]);
+  const todayChunkError = todayChunk?.isError ?? false;
+  const computedBranchSpecs = React.useMemo(
+    () =>
+      computeSpecsPresence({
+        specSelected: specId !== null,
+        permissionsLoading,
+        canViewStaff,
+        staffLoading: employeesLoading,
+        staffFailed: employeesError && allEmployees.length === 0,
+        todayLoaded: todayChunkData !== undefined,
+        todayFailed: todayChunkError && todayChunkData === undefined,
+        compute: () =>
+          specializationsOnShift(
+            mergedEmployees,
+            new Map(allEmployees.map((emp) => [emp.id, emp.specializations.map((s) => s.id)] as const)),
+            todayIso,
+          ),
+      }),
+    [
+      specId,
+      permissionsLoading,
+      canViewStaff,
+      employeesLoading,
+      employeesError,
+      allEmployees,
+      todayChunkData,
+      todayChunkError,
+      mergedEmployees,
+      todayIso,
+    ],
+  );
   if (computedBranchSpecs !== undefined) {
     branchSpecsRef.current = { key: branchSpecsKey, ids: computedBranchSpecs };
   }
-  const rememberedBranchSpecs =
-    branchSpecsRef.current?.key === branchSpecsKey ? branchSpecsRef.current.ids : undefined;
-  // Специальность уже выбрана, а запомненного состава нет — посчитать нечем.
-  const branchSpecs =
-    rememberedBranchSpecs !== undefined ? rememberedBranchSpecs : specId !== null ? null : undefined;
+  const branchSpecs = resolveSpecsPresence(
+    computedBranchSpecs,
+    branchSpecsRef.current?.key === branchSpecsKey ? branchSpecsRef.current.ids : undefined,
+    specId !== null,
+  );
   const railSpecs = React.useMemo(
-    () => (branchSpecs ? specs.filter((s) => branchSpecs.has(s.id) || s.id === specId) : specs),
-    [branchSpecs, specs, specId],
+    () =>
+      railSpecializations(
+        specs,
+        branchSpecs ?? null,
+        specId,
+        (id) => (badgeBySpec.get(id)?.total ?? 0) > 0,
+      ),
+    [specs, branchSpecs, specId, badgeBySpec],
   );
 
   const docs = React.useMemo(() => {
@@ -2166,7 +2195,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             transition: "transform .13s ease",
                           }}
                         />
-                        {showBadge && (
+                        {showBadge ? (
                           <Box
                             sx={(t) => ({
                               fontSize: "0.6875rem",
@@ -2185,6 +2214,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           >
                             {badge.free}/{badge.total}
                           </Box>
+                        ) : (
+                          // Место бейджа «1/1»: без него стрелка уезжала вправо
+                          // и выбивалась из колонки стрелок соседних строк.
+                          <Box sx={{ width: 28, flexShrink: 0 }} />
                         )}
                       </Box>
 
