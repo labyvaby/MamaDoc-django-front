@@ -100,8 +100,16 @@ const stampChunkData = createIdentityStamper();
  * (см. freeSlotsGrid.ts): на десктопе видно три колонки, на телефоне — одна.
  */
 const GRID_OVERSCAN_COLUMNS = 1;
+/**
+ * Ещё дальше — в фоне: столько колонок с каждой стороны дорисовываются
+ * низкоприоритетно (startTransition), уже после показа кадра. Рывок прокрутки
+ * на пару экранов тогда попадает в готовые колонки, а смена дня и открытие
+ * вкладки не ждут этой работы.
+ */
+const GRID_PREFETCH_COLUMNS = 3;
 /** Сколько колонок считать видимыми, пока сетка ещё не измерена. */
 const GRID_FALLBACK_VISIBLE_COLUMNS = 3;
+const NO_IDS: ReadonlySet<number> = new Set();
 
 /** Индекс дня недели с понедельника (Пн=0 … Вс=6), без плагина isoWeek. */
 function mondayIndex(d: Dayjs): number {
@@ -980,23 +988,50 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
    */
   const [renderedIds, setRenderedIds] = React.useState<ReadonlySet<number>>(() => new Set());
   /**
+   * Фоновый запас колонок (GRID_PREFETCH_COLUMNS). Привязан к дню и составу
+   * колонок: набор от прежнего дня в первом рендере нового не рисуется, иначе
+   * смена дня снова ждала бы лишние колонки.
+   */
+  const [prefetch, setPrefetch] = React.useState<{ key: string; ids: ReadonlySet<number> }>(
+    () => ({ key: "", ids: NO_IDS }),
+  );
+  /** Ключ дня и состава колонок — выставляется в рендере, см. prefetch. */
+  const prefetchKeyRef = React.useRef("");
+  // Последние запрошенные наборы: прокрутка зовёт пересчёт на каждом кадре, и
+  // без сверки каждый кадр планировал бы рендер вкладки впустую.
+  const renderedIdsRef = React.useRef<ReadonlySet<number>>(renderedIds);
+  const prefetchRef = React.useRef(prefetch);
+  /**
    * Пересчитать окно отрисовки по положению сетки. `scrollLeft` передаётся,
    * когда позицию только что выставили программно (смена дня, пейджер).
    */
   const updateRenderRange = React.useCallback((scrollLeft?: number) => {
     const el = matrixScrollRef.current;
     if (!el) return;
+    const ids = activeEmployeeIdsRef.current;
     const column = el.firstElementChild as HTMLElement | null;
-    const range = visibleColumnRange({
+    const layout = {
       scrollLeft: scrollLeft ?? el.scrollLeft,
       viewportWidth: el.clientWidth,
       columnWidth: column?.getBoundingClientRect().width ?? 0,
-      count: activeEmployeeIdsRef.current.length,
-      overscan: GRID_OVERSCAN_COLUMNS,
+      count: ids.length,
       fallbackVisible: GRID_FALLBACK_VISIBLE_COLUMNS,
-    });
-    const next = idsInRange(activeEmployeeIdsRef.current, range);
-    setRenderedIds((prev) => (sameIdSet(prev, next) ? prev : new Set(next)));
+    };
+    const next = idsInRange(ids, visibleColumnRange({ ...layout, overscan: GRID_OVERSCAN_COLUMNS }));
+    if (!sameIdSet(renderedIdsRef.current, next)) {
+      const nextIds = new Set(next);
+      renderedIdsRef.current = nextIds;
+      setRenderedIds(nextIds);
+    }
+    const key = prefetchKeyRef.current;
+    const wide = idsInRange(ids, visibleColumnRange({ ...layout, overscan: GRID_PREFETCH_COLUMNS }));
+    if (prefetchRef.current.key !== key || !sameIdSet(prefetchRef.current.ids, wide)) {
+      const nextPrefetch = { key, ids: new Set(wide) };
+      prefetchRef.current = nextPrefetch;
+      // Переход (transition) React рендерит кусками и прерывает ради ввода:
+      // запас дорисовывается, не блокируя клики и прокрутку.
+      React.startTransition(() => setPrefetch(nextPrefetch));
+    }
   }, []);
   /**
    * Вертикальная прокрутка тел колонок по врачу: тело вне окна отрисовки
@@ -1543,6 +1578,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const activeDocsKey = activeDocsOnDay.map(({ emp }) => emp.employeeId).join(",");
   /** Подпись в шапках колонок: специальность выбранной группы или «Специалист». */
   const gridSpecName = specId ? specs.find((s) => s.id === specId)?.name : null;
+  const prefetchKey = `${activeDayDate}|${activeDocsKey}`;
+  prefetchKeyRef.current = prefetchKey;
+  const prefetchedIds = prefetch.key === prefetchKey ? prefetch.ids : NO_IDS;
 
   // Смена дня пересобирает набор колонок. Возвращаемся к тому же врачу по id,
   // если он есть на новой дате; если врача в этот день нет — к первому.
@@ -2678,7 +2716,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       noteFullDay={docNote?.fullDay ?? false}
                       absence={docNote?.absence}
                       multi={activeDocsOnDay.length > 1}
-                      rendered={renderedIds.has(emp.employeeId)}
+                      rendered={
+                        renderedIds.has(emp.employeeId) || prefetchedIds.has(emp.employeeId)
+                      }
                       scrollTops={bodyScrollTopsRef.current}
                       onSearchDoctor={searchByDoctor}
                       onBook={stableOnBook}
