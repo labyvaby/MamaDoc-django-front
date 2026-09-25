@@ -277,6 +277,9 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
       .foot { margin-top:${px(16)}; display:flex; justify-content:space-between; gap:${px(12)}; font-size:${px(9)}; color:#333; }
       .sign { min-width:${px(160)}; }
       .sign .line { margin-top:${px(14)}; border-top:1px solid #999; padding-top:${px(3)}; color:#777; }
+      /* Кто оформил чек — служебная пометка, пациенту она не нужна: по просьбе
+         заказчика (25.09.2026) печатаем её сильно мельче остального бланка. */
+      .created-by { font-size:${px(6)}; }
       /* На бумаге ширину ограничивает сам лист, поэтому max-width снимаем:
          иначе к полям добавился бы ещё и отступ от auto-центрирования. */
       @media print { body { margin:0; max-width:none; padding:${sheet.padMm}mm; } }
@@ -333,7 +336,7 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
     </div>
     <div class="foot">
       <div class="sign">
-        <div>${esc(tt("appointments:invoice.createdBy"))}: ${esc(data.createdByName || "—")}</div>
+        <div class="created-by">${esc(tt("appointments:invoice.createdBy"))}: ${esc(data.createdByName || "—")}</div>
       </div>
       <div class="sign">
         <div class="line">${esc(tt("appointments:invoice.signature"))}</div>

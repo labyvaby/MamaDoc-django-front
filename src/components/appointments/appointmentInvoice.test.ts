@@ -212,6 +212,16 @@ describe("чек (лист A5)", () => {
     expect(out).toContain("font-size:12.83px");
     expect(out).not.toContain("font-size:9.5px");
   });
+
+  it("«Пользователь, создавший счёт» — мелкой служебной строкой", () => {
+    const out = html();
+    expect(out).toContain(
+      '<div class="created-by">Пользователь, создавший счёт: Таалайбекова Бегимай</div>',
+    );
+    expect(out).toContain(".created-by { font-size:6px; }");
+    // На A4 кегль растёт вместе с бланком: 6 × 1.35.
+    expect(html("A4")).toContain(".created-by { font-size:8.1px; }");
+  });
 });
 
 describe("доступность чека", () => {
