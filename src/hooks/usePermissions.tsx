@@ -4,6 +4,7 @@ import type { MeResponse, RbacMembership, RbacOrganization, RbacBranch, ActiveEm
 import { ApiError } from "../api/client";
 import type { Role, Permission, UserPermissions, RoleName, PermissionCheck, AuthStatus } from "../types/rbac";
 import { getModuleCodeForPermission } from "../utils/moduleMapping";
+import { visibleModules } from "../config/moduleView";
 
 type GlobalState = {
   role: Role | null;
@@ -27,6 +28,11 @@ type GlobalState = {
   /** Суперпользователь платформы (user.isSuperuser из /auth/me/). Не путать с
    *  ролью «superadmin» внутри организации: модули переключает только он. */
   isPlatformAdmin: boolean;
+  /** Модули организации из /auth/me/ (organizationModules); null — бэк не прислал. */
+  organizationModules: string[] | null;
+  /** Режим «Меню как у клиники» (только суперпользователь). Живёт в памяти
+   *  вкладки: /auth/me/ и смена организации его не трогают. */
+  viewAsOrganization: boolean;
 };
 
 let globalState: GlobalState = {
@@ -34,7 +40,7 @@ let globalState: GlobalState = {
   lastFetchedAt: 0, employeeId: null, memberships: [], activeMembership: null,
   activeOrganization: null, activeBranch: null, activeEmployee: null,
   switching: false, enabledModules: [], authStatus: "loading", authError: null, hasPassword: null,
-  isPlatformAdmin: false,
+  isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false,
 };
 let inFlight: Promise<void> | null = null;
 const listeners = new Set<(state: GlobalState) => void>();
@@ -43,7 +49,7 @@ let authEpoch = 0;
 const notify = () => listeners.forEach((listener) => listener(globalState));
 const setGlobal = (patch: Partial<GlobalState>) => { globalState = { ...globalState, ...patch }; notify(); };
 
-function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
+export function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
   const { user, activeMembership } = meData;
   const memberships = (meData.memberships ?? []).map((membership) => ({
     ...membership,
@@ -76,12 +82,14 @@ function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
     enabledModules: meData.enabledModules ?? [], authStatus: "authenticated" as AuthStatus, authError: null,
     hasPassword: userHasPassword(user),
     isPlatformAdmin: Boolean(user.isSuperuser),
+    organizationModules: meData.organizationModules ?? null,
   };
 }
 
 export function applyMeResponse(meData: MeResponse): void {
   authEpoch += 1;
-  setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
+  // Вход — новая сессия: режим «Меню как у клиники» не наследуется.
+  setGlobal({ ...buildStateFromMe(meData), viewAsOrganization: false, lastFetchedAt: Date.now() });
 }
 
 /** Пароль только что установлен (форма в профиле): убрать кнопку в шапке
@@ -105,7 +113,7 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       const meData = await getCurrentUser();
       if (epoch !== authEpoch) return;
       if (!meData?.user) {
-        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false });
+        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false });
       } else {
         setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
       }
@@ -113,7 +121,7 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       if (epoch !== authEpoch) return;
       const status = error instanceof ApiError ? error.status : -1;
       if (status === 401) {
-        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false });
+        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false });
       } else {
         const message = error instanceof ApiError ? `Сервер недоступен (${status || "сеть"})` : "Сетевая ошибка";
         const authenticated = globalState.authStatus === "authenticated";
@@ -163,6 +171,11 @@ export function retryAuth(): void {
   void fetchPermissions({ force: true });
 }
 
+/** Включить/выключить «Меню как у клиники» (страница «Модули»). */
+export function setViewAsOrganization(on: boolean): void {
+  setGlobal({ viewAsOrganization: on });
+}
+
 if (typeof window !== "undefined") {
   const refetch = () => { if (globalState.authStatus === "authenticated") void fetchPermissions(); };
   window.addEventListener("mamadoc:api-unauthorized", () => void fetchPermissions({ force: true }));
@@ -200,12 +213,15 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
   // Django-суперпользователь получает от /auth/me все активные модули, чтобы
   // видеть новые возможности для настройки. Защищённая роль superadmin без
   // глобального флага по-прежнему ограничивается модулями своей организации.
-  const hasModule = useCallback((code: string) => state.enabledModules.includes(code), [state.enabledModules]);
+  // В режиме «Меню как у клиники» суперпользователь видит модули выбранной
+  // организации (visibleModules) — все гейты ниже идут через `modules`.
+  const modules = visibleModules(state);
+  const hasModule = useCallback((code: string) => modules.includes(code), [modules]);
   const canAccess = useCallback((code: string) => {
     const module = getModuleCodeForPermission(code);
-    if (module !== null && !state.enabledModules.includes(module)) return false;
+    if (module !== null && !modules.includes(module)) return false;
     return hasPermission(code);
-  }, [hasPermission, state.enabledModules]);
+  }, [hasPermission, modules]);
   const canManageEmployees = useCallback(() => canAccess("staff.update"), [canAccess]);
   const canManageExpenses = useCallback(() => canAccess("finance.expense.manage"), [canAccess]);
   return {
@@ -214,10 +230,13 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
     isNurse: useCallback(() => hasRole("nurse"), [hasRole]), canManageEmployees, canManageExpenses,
     employee: state.employee, memberships: state.memberships, activeMembership: state.activeMembership,
     activeOrganization: state.activeOrganization, activeBranch: state.activeBranch, activeEmployee: state.activeEmployee,
-    switching: state.switching, switchContext, enabledModules: state.enabledModules, hasModule, canAccess,
+    switching: state.switching, switchContext, enabledModules: modules, hasModule, canAccess,
     authStatus: state.authStatus, authError: state.authError, retryAuth,
     hasPassword: state.hasPassword,
     isPlatformAdmin: state.isPlatformAdmin,
+    organizationModules: state.organizationModules,
+    viewAsOrganization: state.viewAsOrganization,
+    setViewAsOrganization,
   };
 };
 

@@ -12,8 +12,10 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  FormControlLabel,
   Snackbar,
   Stack,
+  Switch,
   Typography,
 } from "@mui/material";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
@@ -37,7 +39,14 @@ const ModulesCatalogPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data, isLoading, isError } = useModulesCatalog();
-  const { isPlatformAdmin, activeOrganization } = usePermissions();
+  const {
+    isPlatformAdmin,
+    activeOrganization,
+    organizationModules,
+    viewAsOrganization,
+    setViewAsOrganization,
+    retryAuth,
+  } = usePermissions();
   const [stubOpen, setStubOpen] = useState(false);
   const [pending, setPending] = useState<PendingToggle | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -56,6 +65,9 @@ const ModulesCatalogPage: React.FC = () => {
       setOrganizationModule(activeOrganization!.id, code, enable),
     onSuccess: (row) => {
       queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tenancy.all });
+      // organizationModules в /auth/me/ поменялись — в режиме «Меню как у
+      // клиники» меню должно смениться сразу, без перезагрузки.
+      retryAuth?.();
       setNotice({
         severity: "success",
         text: `«${row.moduleName}» ${row.isEnabled ? "подключён" : "отключён"}.`,
@@ -101,6 +113,29 @@ const ModulesCatalogPage: React.FC = () => {
           <Typography variant="body2" color="text.secondary">
             Всё, что можно подключить к вашей CRM. Подключено {connectedCount} · доступно ещё {availableCount}
           </Typography>
+          {/* Только суперпользователю: он видит все модули платформы, а так —
+              меню глазами сотрудников выбранной организации. Со старым бэком
+              (нет organizationModules) переключателя нет. */}
+          {canToggle && organizationModules != null && (
+            <FormControlLabel
+              sx={{ mt: 0.5, mr: 0, alignItems: "flex-start" }}
+              control={
+                <Switch
+                  size="small"
+                  checked={Boolean(viewAsOrganization)}
+                  onChange={(_, on) => setViewAsOrganization?.(on)}
+                />
+              }
+              label={
+                <Box sx={{ pt: 0.25 }}>
+                  <Typography variant="body2">Меню как у клиники</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Показывать только модули, подключённые у «{orgName}», — как их видят сотрудники. Сбросится при перезагрузке страницы.
+                  </Typography>
+                </Box>
+              }
+            />
+          )}
         </Stack>
 
         {/* Группы — Stack, а не Box: мобильный SettingsLayout растягивает
