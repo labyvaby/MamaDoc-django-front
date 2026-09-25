@@ -114,6 +114,11 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // (chatwoot.manage), отдельное от chatwoot.view — видеть чаты и
   // настраивать секрет приёмника не одно и то же.
   chatwoot: "chatwoot.manage",
+  // Синхронизация с Altegio. Страница новая и закрыта: маршрут под
+  // RequireSuperAdmin, API — только суперадмину. Этот код не выдан ни одной
+  // роли, поэтому вкладку видит лишь суперадмин (ему can() отвечает «да»
+  // на любое право) — пока заказчик отдельно не откроет раздел ролям.
+  altegio: "altegio.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

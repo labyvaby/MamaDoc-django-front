@@ -38,7 +38,8 @@
       "site": "Сайт",
       "automations": "Автоматизации",
       "odoctor": "Витрина odoctor.kg",
-      "chatwoot": "Chatwoot"
+      "chatwoot": "Chatwoot",
+      "altegio": "Altegio"
     }
   },
   "placeholder": {
@@ -1257,6 +1258,62 @@
       "timezoneHint": "Время местное: по часовому поясу филиала правила, а для «Все {{branch.nomPl}}» — по поясу организации.",
       "nextRun": "Ближайший запуск: {{when}}",
       "notArmed": "Расписание запустится после активации правила."
+    }
+  },
+  "altegio": {
+    "title": "Altegio",
+    "description": "Записи из Altegio сами появляются в расписании ErkinAI и обновляются раз в 5 минут. До отметки «Пришёл» время, специалист, услуги и отмена приходят из Altegio, дальше приём ведёт ErkinAI.",
+    "connectionTitle": "Подключение",
+    "connectionDescription": "Ключ доступа (токен партнёра) — из кабинета разработчика Altegio. Логин и пароль — сотрудника Altegio с доступом к журналу записей: пароль нужен один раз и не сохраняется. Лучше завести отдельную учётку — если пароль личной сменят, синхронизация остановится.",
+    "partnerTokenLabel": "Ключ доступа (partner token)",
+    "loginLabel": "Логин Altegio — телефон или email",
+    "passwordLabel": "Пароль",
+    "connectButton": "Подключить",
+    "connectedAs": "Подключено: {{login}}",
+    "disconnectButton": "Отключить",
+    "connectedSnack": "Altegio подключён",
+    "disconnectedSnack": "Altegio отключён",
+    "savedSnack": "Сохранено",
+    "syncTitle": "Синхронизация",
+    "fallbackLabel": "Услуга «Запись из Altegio»",
+    "fallbackHelper": "Для записей без услуги или с услугой, которую ещё не связали.",
+    "enabledLabel": "Синхронизация включена",
+    "enabledHelper": "Включается, когда выбрана услуга «Запись из Altegio». При первом включении заберём все будущие записи.",
+    "lastSuccess": "Последний успешный прогон: {{at}}",
+    "neverRun": "Синхронизация ещё не запускалась.",
+    "lastError": "Последняя ошибка: {{error}}",
+    "waiting": "Ждут связки специалиста: {{n}}",
+    "diverged": "Расхождений: {{n}}",
+    "linksTitle": "Связки",
+    "linksDescription": "Каждому филиалу, специалисту и услуге Altegio выберите пару в ErkinAI. Кнопка «Похоже» только подсказывает — связь выбираете вы.",
+    "locationsTitle": "Филиалы",
+    "locationColumn": "Филиал Altegio",
+    "branchColumn": "Филиал ErkinAI",
+    "notLinked": "Не связан",
+    "locationPicker": "Филиал Altegio для специалистов и услуг",
+    "staffTitle": "Специалисты",
+    "staffColumn": "Специалист Altegio",
+    "employeeColumn": "Сотрудник ErkinAI",
+    "defaultServiceColumn": "Услуга по умолчанию",
+    "noDefaultService": "Общая «Запись из Altegio»",
+    "servicesTitle": "Услуги",
+    "serviceColumn": "Услуга Altegio",
+    "crmServiceColumn": "Услуга ErkinAI",
+    "suggestion": "Похоже: {{name}}",
+    "loadError": "Не удалось получить список из Altegio: {{error}}",
+    "journalTitle": "Журнал",
+    "journalDescription": "Записи, которые ждут связки специалиста или разошлись с ErkinAI. Остальные заводятся молча.",
+    "journalEmpty": "Проблемных записей нет.",
+    "journalStates": {
+      "waiting_staff": "Ждёт связки",
+      "diverged": "Расхождение"
+    },
+    "journalColumns": {
+      "startsAt": "Время",
+      "staff": "Специалист",
+      "client": "Клиент",
+      "state": "Состояние",
+      "note": "Что не так"
     }
   },
   "odoctor": {
