@@ -14,6 +14,7 @@ import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { Link as RouterLink, useLocation } from "react-router";
 
+import ExtensionOutlined from "@mui/icons-material/ExtensionOutlined";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
@@ -71,6 +72,7 @@ export const SETTINGS_GROUPS = [
   "access",
   "catalogs",
   "operations",
+  "platform",
 ] as const;
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
@@ -239,6 +241,7 @@ const TAB_DEFS: TabDef[] = [
     icon: <ForumOutlined fontSize="small" />,
     group: "operations",
   },
+  { key: "modules", to: "/settings/modules", icon: <ExtensionOutlined fontSize="small" />, group: "platform" },
 ];
 
 /**

@@ -118,6 +118,15 @@ export interface UserPermissions {
   /** Есть ли у пользователя пароль (из /auth/me/): false → в шапке кнопка
    *  «Установить пароль»; null — бэк поля не прислал (Django-режим). */
   hasPassword?: boolean | null;
+  /** Суперпользователь платформы (Django is_superuser). Не путать с ролью
+   *  «superadmin» организации (`isSuperAdmin`). */
+  isPlatformAdmin?: boolean;
+  /** Модули активной организации (organizationModules из /auth/me/);
+   *  null — бэк поле не прислал. */
+  organizationModules?: string[] | null;
+  /** Режим «Меню как у клиники»: суперпользователь видит модули организации. */
+  viewAsOrganization?: boolean;
+  setViewAsOrganization?: (on: boolean) => void;
 }
 
 // Конфигурация защищенного маршрута

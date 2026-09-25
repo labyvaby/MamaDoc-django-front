@@ -113,6 +113,10 @@ export type MeResponse = {
   permissions: string[];
   /** Module codes enabled for the active organization (e.g. "patients", "finance"). */
   enabledModules: string[];
+  /** Модули активной организации — как их видят её сотрудники. У
+   *  суперпользователя может быть уже enabledModules (он видит всё). Старый бэк
+   *  поле не шлёт. */
+  organizationModules?: string[];
 };
 
 /** Payload accepted by POST /api/auth/context/. */
