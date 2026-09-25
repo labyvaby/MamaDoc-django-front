@@ -134,6 +134,7 @@ const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSetting
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
 const OdoctorSettingsPage = lazy(() => import("./pages/settings/OdoctorSettingsPage"));
 const ChatwootLeadsSettingsPage = lazy(() => import("./pages/settings/ChatwootLeadsSettingsPage"));
+const AltegioSettingsPage = lazy(() => import("./pages/settings/AltegioSettingsPage"));
 const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const ClientsSettingsPage = lazy(() => import("./pages/settings/ClientsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
@@ -869,6 +870,19 @@ function App() {
                                 <ChatwootLeadsSettingsPage />
                               </Suspense>
                             </RequirePermission>
+                          }
+                        />
+                        {/* Altegio → ErkinAI: новая закрытая страница — только
+                            суперадминистратору, как и её API, пока заказчик
+                            отдельно не откроет раздел ролям организации. */}
+                        <Route
+                          path="settings/altegio"
+                          element={
+                            <RequireSuperAdmin>
+                              <Suspense fallback={<LinearProgress />}>
+                                <AltegioSettingsPage />
+                              </Suspense>
+                            </RequireSuperAdmin>
                           }
                         />
                         <Route
