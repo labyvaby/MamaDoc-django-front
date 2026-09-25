@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { visibleModules } from "./moduleView";
+import { superSeesAllPages, visibleModules } from "./moduleView";
 
 const all = ["appointments", "cleaning", "pos", "rbac"];
 const clinic = ["appointments", "rbac"];
@@ -28,5 +28,21 @@ describe("visibleModules", () => {
     expect(
       visibleModules({ isPlatformAdmin: false, viewAsOrganization: true, enabledModules: clinic, organizationModules: [] }),
     ).toBe(clinic);
+  });
+});
+
+describe("superSeesAllPages", () => {
+  it("lets a superadmin see the menu pages regardless of modules", () => {
+    expect(superSeesAllPages(true, false)).toBe(true);
+  });
+
+  it("drops that pass in the clinic view, so menu pages follow the clinic's modules", () => {
+    // Иначе «СКУД», «Регистратура» и др. (обход «isSuper ||» в сайдбаре)
+    // оставались в меню «как у клиники», хотя модуля у неё нет.
+    expect(superSeesAllPages(true, true)).toBe(false);
+  });
+
+  it("never gives the pass to anyone else", () => {
+    expect(superSeesAllPages(false, false)).toBe(false);
   });
 });

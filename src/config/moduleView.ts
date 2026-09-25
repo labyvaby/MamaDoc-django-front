@@ -17,3 +17,12 @@ export function visibleModules(input: {
   }
   return enabledModules;
 }
+
+/**
+ * Обход «суперадмин видит страницу без проверки модуля» в пунктах меню
+ * (Регистратура, СКУД и др.). В режиме «Меню как у клиники» обход выключен:
+ * пункты идут обычной проверкой can() — модуль выбранной организации + право.
+ */
+export function superSeesAllPages(isSuperAdmin: boolean, viewAsOrganization: boolean): boolean {
+  return isSuperAdmin && !viewAsOrganization;
+}
