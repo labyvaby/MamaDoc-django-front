@@ -438,6 +438,21 @@ export const djangoQueryKeys = {
     cabinetDoctors: (branchId: number) =>
       ["django", "odoctor", "cabinet-doctors", branchId] as const,
   },
+  altegio: {
+    // Подключение одно на организацию.
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "settings", organizationId ?? null] as const,
+    // Списки из самого Altegio — не кешируются надолго: запрос уходит во
+    // внешнюю систему, вчерашний список специалистов выдавал бы ушедших.
+    locations: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "locations", organizationId ?? null] as const,
+    staff: (organizationId: number | null | undefined, altegioLocationId: number) =>
+      ["django", "altegio", "staff", organizationId ?? null, altegioLocationId] as const,
+    services: (organizationId: number | null | undefined, altegioLocationId: number) =>
+      ["django", "altegio", "services", organizationId ?? null, altegioLocationId] as const,
+    journal: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "journal", organizationId ?? null] as const,
+  },
 
   scheduling: {
     rules: (params: Record<string, unknown>) =>
