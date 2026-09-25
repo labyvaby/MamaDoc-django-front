@@ -27,8 +27,10 @@ export default function ClientsPage() {
   // Права гранулярные, как у пациентов: заводить и править — разные галочки.
   const canCreate = auth.isSuperAdmin() || auth.hasPermission("clients.create");
   const canUpdate = auth.isSuperAdmin() || auth.hasPermission("clients.update");
-  const canViewFinance = auth.isSuperAdmin() || auth.hasPermission("pos.view") || auth.hasPermission("pos.sell");
-  const canViewPurchaseHistory = auth.isSuperAdmin() || auth.hasPermission("pos.history");
+  // Блоки кассы — через canAccess (модуль + право): без модуля «Касса» у
+  // организации (и в «Меню как у клиники») их нет, как и данных на бэке.
+  const canViewFinance = auth.canAccess("pos.view") || auth.canAccess("pos.sell");
+  const canViewPurchaseHistory = auth.canAccess("pos.history");
 
   usePageTitle("Все клиенты");
   const [search, setSearch] = React.useState("");

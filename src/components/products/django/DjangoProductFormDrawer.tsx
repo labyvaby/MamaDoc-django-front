@@ -29,6 +29,7 @@ import {
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { useFormValidation } from "../../../hooks/useFormValidation";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { moduleField } from "../../../config/moduleView";
 import { cascadeContainer, cascadeItem } from "../../ui";
 import { DjangoProductGallery } from "./DjangoProductGallery";
 import { PHOTO_ACCEPT } from "../../../utility/imageCompression";
@@ -195,7 +196,7 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                 // ⚠ Пустую строку бэк пишет в товар буквально (проверено на test
                 // 20.09.2026), поэтому в клинике шлём то, что ввёл сотрудник, а не
                 // `${category?.name ?? ""}` от справочника, которого у неё нет.
-                const payload = { name: values.name.trim(), category: isRetail ? category?.name ?? "" : values.category.trim(), categoryId: category?.id, barcode: values.barcode.trim(), unit: selectedUnit?.shortName ?? values.unit.trim(), unitId: selectedUnit?.id, description: values.description.trim(), comment: values.comment.trim(), isForSale: values.isForSale, isInfusion: values.isInfusion, isVaccine: canUseVaccines && values.isVaccine, price: values.price || 0 };
+                const payload = { name: values.name.trim(), category: isRetail ? category?.name ?? "" : values.category.trim(), categoryId: category?.id, barcode: values.barcode.trim(), unit: selectedUnit?.shortName ?? values.unit.trim(), unitId: selectedUnit?.id, description: values.description.trim(), comment: values.comment.trim(), isForSale: values.isForSale, isInfusion: values.isInfusion, isVaccine: moduleField(canUseVaccines, values.isVaccine), price: values.price || 0 };
                 const saved = isEdit && product ? await updateProduct(product.id, payload) : await createProduct(payload);
                 if (isRetail) await replaceProductGenericAttributes(saved.id, genericIds());
                 if (photo) await uploadProductImage(saved.id, photo);

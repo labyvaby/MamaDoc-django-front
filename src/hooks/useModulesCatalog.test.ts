@@ -1,4 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+const getModulesCatalog = vi.fn();
+
+vi.mock("../api/tenancy", () => ({
+  getModulesCatalog: (...args: unknown[]) => getModulesCatalog(...args),
+}));
 
 import { djangoQueryKeys } from "../api/queryKeys";
 import { modulesCatalogQuery } from "./useModulesCatalog";
@@ -19,5 +25,11 @@ describe("modulesCatalogQuery", () => {
   it("falls under the tenancy root the page invalidates after a toggle", () => {
     const root = djangoQueryKeys.tenancy.all;
     expect(modulesCatalogQuery(8).queryKey.slice(0, root.length)).toEqual([...root]);
+  });
+
+  it("requests the very organization its key names", async () => {
+    getModulesCatalog.mockResolvedValue([]);
+    await modulesCatalogQuery(8).queryFn();
+    expect(getModulesCatalog).toHaveBeenCalledWith(8);
   });
 });

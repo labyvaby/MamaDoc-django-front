@@ -4,7 +4,7 @@ import type { MeResponse, RbacMembership, RbacOrganization, RbacBranch, ActiveEm
 import { ApiError } from "../api/client";
 import type { Role, Permission, UserPermissions, RoleName, PermissionCheck, AuthStatus } from "../types/rbac";
 import { getModuleCodeForPermission } from "../utils/moduleMapping";
-import { visibleModules } from "../config/moduleView";
+import { keepsClinicView, visibleModules } from "../config/moduleView";
 
 type GlobalState = {
   role: Role | null;
@@ -115,7 +115,11 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       if (!meData?.user) {
         setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false });
       } else {
-        setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
+        setGlobal({
+          ...buildStateFromMe(meData),
+          viewAsOrganization: keepsClinicView(globalState.viewAsOrganization, globalState.employeeId, meData),
+          lastFetchedAt: Date.now(),
+        });
       }
     } catch (error) {
       if (epoch !== authEpoch) return;
@@ -157,7 +161,12 @@ export async function switchContext(payload: SwitchContextPayload): Promise<MeRe
   try {
     const meData = await switchAuthContext(payload);
     authEpoch += 1;
-    setGlobal({ ...buildStateFromMe(meData), switching: false, lastFetchedAt: Date.now() });
+    setGlobal({
+      ...buildStateFromMe(meData),
+      viewAsOrganization: keepsClinicView(globalState.viewAsOrganization, globalState.employeeId, meData),
+      switching: false,
+      lastFetchedAt: Date.now(),
+    });
     window.dispatchEvent(new Event("mamadoc:django-context-switched"));
     return meData;
   } catch (error) {

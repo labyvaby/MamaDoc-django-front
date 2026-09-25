@@ -361,6 +361,7 @@ const SidebarSecondary: React.FC = () => {
     activeBranch,
     activeOrganization,
     loading: permissionsLoading,
+    isPlatformAdmin,
     viewAsOrganization,
   } = usePermissions();
   const { can } = useCanChecker();
@@ -376,7 +377,7 @@ const SidebarSecondary: React.FC = () => {
   const activeBranchId = useActiveScope().branchId;
   const isSuper = isSuperAdmin();
   // Обход «isSuper ||» у пунктов ниже; в «Меню как у клиники» выключен.
-  const superSeesAll = superSeesAllPages(isSuper, Boolean(viewAsOrganization));
+  const superSeesAll = superSeesAllPages(isSuper, Boolean(isPlatformAdmin), Boolean(viewAsOrganization));
   const isRetail = activeOrganization?.vertical === "retail";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");

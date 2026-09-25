@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Alert,
@@ -25,14 +25,21 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { type CatalogModule, setOrganizationModule } from "../../api/tenancy";
 import { useModulesCatalog } from "../../hooks/useModulesCatalog";
-import { usePermissions } from "../../hooks/usePermissions";
+import { refreshAuthContext, usePermissions } from "../../hooks/usePermissions";
 import { MODULE_SETTINGS_ROUTE, moduleIcon } from "../../config/moduleCatalogMeta";
 import { CATEGORY_LABELS, groupByCategory } from "../../config/moduleCatalogGrouping";
 import { catalogActions } from "../../config/moduleCatalogActions";
 import { missingRequirements } from "../../config/moduleCatalogRequirements";
 import { SettingsLayout } from "./SettingsLayout";
 
-type PendingToggle = { module: CatalogModule; enable: boolean };
+/** Подтверждаемое переключение. Организация фиксируется в момент нажатия:
+ *  PATCH уходит именно в неё, даже если активная организация уже сменилась. */
+type PendingToggle = {
+  module: CatalogModule;
+  enable: boolean;
+  organizationId: number;
+  organizationName: string;
+};
 type Notice = { severity: "success" | "error"; text: string };
 
 const ModulesCatalogPage: React.FC = () => {
@@ -45,11 +52,30 @@ const ModulesCatalogPage: React.FC = () => {
     organizationModules,
     viewAsOrganization,
     setViewAsOrganization,
-    retryAuth,
   } = usePermissions();
   const [stubOpen, setStubOpen] = useState(false);
+  // Содержимое окна (pending) живёт до конца анимации закрытия — иначе оно
+  // успевало перерисоваться в «Отключить модуль?» пустым; открытость — отдельно.
   const [pending, setPending] = useState<PendingToggle | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+
+  // Активная организация сменилась при открытом окне (другая вкладка,
+  // обновление /auth/me/) — подтверждение относилось к прежней, закрываем.
+  useEffect(() => {
+    if (pending && pending.organizationId !== activeOrganization?.id) setDialogOpen(false);
+  }, [activeOrganization?.id, pending]);
+
+  const askToggle = (module: CatalogModule, enable: boolean) => {
+    if (!activeOrganization) return;
+    setPending({
+      module,
+      enable,
+      organizationId: activeOrganization.id,
+      organizationName: activeOrganization.name,
+    });
+    setDialogOpen(true);
+  };
 
   const catalog = useMemo(() => data ?? [], [data]);
   const groups = useMemo(() => groupByCategory(catalog), [catalog]);
@@ -61,13 +87,8 @@ const ModulesCatalogPage: React.FC = () => {
   const orgName = activeOrganization?.name ?? "организации";
 
   const toggle = useMutation({
-    mutationFn: ({ code, enable }: { code: string; enable: boolean }) =>
-      setOrganizationModule(activeOrganization!.id, code, enable),
+    mutationFn: (p: PendingToggle) => setOrganizationModule(p.organizationId, p.module.code, p.enable),
     onSuccess: (row) => {
-      queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tenancy.all });
-      // organizationModules в /auth/me/ поменялись — в режиме «Меню как у
-      // клиники» меню должно смениться сразу, без перезагрузки.
-      retryAuth?.();
       setNotice({
         severity: "success",
         text: `«${row.moduleName}» ${row.isEnabled ? "подключён" : "отключён"}.`,
@@ -79,7 +100,16 @@ const ModulesCatalogPage: React.FC = () => {
         text: error instanceof Error ? error.message : "Не удалось переключить модуль.",
       });
     },
-    onSettled: () => setPending(null),
+    onSettled: () => {
+      // И после ошибки: отказ мог прийти из-за устаревшего экрана, а сетевой
+      // сбой — скрыть уже применённое изменение.
+      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tenancy.all });
+      // organizationModules в /auth/me/ поменялись — в «Меню как у клиники»
+      // меню должно смениться сразу. fresh-запрос: /auth/me/, начатый до
+      // изменения, не годится.
+      void refreshAuthContext();
+      setDialogOpen(false);
+    },
   });
 
   if (isLoading) {
@@ -219,7 +249,7 @@ const ModulesCatalogPage: React.FC = () => {
                           <Button
                             size="small"
                             color="error"
-                            onClick={() => setPending({ module: m, enable: false })}
+                            onClick={() => askToggle(m, false)}
                           >
                             Отключить
                           </Button>
@@ -228,7 +258,7 @@ const ModulesCatalogPage: React.FC = () => {
                           <Button
                             size="small"
                             startIcon={<AddOutlined />}
-                            onClick={() => setPending({ module: m, enable: true })}
+                            onClick={() => askToggle(m, true)}
                           >
                             Подключить
                           </Button>
@@ -261,29 +291,30 @@ const ModulesCatalogPage: React.FC = () => {
       </Stack>
 
       <Dialog
-        open={pending !== null}
+        open={dialogOpen}
         onClose={() => {
-          if (!toggle.isPending) setPending(null);
+          if (!toggle.isPending) setDialogOpen(false);
         }}
+        slotProps={{ transition: { onExited: () => setPending(null) } }}
       >
         <DialogTitle>{pending?.enable ? "Подключить модуль?" : "Отключить модуль?"}</DialogTitle>
         <DialogContent>
           <DialogContentText>
             {pending?.enable
-              ? `Подключить «${pending.module.name}» для «${orgName}»? Модуль появится в CRM клиники.`
-              : `Отключить «${pending?.module.name ?? ""}» у «${orgName}»? Разделы модуля пропадут у сотрудников клиники. Права в ролях сохранятся и вернутся при подключении.`}
+              ? `Подключить «${pending.module.name}» для «${pending.organizationName}»? Модуль появится в CRM клиники.`
+              : `Отключить «${pending?.module.name ?? ""}» у «${pending?.organizationName ?? ""}»? Разделы модуля пропадут у сотрудников клиники. Права в ролях сохранятся и вернутся при подключении.`}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPending(null)} disabled={toggle.isPending}>
+          <Button onClick={() => setDialogOpen(false)} disabled={toggle.isPending}>
             Отмена
           </Button>
           <Button
             variant="contained"
             color={pending?.enable ? "primary" : "error"}
-            disabled={toggle.isPending}
+            disabled={toggle.isPending || !dialogOpen}
             onClick={() => {
-              if (pending) toggle.mutate({ code: pending.module.code, enable: pending.enable });
+              if (pending) toggle.mutate(pending);
             }}
           >
             {pending?.enable ? "Подключить" : "Отключить"}

@@ -18,8 +18,15 @@ export interface CatalogModule {
   requires: string[];
 }
 
-export function getModulesCatalog(): Promise<CatalogModule[]> {
-  return apiRequest<CatalogModule[]>("/tenancy/catalog/");
+/**
+ * Каталог указанной организации. Сессия одна на все вкладки, поэтому
+ * организацию страницы передаём явно, а не полагаемся на сессию: иначе
+ * соседняя вкладка могла подсунуть каталог другой клиники. Без id — как раньше,
+ * организация сессии.
+ */
+export function getModulesCatalog(organizationId?: number | null): Promise<CatalogModule[]> {
+  const query = organizationId != null ? `?organizationId=${organizationId}` : "";
+  return apiRequest<CatalogModule[]>(`/tenancy/catalog/${query}`);
 }
 
 /** Строка «модуль организации» из /api/tenancy/organizations/<id>/modules/. */

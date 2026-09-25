@@ -7,12 +7,12 @@ import { usePermissions } from "./usePermissions";
 /**
  * Запрос витрины для организации. Ключ — под djangoQueryKeys.all и с id
  * организации: смена организации (switchContext) снимает его вместе с
- * остальными данными контекста.
+ * остальными данными контекста. Запрос несёт ту же организацию, что и ключ.
  */
 export function modulesCatalogQuery(organizationId: number | null | undefined) {
   return {
     queryKey: djangoQueryKeys.tenancy.catalog(organizationId),
-    queryFn: getModulesCatalog,
+    queryFn: () => getModulesCatalog(organizationId),
     staleTime: 5 * 60 * 1000,
   };
 }

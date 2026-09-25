@@ -19,10 +19,39 @@ export function visibleModules(input: {
 }
 
 /**
+ * Значение поля модуля для запроса на запись. Модуль выключен → undefined:
+ * поле не уходит в JSON, и бэк не перезаписывает сохранённое значение
+ * (иначе форма, где поле спрятано вместе с модулем, стирала бы его).
+ */
+export function moduleField<T>(moduleEnabled: boolean, value: T): T | undefined {
+  return moduleEnabled ? value : undefined;
+}
+
+/**
  * Обход «суперадмин видит страницу без проверки модуля» в пунктах меню
  * (Регистратура, СКУД и др.). В режиме «Меню как у клиники» обход выключен:
  * пункты идут обычной проверкой can() — модуль выбранной организации + право.
+ * Режим — только у суперпользователя платформы; роль «superadmin» клиники
+ * обход не теряет, даже если флаг режима остался от прежнего пользователя.
  */
-export function superSeesAllPages(isSuperAdmin: boolean, viewAsOrganization: boolean): boolean {
-  return isSuperAdmin && !viewAsOrganization;
+export function superSeesAllPages(
+  isSuperAdmin: boolean,
+  isPlatformAdmin: boolean,
+  viewAsOrganization: boolean,
+): boolean {
+  return isSuperAdmin && !(isPlatformAdmin && viewAsOrganization);
+}
+
+/**
+ * Оставить ли «Меню как у клиники» после нового ответа /auth/me/. Режим
+ * принадлежит тому, кто его включил: вход другого пользователя в ту же сессию
+ * (например, из соседней вкладки) или пользователь не суперпользователь —
+ * сброс. Обновление /auth/me/ и смена организации режим не трогают.
+ */
+export function keepsClinicView(
+  viewAsOrganization: boolean,
+  previousUserId: string | null | undefined,
+  me: { user: { id: number; isSuperuser: boolean } },
+): boolean {
+  return viewAsOrganization && previousUserId === String(me.user.id) && Boolean(me.user.isSuperuser);
 }
