@@ -1,11 +1,11 @@
 import React from "react";
-import { Alert, Box, Drawer, IconButton, Stack, Typography } from "@mui/material";
+import { Alert, Box, Chip, Drawer, IconButton, Stack, Typography } from "@mui/material";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 
 import { categoryTone } from "../../../config/moduleStorefront";
 import type { StorefrontItem } from "../../../config/moduleStorefrontModel";
-import { ProductStatus } from "./ProductCard";
+import { PriceLabel, ProductStatus, SoonChip } from "./ProductCard";
 import { StorefrontTile } from "./storefrontVisuals";
 
 interface Props {
@@ -30,10 +30,14 @@ export const ProductDrawer: React.FC<Props> = ({ item, onClose, action, operator
         <Stack direction="row" spacing={1.5} alignItems="center">
           <StorefrontTile icon={item.product.icon} tone={categoryTone(item.product.category)} size={52} />
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="h6" fontWeight={700}>
-              {item.product.title}
-            </Typography>
-            <ProductStatus item={item} />
+            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Typography variant="h6" fontWeight={700}>
+                {item.product.title}
+              </Typography>
+              {item.product.soon && <SoonChip />}
+            </Stack>
+            {/* У «Скоро» статус — сама пометка, под ней цена. */}
+            {item.status === "soon" ? <PriceLabel item={item} /> : <ProductStatus item={item} />}
           </Box>
           <IconButton aria-label="Закрыть" onClick={onClose}>
             <CloseOutlined />
@@ -49,6 +53,23 @@ export const ProductDrawer: React.FC<Props> = ({ item, onClose, action, operator
               </Stack>
             ))}
           </Stack>
+        )}
+        {item.product.parts && item.product.parts.length > 0 && (
+          <Box>
+            <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+              Что входит
+            </Typography>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
+              {item.product.parts.map((part) => (
+                <Chip key={part} size="small" variant="outlined" label={part} />
+              ))}
+            </Stack>
+          </Box>
+        )}
+        {item.product.soon && (
+          <Alert severity="info" variant="outlined">
+            В разработке. Оставьте заявку — менеджер расскажет о запуске.
+          </Alert>
         )}
         {item.status !== "connected" && item.extraRequirementNames.length > 0 && (
           <Alert severity="info" variant="outlined">
@@ -68,7 +89,7 @@ export const ProductDrawer: React.FC<Props> = ({ item, onClose, action, operator
                 Менеджер ErkinAI связывается с вами
               </Typography>
               <Typography component="li" variant="body2">
-                Модуль появляется в CRM — переустанавливать ничего не нужно
+                Всё включается в вашей CRM — переустанавливать ничего не нужно
               </Typography>
             </Box>
           </Box>

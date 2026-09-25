@@ -475,5 +475,8 @@ export const djangoQueryKeys = {
     // Открытые заявки на подключение с витрины — тоже у каждой организации свои.
     requests: (organizationId: number | null | undefined) =>
       ["django", "tenancy", "requests", organizationId ?? null] as const,
+    // Чем из товаров без модуля (запись, сайт, страховые…) организация уже пользуется.
+    features: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "features", organizationId ?? null] as const,
   },
 };

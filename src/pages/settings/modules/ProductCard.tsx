@@ -5,16 +5,16 @@ import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 
 import { categoryTone } from "../../../config/moduleStorefront";
 import { formatPrice, type StorefrontItem } from "../../../config/moduleStorefrontModel";
-import { StorefrontTile } from "./storefrontVisuals";
+import { PartsLine, StorefrontTile } from "./storefrontVisuals";
 
 export const PriceLabel: React.FC<{ item: StorefrontItem }> = ({ item }) => {
-  const { price } = item.product;
-  const main = item.free ? "Бесплатно" : price === null ? "Цена по запросу" : formatPrice(price);
+  const { price, priceNote } = item.product;
+  const main = item.free || price === 0 ? "Бесплатно" : price === null ? "Цена по запросу" : formatPrice(price);
   const note = item.freeWithTitle
     ? item.free
       ? `с «${item.freeWithTitle}»`
       : `Бесплатно с «${item.freeWithTitle}»`
-    : null;
+    : priceNote ?? null;
   return (
     <Box sx={{ minWidth: 0 }}>
       <Typography variant="subtitle2" fontWeight={700} sx={{ whiteSpace: "nowrap" }}>
@@ -39,14 +39,21 @@ export const ProductStatus: React.FC<{ item: StorefrontItem }> = ({ item }) => {
   return <PriceLabel item={item} />;
 };
 
+/** «Скоро» у товара в разработке — рядом с названием. */
+export const SoonChip: React.FC = () => (
+  <Chip size="small" color="info" label="Скоро" sx={{ height: 20, fontSize: 11, fontWeight: 700 }} />
+);
+
 interface Props {
   item: StorefrontItem;
   action?: React.ReactNode;
   onOpen: () => void;
+  /** Части, в которых нашёлся запрос поиска. */
+  highlight?: string[];
 }
 
 /** Карточка товара: клик — «Подробнее»; кнопка действия клик не пропускает. */
-export const ProductCard: React.FC<Props> = ({ item, action, onOpen }) => {
+export const ProductCard: React.FC<Props> = ({ item, action, onOpen, highlight }) => {
   const { product } = item;
   return (
     <Card
@@ -76,14 +83,18 @@ export const ProductCard: React.FC<Props> = ({ item, action, onOpen }) => {
       <Stack direction="row" spacing={1.5} alignItems="flex-start">
         <StorefrontTile icon={product.icon} tone={categoryTone(product.category)} />
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="subtitle2" fontWeight={700}>
-            {product.title}
-          </Typography>
+          <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Typography variant="subtitle2" fontWeight={700}>
+              {product.title}
+            </Typography>
+            {product.soon && <SoonChip />}
+          </Stack>
           <Typography variant="body2" color="text.secondary">
             {product.tagline}
           </Typography>
         </Box>
       </Stack>
+      <PartsLine parts={product.parts} highlight={highlight} />
       {item.status === "available" && item.extraRequirementNames.length > 0 && (
         <Typography variant="caption" color="warning.main">
           Сначала: {item.extraRequirementNames.join(", ")}

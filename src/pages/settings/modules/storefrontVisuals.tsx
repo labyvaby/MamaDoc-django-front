@@ -1,5 +1,5 @@
 import React from "react";
-import { Box } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import { alpha, darken, lighten, useTheme } from "@mui/material/styles";
 import type { SvgIconComponent } from "@mui/icons-material";
 import ChatOutlined from "@mui/icons-material/ChatOutlined";
@@ -21,6 +21,28 @@ import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 import CheckroomOutlined from "@mui/icons-material/CheckroomOutlined";
 import TelegramIcon from "@mui/icons-material/Telegram";
 import ExtensionOutlined from "@mui/icons-material/ExtensionOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
+import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
+import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
+import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
+import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
+import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
+import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
+import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
+import BoltOutlined from "@mui/icons-material/BoltOutlined";
+import EditNoteOutlined from "@mui/icons-material/EditNoteOutlined";
+import EventNoteOutlined from "@mui/icons-material/EventNoteOutlined";
+import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
+import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
+import ListAltOutlined from "@mui/icons-material/ListAltOutlined";
+import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
+import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
+import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
+import FolderOutlined from "@mui/icons-material/FolderOutlined";
+import PrintOutlined from "@mui/icons-material/PrintOutlined";
+import MonitorHeartOutlined from "@mui/icons-material/MonitorHeartOutlined";
+import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 
 import type { StorefrontIconName, StorefrontTone } from "../../../config/moduleStorefront";
 
@@ -44,6 +66,28 @@ const ICONS: Record<StorefrontIconName, SvgIconComponent> = {
   hanger: CheckroomOutlined,
   telegram: TelegramIcon,
   puzzle: ExtensionOutlined,
+  booking: EventAvailableOutlined,
+  site: LanguageOutlined,
+  insurance: HealthAndSafetyOutlined,
+  bell: NotificationsActiveOutlined,
+  odoctor: LocalHospitalOutlined,
+  lab: ScienceOutlined,
+  ai: AutoAwesomeOutlined,
+  insights: InsightsOutlined,
+  bolt: BoltOutlined,
+  note: EditNoteOutlined,
+  event: EventNoteOutlined,
+  people: PeopleAltOutlined,
+  calendar: CalendarMonthOutlined,
+  list: ListAltOutlined,
+  wallet: AccountBalanceWalletOutlined,
+  chart: AssessmentOutlined,
+  badge: BadgeOutlined,
+  campaign: CampaignOutlined,
+  folder: FolderOutlined,
+  print: PrintOutlined,
+  monitor: MonitorHeartOutlined,
+  trophy: EmojiEventsOutlined,
 };
 
 /** Цвета категорий — из марки ErkinAI; от акцента CRM не зависят, в тёмной теме светлее. */
@@ -85,5 +129,25 @@ export const StorefrontTile: React.FC<{ icon: StorefrontIconName; tone: Storefro
     >
       <Icon sx={{ fontSize: Math.round(size * 0.55) }} />
     </Box>
+  );
+};
+
+/** Части товара одной строкой через точку; найденные поиском — выделены. */
+export const PartsLine: React.FC<{ parts?: string[]; highlight?: string[] }> = ({ parts, highlight = [] }) => {
+  if (!parts || parts.length === 0) return null;
+  return (
+    <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5 }}>
+      {parts.map((part, index) => (
+        <React.Fragment key={part}>
+          {index > 0 && " · "}
+          <Box
+            component="span"
+            sx={highlight.includes(part) ? { color: "primary.main", fontWeight: 700 } : undefined}
+          >
+            {part}
+          </Box>
+        </React.Fragment>
+      ))}
+    </Typography>
   );
 };

@@ -11,7 +11,27 @@ import {
   Typography,
 } from "@mui/material";
 
-import type { RequestTarget } from "../../../config/moduleStorefrontModel";
+import type { RequestKind, RequestTarget } from "../../../config/moduleStorefrontModel";
+
+/** Заголовок и пояснение окна по виду заявки. */
+const WORDING: Record<RequestKind, { title: (name: string) => string; intro: string }> = {
+  product: {
+    title: (name) => `Подключить «${name}»?`,
+    intro: "Менеджер ErkinAI свяжется с вами, ответит на вопросы и всё включит.",
+  },
+  bundle: {
+    title: (name) => `Подключить «${name}»?`,
+    intro: "Менеджер ErkinAI свяжется с вами, ответит на вопросы и всё включит.",
+  },
+  included: {
+    title: (name) => `Включить «${name}»?`,
+    intro: "Входит в ваш пакет — без доплаты. Менеджер ErkinAI включит и сообщит вам.",
+  },
+  soon: {
+    title: (name) => `Узнать о запуске «${name}»?`,
+    intro: "Модуль в разработке. Менеджер ErkinAI расскажет о сроках и сообщит, когда можно подключить.",
+  },
+};
 
 export interface RequestContact {
   name: string;
@@ -61,6 +81,7 @@ export const RequestDialog: React.FC<Props> = ({
     }
     onSubmit({ name: name.trim(), phone: phone.trim(), comment: comment.trim() });
   };
+  const wording = WORDING[target?.kind ?? "product"];
 
   return (
     <Dialog
@@ -72,11 +93,11 @@ export const RequestDialog: React.FC<Props> = ({
       maxWidth="xs"
       slotProps={{ transition: { onExited } }}
     >
-      <DialogTitle>Подключить «{target?.title ?? ""}»?</DialogTitle>
+      <DialogTitle>{wording.title(target?.title ?? "")}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 0.5 }}>
           <Typography variant="body2" color="text.secondary">
-            Менеджер ErkinAI свяжется с вами, ответит на вопросы и включит модуль.
+            {wording.intro}
           </Typography>
           {target && target.extraRequirementNames.length > 0 && (
             <Alert severity="info" variant="outlined">
@@ -101,7 +122,7 @@ export const RequestDialog: React.FC<Props> = ({
             label="Комментарий"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="Например: какие мессенджеры подключить"
+            placeholder="Например: когда удобно созвониться"
             fullWidth
             multiline
             minRows={2}

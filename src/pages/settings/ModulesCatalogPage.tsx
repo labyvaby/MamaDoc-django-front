@@ -12,19 +12,25 @@ import {
   DialogContentText,
   DialogTitle,
   FormControlLabel,
+  IconButton,
+  InputAdornment,
   Snackbar,
   Stack,
   Switch,
+  TextField,
   Typography,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import ClearOutlined from "@mui/icons-material/ClearOutlined";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { type CatalogModule, createModuleRequest, setOrganizationModule } from "../../api/tenancy";
 import { useModulesCatalog } from "../../hooks/useModulesCatalog";
 import { useModuleRequests } from "../../hooks/useModuleRequests";
+import { useStorefrontFeatures } from "../../hooks/useStorefrontFeatures";
 import { refreshAuthContext, usePermissions } from "../../hooks/usePermissions";
 import { MODULE_SETTINGS_ROUTE } from "../../config/moduleCatalogMeta";
 import { catalogActions } from "../../config/moduleCatalogActions";
@@ -32,14 +38,17 @@ import { RECOMMEND_TITLE } from "../../config/moduleStorefront";
 import {
   buildStorefront,
   bundleTarget,
+  includedTarget,
   itemTarget,
-  shelfOrder,
+  searchStorefront,
+  storefrontVertical,
+  type IncludedItem,
   type RequestTarget,
   type StorefrontItem,
 } from "../../config/moduleStorefrontModel";
 import { SettingsLayout } from "./SettingsLayout";
-import { BasePackageBlock } from "./modules/BasePackageBlock";
 import { BundleCard } from "./modules/BundleCard";
+import { IncludedCard } from "./modules/IncludedCard";
 import { ProductCard } from "./modules/ProductCard";
 import { ProductDrawer } from "./modules/ProductDrawer";
 import { RequestDialog, type RequestContact } from "./modules/RequestDialog";
@@ -50,16 +59,23 @@ type PendingToggle = { module: CatalogModule; enable: boolean; organizationId: n
 type PendingRequest = RequestTarget & { organizationId: number };
 type Notice = { severity: "success" | "error"; text: string };
 
+const GRID = { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", lg: "repeat(3, minmax(0, 1fr))" };
+
+/** Подпись кнопки перехода: экран настроек — «Настроить», рабочий раздел — «Открыть». */
+const routeLabel = (route: string) => (route.startsWith("/settings") ? "Настроить" : "Открыть");
+
 /**
  * Витрина «Модули» (docs/specs/2026-09-26-modules-storefront-design.md): товары
- * с ценами, подборки «Рекомендуем», «Подробнее» и заявка менеджеру. Суперпользователь
- * платформы вместо заявки переключает модули сам.
+ * с ценами, подборки «Рекомендуем», «Подробнее», заявка менеджеру, поиск и раздел
+ * «Входит в ваш пакет». Суперпользователь платформы вместо заявки переключает
+ * модули сам.
  */
 const ModulesCatalogPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const catalogQuery = useModulesCatalog();
   const requestsQuery = useModuleRequests();
+  const featuresQuery = useStorefrontFeatures();
   const {
     isPlatformAdmin,
     activeOrganization,
@@ -71,9 +87,10 @@ const ModulesCatalogPage: React.FC = () => {
   // Переключает модули только суперпользователь платформы; клиника шлёт заявку.
   const isOperator = Boolean(isPlatformAdmin && activeOrganization);
   const orgName = activeOrganization?.name ?? "организации";
-  const vertical = activeOrganization?.vertical ?? "clinic";
+  const vertical = storefrontVertical(activeOrganization?.vertical);
 
   const [filter, setFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [requestTarget, setRequestTarget] = useState<PendingRequest | null>(null);
   const [requestOpen, setRequestOpen] = useState(false);
@@ -84,13 +101,26 @@ const ModulesCatalogPage: React.FC = () => {
   const catalog = useMemo(() => catalogQuery.data ?? [], [catalogQuery.data]);
   const catalogByCode = useMemo(() => new Map(catalog.map((m) => [m.code, m])), [catalog]);
   const storefront = useMemo(
-    () => buildStorefront({ catalog, vertical, openRequests: requestsQuery.data ?? [] }),
-    [catalog, vertical, requestsQuery.data],
+    () =>
+      buildStorefront({
+        catalog,
+        vertical,
+        openRequests: requestsQuery.data ?? [],
+        // Признаки не пришли — товары без модуля не показываем, а не предлагаем вслепую.
+        signals: featuresQuery.data ?? null,
+        operator: isOperator,
+      }),
+    [catalog, vertical, requestsQuery.data, featuresQuery.data, isOperator],
   );
+  const searching = search.trim().length > 0;
+  const found = useMemo(() => searchStorefront(storefront, search), [storefront, search]);
+  // Поиск идёт по всей витрине, фильтр-чипы — только без поиска.
+  const shelf = searching
+    ? found.items
+    : found.items.filter(({ item }) =>
+        filter === "all" ? true : filter === "connected" ? item.status === "connected" : item.product.category === filter,
+      );
   const drawerItem = storefront.items.find((i) => i.product.id === drawerId) ?? null;
-  const shelf = shelfOrder(storefront.items).filter((item) =>
-    filter === "all" ? true : filter === "connected" ? item.status === "connected" : item.product.category === filter,
-  );
 
   // Организация сменилась при открытом окне — подтверждение относилось к прежней.
   useEffect(() => {
@@ -131,8 +161,14 @@ const ModulesCatalogPage: React.FC = () => {
         contactPhone: contact.phone,
         comment: contact.comment,
       }),
-    onSuccess: () => {
-      setNotice({ severity: "success", text: "Заявка отправлена. Менеджер свяжется с вами." });
+    onSuccess: (_, { target }) => {
+      setNotice({
+        severity: "success",
+        text:
+          target.kind === "soon"
+            ? "Заявка отправлена. Расскажем о запуске."
+            : "Заявка отправлена. Менеджер свяжется с вами.",
+      });
       setRequestOpen(false);
     },
     onError: (error) =>
@@ -153,8 +189,16 @@ const ModulesCatalogPage: React.FC = () => {
     setRequestTarget({ ...target, organizationId: activeOrganization.id });
     setRequestOpen(true);
   };
-  const settingsRouteOf = (item: StorefrontItem) =>
-    item.product.modules.map((code) => MODULE_SETTINGS_ROUTE[code]).find(Boolean);
+  const routeOf = (item: StorefrontItem) =>
+    item.product.route ?? item.product.modules.map((code) => MODULE_SETTINGS_ROUTE[code]).find(Boolean);
+  const routeButton = (item: StorefrontItem, props: React.ComponentProps<typeof Button> = { size: "small" }) => {
+    const route = routeOf(item);
+    return route ? (
+      <Button {...props} onClick={() => navigate(route)}>
+        {routeLabel(route)}
+      </Button>
+    ) : null;
+  };
 
   const clinicAction = (item: StorefrontItem): React.ReactNode => {
     if (item.status === "available") {
@@ -164,18 +208,19 @@ const ModulesCatalogPage: React.FC = () => {
         </Button>
       );
     }
-    const route = settingsRouteOf(item);
-    if (item.status === "connected" && route) {
+    if (item.status === "soon") {
       return (
-        <Button size="small" onClick={() => navigate(route)}>
-          Настроить
+        <Button size="small" variant="outlined" onClick={() => askRequest(itemTarget(item))}>
+          Узнать о запуске
         </Button>
       );
     }
-    return null;
+    return item.status === "connected" ? routeButton(item) : null;
   };
 
   const operatorAction = (item: StorefrontItem): React.ReactNode => {
+    // Без модуля переключать нечего: оператор идёт в настройки возможности.
+    if (item.product.modules.length === 0) return routeButton(item);
     const module = item.product.modules.length === 1 ? catalogByCode.get(item.product.modules[0]) : undefined;
     if (!module) {
       return (
@@ -208,7 +253,10 @@ const ModulesCatalogPage: React.FC = () => {
   };
 
   const drawerAction = (item: StorefrontItem): React.ReactNode => {
-    if (isOperator) return null;
+    // Оператору переключатели модулей — ниже; у товара без модуля — переход в его настройки.
+    if (isOperator) {
+      return item.product.modules.length === 0 ? routeButton(item, { variant: "outlined", fullWidth: true }) : null;
+    }
     if (item.status === "requested") {
       return (
         <Alert severity="warning" variant="outlined">
@@ -216,23 +264,18 @@ const ModulesCatalogPage: React.FC = () => {
         </Alert>
       );
     }
-    if (item.status === "available") {
+    if (item.status === "available" || item.status === "soon") {
       return (
         <Button variant="contained" size="large" fullWidth onClick={() => askRequest(itemTarget(item))}>
-          Отправить заявку
+          {item.status === "soon" ? "Узнать о запуске" : "Отправить заявку"}
         </Button>
       );
     }
-    const route = settingsRouteOf(item);
-    return route ? (
-      <Button variant="outlined" fullWidth onClick={() => navigate(route)}>
-        Настроить
-      </Button>
-    ) : null;
+    return routeButton(item, { variant: "outlined", fullWidth: true });
   };
 
   const drawerOperator = (item: StorefrontItem): React.ReactNode =>
-    isOperator ? (
+    isOperator && item.product.modules.length > 0 ? (
       <Box>
         <Typography variant="overline" color="text.secondary">
           Оператор платформы
@@ -262,7 +305,28 @@ const ModulesCatalogPage: React.FC = () => {
       </Box>
     ) : null;
 
-  if (catalogQuery.isLoading) {
+  const includedAction = (entry: IncludedItem): React.ReactNode => {
+    const { module } = entry;
+    if (!module) return null;
+    if (isOperator) {
+      return module.isEnabled ? (
+        <Button size="small" color="error" onClick={() => askToggle(module, false)}>
+          Отключить
+        </Button>
+      ) : (
+        <Button size="small" startIcon={<AddOutlined />} onClick={() => askToggle(module, true)}>
+          Включить
+        </Button>
+      );
+    }
+    return entry.status === "off" ? (
+      <Button size="small" variant="outlined" onClick={() => askRequest(includedTarget(entry))}>
+        Включить
+      </Button>
+    ) : null;
+  };
+
+  if (catalogQuery.isLoading || featuresQuery.isLoading) {
     return (
       <SettingsLayout>
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
@@ -284,10 +348,11 @@ const ModulesCatalogPage: React.FC = () => {
     ...storefront.categories.map((c) => ({ id: c.id as string, label: c.label })),
     { id: "connected", label: `Подключённые · ${storefront.connectedCount}` },
   ];
+  const nothingFound = searching && found.items.length === 0 && found.included.length === 0;
 
   return (
     <SettingsLayout>
-      {/* Корень и секции — Stack, последний блок — Card: мобильный SettingsLayout
+      {/* Корень и секции — Stack, последний блок — тоже Stack: мобильный SettingsLayout
           растягивает кнопки в последнем Box-потомке корня. Шапка — Stack + h6,
           как у соседних страниц настроек. */}
       <Stack spacing={3} sx={{ maxWidth: 1100, mx: "auto", width: "100%" }}>
@@ -334,10 +399,41 @@ const ModulesCatalogPage: React.FC = () => {
           )}
         </Stack>
 
-        {storefront.bundles.length > 0 && (
+        <TextField
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Найти: инвентаризация, зарплата, запись…"
+          size="small"
+          fullWidth
+          slotProps={{
+            htmlInput: { "aria-label": "Поиск по модулям" },
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchOutlined fontSize="small" />
+                </InputAdornment>
+              ),
+              endAdornment: searching ? (
+                <InputAdornment position="end">
+                  <IconButton size="small" aria-label="Очистить поиск" onClick={() => setSearch("")}>
+                    <ClearOutlined fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ) : undefined,
+            },
+          }}
+        />
+
+        {nothingFound && (
+          <Typography variant="body2" color="text.secondary">
+            По запросу «{search.trim()}» ничего не нашлось. Попробуйте другое слово.
+          </Typography>
+        )}
+
+        {!searching && storefront.bundles.length > 0 && (
           <Stack spacing={1.5}>
             <Typography variant="subtitle1" fontWeight={700}>
-              {RECOMMEND_TITLE[vertical] ?? RECOMMEND_TITLE.clinic}
+              {RECOMMEND_TITLE[vertical]}
             </Typography>
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 1.5 }}>
               {storefront.bundles.map((view, index) => (
@@ -362,47 +458,65 @@ const ModulesCatalogPage: React.FC = () => {
           </Stack>
         )}
 
-        <Stack spacing={1.5}>
-          <Stack
-            direction="row"
-            spacing={1}
-            sx={{ overflowX: "auto", pb: 0.5, "&::-webkit-scrollbar": { display: "none" } }}
-          >
-            {filters.map((f) => (
-              <Chip
-                key={f.id}
-                label={f.label}
-                clickable
-                color={filter === f.id ? "primary" : "default"}
-                variant={filter === f.id ? "filled" : "outlined"}
-                onClick={() => setFilter(f.id)}
-              />
-            ))}
-          </Stack>
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", lg: "repeat(3, minmax(0, 1fr))" },
-              gap: 1.5,
-            }}
-          >
-            {shelf.map((item) => (
-              <ProductCard
-                key={item.product.id}
-                item={item}
-                action={isOperator ? operatorAction(item) : clinicAction(item)}
-                onOpen={() => setDrawerId(item.product.id)}
-              />
-            ))}
-          </Box>
-          {shelf.length === 0 && (
-            <Typography variant="body2" color="text.secondary">
-              В этом разделе пока ничего нет.
+        {(!searching || shelf.length > 0) && (
+          <Stack spacing={1.5}>
+            <Typography variant="subtitle1" fontWeight={700}>
+              Дополнительные модули
             </Typography>
-          )}
-        </Stack>
+            {!searching && (
+              <Stack
+                direction="row"
+                spacing={1}
+                sx={{ overflowX: "auto", pb: 0.5, "&::-webkit-scrollbar": { display: "none" } }}
+              >
+                {filters.map((f) => (
+                  <Chip
+                    key={f.id}
+                    label={f.label}
+                    clickable
+                    color={filter === f.id ? "primary" : "default"}
+                    variant={filter === f.id ? "filled" : "outlined"}
+                    onClick={() => setFilter(f.id)}
+                  />
+                ))}
+              </Stack>
+            )}
+            <Box sx={{ display: "grid", gridTemplateColumns: GRID, gap: 1.5 }}>
+              {shelf.map(({ item, parts }) => (
+                <ProductCard
+                  key={item.product.id}
+                  item={item}
+                  highlight={parts}
+                  action={isOperator ? operatorAction(item) : clinicAction(item)}
+                  onOpen={() => setDrawerId(item.product.id)}
+                />
+              ))}
+            </Box>
+            {!searching && shelf.length === 0 && (
+              <Typography variant="body2" color="text.secondary">
+                В этом разделе пока ничего нет.
+              </Typography>
+            )}
+          </Stack>
+        )}
 
-        <BasePackageBlock modules={storefront.basePackage} />
+        {found.included.length > 0 && (
+          <Stack spacing={1.5}>
+            <Box>
+              <Typography variant="subtitle1" fontWeight={700}>
+                Входит в ваш пакет
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Уже есть в вашей CRM — без доплаты.
+              </Typography>
+            </Box>
+            <Box sx={{ display: "grid", gridTemplateColumns: GRID, gap: 1.5 }}>
+              {found.included.map(({ item, parts }) => (
+                <IncludedCard key={item.card.id} item={item} highlight={parts} action={includedAction(item)} />
+              ))}
+            </Box>
+          </Stack>
+        )}
       </Stack>
 
       <ProductDrawer

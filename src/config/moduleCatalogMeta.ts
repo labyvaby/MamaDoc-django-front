@@ -9,5 +9,5 @@ export const MODULE_SETTINGS_ROUTE: Record<string, string> = {
   pos: "/settings/store",
   announcements: "/settings/announcements",
   promotions: "/settings/promotions",
-  ecommerce: "/settings/odoctor",
+  procurement: "/settings/procurement",
 };

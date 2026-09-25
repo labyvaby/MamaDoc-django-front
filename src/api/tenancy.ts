@@ -31,6 +31,23 @@ export function getModulesCatalog(organizationId?: number | null): Promise<Catal
   return apiRequest<CatalogModule[]>(`/tenancy/catalog/${orgQuery(organizationId)}`);
 }
 
+/**
+ * Возможности без своего модуля: пользуется ли ими клиника уже сейчас.
+ * Сервер смотрит на данные организации (tenancy/features.py) — витрина
+ * не предлагает то, что уже работает.
+ */
+export interface FeatureSignals {
+  onlineBooking: boolean;
+  site: boolean;
+  insurers: boolean;
+  notifications: boolean;
+  odoctor: boolean;
+}
+
+export function getStorefrontFeatures(organizationId?: number | null): Promise<FeatureSignals> {
+  return apiRequest<FeatureSignals>(`/tenancy/features/${orgQuery(organizationId)}`);
+}
+
 /** Заявка клиники на подключение с витрины (docs/specs/2026-09-26-modules-storefront-design.md). */
 export interface ModuleRequest {
   id: number;

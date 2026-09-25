@@ -1,18 +1,21 @@
-import type { CatalogModule, ModuleRequest } from "../api/tenancy";
+import type { CatalogModule, FeatureSignals, ModuleRequest } from "../api/tenancy";
 import { missingRequirements } from "./moduleCatalogRequirements";
 import {
-  STOREFRONT_BASE_MODULES,
   STOREFRONT_BUNDLES,
   STOREFRONT_CATEGORIES,
-  STOREFRONT_HIDDEN_MODULES,
+  STOREFRONT_CORE_MODULES,
+  STOREFRONT_INCLUDED,
   STOREFRONT_PRODUCTS,
   type StorefrontBundle,
   type StorefrontCategory,
   type StorefrontCategoryId,
+  type StorefrontIncluded,
   type StorefrontProduct,
+  type StorefrontVertical,
 } from "./moduleStorefront";
 
-export type ProductStatus = "connected" | "requested" | "available";
+/** soon — в разработке: показываем, заявка — интерес до запуска. */
+export type ProductStatus = "connected" | "requested" | "available" | "soon";
 
 export interface StorefrontItem {
   product: StorefrontProduct;
@@ -29,6 +32,18 @@ export interface StorefrontItem {
   freeWithTitle: string | null;
 }
 
+/** included — работает; off — модуль пакета выключен; requested — просили включить. */
+export type IncludedStatus = "included" | "off" | "requested";
+
+export interface IncludedItem {
+  card: StorefrontIncluded;
+  status: IncludedStatus;
+  /** Модуль карточки из каталога; null — возможность без модуля, всегда в пакете. */
+  module: CatalogModule | null;
+  requestModules: string[];
+  extraRequirementNames: string[];
+}
+
 export interface StorefrontBundleView {
   bundle: StorefrontBundle;
   items: StorefrontItem[];
@@ -41,17 +56,22 @@ export interface StorefrontBundleView {
 export interface StorefrontView {
   items: StorefrontItem[];
   bundles: StorefrontBundleView[];
-  basePackage: CatalogModule[];
+  /** «Входит в ваш пакет». */
+  included: IncludedItem[];
   categories: StorefrontCategory[];
   connectedCount: number;
   availableCount: number;
 }
+
+/** product/bundle — купить; included — включить своё; soon — узнать о запуске. */
+export type RequestKind = "product" | "bundle" | "included" | "soon";
 
 export interface RequestTarget {
   productId: string;
   title: string;
   modules: string[];
   extraRequirementNames: string[];
+  kind: RequestKind;
 }
 
 const BACKEND_CATEGORY: Record<string, StorefrontCategoryId> = {
@@ -70,6 +90,14 @@ export function formatPrice(price: number): string {
   return `${price.toLocaleString("ru-RU")} сом/мес`;
 }
 
+/** Вид бизнеса витрины: прочие смотрят витрину клиники, как и словарь терминов. */
+export function storefrontVertical(vertical: string | null | undefined): StorefrontVertical {
+  return vertical === "beauty" || vertical === "retail" ? vertical : "clinic";
+}
+
+const suits = (verticals: readonly StorefrontVertical[] | undefined, vertical: StorefrontVertical) =>
+  !verticals || verticals.includes(vertical);
+
 /** Модуль, которого нет в конфиге: продаём «по запросу» его же словами. */
 function productFromModule(module: CatalogModule): StorefrontProduct {
   return {
@@ -84,21 +112,55 @@ function productFromModule(module: CatalogModule): StorefrontProduct {
   };
 }
 
+/** Модуль без товара и карточки — оператору, чтобы его было чем переключить. */
+function cardFromModule(module: CatalogModule): StorefrontIncluded {
+  return { id: module.code, title: module.name, icon: "puzzle", tone: "blue", tagline: module.description, module: module.code };
+}
+
+/** Заявка покрывает товар: на него самого или на все его недостающие модули. */
+const isRequested = (productId: string, missing: string[], openRequests: ModuleRequest[]) =>
+  openRequests.some(
+    (r) => r.productId === productId || (missing.length > 0 && missing.every((code) => r.moduleCodes.includes(code))),
+  );
+
+/** Недостающие требования модулей — в заявку, названия тех, что вне товара, — в окно заявки. */
+function requirementsOf(codes: string[], own: string[], byCode: Map<string, CatalogModule>, catalog: CatalogModule[]) {
+  const requirements = new Map<string, string>();
+  for (const code of codes) {
+    const module = byCode.get(code);
+    if (!module) continue;
+    for (const r of missingRequirements(module, catalog)) {
+      if (!own.includes(r.code)) requirements.set(r.code, r.name);
+    }
+  }
+  return { requestModules: [...requirements.keys(), ...codes], extraRequirementNames: [...requirements.values()] };
+}
+
 export function buildStorefront(input: {
   catalog: CatalogModule[];
   vertical: string | null | undefined;
   openRequests: ModuleRequest[];
+  /** Признаки товаров без модуля; null — неизвестны, такие товары не показываем. */
+  signals?: FeatureSignals | null;
+  /** Оператор платформы видит и выключенное снятое с продажи, и модули без карточки. */
+  operator?: boolean;
 }): StorefrontView {
-  const { catalog, vertical, openRequests } = input;
+  const { catalog, openRequests, signals = null, operator = false } = input;
+  const vertical = storefrontVertical(input.vertical);
   const byCode = new Map(catalog.map((m) => [m.code, m]));
   const configured = new Set(STOREFRONT_PRODUCTS.flatMap((p) => p.modules));
-  const notForSale = new Set([...STOREFRONT_BASE_MODULES, ...STOREFRONT_HIDDEN_MODULES]);
+  const inPackage = new Set([
+    ...STOREFRONT_CORE_MODULES,
+    ...STOREFRONT_INCLUDED.flatMap((c) => (c.module ? [c.module] : [])),
+  ]);
   const products = [
-    ...STOREFRONT_PRODUCTS,
-    ...catalog.filter((m) => !configured.has(m.code) && !notForSale.has(m.code)).map(productFromModule),
+    ...STOREFRONT_PRODUCTS.filter((p) => suits(p.verticals, vertical)),
+    ...catalog.filter((m) => !configured.has(m.code) && !inPackage.has(m.code)).map(productFromModule),
   ].filter((p) => p.modules.every((code) => byCode.has(code)));
 
-  const base = products.map((p) => toItem(p, byCode, catalog, openRequests));
+  const base = products
+    .map((p) => toItem(p, byCode, catalog, openRequests, signals))
+    .filter((i): i is StorefrontItem => i !== null);
   const statusById = new Map(base.map((i) => [i.product.id, i.status]));
   const titleById = new Map(STOREFRONT_PRODUCTS.map((p) => [p.id, p.title]));
   const items = base.map((item) => {
@@ -110,18 +172,19 @@ export function buildStorefront(input: {
     };
   });
   const itemById = new Map(items.map((i) => [i.product.id, i]));
-  const bundles = (STOREFRONT_BUNDLES[vertical ?? ""] ?? STOREFRONT_BUNDLES.clinic)
+  const bundles = STOREFRONT_BUNDLES[vertical]
     .map((b) => toBundleView(b, itemById))
     .filter((v): v is StorefrontBundleView => v !== null)
     .slice(0, 2);
+  const onShelf = new Set(items.flatMap((i) => i.product.modules));
   const present = new Set(items.map((i) => i.product.category));
   return {
     items,
     bundles,
-    basePackage: catalog.filter((m) => m.isEnabled && notForSale.has(m.code)),
+    included: buildIncluded({ catalog, byCode, vertical, openRequests, operator, onShelf }),
     categories: STOREFRONT_CATEGORIES.filter((c) => present.has(c.id)),
     connectedCount: items.filter((i) => i.status === "connected").length,
-    availableCount: items.filter((i) => i.status !== "connected").length,
+    availableCount: items.filter((i) => i.status === "available" || i.status === "requested").length,
   };
 }
 
@@ -130,30 +193,68 @@ function toItem(
   byCode: Map<string, CatalogModule>,
   catalog: CatalogModule[],
   openRequests: ModuleRequest[],
-): StorefrontItem {
+  signals: FeatureSignals | null,
+): StorefrontItem | null {
+  const plain = { product, missingModules: [], requestModules: [], extraRequirementNames: [], free: false, freeWithTitle: null };
+  if (product.soon) {
+    return { ...plain, status: isRequested(product.id, [], openRequests) ? "requested" : "soon" };
+  }
+  if (product.signal) {
+    // Не знаем, пользуется ли клиника, — не предлагаем: вдруг уже работает.
+    if (!signals) return null;
+    const status = signals[product.signal] ? "connected" : isRequested(product.id, [], openRequests) ? "requested" : "available";
+    return { ...plain, status };
+  }
   const missingModules = product.modules.filter((code) => !byCode.get(code)?.isEnabled);
-  const requirements = new Map<string, string>();
-  for (const code of missingModules) {
-    const module = byCode.get(code);
-    if (!module) continue;
-    for (const r of missingRequirements(module, catalog)) {
-      if (!product.modules.includes(r.code)) requirements.set(r.code, r.name);
+  const status: ProductStatus =
+    missingModules.length === 0 ? "connected" : isRequested(product.id, missingModules, openRequests) ? "requested" : "available";
+  return {
+    ...plain,
+    status,
+    missingModules,
+    ...requirementsOf(missingModules, product.modules, byCode, catalog),
+  };
+}
+
+function buildIncluded(input: {
+  catalog: CatalogModule[];
+  byCode: Map<string, CatalogModule>;
+  vertical: StorefrontVertical;
+  openRequests: ModuleRequest[];
+  operator: boolean;
+  /** Модули товаров на полке — оператору их не повторяем. */
+  onShelf: Set<string>;
+}): IncludedItem[] {
+  const { catalog, byCode, vertical, openRequests, operator, onShelf } = input;
+  const toIncluded = (card: StorefrontIncluded, module: CatalogModule | null): IncludedItem => {
+    if (!module || module.isEnabled) {
+      return { card, status: "included", module, requestModules: [], extraRequirementNames: [] };
+    }
+    return {
+      card,
+      status: isRequested(card.id, [module.code], openRequests) ? "requested" : "off",
+      module,
+      ...requirementsOf([module.code], [module.code], byCode, catalog),
+    };
+  };
+
+  const items: IncludedItem[] = [];
+  for (const card of STOREFRONT_INCLUDED) {
+    if (!suits(card.verticals, vertical)) continue;
+    const module = card.module ? byCode.get(card.module) : null;
+    // Модуля нет в каталоге организации — этой возможности у неё быть не может.
+    if (module === undefined) continue;
+    const entry = toIncluded(card, module);
+    if (card.hiddenWhenOff && entry.status !== "included" && !operator) continue;
+    items.push(entry);
+  }
+  if (operator) {
+    const shown = new Set([...onShelf, ...items.flatMap((i) => (i.module ? [i.module.code] : []))]);
+    for (const module of catalog) {
+      if (!shown.has(module.code)) items.push(toIncluded(cardFromModule(module), module));
     }
   }
-  const requested =
-    missingModules.length > 0 &&
-    openRequests.some(
-      (r) => r.productId === product.id || missingModules.every((code) => r.moduleCodes.includes(code)),
-    );
-  return {
-    product,
-    status: missingModules.length === 0 ? "connected" : requested ? "requested" : "available",
-    missingModules,
-    requestModules: [...requirements.keys(), ...missingModules],
-    extraRequirementNames: [...requirements.values()],
-    free: false,
-    freeWithTitle: null,
-  };
+  return items;
 }
 
 function toBundleView(bundle: StorefrontBundle, itemById: Map<string, StorefrontItem>): StorefrontBundleView | null {
@@ -186,6 +287,7 @@ export function itemTarget(item: StorefrontItem): RequestTarget {
     title: item.product.title,
     modules: item.requestModules,
     extraRequirementNames: item.extraRequirementNames,
+    kind: item.product.soon ? "soon" : "product",
   };
 }
 
@@ -195,12 +297,54 @@ export function bundleTarget(view: StorefrontBundleView): RequestTarget {
     title: view.bundle.title,
     modules: view.requestModules,
     extraRequirementNames: view.extraRequirementNames,
+    kind: "bundle",
   };
 }
 
-const SHELF_RANK: Record<ProductStatus, number> = { available: 0, requested: 1, connected: 2 };
+export function includedTarget(item: IncludedItem): RequestTarget {
+  return {
+    productId: item.card.id,
+    title: item.card.title,
+    modules: item.requestModules,
+    extraRequirementNames: item.extraRequirementNames,
+    kind: "included",
+  };
+}
 
-/** Порядок на полке: что можно подключить, потом в заявках, потом подключённое. */
+const SHELF_RANK: Record<ProductStatus, number> = { available: 0, requested: 1, soon: 2, connected: 3 };
+
+/** Порядок на полке: что можно подключить, потом в заявках, потом «Скоро», потом подключённое. */
 export function shelfOrder(items: StorefrontItem[]): StorefrontItem[] {
   return [...items].sort((a, b) => SHELF_RANK[a.status] - SHELF_RANK[b.status]);
+}
+
+export interface SearchResult<T> {
+  item: T;
+  /** Части, в которых нашлось слово, — карточка их выделяет. */
+  parts: string[];
+}
+
+const normalize = (text: string) => text.toLocaleLowerCase("ru-RU").replace(/ё/g, "е");
+
+function match(words: string[], doc: { title: string; tagline: string; features?: string[]; parts?: string[] }) {
+  const fields = [doc.title, doc.tagline, ...(doc.features ?? []), ...(doc.parts ?? [])].map(normalize);
+  if (!words.every((word) => fields.some((field) => field.includes(word)))) return null;
+  return (doc.parts ?? []).filter((part) => words.some((word) => normalize(part).includes(word)));
+}
+
+/** Поиск по названию, пользе, возможностям и частям; все слова запроса должны найтись. */
+export function searchStorefront(
+  view: StorefrontView,
+  query: string,
+): { items: SearchResult<StorefrontItem>[]; included: SearchResult<IncludedItem>[] } {
+  const words = normalize(query).split(/\s+/).filter(Boolean);
+  const hits = <T>(list: T[], docOf: (item: T) => Parameters<typeof match>[1]): SearchResult<T>[] =>
+    list.flatMap((item) => {
+      const parts = words.length === 0 ? [] : match(words, docOf(item));
+      return parts === null ? [] : [{ item, parts }];
+    });
+  return {
+    items: hits(shelfOrder(view.items), (i) => i.product),
+    included: hits(view.included, (i) => i.card),
+  };
 }
