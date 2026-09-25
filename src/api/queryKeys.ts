@@ -465,4 +465,12 @@ export const djangoQueryKeys = {
     services: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
       ["django", "reference", "services", context] as const,
   },
+
+  tenancy: {
+    all: ["django", "tenancy"] as const,
+    // Витрина «Модули» — у каждой организации своя: после смены организации
+    // кнопки бьют в новую, значит и карточки должны быть её.
+    catalog: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "catalog", organizationId ?? null] as const,
+  },
 };

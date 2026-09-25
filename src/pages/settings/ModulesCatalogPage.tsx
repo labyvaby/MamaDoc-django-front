@@ -20,6 +20,7 @@ import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { djangoQueryKeys } from "../../api/queryKeys";
 import { type CatalogModule, setOrganizationModule } from "../../api/tenancy";
 import { useModulesCatalog } from "../../hooks/useModulesCatalog";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -54,7 +55,7 @@ const ModulesCatalogPage: React.FC = () => {
     mutationFn: ({ code, enable }: { code: string; enable: boolean }) =>
       setOrganizationModule(activeOrganization!.id, code, enable),
     onSuccess: (row) => {
-      queryClient.invalidateQueries({ queryKey: ["tenancy", "catalog"] });
+      queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tenancy.all });
       setNotice({
         severity: "success",
         text: `«${row.moduleName}» ${row.isEnabled ? "подключён" : "отключён"}.`,
