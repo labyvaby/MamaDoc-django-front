@@ -19,6 +19,8 @@ import { PageHeader, AppBottomSheet, SegmentedTabs, cascadeContainer, cascadeIte
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useQueryClient } from "@tanstack/react-query";
+import { djangoQueryKeys } from "../../api/queryKeys";
 import { useSheetBackClose } from "../../hooks/useSheetBackClose";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { useT } from "../../i18n/VerticalProvider";
@@ -72,7 +74,9 @@ const DjangoPatientsPage: React.FC = () => {
     loading: permLoading,
     activeBranch,
     activeMembership,
+    canAccess,
   } = usePermissions();
+  const queryClient = useQueryClient();
 
   const canView = isSuperAdmin() || hasPermission("patients.view");
   const canCreate = isSuperAdmin() || hasPermission("patients.create");
@@ -80,7 +84,8 @@ const DjangoPatientsPage: React.FC = () => {
   const canManagePatients = isSuperAdmin() || hasPermission("patients.manage");
   const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
   const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
-  const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
+  // Право + включённый модуль: при выключенном модуле вкладка ловила бы 403.
+  const canViewVaccinations = isSuperAdmin() || canAccess("vaccinations.view");
   const defaultBranchId = activeBranch?.id ?? null;
 
   // ── List data ──────────────────────────────────────────────────────────────
@@ -328,6 +333,8 @@ const DjangoPatientsPage: React.FC = () => {
 
   const handleUpdated = (saved: DjangoPatient) => {
     setEditOpen(false);
+    // Пол / дата рождения / ИНН меняют календарь и «Не оформлено».
+    void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.vaccinations.all });
     setPatients((prev) => {
       const idx = prev.findIndex((p) => p.id === saved.id);
       if (idx >= 0) { const next = [...prev]; next[idx] = saved; return next; }
@@ -376,7 +383,7 @@ const DjangoPatientsPage: React.FC = () => {
   );
 
   const vaccinationsNode = (
-    <PatientVaccinationsPanel patient={selected} />
+    <PatientVaccinationsPanel patient={selected} onEditPatient={canUpdate ? handleEdit : undefined} />
   );
 
   const oldConclusionsNode = (
