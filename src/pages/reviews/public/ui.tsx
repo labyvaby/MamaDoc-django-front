@@ -5,6 +5,7 @@ import CheckRounded from "@mui/icons-material/CheckRounded";
 import ArrowOutwardRounded from "@mui/icons-material/ArrowOutwardRounded";
 
 import type { MapPlatform } from "../../../api/reviews";
+import { MapLogo } from "./mapLogos";
 import {
   AMBER,
   CARD,
@@ -274,13 +275,10 @@ export const TagPill: React.FC<{
   );
 };
 
-const MAP_BRANDS: Record<
-  MapPlatform,
-  { name: string; mark: string; bg: string; fg: string }
-> = {
-  "2gis": { name: "2ГИС", mark: "2Г", bg: "#19AA1E", fg: "#FFFFFF" },
-  yandex: { name: "Яндекс Карты", mark: "Я", bg: "#FC3F1D", fg: "#FFFFFF" },
-  google: { name: "Google Maps", mark: "G", bg: "#FFFFFF", fg: "#4285F4" },
+const MAP_NAMES: Record<MapPlatform, string> = {
+  "2gis": "2ГИС",
+  yandex: "Яндекс Карты",
+  google: "Google Maps",
 };
 
 export const MapCard: React.FC<{
@@ -288,7 +286,6 @@ export const MapCard: React.FC<{
   opened: boolean;
   onOpen: () => void;
 }> = ({ platform, opened, onOpen }) => {
-  const brand = MAP_BRANDS[platform];
   return (
     <ButtonBase
       onClick={onOpen}
@@ -319,21 +316,18 @@ export const MapCard: React.FC<{
           height: 48,
           flexShrink: 0,
           borderRadius: "14px",
+          overflow: "hidden",
           display: "grid",
           placeItems: "center",
-          bgcolor: brand.bg,
-          color: brand.fg,
-          border: brand.bg === "#FFFFFF" ? `1px solid ${LINE}` : "none",
-          fontWeight: 800,
-          fontSize: 18,
-          letterSpacing: "-0.03em",
+          bgcolor: "#FFFFFF",
+          border: `1px solid ${LINE}`,
         }}
       >
-        {brand.mark}
+        <MapLogo platform={platform} />
       </Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography sx={{ fontWeight: 700, fontSize: 16, color: INK }}>
-          {brand.name}
+          {MAP_NAMES[platform]}
         </Typography>
         <Typography sx={{ fontSize: 13, color: opened ? TEAL : MUTED }}>
           {opened ? "Открыли — спасибо!" : "Оставить отзыв"}
