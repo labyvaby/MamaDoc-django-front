@@ -6,6 +6,7 @@ import ArrowOutwardRounded from "@mui/icons-material/ArrowOutwardRounded";
 
 import type { MapPlatform } from "../../../api/reviews";
 import { MapLogo, isFullTile } from "./mapLogos";
+import kidsBackgroundUrl from "./logos/kids-bg.webp";
 import {
   AMBER,
   CARD,
@@ -62,22 +63,55 @@ export const ClinicHeader: React.FC<{ name: string; logo?: string }> = ({
   </Stack>
 );
 
+/** Детское оформление: картинка 919×1712, мишка — верхние ~21% высоты. */
+const KIDS_BG_RATIO = 1712 / 919;
+const KIDS_BG_MAX_WIDTH = 560;
+// Картинка «cover» в колонке шириной до 560px: её высота — большее из высоты
+// экрана и ширины × пропорция. Контент начинается сразу под мишкой.
+const KIDS_TOP = `calc(0.22 * max(100dvh, min(100vw, ${KIDS_BG_MAX_WIDTH}px) * ${KIDS_BG_RATIO}))`;
+
 export const Shell: React.FC<
   React.PropsWithChildren<{
     footer?: React.ReactNode;
     header?: React.ReactNode;
+    /** Детское оформление страницы (фон с мишкой) — из настроек клиники. */
+    kids?: boolean;
   }>
-> = ({ children, footer, header }) => (
+> = ({ children, footer, header, kids = false }) => (
   <Box
     sx={{
       minHeight: "100dvh",
-      bgcolor: PAPER,
+      bgcolor: kids ? "#F3ECE1" : PAPER,
       color: INK,
-      backgroundImage: `${GRAIN}, radial-gradient(120% 60% at 110% -10%, rgba(233,162,59,0.22), transparent 60%), radial-gradient(90% 55% at -20% 105%, rgba(30,91,85,0.16), transparent 60%)`,
+      backgroundImage: kids
+        ? "none"
+        : `${GRAIN}, radial-gradient(120% 60% at 110% -10%, rgba(233,162,59,0.22), transparent 60%), radial-gradient(90% 55% at -20% 105%, rgba(30,91,85,0.16), transparent 60%)`,
       display: "flex",
       flexDirection: "column",
+      position: "relative",
+      isolation: "isolate",
     }}
   >
+    {kids && (
+      <Box
+        aria-hidden
+        sx={{
+          position: "fixed",
+          top: 0,
+          bottom: 0,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "100%",
+          maxWidth: KIDS_BG_MAX_WIDTH,
+          zIndex: -1,
+          pointerEvents: "none",
+          backgroundImage: `url(${kidsBackgroundUrl})`,
+          backgroundSize: "cover",
+          backgroundPosition: "top center",
+          backgroundRepeat: "no-repeat",
+        }}
+      />
+    )}
     <Box
       component="main"
       sx={{
@@ -86,7 +120,7 @@ export const Shell: React.FC<
         maxWidth: 480,
         mx: "auto",
         px: 2.5,
-        pt: { xs: 4, sm: 7 },
+        pt: kids ? KIDS_TOP : { xs: 4, sm: 7 },
         pb: 4,
         display: "flex",
         flexDirection: "column",

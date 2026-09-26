@@ -30,6 +30,7 @@ const ctx: RateContext = {
   maps: [],
   instagram: "",
   clinicLogo: "",
+  pageTheme: "default",
 };
 
 describe("rateForm", () => {
