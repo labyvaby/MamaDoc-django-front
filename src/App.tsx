@@ -114,6 +114,7 @@ const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/Expens
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
 const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
 const ConclusionFormsSettingsPage = lazy(() => import("./pages/settings/ConclusionFormsSettingsPage"));
+const PrintBlanksSettingsPage = lazy(() => import("./pages/settings/PrintBlanksSettingsPage"));
 const DjangoReportsPage = lazy(() => import("./pages/reports/django/ReportsRouter"));
 const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
@@ -1398,6 +1399,16 @@ function App() {
                                 <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.conclusionForms}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <ConclusionFormsSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/print-blanks"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.printBlanks}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <PrintBlanksSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

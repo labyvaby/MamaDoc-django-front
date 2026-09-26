@@ -100,6 +100,10 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // Шаблоны ролей выдают этот код там же, где medical.diagnoses.manage, так
   // что доступ у существующих ролей не меняется.
   conclusionForms: "medical.conclusion_forms.manage",
+  // Тексты бланков учёта (договор, расписка) правит управляющий; печатают их
+  // из мастера постановки по printforms.print — экран с одним списком без
+  // права на правку был бы пустым пунктом меню.
+  printBlanks: "printforms.manage",
   tasks: "tasks.manage",
   deals: "deals.manage",
   cleaning: "cleaning.manage",

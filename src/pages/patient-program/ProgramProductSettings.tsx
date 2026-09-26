@@ -1,7 +1,8 @@
 import React from "react";
-import { Alert, Autocomplete, Box, MenuItem, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Autocomplete, Box, Link, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
+import { Link as RouterLink } from "react-router";
 
 import { getServices, type Service } from "../../api/catalog";
 import { getErrorMessage } from "../../api/client";
@@ -15,6 +16,7 @@ import { useCanChecker } from "../../hooks/useCan";
 import { subtleBg } from "../../theme/uiHelpers";
 import {
   programCardPrefix,
+  programInactivityMonths,
   programSpecializationIds,
   programTemplateIds,
 } from "../registry/registryConstants";
@@ -44,6 +46,7 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
   const [prefix, setPrefix] = React.useState(programCardPrefix(program));
   const [specializationIds, setSpecializationIds] = React.useState<number[]>(programSpecializationIds(program));
   const [templateIds, setTemplateIds] = React.useState<number[]>(programTemplateIds(program));
+  const [inactivity, setInactivity] = React.useState(String(programInactivityMonths(program)));
 
   React.useEffect(() => {
     setFeeServiceId(program.feeServiceId);
@@ -52,6 +55,7 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
     setPrefix(programCardPrefix(program));
     setSpecializationIds(programSpecializationIds(program));
     setTemplateIds(programTemplateIds(program));
+    setInactivity(String(programInactivityMonths(program)));
   }, [program]);
 
   const services = useQuery({
@@ -75,6 +79,8 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
   const discountValue = Number(discount);
   const monthsInvalid = !Number.isInteger(months) || months < 1 || months > 60;
   const discountInvalid = !Number.isInteger(discountValue) || discountValue < 0 || discountValue > 100;
+  const inactivityValue = Number(inactivity);
+  const inactivityInvalid = !Number.isInteger(inactivityValue) || inactivityValue < 1 || inactivityValue > 24;
 
   const save = useMutation({
     mutationFn: () =>
@@ -87,6 +93,7 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
           cardNumberPrefix: prefix.trim(),
           responsibleSpecializationIds: specializationIds,
           documentTemplateIds: templateIds,
+          inactivityMonths: inactivityValue,
         },
       }),
     onSuccess: (saved) => {
@@ -148,6 +155,16 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
             onChange={(event) => setPrefix(event.target.value.slice(0, 16))}
             placeholder="МД-"
           />
+          <TextField
+            size="small"
+            type="number"
+            label="Не приходили, мес."
+            value={inactivity}
+            onChange={(event) => setInactivity(event.target.value)}
+            error={inactivityInvalid}
+            helperText="Порог вкладки «Не приходили» в «Учёте»"
+            inputProps={{ min: 1, max: 24 }}
+          />
         </Stack>
         <TextField
           select
@@ -180,11 +197,16 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
             </MenuItem>
           ))}
         </TextField>
+        {can("printforms.manage") && (
+          <Link component={RouterLink} to="/settings/print-blanks" variant="caption" sx={{ alignSelf: "flex-start" }}>
+            Изменить тексты бланков
+          </Link>
+        )}
         {save.error && <Alert severity="error">{getErrorMessage(save.error)}</Alert>}
         <AppButton
           variant="contained"
           size="small"
-          disabled={save.isPending || monthsInvalid || discountInvalid}
+          disabled={save.isPending || monthsInvalid || discountInvalid || inactivityInvalid}
           onClick={() => save.mutate()}
           sx={{ alignSelf: "flex-start" }}
         >
