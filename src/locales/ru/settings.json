@@ -762,7 +762,7 @@
       "reviews": "Отзывы",
       "targets": "Планы и цели",
       "tasks": "Задачи",
-      "tenancy": "Мультиарендность",
+      "tenancy": "Модули",
       "vaccinations": "{{vaccine.nomPl, capitalize}}"
     },
     "row": {

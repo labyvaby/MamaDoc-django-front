@@ -41,6 +41,9 @@ const PERMISSIONS: RbacPermission[] = [
   perm("warehouse.sales.view"),
   perm("warehouse.sales.manage"),
   perm("finance.cashbox.shift.close"),
+  perm("tenancy.catalog.view"),
+  perm("tenancy.catalog.connect"),
+  perm("tenancy.catalog.disconnect"),
 ];
 
 describe("buildBaseCodeMap", () => {
@@ -85,5 +88,10 @@ describe("buildBaseCodeMap", () => {
 
   it("не выдумывает зависимость, когда права на просмотр в домене нет", () => {
     expect(map.has("notifications.manage")).toBe(false);
+  });
+
+  it("подключение и отключение модулей требуют просмотра модулей", () => {
+    expect(map.get("tenancy.catalog.connect")).toBe("tenancy.catalog.view");
+    expect(map.get("tenancy.catalog.disconnect")).toBe("tenancy.catalog.view");
   });
 });

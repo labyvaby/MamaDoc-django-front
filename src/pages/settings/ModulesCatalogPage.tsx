@@ -32,8 +32,10 @@ import {
   type CatalogModule,
   createModuleRequest,
   setOrganizationModule,
+  setPackageModule,
   setStorefrontProductState,
 } from "../../api/tenancy";
+import { useCan } from "../../hooks/useCan";
 import { useInactiveProducts } from "../../hooks/useInactiveProducts";
 import { useModulesCatalog } from "../../hooks/useModulesCatalog";
 import { useModuleRequests } from "../../hooks/useModuleRequests";
@@ -45,7 +47,7 @@ import { RECOMMEND_TITLE } from "../../config/moduleStorefront";
 import {
   buildStorefront,
   bundleTarget,
-  includedTarget,
+  disconnectTarget,
   itemTarget,
   searchStorefront,
   storefrontVertical,
@@ -60,8 +62,17 @@ import { ProductCard } from "./modules/ProductCard";
 import { ProductDrawer } from "./modules/ProductDrawer";
 import { RequestDialog, type RequestContact } from "./modules/RequestDialog";
 
-/** Подтверждаемое переключение оператора. Организация фиксируется в момент нажатия. */
-type PendingToggle = { module: CatalogModule; enable: boolean; organizationId: number; organizationName: string };
+/**
+ * Подтверждаемое переключение. Организация фиксируется в момент нажатия.
+ * selfService — клиника сама включает модуль своего пакета; иначе — оператор платформы.
+ */
+type PendingToggle = {
+  module: CatalogModule;
+  enable: boolean;
+  organizationId: number;
+  organizationName: string;
+  selfService: boolean;
+};
 /** Заявка клиники — тоже с организацией на момент нажатия. */
 type PendingRequest = RequestTarget & { organizationId: number };
 /** Скрыть товар от всех клиник или показать снова — решение оператора платформы. */
@@ -94,8 +105,11 @@ const ModulesCatalogPage: React.FC = () => {
     viewAsOrganization,
     setViewAsOrganization,
   } = usePermissions();
-  // Переключает модули только суперпользователь платформы; клиника шлёт заявку.
+  // Любые модули переключает суперпользователь платформы. Клиника с правом
+  // сама включает и выключает модули своего пакета, платные — заявкой.
   const isOperator = Boolean(isPlatformAdmin && activeOrganization);
+  const canConnect = useCan("tenancy.catalog.connect");
+  const canDisconnect = useCan("tenancy.catalog.disconnect");
   const orgName = activeOrganization?.name ?? "организации";
   const vertical = storefrontVertical(activeOrganization?.vertical);
 
@@ -156,7 +170,10 @@ const ModulesCatalogPage: React.FC = () => {
   };
 
   const toggle = useMutation({
-    mutationFn: (p: PendingToggle) => setOrganizationModule(p.organizationId, p.module.code, p.enable),
+    mutationFn: (p: PendingToggle) =>
+      p.selfService
+        ? setPackageModule(p.organizationId, p.module.code, p.enable)
+        : setOrganizationModule(p.organizationId, p.module.code, p.enable),
     onSuccess: (row) =>
       setNotice({ severity: "success", text: `«${row.moduleName}» ${row.isEnabled ? "подключён" : "отключён"}.` }),
     onError: (error) =>
@@ -182,14 +199,16 @@ const ModulesCatalogPage: React.FC = () => {
         contactName: contact.name,
         contactPhone: contact.phone,
         comment: contact.comment,
+        kind: target.kind === "disconnect" ? "disconnect" : "connect",
       }),
     onSuccess: (_, { target }) => {
+      const texts: Partial<Record<RequestTarget["kind"], string>> = {
+        soon: "Заявка отправлена. Расскажем о запуске.",
+        disconnect: "Заявка на отключение отправлена. Менеджер свяжется с вами.",
+      };
       setNotice({
         severity: "success",
-        text:
-          target.kind === "soon"
-            ? "Заявка отправлена. Расскажем о запуске."
-            : "Заявка отправлена. Менеджер свяжется с вами.",
+        text: texts[target.kind] ?? "Заявка отправлена. Менеджер свяжется с вами.",
       });
       setRequestOpen(false);
     },
@@ -226,9 +245,15 @@ const ModulesCatalogPage: React.FC = () => {
     setVisibilityOpen(true);
   };
 
-  const askToggle = (module: CatalogModule, enable: boolean) => {
+  const askToggle = (module: CatalogModule, enable: boolean, selfService = false) => {
     if (!activeOrganization) return;
-    setPending({ module, enable, organizationId: activeOrganization.id, organizationName: activeOrganization.name });
+    setPending({
+      module,
+      enable,
+      organizationId: activeOrganization.id,
+      organizationName: activeOrganization.name,
+      selfService,
+    });
     setToggleOpen(true);
   };
   const askRequest = (target: RequestTarget) => {
@@ -247,22 +272,38 @@ const ModulesCatalogPage: React.FC = () => {
     ) : null;
   };
 
+  /** Отключить платный товар можно только заявкой: оплату останавливает менеджер. */
+  const canAskOff = (item: StorefrontItem) =>
+    canDisconnect && item.status === "connected" && item.product.modules.length > 0 && !item.pendingDisconnect;
+
   const clinicAction = (item: StorefrontItem): React.ReactNode => {
     if (item.status === "available") {
-      return (
+      return canConnect ? (
         <Button size="small" variant="contained" startIcon={<AddOutlined />} onClick={() => askRequest(itemTarget(item))}>
           {item.product.price === null ? "Узнать" : "Подключить"}
         </Button>
-      );
+      ) : null;
     }
     if (item.status === "soon") {
-      return (
+      return canConnect ? (
         <Button size="small" variant="outlined" onClick={() => askRequest(itemTarget(item))}>
           Узнать о запуске
         </Button>
-      );
+      ) : null;
     }
-    return item.status === "connected" ? routeButton(item) : null;
+    if (item.status !== "connected") return null;
+    const route = routeButton(item);
+    const off = canAskOff(item) ? (
+      <Button size="small" color="error" onClick={() => askRequest(disconnectTarget(item))}>
+        Отключить
+      </Button>
+    ) : null;
+    return route || off ? (
+      <Stack direction="row" spacing={0.5}>
+        {route}
+        {off}
+      </Stack>
+    ) : null;
   };
 
   const operatorAction = (item: StorefrontItem): React.ReactNode => {
@@ -312,21 +353,34 @@ const ModulesCatalogPage: React.FC = () => {
     if (isOperator) {
       return item.product.modules.length === 0 ? routeButton(item, { variant: "outlined", fullWidth: true }) : null;
     }
-    if (item.status === "requested") {
+    if (item.status === "requested" || item.pendingDisconnect) {
       return (
         <Alert severity="warning" variant="outlined">
-          Заявка отправлена — менеджер свяжется с вами.
+          {item.pendingDisconnect ? "Заявка на отключение отправлена" : "Заявка отправлена"} — менеджер свяжется с вами.
         </Alert>
       );
     }
     if (item.status === "available" || item.status === "soon") {
-      return (
+      return canConnect ? (
         <Button variant="contained" size="large" fullWidth onClick={() => askRequest(itemTarget(item))}>
           {item.status === "soon" ? "Узнать о запуске" : "Отправить заявку"}
         </Button>
+      ) : (
+        <Typography variant="body2" color="text.secondary">
+          Подключить может сотрудник с правом «Подключение модулей».
+        </Typography>
       );
     }
-    return routeButton(item, { variant: "outlined", fullWidth: true });
+    return (
+      <Stack spacing={1}>
+        {routeButton(item, { variant: "outlined", fullWidth: true })}
+        {canAskOff(item) && (
+          <Button color="error" fullWidth onClick={() => askRequest(disconnectTarget(item))}>
+            Отключить — заявка менеджеру
+          </Button>
+        )}
+      </Stack>
+    );
   };
 
   const drawerOperator = (item: StorefrontItem): React.ReactNode =>
@@ -389,8 +443,17 @@ const ModulesCatalogPage: React.FC = () => {
         </Button>
       );
     }
-    return entry.status === "off" ? (
-      <Button size="small" variant="outlined" onClick={() => askRequest(includedTarget(entry))}>
+    // Модуль пакета клиника с правом переключает сама, без заявки и доплаты.
+    if (!entry.selfService) return null;
+    if (module.isEnabled) {
+      return canDisconnect ? (
+        <Button size="small" color="error" onClick={() => askToggle(module, false, true)}>
+          Отключить
+        </Button>
+      ) : null;
+    }
+    return canConnect ? (
+      <Button size="small" variant="outlined" startIcon={<AddOutlined />} onClick={() => askToggle(module, true, true)}>
         Включить
       </Button>
     ) : null;
@@ -520,7 +583,7 @@ const ModulesCatalogPage: React.FC = () => {
                   view={view}
                   featured={index === 0}
                   action={
-                    isOperator ? undefined : (
+                    isOperator || !canConnect ? undefined : (
                       <Button
                         size="small"
                         variant={index === 0 ? "contained" : "outlined"}
@@ -648,12 +711,22 @@ const ModulesCatalogPage: React.FC = () => {
         }}
         slotProps={{ transition: { onExited: () => setPending(null) } }}
       >
-        <DialogTitle>{pending?.enable ? "Подключить модуль?" : "Отключить модуль?"}</DialogTitle>
+        <DialogTitle>
+          {pending?.selfService
+            ? `${pending.enable ? "Включить" : "Отключить"} «${pending.module.name}»?`
+            : pending?.enable
+              ? "Подключить модуль?"
+              : "Отключить модуль?"}
+        </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {pending?.enable
-              ? `Подключить «${pending.module.name}» для «${pending.organizationName}»? Модуль появится в CRM клиники.`
-              : `Отключить «${pending?.module.name ?? ""}» у «${pending?.organizationName ?? ""}»? Разделы модуля пропадут у сотрудников клиники. Права в ролях сохранятся и вернутся при подключении.`}
+            {pending?.selfService
+              ? pending.enable
+                ? "Входит в ваш пакет — без доплаты. Разделы модуля сразу появятся у сотрудников."
+                : "Разделы модуля пропадут у сотрудников. Права в ролях сохранятся и вернутся, когда модуль снова включат."
+              : pending?.enable
+                ? `Подключить «${pending.module.name}» для «${pending.organizationName}»? Модуль появится в CRM клиники.`
+                : `Отключить «${pending?.module.name ?? ""}» у «${pending?.organizationName ?? ""}»? Разделы модуля пропадут у сотрудников клиники. Права в ролях сохранятся и вернутся при подключении.`}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
@@ -668,7 +741,7 @@ const ModulesCatalogPage: React.FC = () => {
               if (pending) toggle.mutate(pending);
             }}
           >
-            {pending?.enable ? "Подключить" : "Отключить"}
+            {pending?.enable ? (pending.selfService ? "Включить" : "Подключить") : "Отключить"}
           </Button>
         </DialogActions>
       </Dialog>

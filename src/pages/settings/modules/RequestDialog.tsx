@@ -23,9 +23,9 @@ const WORDING: Record<RequestKind, { title: (name: string) => string; intro: str
     title: (name) => `Подключить «${name}»?`,
     intro: "Менеджер ErkinAI свяжется с вами, ответит на вопросы и всё включит.",
   },
-  included: {
-    title: (name) => `Включить «${name}»?`,
-    intro: "Входит в ваш пакет — без доплаты. Менеджер ErkinAI включит и сообщит вам.",
+  disconnect: {
+    title: (name) => `Отключить «${name}»?`,
+    intro: "Платный модуль отключает менеджер ErkinAI: он свяжется с вами и отключит его.",
   },
   soon: {
     title: (name) => `Узнать о запуске «${name}»?`,

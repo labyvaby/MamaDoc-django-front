@@ -34,6 +34,8 @@ export interface StorefrontItem {
   inactive: boolean;
   /** Почему скрыт; сервер отдаёт её только суперпользователю. */
   inactiveReason: string;
+  /** Клиника попросила отключить платный товар — ждёт менеджера. */
+  pendingDisconnect: boolean;
 }
 
 /** included — работает; off — модуль пакета выключен; requested — просили включить. */
@@ -44,8 +46,8 @@ export interface IncludedItem {
   status: IncludedStatus;
   /** Модуль карточки из каталога; null — возможность без модуля, всегда в пакете. */
   module: CatalogModule | null;
-  requestModules: string[];
-  extraRequirementNames: string[];
+  /** Модуль пакета (сервер: inPackage) — клиника с правом включает и выключает сама. */
+  selfService: boolean;
 }
 
 export interface StorefrontBundleView {
@@ -67,8 +69,8 @@ export interface StorefrontView {
   availableCount: number;
 }
 
-/** product/bundle — купить; included — включить своё; soon — узнать о запуске. */
-export type RequestKind = "product" | "bundle" | "included" | "soon";
+/** product/bundle — купить; soon — узнать о запуске; disconnect — отключить платное. */
+export type RequestKind = "product" | "bundle" | "soon" | "disconnect";
 
 export interface RequestTarget {
   productId: string;
@@ -121,11 +123,16 @@ function cardFromModule(module: CatalogModule): StorefrontIncluded {
   return { id: module.code, title: module.name, icon: "puzzle", tone: "blue", tagline: module.description, module: module.code };
 }
 
-/** Заявка покрывает товар: на него самого или на все его недостающие модули. */
+/** Заявка покрывает товар: на него самого или на все его модули. */
+const covers = (r: ModuleRequest, productId: string, codes: string[]) =>
+  r.productId === productId || (codes.length > 0 && codes.every((code) => r.moduleCodes.includes(code)));
+
+/** Открытая заявка на подключение; нет поля kind (старый бэк) — подключение. */
 const isRequested = (productId: string, missing: string[], openRequests: ModuleRequest[]) =>
-  openRequests.some(
-    (r) => r.productId === productId || (missing.length > 0 && missing.every((code) => r.moduleCodes.includes(code))),
-  );
+  openRequests.some((r) => r.kind !== "disconnect" && covers(r, productId, missing));
+
+const isPendingDisconnect = (productId: string, codes: string[], openRequests: ModuleRequest[]) =>
+  openRequests.some((r) => r.kind === "disconnect" && covers(r, productId, codes));
 
 /** Недостающие требования модулей — в заявку, названия тех, что вне товара, — в окно заявки. */
 function requirementsOf(codes: string[], own: string[], byCode: Map<string, CatalogModule>, catalog: CatalogModule[]) {
@@ -218,6 +225,7 @@ function toItem(
     freeWithTitle: null,
     inactive: false,
     inactiveReason: "",
+    pendingDisconnect: false,
   };
   if (product.soon) {
     return { ...plain, status: isRequested(product.id, [], openRequests) ? "requested" : "soon" };
@@ -236,6 +244,7 @@ function toItem(
     status,
     missingModules,
     ...requirementsOf(missingModules, product.modules, byCode, catalog),
+    pendingDisconnect: isPendingDisconnect(product.id, product.modules, openRequests),
   };
 }
 
@@ -250,14 +259,13 @@ function buildIncluded(input: {
 }): IncludedItem[] {
   const { catalog, byCode, vertical, openRequests, operator, onShelf } = input;
   const toIncluded = (card: StorefrontIncluded, module: CatalogModule | null): IncludedItem => {
-    if (!module || module.isEnabled) {
-      return { card, status: "included", module, requestModules: [], extraRequirementNames: [] };
-    }
+    const selfService = module?.inPackage === true;
+    if (!module || module.isEnabled) return { card, status: "included", module, selfService };
     return {
       card,
       status: isRequested(card.id, [module.code], openRequests) ? "requested" : "off",
       module,
-      ...requirementsOf([module.code], [module.code], byCode, catalog),
+      selfService,
     };
   };
 
@@ -324,13 +332,14 @@ export function bundleTarget(view: StorefrontBundleView): RequestTarget {
   };
 }
 
-export function includedTarget(item: IncludedItem): RequestTarget {
+/** Заявка отключить подключённый платный товар: оплата прекращается вместе с ним. */
+export function disconnectTarget(item: StorefrontItem): RequestTarget {
   return {
-    productId: item.card.id,
-    title: item.card.title,
-    modules: item.requestModules,
-    extraRequirementNames: item.extraRequirementNames,
-    kind: "included",
+    productId: item.product.id,
+    title: item.product.title,
+    modules: item.product.modules,
+    extraRequirementNames: [],
+    kind: "disconnect",
   };
 }
 

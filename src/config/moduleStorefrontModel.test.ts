@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 
-import type { CatalogModule, FeatureSignals, ModuleRequest } from "../api/tenancy";
+import type { CatalogModule, FeatureSignals, ModuleRequest, ModuleRequestKind } from "../api/tenancy";
 import {
   buildStorefront,
   bundleTarget,
+  disconnectTarget,
   formatPrice,
-  includedTarget,
   itemTarget,
   searchStorefront,
   shelfOrder,
@@ -16,8 +16,10 @@ import {
 const mod = (code: string, isEnabled = false, requires: string[] = [], name = code, category = "ops"): CatalogModule => ({
   code, name, description: `${name} — описание`, category, tier: "shared", isEnabled, requires,
 });
-const request = (productId: string, moduleCodes: string[]): ModuleRequest => ({
-  id: 1, productId, productTitle: productId, moduleCodes, status: "new", createdAt: "2026-09-26T10:00:00Z",
+/** Модуль пакета: клиника с правом включает его сама. */
+const pkg = (code: string, isEnabled = false): CatalogModule => ({ ...mod(code, isEnabled), inPackage: true });
+const request = (productId: string, moduleCodes: string[], kind?: ModuleRequestKind): ModuleRequest => ({
+  id: 1, productId, productTitle: productId, moduleCodes, status: "new", createdAt: "2026-09-26T10:00:00Z", kind,
 });
 const NO_FEATURES: FeatureSignals = { onlineBooking: false, site: false, insurers: false, notifications: false, odoctor: false };
 const build = (
@@ -225,10 +227,30 @@ describe("the package section", () => {
     expect(ids("beauty")).not.toContain("conclusions");
   });
 
-  it("requests an off module together with its missing requirements", () => {
-    const view = build([mod("reports", false, ["finance"]), mod("finance", false, [], "Финансы")]);
-    expect(includedTarget(included(view, "reports")!)).toEqual({
-      productId: "reports", title: "Отчёты", modules: ["finance", "reports"], extraRequirementNames: ["Финансы"], kind: "included",
+  it("lets the clinic switch only the modules the server marks as its package", () => {
+    const view = build([pkg("documents"), mod("reports", true)]);
+    expect(included(view, "documents")!.selfService).toBe(true);
+    expect(included(view, "reports")!.selfService).toBe(false);
+    expect(included(view, "staff")!.selfService).toBe(false);
+  });
+});
+
+describe("switching a paid product off", () => {
+  it("is a request, and it marks the product pending while it waits", () => {
+    const pending = build([mod("chatwoot", true)], "clinic", [request("chats", ["chatwoot"], "disconnect")]);
+    expect(item(pending, "chats")).toMatchObject({ status: "connected", pendingDisconnect: true });
+    const idle = build([mod("chatwoot", true)]);
+    expect(item(idle, "chats")!.pendingDisconnect).toBe(false);
+  });
+
+  it("does not count as a request to connect", () => {
+    const view = build([mod("chatwoot")], "clinic", [request("chats", ["chatwoot"], "disconnect")]);
+    expect(item(view, "chats")!.status).toBe("available");
+  });
+
+  it("targets the product's modules", () => {
+    expect(disconnectTarget(item(build([mod("chatwoot", true)]), "chats")!)).toEqual({
+      productId: "chats", title: "Чаты", modules: ["chatwoot"], extraRequirementNames: [], kind: "disconnect",
     });
   });
 });

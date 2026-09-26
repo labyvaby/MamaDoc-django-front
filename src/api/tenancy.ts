@@ -16,6 +16,23 @@ export interface CatalogModule {
   isEnabled: boolean;
   /** Прямые требования модуля (коды), граф — tenancy.dependencies на бэке. */
   requires: string[];
+  /**
+   * Входит в пакет без доплаты: клиника с правом включает и выключает сама
+   * (tenancy/package.py). Нет поля (старый бэк) — как платный.
+   */
+  inPackage?: boolean;
+}
+
+/** Включить или выключить модуль своего пакета — клиника с правом, без менеджера. */
+export function setPackageModule(
+  organizationId: number | null | undefined,
+  code: string,
+  isEnabled: boolean,
+): Promise<OrganizationModule> {
+  return apiRequest<OrganizationModule>(
+    `/tenancy/package-modules/${encodeURIComponent(code)}/${orgQuery(organizationId)}`,
+    { method: "PATCH", body: { isEnabled } },
+  );
 }
 
 /**
@@ -75,10 +92,15 @@ export function setStorefrontProductState(
 }
 
 /** Заявка клиники на подключение с витрины (docs/specs/2026-09-26-modules-storefront-design.md). */
+/** connect — подключить платное, disconnect — отключить его: оба делает менеджер. */
+export type ModuleRequestKind = "connect" | "disconnect";
+
 export interface ModuleRequest {
   id: number;
   productId: string;
   productTitle: string;
+  /** Нет поля (старый бэк) — заявка на подключение. */
+  kind?: ModuleRequestKind;
   moduleCodes: string[];
   status: string;
   createdAt: string;
@@ -91,6 +113,7 @@ export interface ModuleRequestInput {
   contactName: string;
   contactPhone: string;
   comment: string;
+  kind?: ModuleRequestKind;
 }
 
 /** Открытые заявки организации — карточки показывают «Заявка отправлена». */

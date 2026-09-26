@@ -32,6 +32,9 @@ export const PriceLabel: React.FC<{ item: StorefrontItem }> = ({ item }) => {
 };
 
 export const ProductStatus: React.FC<{ item: StorefrontItem }> = ({ item }) => {
+  if (item.status === "connected" && item.pendingDisconnect) {
+    return <Chip size="small" color="warning" variant="outlined" icon={<ScheduleOutlined />} label="Ждёт отключения" />;
+  }
   if (item.status === "connected") {
     return <Chip size="small" color="success" variant="outlined" icon={<CheckCircleOutlined />} label="Подключён" />;
   }

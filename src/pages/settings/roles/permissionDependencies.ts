@@ -8,7 +8,7 @@ import type { RbacPermission } from "../../../api/rbac";
  * `printforms.print`, `vaccinations.record`) сюда намеренно не входят — они
  * выполняются с одного экрана и просмотра домена могут не требовать.
  */
-const WRITE_SUFFIXES = ["create", "update", "delete", "manage"];
+const WRITE_SUFFIXES = ["create", "update", "delete", "manage", "connect", "disconnect"];
 
 /** Коды просмотра домена в порядке приоритета: `x.view`, иначе `x.read`, иначе `x.list`. */
 const VIEW_SUFFIXES = ["view", "read", "list"];
