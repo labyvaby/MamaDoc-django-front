@@ -300,12 +300,13 @@ const RateFlow: React.FC = () => {
 
   const header = <ClinicHeader name={ctx.clinicName} logo={ctx.clinicLogo} />;
   const kids = ctx.pageTheme === "kids";
+  const kidsThanks = kids ? ("thanks" as const) : undefined;
 
   if (screen === "done" && !editing) {
     const happy = ctx.rating === 5;
     if (happy) {
       return (
-        <Shell kids={kids}>
+        <Shell kids={kidsThanks}>
           <Stack spacing={2.5} textAlign="center" sx={{ my: "auto", py: 4 }}>
             <Reveal order={2}>
               <Display size={30} center>
@@ -349,7 +350,7 @@ const RateFlow: React.FC = () => {
       );
     }
     return (
-      <Shell kids={kids}>
+      <Shell kids={kidsThanks}>
         <Stack
           spacing={2.5}
           alignItems="center"
@@ -454,7 +455,7 @@ const RateFlow: React.FC = () => {
   );
 
   return (
-    <Shell footer={stickyBar} header={header} kids={kids}>
+    <Shell footer={stickyBar} header={header} kids={kids ? "form" : undefined}>
       <Reveal order={1}>
         <Box sx={{ mt: 2.5 }}>
           <Display>{t("public.howWasVisit")}</Display>

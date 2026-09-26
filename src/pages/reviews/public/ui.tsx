@@ -6,7 +6,8 @@ import ArrowOutwardRounded from "@mui/icons-material/ArrowOutwardRounded";
 
 import type { MapPlatform } from "../../../api/reviews";
 import { MapLogo, isFullTile } from "./mapLogos";
-import kidsBackgroundUrl from "./logos/kids-bg.webp";
+import kidsThanksUrl from "./logos/kids-bg-thanks.webp";
+import kidsFormUrl from "./logos/kids-bg-form.webp";
 import {
   AMBER,
   CARD,
@@ -63,25 +64,39 @@ export const ClinicHeader: React.FC<{ name: string; logo?: string }> = ({
   </Stack>
 );
 
-/** Детское оформление: картинка 919×1712, мишка — верхние ~21% высоты. */
-const KIDS_BG_RATIO = 1712 / 919;
+/** Детское оформление: свой фон для опроса и для экранов «Спасибо». */
+export type KidsScreen = "form" | "thanks";
+
 const KIDS_BG_MAX_WIDTH = 560;
+const KIDS_BG: Record<
+  KidsScreen,
+  { url: string; ratio: number; bearShare: number; color: string }
+> = {
+  // 853×1843, мишка выглядывает справа — верхние ~24% высоты.
+  form: { url: kidsFormUrl, ratio: 1843 / 853, bearShare: 0.25, color: "#F4E6DC" },
+  // 919×1712, мишка со звездой — верхние ~21% высоты.
+  thanks: { url: kidsThanksUrl, ratio: 1712 / 919, bearShare: 0.22, color: "#F3ECE1" },
+};
+
 // Картинка «cover» в колонке шириной до 560px: её высота — большее из высоты
 // экрана и ширины × пропорция. Контент начинается сразу под мишкой.
-const KIDS_TOP = `calc(0.22 * max(100dvh, min(100vw, ${KIDS_BG_MAX_WIDTH}px) * ${KIDS_BG_RATIO}))`;
+const kidsTop = (screen: KidsScreen) => {
+  const { ratio, bearShare } = KIDS_BG[screen];
+  return `calc(${bearShare} * max(100dvh, min(100vw, ${KIDS_BG_MAX_WIDTH}px) * ${ratio}))`;
+};
 
 export const Shell: React.FC<
   React.PropsWithChildren<{
     footer?: React.ReactNode;
     header?: React.ReactNode;
-    /** Детское оформление страницы (фон с мишкой) — из настроек клиники. */
-    kids?: boolean;
+    /** Детское оформление (фон с мишкой) — из настроек клиники. */
+    kids?: KidsScreen;
   }>
-> = ({ children, footer, header, kids = false }) => (
+> = ({ children, footer, header, kids }) => (
   <Box
     sx={{
       minHeight: "100dvh",
-      bgcolor: kids ? "#F3ECE1" : PAPER,
+      bgcolor: kids ? KIDS_BG[kids].color : PAPER,
       color: INK,
       backgroundImage: kids
         ? "none"
@@ -105,7 +120,7 @@ export const Shell: React.FC<
           maxWidth: KIDS_BG_MAX_WIDTH,
           zIndex: -1,
           pointerEvents: "none",
-          backgroundImage: `url(${kidsBackgroundUrl})`,
+          backgroundImage: `url(${KIDS_BG[kids].url})`,
           backgroundSize: "cover",
           backgroundPosition: "top center",
           backgroundRepeat: "no-repeat",
@@ -120,7 +135,7 @@ export const Shell: React.FC<
         maxWidth: 480,
         mx: "auto",
         px: 2.5,
-        pt: kids ? KIDS_TOP : { xs: 4, sm: 7 },
+        pt: kids ? kidsTop(kids) : { xs: 4, sm: 7 },
         pb: 4,
         display: "flex",
         flexDirection: "column",
