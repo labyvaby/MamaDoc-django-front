@@ -29,6 +29,7 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import UpcomingOutlined from "@mui/icons-material/UpcomingOutlined";
+import AssignmentLateOutlined from "@mui/icons-material/AssignmentLateOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import MedicationOutlined from "@mui/icons-material/MedicationOutlined";
@@ -62,6 +63,7 @@ import {
 import {
   deleteCalendarTemplate,
   getBatches,
+  getDraftCount,
   SCHEDULE_DASHBOARD_PAGE_SIZE,
   VACCINATION_BATCH_WRITEOFF_ENABLED,
   VACCINATION_SCHEDULE_BRANCH_SCOPING,
@@ -87,9 +89,15 @@ import VaccineDialog from "../../components/vaccinations/VaccineDialog";
 import BatchDialog from "../../components/vaccinations/BatchDialog";
 import BatchWriteOffDialog from "../../components/vaccinations/BatchWriteOffDialog";
 import CalendarTemplateDialog from "../../components/vaccinations/CalendarTemplateDialog";
+import DraftsTab from "./DraftsTab";
 import { injectionSiteLabel, scheduleDateInfo } from "./meta";
 
-type VaccTab = "due" | "records" | "vaccines" | "batches" | "calendar" | "report";
+type VaccTab = "drafts" | "due" | "records" | "vaccines" | "batches" | "calendar" | "report";
+
+/** «Не оформлено» — только тем, кто оформляет прививки (vaccinations.record). */
+const RECORD_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
+  { id: "drafts", label: "Не оформлено", icon: AssignmentLateOutlined },
+];
 
 const BASE_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
   { id: "due", label: "Кому пора", icon: UpcomingOutlined },
@@ -116,6 +124,7 @@ const READ_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
  * «Работа» (ежедневное) · «Справочники» (настройка) · «Аналитика».
  */
 const TAB_GROUP: Record<VaccTab, "work" | "ref" | "analytics"> = {
+  drafts: "work",
   due: "work",
   records: "work",
   vaccines: "ref",
@@ -199,9 +208,23 @@ const VaccinationsPage: React.FC = () => {
   const canManage = can("vaccinations.manage");
 
   const tabs = React.useMemo(
-    () => (canManage ? [...BASE_TABS, ...MANAGE_TABS, ...READ_TABS] : [...BASE_TABS, ...READ_TABS]),
-    [canManage],
+    () => [
+      ...(canRecord ? RECORD_TABS : []),
+      ...BASE_TABS,
+      ...(canManage ? MANAGE_TABS : []),
+      ...READ_TABS,
+    ],
+    [canManage, canRecord],
   );
+
+  // Бейдж на вкладке «Не оформлено».
+  const draftCountQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.draftCount({ branchId, orgId }),
+    queryFn: ({ signal }) => getDraftCount(branchId, orgId, signal),
+    enabled: !permLoading && canRecord,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+  const draftCount = draftCountQuery.data ?? 0;
 
   const [tab, setTab] = React.useState<VaccTab>(() => {
     const saved = sessionStorage.getItem("vaccinations-tab");
@@ -1078,6 +1101,23 @@ const VaccinationsPage: React.FC = () => {
                     <Stack direction="row" alignItems="center" gap={0.75} sx={{ position: "relative" }}>
                       <Icon sx={{ fontSize: 17 }} />
                       <span>{label}</span>
+                      {id === "drafts" && draftCount > 0 && (
+                        <Box
+                          component="span"
+                          sx={{
+                            minWidth: 18,
+                            px: 0.5,
+                            borderRadius: "9px",
+                            fontSize: "0.7rem",
+                            lineHeight: "18px",
+                            textAlign: "center",
+                            bgcolor: active ? "primary.contrastText" : "warning.main",
+                            color: active ? "primary.main" : "warning.contrastText",
+                          }}
+                        >
+                          {draftCount}
+                        </Box>
+                      )}
                     </Stack>
                   </ButtonBase>
                 </React.Fragment>
@@ -1209,6 +1249,16 @@ const VaccinationsPage: React.FC = () => {
         )}
 
         {/* ── Таблица ── */}
+        {tab === "drafts" && canRecord && (
+          <DraftsTab
+            branchId={branchId}
+            orgId={orgId}
+            canRecord={canRecord}
+            canUpdatePatient={canUpdatePatient}
+            onEditPatient={(id) => void openEditPatient(id)}
+          />
+        )}
+
         {tab === "due" &&
           (dueQuery.error ? (
             <Alert severity="error">
