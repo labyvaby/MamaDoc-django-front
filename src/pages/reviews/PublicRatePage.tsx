@@ -44,6 +44,7 @@ import {
 import {
   CARD,
   CLAY,
+  INK,
   LINE,
   MUTED,
   PAPER,
@@ -66,6 +67,44 @@ import {
   StarPicker,
   TagPill,
 } from "./public/ui";
+
+/** Просьба отметить в Instagram: заметная, но скромнее кнопок карт. */
+const InstagramNudge: React.FC<{ handle: string }> = ({ handle }) => (
+  <Stack alignItems="center" spacing={1}>
+    <Typography sx={{ fontSize: 14, color: MUTED }}>
+      {!handle && (
+        <Instagram
+          sx={{ fontSize: 17, color: "#D62976", verticalAlign: "-3px", mr: 0.5 }}
+        />
+      )}
+      Отметьте нас в Instagram — нам будет очень приятно 💛
+    </Typography>
+    {handle && (
+      <Link
+        href={`https://instagram.com/${handle}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        underline="none"
+        sx={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 0.75,
+          px: 1.75,
+          py: 0.75,
+          borderRadius: 999,
+          border: `1px solid ${LINE}`,
+          bgcolor: "rgba(255,255,255,0.6)",
+          color: INK,
+          fontSize: 14,
+          fontWeight: 700,
+          "&:hover": { borderColor: "#D62976" },
+        }}
+      >
+        <Instagram sx={{ fontSize: 19, color: "#D62976" }} />@{handle}
+      </Link>
+    )}
+  </Stack>
+);
 
 const CONSENT_OPTIONS: ChoiceOption<PublishConsent>[] = [
   {
@@ -266,7 +305,7 @@ const RateFlow: React.FC = () => {
     const happy = ctx.rating === 5;
     if (happy) {
       return (
-        <Shell header={header}>
+        <Shell>
           <Stack spacing={2.5} textAlign="center" sx={{ my: "auto", py: 4 }}>
             <Medallion tone="happy" icon={<StarRounded />} />
             <Reveal order={2}>
@@ -274,6 +313,7 @@ const RateFlow: React.FC = () => {
                 Спасибо, это очень приятно!
               </Display>
             </Reveal>
+            <Reveal order={2}>{header}</Reveal>
             <Reveal order={3}>
               <Typography sx={{ color: MUTED, fontSize: 16 }}>
                 {ctx.maps.length > 0
@@ -299,36 +339,16 @@ const RateFlow: React.FC = () => {
                 <PublishNote ctx={ctx} />
               </Reveal>
             )}
-            <Reveal order={8}>{editLink}</Reveal>
-            <Reveal order={9}>
-              <Typography sx={{ fontSize: 13, color: MUTED, px: 1, opacity: 0.85 }}>
-                <Instagram
-                  sx={{ fontSize: 15, verticalAlign: "-3px", mr: 0.5 }}
-                />
-                Отметьте нас в Instagram
-                {ctx.instagram && (
-                  <>
-                    {" "}
-                    <Link
-                      href={`https://instagram.com/${ctx.instagram}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      underline="always"
-                      sx={{ color: "inherit" }}
-                    >
-                      @{ctx.instagram}
-                    </Link>
-                  </>
-                )}
-                {" "}— нам будет приятно 💛
-              </Typography>
+            <Reveal order={7}>
+              <InstagramNudge handle={ctx.instagram} />
             </Reveal>
+            <Reveal order={8}>{editLink}</Reveal>
           </Stack>
         </Shell>
       );
     }
     return (
-      <Shell header={header}>
+      <Shell>
         <Stack
           spacing={2.5}
           alignItems="center"
@@ -341,6 +361,7 @@ const RateFlow: React.FC = () => {
               Спасибо, что рассказали
             </Display>
           </Reveal>
+          <Reveal order={2}>{header}</Reveal>
           <Reveal order={3}>
             <Typography sx={{ color: MUTED, fontSize: 16, maxWidth: 360 }}>
               Нам жаль, что не всё прошло хорошо. Ответ уже у нас — мы
