@@ -17,6 +17,7 @@ import ScheduleRounded from "@mui/icons-material/ScheduleRounded";
 import LockOutlined from "@mui/icons-material/LockOutlined";
 import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+import Instagram from "@mui/icons-material/Instagram";
 import { useParams } from "react-router";
 
 import {
@@ -290,6 +291,19 @@ const RateFlow: React.FC = () => {
                 ))}
               </Stack>
             )}
+            <Reveal order={7}>
+              <Typography sx={{ fontSize: 14, color: MUTED, px: 1 }}>
+                <Instagram
+                  sx={{
+                    fontSize: 18,
+                    color: "#D62976",
+                    verticalAlign: "-4px",
+                    mr: 0.5,
+                  }}
+                />
+                Отметьте нас в Instagram — нам будет очень приятно 💛
+              </Typography>
+            </Reveal>
             {ctx.publishConsent !== "private" && (
               <Reveal order={7}>
                 <PublishNote ctx={ctx} />

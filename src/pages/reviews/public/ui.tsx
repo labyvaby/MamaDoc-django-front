@@ -5,7 +5,7 @@ import CheckRounded from "@mui/icons-material/CheckRounded";
 import ArrowOutwardRounded from "@mui/icons-material/ArrowOutwardRounded";
 
 import type { MapPlatform } from "../../../api/reviews";
-import { MapLogo } from "./mapLogos";
+import { MapLogo, isFullTile } from "./mapLogos";
 import {
   AMBER,
   CARD,
@@ -320,7 +320,7 @@ export const MapCard: React.FC<{
           display: "grid",
           placeItems: "center",
           bgcolor: "#FFFFFF",
-          border: `1px solid ${LINE}`,
+          border: isFullTile(platform) ? "none" : `1px solid ${LINE}`,
         }}
       >
         <MapLogo platform={platform} />
