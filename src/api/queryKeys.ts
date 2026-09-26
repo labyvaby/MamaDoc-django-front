@@ -354,6 +354,16 @@ export const djangoQueryKeys = {
     // Месячный отчёт по календарю.
     monthlyReport: (params: Record<string, unknown>) =>
       ["django", "vaccinations", "monthly-report", params] as const,
+    // Бейдж «Не оформлено».
+    draftCount: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "records", "draft-count", params] as const,
+    recordAudit: (id: number, orgId?: number) =>
+      ["django", "vaccinations", "records", id, "audit", orgId] as const,
+    exemptions: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "exemptions", params] as const,
+    refusals: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "refusals", params] as const,
+    form5Rows: (orgId?: number) => ["django", "vaccinations", "form5-rows", orgId] as const,
   },
 
   staff: {

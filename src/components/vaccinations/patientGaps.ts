@@ -46,11 +46,15 @@ export function applyInnToPatientDraft(
 }
 
 /** Что из пациента реально поменяли — только это уходит в тело administer. */
-export function changedPatientFields(
-  original: PatientDraft,
-  current: PatientDraft,
-): Partial<Omit<PatientDraft, "gender">> & { gender?: "male" | "female" } {
-  const out: Partial<Omit<PatientDraft, "gender">> & { gender?: "male" | "female" } = {};
+export interface PatientChanges {
+  gender?: "male" | "female";
+  birthDate?: string;
+  inn?: string;
+  innAbsentReason?: PatientDraft["innAbsentReason"];
+}
+
+export function changedPatientFields(original: PatientDraft, current: PatientDraft): PatientChanges {
+  const out: PatientChanges = {};
   if (current.gender !== original.gender && current.gender !== "unknown") {
     out.gender = current.gender;
   }
