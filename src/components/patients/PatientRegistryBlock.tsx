@@ -158,6 +158,16 @@ export const PatientRegistryBlock: React.FC<PatientRegistryBlockProps> = ({
                 {t("card.doctor", { name: row.responsibleEmployee.fullName })}
               </Typography>
             )}
+            {row.currentTerm?.package && (
+              <Typography variant="body2" color="text.secondary">
+                {row.currentTerm.package.visitDiscountPercent > 0
+                  ? t("card.packageWithDiscount", {
+                      name: row.currentTerm.package.name,
+                      percent: row.currentTerm.package.visitDiscountPercent,
+                    })
+                  : t("card.package", { name: row.currentTerm.package.name })}
+              </Typography>
+            )}
             <Typography variant="body2" color="text.secondary">
               {t(`payment.${row.paymentState}`)}
               {row.currentTerm && Number(row.currentTerm.priceAmount) > Number(row.currentTerm.paidAmount)

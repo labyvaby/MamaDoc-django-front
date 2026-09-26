@@ -7,6 +7,7 @@ import {
   DialogTitle,
   Divider,
   IconButton,
+  MenuItem,
   Stack,
   TextField,
   Tooltip,
@@ -18,18 +19,20 @@ import dayjs, { type Dayjs } from "dayjs";
 import { useSnackbar } from "notistack";
 
 import { getErrorMessage } from "../../../api/client";
-import { createTerm, deleteTerm, getTerms } from "../../../api/registry";
+import { getProgramPackages } from "../../../api/programs";
+import { djangoQueryKeys } from "../../../api/queryKeys";
+import { createTerm, deleteTerm, getPriceQuote, getTerms } from "../../../api/registry";
 import { AppButton, CustomDatePicker } from "../../../components/ui";
 import type { ActiveScope } from "../../../hooks/useActiveScope";
 import { useT } from "../../../i18n/VerticalProvider";
 import type { EnrollmentTarget } from "../enrollmentTarget";
+import { quoteMessage } from "../priceQuote";
 import { formatMoney } from "../registryTabs";
 
 interface RenewDialogProps {
   open: boolean;
   scope: ActiveScope;
   target: EnrollmentTarget;
-  defaultMonths?: number;
   onClose: () => void;
   onDone: () => void;
 }
@@ -44,33 +47,61 @@ export const RenewDialog: React.FC<RenewDialogProps> = ({
   open,
   scope,
   target,
-  defaultMonths = 12,
   onClose,
   onDone,
 }) => {
   const { t } = useT("registry");
   const { enqueueSnackbar } = useSnackbar();
-  const [months, setMonths] = React.useState(String(defaultMonths));
+  const ready = scope.isReady && scope.orgReady;
+  const [packageId, setPackageId] = React.useState<number | "">("");
+  const [months, setMonths] = React.useState("12");
   const [startsOn, setStartsOn] = React.useState<Dayjs | null>(null);
   const [price, setPrice] = React.useState("");
 
   React.useEffect(() => {
     if (!open) return;
-    setMonths(String(defaultMonths));
+    setPackageId("");
+    setMonths("12");
     setStartsOn(null);
     setPrice("");
-  }, [open, defaultMonths]);
+  }, [open]);
 
   const terms = useQuery({
     queryKey: ["django", "programs", "terms", target.enrollmentId, scope],
     queryFn: ({ signal }) => getTerms(scope, target.enrollmentId, signal),
-    enabled: open && scope.isReady && scope.orgReady,
+    enabled: open && ready,
   });
+  const packages = useQuery({
+    queryKey: djangoQueryKeys.programs.packages(scope, { programId: target.programId, active: true }),
+    queryFn: ({ signal }) => getProgramPackages(scope, { programId: target.programId, active: true }, signal),
+    enabled: open && ready,
+  });
+  const offered = React.useMemo(() => packages.data ?? [], [packages.data]);
+  const currentPackageId = target.currentTerm?.package?.id;
+  // Текущий пакет ребёнка, а если он выключен — единственный включённый.
+  React.useEffect(() => {
+    if (!open || packageId !== "" || !offered.length) return;
+    const initial =
+      offered.find((item) => item.id === currentPackageId) ?? (offered.length === 1 ? offered[0] : undefined);
+    if (initial) {
+      setPackageId(initial.id);
+      setMonths(String(initial.termMonths));
+    }
+  }, [open, packageId, offered, currentPackageId]);
+
+  const quoteParams = { packageId: Number(packageId), patientId: target.patientId };
+  const quote = useQuery({
+    queryKey: djangoQueryKeys.programs.priceQuote(scope, quoteParams),
+    queryFn: ({ signal }) => getPriceQuote(scope, quoteParams, signal),
+    enabled: open && ready && packageId !== "",
+  });
+  const message = quote.data ? quoteMessage(quote.data) : null;
 
   const monthsValue = Number(months);
   const monthsInvalid = !Number.isInteger(monthsValue) || monthsValue < 1 || monthsValue > 60;
   const renew = useMutation({
     mutationFn: () => createTerm(scope, target.enrollmentId, {
+      packageId: packageId === "" ? null : packageId,
       months: monthsValue,
       startsOn: startsOn ? startsOn.format("YYYY-MM-DD") : null,
       priceAmount: price.trim() ? price.trim().replace(",", ".") : null,
@@ -104,6 +135,24 @@ export const RenewDialog: React.FC<RenewDialogProps> = ({
       <DialogContent>
         <Stack gap={1.5} sx={{ mt: 0.5 }}>
           <TextField
+            select
+            size="small"
+            label={t("renew.package")}
+            value={packageId}
+            onChange={(e) => {
+              const next = offered.find((item) => item.id === Number(e.target.value));
+              setPackageId(next?.id ?? "");
+              if (next) setMonths(String(next.termMonths));
+            }}
+            helperText={packages.isSuccess && !offered.length ? t("renew.noPackages") : undefined}
+          >
+            {offered.map((item) => (
+              <MenuItem key={item.id} value={item.id}>
+                {item.name} · {formatMoney(item.priceAmount)} сом
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
             size="small"
             type="number"
             label={t("renew.months")}
@@ -126,7 +175,7 @@ export const RenewDialog: React.FC<RenewDialogProps> = ({
             onChange={(e) => {
               if (MONEY_RE.test(e.target.value)) setPrice(e.target.value);
             }}
-            helperText={t("renew.priceHint")}
+            helperText={message ? t(message.key, message.values) : t("renew.priceHint")}
             inputProps={{ inputMode: "decimal" }}
           />
           {list.length > 0 && (
@@ -137,6 +186,7 @@ export const RenewDialog: React.FC<RenewDialogProps> = ({
                 <Stack key={term.id} direction="row" alignItems="center" gap={1}>
                   <Typography variant="body2" sx={{ flex: 1 }}>
                     {dayjs(term.startsOn).format("DD.MM.YYYY")} — {dayjs(term.endsOn).format("DD.MM.YYYY")} ·{" "}
+                    {term.package ? `${term.package.name} · ` : ""}
                     {formatMoney(term.priceAmount)} сом · {t(`payment.${term.paymentState}`)}
                   </Typography>
                   {term.id === last?.id && Number(term.paidAmount) === 0 && (
@@ -164,7 +214,7 @@ export const RenewDialog: React.FC<RenewDialogProps> = ({
         </AppButton>
         <AppButton
           variant="contained"
-          disabled={monthsInvalid || renew.isPending}
+          disabled={monthsInvalid || renew.isPending || packageId === ""}
           onClick={() => renew.mutate()}
         >
           {t("renew.submit")}

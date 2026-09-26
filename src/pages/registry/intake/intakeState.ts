@@ -54,13 +54,14 @@ export interface RepresentativeState {
 }
 
 export interface ProgramState {
-  programId: number | null;
+  /** Пакет учёта; программа (книжка) берётся из пакета. */
+  packageId: number | null;
   branchId: number | null;
   responsibleEmployeeId: number | null;
   termMonths: string;
   /** YYYY-MM-DD; пусто — период начнётся сегодня. */
   termStartsOn: string;
-  /** Пусто — цена услуги-взноса. */
+  /** Пусто — цена пакета с семейной скидкой (считает сервер). */
   priceAmount: string;
   /** Пусто — номер выдаст бэк по префиксу программы. */
   cardNumber: string;
@@ -144,7 +145,7 @@ export function initialIntakeState(existing?: ExistingPerson | null): IntakeStat
         },
     representatives: [newRepresentative({ isPrimaryContact: true })],
     program: {
-      programId: null,
+      packageId: null,
       branchId: null,
       responsibleEmployeeId: null,
       termMonths: "12",
@@ -161,6 +162,11 @@ export function initialIntakeState(existing?: ExistingPerson | null): IntakeStat
 /** Роль задаёт законность по умолчанию: мама, папа, опекун — законные. */
 export function withRelation(rep: RepresentativeState, relation: Relation): RepresentativeState {
   return { ...rep, relation, isLegalRepresentative: LEGAL_RELATIONS.includes(relation) };
+}
+
+/** Уже заведённые взрослые: по их семьям сервер ищет братьев и сестёр. */
+export function existingRepresentativeIds(state: IntakeState): number[] {
+  return state.representatives.flatMap((rep) => (rep.mode === "existing" && rep.existing ? [rep.existing.id] : []));
 }
 
 function repPhone(rep: RepresentativeState): string {
@@ -194,7 +200,7 @@ export function validateStep(step: StepKey, state: IntakeState, context: Validat
   }
   if (step === "program") {
     const program = state.program;
-    if (program.programId == null) errors.programId = "wizard.program.programRequired";
+    if (program.packageId == null) errors.packageId = "wizard.program.packageRequired";
     if (program.branchId == null) errors.branchId = "wizard.program.branchRequired";
     const months = Number(program.termMonths);
     if (!Number.isInteger(months) || months < 1 || months > 60) errors.termMonths = "wizard.program.termInvalid";
@@ -250,7 +256,7 @@ export function buildIntakePayload(state: IntakeState): IntakePayload {
       receivesNotifications: rep.receivesNotifications,
       joinFamily: rep.joinFamily,
     })),
-    programId: program.programId as number,
+    packageId: program.packageId as number,
     branchId: program.branchId as number,
     residenceStatus: program.residenceStatus,
     arrivedFrom: program.arrivedFrom.trim(),

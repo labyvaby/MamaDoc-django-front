@@ -7,6 +7,7 @@ import {
   Drawer,
   FormControlLabel,
   IconButton,
+  Link,
   MenuItem,
   Stack,
   Switch,
@@ -20,6 +21,7 @@ import PublishOutlined from "@mui/icons-material/PublishOutlined";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
+import { Link as RouterLink } from "react-router";
 
 import {
   createProgramConfigurationVersion,
@@ -36,7 +38,6 @@ import { djangoQueryKeys } from "../../api/queryKeys";
 import { AppButton } from "../../components/ui";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import { subtleBg } from "../../theme/uiHelpers";
-import { ProgramProductSettings } from "./ProgramProductSettings";
 
 const FIELD_TYPES: Array<{ value: NonNullable<ProgramFieldDefinition["type"]>; label: string }> = [
   { value: "text", label: "Строка" },
@@ -256,16 +257,10 @@ export const ProgramConstructorDrawer: React.FC<Props> = ({
               control={<Switch checked={Boolean(schema.program.grantsVip)} onChange={(event) => setSchema({ ...schema, program: { ...schema.program, grantsVip: event.target.checked } })} />}
               label="Программа присваивает VIP-статус"
             />
-            {program && (
-              <ProgramProductSettings
-                program={program}
-                scope={scope}
-                onSaved={() => {
-                  void queryClient.invalidateQueries({ queryKey: ["program-constructor", "programs"] });
-                  void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.programs.all });
-                  onChanged();
-                }}
-              />
+            {program?.businessDomain === "medical" && (
+              <Link component={RouterLink} to="/registry/packages" variant="body2" sx={{ alignSelf: "flex-start" }}>
+                Пакеты и настройки учёта
+              </Link>
             )}
 
             <Stack direction="row" justifyContent="space-between" alignItems="center">

@@ -2,6 +2,7 @@ import React from "react";
 import { Alert, Box, Pagination, Stack, Typography } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import AssignmentIndOutlined from "@mui/icons-material/AssignmentIndOutlined";
+import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { useSnackbar } from "notistack";
@@ -60,6 +61,7 @@ const RegistryPage: React.FC = () => {
   const { enqueueSnackbar } = useSnackbar();
   const { can } = useCanChecker();
   const canManage = can("enrollments.manage");
+  const canManagePackages = can("programs.manage");
   const [tab, setTab] = React.useState<RegistryTab>("active");
   const [page, setPage] = React.useState(1);
   const [filters, setFilters] = React.useState<RegistryFilterValues>({ q: "", mine: false });
@@ -72,6 +74,7 @@ const RegistryPage: React.FC = () => {
     branchId: filters.branchId,
     employeeId: filters.mine ? undefined : filters.employeeId,
     programId: filters.programId,
+    packageId: filters.packageId,
     ageFromMonths: filters.ageFromMonths,
     ageToMonths: filters.ageToMonths,
     q: search || undefined,
@@ -138,11 +141,18 @@ const RegistryPage: React.FC = () => {
             {t("page.subtitle")}
           </Typography>
         </Box>
-        {canManage && (
-          <AppButton variant="contained" startIcon={<AddOutlined />} onClick={() => setIntakeOpen(true)}>
-            {t("page.intake")}
-          </AppButton>
-        )}
+        <Stack direction="row" gap={1} flexWrap="wrap">
+          {canManagePackages && (
+            <AppButton variant="outlined" startIcon={<Inventory2Outlined />} onClick={() => navigate("/registry/packages")}>
+              {t("page.packages")}
+            </AppButton>
+          )}
+          {canManage && (
+            <AppButton variant="contained" startIcon={<AddOutlined />} onClick={() => setIntakeOpen(true)}>
+              {t("page.intake")}
+            </AppButton>
+          )}
+        </Stack>
       </Stack>
       <Stack gap={1.5}>
         <SegmentedTabs
