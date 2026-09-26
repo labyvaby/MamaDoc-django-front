@@ -132,7 +132,8 @@ export function initialIntakeState(existing?: ExistingPerson | null): IntakeStat
           birthCertificateIssuedOn: existing.birthCertificateIssuedOn ?? "",
         }
       : {
-          mode: "new",
+          // Как в окне приёма: сначала поиск по базе, новая карточка — через форму пациента.
+          mode: "existing",
           existing: null,
           fullName: "",
           phone: "",

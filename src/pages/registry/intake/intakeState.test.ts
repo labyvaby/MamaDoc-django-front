@@ -53,6 +53,12 @@ describe("intake state", () => {
     expect(validateStep("child", filled())).toEqual({});
   });
 
+  it("starts with a search of the base, as the appointment form does", () => {
+    const state = initialIntakeState();
+    expect(state.child.mode).toBe("existing");
+    expect(validateStep("child", state).existing).toBe("wizard.child.pickRequired");
+  });
+
   it("requires a picked card when the child exists", () => {
     const state = filled();
     state.child = { ...state.child, mode: "existing", existing: null };
