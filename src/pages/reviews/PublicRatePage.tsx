@@ -10,9 +10,7 @@ import {
   Typography,
 } from "@mui/material";
 import { ThemeProvider } from "@mui/material/styles";
-import StarRounded from "@mui/icons-material/StarRounded";
 import FavoriteRounded from "@mui/icons-material/FavoriteRounded";
-import HandshakeRounded from "@mui/icons-material/HandshakeRounded";
 import LinkOffRounded from "@mui/icons-material/LinkOffRounded";
 import ScheduleRounded from "@mui/icons-material/ScheduleRounded";
 import LockOutlined from "@mui/icons-material/LockOutlined";
@@ -309,7 +307,6 @@ const RateFlow: React.FC = () => {
       return (
         <Shell kids={kids}>
           <Stack spacing={2.5} textAlign="center" sx={{ my: "auto", py: 4 }}>
-            <Medallion tone="happy" icon={<StarRounded />} />
             <Reveal order={2}>
               <Display size={30} center>
                 Спасибо, это очень приятно!
@@ -359,7 +356,6 @@ const RateFlow: React.FC = () => {
           textAlign="center"
           sx={{ my: "auto", py: 4 }}
         >
-          <Medallion tone="calm" icon={<HandshakeRounded />} />
           <Reveal order={2}>
             <Display size={30} center>
               Спасибо, что рассказали
