@@ -5,14 +5,22 @@
  */
 export type KgPinResult =
   | { ok: true; gender: "male" | "female"; birthDate: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string }
+  /** 14 цифр, но не на 1/2 — не ПИН физлица: бэк примет, пол и дату не выводим. */
+  | { ok: false; notPersonal: true; error: string };
 
 const PIN_RE = /^\d{14}$/;
 
 export function parseKgPin(value: string): KgPinResult {
   if (!PIN_RE.test(value)) return { ok: false, error: "ИНН — 14 цифр" };
   const gender = value[0] === "1" ? "female" : value[0] === "2" ? "male" : null;
-  if (!gender) return { ok: false, error: "Первая цифра ИНН (пол) — 1 или 2" };
+  if (!gender) {
+    return {
+      ok: false,
+      notPersonal: true,
+      error: "Не похоже на ПИН физлица (начинается не с 1 или 2) — пол и дата не заполнятся",
+    };
+  }
   const dd = Number(value.slice(1, 3));
   const mm = Number(value.slice(3, 5));
   const yyyy = Number(value.slice(5, 9));

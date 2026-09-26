@@ -31,7 +31,11 @@ export function applyInnToPatientDraft(
   const next: PatientDraft = { ...draft, inn };
   if (!inn) return { draft: next, conflict: null };
   const parsed = parseKgPin(inn);
-  if (!parsed.ok) return { draft: next, conflict: parsed.error };
+  if (!parsed.ok) {
+    // Номер не на 1/2 — не ПИН физлица: сохраняется как есть, но с подсказкой.
+    const accepted = "notPersonal" in parsed ? { ...next, innAbsentReason: "" as const } : next;
+    return { draft: accepted, conflict: parsed.error };
+  }
   next.innAbsentReason = "";
   if (draft.gender !== "unknown" && draft.gender !== parsed.gender) {
     return { draft: next, conflict: "Пол не совпадает с ИНН" };

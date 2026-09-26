@@ -18,7 +18,7 @@ describe("parseKgPin", () => {
   it("отклоняет неполный и кривой ИНН", () => {
     expect(parseKgPin("1160419920128")).toEqual({ ok: false, error: "ИНН — 14 цифр" });
     expect(parseKgPin("1160419920128a")).toMatchObject({ ok: false });
-    expect(parseKgPin("31604199201289")).toMatchObject({ ok: false });
+    expect(parseKgPin("31604199201289")).toMatchObject({ ok: false, notPersonal: true });
     expect(parseKgPin("13102199201289")).toMatchObject({ ok: false });
     expect(parseKgPin("10101209901289")).toMatchObject({ ok: false });
   });
