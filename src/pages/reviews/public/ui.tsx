@@ -72,8 +72,8 @@ const KIDS_BG: Record<
   KidsScreen,
   { url: string; ratio: number; bearShare: number; color: string }
 > = {
-  // 853×1843, мишка выглядывает справа — верхние ~24% высоты.
-  form: { url: kidsFormUrl, ratio: 1843 / 853, bearShare: 0.25, color: "#F4E6DC" },
+  // 919×1712, мишка выглядывает справа — верхние ~25% высоты.
+  form: { url: kidsFormUrl, ratio: 1712 / 919, bearShare: 0.26, color: "#F3ECE1" },
   // 919×1712, мишка со звездой — верхние ~21% высоты.
   thanks: { url: kidsThanksUrl, ratio: 1712 / 919, bearShare: 0.22, color: "#F3ECE1" },
 };
