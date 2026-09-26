@@ -7,10 +7,14 @@
  */
 
 import React from "react";
+import { parseKgPin } from "../../utils/kgPin";
+import { INN_ABSENT_REASON_OPTIONS } from "../../pages/vaccinations/meta";
+import type { InnAbsentReason } from "../../api/patients";
 import {
   Alert,
   Box,
   Button,
+  Checkbox,
   CircularProgress,
   Collapse,
   Divider,
@@ -18,6 +22,7 @@ import {
   FormControlLabel,
   IconButton,
   InputAdornment,
+  MenuItem,
   Stack,
   Switch,
   TextField,
@@ -161,6 +166,12 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   const [gender, setGender] = React.useState<PatientGender>("unknown");
   const [address, setAddress] = React.useState("");
   const [inn, setInn] = React.useState("");
+  /** Почему нет ИНН — нужно для оформления прививки. */
+  const [innAbsentReason, setInnAbsentReason] = React.useState<InnAbsentReason | "">("");
+  /** «Приезжий» — графа формы 5. */
+  const [isVisitor, setIsVisitor] = React.useState(false);
+  /** Расхождение ИНН с полом / датой рождения или ошибка разбора. */
+  const [innHint, setInnHint] = React.useState<string | null>(null);
   const [family, setFamily] = React.useState<DjangoFamily | null>(null);
   const [isBlacklisted, setIsBlacklisted] = React.useState(false);
   const [blacklistReason, setBlacklistReason] = React.useState("");
@@ -194,6 +205,9 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
       setGender("unknown");
       setAddress("");
       setInn("");
+      setInnAbsentReason("");
+      setIsVisitor(false);
+      setInnHint(null);
       setFamily(null);
       setIsBlacklisted(false);
       setBlacklistReason("");
@@ -354,6 +368,8 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
         familyId: family?.id ?? null,
         address: address.trim() || undefined,
         inn: inn.trim() || undefined,
+        innAbsentReason: inn.trim() ? "" : innAbsentReason,
+        isVisitor,
         isBlacklisted: canManageBlacklist ? isBlacklisted : undefined,
         blacklistReason: canManageBlacklist && isBlacklisted ? blacklistReason.trim() : undefined,
       });
@@ -604,6 +620,19 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                     onChange={(e) => {
                       const v = e.target.value.replace(/[^0-9]/g, "").slice(0, 14);
                       setInn(v);
+                      setInnHint(null);
+                      if (v.length < 14) return;
+                      // ИНН КР: пол и дата рождения — прямо в номере.
+                      const pin = parseKgPin(v);
+                      if (!pin.ok) {
+                        setInnHint(pin.error);
+                        return;
+                      }
+                      setInnAbsentReason("");
+                      if (gender === "unknown") setGender(pin.gender);
+                      else if (gender !== pin.gender) setInnHint("Пол не совпадает с ИНН");
+                      if (!birth) setBirth(pin.birthDate);
+                      else if (birth !== pin.birthDate) setInnHint("Дата рождения не совпадает с ИНН");
                     }}
                     onKeyDown={submitOnEnter}
                     fullWidth
@@ -611,7 +640,8 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                     placeholder="000000000000"
                     disabled={busy}
                     inputProps={{ inputMode: "numeric" }}
-                    helperText={`${inn.length}/14`}
+                    error={Boolean(innHint)}
+                    helperText={innHint ?? `${inn.length}/14 · пол и дата рождения заполнятся сами`}
                     InputProps={{
                       startAdornment: (
                         <InputAdornment position="start">
@@ -624,6 +654,37 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                         </InputAdornment>
                       ) : undefined,
                     }}
+                  />
+                  {!inn && (
+                    <TextField
+                      select
+                      size="small"
+                      fullWidth
+                      label="Почему нет ИНН"
+                      value={innAbsentReason}
+                      onChange={(e) => setInnAbsentReason(e.target.value as InnAbsentReason | "")}
+                      disabled={busy}
+                    >
+                      <MenuItem value="">
+                        <em>Не указано</em>
+                      </MenuItem>
+                      {INN_ABSENT_REASON_OPTIONS.map((o) => (
+                        <MenuItem key={o.value} value={o.value}>
+                          {o.label}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  )}
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={isVisitor}
+                        onChange={(e) => setIsVisitor(e.target.checked)}
+                        disabled={busy}
+                      />
+                    }
+                    label="Приезжий (не с обслуживаемой территории)"
                   />
                 </Stack>
 
