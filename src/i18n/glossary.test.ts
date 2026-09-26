@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { SUPPORTED_VERTICALS, VERTICAL_LABELS, getGlossary, isVertical } from "./glossary";
+import { isValidTermForms } from "./glossaryOverrides";
 import { TERM_KEYS } from "./types";
+import settings from "../locales/ru/settings.json";
 
 describe("профиль «Проектная компания»", () => {
   it("известен фронту и подписан", () => {
@@ -20,14 +22,20 @@ describe("профиль «Проектная компания»", () => {
     expect(g.org.nom).toBe("компания");
     expect(g.org.gen).toBe("компании");
     expect(g.complaint.nom).toBe("запрос");
+    expect(g.visit.gender).toBe("f");
+    expect(g.specialist.gender).toBe("m");
+    expect(g.org.gender).toBe("f");
+    expect(g.complaint.gender).toBe("m");
   });
 
   it("остальные слова берёт у салона", () => {
     const projects = getGlossary("projects");
     const beauty = getGlossary("beauty");
-    expect(projects.room).toEqual(beauty.room);
-    expect(projects.service).toEqual(beauty.service);
-    expect(projects.employee).toEqual(beauty.employee);
+    const overridden = ["visit", "specialist", "org", "complaint"];
+    for (const key of TERM_KEYS) {
+      if (overridden.includes(key)) continue;
+      expect(projects[key], key).toEqual(beauty[key]);
+    }
   });
 });
 
@@ -35,11 +43,16 @@ describe("полнота профилей", () => {
   it.each(SUPPORTED_VERTICALS)("%s: каждый термин во всех формах", (vertical) => {
     const g = getGlossary(vertical);
     for (const key of TERM_KEYS) {
-      const forms = g[key];
-      expect(forms, `${vertical}.${key}`).toBeDefined();
-      for (const [form, value] of Object.entries(forms)) {
-        expect(value, `${vertical}.${key}.${form}`).not.toBe("");
-      }
+      expect(isValidTermForms(g[key]), `${vertical}.${key}`).toBe(true);
     }
+  });
+});
+
+describe("подписи типов бизнеса в настройках", () => {
+  it.each(SUPPORTED_VERTICALS)("%s: есть label и hint", (vertical) => {
+    const entry = settings.organization.vertical[vertical];
+    expect(entry, vertical).toBeDefined();
+    expect(entry.label, `${vertical}.label`).toBeTruthy();
+    expect(entry.hint, `${vertical}.hint`).toBeTruthy();
   });
 });
