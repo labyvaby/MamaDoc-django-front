@@ -13,17 +13,23 @@ const esc = (s: string) =>
  * Открывает отдельное окно с самодостаточным HTML и вызывает печать. Это
  * внутренний документ клиники по её собственным данным — без гос-брендинга.
  */
+/** В сертификат — только проведённые прививки: черновики ещё не оформлены. */
+export function certificateRows(records: VaccinationRecord[]): VaccinationRecord[] {
+  return records
+    .filter((r) => r.status === "pending")
+    .sort((a, b) => a.administeredAt.localeCompare(b.administeredAt));
+}
+
+/** false — браузер заблокировал окно печати (вызывающий показывает подсказку). */
 export function printVaccinationCertificate(
   patient: DjangoPatient,
   records: VaccinationRecord[],
   upcoming: VaccinationScheduleSlot[],
-): void {
+): boolean {
   const win = window.open("", "_blank", "width=820,height=700");
-  if (!win) return;
+  if (!win) return false;
 
-  const done = records
-    .filter((r) => r.status !== "canceled")
-    .sort((a, b) => a.administeredAt.localeCompare(b.administeredAt));
+  const done = certificateRows(records);
 
   const doneRows = done
     .map(
@@ -93,4 +99,5 @@ export function printVaccinationCertificate(
   win.document.close();
   win.focus();
   window.setTimeout(() => win.print(), 250);
+  return true;
 }

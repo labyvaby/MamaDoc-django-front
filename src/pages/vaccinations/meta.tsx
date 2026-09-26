@@ -1,9 +1,14 @@
 import dayjs from "dayjs";
 
 import type {
+  BatchProgram,
   BatchWriteOffReason,
+  ExemptionKind,
+  InnAbsentReason,
+  RefusalReason,
   ScheduleStatus,
   VaccinationRecordStatus,
+  VaccineFunding,
 } from "../../api/vaccinations";
 
 /** Палитра-тон MUI (null — нейтральный) — та же система, что в задачах. */
@@ -12,6 +17,7 @@ export type ToneName = "warning" | "info" | "success" | "error" | null;
 export const SCHEDULE_STATUS_META: Record<ScheduleStatus, { label: string; color: ToneName }> = {
   planned: { label: "Запланирована", color: "info" },
   overdue: { label: "Просрочена", color: "error" },
+  exempt: { label: "Медотвод", color: "warning" },
   done: { label: "Сделана", color: "success" },
   /** Синоним "done" из changelog'а 21.08.2026; на проде бэк отдаёт "done". */
   completed: { label: "Сделана", color: "success" },
@@ -27,15 +33,56 @@ export const SCHEDULE_STATUS_OPTIONS = (
 
 /**
  * Статус записи о вакцине. "draft" бэк ставит сам при продаже товара-вакцины в
- * приёме — медсестра ещё не оформила дозу; "done"/"completed" и точные подписи —
- * предположение фронта (на проде записи приходят в "pending").
+ * приёме — медсестра ещё не оформила дозу; "pending" — проведена (историческое
+ * значение API).
  */
 export const RECORD_STATUS_META: Record<string, { label: string; color: ToneName }> = {
   draft: { label: "Не оформлена", color: "warning" },
   pending: { label: "Проведена", color: "success" },
-  done: { label: "Завершена", color: "success" },
-  completed: { label: "Завершена", color: "success" },
   canceled: { label: "Отменена", color: "error" },
+};
+
+export const INN_ABSENT_REASON_OPTIONS: { value: InnAbsentReason; label: string }[] = [
+  { value: "newborn", label: "Новорождённый, свидетельства ещё нет" },
+  { value: "foreigner", label: "Иностранный гражданин" },
+  { value: "no_documents", label: "Документы не принесли" },
+  { value: "other", label: "Другое" },
+];
+
+export const EXEMPTION_KIND_OPTIONS: { value: ExemptionKind; label: string }[] = [
+  { value: "temporary", label: "Временный" },
+  { value: "long_term", label: "Длительный" },
+  { value: "permanent", label: "Постоянный" },
+];
+
+export const REFUSAL_REASON_OPTIONS: { value: RefusalReason; label: string }[] = [
+  { value: "safety_doubts", label: "Сомнения в безопасности иммунизации" },
+  { value: "religious", label: "Религиозные взгляды" },
+  { value: "no_information", label: "Нет информации о пользе иммунизации" },
+  { value: "other", label: "Другое" },
+];
+
+export const BATCH_PROGRAM_OPTIONS: { value: BatchProgram; label: string }[] = [
+  { value: "commercial", label: "Платная" },
+  { value: "state_planned", label: "Гос., плановая" },
+  { value: "state_catchup", label: "Гос., наверстывающая" },
+];
+
+export const VACCINE_FUNDING_OPTIONS: { value: VaccineFunding; label: string }[] = [
+  { value: "commercial", label: "Платная" },
+  { value: "state", label: "Государственная" },
+];
+
+/** Ключи недостающих полей из ответа бэка → подписи для пользователя. */
+export const MISSING_FIELD_LABELS: Record<string, string> = {
+  "patient.gender": "пол",
+  "patient.birthDate": "дата рождения",
+  "patient.inn": "ИНН или причина его отсутствия",
+  doseNumber: "номер дозы",
+  administeredBy: "кто ввёл",
+  injectionSite: "место введения",
+  batch: "партия",
+  batchNumberManual: "серия",
 };
 
 export function recordStatusMeta(status: VaccinationRecordStatus) {

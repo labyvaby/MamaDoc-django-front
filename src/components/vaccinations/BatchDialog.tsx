@@ -26,9 +26,11 @@ import {
   updateBatch,
   type CreateBatchPayload,
   type UpdateBatchPayload,
+  type BatchProgram,
   type VaccineBatch,
 } from "../../api/vaccinations";
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
+import { BATCH_PROGRAM_OPTIONS } from "../../pages/vaccinations/meta";
 
 type BatchDialogProps = {
   open: boolean;
@@ -56,6 +58,7 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
   const [costPrice, setCostPrice] = React.useState("");
   const [supplier, setSupplier] = React.useState("");
   const [notes, setNotes] = React.useState("");
+  const [program, setProgram] = React.useState<BatchProgram>("commercial");
 
   // Фото накладной: при редактировании уходят сразу, при приходе копятся до
   // создания партии и отправляются в onSuccess (id появляется только там).
@@ -93,6 +96,7 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
     setCostPrice(batch?.costPrice ? String(parseFloat(batch.costPrice)) : "");
     setSupplier(batch?.supplier ?? "");
     setNotes(batch?.notes ?? "");
+    setProgram(batch?.program ?? "commercial");
     setError(null);
   }, [open, batch]);
 
@@ -107,15 +111,17 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
     mutationFn: () => {
       const costStr = costPrice.trim() === "" ? undefined : costPrice.trim();
       if (isEdit) {
+        // Товар партии при правке не меняется (бэк поле не принимает) —
+        // поэтому и не шлём его.
         const payload: UpdateBatchPayload = {
-          productId: product?.id ?? null,
           batchNumber: batchNumber.trim(),
           expiresAt: expiresAt ? expiresAt.format("YYYY-MM-DD") : undefined,
           quantityInitial: Number(quantityInitial) || 0,
           receivedAt: receivedAt ? receivedAt.format("YYYY-MM-DD") : undefined,
           costPrice: costStr,
-          supplier: supplier.trim() || undefined,
-          notes: notes.trim() || undefined,
+          supplier: supplier.trim(),
+          notes: notes.trim(),
+          program,
         };
         return updateBatch(batch!.id, payload, orgId);
       }
@@ -130,6 +136,7 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
         costPrice: costStr,
         supplier: supplier.trim() || undefined,
         notes: notes.trim() || undefined,
+        program,
       };
       return createBatch(payload, orgId);
     },
@@ -285,6 +292,21 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
             value={supplier}
             onChange={(e) => setSupplier(e.target.value)}
           />
+          <TextField
+            select
+            label="Источник поставки"
+            size="small"
+            fullWidth
+            value={program}
+            onChange={(e) => setProgram(e.target.value as BatchProgram)}
+            helperText="Гос. партии идут в раздел 5 формы 5 (расход вакцин)"
+          >
+            {BATCH_PROGRAM_OPTIONS.map((o) => (
+              <MenuItem key={o.value} value={o.value}>
+                {o.label}
+              </MenuItem>
+            ))}
+          </TextField>
           <TextField
             label="Заметка"
             size="small"
