@@ -58,6 +58,9 @@ export const PAGE_PERMISSIONS = {
   ecommerce: "ecommerce.view",
   targets: "targets.view",
   messaging: "messaging.view",
+  // «Исходящие сообщения (Raven)»: ключ проекта Raven и свои отправители
+  // SMS/WhatsApp. canAccess гейтит и модуль outbound по префиксу кода.
+  outbound: "outbound.manage",
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {

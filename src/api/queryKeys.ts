@@ -184,6 +184,10 @@ export const djangoQueryKeys = {
     detail: (id: number) => ["django", "bookings", id] as const,
   },
 
+  outbound: {
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "outbound", "settings", organizationId ?? null] as const,
+  },
   reviews: {
     all: ["django", "reviews"] as const,
     list: (params: Record<string, unknown>) =>

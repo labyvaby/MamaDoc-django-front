@@ -136,6 +136,7 @@ const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/Cashless
 const OdoctorSettingsPage = lazy(() => import("./pages/settings/OdoctorSettingsPage"));
 const ChatwootLeadsSettingsPage = lazy(() => import("./pages/settings/ChatwootLeadsSettingsPage"));
 const AltegioSettingsPage = lazy(() => import("./pages/settings/AltegioSettingsPage"));
+const OutboundSettingsPage = lazy(() => import("./pages/settings/outbound/OutboundSettingsPage"));
 const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const ClientsSettingsPage = lazy(() => import("./pages/settings/ClientsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
@@ -884,6 +885,16 @@ function App() {
                                 <AltegioSettingsPage />
                               </Suspense>
                             </RequireSuperAdmin>
+                          }
+                        />
+                        <Route
+                          path="settings/outbound"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.outbound}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <OutboundSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route

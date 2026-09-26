@@ -152,6 +152,8 @@ export interface ReviewSettings {
   ravenScenario: string;
   /** Кто отправляет: свой ключ Raven организации или платформенный. */
   ravenKey: "own" | "platform";
+  /** Модуль «Исходящие сообщения (Raven)» включён — без него отзывы не шлются. */
+  outboundEnabled: boolean;
 }
 
 /** Частичное обновление настроек (шлём только меняемые поля). */

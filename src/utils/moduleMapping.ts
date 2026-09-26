@@ -27,6 +27,7 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   waitlist: 'waitlist',
   deals: 'deals',
   reviews: 'reviews',
+  outbound: 'outbound',
   chatwoot: 'chatwoot',
   // Брони не имеют отдельной записи PlatformModule: это клинический
   // рабочий процесс и он доступен только вместе с модулем приёмов.

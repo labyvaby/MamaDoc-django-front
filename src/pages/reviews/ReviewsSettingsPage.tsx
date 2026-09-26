@@ -124,6 +124,7 @@ const ReviewsSettingsPage: React.FC = () => {
   usePageTitle("Настройки отзывов");
   const theme = useTheme();
   const canManage = useCan("reviews.manage");
+  const canManageOutbound = useCan("outbound.manage");
   const {
     isSuperAdmin,
     activeOrganization,
@@ -277,11 +278,30 @@ const ReviewsSettingsPage: React.FC = () => {
                 sx={{ mt: 2, maxWidth: 420 }}
                 fullWidth
               />
-              {!form.ravenScenario && (
-                <Alert severity="warning" sx={{ mt: 1.5 }}>
-                  Сценарий не задан — приглашения не отправляются ни
-                  автоматически, ни кнопкой из карточки приёма.
+              {canManageOutbound && (
+                <Box sx={{ mt: 0.5 }}>
+                  <Button
+                    size="small"
+                    component={RouterLink}
+                    to="/settings/outbound"
+                  >
+                    Ключ Raven и отправители — «Исходящие сообщения (Raven)»
+                  </Button>
+                </Box>
+              )}
+              {!original.outboundEnabled ? (
+                <Alert severity="error" sx={{ mt: 1.5 }}>
+                  Модуль «Исходящие сообщения (Raven)» выключен — отзывы
+                  зависят от него и не отправляются. Включить модуль может
+                  администратор платформы.
                 </Alert>
+              ) : (
+                !form.ravenScenario && (
+                  <Alert severity="warning" sx={{ mt: 1.5 }}>
+                    Сценарий не задан — приглашения не отправляются ни
+                    автоматически, ни кнопкой из карточки приёма.
+                  </Alert>
+                )
               )}
 
               <Divider sx={{ my: 2 }} />
