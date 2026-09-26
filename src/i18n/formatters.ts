@@ -58,3 +58,46 @@ export const genderForm = (value: unknown, forms: Record<string, unknown>): stri
   const gender = value === "f" || value === "n" ? value : "m";
   return pick(gender) || pick("m");
 };
+
+/** Русские согласные — для проверки «стечения согласных» в начале слова. */
+const RU_CONSONANTS = "бвгджзклмнпрстфхцчшщ";
+
+const isConsonantAt = (word: string, index: number): boolean => {
+  const ch = word[index]?.toLowerCase();
+  return !!ch && RU_CONSONANTS.includes(ch);
+};
+
+/** «п» из «п» + согласная — здесь «п» строго «с» или «в» (без регистра). */
+const needsEuphonicO = (p: "с" | "в", word: string): boolean => {
+  const w = word.toLowerCase();
+  if (p === "в") return (w[0] === "в" || w[0] === "ф") && isConsonantAt(w, 1);
+  return w.startsWith("вс") || w.startsWith("вз") || (["с", "з", "ш", "ж", "щ"].includes(w[0] ?? "") && isConsonantAt(w, 1));
+};
+
+/**
+ * Предлог «с»/«в» с чередованием «со»/«во» перед стечением согласных —
+ * форматтер i18next для JSON-шаблонов. В шаблоне заменяет собой И предлог,
+ * И слово — пишут не «с {{visit.ins}}», а:
+ *   {{visit.ins, prep(p: с)}}   → «со встречей» (компания) / «с приёмом» (клиника)
+ *   {{visit.pre, prep(p: в)}}   → «во встрече» / «в приёме»
+ *
+ * Значение — уже просклонённое слово, параметр `p` — сам предлог: ровно
+ * «с», «в», «С» или «В» (регистр предлога сохраняется в результате: «С» →
+ * «Со», «В» → «Во»). Другое значение `p` форматтер не трогает — просто
+ * склеивает предлог со словом через пробел.
+ *
+ * Правило — только стечение согласных в начале слова (без словаря
+ * исключений): «в»→«во» перед словом на «в»/«ф» + согласная; «с»→«со»
+ * перед словом на «с»/«з»/«ш»/«ж»/«щ» + согласная либо на «вс»/«вз» (сама
+ * приставка — уже стечение). Во всех остальных случаях предлог не меняется.
+ *
+ * JS-копия живёт в scripts/i18n-check.mjs — правите одну, правьте и другую.
+ */
+export const prepForm = (value: unknown, options: Record<string, unknown>): string => {
+  const word = typeof value === "string" ? value : String(value);
+  const p = typeof options.p === "string" ? options.p : "";
+  const pLower = p.toLowerCase();
+  if (pLower !== "с" && pLower !== "в") return `${p} ${word}`.trim();
+  const prep = needsEuphonicO(pLower, word) ? `${p}о` : p;
+  return `${prep} ${word}`;
+};

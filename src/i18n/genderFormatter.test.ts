@@ -5,13 +5,16 @@ import { describe, expect, it } from "vitest";
 
 import i18n from "./index";
 import { getGlossary } from "./glossary";
-import { genderForm } from "./formatters";
+import { genderForm, prepForm } from "./formatters";
 import type { Glossary } from "./types";
 
 /**
- * Форматтер `gender` подставляет окончание слова по роду термина прямо в
- * шаблоне: {{visit.gender, gender(m: ...; f: ...; n: ...)}}. Клиника и салон
- * говорят «приём» / «визит» (м. р.), «Проектная компания» — «встреча» (ж. р.).
+ * `gender` подставляет окончание слова по роду термина прямо в шаблоне:
+ * {{visit.gender, gender(m: ...; f: ...; n: ...)}}. Клиника и салон говорят
+ * «приём» / «визит» (м. р.), «Проектная компания» — «встреча» (ж. р.).
+ *
+ * `prep` подставляет предлог «с»/«в» с чередованием «со»/«во» перед
+ * стечением согласных: {{visit.ins, prep(p: с)}} → «со встречей» / «с приёмом».
  */
 
 const clinic = getGlossary("clinic");
@@ -37,6 +40,44 @@ describe("genderForm (модульный уровень)", () => {
 
   it("форма для рода не задана — мужская форма", () => {
     expect(genderForm("f", { m: "создан" })).toBe("создан");
+  });
+});
+
+describe("prepForm (модульный уровень)", () => {
+  it("«в»→«во» перед в/ф + согласная", () => {
+    expect(prepForm("встрече", { p: "в" })).toBe("во встрече");
+    expect(prepForm("враче", { p: "в" })).toBe("во враче");
+    expect(prepForm("флаконе", { p: "в" })).toBe("во флаконе");
+  });
+
+  it("«в» не меняется перед гласной или другой согласной", () => {
+    expect(prepForm("мастере", { p: "в" })).toBe("в мастере");
+    expect(prepForm("приёме", { p: "в" })).toBe("в приёме");
+    expect(prepForm("филиале", { p: "в" })).toBe("в филиале");
+  });
+
+  it("«с»→«со» перед с/з/ш/ж/щ + согласная, и перед вс-/вз-", () => {
+    expect(prepForm("специалистом", { p: "с" })).toBe("со специалистом");
+    expect(prepForm("зданием", { p: "с" })).toBe("со зданием");
+    expect(prepForm("жгутом", { p: "с" })).toBe("со жгутом");
+    expect(prepForm("встречей", { p: "с" })).toBe("со встречей");
+    expect(prepForm("взносом", { p: "с" })).toBe("со взносом");
+  });
+
+  it("«с» не меняется перед гласной или другой согласной", () => {
+    expect(prepForm("приёмом", { p: "с" })).toBe("с приёмом");
+    expect(prepForm("мастером", { p: "с" })).toBe("с мастером");
+  });
+
+  it("регистр предлога сохраняется", () => {
+    expect(prepForm("встречей", { p: "С" })).toBe("Со встречей");
+    expect(prepForm("враче", { p: "В" })).toBe("Во враче");
+    expect(prepForm("приёмом", { p: "С" })).toBe("С приёмом");
+  });
+
+  it("неизвестный предлог — без изменений, просто через пробел", () => {
+    expect(prepForm("приёмом", { p: "у" })).toBe("у приёмом");
+    expect(prepForm("приёмом", {})).toBe("приёмом");
   });
 });
 
@@ -71,6 +112,7 @@ const CASES: Case[] = [
   ["publicBooking:byCode.statusTitleCompleted", {}, "Приём состоялся", "Встреча состоялась"],
   ["publicBooking:byCode.statusTitleNoShow", {}, "Приём пропущен", "Встреча пропущена"],
   ["reviews:public.rateYourVisit", {}, "Оцените ваш приём", "Оцените вашу встречу", "Оцените ваш визит"],
+  ["reviews:public.howWasVisit", {}, "Как прошёл ваш приём?", "Как прошла ваша встреча?", "Как прошёл ваш визит?"],
 ];
 
 describe(`{{visit.gender, gender(...)}} — ${CASES.length} ключей: было (клиника/салон) → стало (компания)`, () => {
@@ -81,7 +123,29 @@ describe(`{{visit.gender, gender(...)}} — ${CASES.length} ключей: был
   });
 });
 
-// ── Страж: {{term.gender, gender(m: ...; f: ...; n: ...)}} нигде не сломан ──
+/**
+ * Ключи, переведённые на {{term.form, prep(p: с|в)}} ради чередования
+ * «со/во» — клиника и салон не меняются («приёмами», «визитами»), у
+ * «Проектной компании» слово «встреча» требует чередования.
+ */
+const PREP_CASES: Case[] = [
+  ["appointments:overlapDialog.text", {}, "Пересекается с приёмами:", "Пересекается со встречами:", "Пересекается с визитами:"],
+  ["reports:productsInVisits", {}, "Товары в приёмах", "Товары во встречах"],
+  ["reports:soldInVisits", {}, "Продано в приёмах", "Продано во встречах"],
+  ["sales:details.fromVisitChip", {}, "С приёма", "Со встречи"],
+  ["sales:list.fromVisitChip", {}, "С приёма", "Со встречи"],
+  ["services:relatedProducts.extraInVisit", {}, "Платные товары в приёме", "Платные товары во встрече"],
+];
+
+describe(`{{term.form, prep(p: ...)}} — ${PREP_CASES.length} ключей: чередование «со/во»`, () => {
+  it.each(PREP_CASES)("%s", (key, vars, clinicText, projectsText, beautyText) => {
+    expect(render(key, clinic, vars)).toBe(clinicText);
+    expect(render(key, projects, vars)).toBe(projectsText);
+    if (beautyText) expect(render(key, beauty, vars)).toBe(beautyText);
+  });
+});
+
+// ── Страж: {{term.gender, gender(...)}} и {{term.form, prep(...)}} нигде не сломаны ──
 
 const localesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "locales", "ru");
 const glossaryKeys = new Set(Object.keys(clinic));
@@ -93,29 +157,35 @@ const flattenStrings = (node: unknown, prefix = ""): [string, string][] =>
       ? Object.entries(node).flatMap(([k, v]) => flattenStrings(v, prefix ? `${prefix}.${k}` : k))
       : [];
 
-describe("страж: {{term.gender, gender(...)}} в src/locales/ru", () => {
+describe("страж: {{term.gender, gender(...)}} и {{term.form, prep(...)}} в src/locales/ru", () => {
   for (const file of fs.readdirSync(localesDir).filter((f) => f.endsWith(".json"))) {
     const ns = path.basename(file, ".json");
     const dict = JSON.parse(fs.readFileSync(path.join(localesDir, file), "utf8"));
     for (const [key, value] of flattenStrings(dict)) {
       const genderReadCount = (value.match(/\.gender\b/g) ?? []).length;
       const genderCallCount = (value.match(/\bgender\(/g) ?? []).length;
-      if (genderReadCount === 0 && genderCallCount === 0) continue;
+      const prepCallCount = (value.match(/\bprep\(/g) ?? []).length;
+      // Голый предлог прямо перед {{visit. / {{specialist. — не через prep(...) —
+      // это именно то, что должно было стать prep(...), а не осталось текстом.
+      const danglingPreps = [...value.matchAll(/\b([свСВ])\s+\{\{(visit|specialist)\./g)].map((m) => m[0]);
+      if (genderReadCount === 0 && genderCallCount === 0 && prepCallCount === 0 && danglingPreps.length === 0) continue;
       it(`${ns}:${key}`, () => {
+        expect(danglingPreps, `${ns}:${key} — предлог не через prep(...): ${value}`).toEqual([]);
+
         // Полные, корректные вызовы {{term.gender, gender(...)}}. Каждое
         // отдельное чтение «.gender» и каждый отдельный вызов «gender(»
         // обязаны быть частью ОДНОГО ТАКОГО матча — иначе gender( повешен
         // не на .gender (например, {{visit.nom, gender(...)}}) или скобки
         // сломаны (например, одна «}» вместо «}}») проскочат незамеченными.
-        const wellFormed = [...value.matchAll(/\{\{\s*(\w+)\.gender\s*,\s*gender\(([^)]*)\)\s*\}\}/g)];
+        const wellFormedGender = [...value.matchAll(/\{\{\s*(\w+)\.gender\s*,\s*gender\(([^)]*)\)\s*\}\}/g)];
         expect(genderReadCount, `${ns}:${key} — «.gender» не в составе корректного вызова: ${value}`).toBe(
-          wellFormed.length,
+          wellFormedGender.length,
         );
         expect(genderCallCount, `${ns}:${key} — gender( не на .gender или скобки сломаны: ${value}`).toBe(
-          wellFormed.length,
+          wellFormedGender.length,
         );
 
-        for (const m of wellFormed) {
+        for (const m of wellFormedGender) {
           const [, term, paramsStr] = m;
           expect(glossaryKeys.has(term), `неизвестный термин «${term}» в ${m[0]}`).toBe(true);
           const rawKeys = paramsStr.split(";").map((p) => p.slice(0, p.indexOf(":")).trim());
@@ -133,6 +203,21 @@ describe("страж: {{term.gender, gender(...)}} в src/locales/ru", () => {
         if (genderCallCount > 0) {
           const collisions = [...value.matchAll(/\{\{\s*(m|f|n)\s*(?:,[^}]*)?\}\}/g)].map((mm) => mm[1]);
           expect(collisions, `${ns}:${key} — «${value}»`).toEqual([]);
+        }
+
+        // То же самое для {{term.form, prep(p: с|в|С|В)}}: ровно один параметр
+        // «p» с одним из четырёх допустимых значений.
+        const wellFormedPrep = [...value.matchAll(/\{\{\s*(\w+)\.\w+\s*,\s*prep\(([^)]*)\)\s*\}\}/g)];
+        expect(prepCallCount, `${ns}:${key} — prep( не на term.form или скобки сломаны: ${value}`).toBe(
+          wellFormedPrep.length,
+        );
+        for (const m of wellFormedPrep) {
+          const [, term, paramsStr] = m;
+          expect(glossaryKeys.has(term), `неизвестный термин «${term}» в ${m[0]}`).toBe(true);
+          const rawKeys = paramsStr.split(";").map((p) => p.slice(0, p.indexOf(":")).trim());
+          expect(rawKeys, `${m[0]} — параметр должен быть один, «p»`).toEqual(["p"]);
+          const pValue = paramsStr.slice(paramsStr.indexOf(":") + 1).trim();
+          expect(["с", "в", "С", "В"].includes(pValue), `${m[0]} → p: «${pValue}»`).toBe(true);
         }
       });
     }

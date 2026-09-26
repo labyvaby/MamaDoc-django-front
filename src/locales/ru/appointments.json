@@ -377,7 +377,7 @@
   },
   "overlapDialog": {
     "title": "Время {{visit.gen}} пересекается",
-    "text": "Пересекается с {{visit.insPl}}:",
+    "text": "Пересекается {{visit.insPl, prep(p: с)}}:",
     "newVisit": "{{visit.gender, gender(m: Новый; f: Новая; n: Новое)}} {{visit.nom}}:",
     "employee": "{{employee.nom, capitalize}}: {{name}}",
     "patient": "{{patient.nom, capitalize}}: {{name}}",
