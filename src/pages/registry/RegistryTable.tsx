@@ -92,6 +92,11 @@ function termLabel(row: RegistryRow): string {
   return `${dayjs(row.currentTerm.startsOn).format("DD.MM.YY")} – ${dayjs(row.currentTerm.endsOn).format("DD.MM.YY")}`;
 }
 
+function programLabel(row: RegistryRow): string {
+  const pkg = row.currentTerm?.package;
+  return pkg ? `${row.program.name} · ${pkg.name}` : row.program.name;
+}
+
 export const RegistryTable: React.FC<RegistryTableProps> = ({ rows, canManage, onAction }) => {
   const { t } = useT("registry");
   const theme = useTheme();
@@ -171,6 +176,11 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({ rows, canManage, o
                 <Typography variant="caption" color="text.secondary">
                   {termLabel(row)}
                 </Typography>
+                {row.currentTerm?.package && (
+                  <Typography variant="caption" color="text.secondary">
+                    {row.currentTerm.package.name}
+                  </Typography>
+                )}
                 {row.responsibleEmployee && (
                   <Typography variant="caption" color="text.secondary">
                     {row.responsibleEmployee.fullName}
@@ -202,7 +212,7 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({ rows, canManage, o
               <TableRow key={row.enrollmentId} hover>
                 <TableCell sx={{ verticalAlign: "top" }}>{patientTitle(row)}</TableCell>
                 <TableCell sx={{ verticalAlign: "top" }}>{contact(row)}</TableCell>
-                <TableCell sx={{ verticalAlign: "top" }}>{row.program.name}</TableCell>
+                <TableCell sx={{ verticalAlign: "top" }}>{programLabel(row)}</TableCell>
                 <TableCell sx={{ verticalAlign: "top" }}>{row.responsibleEmployee?.fullName ?? "—"}</TableCell>
                 <TableCell sx={{ verticalAlign: "top", whiteSpace: "nowrap" }}>{termLabel(row)}</TableCell>
                 <TableCell sx={{ verticalAlign: "top" }}>

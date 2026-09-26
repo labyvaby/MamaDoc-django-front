@@ -3,6 +3,8 @@
     "title": "Учёт",
     "subtitle": "{{patient.nomPl, capitalize}} на сопровождении: кто ждёт осмотра, у кого не оплачено, у кого истекает срок",
     "intake": "Поставить на учёт",
+    "packages": "Пакеты",
+    "package": "Пакет",
     "search": "ФИО, номер карты или телефон",
     "mine": "Мои",
     "empty": "В этой вкладке пусто",
@@ -124,8 +126,8 @@
       "empty": "Добавьте маму, папу или опекуна"
     },
     "program": {
-      "program": "Программа",
-      "programRequired": "Выберите программу",
+      "package": "Пакет",
+      "packageRequired": "Выберите пакет",
       "branch": "{{branch.nom, capitalize}}",
       "branchRequired": "Выберите {{branch.acc}}",
       "doctor": "Закреплённый {{specialist.nom}}",
@@ -143,9 +145,10 @@
       },
       "arrivedFrom": "Откуда прибыл",
       "arrivedFromHint": "Роддом, другая поликлиника, другой город",
-      "price": "Взнос, сом",
-      "priceHint": "По умолчанию — цена услуги «{{service}}»",
-      "noPrograms": "Нет учётных программ: задайте услугу-взнос в настройках программы"
+      "price": "Цена, сом",
+      "familyDiscount": "Семейная скидка {{percent}}%: {{price}} вместо {{base}} сом",
+      "packagePrice": "По пакету: {{price}} сом",
+      "noPackages": "Нет пакетов учёта: управляющий заводит их в «Учёте» → «Пакеты»"
     },
     "payment": {
       "now": "Принять сейчас",
@@ -209,11 +212,13 @@
   },
   "renew": {
     "title": "Продлить учёт",
+    "package": "Пакет",
+    "noPackages": "У программы нет включённых пакетов",
     "months": "Срок, мес.",
     "startsOn": "Начало",
     "startsOnHint": "Пусто — сразу после текущего периода или сегодня, если он истёк",
-    "price": "Взнос, сом",
-    "priceHint": "Пусто — цена услуги-взноса",
+    "price": "Цена, сом",
+    "priceHint": "Пусто — цена пакета с семейной скидкой",
     "submit": "Продлить",
     "done": "Период добавлен",
     "terms": "Периоды",
@@ -261,6 +266,8 @@
     "onRegistry": "На учёте: {{program}}",
     "until": "до {{date}}",
     "doctor": "{{specialist.nom, capitalize}}: {{name}}",
+    "package": "Пакет: {{name}}",
+    "packageWithDiscount": "Пакет: {{name}} · скидка на приёмы {{percent}}% — кассир применяет вручную",
     "representatives": "Представители",
     "children": "Дети",
     "addRepresentative": "Добавить",

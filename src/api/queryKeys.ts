@@ -108,6 +108,10 @@ export const djangoQueryKeys = {
       ["django", "programs", "documents", enrollmentId, scope] as const,
     blankTemplates: (scope: unknown) =>
       ["django", "programs", "blank-templates", scope] as const,
+    packages: (scope: unknown, params: unknown) =>
+      ["django", "programs", "packages", scope, params] as const,
+    priceQuote: (scope: unknown, params: unknown) =>
+      ["django", "programs", "price-quote", scope, params] as const,
   },
 
   cashbox: {

@@ -5,6 +5,7 @@ import {
   createTerm,
   getBlankTemplates,
   getNextCardNumber,
+  getPriceQuote,
   getRegistry,
   intakeEnrollment,
   recordTermPayment,
@@ -65,7 +66,7 @@ describe("registry API", () => {
         representatives: [
           { relation: "mother", new: { fullName: "Мама", phone: "+996700000012" }, isPrimaryContact: true },
         ],
-        programId: 3,
+        packageId: 3,
         branchId: 14,
         responsibleEmployeeId: 7,
         termMonths: 12,
@@ -135,6 +136,16 @@ describe("registry API", () => {
     expect((init.body as FormData).get("kind")).toBe("contract");
     expect((init.body as FormData).get("signedById")).toBe("12");
     expect(String(fetchMock.mock.calls[1][0])).toMatch(/\/v2\/printforms\/templates\/\?organizationId=4&kind=blank$/);
+  });
+
+  it("asks the server for a term price with the family", async () => {
+    const fetchMock = mockJsonFetch({ packageId: 3, priceAmount: "3750.00" });
+
+    await getPriceQuote({ organizationId: 4 }, { packageId: 3, patientId: 15, representativeIds: [4, 7] });
+
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(
+      /\/program-enrollments\/price-quote\/\?organizationId=4&packageId=3&patientId=15&representativeIds=4%2C7$/,
+    );
   });
 
   it("computes the unpaid rest of a term", () => {

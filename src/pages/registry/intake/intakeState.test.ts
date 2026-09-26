@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildIntakePayload,
+  existingRepresentativeIds,
   initialIntakeState,
   newRepresentative,
   validateStep,
@@ -27,7 +28,7 @@ function filled(): IntakeState {
       newRepresentative({ key: "r1", fullName: "Мама", phone: "+996700000012", isPrimaryContact: true }),
     ],
     program: {
-      programId: 3,
+      packageId: 3,
       branchId: 14,
       responsibleEmployeeId: 7,
       termMonths: "12",
@@ -93,10 +94,10 @@ describe("intake state", () => {
 
   it("checks the program step and payment totals", () => {
     const state = filled();
-    state.program.programId = null;
+    state.program.packageId = null;
     state.program.termMonths = "61";
     expect(validateStep("program", state)).toEqual({
-      programId: "wizard.program.programRequired",
+      packageId: "wizard.program.packageRequired",
       termMonths: "wizard.program.termInvalid",
     });
     const pay = filled();
@@ -125,6 +126,7 @@ describe("intake state", () => {
       isLegalRepresentative: true,
       new: { fullName: "Мама", phone: "+996700000012" },
     });
+    expect(payload.packageId).toBe(3);
     expect(payload.termMonths).toBe(12);
     expect(payload.termStartsOn).toBeNull();
     expect(payload.priceAmount).toBeNull();
@@ -177,6 +179,19 @@ describe("intake state", () => {
     const payload = buildIntakePayload(state);
     expect(payload.patient.birthCertificateNumber).toBeNull();
     expect(payload.patient.birthCertificateIssuedOn).toBeNull();
+  });
+
+  it("collects the adults already in the base for the family discount", () => {
+    const state = filled();
+    state.representatives = [
+      newRepresentative({
+        key: "r1",
+        mode: "existing",
+        existing: { id: 55, fullName: "Мама", phone: "+996700000012", birthDate: null, gender: "female", cardNumber: "" },
+      }),
+      newRepresentative({ key: "r2", fullName: "Папа", phone: "+996700000013" }),
+    ];
+    expect(existingRepresentativeIds(state)).toEqual([55]);
   });
 
   it("passes the title page fields of form 112", () => {

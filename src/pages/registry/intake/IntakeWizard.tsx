@@ -17,16 +17,17 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
-import { getService } from "../../../api/catalog";
 import { getErrorMessage } from "../../../api/client";
 import type { Program } from "../../../api/programs";
-import { intakeEnrollment, type IntakeResult } from "../../../api/registry";
+import { djangoQueryKeys } from "../../../api/queryKeys";
+import { getPriceQuote, intakeEnrollment, type IntakeResult } from "../../../api/registry";
 import { AppButton } from "../../../components/ui";
 import type { ActiveScope } from "../../../hooks/useActiveScope";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useT } from "../../../i18n/VerticalProvider";
 import {
   buildIntakePayload,
+  existingRepresentativeIds,
   FORM_STEPS,
   initialIntakeState,
   STEPS,
@@ -81,16 +82,20 @@ export const IntakeWizard: React.FC<IntakeWizardProps> = ({ open, scope, initial
     setResult(null);
   }, [open, initialPatient, activeBranch?.id]);
 
-  const feeService = useQuery({
-    queryKey: ["django", "catalog", "service", program?.feeServiceId ?? null],
-    queryFn: () => getService(program!.feeServiceId as number),
-    enabled: open && program?.feeServiceId != null,
-    staleTime: 60_000,
+  const quoteParams = {
+    packageId: state.program.packageId ?? 0,
+    patientId: state.child.existing?.id ?? null,
+    representativeIds: existingRepresentativeIds(state),
+  };
+  const quote = useQuery({
+    queryKey: djangoQueryKeys.programs.priceQuote(scope, quoteParams),
+    queryFn: ({ signal }) => getPriceQuote(scope, quoteParams, signal),
+    enabled: open && state.program.packageId != null && scope.isReady && scope.orgReady,
   });
   const price = state.program.priceAmount.trim()
     ? toAmount(state.program.priceAmount)
-    : feeService.data
-      ? Number(feeService.data.basePrice)
+    : quote.data
+      ? Number(quote.data.priceAmount)
       : null;
 
   const submit = useMutation({
@@ -182,6 +187,7 @@ export const IntakeWizard: React.FC<IntakeWizardProps> = ({ open, scope, initial
             value={state.program}
             errors={errors}
             childCardNumber={childCardNumber}
+            quote={quote.data}
             onChange={setProgramState}
             onProgramLoaded={setProgram}
           />

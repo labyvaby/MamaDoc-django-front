@@ -7,8 +7,10 @@ import {
   createProgramConfigurationVersion,
   createProgramFromTemplate,
   createProgramNotification,
+  createProgramPackage,
   getPatientInteractions,
   getProgramNotifications,
+  getProgramPackages,
   getProgramModuleRecords,
   getProgramConfigurationVersions,
   getProgramTemplates,
@@ -19,6 +21,7 @@ import {
   transitionProgramEnrollment,
   updateProgramConfigurationVersion,
   updateProgramModuleRecord,
+  updateProgramPackage,
 } from "./programs";
 
 function mockJsonFetch(payload: unknown) {
@@ -276,5 +279,37 @@ describe("program API scope", () => {
       expect.stringMatching(/\/program-enrollments\/21\/notifications\/15\/retry\/\?organizationId=4&branchId=14$/),
       expect.objectContaining({ method: "POST" }),
     );
+  });
+});
+
+describe("registry packages API", () => {
+  it("lists, creates and edits packages inside the organization", async () => {
+    const fetchMock = mockJsonFetch({ id: 5 });
+
+    await getProgramPackages({ organizationId: 4 }, { programId: 3, active: true });
+    await createProgramPackage(
+      { organizationId: 4 },
+      {
+        programId: 3,
+        name: "Премиум",
+        priceAmount: "60000",
+        listPriceAmount: "96000",
+        termMonths: 12,
+        familyDiscountPercent: 25,
+        visitDiscountPercent: 20,
+        description: "",
+        isActive: true,
+      },
+    );
+    await updateProgramPackage({ organizationId: 4 }, 5, { isActive: false });
+
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/programs\/packages\/\?organizationId=4&programId=3&active=1$/);
+    const [createUrl, createInit] = fetchMock.mock.calls[1];
+    expect(String(createUrl)).toMatch(/\/programs\/packages\/\?organizationId=4$/);
+    expect(createInit.method).toBe("POST");
+    expect(JSON.parse(createInit.body as string)).toMatchObject({ programId: 3, priceAmount: "60000" });
+    const [updateUrl, updateInit] = fetchMock.mock.calls[2];
+    expect(String(updateUrl)).toMatch(/\/programs\/packages\/5\/\?organizationId=4$/);
+    expect(updateInit.method).toBe("PATCH");
   });
 });
