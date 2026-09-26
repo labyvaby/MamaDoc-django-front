@@ -26,6 +26,7 @@ export const PAGE_PERMISSIONS = {
   products: ["warehouse.view", "warehouse.sales.view"],
   warehouses: "warehouse.view",
   sales: ["warehouse.sales.view", "warehouse.view"],
+  lab: "lab.view",
   schedule: "schedule.view",
   attendance: "attendance.view",
   attendanceSettings: "attendance.manage",
@@ -110,6 +111,8 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // менять эти настройки бэк разрешает по одному и тому же коду, поэтому
   // «смотреть, но не править» на странице нет.
   odoctor: "odoctor.manage",
+  // Подключение ЛИС: код организации, точки регистрации филиалов.
+  lab: "lab.settings.manage",
   // Chatwoot → сделки: приёмник вебхука и карта инбоксов. Право своё
   // (chatwoot.manage), отдельное от chatwoot.view — видеть чаты и
   // настраивать секрет приёмника не одно и то же.
