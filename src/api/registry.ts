@@ -10,17 +10,20 @@ import { type Scope, scopeParams } from "./scope";
  * Деньги приходят строками с двумя знаками («5000.00»), как в «Доходах».
  */
 
-export type RegistryTab = "active" | "onboarding" | "unpaid" | "expiring" | "cancelled";
+export type RegistryTab = "active" | "onboarding" | "unpaid" | "expiring" | "inactive" | "cancelled";
 export type TermPaymentState = "unpaid" | "partial" | "paid";
 /** Состояние оплаты подключения: `none` — периодов ещё нет. */
 export type PaymentState = TermPaymentState | "none";
-export type CancelReason = "moved" | "refused" | "aged_out" | "transferred" | "other";
+export type CancelReason = "moved" | "refused" | "aged_out" | "transferred" | "not_visiting" | "other";
+/** Проживание по титулу ф. 112/у: постоянно, временно, приезжий. */
+export type ResidenceStatus = "permanent" | "temporary" | "visitor";
 export type Relation = "mother" | "father" | "guardian" | "grandmother" | "grandfather" | "other";
 export type DocumentKind =
   | "contract"
   | "consent_treatment"
   | "consent_personal_data"
   | "birth_certificate"
+  | "exchange_card"
   | "other";
 export type ChildGender = "male" | "female" | "unknown";
 
@@ -138,7 +141,7 @@ export function termDue(term: Pick<EnrollmentTerm, "priceAmount" | "paidAmount">
 export function cancelEnrollment(
   scope: Scope,
   enrollmentId: number,
-  payload: { reason: CancelReason; comment: string },
+  payload: { reason: CancelReason; comment: string; movedToAddress?: string },
 ): Promise<ProgramEnrollment> {
   return apiRequest<ProgramEnrollment>(withScope(`/program-enrollments/${enrollmentId}/cancel/`, scope), {
     method: "POST",
@@ -185,6 +188,8 @@ export interface RegistryRow {
   currentTerm: EnrollmentTerm | null;
   paymentState: PaymentState;
   lastInteraction: { occurredAt: string; channel: string; outcome: string } | null;
+  /** Последний приём, где ребёнок был (пришёл / на приёме / завершён); `null` — визитов нет. */
+  lastVisitAt: string | null;
 }
 
 export type RegistryCounts = Record<RegistryTab, number>;
@@ -234,6 +239,8 @@ export interface IntakeNewPerson {
   gender?: ChildGender;
   cardNumber?: string;
   address?: string;
+  birthCertificateNumber?: string;
+  birthCertificateIssuedOn?: string | null;
 }
 
 export interface IntakeRepresentative {
@@ -253,6 +260,8 @@ export interface IntakePayload {
     birthDate?: string | null;
     gender?: ChildGender | null;
     cardNumber?: string | null;
+    birthCertificateNumber?: string | null;
+    birthCertificateIssuedOn?: string | null;
   };
   representatives: IntakeRepresentative[];
   programId: number;
@@ -263,6 +272,8 @@ export interface IntakePayload {
   priceAmount?: string | null;
   payment?: TermPaymentPayload | null;
   notes?: string;
+  residenceStatus?: ResidenceStatus | "";
+  arrivedFrom?: string;
 }
 
 export interface IntakeResult {
@@ -424,6 +435,8 @@ export interface PrintRender {
   orientation: string;
   fields: PrintField[];
   background: Record<string, unknown>;
+  /** Текст бланка с подстановками; пусто — печать таблицей полей. */
+  body?: string;
   data: Record<string, unknown>;
 }
 

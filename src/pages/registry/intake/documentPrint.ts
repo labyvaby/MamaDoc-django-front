@@ -1,18 +1,15 @@
 import type { PrintRender } from "../../../api/registry";
+import { fillBlank, lookupPath } from "../../../utils/blankText";
 
 /**
- * printforms отдаёт только контекст (геометрия, поля, данные), бланк
- * рисует клиент. Поле шаблона со `slot`/`key` берёт значение по пути в
- * `data` («child.fullName»); шаблон без полей печатает все данные таблицей.
+ * printforms отдаёт только контекст (геометрия, поля, текст, данные), бланк
+ * рисует клиент. Текст бланка (`body`) печатается абзацами с подстановками
+ * `{child.fullName}`; без текста поле шаблона со `slot`/`key` берёт
+ * значение по пути в `data`, а шаблон без полей печатает все данные таблицей.
  */
 
 function lookup(data: Record<string, unknown>, path: string): string {
-  const value = path
-    .split(".")
-    .reduce<unknown>(
-      (acc, part) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[part] : undefined),
-      data,
-    );
+  const value = lookupPath(data, path);
   if (value == null) return "";
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
@@ -31,6 +28,16 @@ function flatten(data: Record<string, unknown>, prefix = ""): Array<[string, str
   });
 }
 
+function bodyHtml(body: string, data: Record<string, unknown>): string {
+  return body
+    .split("\n")
+    .map((line) => {
+      const text = escapeHtml(fillBlank(line, data));
+      return text.trim() ? `<p>${text}</p>` : "<p>&nbsp;</p>";
+    })
+    .join("");
+}
+
 export function renderDocumentHtml(render: PrintRender, title = "Документ"): string {
   const rows = render.fields.length
     ? render.fields.map((field) => {
@@ -39,9 +46,10 @@ export function renderDocumentHtml(render: PrintRender, title = "Докумен�
       })
     : flatten(render.data).map(([path, value]) => `<tr><th>${escapeHtml(path)}</th><td>${escapeHtml(value)}</td></tr>`);
   const page = `${escapeHtml(render.pageSize)} ${escapeHtml(render.orientation)}`;
+  const content = render.body?.trim() ? bodyHtml(render.body, render.data) : `<table>${rows.join("")}</table>`;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
-<style>body{font:12pt/1.4 Arial,sans-serif;margin:20mm}th{text-align:left;padding:4px 12px 4px 0;vertical-align:top;font-weight:600}td{padding:4px 0}@page{size:${page}}</style></head>
-<body><table>${rows.join("")}</table><script>window.onload=function(){window.print()}</script></body></html>`;
+<style>body{font:12pt/1.4 Arial,sans-serif;margin:20mm}th{text-align:left;padding:4px 12px 4px 0;vertical-align:top;font-weight:600}td{padding:4px 0}p{margin:0 0 6px;white-space:pre-wrap}@page{size:${page}}</style></head>
+<body>${content}<script>window.onload=function(){window.print()}</script></body></html>`;
 }
 
 export function openPrintWindow(render: PrintRender, title?: string): boolean {

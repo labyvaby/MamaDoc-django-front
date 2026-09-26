@@ -19,6 +19,7 @@ function row(overrides: Partial<RegistryRow> = {}): RegistryRow {
     currentTerm: null,
     paymentState: "unpaid",
     lastInteraction: null,
+    lastVisitAt: null,
     ...overrides,
   };
 }

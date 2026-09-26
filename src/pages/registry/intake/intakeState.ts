@@ -3,6 +3,7 @@ import {
   type ChildGender,
   type IntakePayload,
   type Relation,
+  type ResidenceStatus,
 } from "../../../api/registry";
 
 /**
@@ -23,6 +24,8 @@ export interface ExistingPerson {
   birthDate: string | null;
   gender: ChildGender;
   cardNumber: string;
+  birthCertificateNumber?: string;
+  birthCertificateIssuedOn?: string | null;
 }
 
 export interface ChildState {
@@ -32,6 +35,9 @@ export interface ChildState {
   phone: string;
   birthDate: string;
   gender: ChildGender;
+  birthCertificateNumber: string;
+  /** YYYY-MM-DD или пусто. */
+  birthCertificateIssuedOn: string;
 }
 
 export interface RepresentativeState {
@@ -58,6 +64,9 @@ export interface ProgramState {
   priceAmount: string;
   /** Пусто — номер выдаст бэк по префиксу программы. */
   cardNumber: string;
+  /** Титул ф. 112/у: проживает постоянно / временно / приезжий; пусто — не указано. */
+  residenceStatus: ResidenceStatus | "";
+  arrivedFrom: string;
 }
 
 export interface PaymentState {
@@ -119,8 +128,19 @@ export function initialIntakeState(existing?: ExistingPerson | null): IntakeStat
           phone: existing.phone,
           birthDate: existing.birthDate ?? "",
           gender: existing.gender,
+          birthCertificateNumber: existing.birthCertificateNumber ?? "",
+          birthCertificateIssuedOn: existing.birthCertificateIssuedOn ?? "",
         }
-      : { mode: "new", existing: null, fullName: "", phone: "", birthDate: "", gender: "unknown" },
+      : {
+          mode: "new",
+          existing: null,
+          fullName: "",
+          phone: "",
+          birthDate: "",
+          gender: "unknown",
+          birthCertificateNumber: "",
+          birthCertificateIssuedOn: "",
+        },
     representatives: [newRepresentative({ isPrimaryContact: true })],
     program: {
       programId: null,
@@ -130,6 +150,8 @@ export function initialIntakeState(existing?: ExistingPerson | null): IntakeStat
       termStartsOn: "",
       priceAmount: "",
       cardNumber: "",
+      residenceStatus: "",
+      arrivedFrom: "",
     },
     payment: { mode: "now", cash: "", card: "", cashlessMethodId: null },
   };
@@ -192,6 +214,7 @@ function amountOrNull(raw: string): string | null {
 export function buildIntakePayload(state: IntakeState): IntakePayload {
   const { child, program, payment } = state;
   const cardNumber = program.cardNumber.trim();
+  const certificateNumber = child.birthCertificateNumber.trim();
   const patient: IntakePayload["patient"] =
     child.mode === "existing" && child.existing
       ? {
@@ -199,6 +222,9 @@ export function buildIntakePayload(state: IntakeState): IntakePayload {
           birthDate: child.birthDate || null,
           gender: child.gender === "unknown" ? null : child.gender,
           cardNumber: cardNumber || null,
+          // Пусто — не трогать сохранённое в карточке (бэк меняет только непустые поля).
+          birthCertificateNumber: certificateNumber || null,
+          birthCertificateIssuedOn: child.birthCertificateIssuedOn || null,
         }
       : {
           new: {
@@ -207,6 +233,8 @@ export function buildIntakePayload(state: IntakeState): IntakePayload {
             birthDate: child.birthDate,
             gender: child.gender,
             cardNumber,
+            birthCertificateNumber: certificateNumber,
+            birthCertificateIssuedOn: child.birthCertificateIssuedOn || null,
           },
         };
   return {
@@ -223,6 +251,8 @@ export function buildIntakePayload(state: IntakeState): IntakePayload {
     })),
     programId: program.programId as number,
     branchId: program.branchId as number,
+    residenceStatus: program.residenceStatus,
+    arrivedFrom: program.arrivedFrom.trim(),
     responsibleEmployeeId: program.responsibleEmployeeId,
     termMonths: Number(program.termMonths),
     termStartsOn: program.termStartsOn || null,

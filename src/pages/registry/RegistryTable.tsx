@@ -137,14 +137,23 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({ rows, canManage, o
     </>
   );
 
-  const lastTouch = (row: RegistryRow) =>
-    row.lastInteraction ? (
+  const lastVisit = (row: RegistryRow) =>
+    row.lastVisitAt
+      ? t("columns.lastVisit", { date: dayjs(row.lastVisitAt).format("DD.MM.YY") })
+      : t("columns.noVisits");
+
+  const lastTouch = (row: RegistryRow) => (
+    <Stack gap={0.25}>
       <Typography variant="caption">
-        {dayjs(row.lastInteraction.occurredAt).format("DD.MM.YY")} · {t(`channels.${row.lastInteraction.channel}`)}
+        {row.lastInteraction
+          ? `${dayjs(row.lastInteraction.occurredAt).format("DD.MM.YY")} · ${t(`channels.${row.lastInteraction.channel}`)}`
+          : "—"}
       </Typography>
-    ) : (
-      "—"
-    );
+      <Typography variant="caption" color="text.secondary">
+        {lastVisit(row)}
+      </Typography>
+    </Stack>
+  );
 
   return (
     <>
@@ -167,6 +176,9 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({ rows, canManage, o
                     {row.responsibleEmployee.fullName}
                   </Typography>
                 )}
+                <Typography variant="caption" color="text.secondary">
+                  {lastVisit(row)}
+                </Typography>
               </Stack>
             </Paper>
           ))}

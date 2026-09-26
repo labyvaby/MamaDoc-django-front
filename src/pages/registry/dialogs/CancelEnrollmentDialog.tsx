@@ -16,33 +16,43 @@ interface CancelEnrollmentDialogProps {
   scope: ActiveScope;
   enrollmentId: number;
   patientName: string;
+  /** Причина, выбранная при открытии; из вкладки «Не приходили» — «Не посещает». */
+  defaultReason?: CancelReason;
   onClose: () => void;
   onDone: (enrollment: ProgramEnrollment) => void;
 }
 
-/** Снятие с учёта с причиной: «Другое» требует комментарий. */
+/** Снятие с учёта с причиной: «Другое» требует комментарий, «Выбыл» — можно указать адрес выбытия. */
 export const CancelEnrollmentDialog: React.FC<CancelEnrollmentDialogProps> = ({
   open,
   scope,
   enrollmentId,
   patientName,
+  defaultReason = "moved",
   onClose,
   onDone,
 }) => {
   const { t } = useT("registry");
   const { enqueueSnackbar } = useSnackbar();
-  const [reason, setReason] = React.useState<CancelReason>("moved");
+  const [reason, setReason] = React.useState<CancelReason>(defaultReason);
   const [comment, setComment] = React.useState("");
+  const [movedToAddress, setMovedToAddress] = React.useState("");
 
   React.useEffect(() => {
     if (!open) return;
-    setReason("moved");
+    setReason(defaultReason);
     setComment("");
-  }, [open]);
+    setMovedToAddress("");
+  }, [open, defaultReason]);
 
   const commentMissing = reason === "other" && !comment.trim();
   const mutation = useMutation({
-    mutationFn: () => cancelEnrollment(scope, enrollmentId, { reason, comment: comment.trim() }),
+    mutationFn: () =>
+      cancelEnrollment(scope, enrollmentId, {
+        reason,
+        comment: comment.trim(),
+        ...(reason === "moved" && movedToAddress.trim() ? { movedToAddress: movedToAddress.trim() } : {}),
+      }),
     onSuccess: (enrollment) => {
       enqueueSnackbar(t("cancel.done"), { variant: "success" });
       onDone(enrollment);
@@ -69,6 +79,15 @@ export const CancelEnrollmentDialog: React.FC<CancelEnrollmentDialogProps> = ({
               </MenuItem>
             ))}
           </TextField>
+          {reason === "moved" && (
+            <TextField
+              size="small"
+              label={t("cancel.movedToAddress")}
+              value={movedToAddress}
+              onChange={(e) => setMovedToAddress(e.target.value.slice(0, 255))}
+              helperText={t("cancel.movedToAddressHint")}
+            />
+          )}
           <TextField
             size="small"
             label={t("cancel.comment")}

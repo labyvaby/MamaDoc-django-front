@@ -45,6 +45,8 @@ export const ChildStep: React.FC<ChildStepProps> = ({ scope, value, errors, onCh
               phone: person?.phone ?? "",
               birthDate: person?.birthDate ?? value.birthDate,
               gender: person && person.gender !== "unknown" ? person.gender : value.gender,
+              birthCertificateNumber: person?.birthCertificateNumber ?? "",
+              birthCertificateIssuedOn: person?.birthCertificateIssuedOn ?? "",
             })
           }
         />
@@ -95,6 +97,27 @@ export const ChildStep: React.FC<ChildStepProps> = ({ scope, value, errors, onCh
               <ToggleButton value="female">{t("wizard.child.female")}</ToggleButton>
             </ToggleButtonGroup>
             {errors.gender && <FormHelperText error>{error("gender")}</FormHelperText>}
+          </Stack>
+          <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
+            <TextField
+              size="small"
+              label={t("wizard.child.birthCertificateNumber")}
+              value={value.birthCertificateNumber}
+              onChange={(e) => onChange({ ...value, birthCertificateNumber: e.target.value.slice(0, 32) })}
+              sx={{ flex: 1 }}
+            />
+            <CustomDatePicker
+              label={t("wizard.child.birthCertificateIssuedOn")}
+              value={value.birthCertificateIssuedOn ? dayjs(value.birthCertificateIssuedOn) : null}
+              onChange={(date) =>
+                onChange({
+                  ...value,
+                  birthCertificateIssuedOn: date && date.isValid() ? date.format("YYYY-MM-DD") : "",
+                })
+              }
+              disableFuture
+              slotProps={{ textField: { size: "small" } }}
+            />
           </Stack>
         </>
       )}

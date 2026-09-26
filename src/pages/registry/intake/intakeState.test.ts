@@ -13,7 +13,16 @@ function filled(): IntakeState {
   const state = initialIntakeState();
   return {
     ...state,
-    child: { mode: "new", existing: null, fullName: "Иванов Али", phone: "", birthDate: "2026-05-10", gender: "male" },
+    child: {
+      mode: "new",
+      existing: null,
+      fullName: "Иванов Али",
+      phone: "",
+      birthDate: "2026-05-10",
+      gender: "male",
+      birthCertificateNumber: "",
+      birthCertificateIssuedOn: "",
+    },
     representatives: [
       newRepresentative({ key: "r1", fullName: "Мама", phone: "+996700000012", isPrimaryContact: true }),
     ],
@@ -25,6 +34,8 @@ function filled(): IntakeState {
       termStartsOn: "",
       priceAmount: "",
       cardNumber: "",
+      residenceStatus: "",
+      arrivedFrom: "",
     },
     payment: { mode: "now", cash: "5000", card: "", cashlessMethodId: null },
   };
@@ -99,6 +110,8 @@ describe("intake state", () => {
       birthDate: "2026-05-10",
       gender: "male",
       cardNumber: "",
+      birthCertificateNumber: "",
+      birthCertificateIssuedOn: null,
     });
     expect(payload.representatives[0]).toMatchObject({
       relation: "mother",
@@ -121,6 +134,8 @@ describe("intake state", () => {
       phone: "+996700000001",
       birthDate: "2025-01-01",
       gender: "female",
+      birthCertificateNumber: "KR-I 1",
+      birthCertificateIssuedOn: "2025-02-01",
     };
     state.representatives[0] = { ...state.representatives[0], mode: "existing", existing: {
       id: 55, fullName: "Мама", phone: "+996700000012", birthDate: null, gender: "female", cardNumber: "",
@@ -131,11 +146,39 @@ describe("intake state", () => {
     state.payment.mode = "later";
 
     const payload = buildIntakePayload(state);
-    expect(payload.patient).toEqual({ id: 7233, birthDate: "2025-01-01", gender: "female", cardNumber: "МД-7" });
+    expect(payload.patient).toEqual({
+      id: 7233,
+      birthDate: "2025-01-01",
+      gender: "female",
+      cardNumber: "МД-7",
+      birthCertificateNumber: "KR-I 1",
+      birthCertificateIssuedOn: "2025-02-01",
+    });
     expect(payload.representatives[0]).toMatchObject({ patientId: 55 });
     expect(payload.representatives[0]).not.toHaveProperty("new");
     expect(payload.termStartsOn).toBe("2026-03-01");
     expect(payload.priceAmount).toBe("4500.50");
     expect(payload.payment).toBeNull();
+  });
+
+  it("keeps the stored certificate of an existing child when the fields are left empty", () => {
+    const state = filled();
+    state.child = {
+      ...state.child,
+      mode: "existing",
+      existing: { id: 7233, fullName: "Есть", phone: "", birthDate: "2025-01-01", gender: "male", cardNumber: "" },
+    };
+    const payload = buildIntakePayload(state);
+    expect(payload.patient.birthCertificateNumber).toBeNull();
+    expect(payload.patient.birthCertificateIssuedOn).toBeNull();
+  });
+
+  it("passes the title page fields of form 112", () => {
+    const state = filled();
+    state.program.residenceStatus = "visitor";
+    state.program.arrivedFrom = " Роддом №2 ";
+    const payload = buildIntakePayload(state);
+    expect(payload.residenceStatus).toBe("visitor");
+    expect(payload.arrivedFrom).toBe("Роддом №2");
   });
 });

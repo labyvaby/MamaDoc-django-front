@@ -12,7 +12,7 @@ import type { ActiveScope } from "../../../../hooks/useActiveScope";
 import { doctorEmployeesOnly, useAllActiveEmployees } from "../../../../hooks/useAllActiveEmployees";
 import { usePermissions } from "../../../../hooks/usePermissions";
 import { useT } from "../../../../i18n/VerticalProvider";
-import { programCardPrefix, programSpecializationIds } from "../../registryConstants";
+import { programCardPrefix, programSpecializationIds, RESIDENCE_STATUSES } from "../../registryConstants";
 import type { ProgramState, StepErrors } from "../intakeState";
 
 const MONEY_RE = /^\d{0,10}(?:[.,]\d{0,2})?$/;
@@ -186,6 +186,31 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
         }
         slotProps={{ textField: { size: "small", helperText: t("wizard.program.startsOnHint") } }}
       />
+      <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
+        <TextField
+          select
+          size="small"
+          label={t("wizard.program.residence")}
+          value={value.residenceStatus}
+          onChange={(e) => onChange({ ...value, residenceStatus: e.target.value as ProgramState["residenceStatus"] })}
+          sx={{ minWidth: 200 }}
+        >
+          <MenuItem value="">{t("wizard.program.residenceNone")}</MenuItem>
+          {RESIDENCE_STATUSES.map((status) => (
+            <MenuItem key={status} value={status}>
+              {t(`wizard.program.residenceStatuses.${status}`)}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          size="small"
+          label={t("wizard.program.arrivedFrom")}
+          value={value.arrivedFrom}
+          onChange={(e) => onChange({ ...value, arrivedFrom: e.target.value.slice(0, 255) })}
+          helperText={t("wizard.program.arrivedFromHint")}
+          sx={{ flex: 1 }}
+        />
+      </Stack>
       {!childCardNumber && (
         <TextField
           size="small"

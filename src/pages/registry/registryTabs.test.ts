@@ -22,8 +22,8 @@ describe("registryTabs", () => {
     expect(isChild("2000-01-01", today)).toBe(false);
   });
 
-  it("lists the five stage-1 tabs with label keys", () => {
-    expect(REGISTRY_TABS).toEqual(["active", "onboarding", "unpaid", "expiring", "cancelled"]);
+  it("lists the registry tabs with label keys", () => {
+    expect(REGISTRY_TABS).toEqual(["active", "onboarding", "unpaid", "expiring", "inactive", "cancelled"]);
     expect(tabLabelKey("expiring")).toBe("tabs.expiring");
   });
 

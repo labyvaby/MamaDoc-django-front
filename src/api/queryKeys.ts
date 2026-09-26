@@ -441,6 +441,13 @@ export const djangoQueryKeys = {
       ["django", "conclusion-forms", organizationId ?? null, branchId ?? null] as const,
   },
 
+  printforms: {
+    all: ["django", "printforms"] as const,
+    // Шаблоны принадлежат организации, филиала в ключе нет.
+    templates: (organizationId: number | null | undefined, kind: string) =>
+      ["django", "printforms", "templates", kind, organizationId ?? null] as const,
+  },
+
   odoctor: {
     // Строка настроек одна на организацию, списка нет — только объект в скоупе
     // организации, поэтому и ключ один.

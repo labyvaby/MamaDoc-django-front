@@ -16,6 +16,7 @@
     "onboarding": "Ожидают осмотра",
     "unpaid": "Не оплачено",
     "expiring": "Истекают",
+    "inactive": "Не приходили",
     "cancelled": "Сняты"
   },
   "columns": {
@@ -26,6 +27,8 @@
     "term": "Срок",
     "payment": "Оплата",
     "lastTouch": "Последнее касание",
+    "lastVisit": "Визит {{date}}",
+    "noVisits": "Визитов не было",
     "actions": "Действия"
   },
   "payment": {
@@ -46,6 +49,7 @@
     "refused": "Отказ",
     "aged_out": "Исполнилось 18",
     "transferred": "Другая клиника",
+    "not_visiting": "Не посещает",
     "other": "Другое"
   },
   "relations": {
@@ -100,6 +104,8 @@
       "female": "Девочка",
       "cardNumber": "Номер карты",
       "cardNumberHint": "Предложен следующий свободный, можно изменить",
+      "birthCertificateNumber": "Свидетельство о рождении, номер",
+      "birthCertificateIssuedOn": "Дата выдачи",
       "pickRequired": "Выберите карточку из базы"
     },
     "representatives": {
@@ -131,6 +137,15 @@
       "termInvalid": "Срок — от 1 до 60 месяцев",
       "startsOn": "Начало периода",
       "startsOnHint": "Для детей, которые уже наблюдаются, можно указать прошлую дату",
+      "residence": "Проживает",
+      "residenceNone": "Не указано",
+      "residenceStatuses": {
+        "permanent": "Постоянно",
+        "temporary": "Временно",
+        "visitor": "Приезжий из другого города или села"
+      },
+      "arrivedFrom": "Откуда прибыл",
+      "arrivedFromHint": "Роддом, другая поликлиника, другой город",
       "price": "Взнос, сом",
       "priceHint": "По умолчанию — цена услуги «{{service}}»",
       "noPrograms": "Нет учётных программ: задайте услугу-взнос в настройках программы"
@@ -166,6 +181,7 @@
         "consent_treatment": "Согласие на вмешательство",
         "consent_personal_data": "Согласие на персональные данные",
         "birth_certificate": "Свидетельство о рождении",
+        "exchange_card": "Обменная карта из роддома",
         "other": "Другое"
       }
     },
@@ -212,6 +228,8 @@
     "reason": "Причина",
     "comment": "Комментарий",
     "commentRequired": "Для причины «Другое» нужен комментарий",
+    "movedToAddress": "Адрес выбытия",
+    "movedToAddressHint": "Куда переехали — можно не заполнять",
     "submit": "Снять",
     "done": "Снят с учёта"
   },
