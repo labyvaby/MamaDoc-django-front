@@ -1,7 +1,9 @@
 import React from "react";
 import { Box, Card, Chip, Stack, Typography } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
+import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
 
 import { categoryTone } from "../../../config/moduleStorefront";
 import { formatPrice, type StorefrontItem } from "../../../config/moduleStorefrontModel";
@@ -44,9 +46,15 @@ export const SoonChip: React.FC = () => (
   <Chip size="small" color="info" label="Скоро" sx={{ height: 20, fontSize: 11, fontWeight: 700 }} />
 );
 
-/** «Неактивен» — клиникам не показывается; видит только оператор платформы. */
+/** «Неактивен» — клиникам не показывается; видит только оператор платформы. Заметно, а не серым. */
 export const InactiveChip: React.FC = () => (
-  <Chip size="small" variant="outlined" label="Неактивен" sx={{ height: 20, fontSize: 11, fontWeight: 700 }} />
+  <Chip
+    size="small"
+    color="warning"
+    icon={<VisibilityOffOutlined />}
+    label="Неактивен"
+    sx={{ height: 22, fontSize: 11, fontWeight: 700 }}
+  />
 );
 
 interface Props {
@@ -80,7 +88,13 @@ export const ProductCard: React.FC<Props> = ({ item, action, onOpen, highlight }
         gap: 1.5,
         cursor: "pointer",
         borderRadius: 3,
-        bgcolor: item.inactive ? "action.hover" : undefined,
+        // Неактивное — пунктирная оранжевая рамка и тёплый фон: видно издалека.
+        ...(item.inactive && {
+          borderStyle: "dashed",
+          borderWidth: 2,
+          borderColor: "warning.main",
+          bgcolor: (theme) => alpha(theme.palette.warning.main, 0.06),
+        }),
         transition: "border-color .15s ease",
         "&:hover": { borderColor: "primary.main" },
         "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },

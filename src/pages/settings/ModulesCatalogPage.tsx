@@ -24,6 +24,7 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import ClearOutlined from "@mui/icons-material/ClearOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { djangoQueryKeys } from "../../api/queryKeys";
@@ -137,6 +138,10 @@ const ModulesCatalogPage: React.FC = () => {
     : found.items.filter(({ item }) =>
         filter === "all" ? true : filter === "connected" ? item.status === "connected" : item.product.category === filter,
       );
+  // Неактивное (его видит только оператор) — отдельным блоком, а не хвостом полки.
+  const onShelf = shelf.filter(({ item }) => !item.inactive);
+  const hiddenShelf = shelf.filter(({ item }) => item.inactive);
+  const hiddenCount = storefront.items.filter((i) => i.inactive).length;
   const drawerItem = storefront.items.find((i) => i.product.id === drawerId) ?? null;
 
   // Организация сменилась при открытом окне — подтверждение относилось к прежней.
@@ -261,6 +266,14 @@ const ModulesCatalogPage: React.FC = () => {
   };
 
   const operatorAction = (item: StorefrontItem): React.ReactNode => {
+    // У скрытого главное — вернуть клиникам; модули переключаются в «Подробнее».
+    if (item.inactive) {
+      return (
+        <Button size="small" variant="outlined" color="warning" onClick={() => askVisibility(item, false)}>
+          Сделать активным
+        </Button>
+      );
+    }
     // Без модуля переключать нечего: оператор идёт в настройки возможности.
     if (item.product.modules.length === 0) return routeButton(item);
     const module = item.product.modules.length === 1 ? catalogByCode.get(item.product.modules[0]) : undefined;
@@ -429,6 +442,14 @@ const ModulesCatalogPage: React.FC = () => {
               label={`Подключено ${storefront.connectedCount}`}
             />
             <Chip size="small" variant="outlined" label={`Доступно ${storefront.availableCount}`} />
+            {isOperator && hiddenCount > 0 && (
+              <Chip
+                size="small"
+                color="warning"
+                icon={<VisibilityOffOutlined />}
+                label={`Скрыто от клиник ${hiddenCount}`}
+              />
+            )}
           </Stack>
           {/* Только суперпользователю: он видит все модули платформы, а так —
               меню глазами сотрудников выбранной организации. Со старым бэком
@@ -539,7 +560,7 @@ const ModulesCatalogPage: React.FC = () => {
               </Stack>
             )}
             <Box sx={{ display: "grid", gridTemplateColumns: GRID, gap: 1.5 }}>
-              {shelf.map(({ item, parts }) => (
+              {onShelf.map(({ item, parts }) => (
                 <ProductCard
                   key={item.product.id}
                   item={item}
@@ -553,6 +574,30 @@ const ModulesCatalogPage: React.FC = () => {
               <Typography variant="body2" color="text.secondary">
                 В этом разделе пока ничего нет.
               </Typography>
+            )}
+            {hiddenShelf.length > 0 && (
+              <Stack spacing={1.5} sx={{ pt: 1.5 }}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <VisibilityOffOutlined color="warning" fontSize="small" />
+                  <Typography variant="subtitle1" fontWeight={700}>
+                    Неактивные · {hiddenShelf.length}
+                  </Typography>
+                </Stack>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: "4px !important" }}>
+                  Клиники их не видят и не могут заказать. Видите только вы.
+                </Typography>
+                <Box sx={{ display: "grid", gridTemplateColumns: GRID, gap: 1.5 }}>
+                  {hiddenShelf.map(({ item, parts }) => (
+                    <ProductCard
+                      key={item.product.id}
+                      item={item}
+                      highlight={parts}
+                      action={operatorAction(item)}
+                      onOpen={() => setDrawerId(item.product.id)}
+                    />
+                  ))}
+                </Box>
+              </Stack>
             )}
           </Stack>
         )}
