@@ -26,9 +26,48 @@ import {
   starPop,
 } from "./theme";
 
+/** Шапка страницы: логотип и название клиники, которой ставят оценку. */
+export const ClinicHeader: React.FC<{ name: string; logo?: string }> = ({
+  name,
+  logo,
+}) => (
+  <Stack
+    direction="row"
+    spacing={1.25}
+    alignItems="center"
+    justifyContent="center"
+    sx={{ mb: 1 }}
+  >
+    {logo && (
+      <Box
+        component="img"
+        src={logo}
+        alt=""
+        sx={{
+          width: 40,
+          height: 40,
+          borderRadius: "12px",
+          objectFit: "contain",
+          bgcolor: "#FFFFFF",
+          border: `1px solid ${LINE}`,
+          flexShrink: 0,
+        }}
+      />
+    )}
+    <Typography
+      sx={{ fontWeight: 700, fontSize: 15, color: INK, lineHeight: 1.2 }}
+    >
+      {name}
+    </Typography>
+  </Stack>
+);
+
 export const Shell: React.FC<
-  React.PropsWithChildren<{ footer?: React.ReactNode }>
-> = ({ children, footer }) => (
+  React.PropsWithChildren<{
+    footer?: React.ReactNode;
+    header?: React.ReactNode;
+  }>
+> = ({ children, footer, header }) => (
   <Box
     sx={{
       minHeight: "100dvh",
@@ -53,6 +92,7 @@ export const Shell: React.FC<
         flexDirection: "column",
       }}
     >
+      {header}
       {children}
     </Box>
     {footer}

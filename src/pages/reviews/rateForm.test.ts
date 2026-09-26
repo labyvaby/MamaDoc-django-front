@@ -29,6 +29,7 @@ const ctx: RateContext = {
   canEdit: true,
   maps: [],
   instagram: "",
+  clinicLogo: "",
 };
 
 describe("rateForm", () => {

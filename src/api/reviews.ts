@@ -180,6 +180,8 @@ export interface RateContext {
   doctorName: string | null;
   hasDoctor: boolean;
   clinicName: string;
+  /** Логотип организации (/media/...), пусто — нет логотипа. */
+  clinicLogo: string;
   answered: boolean;
   rating: number | null;
   doctorRating: number | null;

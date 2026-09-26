@@ -54,9 +54,9 @@ import {
 import {
   Card,
   ChoiceCards,
+  ClinicHeader,
   type ChoiceOption,
   Display,
-  Eyebrow,
   MapCard,
   Medallion,
   RatingRow,
@@ -260,11 +260,13 @@ const RateFlow: React.FC = () => {
     </Button>
   );
 
+  const header = <ClinicHeader name={ctx.clinicName} logo={ctx.clinicLogo} />;
+
   if (screen === "done" && !editing) {
     const happy = ctx.rating === 5;
     if (happy) {
       return (
-        <Shell>
+        <Shell header={header}>
           <Stack spacing={2.5} textAlign="center" sx={{ my: "auto", py: 4 }}>
             <Medallion tone="happy" icon={<StarRounded />} />
             <Reveal order={2}>
@@ -292,15 +294,16 @@ const RateFlow: React.FC = () => {
                 ))}
               </Stack>
             )}
-            <Reveal order={7}>
-              <Typography sx={{ fontSize: 14, color: MUTED, px: 1 }}>
+            {ctx.publishConsent !== "private" && (
+              <Reveal order={7}>
+                <PublishNote ctx={ctx} />
+              </Reveal>
+            )}
+            <Reveal order={8}>{editLink}</Reveal>
+            <Reveal order={9}>
+              <Typography sx={{ fontSize: 13, color: MUTED, px: 1, opacity: 0.85 }}>
                 <Instagram
-                  sx={{
-                    fontSize: 18,
-                    color: "#D62976",
-                    verticalAlign: "-4px",
-                    mr: 0.5,
-                  }}
+                  sx={{ fontSize: 15, verticalAlign: "-3px", mr: 0.5 }}
                 />
                 Отметьте нас в Instagram
                 {ctx.instagram && (
@@ -310,27 +313,22 @@ const RateFlow: React.FC = () => {
                       href={`https://instagram.com/${ctx.instagram}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      sx={{ color: "#D62976", fontWeight: 600 }}
+                      underline="always"
+                      sx={{ color: "inherit" }}
                     >
                       @{ctx.instagram}
                     </Link>
                   </>
                 )}
-                {" "}— нам будет очень приятно 💛
+                {" "}— нам будет приятно 💛
               </Typography>
             </Reveal>
-            {ctx.publishConsent !== "private" && (
-              <Reveal order={7}>
-                <PublishNote ctx={ctx} />
-              </Reveal>
-            )}
-            <Reveal order={8}>{editLink}</Reveal>
           </Stack>
         </Shell>
       );
     }
     return (
-      <Shell>
+      <Shell header={header}>
         <Stack
           spacing={2.5}
           alignItems="center"
@@ -435,12 +433,9 @@ const RateFlow: React.FC = () => {
   );
 
   return (
-    <Shell footer={stickyBar}>
-      <Reveal>
-        <Eyebrow>{ctx.clinicName}</Eyebrow>
-      </Reveal>
+    <Shell footer={stickyBar} header={header}>
       <Reveal order={1}>
-        <Box sx={{ mt: 1.5 }}>
+        <Box sx={{ mt: 2.5 }}>
           <Display>{t("public.howWasVisit")}</Display>
         </Box>
       </Reveal>
