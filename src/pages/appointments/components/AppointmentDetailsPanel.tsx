@@ -134,7 +134,7 @@ interface AppointmentDetailsPanelProps {
    */
   onRecordVaccination?: (
     a: DjangoAppointment,
-    prefill?: { vaccineId: number; doseNumber: number },
+    prefill?: { vaccineId: number; doseNumber: number; draftRecordId?: number },
   ) => void;
   /** Групповой ввод нескольких положенных доз за один визит. */
   onRecordVaccinationMulti?: (
@@ -336,14 +336,40 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     [apptRecordsQuery.data],
   );
 
-  /** Точная привязка: строка счёта закрыта конкретной записью. */
+  /**
+   * Точная привязка: строка счёта закрыта проведённой записью. Черновик,
+   * созданный продажей, строку не закрывает — его ещё надо оформить.
+   */
   const recordedLineIds = React.useMemo(
     () =>
       new Set(
-        apptRecords.map((r) => r.productLineId).filter((id): id is number => id != null),
+        apptRecords
+          .filter((r) => r.status !== "draft")
+          .map((r) => r.productLineId)
+          .filter((id): id is number => id != null),
       ),
     [apptRecords],
   );
+
+  /** Черновик на строке счёта — «Оформить» открывает именно его. */
+  const draftByLineId = React.useMemo(() => {
+    const map = new Map<number, number>();
+    for (const r of apptRecords) {
+      if (r.status === "draft" && r.productLineId != null) map.set(r.productLineId, r.id);
+    }
+    return map;
+  }, [apptRecords]);
+
+  /**
+   * Положенные дозы без тех вакцин, что уже проданы в приёме черновиком: их
+   * оформляют со строки счёта, иначе новая запись добавила бы вторую строку.
+   */
+  const dueDosesToEnter = React.useMemo(() => {
+    const draftVaccineIds = new Set(
+      apptRecords.filter((r) => r.status === "draft").map((r) => r.vaccineId),
+    );
+    return dueDoses.filter((d) => !draftVaccineIds.has(d.vaccineId));
+  }, [dueDoses, apptRecords]);
 
   /**
    * Запасной счёт по вакцине — для записей, созданных до появления
@@ -1164,10 +1190,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               // счёт и склад второй раз не трогаются (бэк, 21.08.2026).
               onRecordVaccine={
                 canRecordVaccination && onRecordVaccination && isAppointmentActive
-                  ? (vaccineId) =>
+                  ? (vaccineId, line) =>
                       onRecordVaccination(appt, {
                         vaccineId,
                         doseNumber: doseNumberForVaccine(vaccineId),
+                        draftRecordId: draftByLineId.get(line.id),
                       })
                   : undefined
               }
@@ -1177,7 +1204,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 можно ввести», а не содержание визита. */}
             {canRecordVaccination && appt.patient && isAppointmentActive && (
               <AppointmentDueDoses
-                dueDoses={dueDoses}
+                dueDoses={dueDosesToEnter}
                 onRecord={(prefill) => onRecordVaccination?.(appt, prefill)}
                 onRecordMulti={(doses) => onRecordVaccinationMulti?.(appt, doses)}
               />
