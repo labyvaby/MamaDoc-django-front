@@ -292,8 +292,9 @@ const RateFlow: React.FC = () => {
   const editLink = ctx.canEdit && (
     <Button
       variant="text"
+      size="small"
       onClick={() => setEditing(true)}
-      sx={{ color: TEAL, fontSize: 15 }}
+      sx={{ color: TEAL, fontSize: 13, fontWeight: 600, alignSelf: "center" }}
     >
       Изменить ответ
     </Button>
@@ -340,9 +341,11 @@ const RateFlow: React.FC = () => {
               </Reveal>
             )}
             <Reveal order={7}>
+              <Box sx={{ mt: -1 }}>{editLink}</Box>
+            </Reveal>
+            <Reveal order={8}>
               <InstagramNudge handle={ctx.instagram} />
             </Reveal>
-            <Reveal order={8}>{editLink}</Reveal>
           </Stack>
         </Shell>
       );
