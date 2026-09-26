@@ -23,12 +23,12 @@ const ACTIVE_STATUSES = new Set(["created", "sent", "rated", "awaiting_comment"]
  * кнопку — в AppointmentDetailsPanel.
  */
 export function useAppointmentReview(appointmentId: number) {
-  const canView = useCan("reviews.view");
-  const canManage = useCan("reviews.manage");
+  const canView = useCan(["reviews.view", "reviews.view_own"]);
+  const canRequest = useCan("reviews.request");
   const queryClient = useQueryClient();
   const { open: notify } = useNotification();
 
-  const enabled = canView || canManage;
+  const enabled = canView || canRequest;
 
   const query = useQuery({
     queryKey: djangoQueryKeys.reviews.byAppointment(appointmentId),
@@ -52,7 +52,8 @@ export function useAppointmentReview(appointmentId: number) {
 
   const latest = query.data?.[0] ?? null;
   const isActive = latest != null && ACTIVE_STATUSES.has(latest.status);
-  const showButton = canManage && !isActive && !mutation.isPending;
+  const answered = latest?.status === "completed";
+  const showButton = canRequest && !isActive && !answered && !mutation.isPending;
   const statusMeta = latest ? REQUEST_STATUS_META[latest.status] : null;
 
   return {
@@ -72,7 +73,7 @@ interface Props {
 
 /**
  * Индикатор статуса отзыва (чип статуса + оценка + попытка + время отправки)
- * внутри карточки приёма. Самогейтится по правам reviews.view/manage — для
+ * внутри карточки приёма. Самогейтится по правам reviews.view/view_own/request — для
  * ролей без доступа не рендерит ничего. Кнопка запроса — в шапке карточки,
  * см. useAppointmentReview.
  */
@@ -94,9 +95,14 @@ const AppointmentReviewStatus: React.FC<Props> = ({ appointmentId }) => {
         latest && (
           <>
             {statusMeta && (
-              <Tooltip title="Отзыв">
+              <Tooltip title={latest.status === "failed" && latest.error ? `Отзыв: ${latest.error}` : "Отзыв"}>
                 <Chip label={statusMeta.label} color={statusMeta.color} size="small" />
               </Tooltip>
+            )}
+            {latest.deliveredChannel && (
+              <Typography variant="caption" color="text.disabled">
+                через {latest.deliveredChannel === "whatsapp" ? "WhatsApp" : "SMS"}
+              </Typography>
             )}
             {latest.rating != null && (
               <Rating value={latest.rating} readOnly size="small" />
