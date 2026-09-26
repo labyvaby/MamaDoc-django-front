@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
+import { useSnackbar } from "notistack";
 
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
@@ -147,6 +148,7 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({
 }) => {
   const orgId = useApiOrgId();
   const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
   const { can } = useCanChecker();
   const canRecord = can("vaccinations.record");
   const patientId = patient?.id ?? null;
@@ -305,7 +307,13 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({
             variant="outlined"
             size="small"
             startIcon={<PrintOutlined />}
-            onClick={() => printVaccinationCertificate(patient, history, planned)}
+            onClick={() => {
+              if (!printVaccinationCertificate(patient, history, planned)) {
+                enqueueSnackbar("Разрешите всплывающие окна, чтобы распечатать сертификат", {
+                  variant: "warning",
+                });
+              }
+            }}
           >
             Сертификат
           </AppButton>
