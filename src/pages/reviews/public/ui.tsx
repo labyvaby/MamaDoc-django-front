@@ -306,15 +306,9 @@ export const RatingRow: React.FC<{
   value: number | null;
   onChange: (v: number) => void;
 }> = ({ title, caption, value, onChange }) => (
-  <Stack
-    direction="row"
-    alignItems="center"
-    justifyContent="space-between"
-    flexWrap="wrap"
-    rowGap={1}
-    columnGap={2}
-    sx={{ py: 1.25 }}
-  >
+  // Всегда в столбик: подпись сверху, звёзды под ней — строки с короткой и
+  // длинной подписью выглядят одинаково на любой ширине.
+  <Stack spacing={1} sx={{ py: 1.25 }}>
     <Box sx={{ minWidth: 0 }}>
       <Typography sx={{ fontWeight: 600, fontSize: 15 }}>{title}</Typography>
       {caption && (
@@ -323,7 +317,7 @@ export const RatingRow: React.FC<{
         </Typography>
       )}
     </Box>
-    <StarPicker label={title} value={value} onChange={onChange} size={30} />
+    <StarPicker label={title} value={value} onChange={onChange} size={32} />
   </Stack>
 );
 
