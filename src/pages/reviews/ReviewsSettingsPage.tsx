@@ -8,6 +8,7 @@ import {
   CircularProgress,
   Divider,
   FormControlLabel,
+  MenuItem,
   Paper,
   Stack,
   Switch,
@@ -55,6 +56,8 @@ type FormState = Pick<
   | "positiveTags"
   | "negativeTags"
   | "ravenScenario"
+  | "instagram"
+  | "pageTheme"
 >;
 
 const FORM_KEYS: (keyof FormState)[] = [
@@ -67,6 +70,8 @@ const FORM_KEYS: (keyof FormState)[] = [
   "positiveTags",
   "negativeTags",
   "ravenScenario",
+  "instagram",
+  "pageTheme",
 ];
 
 const same = (a: unknown, b: unknown) =>
@@ -366,6 +371,38 @@ const ReviewsSettingsPage: React.FC = () => {
                   color="error"
                 />
               </Stack>
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: "14px" }}>
+              <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+                Страница отзыва
+              </Typography>
+              <TextField
+                select
+                size="small"
+                label="Оформление"
+                value={form.pageTheme}
+                onChange={(e) =>
+                  set("pageTheme", e.target.value as ReviewSettings["pageTheme"])
+                }
+                helperText="Детское — фон с мишкой, для детских клиник."
+                sx={{ maxWidth: 420, mb: 2 }}
+                fullWidth
+              >
+                <MenuItem value="default">Обычное</MenuItem>
+                <MenuItem value="kids">Детское (мишка)</MenuItem>
+              </TextField>
+              <TextField
+                size="small"
+                label="Профиль Instagram"
+                placeholder="mama.doctor.kg"
+                value={form.instagram}
+                onChange={(e) => set("instagram", e.target.value.trim())}
+                inputProps={{ maxLength: 80 }}
+                helperText="После 5★ пациент увидит «Отметьте нас в Instagram» со ссылкой на профиль. Можно вставить ссылку или @имя."
+                sx={{ maxWidth: 420 }}
+                fullWidth
+              />
             </Paper>
 
             <ReviewLinksEditor

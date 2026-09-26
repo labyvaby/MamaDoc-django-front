@@ -28,6 +28,9 @@ const ctx: RateContext = {
   negativeTags: ["Долго"],
   canEdit: true,
   maps: [],
+  instagram: "",
+  clinicLogo: "",
+  pageTheme: "default",
 };
 
 describe("rateForm", () => {
