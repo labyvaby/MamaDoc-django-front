@@ -28,6 +28,7 @@ const ctx: RateContext = {
   negativeTags: ["Долго"],
   canEdit: true,
   maps: [],
+  instagram: "",
 };
 
 describe("rateForm", () => {

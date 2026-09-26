@@ -4,6 +4,7 @@ import {
   Button,
   CircularProgress,
   Divider,
+  Link,
   Stack,
   TextField,
   Typography,
@@ -301,7 +302,21 @@ const RateFlow: React.FC = () => {
                     mr: 0.5,
                   }}
                 />
-                Отметьте нас в Instagram — нам будет очень приятно 💛
+                Отметьте нас в Instagram
+                {ctx.instagram && (
+                  <>
+                    {" "}
+                    <Link
+                      href={`https://instagram.com/${ctx.instagram}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      sx={{ color: "#D62976", fontWeight: 600 }}
+                    >
+                      @{ctx.instagram}
+                    </Link>
+                  </>
+                )}
+                {" "}— нам будет очень приятно 💛
               </Typography>
             </Reveal>
             {ctx.publishConsent !== "private" && (

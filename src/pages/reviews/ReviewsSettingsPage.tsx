@@ -55,6 +55,7 @@ type FormState = Pick<
   | "positiveTags"
   | "negativeTags"
   | "ravenScenario"
+  | "instagram"
 >;
 
 const FORM_KEYS: (keyof FormState)[] = [
@@ -67,6 +68,7 @@ const FORM_KEYS: (keyof FormState)[] = [
   "positiveTags",
   "negativeTags",
   "ravenScenario",
+  "instagram",
 ];
 
 const same = (a: unknown, b: unknown) =>
@@ -366,6 +368,23 @@ const ReviewsSettingsPage: React.FC = () => {
                   color="error"
                 />
               </Stack>
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: "14px" }}>
+              <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+                Instagram клиники
+              </Typography>
+              <TextField
+                size="small"
+                label="Профиль Instagram"
+                placeholder="mama.doctor.kg"
+                value={form.instagram}
+                onChange={(e) => set("instagram", e.target.value.trim())}
+                inputProps={{ maxLength: 80 }}
+                helperText="После 5★ пациент увидит «Отметьте нас в Instagram» со ссылкой на профиль. Можно вставить ссылку или @имя."
+                sx={{ maxWidth: 420 }}
+                fullWidth
+              />
             </Paper>
 
             <ReviewLinksEditor
