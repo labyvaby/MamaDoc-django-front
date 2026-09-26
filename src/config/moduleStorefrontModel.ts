@@ -156,7 +156,10 @@ export function buildStorefront(input: {
   const products = [
     ...STOREFRONT_PRODUCTS.filter((p) => suits(p.verticals, vertical)),
     ...catalog.filter((m) => !configured.has(m.code) && !inPackage.has(m.code)).map(productFromModule),
-  ].filter((p) => p.modules.every((code) => byCode.has(code)));
+  ]
+    .filter((p) => p.modules.every((code) => byCode.has(code)))
+    // Неактивное клиникам не показываем; оператор видит с пометкой.
+    .filter((p) => operator || !p.inactive);
 
   const base = products
     .map((p) => toItem(p, byCode, catalog, openRequests, signals))
@@ -171,7 +174,9 @@ export function buildStorefront(input: {
       freeWithTitle: freeWith ? titleById.get(freeWith) ?? null : null,
     };
   });
-  const itemById = new Map(items.map((i) => [i.product.id, i]));
+  // Счётчики и подборки — по тому, что продаётся: у оператора они те же, что у клиники.
+  const onSale = items.filter((i) => !i.product.inactive);
+  const itemById = new Map(onSale.map((i) => [i.product.id, i]));
   const bundles = STOREFRONT_BUNDLES[vertical]
     .map((b) => toBundleView(b, itemById))
     .filter((v): v is StorefrontBundleView => v !== null)
@@ -183,8 +188,8 @@ export function buildStorefront(input: {
     bundles,
     included: buildIncluded({ catalog, byCode, vertical, openRequests, operator, onShelf }),
     categories: STOREFRONT_CATEGORIES.filter((c) => present.has(c.id)),
-    connectedCount: items.filter((i) => i.status === "connected").length,
-    availableCount: items.filter((i) => i.status === "available" || i.status === "requested").length,
+    connectedCount: onSale.filter((i) => i.status === "connected").length,
+    availableCount: onSale.filter((i) => i.status === "available" || i.status === "requested").length,
   };
 }
 
@@ -312,10 +317,15 @@ export function includedTarget(item: IncludedItem): RequestTarget {
 }
 
 const SHELF_RANK: Record<ProductStatus, number> = { available: 0, requested: 1, soon: 2, connected: 3 };
+const INACTIVE_RANK = 4;
 
-/** Порядок на полке: что можно подключить, потом в заявках, потом «Скоро», потом подключённое. */
+/**
+ * Порядок на полке: что можно подключить, потом в заявках, потом «Скоро», потом
+ * подключённое; неактивное (его видит только оператор) — в самом конце.
+ */
 export function shelfOrder(items: StorefrontItem[]): StorefrontItem[] {
-  return [...items].sort((a, b) => SHELF_RANK[a.status] - SHELF_RANK[b.status]);
+  const rank = (i: StorefrontItem) => (i.product.inactive ? INACTIVE_RANK : SHELF_RANK[i.status]);
+  return [...items].sort((a, b) => rank(a) - rank(b));
 }
 
 export interface SearchResult<T> {

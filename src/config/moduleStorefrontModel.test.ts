@@ -135,10 +135,12 @@ describe("buildStorefront", () => {
 describe("features without a module", () => {
   it("take their status from the server signals and an open request", () => {
     const view = build([], "clinic", [request("site", [])], { ...NO_FEATURES, onlineBooking: true });
-    expect(
-      ["online_booking", "site", "insurers", "notifications", "odoctor"].map((id) => item(view, id)!.status),
-    ).toEqual(["connected", "requested", "available", "available", "available"]);
+    expect(["online_booking", "site", "insurers", "odoctor"].map((id) => item(view, id)!.status)).toEqual([
+      "connected", "requested", "available", "available",
+    ]);
     expect(item(view, "insurers")!.requestModules).toEqual([]);
+    const operator = build([], "clinic", [], { ...NO_FEATURES, notifications: true }, true);
+    expect(item(operator, "notifications")!.status).toBe("connected");
   });
 
   it("stay hidden while the signals are unknown", () => {
@@ -149,7 +151,26 @@ describe("features without a module", () => {
     const retail = build([], "retail", [], NO_FEATURES).items.map((i) => i.product.id);
     expect(retail).toEqual(["ai_analyst"]);
     const beauty = build([], "beauty", [], NO_FEATURES).items.map((i) => i.product.id);
-    expect(beauty).toEqual(["online_booking", "site", "ai_analyst", "notifications"]);
+    expect(beauty).toEqual(["online_booking", "site", "ai_analyst"]);
+  });
+});
+
+describe("inactive products", () => {
+  it("are hidden from the clinic and shown to the operator with the reason", () => {
+    expect(item(build([], "clinic", [], NO_FEATURES), "notifications")).toBeUndefined();
+    const notifications = item(build([], "clinic", [], NO_FEATURES, true), "notifications")!;
+    expect(notifications.status).toBe("available");
+    expect(notifications.product.inactive?.reason).toBeTruthy();
+  });
+
+  it("are not counted and stand last on the operator's shelf", () => {
+    const catalog = [mod("chatwoot", true), mod("deals")];
+    const clinic = build(catalog, "clinic", [], NO_FEATURES);
+    const operator = build(catalog, "clinic", [], NO_FEATURES, true);
+    expect(operator.items.length).toBe(clinic.items.length + 1);
+    expect([operator.connectedCount, operator.availableCount]).toEqual([clinic.connectedCount, clinic.availableCount]);
+    const shelf = shelfOrder(operator.items).map((i) => i.product.id);
+    expect(shelf[shelf.length - 1]).toBe("notifications");
   });
 });
 

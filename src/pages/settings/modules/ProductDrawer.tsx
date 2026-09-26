@@ -5,7 +5,7 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 
 import { categoryTone } from "../../../config/moduleStorefront";
 import type { StorefrontItem } from "../../../config/moduleStorefrontModel";
-import { PriceLabel, ProductStatus, SoonChip } from "./ProductCard";
+import { InactiveChip, PriceLabel, ProductStatus, SoonChip } from "./ProductCard";
 import { StorefrontTile } from "./storefrontVisuals";
 
 interface Props {
@@ -35,6 +35,7 @@ export const ProductDrawer: React.FC<Props> = ({ item, onClose, action, operator
                 {item.product.title}
               </Typography>
               {item.product.soon && <SoonChip />}
+              {item.product.inactive && <InactiveChip />}
             </Stack>
             {/* У «Скоро» статус — сама пометка, под ней цена. */}
             {item.status === "soon" ? <PriceLabel item={item} /> : <ProductStatus item={item} />}
@@ -43,6 +44,11 @@ export const ProductDrawer: React.FC<Props> = ({ item, onClose, action, operator
             <CloseOutlined />
           </IconButton>
         </Stack>
+        {item.product.inactive && (
+          <Alert severity="warning" variant="outlined">
+            Неактивен — клиникам не показывается. {item.product.inactive.reason}
+          </Alert>
+        )}
         <Typography variant="body1">{item.product.tagline}</Typography>
         {item.product.features.length > 0 && (
           <Stack spacing={1}>
