@@ -223,3 +223,109 @@ describe("страж: {{term.gender, gender(...)}} и {{term.form, prep(...)}} �
     }
   }
 });
+
+/**
+ * Аллоулист: ключи с {{visit.(nom|gen|dat|acc|ins|pre)}} в единственном
+ * числе, где рядом сознательно НЕТ gender(...) — согласующегося слова там
+ * нет (см. таблицу «было → стало» задачи 7б и её ревью), поэтому мужское
+ * окончание в шаблоне не нужно чинить. Список зафиксирован намеренно: любая
+ * НОВАЯ строка с {{visit.*}} в единственном числе без gender(...) уронит
+ * этот тест, пока её не проверят и не впишут сюда явно (или не заменят
+ * форматтером gender, если слово всё-таки согласуется).
+ */
+const REVIEWED_SINGULAR_VISIT_WITHOUT_GENDER = [
+  "appointments:addDrawer.dateTimeSection",
+  "appointments:addDrawer.discardText",
+  "appointments:addDrawer.noBranchHowToTail",
+  "appointments:addDrawer.noBranchText",
+  "appointments:addDrawer.title",
+  "appointments:bankConfirmation.noneFound",
+  "appointments:cashDateDialog.appointmentDate",
+  "appointments:chips.overdue",
+  "appointments:conclusion.aiAssist.tooltip",
+  "appointments:confirm.deleteTitle",
+  "appointments:details.deleteTitle",
+  "appointments:details.startVisit",
+  "appointments:editDrawer.title",
+  "appointments:editDrawer.titleLower",
+  "appointments:invoice.visitDate",
+  "appointments:journal.actions.edit",
+  "appointments:journal.count.appointments_few",
+  "appointments:journal.count.appointments_one",
+  "appointments:journal.details.composition",
+  "appointments:journal.details.sliceShare",
+  "appointments:list.count_few",
+  "appointments:list.count_one",
+  "appointments:overlapDialog.title",
+  "appointments:page.addVisit",
+  "appointments:page.noSelection",
+  "appointments:payment.cashDateAppointment",
+  "appointments:payment.lockedBonuses",
+  "appointments:payment.lockedRefund",
+  "appointments:payment.title",
+  "appointments:slots.visitsCount_few",
+  "appointments:slots.visitsCount_one",
+  "appointments:status.in_progress",
+  "bookings:confirm.servicesRequired",
+  "bookings:confirm.subtitle",
+  "bookings:detail.openVisit",
+  "bookings:detail.prepaymentNeedsAttention",
+  "bookings:detail.visitNotCreated",
+  "bookings:missed.hint",
+  "bookings:missed.noShowConfirm.message",
+  "bookings:missed.noShowTooltip",
+  "bookings:visitInCrm",
+  "cashbox:appointmentRef",
+  "cashbox:typeLabelPayment",
+  "client:visitDetailsTitle",
+  "deals:detail.createAppointment",
+  "doctor:selectVisitPrompt",
+  "landing:reviews.subtitle",
+  "load:count_few",
+  "load:count_one",
+  "patients:balance.visitRef",
+  "print:visitDateTimeLabel",
+  "publicBooking:brandSubtitle",
+  "publicBooking:byCode.statusHintPending",
+  "publicBooking:my.serviceOnVisit",
+  "publicBooking:reminderOnTime",
+  "publicBooking:selectDateRequired",
+  "publicBooking:selectTimeRequired",
+  "publicBooking:successHint",
+  "reviews:public.visitLabel",
+  "reviews:settings.delayLabel",
+  "reviews:settings.pollerHint",
+  "sales:details.fromVisitChip",
+  "sales:details.fromVisitHint",
+  "sales:details.noVisitPayment",
+  "sales:details.paymentInVisit",
+  "sales:details.visitTitle",
+  "sales:list.fromVisitChip",
+  "services:relatedProducts.autoWriteOffOn",
+  "services:relatedProducts.extraInVisit",
+  "settings:branches.description",
+  "settings:notifications.columns.visit",
+  "vaccinations:recordDrawer.visitIdLabel",
+];
+
+describe("страж: аллоулист {{visit.*}} в ед. числе без gender(...)", () => {
+  it(`ровно ${REVIEWED_SINGULAR_VISIT_WITHOUT_GENDER.length} проверенных ключей`, () => {
+    const found: string[] = [];
+    for (const file of fs.readdirSync(localesDir).filter((f) => f.endsWith(".json"))) {
+      const ns = path.basename(file, ".json");
+      const dict = JSON.parse(fs.readFileSync(path.join(localesDir, file), "utf8"));
+      for (const [key, value] of flattenStrings(dict)) {
+        if (/\{\{visit\.(nom|gen|dat|acc|ins|pre)\b/.test(value) && !/\bgender\(/.test(value)) {
+          found.push(`${ns}:${key}`);
+        }
+      }
+    }
+    found.sort();
+    expect(
+      found,
+      "Новый шаблон со словом визита в единственном числе и без gender(...): проверьте согласование рода " +
+        "(при необходимости используйте форматтер gender) и затем впишите ключ в " +
+        "REVIEWED_SINGULAR_VISIT_WITHOUT_GENDER.",
+    ).toEqual(REVIEWED_SINGULAR_VISIT_WITHOUT_GENDER);
+  });
+});
