@@ -73,7 +73,7 @@ const CASES: Case[] = [
   ["reviews:public.rateYourVisit", {}, "Оцените ваш приём", "Оцените вашу встречу", "Оцените ваш визит"],
 ];
 
-describe("{{visit.gender, gender(...)}} — 27 ключей: было (клиника/салон) → стало (компания)", () => {
+describe(`{{visit.gender, gender(...)}} — ${CASES.length} ключей: было (клиника/салон) → стало (компания)`, () => {
   it.each(CASES)("%s", (key, vars, clinicText, projectsText, beautyText) => {
     expect(render(key, clinic, vars)).toBe(clinicText);
     expect(render(key, projects, vars)).toBe(projectsText);
@@ -98,14 +98,30 @@ describe("страж: {{term.gender, gender(...)}} в src/locales/ru", () => {
     const ns = path.basename(file, ".json");
     const dict = JSON.parse(fs.readFileSync(path.join(localesDir, file), "utf8"));
     for (const [key, value] of flattenStrings(dict)) {
-      if (!/\.gender\b/.test(value) && !/\bgender\(/.test(value)) continue;
+      const genderReadCount = (value.match(/\.gender\b/g) ?? []).length;
+      const genderCallCount = (value.match(/\bgender\(/g) ?? []).length;
+      if (genderReadCount === 0 && genderCallCount === 0) continue;
       it(`${ns}:${key}`, () => {
-        for (const m of value.matchAll(/\{\{\s*(\w+)\.gender\b[^}]*\}\}/g)) {
-          expect(glossaryKeys.has(m[1]), `неизвестный термин «${m[1]}» в ${m[0]}`).toBe(true);
-          const call = m[0].match(/^\{\{\s*\w+\.gender\s*,\s*gender\(([^)]*)\)\s*\}\}$/);
-          if (!call) throw new Error(`сломан вызов форматтера gender: ${m[0]}`);
+        // Полные, корректные вызовы {{term.gender, gender(...)}}. Каждое
+        // отдельное чтение «.gender» и каждый отдельный вызов «gender(»
+        // обязаны быть частью ОДНОГО ТАКОГО матча — иначе gender( повешен
+        // не на .gender (например, {{visit.nom, gender(...)}}) или скобки
+        // сломаны (например, одна «}» вместо «}}») проскочат незамеченными.
+        const wellFormed = [...value.matchAll(/\{\{\s*(\w+)\.gender\s*,\s*gender\(([^)]*)\)\s*\}\}/g)];
+        expect(genderReadCount, `${ns}:${key} — «.gender» не в составе корректного вызова: ${value}`).toBe(
+          wellFormed.length,
+        );
+        expect(genderCallCount, `${ns}:${key} — gender( не на .gender или скобки сломаны: ${value}`).toBe(
+          wellFormed.length,
+        );
+
+        for (const m of wellFormed) {
+          const [, term, paramsStr] = m;
+          expect(glossaryKeys.has(term), `неизвестный термин «${term}» в ${m[0]}`).toBe(true);
+          const rawKeys = paramsStr.split(";").map((p) => p.slice(0, p.indexOf(":")).trim());
+          expect(new Set(rawKeys).size, `дублирующийся ключ формы в ${m[0]}`).toBe(rawKeys.length);
           const params = Object.fromEntries(
-            call[1].split(";").map((p) => {
+            paramsStr.split(";").map((p) => {
               const i = p.indexOf(":");
               return [p.slice(0, i).trim(), p.slice(i + 1).trim()];
             }),
@@ -113,7 +129,8 @@ describe("страж: {{term.gender, gender(...)}} в src/locales/ru", () => {
           expect(Object.keys(params).sort(), m[0]).toEqual(["f", "m", "n"]);
           for (const v of Object.values(params)) expect(/^[^();]+$/.test(v), `${m[0]} → «${v}»`).toBe(true);
         }
-        if (/\bgender\(/.test(value)) {
+
+        if (genderCallCount > 0) {
           const collisions = [...value.matchAll(/\{\{\s*(m|f|n)\s*(?:,[^}]*)?\}\}/g)].map((mm) => mm[1]);
           expect(collisions, `${ns}:${key} — «${value}»`).toEqual([]);
         }
