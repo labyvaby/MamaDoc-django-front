@@ -80,7 +80,7 @@ export const ProductCard: React.FC<Props> = ({ item, action, onOpen, highlight }
         gap: 1.5,
         cursor: "pointer",
         borderRadius: 3,
-        bgcolor: product.inactive ? "action.hover" : undefined,
+        bgcolor: item.inactive ? "action.hover" : undefined,
         transition: "border-color .15s ease",
         "&:hover": { borderColor: "primary.main" },
         "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },
@@ -94,7 +94,7 @@ export const ProductCard: React.FC<Props> = ({ item, action, onOpen, highlight }
               {product.title}
             </Typography>
             {product.soon && <SoonChip />}
-            {product.inactive && <InactiveChip />}
+            {item.inactive && <InactiveChip />}
           </Stack>
           <Typography variant="body2" color="text.secondary">
             {product.tagline}

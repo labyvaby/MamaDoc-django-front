@@ -27,7 +27,13 @@ import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { djangoQueryKeys } from "../../api/queryKeys";
-import { type CatalogModule, createModuleRequest, setOrganizationModule } from "../../api/tenancy";
+import {
+  type CatalogModule,
+  createModuleRequest,
+  setOrganizationModule,
+  setStorefrontProductState,
+} from "../../api/tenancy";
+import { useInactiveProducts } from "../../hooks/useInactiveProducts";
 import { useModulesCatalog } from "../../hooks/useModulesCatalog";
 import { useModuleRequests } from "../../hooks/useModuleRequests";
 import { useStorefrontFeatures } from "../../hooks/useStorefrontFeatures";
@@ -57,6 +63,8 @@ import { RequestDialog, type RequestContact } from "./modules/RequestDialog";
 type PendingToggle = { module: CatalogModule; enable: boolean; organizationId: number; organizationName: string };
 /** Заявка клиники — тоже с организацией на момент нажатия. */
 type PendingRequest = RequestTarget & { organizationId: number };
+/** Скрыть товар от всех клиник или показать снова — решение оператора платформы. */
+type PendingVisibility = { productId: string; title: string; inactive: boolean };
 type Notice = { severity: "success" | "error"; text: string };
 
 const GRID = { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", lg: "repeat(3, minmax(0, 1fr))" };
@@ -76,6 +84,7 @@ const ModulesCatalogPage: React.FC = () => {
   const catalogQuery = useModulesCatalog();
   const requestsQuery = useModuleRequests();
   const featuresQuery = useStorefrontFeatures();
+  const inactiveQuery = useInactiveProducts();
   const {
     isPlatformAdmin,
     activeOrganization,
@@ -96,10 +105,17 @@ const ModulesCatalogPage: React.FC = () => {
   const [requestOpen, setRequestOpen] = useState(false);
   const [pending, setPending] = useState<PendingToggle | null>(null);
   const [toggleOpen, setToggleOpen] = useState(false);
+  const [visibility, setVisibility] = useState<PendingVisibility | null>(null);
+  const [visibilityOpen, setVisibilityOpen] = useState(false);
+  const [visibilityReason, setVisibilityReason] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const catalog = useMemo(() => catalogQuery.data ?? [], [catalogQuery.data]);
   const catalogByCode = useMemo(() => new Map(catalog.map((m) => [m.code, m])), [catalog]);
+  const inactive = useMemo(
+    () => new Map((inactiveQuery.data ?? []).map((state) => [state.productId, state.reason])),
+    [inactiveQuery.data],
+  );
   const storefront = useMemo(
     () =>
       buildStorefront({
@@ -109,8 +125,9 @@ const ModulesCatalogPage: React.FC = () => {
         // Признаки не пришли — товары без модуля не показываем, а не предлагаем вслепую.
         signals: featuresQuery.data ?? null,
         operator: isOperator,
+        inactive,
       }),
-    [catalog, vertical, requestsQuery.data, featuresQuery.data, isOperator],
+    [catalog, vertical, requestsQuery.data, featuresQuery.data, isOperator, inactive],
   );
   const searching = search.trim().length > 0;
   const found = useMemo(() => searchStorefront(storefront, search), [storefront, search]);
@@ -178,6 +195,31 @@ const ModulesCatalogPage: React.FC = () => {
       }),
     onSettled: refresh,
   });
+
+  const changeVisibility = useMutation({
+    mutationFn: (p: PendingVisibility & { reason: string }) =>
+      setStorefrontProductState(p.productId, p.inactive, p.reason),
+    onSuccess: (state, p) =>
+      setNotice({
+        severity: "success",
+        text: state.isInactive ? `«${p.title}» скрыт от клиник.` : `«${p.title}» снова виден клиникам.`,
+      }),
+    onError: (error) =>
+      setNotice({
+        severity: "error",
+        text: error instanceof Error ? error.message : "Не удалось изменить статус.",
+      }),
+    onSettled: () => {
+      refresh();
+      setVisibilityOpen(false);
+    },
+  });
+
+  const askVisibility = (item: StorefrontItem, makeInactive: boolean) => {
+    setVisibility({ productId: item.product.id, title: item.product.title, inactive: makeInactive });
+    setVisibilityReason("");
+    setVisibilityOpen(true);
+  };
 
   const askToggle = (module: CatalogModule, enable: boolean) => {
     if (!activeOrganization) return;
@@ -275,12 +317,27 @@ const ModulesCatalogPage: React.FC = () => {
   };
 
   const drawerOperator = (item: StorefrontItem): React.ReactNode =>
-    isOperator && item.product.modules.length > 0 ? (
+    isOperator ? (
       <Box>
         <Typography variant="overline" color="text.secondary">
           Оператор платформы
         </Typography>
         <Stack spacing={1}>
+          {/* Статус на всей платформе: скрывает товар сразу у всех клиник. */}
+          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+            <Typography variant="body2">
+              {item.inactive ? "Неактивен — клиники не видят" : "Клиники видят на витрине"}
+            </Typography>
+            {item.inactive ? (
+              <Button size="small" onClick={() => askVisibility(item, false)}>
+                Сделать активным
+              </Button>
+            ) : (
+              <Button size="small" color="warning" onClick={() => askVisibility(item, true)}>
+                Сделать неактивным
+              </Button>
+            )}
+          </Stack>
           {item.product.modules.map((code) => {
             const module = catalogByCode.get(code);
             if (!module) return null;
@@ -326,7 +383,7 @@ const ModulesCatalogPage: React.FC = () => {
     ) : null;
   };
 
-  if (catalogQuery.isLoading || featuresQuery.isLoading) {
+  if (catalogQuery.isLoading || featuresQuery.isLoading || inactiveQuery.isLoading) {
     return (
       <SettingsLayout>
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
@@ -567,6 +624,58 @@ const ModulesCatalogPage: React.FC = () => {
             }}
           >
             {pending?.enable ? "Подключить" : "Отключить"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={visibilityOpen}
+        onClose={() => {
+          if (!changeVisibility.isPending) setVisibilityOpen(false);
+        }}
+        fullWidth
+        maxWidth="xs"
+        slotProps={{ transition: { onExited: () => setVisibility(null) } }}
+      >
+        <DialogTitle>
+          {visibility?.inactive
+            ? `Сделать «${visibility.title}» неактивным?`
+            : `Сделать «${visibility?.title ?? ""}» активным?`}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 0.5 }}>
+            <DialogContentText>
+              {visibility?.inactive
+                ? "Все клиники перестанут видеть товар на витрине и не смогут оставить на него заявку. Вы будете видеть его в конце витрины с пометкой «Неактивен»."
+                : "Товар снова появится на витрине у всех клиник."}
+            </DialogContentText>
+            {visibility?.inactive && (
+              <TextField
+                label="Причина"
+                helperText="Видят только суперпользователи"
+                value={visibilityReason}
+                onChange={(e) => setVisibilityReason(e.target.value)}
+                slotProps={{ htmlInput: { maxLength: 300 } }}
+                fullWidth
+                multiline
+                minRows={2}
+              />
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setVisibilityOpen(false)} disabled={changeVisibility.isPending}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            color={visibility?.inactive ? "warning" : "primary"}
+            disabled={changeVisibility.isPending || !visibilityOpen}
+            onClick={() => {
+              if (visibility) changeVisibility.mutate({ ...visibility, reason: visibilityReason });
+            }}
+          >
+            {visibility?.inactive ? "Сделать неактивным" : "Сделать активным"}
           </Button>
         </DialogActions>
       </Dialog>

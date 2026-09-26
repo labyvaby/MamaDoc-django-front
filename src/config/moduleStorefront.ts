@@ -58,8 +58,6 @@ export interface StorefrontProduct {
   signal?: keyof FeatureSignals;
   /** В разработке: показываем с ценой, заявка — интерес до запуска. */
   soon?: boolean;
-  /** Неактивен: клиникам не показываем; суперпользователь видит с пометкой и причиной. */
-  inactive?: { reason: string };
   /** Только для этих видов бизнеса; нет — для всех. */
   verticals?: readonly StorefrontVertical[];
   /** Экран товара без модуля для кнопки «Настроить» / «Открыть». */
@@ -118,7 +116,6 @@ export const STOREFRONT_PRODUCTS: StorefrontProduct[] = [
   {
     id: "notifications", title: "Уведомления клиентам", modules: [], signal: "notifications", category: "communication",
     icon: "bell", price: 0, priceNote: "SMS 1,8 · WhatsApp 1,2 сом", verticals: SERVICES, route: "/settings/notifications",
-    inactive: { reason: "Уведомления о приёмах сейчас не уходят: сначала нужно исправить отправку." },
     tagline: "Напоминания о записи по SMS и WhatsApp — меньше неявок",
     features: ["Правила: когда и о чём напоминать", "Включается по филиалам", "Платите только за отправленные сообщения"],
     parts: ["SMS", "WhatsApp"],

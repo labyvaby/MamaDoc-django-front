@@ -35,7 +35,7 @@ export const ProductDrawer: React.FC<Props> = ({ item, onClose, action, operator
                 {item.product.title}
               </Typography>
               {item.product.soon && <SoonChip />}
-              {item.product.inactive && <InactiveChip />}
+              {item.inactive && <InactiveChip />}
             </Stack>
             {/* У «Скоро» статус — сама пометка, под ней цена. */}
             {item.status === "soon" ? <PriceLabel item={item} /> : <ProductStatus item={item} />}
@@ -44,9 +44,9 @@ export const ProductDrawer: React.FC<Props> = ({ item, onClose, action, operator
             <CloseOutlined />
           </IconButton>
         </Stack>
-        {item.product.inactive && (
+        {item.inactive && (
           <Alert severity="warning" variant="outlined">
-            Неактивен — клиникам не показывается. {item.product.inactive.reason}
+            Неактивен — клиникам не показывается.{item.inactiveReason ? ` ${item.inactiveReason}` : ""}
           </Alert>
         )}
         <Typography variant="body1">{item.product.tagline}</Typography>

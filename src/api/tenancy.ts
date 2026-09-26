@@ -48,6 +48,32 @@ export function getStorefrontFeatures(organizationId?: number | null): Promise<F
   return apiRequest<FeatureSignals>(`/tenancy/features/${orgQuery(organizationId)}`);
 }
 
+/**
+ * Товар витрины, скрытый от клиник («Неактивен»). Список один на платформу;
+ * причину сервер отдаёт только суперпользователю, клинике — пустую строку.
+ */
+export interface StorefrontProductState {
+  productId: string;
+  isInactive: boolean;
+  reason: string;
+}
+
+export function getInactiveProducts(organizationId?: number | null): Promise<StorefrontProductState[]> {
+  return apiRequest<StorefrontProductState[]>(`/tenancy/storefront/products/${orgQuery(organizationId)}`);
+}
+
+/** Скрыть товар от клиник или снова показать — только суперпользователь платформы. */
+export function setStorefrontProductState(
+  productId: string,
+  isInactive: boolean,
+  reason = "",
+): Promise<StorefrontProductState> {
+  return apiRequest<StorefrontProductState>(`/tenancy/storefront/products/${encodeURIComponent(productId)}/`, {
+    method: "PATCH",
+    body: { isInactive, reason },
+  });
+}
+
 /** Заявка клиники на подключение с витрины (docs/specs/2026-09-26-modules-storefront-design.md). */
 export interface ModuleRequest {
   id: number;

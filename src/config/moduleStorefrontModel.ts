@@ -30,6 +30,10 @@ export interface StorefrontItem {
   free: boolean;
   /** Название товара из `freeWith`, для подписи «Бесплатно с …». */
   freeWithTitle: string | null;
+  /** «Неактивен»: клиникам не показывается, такой товар видит только оператор. */
+  inactive: boolean;
+  /** Почему скрыт; сервер отдаёт её только суперпользователю. */
+  inactiveReason: string;
 }
 
 /** included — работает; off — модуль пакета выключен; requested — просили включить. */
@@ -144,8 +148,11 @@ export function buildStorefront(input: {
   signals?: FeatureSignals | null;
   /** Оператор платформы видит и выключенное снятое с продажи, и модули без карточки. */
   operator?: boolean;
+  /** Товары «Неактивен» (id → причина): клиникам их не показываем. */
+  inactive?: Map<string, string> | null;
 }): StorefrontView {
   const { catalog, openRequests, signals = null, operator = false } = input;
+  const hidden = input.inactive ?? new Map<string, string>();
   const vertical = storefrontVertical(input.vertical);
   const byCode = new Map(catalog.map((m) => [m.code, m]));
   const configured = new Set(STOREFRONT_PRODUCTS.flatMap((p) => p.modules));
@@ -159,7 +166,7 @@ export function buildStorefront(input: {
   ]
     .filter((p) => p.modules.every((code) => byCode.has(code)))
     // Неактивное клиникам не показываем; оператор видит с пометкой.
-    .filter((p) => operator || !p.inactive);
+    .filter((p) => operator || !hidden.has(p.id));
 
   const base = products
     .map((p) => toItem(p, byCode, catalog, openRequests, signals))
@@ -172,10 +179,12 @@ export function buildStorefront(input: {
       ...item,
       free: Boolean(freeWith && statusById.get(freeWith) === "connected"),
       freeWithTitle: freeWith ? titleById.get(freeWith) ?? null : null,
+      inactive: hidden.has(item.product.id),
+      inactiveReason: hidden.get(item.product.id) ?? "",
     };
   });
   // Счётчики и подборки — по тому, что продаётся: у оператора они те же, что у клиники.
-  const onSale = items.filter((i) => !i.product.inactive);
+  const onSale = items.filter((i) => !i.inactive);
   const itemById = new Map(onSale.map((i) => [i.product.id, i]));
   const bundles = STOREFRONT_BUNDLES[vertical]
     .map((b) => toBundleView(b, itemById))
@@ -200,7 +209,16 @@ function toItem(
   openRequests: ModuleRequest[],
   signals: FeatureSignals | null,
 ): StorefrontItem | null {
-  const plain = { product, missingModules: [], requestModules: [], extraRequirementNames: [], free: false, freeWithTitle: null };
+  const plain = {
+    product,
+    missingModules: [],
+    requestModules: [],
+    extraRequirementNames: [],
+    free: false,
+    freeWithTitle: null,
+    inactive: false,
+    inactiveReason: "",
+  };
   if (product.soon) {
     return { ...plain, status: isRequested(product.id, [], openRequests) ? "requested" : "soon" };
   }
@@ -324,7 +342,7 @@ const INACTIVE_RANK = 4;
  * подключённое; неактивное (его видит только оператор) — в самом конце.
  */
 export function shelfOrder(items: StorefrontItem[]): StorefrontItem[] {
-  const rank = (i: StorefrontItem) => (i.product.inactive ? INACTIVE_RANK : SHELF_RANK[i.status]);
+  const rank = (i: StorefrontItem) => (i.inactive ? INACTIVE_RANK : SHELF_RANK[i.status]);
   return [...items].sort((a, b) => rank(a) - rank(b));
 }
 

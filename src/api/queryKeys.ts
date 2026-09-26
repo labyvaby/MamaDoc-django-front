@@ -478,5 +478,8 @@ export const djangoQueryKeys = {
     // Чем из товаров без модуля (запись, сайт, страховые…) организация уже пользуется.
     features: (organizationId: number | null | undefined) =>
       ["django", "tenancy", "features", organizationId ?? null] as const,
+    // Товары витрины, скрытые от клиник («Неактивен»).
+    inactive: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "inactive", organizationId ?? null] as const,
   },
 };
