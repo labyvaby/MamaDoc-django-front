@@ -2,7 +2,7 @@
  * OldConclusionDetailsCard.tsx
  * Компонент отображает подробную информацию о старом заключении.
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
     Box,
     Card,
@@ -18,9 +18,55 @@ import {
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import { useNotification } from "@refinedev/core";
-import type { OldConclusion } from "../useOldConclusions";
+import { livePrintPath, type OldConclusion } from "../useOldConclusions";
 import { generateConclusionPDF } from "../../../utility/pdfGenerator";
 import dayjs from "dayjs";
+import { getMedicalConclusion } from "../../../api/medical";
+import { parseConclusionFormData } from "../../../api/conclusionFormData";
+import {
+    buildConclusionPrintParts,
+    formatDiagnoses,
+    type ConclusionPrintParts,
+} from "../../../utility/conclusionPrintParts";
+import { formatQuantity } from "../../../utility/format";
+import type { ConclusionFormTemplate } from "../../../api/conclusionForms";
+import { ConclusionFormReadView } from "../../../components/conclusion-forms/ConclusionFormReadView";
+
+/**
+ * Живое заключение по бланку: сам бланк и его разложение, как на печати.
+ *
+ * Список `patient-conclusions` отдаёт только колонки, без `formData`, и весь
+ * протокол (карта гинеколога) показывался под заголовком «Анамнез» — туда
+ * бланк собирает текст. Поэтому открытое заключение догружаем целиком и,
+ * если оно заполнено по бланку, показываем строки бланка (21.09.2026).
+ */
+type FormView = { template: ConclusionFormTemplate; parts: ConclusionPrintParts };
+
+async function loadFormView(id: number): Promise<FormView | null> {
+    const c = await getMedicalConclusion(id);
+    const parsed = parseConclusionFormData(c.formData);
+    if (!parsed?.snapshot) return null;
+    const quantity = (value: string | null | undefined) =>
+        value == null || value === "" ? "" : formatQuantity(value);
+    return {
+        template: parsed.snapshot,
+        parts: buildConclusionPrintParts({
+            template: parsed.snapshot,
+            formValues: parsed.values,
+            manual: parsed.manual,
+            columns: {
+                heightCm: quantity(c.heightCm),
+                weightKg: quantity(c.weightKg),
+                temperature: quantity(c.temperature),
+                complaints: c.complaints ?? "",
+                diagnosis: formatDiagnoses(c.diagnosisData ?? []),
+                anamnesis: c.anamnesis ?? "",
+                objective: c.objective ?? "",
+                conclusion: c.conclusion ?? "",
+            },
+        }),
+    };
+}
 
 type Props = {
     item: OldConclusion | null;
@@ -32,6 +78,26 @@ type Props = {
 const OldConclusionDetailsCard: React.FC<Props> = ({ item, patientFio, patientDob, onClose }) => {
     const [isPrinting, setIsPrinting] = useState(false);
     const { open: notify } = useNotification();
+    const [formView, setFormView] = useState<FormView | null>(null);
+
+    const liveId =
+        item?.source === "current" ? Number(item.id.replace(/^live-/, "")) : null;
+
+    useEffect(() => {
+        setFormView(null);
+        if (!liveId || !Number.isFinite(liveId)) return;
+        let active = true;
+        loadFormView(liveId)
+            .then((view) => {
+                if (active) setFormView(view);
+            })
+            .catch(() => {
+                /* не догрузилось — остаётся обычный вид по колонкам */
+            });
+        return () => {
+            active = false;
+        };
+    }, [liveId]);
 
     if (!item) return null;
 
@@ -46,6 +112,14 @@ const OldConclusionDetailsCard: React.FC<Props> = ({ item, patientFio, patientDo
         : "Дата неизвестна";
 
     const handlePrint = async () => {
+        // Живое заключение печатается тем же документом, что из приёма: лист
+        // бланка из сохранённых данных. Штатный шаблон ниже положил бы весь
+        // протокол под «Анамнез».
+        const printPath = livePrintPath(item);
+        if (printPath) {
+            window.open(printPath, "_blank", "noopener");
+            return;
+        }
         setIsPrinting(true);
         try {
             const printData = {
@@ -123,6 +197,14 @@ const OldConclusionDetailsCard: React.FC<Props> = ({ item, patientFio, patientDo
             <Divider />
             <CardContent sx={{ flex: 1, overflowY: "auto", p: 3 }}>
                 <Stack spacing={3}>
+                    {formView ? (
+                        <ConclusionFormReadView
+                            template={formView.template}
+                            values={formView.parts.sheetValues}
+                            trailer={formView.parts.trailer}
+                        />
+                    ) : (
+                    <>
                     {/* Жизненные показатели */}
                     {(!!item.weight_kg || !!item.height_cm || !!item.temperature) && (
                         <Box>
@@ -207,6 +289,8 @@ const OldConclusionDetailsCard: React.FC<Props> = ({ item, patientFio, patientDo
                                 {item.diagnosis}
                             </Typography>
                         </Box>
+                    )}
+                    </>
                     )}
 
                     {/* Рекомендации */}

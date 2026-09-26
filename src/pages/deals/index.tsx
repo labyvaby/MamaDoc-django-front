@@ -1,5 +1,16 @@
 import React from "react";
-import { Alert, Box, Chip, MenuItem, Snackbar, Stack, TextField, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Chip,
+  IconButton,
+  MenuItem,
+  Snackbar,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
+} from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useQuery } from "@tanstack/react-query";
@@ -8,6 +19,8 @@ import dayjs from "dayjs";
 
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import FilterAltOffOutlined from "@mui/icons-material/FilterAltOffOutlined";
+import VolumeOffOutlined from "@mui/icons-material/VolumeOffOutlined";
+import VolumeUpOutlined from "@mui/icons-material/VolumeUpOutlined";
 
 import { AppButton, ListEmptyState, PageHeader, SegmentedTabs } from "../../components/ui";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
@@ -31,7 +44,33 @@ import {
   getPipelines,
   type DealBoardParams,
 } from "../../api/deals";
-import { DEALS_REFRESH_MS, dealsErrorMessage } from "./meta";
+import {
+  DEAL_HIGHLIGHT_MS,
+  DEALS_REFRESH_LIVE_MS,
+  DEALS_REFRESH_MS,
+  DEALS_SOUND_KEY,
+  dealsErrorMessage,
+} from "./meta";
+import { useDealsRealtime } from "./useDealsRealtime";
+
+/** Звук новой сделки: короткий «динь», играет только на чужие события. */
+function playNewDealSound() {
+  try {
+    const audio = new Audio("/sounds/deal-new.wav");
+    audio.volume = 0.5;
+    void audio.play().catch(() => undefined);
+  } catch {
+    // Нет Audio (SSR, старый браузер) — тишина, доска и так обновится.
+  }
+}
+
+function readSoundPref(): boolean {
+  try {
+    return localStorage.getItem(DEALS_SOUND_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
 
 /** Пилюля-фильтр по касаниям: «На сегодня» / «Просрочено». */
 type ActionPill = "today" | "overdue" | null;
@@ -81,6 +120,27 @@ const DealsPage: React.FC = () => {
     null,
   );
 
+  /* Realtime: сделки, созданные из этой вкладки, помним, чтобы не праздновать
+     собственное действие; чужая новая — подсветка на несколько секунд и звук. */
+  const ownIds = React.useRef(new Set<number>());
+  const [highlightId, setHighlightId] = React.useState<number | null>(null);
+  const highlightTimer = React.useRef<number | undefined>(undefined);
+  const [soundOn, setSoundOn] = React.useState(readSoundPref);
+  const soundRef = React.useRef(soundOn);
+  soundRef.current = soundOn;
+  React.useEffect(() => () => window.clearTimeout(highlightTimer.current), []);
+  const toggleSound = () => {
+    setSoundOn((cur) => {
+      const next = !cur;
+      try {
+        localStorage.setItem(DEALS_SOUND_KEY, next ? "on" : "off");
+      } catch {
+        // localStorage недоступен — настройка живёт до перезагрузки.
+      }
+      return next;
+    });
+  };
+
   React.useEffect(() => {
     const next = new URLSearchParams();
     if (tab !== "board") next.set("tab", tab);
@@ -108,6 +168,19 @@ const DealsPage: React.FC = () => {
     if (pipelineId !== "") return pipelines.find((p) => p.id === pipelineId) ?? null;
     return pipelines.find((p) => p.isDefault) ?? pipelines[0] ?? null;
   }, [pipelines, pipelineId]);
+
+  const realtime = useDealsRealtime({
+    pipelineId: activePipeline?.id,
+    ownIds,
+    onCelebrate: (dealId) => {
+      if (soundRef.current) playNewDealSound();
+      if (dealId == null) return;
+      setHighlightId(dealId);
+      window.clearTimeout(highlightTimer.current);
+      highlightTimer.current = window.setTimeout(() => setHighlightId(null), DEAL_HIGHLIGHT_MS);
+    },
+  });
+  const refreshMs = realtime ? DEALS_REFRESH_LIVE_MS : DEALS_REFRESH_MS;
 
   const sourcesQuery = useQuery({
     queryKey: djangoQueryKeys.deals.sources(orgId),
@@ -149,7 +222,7 @@ const DealsPage: React.FC = () => {
       getDealsSummary({ pipelineId: activePipeline?.id, organizationId: orgId }, signal),
     enabled: canView && !permLoading,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-    refetchInterval: DEALS_REFRESH_MS,
+    refetchInterval: refreshMs,
   });
 
   const summary = summaryQuery.data;
@@ -174,11 +247,18 @@ const DealsPage: React.FC = () => {
       <PageHeader
         title={t("title")}
         actions={
-          canCreate && !noPipelines ? (
-            <AppButton startIcon={<AddOutlined />} onClick={() => setCreateOpen(true)}>
-              {isMobile ? t("add") : t("addFull")}
-            </AppButton>
-          ) : undefined
+          <Stack direction="row" alignItems="center" gap={0.5}>
+            <Tooltip title={soundOn ? t("board.soundOn") : t("board.soundOff")}>
+              <IconButton size="small" onClick={toggleSound} aria-label={t("board.soundToggle")}>
+                {soundOn ? <VolumeUpOutlined fontSize="small" /> : <VolumeOffOutlined fontSize="small" />}
+              </IconButton>
+            </Tooltip>
+            {canCreate && !noPipelines ? (
+              <AppButton startIcon={<AddOutlined />} onClick={() => setCreateOpen(true)}>
+                {isMobile ? t("add") : t("addFull")}
+              </AppButton>
+            ) : null}
+          </Stack>
         }
       />
 
@@ -350,6 +430,8 @@ const DealsPage: React.FC = () => {
             canUpdate={canUpdate}
             canManage={canManage}
             enabled={activePipeline != null}
+            highlightId={highlightId}
+            refetchIntervalMs={refreshMs}
             /* Пустой экран — только когда фильтры отсекли всё: иначе он скрывает
                настроенные этапы, а это единственная навигация по воронке. */
             emptyState={
@@ -367,6 +449,7 @@ const DealsPage: React.FC = () => {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={(deal) => {
+          ownIds.current.add(deal.id);
           setToast({ text: t("create.created"), severity: "success" });
           setOpenDealId(deal.id);
         }}
@@ -381,12 +464,14 @@ const DealsPage: React.FC = () => {
         onClose={() => setOpenDealId(null)}
         onError={(text) => setToast({ text, severity: "error" })}
         onNotify={(text) => setToast({ text, severity: "success" })}
-        sources={sourcesQuery.data ?? []}
         stages={activePipeline?.stages ?? []}
         lostReasons={lostReasonsQuery.data ?? []}
         canUpdate={canUpdate}
         canManage={canManage}
         canOverrideAmount={canOverrideAmount}
+        nextTouchHours={activePipeline?.nextTouchHours ?? 24}
+        cardActions={activePipeline?.cardActions}
+        customFields={activePipeline?.customFields ?? []}
       />
 
       <Snackbar

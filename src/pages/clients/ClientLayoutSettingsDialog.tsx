@@ -8,17 +8,10 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
-  IconButton,
-  List,
-  ListItem,
-  ListItemText,
   Stack,
   Typography,
 } from "@mui/material";
-import ArrowDownwardOutlined from "@mui/icons-material/ArrowDownwardOutlined";
-import ArrowUpwardOutlined from "@mui/icons-material/ArrowUpwardOutlined";
-import ViewSidebarOutlined from "@mui/icons-material/ViewSidebarOutlined";
-import type { ClientLayoutSettings, ClientTabKey } from "./clientLayout";
+import type { ClientLayoutSettings } from "./clientLayout";
 
 type Props = {
   open: boolean;
@@ -27,32 +20,16 @@ type Props = {
   onSave: (value: ClientLayoutSettings) => void;
 };
 
-const tabLabels: Record<ClientTabKey, string> = {
-  purchases: "История покупок",
-  contacts: "Контактные лица",
-};
-
 type FieldsProps = {
   value: ClientLayoutSettings;
   onChange: React.Dispatch<React.SetStateAction<ClientLayoutSettings>>;
 };
 
 export function ClientLayoutSettingsFields({ value, onChange }: FieldsProps) {
-  const moveTab = (tab: ClientTabKey, direction: -1 | 1) => {
-    onChange((current) => {
-      const index = current.tabs.indexOf(tab);
-      const nextIndex = index + direction;
-      if (index < 0 || nextIndex < 0 || nextIndex >= current.tabs.length) return current;
-      const tabs = [...current.tabs];
-      [tabs[index], tabs[nextIndex]] = [tabs[nextIndex], tabs[index]];
-      return { ...current, tabs };
-    });
-  };
-
   return (
     <Stack gap={2}>
       <Typography variant="body2" color="text.secondary">
-        Выберите блоки карточки и порядок разделов в боковом меню профиля клиента.
+        Выберите блоки, которые будут показаны в карточке клиента.
       </Typography>
       <Stack>
         <Typography variant="subtitle2">Блоки карточки</Typography>
@@ -68,16 +45,6 @@ export function ClientLayoutSettingsFields({ value, onChange }: FieldsProps) {
             label={label}
           />
         ))}
-      </Stack>
-      <Stack>
-        <Typography variant="subtitle2">Боковое меню</Typography>
-        <List dense disablePadding>
-          {value.tabs.map((tab, index) => (
-            <ListItem key={tab} disableGutters secondaryAction={<Stack direction="row"><IconButton size="small" disabled={index === 0} onClick={() => moveTab(tab, -1)} aria-label="Переместить вверх"><ArrowUpwardOutlined fontSize="small" /></IconButton><IconButton size="small" disabled={index === value.tabs.length - 1} onClick={() => moveTab(tab, 1)} aria-label="Переместить вниз"><ArrowDownwardOutlined fontSize="small" /></IconButton></Stack>}>
-              <ViewSidebarOutlined color="action" sx={{ mr: 1 }} /><ListItemText primary={tabLabels[tab]} />
-            </ListItem>
-          ))}
-        </List>
       </Stack>
     </Stack>
   );

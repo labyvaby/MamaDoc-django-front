@@ -22,7 +22,7 @@ import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { PdfResultView } from "./PdfResultView";
 import { ConclusionDocumentView } from "./DocumentViews";
 import { formatQuantity } from "../../utility/format";
-import { loadDjangoPrintData } from "./djangoPrintData";
+import { loadDjangoPrintData, readPrintTarget } from "./djangoPrintData";
 
 /**
  * Печать заключения — единственное место, где документ собирается.
@@ -55,8 +55,8 @@ export const ConclusionPrintPage: React.FC = () => {
     let active = true;
     (async () => {
       try {
-        const lineIdRaw = new URLSearchParams(window.location.search).get("lineId");
-        const d = await loadDjangoPrintData(Number(id), lineIdRaw ? Number(lineIdRaw) : null);
+        const target = readPrintTarget();
+        const d = await loadDjangoPrintData(Number(id), target.lineId, target.conclusionId);
         const c = d.conclusion;
 
         // Прочерк ставит документ, а не данные. Пустое привязанное поле на
@@ -72,7 +72,7 @@ export const ConclusionPrintPage: React.FC = () => {
           heightCm: quantity(c?.heightCm),
           weightKg: quantity(c?.weightKg),
           temperature: quantity(c?.temperature),
-          complaints: c?.complaints ?? d.appt.doctorComplaints ?? "",
+          complaints: c?.complaints ?? d.visit.doctorComplaints ?? "",
           diagnosis: formatDiagnoses(c?.diagnosisData ?? []),
           anamnesis: c?.anamnesis ?? "",
           objective: c?.objective ?? "",
@@ -84,13 +84,13 @@ export const ConclusionPrintPage: React.FC = () => {
         const screenData: ConclusionPDFData = {
           patientFio: d.patientFio,
           patientDob: d.patientDob,
-          appointmentDate: d.appt.scheduledAt
-            ? dayjs(d.appt.scheduledAt).format("DD.MM.YYYY HH:mm")
+          appointmentDate: d.visit.startsAt
+            ? dayjs(d.visit.startsAt).format("DD.MM.YYYY HH:mm")
             : "—",
           height: columns.heightCm,
           weight: columns.weightKg,
           temperature: columns.temperature,
-          complaints: d.appt.complaints ?? "—",
+          complaints: d.visit.complaints ?? "—",
           doctorComplaints: columns.complaints || "—",
           diagnosis: columns.diagnosis || "—",
           anamnesis: columns.anamnesis,
@@ -177,9 +177,17 @@ async function resolveTemplate(
   if (!parsed.snapshot) return current;
   // Шаблон удалили — печатаем снимок как есть, с его бумагой и отступами.
   if (!current) return parsed.snapshot;
-  // Отступы — та же бумага, что и подложка: их подгоняют под напечатанную
-  // шапку бланка, и старые заключения должны печататься по текущей настройке.
-  return { ...parsed.snapshot, background: current.background, margins: current.margins };
+  // Отступы и шапка клиники — та же бумага, что и подложка: их подгоняют под
+  // фирменный бланк, и старые заключения должны печататься по текущей
+  // настройке. Шапка из снимка печаталась даже после того, как её выключили в
+  // конструкторе (жалоба 14.09.2026).
+  return {
+    ...parsed.snapshot,
+    background: current.background,
+    margins: current.margins,
+    showClinicHeader: current.showClinicHeader,
+    headerContacts: current.headerContacts,
+  };
 }
 
 async function fetchCurrentForm(
@@ -211,8 +219,8 @@ async function printWithSheet(
   const context: SheetContext = {
     patientFio: d.patientFio,
     patientDob: d.patientDob,
-    appointmentDateTime: d.appt.scheduledAt
-      ? dayjs(d.appt.scheduledAt).format("DD.MM.YYYY HH:mm")
+    appointmentDateTime: d.visit.startsAt
+      ? dayjs(d.visit.startsAt).format("DD.MM.YYYY HH:mm")
       : "—",
     doctorFio: d.doctorFio,
     clinicName: organization?.name ?? "",

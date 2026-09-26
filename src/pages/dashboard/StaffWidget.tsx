@@ -1,136 +1,114 @@
 import React from "react";
-import { Box, Stack, Tooltip, Typography } from "@mui/material";
-import { alpha } from "@mui/material/styles";
-import { useQuery } from "@tanstack/react-query";
+import { Box, Skeleton, Stack, Typography } from "@mui/material";
 import dayjs from "dayjs";
 
-import { AppCard } from "../../components/ui";
-import { getPayrollReport } from "../../api/payroll";
-import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
-import { subtleBg } from "../../theme/uiHelpers";
-import { WidgetError, type WidgetProps } from "./widgetKit";
-import { num } from "./widgetUtils";
+import { DashCard, WidgetError, type WidgetProps } from "./widgetKit";
+import { num, othersOf } from "./widgetUtils";
+import { useDashboardData } from "./DashboardData";
+import { RankOthers, RankRow, type RankRowData } from "./RankRow";
 
 /** Сколько строк показываем: длинный список превращает сводку в отчёт. */
 const TOP_SIZE = 5;
 
 /**
- * Кто сколько сделал за месяц — по данным ведомости зарплаты.
+ * Кто приносит деньги — топ сотрудников по выручке за период (`staff.topByRevenue`
+ * агрегата, нужен finance.view). Выручка — сумма строк услуг полностью
+ * оплаченных визитов (цена × количество − скидка строки); частично оплаченные
+ * и закрытые скидкой целиком не входят (ответ бэка 24.09.2026).
  *
- * ⚠ Здесь НЕ «сколько денег принёс сотрудник»: такой метрики в CRM нет.
- * `appointmentsCount` — приёмы, где он исполнитель, `earnings` — что ему
- * начислено. Второе связано с первым, но это разные величины, и подменять
- * одно другим на экране владельца нельзя.
+ * Без выручки (нет finance.view — сервер не отдаёт topByRevenue) — как раньше,
+ * по ведомости зарплаты за месяц: приёмы исполнителем и начислено.
  *
- * ⚠ Поле `paidCount` в этом отчёте бэк НЕ заполняет — приходит 0 у всех строк
- * (проверено на живом API 25.08.2026), хотя `totalCount` и `appointmentsCount`
- * заполнены. Поэтому считаем по приёмам исполнителя: сортировка по `paidCount`
- * дала бы случайный порядок и пустые полосы.
- *
- * Отчёт месячный по своей природе, поэтому виджет не зависит от выбранного
- * периода и всегда показывает текущий месяц — это написано в подзаголовке.
+ * ⚠ Выручка и «начислено» (`payroll.earnings`) — разные величины, бэк развёл
+ * их по разным полям; подменять одно другим на экране владельца нельзя.
  */
-export const StaffWidget: React.FC<WidgetProps> = ({ range, scope }) => {
-  const month = dayjs(range.month + "-01");
+export const StaffWidget: React.FC<WidgetProps> = ({ range }) => {
+  const data = useDashboardData();
+  const staff = data.sections.staff;
+  const loading = data.isLoading("staff");
+  const error = data.error("staff");
 
-  const query = useQuery({
-    queryKey: djangoQueryKeys.payroll.report({
-      view: "dashboard",
-      organizationId: scope.organizationId ?? null,
-      branchId: scope.branchId ?? null,
-      month: range.month,
-    }),
-    queryFn: ({ signal }) =>
-      getPayrollReport(
-        {
-          year: month.year(),
-          month: month.month() + 1,
-          organizationId: scope.organizationId,
-          branchId: scope.branchId,
-        },
-        signal,
-      ),
-    enabled: scope.orgReady,
-    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-  });
+  const byRevenue = staff?.topByRevenue;
+  const others = byRevenue
+    ? othersOf(staff?.topByRevenueTotal, byRevenue.slice(0, TOP_SIZE))
+    : null;
+  const payroll = staff?.payroll;
 
-  const rows = React.useMemo(() => {
-    const all = query.data?.rows ?? [];
-    return [...all]
+  const rows = React.useMemo<RankRowData[]>(() => {
+    if (byRevenue) {
+      return byRevenue.slice(0, TOP_SIZE).map((r) => ({
+        id: r.employeeId,
+        name: r.employeeName,
+        weight: num(r.amount),
+        main: formatKGS(num(r.amount)),
+        mainTitle: `Выручка оплаченных визитов · ${Math.round(num(r.share))}% от всей`,
+        side: String(r.count),
+        sideTitle: "Оплаченных визитов с участием сотрудника",
+      }));
+    }
+    return (payroll?.rows ?? [])
       .filter((r) => r.appointmentsCount > 0 || num(r.earnings) > 0)
-      .sort(
-        (a, b) =>
-          b.appointmentsCount - a.appointmentsCount || num(b.earnings) - num(a.earnings),
-      )
-      .slice(0, TOP_SIZE);
-  }, [query.data]);
+      .sort((a, b) => b.appointmentsCount - a.appointmentsCount || num(b.earnings) - num(a.earnings))
+      .slice(0, TOP_SIZE)
+      .map((r) => ({
+        id: r.employeeId,
+        name: r.fullName,
+        weight: r.appointmentsCount,
+        main: formatKGS(num(r.earnings)),
+        mainTitle: "Начислено за месяц: проценты, часы, надбавки",
+        side: String(r.appointmentsCount),
+        sideTitle: "Приёмов исполнителем",
+      }));
+  }, [byRevenue, payroll]);
 
-  const best = rows.reduce((max, r) => Math.max(max, r.appointmentsCount), 0);
+  const best = rows.reduce((max, r) => Math.max(max, r.weight), 0);
+  const payrollMonth = payroll
+    ? dayjs(`${payroll.year}-${String(payroll.month).padStart(2, "0")}-01`)
+    : dayjs(range.dateTo);
 
   return (
-    <AppCard
-      variant="outlined"
-      elevation={0}
+    <DashCard
       title="Сотрудники"
-      subheader={`${month.format("MMMM YYYY")} · по приёмам исполнителя`}
+      subheader={
+        byRevenue
+          ? `${range.label} · по выручке`
+          : `${payrollMonth.format("MMMM")} · по приёмам`
+      }
+      href="/salary-reports"
+      linkLabel="Зарплата"
     >
-      {query.isError ? (
-        <WidgetError error={query.error} />
-      ) : rows.length === 0 ? (
-        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-          {query.isLoading ? "Загружаем…" : "За месяц пока нет приёмов"}
-        </Typography>
-      ) : (
+      {error ? (
+        <WidgetError error={error} />
+      ) : loading ? (
         <Stack spacing={1}>
-          {rows.map((r) => (
-            <Box
-              key={r.employeeId}
-              sx={(t) => ({
-                p: 1.25,
-                borderRadius: "10px",
-                border: 1,
-                borderColor: "divider",
-                bgcolor: subtleBg(t),
-              })}
-            >
-              <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mb: 0.75 }}>
-                <Typography sx={{ fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>
-                  {r.fullName}
-                </Typography>
-                <Tooltip title="Приёмы, где сотрудник указан исполнителем" arrow>
-                  <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                    {r.appointmentsCount}
-                  </Typography>
-                </Tooltip>
-                <Tooltip title="Начислено за месяц: проценты, часы, надбавки" arrow>
-                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                    {formatKGS(num(r.earnings))}
-                  </Typography>
-                </Tooltip>
-              </Stack>
-              <Box
-                sx={(t) => ({
-                  height: 5,
-                  borderRadius: "6px",
-                  bgcolor: subtleBg(t, true),
-                  overflow: "hidden",
-                })}
-              >
-                <Box
-                  sx={(t) => ({
-                    width: `${best > 0 ? Math.round((r.appointmentsCount / best) * 100) : 0}%`,
-                    height: "100%",
-                    bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.8 : 0.55),
-                    transition: "width .3s ease",
-                  })}
-                />
-              </Box>
-            </Box>
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} variant="text" height={28} />
           ))}
         </Stack>
+      ) : rows.length === 0 ? (
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+          {byRevenue ? "За период нет оплаченных визитов" : "За месяц пока нет приёмов"}
+        </Typography>
+      ) : (
+        <Stack spacing={0.25} sx={{ mx: -1 }}>
+          <Stack
+            direction="row"
+            spacing={1.25}
+            sx={{ px: 1, fontSize: "0.6875rem", color: "text.secondary" }}
+          >
+            <Box sx={{ width: 16 }} />
+            <Box sx={{ flex: 1 }} />
+            <Box sx={{ width: 44, textAlign: "right" }}>{byRevenue ? "визитов" : "приёмы"}</Box>
+            <Box sx={{ width: 100, textAlign: "right" }}>{byRevenue ? "выручка" : "начислено"}</Box>
+          </Stack>
+          {rows.map((r, i) => (
+            <RankRow key={r.id} row={r} index={i} best={best} />
+          ))}
+          {others && <RankOthers {...others} label="остальные сотрудники" />}
+        </Stack>
       )}
-    </AppCard>
+    </DashCard>
   );
 };
 

@@ -265,11 +265,31 @@ export function cancelMyBooking(token: string, id: number): Promise<void> {
 
 // ── Клиентские хелперы ────────────────────────────────────────────────────────
 
-/** Статусы, при которых запись ещё «живая» и её можно отменить. */
+/**
+ * Статусы, при которых пациент отменяет запись сам.
+ *
+ * `confirmed` сюда не входит намеренно (10.09.2026): подтверждённая бронь уже
+ * материализована в приём клиники, а отмена брони гасит его каскадом на бэке —
+ * вместе с принятой оплатой, которую возврат не отыгрывает (`prepaymentNeeds
+ * Attention` в контракте броней §6.3: «деньги подтверждены, а приёма не
+ * будет»). Там, где появился приём, распоряжается клиника — то же правило, что
+ * и в CRM, где у брони с приёмом убрана кнопка «Отменить».
+ *
+ * До подтверждения приёма ещё нет: `pending` и `awaiting_payment` пациент
+ * снимает сам, иначе он просто не придёт и слот пропадёт молча.
+ */
+const SELF_CANCELLABLE_STATUSES = new Set(["pending", "awaiting_payment"]);
+
+/** Запись ещё «живая» — показываем её в предстоящих (отмена тут ни при чём). */
 const ACTIVE_STATUSES = new Set(["pending", "confirmed", "awaiting_payment"]);
 
 export function isBookingCancellable(b: MyBooking): boolean {
-  return ACTIVE_STATUSES.has(b.status) && !isPast(b);
+  return SELF_CANCELLABLE_STATUSES.has(b.status) && !isPast(b);
+}
+
+/** Отменить может только клиника: приём уже создан, звонить в регистратуру. */
+export function isCancellableByClinicOnly(b: MyBooking): boolean {
+  return b.status === "confirmed" && !isPast(b);
 }
 
 function isPast(b: MyBooking): boolean {

@@ -15,6 +15,22 @@ export interface AllActiveEmployeesResult {
 }
 
 /**
+ * Только врачи (`clinicalRole`, профессиональный тип, не RBAC-роль). В пикерах
+ * «чьё окно ждём» регистраторам, уборщицам и бухгалтерам делать нечего;
+ * медсёстры тоже не показываются — очередь ведётся к врачу.
+ *
+ * Если клиническая роль не проставлена никому (карточки сотрудников заполнены
+ * по умолчанию `other`), возвращаем список как есть: пустой селект хуже
+ * лишних строк — выбрать было бы вообще некого.
+ */
+export function doctorEmployeesOnly(
+  employees: DjangoEmployeeListItem[],
+): DjangoEmployeeListItem[] {
+  const doctors = employees.filter((e) => e.clinicalRole === "doctor");
+  return doctors.length > 0 ? doctors : employees;
+}
+
+/**
  * Полный список активных сотрудников организации — все страницы за один раз.
  *
  * Пикеры сотрудников раньше искали по серверу с `pageSize: 20` и со строкой

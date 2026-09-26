@@ -1,5 +1,7 @@
 import { apiRequest } from "./client";
 
+const POS_API_BASE = "/v2/pos";
+
 export type RetailReceipt = {
   id: number;
   number: string;
@@ -26,10 +28,11 @@ export type ClientPurchase = {
   createdAt: string;
   completedAt: string | null;
   lines: Array<{ id: number; productName: string; quantity: string; total: string }>;
+  audit: Array<{ id: number; action: string; reason: string; userId: number | null; userName: string | null; metadata: Record<string, unknown>; createdAt: string }>;
 };
 
 export function getClientPurchases(clientId: number, signal?: AbortSignal) {
-  return apiRequest<ClientPurchase[]>(`/pos/receipts/?clientId=${clientId}&limit=100`, { signal });
+  return apiRequest<ClientPurchase[]>(`${POS_API_BASE}/receipts/?clientId=${clientId}&limit=100`, { signal });
 }
 
 export type RetailReceiptLine = {
@@ -43,7 +46,7 @@ export type RetailReceiptLine = {
 export function getRetailReceipts(params: { branchId?: number; limit?: number; offset?: number } = {}, signal?: AbortSignal) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) if (value != null) query.set(key, String(value));
-  return apiRequest<RetailReceipt[]>(`/pos/${query.size ? `?${query}` : ""}`, { signal });
+  return apiRequest<RetailReceipt[]>(`${POS_API_BASE}/receipts/${query.size ? `?${query}` : ""}`, { signal });
 }
 
 export function createRetailReceipt(data: {
@@ -58,11 +61,11 @@ export function createRetailReceipt(data: {
   promoCode?: string;
   idempotencyKey?: string;
 }) {
-  return apiRequest<RetailReceipt>("/pos/", { method: "POST", body: data });
+  return apiRequest<RetailReceipt>(`${POS_API_BASE}/receipts/`, { method: "POST", body: data });
 }
 
 export function returnRetailReceipt(id: number, data: { lines: Array<{ receiptLineId: number; quantity: number }>; reason?: string }) {
-  return apiRequest<RetailReceipt>(`/pos/${id}/returns/`, { method: "POST", body: data });
+  return apiRequest<RetailReceipt>(`${POS_API_BASE}/receipts/${id}/return/`, { method: "POST", body: data });
 }
 
 export type InventoryCount = { id: number; warehouseId: number; status: string; linesCount: number; completedAt: string | null };

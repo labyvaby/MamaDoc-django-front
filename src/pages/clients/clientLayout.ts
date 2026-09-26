@@ -1,9 +1,9 @@
+import { apiRequest } from "../../api/client";
+
 export type ClientSectionKey = "identity" | "company" | "finance" | "note";
-export type ClientTabKey = "purchases" | "contacts";
 
 export type ClientLayoutSettings = {
   sections: Record<ClientSectionKey, boolean>;
-  tabs: ClientTabKey[];
 };
 
 export const defaultClientLayoutSettings: ClientLayoutSettings = {
@@ -13,28 +13,39 @@ export const defaultClientLayoutSettings: ClientLayoutSettings = {
     finance: true,
     note: true,
   },
-    tabs: ["purchases", "contacts"],
 };
 
-const storageKey = (organizationId: number) => `mamadoc:clients:layout:${organizationId}`;
-
-export function readClientLayoutSettings(organizationId: number | null): ClientLayoutSettings {
-  if (!organizationId || typeof window === "undefined") return defaultClientLayoutSettings;
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(storageKey(organizationId)) ?? "null") as (Partial<ClientLayoutSettings> & { tabs?: string[] }) | null;
-    const savedTabs: string[] = Array.isArray(parsed?.tabs) ? parsed.tabs : [...defaultClientLayoutSettings.tabs];
-    return {
-      sections: { ...defaultClientLayoutSettings.sections, ...(parsed?.sections ?? {}) },
-      tabs: savedTabs.map((tab) => tab === "history" ? "purchases" : tab).filter(
-        (tab): tab is ClientTabKey => tab === "purchases" || tab === "contacts",
-      ),
-    };
-  } catch {
-    return defaultClientLayoutSettings;
-  }
+export function normalizeClientLayoutSettings(value: unknown): ClientLayoutSettings {
+  if (!value || typeof value !== "object") return defaultClientLayoutSettings;
+  const raw = value as { sections?: unknown };
+  return {
+    sections: {
+      ...defaultClientLayoutSettings.sections,
+      ...(raw.sections && typeof raw.sections === "object" ? raw.sections : {}),
+    },
+  };
 }
 
-export function writeClientLayoutSettings(organizationId: number | null, value: ClientLayoutSettings): void {
-  if (!organizationId || typeof window === "undefined") return;
-  window.localStorage.setItem(storageKey(organizationId), JSON.stringify(value));
+const clientLayoutPath = (organizationId: number) =>
+  `/v2/person-form/client-layout/?organizationId=${organizationId}`;
+
+export function getClientLayoutSettings(organizationId: number, signal?: AbortSignal) {
+  return apiRequest<ClientLayoutSettings>(clientLayoutPath(organizationId), {
+    signal,
+    headers: { "X-Organization-Id": String(organizationId) },
+  }).then(normalizeClientLayoutSettings);
+}
+
+export function updateClientLayoutSettings(
+  organizationId: number,
+  value: ClientLayoutSettings,
+) {
+  return apiRequest<ClientLayoutSettings>(clientLayoutPath(organizationId), {
+    method: "PATCH",
+    headers: { "X-Organization-Id": String(organizationId) },
+    // Older servers still require the retired tabs field. Newer servers
+    // ignore it, so this keeps the shared card-section settings writable
+    // throughout the rollout.
+    body: { ...value, tabs: ["purchases"] },
+  }).then(normalizeClientLayoutSettings);
 }

@@ -22,11 +22,37 @@ export const WAITLIST_USE_MOCKS = false;
  * Включён 09.09.2026 вместе с `WAITLIST_USE_MOCKS = false` — врозь эти два
  * флага не трогать: с моками регистратор увидел бы выдуманную очередь и стал
  * бы звонить людям, которых в ней нет. На проде проверены `GET /api/waitlist/`,
- * `summary/` и `match-counts/`; публичный канал витрины остаётся закрыт флагом
- * `WAITLIST_PUBLIC_CHANNEL_ENABLED` (ручка `POST /api/v1/waitlist/` не
- * проверена).
+ * `summary/` и `match-counts/`, а 10.09.2026 — и публичный канал витрины
+ * (`WAITLIST_PUBLIC_CHANNEL_ENABLED`): `POST /api/v1/waitlist/` создаёт запись
+ * с `source: "public"`, `patientId: null` и именем гостя в `contactName`.
  */
 export const WAITLIST_MODULE_ENABLED = true;
+
+/**
+ * Вакцина в записи: пикер в форме, чип в списке и блок «Ждут вакцину» на
+ * главном экране модуля.
+ *
+ * ⚠ ВКЛЮЧЁН РАНЬШЕ ПРОДА (решение 17.09.2026: выкладываем, как только бэк будет
+ * готов). Бэк тикет закрыл, но выложил ТОЛЬКО на test — на crm.operator.kg поля
+ * `vaccine` в записи ещё нет, и до выкладки пикер будет терять выбор. На test
+ * поле живое: `PATCH {vaccineId}` сохраняет, `vaccineId: null` не очищает,
+ * `clearVaccine: true` очищает, фильтр `?vaccineId=` режет список, — но остаются
+ * два незакрытых блокера:
+ *
+ * 1. `GET /waitlist/summary/` отвечает **500**, как только хотя бы у одной
+ *    активной записи есть вакцина (с пустым `byVaccine` — 200). Сводка кормит
+ *    бейдж в сайдбаре и счётчики страницы, то есть один выбранный препарат
+ *    гасил бы весь экран очереди;
+ * 2. `POST /api/waitlist/` на test отвечает 500 на любой payload, даже без
+ *    вакцины (баш-проверка 17.09.2026, шесть вариантов тела).
+ *
+ * Пункт 1 виден прямо в интерфейсе: как только регистратор выбирает препарат,
+ * счётчики на экране очереди повисают пустыми, бейдж модуля в сайдбаре пропадает,
+ * а блок «Ждут вакцину» не появляется вовсе (проверено в UI 17.09.2026). Пока бэк
+ * не ответил по обоим пунктам — держать это в виду при выкладке; тикет
+ * `backend_ticket_waitlist_vaccine.md`, §9.
+ */
+export const WAITLIST_VACCINE_LIVE = true;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -66,6 +92,12 @@ export interface WaitlistContact {
   createdAt: string;
 }
 
+/** Товар-вакцина склада (`/warehouse/products/?isVaccine=true`). */
+export interface WaitlistVaccineRef {
+  id: number;
+  name: string;
+}
+
 export interface WaitlistEntry {
   id: number;
   /** Карта пациента, если он уже в базе; иначе запись живёт как имя + телефон. */
@@ -79,6 +111,11 @@ export interface WaitlistEntry {
   specializationId: number | null;
   specializationName: string | null;
   services: WaitlistServiceRef[];
+  /**
+   * «Жду, когда привезут этот препарат»; null — вакцина не при чём.
+   * `undefined` — окружение, где поля ещё нет (см. WAITLIST_VACCINE_LIVE).
+   */
+  vaccine?: WaitlistVaccineRef | null;
   branchId: number | null;
   branchName: string | null;
   /** Желаемый период, `YYYY-MM-DD`. Пусто с обеих сторон = «когда угодно». */
@@ -124,6 +161,13 @@ export interface WaitlistFilters {
   status?: WaitlistStatus | readonly WaitlistStatus[];
   employeeId?: number;
   specializationId?: number;
+  /** Товар-вакцина; `byVaccine` в сводке кликом уводит сюда. */
+  vaccineId?: number;
+  /**
+   * Филиал записи. Бэк сам по филиалу сессии НЕ режет (проверено на проде
+   * 10.09.2026: запись филиала 13 видна из сессии филиала 1), но параметр
+   * поддерживает — скоуп держит фронт, подставляя активный филиал.
+   */
   branchId?: number;
   priority?: WaitlistPriority;
   source?: WaitlistSource;
@@ -150,12 +194,25 @@ export interface WaitlistFilters {
   matchBranchId?: number;
 }
 
+export interface WaitlistVaccineDemand {
+  id: number;
+  name: string;
+  count: number;
+  urgentCount: number;
+}
+
 export interface WaitlistSummary {
   waiting: number;
   offered: number;
   urgent: number;
   /** Записи, у которых activeUntil на подходе (порог задаёт бэк). */
   expiringSoon: number;
+  /**
+   * Сколько человек ждут каждую вакцину (активные записи, сортировка по count).
+   * Появляется вместе с полем `vaccine` на бэке — до этого ключа нет, поэтому
+   * поле необязательное.
+   */
+  byVaccine?: WaitlistVaccineDemand[];
 }
 
 export interface CreateWaitlistPayload {
@@ -165,6 +222,8 @@ export interface CreateWaitlistPayload {
   employeeId?: number | null;
   specializationId?: number | null;
   serviceIds?: number[];
+  /** Товар-вакцина склада; ориентир наравне с врачом и специализацией. */
+  vaccineId?: number | null;
   branchId?: number | null;
   desiredDateFrom?: string | null;
   desiredDateTo?: string | null;
@@ -184,6 +243,7 @@ export interface UpdateWaitlistPayload extends Partial<CreateWaitlistPayload> {
   clearPatient?: boolean;
   clearEmployee?: boolean;
   clearSpecialization?: boolean;
+  clearVaccine?: boolean;
   clearBranch?: boolean;
   clearDesiredDates?: boolean;
   clearDesiredTimes?: boolean;
@@ -352,6 +412,12 @@ export function matchesSlot(entry: WaitlistEntry, slot: WaitlistSlot): boolean {
   if (!WAITLIST_ACTIVE_STATUSES.includes(entry.status)) return false;
   if (entry.activeUntil && entry.activeUntil < slot.date) return false;
 
+  // Запись «жду только препарат» (ни врача, ни специализации — так можно с
+  // 17.09.2026) в подбор кандидатов под освободившееся окно не попадает: её
+  // ждут поставку вакцины, а не окно в расписании. Бэк режет такие записи в
+  // match-counts/ так же — правило продублировано в тикете §3 и в тесте.
+  if (entry.employeeId == null && entry.specializationId == null) return false;
+
   // Врач: либо ждут именно его, либо ждут специализацию, которая у него есть.
   if (entry.employeeId != null) {
     if (entry.employeeId !== slot.employeeId) return false;
@@ -408,6 +474,7 @@ function buildParams(filters: WaitlistFilters): URLSearchParams {
   if (filters.specializationId != null) {
     q.set("specializationId", String(filters.specializationId));
   }
+  if (filters.vaccineId != null) q.set("vaccineId", String(filters.vaccineId));
   if (filters.branchId != null) q.set("branchId", String(filters.branchId));
   if (filters.priority) q.set("priority", filters.priority);
   if (filters.source) q.set("source", filters.source);
@@ -441,6 +508,7 @@ export function getWaitlist(
       list = list.filter((e) => wanted.includes(e.status));
     }
     if (filters.employeeId != null) list = list.filter((e) => e.employeeId === filters.employeeId);
+    if (filters.vaccineId != null) list = list.filter((e) => e.vaccine?.id === filters.vaccineId);
     if (filters.specializationId != null) {
       list = list.filter((e) => e.specializationId === filters.specializationId);
     }
@@ -523,12 +591,19 @@ export function getWaitlistEntry(
   });
 }
 
+/**
+ * Счётчики очереди для бейджа в сайдбаре. `branchId` — активный филиал сессии:
+ * бэк по филиалу не режет, поэтому без него бейдж считал бы чужие филиалы.
+ */
 export function getWaitlistSummary(
   organizationId?: number,
+  branchId?: number,
   signal?: AbortSignal,
 ): Promise<WaitlistSummary> {
   if (WAITLIST_USE_MOCKS) {
-    const active = mockEntries.filter((e) => WAITLIST_ACTIVE_STATUSES.includes(e.status));
+    const active = mockEntries
+      .filter((e) => WAITLIST_ACTIVE_STATUSES.includes(e.status))
+      .filter((e) => branchId == null || e.branchId === branchId);
     const soon = isoDay(7);
     return mockDelay({
       waiting: active.filter((e) => e.status === "waiting").length,
@@ -537,7 +612,11 @@ export function getWaitlistSummary(
       expiringSoon: active.filter((e) => e.activeUntil != null && e.activeUntil <= soon).length,
     });
   }
-  return apiRequest<WaitlistSummary>(withOrg("/waitlist/summary/", organizationId), { signal });
+  const q = new URLSearchParams();
+  if (organizationId != null) q.set("organizationId", String(organizationId));
+  if (branchId != null) q.set("branchId", String(branchId));
+  const query = q.toString();
+  return apiRequest<WaitlistSummary>(`/waitlist/summary/${query ? `?${query}` : ""}`, { signal });
 }
 
 /**

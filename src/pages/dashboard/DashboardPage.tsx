@@ -10,7 +10,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useIsFetching, useQuery } from "@tanstack/react-query";
+import { useIsFetching } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
@@ -19,13 +19,10 @@ import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 
-import { PageHeader, SegmentedTabs, cascadeContainer, cascadeItem } from "../../components/ui";
-import { getBranches } from "../../api/organization";
-import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
+import { SegmentedTabs, cascadeContainer, cascadeItem } from "../../components/ui";
 import { useCanChecker } from "../../hooks/useCan";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePermissions } from "../../hooks/usePermissions";
-import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
 import { PERIOD_TABS, resolvePeriod, type PeriodKey } from "./period";
 import {
   DEFAULT_LAYOUT,
@@ -33,45 +30,63 @@ import {
   loadLayout,
   resolveSpan,
   saveLayout,
+  stretchRows,
   visibleWidgets,
   type DashboardLayout,
   type WidgetId,
 } from "./layout";
 import { LayoutEditor } from "./LayoutEditor";
-import {
-  AppointmentsWidget,
-  EmptyDashboard,
-  MonthWidget,
-  MoneyWidget,
-  ReviewsWidget,
-  TasksWidget,
-  DealsWidget,
-} from "./widgets";
+import { AppointmentsWidget, EmptyDashboard, MoneyWidget, ResultsWidget } from "./widgets";
+import { ServicesWidget } from "./ServicesWidget";
+import { DashboardDataContext, useDashboardDataSource } from "./DashboardData";
+import { OpsWidget } from "./OpsWidget";
 import {
   AvailabilityWidget,
   BookingsWidget,
   BranchesWidget,
 } from "./operationsWidgets";
 import { exportDashboardXlsx } from "./exportDashboardXlsx";
+import { planScopeKey, readRevenuePlans, resolvePlan } from "./revenuePlan";
 import { StaffWidget } from "./StaffWidget";
+import { PulseWidget } from "./PulseWidget";
+import { AttentionWidget } from "./AttentionWidget";
 import type { WidgetProps } from "./widgetKit";
+
+// Глобальной русской локали dayjs в приложении нет: её включают страницы
+// побочным эффектом импорта. Сводка — главная после входа, и при прямом
+// заходе даты и месяцы выходили по-английски («Wednesday», «september»).
+dayjs.locale("ru");
 
 const PERIOD_STORAGE_KEY = "mamadoc:dashboard:period";
 
 const MotionGrid = motion(Grid);
 
 const WIDGET_COMPONENT: Record<WidgetId, React.FC<WidgetProps>> = {
+  pulse: PulseWidget,
+  attention: AttentionWidget,
   money: MoneyWidget,
   appointments: AppointmentsWidget,
   availability: AvailabilityWidget,
   bookings: BookingsWidget,
   branches: BranchesWidget,
-  month: MonthWidget,
+  month: ResultsWidget,
   staff: StaffWidget,
-  tasks: TasksWidget,
-  deals: DealsWidget,
-  reviews: ReviewsWidget,
+  services: ServicesWidget,
+  ops: OpsWidget,
 };
+
+/** Иконка-кнопка шапки: 36px, тонкая грань, как сегмент периода рядом. */
+const headerButtonSx = {
+  width: 36,
+  height: 36,
+  borderRadius: "10px",
+  border: 1,
+  borderColor: "divider",
+  bgcolor: "background.paper",
+  color: "text.secondary",
+  "&:hover": { color: "text.primary", bgcolor: "background.paper" },
+  "& .MuiSvgIcon-root": { fontSize: 20 },
+} as const;
 
 /**
  * Сводка — общий главный экран.
@@ -85,11 +100,9 @@ const WIDGET_COMPONENT: Record<WidgetId, React.FC<WidgetProps>> = {
  * Поверх прав работают личные настройки: любой блок можно спрятать и
  * переставить, выбор хранится в браузере пользователя (задача #232).
  *
- * ⚠ Данные берутся из существующих агрегатов CRM (`/cashbox/summary/`,
- * `/reports/monthly/`, `/appointments/day-counts/`, `/tasks/summary/`,
- * `/reviews/stats/`, `/scheduling/availability/summary/`, `/bookings/`) — ни
- * одной новой ручки на бэке не требуется. Когда появятся вьюхи аналитического
- * слоя, блоки переедут на них по одному.
+ * Данные — один агрегат `/dashboard/summary/` на весь экран (DashboardData.ts):
+ * блоки читают его из контекста и своих запросов не делают. Раздел без права
+ * сервер не отдаёт, и блок его не рисует.
  */
 export const DashboardPage: React.FC = () => {
   const { can, loading: permsLoading } = useCanChecker();
@@ -106,7 +119,22 @@ export const DashboardPage: React.FC = () => {
     localStorage.setItem(PERIOD_STORAGE_KEY, key);
   };
 
-  const range = React.useMemo(() => resolvePeriod(period), [period]);
+  // Сводку держат открытой сутками: без смены даты в полночь «Сегодня»
+  // утром показывало бы вчерашний день. Проверяем раз в минуту — дешевле,
+  // чем таймер на точную полночь с учётом сна ноутбука.
+  const [dayKey, setDayKey] = React.useState(() => dayjs().format("YYYY-MM-DD"));
+  React.useEffect(() => {
+    const id = window.setInterval(() => {
+      const now = dayjs().format("YYYY-MM-DD");
+      setDayKey((prev) => (prev === now ? prev : now));
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // dayKey — зависимость-триггер: сам в расчёт не входит, resolvePeriod
+  // берёт текущую дату.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const range = React.useMemo(() => resolvePeriod(period), [period, dayKey]);
 
   // Каскад проигрываем только если вкладка видима на момент монтирования.
   // В фоновой вкладке браузер замораживает requestAnimationFrame, анимация не
@@ -126,14 +154,7 @@ export const DashboardPage: React.FC = () => {
     if (fetching === 0) setUpdatedAt(dayjs().format("HH:mm"));
   }, [fetching]);
 
-  // Филиалы нужны, чтобы понять, есть ли что сравнивать: блок сравнения не
-  // имеет смысла при единственной точке.
-  const branchesQuery = useQuery({
-    queryKey: [...djangoQueryKeys.organization.branches, scope.organizationId ?? null],
-    queryFn: () => getBranches(scope.organizationId),
-    enabled: scope.orgReady && can("finance.view"),
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-  });
+  const data = useDashboardDataSource({ range, periodKey: period, scope });
 
   const [layout, setLayout] = React.useState<DashboardLayout>(() => loadLayout());
   const [editing, setEditing] = React.useState(false);
@@ -143,9 +164,10 @@ export const DashboardPage: React.FC = () => {
     saveLayout(next);
   };
 
+  // Блок сравнения филиалов не имеет смысла при единственной точке.
   const ctx = React.useMemo(
-    () => ({ can, period, branchCount: branchesQuery.data?.length ?? 1 }),
-    [can, period, branchesQuery.data],
+    () => ({ can, period, branchCount: data.branchTotal }),
+    [can, period, data.branchTotal],
   );
 
   const shown = visibleWidgets(layout, ctx);
@@ -160,24 +182,15 @@ export const DashboardPage: React.FC = () => {
     setExportError(null);
     try {
       await exportDashboardXlsx({
-        range,
-        periodKey: period,
-        scope,
+        data,
+        plan: resolvePlan(
+          readRevenuePlans(activeOrganization?.themeConfig),
+          planScopeKey(scope.branchId),
+          resolvePeriod("month", dayjs(range.dateTo)).month,
+        )?.amount,
         organizationName: activeOrganization?.name ?? "",
         branchName:
           activeBranch?.name !== activeOrganization?.name ? activeBranch?.name : undefined,
-        // В файл кладём то, на что есть права, а не то, что сейчас на экране:
-        // спрятанный блок — это выбор вида, а не запрет на данные.
-        allow: {
-          money: can(PAGE_PERMISSIONS.cashbox),
-          appointments: can(PAGE_PERMISSIONS.appointments),
-          reports: can(PAGE_PERMISSIONS.reports),
-          tasks: can(PAGE_PERMISSIONS.tasks),
-          // Воронки в выгрузке нет: xlsx собирает деньги, записи и отчёты,
-          // а ретроспектива обращений живёт во вкладке аналитики.
-          reviews: can(PAGE_PERMISSIONS.reviews),
-          branches: can(PAGE_PERMISSIONS.cashbox) && (branchesQuery.data?.length ?? 0) > 1,
-        },
       });
     } catch (e) {
       setExportError(e instanceof Error ? e.message : "Не удалось выгрузить файл");
@@ -202,60 +215,115 @@ export const DashboardPage: React.FC = () => {
 
   const widgetProps = { range, periodKey: period, scope };
 
+  // Ряды растягиваются, если соседа нет по правам или он спрятан: иначе в
+  // сетке оставалась бы дыра. На среднем экране «две трети» — уже вся ширина:
+  // 8 из 12 рядом с половинкой не помещается, остальное — половинки.
+  const lgSpans = stretchRows(shown.map((w) => resolveSpan(w, layout)));
+  const mdSpans = stretchRows(shown.map((w) => (resolveSpan(w, layout) >= 8 ? 12 : 6)));
+
   return (
     // Свой скролл-контейнер обязателен: лейаут приложения (`childrenBoxProps`
     // в App.tsx) фиксирует высоту и ставит `overflow: hidden`, поэтому страница
     // без него просто обрезается — на «Месяце» нижние карточки были недоступны.
-    <Box sx={{ height: "100%", overflowY: "auto", overflowX: "hidden", pr: { md: 0.5 } }}>
-      <PageHeader
-        title="Сводка"
-        actions={
-          <Stack direction="row" alignItems="center" spacing={1.5}>
-            {updatedAt && !editing && (
-              <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                обновлено в {updatedAt}
-              </Typography>
-            )}
-            {!editing && (
-              <SegmentedTabs
-                tabs={PERIOD_TABS}
-                value={period}
-                onChange={handlePeriod}
-                layoutId="dashboard-period"
+    <DashboardDataContext.Provider value={data}>
+    <Box sx={{ height: "100%", overflowY: "auto", overflowX: "hidden", pr: { md: 0.5 }, pb: 2 }}>
+      {/* Шапка в одну строку: заголовок с датой и скоупом слева, управление
+          справа. Отдельная строка с датой над сеткой съедала высоту экрана. */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        sx={{ flexWrap: "wrap", columnGap: 1.5, rowGap: 1, mb: 1.75, pt: 0.5 }}
+      >
+        <Stack
+          direction="row"
+          alignItems="baseline"
+          sx={{ flex: 1, minWidth: 0, columnGap: 1.5, flexWrap: "wrap" }}
+        >
+          <Typography
+            component="h1"
+            sx={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.3 }}
+          >
+            Сводка
+          </Typography>
+          {!editing && (
+            <Typography sx={{ fontSize: "0.875rem", color: "text.secondary", minWidth: 0 }} noWrap>
+              {/* Дата с днём недели: у бизнеса разный поток по дням, и
+                  «сегодня» без неё читается хуже. */}
+              <Box component="span" sx={{ color: "text.primary", fontWeight: 500 }}>
+                {dayjs().format("dddd, D MMMM")}
+              </Box>
+              {scopeLabel ? ` · ${scopeLabel}` : ""}
+            </Typography>
+          )}
+        </Stack>
+
+        {/* На телефоне управление уходит на свою строку во всю ширину: период
+            и две кнопки не помещаются рядом с заголовком. ⚠ Брейкпоинт sm в
+            теме = 360px, телефон попадает в sm — переключаемся по md. */}
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1.25}
+          sx={{ width: { xs: "100%", md: "auto" }, justifyContent: { xs: "space-between", md: "flex-start" } }}
+        >
+          {updatedAt && !editing && (
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={0.75}
+              sx={{ display: { xs: "none", md: "flex" } }}
+            >
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  // Точка — «данные живые»: серая, пока что-то грузится.
+                  bgcolor: fetching > 0 ? "text.disabled" : "success.main",
+                }}
               />
-            )}
-            {!editing && (
-              <Tooltip title="Выгрузить в Excel" arrow>
-                {/* span — чтобы подсказка работала и на выключенной кнопке:
-                    MUI не вешает события на disabled-элемент. */}
-                <span>
-                  <IconButton
-                    onClick={handleExport}
-                    disabled={exporting || !hasAnything}
-                    sx={{ borderRadius: "10px" }}
-                    aria-label="Выгрузить сводку в Excel"
-                  >
-                    {exporting ? (
-                      <CircularProgress size={20} />
-                    ) : (
-                      <FileDownloadOutlined />
-                    )}
-                  </IconButton>
-                </span>
-              </Tooltip>
-            )}
-            <Tooltip title={editing ? "Готово" : "Настроить состав"} arrow>
-              <IconButton
-                onClick={() => setEditing((v) => !v)}
-                sx={{ borderRadius: "10px" }}
-                aria-label={editing ? "Завершить настройку" : "Настроить состав блоков"}
-              >
-                {editing ? <CheckOutlined /> : <TuneOutlined />}
-              </IconButton>
+              <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
+                {fetching > 0 ? "обновляем…" : `обновлено в ${updatedAt}`}
+              </Typography>
+            </Stack>
+          )}
+          {!editing && (
+            <Box sx={{ flex: { xs: 1, md: "none" }, minWidth: 0 }}>
+            <SegmentedTabs
+              tabs={PERIOD_TABS}
+              value={period}
+              onChange={handlePeriod}
+              layoutId="dashboard-period"
+            />
+            </Box>
+          )}
+          {!editing && (
+            <Tooltip title="Выгрузить в Excel" arrow>
+              {/* span — чтобы подсказка работала и на выключенной кнопке:
+                  MUI не вешает события на disabled-элемент. */}
+              <span>
+                <IconButton
+                  onClick={handleExport}
+                  disabled={exporting || !hasAnything}
+                  sx={headerButtonSx}
+                  aria-label="Выгрузить сводку в Excel"
+                >
+                  {exporting ? <CircularProgress size={18} /> : <FileDownloadOutlined />}
+                </IconButton>
+              </span>
             </Tooltip>
-          </Stack>
-        }
-      />
+          )}
+          <Tooltip title={editing ? "Готово" : "Настроить состав"} arrow>
+            <IconButton
+              onClick={() => setEditing((v) => !v)}
+              sx={headerButtonSx}
+              aria-label={editing ? "Завершить настройку" : "Настроить состав блоков"}
+            >
+              {editing ? <CheckOutlined /> : <TuneOutlined />}
+            </IconButton>
+          </Tooltip>
+        </Stack>
+      </Stack>
 
       {exportError && (
         <Alert
@@ -266,12 +334,6 @@ export const DashboardPage: React.FC = () => {
         >
           {exportError}
         </Alert>
-      )}
-
-      {scopeLabel && !editing && (
-        <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
-          {scopeLabel}
-        </Typography>
       )}
 
       {editing ? (
@@ -288,21 +350,21 @@ export const DashboardPage: React.FC = () => {
         // без микро-анимаций внутри плиток.
         <MotionGrid
           container
-          spacing={2}
+          spacing={1.5}
           alignItems="stretch"
           variants={cascadeContainer}
           initial={animateOnMount ? "hidden" : false}
           animate="show"
         >
-          {shown.map((w) => {
+          {shown.map((w, i) => {
             const Widget = WIDGET_COMPONENT[w.id];
             return (
               <MotionGrid
                 item
                 key={w.id}
                 xs={12}
-                md={resolveSpan(w, layout) === 12 ? 12 : 6}
-                lg={resolveSpan(w, layout)}
+                md={mdSpans[i]}
+                lg={lgSpans[i]}
                 variants={cascadeItem}
               >
                 <Widget {...widgetProps} />
@@ -312,6 +374,7 @@ export const DashboardPage: React.FC = () => {
         </MotionGrid>
       )}
     </Box>
+    </DashboardDataContext.Provider>
   );
 };
 

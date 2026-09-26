@@ -102,10 +102,21 @@ export function previousRange(range: PeriodRange, key: PeriodKey): PeriodRange {
   };
 }
 
-/** Сумма значений карты «дата → количество» по всем дням периода. */
-export function sumDayCounts(counts: Record<string, number> | undefined): number {
-  if (!counts) return 0;
-  return Object.values(counts).reduce((acc, n) => acc + (Number(n) || 0), 0);
+/** Окно графика на «Сегодня»: один столбик ничего не говорит, нужен фон. */
+export const TODAY_CHART_DAYS = 14;
+
+/**
+ * Окно графика записей. На «Неделе» и «Месяце» совпадает с периодом, на
+ * «Сегодня» — последние 14 дней с сегодняшним в конце.
+ */
+export function chartRangeFor(range: PeriodRange, key: PeriodKey): PeriodRange {
+  if (key !== "today") return range;
+  return {
+    ...range,
+    dateFrom: dayjs(range.dateTo)
+      .subtract(TODAY_CHART_DAYS - 1, "day")
+      .format("YYYY-MM-DD"),
+  };
 }
 
 /**

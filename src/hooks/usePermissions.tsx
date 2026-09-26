@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { getCurrentUser, switchAuthContext } from "../api";
+import { getCurrentUser, switchAuthContext, userHasPassword } from "../api";
 import type { MeResponse, RbacMembership, RbacOrganization, RbacBranch, ActiveEmployee, SwitchContextPayload } from "../api/auth";
 import { ApiError } from "../api/client";
+import { clearAccessEnded } from "../api/accessEnded";
 import type { Role, Permission, UserPermissions, RoleName, PermissionCheck, AuthStatus } from "../types/rbac";
 import { getModuleCodeForPermission } from "../utils/moduleMapping";
 
@@ -22,13 +23,15 @@ type GlobalState = {
   enabledModules: string[];
   authStatus: AuthStatus;
   authError: string | null;
+  /** Есть ли у пользователя пароль (из /auth/me/); null — бэк не прислал поле. */
+  hasPassword: boolean | null;
 };
 
 let globalState: GlobalState = {
   role: null, employee: null, permissions: [], loading: true, loaded: false,
   lastFetchedAt: 0, employeeId: null, memberships: [], activeMembership: null,
   activeOrganization: null, activeBranch: null, activeEmployee: null,
-  switching: false, enabledModules: [], authStatus: "loading", authError: null,
+  switching: false, enabledModules: [], authStatus: "loading", authError: null, hasPassword: null,
 };
 let inFlight: Promise<void> | null = null;
 const listeners = new Set<(state: GlobalState) => void>();
@@ -68,12 +71,21 @@ function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
     activeOrganization: meData.activeOrganization ?? null, activeBranch: meData.activeBranch ?? null,
     activeEmployee: meData.activeEmployee ?? null,
     enabledModules: meData.enabledModules ?? [], authStatus: "authenticated" as AuthStatus, authError: null,
+    hasPassword: userHasPassword(user),
   };
 }
 
 export function applyMeResponse(meData: MeResponse): void {
+  // Вошли — записка «доступа больше нет» от прошлой сессии больше не нужна.
+  clearAccessEnded();
   authEpoch += 1;
   setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
+}
+
+/** Пароль только что установлен (форма в профиле): убрать кнопку в шапке
+ *  сразу, не дожидаясь повторного /auth/me/. */
+export function markPasswordSet(): void {
+  setGlobal({ hasPassword: true });
 }
 
 async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = {}): Promise<void> {
@@ -91,7 +103,7 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       const meData = await getCurrentUser();
       if (epoch !== authEpoch) return;
       if (!meData?.user) {
-        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null });
+        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null });
       } else {
         setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
       }
@@ -99,7 +111,7 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       if (epoch !== authEpoch) return;
       const status = error instanceof ApiError ? error.status : -1;
       if (status === 401) {
-        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null });
+        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null });
       } else {
         const message = error instanceof ApiError ? `Сервер недоступен (${status || "сеть"})` : "Сетевая ошибка";
         const authenticated = globalState.authStatus === "authenticated";
@@ -183,9 +195,9 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
   const isAdmin = useCallback(() => hasRole(["superadmin", "admin", "administrator"]), [hasRole]);
   const isRegistrator = useCallback(() => hasRole(["receptionist", "registrator"]), [hasRole]);
   const isDoctor = useCallback(() => hasRole("doctor"), [hasRole]);
-  // Даже платформенный администратор в контексте конкретной организации
-  // видит только её включённые модули. Иначе, открыв магазин одежды, он
-  // получает клиническое меню только из-за глобальной роли.
+  // Django-суперпользователь получает от /auth/me все активные модули, чтобы
+  // видеть новые возможности для настройки. Защищённая роль superadmin без
+  // глобального флага по-прежнему ограничивается модулями своей организации.
   const hasModule = useCallback((code: string) => state.enabledModules.includes(code), [state.enabledModules]);
   const canAccess = useCallback((code: string) => {
     const module = getModuleCodeForPermission(code);
@@ -202,6 +214,7 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
     activeOrganization: state.activeOrganization, activeBranch: state.activeBranch, activeEmployee: state.activeEmployee,
     switching: state.switching, switchContext, enabledModules: state.enabledModules, hasModule, canAccess,
     authStatus: state.authStatus, authError: state.authError, retryAuth,
+    hasPassword: state.hasPassword,
   };
 };
 

@@ -41,8 +41,8 @@ export const djangoQueryKeys = {
       ["django", "appointments", "service-providers"] as const,
     /**
      * Исполнители одной услуги — секция «Кто оказывает» в карточке услуги.
-     * Один запрос `service-providers/?serviceId=`; фолбэк на пересечение с
-     * матрицей живёт под ключом `serviceProvidersInBranch` (см. хук).
+     * Один запрос `service-providers/?serviceId=`; филиал и организация в
+     * ключе, потому что ручка сужает выдачу по ним.
      */
     serviceProvidersForService: (
       organizationId: number | null,
@@ -58,27 +58,7 @@ export const djangoQueryKeys = {
         branchId,
         serviceId,
       ] as const,
-    /**
-     * Все сотрудники филиала с хотя бы одной привязкой — справочник ФИО и
-     * специализаций. Нужен как фолбэк секции «Кто оказывает» на окружениях,
-     * где `service-providers/?serviceId=` ещё отдаёт пустой список.
-     */
-    serviceProvidersInBranch: (
-      organizationId: number | null,
-      branchId: number | null,
-    ) =>
-      [
-        "django",
-        "appointments",
-        "service-providers",
-        "in-branch",
-        organizationId,
-        branchId,
-      ] as const,
-    /**
-     * Матрица пар «услуга ↔ сотрудник» — счётчик исполнителей в списке услуг
-     * и состав секции «Кто оказывает» в карточке.
-     */
+    /** Матрица пар «услуга ↔ сотрудник» — счётчик исполнителей в списке услуг. */
     serviceAssignments: (branchId: number | null) =>
       ["django", "appointments", "service-assignments", branchId] as const,
     formData: (context: { orgId?: number | null; branchId?: number | null; membershipId?: number | null } = {}) =>
@@ -106,6 +86,12 @@ export const djangoQueryKeys = {
       ["django", "cashbox", "summary", filters] as const,
     entries: (entryType: string, filters: Record<string, unknown>) =>
       ["django", "cashbox", "entries", entryType, filters] as const,
+  },
+
+  dashboard: {
+    all: ["django", "dashboard"] as const,
+    summary: (params: Record<string, unknown>) =>
+      ["django", "dashboard", "summary", params] as const,
   },
 
   reports: {
@@ -208,6 +194,12 @@ export const djangoQueryKeys = {
       ["django", "reviews", "settings", organizationId ?? null] as const,
     byAppointment: (appointmentId: number) =>
       ["django", "reviews", "appointment", appointmentId] as const,
+    staff: (params: Record<string, unknown>) =>
+      ["django", "reviews", "staff", params] as const,
+    tags: (params: Record<string, unknown>) =>
+      ["django", "reviews", "tags", params] as const,
+    mapClicks: (params: Record<string, unknown>) =>
+      ["django", "reviews", "map-clicks", params] as const,
   },
 
   tasks: {
@@ -239,8 +231,13 @@ export const djangoQueryKeys = {
       ["django", "deals", "stages", pipelineId ?? null, orgId ?? null] as const,
     sources: (orgId?: number) => ["django", "deals", "sources", orgId ?? null] as const,
     lostReasons: (orgId?: number) => ["django", "deals", "lost-reasons", orgId ?? null] as const,
+    bots: (orgId?: number) => ["django", "deals", "bots", orgId ?? null] as const,
+    botKeys: (botId: number, orgId?: number) => ["django", "deals", "bots", botId, "keys", orgId ?? null] as const,
     duplicates: (phone: string, orgId?: number) =>
       ["django", "deals", "duplicates", phone, orgId ?? null] as const,
+    /** Клиенты с тем же телефоном — подсказка «Привязать» в карточке. */
+    patientCandidates: (dealId: number, orgId?: number) =>
+      ["django", "deals", dealId, "patient-candidates", orgId ?? null] as const,
     funnel: (params: Record<string, unknown>) => ["django", "deals", "funnel", params] as const,
     /** Пикер услуг в карточке сделки: прайс общий по организации. */
     servicePicker: (search: string, orgId?: number) =>
@@ -257,7 +254,8 @@ export const djangoQueryKeys = {
       ["django", "waitlist", "matches", params] as const,
     matchCounts: (params: Record<string, unknown>) =>
       ["django", "waitlist", "match-counts", params] as const,
-    summary: (orgId?: number) => ["django", "waitlist", "summary", orgId ?? null] as const,
+    summary: (orgId?: number, branchId?: number) =>
+      ["django", "waitlist", "summary", orgId ?? null, branchId ?? null] as const,
   },
 
   achievements: {
@@ -278,6 +276,26 @@ export const djangoQueryKeys = {
       ["django", "documents", "list", params] as const,
     roles: (organizationId: number | null | undefined) =>
       ["django", "documents", "roles", organizationId ?? null] as const,
+  },
+
+  // Закупки: накладные, возвраты, оплаты и поставщики. В каждом ключе —
+  // организация и филиал: списки бэк сужает по ним (см. api/procurement.ts).
+  procurement: {
+    all: ["django", "procurement"] as const,
+    suppliers: (params: Record<string, unknown>) =>
+      ["django", "procurement", "suppliers", params] as const,
+    receipts: (params: Record<string, unknown>) =>
+      ["django", "procurement", "receipts", params] as const,
+    receipt: (id: number, params: Record<string, unknown>) =>
+      ["django", "procurement", "receipt", id, params] as const,
+    summary: (params: Record<string, unknown>) =>
+      ["django", "procurement", "summary", params] as const,
+    returns: (params: Record<string, unknown>) =>
+      ["django", "procurement", "returns", params] as const,
+    payments: (params: Record<string, unknown>) =>
+      ["django", "procurement", "payments", params] as const,
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "procurement", "settings", organizationId ?? null] as const,
   },
 
   cleaning: {
@@ -426,15 +444,34 @@ export const djangoQueryKeys = {
     cabinetDoctors: (branchId: number) =>
       ["django", "odoctor", "cabinet-doctors", branchId] as const,
   },
+  altegio: {
+    // Подключение одно на организацию.
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "settings", organizationId ?? null] as const,
+    // Списки из самого Altegio — не кешируются надолго: запрос уходит во
+    // внешнюю систему, вчерашний список специалистов выдавал бы ушедших.
+    locations: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "locations", organizationId ?? null] as const,
+    staff: (organizationId: number | null | undefined, altegioLocationId: number) =>
+      ["django", "altegio", "staff", organizationId ?? null, altegioLocationId] as const,
+    services: (organizationId: number | null | undefined, altegioLocationId: number) =>
+      ["django", "altegio", "services", organizationId ?? null, altegioLocationId] as const,
+    journal: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "journal", organizationId ?? null] as const,
+  },
 
   scheduling: {
     rules: (params: Record<string, unknown>) =>
       ["django", "scheduling", "rules", params] as const,
     exceptions: (params: Record<string, unknown>) =>
       ["django", "scheduling", "exceptions", params] as const,
-    /** Приёмы, попадающие под отсутствие сотрудника (exceptions/conflicts/). */
+    /**
+     * Приёмы, попадающие под отсутствие сотрудника (exceptions/conflicts/).
+     * Свой корень, а не под `exceptions`: сброс списков исключений не должен
+     * тянуть за собой запросы по всем сотрудникам (см. scheduleInvalidation.ts).
+     */
     conflicts: (params: Record<string, unknown>) =>
-      ["django", "scheduling", "exceptions", "conflicts", params] as const,
+      ["django", "scheduling", "conflicts", params] as const,
     availability: (params: Record<string, unknown>) =>
       ["django", "scheduling", "availability", params] as const,
     availabilitySummary: (params: Record<string, unknown>) =>

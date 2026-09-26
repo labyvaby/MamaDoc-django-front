@@ -2,6 +2,7 @@ import React from "react";
 import {
   Alert,
   Box,
+  ButtonBase,
   Chip,
   Dialog,
   DialogActions,
@@ -18,61 +19,449 @@ import {
   Typography,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { useTheme } from "@mui/material/styles";
+import { alpha, useTheme, type Theme } from "@mui/material/styles";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router";
 import dayjs from "dayjs";
 
-import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
-import MoreVertOutlined from "@mui/icons-material/MoreVertOutlined";
-import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
+import AddOutlined from "@mui/icons-material/AddOutlined";
+import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
+import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
+import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
+import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
+import HourglassBottomOutlined from "@mui/icons-material/HourglassBottomOutlined";
+import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
+import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
+import MoreVertOutlined from "@mui/icons-material/MoreVertOutlined";
+import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
+import PhoneInTalkOutlined from "@mui/icons-material/PhoneInTalkOutlined";
+import PlaylistAddOutlined from "@mui/icons-material/PlaylistAddOutlined";
+import PriorityHighOutlined from "@mui/icons-material/PriorityHighOutlined";
+import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
+import QueryBuilderOutlined from "@mui/icons-material/QueryBuilderOutlined";
 
-import { AppButton, ListEmptyState, PageHeader } from "../../components/ui";
+import {
+  AppButton,
+  FilterPill,
+  PageHeader,
+  SegmentedTabs,
+  UserAvatar,
+  pillSx,
+} from "../../components/ui";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { subtleBg } from "../../theme/uiHelpers";
 import { useT } from "../../i18n/VerticalProvider";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCanChecker } from "../../hooks/useCan";
-import { useApiOrgId } from "../../hooks/useApiOrgId";
-import { useDebouncedValue } from "../../hooks/useDebouncedValue";
-import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
+import { useActiveScope } from "../../hooks/useActiveScope";
+import { doctorEmployeesOnly, useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatPhoneDisplay } from "../../utility/phone";
+import { getProducts, productAvailableStock } from "../../api/warehouse";
 import {
   cancelWaitlistEntry,
-  contactWaitlistEntry,
   getWaitlist,
+  getWaitlistSummary,
   reopenWaitlistEntry,
   WAITLIST_ACTIVE_STATUSES,
   WAITLIST_CLOSED_STATUSES,
   WAITLIST_USE_MOCKS,
+  WAITLIST_VACCINE_LIVE,
+  type WaitlistVaccineDemand,
   type WaitlistEntry,
   type WaitlistFilters,
 } from "../../api/waitlist";
 import WaitlistDrawer from "../../components/waitlist/WaitlistDrawer";
+import WaitlistDetailDrawer from "../../components/waitlist/WaitlistDetailDrawer";
+import { useSeesOwnWaitlistOnly } from "./useOwnScope";
 import {
   WaitlistPriorityChip,
   WaitlistSourceChip,
   WaitlistStatusChip,
+  WaitlistVaccineChip,
 } from "../../components/waitlist/WaitlistChips";
 import {
   displayName,
+  isExpiringSoon,
   periodLabel,
   timeRangeLabel,
   waitingDays,
   waitingForLabel,
-  WAITLIST_CONTACT_RESULT_META,
+  weekdaysLabel,
+  WAITING_LONG_DAYS,
   WAITLIST_REFRESH_MS,
   waitlistErrorMessage,
 } from "./meta";
 
 const PAGE_SIZE = 20;
 
-/** Вкладки-пилюли: очередь / закрытые. */
-type WaitlistTab = "active" | "closed";
+/** «В очереди» — все активные; «Ждём ответа» — только offered; «Закрытые». */
+type WaitlistTab = "active" | "offered" | "closed";
+
+const isWaitlistTab = (v: string | null): v is WaitlistTab =>
+  v === "active" || v === "offered" || v === "closed";
+
+// ── Состояние фильтров в URL ──────────────────────────────────────────────────
+
+interface FiltersState {
+  tab: WaitlistTab;
+  employeeId: number | "";
+  /** Клик по строке блока «Ждут вакцину» на главном экране. */
+  vaccineId: number | "";
+  urgent: boolean;
+  fromSite: boolean;
+  search: string;
+  page: number;
+}
+
+function readFilters(p: URLSearchParams): FiltersState {
+  const employee = Number(p.get("employee"));
+  const vaccine = Number(p.get("vaccine"));
+  const page = Number(p.get("page"));
+  const tab = p.get("tab");
+  return {
+    tab: isWaitlistTab(tab) ? tab : "active",
+    employeeId: Number.isFinite(employee) && employee > 0 ? employee : "",
+    vaccineId: Number.isFinite(vaccine) && vaccine > 0 ? vaccine : "",
+    urgent: p.get("urgent") === "1",
+    fromSite: p.get("source") === "public",
+    search: p.get("q") ?? "",
+    page: Number.isFinite(page) && page > 0 ? page - 1 : 0,
+  };
+}
+
+/**
+ * URL пишется целиком из состояния: `setSearchParams` не батчится, и две
+ * записи подряд теряют одну из них. Дефолты в адрес не попадают.
+ */
+function writeFilters(f: FiltersState): URLSearchParams {
+  const p = new URLSearchParams();
+  if (f.tab !== "active") p.set("tab", f.tab);
+  if (f.employeeId !== "") p.set("employee", String(f.employeeId));
+  if (f.vaccineId !== "") p.set("vaccine", String(f.vaccineId));
+  if (f.urgent) p.set("urgent", "1");
+  if (f.fromSite) p.set("source", "public");
+  if (f.search) p.set("q", f.search);
+  if (f.page > 0) p.set("page", String(f.page + 1));
+  return p;
+}
+
+// ── Мелкие элементы ───────────────────────────────────────────────────────────
+
+type KpiTone = "primary" | "warning" | "error";
+
+const toneOf = (t: Theme, tone: KpiTone) =>
+  tone === "warning" ? t.palette.warning : tone === "error" ? t.palette.error : t.palette.primary;
+
+/**
+ * Показатель очереди. Кликабельный — фильтрует список; активный подсвечен
+ * гранью. Число — главное: регистратор смотрит «сколько звонить», а не читает.
+ */
+const KpiTile: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  value: number | undefined;
+  tone: KpiTone;
+  active?: boolean;
+  hint?: string;
+  onClick?: () => void;
+}> = ({ icon, label, value, tone, active = false, hint, onClick }) => {
+  const dim = value === 0;
+  const tile = (
+    <Stack
+      direction="row"
+      alignItems="center"
+      gap={1.5}
+      component={onClick ? ButtonBase : "div"}
+      {...(onClick ? { onClick, focusRipple: true } : {})}
+      sx={(t) => {
+        const p = toneOf(t, tone);
+        return {
+          width: "100%",
+          p: 1.5,
+          borderRadius: "12px",
+          border: 1,
+          textAlign: "left",
+          justifyContent: "flex-start",
+          borderColor: active ? alpha(p.main, 0.55) : "divider",
+          bgcolor: active ? alpha(p.main, t.palette.mode === "dark" ? 0.12 : 0.06) : "background.paper",
+          transition: "background-color .15s ease, border-color .15s ease",
+          ...(onClick && {
+            cursor: "pointer",
+            "&:hover": {
+              borderColor: alpha(p.main, 0.4),
+              bgcolor: active ? alpha(p.main, t.palette.mode === "dark" ? 0.16 : 0.09) : subtleBg(t, true),
+            },
+          }),
+        };
+      }}
+    >
+      <Box
+        sx={(t) => {
+          const p = toneOf(t, tone);
+          return {
+            width: 40,
+            height: 40,
+            borderRadius: "10px",
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: dim
+              ? "text.disabled"
+              : tone === "primary"
+                ? "primary.onSurface"
+                : t.palette.mode === "dark"
+                  ? p.light
+                  : p.dark,
+            bgcolor: dim ? subtleBg(t, true) : alpha(p.main, t.palette.mode === "dark" ? 0.18 : 0.1),
+            "& .MuiSvgIcon-root": { fontSize: 20 },
+          };
+        }}
+      >
+        {icon}
+      </Box>
+      <Box sx={{ minWidth: 0 }}>
+        {value == null ? (
+          <Skeleton width={28} height={30} />
+        ) : (
+          <Typography
+            sx={{
+              fontSize: "1.375rem",
+              fontWeight: 700,
+              lineHeight: 1.15,
+              letterSpacing: -0.3,
+              fontVariantNumeric: "tabular-nums",
+              color: dim ? "text.secondary" : "text.primary",
+            }}
+          >
+            {value}
+          </Typography>
+        )}
+        <Typography variant="caption" color="text.secondary" noWrap display="block">
+          {label}
+        </Typography>
+      </Box>
+    </Stack>
+  );
+  return hint ? (
+    <Tooltip title={hint}>
+      <Box sx={{ display: "flex" }}>{tile}</Box>
+    </Tooltip>
+  ) : (
+    tile
+  );
+};
+
+
+/** Пустая очередь без фильтров — объясняем, как пользоваться модулем. */
+const HowItWorks: React.FC<{ onAdd?: () => void }> = ({ onAdd }) => {
+  const { t } = useT("waitlist");
+  const steps = [
+    { icon: <PlaylistAddOutlined />, title: t("howItWorks.step1Title"), text: t("howItWorks.step1Text") },
+    { icon: <NotificationsActiveOutlined />, title: t("howItWorks.step2Title"), text: t("howItWorks.step2Text") },
+    { icon: <PhoneInTalkOutlined />, title: t("howItWorks.step3Title"), text: t("howItWorks.step3Text") },
+  ];
+  return (
+    <Box
+      sx={{
+        borderRadius: "14px",
+        border: 1,
+        borderColor: "divider",
+        bgcolor: "background.paper",
+        px: { xs: 2, md: 4 },
+        py: { xs: 3, md: 5 },
+      }}
+    >
+      <Stack alignItems="center" textAlign="center" sx={{ maxWidth: 520, mx: "auto" }}>
+        <Box
+          sx={(th) => ({
+            width: 56,
+            height: 56,
+            borderRadius: "16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "primary.onSurface",
+            bgcolor: alpha(th.palette.primary.main, th.palette.mode === "dark" ? 0.16 : 0.1),
+            mb: 1.5,
+          })}
+        >
+          <HourglassEmptyOutlined sx={{ fontSize: 28 }} />
+        </Box>
+        <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: -0.2 }}>
+          {t("empty")}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          {t("emptyHint")}
+        </Typography>
+      </Stack>
+
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" },
+          gap: 1.25,
+          mt: 3.5,
+          maxWidth: 960,
+          mx: "auto",
+        }}
+      >
+        {steps.map((s, i) => (
+          <Stack
+            key={s.title}
+            gap={1}
+            sx={(th) => ({
+              p: 2,
+              borderRadius: "12px",
+              border: 1,
+              borderColor: "divider",
+              bgcolor: subtleBg(th),
+            })}
+          >
+            <Stack direction="row" alignItems="center" gap={1}>
+              <Box
+                sx={(th) => ({
+                  width: 32,
+                  height: 32,
+                  borderRadius: "9px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "primary.onSurface",
+                  bgcolor: alpha(th.palette.primary.main, th.palette.mode === "dark" ? 0.16 : 0.1),
+                  "& .MuiSvgIcon-root": { fontSize: 18 },
+                })}
+              >
+                {s.icon}
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                {i + 1}
+              </Typography>
+            </Stack>
+            <Typography variant="body2" fontWeight={600}>
+              {s.title}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {s.text}
+            </Typography>
+          </Stack>
+        ))}
+      </Box>
+
+      {onAdd && (
+        <Stack alignItems="center" sx={{ mt: 3 }}>
+          {/* Основная кнопка уже в шапке — здесь контурная (гайд §5.4). */}
+          <AppButton variant="outlined" startIcon={<AddOutlined />} onClick={onAdd}>
+            {t("add")}
+          </AppButton>
+        </Stack>
+      )}
+    </Box>
+  );
+};
+
+/**
+ * «На какие вакцины ждут» — главная просьба клиники: у них в очередь встают
+ * в основном за препаратом. Рядом с числом ждущих показываем остаток склада:
+ * пустой остаток и есть повод для обзвона, когда приедет партия.
+ */
+const VaccineDemandRow: React.FC<{
+  row: WaitlistVaccineDemand;
+  stock: number | null;
+  active: boolean;
+  onClick: () => void;
+}> = ({ row, stock, active, onClick }) => {
+  const { t } = useT("waitlist");
+  const outOfStock = stock != null && stock <= 0;
+  return (
+    <Stack
+      direction="row"
+      alignItems="center"
+      gap={1}
+      onClick={onClick}
+      sx={(th) => ({
+        px: 1.25,
+        py: 0.85,
+        borderRadius: "10px",
+        border: 1,
+        borderColor: active ? alpha(th.palette.primary.main, 0.5) : "divider",
+        bgcolor: active ? alpha(th.palette.primary.main, th.palette.mode === "dark" ? 0.16 : 0.08) : subtleBg(th),
+        cursor: "pointer",
+        minWidth: 0,
+        "&:hover": { borderColor: alpha(th.palette.primary.main, 0.35) },
+      })}
+    >
+      <Typography variant="body2" fontWeight={600} noWrap sx={{ flex: 1, minWidth: 0 }}>
+        {row.name}
+      </Typography>
+      <Typography variant="body2" fontWeight={700}>
+        {row.count}
+      </Typography>
+      {stock != null && (
+        <Typography variant="caption" color={outOfStock ? "error.main" : "text.secondary"} noWrap>
+          {outOfStock ? t("vaccineDemand.outOfStock") : t("vaccineDemand.inStock", { count: stock })}
+        </Typography>
+      )}
+    </Stack>
+  );
+};
+
+/** «5 дней» + «с 02.09»; долгое ожидание и близкий конец срока — тоном. */
+const WaitingCell: React.FC<{ entry: WaitlistEntry; closed: boolean }> = ({ entry, closed }) => {
+  const { t } = useT("waitlist");
+  if (closed) {
+    return (
+      <Stack gap={0.25} sx={{ minWidth: 0 }}>
+        <Typography variant="body2" noWrap>
+          {entry.closedAt ? dayjs(entry.closedAt).format("DD.MM.YYYY") : "—"}
+        </Typography>
+        <Typography variant="caption" color="text.secondary" noWrap>
+          {t("waitingDays", { count: waitingDays(entry) })}
+        </Typography>
+      </Stack>
+    );
+  }
+  const days = waitingDays(entry);
+  const long = days >= WAITING_LONG_DAYS;
+  const expiring = isExpiringSoon(entry);
+  return (
+    <Stack gap={0.25} sx={{ minWidth: 0 }}>
+      <Typography
+        variant="body2"
+        noWrap
+        sx={(th) => ({
+          fontWeight: long ? 600 : 400,
+          color: long ? (th.palette.mode === "dark" ? th.palette.warning.light : th.palette.warning.dark) : "text.primary",
+        })}
+      >
+        {t("waitingDays", { count: days })}
+      </Typography>
+      <Typography
+        variant="caption"
+        noWrap
+        sx={(th) => ({
+          color: expiring
+            ? th.palette.mode === "dark"
+              ? th.palette.error.light
+              : th.palette.error.dark
+            : "text.secondary",
+        })}
+      >
+        {expiring && entry.activeUntil
+          ? t("expiresOn", { date: dayjs(entry.activeUntil).format("DD.MM") })
+          : dayjs(entry.createdAt).format("с DD.MM")}
+      </Typography>
+    </Stack>
+  );
+};
+
+// ── Страница ──────────────────────────────────────────────────────────────────
 
 const WaitlistPage: React.FC = () => {
   const { t } = useT("waitlist");
@@ -80,7 +469,8 @@ const WaitlistPage: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const orgId = useApiOrgId();
+  const scope = useActiveScope();
+  const orgId = scope.organizationId;
   const { can, loading: permLoading } = useCanChecker();
 
   usePageTitle(t("title"));
@@ -88,54 +478,111 @@ const WaitlistPage: React.FC = () => {
   const canView = can("waitlist.view") || can("waitlist.manage");
   const canCreate = can("waitlist.create") || can("waitlist.manage");
   const canManage = can("waitlist.manage");
+  // Клиницист без waitlist.view_all: API отдаёт только его очередь, фильтр
+  // «Сотрудник» ему нечего переключать — прячем.
+  const seesOwnOnly = useSeesOwnWaitlistOnly();
 
+  // ── Фильтры: из URL при входе, обратно в URL при каждом изменении ──
   const [searchParams, setSearchParams] = useSearchParams();
+  const [filters, setFilters] = React.useState<FiltersState>(() => readFilters(searchParams));
+  const [searchInput, setSearchInput] = React.useState(filters.search);
+  const { tab, employeeId, vaccineId, urgent, fromSite, search, page } = filters;
 
-  const [tab, setTab] = React.useState<WaitlistTab>(
-    (searchParams.get("tab") as WaitlistTab) || "active",
-  );
-  // Поиск держим в локальном state и пишем в URL с задержкой: setSearchParams
-  // не батчится, и запись на каждый символ теряет буквы.
-  const [search, setSearch] = React.useState(searchParams.get("q") ?? "");
-  const debouncedSearch = useDebouncedValue(search, 350);
-  const [employeeId, setEmployeeId] = React.useState<number | "">(
-    searchParams.get("employee") ? Number(searchParams.get("employee")) : "",
-  );
-  const [onlyUrgent, setOnlyUrgent] = React.useState(searchParams.get("urgent") === "1");
-  const [page, setPage] = React.useState(0);
+  const patch = React.useCallback((p: Partial<FiltersState>) => {
+    // Любая смена фильтра, кроме листания, возвращает на первую страницу.
+    setFilters((prev) => ({ ...prev, page: 0, ...p }));
+  }, []);
 
   React.useEffect(() => {
-    const next = new URLSearchParams();
-    if (tab !== "active") next.set("tab", tab);
-    if (debouncedSearch) next.set("q", debouncedSearch);
-    if (employeeId !== "") next.set("employee", String(employeeId));
-    if (onlyUrgent) next.set("urgent", "1");
-    setSearchParams(next, { replace: true });
-  }, [tab, debouncedSearch, employeeId, onlyUrgent, setSearchParams]);
+    const timer = setTimeout(() => {
+      const next = searchInput.trim();
+      setFilters((prev) => (prev.search === next ? prev : { ...prev, search: next, page: 0 }));
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
-  const { employees } = useAllActiveEmployees(true);
+  React.useEffect(() => {
+    const next = writeFilters(filters);
+    if (next.toString() !== new URLSearchParams(window.location.search).toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [filters, setSearchParams]);
 
-  const filters: WaitlistFilters = React.useMemo(
+  // Смена филиала — другая очередь: страница пагинации сбрасывается, иначе
+  // после переключения можно попасть на пустую вторую страницу.
+  React.useEffect(() => {
+    setFilters((prev) => (prev.page === 0 ? prev : { ...prev, page: 0 }));
+  }, [scope.branchId]);
+
+  const { employees: allEmployees } = useAllActiveEmployees(true);
+  // Фильтр очереди — по тем же людям, что и в форме: только врачи.
+  const employees = React.useMemo(() => doctorEmployeesOnly(allEmployees), [allEmployees]);
+
+  // Филиал режем сами: бэк по филиалу сессии на проде не скоупит (10.09.2026),
+  // но параметр branchId поддерживает. У суперадмина без филиала branchId
+  // пуст — это осознанный режим «все филиалы».
+  const listFilters: WaitlistFilters = React.useMemo(
     () => ({
-      status: tab === "active" ? WAITLIST_ACTIVE_STATUSES : WAITLIST_CLOSED_STATUSES,
-      search: debouncedSearch || undefined,
+      status:
+        tab === "active" ? WAITLIST_ACTIVE_STATUSES : tab === "offered" ? "offered" : WAITLIST_CLOSED_STATUSES,
+      search: search || undefined,
       employeeId: employeeId === "" ? undefined : employeeId,
-      priority: onlyUrgent ? "urgent" : undefined,
+      priority: urgent ? "urgent" : undefined,
+      source: fromSite ? "public" : undefined,
+      vaccineId: vaccineId === "" ? undefined : vaccineId,
       page: page + 1,
       pageSize: PAGE_SIZE,
       organizationId: orgId,
+      branchId: scope.branchId,
     }),
-    [tab, debouncedSearch, employeeId, onlyUrgent, page, orgId],
+    [tab, search, employeeId, vaccineId, urgent, fromSite, page, orgId, scope.branchId],
   );
 
+  const enabled = canView && scope.orgReady;
+
   const query = useQuery({
-    queryKey: djangoQueryKeys.waitlist.list(filters as Record<string, unknown>),
-    queryFn: ({ signal }) => getWaitlist(filters, signal),
+    queryKey: djangoQueryKeys.waitlist.list(listFilters as Record<string, unknown>),
+    queryFn: ({ signal }) => getWaitlist(listFilters, signal),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     refetchInterval: WAITLIST_REFRESH_MS,
     placeholderData: keepPreviousData,
-    enabled: canView,
+    enabled,
   });
+
+  const summaryQuery = useQuery({
+    queryKey: djangoQueryKeys.waitlist.summary(orgId, scope.branchId),
+    queryFn: ({ signal }) => getWaitlistSummary(orgId, scope.branchId, signal),
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchInterval: WAITLIST_REFRESH_MS,
+    enabled,
+  });
+  const summary = summaryQuery.data;
+  const vaccineDemand = summary?.byVaccine ?? [];
+
+  /**
+   * Остаток вакцины бэк в сводке не считает (см. тикет) — берём со склада тем
+   * же запросом, что и пикер формы, поэтому цифра совпадает с той, по которой
+   * препарат спишется в приёме.
+   */
+  const vaccineStockQuery = useQuery({
+    queryKey: ["django", "warehouse", "products", "waitlist-vaccine-picker", orgId, scope.branchId],
+    queryFn: ({ signal }) =>
+      getProducts(signal, { organizationId: orgId, isVaccine: true, branchId: scope.branchId ?? undefined }),
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    // Нужен и блоку «Ждут вакцину», и чипам в строках: по цвету чипа видно,
+    // кому можно звонить — препарат уже на складе.
+    enabled:
+      enabled &&
+      WAITLIST_VACCINE_LIVE &&
+      (vaccineDemand.length > 0 || (query.data?.results ?? []).some((e) => e.vaccine != null)),
+  });
+  const vaccineStock = React.useMemo(() => {
+    const map = new Map<number, number>();
+    for (const product of vaccineStockQuery.data ?? []) {
+      map.set(product.id, productAvailableStock(product));
+    }
+    return map;
+  }, [vaccineStockQuery.data]);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.waitlist.all });
@@ -146,9 +593,23 @@ const WaitlistPage: React.FC = () => {
 
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<WaitlistEntry | null>(null);
+  const openCreate = () => {
+    setEditing(null);
+    setDrawerOpen(true);
+  };
+  const openEdit = (entry: WaitlistEntry) => {
+    setEditing(entry);
+    setDrawerOpen(true);
+  };
+
+  const [detailEntry, setDetailEntry] = React.useState<WaitlistEntry | null>(null);
 
   const [menuAnchor, setMenuAnchor] = React.useState<HTMLElement | null>(null);
   const [menuEntry, setMenuEntry] = React.useState<WaitlistEntry | null>(null);
+  const openMenu = (anchor: HTMLElement, entry: WaitlistEntry) => {
+    setMenuAnchor(anchor);
+    setMenuEntry(entry);
+  };
 
   const [cancelTarget, setCancelTarget] = React.useState<WaitlistEntry | null>(null);
   const [cancelReason, setCancelReason] = React.useState("");
@@ -159,6 +620,7 @@ const WaitlistPage: React.FC = () => {
     onSuccess: () => {
       setCancelTarget(null);
       setCancelReason("");
+      setDetailEntry(null);
       setToast(t("actions.cancelled"));
       invalidate();
     },
@@ -172,16 +634,6 @@ const WaitlistPage: React.FC = () => {
       invalidate();
     },
     onError: (e) => setError(waitlistErrorMessage(e, "Не удалось вернуть запись в очередь")),
-  });
-
-  const contactMutation = useMutation({
-    mutationFn: (entry: WaitlistEntry) =>
-      contactWaitlistEntry(entry.id, { result: "no_answer" }, orgId),
-    onSuccess: () => {
-      setToast(t("actions.contactSaved"));
-      invalidate();
-    },
-    onError: (e) => setError(waitlistErrorMessage(e, "Не удалось отметить контакт")),
   });
 
   /**
@@ -199,26 +651,48 @@ const WaitlistPage: React.FC = () => {
 
   const rows = query.data?.results ?? [];
   const total = query.data?.count ?? 0;
+  const closed = tab === "closed";
+
+  // Открытая карточка берёт свежую строку из списка после фонового обновления.
+  const detailRow = detailEntry ? (rows.find((r) => r.id === detailEntry.id) ?? detailEntry) : null;
+
+  const vaccineFilterName =
+    vaccineId === ""
+      ? null
+      : (vaccineDemand.find((v) => v.id === vaccineId)?.name ??
+        rows.find((r) => r.vaccine?.id === vaccineId)?.vaccine?.name ??
+        vaccineStockQuery.data?.find((p) => p.id === vaccineId)?.name ??
+        null);
+
+  const hasActiveFilters =
+    employeeId !== "" || vaccineId !== "" || urgent || fromSite || search !== "";
+  const resetFilters = () => {
+    setSearchInput("");
+    patch({ employeeId: "", vaccineId: "", urgent: false, fromSite: false, search: "" });
+  };
 
   const columns: GridColDef<WaitlistEntry>[] = [
     {
       field: "name",
       headerName: t("columns.patient"),
-      flex: 1.4,
-      minWidth: 200,
+      flex: 1.3,
+      minWidth: 220,
       sortable: false,
       renderCell: ({ row }) => (
-        <Stack sx={{ py: 0.5, minWidth: 0 }}>
-          <Stack direction="row" alignItems="center" gap={0.75}>
-            <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>
-              {displayName(row)}
+        <Stack direction="row" alignItems="center" gap={1.25} sx={{ minWidth: 0 }}>
+          <UserAvatar name={displayName(row)} size={34} sx={{ borderRadius: "10px", flexShrink: 0 }} />
+          <Box sx={{ minWidth: 0 }}>
+            <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+              <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+                {displayName(row)}
+              </Typography>
+              <WaitlistPriorityChip priority={row.priority} />
+              <WaitlistSourceChip source={row.source} />
+            </Stack>
+            <Typography variant="caption" color="text.secondary" noWrap display="block">
+              {formatPhoneDisplay(row.phone)}
             </Typography>
-            <WaitlistPriorityChip priority={row.priority} />
-            <WaitlistSourceChip source={row.source} />
-          </Stack>
-          <Typography variant="caption" color="text.secondary">
-            {formatPhoneDisplay(row.phone)}
-          </Typography>
+          </Box>
         </Stack>
       ),
     },
@@ -226,12 +700,26 @@ const WaitlistPage: React.FC = () => {
       field: "waitingFor",
       headerName: t("columns.waitingFor"),
       flex: 1,
-      minWidth: 160,
+      minWidth: 170,
       sortable: false,
       renderCell: ({ row }) => (
-        <Typography variant="body2" noWrap>
-          {waitingForLabel(row)}
-        </Typography>
+        <Stack gap={0.25} sx={{ minWidth: 0 }}>
+          <Typography variant="body2" noWrap>
+            {waitingForLabel(row)}
+          </Typography>
+          {(row.vaccine || row.services.length > 0) && (
+            <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+              {row.vaccine && (
+                <WaitlistVaccineChip name={row.vaccine.name} stock={vaccineStock.get(row.vaccine.id) ?? null} />
+              )}
+              {row.services.length > 0 && (
+                <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
+                  {row.services.map((s) => s.name).join(", ")}
+                </Typography>
+              )}
+            </Stack>
+          )}
+        </Stack>
       ),
     },
     {
@@ -240,295 +728,448 @@ const WaitlistPage: React.FC = () => {
       flex: 1,
       minWidth: 160,
       sortable: false,
+      renderCell: ({ row }) => {
+        const extra = [weekdaysLabel(row), timeRangeLabel(row)].filter(Boolean).join(" · ");
+        return (
+          <Stack gap={0.25} sx={{ minWidth: 0 }}>
+            <Typography variant="body2" noWrap>
+              {periodLabel(row)}
+            </Typography>
+            {extra && (
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {extra}
+              </Typography>
+            )}
+          </Stack>
+        );
+      },
+    },
+    {
+      field: "waitingDays",
+      headerName: closed ? t("columns.closed") : t("columns.waitingDays"),
+      width: 120,
+      sortable: false,
+      renderCell: ({ row }) => <WaitingCell entry={row} closed={closed} />,
+    },
+  ];
+  // «В очереди» смешивает ждущих и тех, кому уже предложили окно, — там статус
+  // различает строки. На остальных вкладках он у всех один (кроме закрытых).
+  if (tab !== "offered") {
+    columns.push({
+      field: "status",
+      headerName: t("columns.status"),
+      width: 175,
+      sortable: false,
       renderCell: ({ row }) => (
-        <Stack sx={{ py: 0.5, minWidth: 0 }}>
-          <Typography variant="body2" noWrap>
-            {periodLabel(row)}
-          </Typography>
-          {timeRangeLabel(row) && (
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {timeRangeLabel(row)}
+        <Stack gap={0.35} sx={{ minWidth: 0, alignItems: "flex-start" }}>
+          <WaitlistStatusChip status={row.status} />
+          {row.closeReason && (
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ maxWidth: 140 }}>
+              {row.closeReason}
             </Typography>
           )}
         </Stack>
       ),
-    },
-    {
-      field: "waitingDays",
-      headerName: t("columns.waitingDays"),
-      width: 120,
-      sortable: false,
-      renderCell: ({ row }) => (
-        <Typography variant="body2">{t("waitingDays", { count: waitingDays(row) })}</Typography>
-      ),
-    },
-    {
-      field: "lastContact",
-      headerName: t("columns.lastContact"),
-      width: 170,
-      sortable: false,
-      renderCell: ({ row }) =>
-        row.lastContactAt ? (
-          <Stack sx={{ py: 0.5 }}>
-            <Typography variant="body2">{dayjs(row.lastContactAt).format("DD.MM HH:mm")}</Typography>
-            {row.lastContactResult && (
-              <Typography variant="caption" color="text.secondary">
-                {WAITLIST_CONTACT_RESULT_META[row.lastContactResult].label}
-              </Typography>
+    });
+  }
+  columns.push({
+    field: "actions",
+    headerName: "",
+    width: closed ? 64 : canCreate ? 214 : 116,
+    sortable: false,
+    align: "right",
+    renderCell: ({ row }) => (
+      // Клик по кнопкам не должен всплывать до строки: onRowClick открыл бы карточку.
+      <Stack direction="row" alignItems="center" gap={0.75} onClick={(e) => e.stopPropagation()}>
+        {!closed && (
+          <>
+            {canCreate && (
+              <AppButton
+                size="small"
+                variant="contained"
+                onClick={() => handleBook(row)}
+                sx={{ height: 32, minHeight: 32, px: 1.5 }}
+              >
+                {t("actions.book")}
+              </AppButton>
             )}
-          </Stack>
-        ) : (
-          <Typography variant="caption" color="text.secondary">
-            {t("neverContacted")}
-          </Typography>
-        ),
-    },
-    {
-      field: "status",
-      headerName: t("columns.status"),
-      width: 150,
-      sortable: false,
-      renderCell: ({ row }) => <WaitlistStatusChip status={row.status} />,
-    },
-    {
-      field: "actions",
-      headerName: "",
-      width: 120,
-      sortable: false,
-      renderCell: ({ row }) => (
-        <Stack direction="row" gap={0.25}>
-          <Tooltip title={t("actions.call")}>
-            <IconButton size="small" href={`tel:${row.phone}`}>
-              <PhoneOutlined fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          {canCreate && (
-            <Tooltip title={t("actions.book")}>
-              <IconButton size="small" onClick={() => handleBook(row)}>
-                <EventAvailableOutlined fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-          <IconButton
-            size="small"
-            onClick={(e) => {
-              setMenuAnchor(e.currentTarget);
-              setMenuEntry(row);
-            }}
-          >
-            <MoreVertOutlined fontSize="small" />
-          </IconButton>
-        </Stack>
-      ),
-    },
-  ];
+          </>
+        )}
+        <IconButton size="small" onClick={(e) => openMenu(e.currentTarget, row)}>
+          <MoreVertOutlined fontSize="small" />
+        </IconButton>
+      </Stack>
+    ),
+  });
 
   if (!permLoading && !canView) return <AccessDenied />;
 
-  const statusFilterChips: { value: WaitlistTab; label: string }[] = [
-    { value: "active", label: t("filters.active") },
-    { value: "closed", label: t("filters.closed") },
+  const tabs = [
+    { key: "active" as const, label: t("tabs.active"), icon: <HourglassEmptyOutlined /> },
+    { key: "offered" as const, label: t("tabs.offered"), icon: <QueryBuilderOutlined /> },
+    { key: "closed" as const, label: t("tabs.closed"), icon: <HistoryOutlined /> },
   ];
 
+  const loading = query.isLoading;
+  // Совсем пустая очередь (не результат фильтра) — вместо пустой таблицы
+  // объясняем, как работает модуль.
+  const showHowItWorks = !loading && !query.isError && tab === "active" && !hasActiveFilters && total === 0;
+
+  const emptyText = hasActiveFilters
+    ? t("emptyFiltered")
+    : tab === "offered"
+      ? t("emptyOffered")
+      : tab === "closed"
+        ? t("emptyClosed")
+        : t("empty");
+
+  const emptyState = (
+    <Stack alignItems="center" justifyContent="center" sx={{ height: "100%", py: 6 }}>
+      <EventBusyOutlined sx={{ fontSize: 48, color: "text.disabled", mb: 1.5 }} />
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        {emptyText}
+      </Typography>
+      {hasActiveFilters && (
+        <AppButton size="small" onClick={resetFilters}>
+          {t("filters.reset")}
+        </AppButton>
+      )}
+    </Stack>
+  );
+  const NoRowsOverlay = () => emptyState;
+
   return (
-    <Box sx={{ p: { xs: 1.5, md: 2 } }}>
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <PageHeader
         title={t("title")}
+        showTitle={false}
         showSearch
-        searchVal={search}
-        onSearchChange={setSearch}
+        searchVal={searchInput}
+        onSearchChange={setSearchInput}
         searchPlaceholder={t("filters.search")}
-        onAdd={canCreate ? () => {
-          setEditing(null);
-          setDrawerOpen(true);
-        } : undefined}
+        onAdd={canCreate ? openCreate : undefined}
         addButtonText={t("add")}
         loading={query.isFetching}
       />
 
-      {WAITLIST_USE_MOCKS && (
-        <Alert severity="info" sx={{ mb: 1.5 }}>
-          {t("mockNotice")}
-        </Alert>
-      )}
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          px: theme.appLayout.page.paddingX,
+          pb: 2,
+        }}
+      >
+        {WAITLIST_USE_MOCKS && (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            {t("mockNotice")}
+          </Alert>
+        )}
 
-      {/* ── Ряд фильтров пилюлями (паттерн /tasks) ── */}
-      <Stack direction="row" gap={1} sx={{ mb: 1.5, flexWrap: "wrap", alignItems: "center" }}>
-        {statusFilterChips.map((chip) => (
-          <Chip
-            key={chip.value}
-            label={chip.label}
-            size="small"
-            color={tab === chip.value ? "primary" : "default"}
-            variant={tab === chip.value ? "filled" : "outlined"}
-            onClick={() => {
-              setTab(chip.value);
-              setPage(0);
-            }}
-          />
-        ))}
-        <TextField
-          select
-          size="small"
-          value={employeeId}
-          onChange={(e) => {
-            setEmployeeId(e.target.value === "" ? "" : Number(e.target.value));
-            setPage(0);
+        {/* ── Показатели очереди: клик фильтрует список ── */}
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(4, minmax(0, 1fr))" },
+            gap: 1.25,
+            mt: 2,
           }}
-          sx={{ minWidth: 180 }}
-          SelectProps={{ displayEmpty: true }}
         >
-          <MenuItem value="">{t("filters.employee")}: {t("filters.all")}</MenuItem>
-          {employees.map((emp) => (
-            <MenuItem key={emp.id} value={emp.id}>
-              {emp.fullName}
-            </MenuItem>
-          ))}
-        </TextField>
-        <Chip
-          label={t("priority.urgent")}
-          size="small"
-          color={onlyUrgent ? "error" : "default"}
-          variant={onlyUrgent ? "filled" : "outlined"}
-          onClick={() => {
-            setOnlyUrgent((v) => !v);
-            setPage(0);
-          }}
-        />
-      </Stack>
+          <KpiTile
+            icon={<PersonOutlineOutlined />}
+            label={t("kpi.waiting")}
+            value={summary?.waiting}
+            tone="primary"
+            active={tab === "active" && !urgent}
+            onClick={() => patch({ tab: "active", urgent: false })}
+          />
+          <KpiTile
+            icon={<QueryBuilderOutlined />}
+            label={t("kpi.offered")}
+            value={summary?.offered}
+            tone="warning"
+            active={tab === "offered"}
+            onClick={() => patch({ tab: "offered" })}
+          />
+          <KpiTile
+            icon={<PriorityHighOutlined />}
+            label={t("kpi.urgent")}
+            value={summary?.urgent}
+            tone="error"
+            active={tab === "active" && urgent}
+            onClick={() => patch({ tab: "active", urgent: !(tab === "active" && urgent) })}
+          />
+          {/* Фильтра «истекает» у списка нет — плитка только информирует. */}
+          <KpiTile
+            icon={<HourglassBottomOutlined />}
+            label={t("kpi.expiringSoon")}
+            value={summary?.expiringSoon}
+            tone="warning"
+            hint={t("kpi.expiringHint")}
+          />
+        </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 1.5 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-
-      {query.isError && <Alert severity="error">{t("loadError")}</Alert>}
-
-      {query.isLoading && (
-        <Stack spacing={1}>
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} variant="rounded" height={64} />
-          ))}
-        </Stack>
-      )}
-
-      {!query.isLoading && rows.length === 0 && (
-        <ListEmptyState
-          icon={<HourglassEmptyOutlined sx={{ fontSize: 40 }} />}
-          title={debouncedSearch || employeeId !== "" ? t("emptyFiltered") : t("empty")}
-          description={t("emptyHint")}
-          action={
-            canCreate ? (
-              <AppButton
-                variant="contained"
-                onClick={() => {
-                  setEditing(null);
-                  setDrawerOpen(true);
-                }}
-              >
-                {t("add")}
-              </AppButton>
-            ) : undefined
-          }
-        />
-      )}
-
-      {/* На телефоне таблица нечитаема — там карточки. */}
-      {!query.isLoading && rows.length > 0 && isMobile && (
-        <Stack spacing={1}>
-          {rows.map((row) => (
-            <Stack
-              key={row.id}
-              spacing={0.75}
-              sx={(th) => ({ p: 1.5, borderRadius: "10px", bgcolor: subtleBg(th, true) })}
-            >
-              <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
-                <Typography sx={{ fontWeight: 600 }}>{displayName(row)}</Typography>
-                <WaitlistStatusChip status={row.status} />
-              </Stack>
-              <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center">
-                <WaitlistPriorityChip priority={row.priority} />
-                <WaitlistSourceChip source={row.source} />
-                <Typography variant="body2" color="text.secondary">
-                  {formatPhoneDisplay(row.phone)}
-                </Typography>
-              </Stack>
-              <Typography variant="body2" color="text.secondary">
-                {waitingForLabel(row)} · {periodLabel(row)}
+        {WAITLIST_VACCINE_LIVE && vaccineDemand.length > 0 && (
+          <Box sx={{ mt: 2 }}>
+            <Stack direction="row" alignItems="center" gap={0.75} sx={{ mb: 1 }}>
+              <VaccinesOutlined sx={{ fontSize: 18, color: "text.secondary" }} />
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {t("vaccineDemand.title")}
               </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {t("waitingDays", { count: waitingDays(row) })}
-              </Typography>
-              <Stack direction="row" gap={1}>
-                <AppButton size="small" variant="outlined" href={`tel:${row.phone}`}>
-                  {t("actions.call")}
-                </AppButton>
-                {canCreate && (
-                  <AppButton size="small" variant="contained" onClick={() => handleBook(row)}>
-                    {t("actions.book")}
-                  </AppButton>
-                )}
-                <IconButton
-                  size="small"
-                  onClick={(e) => {
-                    setMenuAnchor(e.currentTarget);
-                    setMenuEntry(row);
-                  }}
-                >
-                  <MoreVertOutlined fontSize="small" />
-                </IconButton>
-              </Stack>
             </Stack>
-          ))}
-        </Stack>
-      )}
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)" },
+                gap: 1,
+              }}
+            >
+              {vaccineDemand.map((row) => (
+                <VaccineDemandRow
+                  key={row.id}
+                  row={row}
+                  stock={vaccineStock.get(row.id) ?? null}
+                  active={vaccineId === row.id}
+                  // Повторный клик снимает фильтр: строка работает как пилюля.
+                  onClick={() =>
+                    patch({ tab: "active", vaccineId: vaccineId === row.id ? "" : row.id })
+                  }
+                />
+              ))}
+            </Box>
+          </Box>
+        )}
 
-      {!query.isLoading && rows.length > 0 && !isMobile && (
-        <Box sx={{ width: "100%" }}>
+        {/* ── Одна строка управления: вкладки + фильтры ── */}
+        <Stack direction="row" flexWrap="wrap" gap={1} alignItems="center" sx={{ mt: 2, mb: 1.5 }}>
+          <SegmentedTabs layoutId="waitlist-tabs" tabs={tabs} value={tab} onChange={(key) => patch({ tab: key })} />
+          {!seesOwnOnly && (
+            <FilterPill
+              label={t("filters.employee")}
+              icon={<PersonOutlineOutlined />}
+              value={employeeId === "" ? "" : String(employeeId)}
+              options={employees.map((e) => ({ value: String(e.id), label: e.fullName }))}
+              allLabel={t("filters.allEmployees")}
+              onChange={(v) => patch({ employeeId: v === "" ? "" : Number(v) })}
+            />
+          )}
+          <Chip
+            label={t("priority.urgent")}
+            icon={<PriorityHighOutlined />}
+            onClick={() => patch({ urgent: !urgent })}
+            sx={(th) => ({ ...pillSx(th, urgent, "error"), "& .MuiChip-icon": { fontSize: 15, color: "inherit", ml: 0 } })}
+          />
+          <Chip
+            label={t("filters.fromSite")}
+            icon={<LanguageOutlined />}
+            onClick={() => patch({ fromSite: !fromSite })}
+            sx={(th) => ({ ...pillSx(th, fromSite), "& .MuiChip-icon": { fontSize: 15, color: "inherit", ml: 0 } })}
+          />
+          {/* Фильтр по вакцине включается кликом в блоке «Ждут вакцину» — здесь
+              он виден рядом с остальными и снимается крестиком. */}
+          {vaccineId !== "" && (
+            <Chip
+              label={vaccineFilterName ?? t("filters.vaccine")}
+              icon={<VaccinesOutlined />}
+              onDelete={() => patch({ vaccineId: "" })}
+              sx={(th) => ({
+                ...pillSx(th, true),
+                maxWidth: 260,
+                "& .MuiChip-icon": { fontSize: 15, color: "inherit", ml: 0 },
+                "& .MuiChip-deleteIcon": { fontSize: 16, color: "inherit", mr: -0.5, ml: 0.5 },
+              })}
+            />
+          )}
+          {hasActiveFilters && (
+            <AppButton
+              size="small"
+              onClick={resetFilters}
+              startIcon={<CloseOutlined fontSize="small" />}
+              sx={{ height: 30, minHeight: 30 }}
+            >
+              {t("filters.reset")}
+            </AppButton>
+          )}
+        </Stack>
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 1.5 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+
+        {query.isError ? (
+          <Alert severity="error">{t("loadError")}</Alert>
+        ) : showHowItWorks ? (
+          <HowItWorks onAdd={canCreate ? openCreate : undefined} />
+        ) : isMobile ? (
+          /* ── Телефон: карточки ── */
+          <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", pb: 1 }}>
+            {loading ? (
+              <Stack spacing={1}>
+                {[0, 1, 2, 3].map((i) => (
+                  <Skeleton key={i} variant="rounded" height={112} sx={{ borderRadius: "14px" }} />
+                ))}
+              </Stack>
+            ) : rows.length === 0 ? (
+              emptyState
+            ) : (
+              <Stack spacing={1}>
+                {rows.map((row) => {
+                  const active = WAITLIST_ACTIVE_STATUSES.includes(row.status);
+                  return (
+                    <ButtonBase
+                      key={row.id}
+                      component="div"
+                      focusRipple
+                      onClick={() => setDetailEntry(row)}
+                      sx={(th) => ({
+                        display: "block",
+                        width: "100%",
+                        textAlign: "left",
+                        p: 1.5,
+                        borderRadius: "14px",
+                        border: 1,
+                        borderColor: "divider",
+                        bgcolor: "background.paper",
+                        ...(row.priority === "urgent" && active
+                          ? { boxShadow: `inset 3px 0 0 ${th.palette.error.main}` }
+                          : null),
+                      })}
+                    >
+                      <Stack direction="row" alignItems="center" gap={1.25}>
+                        <UserAvatar name={displayName(row)} size={40} sx={{ borderRadius: "10px", flexShrink: 0 }} />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap>
+                            {displayName(row)}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" noWrap display="block">
+                            {waitingForLabel(row)} · {periodLabel(row)}
+                          </Typography>
+                        </Box>
+                        <WaitlistStatusChip status={row.status} />
+                      </Stack>
+                      <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ mt: 1 }}>
+                        {row.vaccine && (
+                          <WaitlistVaccineChip
+                            name={row.vaccine.name}
+                            stock={vaccineStock.get(row.vaccine.id) ?? null}
+                          />
+                        )}
+                        <WaitlistPriorityChip priority={row.priority} />
+                        <WaitlistSourceChip source={row.source} />
+                        <Typography variant="caption" color="text.secondary">
+                          {t("waitingDays", { count: waitingDays(row) })}
+                        </Typography>
+                      </Stack>
+                      {active && (
+                        <Stack
+                          direction="row"
+                          gap={1}
+                          sx={{ mt: 1.25 }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {canCreate && (
+                            <AppButton
+                              size="small"
+                              variant="contained"
+                              onClick={() => handleBook(row)}
+                              startIcon={<EventAvailableOutlined fontSize="small" />}
+                              sx={{ flex: 1 }}
+                            >
+                              {t("actions.book")}
+                            </AppButton>
+                          )}
+                          <IconButton size="small" onClick={(e) => openMenu(e.currentTarget, row)}>
+                            <MoreVertOutlined fontSize="small" />
+                          </IconButton>
+                        </Stack>
+                      )}
+                    </ButtonBase>
+                  );
+                })}
+
+                {total > PAGE_SIZE && (
+                  <Stack direction="row" alignItems="center" justifyContent="center" gap={1} sx={{ pt: 0.5 }}>
+                    <IconButton size="small" disabled={page === 0} onClick={() => setFilters((f) => ({ ...f, page: f.page - 1 }))}>
+                      <ChevronLeftOutlined fontSize="small" />
+                    </IconButton>
+                    <Typography variant="caption" color="text.secondary">
+                      {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} из {total}
+                    </Typography>
+                    <IconButton
+                      size="small"
+                      disabled={(page + 1) * PAGE_SIZE >= total}
+                      onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}
+                    >
+                      <ChevronRightOutlined fontSize="small" />
+                    </IconButton>
+                  </Stack>
+                )}
+              </Stack>
+            )}
+          </Box>
+        ) : (
           <DataGrid<WaitlistEntry>
             rows={rows}
             columns={columns}
             getRowId={(row) => row.id}
-            autoHeight
+            loading={loading}
             rowHeight={64}
+            columnHeaderHeight={theme.appLayout.table.headerRowHeight}
             disableColumnMenu
             disableRowSelectionOnClick
             localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
             paginationMode="server"
             rowCount={total}
             paginationModel={{ page, pageSize: PAGE_SIZE }}
-            onPaginationModelChange={(model) => setPage(model.page)}
+            onPaginationModelChange={(m) => setFilters((f) => ({ ...f, page: m.page }))}
             pageSizeOptions={[PAGE_SIZE]}
-            onRowClick={({ row }) => {
-              if (!canCreate) return;
-              setEditing(row);
-              setDrawerOpen(true);
-            }}
+            onRowClick={({ row }) => setDetailEntry(row)}
+            getRowClassName={({ row }) =>
+              row.priority === "urgent" && WAITLIST_ACTIVE_STATUSES.includes(row.status) ? "row-urgent" : ""
+            }
+            slots={{ noRowsOverlay: NoRowsOverlay }}
+            sx={(th) => ({
+              flex: 1,
+              minHeight: 360,
+              bgcolor: "background.paper",
+              borderRadius: "14px",
+              "& .MuiDataGrid-row": { cursor: "pointer" },
+              "& .MuiDataGrid-columnHeaders": { bgcolor: "background.paper" },
+              // Центрируем контент ячеек флексом: голая Typography иначе
+              // прилипает к верху строки.
+              "& .MuiDataGrid-cell": { display: "flex", alignItems: "center" },
+              "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within": { outline: "none" },
+              // Срочная запись — полоса слева тенью внутрь: не сдвигает содержимое.
+              "& .row-urgent": { boxShadow: `inset 3px 0 0 ${th.palette.error.main}` },
+            })}
           />
-        </Box>
-      )}
+        )}
+      </Box>
 
       <Menu
         anchorEl={menuAnchor}
         open={Boolean(menuAnchor)}
         onClose={() => setMenuAnchor(null)}
+        slotProps={{ paper: { sx: { borderRadius: "12px", minWidth: 200 } } }}
       >
-        {menuEntry && WAITLIST_ACTIVE_STATUSES.includes(menuEntry.status) && (
+        {menuEntry && (
           <MenuItem
             onClick={() => {
-              contactMutation.mutate(menuEntry);
+              setDetailEntry(menuEntry);
               setMenuAnchor(null);
             }}
           >
-            {t("actions.contact")}
+            {t("detail.title")}
           </MenuItem>
         )}
         {menuEntry && canCreate && (
           <MenuItem
             onClick={() => {
-              setEditing(menuEntry);
-              setDrawerOpen(true);
+              openEdit(menuEntry);
               setMenuAnchor(null);
             }}
           >
@@ -537,6 +1178,7 @@ const WaitlistPage: React.FC = () => {
         )}
         {menuEntry && WAITLIST_ACTIVE_STATUSES.includes(menuEntry.status) && (
           <MenuItem
+            sx={{ color: "error.main" }}
             onClick={() => {
               setCancelTarget(menuEntry);
               setMenuAnchor(null);
@@ -557,9 +1199,27 @@ const WaitlistPage: React.FC = () => {
         )}
       </Menu>
 
+      <WaitlistDetailDrawer
+        entry={detailRow}
+        organizationId={orgId}
+        vaccineStock={detailRow?.vaccine ? (vaccineStock.get(detailRow.vaccine.id) ?? null) : null}
+        canCreate={canCreate}
+        canManage={canManage}
+        onClose={() => setDetailEntry(null)}
+        onBook={handleBook}
+        onEdit={openEdit}
+        onCancel={setCancelTarget}
+        onReopen={(entry) => reopenMutation.mutate(entry)}
+      />
+
       <Dialog open={cancelTarget != null} onClose={() => setCancelTarget(null)} fullWidth maxWidth="xs">
         <DialogTitle>{t("actions.cancelTitle")}</DialogTitle>
         <DialogContent>
+          {cancelTarget && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+              {displayName(cancelTarget)} · {formatPhoneDisplay(cancelTarget.phone)}
+            </Typography>
+          )}
           <TextField
             autoFocus
             fullWidth
@@ -568,7 +1228,7 @@ const WaitlistPage: React.FC = () => {
             placeholder={t("actions.cancelReasonPlaceholder")}
             value={cancelReason}
             onChange={(e) => setCancelReason(e.target.value)}
-            sx={{ mt: 1 }}
+            sx={{ mt: 0.5 }}
           />
         </DialogContent>
         <DialogActions>

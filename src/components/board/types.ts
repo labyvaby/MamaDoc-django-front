@@ -50,6 +50,8 @@ export interface BoardCardSpec {
   accentTooltip?: string;
   /** Требует внимания (просроченный срок) — рамка меняет цвет. */
   alert?: boolean;
+  /** Только что появилась по realtime — светящаяся рамка, гаснет сама. */
+  highlight?: boolean;
   /** Те же переходы, что и перетаскиванием: на тач-экране drag недоступен. */
   actions?: BoardCardAction[];
   /** Подпись кнопки меню действий. */

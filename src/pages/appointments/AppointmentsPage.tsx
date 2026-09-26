@@ -46,12 +46,14 @@ import {
   getAppointmentNotifications,
   updateAppointment,
   startAppointment,
+  cancelAppointment,
   deleteAppointment,
   parseBackendError,
   type DjangoAppointment,
   type HomeDashboard,
 } from "../../api/appointments";
 import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
+import { updateBookingStatus } from "../../api/bookings";
 import {
   getWaitlist,
   getWaitlistEntry,
@@ -73,6 +75,7 @@ import {
   DJANGO_LIST_STALE_TIME_MS,
 } from "../../api/queryKeys";
 
+import { hapticSuccess, hapticTap } from "../../utility/haptics";
 import AppointmentListPanel from "./components/AppointmentListPanel";
 import AppointmentDetailsPanel from "./components/AppointmentDetailsPanel";
 import DjangoConclusionSlotsPanel from "./DjangoConclusionSlotsPanel";
@@ -84,6 +87,8 @@ import { appointmentPatientToStub } from "./patientStub";
 import { PageHeader, DateNavigation } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useAppointmentsAutoSync } from "../../hooks/useAppointmentsAutoSync";
+import { useKeyboardViewportHeight } from "../../hooks/useKeyboardViewportHeight";
+import { useSheetBackClose } from "../../hooks/useSheetBackClose";
 import { useT } from "../../i18n/VerticalProvider";
 import { useReceptionFilters } from "./useReceptionFilters";
 
@@ -421,11 +426,18 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   );
   // Заключение открывается отдельной (третьей) колонкой — как в оригинале.
   const [conclusionOpen, setConclusionOpen] = React.useState(false);
+  // Лист заключения на телефоне сжимаем до области над клавиатурой: иначе её
+  // нижняя треть накрывает и поле ввода, и кнопки сохранения.
+  const sheetViewport = useKeyboardViewportHeight(isMobile && conclusionOpen);
 
   // В кабинете врача создание приёмов скрыто — это рабочий список своих приёмов.
   const canCreate = !isDoctorCabinet && can("appointments.create");
   const canUpdate = can("appointments.update");
-  const canDelete = isSuperAdmin() || can("appointments.delete");
+  // Physical deletion is a protected superadmin-only operation. The legacy
+  // appointments.delete permission must not expose a destructive UI action.
+  const canDelete = isSuperAdmin();
+  const canCancelAny = can("appointments.cancel");
+  const canCancelOwn = can("appointments.cancel_own");
   const canViewFinance = can("finance.view");
   const canManageFinance = can("finance.manage");
   // Регистратор может ввести вакцину прямо из карточки приёма — если бэк выдал
@@ -457,6 +469,13 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
    * реального создания приёма: пока приёма нет, человек по-прежнему ждёт.
    */
   const [waitlistToClose, setWaitlistToClose] = React.useState<WaitlistEntry | null>(null);
+  /**
+   * Пропущенная онлайн-запись, которую перезаписывают (`?bookingId=` из модуля
+   * «Онлайн-запись»). Закрываем её, только когда новый приём создан — иначе
+   * недозвон оставил бы пациента и без заявки, и без приёма. Статуса
+   * «перенесена» у брони нет, поэтому `cancelled`: приёма по ней не было.
+   */
+  const [bookingToClose, setBookingToClose] = React.useState<number | null>(null);
   const activeScope = useActiveScope();
   const branchId = activeBranch?.id ?? undefined;
 
@@ -567,6 +586,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       setRebookPatientId(asId(searchParams.get("patient")));
       setRebookEmployeeId(asId(searchParams.get("employee")));
       setRebookServiceId(asId(searchParams.get("service")));
+      setBookingToClose(asId(searchParams.get("bookingId")));
       setCreateOpen(true);
       // Пришли из листа ожидания: запись закроется, когда приём будет создан
       // (см. handleCreated). Карточку тянем отдельно — в URL только id.
@@ -581,7 +601,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setSearchParams(
       (prev: URLSearchParams) => {
         const next = new URLSearchParams(prev);
-        for (const key of ["appointment", "new", "patient", "employee", "service", "waitlistId"]) {
+        for (const key of ["appointment", "new", "patient", "employee", "service", "waitlistId", "bookingId"]) {
           next.delete(key);
         }
         return next;
@@ -608,6 +628,14 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       // должен сразу закрывать слот и в виде «Окна».
       queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.scheduling.availabilityAll,
+      });
+      // Подтверждённая бронь идёт за приёмом: оплата, отмена, неявка и
+      // завершение двигают её статус на бэке (памятка бэка 15.09.2026). Только
+      // помечаем устаревшим, без рефетча: экран броней перезапросит при
+      // открытии, а бейджи сайдбара (pending) от приёма не зависят.
+      queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.bookings.all,
+        refetchType: "none",
       });
     },
   });
@@ -747,6 +775,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
 
   const handlePaymentSaved = React.useCallback(
     (summary: PaymentSummary) => {
+      // Чек закрыт — короткая вибрация подтверждает это раньше, чем регистратор
+      // поднимет глаза на экран (см. utility/haptics.ts).
+      hapticSuccess();
       setItems((prev) =>
         prev.map((appt) =>
           appt.id === summary.appointmentId
@@ -835,6 +866,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     async (appt: DjangoAppointment) => {
       try {
         const updated = await updateAppointment(appt.id, { status: "confirmed" });
+        hapticTap();
         notifyConsumptionWarnings(updated);
         refreshAfterMutation();
       } catch (e) {
@@ -857,6 +889,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     async (appt: DjangoAppointment) => {
       try {
         const updated = await updateAppointment(appt.id, { status: "arrived" });
+        hapticTap();
         statusBeforeArrivalRef.current.set(
           appt.id,
           appt.status === "confirmed" ? "confirmed" : "scheduled",
@@ -875,7 +908,24 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       const previousStatus = statusBeforeArrivalRef.current.get(appt.id) ?? "scheduled";
       try {
         const updated = await updateAppointment(appt.id, { status: previousStatus });
+        hapticTap();
         statusBeforeArrivalRef.current.delete(appt.id);
+        notifyConsumptionWarnings(updated);
+        refreshAfterMutation();
+      } catch (e) {
+        notify?.({ type: "error", message: parseBackendError(e) });
+      }
+    },
+    [refreshAfterMutation, notify, notifyConsumptionWarnings],
+  );
+
+  // Отмена случайного «Подтвердить»: confirmed → scheduled. Отдельного
+  // экшена у бэка нет, тот же PATCH status, что и вперёд.
+  const handleUndoConfirm = React.useCallback(
+    async (appt: DjangoAppointment) => {
+      try {
+        const updated = await updateAppointment(appt.id, { status: "scheduled" });
+        hapticTap();
         notifyConsumptionWarnings(updated);
         refreshAfterMutation();
       } catch (e) {
@@ -928,6 +978,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
           matchDate: slot.date,
           matchTime: slot.time,
           matchBranchId: slot.branchId ?? undefined,
+          // Филиал режем явно: бэк по филиалу сессии не скоупит, и без этого
+          // «N ждут» посчитало бы очередь соседнего филиала.
+          branchId: slot.branchId ?? activeScope.branchId,
           organizationId: orgId,
           pageSize: 1,
         });
@@ -940,7 +993,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         // бэке (403/404). Отмена приёма от этого не должна выглядеть неудачной.
       }
     },
-    [canWaitlist, orgId],
+    [canWaitlist, orgId, activeScope.branchId],
   );
 
   const handleConfirm = React.useCallback(async () => {
@@ -948,11 +1001,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setConfirmBusy(true);
     try {
       if (confirm.mode === "cancel") {
-        // status-only PATCH: бэк не проверяет overlap, отмена дубля проходит.
-        // Отмена завершённого приёма возвращает расходники на склад — возврат
-        // тоже приходит с предупреждениями (например, склада у филиала нет).
+        // Dedicated cancellation endpoint keeps the appointment and its
+        // history. A canceled completed appointment still returns consumables.
         notifyConsumptionWarnings(
-          await updateAppointment(confirm.appt.id, { status: "canceled" }),
+          await cancelAppointment(confirm.appt.id),
         );
         void checkWaitlistForFreedSlot(confirm.appt);
       } else {
@@ -995,9 +1047,16 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         ).catch((e) => notify?.({ type: "error", message: parseBackendError(e) }));
         setWaitlistToClose(null);
       }
+      // Перезапись пропущенной онлайн-записи: приём есть — заявку закрываем.
+      if (bookingToClose != null && created) {
+        void updateBookingStatus(bookingToClose, "cancelled")
+          .then(() => queryClient.invalidateQueries({ queryKey: djangoQueryKeys.bookings.all }))
+          .catch((e) => notify?.({ type: "error", message: parseBackendError(e) }));
+        setBookingToClose(null);
+      }
       refreshAfterMutation();
     },
-    [refreshAfterMutation, waitlistToClose, orgId, notify],
+    [refreshAfterMutation, waitlistToClose, bookingToClose, orgId, notify, queryClient],
   );
 
   const handleSaved = React.useCallback(() => {
@@ -1006,6 +1065,14 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   }, [refreshAfterMutation]);
 
   const showDetails = selectedAppt !== null;
+
+  // Кнопка «назад» на телефоне закрывает верхний лист, а не уносит со
+  // страницы. Порядок вызовов — снизу вверх: если карточка и заключение
+  // открываются одним рендером, запись заключения ляжет в историю последней,
+  // и «назад» закроет сначала его.
+  useSheetBackClose(showDetails, () => setSelectedAppt(null), isMobile);
+  useSheetBackClose(slotApptId != null, closeSlotAppt, isMobile);
+  useSheetBackClose(conclusionOpen, () => setConclusionOpen(false), isMobile);
 
   /**
    * Карточка приёма: в виде «Список» — колонка/дровер выбранного приёма,
@@ -1016,6 +1083,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     <AppointmentDetailsPanel
       appointment={appt}
       canUpdate={canUpdate}
+      canCancel={
+        canCancelAny ||
+        (canCancelOwn &&
+          activeEmployee?.id != null &&
+          appt.services.some((line) => line.employee?.id === activeEmployee.id))
+      }
       canManageFinance={canManageFinance}
       canViewFinance={canViewFinance}
       canDelete={canDelete}
@@ -1027,6 +1100,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       onConfirmVisit={handleConfirmVisit}
       onArrived={handleArrived}
       onUndoArrived={handleUndoArrived}
+      onUndoConfirm={handleUndoConfirm}
       onStartAppointment={handleStartAppointment}
       onRecordVaccination={(a, prefill) => {
         setVaccineAppt(a);
@@ -1042,6 +1116,42 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       onClose={onClose}
     />
   );
+
+  // Переключатель «Список / Окна». На телефоне подписи съедали половину ряда
+  // с поиском, поэтому там остаются только иконки (название — в title).
+  // Видимость шапки на телефоне — ею управляет скролл списка.
+  const [headerHidden, setHeaderHidden] = React.useState(false);
+  React.useEffect(() => {
+    setHeaderHidden(false);
+  }, [dateStr, viewMode]);
+
+  const viewModeToggle = canCreate ? (
+    <ToggleButtonGroup
+      size="small"
+      exclusive
+      value={viewMode}
+      onChange={(_, v) => v && handleViewModeChange(v)}
+    >
+      <ToggleButton
+        value="list"
+        aria-label={t("page.tabList")}
+        title={t("page.tabList")}
+        sx={{ textTransform: "none", px: isMobile ? 1 : 1.25 }}
+      >
+        <FormatListBulletedOutlined sx={{ fontSize: isMobile ? 18 : 16, mr: isMobile ? 0 : 0.5 }} />
+        {!isMobile && t("page.tabList")}
+      </ToggleButton>
+      <ToggleButton
+        value="slots"
+        aria-label={t("page.tabSlots")}
+        title={t("page.tabSlots")}
+        sx={{ textTransform: "none", px: isMobile ? 1 : 1.25 }}
+      >
+        <EventAvailableOutlined sx={{ fontSize: isMobile ? 18 : 16, mr: isMobile ? 0 : 0.5 }} />
+        {!isMobile && t("page.tabSlots")}
+      </ToggleButton>
+    </ToggleButtonGroup>
+  ) : null;
 
   // Details panel: drawer on mobile, inline panel on desktop
   const detailsPanel = selectedAppt
@@ -1062,6 +1172,19 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         {/* ── Top controls: like the original Регистратура ──
             «Добавить прием» (large, left) + horizontal date pills. */}
         {viewMode === "list" && (
+          // Шапка (даты, поиск, кнопки) на телефоне уезжает при скролле списка
+          // вниз и возвращается при скролле вверх: в покое она занимала ~100px
+          // из ~380px, которые отделяли верх экрана от первой записи.
+          <Box
+            sx={{
+              flexShrink: 0,
+              overflow: "hidden",
+              transition: "max-height 220ms ease, opacity 220ms ease",
+              maxHeight: isMobile && headerHidden ? 0 : 400,
+              opacity: isMobile && headerHidden ? 0 : 1,
+              pointerEvents: isMobile && headerHidden ? "none" : "auto",
+            }}
+          >
           <PageHeader
             title={pageTitle}
             showTitle={false}
@@ -1075,28 +1198,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             onSearchChange={setSearchQuery}
             searchPlaceholder={t("list.searchPlaceholder")}
             loading={loading}
-            actions={
-              <Stack direction="row" spacing={1} alignItems="center">
-                {canCreate && (
-                  <ToggleButtonGroup
-                    size="small"
-                    exclusive
-                    value={viewMode}
-                    onChange={(_, v) => v && handleViewModeChange(v)}
-                  >
-                    <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
-                      <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                      {t("page.tabList")}
-                    </ToggleButton>
-                    <ToggleButton value="slots" sx={{ textTransform: "none", px: 1.25 }}>
-                      <EventAvailableOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                      {t("page.tabSlots")}
-                    </ToggleButton>
-                  </ToggleButtonGroup>
-                )}
-              </Stack>
-            }
+            compactMobile
+            actions={viewModeToggle}
           />
+          </Box>
         )}
 
         {/* ── Error ── */}
@@ -1139,23 +1244,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                       {tWaitlist("add")}
                     </Button>
                   )}
-                  {canCreate && (
-                    <ToggleButtonGroup
-                      size="small"
-                      exclusive
-                      value={viewMode}
-                      onChange={(_, v) => v && handleViewModeChange(v)}
-                    >
-                      <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
-                        <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                        {t("page.tabList")}
-                      </ToggleButton>
-                      <ToggleButton value="slots" sx={{ textTransform: "none", px: 1.25 }}>
-                        <EventAvailableOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                        {t("page.tabSlots")}
-                      </ToggleButton>
-                    </ToggleButtonGroup>
-                  )}
+                  {viewModeToggle}
                 </Stack>
               }
               onBook={(employeeId, dateTime) => {
@@ -1187,8 +1276,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             flex: 1,
             minHeight: 0,
             overflow: "hidden",
-            px: t.appLayout.page.paddingX,
-            pb: 1,
+            // Телефон: список во всю ширину экрана (см. карточку в панели).
+            px: isMobile ? 0 : t.appLayout.page.paddingX,
+            pb: isMobile ? 0 : 1,
             display: "flex",
             flexDirection: "row",
             gap: 2,
@@ -1241,6 +1331,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               showGroupTotals
               groupEmployeeIds={groupEmployeeIds}
               dayShifts={dayShifts}
+              onScrollDirection={setHeaderHidden}
             />
           </Box>
 
@@ -1321,30 +1412,38 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             sx: (theme) => ({
               // Единая высота мобильных листов — токен темы, а не хардкод:
               // список, «Окна» и реестр открывали одну карточку на разную высоту.
-              height: theme.appLayout.drawer.bottomSheet.height,
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
+              // Заключение — исключение: с клавиатурой от половины листа
+              // остаётся полторы строки, поэтому оно занимает весь экран.
+              height: conclusionOpen ? sheetViewport.height : theme.appLayout.drawer.bottomSheet.height,
+              bottom: conclusionOpen ? sheetViewport.bottom : 0,
+              borderTopLeftRadius: conclusionOpen ? 0 : 16,
+              borderTopRightRadius: conclusionOpen ? 0 : 16,
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",
             }),
           }}
         >
-          <Box sx={{ flex: conclusionOpen ? "0 0 50%" : 1, minHeight: 0, overflow: "hidden" }}>
+          {/* Карточку приёма прячем, а не ужимаем: делёж экрана пополам
+              оставлял заключению ~150px. Крестик заключения возвращает её. */}
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              overflow: "hidden",
+              display: conclusionOpen ? "none" : "block",
+            }}
+          >
             {detailsPanel}
           </Box>
-          {/* На мобиле заключение показывается снизу под деталями. */}
           {conclusionOpen && selectedAppt && (
-            <>
-              <Divider />
-              <Box sx={{ flex: "1 1 50%", minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                <DjangoConclusionSlotsPanel
-                  appointmentId={selectedAppt.id}
-                  branchId={selectedAppt.branchId}
-                  onClose={() => setConclusionOpen(false)}
-                />
-              </Box>
-            </>
+            <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              <DjangoConclusionSlotsPanel
+                appointmentId={selectedAppt.id}
+                branchId={selectedAppt.branchId}
+                onClose={() => setConclusionOpen(false)}
+              />
+            </Box>
           )}
         </Drawer>
       )}
@@ -1360,9 +1459,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
           sx: (theme) => ({
             ...(isMobile
               ? {
-                  height: theme.appLayout.drawer.bottomSheet.height,
-                  borderTopLeftRadius: 16,
-                  borderTopRightRadius: 16,
+                  // С открытым заключением лист во весь экран — иначе под
+                  // клавиатурой на поле остаётся одна строка.
+                  height: conclusionOpen ? sheetViewport.height : theme.appLayout.drawer.bottomSheet.height,
+                  bottom: conclusionOpen ? sheetViewport.bottom : 0,
+                  borderTopLeftRadius: conclusionOpen ? 0 : 16,
+                  borderTopRightRadius: conclusionOpen ? 0 : 16,
                 }
               : {
                   // 760px — чтобы весь ряд действий шапки («Подтвердить»,
@@ -1380,13 +1482,14 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       >
         {slotAppt ? (
           <>
+            {/* На мобиле карточка уступает заключению весь экран целиком. */}
             <Box
               sx={{
-                flex: conclusionOpen && isMobile ? "0 0 50%" : 1,
+                flex: 1,
                 minWidth: 0,
                 minHeight: 0,
                 overflow: "hidden",
-                display: "flex",
+                display: conclusionOpen && isMobile ? "none" : "flex",
                 flexDirection: "column",
               }}
             >
@@ -1394,7 +1497,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             </Box>
             {conclusionOpen && (
               <>
-                <Divider orientation={isMobile ? "horizontal" : "vertical"} flexItem />
+                {!isMobile && <Divider orientation="vertical" flexItem />}
                 <Box
                   sx={{
                     flex: 1,

@@ -45,6 +45,8 @@ import { useNotification } from "@refinedev/core";
 import { useAppointmentsList } from "../../../../api/hooks/useAppointmentsQuery";
 import { usePageTitle } from "../../../../hooks/usePageTitle";
 import { useCanChecker } from "../../../../hooks/useCan";
+import { useKeyboardViewportHeight } from "../../../../hooks/useKeyboardViewportHeight";
+import { useSheetBackClose } from "../../../../hooks/useSheetBackClose";
 import { ListEmptyState, ListLoadingSkeleton, SegmentedTabs } from "../../../../components/ui";
 import { subtleBg } from "../../../../theme";
 import { useT } from "../../../../i18n/VerticalProvider";
@@ -159,6 +161,10 @@ export const RegistryJournalView: React.FC<Props> = ({
   const [editTarget, setEditTarget] = React.useState<DjangoAppointment | null>(null);
   const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
   const [conclusionTarget, setConclusionTarget] = React.useState<DjangoAppointment | null>(null);
+  // Лист заключения на телефоне живёт над клавиатурой, а не под ней.
+  const conclusionViewport = useKeyboardViewportHeight(isMobile && !!conclusionTarget, "92dvh");
+  // «Назад» закрывает лист, а не уводит из журнала.
+  useSheetBackClose(!!conclusionTarget, () => setConclusionTarget(null), isMobile);
   const [cardTarget, setCardTarget] = React.useState<DjangoAppointment | null>(null);
   const [invoiceTarget, setInvoiceTarget] = React.useState<DjangoAppointment | null>(null);
 
@@ -804,7 +810,8 @@ export const RegistryJournalView: React.FC<Props> = ({
         PaperProps={{
           sx: {
             width: { xs: "100%", md: 620 },
-            height: { xs: "92dvh", md: "100%" },
+            height: { xs: conclusionViewport.height, md: "100%" },
+            ...(isMobile ? { bottom: conclusionViewport.bottom } : null),
             borderTopLeftRadius: { xs: "14px", md: 0 },
             borderTopRightRadius: { xs: "14px", md: 0 },
           },

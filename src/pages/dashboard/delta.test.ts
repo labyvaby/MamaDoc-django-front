@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeDelta } from "./delta";
-import { previousRange, resolvePeriod, sumDayCounts, toDailySeries } from "./period";
+import { chartRangeFor, previousRange, resolvePeriod, toDailySeries } from "./period";
 import dayjs from "dayjs";
 import {
   WIDGETS,
@@ -84,10 +84,9 @@ describe("previousRange", () => {
 });
 
 describe("ряд по дням", () => {
-  it("считает сумму и достраивает пустые дни", () => {
+  it("достраивает пустые дни", () => {
     const range = resolvePeriod("week", dayjs("2026-08-25"));
     const counts = { "2026-08-25": 3, "2026-08-20": 2 };
-    expect(sumDayCounts(counts)).toBe(5);
 
     const series = toDailySeries(counts, range);
     expect(series).toHaveLength(7);
@@ -100,9 +99,9 @@ describe("раскладка блоков", () => {
   const ctx = { can: () => true, period: "month" as const, branchCount: 3 };
 
   it("новый блок из кода доезжает до сохранённой раскладки", () => {
-    const saved = normalizeLayout({ order: ["tasks", "money"], hidden: [] });
-    expect(saved.order[0]).toBe("tasks");
-    expect(saved.order).toContain("reviews");
+    const saved = normalizeLayout({ order: ["ops", "money"], hidden: [] });
+    expect(saved.order[0]).toBe("ops");
+    expect(saved.order).toContain("staff");
     expect(saved.order).toHaveLength(WIDGETS.length);
   });
 
@@ -116,9 +115,9 @@ describe("раскладка блоков", () => {
   });
 
   it("спрятанные блоки не попадают в отрисовку, порядок сохраняется", () => {
-    const layout = normalizeLayout({ order: ["reviews", "money"], hidden: ["money"] });
+    const layout = normalizeLayout({ order: ["staff", "money"], hidden: ["money"] });
     const ids = visibleWidgets(layout, ctx).map((w) => w.id);
-    expect(ids[0]).toBe("reviews");
+    expect(ids[0]).toBe("staff");
     expect(ids).not.toContain("money");
   });
 
@@ -131,10 +130,11 @@ describe("раскладка блоков", () => {
     );
   });
 
-  it("месячный блок показывается только на периоде «Месяц»", () => {
-    expect(availableWidgets({ ...ctx, period: "week" }).map((w) => w.id)).not.toContain("month");
-    expect(availableWidgets(ctx).map((w) => w.id)).toContain("month");
+  it("итоги на агрегате — на любом периоде", () => {
+    expect(availableWidgets({ ...ctx, period: "week" }).map((w) => w.id)).toContain("month");
+    expect(availableWidgets({ ...ctx, period: "today" }).map((w) => w.id)).toContain("month");
   });
+
 
   it("без прав блок недоступен", () => {
     const noMoney = { ...ctx, can: (p: string | string[]) => !String(p).includes("finance") };
@@ -142,10 +142,10 @@ describe("раскладка блоков", () => {
   });
 
   it("перестановка не выходит за границы списка", () => {
-    const order = ["money", "tasks", "reviews"] as const;
+    const order = ["money", "ops", "staff"] as const;
     expect(moveWidget([...order], "money", -1)).toEqual([...order]);
-    expect(moveWidget([...order], "reviews", 1)).toEqual([...order]);
-    expect(moveWidget([...order], "money", 1)).toEqual(["tasks", "money", "reviews"]);
+    expect(moveWidget([...order], "staff", 1)).toEqual([...order]);
+    expect(moveWidget([...order], "money", 1)).toEqual(["ops", "money", "staff"]);
   });
 
   it("переключатель видимости работает в обе стороны", () => {
@@ -184,14 +184,14 @@ describe("ширина блоков", () => {
 });
 
 describe("перенос перетаскиванием", () => {
-  const order = ["money", "appointments", "tasks", "reviews"] as const;
+  const order = ["money", "appointments", "ops", "staff"] as const;
 
   it("переносит через несколько позиций, а не меняет местами соседей", () => {
-    expect(reorderWidget([...order], "reviews", 0)).toEqual([
-      "reviews",
+    expect(reorderWidget([...order], "staff", 0)).toEqual([
+      "staff",
       "money",
       "appointments",
-      "tasks",
+      "ops",
     ]);
   });
 
@@ -202,9 +202,22 @@ describe("перенос перетаскиванием", () => {
   it("индекс за границами прижимается к краю", () => {
     expect(reorderWidget([...order], "money", 99)).toEqual([
       "appointments",
-      "tasks",
-      "reviews",
+      "ops",
+      "staff",
       "money",
     ]);
+  });
+});
+
+describe("окно графика записей", () => {
+  it("на «Сегодня» — 14 дней, заканчивая сегодняшним", () => {
+    const w = chartRangeFor(resolvePeriod("today", dayjs("2026-09-24")), "today");
+    expect(w.dateFrom).toBe("2026-09-11");
+    expect(w.dateTo).toBe("2026-09-24");
+  });
+
+  it("на «Неделе» и «Месяце» совпадает с периодом", () => {
+    const month = resolvePeriod("month", dayjs("2026-09-24"));
+    expect(chartRangeFor(month, "month")).toBe(month);
   });
 });

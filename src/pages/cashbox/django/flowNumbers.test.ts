@@ -80,7 +80,7 @@ describe("cardFlowNumbers — безнал", () => {
     ],
   });
 
-  it("оплаты идут нетто, возврат — подстрокой, отдельной строки возвратов нет", () => {
+  it("оплаты идут нетто, возврат сидит у своего способа — отдельных строк возвратов нет", () => {
     const { breakdown } = cardFlowNumbers(s);
 
     expect(breakdown.map((r) => r.key)).toEqual(["payment", "sale", "expense", "supply"]);
@@ -89,19 +89,78 @@ describe("cardFlowNumbers — безнал", () => {
     expect(payment.amount).toBe(147000);
     expect(payment.direction).toBe(1);
     expect(payment.children?.map((c) => [c.label, c.amount, c.direction ?? 1])).toEqual([
-      ["Бакай", 120000, 1],
+      ["Бакай", 118800, 1],
       ["MBank", 28200, 1],
-      ["Возвраты", 1200, -1],
+    ]);
+    // Пояснение — только у способа, по которому был возврат.
+    expect(payment.children?.map((c) => c.note)).toEqual([
+      `оплачено ${(120000).toLocaleString("ru-RU")} · возврат −${(1200).toLocaleString("ru-RU")}`,
+      undefined,
+    ]);
+  });
+
+  it("возврат без разреза по способам — общей строкой «Возвраты»", () => {
+    const noMethods = row(
+      cardFlowNumbers(summary({ cardIncome: "1000.00", cardRefunds: "300.00" })).breakdown,
+      "payment",
+    );
+    expect(noMethods.children?.map((c) => [c.label, c.amount, c.direction])).toEqual([
+      ["Возвраты", 300, -1],
+    ]);
+
+    // Разрез покрыл не всё — остаток тоже общей строкой, итог сходится.
+    const partial = row(
+      cardFlowNumbers(summary({ ...s, cardRefunds: "1500.00" })).breakdown,
+      "payment",
+    );
+    expect(partial.children?.at(-1)).toMatchObject({ label: "Возвраты", amount: 300, direction: -1 });
+  });
+
+  it("способ вернул больше, чем принял за окно — строка способа в минус", () => {
+    const payment = row(
+      cardFlowNumbers(
+        summary({
+          cardIncome: "500.00",
+          cardRefunds: "800.00",
+          byCashlessMethod: [
+            {
+              cashlessMethodId: 3,
+              cashlessMethodName: "Optima",
+              income: "0.00",
+              refunds: "800.00",
+              expenses: "0.00",
+              supplyExpenses: "0.00",
+              count: 1,
+            },
+            {
+              cashlessMethodId: 1,
+              cashlessMethodName: "Бакай",
+              income: "500.00",
+              refunds: "0.00",
+              expenses: "0.00",
+              supplyExpenses: "0.00",
+              count: 1,
+            },
+          ],
+        }),
+      ).breakdown,
+      "payment",
+    );
+    expect(payment.children?.map((c) => [c.label, c.amount, c.direction])).toEqual([
+      ["Бакай", 500, 1],
+      ["Optima", 800, -1],
     ]);
   });
 
   it("подстроки складываются в сумму строки", () => {
-    const payment = row(cardFlowNumbers(s).breakdown, "payment");
-    const sum = (payment.children ?? []).reduce(
-      (acc, c) => acc + c.amount * (c.direction ?? payment.direction),
-      0,
-    );
-    expect(sum).toBe(payment.amount * payment.direction);
+    for (const summ of [s, summary({ ...s, cardRefunds: "1500.00" })]) {
+      const payment = row(cardFlowNumbers(summ).breakdown, "payment");
+      const sum = (payment.children ?? []).reduce(
+        (acc, c) => acc + c.amount * (c.direction ?? payment.direction),
+        0,
+      );
+      expect(sum).toBe(payment.amount * payment.direction);
+    }
   });
 
   it("приход нетто, возвраты не попадают в расход", () => {
@@ -123,8 +182,16 @@ describe("cardFlowNumbers — безнал", () => {
   });
 
   it("без возвратов подстроки — только способы", () => {
-    const { breakdown } = cardFlowNumbers(summary({ ...s, cardRefunds: "0.00" }));
-    expect(row(breakdown, "payment").children?.map((c) => c.label)).toEqual(["Бакай", "MBank"]);
+    const { breakdown } = cardFlowNumbers(
+      summary({
+        ...s,
+        cardRefunds: "0.00",
+        byCashlessMethod: s.byCashlessMethod?.map((m) => ({ ...m, refunds: "0.00" })),
+      }),
+    );
+    const children = row(breakdown, "payment").children ?? [];
+    expect(children.map((c) => c.label)).toEqual(["Бакай", "MBank"]);
+    expect(children.every((c) => c.note === undefined)).toBe(true);
   });
 
   it("«Без способа» стоит после реальных способов, даже если сумма больше", () => {

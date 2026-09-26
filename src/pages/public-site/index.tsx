@@ -77,12 +77,12 @@ const LandingBody: React.FC<{
   previewMode: boolean;
 }> = ({ data, config, previewMode }) => {
   const orgSlug = useBookingOrgSlug();
-  const { org, specialists, loaded } = data;
+  const { org, loaded } = data;
 
   // Отзывы — отдельный запрос, поэтому только для включённого блока
   // (см. useLandingReviews).
   const reviewsEnabled = config.blocks.reviews && loaded;
-  const { reviews, loading: reviewsLoading } = useLandingReviews(specialists, reviewsEnabled);
+  const { reviews, loading: reviewsLoading } = useLandingReviews(reviewsEnabled);
 
   const blocks = useVisibleBlocks({ config, data, reviews, reviewsLoading, orgSlug });
   const sections = blocks.map((b) => b.nav).filter((n): n is SiteNavItem => Boolean(n));

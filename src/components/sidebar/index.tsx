@@ -38,6 +38,7 @@ import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import PointOfSaleOutlined from "@mui/icons-material/PointOfSaleOutlined";
 // import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
@@ -82,6 +83,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { useCanChecker } from "../../hooks/useCan";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useActiveScope } from "../../hooks/useActiveScope";
 import {
   PAGE_PERMISSIONS,
   SETTINGS_TAB_PERMISSIONS,
@@ -369,6 +371,7 @@ const SidebarSecondary: React.FC = () => {
       : can(permission),
   );
   const orgId = useApiOrgId();
+  const activeBranchId = useActiveScope().branchId;
   const isSuper = isSuperAdmin();
   const isRetail = activeOrganization?.vertical === "retail";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
@@ -419,19 +422,25 @@ const SidebarSecondary: React.FC = () => {
     // ОРГАНИЗАЦИЯ
     employees: can(PAGE_PERMISSIONS.employees),
     patients: !isRetail && can(PAGE_PERMISSIONS.patients),
-    clients: isRetail && can(PAGE_PERMISSIONS.clients),
+    clients: can(PAGE_PERMISSIONS.clients),
     vaccinations: !isRetail && can(PAGE_PERMISSIONS.vaccinations),
-    // Исторические реестры — только суперадмин (19.08.2026), права нет намеренно.
-    allAppointments: !isRetail && isSuper && can(PAGE_PERMISSIONS.appointments),
-    allProcedures: !isRetail && isSuper && can(PAGE_PERMISSIONS.appointments),
+    // Исторические реестры — по page-visibility праву, как Регистратура;
+    // по умолчанию право ни у кого, поэтому без явной выдачи видит только суперадмин.
+    allAppointments: !isRetail && (isSuper || can(PAGE_PERMISSIONS.allAppointments)),
+    allProcedures: !isRetail && (isSuper || can(PAGE_PERMISSIONS.allProcedures)),
     services: !isRetail && can(PAGE_PERMISSIONS.services),
     documents: moduleGate("documents"),
     // СКЛАДЫ
     pos: can(PAGE_PERMISSIONS.pos),
     products: can(PAGE_PERMISSIONS.products),
-    sales: can(PAGE_PERMISSIONS.sales),
+    // Для retail источником продаж является касса POS; старая страница
+    // warehouse/sales относится к медицинскому режиму и дублирует кассу.
+    sales: !isRetail && can(PAGE_PERMISSIONS.sales),
     storage: can(PAGE_PERMISSIONS.warehouses),
     inventory: can(PAGE_PERMISSIONS.warehouses),
+    // Накладные (закупки): page-visibility право; модуль procurement гейтится
+    // внутри can() по префиксу кода — выключенный модуль прячет пункт сам.
+    procurement: can(PAGE_PERMISSIONS.procurementInvoices),
     // УПРАВЛЕНИЕ
     // payroll.view открывает общий отчёт; payroll.view_own + активная карточка
     // сотрудника — тот же экран в персональном режиме (только свои цифры).
@@ -477,8 +486,8 @@ const SidebarSecondary: React.FC = () => {
   // Бейдж «Лист ожидания»: сколько человек стоит в очереди (waiting). Красный —
   // когда среди них есть срочные: такой очередью надо заняться сегодня.
   const waitlistSummaryQuery = useQuery({
-    queryKey: djangoQueryKeys.waitlist.summary(orgId),
-    queryFn: ({ signal }) => getWaitlistSummary(orgId, signal),
+    queryKey: djangoQueryKeys.waitlist.summary(orgId, activeBranchId),
+    queryFn: ({ signal }) => getWaitlistSummary(orgId, activeBranchId, signal),
     enabled: can_.waitlist && !permissionsLoading,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     refetchInterval: DJANGO_POLL_INTERVAL_MS,
@@ -591,6 +600,13 @@ const SidebarSecondary: React.FC = () => {
   const chatsBadgeColor: "error" | "primary" =
     (chatsCounts?.mine ?? 0) > 0 ? "error" : "primary";
 
+  // «Сводка»: срочное из блока «Требует внимания» — просроченные задачи и
+  // заявки без ответа с прошедшей датой. Оба счётчика сайдбар уже опрашивает
+  // для своих пунктов, поэтому бейдж не стоит ни одного нового запроса. Минус
+  // в кассе сюда не входит: ради него пришлось бы опрашивать кассу со всех
+  // страниц приложения.
+  const dashboardUrgentCount = tasksOverdue + (bookingsOverdueQuery.data?.count ?? 0);
+
   const bookingsBadgeCount = bookingsPendingQuery.data?.count ?? 0;
   const bookingsBadgeColor: "error" | "primary" =
     (bookingsOverdueQuery.data?.count ?? 0) > 0 ? "error" : "primary";
@@ -599,7 +615,7 @@ const SidebarSecondary: React.FC = () => {
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
-    "storage": can_.products || can_.vaccinations || can_.sales || can_.storage,
+    "storage": can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
 
@@ -699,14 +715,16 @@ const SidebarSecondary: React.FC = () => {
             Остальные → placeholder (видны в меню, не скрыты)
             ══════════════════════════════════════════ */}
 
-        {/* Сводка — пока только суперадминистратору (решение заказчика
-            27.08.2026). Роут закрыт RequireSuperAdmin в App.tsx. */}
-        {show("my-work") && isSuper && (
+        {/* Сводка доступна суперадминистратору только при включённом модуле
+            reports. Роут дополнительно закрыт RequirePermission в App.tsx. */}
+        {show("my-work") && isSuper && can_.reports && (
           <SidebarMenuItem
             to="/dashboard"
             icon={<InsightsOutlined />}
             label="Сводка"
             collapsed={siderCollapsed}
+            badgeCount={dashboardUrgentCount}
+            badgeColor="error"
           />
         )}
 
@@ -723,7 +741,7 @@ const SidebarSecondary: React.FC = () => {
         {/* Брони (гостевая форма /book + синк operator.kg, Django-mode only).
             Бейдж — сколько заявок ждёт подтверждения. */}
         {show("my-work") && can_.bookings && (
-          <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Брони" collapsed={siderCollapsed} badgeCount={bookingsBadgeCount} badgeColor={bookingsBadgeColor} />
+          <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Онлайн-запись" collapsed={siderCollapsed} badgeCount={bookingsBadgeCount} badgeColor={bookingsBadgeColor} />
         )}
 
         {/* Чаты — встроенный дашборд Chatwoot (chat.operator.kg) со сквозной
@@ -821,7 +839,10 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Касса магазина — рабочий инструмент продаж, в разделе «Моя работа» */}
         {show("my-work") && can_.pos && (
-          <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса магазина" collapsed={siderCollapsed} />
+          <>
+            <SidebarMenuItem to="/pos" icon={<PointOfSaleOutlined />} label="Касса магазина" collapsed={siderCollapsed} excludePaths={["/pos/history"]} />
+            <SidebarMenuItem to="/pos/history" icon={<HistoryOutlined />} label="История продаж" collapsed={siderCollapsed} />
+          </>
         )}
 
         {/* ══════════════════════════════════════════
@@ -899,6 +920,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Инвентаризация по штрихкодам */}
         {show("storage") && can_.inventory && (
           <SidebarMenuItem to="/inventory" icon={<FactCheckOutlined />} label="Инвентаризация" collapsed={siderCollapsed} />
+        )}
+
+        {/* Накладные: приход от поставщиков, возвраты, оплаты, поставщики */}
+        {show("storage") && can_.procurement && (
+          <SidebarMenuItem to="/invoices" icon={<ReceiptLongOutlined />} label="Накладные" collapsed={siderCollapsed} />
         )}
 
         {/* ══════════════════════════════════════════
@@ -1241,7 +1267,7 @@ const SidebarFooter: React.FC = () => {
           <>
             <Box>
               <Typography variant="caption" color="text.secondary" display="block">
-                Aximo CRM {appVersion}
+                ErkinAI {appVersion}
               </Typography>
               <Typography variant="caption" color="text.secondary" display="block">
                 © {new Date().getFullYear()}

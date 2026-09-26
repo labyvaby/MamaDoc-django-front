@@ -115,6 +115,9 @@ export interface UserPermissions {
   authError?: string | null;
   /** Принудительно повторить запрос /auth/me/ без reload страницы (только Django-режим). */
   retryAuth?: () => void;
+  /** Есть ли у пользователя пароль (из /auth/me/): false → в шапке кнопка
+   *  «Установить пароль»; null — бэк поля не прислал (Django-режим). */
+  hasPassword?: boolean | null;
 }
 
 // Конфигурация защищенного маршрута
@@ -138,6 +141,10 @@ export const PERMISSIONS = {
   APPOINTMENTS_CREATE: 'appointments.create',
   APPOINTMENTS_READ: 'appointments.read',
   APPOINTMENTS_UPDATE: 'appointments.update',
+  APPOINTMENTS_CANCEL: 'appointments.cancel',
+  APPOINTMENTS_CANCEL_OWN: 'appointments.cancel_own',
+  // Kept for compatibility with older permission payloads. The backend
+  // allows physical appointment deletion only for superadmins.
   APPOINTMENTS_DELETE: 'appointments.delete',
   APPOINTMENTS_LIST: 'appointments.list',
   APPOINTMENTS_OWN: 'appointments.own',
@@ -194,6 +201,8 @@ export const PERMISSIONS = {
   WAITLIST_VIEW: 'waitlist.view',
   WAITLIST_CREATE: 'waitlist.create',
   WAITLIST_MANAGE: 'waitlist.manage',
+  // Область чтения: без него сотрудник с карточкой видит только ожидания к себе.
+  WAITLIST_VIEW_ALL: 'waitlist.view_all',
 
   // Достижения (контракт: MamaDoc/backend_ticket_achievements_module.md)
   ACHIEVEMENTS_VIEW: 'achievements.view',

@@ -5,6 +5,7 @@ import dayjs, { type Dayjs } from "dayjs";
 
 import type { BookingPrepaymentStatus, BookingStatus } from "../../api/bookings";
 import { subtleBg } from "../../theme/uiHelpers";
+import { pluralRu } from "../../utility/amountInWords";
 import { formatKGS } from "../../utility/format";
 
 type ChipColor = "default" | "success" | "warning" | "error" | "info";
@@ -80,11 +81,17 @@ export const isTerminalBookingStatus = (status: BookingStatus): boolean =>
  * нет, это management-команда по расписанию), и всё это время список забит
  * записями, которые никогда не станут приёмами.
  *
- * ⚠ Судим по времени, а не по `prepaymentStatus`: у просроченных броней он
- * остаётся `pending` (проверено на тесте 09.09.2026 — брони от 6 сентября всё
- * ещё «Ждём оплату»), то есть в `expired` бэк их не переводит.
+ * Основной признак — `prepaymentStatus: "expired"`: с §9.2 контракта броней
+ * (10.09.2026) бэк выводит его при чтении, не дожидаясь поллера, так что
+ * читать статус достаточно. Проверено на тесте: все 12 просроченных приходят
+ * `expired`, а бронь с истёкшей ссылкой, по которой деньги всё-таки пришли,
+ * остаётся `paid` — то есть статус точнее часов браузера.
  *
- * `awaiting_payment` без `prepaymentExpiresAt` закрытой не считаем: срок
+ * ⚠ Сравнение с часами оставлено фолбэком: на проде §9 на 10.09.2026 не
+ * выложен, там просроченные брони всё ещё приходят `pending`. Как приедет —
+ * ветку с `prepaymentExpiresAt` можно снять.
+ *
+ * `awaiting_payment` без срока и без статуса закрытой не считаем: срок
  * неизвестен, а скрывать то, о чём нечего утверждать, нельзя.
  *
  * `completed` сюда не входит: выполненная бронь — законная история приёма.
@@ -92,12 +99,17 @@ export const isTerminalBookingStatus = (status: BookingStatus): boolean =>
 export function isBookingClosed(
   b: {
     status: BookingStatus;
+    prepaymentStatus?: BookingPrepaymentStatus | null;
     prepaymentExpiresAt?: string | null;
   },
   now: Dayjs = dayjs(),
 ): boolean {
   if (b.status === "cancelled" || b.status === "no_show") return true;
   if (b.status !== "awaiting_payment") return false;
+  if (b.prepaymentStatus === "expired") return true;
+  // Деньги дошли — бронь живая, сколько бы ни показывали часы браузера: ссылка
+  // могла истечь уже после оплаты (на тесте такая бронь есть).
+  if (b.prepaymentStatus === "paid") return false;
   if (!b.prepaymentExpiresAt) return false;
   const end = dayjs(b.prepaymentExpiresAt);
   return end.isValid() && end.isBefore(now);
@@ -140,6 +152,24 @@ export const StatusChip: React.FC<{
 
   const countdown =
     status === "awaiting_payment" && now ? awaitingPaymentCountdown(expiresAt, now) : null;
+  // Ссылка уже истекла, а поллер бэка бронь ещё не снял: «Идёт оплата ·
+  // истекает» на броне трёхдневной давности врёт — оплаты больше не будет.
+  const lapsed = countdown?.text === "истекает" && expiresAt != null && now != null && dayjs(expiresAt).isBefore(now);
+  if (lapsed) {
+    return (
+      <Chip
+        size="small"
+        label="Не оплачена"
+        sx={(t) => ({
+          fontWeight: 500,
+          height: size === "medium" ? 28 : 24,
+          borderRadius: "7px",
+          color: "text.secondary",
+          bgcolor: subtleBg(t, true),
+        })}
+      />
+    );
+  }
   const label = countdown ? `${m.label} · ${countdown.text}` : m.label;
   const urgentTone = countdown?.urgent ?? false;
 
@@ -209,6 +239,25 @@ export function prepaymentExpiryText(expiresAt: string | null | undefined): stri
   return `ссылка действует ещё ${Math.max(minutes, 1)} мин`;
 }
 
+/**
+ * Возраст заявки для колонки «Создано» в разборе: «только что» / «12 мин назад» /
+ * «6 часов назад» / «3 дня назад». Всегда длительность, а не время суток:
+ * «00:08» без даты читалось как время визита, а регистратуре нужно другое —
+ * сколько заявка ждёт ответа. Точная дата — в тултипе ячейки.
+ */
+export function bookingAgeText(createdAt: string | null | undefined, now: Dayjs): string | null {
+  if (!createdAt) return null;
+  const d = dayjs(createdAt);
+  if (!d.isValid()) return null;
+  const mins = now.diff(d, "minute");
+  if (mins < 1) return "только что";
+  if (mins < 60) return `${mins} мин назад`;
+  const hours = now.diff(d, "hour");
+  if (hours < 24) return `${hours} ${pluralRu(hours, ["час", "часа", "часов"])} назад`;
+  const days = now.diff(d, "day");
+  return `${days} ${pluralRu(days, ["день", "дня", "дней"])} назад`;
+}
+
 /** Есть ли у брони онлайн-предоплата вообще (у врача без неё поле null). */
 export function hasPrepayment(b: {
   prepaymentStatus?: BookingPrepaymentStatus | null;
@@ -232,7 +281,12 @@ export const PrepaymentChip: React.FC<{
   amount?: string | null;
   needsAttention?: boolean;
   awaitingConfirmation?: boolean;
-}> = ({ status, amount, needsAttention, awaitingConfirmation }) => {
+  /** Срок ссылки: `pending` с истёкшим сроком показываем как «Ссылка истекла». */
+  expiresAt?: string | null;
+}> = ({ status: rawStatus, amount, needsAttention, awaitingConfirmation, expiresAt }) => {
+  // Бэк без §9.2 оставляет просроченную оплату `pending` — судим по сроку.
+  const status: BookingPrepaymentStatus =
+    rawStatus === "pending" && expiresAt && dayjs(expiresAt).isBefore(dayjs()) ? "expired" : rawStatus;
   const m = BOOKING_PREPAYMENT_META[status];
   if (!m) return <>{status}</>;
   const baseLabel =
@@ -291,21 +345,50 @@ export function isBookingOverdue(b: {
   return start.isValid() && start.isBefore(dayjs());
 }
 
+/** Конец окна визита: начало плюс длительность; без длительности — начало. */
+export function bookingEnd(date: string, time: string, durationMin: number | null | undefined) {
+  return bookingStart(date, time).add(durationMin || 0, "minute");
+}
+
+/**
+ * Пропущенная заявка: «Ожидает», у которой окно визита уже закрылось.
+ *
+ * Цикл онлайн-записи — заявка → приём в регистратуре → пациент пришёл. Если
+ * окно прошло, а приёма нет, пациента в это время не принимали, и подтверждать
+ * заявку нечего: приём создался бы задним числом на время, когда никто не
+ * пришёл. У такой заявки другие исходы — перезаписать, неявка, отмена
+ * (см. `MissedBookingActions`).
+ *
+ * Порог — конец окна, а не начало: пациент может опоздать, а регистратор —
+ * подтвердить заявку, пока визит ещё идёт.
+ */
+export function isBookingMissed(
+  b: { date: string; time: string; status: BookingStatus; totalDurationMin?: number | null },
+  now: Dayjs = dayjs(),
+): boolean {
+  if (b.status !== "pending") return false;
+  const end = bookingEnd(b.date, b.time, b.totalDurationMin);
+  return end.isValid() && end.isBefore(now);
+}
+
 /**
  * Приоритет разбора для сортировки списка: деньги пришли, а приёма не будет —
  * самое горящее (`prepaymentNeedsAttention`); дальше — оплаченные (ждут
- * подтверждения администратором) и просроченные «Ожидает»; остальное — как
- * раньше, по времени начала.
+ * подтверждения администратором) и «Ожидает», чей визит уже начался; остальное
+ * — как раньше, по времени начала. Пропущенные — в самый низ: в живой очереди
+ * счёт идёт на минуты, а по ним спешить уже некуда.
  */
 function bookingPriority(b: {
   date: string;
   time: string;
   status: BookingStatus;
+  totalDurationMin?: number | null;
   prepaymentStatus?: BookingPrepaymentStatus | null;
   prepaymentNeedsAttention?: boolean;
 }): number {
   if (b.prepaymentNeedsAttention) return 0;
   if (b.prepaymentStatus === "paid") return 1;
+  if (isBookingMissed(b)) return 4;
   if (isBookingOverdue(b)) return 2;
   return 3;
 }
@@ -320,6 +403,7 @@ export function sortBookingsByPriority<
     date: string;
     time: string;
     status: BookingStatus;
+    totalDurationMin?: number | null;
     prepaymentStatus?: BookingPrepaymentStatus | null;
     prepaymentNeedsAttention?: boolean;
   },
@@ -350,13 +434,16 @@ export type BookingTimeHint = {
  * Подсказка «когда»: скоро / сегодня / просрочена. Считается только для живых
  * броней — у завершённой или отменённой напоминать не о чем.
  *
- * Просроченной считаем `pending` с уже прошедшим временем: такая бронь висит
- * необработанной, и это главный повод открыть карточку.
+ * У `pending` с уже начавшимся визитом две стадии: пока окно визита идёт —
+ * «визит идёт, не подтверждена» (ещё можно подтвердить, пациент мог опоздать);
+ * после конца окна — «пропущена» (`isBookingMissed`), и подтверждать её уже
+ * нечего. Без `durationMin` конец окна равен началу.
  */
 export function bookingTimeHint(
   date: string,
   time: string,
   status: BookingStatus,
+  durationMin?: number | null,
 ): BookingTimeHint | null {
   if (isTerminalBookingStatus(status)) return null;
   // Бронь, ждущая оплаты, администратора не касается: её судьбу решает банк, а
@@ -369,8 +456,13 @@ export function bookingTimeHint(
 
   if (diffMin < 0) {
     if (status === "pending") {
+      const missed = isBookingMissed({ date, time, status, totalDurationMin: durationMin }, now);
       return {
-        text: start.isSame(now, "day") ? "время прошло, не обработана" : "просрочена",
+        text: missed
+          ? start.isSame(now, "day")
+            ? "пропущена сегодня"
+            : "пропущена"
+          : "визит идёт, не подтверждена",
         tone: "warning",
       };
     }

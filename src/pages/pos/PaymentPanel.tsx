@@ -147,13 +147,14 @@ const AppliedChip: React.FC<{ label: string; onClear: () => void }> = ({ label, 
 };
 
 /** Строка блока итогов. */
-const SummaryLine: React.FC<{ label: string; value: React.ReactNode; tone?: "muted" | "positive" }> = ({ label, value, tone }) => {
+const SummaryLine: React.FC<{ label: string; value: React.ReactNode; tone?: "muted" | "discount" | "bonus" | "cashback" | "certificate" }> = ({ label, value, tone }) => {
   const theme = useTheme();
   const c = posColors(theme);
+  const toneColor = tone === "discount" ? c.discount : tone === "bonus" ? c.bonus : tone === "cashback" ? c.cashback : tone === "certificate" ? c.certificate : c.textSoft;
   return (
     <Stack direction="row" alignItems="center" justifyContent="space-between">
       <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>{label}</Typography>
-      <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: tone === "positive" ? c.positive : c.textSoft }}>
+      <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: toneColor }}>
         {value}
       </Typography>
     </Stack>
@@ -429,11 +430,11 @@ export const PosPaymentPanel: React.FC<Props> = ({
       <Stack gap="10px" sx={{ p: "12px", borderRadius: `${POS_RADIUS.card}px`, bgcolor: c.card, flexShrink: 0 }}>
         <Stack gap="4px" sx={{ pb: "10px", borderBottom: `1px solid ${c.hairline}` }}>
           <SummaryLine label="Подытог" value={<PosAmount value={totals.subtotal} />} />
-          {totals.discount > 0 ? <SummaryLine label="Скидка" value={<PosAmount value={totals.discount} negative />} /> : null}
-          {totals.bonuses > 0 ? <SummaryLine label="Бонусы" value={<PosAmount value={totals.bonuses} negative />} tone="positive" /> : null}
-          {totals.cashback > 0 ? <SummaryLine label="Кешбэк" value={<PosAmount value={totals.cashback} negative />} tone="positive" /> : null}
+          {totals.discount > 0 ? <SummaryLine label="Скидка" value={<PosAmount value={totals.discount} negative />} tone="discount" /> : null}
+          {totals.bonuses > 0 ? <SummaryLine label="Бонусы" value={<PosAmount value={totals.bonuses} negative />} tone="bonus" /> : null}
+          {totals.cashback > 0 ? <SummaryLine label="Кешбэк" value={<PosAmount value={totals.cashback} negative />} tone="cashback" /> : null}
           {totals.certificate > 0 ? (
-            <SummaryLine label="Сертификат" value={<PosAmount value={totals.certificate} negative />} tone="positive" />
+            <SummaryLine label="Сертификат" value={<PosAmount value={totals.certificate} negative />} tone="certificate" />
           ) : null}
         </Stack>
 
@@ -461,20 +462,6 @@ export const PosPaymentPanel: React.FC<Props> = ({
             }}
           >
             Принять оплату
-            <Box
-              sx={{
-                px: "6px",
-                py: "4px",
-                borderRadius: `${POS_RADIUS.chip}px`,
-                border: "1px solid currentColor",
-                opacity: 0.6,
-                fontSize: 12,
-                fontWeight: 400,
-                lineHeight: 0.9,
-              }}
-            >
-              F5
-            </Box>
           </ButtonBase>
         </Stack>
       </Stack>

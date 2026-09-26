@@ -45,6 +45,7 @@ import { formatDayLong, formatPhone, formatPrice, formatServicesCount, telHref }
 import { primaryPhone, useBookingOrg } from "./useBookingOrg";
 import { useT } from "../../i18n/VerticalProvider";
 import { StepIndicator, type BookingStep } from "./booking/StepIndicator";
+import { submitErrorKey } from "./booking/submitError";
 import { ScheduleCard } from "./booking/ScheduleCard";
 import { BranchesCard } from "./booking/BranchesCard";
 import {
@@ -172,6 +173,10 @@ const DoctorBookingPage: React.FC = () => {
   const { session, selectedPatient } = usePatientSession();
 
   const [doctor, setDoctor] = React.useState<ProfessionalDetail | null>(null);
+  // Какой филиал подтверждён ответом карточки; до этого услуги не показываем.
+  const [servicesBranchId, setServicesBranchId] = React.useState<number | null | undefined>(
+    undefined,
+  );
   const [reviews, setReviews] = React.useState<ProfessionalReview[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [notFound, setNotFound] = React.useState(false);
@@ -264,8 +269,11 @@ const DoctorBookingPage: React.FC = () => {
     setLoading(true);
     setNotFound(false);
     setError(null);
-    getProfessional(idOrSlug, controller.signal)
-      .then(setDoctor)
+    getProfessional(idOrSlug, {}, controller.signal)
+      .then((nextDoctor) => {
+        setDoctor(nextDoctor);
+        setServicesBranchId(null);
+      })
       .catch((e) => {
         if (isAbortError(e)) return;
         if (e instanceof ApiError && e.status === 404) setNotFound(true);
@@ -289,6 +297,25 @@ const DoctorBookingPage: React.FC = () => {
       .finally(() => setScheduleLoading(false));
     return () => controller.abort();
   }, [idOrSlug]);
+
+  // После определения филиала перезагружаем карточку: backend фильтрует
+  // doctor.services по этому же филиалу, который уйдёт в бронь.
+  React.useEffect(() => {
+    if (!doctor || branchId === null) return;
+    const controller = new AbortController();
+    getProfessional(idOrSlug, { branchId }, controller.signal)
+      .then((nextDoctor) => {
+        setDoctor(nextDoctor);
+        setServicesBranchId(branchId);
+      })
+      .catch((e) => {
+        if (isAbortError(e)) return;
+        // Не ответило — оставляем набор из карточки: список услуг лучше пустого
+        // экрана, а неверный выбор упрётся в 400 при создании брони.
+        setServicesBranchId(branchId);
+      });
+    return () => controller.abort();
+  }, [idOrSlug, branchId]);
 
   /** Ближайший свободный день филиала (или null) — по загруженным календарям. */
   const nearestDayByBranch = React.useMemo(() => {
@@ -392,14 +419,17 @@ const DoctorBookingPage: React.FC = () => {
   }, [servicesUnlocked]);
 
   const allServices: PickableService[] = React.useMemo(
-    () =>
-      (doctor?.services ?? []).map((s) => ({
+    () => {
+      const source =
+        branchId !== null && servicesBranchId !== branchId ? [] : doctor?.services ?? [];
+      return source.map((s) => ({
         id: s.id,
         name: s.name,
         durationMinutes: s.durationMinutes,
         basePrice: s.basePrice,
-      })),
-    [doctor],
+      }));
+    },
+    [doctor, branchId, servicesBranchId],
   );
   const visibleServices = filteredServices ?? allServices;
   const chosenServices = React.useMemo(
@@ -643,17 +673,18 @@ const DoctorBookingPage: React.FC = () => {
       })
       .catch((e) => {
         // Тексты ошибок бэка адресованы разработчику — гостю показываем
-        // понятное объяснение по коду ответа.
-        if (!(e instanceof ApiError)) setSubmitError(t("bookingFailed"));
-        // 405 — эндпоинта создания нет (было до 03.08.2026). 404 с живым POST
-        // значит другое: врач, филиал или услуга не найдены — предлагать
-        // «скоро заработает» здесь неуместно.
-        else if (e.status === 405) setSubmitError(t("onlineBookingSoon"));
-        else if (e.status === 404) setSubmitError(t("bookingTargetGone"));
-        else if (e.status === 409) setSubmitError(t("slotTaken"));
-        else if (e.status === 429) setSubmitError(t("tooManyAttempts"));
-        else if (e.status === 400) setSubmitError(t("bookingFailed"));
-        else setSubmitError(e.message || t("bookingFailed"));
+        // понятное объяснение по статусу и коду (см. submitErrorKey).
+        const key = submitErrorKey(e);
+        setSubmitError(t(key));
+        // Сервер закрыл это время (расписание сменили, пока гость выбирал):
+        // показанные окна уже неправда — перечитываем календарь и слоты,
+        // как после сгоревшей оплаты (handleRetry), чтобы гость не тыкал
+        // в них снова.
+        if (key === "bookingClosedForTime") {
+          setSelectedTime(null);
+          setCalendarReloadKey((k) => k + 1);
+          if (selectedDate) void reloadTimes(selectedDate, selectedServices);
+        }
       })
       .finally(() => setSubmitting(false));
   };

@@ -24,6 +24,8 @@ import CakeOutlined from "@mui/icons-material/CakeOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import AlternateEmailOutlined from "@mui/icons-material/AlternateEmailOutlined";
 import dayjs from "dayjs";
+import { useSearchParams } from "react-router";
+import { isProfileTabKey, resolveTabIndex, type ProfileTabKey } from "./profileTabs";
 
 import AddAPhotoOutlined from "@mui/icons-material/AddAPhotoOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
@@ -175,7 +177,17 @@ const ProfilePage: React.FC = () => {
   const { can } = useCanChecker();
 
   const [editOpen, setEditOpen] = React.useState(false);
-  const [tab, setTab] = React.useState(0);
+  // Вкладка хранится ключом: «Документы» появляются после загрузки employee и
+  // сдвигали бы индекс. ?tab=security — deep-link из кнопки «Установить пароль»
+  // в шапке; реагируем и на смену параметра, если страница уже открыта.
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const [tabKey, setTabKey] = React.useState<ProfileTabKey>(() =>
+    isProfileTabKey(requestedTab) ? requestedTab : "main",
+  );
+  React.useEffect(() => {
+    if (isProfileTabKey(requestedTab)) setTabKey(requestedTab);
+  }, [requestedTab]);
 
   // Настоящий employee id берём из /auth/me (activeEmployee.id).
   const [empId, setEmpId] = React.useState<number | null>(null);
@@ -217,7 +229,7 @@ const ProfilePage: React.FC = () => {
 
   // Tab definitions, built conditionally so indices always line up with the
   // rendered content (no hard-coded positions that break when a tab is hidden).
-  const tabs: { key: string; label: string; icon: React.ReactElement; content: React.ReactNode }[] = [
+  const tabs: { key: ProfileTabKey; label: string; icon: React.ReactElement; content: React.ReactNode }[] = [
     {
       key: "main",
       label: "Основное",
@@ -286,7 +298,7 @@ const ProfilePage: React.FC = () => {
     });
   }
 
-  const activeTab = Math.min(tab, tabs.length - 1);
+  const activeTab = resolveTabIndex(tabs, tabKey);
 
   return (
     <Box
@@ -339,7 +351,7 @@ const ProfilePage: React.FC = () => {
             <SegmentedTabs
               tabs={tabs.map((t) => ({ key: t.key, label: t.label, icon: t.icon }))}
               value={activeTab}
-              onChange={setTab}
+              onChange={(i) => setTabKey(tabs[i]?.key ?? "main")}
             />
           </MotionBox>
 

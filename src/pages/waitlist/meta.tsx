@@ -4,7 +4,6 @@ import { ApiError } from "../../api/client";
 import type { ToneName } from "../../components/ui/TonedChip";
 import { tt } from "../../i18n/t";
 import type {
-  WaitlistContactResult,
   WaitlistEntry,
   WaitlistPriority,
   WaitlistSource,
@@ -17,11 +16,19 @@ export const WAITLIST_REFRESH_MS = 60_000;
 /**
  * Канал витрины `/book` («Сообщить, когда освободится»).
  *
- * ⚠ Выключен: `POST /api/v1/waitlist/` бэком не реализован (тикет
- * `backend_ticket_waitlist_module.md` §5). Пока флаг false, гость видит
- * привычный текст «окон нет» без формы — иначе заявка уходила бы в никуда.
+ * Включён 10.09.2026: `POST /api/v1/waitlist/` выложен на прод и отвечает
+ * `201 {"data": {"id", "status": "waiting"}}` — ровно то, что ждёт
+ * `createWaitlistRequest`. Обязательны `professional_id`, `patient_name`,
+ * `patient_phone` (телефон проверяется как кыргызстанский); заявка приходит
+ * регистратору как `source: "public"`, имя гостя лежит в `contactName`
+ * (`patientName` пустой, пока запись не связали с картой) — секция «Кто ждёт»
+ * и так показывает `patientName || contactName`.
+ *
+ * ⚠ Анти-спама на ручке нет: подряд идущие POST с одного адреса проходят все
+ * (проверено на проде). Если очередь начнут засорять, защиту просить у бэка —
+ * тикет `backend_ticket_waitlist_module.md` §9.7.
  */
-export const WAITLIST_PUBLIC_CHANNEL_ENABLED = false;
+export const WAITLIST_PUBLIC_CHANNEL_ENABLED = true;
 
 /** Палитра-тон статусных плашек — общий тип с `TonedChip`. */
 export type { ToneName } from "../../components/ui/TonedChip";
@@ -97,36 +104,6 @@ export const WAITLIST_SOURCE_META: Record<WaitlistSource, { readonly label: stri
   },
 };
 
-export const WAITLIST_CONTACT_RESULT_META: Record<
-  WaitlistContactResult,
-  { readonly label: string; color: ToneName }
-> = {
-  no_answer: {
-    get label() {
-      return tt("waitlist:contactResult.no_answer");
-    },
-    color: "warning",
-  },
-  refused: {
-    get label() {
-      return tt("waitlist:contactResult.refused");
-    },
-    color: "error",
-  },
-  agreed: {
-    get label() {
-      return tt("waitlist:contactResult.agreed");
-    },
-    color: "success",
-  },
-  callback_later: {
-    get label() {
-      return tt("waitlist:contactResult.callback_later");
-    },
-    color: "info",
-  },
-};
-
 export const WAITLIST_STATUS_OPTIONS = (Object.keys(WAITLIST_STATUS_META) as WaitlistStatus[]).map(
   (value) => ({ value, get label() {
     return WAITLIST_STATUS_META[value].label;
@@ -144,6 +121,35 @@ export const WEEKDAY_OPTIONS: { value: number; label: string }[] = [
   { value: 7, label: "Вс" },
 ];
 
+/**
+ * С какого срока ожидание подсвечиваем как «ждёт давно». Порог — решение
+ * фронта (в ТЗ его нет): две недели — больше половины дефолтного TTL в 30 дней.
+ */
+export const WAITING_LONG_DAYS = 14;
+
+/**
+ * За сколько дней до `activeUntil` запись помечается «скоро истечёт». Порог
+ * `summary.expiringSoon` задаёт бэк и нам не сообщает — 7 дней совпадает с
+ * моком, на живом API числа в плитке и подсветка строк могут разойтись.
+ */
+export const EXPIRING_SOON_DAYS = 7;
+
+/** «Пн, Ср, Пт» / «» — пустой массив означает любые дни. */
+export function weekdaysLabel(entry: WaitlistEntry): string {
+  if (entry.desiredWeekdays.length === 0 || entry.desiredWeekdays.length === 7) return "";
+  return [...entry.desiredWeekdays]
+    .sort((a, b) => a - b)
+    .map((d) => WEEKDAY_OPTIONS.find((o) => o.value === d)?.label ?? String(d))
+    .join(", ");
+}
+
+/** Активная запись, у которой срок ожидания закончится в ближайшие дни. */
+export function isExpiringSoon(entry: WaitlistEntry): boolean {
+  if (!entry.activeUntil || !["waiting", "offered"].includes(entry.status)) return false;
+  const left = dayjs(entry.activeUntil).startOf("day").diff(dayjs().startOf("day"), "day");
+  return left <= EXPIRING_SOON_DAYS;
+}
+
 /** Сколько дней человек уже в очереди. */
 export function waitingDays(entry: WaitlistEntry): number {
   return Math.max(0, dayjs().startOf("day").diff(dayjs(entry.createdAt).startOf("day"), "day"));
@@ -154,7 +160,11 @@ export function displayName(entry: WaitlistEntry): string {
   return entry.patientName || entry.contactName;
 }
 
-/** «Иванова М. П.» / «Любой педиатр» / «—». */
+/**
+ * «Иванова М. П.» / «Любой специалист · Педиатр». Вакцину сюда не подмешиваем:
+ * у неё своё место (`WaitlistVaccineChip`), иначе препарат читается как ФИО
+ * врача, а при указанном враче пропадает совсем.
+ */
 export function waitingForLabel(entry: WaitlistEntry): string {
   if (entry.employeeName) return entry.employeeName;
   if (entry.specializationName) {

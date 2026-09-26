@@ -31,13 +31,35 @@ import dayjs, { type Dayjs } from "dayjs";
 
 import { getSpecializations, type DjangoSpecialization } from "../../api/staff";
 import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
+import { useStableCallback } from "../../hooks/useStableCallback";
+import { useCanChecker } from "../../hooks/useCan";
 import {
   getAvailability,
   getAvailabilitySummary,
+  getScheduleExceptions,
   type EmployeeAvailability,
   type AvailabilityDay,
 } from "../../api/scheduling";
 import { buildTimeline } from "./freeSlotsTimeline";
+import {
+  createIdentityStamper,
+  idsInRange,
+  sameIdSet,
+  visibleColumnRange,
+} from "./freeSlotsGrid";
+import { resampleEmployeeDays } from "./slotGrid";
+import {
+  computeSpecsPresence,
+  railSpecializations,
+  resolveSpecsPresence,
+  specializationsOnShift,
+} from "./specPresence";
+import {
+  absenceForDay,
+  buildDayAbsences,
+  formatAbsenceRanges,
+  type DayAbsence,
+} from "./absenceHours";
 import {
   getStatusAccent,
   getStatusChipSx,
@@ -77,6 +99,25 @@ const CHUNK_DAYS = 30;
 /** За сколько пикселей до края ленты начинаем догрузку следующего чанка. */
 const STRIP_LOAD_THRESHOLD_PX = 260;
 
+/** Номер ответа availability по ссылке — см. chunkDataStamp. */
+const stampChunkData = createIdentityStamper();
+
+/**
+ * Окна дня рисуем только у видимых колонок и у соседей про запас
+ * (см. freeSlotsGrid.ts): на десктопе видно три колонки, на телефоне — одна.
+ */
+const GRID_OVERSCAN_COLUMNS = 1;
+/**
+ * Ещё дальше — в фоне: столько колонок с каждой стороны дорисовываются
+ * низкоприоритетно (startTransition), уже после показа кадра. Рывок прокрутки
+ * на пару экранов тогда попадает в готовые колонки, а смена дня и открытие
+ * вкладки не ждут этой работы.
+ */
+const GRID_PREFETCH_COLUMNS = 3;
+/** Сколько колонок считать видимыми, пока сетка ещё не измерена. */
+const GRID_FALLBACK_VISIBLE_COLUMNS = 3;
+const NO_IDS: ReadonlySet<number> = new Set();
+
 /** Индекс дня недели с понедельника (Пн=0 … Вс=6), без плагина isoWeek. */
 function mondayIndex(d: Dayjs): number {
   return (d.day() + 6) % 7;
@@ -106,6 +147,16 @@ const PAGER_ARROW_ZONE = 34;
 const PAGER_COUNTER_ZONE = 72;
 /** Края трека гасим, чтобы уезжающее имя не сталкивалось со стрелками. */
 const PAGER_EDGE_MASK = `linear-gradient(90deg, transparent 0, #000 ${PAGER_ARROW_ZONE}px, #000 calc(100% - ${PAGER_COUNTER_ZONE}px), transparent 100%)`;
+
+/**
+ * Курсор «тащу» и запрет выделения на время перетаскивания — прямо в style,
+ * без ререндера: базовые значения (grab / auto) задаёт sx контейнера.
+ */
+function setGrabbing(el: HTMLElement | null, on: boolean): void {
+  if (!el) return;
+  el.style.cursor = on ? "grabbing" : "";
+  el.style.userSelect = on ? "none" : "";
+}
 
 /** Стабильный цвет аватара по имени (аналог stringToColor из оригинала). */
 function avatarColor(name: string): string {
@@ -280,10 +331,12 @@ interface DayTimelineProps {
    * права на очередь или модуль выключен).
    */
   onWaitlist?: (employeeId: number, date: string) => void;
+  /** Отсутствие врача в этот день: весь день или часы (см. absenceHours.ts). */
+  absence?: DayAbsence;
 }
 
 /** Окна и приёмы одного дня одного врача — общий рендер сетки и панели врача. */
-const DayTimeline: React.FC<DayTimelineProps> = ({
+const DayTimelineBase: React.FC<DayTimelineProps> = ({
   day,
   employeeId,
   dense = false,
@@ -291,11 +344,12 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
   onOpenAppointment,
   dragMovedRef,
   onWaitlist,
+  absence,
 }) => {
   const { t } = useT("appointments");
   const { t: tWaitlist } = useT("waitlist");
   const theme = useTheme();
-  const rows = React.useMemo(() => buildTimeline(day), [day]);
+  const rows = React.useMemo(() => buildTimeline(day, absence), [day, absence]);
 
   /** Кнопка «в лист ожидания» под заглушкой «окон нет». */
   const waitlistAction = onWaitlist ? (
@@ -304,15 +358,22 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
     </Button>
   ) : undefined;
 
+  // Целодневное отсутствие: `availability` знает про него флагом, а вид и часы
+  // приходят из исключений графика (absence). Флаг и исключение могут разойтись
+  // во времени (кэш availability живёт дольше), поэтому доверяем любому из них.
+  const fullDayAbsence = day.dayOff || absence?.fullDay === true;
+  const absenceLabel =
+    absence?.kind === "vacation" ? t("slots.vacation") : t("slots.dayOff");
+
   // Приём есть, а смены в этот день нет (или это выходной): раньше здесь стояла
   // заглушка «нет графика» и приёмы не показывались вообще — врач выглядел
   // пустой колонкой. Показываем приёмы, но помечаем: окон для записи тут нет.
-  const offSchedule = (!day.scheduled || day.dayOff) && rows.some((r) => r.kind === "appt");
+  const offSchedule = (!day.scheduled || fullDayAbsence) && rows.some((r) => r.kind === "appt");
 
-  if (day.dayOff && !offSchedule) {
+  if (fullDayAbsence && !offSchedule) {
     return (
       <Alert severity="info" icon={false} action={waitlistAction}>
-        {t("slots.dayOff")}
+        {absenceLabel}
       </Alert>
     );
   }
@@ -353,10 +414,53 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
             },
           }}
         >
-          {t("slots.offScheduleAppointments")}
+          {fullDayAbsence
+            ? t("slots.absenceAppointments", { absence: absenceLabel.toLowerCase() })
+            : t("slots.offScheduleAppointments")}
         </Alert>
       )}
       {rows.map((row) => {
+        if (row.kind === "absence") {
+          // Часы отсутствия внутри рабочего дня: слотов здесь нет, и без явной
+          // полосы это время выглядит как «всё занято».
+          return (
+            <Stack
+              key={row.key}
+              direction="row"
+              alignItems="center"
+              spacing={1}
+              sx={{
+                px: 1,
+                py: 0.5,
+                borderRadius: "8px",
+                border: "1px dashed",
+                borderColor: "divider",
+                color: "text.secondary",
+                backgroundImage: `repeating-linear-gradient(45deg, transparent 0 4px, ${alpha(
+                  theme.palette.text.primary,
+                  0.06,
+                )} 4px 8px)`,
+              }}
+            >
+              <Typography
+                sx={{
+                  fontSize: timeFontSize,
+                  fontWeight: 600,
+                  fontVariantNumeric: "tabular-nums",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {row.start}–{row.end}
+              </Typography>
+              <Typography
+                noWrap
+                sx={{ fontSize: dense ? "0.6875rem" : "0.75rem", minWidth: 0 }}
+              >
+                {t("slots.absent")}
+              </Typography>
+            </Stack>
+          );
+        }
         if (row.kind === "appt") {
           const { appt } = row;
           const accent = getStatusAccent(appt.status, theme);
@@ -564,6 +668,231 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
   );
 };
 
+/**
+ * Мемо обязательно: в дне 25–50 колонок и до полутора тысяч строк, а без него
+ * сетка перерисовывалась целиком на каждое нажатие мыши, прокрутку, букву в
+ * поиске и рендер страницы. Пропсы стабильны: день — объект из кэша React
+ * Query, колбэки — через useStableCallback, `absence` — из мемо-карты.
+ */
+const DayTimeline = React.memo(DayTimelineBase);
+
+// ── Колонка врача в сетке дня ─────────────────────────────────────────────────
+
+interface DoctorColumnProps {
+  employeeId: number;
+  fullName: string;
+  status: DocStatus;
+  /** Специальность выбранной группы; нет — подпись «Специалист». */
+  specName: string | null | undefined;
+  day: AvailabilityDay | undefined;
+  /** Приёмы есть, а смены (или рабочего дня) нет — см. DayTimeline. */
+  offSchedule: boolean;
+  /** Выходной/отпуск на весь день без приёмов. */
+  dayOff: boolean;
+  /** Подпись отсутствия из исключений графика (absenceNote); null — нет. */
+  noteLabel: string | null;
+  noteFullDay: boolean;
+  absence: DayAbsence | undefined;
+  /** Врачей в дне больше одного: на телефоне шапку колонки заменяет пейджер. */
+  multi: boolean;
+  /**
+   * Колонка в окне отрисовки (видна или соседняя). Вне окна рисуем только
+   * шапку: тело с окнами дня — самая дорогая часть сетки.
+   */
+  rendered: boolean;
+  /**
+   * Вертикальная прокрутка тел колонок по врачу (общая на сетку). Пока колонка
+   * вне окна отрисовки, её тело пустое — позицию берём отсюда при возврате.
+   */
+  scrollTops: Map<number, number>;
+  onSearchDoctor: (fullName: string) => void;
+  onBook: DayTimelineProps["onBook"];
+  onOpenAppointment?: DayTimelineProps["onOpenAppointment"];
+  onWaitlist?: DayTimelineProps["onWaitlist"];
+  dragMovedRef: { current: boolean };
+}
+
+const DoctorColumn = React.memo(function DoctorColumn({
+  employeeId,
+  fullName,
+  status,
+  specName,
+  day,
+  offSchedule,
+  dayOff,
+  noteLabel,
+  noteFullDay,
+  absence,
+  multi,
+  rendered,
+  scrollTops,
+  onSearchDoctor,
+  onBook,
+  onOpenAppointment,
+  onWaitlist,
+  dragMovedRef,
+}: DoctorColumnProps) {
+  const { t } = useT("appointments");
+
+  // Колонка, прокрученная к 14:00, после ухода из окна отрисовки и возврата
+  // должна стоять там же, как раньше, когда её DOM жил всё время. Флаг — в ref:
+  // событие scroll от опустевшего тела приходит уже после рендера с
+  // rendered=false, и затирать им запомненную позицию нельзя.
+  const bodyRef = React.useRef<HTMLDivElement>(null);
+  const renderedRef = React.useRef(rendered);
+  React.useLayoutEffect(() => {
+    renderedRef.current = rendered;
+    const saved = scrollTops.get(employeeId);
+    if (rendered && saved && bodyRef.current) bodyRef.current.scrollTop = saved;
+  }, [rendered, employeeId, scrollTops]);
+  // Врач ушёл из сетки (другой день без смены, поиск, фильтр) — как и раньше,
+  // при возвращении колонка начинается сверху.
+  React.useEffect(
+    () => () => {
+      scrollTops.delete(employeeId);
+    },
+    [employeeId, scrollTops],
+  );
+  const handleBodyScroll = React.useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      if (renderedRef.current) scrollTops.set(employeeId, e.currentTarget.scrollTop);
+    },
+    [employeeId, scrollTops],
+  );
+
+  return (
+    <Box
+      sx={{
+        // Сетка не растягивает карточки по числу врачей:
+        // на десктопе — по трети панели; на телефоне колонка
+        // занимает экран целиком и листается свайпом (ориентир —
+        // полоса аватаров над сеткой).
+        flex: { xs: "0 0 100%", md: "0 0 33.3333%" },
+        minWidth: 175,
+        scrollSnapAlign: { xs: "start", md: "none" },
+        // Один свайп — ровно один врач: без этого инерция
+        // пролетала мимо двух-трёх колонок и было непонятно,
+        // кого показали.
+        scrollSnapStop: { xs: "always", md: "normal" },
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        borderRight: "1px solid",
+        borderColor: "divider",
+        "&:last-of-type": {
+          borderRight: "none",
+        },
+      }}
+    >
+      {/* Шапка врача в колонке — подпись, а не кнопка:
+          отдельного экрана врача в режиме окон нет. */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={1}
+        sx={(tokens) => ({
+          display: {
+            xs: multi ? "none" : "flex",
+            md: "flex",
+          },
+          px: 1.25,
+          py: 1,
+          borderBottom: "1px solid",
+          borderColor: "divider",
+          bgcolor: subtleBg(tokens),
+          cursor: "pointer",
+          "&:hover": { bgcolor: alpha(tokens.palette.primary.main, 0.08) },
+        })}
+        onClick={() => onSearchDoctor(fullName)}
+      >
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+          <Box sx={{ position: "relative", flexShrink: 0 }}>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: "9px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#fff",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                bgcolor: avatarColor(fullName),
+              }}
+            >
+              {initials(fullName)}
+            </Box>
+            <Box
+              sx={{
+                position: "absolute",
+                right: -2,
+                bottom: -2,
+                width: 10,
+                height: 10,
+                borderRadius: "50%",
+                border: "2px solid",
+                borderColor: "background.paper",
+                bgcolor: STATUS_DOT[status],
+              }}
+            />
+          </Box>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Typography variant="body2" fontWeight={600} noWrap sx={{ fontSize: "0.8125rem", lineHeight: 1.2 }}>
+              {fullName}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", fontSize: "0.6875rem" }}>
+              {specName ?? t("slots.specialist")}
+              {offSchedule && (
+                <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>
+                  {" · "}
+                  {t("slots.offSchedule")}
+                </Box>
+              )}
+              {dayOff && (
+                <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>
+                  {" · "}
+                  {noteLabel ?? t("slots.dayOff")}
+                </Box>
+              )}
+              {/* Врач работает, но часть дня его не будет. */}
+              {noteLabel != null && !noteFullDay && !dayOff && (
+                <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>
+                  {" · "}
+                  {noteLabel}
+                </Box>
+              )}
+            </Typography>
+          </Box>
+        </Stack>
+      </Stack>
+
+      {/* Таймлайн окон и приёмов за день */}
+      <Box
+        ref={bodyRef}
+        onScroll={handleBodyScroll}
+        sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1 }}
+      >
+        {!rendered ? null : !day ? (
+          <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>
+        ) : (
+          <DayTimeline
+            day={day}
+            employeeId={employeeId}
+            dense
+            onBook={onBook}
+            onOpenAppointment={onOpenAppointment}
+            dragMovedRef={dragMovedRef}
+            onWaitlist={onWaitlist}
+            absence={absence}
+          />
+        )}
+      </Box>
+    </Box>
+  );
+});
+
 export interface FreeSlotsViewProps {
   branchId?: number;
   organizationId?: number;
@@ -586,6 +915,16 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
+
+  // Страница передаёт обработчики стрелками — новая ссылка на каждый её рендер.
+  // Колонкам сетки нужны постоянные, иначе мемо не срабатывает (см. DayTimeline).
+  const stableOnBook = useStableCallback(onBook);
+  const stableOnOpenAppointment = useStableCallback((appointmentId: number) =>
+    onOpenAppointment?.(appointmentId),
+  );
+  const stableOnWaitlist = useStableCallback((employeeId: number, date: string) =>
+    onWaitlist?.(employeeId, date),
+  );
 
   const todayIso = React.useMemo(() => dayjs().format("YYYY-MM-DD"), []);
   // Сколько 30-дневных чанков загружено в прошлое и в будущее от сегодня.
@@ -614,7 +953,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // При первом открытии остаёмся на «Все специалисты», но список врачей свёрнут.
   const [collapsedGroup, setCollapsedGroup] = React.useState<number | "all" | null>("all");
   const stripRef = React.useRef<HTMLDivElement>(null);
-  const [isStripDragging, setIsStripDragging] = React.useState(false);
+  // Перетаскивание ленты и сетки — в ref, не в state: каждый ререндер от
+  // нажатия мыши перерисовывал всю вкладку (секунда на слабом ПК).
+  const stripDraggingRef = React.useRef(false);
   const stripDragStartXRef = React.useRef(0);
   const stripScrollStartRef = React.useRef(0);
   const stripDragMovedRef = React.useRef(false);
@@ -622,7 +963,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const userPickedDayRef = React.useRef(false);
 
   // Перетаскивание мышкой для горизонтального скролла сетки врачей (drag-to-scroll)
-  const matrixScrollRef = React.useRef<HTMLDivElement>(null);
+  const matrixScrollRef = React.useRef<HTMLDivElement | null>(null);
   // Запоминаем не индекс, а id врача: состав колонок меняется при выборе
   // другой даты, поэтому индекс на новой дате уже может указывать на другого
   // человека.
@@ -648,6 +989,82 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const pagerStillFramesRef = React.useRef(0);
 
   /**
+   * Врачи, чьим колонкам рисуем окна дня: видимые и соседние (freeSlotsGrid.ts).
+   * Хранятся врачи, а не номера колонок: при смене дня тот же врач стоит на
+   * другой позиции, и первый рендер нового дня сразу рисует нужные колонки.
+   */
+  const [renderedIds, setRenderedIds] = React.useState<ReadonlySet<number>>(() => new Set());
+  /**
+   * Фоновый запас колонок (GRID_PREFETCH_COLUMNS). Привязан к дню и составу
+   * колонок: набор от прежнего дня в первом рендере нового не рисуется, иначе
+   * смена дня снова ждала бы лишние колонки.
+   */
+  const [prefetch, setPrefetch] = React.useState<{ key: string; ids: ReadonlySet<number> }>(
+    () => ({ key: "", ids: NO_IDS }),
+  );
+  /** Ключ дня и состава колонок — выставляется в рендере, см. prefetch. */
+  const prefetchKeyRef = React.useRef("");
+  // Последние запрошенные наборы: прокрутка зовёт пересчёт на каждом кадре, и
+  // без сверки каждый кадр планировал бы рендер вкладки впустую.
+  const renderedIdsRef = React.useRef<ReadonlySet<number>>(renderedIds);
+  const prefetchRef = React.useRef(prefetch);
+  /**
+   * Пересчитать окно отрисовки по положению сетки. `scrollLeft` передаётся,
+   * когда позицию только что выставили программно (смена дня, пейджер).
+   */
+  const updateRenderRange = React.useCallback((scrollLeft?: number) => {
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    const ids = activeEmployeeIdsRef.current;
+    const column = el.firstElementChild as HTMLElement | null;
+    const layout = {
+      scrollLeft: scrollLeft ?? el.scrollLeft,
+      viewportWidth: el.clientWidth,
+      columnWidth: column?.getBoundingClientRect().width ?? 0,
+      count: ids.length,
+      fallbackVisible: GRID_FALLBACK_VISIBLE_COLUMNS,
+    };
+    const next = idsInRange(ids, visibleColumnRange({ ...layout, overscan: GRID_OVERSCAN_COLUMNS }));
+    if (!sameIdSet(renderedIdsRef.current, next)) {
+      const nextIds = new Set(next);
+      renderedIdsRef.current = nextIds;
+      setRenderedIds(nextIds);
+    }
+    const key = prefetchKeyRef.current;
+    const wide = idsInRange(ids, visibleColumnRange({ ...layout, overscan: GRID_PREFETCH_COLUMNS }));
+    if (prefetchRef.current.key !== key || !sameIdSet(prefetchRef.current.ids, wide)) {
+      const nextPrefetch = { key, ids: new Set(wide) };
+      prefetchRef.current = nextPrefetch;
+      // Переход (transition) React рендерит кусками и прерывает ради ввода:
+      // запас дорисовывается, не блокируя клики и прокрутку.
+      React.startTransition(() => setPrefetch(nextPrefetch));
+    }
+  }, []);
+  /**
+   * Вертикальная прокрутка тел колонок по врачу: тело вне окна отрисовки
+   * пустеет, и без запомненной позиции колонка возвращалась бы к 00:00.
+   */
+  const bodyScrollTopsRef = React.useRef(new Map<number, number>());
+
+  // Сетка то появляется, то сменяется спиннером или заглушкой «нет смен», а
+  // ширину панели меняют окно браузера и боковое меню. Наблюдатель размеров
+  // вешаем на сам элемент сетки через ref-колбэк — он живёт ровно столько же.
+  const matrixResizeObserverRef = React.useRef<ResizeObserver | null>(null);
+  const setMatrixEl = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      matrixScrollRef.current = el;
+      matrixResizeObserverRef.current?.disconnect();
+      matrixResizeObserverRef.current = null;
+      if (el && typeof ResizeObserver !== "undefined") {
+        const observer = new ResizeObserver(() => updateRenderRange());
+        observer.observe(el);
+        matrixResizeObserverRef.current = observer;
+      }
+    },
+    [updateRenderRange],
+  );
+
+  /**
    * Ставит трек шапки в ту же точку, где стоит сетка. Прогресс дробный, ширина
    * трека равна ширине колонки, поэтому сдвиг совпадает с сеткой один в один.
    * Пишем прямо в style: ререндер шапки на каждый кадр прокрутки дороже самой
@@ -664,6 +1081,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     }
     pagerStillFramesRef.current = 0;
     pagerLastLeftRef.current = left;
+    updateRenderRange(left);
     const progress = left / el.clientWidth;
     if (pagerTrackRef.current) {
       pagerTrackRef.current.style.transform = `translate3d(${-progress * 100}%, 0, 0)`;
@@ -678,7 +1096,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     const focusedIdx = columnWidth > 0 ? Math.round(left / columnWidth) : idx;
     const focusedId = activeEmployeeIdsRef.current[focusedIdx] ?? null;
     if (focusedId != null) focusedEmployeeIdRef.current = focusedId;
-  }, []);
+  }, [updateRenderRange]);
 
   // Событие scroll браузер отдаёт реже кадров (а на инерционном скролле ещё и с
   // задержкой), поэтому по событию сдвигаем трек сразу, а дальше до конца
@@ -766,66 +1184,94 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     if (el.clientWidth > 0) scrollToDoc(Math.round(el.scrollLeft / el.clientWidth));
   }, [scrollToDoc]);
 
-  const [isDragging, setIsDragging] = React.useState(false);
-  const [dragStartX, setDragStartX] = React.useState(0);
-  const [dragScrollLeft, setDragScrollLeft] = React.useState(0);
+  const matrixDragRef = React.useRef<{ startX: number; startLeft: number } | null>(null);
   const isDragMovedRef = React.useRef(false);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     const container = matrixScrollRef.current;
     if (!container) return;
-    setIsDragging(true);
+    matrixDragRef.current = {
+      startX: e.pageX - container.offsetLeft,
+      startLeft: container.scrollLeft,
+    };
     isDragMovedRef.current = false;
-    setDragStartX(e.pageX - container.offsetLeft);
-    setDragScrollLeft(container.scrollLeft);
+    setGrabbing(container, true);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
+    const drag = matrixDragRef.current;
+    if (!drag) return;
     const container = matrixScrollRef.current;
     if (!container) return;
     const x = e.pageX - container.offsetLeft;
-    const walk = (x - dragStartX) * 1.5;
-    if (Math.abs(x - dragStartX) > 4) {
+    const walk = (x - drag.startX) * 1.5;
+    if (Math.abs(x - drag.startX) > 4) {
       isDragMovedRef.current = true;
     }
-    container.scrollLeft = dragScrollLeft - walk;
+    container.scrollLeft = drag.startLeft - walk;
     matrixScrollLeftRef.current = container.scrollLeft;
   };
 
   const handleMouseUpOrLeave = () => {
-    setIsDragging(false);
+    if (!matrixDragRef.current) return;
+    matrixDragRef.current = null;
+    setGrabbing(matrixScrollRef.current, false);
   };
 
   const handleStripMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0 || !stripRef.current) return;
-    setIsStripDragging(true);
+    stripDraggingRef.current = true;
     stripDragMovedRef.current = false;
     stripDragStartXRef.current = e.pageX;
     stripScrollStartRef.current = stripRef.current.scrollLeft;
+    setGrabbing(stripRef.current, true);
   };
 
   const handleStripMouseMove = (e: React.MouseEvent) => {
-    if (!isStripDragging || !stripRef.current) return;
+    if (!stripDraggingRef.current || !stripRef.current) return;
     const delta = e.pageX - stripDragStartXRef.current;
     if (Math.abs(delta) > 4) stripDragMovedRef.current = true;
     stripRef.current.scrollLeft = stripScrollStartRef.current - delta;
   };
 
   const handleStripMouseUpOrLeave = () => {
-    setIsStripDragging(false);
+    if (!stripDraggingRef.current) return;
+    stripDraggingRef.current = false;
+    setGrabbing(stripRef.current, false);
   };
 
   // Специализация врача для подписи в мобильном пейджере. Прав на справочник
   // сотрудников может не быть (403) — тогда карта пустая и подпись деградирует
   // до общего «Специалист», как было раньше.
-  const { employees: allEmployees } = useAllActiveEmployees();
+  // Без права справочник не запрашиваем: отказ 403 с повтором только задержал
+  // бы рельс (его состав считается по справочнику, см. branchSpecs).
+  const { can, loading: permissionsLoading } = useCanChecker();
+  const canViewStaff = can("staff.view");
+  const {
+    employees: allEmployees,
+    isLoading: employeesLoading,
+    isError: employeesError,
+  } = useAllActiveEmployees(canViewStaff);
   const specLabelByEmployee = React.useMemo(() => {
     const map = new Map<number, string>();
     allEmployees.forEach((emp) => {
       const names = emp.specializations.map((s) => s.name).filter(Boolean);
       if (names.length) map.set(emp.id, names.join(", "));
+    });
+    return map;
+  }, [allEmployees]);
+
+  /**
+   * Свой шаг сетки окон у сотрудника: терапевт по 20 минут, УЗИ по 40.
+   * Справочник может быть недоступен (403) — тогда карта пуста и сетка
+   * остаётся такой, какой её прислал бэк.
+   */
+  const slotMinutesByEmployee = React.useMemo(() => {
+    const map = new Map<number, number>();
+    allEmployees.forEach((emp) => {
+      const minutes = emp.slotDurationMinutes;
+      if (minutes) map.set(emp.id, minutes);
     });
     return map;
   }, [allEmployees]);
@@ -905,6 +1351,63 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     })),
   });
 
+  /**
+   * Отсутствия врачей на весь загруженный диапазон — одним запросом.
+   *
+   * `availability` отдаёт только флаг `dayOff` на день; часы отсутствия
+   * («ушёл с 14:00») в ней никак не выражены — слоты интервала просто не
+   * приходят. Права на `/scheduling/` есть не у всех ролей: при отказе
+   * деградируем к прежнему поведению, поэтому `retry: false`.
+   */
+  const absenceRange = React.useMemo(
+    () => ({
+      dateFrom: chunks[0]?.from ?? todayIso,
+      dateTo: chunks[chunks.length - 1]?.to ?? todayIso,
+    }),
+    [chunks, todayIso],
+  );
+  const absencesQuery = useQuery({
+    queryKey: djangoQueryKeys.scheduling.exceptions({
+      dateFrom: absenceRange.dateFrom,
+      dateTo: absenceRange.dateTo,
+      orgId: organizationId ?? null,
+      branchId: branchId ?? null,
+    }),
+    queryFn: ({ signal }) =>
+      getScheduleExceptions(
+        { ...absenceRange, branchId, organizationId },
+        signal,
+      ),
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    retry: false,
+  });
+  const absencesByDay = React.useMemo(
+    () => buildDayAbsences(absencesQuery.data),
+    [absencesQuery.data],
+  );
+  /**
+   * Подпись отсутствия для списков врачей: «Выходной день» / «Отпуск» на весь
+   * день, «Не работает 14:00–18:00» — на часы. Нужна в трёх местах (пейджер
+   * телефона, меню выбора врача, шапка колонки), поэтому считается один раз.
+   */
+  const absenceNote = React.useCallback(
+    (employeeId: number, date: string | null | undefined) => {
+      if (!date) return null;
+      const absence = absenceForDay(absencesByDay, employeeId, date);
+      if (!absence) return null;
+      const fullDayLabel =
+        absence.kind === "vacation" ? t("slots.vacation") : t("slots.dayOff");
+      return {
+        absence,
+        fullDay: absence.fullDay,
+        label: absence.fullDay
+          ? fullDayLabel
+          : t("slots.absentHours", { range: formatAbsenceRanges(absence.ranges) }),
+      };
+    },
+    [absencesByDay, t],
+  );
+
   // Догрузка к краям не должна дёргаться, пока крайний чанк ещё в полёте.
   const pastEdgeLoading = chunkQueries[0]?.isLoading ?? false;
   const futureEdgeLoading = chunkQueries[chunkQueries.length - 1]?.isLoading ?? false;
@@ -913,7 +1416,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
 
   // Один «виртуальный» ответ на весь загруженный диапазон: сотрудники те же,
   // дни чанков склеиваются по датам; nearestFree — самый ранний будущий.
-  const chunkDataStamp = chunkQueries.map((q) => q.dataUpdatedAt).join(",");
+  // Штамп — по ссылкам на ответы, а не по dataUpdatedAt: окна перезапрашиваются
+  // на каждое изменение приёмов в филиале, и одинаковый ответ (React Query
+  // отдаёт тогда прежний объект) не должен пересобирать всю сетку.
+  const chunkDataStamp = chunkQueries.map((q) => stampChunkData(q.data)).join(",");
   const mergedEmployees = React.useMemo<EmployeeAvailability[]>(() => {
     const byId = new Map<number, EmployeeAvailability>();
     for (const q of chunkQueries) {
@@ -941,7 +1447,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     const merged = Array.from(byId.values());
     merged.forEach((emp) => emp.days.sort((a, b) => a.date.localeCompare(b.date)));
     return merged;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- chunkQueries пересоздаётся каждый рендер; штамп dataUpdatedAt отражает реальные изменения данных
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chunkQueries пересоздаётся каждый рендер; штамп по ссылкам на ответы отражает реальные изменения данных
   }, [chunkDataStamp, todayIso]);
 
   // Крайний чанк загрузился «пустым» — дальше в эту сторону грузить нечего,
@@ -977,8 +1483,86 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // ищет конкретного врача по фамилии, а его место в списке съезжало от
   // загруженности дня, и глазами приходилось искать заново. Свободность
   // никуда не делась — она видна на самой карточке врача и в сетке.
+  /**
+   * Сетка окон под шаг сотрудника — до всего остального, что считает окна:
+   * счётчики в ленте дат, карточки врачей и колонки дня должны говорить об
+   * одних и тех же окнах. Шага нет — день остаётся тем, что прислал бэк.
+   */
+  const employeesWithGrid = React.useMemo(
+    () =>
+      mergedEmployees.map((emp) =>
+        resampleEmployeeDays(emp, slotMinutesByEmployee.get(emp.employeeId)),
+      ),
+    [mergedEmployees, slotMinutesByEmployee],
+  );
+
+  /**
+   * Специальности со сменами в филиале: пустые рельс не показывает
+   * (specPresence.ts). Считаются по полной выдаче «Все специалисты» — при
+   * выбранной специальности выдача урезана, — поэтому результат запоминается
+   * по организации и филиалу. `undefined` — ещё считается (в рельсе спиннер),
+   * `null` — состав неизвестен, и рельс показывает весь справочник, как раньше.
+   */
+  const branchSpecsKey = `${organizationId ?? ""}|${branchId ?? ""}`;
+  const branchSpecsRef = React.useRef<{ key: string; ids: ReadonlySet<number> | null } | null>(
+    null,
+  );
+  // Готовность — по чанку, который начинается сегодня; сами смены берутся из
+  // всех загруженных чанков (mergedEmployees).
+  const todayChunk = chunkQueries[pastChunks];
+  const todayChunkData = todayChunk?.data;
+  const todayChunkError = todayChunk?.isError ?? false;
+  const computedBranchSpecs = React.useMemo(
+    () =>
+      computeSpecsPresence({
+        specSelected: specId !== null,
+        permissionsLoading,
+        canViewStaff,
+        staffLoading: employeesLoading,
+        staffFailed: employeesError && allEmployees.length === 0,
+        todayLoaded: todayChunkData !== undefined,
+        todayFailed: todayChunkError && todayChunkData === undefined,
+        compute: () =>
+          specializationsOnShift(
+            mergedEmployees,
+            new Map(allEmployees.map((emp) => [emp.id, emp.specializations.map((s) => s.id)] as const)),
+            todayIso,
+          ),
+      }),
+    [
+      specId,
+      permissionsLoading,
+      canViewStaff,
+      employeesLoading,
+      employeesError,
+      allEmployees,
+      todayChunkData,
+      todayChunkError,
+      mergedEmployees,
+      todayIso,
+    ],
+  );
+  if (computedBranchSpecs !== undefined) {
+    branchSpecsRef.current = { key: branchSpecsKey, ids: computedBranchSpecs };
+  }
+  const branchSpecs = resolveSpecsPresence(
+    computedBranchSpecs,
+    branchSpecsRef.current?.key === branchSpecsKey ? branchSpecsRef.current.ids : undefined,
+    specId !== null,
+  );
+  const railSpecs = React.useMemo(
+    () =>
+      railSpecializations(
+        specs,
+        branchSpecs ?? null,
+        specId,
+        (id) => (badgeBySpec.get(id)?.total ?? 0) > 0,
+      ),
+    [specs, branchSpecs, specId, badgeBySpec],
+  );
+
   const docs = React.useMemo(() => {
-    const list = mergedEmployees
+    const list = employeesWithGrid
       .map((emp) => ({
         emp,
         sum: summarize(emp, todayIso),
@@ -986,7 +1570,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     const q = search.trim().toLowerCase();
     const filtered = q ? list.filter((x) => x.emp.fullName.toLowerCase().includes(q)) : list;
     return filtered.sort((a, b) => a.emp.fullName.localeCompare(b.emp.fullName, "ru"));
-  }, [mergedEmployees, search, todayIso]);
+  }, [employeesWithGrid, search, todayIso]);
 
   // Сбрасываем выбор врача только если выбранного врача больше нет в отфильтрованном списке.
   React.useEffect(() => {
@@ -1072,6 +1656,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   activeEmployeeIdsRef.current = activeDocsOnDay.map(({ emp }) => emp.employeeId);
   /** Состав колонок дня — по нему сбрасываем пейджер, см. эффект ниже. */
   const activeDocsKey = activeDocsOnDay.map(({ emp }) => emp.employeeId).join(",");
+  /** Подпись в шапках колонок: специальность выбранной группы или «Специалист». */
+  const gridSpecName = specId ? specs.find((s) => s.id === specId)?.name : null;
+  const prefetchKey = `${activeDayDate}|${activeDocsKey}`;
+  prefetchKeyRef.current = prefetchKey;
+  const prefetchedIds = prefetch.key === prefetchKey ? prefetch.ids : NO_IDS;
 
   // Смена дня пересобирает набор колонок. Возвращаемся к тому же врачу по id,
   // если он есть на новой дате; если врача в этот день нет — к первому.
@@ -1108,11 +1697,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     matrixScrollLeftRef.current = left;
     el?.scrollTo({ left });
     pagerLastLeftRef.current = left;
+    // Событие scroll на ту же позицию не придёт (см. syncPagerToScroll) —
+    // окно отрисовки ставим сами, до отрисовки кадра.
+    updateRenderRange(left);
     if (pagerTrackRef.current) {
       const progress = el?.clientWidth ? left / el.clientWidth : 0;
       pagerTrackRef.current.style.transform = `translate3d(${-progress * 100}%, 0, 0)`;
     }
-  }, [selDay, specId, search, activeDocsKey]);
+  }, [selDay, specId, search, activeDocsKey, updateRenderRange]);
 
   const selectedMonth = dayjs(selectedDay?.date ?? selectableDays[0]?.date ?? todayIso);
   const selectedMonthLabel = `${MONTHS_NOMINATIVE[selectedMonth.month()]} ${selectedMonth.year()}`;
@@ -1291,8 +1883,8 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                 py: 0.25,
                 px: 0.5,
                 flex: 1,
-                cursor: isFinePointer ? (isStripDragging ? "grabbing" : "grab") : "default",
-                userSelect: isStripDragging ? "none" : "auto",
+                cursor: isFinePointer ? "grab" : "default",
+                userSelect: "auto",
                 "&::-webkit-scrollbar": { height: 4 },
               }}
             >
@@ -1536,14 +2128,25 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                   </React.Fragment>
                 );
               })()}
-              {specs.length === 0 ? (
+              {/* Пока не известно, у каких специальностей в филиале есть смены,
+                  список не показываем: иначе справочник на секунду вставал бы
+                  целиком и потом схлопывался. */}
+              {branchSpecs === undefined ? (
+                <Stack alignItems="center" py={2}>
+                  <CircularProgress size={16} />
+                </Stack>
+              ) : railSpecs.length === 0 ? (
                 <Typography variant="body2" color="text.disabled" sx={{ px: 2, py: 2 }}>
                   {t("slots.noSpecialities")}
                 </Typography>
               ) : (
-                specs.map((s) => {
+                railSpecs.map((s) => {
                   const active = s.id === specId;
+                  // «0/0» — сегодня в филиале никого из специальности: бейдж про
+                  // сегодня, сказать ему нечего. Сама строка остаётся — врачи
+                  // работают в другие дни (пустые специальности уже скрыты).
                   const badge = badgeBySpec.get(s.id);
+                  const showBadge = badge != null && badge.total > 0;
                   return (
                     <React.Fragment key={s.id}>
                       <Box
@@ -1592,7 +2195,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             transition: "transform .13s ease",
                           }}
                         />
-                        {badge && (
+                        {showBadge ? (
                           <Box
                             sx={(t) => ({
                               fontSize: "0.6875rem",
@@ -1611,6 +2214,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           >
                             {badge.free}/{badge.total}
                           </Box>
+                        ) : (
+                          // Место бейджа «1/1»: без него стрелка уезжала вправо
+                          // и выбивалась из колонки стрелок соседних строк.
+                          <Box sx={{ width: 28, flexShrink: 0 }} />
                         )}
                       </Box>
 
@@ -1849,7 +2456,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             // «нет окон», что и обычный полностью занятый день — регистратор
                             // не мог отличить «не пробуйте, врач отсутствует» от «всё занято,
                             // но врач работает». Показываем отдельно, тем же тоном.
-                            const isDayOff = Boolean(day?.dayOff) && !offSchedule;
+                            const note = absenceNote(emp.employeeId, activeDayDate);
+                            const isDayOff =
+                              (Boolean(day?.dayOff) || note?.fullDay === true) && !offSchedule;
                             const specLabel =
                               specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
                             return (
@@ -1918,20 +2527,33 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                                         component="span"
                                         sx={{ color: "warning.main", fontWeight: 600 }}
                                       >
-                                        {t("slots.dayOff")}
+                                        {note?.label ?? t("slots.dayOff")}
                                       </Box>
                                     ) : (
-                                      <Box
-                                        component="span"
-                                        sx={{
-                                          color: free > 0 ? "success.main" : "text.disabled",
-                                          fontWeight: free > 0 ? 600 : 400,
-                                        }}
-                                      >
-                                        {free > 0
-                                          ? t("slots.freeSlotsCountShort", { count: free })
-                                          : t("slots.noSlotsShort")}
-                                      </Box>
+                                      <>
+                                        <Box
+                                          component="span"
+                                          sx={{
+                                            color: free > 0 ? "success.main" : "text.disabled",
+                                            fontWeight: free > 0 ? 600 : 400,
+                                          }}
+                                        >
+                                          {free > 0
+                                            ? t("slots.freeSlotsCountShort", { count: free })
+                                            : t("slots.noSlotsShort")}
+                                        </Box>
+                                        {/* Часы отсутствия: врач работает, но
+                                            часть дня его не будет. */}
+                                        {note && !note.fullDay && (
+                                          <Box
+                                            component="span"
+                                            sx={{ color: "warning.main", fontWeight: 600 }}
+                                          >
+                                            {" · "}
+                                            {note.label}
+                                          </Box>
+                                        )}
+                                      </>
                                     )}
                                   </Typography>
                                 </Box>
@@ -2019,8 +2641,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           const dayAppts = day?.appointments?.length ?? 0;
                           const itemOffSchedule =
                             Boolean(day) && (!day!.scheduled || day!.dayOff) && dayAppts > 0;
+                          const itemNote = absenceNote(emp.employeeId, activeDayDate);
                           // Чистый выходной без приёмов — отдельная подпись, а не «нет окон».
-                          const itemDayOff = Boolean(day?.dayOff) && !itemOffSchedule;
+                          const itemDayOff =
+                            (Boolean(day?.dayOff) || itemNote?.fullDay === true) &&
+                            !itemOffSchedule;
                           const selected = idx === safeIdx;
                           const itemSpec = specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
                           return (
@@ -2060,10 +2685,16 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                                   itemOffSchedule
                                     ? `${itemSpec} · ${t("slots.offSchedule")} · ${t("slots.visitsCount", { count: dayAppts })}`
                                     : itemDayOff
-                                      ? `${itemSpec} · ${t("slots.dayOff")}`
-                                      : free > 0
-                                        ? `${itemSpec} · ${t("slots.freeSlotsCount", { count: free })}`
-                                        : `${itemSpec} · ${t("slots.noFreeSlotsShort")}`
+                                      ? `${itemSpec} · ${itemNote?.label ?? t("slots.dayOff")}`
+                                      : [
+                                          itemSpec,
+                                          free > 0
+                                            ? t("slots.freeSlotsCount", { count: free })
+                                            : t("slots.noFreeSlotsShort"),
+                                          // Часы отсутствия дописываются к обычной
+                                          // подписи: врач в этот день работает.
+                                          ...(itemNote && !itemNote.fullDay ? [itemNote.label] : []),
+                                        ].join(" · ")
                                 }
                                 primaryTypographyProps={{ variant: "body2", fontWeight: 600, noWrap: true }}
                                 secondaryTypographyProps={{
@@ -2132,7 +2763,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
 
             return (
               <Box
-                ref={matrixScrollRef}
+                ref={setMatrixEl}
                 onScroll={handleMatrixScroll}
                 onMouseDown={isFinePointer ? handleMouseDown : undefined}
                 onMouseMove={isFinePointer ? handleMouseMove : undefined}
@@ -2150,140 +2781,46 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                   // свайп доводится до колонки, то есть до следующего врача.
                   scrollSnapType: { xs: "x mandatory", md: "none" },
                   WebkitOverflowScrolling: "touch",
-                  cursor: isFinePointer ? (isDragging ? "grabbing" : "grab") : "default",
-                  userSelect: isDragging ? "none" : "auto",
+                  cursor: isFinePointer ? "grab" : "default",
+                  userSelect: "auto",
                   "&::-webkit-scrollbar": { height: 6 },
                 }}
               >
                 {activeDocsOnDay.map(({ emp, sum }) => {
-                  const docDay = emp.days.find((d) => d.date === activeDayDate)!;
-                  const specName = specId ? specs.find((s) => s.id === specId)?.name : null;
+                  const docDay = emp.days.find((d) => d.date === activeDayDate);
                   const docOffSchedule =
-                    Boolean(docDay) &&
+                    docDay != null &&
                     (!docDay.scheduled || docDay.dayOff) &&
                     (docDay.appointments?.length ?? 0) > 0;
+                  const docNote = absenceNote(emp.employeeId, activeDayDate);
                   // Чистый выходной без приёмов — та же шапка, но своя подпись.
-                  const docDayOff = Boolean(docDay?.dayOff) && !docOffSchedule;
+                  const docDayOff =
+                    (Boolean(docDay?.dayOff) || docNote?.fullDay === true) && !docOffSchedule;
 
                   return (
-                    <Box
+                    <DoctorColumn
                       key={emp.employeeId}
-                      sx={{
-                        // Сетка не растягивает карточки по числу врачей:
-                        // на десктопе — по трети панели; на телефоне колонка
-                        // занимает экран целиком и листается свайпом (ориентир —
-                        // полоса аватаров над сеткой).
-                        flex: { xs: "0 0 100%", md: "0 0 33.3333%" },
-                        minWidth: 175,
-                        scrollSnapAlign: { xs: "start", md: "none" },
-                        // Один свайп — ровно один врач: без этого инерция
-                        // пролетала мимо двух-трёх колонок и было непонятно,
-                        // кого показали.
-                        scrollSnapStop: { xs: "always", md: "normal" },
-                        height: "100%",
-                        display: "flex",
-                        flexDirection: "column",
-                        borderRight: "1px solid",
-                        borderColor: "divider",
-                        "&:last-of-type": {
-                          borderRight: "none",
-                        },
-                      }}
-                    >
-                      {/* Шапка врача в колонке — подпись, а не кнопка:
-                          отдельного экрана врача в режиме окон нет. */}
-                      <Stack
-                        direction="row"
-                        alignItems="center"
-                        justifyContent="space-between"
-                        spacing={1}
-                        sx={(tokens) => ({
-                          display: {
-                            xs: activeDocsOnDay.length > 1 ? "none" : "flex",
-                            md: "flex",
-                          },
-                          px: 1.25,
-                          py: 1,
-                          borderBottom: "1px solid",
-                          borderColor: "divider",
-                          bgcolor: subtleBg(tokens),
-                          cursor: "pointer",
-                          "&:hover": { bgcolor: alpha(tokens.palette.primary.main, 0.08) },
-                        })}
-                        onClick={() => searchByDoctor(emp.fullName)}
-                      >
-                        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
-                          <Box sx={{ position: "relative", flexShrink: 0 }}>
-                            <Box
-                              sx={{
-                                width: 32,
-                                height: 32,
-                                borderRadius: "9px",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                color: "#fff",
-                                fontSize: "0.75rem",
-                                fontWeight: 600,
-                                bgcolor: avatarColor(emp.fullName),
-                              }}
-                            >
-                              {initials(emp.fullName)}
-                            </Box>
-                            <Box
-                              sx={{
-                                position: "absolute",
-                                right: -2,
-                                bottom: -2,
-                                width: 10,
-                                height: 10,
-                                borderRadius: "50%",
-                                border: "2px solid",
-                                borderColor: "background.paper",
-                                bgcolor: STATUS_DOT[sum.status],
-                              }}
-                            />
-                          </Box>
-                          <Box sx={{ minWidth: 0, flex: 1 }}>
-                            <Typography variant="body2" fontWeight={600} noWrap sx={{ fontSize: "0.8125rem", lineHeight: 1.2 }}>
-                              {emp.fullName}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", fontSize: "0.6875rem" }}>
-                              {specName ?? t("slots.specialist")}
-                              {docOffSchedule && (
-                                <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>
-                                  {" · "}
-                                  {t("slots.offSchedule")}
-                                </Box>
-                              )}
-                              {docDayOff && (
-                                <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>
-                                  {" · "}
-                                  {t("slots.dayOff")}
-                                </Box>
-                              )}
-                            </Typography>
-                          </Box>
-                        </Stack>
-                      </Stack>
-
-                      {/* Таймлайн окон и приёмов за день */}
-                      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1 }}>
-                        {!docDay ? (
-                          <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>
-                        ) : (
-                          <DayTimeline
-                            day={docDay}
-                            employeeId={emp.employeeId}
-                            dense
-                            onBook={onBook}
-                            onOpenAppointment={onOpenAppointment}
-                            dragMovedRef={isDragMovedRef}
-                            onWaitlist={onWaitlist}
-                          />
-                        )}
-                      </Box>
-                    </Box>
+                      employeeId={emp.employeeId}
+                      fullName={emp.fullName}
+                      status={sum.status}
+                      specName={gridSpecName}
+                      day={docDay}
+                      offSchedule={docOffSchedule}
+                      dayOff={docDayOff}
+                      noteLabel={docNote?.label ?? null}
+                      noteFullDay={docNote?.fullDay ?? false}
+                      absence={docNote?.absence}
+                      multi={activeDocsOnDay.length > 1}
+                      rendered={
+                        renderedIds.has(emp.employeeId) || prefetchedIds.has(emp.employeeId)
+                      }
+                      scrollTops={bodyScrollTopsRef.current}
+                      onSearchDoctor={searchByDoctor}
+                      onBook={stableOnBook}
+                      onOpenAppointment={onOpenAppointment ? stableOnOpenAppointment : undefined}
+                      onWaitlist={onWaitlist ? stableOnWaitlist : undefined}
+                      dragMovedRef={isDragMovedRef}
+                    />
                   );
                 })}
               </Box>

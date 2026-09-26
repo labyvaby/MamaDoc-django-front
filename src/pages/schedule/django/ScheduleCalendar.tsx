@@ -26,6 +26,7 @@ import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
+import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import "dayjs/locale/ru";
@@ -56,6 +57,7 @@ import {
   type LaneSegment,
   type PackedLane,
 } from "./monthTimeline";
+import { groupAbsencesByDate, type AbsenceMark } from "./absenceRows";
 import ScheduleDayTimeline from "./ScheduleDayTimeline";
 import ScheduleWeekResourceGrid from "./ScheduleWeekResourceGrid";
 import ScheduleFilters from "./ScheduleFilters";
@@ -117,6 +119,8 @@ export interface ScheduleCalendarProps {
   absenceDayEmployees?: Map<string, { employeeId: number; count: number }[]>;
   /** Клик по маркеру — открыть разбор по конкретному сотруднику и дню. */
   onAbsenceBadgeClick?: (employeeId: number, date: string) => void;
+  /** Клик по полосе смены в дневном виде — открыть карточку этой смены. */
+  onOccurrenceClick?: (day: Dayjs, occurrence: DayOccurrence) => void;
 }
 
 const WEEKDAY_FULL = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
@@ -136,6 +140,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
   absenceDayTotals,
   absenceDayEmployees,
   onAbsenceBadgeClick,
+  onOccurrenceClick,
 }) => {
   const theme = useTheme();
   const mode = theme.palette.mode;
@@ -148,10 +153,48 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
   const [view, setView] = React.useState<ScheduleView>("day");
 
   const employeesById = React.useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
-  const { filters, set: setFilter, reset: resetFilters, apply: filterOccurrences } = useScheduleFilters(
-    employeesById,
-    currentEmployeeId,
-  );
+  const {
+    filters,
+    set: setFilter,
+    reset: resetFilters,
+    apply: filterOccurrences,
+    matchesEmployee,
+  } = useScheduleFilters(employeesById, currentEmployeeId);
+
+  /**
+   * Отсутствующие с неразобранными записями — под тем же фильтром, что и смены:
+   * иначе фильтр «только мои» или по специализации оставлял бы в сетке чужие
+   * строки отсутствия.
+   */
+  const absenceNames = React.useMemo(() => {
+    const map = new Map<number, string>();
+    for (const exc of exceptions) if (!map.has(exc.employeeId)) map.set(exc.employeeId, exc.employeeName);
+    return map;
+  }, [exceptions]);
+  /**
+   * Отпуска и выходные по датам — под тем же фильтром, что и смены. Нужны и
+   * месячному виду (счётчик «N отсутствуют»), и телефонному списку дня: там
+   * сетки нет, а отсутствие видно только так.
+   */
+  const absencesByDate = React.useMemo(() => {
+    const grouped = groupAbsencesByDate(exceptions);
+    const map = new Map<string, AbsenceMark[]>();
+    for (const [date, list] of grouped) {
+      const kept = list.filter((m) => matchesEmployee(m.employeeId, m.employeeName));
+      if (kept.length > 0) map.set(date, kept);
+    }
+    return map;
+  }, [exceptions, matchesEmployee]);
+
+  const filteredAbsenceDayEmployees = React.useMemo(() => {
+    if (!absenceDayEmployees) return undefined;
+    const map = new Map<string, { employeeId: number; count: number }[]>();
+    for (const [date, list] of absenceDayEmployees) {
+      const kept = list.filter((e) => matchesEmployee(e.employeeId, absenceNames.get(e.employeeId)));
+      if (kept.length > 0) map.set(date, kept);
+    }
+    return map;
+  }, [absenceDayEmployees, matchesEmployee, absenceNames]);
 
   /**
    * Цвет сотрудника. Сотрудника может не быть в справочнике (правила приходят
@@ -337,8 +380,32 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
     const isCurrentMonth = day.isSame(month, "month");
     const isWeekend = day.isoWeekday() >= 6;
     const count = staffCount(occs);
+    // Отпуска и выходные дня — нейтральной меткой рядом со счётчиком смен.
+    // Красный чип рядом означает другое: записи, оставшиеся без разбора.
+    const absences = absencesByDate.get(day.format("YYYY-MM-DD")) ?? [];
     return (
       <Stack direction="row" alignItems="center" spacing={0.5}>
+        {show && absences.length > 0 && (
+          <Tooltip
+            title={absences
+              .map(
+                (m) =>
+                  `${m.employeeName}: ${m.label}${
+                    m.startTime && m.endTime ? ` ${m.startTime}–${m.endTime}` : ""
+                  }${m.comment ? ` — ${m.comment}` : ""}`,
+              )
+              .join("  •  ")}
+            arrow
+            placement="left"
+          >
+            <Stack direction="row" alignItems="center" spacing={0.25} sx={{ color: "text.disabled" }}>
+              <EventBusyOutlined sx={{ fontSize: 13 }} />
+              <Typography sx={{ fontSize: "0.7rem", fontWeight: 600, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                {absences.length}
+              </Typography>
+            </Stack>
+          </Tooltip>
+        )}
         {show && count > 0 && (
           <Tooltip title={`Сотрудников в смене: ${count}`} arrow placement="left">
             <Stack direction="row" alignItems="center" spacing={0.25} sx={{ color: "text.secondary" }}>
@@ -801,6 +868,8 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
               exceptions={exceptions}
               employeeColorMap={employeeColorMap}
               onDayClick={onDayClick}
+              absenceDayEmployees={filteredAbsenceDayEmployees}
+              onAbsenceClick={onAbsenceBadgeClick}
             />
           </Box>
         ) : (
@@ -811,6 +880,12 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
               occurrences={occsFor(month)}
               employeeColorMap={employeeColorMap}
               onEmployeeClick={() => onDayClick(month)}
+              exceptions={exceptions}
+              absenceDayEmployees={filteredAbsenceDayEmployees}
+              onAbsenceClick={onAbsenceBadgeClick}
+              onOccurrenceClick={
+                onOccurrenceClick ? (occ) => onOccurrenceClick(month, occ) : undefined
+              }
             />
           </Box>
         )}
@@ -875,7 +950,10 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
             const occs = occsFor(month).sort(
               (a, b) => a.startTime.localeCompare(b.startTime) || a.employeeName.localeCompare(b.employeeName),
             );
-            if (occs.length === 0) {
+            // Отпуска и выходные этого дня: на телефоне сетки нет, и без этого
+            // списка отсутствие ничем не отличалось от «не стоит в графике».
+            const dayAbsences = absencesByDate.get(month.format("YYYY-MM-DD")) ?? [];
+            if (occs.length === 0 && dayAbsences.length === 0) {
               return (
                 <Typography color="text.disabled" align="center" sx={{ py: 6 }}>
                   На этот день смен нет
@@ -886,6 +964,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
               <>
                 <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
                   Сотрудников в смене: {staffCount(occs)}
+                  {dayAbsences.length > 0 ? ` · отсутствуют: ${dayAbsences.length}` : ""}
                 </Typography>
                 <Stack spacing={0.75}>
                   {occs.map((occ) => {
@@ -927,6 +1006,64 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                     );
                   })}
                 </Stack>
+
+                {dayAbsences.length > 0 && (
+                  <Stack spacing={0.75} sx={{ mt: occs.length > 0 ? 1.5 : 0 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      Отсутствуют
+                    </Typography>
+                    {dayAbsences.map((mark) => (
+                      <Stack
+                        key={mark.id}
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        onClick={() => onDayClick(month)}
+                        sx={{
+                          border: "1px dashed",
+                          borderColor: "divider",
+                          borderRadius: "10px",
+                          p: 1,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <UserAvatar
+                          name={mark.employeeName}
+                          src={employeesById.get(mark.employeeId)?.photoUrl}
+                          size={30}
+                          sx={{ opacity: 0.55 }}
+                        />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" color="text.secondary" noWrap>
+                            {mark.employeeName}
+                          </Typography>
+                          {mark.comment && (
+                            <Typography variant="caption" color="text.disabled" noWrap sx={{ display: "block" }}>
+                              {mark.comment}
+                            </Typography>
+                          )}
+                        </Box>
+                        <Stack alignItems="flex-end" sx={{ flexShrink: 0 }}>
+                          <Chip
+                            label={mark.label}
+                            size="small"
+                            variant="outlined"
+                            sx={{ height: 18, fontSize: "0.6rem" }}
+                          />
+                          {mark.startTime && mark.endTime && (
+                            <Typography
+                              variant="caption"
+                              color="text.disabled"
+                              sx={{ fontVariantNumeric: "tabular-nums" }}
+                            >
+                              {mark.startTime}–{mark.endTime}
+                            </Typography>
+                          )}
+                        </Stack>
+                      </Stack>
+                    ))}
+                  </Stack>
+                )}
               </>
             );
           })()}

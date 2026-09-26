@@ -4,12 +4,15 @@ import { flushSync } from "react-dom";
 import html2pdf from "html2pdf.js";
 
 import { pdfFileName } from "../../utility/pdfLayout";
-import type {
-  ConclusionFormTemplate,
-  ConclusionFormPayload,
+import {
+  type ConclusionFormTemplate,
+  type ConclusionFormPayload,
 } from "../../api/conclusionForms";
 import { FormSheet, type SheetContext } from "./FormSheet";
 import { ConclusionTrailer, type ConclusionTrailerFields } from "./ConclusionTrailer";
+import { applySheetPageBreaks, layoutSheetPages } from "./sheetPageLayout";
+
+export { applySheetPageBreaks, layoutSheetPages };
 
 /**
  * PDF заключения, у которого есть бланк: один документ, а не два.
@@ -55,6 +58,11 @@ export async function generateConclusionSheetPdf(
         />,
       );
     });
+
+    // Лист уже в потоке документа и измерен браузером — самое время развести
+    // блоки по страницам, до того как html2pdf снимет его клон.
+    applySheetPageBreaks(container, template);
+    layoutSheetPages(container, template);
 
     const blob = await html2pdf()
       .set({

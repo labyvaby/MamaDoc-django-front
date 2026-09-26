@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import ruSettings from "../../../locales/ru/settings.json";
 import { PREVIEW_SECTIONS, previewSectionsFor } from "./rolePreview";
 
 const keysFor = (codes: string[]) => previewSectionsFor(codes).map((s) => s.key);
@@ -38,6 +39,18 @@ describe("previewSectionsFor", () => {
   it("каждый раздел витрины требует хотя бы одно право", () => {
     for (const section of PREVIEW_SECTIONS) {
       expect(section.permissions.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("исторические реестры открываются каждый своим правом", () => {
+    expect(keysFor(["appointments.all_appointments.view"])).toEqual(["allAppointments"]);
+    expect(keysFor(["appointments.all_procedures.view"])).toEqual(["allProcedures"]);
+  });
+
+  it("у каждого раздела витрины есть подпись в ru/settings.json", () => {
+    const labels = ruSettings.roles.preview.sections as Record<string, string>;
+    for (const section of PREVIEW_SECTIONS) {
+      expect(labels[section.key], `нет подписи roles.preview.sections.${section.key}`).toBeTruthy();
     }
   });
 });

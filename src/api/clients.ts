@@ -2,24 +2,20 @@ import { apiRequest } from "./client";
 import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 
 export type ClientType = "individual" | "company";
-export type ClientStatus = "new" | "active" | "inactive" | "no_offering";
+
+export interface DjangoClientStatus {
+  id: number;
+  code: string;
+  name: string;
+  color: string;
+  isSystem: boolean;
+  isActive: boolean;
+}
 
 export interface DjangoClientGroupRef {
   id: number;
   name: string;
   color: string;
-}
-
-export interface DjangoClientContact {
-  id: number | null;
-  clientId: number;
-  fullName: string;
-  position: string;
-  phone: string;
-  email: string;
-  isPrimary: boolean;
-  note: string;
-  isSelf: boolean;
 }
 
 export interface DjangoClient {
@@ -32,7 +28,6 @@ export interface DjangoClient {
   photoUrl: string | null;
   dob: string | null;
   address: string;
-  status: ClientStatus;
   managerId: number | null;
   familyGroupId: number | null;
   note: string;
@@ -46,9 +41,11 @@ export interface DjangoClient {
   bankAccount: string;
   bankBik: string;
   groups: DjangoClientGroupRef[];
-  primaryContact: DjangoClientContact | null;
   joinedAt: string;
   updatedAt: string;
+  customerStatus: DjangoClientStatus | null;
+  isBlacklisted: boolean;
+  blacklistReason: string;
 }
 
 export interface CreateClientPayload {
@@ -59,7 +56,9 @@ export interface CreateClientPayload {
   dob?: string | null;
   address?: string;
   clientType?: ClientType;
-  status?: ClientStatus;
+  customerStatusId?: number | null;
+  isBlacklisted?: boolean;
+  blacklistReason?: string;
   note?: string;
   legalName?: string;
   inn?: string;
@@ -74,48 +73,42 @@ export type UpdateClientPayload = Omit<Partial<CreateClientPayload>, "organizati
 
 export function getClients(
   organizationId: number,
-  params: { query?: string; status?: string; clientType?: string } = {},
+  params: { query?: string; clientType?: string } = {},
   signal?: AbortSignal,
 ): Promise<DjangoClient[]> {
   const search = new URLSearchParams({ organizationId: String(organizationId) });
   if (params.query?.trim()) search.set("q", params.query.trim());
-  if (params.status) search.set("status", params.status);
   if (params.clientType) search.set("clientType", params.clientType);
   return apiRequest<DjangoClient[]>(`/clients/?${search.toString()}`, { signal });
 }
 
-export function getClientContacts(
-  id: number,
+export function getClientStatuses(
   organizationId: number,
   signal?: AbortSignal,
-): Promise<DjangoClientContact[]> {
-  return apiRequest<DjangoClientContact[]>(
-    `/clients/${id}/contacts/?organizationId=${organizationId}`,
+): Promise<DjangoClientStatus[]> {
+  return apiRequest<DjangoClientStatus[]>(
+    `/clients/statuses/?organizationId=${organizationId}`,
     { signal },
   );
 }
 
-export type CreateClientContactPayload = Omit<DjangoClientContact, "id" | "clientId" | "isSelf">;
-
-export function createClientContact(
-  id: number,
+export function createClientStatus(
   organizationId: number,
-  payload: CreateClientContactPayload,
-): Promise<DjangoClientContact> {
-  return apiRequest<DjangoClientContact>(
-    `/clients/${id}/contacts/?organizationId=${organizationId}`,
+  payload: { name: string; color?: string; sortOrder?: number },
+): Promise<DjangoClientStatus> {
+  return apiRequest<DjangoClientStatus>(
+    `/clients/statuses/?organizationId=${organizationId}`,
     { method: "POST", body: payload },
   );
 }
 
-export function updateClientContact(
-  clientId: number,
-  contactId: number,
+export function updateClientStatus(
+  id: number,
   organizationId: number,
-  payload: Partial<CreateClientContactPayload>,
-): Promise<DjangoClientContact> {
-  return apiRequest<DjangoClientContact>(
-    `/clients/${clientId}/contacts/${contactId}/?organizationId=${organizationId}`,
+  payload: Partial<{ name: string; color: string; sortOrder: number; isActive: boolean }>,
+): Promise<DjangoClientStatus> {
+  return apiRequest<DjangoClientStatus>(
+    `/clients/statuses/${id}/?organizationId=${organizationId}`,
     { method: "PATCH", body: payload },
   );
 }

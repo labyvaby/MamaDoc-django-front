@@ -1,722 +1,778 @@
 import React from "react";
-import { Box, Grid, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, Grid, Skeleton, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { Link as RouterLink } from "react-router";
 
-import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
-import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
-import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
-import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
-import ReplayOutlined from "@mui/icons-material/ReplayOutlined";
-import StarBorderOutlined from "@mui/icons-material/StarBorderOutlined";
-import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
-import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
-import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
-import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
-
-import { AppCard, AppButton } from "../../components/ui";
-import { getDayCounts } from "../../api/appointments";
-import { getCashboxSummary } from "../../api/cashbox";
-import { getMonthlyReport } from "../../api/reports";
-import { getReviewStats } from "../../api/reviews";
-import { getTasksSummary } from "../../api/tasks";
-import { getDealsSummary } from "../../api/deals";
-import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
+import { AppButton } from "../../components/ui";
+import type { DashboardMoneyScalars } from "../../api/dashboard";
 import { formatKGS } from "../../utility/format";
+import { pluralRu } from "../../utility/amountInWords";
 import { subtleBg } from "../../theme/uiHelpers";
 import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
 import { useCanChecker } from "../../hooks/useCan";
-import { MetricTile } from "./MetricTile";
-import { Sparkline } from "./Sparkline";
-import { WidgetError, type WidgetProps } from "./widgetKit";
+import { DeltaChip, MetricTile } from "./MetricTile";
+import { DashCard, WidgetError, type WidgetProps } from "./widgetKit";
 import { delta, num } from "./widgetUtils";
-import { previousRange, sumDayCounts, toDailySeries, type PeriodRange } from "./period";
+import { TODAY_CHART_DAYS, toDailySeries } from "./period";
+import { useDashboardData } from "./DashboardData";
 
-// ── Приёмы ────────────────────────────────────────────────────────────────────
+// ── Записи ────────────────────────────────────────────────────────────────────
 
 /**
- * Записи за период по дням. Источник — `/appointments/day-counts/`: он отдаёт
- * ровно карту «дата → количество», поэтому окно любой длины стоит один запрос,
- * а не выгрузку самих приёмов (месяц списком — около 3 МБ).
+ * Записи за период по дням — раздел `appointments` агрегата: `daily` за окно
+ * графика и `weekdayBaseline` — «обычно в этот день недели» (среднее по тому
+ * же дню недели за 4 прошлые недели), его считает бэк.
  *
- * ⚠ Считаются ВСЕ записи периода, независимо от статуса и вида: приёмы и
- * процедуры здесь вместе. Разделение даёт месячный отчёт (виджет «Месяц»).
+ * График зависит от периода:
+ * - «Сегодня» — последние 14 дней с выделенным сегодня (число — за сегодня);
+ * - «Неделя» — 7 дней периода с днём недели в подписи;
+ * - «Месяц» — дни с 1-го по сегодня, подписи через день, без чисел над
+ *   столбиками (на 30 столбиках они слипаются).
+ *
+ * ⚠ Главное число — ВСЕ записи периода, независимо от статуса и вида: приёмы и
+ * процедуры вместе (как day-counts). Под ним — из чего оно сложилось: визиты,
+ * отмены, неявки, повторные.
  */
-export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) => {
-  const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
-  // Куда ведёт плитка: первое доступное рабочее пространство приёмов. Общую
+export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey }) => {
+  const data = useDashboardData();
+  const { prev, chartRange } = data;
+  // Куда ведёт карточка: первое доступное рабочее пространство приёмов. Общую
   // «главную по правам» (resolveHomeRoute) здесь брать нельзя — она может
-  // вернуть /cleaning или /profile, и плитка «Всего записей» уводила бы не
-  // туда. Нет ни одного из трёх прав — плитка остаётся без перехода.
+  // вернуть /cleaning или /profile. Нет ни одного из трёх прав — без перехода.
   const { can } = useCanChecker();
-  const workspacePath = can(PAGE_PERMISSIONS.appointmentsRegistry)
-    ? "/appointments"
+  const workspace = can(PAGE_PERMISSIONS.appointmentsRegistry)
+    ? { href: "/appointments", label: "Регистратура" }
     : can(PAGE_PERMISSIONS.doctorRoom)
-    ? "/doctor"
-    : can(PAGE_PERMISSIONS.nurseRoom)
-    ? "/nurse"
-    : undefined;
+      ? { href: "/doctor", label: "Кабинет врача" }
+      : can(PAGE_PERMISSIONS.nurseRoom)
+        ? { href: "/nurse", label: "Процедурный" }
+        : undefined;
 
-  const useCounts = (r: PeriodRange) =>
-    useQuery({
-      queryKey: djangoQueryKeys.appointments.list({
-        view: "dashboardDayCounts",
-        organizationId: scope.organizationId ?? null,
-        branchId: scope.branchId ?? null,
-        dateFrom: r.dateFrom,
-        dateTo: r.dateTo,
-      }),
-      queryFn: ({ signal }) =>
-        getDayCounts({ dateFrom: r.dateFrom, dateTo: r.dateTo, branchId: scope.branchId }, signal),
-      enabled: scope.orgReady,
-      staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-    });
+  const a = data.sections.appointments;
+  const loading = data.isLoading("appointments");
+  const error = data.error("appointments");
 
-  const query = useCounts(range);
-  const prevQuery = useCounts(prev);
+  const total = a?.total ?? 0;
+  const prevTotal = a?.baseline?.total;
+  // Ряд — по календарю окна: пропуск пустого дня превратил бы провал в ровную линию.
+  const series = React.useMemo(
+    () =>
+      a?.daily
+        ? toDailySeries(Object.fromEntries(a.daily.map((d) => [d.date, d.count])), chartRange)
+        : [],
+    [a?.daily, chartRange],
+  );
+  // На «Неделе» и «Месяце» окно графика совпадает с периодом.
+  const periodSeries = periodKey === "today" ? [] : series;
+  const peak = periodSeries.reduce((max, d) => Math.max(max, d.count), 0);
+  const busiest = periodSeries.find((d) => d.count === peak && peak > 0);
+  const perDay = periodSeries.length ? Math.round((total / periodSeries.length) * 10) / 10 : 0;
+  const usualByDate = new Map((a?.weekdayBaseline ?? []).map((w) => [w.date, num(w.average)]));
+  const hasBaseline = usualByDate.size > 0;
+  const baselines = series.map((d) => (hasBaseline ? (usualByDate.get(d.date) ?? 0) : null));
+  const chartMax = Math.max(
+    series.reduce((max, d) => Math.max(max, d.count), 0),
+    ...baselines.map((b) => b ?? 0),
+  );
+  const barPx = (v: number) => (chartMax ? Math.max(4, (v / chartMax) * 72) : 4);
 
-  const total = sumDayCounts(query.data);
-  const prevTotal = prevQuery.data ? sumDayCounts(prevQuery.data) : undefined;
-  const series = toDailySeries(query.data, range);
-  const peak = series.reduce((max, d) => Math.max(max, d.count), 0);
-  const busiest = series.find((d) => d.count === peak && peak > 0);
-  const perDay = series.length ? total / series.length : 0;
-  const prevPerDay =
-    prevQuery.data && prev.dateFrom
-      ? (prevTotal ?? 0) / Math.max(1, toDailySeries(prevQuery.data, prev).length)
-      : undefined;
+  const hint =
+    periodKey === "today"
+      ? "приёмы и процедуры, все статусы"
+      : `≈ ${perDay.toLocaleString("ru-RU")} в день${busiest ? ` · пик ${peak} — ${dayjs(busiest.date).format(periodKey === "week" ? "dd" : "D MMM")}` : ""}`;
 
-  const round1 = (n: number) => Math.round(n * 10) / 10;
+  const barLabel = (date: string, index: number) => {
+    const day = dayjs(date);
+    if (date === range.dateTo && periodKey === "today") return "сегодня";
+    if (periodKey === "week") return day.format("dd D");
+    if (periodKey === "month") return index % 2 === 0 ? day.format("D") : "";
+    return day.format("D");
+  };
 
   return (
-    <AppCard variant="outlined" elevation={0} title="Записи" subheader={range.label}>
-      {query.isError ? (
-        <WidgetError error={query.error} />
+    <DashCard
+      title="Записи"
+      subheader={periodKey === "today" ? `последние ${TODAY_CHART_DAYS} дней` : range.label}
+      href={workspace?.href}
+      linkLabel={workspace?.label}
+    >
+      {error ? (
+        <WidgetError error={error} />
       ) : (
-        <Stack spacing={2}>
-          <Grid container spacing={1.5}>
-            <Grid item xs={6}>
-              <MetricTile
-                label="Всего записей"
-                // Не «Регистратура» жёстко: у врача её нет, клик по плитке
-                // приводил на «Нет доступа».
-                href={workspacePath}
-                value={total}
-                icon={<EventAvailableOutlined />}
-                loading={query.isLoading}
-                delta={delta(total, prevTotal, prev.label)}
-                title="Приёмы и процедуры вместе — day-counts их не различает"
+        <Stack spacing={1.75} sx={{ height: "100%" }}>
+          <Stack direction="row" alignItems="center" spacing={1.25} sx={{ flexWrap: "wrap" }}>
+            {loading ? (
+              <Skeleton variant="text" width={80} height={38} />
+            ) : (
+              <Typography
+                sx={{
+                  fontSize: 28,
+                  fontWeight: 700,
+                  letterSpacing: "-0.02em",
+                  lineHeight: 1.15,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {total}
+              </Typography>
+            )}
+            {prevTotal !== undefined && !loading && (
+              <DeltaChip
+                size="md"
+                delta={{ current: total, previous: prevTotal, baselineLabel: prev.label }}
               />
-            </Grid>
-            <Grid item xs={6}>
-              <MetricTile
-                label="В среднем за день"
-                value={round1(perDay)}
-                icon={<TrendingUpOutlined />}
-                loading={query.isLoading}
-                delta={delta(
-                  round1(perDay),
-                  prevPerDay === undefined ? undefined : round1(prevPerDay),
-                  prev.label,
-                )}
-                hint={
-                  busiest
-                    ? `пик — ${peak} (${dayjs(busiest.date).format("D MMMM")})`
-                    : undefined
-                }
-              />
-            </Grid>
-          </Grid>
+            )}
+            <Box sx={{ flex: 1 }} />
+            <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{hint}</Typography>
+          </Stack>
+          {/* Разбивка слева, легенда засечки справа — одной строкой под числом. */}
+          {((a && a.visits != null) || (hasBaseline && series.length > 1)) && (
+            <Stack
+              direction="row"
+              alignItems="center"
+              sx={{ mt: "-6px !important", columnGap: 1.5, rowGap: 0.5, flexWrap: "wrap" }}
+            >
+              {a && a.visits != null && <AppointmentsBreakdown a={a} />}
+              <Box sx={{ flex: 1 }} />
+              {hasBaseline && series.length > 1 && (
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  spacing={0.75}
+                  sx={{ fontSize: "0.6875rem", color: "text.secondary" }}
+                >
+                  <Box sx={{ width: 12, height: 2, borderRadius: "1px", bgcolor: "text.secondary", opacity: 0.7 }} />
+                  <span>обычно в этот день недели</span>
+                </Stack>
+              )}
+            </Stack>
+          )}
 
-          {/* Мини-график по дням: столбики от пика периода. Без библиотек — их
-              в проекте нет, а ради тридцати прямоугольников тянуть графическую
-              зависимость незачем. Выходные приглушены, пик выделен. */}
-          {series.length > 1 && !query.isLoading && (
-            <Box sx={{ display: "flex", alignItems: "flex-end", gap: 0.5, height: 72 }}>
-              {series.map((d) => {
-                const day = dayjs(d.date);
-                const isWeekend = day.day() === 0 || day.day() === 6;
-                const isPeak = peak > 0 && d.count === peak;
-                return (
-                  <Tooltip
-                    key={d.date}
-                    arrow
-                    placement="top"
-                    title={`${day.format("dd, D MMMM")} — ${d.count}`}
-                  >
+          {loading ? (
+            <Skeleton variant="rounded" height={110} sx={{ borderRadius: "10px" }} />
+          ) : (
+            series.length > 1 && (
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "flex-end",
+                  gap: periodKey === "month" ? "3px" : "4px",
+                  flex: 1,
+                  minHeight: 110,
+                }}
+              >
+                {series.map((d, i) => {
+                  const day = dayjs(d.date);
+                  const isWeekend = day.day() === 0 || day.day() === 6;
+                  const isToday = d.date === range.dateTo;
+                  const label = barLabel(d.date, i);
+                  const usual = baselines[i];
+                  return (
+                    <Tooltip
+                      key={d.date}
+                      arrow
+                      placement="top"
+                      title={`${day.format("dd, D MMMM")} — ${d.count}${
+                        usual != null ? ` · обычно ≈ ${(Math.round(usual * 10) / 10).toLocaleString("ru-RU")}` : ""
+                      }`}
+                    >
+                      <Box
+                        component={RouterLink}
+                        to={`/appointments?date=${d.date}`}
+                        sx={{
+                          flex: 1,
+                          minWidth: 0,
+                          height: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "flex-end",
+                          gap: "5px",
+                          textDecoration: "none",
+                          "&:hover .appt-bar": { opacity: 0.8 },
+                        }}
+                      >
+                        {periodKey !== "month" && (
+                          <Typography
+                            sx={{
+                              fontSize: "0.6875rem",
+                              fontWeight: 600,
+                              color: "text.secondary",
+                              fontVariantNumeric: "tabular-nums",
+                            }}
+                          >
+                            {d.count}
+                          </Typography>
+                        )}
+                        <Box
+                          className="appt-bar"
+                          sx={(t) => {
+                            const dark = t.palette.mode === "dark";
+                            return {
+                              position: "relative",
+                              width: "100%",
+                              height: barPx(d.count),
+                              borderRadius: "4px 4px 1px 1px",
+                              transition: "opacity .15s ease",
+                              bgcolor: isToday
+                                ? t.palette.primary.main
+                                : d.count === 0
+                                  ? subtleBg(t, true)
+                                  : alpha(
+                                      t.palette.primary.main,
+                                      isWeekend ? (dark ? 0.3 : 0.18) : dark ? 0.6 : 0.38,
+                                    ),
+                            };
+                          }}
+                        >
+                          {/* Засечка «обычно в этот день недели»: столбик ниже
+                              неё — день слабее обычного, выше — сильнее. */}
+                          {usual != null && usual > 0 && (
+                            <Box
+                              sx={{
+                                position: "absolute",
+                                left: -1,
+                                right: -1,
+                                bottom: barPx(usual) - 1,
+                                height: 2,
+                                borderRadius: "1px",
+                                bgcolor: "text.secondary",
+                                opacity: 0.7,
+                                pointerEvents: "none",
+                              }}
+                            />
+                          )}
+                        </Box>
+                        <Typography
+                          sx={{
+                            fontSize: "0.6875rem",
+                            lineHeight: 1.2,
+                            minHeight: "1.2em",
+                            whiteSpace: "nowrap",
+                            fontWeight: isToday ? 700 : 400,
+                            color: isToday ? "primary.onSurface" : "text.secondary",
+                          }}
+                        >
+                          {label}
+                        </Typography>
+                      </Box>
+                    </Tooltip>
+                  );
+                })}
+              </Box>
+            )
+          )}
+        </Stack>
+      )}
+    </DashCard>
+  );
+};
+
+// ── Движение денег ────────────────────────────────────────────────────────────
+
+/** Одна строка разбора «откуда пришло и куда ушло». */
+const FlowRow: React.FC<{
+  label: string;
+  amount: number;
+  sign: "+" | "−";
+  hint?: string;
+  /** Доля от самой крупной строки, 0..1. */
+  share: number;
+}> = ({ label, amount, sign, hint, share }) => (
+  <Box
+    sx={{
+      display: "grid",
+      gridTemplateColumns: "16px minmax(0,1fr) auto",
+      alignItems: "center",
+      columnGap: 1.25,
+      py: 0.75,
+    }}
+  >
+    <Typography
+      sx={{ fontSize: "0.875rem", fontWeight: 600, color: "text.disabled", textAlign: "center" }}
+    >
+      {sign}
+    </Typography>
+    <Box sx={{ minWidth: 0 }}>
+      <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }} noWrap>
+        {label}
+        {hint && (
+          <Box component="span" sx={{ color: "text.disabled", ml: 0.75, fontSize: "0.75rem" }}>
+            {hint}
+          </Box>
+        )}
+      </Typography>
+      <Box
+        sx={(t) => ({
+          mt: 0.5,
+          height: 4,
+          borderRadius: "2px",
+          bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.12 : 0.07),
+        })}
+      >
+        <Box
+          sx={(t) => ({
+            height: "100%",
+            borderRadius: "2px",
+            width: `${Math.min(100, Math.max(2, share * 100))}%`,
+            // Приход — акцентом, расход — нейтральным: расход не «плохой
+            // цвет», это просто другая сторона движения.
+            bgcolor:
+              sign === "−"
+                ? alpha(t.palette.text.primary, 0.28)
+                : alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.7 : 0.5),
+          })}
+        />
+      </Box>
+    </Box>
+    <Typography
+      sx={{
+        minWidth: 110,
+        textAlign: "right",
+        fontSize: "0.875rem",
+        fontWeight: 600,
+        fontVariantNumeric: "tabular-nums",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {formatKGS(amount)}
+    </Typography>
+  </Box>
+);
+
+/** Откуда ушли возвраты: «нал 1 000 с · безнал 300 с» — нулевые источники не пишем. */
+function refundSourcesHint(s: DashboardMoneyScalars): string | undefined {
+  const parts = [
+    ["нал", num(s.cashRefunds)],
+    ["безнал", num(s.cardRefunds)],
+    ["на баланс", num(s.balanceRefunds)],
+  ] as const;
+  const text = parts
+    .filter(([, amount]) => amount > 0)
+    .map(([label, amount]) => `${label} ${formatKGS(amount)}`)
+    .join(" · ");
+  return text || undefined;
+}
+
+/**
+ * «Куда ушли деньги» — разбор кассы за период как маленький отчёт о движении:
+ * оплаты − возвраты + товары − расходы − закупки = осталось. Главная цифра
+ * (выручка) уже в «Пульсе», здесь владелец видит, из чего сложился остаток и
+ * что его съело.
+ *
+ * Все суммы приходят строками-decimal — считаем через Number. Страховое
+ * покрытие в gross/net НЕ входит и показано отдельной подписью. Итог —
+ * `netCashFlow` бэка: это формула (netIncome + товары − расходы − закупки),
+ * а не совпадение, движения баланса в неё не входят (ответ бэка 24.09.2026).
+ *
+ * Внизу — деньги, которые заработали, но не получили: недоплата по прошедшим
+ * визитам периода и остаток долга на сейчас.
+ */
+export const MoneyWidget: React.FC<WidgetProps> = ({ range }) => {
+  const data = useDashboardData();
+  const s = data.sections.money;
+  const loading = data.isLoading("money");
+  const error = data.error("money");
+
+  const gross = num(s?.grossIncome);
+  const refunds = num(s?.refundedTotal);
+  const sales = num(s?.salesTotal);
+  const expenses = num(s?.totalExpenses);
+  const supply = num(s?.supplyTotal);
+  const flow = num(s?.netCashFlow);
+  // Полосы — от самой крупной строки, чтобы пропорции читались глазом.
+  const scale = Math.max(gross, sales, expenses, supply, refunds, 1);
+
+  const cash = num(s?.cashIncome);
+  const card = num(s?.cardIncome);
+  const cashShare = cash + card > 0 ? Math.round((cash / (cash + card)) * 100) : null;
+  const insurance = num(s?.insuranceIncome);
+
+  return (
+    <DashCard title="Движение денег" subheader={range.label} href="/cashbox" linkLabel="Касса">
+      {error ? (
+        <WidgetError error={error} />
+      ) : loading || !s ? (
+        <Stack spacing={1}>
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} variant="text" height={28} />
+          ))}
+        </Stack>
+      ) : (
+        <Stack spacing={1.5}>
+          <Box>
+            <FlowRow
+              sign="+"
+              label="Оплаты"
+              amount={gross}
+              share={gross / scale}
+              hint={`${s.paymentCount} оплат`}
+            />
+            {refunds > 0 && (
+              <FlowRow
+                sign="−"
+                label="Возвраты"
+                amount={refunds}
+                share={refunds / scale}
+                hint={refundSourcesHint(s)}
+              />
+            )}
+            {sales > 0 && (
+              <FlowRow
+                sign="+"
+                label="Продажи товаров"
+                amount={sales}
+                share={sales / scale}
+                hint={`${s.saleCount} продаж`}
+              />
+            )}
+            <FlowRow
+              sign="−"
+              label="Расходы"
+              amount={expenses}
+              share={expenses / scale}
+              hint={s.expenseCount ? `${s.expenseCount} шт.` : undefined}
+            />
+            {supply > 0 && (
+              <FlowRow sign="−" label="Закупки" amount={supply} share={supply / scale} />
+            )}
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: "16px minmax(0,1fr) auto",
+                alignItems: "center",
+                columnGap: 1.25,
+                pt: 1.25,
+                mt: 0.5,
+                borderTop: 1,
+                borderColor: "divider",
+              }}
+            >
+              <Typography
+                sx={{
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  color: "text.disabled",
+                  textAlign: "center",
+                }}
+              >
+                =
+              </Typography>
+              <Typography sx={{ fontSize: "0.875rem", fontWeight: 650 }}>Осталось</Typography>
+              <Typography
+                sx={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  textAlign: "right",
+                  fontVariantNumeric: "tabular-nums",
+                  color: flow < 0 ? "error.onSurface" : "text.primary",
+                }}
+              >
+                {formatKGS(flow)}
+              </Typography>
+            </Box>
+          </Box>
+
+          {(cashShare != null || insurance > 0) && (
+            <Stack spacing={0.75}>
+              {cashShare != null && (
+                <Box sx={{ display: "flex", height: 6, gap: "2px", borderRadius: "3px", overflow: "hidden" }}>
+                  <Tooltip title={`Наличные — ${formatKGS(cash)}`} arrow>
                     <Box
-                      component={RouterLink}
-                      to={`/appointments?date=${d.date}`}
                       sx={(t) => ({
-                        display: "block",
-                        flex: 1,
-                        minWidth: 4,
-                        height: `${peak ? Math.max(5, (d.count / peak) * 100) : 5}%`,
-                        borderRadius: "4px 4px 2px 2px",
-                        transition: "background-color .15s ease",
-                        bgcolor: !d.count
-                          ? subtleBg(t, true)
-                          : alpha(
-                              t.palette.primary.main,
-                              isPeak
-                                ? t.palette.mode === "dark"
-                                  ? 0.85
-                                  : 0.65
-                                : isWeekend
-                                  ? t.palette.mode === "dark"
-                                    ? 0.3
-                                    : 0.18
-                                  : t.palette.mode === "dark"
-                                    ? 0.55
-                                    : 0.35,
-                            ),
-                        "&:hover": {
-                          bgcolor: alpha(t.palette.primary.main, 0.95),
-                        },
+                        width: `${cashShare}%`,
+                        bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.85 : 0.7),
                       })}
                     />
                   </Tooltip>
-                );
-              })}
-            </Box>
-          )}
-        </Stack>
-      )}
-    </AppCard>
-  );
-};
-
-// ── Деньги ────────────────────────────────────────────────────────────────────
-
-/** Доля наличных и безнала одной полосой — структура прихода без круговых диаграмм. */
-const PaymentMix: React.FC<{ cash: number; card: number }> = ({ cash, card }) => {
-  const total = cash + card;
-  if (total <= 0) return null;
-  const cashShare = Math.round((cash / total) * 100);
-
-  return (
-    <Box>
-      <Box
-        sx={{ display: "flex", height: 8, borderRadius: "6px", overflow: "hidden", mb: 0.75 }}
-      >
-        <Tooltip title={`Наличные — ${formatKGS(cash)}`} arrow>
-          <Box
-            sx={(t) => ({
-              width: `${cashShare}%`,
-              bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.85 : 0.6),
-            })}
-          />
-        </Tooltip>
-        <Tooltip title={`Безнал — ${formatKGS(card)}`} arrow>
-          <Box
-            sx={(t) => ({
-              flex: 1,
-              bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.32 : 0.2),
-            })}
-          />
-        </Tooltip>
-      </Box>
-      <Typography variant="caption" sx={{ color: "text.secondary" }}>
-        наличные {cashShare}% · безнал {100 - cashShare}%
-      </Typography>
-    </Box>
-  );
-};
-
-/**
- * Касса за период. Все суммы приходят строками-decimal, поэтому считаем через
- * Number, а не складываем строки.
- *
- * `netIncome` — приход за вычетом возвратов; `netCashFlow` — он же плюс продажи
- * товаров и минус расходы и закупки, то есть «сколько реально осталось».
- * Страховое покрытие в gross/net НЕ входит и показано отдельной подписью.
- */
-export const MoneyWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) => {
-  const { can } = useCanChecker();
-  const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
-
-  const useSummary = (r: PeriodRange) =>
-    useQuery({
-      queryKey: djangoQueryKeys.cashbox.summary({
-        view: "dashboard",
-        organizationId: scope.organizationId ?? null,
-        branchId: scope.branchId ?? null,
-        dateFrom: r.dateFrom,
-        dateTo: r.dateTo,
-      }),
-      queryFn: ({ signal }) =>
-        getCashboxSummary(
-          {
-            organizationId: scope.organizationId,
-            branchId: scope.branchId,
-            dateFrom: r.dateFrom,
-            dateTo: r.dateTo,
-          },
-          signal,
-        ),
-      enabled: scope.orgReady,
-      staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-    });
-
-  const query = useSummary(range);
-  const prevQuery = useSummary(prev);
-
-  const s = query.data;
-  const p = prevQuery.data;
-  const loading = query.isLoading;
-
-  /** Средний чек: приход, поделённый на число оплат. В CRM его нет нигде — считаем здесь. */
-  const avgCheck = s && s.paymentCount > 0 ? num(s.netIncome) / s.paymentCount : 0;
-  const prevAvgCheck = p && p.paymentCount > 0 ? num(p.netIncome) / p.paymentCount : undefined;
-
-  // Деньги по дням берём из месячного отчёта: касса умеет только итог за
-  // период, а дневную разбивку пришлось бы собирать по запросу на день.
-  // Ключ тот же, что у виджета «Месяц целиком», — react-query отдаёт кэш, а не
-  // делает второй запрос. Право на отчёты есть не у всех, поэтому кривая
-  // необязательная: без неё карточка просто короче.
-  const canReports = can(PAGE_PERMISSIONS.reports);
-  const dailyQuery = useQuery({
-    queryKey: djangoQueryKeys.reports.monthly({
-      view: "dashboard",
-      organizationId: scope.organizationId ?? null,
-      branchId: scope.branchId ?? null,
-      month: range.month,
-    }),
-    queryFn: ({ signal }) =>
-      getMonthlyReport(
-        { month: range.month, branchId: scope.branchId, organizationId: scope.organizationId },
-        signal,
-      ),
-    enabled: scope.orgReady && canReports && periodKey === "month",
-    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-  });
-
-  const daily = React.useMemo(() => {
-    const rows = dailyQuery.data?.daily ?? [];
-    return (
-      rows
-        .filter((d) => d.date <= range.dateTo)
-        // ⚠ Бэк отдаёт дни в обратном порядке — от 31-го к 1-му (проверено на
-        // /reports/monthly/ 25.08.2026). Без сортировки кривая читалась справа
-        // налево: рост выглядел падением.
-        .sort((a, b) => a.date.localeCompare(b.date))
-        .map((d) => ({
-          label: dayjs(d.date).format("D MMMM"),
-          value: num(d.cashSum) + num(d.cardSum),
-        }))
-    );
-  }, [dailyQuery.data, range.dateTo]);
-
-  /**
-   * Оценка по темпу: сколько выйдет к концу месяца, если дальше пойдёт как
-   * шло. Намеренно не называется прогнозом — это линейная экстраполяция, она
-   * не знает ни про выходные впереди, ни про сезон.
-   */
-  const pace = React.useMemo(() => {
-    if (periodKey !== "month" || !s) return null;
-    const elapsed = dayjs(range.dateTo).date();
-    const inMonth = dayjs(range.dateTo).daysInMonth();
-    if (elapsed < 3 || elapsed >= inMonth) return null;
-    return (num(s.netIncome) / elapsed) * inMonth;
-  }, [periodKey, s, range.dateTo]);
-
-  return (
-    <AppCard variant="outlined" elevation={0} title="Деньги" subheader={range.label}>
-      {query.isError ? (
-        <WidgetError error={query.error} />
-      ) : (
-        <Stack spacing={2}>
-          <Grid container spacing={1.5}>
-            <Grid item xs={12} sm={6}>
-              <MetricTile
-                label="Приход за вычетом возвратов"
-              href="/cashbox"
-                value={formatKGS(num(s?.netIncome))}
-                icon={<PaymentsOutlined />}
-                tone="success"
-                loading={loading}
-                delta={delta(num(s?.netIncome), p ? num(p.netIncome) : undefined, prev.label)}
-                hint={pace != null ? `по темпу к концу месяца ≈ ${formatKGS(pace)}` : undefined}
-                title="netIncome: оплаты минус возвраты. Страховое покрытие сюда не входит."
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <MetricTile
-                label="Средний чек"
-              href="/cashbox"
-                value={formatKGS(avgCheck)}
-                icon={<ReceiptLongOutlined />}
-                loading={loading}
-                delta={delta(avgCheck, prevAvgCheck, prev.label)}
-                hint={s ? `${s.paymentCount} оплат` : undefined}
-                title="Приход ÷ число оплат. Это чек на оплату, а не на пациента: один визит может быть оплачен несколькими платежами."
-              />
-            </Grid>
-            <Grid item xs={6}>
-              <MetricTile
-                label="Остаток движения"
-              href="/cashbox"
-                value={formatKGS(num(s?.netCashFlow))}
-                icon={<TrendingUpOutlined />}
-                tone={num(s?.netCashFlow) < 0 ? "error" : "neutral"}
-                loading={loading}
-                delta={delta(num(s?.netCashFlow), p ? num(p.netCashFlow) : undefined, prev.label)}
-                hint={
-                  s
-                    ? `продажи ${formatKGS(num(s.salesTotal))} · расходы ${formatKGS(num(s.totalExpenses))}`
-                    : undefined
-                }
-                title="netCashFlow = приход + продажи товаров − расходы − закупки"
-              />
-            </Grid>
-            <Grid item xs={6}>
-              <MetricTile
-                label="Возвраты"
-              href="/cashbox"
-                value={formatKGS(num(s?.refundedTotal))}
-                icon={<ReplayOutlined />}
-                tone={num(s?.refundedTotal) > 0 ? "warning" : "neutral"}
-                loading={loading}
-                delta={delta(
-                  num(s?.refundedTotal),
-                  p ? num(p.refundedTotal) : undefined,
-                  prev.label,
-                  true,
-                )}
-                hint={
-                  s && num(s.insuranceIncome) > 0
-                    ? `страховые ${formatKGS(num(s.insuranceIncome))} — вне итогов`
-                    : s?.refundCount
-                      ? `${s.refundCount} операций`
-                      : undefined
-                }
-              />
-            </Grid>
-          </Grid>
-
-          {!loading && s && <PaymentMix cash={num(s.cashIncome)} card={num(s.cardIncome)} />}
-
-          {daily.length > 1 && (
-            <Box>
-              <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                Приход по дням
-              </Typography>
-              <Sparkline points={daily} format={formatKGS} />
-            </Box>
-          )}
-        </Stack>
-      )}
-    </AppCard>
-  );
-};
-
-// ── Месяц ─────────────────────────────────────────────────────────────────────
-
-/**
- * Месячный отчёт: единственный источник, который делит записи по статусам
- * (оплачено / отменено / ожидает) и отделяет приёмы от процедур. Показывается
- * только на периоде «Месяц» — эндпоинт умеет считать лишь календарный месяц.
- */
-export const MonthWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) => {
-  const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
-
-  const useReport = (month: string) =>
-    useQuery({
-      queryKey: djangoQueryKeys.reports.monthly({
-        view: "dashboard",
-        organizationId: scope.organizationId ?? null,
-        branchId: scope.branchId ?? null,
-        month,
-      }),
-      queryFn: ({ signal }) =>
-        getMonthlyReport(
-          { month, branchId: scope.branchId, organizationId: scope.organizationId },
-          signal,
-        ),
-      enabled: scope.orgReady,
-      staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-    });
-
-  const query = useReport(range.month);
-  const prevQuery = useReport(prev.month);
-
-  const sum = query.data?.summary;
-  const prevSum = prevQuery.data?.summary;
-  const loading = query.isLoading;
-  const paidShare =
-    sum && sum.apptTotalCount > 0
-      ? Math.round((sum.apptPaidCount / sum.apptTotalCount) * 100)
-      : null;
-  const prevLabel = "прошлый месяц целиком";
-
-  return (
-    <AppCard
-      variant="outlined"
-      elevation={0}
-      title="Месяц целиком"
-      subheader={dayjs(range.month + "-01").format("MMMM YYYY")}
-    >
-      {query.isError ? (
-        <WidgetError error={query.error} />
-      ) : (
-        <Grid container spacing={1.5}>
-          {/* Приёмы и процедуры разведены намеренно: карточка «Записи» выше
-              считает и то и другое (day-counts не различает), а месячный отчёт
-              даёт их порознь. Без этой подписи числа выглядят противоречиво —
-              «290 записей» против «231 приёма». */}
-          <Grid item xs={6} sm={4}>
-            <MetricTile
-              label="Приёмов"
-              href="/reports"
-              value={sum?.apptTotalCount ?? 0}
-              loading={loading}
-              delta={delta(sum?.apptTotalCount ?? 0, prevSum?.apptTotalCount, prevLabel)}
-              hint={sum ? `процедур — ${sum.procTotalCount}` : undefined}
-              title="Месячный отчёт считает приёмы и процедуры раздельно; карточка «Записи» — вместе"
-            />
-          </Grid>
-          <Grid item xs={6} sm={4}>
-            <MetricTile
-              label="Оплачено"
-              href="/reports"
-              value={sum?.apptPaidCount ?? 0}
-              tone="success"
-              loading={loading}
-              delta={delta(sum?.apptPaidCount ?? 0, prevSum?.apptPaidCount, prevLabel)}
-              hint={paidShare != null ? `${paidShare}% приёмов` : undefined}
-              title="Оплаченными считаются приёмы в статусе paid или discounted"
-            />
-          </Grid>
-          <Grid item xs={6} sm={4}>
-            <MetricTile
-              label="Отменено"
-              href="/reports"
-              value={sum?.apptCancelledCount ?? 0}
-              tone={sum && sum.apptCancelledCount > 0 ? "warning" : "neutral"}
-              loading={loading}
-              delta={delta(
-                sum?.apptCancelledCount ?? 0,
-                prevSum?.apptCancelledCount,
-                prevLabel,
-                true,
+                  <Tooltip title={`Безнал — ${formatKGS(card)}`} arrow>
+                    <Box
+                      sx={(t) => ({
+                        flex: 1,
+                        bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.32 : 0.22),
+                      })}
+                    />
+                  </Tooltip>
+                </Box>
               )}
-              title="Отмены и неявки — разные статусы; здесь только отмены"
-            />
-          </Grid>
-          <Grid item xs={6} sm={4}>
-            <MetricTile
-              label="Скидки"
-              href="/reports"
-              value={formatKGS(num(sum?.discountSum))}
-              loading={loading}
-              delta={delta(num(sum?.discountSum), prevSum ? num(prevSum.discountSum) : undefined, prevLabel)}
-              hint={sum?.discountedCount ? `${sum.discountedCount} приёмов` : undefined}
-            />
-          </Grid>
-        </Grid>
-      )}
-    </AppCard>
-  );
-};
-
-// ── Задачи ────────────────────────────────────────────────────────────────────
-
-/** Сводка задач организации. Периода не имеет: это состояние «прямо сейчас». */
-export const TasksWidget: React.FC<WidgetProps> = ({ scope }) => {
-  const query = useQuery({
-    queryKey: djangoQueryKeys.tasks.summary(scope.organizationId),
-    queryFn: ({ signal }) => getTasksSummary(scope.organizationId, signal),
-    enabled: scope.orgReady,
-    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-  });
-
-  const s = query.data;
-  const loading = query.isLoading;
-
-  return (
-    <AppCard variant="outlined" elevation={0} title="Задачи" subheader="сейчас">
-      {query.isError ? (
-        <WidgetError error={query.error} />
-      ) : (
-        <Grid container spacing={1.5}>
-          <Grid item xs={6}>
-            <MetricTile
-              label="Просрочено"
-              href="/tasks"
-              value={s?.overdue ?? 0}
-              icon={<WarningAmberOutlined />}
-              tone={s && s.overdue > 0 ? "error" : "neutral"}
-              loading={loading}
-            />
-          </Grid>
-          <Grid item xs={6}>
-            <MetricTile
-              label="В работе"
-              href="/tasks"
-              value={s?.inProgress ?? 0}
-              icon={<AssignmentOutlined />}
-              loading={loading}
-              hint={s?.new ? `новых — ${s.new}` : undefined}
-            />
-          </Grid>
-          {s && s.awaitingApproval > 0 && (
-            <Grid item xs={12}>
-              <MetricTile label="Ждут приёмки"
-              href="/tasks" value={s.awaitingApproval} tone="warning" />
-            </Grid>
+              <Stack
+                direction="row"
+                sx={{ fontSize: "0.75rem", color: "text.secondary", flexWrap: "wrap", columnGap: 1 }}
+              >
+                {cashShare != null && (
+                  <Box>
+                    наличные {cashShare}% · безнал {100 - cashShare}%
+                  </Box>
+                )}
+                <Box sx={{ flex: 1 }} />
+                {insurance > 0 && <Box>страховые {formatKGS(insurance)} — вне итогов</Box>}
+              </Stack>
+            </Stack>
           )}
-        </Grid>
+
+          {(s.unpaidPastCount != null || s.debtOutstanding != null) && (
+            <UnpaidFooter
+              unpaidCount={s.unpaidPastCount}
+              unpaidAmount={s.unpaidPastAmount}
+              outstanding={s.debtOutstanding}
+            />
+          )}
+        </Stack>
       )}
-    </AppCard>
+    </DashCard>
   );
 };
 
-// ── Воронка продаж ────────────────────────────────────────────────────────────
+// ── Из чего сложились записи ─────────────────────────────────────────────────
+
+/** Строка под числом записей: визиты, отмены, неявки, повторные. */
+const AppointmentsBreakdown: React.FC<{
+  a: { visits?: number; canceled?: number; noShow?: number; repeatShare?: string };
+}> = ({ a }) => {
+  const parts = [
+    `визитов ${a.visits ?? 0}`,
+    a.canceled ? `отмен ${a.canceled}` : null,
+    a.noShow ? `неявок ${a.noShow}` : null,
+    a.visits ? `повторных ${Math.round(num(a.repeatShare))}%` : null,
+  ].filter(Boolean);
+  return (
+    <Typography
+      sx={{
+        fontSize: "0.75rem",
+        color: "text.secondary",
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {parts.join(" · ")}
+    </Typography>
+  );
+};
+
+// ── Не получено ───────────────────────────────────────────────────────────────
 
 /**
- * Обращения в работе и то, что мешает им двигаться.
- *
- * Периода не имеет: вопрос всегда про «сейчас» — сколько денег в воронке и
- * кому надо позвонить сегодня. Ретроспектива живёт во вкладке аналитики,
- * туда и уводим по клику.
+ * Подвал «Движения денег»: недоплата по прошедшим визитам периода и остаток
+ * долга на сейчас. Это разные числа: первое — про выбранный период, второе —
+ * по всем прошедшим визитам, от периода не зависит.
  */
-export const DealsWidget: React.FC<WidgetProps> = ({ scope }) => {
-  const query = useQuery({
-    queryKey: djangoQueryKeys.deals.summary({ organizationId: scope.organizationId }),
-    queryFn: ({ signal }) => getDealsSummary({ organizationId: scope.organizationId }, signal),
-    enabled: scope.orgReady,
-    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-  });
-
-  const s = query.data;
-  const loading = query.isLoading;
-
+const UnpaidFooter: React.FC<{
+  unpaidCount?: number;
+  unpaidAmount?: string;
+  outstanding?: string;
+}> = ({ unpaidCount, unpaidAmount, outstanding }) => {
+  const unpaid = num(unpaidAmount);
+  const debt = num(outstanding);
+  if (!unpaid && !debt) return null;
   return (
-    <AppCard variant="outlined" elevation={0} title="Воронка продаж" subheader="сейчас">
-      {query.isError ? (
-        <WidgetError error={query.error} />
-      ) : (
-        <Grid container spacing={1.5}>
-          <Grid item xs={6}>
-            <MetricTile
-              label="В работе"
-              href="/deals"
-              value={s?.openCount ?? 0}
-              icon={<FilterAltOutlined />}
-              hint={s ? formatKGS(s.openAmount) : undefined}
-              loading={loading}
-            />
-          </Grid>
-          <Grid item xs={6}>
-            {/* Просроченное касание — то, из-за чего лиды умирают молча. */}
-            <MetricTile
-              label="Просрочено касаний"
-              href="/deals?action=overdue"
-              value={s?.overdueActionsCount ?? 0}
-              icon={<WarningAmberOutlined />}
-              tone={s && s.overdueActionsCount > 0 ? "error" : "neutral"}
-              loading={loading}
-            />
-          </Grid>
-          <Grid item xs={6}>
-            <MetricTile
-              label="На сегодня"
-              href="/deals?action=today"
-              value={s?.todayActionsCount ?? 0}
-              icon={<AccessTimeOutlined />}
-              loading={loading}
-            />
-          </Grid>
-          <Grid item xs={6}>
-            <MetricTile
-              label="Выиграно"
-              href="/deals?tab=analytics"
-              value={s?.wonCount ?? 0}
-              icon={<TrendingUpOutlined />}
-              tone={s && s.wonCount > 0 ? "success" : "neutral"}
-              hint={s ? formatKGS(s.wonAmount) : undefined}
-              loading={loading}
-            />
-          </Grid>
-        </Grid>
+    <Stack
+      direction="row"
+      sx={{
+        pt: 1,
+        borderTop: 1,
+        borderColor: "divider",
+        fontSize: "0.75rem",
+        color: "text.secondary",
+        columnGap: 1,
+        rowGap: 0.25,
+        flexWrap: "wrap",
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {unpaid > 0 && (
+        <Tooltip
+          arrow
+          title="Визит уже прошёл, не отменён и не неявка, а по журналу платежей за вычетом возвратов оплачено меньше, чем к оплате. Статус приёма не учитывается."
+        >
+          <Box>
+            не получено за {unpaidCount}{" "}
+            {pluralRu(unpaidCount ?? 0, ["визит", "визита", "визитов"])} —{" "}
+            <Box component="span" sx={{ color: "warning.onSurface", fontWeight: 600 }}>
+              {formatKGS(unpaid)}
+            </Box>
+          </Box>
+        </Tooltip>
       )}
-    </AppCard>
+      <Box sx={{ flex: 1 }} />
+      {debt > 0 && (
+        <Tooltip
+          arrow
+          title="Остаток непогашенного долга по всем прошедшим визитам на сейчас — от периода не зависит"
+        >
+          <Box>долг пациентов сейчас — {formatKGS(debt)}</Box>
+        </Tooltip>
+      )}
+    </Stack>
   );
 };
 
-// ── Отзывы ────────────────────────────────────────────────────────────────────
+// ── Итоги периода ─────────────────────────────────────────────────────────────
 
-/** Оценки за период: средняя, отклик и число негативных — их разбирают вручную. */
-export const ReviewsWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) => {
-  const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
+const pct = (v: string | undefined) => `${Math.round(num(v))}%`;
 
-  const useStats = (r: PeriodRange) =>
-    useQuery({
-      queryKey: djangoQueryKeys.reviews.stats({
-        view: "dashboard",
-        organizationId: scope.organizationId ?? null,
-        from: r.dateFrom,
-        to: r.dateTo,
-      }),
-      queryFn: ({ signal }) =>
-        getReviewStats(
-          { from: r.dateFrom, to: r.dateTo, organizationId: scope.organizationId },
-          signal,
-        ),
-      enabled: scope.orgReady,
-      staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-    });
+/**
+ * Итоги периода: чем закончились записи и сколько денег за ними осталось.
+ *
+ * Раньше блок стоял на месячном отчёте и потому жил только на «Месяце»; теперь
+ * всё считает агрегат за любой период. Каждая плитка — из своего раздела, и
+ * раздела без права просто нет (что пришло, то и показываем).
+ *
+ * - отмены и неявки — порознь, у отмен видно, кто отменил (у старых отмен
+ *   инициатор неизвестен);
+ * - повторные — визиты карт, у которых раньше уже был визит в организации
+ *   (по карте пациента, не по семье — решение бэка, ответ 24.09.2026);
+ * - конверсия — доля броней периода, дошедших до оплаченного приёма.
+ */
+export const ResultsWidget: React.FC<WidgetProps> = ({ range }) => {
+  const data = useDashboardData();
+  const { prev } = data;
+  const a = data.sections.appointments;
+  const ab = a?.baseline ?? undefined;
+  const money = data.sections.money;
+  const bookings = data.sections.bookings;
+  const loading = data.isLoading("appointments");
+  const error = data.error("appointments");
+  const label = prev.label;
 
-  const query = useStats(range);
-  const prevQuery = useStats(prev);
+  const visits = a?.visits ?? 0;
+  const paidShare = a && visits > 0 ? Math.round(((a.paid ?? 0) / visits) * 100) : null;
+  const by = a?.canceledBy;
+  const canceledHint = by
+    ? [
+        by.patient ? `пациент ${by.patient}` : null,
+        by.clinic ? `клиника ${by.clinic}` : null,
+        by.unknown ? `неизвестно ${by.unknown}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ") || undefined
+    : undefined;
 
-  const s = query.data;
-  const p = prevQuery.data;
-  const loading = query.isLoading;
-  const responsePercent = s ? Math.round(num(s.responseRate) * 100) : null;
-  // Без единого отправленного запроса бэк отдаёт avgRating "0.0". Показать
-  // ноль значило бы соврать: это не плохая оценка, а отсутствие оценок.
-  const hasReviews = !!s && s.sent > 0;
-  const prevHasReviews = !!p && p.sent > 0;
+  const tiles: React.ReactNode[] = [];
+  if (a?.visits != null || loading) {
+    tiles.push(
+      <MetricTile
+        key="visits"
+        label="Визитов"
+        href="/appointments"
+        value={visits}
+        loading={loading}
+        delta={delta(visits, ab?.visits, label)}
+        hint={a?.total != null ? `из ${a.total} записей` : undefined}
+        title="Записи периода без отменённых и неявок"
+      />,
+      <MetricTile
+        key="paid"
+        label="Оплачено"
+        href="/appointments"
+        value={a?.paid ?? 0}
+        tone="success"
+        loading={loading}
+        delta={delta(a?.paid ?? 0, ab?.paid, label)}
+        hint={paidShare != null ? `${paidShare}% визитов` : undefined}
+        title="Оплачено полностью, со скидкой или хотя бы частично"
+      />,
+      <MetricTile
+        key="canceled"
+        label="Отмены"
+        href="/appointments"
+        value={a?.canceled ?? 0}
+        tone={a?.canceled ? "warning" : "neutral"}
+        loading={loading}
+        delta={delta(a?.canceled ?? 0, ab?.canceled, label, true)}
+        hint={canceledHint}
+        title="Отменённые записи без неявок. Кто отменил, записывается с появления поля — у старых отмен неизвестно"
+      />,
+      <MetricTile
+        key="noShow"
+        label="Неявки"
+        href="/appointments"
+        value={a?.noShow ?? 0}
+        tone={a?.noShow ? "warning" : "neutral"}
+        loading={loading}
+        delta={delta(a?.noShow ?? 0, ab?.noShow, label, true)}
+      />,
+      <MetricTile
+        key="repeat"
+        label="Повторные"
+        href="/patients"
+        value={pct(a?.repeatShare)}
+        loading={loading}
+        // Без дельты: относительное изменение доли (+588% при 12,5% → 86%)
+        // читается как рост визитов, а не доли.
+        hint={
+          a?.repeatVisits != null
+            ? `${a.repeatVisits} визитов${ab?.visits ? ` · ${prev.label} — ${pct(ab.repeatShare)}` : ""}`
+            : undefined
+        }
+        title="Доля визитов пациентов, у которых раньше уже был визит в организации (в любом филиале)"
+      />,
+    );
+  }
+  if (money?.unpaidPastCount != null) {
+    tiles.push(
+      <MetricTile
+        key="unpaid"
+        label="Не получено"
+        href="/reports"
+        value={formatKGS(num(money.unpaidPastAmount))}
+        tone={money.unpaidPastCount > 0 ? "warning" : "neutral"}
+        hint={`${money.unpaidPastCount} ${pluralRu(money.unpaidPastCount, [
+          "прошедший визит",
+          "прошедших визита",
+          "прошедших визитов",
+        ])}`}
+        title="Прошедшие визиты периода, оплаченные не полностью: сколько по ним осталось получить"
+      />,
+    );
+  }
+  if (money?.debtOutstanding != null) {
+    tiles.push(
+      <MetricTile
+        key="debt"
+        label="Долг сейчас"
+        href="/reports"
+        value={formatKGS(num(money.debtOutstanding))}
+        tone={num(money.debtOutstanding) > 0 ? "warning" : "neutral"}
+        hint="все прошедшие визиты"
+        title="Остаток непогашенного долга на сейчас по всем прошедшим визитам — от периода не зависит"
+      />,
+    );
+  }
+  if (bookings?.conversionRate != null) {
+    tiles.push(
+      <MetricTile
+        key="conversion"
+        label="Брони → оплата"
+        href="/bookings"
+        value={bookings.total ? pct(bookings.conversionRate) : "—"}
+        hint={
+          bookings.total
+            ? `${bookings.paid ?? 0} из ${bookings.total} · в приём ${bookings.materialized ?? 0}`
+            : "броней на даты периода нет"
+        }
+        title="Брони на даты периода: сколько превратились в приём и сколько из них оплачено"
+      />,
+    );
+  }
 
   return (
-    <AppCard variant="outlined" elevation={0} title="Отзывы" subheader={range.label}>
-      {query.isError ? (
-        <WidgetError error={query.error} />
+    <DashCard title="Итоги" subheader={range.label} href="/reports" linkLabel="Отчёты">
+      {error ? (
+        <WidgetError error={error} />
+      ) : tiles.length === 0 ? (
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+          Нет данных за период
+        </Typography>
       ) : (
-        <Grid container spacing={1.5}>
-          <Grid item xs={6}>
-            <MetricTile
-              label="Средняя оценка"
-              href="/reviews"
-              value={hasReviews ? s!.avgRating : "—"}
-              icon={<StarBorderOutlined />}
-              tone={hasReviews ? (num(s!.avgRating) < 4 ? "warning" : "success") : "neutral"}
-              loading={loading}
-              delta={
-                hasReviews && prevHasReviews
-                  ? { current: num(s!.avgRating), previous: num(p!.avgRating), baselineLabel: prev.label }
-                  : undefined
-              }
-              hint={hasReviews ? `${s!.answered} из ${s!.sent}` : "запросов не было"}
-            />
-          </Grid>
-          <Grid item xs={6}>
-            <MetricTile
-              label="Негативных"
-              href="/reviews"
-              value={s?.negativeCount ?? 0}
-              tone={s && s.negativeCount > 0 ? "error" : "neutral"}
-              loading={loading}
-              delta={delta(s?.negativeCount ?? 0, p?.negativeCount, prev.label, true)}
-              hint={hasReviews && responsePercent != null ? `отклик ${responsePercent}%` : undefined}
-            />
-          </Grid>
+        <Grid container spacing={1.25}>
+          {tiles.map((tile, i) => (
+            <Grid item key={i} xs={6} sm={4} lg={3}>
+              {tile}
+            </Grid>
+          ))}
         </Grid>
       )}
-    </AppCard>
+    </DashCard>
   );
 };
 

@@ -15,7 +15,10 @@ import OnboardEmployeeDrawer from "./components/OnboardEmployeeDrawer";
 import EmployeeServicesDrawer from "./components/EmployeeServicesDrawer";
 import DjangoEditEmployeeDrawer from "./components/DjangoEditEmployeeDrawer";
 import DjangoFireEmployeeDialog from "./components/DjangoFireEmployeeDialog";
+import DjangoRestoreEmployeeDialog from "./components/DjangoRestoreEmployeeDialog";
 import { useEmployeesPageState } from "./hooks/useEmployeesPage";
+import { mapDjangoFullToRow } from "./viewModel";
+import type { DjangoEmployee } from "../../api/staff";
 import { AppBottomSheet, PageHeader } from "../../components/ui";
 import { useCan } from "../../hooks/useCan";
 import type { EmployesRow } from "./types";
@@ -25,6 +28,25 @@ const EmployeesPage: React.FC = () => {
   usePageTitle(t("page.title"));
   const state = useEmployeesPageState();
   const [onboardOpen, setOnboardOpen] = React.useState(false);
+  const [restoreOpen, setRestoreOpen] = React.useState<EmployesRow | null>(null);
+
+  // После увольнения/восстановления бэк отдаёт свежую карточку — с журналом
+  // «кем и когда». Кладём её целиком: правка одного status оставляла плашку
+  // с датой прошлого увольнения, а услуги в карточке не перечитывались.
+  const applyFreshEmployee = React.useCallback(
+    (fresh: DjangoEmployee) => {
+      const id = String(fresh.id);
+      state.setItems((prev) =>
+        prev.map((x) => (x.id === id ? mapDjangoFullToRow(fresh, x) : x)),
+      );
+      if (state.detailsOpen?.id === id) {
+        state.setDetailsOpen((prev) =>
+          prev ? mapDjangoFullToRow(fresh, prev) : prev,
+        );
+      }
+    },
+    [state],
+  );
   const [servicesDrawer, setServicesDrawer] = React.useState<{
     open: boolean;
     employeeId: number;
@@ -45,10 +67,15 @@ const EmployeesPage: React.FC = () => {
   const canStaffCreate = useCan("staff.create");
   const canStaffUpdate = useCan("staff.update");
   const canStaffDelete = useCan("staff.delete"); // "уволить"
-  const canMembershipsCreate = useCan("rbac.memberships.create");
-  const canMembershipsUpdate = useCan("rbac.memberships.update");
 
-  const canOnboard = canStaffCreate && (canMembershipsCreate || canMembershipsUpdate);
+  // Кнопка «Создать» держится на одном праве домена — staff.create. Раньше к
+  // нему добавлялось rbac.memberships.create/update, потому что онбординг
+  // заводит ещё и членство. Это соглашение фронта, а не требование бэка, и
+  // оно молча прятало кнопку у ролей, которым создание сотрудников выдали:
+  // коды rbac.* режутся вдобавок модулем "rbac" (utils/moduleMapping), а он
+  // включён не в каждой организации. Право на членство проверяет сам
+  // POST /staff/employees/onboard/ — его отказ дровер показывает текстом.
+  const canOnboard = canStaffCreate;
   const canEdit = canStaffUpdate;
   const canFire = canStaffDelete;
   const handleAddClick = canOnboard ? () => setOnboardOpen(true) : undefined;
@@ -125,6 +152,7 @@ const EmployeesPage: React.FC = () => {
               onSelect={(e) => state.setDetailsOpen(e)}
               onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
               onDelete={canFire ? (e) => state.setDeleteOpen(e) : undefined}
+              onRestore={canFire ? (e) => setRestoreOpen(e) : undefined}
               listRef={listRef}
               onScroll={state.loadMore}
               loading={state.loading}
@@ -153,6 +181,7 @@ const EmployeesPage: React.FC = () => {
                   <EmployeeCard
                     emp={state.detailsOpen}
                     onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
+                    onRestore={canFire ? (e) => setRestoreOpen(e) : undefined}
                     onOpenServices={
                       (id, name) => openServicesDrawer(id, name)
                     }
@@ -189,6 +218,7 @@ const EmployeesPage: React.FC = () => {
             <EmployeeCard
               emp={state.detailsOpen}
               onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
+              onRestore={canFire ? (e) => setRestoreOpen(e) : undefined}
               onOpenServices={
                 (id, name) => openServicesDrawer(id, name)
               }
@@ -239,19 +269,19 @@ const EmployeesPage: React.FC = () => {
       <DjangoFireEmployeeDialog
           record={state.deleteOpen}
           onClose={() => state.setDeleteOpen(null)}
-          onFired={(id) => {
-            // Update status to "fired" in list rather than removing
-            state.setItems((prev) =>
-              prev.map((x) =>
-                x.id === id ? { ...x, status: "fired" } : x,
-              ),
-            );
-            if (state.detailsOpen?.id === id) {
-              state.setDetailsOpen((prev) =>
-                prev ? { ...prev, status: "fired" } : prev,
-              );
-            }
+          onFired={(fresh) => {
+            // Строка остаётся в списке — меняется статус.
+            applyFreshEmployee(fresh);
             state.setDeleteOpen(null);
+          }}
+        />
+
+      <DjangoRestoreEmployeeDialog
+          record={restoreOpen}
+          onClose={() => setRestoreOpen(null)}
+          onRestored={(fresh) => {
+            applyFreshEmployee(fresh);
+            setRestoreOpen(null);
           }}
         />
 

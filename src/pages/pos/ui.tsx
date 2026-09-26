@@ -55,10 +55,11 @@ export const PosThumb: React.FC<{ src?: string | null; size?: number; radius?: n
         border: `1px solid ${c.hairline}`,
         display: "grid",
         placeItems: "center",
+        overflow: "hidden",
         ...sx,
       }}
     >
-      {src ? <Box component="img" src={src} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} /> : <ImageOutlined sx={{ fontSize: Math.round(size * 0.5), color: c.textDim, opacity: 0.6 }} />}
+      {src ? <Box component="img" src={src} alt="" sx={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit", display: "block" }} /> : <ImageOutlined sx={{ fontSize: Math.round(size * 0.5), color: c.textDim, opacity: 0.6 }} />}
     </Box>
   );
 };

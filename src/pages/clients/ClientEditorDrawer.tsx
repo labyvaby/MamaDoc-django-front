@@ -7,10 +7,12 @@ import {
   Divider,
   Drawer,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Select,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -18,24 +20,20 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import dayjs from "dayjs";
-import { CustomDatePicker, PhoneCountryCodeSelect } from "../../components/ui";
+import { CustomDatePicker, PhoneNumberField } from "../../components/ui";
 import {
   composePhone,
   DEFAULT_PHONE_COUNTRY_CODE,
-  formatPhoneLocalDisplay,
-  getPhoneLocalMaxLength,
-  handlePhonePaste,
   parsePhone,
   type PhoneCountryCode,
 } from "../../utility/phone";
-import { usePhoneLocalInput } from "../../hooks/usePhoneLocalInput";
 import { formatPatientAge } from "../../utility/age";
 import {
   createClient,
   deleteClientPhoto,
   updateClient,
   uploadClientPhoto,
-  type ClientStatus,
+  type DjangoClientStatus,
   type ClientType,
   type DjangoClient,
 } from "../../api/clients";
@@ -48,6 +46,7 @@ type Props = {
   client: DjangoClient | null;
   onClose: () => void;
   onSaved: (client: DjangoClient) => void;
+  statuses: DjangoClientStatus[];
 };
 
 type Draft = {
@@ -58,7 +57,6 @@ type Draft = {
   dob: string;
   address: string;
   clientType: ClientType;
-  status: ClientStatus;
   note: string;
   legalName: string;
   inn: string;
@@ -67,6 +65,9 @@ type Draft = {
   bankName: string;
   bankAccount: string;
   bankBik: string;
+  customerStatusId: number | null;
+  isBlacklisted: boolean;
+  blacklistReason: string;
 };
 
 const emptyDraft: Draft = {
@@ -77,7 +78,6 @@ const emptyDraft: Draft = {
   dob: "",
   address: "",
   clientType: "individual",
-  status: "new",
   note: "",
   legalName: "",
   inn: "",
@@ -86,6 +86,9 @@ const emptyDraft: Draft = {
   bankName: "",
   bankAccount: "",
   bankBik: "",
+  customerStatusId: null,
+  isBlacklisted: false,
+  blacklistReason: "",
 };
 
 function toDraft(client: DjangoClient | null): Draft {
@@ -99,7 +102,6 @@ function toDraft(client: DjangoClient | null): Draft {
     dob: client.dob || "",
     address: client.address || "",
     clientType: client.clientType,
-    status: client.status,
     note: client.note,
     legalName: client.legalName,
     inn: client.inn,
@@ -108,10 +110,13 @@ function toDraft(client: DjangoClient | null): Draft {
     bankName: client.bankName,
     bankAccount: client.bankAccount,
     bankBik: client.bankBik,
+    customerStatusId: client.customerStatus?.id ?? null,
+    isBlacklisted: client.isBlacklisted,
+    blacklistReason: client.blacklistReason,
   };
 }
 
-export default function ClientEditorDrawer({ open, organizationId, client, onClose, onSaved }: Props) {
+export default function ClientEditorDrawer({ open, organizationId, client, onClose, onSaved, statuses }: Props) {
   const [draft, setDraft] = React.useState<Draft>(() => toDraft(client));
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -123,13 +128,6 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
     setDraft((current) => ({ ...current, [key]: value }));
   };
 
-  const phoneInput = usePhoneLocalInput(
-    draft.phoneCountryCode,
-    draft.phone,
-    (value) => set("phone", value),
-    (value) => set("phoneCountryCode", value),
-  );
-
   React.useEffect(() => {
     if (!open) return;
     setDraft(toDraft(client));
@@ -137,7 +135,10 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
     setPhotoFile(null);
     setPhotoPreview(client?.photoUrl ?? null);
     setPhotoRemoved(false);
-  }, [open, client]);
+    if (!client && statuses.length > 0) {
+      setDraft((current) => ({ ...current, customerStatusId: statuses.find((item) => item.code === "regular")?.id ?? statuses[0].id }));
+    }
+  }, [open, client, statuses]);
 
   const handlePickPhoto = React.useCallback((file: File | null) => {
     setPhotoRemoved(false);
@@ -172,7 +173,9 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
         dob: draft.dob || null,
         address: draft.address.trim(),
         clientType: draft.clientType,
-        status: draft.status,
+        customerStatusId: draft.customerStatusId,
+        isBlacklisted: draft.isBlacklisted,
+        blacklistReason: draft.blacklistReason.trim(),
         note: draft.note.trim(),
         legalName: draft.legalName.trim(),
         inn: draft.inn.trim(),
@@ -249,23 +252,15 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
 
             <Divider />
             <SectionLabel>Контакты</SectionLabel>
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>Телефон *</Typography>
-              <TextField
-                value={formatPhoneLocalDisplay(draft.phoneCountryCode, draft.phone)}
-                inputRef={phoneInput.inputRef}
-                onChange={phoneInput.onChange}
-                onKeyDown={phoneInput.onKeyDown}
-                onPaste={(event) => handlePhonePaste(event, draft.phoneCountryCode, (code, local) => { set("phoneCountryCode", code); set("phone", local); })}
-                fullWidth
-                size="small"
-                disabled={busy || Boolean(client)}
-                helperText={client ? "Телефон нельзя изменить в этой форме" : undefined}
-                InputProps={{ startAdornment: <PhoneCountryCodeSelect value={draft.phoneCountryCode} onChange={(code) => set("phoneCountryCode", code)} /> }}
-                inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
-                placeholder={getPhoneLocalMaxLength(draft.phoneCountryCode) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
-              />
-            </Stack>
+            <PhoneNumberField
+              label="Телефон *"
+              countryCode={draft.phoneCountryCode}
+              phone={draft.phone}
+              onCountryCodeChange={(value) => set("phoneCountryCode", value)}
+              onPhoneChange={(value) => set("phone", value)}
+              disabled={busy || Boolean(client)}
+              helperText={client ? "Телефон нельзя изменить в этой форме" : undefined}
+            />
             <TextField label="Email" placeholder="client@example.com" value={draft.email} onChange={(event) => set("email", event.target.value)} fullWidth />
 
             {draft.clientType === "individual" && (
@@ -299,14 +294,16 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
             <Divider />
             <SectionLabel>Дополнительно</SectionLabel>
             <FormControl fullWidth>
-              <InputLabel>Статус</InputLabel>
-              <Select value={draft.status} label="Статус" onChange={(event) => set("status", event.target.value as ClientStatus)}>
-                <MenuItem value="new">Новый</MenuItem>
-                <MenuItem value="active">Активен</MenuItem>
-                <MenuItem value="inactive">Неактивен</MenuItem>
-                <MenuItem value="no_offering">Без покупок</MenuItem>
+              <InputLabel>Статус клиента</InputLabel>
+              <Select value={draft.customerStatusId ?? ""} label="Статус клиента" onChange={(event) => set("customerStatusId", event.target.value ? Number(event.target.value) : null)}>
+                {statuses.map((status) => <MenuItem key={status.id} value={status.id}>{status.name}</MenuItem>)}
               </Select>
             </FormControl>
+            <FormControlLabel
+              control={<Switch checked={draft.isBlacklisted} onChange={(_, checked) => set("isBlacklisted", checked)} />}
+              label="Чёрный список клиентов"
+            />
+            {draft.isBlacklisted && <TextField label="Причина добавления в ЧС *" value={draft.blacklistReason} onChange={(event) => set("blacklistReason", event.target.value)} multiline minRows={2} fullWidth required />}
             <TextField label="Примечание" placeholder="Дополнительная информация" value={draft.note} onChange={(event) => set("note", event.target.value)} multiline minRows={3} fullWidth />
           </Stack>
         </Box>

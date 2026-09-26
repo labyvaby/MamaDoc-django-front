@@ -1,8 +1,33 @@
 import React from "react";
 import { Box } from "@mui/material";
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  closestCorners,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 
-import BoardCard from "./BoardCard";
+import BoardCard, { BoardCardGhost } from "./BoardCard";
 import BoardColumn from "./BoardColumn";
+import {
+  cardDndId,
+  columnDndId,
+  columnOfCard,
+  moveCard,
+  resolveDrop,
+  type DndColumn,
+} from "./dnd";
 import type { BoardCardSpec, BoardColumnDef, BoardColumnId } from "./types";
 
 /** Минимальная ширина колонки: уже неё карточка перестаёт читаться. */
@@ -15,10 +40,17 @@ export interface BoardProps<T, C extends BoardColumnId> {
   getItemId: (item: T) => string | number;
   /** В какой колонке элемент лежит сейчас: её не гасим при перетаскивании. */
   columnOf: (item: T) => C;
-  /** Разрешён ли перенос: колонки, куда нельзя, гаснут ещё до drop. */
+  /**
+   * Разрешён ли перенос: колонки, куда нельзя, гаснут ещё до drop. Для своей
+   * колонки — можно ли переставлять карточки внутри неё (у сделок — да, у
+   * задач порядка нет).
+   */
   canDrop: (item: T, columnId: C) => boolean;
-  /** Карточку бросили в колонку (в свою же колонку ядро не зовёт). */
-  onDrop: (item: T, columnId: C) => void;
+  /**
+   * Карточку бросили: колонка и 0-based место в ней (без учёта самой
+   * карточки). В свою колонку на то же место ядро не зовёт.
+   */
+  onDrop: (item: T, columnId: C, index: number) => void;
   /** Оформление и содержимое карточки. */
   card: (item: T) => BoardCardSpec;
   /** Что показать, когда доска пуста целиком (общий экран с пустым списком). */
@@ -33,7 +65,13 @@ export interface BoardProps<T, C extends BoardColumnId> {
  *
  * Ядро знает про раскладку, drag-and-drop и вид; правила переходов, тексты и
  * загрузка данных остаются в модуле. Используется доской задач (`/tasks`) и
- * воронкой продаж (`/deals`) — см. `MamaDoc/TZ_sales_funnel_module.md` §7.1.
+ * воронкой продаж (`/deals`).
+ *
+ * Перетаскивание — `@dnd-kit`: сортировка внутри колонки, раздвигающиеся
+ * соседи вместо «пунктирной зоны», копия карточки под курсором
+ * (`DragOverlay`), автопрокрутка у краёв, тач (удержание 200 мс) и
+ * клавиатура (Space — взять, стрелки — нести, Space — отпустить, Esc —
+ * отмена). Меню «Перенести в…» на карточке остаётся запасным путём.
  */
 function Board<T, C extends BoardColumnId>({
   columns,
@@ -50,89 +88,211 @@ function Board<T, C extends BoardColumnId>({
 }: BoardProps<T, C>) {
   const [dragged, setDragged] = React.useState<T | null>(null);
   const [hoverColumn, setHoverColumn] = React.useState<C | null>(null);
-  const draggedId = dragged != null ? getItemId(dragged) : null;
+  /* Раскладка на время перетаскивания. Когда карточку несут в другую колонку,
+     переносим её id туда уже во время drag: тогда она попадает в
+     `SortableContext` целевой колонки, и соседи раздвигаются под неё так же,
+     как внутри своей. Снаружи данные не меняются — только этот снимок. */
+  const [dragLayout, setDragLayout] = React.useState<DndColumn[] | null>(null);
+  const [ghostWidth, setGhostWidth] = React.useState<number | undefined>(
+    undefined
+  );
+
+  const sensors = useSensors(
+    // Клик без движения остаётся кликом (открыть карточку): drag стартует
+    // после 6px пути.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    // На тач-экране короткое касание — прокрутка колонки, удержание — drag.
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 5 },
+    }),
+    // Enter открывает карточку, поэтому взять/отпустить — только Space.
+    useSensor(KeyboardSensor, {
+      keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space"] },
+    })
+  );
+
+  /* Снимок раскладки для чистых функций: dnd-kit говорит только «над чем»,
+     а колонку и индекс мы считаем сами. Во время drag — локальная раскладка. */
+  const baseColumns: DndColumn[] = columns.map((column) => ({
+    key: columnDndId(column.id),
+    ids: itemsOf(column.id).map((item) => cardDndId(getItemId(item))),
+  }));
+  const dndColumns: DndColumn[] = dragLayout ?? baseColumns;
+  const columnByKey = new Map<string, BoardColumnDef<C>>(
+    columns.map((column) => [columnDndId(column.id), column])
+  );
+  const itemByDndId = new Map<string, T>();
+  for (const column of columns) {
+    for (const item of itemsOf(column.id))
+      itemByDndId.set(cardDndId(getItemId(item)), item);
+  }
 
   const endDrag = () => {
     setDragged(null);
     setHoverColumn(null);
+    setDragLayout(null);
+  };
+
+  const onDragStart = (event: DragStartEvent) => {
+    const item = itemByDndId.get(String(event.active.id)) ?? null;
+    setDragged(item);
+    setDragLayout(baseColumns);
+    const width = event.active.rect.current.initial?.width;
+    setGhostWidth(width && width > 0 ? width : undefined);
+  };
+
+  const onDragOver = (event: DragOverEvent) => {
+    if (!dragged) return;
+    const activeId = String(event.active.id);
+    const target = resolveDrop(
+      activeId,
+      event.over ? String(event.over.id) : null,
+      dndColumns
+    );
+    const column = target ? columnByKey.get(target.columnKey) : undefined;
+    setHoverColumn(column?.id ?? null);
+    if (!target || !column || !canDrop(dragged, column.id)) return;
+    // Внутри колонки соседей двигает сам sortable; вмешиваемся только при
+    // переходе между колонками — переносим id, чтобы освободить место.
+    if (columnOfCard(activeId, dndColumns) !== target.columnKey) {
+      setDragLayout(moveCard(dndColumns, activeId, target.columnKey, target.index));
+    }
+  };
+
+  const onDragEnd = (event: DragEndEvent) => {
+    const item = dragged;
+    const activeId = String(event.active.id);
+    const target = resolveDrop(
+      activeId,
+      event.over ? String(event.over.id) : null,
+      dndColumns
+    );
+    endDrag();
+    if (!item || !target) return;
+    const column = columnByKey.get(target.columnKey);
+    if (!column || !canDrop(item, column.id)) return;
+    // Исходное место — по данным модуля, а не по раскладке drag: в ней
+    // карточка уже могла переехать в целевую колонку.
+    const sourceKey = columnOfCard(activeId, baseColumns);
+    if (sourceKey === target.columnKey) {
+      // Внутри колонки: сравниваем с текущим местом без самой карточки.
+      const ids = baseColumns.find((c) => c.key === sourceKey)?.ids ?? [];
+      const currentIndex = ids.indexOf(activeId);
+      if (currentIndex === target.index) return;
+    }
+    onDrop(item, column.id, target.index);
   };
 
   /* Доска целиком пуста: несколько одинаковых пунктирных зон подряд выглядят
      как поломка, поэтому показываем один экран — тот же, что и у списка. */
   if (isEmpty && emptyState != null) {
     return (
-      <Box sx={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         {emptyState}
       </Box>
     );
   }
 
-  return (
-    <Box
-      sx={{
-        flex: 1,
-        minHeight: 0,
-        display: "flex",
-        gap: 1.25,
-        overflowX: "auto",
-        pb: 1,
-      }}
-    >
-      {columns.map((column) => {
-        const items = itemsOf(column.id);
-        const droppable = dragged != null && canDrop(dragged, column.id);
+  const draggedSpec = dragged ? card(dragged) : null;
 
-        return (
-          <BoardColumn
-            key={column.id}
-            title={column.title}
-            dotColor={column.dotColor}
-            count={column.count}
-            headerMeta={column.headerMeta}
-            loading={column.loading}
-            empty={items.length === 0}
-            emptyHint={column.emptyHint}
-            dropHint={dropHint}
-            droppable={droppable}
-            isHover={hoverColumn === column.id && droppable}
-            dimmed={dragged != null && !droppable && columnOf(dragged) !== column.id}
-            minWidth={minColumnWidth}
-            footer={column.footer}
-            onScrollEnd={column.onScrollEnd}
-            onDragOver={(e) => {
-              if (!droppable) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              if (hoverColumn !== column.id) setHoverColumn(column.id);
-            }}
-            onDragLeave={() => setHoverColumn((c) => (c === column.id ? null : c))}
-            onDrop={(e) => {
-              e.preventDefault();
-              const item = dragged;
-              endDrag();
-              if (!item || columnOf(item) === column.id) return;
-              onDrop(item, column.id);
-            }}
-          >
-            {items.map((item, index) => {
-              const id = getItemId(item);
-              return (
-                <BoardCard
-                  key={id}
-                  {...card(item)}
-                  id={id}
-                  index={index}
-                  dragging={draggedId === id}
-                  onDragStart={() => setDragged(item)}
-                  onDragEnd={endDrag}
-                />
-              );
-            })}
-          </BoardColumn>
-        );
-      })}
-    </Box>
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCorners}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragEnd={onDragEnd}
+      onDragCancel={endDrag}
+    >
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          gap: 1.25,
+          overflowX: "auto",
+          pb: 1,
+        }}
+      >
+        {columns.map((column) => {
+          const key = columnDndId(column.id);
+          // Во время drag — по локальной раскладке (карточка уже «в» целевой колонке).
+          const items = dragLayout
+            ? (dndColumns.find((c) => c.key === key)?.ids ?? [])
+                .map((id) => itemByDndId.get(id))
+                .filter((item): item is T => item != null)
+            : itemsOf(column.id);
+          const ownColumn = dragged != null && columnOf(dragged) === column.id;
+          const droppable = dragged != null && canDrop(dragged, column.id);
+
+          return (
+            <BoardColumn
+              key={key}
+              dndId={key}
+              title={column.title}
+              dotColor={column.dotColor}
+              count={column.count}
+              headerMeta={column.headerMeta}
+              loading={column.loading}
+              empty={items.length === 0}
+              emptyHint={column.emptyHint}
+              dropHint={dropHint}
+              droppable={droppable}
+              isHover={hoverColumn === column.id && droppable && !ownColumn}
+              dimmed={dragged != null && !droppable && !ownColumn}
+              minWidth={minColumnWidth}
+              footer={column.footer}
+              onScrollEnd={column.onScrollEnd}
+            >
+              <SortableContext
+                items={items.map((item) => cardDndId(getItemId(item)))}
+                strategy={verticalListSortingStrategy}
+              >
+                {items.map((item, index) => {
+                  const id = cardDndId(getItemId(item));
+                  const spec = card(item);
+                  return (
+                    <BoardCard
+                      key={id}
+                      {...spec}
+                      dndId={id}
+                      index={index}
+                      dragging={
+                        dragged != null && cardDndId(getItemId(dragged)) === id
+                      }
+                      dragDisabled={!canDropAnywhere(item, columns, canDrop)}
+                    />
+                  );
+                })}
+              </SortableContext>
+            </BoardColumn>
+          );
+        })}
+      </Box>
+      <DragOverlay dropAnimation={null}>
+        {draggedSpec ? (
+          <BoardCardGhost spec={draggedSpec} width={ghostWidth} />
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
+}
+
+/** Карточку, которую некуда нести, не даём и взять. */
+function canDropAnywhere<T, C extends BoardColumnId>(
+  item: T,
+  columns: BoardColumnDef<C>[],
+  canDrop: (item: T, columnId: C) => boolean
+): boolean {
+  return columns.some((column) => canDrop(item, column.id));
 }
 
 export default Board;

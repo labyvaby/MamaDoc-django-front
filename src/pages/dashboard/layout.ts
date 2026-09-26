@@ -11,6 +11,8 @@ import type { PeriodKey } from "./period";
  * прячет и переставляет блоки, выбор хранится у него в браузере.
  */
 export type WidgetId =
+  | "pulse"
+  | "attention"
   | "money"
   | "appointments"
   | "availability"
@@ -18,11 +20,14 @@ export type WidgetId =
   | "branches"
   | "month"
   | "staff"
-  | "tasks"
-  | "deals"
-  | "reviews";
+  | "services"
+  | "ops";
 
-export type WidgetSpan = 4 | 6 | 12;
+/**
+ * 5 и 7 — только ширины по умолчанию (ряд «Операции 7 + Сотрудники 5» из
+ * макета). В настройках пользователь выбирает из SPAN_OPTIONS.
+ */
+export type WidgetSpan = 4 | 5 | 6 | 7 | 8 | 12;
 
 export interface WidgetMeta {
   id: WidgetId;
@@ -38,15 +43,78 @@ export interface WidgetMeta {
   needsManyBranches?: boolean;
 }
 
-/** Порядок по умолчанию: деньги и загрузка сверху, справочное ниже. */
+/**
+ * Порядок по умолчанию — по тому, как владелец читает экран утром:
+ * 1. «Пульс» — сколько заработали и куда идёт месяц (единственная крупная цифра);
+ * 2. «Требует внимания» — что решить сегодня, из всех разделов одним списком;
+ * 3. разбор денег и потока записей — почему цифра такая;
+ * 4. операционка «сейчас» (задачи, воронка, отзывы);
+ * 5. кто и что приносит деньги: сотрудники и услуги;
+ * 6. справочное: филиалы, итоги периода.
+ *
+ * Ряды на широком экране: 8+4 · 6+6 · 12 · 6+6 · 12 · 12.
+ */
 export const WIDGETS: WidgetMeta[] = [
-  { id: "money", label: "Деньги", permission: PAGE_PERMISSIONS.cashbox, span: 6 },
+  { id: "pulse", label: "Пульс: выручка и темп", permission: PAGE_PERMISSIONS.cashbox, span: 8 },
+  {
+    id: "attention",
+    label: "Требует внимания",
+    // Блок собирает сигналы из всех разделов — нужен доступ хотя бы к одному.
+    permission: [
+      PAGE_PERMISSIONS.cashbox,
+      PAGE_PERMISSIONS.reports,
+      PAGE_PERMISSIONS.schedule,
+      PAGE_PERMISSIONS.tasks,
+      ...PAGE_PERMISSIONS.bookings,
+      ...PAGE_PERMISSIONS.reviews,
+      ...PAGE_PERMISSIONS.deals,
+    ],
+    span: 4,
+  },
+  { id: "money", label: "Движение денег", permission: PAGE_PERMISSIONS.cashbox, span: 6 },
   {
     id: "appointments",
     label: "Записи",
     permission: PAGE_PERMISSIONS.appointments,
     span: 6,
   },
+  {
+    id: "ops",
+    label: "Задачи, воронка, отзывы",
+    // Секции внутри гейтятся каждая своим правом; карточка нужна, если есть
+    // хотя бы одна.
+    permission: [PAGE_PERMISSIONS.tasks, ...PAGE_PERMISSIONS.deals, ...PAGE_PERMISSIONS.reviews],
+    span: 12,
+  },
+  {
+    id: "staff",
+    label: "Сотрудники",
+    permission: PAGE_PERMISSIONS.payroll,
+    span: 6,
+  },
+  {
+    id: "services",
+    label: "Что продаётся",
+    permission: PAGE_PERMISSIONS.appointments,
+    span: 6,
+  },
+  {
+    id: "branches",
+    label: "Филиалы",
+    permission: PAGE_PERMISSIONS.cashbox,
+    span: 12,
+    needsManyBranches: true,
+  },
+  {
+    // Ключ «month» сохранён ради личных раскладок: раньше блок был «Месяц
+    // целиком» на месячном отчёте, теперь — итоги любого периода из агрегата.
+    id: "month",
+    label: "Итоги периода",
+    permission: [PAGE_PERMISSIONS.appointments, PAGE_PERMISSIONS.cashbox],
+    span: 12,
+  },
+  // Подробности того, что уже есть в «Пульсе» (загрузка) и «Требует внимания»
+  // (заявки). По умолчанию спрятаны, но их можно вернуть в настройках состава.
   {
     id: "availability",
     label: "Свободны сегодня",
@@ -59,30 +127,10 @@ export const WIDGETS: WidgetMeta[] = [
     permission: PAGE_PERMISSIONS.bookings,
     span: 6,
   },
-  {
-    id: "branches",
-    label: "Сравнение филиалов",
-    permission: PAGE_PERMISSIONS.cashbox,
-    span: 12,
-    needsManyBranches: true,
-  },
-  {
-    id: "month",
-    label: "Месяц целиком",
-    permission: PAGE_PERMISSIONS.reports,
-    span: 12,
-    onlyPeriod: "month",
-  },
-  {
-    id: "staff",
-    label: "Сотрудники",
-    permission: PAGE_PERMISSIONS.payroll,
-    span: 6,
-  },
-  { id: "tasks", label: "Задачи", permission: PAGE_PERMISSIONS.tasks, span: 6 },
-  { id: "deals", label: "Воронка продаж", permission: PAGE_PERMISSIONS.deals, span: 6 },
-  { id: "reviews", label: "Отзывы", permission: PAGE_PERMISSIONS.reviews, span: 6 },
 ];
+
+/** Спрятаны у тех, кто раскладку ещё не настраивал. */
+const DEFAULT_HIDDEN: WidgetId[] = ["availability", "bookings"];
 
 const WIDGET_BY_ID = new Map(WIDGETS.map((w) => [w.id, w]));
 
@@ -96,12 +144,13 @@ export interface DashboardLayout {
 export const SPAN_OPTIONS: { value: WidgetSpan; label: string; hint: string }[] = [
   { value: 4, label: "Узкий", hint: "треть ширины" },
   { value: 6, label: "Средний", hint: "половина ширины" },
+  { value: 8, label: "Большой", hint: "две трети ширины" },
   { value: 12, label: "Широкий", hint: "во всю ширину" },
 ];
 
 export const DEFAULT_LAYOUT: DashboardLayout = {
   order: WIDGETS.map((w) => w.id),
-  hidden: [],
+  hidden: DEFAULT_HIDDEN,
   sizes: {},
 };
 
@@ -109,16 +158,36 @@ const STORAGE_KEY = "mamadoc:dashboard:layout";
 
 /**
  * Читаем сохранённую раскладку, достраивая её до актуального реестра: новые
- * блоки появляются в конце, исчезнувшие отбрасываются. Без этого добавление
- * виджета в код не дошло бы до тех, кто хоть раз открывал настройки.
+ * блоки встают на своё место из реестра, исчезнувшие отбрасываются. Без этого
+ * добавление виджета в код не дошло бы до тех, кто хоть раз открывал настройки.
+ *
+ * «Своё место» — сразу за предыдущим по реестру блоком, который у пользователя
+ * уже есть, а если такого нет — перед ближайшим следующим. Так «Пульс» у
+ * старой раскладки встаёт перед «Деньгами», а не теряется в конце под десятком
+ * карточек.
  */
 export function normalizeLayout(saved: Partial<DashboardLayout> | null): DashboardLayout {
+  if (!saved) return { order: [...DEFAULT_LAYOUT.order], hidden: [...DEFAULT_HIDDEN], sizes: {} };
   const known = new Set(WIDGETS.map((w) => w.id));
-  const savedOrder = (saved?.order ?? []).filter((id): id is WidgetId => known.has(id));
-  const missing = WIDGETS.map((w) => w.id).filter((id) => !savedOrder.includes(id));
+  const registry = WIDGETS.map((w) => w.id);
+  const order = (saved.order ?? []).filter((id): id is WidgetId => known.has(id));
+  registry.forEach((id, index) => {
+    if (order.includes(id)) return;
+    const after = registry
+      .slice(0, index)
+      .reverse()
+      .find((prev) => order.includes(prev));
+    if (after) {
+      order.splice(order.indexOf(after) + 1, 0, id);
+      return;
+    }
+    const before = registry.slice(index + 1).find((next) => order.includes(next));
+    if (before) order.splice(order.indexOf(before), 0, id);
+    else order.push(id);
+  });
   const allowedSpans = new Set(SPAN_OPTIONS.map((o) => o.value));
   const sizes: Partial<Record<WidgetId, WidgetSpan>> = {};
-  for (const [id, span] of Object.entries(saved?.sizes ?? {})) {
+  for (const [id, span] of Object.entries(saved.sizes ?? {})) {
     // Чужие ключи и произвольные числа отбрасываем: раскладка приходит из
     // localStorage, то есть её мог поправить кто угодно.
     if (known.has(id as WidgetId) && allowedSpans.has(span as WidgetSpan)) {
@@ -127,8 +196,8 @@ export function normalizeLayout(saved: Partial<DashboardLayout> | null): Dashboa
   }
 
   return {
-    order: [...savedOrder, ...missing],
-    hidden: (saved?.hidden ?? []).filter((id): id is WidgetId => known.has(id)),
+    order,
+    hidden: (saved.hidden ?? []).filter((id): id is WidgetId => known.has(id)),
     sizes,
   };
 }
@@ -218,9 +287,15 @@ export interface VisibilityContext {
  */
 export function availableWidgets(ctx: VisibilityContext): WidgetMeta[] {
   return WIDGETS.filter((w) => {
-    // Воронка продаж ждёт бэкенда на проде: блок убираем тем же флагом, что и
-    // страницу с пунктом меню — иначе сводка встречает ошибкой загрузки.
-    if (w.id === "deals" && !DEALS_MODULE_ENABLED) return false;
+    // Воронка ждёт бэкенда на проде и скрыта флагом. Если воронка — всё, что
+    // есть у пользователя в «Операциях», карточка была бы пустой рамкой.
+    if (
+      w.id === "ops" &&
+      !ctx.can([PAGE_PERMISSIONS.tasks, ...PAGE_PERMISSIONS.reviews]) &&
+      !(DEALS_MODULE_ENABLED && ctx.can(PAGE_PERMISSIONS.deals))
+    ) {
+      return false;
+    }
     if (!ctx.can(w.permission)) return false;
     if (w.onlyPeriod && w.onlyPeriod !== ctx.period) return false;
     if (w.needsManyBranches && ctx.branchCount < 2) return false;
@@ -238,4 +313,34 @@ export function visibleWidgets(
     .filter((id) => available.has(id) && !layout.hidden.includes(id))
     .map((id) => WIDGET_BY_ID.get(id)!)
     .filter(Boolean);
+}
+
+/**
+ * Растянуть блоки так, чтобы каждый ряд сетки был заполнен.
+ *
+ * Раскладка задана рядами (8+4, 6+6, 7+5), но блок соседа может быть скрыт
+ * правами или пользователем — тогда в ряду оставалась бы дыра. Раскладываем
+ * блоки по рядам слева направо и недостающие колонки делим между блоками
+ * ряда пропорционально их ширине: «Пульс» без «Внимания» становится во всю
+ * ширину, две трети без трети — тоже.
+ */
+export function stretchRows(spans: number[], columns = 12): number[] {
+  const out: number[] = [];
+  let row: number[] = [];
+  const flush = () => {
+    if (!row.length) return;
+    const sum = row.reduce((a, b) => a + b, 0);
+    const scaled = row.map((span) => Math.floor((span * columns) / sum));
+    // Остаток от округления — последнему в ряду, чтобы сумма была ровно 12.
+    scaled[scaled.length - 1] += columns - scaled.reduce((a, b) => a + b, 0);
+    out.push(...scaled);
+    row = [];
+  };
+  for (const raw of spans) {
+    const span = Math.min(columns, Math.max(1, raw));
+    if (row.reduce((a, b) => a + b, 0) + span > columns) flush();
+    row.push(span);
+  }
+  flush();
+  return out;
 }

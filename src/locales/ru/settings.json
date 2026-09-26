@@ -12,7 +12,10 @@
       "operations": "Операционные"
     },
     "tabs": {
-      "posModule": "Касса магазина",
+      "store": "Магазин",
+      "procurement": "Закупки и накладные",
+      "discountKinds": "Виды скидок",
+      "promotions": "Акции и промокоды",
       "organization": "Организация",
       "branches": "{{branch.nomPl, capitalize}}",
       "roles": "Роли",
@@ -35,7 +38,9 @@
       "site": "Сайт",
       "automations": "Автоматизации",
       "odoctor": "Витрина odoctor.kg",
-      "lab": "Лаборатория (ЛИС)"
+      "lab": "Лаборатория (ЛИС)",
+      "chatwoot": "Chatwoot",
+      "altegio": "Altegio"
     }
   },
   "placeholder": {
@@ -183,7 +188,15 @@
     "columns": {
       "name": "Название",
       "kind": "Тип",
+      "photoRequired": "Фото чека",
       "status": "Статус"
+    },
+    "photoRequired": {
+      "label": "Требуется фото чека",
+      "description": "Без фото расход помечается в списке красной камерой. Снимите у категорий без чека — например, инкассации, аванса, зарплаты.",
+      "on": "Фото чека требуется — расход без фото помечается",
+      "off": "Фото чека не требуется — метки нет",
+      "saveError": "Не удалось сохранить настройку фото"
     },
     "status": {
       "active": "Активна",
@@ -252,8 +265,12 @@
     "branchIpsTitle": "Wi-Fi IP по {{branch.datPl}}",
     "branchIpsDescription": "{{employee.nom, capitalize}} сможет начать смену, если его внешний IP совпадает с любым из IP {{branch.gen}} или с общим IP {{org.gen}}. У {{branch.gen}} может быть несколько адресов (например, разные Wi-Fi роутеры) — добавляйте их по одному или вставьте списком.",
     "branchIpHelper": "Например, IP основного и резервного Wi-Fi роутера {{branch.gen}}.",
+    "bindCurrentIp": "Привязать текущий IP ({{subnet}})",
+    "currentIpHint": "Ваш IP сейчас: {{ip}}. Добавится подсеть — не забудьте сохранить.",
+    "currentIpBound": "Ваш IP {{ip}} уже входит в список.",
     "loadError": "Не удалось загрузить настройки СКУД для выбранной организации",
     "saveSuccess": "Настройки успешно сохранены",
+    "saveNoChanges": "Изменений нет — сохранять нечего",
     "saveError": "Ошибка при сохранении настроек"
   },
   "diagnoses": {
@@ -526,7 +543,7 @@
       },
       "record": {
         "label": "Запись",
-        "hint": "Строка расписания и брони."
+        "hint": "Строка расписания и онлайн-записи."
       },
       "complaint": {
         "label": "Обращение",
@@ -720,10 +737,10 @@
       "achievements": "Достижения",
       "announcements": "Объявления",
       "billing": "Оплаты и счета",
-      "bookings": "Брони",
+      "bookings": "Онлайн-запись",
       "chatwoot": "Чаты",
       "cleaning": "Уборка",
-      "clients": "{{patient.nomPl, capitalize}} (CRM)",
+      "clients": "Клиенты",
       "deals": "Воронка продаж",
       "documents": "Документы",
       "ecommerce": "Интернет-магазин",
@@ -796,8 +813,10 @@
         "registratura": "Регистратура",
         "doctorRoom": "Кабинет {{specialist.gen}}",
         "nurseRoom": "Процедурный кабинет",
+        "allAppointments": "Все {{visit.nomPl}}",
+        "allProcedures": "Все процедуры",
         "schedule": "Расписание",
-        "bookings": "Брони",
+        "bookings": "Онлайн-запись",
         "chats": "Чаты",
         "tasks": "Задачи",
         "waitlist": "Лист ожидания",
@@ -1242,6 +1261,62 @@
       "notArmed": "Расписание запустится после активации правила."
     }
   },
+  "altegio": {
+    "title": "Altegio",
+    "description": "Записи из Altegio сами появляются в расписании ErkinAI и обновляются раз в 5 минут. До отметки «Пришёл» время, специалист, услуги и отмена приходят из Altegio, дальше приём ведёт ErkinAI.",
+    "connectionTitle": "Подключение",
+    "connectionDescription": "Ключ доступа (токен партнёра) — из кабинета разработчика Altegio. Логин и пароль — сотрудника Altegio с доступом к журналу записей: пароль нужен один раз и не сохраняется. Лучше завести отдельную учётку — если пароль личной сменят, синхронизация остановится.",
+    "partnerTokenLabel": "Ключ доступа (partner token)",
+    "loginLabel": "Логин Altegio — телефон или email",
+    "passwordLabel": "Пароль",
+    "connectButton": "Подключить",
+    "connectedAs": "Подключено: {{login}}",
+    "disconnectButton": "Отключить",
+    "connectedSnack": "Altegio подключён",
+    "disconnectedSnack": "Altegio отключён",
+    "savedSnack": "Сохранено",
+    "syncTitle": "Синхронизация",
+    "fallbackLabel": "Услуга «Запись из Altegio»",
+    "fallbackHelper": "Для записей без услуги или с услугой, которую ещё не связали.",
+    "enabledLabel": "Синхронизация включена",
+    "enabledHelper": "Включается, когда выбрана услуга «Запись из Altegio». При первом включении заберём все будущие записи.",
+    "lastSuccess": "Последний успешный прогон: {{at}}",
+    "neverRun": "Синхронизация ещё не запускалась.",
+    "lastError": "Последняя ошибка: {{error}}",
+    "waiting": "Ждут связки специалиста: {{n}}",
+    "diverged": "Расхождений: {{n}}",
+    "linksTitle": "Связки",
+    "linksDescription": "Каждому филиалу, специалисту и услуге Altegio выберите пару в ErkinAI. Кнопка «Похоже» только подсказывает — связь выбираете вы.",
+    "locationsTitle": "Филиалы",
+    "locationColumn": "Филиал Altegio",
+    "branchColumn": "Филиал ErkinAI",
+    "notLinked": "Не связан",
+    "locationPicker": "Филиал Altegio для специалистов и услуг",
+    "staffTitle": "Специалисты",
+    "staffColumn": "Специалист Altegio",
+    "employeeColumn": "Сотрудник ErkinAI",
+    "defaultServiceColumn": "Услуга по умолчанию",
+    "noDefaultService": "Общая «Запись из Altegio»",
+    "servicesTitle": "Услуги",
+    "serviceColumn": "Услуга Altegio",
+    "crmServiceColumn": "Услуга ErkinAI",
+    "suggestion": "Похоже: {{name}}",
+    "loadError": "Не удалось получить список из Altegio: {{error}}",
+    "journalTitle": "Журнал",
+    "journalDescription": "Записи, которые ждут связки специалиста или разошлись с ErkinAI. Остальные заводятся молча.",
+    "journalEmpty": "Проблемных записей нет.",
+    "journalStates": {
+      "waiting_staff": "Ждёт связки",
+      "diverged": "Расхождение"
+    },
+    "journalColumns": {
+      "startsAt": "Время",
+      "staff": "Специалист",
+      "client": "Клиент",
+      "state": "Состояние",
+      "note": "Что не так"
+    }
+  },
   "odoctor": {
     "title": "Витрина odoctor.kg",
     "description": "Синхронизация с публичной витриной записи odoctor.kg: свободные окна {{specialist.genPl}} выкладываются туда сами и закрываются, как только окно занято записью.",
@@ -1254,6 +1329,8 @@
     "form": {
       "enabledLabel": "Интеграция включена",
       "enabledHelper": "Выключено — синхронизация организацию не трогает: окна на витрину не уходят и не снимаются.",
+      "fullSyncLabel": "Полная синхронизация",
+      "fullSyncHelper": "CRM — единственный источник правды. Включено: день, который правили руками в кабинете odoctor, через минуту приводится обратно к расписанию CRM. Выключено: такой день выходит из-под синхронизации и дальше живёт сам по себе. Проданные витриной окна не трогаются в любом случае.",
       "horizonLabel": "Горизонт, дней",
       "horizonHelper": "На сколько дней вперёд держать окна на витрине. Дальше последней даты расписания {{specialist.gen}} синхронизация всё равно не заходит.",
       "loginLabel": "Логин",
@@ -1308,6 +1385,94 @@
       "unlink": "Отвязать",
       "mappedDoctors": "Сопоставлено врачей: {{doctors}}",
       "footnote": "Выключатель филиала останавливает выкладку сразу у всех его врачей, а тумблеры в карточках оставляет как есть. Отвязать филиал можно только после того, как сняты связи его врачей: окна убираются по адресу, который хранится в связи филиала."
+    }
+  },
+  "chatwoot": {
+    "title": "Chatwoot → воронка продаж",
+    "description": "Один экран для всей связки с Chatwoot: раздел «Чаты» для сотрудников и автоматические сделки из новых диалогов.",
+    "needsOrg": "Выберите организацию, чтобы настроить интеграцию.",
+    "saveButton": "Сохранить",
+    "savedSnack": "Настройки сохранены",
+    "enabled": {
+      "label": "Заводить сделки из диалогов",
+      "helper": "Выключено — вебхук принимается, но сделки не создаются. Быстрый стоп без правок в Chatwoot."
+    },
+    "connection": {
+      "title": "Подключение",
+      "account": "Аккаунт Chatwoot: #{{id}}",
+      "accountMissing": "Аккаунт Chatwoot для организации не задан — сначала подключите раздел «Чаты».",
+      "tokenLabel": "API-токен агента (необязательно)",
+      "tokenHelper": "Пусто — используется токен подключения «Чаты». Сохранённый токен не показывается; введите новый, чтобы заменить.",
+      "tokenConfigured": "Токен сохранён",
+      "tokenClear": "Удалить сохранённый токен",
+      "testButton": "Проверить связь",
+      "testOk": "Связь есть: инбоксов — {{count}}",
+      "testFailed": "Не удалось: {{error}}"
+    },
+    "webhook": {
+      "title": "Вебхук",
+      "description": "Вставьте эту ссылку в Chatwoot: Settings → Integrations → Webhooks → Add new webhook. События: Conversation Created и Conversation Status Changed.",
+      "notYet": "Ссылка появится после первого сохранения.",
+      "copy": "Скопировать",
+      "copied": "Скопировано",
+      "rotate": "Перегенерировать секрет",
+      "rotateConfirm": "Прежняя ссылка перестанет работать сразу — её нужно будет заменить в Chatwoot. Продолжить?",
+      "rotated": "Секрет обновлён — замените ссылку в Chatwoot"
+    },
+    "inboxes": {
+      "title": "Инбоксы → источники",
+      "description": "Из каких инбоксов заводить сделки, как определять клиента и в какой филиал класть сделку. WhatsApp через Evolution приходит как Channel::Api — ориентируйтесь на название.",
+      "loadHint": "Нажмите «Проверить связь», чтобы подтянуть список инбоксов из Chatwoot.",
+      "empty": "Инбоксов нет.",
+      "colInbox": "Инбокс",
+      "colSource": "Источник",
+      "colIdentity": "Клиент по",
+      "colChannel": "Канал",
+      "colEnabled": "Заводить",
+      "unmapped": "Не заводить",
+      "identity": {
+        "phone": "телефону",
+        "username": "нику / contact id"
+      },
+      "channel": {
+        "whatsapp": "WhatsApp",
+        "instagram": "Instagram",
+        "telegram": "Telegram",
+        "web": "Сайт",
+        "phone": "Телефон",
+        "other": "Другое"
+      },
+      "whitelistHint": "Пилот: включите один-два инбокса, остальные добавьте потом.",
+      "colBranch": "Филиал",
+      "branchNone": "Общая (все филиалы)"
+    },
+    "funnel": {
+      "title": "Воронка",
+      "pipeline": "Воронка",
+      "pipelineDefault": "По умолчанию",
+      "reopenStage": "Этап при повторном обращении закрытой сделки",
+      "reopenDefault": "Первый рабочий этап",
+      "assignee": "Ответственный по умолчанию",
+      "assigneeNone": "Не назначать",
+      "assigneeHelper": "Ставится только на новую сделку; существующую не переназначает."
+    },
+    "chats": {
+      "title": "Раздел «Чаты»",
+      "description": "Встроенный чат-центр Chatwoot в CRM. Каждому агенту Chatwoot выберите сотрудника CRM — под этой учёткой он будет входить в «Чаты».",
+      "enabled": "Показывать раздел «Чаты»",
+      "accountId": "ID аккаунта Chatwoot",
+      "accountHelper": "Номер аккаунта (тенанта) на chat.operator.kg",
+      "accountLocked": "Меняет только суперадмин",
+      "agentsTitle": "Агенты Chatwoot и сотрудники CRM",
+      "agentsSummary": "Привязано {{linked}} из {{total}} агентов",
+      "colEmployee": "Сотрудник CRM",
+      "colAgent": "Агент Chatwoot",
+      "colAgentEmail": "Email агента",
+      "pickEmployee": "Выберите сотрудника",
+      "suggestedHint": "Найден по совпадению email — подтвердите, чтобы закрепить",
+      "confirm": "Подтвердить",
+      "linked": "привязан",
+      "linkSaved": "Привязка сохранена"
     }
   }
 }

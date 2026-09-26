@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 import { fileURLToPath } from "node:url";
@@ -36,7 +37,7 @@ const bookingMeta = (env: Record<string, string>) => ({
       .replaceAll("__BOOKING_ORG_NAME__", env.VITE_BOOKING_ORG_NAME || "Мама Доктор")
       .replaceAll(
         "__BOOKING_ORIGIN__",
-        (env.VITE_BOOKING_PUBLIC_ORIGIN || "https://newcrm.pediatr.kg").replace(/\/+$/, ""),
+        (env.VITE_BOOKING_PUBLIC_ORIGIN || "https://crm.operator.kg").replace(/\/+$/, ""),
       ),
 });
 
@@ -49,9 +50,20 @@ const rewriteDevCookie = (cookie: string): string =>
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiProxyTarget = env.VITE_API_PROXY_TARGET;
+  const apiProxyPath = env.VITE_API_PROXY_PATH || "/api";
+  const apiProxyRewrite =
+    apiProxyPath === "/api"
+      ? undefined
+      : (path: string) => path.replace(new RegExp(`^${apiProxyPath}`), "/api");
 
   return {
     plugins: [react(), bookingMeta(env)],
+    test: {
+      // Playwright-сценарии живут в e2e/ и запускаются своим раннером;
+      // vitest по умолчанию подхватил бы их *.spec.ts и упал на импорте
+      // @playwright/test.
+      exclude: ["e2e/**", "node_modules/**", "dist/**"],
+    },
     define: {
       __APP_FRONTEND_COMMIT_COUNT__: JSON.stringify(getFrontendCommitCount()),
     },
@@ -66,10 +78,11 @@ export default defineConfig(({ mode }) => {
       host: true,
       proxy: apiProxyTarget
         ? {
-            "/api": {
+            [apiProxyPath]: {
               target: apiProxyTarget,
               changeOrigin: true,
               secure: false,
+              rewrite: apiProxyRewrite,
               configure: (proxy) => {
                 proxy.on("proxyRes", (proxyRes) => {
                   const setCookie = proxyRes.headers["set-cookie"];

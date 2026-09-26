@@ -36,7 +36,7 @@ import GirlOutlined from "@mui/icons-material/GirlOutlined";
 import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import { motion } from "framer-motion";
 import { useNotification } from "@refinedev/core";
-import { CustomDatePicker, PhoneCountryCodeSelect, UserAvatar, cascadeContainer, cascadeItem } from "../ui";
+import { CustomDatePicker, PhoneNumberField, UserAvatar, cascadeContainer, cascadeItem } from "../ui";
 import dayjs from "dayjs";
 import { formatPatientAge } from "../../utility/age";
 import { capitalizeFullName } from "../../utility/name";
@@ -44,13 +44,9 @@ import {
   composePhone,
   isPhoneLocalComplete,
   parsePhone,
-  formatPhoneLocalDisplay,
   DEFAULT_PHONE_COUNTRY_CODE,
-  getPhoneLocalMaxLength,
-  handlePhonePaste,
   type PhoneCountryCode,
 } from "../../utility/phone";
-import { usePhoneLocalInput } from "../../hooks/usePhoneLocalInput";
 import { useCan } from "../../hooks/useCan";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import {
@@ -76,7 +72,15 @@ type Props = {
   onClose: () => void;
   onCreated?: (p: DjangoPatient) => void;
   initialPhone?: string;
+  /** Имя из заявки: карту заводят прямо из подтверждения онлайн-записи. */
+  initialFullName?: string;
   branchId?: number | null;
+  /**
+   * Перекрыть z-index дровера. Нужен, когда форма открывается поверх диалога:
+   * у MUI `drawer` (1200) ниже `modal` (1300), и без этого форма уезжает под
+   * диалог подтверждения.
+   */
+  zIndex?: number;
 };
 
 const MotionStack = motion(Stack);
@@ -137,7 +141,9 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   onClose,
   onCreated,
   initialPhone,
+  initialFullName,
   branchId,
+  zIndex,
 }) => {
   const { t } = useT("patients");
   const { open: notify } = useNotification();
@@ -151,13 +157,6 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   const [phone, setPhone] = React.useState("");
   const [phoneCountryCode, setPhoneCountryCode] =
     React.useState<PhoneCountryCode>(DEFAULT_PHONE_COUNTRY_CODE);
-  // Правка в середине номера не должна выбрасывать курсор в конец.
-  const phoneInput = usePhoneLocalInput(
-    phoneCountryCode,
-    phone,
-    setPhone,
-    setPhoneCountryCode,
-  );
   const [birth, setBirth] = React.useState("");
   const [gender, setGender] = React.useState<PatientGender>("unknown");
   const [address, setAddress] = React.useState("");
@@ -205,10 +204,15 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
       setDraftRestored(false);
       return;
     }
-    if (initialPhone) {
-      const parsed = parsePhone(initialPhone);
-      setPhone(parsed.local);
-      setPhoneCountryCode(parsed.countryCode);
+    // Предзаполнение из точки входа важнее черновика: заводят карту
+    // конкретного человека, а не продолжают прошлую форму.
+    if (initialPhone || initialFullName) {
+      if (initialPhone) {
+        const parsed = parsePhone(initialPhone);
+        setPhone(parsed.local);
+        setPhoneCountryCode(parsed.countryCode);
+      }
+      if (initialFullName) setFio(capitalizeFullName(initialFullName));
       return;
     }
     const draft = readPatientDraft();
@@ -225,7 +229,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
       setBlacklistReason(draft.blacklistReason);
       setDraftRestored(true);
     }
-  }, [open, initialPhone]);
+  }, [open, initialPhone, initialFullName]);
 
   // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
   // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
@@ -391,6 +395,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
       anchor="right"
       open={open}
       onClose={busy ? undefined : handleClose}
+      sx={zIndex != null ? { zIndex } : undefined}
       PaperProps={{
         sx: {
           width: { xs: 320, sm: 480, md: 520 },
@@ -498,54 +503,15 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
 
             {/* ── Телефон ── */}
             <MotionBox variants={cascadeItem}>
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  {t("form.phone")}
-                </Typography>
-                <TextField
-                  value={formatPhoneLocalDisplay(phoneCountryCode, phone)}
-                  inputRef={phoneInput.inputRef}
-                  onChange={phoneInput.onChange}
-                  onPaste={(e) =>
-                    handlePhonePaste(e, phoneCountryCode, (code, local) => {
-                      setPhoneCountryCode(code);
-                      setPhone(local);
-                    })
-                  }
-                  onKeyDown={(e) => {
-                    phoneInput.onKeyDown(e);
-                    submitOnEnter(e);
-                  }}
-                  fullWidth
-                  size="small"
-                  disabled={busy}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start" sx={{ mr: 1, ml: "-14px" }}>
-                        <PhoneCountryCodeSelect
-                          value={phoneCountryCode}
-                          onChange={(code) => setPhoneCountryCode(code)}
-                        />
-                      </InputAdornment>
-                    ),
-                    endAdornment:
-                      phone.length === getPhoneLocalMaxLength(phoneCountryCode) ? (
-                        <InputAdornment position="end">
-                          <CheckCircleOutlined fontSize="small" color="success" />
-                        </InputAdornment>
-                      ) : undefined,
-                  }}
-                  inputProps={{
-                    inputMode: "tel",
-                    pattern: "[0-9]*",
-                  }}
-                  placeholder={
-                    getPhoneLocalMaxLength(phoneCountryCode) === 10
-                      ? "XXX XXX XXXX"
-                      : "XXX XXX XXX"
-                  }
-                />
-              </Stack>
+              <PhoneNumberField
+                label={t("form.phone")}
+                countryCode={phoneCountryCode}
+                phone={phone}
+                onCountryCodeChange={setPhoneCountryCode}
+                onPhoneChange={setPhone}
+                disabled={busy}
+                onEnter={submitOnEnter}
+              />
             </MotionBox>
 
             {/* ── О пациенте ── */}

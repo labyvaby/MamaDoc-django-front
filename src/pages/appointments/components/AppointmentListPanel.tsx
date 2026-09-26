@@ -1,7 +1,6 @@
 import React from "react";
 import {
   Avatar,
-  Alert,
   Badge,
   Box,
   Button,
@@ -10,6 +9,7 @@ import {
   CardHeader,
   Chip,
   Divider,
+  IconButton,
   LinearProgress,
   Stack,
   Tooltip,
@@ -28,6 +28,7 @@ import AlarmOutlined from "@mui/icons-material/AlarmOutlined";
 import EventRepeatOutlined from "@mui/icons-material/EventRepeat";
 import EditCalendarOutlined from "@mui/icons-material/EditCalendar";
 import EventBusyOutlined from "@mui/icons-material/EventBusy";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import dayjs from "dayjs";
 
 import type { AppointmentNotificationItem, DjangoAppointment } from "../../../api/appointments";
@@ -38,6 +39,7 @@ import {
   isCancelledStatus,
   isSlotCovered,
 } from "./slotAvailability";
+import { subtleBg } from "../../../theme";
 import { formatKGS, discountPercentOf } from "../../../utility/format";
 import { formatPhoneDisplay } from "../../../utility/phone";
 import { useT } from "../../../i18n/VerticalProvider";
@@ -51,7 +53,6 @@ import {
   appointmentMoneyFlags,
   appointmentPriceChangeSummary,
   employeeMoneyTotals,
-  firstFreeSlotInSegment,
   firstFreeSlotInSegmentFor,
   firstFreeSlotAtOrAfter,
   matchesAppointmentSearch,
@@ -59,6 +60,7 @@ import {
   matchesMoneyFlags,
   type AppointmentMoneyFlag,
 } from "./listFilters";
+import { buildListRows, isGap, type RenderItem } from "./listRows";
 import { isAppointmentCancelReason, type AppointmentCancelReason } from "../../../api/appointments";
 import { AppBottomSheet } from "../../../components/ui";
 
@@ -149,6 +151,12 @@ interface AppointmentListPanelProps {
    */
   groupEmployeeIds?: Set<number> | null;
   /**
+   * Телефон: лента сообщает странице, куда поехал скролл, чтобы та спрятала
+   * свою шапку (даты, поиск, кнопки) при движении вниз и вернула при движении
+   * вверх. До первой записи на телефоне уходило больше трети экрана.
+   */
+  onScrollDirection?: (goingDown: boolean) => void;
+  /**
    * Смены сотрудников на выбранную дату (из модуля расписания): плашки
    * «Есть окно на HH:mm» показываются только внутри рабочих часов исполнителя.
    * `scheduledIds` — сотрудники, у которых на эту дату есть активное правило
@@ -163,22 +171,19 @@ interface AppointmentListPanelProps {
   } | null;
 }
 
-type GapSlot = {
-  isGap: true;
-  id: string;
-  timeStr: string;
-  dateIso: string;
-  /** Исполнитель группы, в которой стоит окно (null — группа «без специалиста»). */
-  employeeId: number | null;
-};
-
-type RenderItem = DjangoAppointment | GapSlot;
-
-function isGap(item: RenderItem): item is GapSlot {
-  return (item as GapSlot).isGap === true;
-}
-
 const GAP_THRESHOLD_MS = 30 * 60 * 1000;
+
+// Шапка на телефоне занимает ~100px: пока запаса прокрутки меньше её двойной
+// высоты, прятать нечего — лента после скрытия просто упрётся в дно.
+const HEADER_HIDE_MIN_SCROLLABLE = 200;
+// Чуть больше, чем анимация max-height/opacity шапки (220ms) в AppointmentsPage.
+const HEADER_TOGGLE_LOCK_MS = 320;
+// Насколько надо потянуть ряд исполнителей вниз, чтобы вернуть шапку.
+const STRIP_PULL_THRESHOLD = 24;
+// Тишина в событиях скролла, после которой лента считается остановившейся.
+const SCROLL_IDLE_MS = 200;
+// Сколько надо непрерывно прокрутить ленту вверх, чтобы шапка вернулась сама.
+const HEADER_REVEAL_UP_DISTANCE = 80;
 
 // ─── SMS-уведомления: маппинг тип → иконка/цвет (1-в-1 со старым фронтом).
 // Подписи живут в словаре (appointments:notifications.*).
@@ -199,6 +204,12 @@ type DoctorStoryItemProps = {
   isActive: boolean;
   onClick: () => void;
   /**
+   * Телефонный размер: аватар меньше и подпись в одну строку. Лента из 48px
+   * аватаров с двухстрочными подписями занимала 74px высоты — столько же, сколько
+   * запись приёма.
+   */
+  compact?: boolean;
+  /**
    * У сотрудника в этот день нет ни одной записи — он в ленте потому, что у
    * него смена по графику. Приглушаем, иначе непонятно, почему он здесь.
    */
@@ -212,7 +223,10 @@ const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({
   isActive,
   onClick,
   dimmed = false,
+  compact = false,
 }) => {
+  const bubbleSize = compact ? 40 : 48;
+  const cellWidth = compact ? 54 : 64;
   const theme = useTheme();
   const { t } = useT("appointments");
   const displayName = nickname || name.split(" ")[0];
@@ -224,7 +238,10 @@ const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({
       onClick={onClick}
       sx={{
         cursor: "pointer",
-        minWidth: 56,
+        // Ширина ячейки фиксирована: подпись шире пузыря наезжала на соседний
+        // аватар (ячейка 56 против maxWidth 72 у текста).
+        width: cellWidth,
+        flexShrink: 0,
         transition: "all 0.2s ease",
         // Выбранный сотрудник не приглушается: активный фильтр должен читаться
         // однозначно, даже если записей у него нет.
@@ -235,10 +252,10 @@ const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({
       <Box
         sx={{
           position: "relative",
-          width: 48,
-          height: 48,
+          width: bubbleSize,
+          height: bubbleSize,
           borderRadius: "50%",
-          padding: "3px",
+          padding: compact ? "2px" : "3px",
           background: isActive ? theme.palette.primary.main : "transparent",
           border: isActive
             ? "none"
@@ -269,14 +286,18 @@ const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({
         sx={{
           fontWeight: isActive ? 700 : 500,
           color: isActive ? "text.primary" : "text.secondary",
-          fontSize: "0.75rem",
+          fontSize: compact ? "0.65rem" : "0.75rem",
+          lineHeight: 1.2,
           textAlign: "center",
-          maxWidth: 72,
+          width: "100%",
           overflow: "hidden",
           textOverflow: "ellipsis",
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical",
+          // На телефоне подпись в одну строку (вторая стоила 14px на всю
+          // ленту), но не через line-clamp: он режет строку по высоте кегля и
+          // срезал хвосты у «у», «р», «д». Обычный nowrap этого не делает.
+          ...(compact
+            ? { whiteSpace: "nowrap" }
+            : { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }),
         }}
       >
         {displayName}
@@ -290,6 +311,25 @@ const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({
     bubble
   );
 };
+
+// ─── NowLine — линия текущего времени в ленте дня ────────────────────────────
+//
+// Рисуется только в сегодняшнем дне и только перед первым НЕ начавшимся
+// элементом каждого специалиста — приёмом или окном (см. buildListRows): у
+// каждого свой ход дня. Красный — привычный цвет «сейчас» в календарях; со
+// статусными чипами не путается, потому что это линия, а не чип.
+// Ref — для подскролла к текущему моменту при открытии дня.
+
+const NowLine = React.forwardRef<HTMLDivElement, { label: string }>(({ label }, ref) => (
+  <Stack ref={ref} direction="row" alignItems="center" gap={1} sx={{ px: 2, py: 0.75 }}>
+    <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: "error.main", flexShrink: 0 }} />
+    <Typography variant="caption" sx={{ color: "error.main", fontWeight: 700, whiteSpace: "nowrap" }}>
+      {label}
+    </Typography>
+    <Box sx={{ flex: 1, height: "1px", bgcolor: "error.main", opacity: 0.45 }} />
+  </Stack>
+));
+NowLine.displayName = "NowLine";
 
 // ─── AddSlotButton — кнопка "Есть окно на HH:mm" ─────────────────────────────
 
@@ -325,6 +365,49 @@ const AddSlotButton: React.FC<{ timeStr: string; onClick: () => void }> = ({ tim
   );
 };
 
+// ─── GapRun — подряд идущие свободные окна одной строкой ─────────────────────
+//
+// На телефоне каждая пунктирная кнопка «Есть окно на 10:30» занимала 44px, и
+// день с шестью окнами состоял в основном из них. Тот же смысл — одна строка с
+// временами; тап по времени открывает ту же форму записи.
+
+const GapRun: React.FC<{
+  label: string;
+  times: string[];
+  onPick: (index: number) => void;
+}> = ({ label, times, onPick }) => (
+  <Stack
+    direction="row"
+    alignItems="center"
+    gap={0.75}
+    useFlexGap
+    sx={{ px: 2, py: 0.75, flexWrap: "wrap" }}
+  >
+    <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+      {label}
+    </Typography>
+    {times.map((time, index) => (
+      <Chip
+        key={time}
+        label={time}
+        size="small"
+        variant="outlined"
+        clickable
+        onClick={() => onPick(index)}
+        icon={<AddCircleOutline sx={{ fontSize: 13 }} />}
+        sx={{
+          height: 24,
+          fontWeight: 600,
+          borderStyle: "dashed",
+          borderColor: "primary.main",
+          color: "primary.onSurface",
+          "& .MuiChip-icon": { ml: 0.5, mr: -0.25, color: "primary.main" },
+        }}
+      />
+    ))}
+  </Stack>
+);
+
 // ─── AppointmentListPanel ─────────────────────────────────────────────────────
 
 const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
@@ -357,6 +440,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   showFilteredCount = true,
   groupEmployeeIds = null,
   dayShifts = null,
+  onScrollDirection,
 }) => {
   const { t, term } = useT("appointments");
   const theme = useTheme();
@@ -364,6 +448,19 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   // в него попадает (см. theme.ts).
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const titleDate = date ? date.format("DD.MM.YYYY") : "";
+
+  // ── Маркер «сейчас» ───────────────────────────────────────────────────────
+  // День длинный, и при 40 записях регистратор каждый раз искал текущий час
+  // скроллом. Линия времени рисуется только в сегодняшнем дне и тикает раз в
+  // минуту (списки обновляет поллинг, но он не двигает саму линию).
+  const isToday = date ? date.isSame(dayjs(), "day") : false;
+  const [nowTs, setNowTs] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!isToday) return;
+    setNowTs(Date.now());
+    const timer = window.setInterval(() => setNowTs(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [isToday, titleDate]);
 
   // ── Doctor filter state: управляемый (doctorFilter) или внутренний ────────
   const isDoctorControlled = doctorFilter !== undefined;
@@ -734,13 +831,33 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       renderItems: RenderItem[];
     }[] = [];
 
+    // Отменённые и неявки уводим в конец группы: активные записи и свободные
+    // окна остаются вверху в хронологии, а строки, по которым делать нечего,
+    // не разрывают ленту. Между собой сохраняют порядок из renderItems
+    // (хронологический). Свободное окно, освободившееся из-за отмены, остаётся
+    // на своём времени — вниз уезжает только карточка отменённого приёма.
+    const cancelledToBottom = (list: RenderItem[]): RenderItem[] => {
+      const head: RenderItem[] = [];
+      const tail: RenderItem[] = [];
+      for (const it of list) {
+        if (!isGap(it) && isCancelledStatus(it.status)) tail.push(it);
+        else head.push(it);
+      }
+      return tail.length > 0 ? [...head, ...tail] : list;
+    };
+
     rawGroups.forEach(({ employeeId: groupEmployeeId, name: docName, appts }) => {
       const sorted = [...appts].sort((a, b) =>
         dayjs(a.scheduledAt).valueOf() - dayjs(b.scheduledAt).valueOf(),
       );
 
       if (!onAddSlot) {
-        result.push({ employeeId: groupEmployeeId, name: docName, appts: sorted, renderItems: sorted });
+        result.push({
+          employeeId: groupEmployeeId,
+          name: docName,
+          appts: sorted,
+          renderItems: cancelledToBottom(sorted),
+        });
         return;
       }
 
@@ -895,7 +1012,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       }
 
       if (renderItems.length > 0) {
-        result.push({ employeeId: groupEmployeeId, name: docName, appts: sorted, renderItems });
+        result.push({
+          employeeId: groupEmployeeId,
+          name: docName,
+          appts: sorted,
+          renderItems: cancelledToBottom(renderItems),
+        });
       }
     });
 
@@ -984,7 +1106,288 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     scrollContainerRef.current.scrollLeft = scrollLeftRef.current - (x - startX.current) * 2;
   };
 
-  const groupEntries = groupedItemsWithGaps;
+  const allGroupEntries = groupedItemsWithGaps;
+
+  // Специалист на смене, но без записей, стоил на телефоне 84px (шапка группы
+  // плюс плашка окна) — при этом ничего не сообщал. Такие группы прячем за одну
+  // строку; при активном фильтре специалиста не прячем ничего, иначе экран
+  // оказался бы пустым.
+  const [freeGroupsOpen, setFreeGroupsOpen] = React.useState(false);
+  // Раскрытие живёт в пределах дня: открыв другую дату, регистратор снова
+  // начинает с тех, у кого есть записи.
+  React.useEffect(() => {
+    setFreeGroupsOpen(false);
+  }, [titleDate]);
+  const collapseFreeGroups =
+    isMobile && selectedDoctorId == null && allGroupEntries.some((g) => g.appts.length > 0);
+  const freeGroupEntries = React.useMemo(
+    () => (collapseFreeGroups ? allGroupEntries.filter((g) => g.appts.length === 0) : []),
+    [allGroupEntries, collapseFreeGroups],
+  );
+  // Раскрытые свободные смены идут в конец, а не на свои места в общем
+  // порядке: строка-переключатель стоит внизу ленты, и вставка групп выше неё
+  // выглядела бы как «нажал, и ничего не произошло».
+  const groupEntries = React.useMemo(() => {
+    if (!collapseFreeGroups) return allGroupEntries;
+    const withAppts = allGroupEntries.filter((g) => g.appts.length > 0);
+    return freeGroupsOpen ? [...withAppts, ...freeGroupEntries] : withAppts;
+  }, [allGroupEntries, collapseFreeGroups, freeGroupEntries, freeGroupsOpen]);
+
+  // Ближайший приём, который ещё не начался: к линии «сейчас» в его группе
+  // подскроллим ленту при открытии сегодняшнего дня. Прошедшие приёмы остаются
+  // выше — регистратуре нужен и вопрос «кто был только что». Именно приём, а
+  // не окно: свободные смены стоят в конце ленты, и окно 08:00 у врача без
+  // записей увезло бы ленту мимо всех реальных приёмов.
+  const nowAnchorApptId = React.useMemo(() => {
+    if (!isToday) return null;
+    let best: { id: number; ts: number } | null = null;
+    for (const group of groupEntries) {
+      for (const item of group.renderItems) {
+        if (isGap(item)) continue;
+        // Отменённые уехали в конец группы — «ближайшим» их считать нельзя,
+        // иначе автоскролл прыгнет к отменённой строке внизу ленты.
+        if (isCancelledStatus(item.status)) continue;
+        const ts = dayjs(item.scheduledAt).valueOf();
+        if (ts < nowTs) continue;
+        if (!best || ts < best.ts) best = { id: item.id, ts };
+      }
+    }
+    return best?.id ?? null;
+  }, [groupEntries, isToday, nowTs]);
+
+  // Шапку страницы прячем при скролле ленты вниз, с порогом: без него она
+  // уезжала бы на каждый пиксель инерции. Обратно её возвращают три вещи:
+  // накопленные HEADER_REVEAL_UP_DISTANCE движения вверх (на каждое мелкое
+  // движение раскрываться нельзя — лента дёргалась посреди чтения), начало
+  // дня и свайп по ряду исполнителей (см. ниже). Короткий список шапку не
+  // прячет вовсе: она и есть весь запас прокрутки.
+  const lastScrollTopRef = React.useRef(0);
+  const headerHiddenRef = React.useRef(false);
+  const headerLockUntilRef = React.useRef(0);
+  const upScrolledRef = React.useRef(0);
+  // Шапку развернули «ручкой», пока лента ещё едет по инерции: её собственные
+  // события сворачивали шапку обратно через полсекунды после жеста. Держим
+  // шапку, пока лента не остановится, — таймер перезапускает каждое событие.
+  const keepHeaderUntilIdleRef = React.useRef(false);
+  const idleTimerRef = React.useRef<number | null>(null);
+  const holdHeaderUntilIdle = React.useCallback(() => {
+    keepHeaderUntilIdleRef.current = true;
+    if (idleTimerRef.current != null) window.clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = window.setTimeout(() => {
+      idleTimerRef.current = null;
+      keepHeaderUntilIdleRef.current = false;
+      lastScrollTopRef.current = listScrollRef.current?.scrollTop ?? lastScrollTopRef.current;
+    }, SCROLL_IDLE_MS);
+  }, []);
+  React.useEffect(
+    () => () => {
+      if (idleTimerRef.current != null) window.clearTimeout(idleTimerRef.current);
+    },
+    [],
+  );
+  const applyHeaderHidden = React.useCallback(
+    (next: boolean) => {
+      if (!onScrollDirection) return;
+      if (next === headerHiddenRef.current) return;
+      headerHiddenRef.current = next;
+      headerLockUntilRef.current = Date.now() + HEADER_TOGGLE_LOCK_MS;
+      upScrolledRef.current = 0;
+      onScrollDirection(next);
+    },
+    [onScrollDirection],
+  );
+  const handleListScroll = React.useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      if (!onScrollDirection) return;
+      const el = event.currentTarget;
+      const maxTop = el.scrollHeight - el.clientHeight;
+      // Резиновый отскок у дна: iOS уводит scrollTop за maxTop и откатывает
+      // обратно — откат читался как скролл вверх, шапка возвращалась, лента
+      // сжималась, следующий свайп снова её прятал, и у конца списка шапка
+      // мерцала. Позиции за краями ленты — не движение пользователя.
+      if (el.scrollTop < 0 || el.scrollTop > maxTop) {
+        lastScrollTopRef.current = Math.min(Math.max(el.scrollTop, 0), Math.max(maxTop, 0));
+        upScrolledRef.current = 0;
+        return;
+      }
+      const top = el.scrollTop;
+      const now = Date.now();
+      if (now < headerLockUntilRef.current) {
+        lastScrollTopRef.current = top;
+        return;
+      }
+      if (keepHeaderUntilIdleRef.current) {
+        lastScrollTopRef.current = top;
+        holdHeaderUntilIdle();
+        return;
+      }
+      // Докрутили ленту в самое начало дня — шапке незачем прятаться.
+      if (top <= 24) {
+        lastScrollTopRef.current = top;
+        applyHeaderHidden(false);
+        return;
+      }
+      const delta = top - lastScrollTopRef.current;
+      if (Math.abs(delta) < 12) return;
+      lastScrollTopRef.current = top;
+      if (delta < 0) {
+        // Движение вверх возвращает шапку не сразу: пока читают ленту, лёгкие
+        // подвижки и отскок инерции её не трогают — нужно осознанное движение.
+        upScrolledRef.current += -delta;
+        if (upScrolledRef.current >= HEADER_REVEAL_UP_DISTANCE) applyHeaderHidden(false);
+        return;
+      }
+      upScrolledRef.current = 0;
+      const scrollable = el.scrollHeight - el.clientHeight;
+      if (scrollable > HEADER_HIDE_MIN_SCROLLABLE) applyHeaderHidden(true);
+    },
+    [applyHeaderHidden, holdHeaderUntilIdle, onScrollDirection],
+  );
+
+  // Свайп вниз по ряду исполнителей возвращает шапку. Ряд остаётся на виду,
+  // когда шапка свёрнута, а вертикального скролла у него нет — для пальца это
+  // единственная «ручка», которой даты и поиск вытягиваются обратно, не
+  // прокручивая ленту приёмов к началу дня. По горизонтали тот же ряд листает
+  // исполнителей, поэтому жест засчитываем только когда движение вертикальное.
+  const stripSwipeRef = React.useRef<{ x: number; y: number; settled: boolean } | null>(null);
+  const handleStripPointerDown = React.useCallback((e: React.PointerEvent) => {
+    stripSwipeRef.current = { x: e.clientX, y: e.clientY, settled: false };
+  }, []);
+  const handleStripPointerMove = React.useCallback(
+    (e: React.PointerEvent) => {
+      const start = stripSwipeRef.current;
+      if (!start || start.settled) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        start.settled = true;
+        return;
+      }
+      if (dy < STRIP_PULL_THRESHOLD) return;
+      start.settled = true;
+      applyHeaderHidden(false);
+      holdHeaderUntilIdle();
+    },
+    [applyHeaderHidden, holdHeaderUntilIdle],
+  );
+  const handleStripPointerEnd = React.useCallback(() => {
+    stripSwipeRef.current = null;
+  }, []);
+
+  const listScrollRef = React.useRef<HTMLDivElement>(null);
+  const nowAnchorRef = React.useRef<HTMLDivElement>(null);
+  const autoScrolledDateRef = React.useRef<string | null>(null);
+
+  // Новый день читают с начала: без сброса лента оставалась там, где её
+  // бросили в прошлом дне, и открывалась с середины чужого списка.
+  React.useEffect(() => {
+    listScrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    lastScrollTopRef.current = 0;
+    // Родитель на новом дне тоже показывает шапку — держим флаги синхронными.
+    headerHiddenRef.current = false;
+    headerLockUntilRef.current = 0;
+    keepHeaderUntilIdleRef.current = false;
+    upScrolledRef.current = 0;
+  }, [titleDate]);
+
+  React.useEffect(() => {
+    if (!isToday || nowAnchorApptId == null) return;
+    // Один подскролл на открытый день: дальше лента слушается пользователя, а
+    // не прыгает каждую минуту, когда ближайший приём сменился.
+    if (autoScrolledDateRef.current === titleDate) return;
+    const container = listScrollRef.current;
+    const anchor = nowAnchorRef.current;
+    if (!container || !anchor) return;
+    autoScrolledDateRef.current = titleDate;
+    const delta = anchor.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    // Якорь — сама линия «сейчас»: между ней и ближайшим приёмом может стоять
+    // окно, и якорь на приёме увозил бы линию под липкую шапку группы. Отступ
+    // оставляет над линией шапку и краешек только что закончившегося приёма.
+    const target = Math.max(0, container.scrollTop + delta - 96);
+    container.scrollTo({ top: target, behavior: "auto" });
+    // Свой же подскролл выглядит для обработчика как рывок пальцем вниз и
+    // прятал шапку сразу при открытии дня — считаем его новой точкой отсчёта.
+    lastScrollTopRef.current = target;
+  }, [isToday, nowAnchorApptId, titleDate]);
+
+  // Лента исполнителей: на телефоне она делит ряд с кнопкой фильтров —
+  // отдельная строка под кнопку стоила 40px, а фильтр и выбор специалиста
+  // всё равно нажимают подряд.
+  const doctorStrip = !hideDoctorStrip && availableDoctors.length > 0 ? (
+            <Box
+              ref={scrollContainerRef}
+              onMouseDown={handleMouseDown}
+              onMouseLeave={handleMouseLeave}
+              onMouseUp={handleMouseUp}
+              onMouseMove={handleMouseMove}
+              sx={{
+                display: "flex",
+                overflowX: "auto",
+                scrollbarWidth: "none",
+                "&::-webkit-scrollbar": { display: "none" },
+                gap: isMobile ? "10px" : "12px",
+                cursor: "grab",
+                userSelect: "none",
+                pb: isMobile ? 0 : 0.5,
+                ...(isMobile ? { flex: 1, minWidth: 0 } : { px: 2, mx: -2 }),
+              }}
+            >
+              {/* "Все" bubble */}
+              <Stack
+                spacing={0.25}
+                alignItems="center"
+                onClick={() => setSelectedDoctorId(null)}
+                sx={{ cursor: "pointer", width: isMobile ? 54 : 64, flexShrink: 0 }}
+              >
+                <Box
+                  sx={{
+                    width: isMobile ? 40 : 48,
+                    height: isMobile ? 40 : 48,
+                    borderRadius: "50%",
+                    border:
+                      selectedDoctorId === null
+                        ? `3px solid ${theme.palette.primary.main}`
+                        : `1.5px solid ${theme.palette.divider}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    bgcolor: selectedDoctorId === null ? "primary.main" : "transparent",
+                    color: selectedDoctorId === null ? "primary.contrastText" : "text.secondary",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {t("filters.all")}
+                  </Typography>
+                </Box>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: selectedDoctorId === null ? 700 : 500,
+                    fontSize: isMobile ? "0.65rem" : "0.75rem",
+                  }}
+                >
+                  {t("filters.all")}
+                </Typography>
+              </Stack>
+
+              {availableDoctors.map((doc) => (
+                <DoctorStoryItem
+                  key={doc.id}
+                  compact={isMobile}
+                  name={doc.name}
+                  nickname={doc.nickname}
+                  photoUrl={doc.photoUrl ?? undefined}
+                  isActive={selectedDoctorId === doc.id}
+                  dimmed={doc.apptCount === 0}
+                  onClick={() =>
+                    setSelectedDoctorId(selectedDoctorId === doc.id ? null : doc.id)
+                  }
+                />
+              ))}
+              <Box sx={{ minWidth: 16, flexShrink: 0 }} />
+            </Box>
+  ) : null;
 
   const chipRow = (
     <AppointmentFilterChips
@@ -1005,154 +1408,156 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   );
 
   return (
-    <Card variant="outlined" sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+    <Card
+      variant="outlined"
+      sx={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        // На телефоне карточка со скруглениями и рамкой съедала полосу по краям
+        // экрана: список идёт во всю ширину, как в мобильных приложениях.
+        ...(isMobile ? { border: "none", borderRadius: 0 } : {}),
+      }}
+    >
       {/* ── Header: заголовок + doctor story strip ── */}
       <CardHeader
         sx={{
-          pb: 1.5,
+          pb: isMobile ? 1 : 1.5,
+          pt: isMobile ? 1.5 : undefined,
           "& .MuiCardHeader-content": { minWidth: 0 },
           "& .MuiCardHeader-action": { alignSelf: "flex-start", mt: 0.5 },
         }}
         title={
-          <Stack direction="column" gap={2} sx={{ width: "100%" }}>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
-              <Typography variant="subtitle1" noWrap sx={{ fontWeight: 700 }}>
-                {t("list.title", { date: titleDate })}
-              </Typography>
-              {/* Сколько записей скрыто фильтрами: без этой строки отобранный
-                  день выглядит как «сегодня почти никого нет». */}
-              {showFilteredCount && isFiltered && (
-                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                  {t("registry.filteredCount", {
-                    shown: filteredItems.length,
-                    total: items.length,
-                  })}
+          <Stack direction="column" gap={isMobile ? 1.25 : 2} sx={{ width: "100%" }}>
+            {/* Заголовок «Приёмы (дата)» на телефоне дублирует выбранный день из
+                ленты дат и стоил целой строки экрана — там его нет, а счётчик
+                отфильтрованных уезжает в ряд с кнопкой фильтров. */}
+            {!isMobile && (
+              <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+                <Typography variant="subtitle1" noWrap sx={{ fontWeight: 700 }}>
+                  {t("list.title", { date: titleDate })}
                 </Typography>
-              )}
-            </Stack>
-
-            {!hideDoctorStrip && availableDoctors.length > 0 && (
-              <Box
-                ref={scrollContainerRef}
-                onMouseDown={handleMouseDown}
-                onMouseLeave={handleMouseLeave}
-                onMouseUp={handleMouseUp}
-                onMouseMove={handleMouseMove}
-                sx={{
-                  display: "flex",
-                  overflowX: "auto",
-                  scrollbarWidth: "none",
-                  "&::-webkit-scrollbar": { display: "none" },
-                  gap: "12px",
-                  cursor: "grab",
-                  userSelect: "none",
-                  pb: 0.5,
-                  px: 2,
-                  mx: -2,
-                }}
-              >
-                {/* "Все" bubble */}
-                <Stack
-                  spacing={0.25}
-                  alignItems="center"
-                  onClick={() => setSelectedDoctorId(null)}
-                  sx={{ cursor: "pointer", minWidth: 56 }}
-                >
-                  <Box
-                    sx={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: "50%",
-                      border:
-                        selectedDoctorId === null
-                          ? `3px solid ${theme.palette.primary.main}`
-                          : `1.5px solid ${theme.palette.divider}`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      bgcolor: selectedDoctorId === null ? "primary.main" : "transparent",
-                      color: selectedDoctorId === null ? "primary.contrastText" : "text.secondary",
-                      transition: "all 0.2s ease",
-                    }}
-                  >
-                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                      {t("filters.all")}
-                    </Typography>
-                  </Box>
-                  <Typography
-                    variant="caption"
-                    sx={{ fontWeight: selectedDoctorId === null ? 700 : 500, fontSize: "0.75rem" }}
-                  >
-                    {t("filters.all")}
+                {/* Сколько записей скрыто фильтрами: без этой строки отобранный
+                    день выглядит как «сегодня почти никого нет». */}
+                {showFilteredCount && isFiltered && (
+                  <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                    {t("registry.filteredCount", {
+                      shown: filteredItems.length,
+                      total: items.length,
+                    })}
                   </Typography>
-                </Stack>
+                )}
+              </Stack>
+            )}
 
-                {availableDoctors.map((doc) => (
-                  <DoctorStoryItem
-                    key={doc.id}
-                    name={doc.name}
-                    nickname={doc.nickname}
-                    photoUrl={doc.photoUrl ?? undefined}
-                    isActive={selectedDoctorId === doc.id}
-                    dimmed={doc.apptCount === 0}
-                    onClick={() =>
-                      setSelectedDoctorId(selectedDoctorId === doc.id ? null : doc.id)
-                    }
-                  />
-                ))}
-                <Box sx={{ minWidth: 16, flexShrink: 0 }} />
-              </Box>
+            {isMobile ? (
+              // Один ряд: фильтр, счётчик отобранных и лента исполнителей.
+              // Выравнивание по верху, а не по центру: у ячеек исполнителей под
+              // кружком есть подпись с именем, и центрирование по всей высоте
+              // ряда опускало кнопку фильтра ниже линии аватаров. Кнопка и
+              // кружок одного размера (40), поэтому по верху они совпадают.
+              <Stack
+                direction="row"
+                alignItems="flex-start"
+                gap={1}
+                sx={{ minWidth: 0 }}
+                onPointerDown={handleStripPointerDown}
+                onPointerMove={handleStripPointerMove}
+                onPointerUp={handleStripPointerEnd}
+                onPointerCancel={handleStripPointerEnd}
+              >
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  gap={1}
+                  sx={{ height: 40, flexShrink: 0 }}
+                >
+                  <Badge badgeContent={activeChipCount} color="primary">
+                    <IconButton
+                      size="small"
+                      onClick={() => setFilterSheetOpen(true)}
+                      aria-label={t("filters.button")}
+                      title={t("filters.button")}
+                      sx={{
+                        width: 40,
+                        height: 40,
+                        border: "1px solid",
+                        borderColor: activeChipCount > 0 ? "primary.main" : "divider",
+                        borderRadius: 1.5,
+                        color: activeChipCount > 0 ? "primary.main" : "text.secondary",
+                      }}
+                    >
+                      <FilterListOutlined fontSize="small" />
+                    </IconButton>
+                  </Badge>
+                  {showFilteredCount && isFiltered && (
+                    <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                      {t("registry.filteredCount", {
+                        shown: filteredItems.length,
+                        total: items.length,
+                      })}
+                    </Typography>
+                  )}
+                </Stack>
+                {doctorStrip}
+              </Stack>
+            ) : (
+              doctorStrip
             )}
 
             {/* Фильтр специалиста переживает смену даты (он в URL), поэтому в
                 другом дне он может указывать на того, кто в этот день не
                 работает: без подсказки это выглядит как пустой день. */}
             {!hideDoctorStrip && doctorHasNoShift && (
-              <Alert
-                severity="warning"
-                sx={{
-                  mt: -1,
-                  py: 0,
-                  alignItems: "center",
-                  "& .MuiAlert-message": { py: 0.75 },
-                }}
-                action={
-                  <Button
-                    color="inherit"
-                    size="small"
-                    onClick={() => setSelectedDoctorId(null)}
-                    sx={{ whiteSpace: "nowrap", textTransform: "none" }}
-                  >
-                    {t("list.chooseAnotherDoctor")}
-                  </Button>
-                }
-              >
-                {t("list.doctorNotInDay", {
-                  doctorName: selectedDoctorName ?? t("list.selectedDoctor"),
+              // Не Alert: его иконка, паддинги и фраза «Выберите другого»,
+              // дублировавшая кнопку рядом, занимали на телефоне три строки —
+              // больше, чем сама запись приёма. Здесь одна строка: суть, кто, и
+              // как это убрать.
+              <Stack
+                direction="row"
+                alignItems="center"
+                gap={0.75}
+                sx={(th) => ({
+                  mt: -0.5,
+                  px: 1,
+                  py: 0.25,
+                  borderRadius: 1,
+                  color: "warning.main",
+                  bgcolor: alpha(th.palette.warning.main, 0.12),
                 })}
-              </Alert>
+              >
+                <EventBusyOutlined sx={{ fontSize: 16, flexShrink: 0 }} />
+                <Typography
+                  variant="caption"
+                  sx={{ flex: 1, minWidth: 0, lineHeight: 1.3, fontWeight: 600 }}
+                >
+                  {t("list.doctorNotInDay", {
+                    doctorName: selectedDoctorName ?? t("list.selectedDoctor"),
+                  })}
+                </Typography>
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => setSelectedDoctorId(null)}
+                  sx={{
+                    flexShrink: 0,
+                    minWidth: "auto",
+                    px: 0.75,
+                    py: 0,
+                    whiteSpace: "nowrap",
+                    textTransform: "none",
+                    fontWeight: 700,
+                  }}
+                >
+                  {t("list.chooseAnotherDoctor")}
+                </Button>
+              </Stack>
             )}
 
             {/* Фильтры «ход визита | деньги». На телефоне ряд чипов не влезает
                 рядом с лентой исполнителей — там вместо него кнопка, а сами
                 чипы переезжают в лист снизу. */}
-            {isMobile ? (
-              <Box sx={{ mt: -1 }}>
-                <Badge badgeContent={activeChipCount} color="primary">
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<FilterListOutlined fontSize="small" />}
-                    onClick={() => setFilterSheetOpen(true)}
-                    sx={{ textTransform: "none" }}
-                  >
-                    {t("filters.button")}
-                  </Button>
-                </Badge>
-              </Box>
-            ) : (
-              <Box sx={{ mt: -1 }}>{chipRow}</Box>
-            )}
+            {!isMobile && <Box sx={{ mt: -1 }}>{chipRow}</Box>}
           </Stack>
         }
       />
@@ -1162,11 +1567,15 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
       {/* ── Content ── */}
       <CardContent
+        ref={listScrollRef}
+        onScroll={handleListScroll}
         sx={{
           p: 0,
           "&:last-child": { pb: 0 },
           flex: 1,
           overflowY: "auto",
+          // Докрученная до конца лента не должна тянуть за собой страницу.
+          overscrollBehaviorY: "contain",
           msOverflowStyle: "none",
           scrollbarWidth: "none",
           "&::-webkit-scrollbar": { display: "none" },
@@ -1187,6 +1596,27 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           <Stack spacing={0}>
             {groupEntries.map(({ employeeId: groupEmployeeId, name: docName, appts, renderItems: groupItems }) => {
               const apptCount = groupItems.filter((i) => !isGap(i)).length;
+              // Ряды группы и место линии «сейчас» — перед первым элементом
+              // (приёмом или окном), который ещё не начался; на телефоне
+              // подряд идущие окна слиты в один ряд (GapRun).
+              const rows = buildListRows(
+                groupItems,
+                isToday ? nowTs : null,
+                isMobile,
+                // Линию «сейчас» не вешаем на отменённые: они уведены в конец
+                // группы, и над ними внизу ленты она вводила бы в заблуждение.
+                (i) => isGap(i) || !isCancelledStatus(i.status),
+              );
+              // Линия группы с ближайшим приёмом — якорь подскролла при
+              // открытии дня.
+              const isNowAnchorGroup =
+                nowAnchorApptId != null && groupItems.some((i) => !isGap(i) && i.id === nowAnchorApptId);
+              const nowLine = (
+                <NowLine
+                  ref={isNowAnchorGroup ? nowAnchorRef : undefined}
+                  label={t("list.nowMarker", { time: dayjs(nowTs).format("HH:mm") })}
+                />
+              );
               // Деньги группы — по строкам услуг этого исполнителя (см.
               // employeeMoneyTotals): чек совместного приёма иначе попал бы в
               // обе группы целиком.
@@ -1195,14 +1625,22 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                 <Box key={groupEmployeeId ?? "__no_specialist__"}>
                   {/* ── Group header: имя врача + каунтер + деньги ── */}
                   <Box
-                    sx={{
+                    sx={(th) => ({
                       px: 2,
                       py: 1,
-                      bgcolor: "action.selected",
+                      // Шапка липнет к верху ленты: при скролле длинного дня
+                      // уезжало имя специалиста, и было непонятно, чьи это
+                      // приёмы. Фон непрозрачный (action.selected — alpha,
+                      // сквозь него просвечивали строки).
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 2,
+                      bgcolor: th.palette.background.paper,
+                      backgroundImage: `linear-gradient(${subtleBg(th, true)}, ${subtleBg(th, true)})`,
                       borderTop: "1px solid",
                       borderBottom: "1px solid",
                       borderColor: "divider",
-                    }}
+                    })}
                   >
                     <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
                       <Typography variant="subtitle2" fontWeight="bold" noWrap>
@@ -1240,19 +1678,35 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
                   {/* ── Строки приёмов / gap-слоты ── */}
                   <Box>
-                    {groupItems.map((item) => {
-                      if (isGap(item)) {
+                    {rows.map((row) => {
+                      if (row.kind === "gaps") {
                         return (
-                          <AddSlotButton
-                            key={item.id}
-                            timeStr={item.timeStr}
-                            onClick={() => onAddSlot?.(item.dateIso, item.employeeId)}
-                          />
+                          <React.Fragment key={row.gaps[0].id}>
+                            {row.nowLine && nowLine}
+                            {isMobile ? (
+                              <GapRun
+                                label={t("list.freeSlotsRun")}
+                                times={row.gaps.map((gap) => gap.timeStr)}
+                                onPick={(index) => {
+                                  const gap = row.gaps[index];
+                                  onAddSlot?.(gap.dateIso, gap.employeeId);
+                                }}
+                              />
+                            ) : (
+                              row.gaps.map((gap) => (
+                                <AddSlotButton
+                                  key={gap.id}
+                                  timeStr={gap.timeStr}
+                                  onClick={() => onAddSlot?.(gap.dateIso, gap.employeeId)}
+                                />
+                              ))
+                            )}
+                          </React.Fragment>
                         );
                       }
 
                       // ── Строка приёма — 1-в-1 с оригиналом AppointmentsList ──
-                      const a = item as DjangoAppointment;
+                      const a = row.appt;
                       const isSelected = selectedId === a.id;
 
                       // totalAmount с бэка — сумма ДО скидки. Пациент платит
@@ -1275,13 +1729,199 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                           sl.conclusionState === "completed",
                       );
 
+                      // Строка собирается из готовых блоков: на телефоне они
+                      // выстраиваются в три этажа (время + статус / имя /
+                      // телефон + сумма), иначе ФИО и «Итого» рвались каждый на
+                      // две-три строки и одна запись занимала пол-экрана.
+                      const timeBlock = (
+                        <Stack direction="row" alignItems="center" gap={0.5}>
+                          {a.isNight && (
+                            <Tooltip title={t("list.night")}>
+                              <NightlightOutlined color="action" fontSize="small" />
+                            </Tooltip>
+                          )}
+                          <Typography
+                            variant="subtitle2"
+                            sx={{ fontWeight: isMobile ? 700 : undefined, fontVariantNumeric: "tabular-nums" }}
+                          >
+                            {dayjs(a.scheduledAt).format("HH:mm")}
+                          </Typography>
+                        </Stack>
+                      );
+
+                      // Подпись «Пациент:» на телефоне съедала строку под само
+                      // имя — там оно и так стоит первым.
+                      const patientBlock = (
+                        <Typography
+                          variant="body2"
+                          color={isMobile ? "text.primary" : "text.secondary"}
+                          sx={
+                            isMobile
+                              ? {
+                                  fontWeight: 600,
+                                  lineHeight: 1.25,
+                                  display: "-webkit-box",
+                                  WebkitLineClamp: 2,
+                                  WebkitBoxOrient: "vertical",
+                                  overflow: "hidden",
+                                }
+                              : undefined
+                          }
+                        >
+                          {isMobile ? "" : `${t("list.patientLabel")} `}
+                          {a.patient?.fullName ?? "—"}
+                        </Typography>
+                      );
+
+                      const phoneBlock = a.patient?.phone ? (
+                        <Typography
+                          variant="caption"
+                          color="text.disabled"
+                          sx={{ fontVariantNumeric: "tabular-nums" }}
+                        >
+                          {formatPhoneDisplay(a.patient.phone)}
+                        </Typography>
+                      ) : null;
+
+                      const statusBlock = (
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          justifyContent="flex-end"
+                          gap={isMobile ? 0.75 : 1}
+                          useFlexGap
+                          sx={{ flexShrink: isMobile ? 1 : 0, flexWrap: isMobile ? "wrap" : "nowrap", minWidth: 0 }}
+                        >
+                          {/* Статус приёма + деньги (оплата / долг / скидка /
+                              страховка) — общий компонент. Та же логика
+                              применяется в истории пациента и карточках
+                              врача/пациента: иначе оплаченный приём выглядел там
+                              как «Ожидаем», и врач с регистратором видели по
+                              одному приёму разное. Факт оплаты — операционный
+                              статус, виден всем ролям (врачу важно знать, закрыт
+                              ли чек); финансовые действия остаются под правами. */}
+                          <AppointmentStatusChips appointment={a} />
+
+                          {/* Иконка принтера = есть заключение (приём фактически
+                              завершён врачом). Род термина меняется по вертикали:
+                              «Заключение готово» / «Отчёт готов» — отсюда agree(). */}
+                          {hasConclusion && (
+                            <Tooltip
+                              title={`${t("list.conclusionSubject")} ${agree(
+                                term.conclusion.gender,
+                                ["готов", "готова", "готово"],
+                              )}`}
+                            >
+                              <PrintOutlinedIcon
+                                sx={{ fontSize: 20, color: "action.active", opacity: 0.8 }}
+                              />
+                            </Tooltip>
+                          )}
+
+                          {/* По одной иконке на тип: канал, статус и время берём
+                              из фактического лога отправки. */}
+                          {notificationsMap?.has(a.id) &&
+                            [...notificationsMap.get(a.id)!.entries()].map(([notifType, notification]) => {
+                              const cfg = NOTIF_CONFIG[notifType] ?? {
+                                Icon: SmsOutlined,
+                                color: "success.main",
+                              };
+                              const label = t(`notifications.${notifType}`, {
+                                defaultValue: notifType,
+                              });
+                              const time = notification.sentAt
+                                ? dayjs(notification.sentAt).format("DD.MM HH:mm")
+                                : "";
+                              const channel = notification.channel === "whatsapp" ? "WhatsApp" : "SMS";
+                              const successful = ["queued", "sent", "delivered"].includes(notification.status);
+                              const color = notification.status === "failed"
+                                ? "error.main"
+                                : notification.status === "cancelled"
+                                  ? "text.disabled"
+                                  : cfg.color;
+                              return (
+                                <Tooltip
+                                  key={notifType}
+                                  title={`${channel}: ${label} · ${notification.status}${time ? ` · ${time}` : ""}`}
+                                >
+                                  <cfg.Icon sx={{ fontSize: 16, color, opacity: successful ? 0.9 : 0.55 }} />
+                                </Tooltip>
+                              );
+                            })}
+                        </Stack>
+                      );
+
+                      const priceChangeBlock = priceChange ? (
+                        <Tooltip
+                          title={t("list.priceChangedTooltip", {
+                            service: priceChange.serviceName ?? t("details.service"),
+                            oldPrice: formatKGS(priceChange.oldUnitPrice),
+                            newPrice: formatKGS(priceChange.newUnitPrice),
+                          })}
+                        >
+                          <Stack
+                            direction="row"
+                            alignItems="center"
+                            gap={0.4}
+                            sx={{ mt: isMobile ? 0 : 0.5, color: "warning.dark", flexShrink: 0 }}
+                          >
+                            <PriceChangeOutlined sx={{ fontSize: 15 }} />
+                            {/* На телефоне подпись не влезает рядом с суммой —
+                                остаётся иконка с тем же тултипом. */}
+                            {!isMobile && (
+                              <Typography variant="caption" fontWeight={700}>
+                                {t("list.priceChanged")}
+                              </Typography>
+                            )}
+                          </Stack>
+                        </Tooltip>
+                      ) : null;
+
+                      // Итого — стоимость услуг, не финансовая операция, поэтому
+                      // видна всем (в т.ч. врачу без прав на финансы), как в оригинале.
+                      const totalBlock =
+                        totalAmount > 0 || previousPayableAmount != null ? (
+                          <Typography
+                            variant="body2"
+                            color={isMobile ? "text.primary" : "text.secondary"}
+                            sx={{
+                              mt: isMobile ? 0 : priceChange ? 0.125 : 0.5,
+                              fontWeight: isMobile ? 700 : undefined,
+                              whiteSpace: "nowrap",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {/* Слово «Итого» на телефоне уезжало на отдельную
+                                строку — сумма и без него читается как сумма. */}
+                            {!isMobile && `${t("list.total")} `}
+                            {/* При скидке «Итого» — это то, что человек платит по
+                                кассе; сумма до скидки остаётся рядом зачёркнутой,
+                                иначе непонятно, от чего считался процент. Скидка
+                                процентом: у оплаченного приёма чипа скидки нет
+                                (там «Оплачено»), и эта строка — единственное
+                                место, где дисконт виден. */}
+                            {(previousPayableAmount != null || discountPercent != null) && (
+                              <Box
+                                component="span"
+                                sx={{ textDecoration: "line-through", opacity: 0.6, mr: 0.5 }}
+                              >
+                                {formatKGS(previousPayableAmount ?? totalAmount)}
+                              </Box>
+                            )}
+                            {formatKGS(discountPercent != null ? payableAmount : totalAmount)}
+                            {discountPercent != null &&
+                              t("list.discountPercentSuffix", { percent: discountPercent })}
+                          </Typography>
+                        ) : null;
+
                       return (
+                        <React.Fragment key={a.id}>
+                          {row.nowLine && nowLine}
                         <Box
-                          key={a.id}
                           onClick={() => onSelect(a)}
                           sx={{
                             px: 2,
-                            py: 1.25,
+                            py: isMobile ? 1 : 1.25,
                             cursor: "pointer",
                             bgcolor: isSelected
                               ? alpha(theme.palette.primary.main, 0.08)
@@ -1296,159 +1936,93 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                             transition: "background 150ms",
                           }}
                         >
-                          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
-                            {/* Left: время + пациент */}
-                            <Stack>
-                              <Stack direction="row" alignItems="center" gap={0.5}>
-                                {a.isNight && (
-                                  <Tooltip title={t("list.night")}>
-                                    <NightlightOutlined color="action" fontSize="small" />
-                                  </Tooltip>
-                                )}
-                                <Typography variant="subtitle2">
-                                  {dayjs(a.scheduledAt).format("HH:mm")}
-                                </Typography>
+                          {isMobile ? (
+                            <Stack gap={0.25}>
+                              <Stack
+                                direction="row"
+                                alignItems="center"
+                                justifyContent="space-between"
+                                gap={1}
+                              >
+                                {timeBlock}
+                                {statusBlock}
                               </Stack>
-                              <Typography variant="body2" color="text.secondary">
-                                {t("list.patientLabel")} {a.patient?.fullName ?? "—"}
-                              </Typography>
-                              {a.patient?.phone && (
-                                <Typography
-                                  variant="caption"
-                                  color="text.disabled"
-                                  sx={{ fontVariantNumeric: "tabular-nums" }}
+                              {patientBlock}
+                              {(phoneBlock || totalBlock || priceChangeBlock) && (
+                                <Stack
+                                  direction="row"
+                                  alignItems="center"
+                                  justifyContent="space-between"
+                                  gap={1}
                                 >
-                                  {formatPhoneDisplay(a.patient.phone)}
-                                </Typography>
-                              )}
-                            </Stack>
-
-                            {/* Right: чипы статуса + иконки оплаты + сумма */}
-                            <Stack alignItems="flex-end">
-                              <Stack direction="row" alignItems="center" gap={1}>
-                                {/* Статус приёма + деньги (оплата / долг / скидка /
-                                    страховка) — общий компонент. Та же логика
-                                    применяется в истории пациента и карточках
-                                    врача/пациента: иначе оплаченный приём
-                                    выглядел там как «Ожидаем», и врач с
-                                    регистратором видели по одному приёму разное.
-                                    Факт оплаты — операционный статус, виден всем
-                                    ролям (врачу важно знать, закрыт ли чек);
-                                    финансовые действия остаются под правами. */}
-                                <AppointmentStatusChips appointment={a} />
-
-                                {/* Иконка принтера = есть заключение (приём
-                                    фактически завершён врачом). Род термина
-                                    меняется по вертикали: «Заключение готово»
-                                    / «Отчёт готов» — отсюда agree(). */}
-                                {hasConclusion && (
-                                  <Tooltip
-                                    title={`${t("list.conclusionSubject")} ${agree(
-                                      term.conclusion.gender,
-                                      ["готов", "готова", "готово"],
-                                    )}`}
-                                  >
-                                    <PrintOutlinedIcon
-                                      sx={{ fontSize: 20, color: "action.active", opacity: 0.8 }}
-                                    />
-                                  </Tooltip>
-                                )}
-
-                                {/* По одной иконке на тип: канал, статус и время
-                                    берём из фактического лога отправки. */}
-                                {notificationsMap?.has(a.id) &&
-                                  [...notificationsMap.get(a.id)!.entries()].map(([notifType, notification]) => {
-                                    const cfg = NOTIF_CONFIG[notifType] ?? {
-                                      Icon: SmsOutlined,
-                                      color: "success.main",
-                                    };
-                                    const label = t(`notifications.${notifType}`, {
-                                      defaultValue: notifType,
-                                    });
-                                    const time = notification.sentAt
-                                      ? dayjs(notification.sentAt).format("DD.MM HH:mm")
-                                      : "";
-                                    const channel = notification.channel === "whatsapp" ? "WhatsApp" : "SMS";
-                                    const successful = ["queued", "sent", "delivered"].includes(notification.status);
-                                    const color = notification.status === "failed"
-                                      ? "error.main"
-                                      : notification.status === "cancelled"
-                                        ? "text.disabled"
-                                        : cfg.color;
-                                    return (
-                                      <Tooltip
-                                        key={notifType}
-                                        title={`${channel}: ${label} · ${notification.status}${time ? ` · ${time}` : ""}`}
-                                      >
-                                        <cfg.Icon sx={{ fontSize: 16, color, opacity: successful ? 0.9 : 0.55 }} />
-                                      </Tooltip>
-                                    );
-                                  })}
-                              </Stack>
-
-                              {priceChange && (
-                                <Tooltip
-                                  title={t("list.priceChangedTooltip", {
-                                    service: priceChange.serviceName ?? t("details.service"),
-                                    oldPrice: formatKGS(priceChange.oldUnitPrice),
-                                    newPrice: formatKGS(priceChange.newUnitPrice),
-                                  })}
-                                >
-                                  <Stack
-                                    direction="row"
-                                    alignItems="center"
-                                    gap={0.4}
-                                    sx={{ mt: 0.5, color: "warning.dark" }}
-                                  >
-                                    <PriceChangeOutlined sx={{ fontSize: 15 }} />
-                                    <Typography variant="caption" fontWeight={700}>
-                                      {t("list.priceChanged")}
-                                    </Typography>
+                                  {phoneBlock ?? <Box />}
+                                  <Stack direction="row" alignItems="center" gap={0.75}>
+                                    {priceChangeBlock}
+                                    {totalBlock}
                                   </Stack>
-                                </Tooltip>
+                                </Stack>
                               )}
-
-                              {/* Итого — стоимость услуг, не финансовая операция,
-                                  поэтому видна всем (в т.ч. врачу без прав на
-                                  финансы), как в оригинале. */}
-                              {(totalAmount > 0 || previousPayableAmount != null) && (
-                                <Typography
-                                  variant="body2"
-                                  color="text.secondary"
-                                  sx={{ mt: priceChange ? 0.125 : 0.5 }}
-                                >
-                                  {t("list.total")}{" "}
-                                  {/* При скидке «Итого» — это то, что человек
-                                      платит по кассе; сумма до скидки остаётся
-                                      рядом зачёркнутой, иначе непонятно, от чего
-                                      считался процент. Скидка процентом: у
-                                      оплаченного приёма чипа скидки нет (там
-                                      «Оплачено»), и эта строка — единственное
-                                      место, где дисконт виден. */}
-                                  {(previousPayableAmount != null || discountPercent != null) && (
-                                    <Box
-                                      component="span"
-                                      sx={{ textDecoration: "line-through", opacity: 0.6, mr: 0.5 }}
-                                    >
-                                      {formatKGS(previousPayableAmount ?? totalAmount)}
-                                    </Box>
-                                  )}
-                                  {formatKGS(discountPercent != null ? payableAmount : totalAmount)}
-                                  {discountPercent != null &&
-                                    t("list.discountPercentSuffix", { percent: discountPercent })}
-                                </Typography>
-                              )}
-
-
                             </Stack>
-                          </Stack>
+                          ) : (
+                            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
+                              {/* Left: время + пациент */}
+                              <Stack>
+                                {timeBlock}
+                                {patientBlock}
+                                {phoneBlock}
+                              </Stack>
+
+                              {/* Right: чипы статуса + иконки оплаты + сумма */}
+                              <Stack alignItems="flex-end">
+                                {statusBlock}
+                                {priceChangeBlock}
+                                {totalBlock}
+                              </Stack>
+                            </Stack>
+                          )}
                         </Box>
+                        </React.Fragment>
                       );
                     })}
                   </Box>
                 </Box>
               );
             })}
+          </Stack>
+        )}
+
+        {/* Свободные специалисты — одной строкой в конце дня. Строка остаётся
+            и в раскрытом виде: иначе спрятать их обратно было бы нечем. */}
+        {freeGroupEntries.length > 0 && (
+          <Stack
+            direction="row"
+            alignItems="center"
+            gap={0.5}
+            onClick={() => setFreeGroupsOpen((prev) => !prev)}
+            sx={{
+              px: 2,
+              py: 1,
+              cursor: "pointer",
+              color: "text.secondary",
+              borderTop: "1px solid",
+              borderColor: "divider",
+            }}
+          >
+            <Typography variant="caption" sx={{ flex: 1, minWidth: 0 }} noWrap>
+              {freeGroupsOpen
+                ? t("list.freeGroupsCollapse")
+                : t("list.freeGroupsToggle", {
+                    names: freeGroupEntries.map((g) => g.name.split(" ")[0]).join(", "),
+                  })}
+            </Typography>
+            <ExpandMoreOutlined
+              sx={{
+                fontSize: 18,
+                flexShrink: 0,
+                transform: freeGroupsOpen ? "rotate(180deg)" : "none",
+                transition: "transform .15s ease",
+              }}
+            />
           </Stack>
         )}
       </CardContent>

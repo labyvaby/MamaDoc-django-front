@@ -26,6 +26,8 @@ import {
 } from "@mui/material";
 import LinkOffOutlined from "@mui/icons-material/LinkOffOutlined";
 
+import { CollapsibleTextField } from "./CollapsibleTextField";
+
 import type {
   ConclusionFormTemplate,
   FormField,
@@ -143,7 +145,10 @@ export const ConclusionFormInline: React.FC<Props> = ({
               display: "grid",
               // Половинные поля встают парами только на широком экране: в
               // дровере на ноутбуке две колонки по 200px нечитаемы.
-              gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+              // minmax(0, …) и на одной колонке: у «1fr» минимум равен
+              // min-content содержимого, и длинный чип диагноза растягивал
+              // колонку до 490px — форма выезжала за край телефона.
+              gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(2, minmax(0, 1fr))" },
               gap: 1.5,
             }}
           >
@@ -155,26 +160,29 @@ export const ConclusionFormInline: React.FC<Props> = ({
               if (field.slot) {
                 const node = slotNodes[field.slot];
                 return node ? (
-                  <Box key={field.id} sx={{ gridColumn: { xs: "span 1", md: "span 2" } }}>
+                  <Box key={field.id} sx={{ gridColumn: { xs: "span 1", md: "span 2" }, minWidth: 0 }}>
                     {node}
                   </Box>
                 ) : null;
               }
 
-              return (
-                <TextField
-                  key={field.id}
-                  label={field.label || undefined}
-                  placeholder={field.placeholder}
-                  size="small"
-                  fullWidth
-                  multiline={field.type === "multiline"}
-                  minRows={field.type === "multiline" ? field.rows ?? 3 : undefined}
-                  value={values[field.id] ?? ""}
-                  onChange={(e) => onChangeValue(field.id, e.target.value)}
-                  disabled={disabled}
-                  sx={{ gridColumn: { xs: "span 1", md: fieldSpan(field) } }}
-                />
+              const rowProps = {
+                label: field.label || undefined,
+                placeholder: field.placeholder,
+                size: "small" as const,
+                fullWidth: true,
+                value: values[field.id] ?? "",
+                onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                  onChangeValue(field.id, e.target.value),
+                disabled,
+                sx: { gridColumn: { xs: "span 1", md: fieldSpan(field) } },
+              };
+              // Многострочная строка бланка сворачивается, как штатные поля:
+              // иначе один длинный «Зев» растягивал форму на экран.
+              return field.type === "multiline" ? (
+                <CollapsibleTextField key={field.id} {...rowProps} minRows={field.rows ?? 3} />
+              ) : (
+                <TextField key={field.id} {...rowProps} />
               );
             })}
           </Box>
@@ -182,11 +190,10 @@ export const ConclusionFormInline: React.FC<Props> = ({
 
         {form && (
           <>
-            <TextField
+            <CollapsibleTextField
               label="Дополнительно"
               size="small"
               fullWidth
-              multiline
               minRows={2}
               value={manual}
               onChange={(e) => onManualChange(e.target.value)}

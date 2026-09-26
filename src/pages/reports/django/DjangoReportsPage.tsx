@@ -68,6 +68,7 @@ const DjangoReportsPage: React.FC = () => {
     loading: permLoading,
   } = usePermissions();
   const isSuper = isSuperAdmin();
+  const isRetail = activeOrganization?.vertical === "retail";
   const isMultiOrg = (memberships ?? []).length > 1;
   const orgRequired = isSuper || isMultiOrg;
   const needsOrg = orgRequired && !activeOrganization;
@@ -113,7 +114,7 @@ const DjangoReportsPage: React.FC = () => {
     const all = report?.daily ?? [];
     return all.filter(
       (d) =>
-        d.appointmentsCount + d.proceduresCount + d.waitingCount > 0 ||
+        (!isRetail && d.appointmentsCount + d.proceduresCount + d.waitingCount > 0) ||
         num(d.servicesSum) > 0 ||
         num(d.productsSum) > 0 ||
         num(d.cashSum) > 0 ||
@@ -124,7 +125,7 @@ const DjangoReportsPage: React.FC = () => {
         num(d.discountSum) > 0 ||
         num(d.debtSum) > 0,
     );
-  }, [report?.daily]);
+  }, [isRetail, report?.daily]);
 
   // Две смысловые группы: количества и деньги. Цвет оставлен только тому, что
   // требует реакции (ожидание, отмены, долги) — остальные плитки нейтральные.
@@ -136,6 +137,43 @@ const DjangoReportsPage: React.FC = () => {
   // (совпадение проверено на данных за фев–июль 2026, бэком не задокументировано).
   const groups: SummaryCardGroup[] = useMemo(() => {
     if (!summary || !totals) return [];
+    if (isRetail) {
+      return [
+        {
+          title: t("retail.group"),
+          cards: [
+            {
+              title: t("retail.sales"),
+              primaryValue: formatKGS(totals.products),
+              secondaryText: t("retail.salesHint"),
+            },
+            {
+              title: t("retail.received"),
+              primaryValue: formatKGS(num(totals.cash) + num(totals.card)),
+              secondaryText: t("retail.receivedHint", {
+                cash: formatKGS(totals.cash),
+                card: formatKGS(totals.card),
+              }),
+            },
+            {
+              title: t("retail.cash"),
+              primaryValue: formatKGS(totals.cash),
+              secondaryText: t("retail.cash"),
+            },
+            {
+              title: t("retail.cashless"),
+              primaryValue: formatKGS(totals.card),
+              secondaryText: t("retail.cashless"),
+            },
+            {
+              title: t("retail.discounts"),
+              primaryValue: formatKGS(totals.discount),
+              secondaryText: t("retail.discountsHint"),
+            },
+          ],
+        },
+      ];
+    }
     return [
       {
         title: t("groups.flow"),
@@ -215,7 +253,7 @@ const DjangoReportsPage: React.FC = () => {
         ],
       },
     ];
-  }, [summary, totals, t]);
+  }, [isRetail, summary, totals, t]);
 
   /**
    * Безнал за месяц в разрезе способов. В отчёте нет колонок расходов и
@@ -320,8 +358,10 @@ const DjangoReportsPage: React.FC = () => {
                               {dayjs(day.date).format("DD MMMM")}
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
-                              {dayjs(day.date).format("dddd")} • {t("dayVisitsCount", { count: day.appointmentsCount })} | Процедуры:{" "}
-                              {day.proceduresCount}
+                              {dayjs(day.date).format("dddd")}
+                              {!isRetail && (
+                                <> • {t("dayVisitsCount", { count: day.appointmentsCount })} | Процедуры: {day.proceduresCount}</>
+                              )}
                             </Typography>
                           </Box>
                         </Stack>
@@ -333,13 +373,13 @@ const DjangoReportsPage: React.FC = () => {
                               color="text.secondary"
                               sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
                             >
-                              <PaymentsIcon sx={{ fontSize: 14, color: "primary.onSurface" }} /> Услуги
+                              <PaymentsIcon sx={{ fontSize: 14, color: "primary.onSurface" }} /> {isRetail ? t("retail.salesColumn") : "Услуги"}
                             </Typography>
                             <Typography variant="subtitle1" fontWeight={800}>
-                              {formatKGS(day.servicesSum)}
+                              {formatKGS(isRetail ? day.productsSum : day.servicesSum)}
                             </Typography>
                           </Grid2>
-                          <Grid2 size={6}>
+                          {!isRetail && <Grid2 size={6}>
                             <Typography
                               variant="caption"
                               color="text.secondary"
@@ -350,7 +390,7 @@ const DjangoReportsPage: React.FC = () => {
                             <Typography variant="subtitle1" color="secondary.main" fontWeight={800}>
                               {formatKGS(day.productsSum)}
                             </Typography>
-                          </Grid2>
+                          </Grid2>}
                           <Grid2 size={6}>
                             <Typography
                               variant="caption"
@@ -375,7 +415,7 @@ const DjangoReportsPage: React.FC = () => {
                               {formatKGS(day.cardSum)}
                             </Typography>
                           </Grid2>
-                          {num(day.insuranceSum) > 0 && (
+                          {!isRetail && num(day.insuranceSum) > 0 && (
                             <Grid2 size={6}>
                               <Typography
                                 variant="caption"
@@ -409,13 +449,13 @@ const DjangoReportsPage: React.FC = () => {
                   ))}
                 {daily.length === 0 && (
                   <Paper variant="outlined" sx={{ p: 4, textAlign: "center", borderRadius: 3 }}>
-                    <Typography color="text.secondary">Нет данных за этот период</Typography>
+                    <Typography color="text.secondary">{isRetail ? t("retail.empty") : "Нет данных за этот период"}</Typography>
                   </Paper>
                 )}
               </Stack>
             ) : (
               <ReportTableCard
-                title={t("table.byDays")}
+                title={isRetail ? t("retail.table") : t("table.byDays")}
                 headerActions={
                   totals ? (
                     <Chip
@@ -434,7 +474,15 @@ const DjangoReportsPage: React.FC = () => {
                     <TableHead>
                       <TableRow>
                         {(
-                          [
+                          isRetail
+                            ? [
+                                { key: "date", label: t("retail.date"), align: "left" as const },
+                                { key: "sales", label: t("retail.salesColumn"), align: "right" as const },
+                                { key: "cash", label: t("retail.cash"), align: "right" as const },
+                                { key: "cashless", label: t("retail.cashless"), align: "right" as const },
+                                { key: "debt", label: t("retail.debt"), align: "right" as const },
+                              ]
+                            : [
                             { key: "date", label: t("tableHeaders.date"), align: "left" as const },
                             { key: "visits", label: t("tableHeaders.visits"), align: "center" as const },
                             { key: "procedures", label: t("tableHeaders.procedures"), align: "center" as const },
@@ -445,7 +493,7 @@ const DjangoReportsPage: React.FC = () => {
                             { key: "cashless", label: t("tableHeaders.cashless"), align: "right" as const },
                             { key: "insurance", label: t("tableHeaders.insurance"), align: "right" as const },
                             { key: "debt", label: t("tableHeaders.debt"), align: "right" as const },
-                          ]
+                              ]
                         ).map(
                           (h) => (
                             <TableCell
@@ -472,9 +520,17 @@ const DjangoReportsPage: React.FC = () => {
                         <TableRow
                           key={day.date}
                           hover
-                          sx={{ opacity: day.appointmentsCount + day.proceduresCount > 0 ? 1 : 0.6 }}
+                          sx={{ opacity: isRetail || day.appointmentsCount + day.proceduresCount > 0 ? 1 : 0.6 }}
                         >
                           <TableCell sx={{ fontWeight: 600 }}>{dayjs(day.date).format("DD.MM (ddd)")}</TableCell>
+                          {isRetail ? <>
+                            <TableCell align="right">{formatKGS(day.productsSum)}</TableCell>
+                            <TableCell align="right">{formatKGS(day.cashSum)}</TableCell>
+                            <TableCell align="right">{formatKGS(day.cardSum)}</TableCell>
+                            <TableCell align="right" sx={{ color: "warning.onSurface" }}>
+                              {num(day.debtSum) > 0 ? formatKGS(day.debtSum) : "-"}
+                            </TableCell>
+                          </> : <>
                           <TableCell align="center">{day.appointmentsCount > 0 ? day.appointmentsCount : "-"}</TableCell>
                           <TableCell align="center">{day.proceduresCount > 0 ? day.proceduresCount : "-"}</TableCell>
                           <TableCell
@@ -505,6 +561,7 @@ const DjangoReportsPage: React.FC = () => {
                           <TableCell align="right" sx={{ color: "warning.onSurface" }}>
                             {num(day.debtSum) > 0 ? formatKGS(day.debtSum) : "-"}
                           </TableCell>
+                          </>}
                         </TableRow>
                       ))}
                       {totals && (
@@ -517,6 +574,12 @@ const DjangoReportsPage: React.FC = () => {
                           })}
                         >
                           <TableCell>{t("table.totalRow")}</TableCell>
+                          {isRetail ? <>
+                            <TableCell align="right">{formatKGS(totals.products)}</TableCell>
+                            <TableCell align="right">{formatKGS(totals.cash)}</TableCell>
+                            <TableCell align="right">{formatKGS(totals.card)}</TableCell>
+                            <TableCell align="right" sx={{ color: "warning.onSurface" }}>{formatKGS(totals.debt)}</TableCell>
+                          </> : <>
                           <TableCell align="center">{totals.appointmentsCount}</TableCell>
                           <TableCell align="center">{totals.proceduresCount}</TableCell>
                           <TableCell align="center" sx={{ color: "error.onSurface" }}>
@@ -532,6 +595,7 @@ const DjangoReportsPage: React.FC = () => {
                           <TableCell align="right" sx={{ color: "warning.onSurface" }}>
                             {formatKGS(totals.debt)}
                           </TableCell>
+                          </>}
                         </TableRow>
                       )}
                     </TableBody>

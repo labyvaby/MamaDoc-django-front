@@ -218,6 +218,10 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     [activeMembership],
   );
   const [roleId, setRoleId] = React.useState<number | "">("");
+  // Пустой список после загрузки — почти всегда отсутствие rbac.roles.view.
+  // До первой загрузки список тоже пуст, поэтому ждём её завершения.
+  const [depsLoaded, setDepsLoaded] = React.useState(false);
+  const noRoles = depsLoaded && !loadingDeps && roles.length === 0;
   const [employeeBranches, setEmployeeBranches] = React.useState<RbacBranch[]>([]);
   const [userAccessBranches, setUserAccessBranches] = React.useState<RbacBranch[]>([]);
   const [overrideUserAccess, setOverrideUserAccess] = React.useState(false);
@@ -332,7 +336,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
         if (!cancelled)
           notify?.({ type: "error", message: `Ошибка загрузки: ${err?.message ?? err}` });
       })
-      .finally(() => { if (!cancelled) setLoadingDeps(false); });
+      .finally(() => { if (!cancelled) { setLoadingDeps(false); setDepsLoaded(true); } });
     return () => { cancelled = true; };
   }, [open, notify, canViewSpecs, canManageSpecs, canManagePrivate, activeOrganization?.id]);
 
@@ -628,6 +632,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     <DrawerBase
       open={open}
       title="Создать сотрудника"
+      testId="employee-onboard-drawer"
       onClose={handleClose}
       busy={busy}
       onSubmit={handleSubmit}
@@ -786,7 +791,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                   placeholder="Иванов Иван Иванович"
                   required
                   disabled={busy}
-                  inputProps={{ maxLength: 255 }}
+                  inputProps={{ maxLength: 255, "data-testid": "employee-fullname-input" }}
                   error={Boolean(showError("fullName"))}
                   helperText={showError("fullName")}
                   ref={focus.anchor("fullName")}
@@ -820,7 +825,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                     <StatusBadge
                       value={status}
                       onChange={setStatus}
-                      options={["active", "inactive", "fired"]}
+                      // «Уволен» при онбординге бэк отклоняет: онбординг выдаёт доступ.
+                      options={["active", "inactive"]}
                       disabled={busy}
                     />
                   </Box>
@@ -836,44 +842,46 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             <SectionLabel title="Контакты" />
 
             <Field label="Телефон" hint="Телефон или email — нужен для входа по SMS-коду">
-              <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-                <PhoneCountryCodeSelect
-                  value={phoneCountry}
-                  onChange={(code) => { setPhoneCountry(code); setPhoneLocal(""); }}
-                  disabled={busy}
-                />
-                <TextField
-                  value={formatPhoneLocalDisplay(phoneCountry, phoneLocal)}
-                  inputRef={phoneInput.inputRef}
-                  onChange={phoneInput.onChange}
-                  onPaste={(e) =>
-                    handlePhonePaste(e, phoneCountry, (code, local) => {
-                      setPhoneCountry(code);
-                      setPhoneLocal(local);
-                    })
-                  }
-                  onKeyDown={(e) => {
-                    phoneInput.onKeyDown(e);
-                    submitOnEnter(e);
-                  }}
-                  fullWidth
-                  size="small"
-                  placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
-                  disabled={busy}
-                  // maxLength не ставим: значение показывается с пробелами
-                  // («700 123 456»), и лимит по числу цифр обрезал бы ввод
-                  // раньше времени — длину режет onChange.
-                  inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
-                  ref={focus.anchor("phone")}
-                  InputProps={{
-                    endAdornment: !errors.phone && phoneLocal.length === getPhoneLocalMaxLength(phoneCountry) ? (
-                      <InputAdornment position="end">
-                        <CheckCircleOutlined fontSize="small" color="success" />
-                      </InputAdornment>
-                    ) : undefined,
-                  }}
-                />
-              </Box>
+              <TextField
+                value={formatPhoneLocalDisplay(phoneCountry, phoneLocal)}
+                inputRef={phoneInput.inputRef}
+                onChange={phoneInput.onChange}
+                onPaste={(e) =>
+                  handlePhonePaste(e, phoneCountry, (code, local) => {
+                    setPhoneCountry(code);
+                    setPhoneLocal(local);
+                  })
+                }
+                onKeyDown={(e) => {
+                  phoneInput.onKeyDown(e);
+                  submitOnEnter(e);
+                }}
+                fullWidth
+                size="small"
+                placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
+                disabled={busy}
+                // maxLength не ставим: значение показывается с пробелами
+                // («700 123 456»), и лимит по числу цифр обрезал бы ввод
+                // раньше времени — длину режет onChange.
+                inputProps={{ inputMode: "tel", pattern: "[0-9]*", "data-testid": "employee-phone-input" }}
+                ref={focus.anchor("phone")}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start" sx={{ mr: 1, ml: "-14px" }}>
+                      <PhoneCountryCodeSelect
+                        value={phoneCountry}
+                        onChange={setPhoneCountry}
+                        disabled={busy}
+                      />
+                    </InputAdornment>
+                  ),
+                  endAdornment: !errors.phone && phoneLocal.length === getPhoneLocalMaxLength(phoneCountry) ? (
+                    <InputAdornment position="end">
+                      <CheckCircleOutlined fontSize="small" color="success" />
+                    </InputAdornment>
+                  ) : undefined,
+                }}
+              />
             </Field>
 
             <Field label="Email">
@@ -1114,9 +1122,18 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 renderInput={(params) => (
                   <TextField
                     {...params}
+                    inputProps={{ ...params.inputProps, "data-testid": "employee-role-input" }}
                     placeholder={loadingDeps ? "Загрузка…" : "Найти роль…"}
-                    error={submitAttempted && roleId === ""}
-                    helperText={submitAttempted && roleId === "" ? "Выберите роль" : ""}
+                    error={(submitAttempted && roleId === "") || noRoles}
+                    helperText={
+                      // Роли приходят из /rbac/roles/: без права на их просмотр
+                      // списка не будет, и форма молча не отправится — говорим прямо.
+                      noRoles
+                        ? "Роли не загрузились — нужно право «Роли: просмотр»"
+                        : submitAttempted && roleId === ""
+                          ? "Выберите роль"
+                          : ""
+                    }
                     ref={focus.anchor("roleId")}
                   />
                 )}
@@ -1145,6 +1162,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                   renderInput={(params) => (
                     <TextField
                       {...params}
+                      inputProps={{ ...params.inputProps, "data-testid": "employee-branches-input" }}
                       placeholder={loadingDeps ? "Загрузка…" : "Выберите филиалы"}
                       ref={focus.anchor("employeeBranches")}
                     />

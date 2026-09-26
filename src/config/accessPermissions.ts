@@ -13,11 +13,12 @@ export const PAGE_PERMISSIONS = {
   appointmentsRegistry: "appointments.registry.view",
   doctorRoom: "appointments.doctor_room.view",
   nurseRoom: "appointments.nurse_room.view",
-  // Исторические реестры «Все приёмы» / «Все процедуры» permission-кода не
-  // имеют: с 19.08.2026 они скрыты от всех, кроме суперадминистратора, и
-  // гейтятся ролью (RequireSuperAdmin в App.tsx + isSuper в сайдбаре). Право
-  // выдать нельзя — иначе организация вернула бы себе доступ через редактор
-  // ролей.
+  // Исторические реестры «Все приёмы» / «Все процедуры» — такие же
+  // page-visibility права. По умолчанию не выдаются ни одной роли (ни в
+  // шаблонах, ни бэкфиллом): после деплоя разделы по-прежнему видит только
+  // суперадминистратор, пока он сам не включит право нужной роли в редакторе.
+  allAppointments: "appointments.all_appointments.view",
+  allProcedures: "appointments.all_procedures.view",
   patients: "patients.view",
   employees: "staff.view",
   services: "catalog.view",
@@ -32,8 +33,8 @@ export const PAGE_PERMISSIONS = {
   cashbox: "finance.view",
   reports: "reports.view",
   payroll: ["payroll.view", "payroll.view_own"],
-  notifications: "notifications.manage",
-  reviews: ["reviews.view", "reviews.manage"],
+  notifications: "notifications.page.view",
+  reviews: ["reviews.view", "reviews.view_own", "reviews.handle", "reviews.manage"],
   bookings: ["bookings.view", "bookings.manage"],
   // Раздел «Чаты» — встроенный Chatwoot. Право выдаётся ролям в редакторе
   // ролей; сам аккаунт в Chatwoot заводит его администратор отдельно.
@@ -51,13 +52,23 @@ export const PAGE_PERMISSIONS = {
   // Просмотр истории и незавершённых пересчётов доступен вместе со складом;
   // операции открытия/сканирования/завершения дополнительно проверяет API.
   inventory: "warehouse.view",
+  // Накладные (закупки): page-visibility право; данные читает procurement.view,
+  // кнопки — свои коды (см. PROCUREMENT_PERMISSIONS в api/procurement.ts).
+  // Модуль procurement гейтится через canAccess по префиксу кода.
+  procurementInvoices: "procurement.invoices.view",
   ecommerce: "ecommerce.view",
   targets: "targets.view",
   messaging: "messaging.view",
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {
-  posModule: "tenancy.modules.view",
+  // Модули подключает только администратор платформы в Django admin. В CRM
+  // остаются рабочие настройки подключённого продукта: canAccess проверит
+  // одновременно право роли и включённый модуль по префиксу кода.
+  store: "pos.manage",
+  procurement: "procurement.manage",
+  discountKinds: "promotions.view",
+  promotions: "promotions.view",
   organization: "organization.view",
   branches: "branches.view",
   // Сайт-визитку настраивает тот же, кто правит организацию: конструктор
@@ -84,12 +95,17 @@ export const SETTINGS_TAB_PERMISSIONS = {
   skud: PAGE_PERMISSIONS.attendanceSettings,
   announcements: PAGE_PERMISSIONS.announcements,
   notifications: PAGE_PERMISSIONS.notifications,
-  // Конструктор автоматизаций отправляет SMS/WhatsApp и на бэке гейтится тем
-  // же notifications.manage, что и настройки уведомлений — своего кода прав
-  // у модуля нет (docs/automations-api.md §2).
-  automations: PAGE_PERMISSIONS.notifications,
+  // Автоматизации продолжают работать по notifications.manage; отдельное
+  // notifications.page.view управляет только доступностью экрана уведомлений.
+  automations: "notifications.manage",
+  // Подключение WhatsApp и каталог шаблонов: на бэке те же
+  // notifications.manage (docs/whatsapp-templates-mvp.md §1.1). Привязка к
+  // подключению Raven внутри страницы — только суперадмину, это проверяет
+  // сам бэк.
+  whatsapp: "notifications.manage",
   productAttributes: "warehouse.manage",
-  clients: "clients.manage",
+  // Настройки раздела (статусы, раскладка карточки) бэк закрывает clients.update.
+  clients: "clients.update",
   // Витрина odoctor.kg. Право своё, а не общее с расписанием: за страницей
   // лежит учётная запись внешнего кабинета — ключ от чужой системы. Читать и
   // менять эти настройки бэк разрешает по одному и тому же коду, поэтому
@@ -97,6 +113,15 @@ export const SETTINGS_TAB_PERMISSIONS = {
   odoctor: "odoctor.manage",
   // Подключение ЛИС: код организации, точки регистрации филиалов.
   lab: "lab.settings.manage",
+  // Chatwoot → сделки: приёмник вебхука и карта инбоксов. Право своё
+  // (chatwoot.manage), отдельное от chatwoot.view — видеть чаты и
+  // настраивать секрет приёмника не одно и то же.
+  chatwoot: "chatwoot.manage",
+  // Синхронизация с Altegio. Страница новая и закрыта: маршрут под
+  // RequireSuperAdmin, API — только суперадмину. Этот код не выдан ни одной
+  // роли, поэтому вкладку видит лишь суперадмин (ему can() отвечает «да»
+  // на любое право) — пока заказчик отдельно не откроет раздел ролям.
+  altegio: "altegio.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

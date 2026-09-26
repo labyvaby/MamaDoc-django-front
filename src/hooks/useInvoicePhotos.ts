@@ -22,6 +22,7 @@ import {
 } from "../api/invoicePhotos";
 import {
   prepareImageForUpload,
+  isPdfFile,
   PHOTO_SOURCE_MAX_BYTES,
   PHOTO_SOURCE_MAX_MB,
 } from "../utility/imageCompression";
@@ -43,12 +44,21 @@ export interface UseInvoicePhotosOptions {
   open: boolean;
   /** Право на изменение (загрузка/удаление). Просмотр остаётся доступным. */
   canManage?: boolean;
+  /** Для многошаговых черновиков оставить локальные фото при закрытии формы. */
+  preservePendingOnClose?: boolean;
   /**
    * Удалён старый одиночный чек расхода (`photoUrl`). Форма живёт со своей
    * копией расхода, и без этого сигнала миниатюра в списке осталась бы висеть
    * до перезагрузки — выглядело бы как «удаление не сработало».
    */
   onLegacyPhotoRemoved?: () => void;
+  /**
+   * Фото сущности добавлено или удалено на сервере (не отложенный файл до
+   * создания). Список расходов держит свой счётчик фото (`photosCount`) —
+   * по этому сигналу страница его перечитывает, иначе метка «нет фото» в
+   * строке висит до следующего обновления.
+   */
+  onPhotosChanged?: () => void;
 }
 
 export interface UseInvoicePhotosResult {
@@ -86,7 +96,9 @@ export function useInvoicePhotos({
   organizationId = null,
   open,
   canManage = true,
+  preservePendingOnClose = false,
   onLegacyPhotoRemoved,
+  onPhotosChanged,
 }: UseInvoicePhotosOptions): UseInvoicePhotosResult {
   const queryClient = useQueryClient();
   const [pending, setPending] = React.useState<PendingInvoicePhoto[]>([]);
@@ -121,10 +133,11 @@ export function useInvoicePhotos({
     setBusy(false);
   }, [releasePending]);
 
-  // Закрыли форму — чистим локальные файлы (сохранённые остаются на сервере).
+  // Большинство форм очищают временные фото при закрытии. Формы с черновиком
+  // могут явно оставить их и восстановить вместе с остальными полями.
   React.useEffect(() => {
-    if (!open) reset();
-  }, [open, reset]);
+    if (!open && !preservePendingOnClose) reset();
+  }, [open, preservePendingOnClose, reset]);
 
   React.useEffect(() => () => setPending((prev) => {
     releasePending(prev);
@@ -143,26 +156,26 @@ export function useInvoicePhotos({
 
       const free = INVOICE_PHOTOS_MAX - total;
       if (free <= 0) {
-        setError(`Можно приложить не больше ${INVOICE_PHOTOS_MAX} фото`);
+        setError(`Можно приложить не больше ${INVOICE_PHOTOS_MAX} файлов`);
         return;
       }
       const accepted = list.slice(0, free);
       if (list.length > free) {
-        setError(`Можно приложить не больше ${INVOICE_PHOTOS_MAX} фото — лишние пропущены`);
+        setError(`Можно приложить не больше ${INVOICE_PHOTOS_MAX} файлов — лишние пропущены`);
       }
 
       setBusy(true);
       try {
         for (const file of accepted) {
           if (file.size > PHOTO_SOURCE_MAX_BYTES) {
-            setError(`Фото не должно превышать ${PHOTO_SOURCE_MAX_MB} МБ`);
+            setError(`Файл не должен превышать ${PHOTO_SOURCE_MAX_MB} МБ`);
             continue;
           }
-          // Жмём сразу при выборе: превью легче, отправка быстрее, HEIC с
-          // айфона иначе не показать (см. prepareImageForUpload).
-          const prepared = await prepareImageForUpload(file);
+          // PDF оставляем исходным: Gemini читает все его страницы. Фото жмём
+          // сразу, чтобы отправка с телефона была быстрее.
+          const prepared = isPdfFile(file) ? file : await prepareImageForUpload(file);
           if (!prepared) {
-            setError("Не удалось обработать это фото — попробуйте другое или снимите заново");
+            setError("Не удалось обработать файл — попробуйте другой или снимите заново");
             continue;
           }
 
@@ -170,6 +183,7 @@ export function useInvoicePhotos({
             try {
               const uploaded = await uploadInvoicePhoto(target, entityId, prepared, organizationId);
               queryClient.setQueryData<InvoicePhoto[]>(queryKey, (prev) => [...(prev ?? []), uploaded]);
+              onPhotosChanged?.();
             } catch (e) {
               setError(errText(e, "Не удалось загрузить фото"));
             }
@@ -188,7 +202,7 @@ export function useInvoicePhotos({
         setBusy(false);
       }
     },
-    [entityId, organizationId, queryClient, queryKey, target, total],
+    [entityId, onPhotosChanged, organizationId, queryClient, queryKey, target, total],
   );
 
   const removePending = React.useCallback(
@@ -214,13 +228,14 @@ export function useInvoicePhotos({
           (prev ?? []).filter((p) => p.id !== photoId),
         );
         if (wasLegacy) onLegacyPhotoRemoved?.();
+        onPhotosChanged?.();
       } catch (e) {
         setError(errText(e, "Не удалось удалить фото"));
       } finally {
         setBusy(false);
       }
     },
-    [entityId, onLegacyPhotoRemoved, organizationId, queryClient, queryKey, target],
+    [entityId, onLegacyPhotoRemoved, onPhotosChanged, organizationId, queryClient, queryKey, target],
   );
 
   const flush = React.useCallback(

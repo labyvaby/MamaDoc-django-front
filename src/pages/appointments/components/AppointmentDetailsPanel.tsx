@@ -75,7 +75,9 @@ import DjangoConclusionDrawer from "../DjangoConclusionDrawer";
 import { getConclusionSlots, type ConclusionSlot } from "../../../api/medical";
 import PatientQuickViewDrawer from "../../../components/patients/DjangoPatientQuickViewDrawer";
 import DjangoEditPatientDrawer from "../../../components/patients/DjangoEditPatientDrawer";
-import ServiceQuickViewDrawer from "../../../components/services/DjangoServiceQuickViewDrawer";
+import ServiceQuickViewDrawer, {
+  type ServiceQuickViewFallback,
+} from "../../../components/services/DjangoServiceQuickViewDrawer";
 import ProductQuickViewDrawer from "../../../components/products/DjangoProductQuickViewDrawer";
 import AppointmentPatientCard from "./details/AppointmentPatientCard";
 import AppointmentWhenBlock from "./details/AppointmentWhenBlock";
@@ -106,6 +108,8 @@ interface AppointmentDetailsPanelProps {
   canUpdate: boolean;
   canManageFinance: boolean;
   canViewFinance: boolean;
+  /** appointments.cancel or appointments.cancel_own for this appointment. */
+  canCancel?: boolean;
   canDelete?: boolean;
   /** vaccinations.record — показывать «Ввести вакцину» в карточке приёма. */
   canRecordVaccination?: boolean;
@@ -120,6 +124,8 @@ interface AppointmentDetailsPanelProps {
   onArrived?: (a: DjangoAppointment) => void;
   /** Убрать ошибочную отметку «Пациент здесь». */
   onUndoArrived?: (a: DjangoAppointment) => void;
+  /** Отменить ошибочное «Подтвердить»: confirmed → scheduled. */
+  onUndoConfirm?: (a: DjangoAppointment) => void;
   /** Врач начинает приём: перевести в in_progress (если ещё не завершён). */
   onStartAppointment?: (a: DjangoAppointment) => void;
   /**
@@ -154,6 +160,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   canUpdate,
   canManageFinance,
   canViewFinance,
+  canCancel = false,
   canDelete,
   canRecordVaccination,
   isConclusionVisible = false,
@@ -163,6 +170,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   onConfirmVisit,
   onArrived,
   onUndoArrived,
+  onUndoConfirm,
   onStartAppointment,
   onRecordVaccination,
   onRecordVaccinationMulti,
@@ -212,6 +220,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const [selectedDoctorPhotoUrl, setSelectedDoctorPhotoUrl] = React.useState<string | null>(null);
   const [serviceDrawerOpen, setServiceDrawerOpen] = React.useState(false);
   const [selectedServiceId, setSelectedServiceId] = React.useState<number | null>(null);
+  const [selectedServiceFallback, setSelectedServiceFallback] =
+    React.useState<ServiceQuickViewFallback | null>(null);
   const [productDrawerOpen, setProductDrawerOpen] = React.useState(false);
   const [selectedProductId, setSelectedProductId] = React.useState<number | null>(null);
   const [selectedProductName, setSelectedProductName] = React.useState<string | null>(null);
@@ -542,6 +552,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         durationMinutes: sl.durationMinutes,
         amount: som(lineAmount),
         conclusionState: sl.conclusionState,
+        conclusionsTotal: sl.conclusionsTotal,
+        conclusionsCompleted: sl.conclusionsCompleted,
         action:
           canOverridePrice &&
           !appt.priceOverrideLocked &&
@@ -747,10 +759,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     });
   }
 
-  // Отмена — заметная отдельная кнопка: это частое действие регистратуры.
-  // Удаление остаётся в меню, чтобы их нельзя было перепутать.
+  // Отмена — заметная отдельная кнопка. Она имеет отдельное право и не
+  // зависит от appointments.update.
   let cancelAction: HeaderAction | null = null;
-  if (canUpdate && onCancelAppt && !isCancelled) {
+  if (canCancel && onCancelAppt && !isCancelled) {
     cancelAction = {
       key: "cancel",
       label: t("details.cancelRecord"),
@@ -1031,6 +1043,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   ? () => onUndoArrived(appt)
                   : undefined
               }
+              onUndoConfirm={
+                canUpdate && appt.status === "confirmed" && !isPaymentAccepted && onUndoConfirm
+                  ? () => onUndoConfirm(appt)
+                  : undefined
+              }
               paymentsLoading={payQuery.isLoading}
               hidePaymentChip={financeBlockVisible}
             />
@@ -1104,6 +1121,21 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     setDoctorDrawerOpen(true);
                   }}
                   onServiceClick={(serviceId) => {
+                    // Запасные данные из строки приёма: карточку каталога бэк
+                    // отдаёт только по активному филиалу, и услуга приёма из
+                    // соседнего филиала отвечает 404 (дровер был пустым).
+                    const line = appt.services.find((sl) => sl.service?.id === serviceId);
+                    setSelectedServiceFallback(
+                      line?.service
+                        ? {
+                            name: line.service.name,
+                            imageUrl: line.service.imageUrl ?? null,
+                            price:
+                              Number(line.price) > 0 ? line.price : line.service.basePrice ?? null,
+                            durationMinutes: line.durationMinutes ?? null,
+                          }
+                        : null,
+                    );
                     setSelectedServiceId(serviceId);
                     setServiceDrawerOpen(true);
                   }}
@@ -1280,6 +1312,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         open={patientDrawerOpen}
         onClose={() => setPatientDrawerOpen(false)}
         patientId={appt.patient?.id ?? null}
+        fallback={appt.patient}
       />
       <DjangoEditPatientDrawer
         open={editPatientOpen}
@@ -1292,8 +1325,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         onClose={() => {
           setServiceDrawerOpen(false);
           setSelectedServiceId(null);
+          setSelectedServiceFallback(null);
         }}
         serviceId={selectedServiceId}
+        fallback={selectedServiceFallback}
       />
       <ProductQuickViewDrawer
         open={productDrawerOpen}

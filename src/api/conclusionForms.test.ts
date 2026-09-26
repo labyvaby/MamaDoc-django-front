@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  fieldCaption,
   marginsError,
   normalizeForm,
   renderFilledForm,
   resolveFormForScope,
   resolveMargins,
   sheetSizeMm,
+  startsOnNewLine,
+  stripLeadingBlankLines,
   suggestSlotForLabel,
+  toApiPayload,
   usedSlots,
   type ConclusionFormTemplate,
   type FormField,
@@ -95,6 +99,53 @@ describe("renderFilledForm", () => {
     expect(renderFilledForm(template, {})).toBe(
       "Протокол УЗИ\n\nУЗИ — метод визуализации.",
     );
+  });
+
+  it("не удваивает двоеточие, уже стоящее в подписи", () => {
+    const text = renderFilledForm(
+      {
+        title: "",
+        footerNote: "",
+        fields: [
+          field({ id: "a", label: "DS:" }),
+          field({ id: "b", label: "Жалобы: ", type: "multiline" }),
+        ],
+      },
+      { a: "синехии", b: "нет" },
+    );
+
+    expect(text).toBe("DS: синехии\nЖалобы:\nнет");
+  });
+});
+
+describe("перенос строки в начале нормы", () => {
+  // Карта гинеколога (прод, 21.09.2026): норма «Анамнез жизни» начинается с
+  // переноса, чтобы на бумаге список шёл под подписью.
+  const norm = "\n1. Вредные привычки –\n2. Гинекологические заболевания";
+
+  it("в значение поля пустые строки в начале не попадают", () => {
+    expect(stripLeadingBlankLines(norm)).toBe("1. Вредные привычки –\n2. Гинекологические заболевания");
+    expect(stripLeadingBlankLines(" \n\r\n  текст")).toBe("  текст");
+    expect(stripLeadingBlankLines("текст\n")).toBe("текст\n");
+  });
+
+  it("намерение «с новой строки» читается из нормы", () => {
+    expect(startsOnNewLine({ defaultValue: norm })).toBe(true);
+    expect(startsOnNewLine({ defaultValue: "(соответствует нед.)\n\nМатка" })).toBe(false);
+    expect(startsOnNewLine({})).toBe(false);
+  });
+});
+
+describe("fieldCaption", () => {
+  it("ставит ровно одно двоеточие", () => {
+    expect(fieldCaption("Жалобы")).toBe("Жалобы:");
+    expect(fieldCaption("Жалобы:")).toBe("Жалобы:");
+    expect(fieldCaption("  Рекомендации: : ")).toBe("Рекомендации:");
+  });
+
+  it("пустую подпись оставляет пустой", () => {
+    expect(fieldCaption("  ")).toBe("");
+    expect(fieldCaption(":")).toBe("");
   });
 });
 
@@ -195,6 +246,28 @@ describe("resolveFormForScope", () => {
     expect(resolveFormForScope(scarce, { branchId: 13, serviceId: 42 })?.id).toBe(6);
     expect(resolveFormForScope([forms[4]], { branchId: 13, serviceId: 42 })).toBeNull();
     expect(resolveFormForScope([forms[4]], { branchId: 99, serviceId: 42 })?.id).toBe(5);
+  });
+
+  it("несколько общих бланков — не угадываем, врач выбирает сам", () => {
+    // Клиника 21, прод 21.09.2026: пять бланков без привязок, и каждое
+    // заключение (включая УЗИ) открывалось с первым — картой гинеколога.
+    const general = [form({ id: 1 }), form({ id: 2 }), form({ id: 3 })];
+    expect(resolveFormForScope(general, { branchId: 13, serviceId: 42 })).toBeNull();
+  });
+
+  it("среди нескольких общих бланков берётся запасной", () => {
+    const general = [form({ id: 1 }), form({ id: 2, isDefault: true }), form({ id: 3 })];
+    expect(resolveFormForScope(general, { branchId: 13, serviceId: 42 })?.id).toBe(2);
+  });
+
+  it("неоднозначный общий бланк филиала уступает единственному общему бланку организации", () => {
+    const mixed = [form({ id: 1, branchIds: [13] }), form({ id: 2, branchIds: [13] }), form({ id: 3 })];
+    expect(resolveFormForScope(mixed, { branchId: 13, serviceId: 42 })?.id).toBe(3);
+  });
+
+  it("бланк, привязанный к услуге, подставляется и среди общих", () => {
+    const withService = [form({ id: 1 }), form({ id: 2 }), form({ id: 3, serviceIds: [42] })];
+    expect(resolveFormForScope(withService, { branchId: 13, serviceId: 42 })?.id).toBe(3);
   });
 
   it("подходящего бланка нет — врач выбирает сам", () => {
@@ -316,5 +389,66 @@ describe("отступы: транспорт внутри background", () => {
   it("бланк без отступов открывается с прежней геометрией", () => {
     const form = normalizeForm({ ...base, background: { imageUrl: null, opacity: 1 } });
     expect(form.margins).toEqual({ top: 12, right: 15, bottom: 12, left: 15 });
+  });
+});
+
+describe("шапка клиники: транспорт внутри background", () => {
+  // 14.09.2026: выключенная шапка после сохранения возвращалась включённой.
+  const base = {
+    id: 7,
+    name: "Карта осмотра",
+    pageSize: "A4",
+    orientation: "portrait",
+    title: "",
+    showClinicHeader: true,
+    fields: [],
+    target: "conclusion",
+    isActive: true,
+    createdAt: "",
+    updatedAt: "",
+  } as unknown as ConclusionFormTemplate;
+
+  it("выключатель из background важнее поля верхнего уровня", () => {
+    const form = normalizeForm({
+      ...base,
+      background: { imageUrl: null, opacity: 1, showClinicHeader: false },
+    });
+    expect(form.showClinicHeader).toBe(false);
+  });
+
+  it("старый бланк без флага в background берёт поле верхнего уровня", () => {
+    const form = normalizeForm({
+      ...base,
+      showClinicHeader: false,
+      background: { imageUrl: null, opacity: 1 },
+    });
+    expect(form.showClinicHeader).toBe(false);
+  });
+
+  it("при отправке флаг и отступы уезжают в background, прочее не теряется", () => {
+    const payload = toApiPayload({
+      showClinicHeader: false,
+      margins: { top: 40, right: 15, bottom: 12, left: 15 },
+      background: { imageUrl: "https://x/bg.png", opacity: 0.5 },
+    });
+    expect(payload.showClinicHeader).toBe(false);
+    expect(payload.background).toEqual({
+      imageUrl: "https://x/bg.png",
+      opacity: 0.5,
+      showClinicHeader: false,
+      margins: { top: 40, right: 15, bottom: 12, left: 15 },
+    });
+  });
+
+  it("сохранение → чтение даёт то же, что ввёл администратор", () => {
+    const sent = toApiPayload({
+      showClinicHeader: false,
+      margins: { top: 40, right: 15, bottom: 12, left: 15 },
+      background: { imageUrl: null, opacity: 1 },
+    });
+    // Бэк отбросил поля верхнего уровня и вернул дефолт шапки.
+    const echoed = normalizeForm({ ...base, background: sent.background! });
+    expect(echoed.showClinicHeader).toBe(false);
+    expect(echoed.margins).toEqual({ top: 40, right: 15, bottom: 12, left: 15 });
   });
 });

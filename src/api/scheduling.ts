@@ -19,6 +19,11 @@ export interface ScheduleRule {
   lunchEnd: string | null;
   comment: string;
   isActive: boolean;
+  /**
+   * Принимать онлайн-записи на эту смену (см. SCHEDULE_RULE_ONLINE_BOOKING_ENABLED).
+   * На окружении без выкладки поля в ответе нет — отсутствие читаем как true.
+   */
+  onlineBookingEnabled?: boolean;
 }
 
 export interface ScheduleRuleWrite {
@@ -35,6 +40,8 @@ export interface ScheduleRuleWrite {
   lunchEnd?: string | null;
   comment?: string;
   organizationId?: number | null;
+  /** См. SCHEDULE_RULE_ONLINE_BOOKING_ENABLED — без флага поле не отправляем. */
+  onlineBookingEnabled?: boolean;
 }
 
 export interface ScheduleRulePatch {
@@ -52,6 +59,41 @@ export interface ScheduleRulePatch {
   clearBranch?: boolean;
   comment?: string;
   isActive?: boolean;
+  /** См. SCHEDULE_RULE_ONLINE_BOOKING_ENABLED — без флага поле не отправляем. */
+  onlineBookingEnabled?: boolean;
+}
+
+/**
+ * Онлайн-запись выключается в расписании: у правила смены (сотрудник × филиал ×
+ * дни × часы) свой признак `onlineBookingEnabled`. Смена с выключенным
+ * признаком остаётся рабочей внутри CRM (регистратура записывает как раньше),
+ * но исчезает из публичных окон витрины — так клиника закрывает бронь в одном
+ * филиале, не трогая смены того же врача в соседнем.
+ *
+ * Почему в расписании, а не тумблером у филиала: `Employee.onlineBookingEnabled`
+ * (api/staff.ts) и `Service.onlineBookingVisible` (api/catalog.ts) — общие для
+ * организации, а врачи работают в двух филиалах (запрос клиники 10.09.2026
+ * «отменить бронь на Орозбекова» гасил и Сейтек).
+ *
+ * Тикет — `MamaDoc/backend_ticket_schedule_rule_online_booking.md`. 17.09.2026 бэк
+ * его закрыл и выложил на test: `GET /scheduling/rules/` отдаёт поле, а чек-лист
+ * §«Проверки» проходит целиком (публичные `available-times/`, `calendar/`,
+ * `available-services/` у выключенной смены пустеют, внутренний
+ * `/scheduling/availability/` окна сохраняет, `POST /api/v1/bookings/` на закрытое
+ * время → `400 online_booking_closed`).
+ *
+ * ⚠ ФЛАГ ВКЛЮЧЁН РАНЬШЕ ПРОДА (решение 17.09.2026: выкладываем, как только бэк
+ * будет готов). На проде поля в ответе ещё НЕТ, а с включённым флагом фронт шлёт
+ * `onlineBookingEnabled` в POST/PATCH правила — прод-бэк отвечает `400 Object
+ * contains unknown field` и отклоняет запрос целиком, вместе с часами, филиалом и
+ * обедом. То есть эту сборку нельзя выкладывать на прод, пока бэк туда не
+ * приехал: сломается редактирование смен. На test выкладывать можно.
+ */
+export const SCHEDULE_RULE_ONLINE_BOOKING_ENABLED = true;
+
+/** Смена принимает онлайн-записи: поля нет на старом бэке — считаем, что да. */
+export function isRuleOnlineBookingEnabled(rule: ScheduleRule): boolean {
+  return rule.onlineBookingEnabled !== false;
 }
 
 export interface ScheduleException {
@@ -76,17 +118,25 @@ export interface ScheduleException {
  * Частичное отсутствие: выходной/отпуск не на весь день, а на интервал
  * (`startTime`+`endTime` при `kind: "day_off" | "vacation"`).
  *
- * ⚠ Выключено: бэк отклоняет такой POST — `400 VALIDATION_ERROR`,
- * `start_time: «Интервал указывается только для рабочей смены.»` (перепроверено
- * на test 09.09.2026, на проде правки тем более нет). Гайд «расписание и
- * исполнители услуг» §1 контракт описывает, но код не выложен ни на одно
- * окружение — включить, когда `POST /scheduling/exceptions/` перестанет ругаться.
+ * Включено 10.09.2026: бэк выложен на прод — `POST /scheduling/exceptions/`
+ * с `kind: "day_off" | "vacation"` больше не отвечает «Интервал указывается
+ * только для рабочей смены», а проверяет интервал теми же правилами, что и у
+ * рабочей смены: «оба или ни одного» и конец позже начала (проверено на
+ * newcrm.pediatr.kg под сессией, орг 1 — обе ошибки приходят на day_off и
+ * vacation так же, как на extra).
+ *
+ * ⚠ На test бэк ещё старый: там `day_off` с интервалом отвечает `400`,
+ * `start_time: «Интервал указывается только для рабочей смены.»` (проверено
+ * 10.09.2026 — прод обогнал test). Флаг общий для сред и оставлен включённым
+ * сознательно: на тесте переключатель «Указать часы» виден, а сохранение
+ * падает с этим текстом бэка. Выключать обратно из-за теста не стали — на
+ * проде функция нужна; когда test догонит, эта оговорка уходит.
  *
  * Показ от флага не зависит: как только в ответе у отсутствия появятся часы,
  * календарь и таблица начнут резать смену интервалом сами
  * (см. computeDayOccurrences).
  */
-export const PARTIAL_ABSENCE_ENABLED = false;
+export const PARTIAL_ABSENCE_ENABLED = true;
 
 export interface ScheduleExceptionWrite {
   employeeId: number;
@@ -295,6 +345,11 @@ export function getScheduleRules(
     employeeId?: number;
     includeInactive?: boolean;
     branchId?: number;
+    /**
+     * Правила всех филиалов организации (`allBranches=1`, на проде с 03.09.2026):
+     * смены сотрудника в соседнем филиале. Побеждает `branchId` — его не шлём.
+     */
+    allBranches?: boolean;
     organizationId?: number;
   } = {},
   signal?: AbortSignal,
@@ -302,7 +357,8 @@ export function getScheduleRules(
   const q = new URLSearchParams();
   if (params.employeeId != null) q.set("employeeId", String(params.employeeId));
   if (params.includeInactive) q.set("includeInactive", "1");
-  if (params.branchId != null) q.set("branchId", String(params.branchId));
+  if (params.allBranches) q.set("allBranches", "1");
+  else if (params.branchId != null) q.set("branchId", String(params.branchId));
   if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
   const qs = q.toString();
   return apiRequest<ScheduleRule[]>(`/scheduling/rules/${qs ? `?${qs}` : ""}`, { signal });
@@ -332,6 +388,8 @@ export function getScheduleExceptions(
     dateFrom?: string;
     dateTo?: string;
     branchId?: number;
+    /** Исключения всех филиалов — см. getScheduleRules. */
+    allBranches?: boolean;
     organizationId?: number;
   } = {},
   signal?: AbortSignal,
@@ -340,7 +398,8 @@ export function getScheduleExceptions(
   if (params.employeeId != null) q.set("employeeId", String(params.employeeId));
   if (params.dateFrom) q.set("dateFrom", params.dateFrom);
   if (params.dateTo) q.set("dateTo", params.dateTo);
-  if (params.branchId != null) q.set("branchId", String(params.branchId));
+  if (params.allBranches) q.set("allBranches", "1");
+  else if (params.branchId != null) q.set("branchId", String(params.branchId));
   if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
   const qs = q.toString();
   return apiRequest<ScheduleException[]>(`/scheduling/exceptions/${qs ? `?${qs}` : ""}`, {
@@ -444,6 +503,23 @@ export interface ScheduleConflictAppointment {
   paidTotal: string;
   /** true — отсутствующий «врач приёма», false — исполнитель одной из строк. */
   isPerformerPrimary: boolean;
+  /**
+   * Когда приём отметили разобранным (bulk-действие `ack_absence`); `null` — ещё нет.
+   *
+   * «Разобран» не значит «изменён»: чаще всего это как раз решение оставить
+   * приём как есть — пациент предупреждён и согласен ждать. Отметка серверная,
+   * потому что разбор — командная работа: у второго регистратора счётчик
+   * должен погаснуть тоже.
+   */
+  absenceReviewedAt: string | null;
+  /** Кто отметил; `null` вместе с `absenceReviewedAt`. */
+  absenceReviewedBy: AbsenceReviewer | null;
+}
+
+/** Автор отметки разбора. */
+export interface AbsenceReviewer {
+  id: number;
+  fullName: string;
 }
 
 /** Ответ ручки — объект-обёртка с эхом параметров запроса. */
@@ -452,6 +528,16 @@ export interface ScheduleConflictsResponse {
   dateFrom: string;
   dateTo: string;
   appointments: ScheduleConflictAppointment[];
+  /**
+   * Сколько приёмов периода без отметки разбора (считается до применения
+   * фильтра `reviewed`).
+   *
+   * Фронт им не пользуется и `reviewed` не шлёт: счётчик бэка — на весь период
+   * сотрудника, а расписанию нужны числа по дням и только по приёмам,
+   * попадающим в часы частичного отсутствия (`appointmentHitsAbsence`). Одной
+   * выдачи хватает и на счётчики, и на список, где разобранные видно.
+   */
+  unreviewedCount?: number;
 }
 
 /**

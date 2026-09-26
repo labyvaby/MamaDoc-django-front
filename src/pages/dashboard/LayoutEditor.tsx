@@ -33,7 +33,7 @@ import {
 import { useRowDrag } from "./useRowDrag";
 
 /** Компактные подписи ширины: в строке настроек словам «Узкий/Средний» тесно. */
-const SPAN_SHORT: Record<WidgetSpan, string> = { 4: "⅓", 6: "½", 12: "1" };
+const SPAN_SHORT: Record<WidgetSpan, string> = { 4: "⅓", 5: "5/12", 6: "½", 7: "7/12", 8: "⅔", 12: "1" };
 
 export type LayoutEditorProps = {
   layout: DashboardLayout;

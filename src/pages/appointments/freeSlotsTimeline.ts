@@ -3,11 +3,16 @@ import type {
   AvailabilityDay,
   AvailabilitySlot,
 } from "../../api/scheduling";
+import type { DayAbsence } from "./absenceHours";
 
-/** Строка дня в виде «Окна»: окно сетки (свободное/прошедшее) либо приём. */
+/**
+ * Строка дня в виде «Окна»: окно сетки (свободное/прошедшее), приём либо
+ * интервал отсутствия врача (частичный выходной — см. absenceHours.ts).
+ */
 export type TimelineRow =
   | { kind: "slot"; key: string; start: string; slot: AvailabilitySlot }
-  | { kind: "appt"; key: string; start: string; appt: AvailabilityAppointment };
+  | { kind: "appt"; key: string; start: string; appt: AvailabilityAppointment }
+  | { kind: "absence"; key: string; start: string; end: string };
 
 /** 'HH:MM' → минуты от полуночи; строки формата бэка сравниваются как есть. */
 function minutes(hhmm: string): number {
@@ -44,7 +49,7 @@ function coveredByAppointment(
  * смены на то же время — без фильтра одно и то же время встало бы в ленту
  * дважды: приёмом и глухим «занят в другом филиале».
  */
-export function buildTimeline(day: AvailabilityDay): TimelineRow[] {
+export function buildTimeline(day: AvailabilityDay, absence?: DayAbsence): TimelineRow[] {
   const appts = day.appointments;
   const gridSlots = appts
     ? day.slots.filter(
@@ -62,6 +67,19 @@ export function buildTimeline(day: AvailabilityDay): TimelineRow[] {
   }));
   for (const appt of appts ?? []) {
     rows.push({ kind: "appt", key: `a-${appt.id}-${appt.start}`, start: appt.start, appt });
+  }
+  // Часы отсутствия — своей строкой на своём месте: слотов там нет, и без неё
+  // «врач ушёл в 14:00» неотличимо от «после 14:00 всё занято». Целодневное
+  // отсутствие строкой не рисуем — его показывает заглушка над списком.
+  if (absence && !absence.fullDay) {
+    for (const range of absence.ranges) {
+      rows.push({
+        kind: "absence",
+        key: `x-${range.start}-${range.end}`,
+        start: range.start,
+        end: range.end,
+      });
+    }
   }
   // 'HH:MM' с ведущими нулями сравнивается как строка.
   return rows.sort((a, b) => a.start.localeCompare(b.start));

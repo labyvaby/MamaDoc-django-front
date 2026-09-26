@@ -32,6 +32,12 @@ export interface OdoctorSettings {
   organizationId: number;
   /** Выключено — синхронизация организацию не трогает. */
   isEnabled: boolean;
+  /**
+   * CRM — единственный источник правды. Включено: день, который правили
+   * руками в кабинете odoctor, зеркало приводит обратно к расписанию CRM.
+   * Выключено: такой день выходит из-под синхронизации и живёт сам по себе.
+   */
+  fullSync: boolean;
   /** На сколько дней вперёд держать окна на витрине. */
   horizonDays: number;
   /** Логин сервисной учётной записи кабинета odoctor. */
@@ -52,6 +58,7 @@ export interface OdoctorSettings {
 export interface OdoctorSettingsUpdatePayload {
   organizationId?: number | null;
   isEnabled?: boolean;
+  fullSync?: boolean;
   horizonDays?: number;
   odoctorLogin?: string;
   newPassword?: string;
@@ -121,6 +128,7 @@ export function parseHorizonDays(raw: string): number {
 /** Состояние формы настроек — то, из чего собирается тело PATCH. */
 export interface OdoctorSettingsForm {
   isEnabled: boolean;
+  fullSync: boolean;
   horizonDays: number;
   odoctorLogin: string;
   /**
@@ -149,6 +157,7 @@ export interface OdoctorSettingsForm {
 export function odoctorSettingsToForm(settings: OdoctorSettings): OdoctorSettingsForm {
   return {
     isEnabled: settings.isEnabled,
+    fullSync: settings.fullSync,
     horizonDays: settings.horizonDays,
     odoctorLogin: settings.odoctorLogin,
     newPassword: "",
@@ -225,6 +234,7 @@ export function buildOdoctorSettingsPatch(
 ): OdoctorSettingsUpdatePayload {
   const payload: OdoctorSettingsUpdatePayload = {
     isEnabled: form.isEnabled,
+    fullSync: form.fullSync,
     horizonDays: form.horizonDays,
     odoctorLogin: form.odoctorLogin.trim(),
   };

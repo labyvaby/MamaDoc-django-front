@@ -1,69 +1,45 @@
 import React from "react";
-import { Box, Grid, Stack, Typography } from "@mui/material";
+import { Box, Grid, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { useQueries, useQuery } from "@tanstack/react-query";
-import dayjs from "dayjs";
 
 import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 
-import { AppCard } from "../../components/ui";
-import { getAvailabilitySummary } from "../../api/scheduling";
-import { getBookings } from "../../api/bookings";
-import { getBranches } from "../../api/organization";
-import { getCashboxSummary } from "../../api/cashbox";
-import {
-  djangoQueryKeys,
-  DJANGO_DETAIL_STALE_TIME_MS,
-  DJANGO_REFERENCE_STALE_TIME_MS,
-} from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
-import { MetricTile } from "./MetricTile";
-import { WidgetError, type WidgetProps } from "./widgetKit";
+import { DeltaChip, MetricTile } from "./MetricTile";
+import { DashCard, WidgetError, type WidgetProps } from "./widgetKit";
 import { num } from "./widgetUtils";
+import { useDashboardData } from "./DashboardData";
 
 // ── Свободны сегодня ──────────────────────────────────────────────────────────
 
 /**
  * Загрузка специалистов прямо сейчас: сколько из них свободно на сегодня.
- * Источник — тот же агрегат `/scheduling/availability/summary/`, что кормит
- * бейджи «свободны N/M» в расписании, поэтому цифры на двух экранах сойдутся.
+ * Раздел `load` агрегата считается так же, как `/scheduling/availability/summary/`,
+ * который кормит бейджи «свободны N/M» в расписании, — цифры на двух экранах
+ * сойдутся. «Свободен» — есть хотя бы одно свободное окно сегодня.
  *
  * Периода не имеет: вопрос всегда про сегодня — «кого можно занять сейчас».
  */
-export const AvailabilityWidget: React.FC<WidgetProps> = ({ scope }) => {
-  const today = dayjs().format("YYYY-MM-DD");
+export const AvailabilityWidget: React.FC<WidgetProps> = () => {
+  const data = useDashboardData();
+  const s = data.sections.load;
+  const loading = data.isLoading("load");
+  const error = data.error("load");
 
-  const query = useQuery({
-    queryKey: djangoQueryKeys.scheduling.availabilitySummary({
-      view: "dashboard",
-      organizationId: scope.organizationId ?? null,
-      branchId: scope.branchId ?? null,
-      date: today,
-    }),
-    queryFn: ({ signal }) =>
-      getAvailabilitySummary(
-        { date: today, branchId: scope.branchId, organizationId: scope.organizationId },
-        signal,
-      ),
-    enabled: scope.orgReady,
-    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-  });
-
-  const s = query.data;
   const free = s?.overallFreeEmployeeCount ?? 0;
   const total = s?.overallEmployeeCount ?? 0;
   const busy = Math.max(0, total - free);
   const loadPercent = total > 0 ? Math.round((busy / total) * 100) : null;
 
   return (
-    <AppCard variant="outlined" elevation={0} title="Свободны сегодня" subheader="на текущий день">
-      {query.isError ? (
-        <WidgetError error={query.error} />
+    <DashCard title="Свободны сегодня" subheader="на текущий день" href="/schedule" linkLabel="Расписание">
+      {error ? (
+        <WidgetError error={error} />
       ) : (
-        <Grid container spacing={1.5}>
+        <Grid container spacing={1.25}>
           <Grid item xs={6}>
             <MetricTile
               label="Свободных специалистов"
@@ -71,7 +47,7 @@ export const AvailabilityWidget: React.FC<WidgetProps> = ({ scope }) => {
               value={total ? `${free} из ${total}` : "—"}
               icon={<EventAvailableOutlined />}
               tone={total > 0 && free === 0 ? "warning" : "neutral"}
-              loading={query.isLoading}
+              loading={loading}
               hint={total === 0 ? "график на сегодня не заполнен" : undefined}
               title="Свободен — у специалиста есть хотя бы одно незанятое окно на сегодня"
             />
@@ -83,14 +59,14 @@ export const AvailabilityWidget: React.FC<WidgetProps> = ({ scope }) => {
               value={loadPercent == null ? "—" : `${loadPercent}%`}
               icon={<TrendingUpOutlined />}
               tone={loadPercent != null && loadPercent >= 90 ? "warning" : "neutral"}
-              loading={query.isLoading}
+              loading={loading}
               hint={total ? `занято ${busy} из ${total}` : undefined}
               title="Доля специалистов, у которых на сегодня не осталось свободных окон"
             />
           </Grid>
         </Grid>
       )}
-    </AppCard>
+    </DashCard>
   );
 };
 
@@ -98,244 +74,273 @@ export const AvailabilityWidget: React.FC<WidgetProps> = ({ scope }) => {
 
 /**
  * Брони, ожидающие подтверждения, — деньги, которые вот-вот утекут: заявка
- * пришла, но никто её не взял.
+ * пришла, но никто её не взял. Счётчики «на сейчас», от периода не зависят;
+ * прошедшие даты включены осознанно — pending на вчера это «висяк».
  *
- * ⚠ Окно ровно то же, что у бейджа «Брони» в сайдбаре (месяц назад — 90 дней
- * вперёд), и это важно: сначала было «сегодня + 30 дней», и дашборд показывал
- * 0 при бейдже 1. Прошедшие даты включены осознанно — pending на вчера это
- * «висяк», по которому никто не связался с пациентом.
+ * Рядом — чем кончились брони на даты периода: сколько дошли до приёма и до
+ * оплаты (полностью возвращённые оплатой не считаются).
  */
-export const BookingsWidget: React.FC<WidgetProps> = ({ scope }) => {
-  const window = React.useMemo(() => {
-    const today = dayjs();
-    return {
-      pastFrom: today.subtract(30, "day").format("YYYY-MM-DD"),
-      yesterday: today.subtract(1, "day").format("YYYY-MM-DD"),
-      futureTo: today.add(90, "day").format("YYYY-MM-DD"),
-    };
-  }, []);
-
-  const results = useQueries({
-    queries: (["pending", "overdue"] as const).map((kind) => {
-      const dateFrom = window.pastFrom;
-      const dateTo = kind === "pending" ? window.futureTo : window.yesterday;
-      return {
-        queryKey: djangoQueryKeys.bookings.list({
-          view: `dashboard-${kind}`,
-          organizationId: scope.organizationId ?? null,
-          branchId: scope.branchId ?? null,
-          dateFrom,
-          dateTo,
-        }),
-        queryFn: ({ signal }: { signal?: AbortSignal }) =>
-          getBookings(
-            {
-              dateFrom,
-              dateTo,
-              status: "pending",
-              organizationId: scope.organizationId,
-              branchId: scope.branchId,
-              page: 1,
-              // Нужен только счётчик: список не забираем, чтобы не тянуть заявки целиком.
-              pageSize: 1,
-            },
-            signal,
-          ),
-        enabled: scope.orgReady,
-        staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-      };
-    }),
-  });
-
-  const [pendingQuery, overdueQuery] = results;
-  const pending = pendingQuery?.data?.count ?? 0;
-  const overdue = overdueQuery?.data?.count ?? 0;
+export const BookingsWidget: React.FC<WidgetProps> = ({ range }) => {
+  const data = useDashboardData();
+  const b = data.sections.bookings;
+  const loading = data.isLoading("bookings");
+  const error = data.error("bookings");
+  const pending = b?.pendingCount ?? 0;
+  const overdue = b?.overdueCount ?? 0;
+  const hasFunnel = b?.total != null;
 
   return (
-    <AppCard
-      variant="outlined"
-      elevation={0}
-      title="Заявки с витрины"
-      subheader="ждут ответа"
-    >
-      {pendingQuery?.isError ? (
-        <WidgetError error={pendingQuery.error} />
+    <DashCard title="Заявки с витрины" subheader="ждут ответа" href="/bookings" linkLabel="Онлайн-запись">
+      {error ? (
+        <WidgetError error={error} />
       ) : (
-        <Grid container spacing={1.5}>
-          <Grid item xs={6}>
+        <Grid container spacing={1.25}>
+          <Grid item xs={6} lg={hasFunnel ? 4 : 6}>
             <MetricTile
               label="Ждут подтверждения"
               href="/bookings"
               value={pending}
               icon={<BookOnlineOutlined />}
               tone={pending > 0 ? "warning" : "neutral"}
-              loading={pendingQuery?.isLoading ?? true}
+              loading={loading}
               title="Заявка с публичной витрины, которую ещё никто не подтвердил"
             />
           </Grid>
-          <Grid item xs={6}>
+          <Grid item xs={6} lg={hasFunnel ? 4 : 6}>
             <MetricTile
               label="Из них просрочено"
               href="/bookings"
               value={overdue}
               icon={<EventAvailableOutlined />}
               tone={overdue > 0 ? "error" : "neutral"}
-              loading={overdueQuery?.isLoading ?? true}
+              loading={loading}
               hint={overdue > 0 ? "дата визита уже прошла" : undefined}
-              title="Заявка на прошедшую дату, которую так и не подтвердили — пациенту никто не ответил"
+              title="Заявка на прошедшую дату, которую так и не подтвердили — ответа никто не получил"
             />
           </Grid>
+          {hasFunnel && (
+            <Grid item xs={12} lg={4}>
+              <MetricTile
+                label="Дошли до оплаты"
+                href="/bookings"
+                value={b!.total ? `${Math.round(num(b!.conversionRate))}%` : "—"}
+                icon={<TrendingUpOutlined />}
+                hint={
+                  b!.total
+                    ? `${b!.paid ?? 0} из ${b!.total} · в приём ${b!.materialized ?? 0}`
+                    : "броней на даты периода нет"
+                }
+                title={`Брони на даты периода (${range.label}): сколько превратились в приём и сколько из них оплачено`}
+              />
+            </Grid>
+          )}
         </Grid>
       )}
-    </AppCard>
+    </DashCard>
   );
 };
 
 // ── Сравнение филиалов ────────────────────────────────────────────────────────
 
 /**
- * Деньги по филиалам за период — то, ради чего владелец и открывает сводку:
- * где идёт, а где просело.
+ * Деньги по филиалам за период — где идёт, а где просело. Строки отсортированы
+ * по выручке: лидер сверху, отстающий — внизу, его и надо разбирать.
  *
- * ⚠ Стоит по одному запросу на филиал: агрегата «все филиалы разом» на бэке
- * нет. Поэтому берём только текущий период, без базы сравнения, и не больше
- * восьми филиалов — иначе экран превращается в два десятка запросов. Первый
- * кандидат на серверную вьюху.
+ * Все доступные пользователю филиалы без лимита и с базой сравнения — от
+ * активного филиала срез не зависит (исправлено бэком 24.09.2026).
+ *
+ * ⚠ Оплата проживания в отеле, объект которого не привязан к филиалу, в строки
+ * не попадает: у отельных организаций сумма строк бывает меньше общей выручки.
  */
-export const BranchesWidget: React.FC<WidgetProps> = ({ range, scope }) => {
-  const branchesQuery = useQuery({
-    queryKey: [...djangoQueryKeys.organization.branches, scope.organizationId ?? null],
-    queryFn: () => getBranches(scope.organizationId),
-    enabled: scope.orgReady,
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-  });
+export const BranchesWidget: React.FC<WidgetProps> = ({ range }) => {
+  const data = useDashboardData();
+  const { prev } = data;
+  const loading = data.isLoading("branches");
+  const error = data.error("branches");
 
-  const branches = React.useMemo(
-    () => (branchesQuery.data ?? []).slice(0, 8),
-    [branchesQuery.data],
+  const rows = React.useMemo(
+    () =>
+      (data.branches ?? [])
+        .map((b) => {
+          const m = b.money;
+          const income = num(m.netIncome);
+          const cash = num(m.cashIncome);
+          const card = num(m.cardIncome);
+          return {
+            id: b.branchId,
+            name: b.branchName,
+            income,
+            prevIncome: m.baseline ? num(m.baseline.netIncome) : undefined,
+            payments: m.paymentCount,
+            avgCheck: m.paymentCount > 0 ? income / m.paymentCount : 0,
+            cardShare: cash + card > 0 ? Math.round((card / (cash + card)) * 100) : null,
+            unpaid: m.unpaidPastAmount != null ? num(m.unpaidPastAmount) : null,
+          };
+        })
+        .sort((a, b) => b.income - a.income),
+    [data.branches],
   );
-
-  const summaries = useQueries({
-    queries: branches.map((b) => ({
-      queryKey: djangoQueryKeys.cashbox.summary({
-        view: "dashboardBranch",
-        organizationId: scope.organizationId ?? null,
-        branchId: b.id,
-        dateFrom: range.dateFrom,
-        dateTo: range.dateTo,
-      }),
-      queryFn: ({ signal }: { signal?: AbortSignal }) =>
-        getCashboxSummary(
-          {
-            organizationId: scope.organizationId,
-            branchId: b.id,
-            dateFrom: range.dateFrom,
-            dateTo: range.dateTo,
-          },
-          signal,
-        ),
-      staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-    })),
-  });
-
-  const rows = branches.map((b, i) => {
-    const s = summaries[i]?.data;
-    const income = num(s?.netIncome);
-    const cash = num(s?.cashIncome);
-    const card = num(s?.cardIncome);
-    return {
-      id: b.id,
-      name: b.name,
-      income,
-      payments: s?.paymentCount ?? 0,
-      avgCheck: s && s.paymentCount > 0 ? income / s.paymentCount : 0,
-      cardShare: cash + card > 0 ? Math.round((card / (cash + card)) * 100) : null,
-      loading: summaries[i]?.isLoading ?? true,
-    };
-  });
 
   const best = rows.reduce((max, r) => Math.max(max, r.income), 0);
   const totalIncome = rows.reduce((acc, r) => acc + r.income, 0);
 
   return (
-    <AppCard
-      variant="outlined"
-      elevation={0}
-      title="Сравнение филиалов"
+    <DashCard
+      title="Филиалы"
       subheader={`${range.label} · всего ${formatKGS(totalIncome)}`}
+      href="/cashbox"
+      linkLabel="Касса"
     >
-      {branchesQuery.isError ? (
-        <WidgetError error={branchesQuery.error} />
+      {error ? (
+        <WidgetError error={error} />
       ) : (
-        <Stack spacing={1}>
-          {rows.map((r) => (
-            <Box
-              key={r.id}
-              sx={(t) => ({
-                p: 1.5,
-                borderRadius: "10px",
-                border: 1,
-                borderColor: "divider",
-                bgcolor: subtleBg(t),
-              })}
-            >
-              <Stack
-                direction="row"
-                alignItems="baseline"
-                spacing={1.5}
-                sx={{ mb: 0.75, flexWrap: "wrap" }}
-              >
-                <Typography sx={{ fontWeight: 600, minWidth: 0, flex: 1 }}>{r.name}</Typography>
-                <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                  {r.loading ? "…" : formatKGS(r.income)}
-                </Typography>
-                {!r.loading && (
-                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                    {r.payments} оплат · чек {formatKGS(r.avgCheck)}
-                  </Typography>
-                )}
-              </Stack>
-
-              {/* Полоса от лучшего филиала: соотношение читается глазом быстрее,
-                  чем колонка чисел. */}
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <Box
-                  sx={(t) => ({
-                    flex: 1,
-                    height: 6,
-                    borderRadius: "6px",
-                    bgcolor: subtleBg(t, true),
-                    overflow: "hidden",
-                  })}
-                >
-                  <Box
-                    sx={(t) => ({
-                      width: `${best > 0 ? Math.round((r.income / best) * 100) : 0}%`,
-                      height: "100%",
-                      bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.8 : 0.55),
-                      transition: "width .3s ease",
-                    })}
-                  />
-                </Box>
-                {r.cardShare != null && (
-                  <Typography
-                    variant="caption"
-                    sx={{ color: "text.secondary", width: 88, textAlign: "right" }}
-                  >
-                    безнал {r.cardShare}%
-                  </Typography>
-                )}
-              </Stack>
+        <Box>
+          <Stack
+            direction="row"
+            spacing={1.5}
+            sx={{
+              px: 1,
+              pb: 0.75,
+              color: "text.disabled",
+              fontSize: "0.7rem",
+              fontWeight: 600,
+              display: { xs: "none", sm: "flex" },
+            }}
+          >
+            <Box sx={{ flex: 1 }}>Филиал</Box>
+            <Box sx={{ width: 56, textAlign: "right" }}>Доля</Box>
+            <Box sx={{ width: 64, textAlign: "right", display: { xs: "none", md: "block" } }}>
+              Безнал
             </Box>
-          ))}
-
-          {branchesQuery.data && branchesQuery.data.length > 8 && (
-            <Typography variant="caption" sx={{ color: "text.secondary" }}>
-              показаны первые 8 из {branchesQuery.data.length} филиалов
+            <Box sx={{ width: 96, textAlign: "right" }}>Средний чек</Box>
+            <Box sx={{ width: 190, textAlign: "right" }}>Выручка</Box>
+          </Stack>
+          {loading && rows.length === 0 && (
+            <Typography variant="caption" sx={{ color: "text.secondary", px: 1 }}>
+              Загружаем…
             </Typography>
           )}
-        </Stack>
+          {rows.map((r) => {
+            const share = totalIncome > 0 ? Math.round((r.income / totalIncome) * 100) : 0;
+            return (
+              <Box
+                key={r.id}
+                sx={(t) => ({
+                  px: 1,
+                  py: 0.875,
+                  borderRadius: "8px",
+                  "&:hover": { bgcolor: subtleBg(t) },
+                })}
+              >
+                <Stack direction="row" alignItems="center" spacing={1.5}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                      {r.name}
+                    </Typography>
+                    {/* Полоса от лучшего филиала: соотношение читается глазом
+                        быстрее колонки чисел. */}
+                    <Box
+                      sx={(t) => ({
+                        mt: 0.5,
+                        height: 4,
+                        borderRadius: "4px",
+                        bgcolor: subtleBg(t, true),
+                        overflow: "hidden",
+                      })}
+                    >
+                      <Box
+                        sx={(t) => ({
+                          width: `${best > 0 ? Math.round((r.income / best) * 100) : 0}%`,
+                          height: "100%",
+                          borderRadius: "4px",
+                          bgcolor: alpha(
+                            t.palette.primary.main,
+                            t.palette.mode === "dark" ? 0.8 : 0.6,
+                          ),
+                          transition: "width .3s ease",
+                        })}
+                      />
+                    </Box>
+                  </Box>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      width: 56,
+                      textAlign: "right",
+                      color: "text.secondary",
+                      fontVariantNumeric: "tabular-nums",
+                      display: { xs: "none", sm: "block" },
+                    }}
+                  >
+                    {share}%
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      width: 64,
+                      textAlign: "right",
+                      color: "text.secondary",
+                      fontVariantNumeric: "tabular-nums",
+                      display: { xs: "none", md: "block" },
+                    }}
+                  >
+                    {r.cardShare == null ? "—" : `${r.cardShare}%`}
+                  </Typography>
+                  <Tooltip title={`${r.payments} оплат`} arrow>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        width: 96,
+                        textAlign: "right",
+                        color: "text.secondary",
+                        fontVariantNumeric: "tabular-nums",
+                        display: { xs: "none", sm: "block" },
+                      }}
+                    >
+                      {formatKGS(r.avgCheck)}
+                    </Typography>
+                  </Tooltip>
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    justifyContent="flex-end"
+                    spacing={0.75}
+                    sx={{ width: { xs: "auto", sm: 190 }, flexShrink: 0 }}
+                  >
+                    {r.prevIncome !== undefined && (r.income > 0 || r.prevIncome > 0) && (
+                      <DeltaChip
+                        delta={{
+                          current: r.income,
+                          previous: r.prevIncome,
+                          baselineLabel: prev.label,
+                        }}
+                      />
+                    )}
+                    <Tooltip
+                      arrow
+                      title={
+                        r.unpaid ? `Не получено за прошедшие визиты: ${formatKGS(r.unpaid)}` : ""
+                      }
+                    >
+                      <Typography
+                        sx={{
+                          fontWeight: 700,
+                          fontSize: "0.9rem",
+                          fontVariantNumeric: "tabular-nums",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {formatKGS(r.income)}
+                      </Typography>
+                    </Tooltip>
+                  </Stack>
+                </Stack>
+              </Box>
+            );
+          })}
+
+        </Box>
       )}
-    </AppCard>
+    </DashCard>
   );
 };

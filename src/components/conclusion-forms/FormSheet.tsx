@@ -2,10 +2,13 @@ import React from "react";
 import { Box } from "@mui/material";
 
 import {
+  fieldCaption,
   REQUIRED_BLOCK_LABELS,
   resolveMargins,
   sheetSizeMm,
   sheetTypography,
+  startsOnNewLine,
+  stripLeadingBlankLines,
   type ConclusionFormTemplate,
   type ConclusionFormPayload,
   type FormField,
@@ -66,18 +69,22 @@ interface FormSheetProps {
   /** Пунктиром показать границу рабочей области (конструктор бланка). */
   showContentBounds?: boolean;
   /**
-   * Режим печати: высота листа остаётся ровно физической страницей (letterhead
-   * и подложка занимают её целиком, подпись стоит у низа, как на бумаге), но
-   * `overflow: hidden` меняется на `visible` — контент, который на лист не
-   * поместился, не обрезается, а продолжается ниже границы листа в обычном
-   * потоке документа. html2pdf сам режет получившийся поток (лист + довесок,
-   * если он был, + хвост заключения следом, см. printFormSheet.tsx) на
-   * страницы нужного формата. До этого прежний `overflow: hidden` молча терял
-   * контент, не поместившийся на один лист (бланк с длинными полями печатался
-   * без диагноза/заключения — реальная жалоба клиники, 08.09.2026); попытка
-   * чинить это авто-высотой листа заодно сломала порядок — короткий бланк
-   * заканчивался у верха, а хвост заключения печатался далеко под подписью,
-   * с пустым разрывом (родитель auto-высоты не тянет flex-контент вниз).
+   * Режим печати: физическая страница — минимум высоты листа, а не потолок.
+   * Короткий бланк занимает страницу целиком (letterhead и подложка — во весь
+   * лист, подпись у низа, как на бумаге), а длинный растёт дальше вместе с
+   * контентом, и подпись уезжает вниз следом за ним. html2pdf режет
+   * получившийся поток на страницы, а `applySheetPageBreaks`
+   * (printConclusionSheet.tsx) заранее сдвигает блоки с границы страницы —
+   * см. `data-print-block`.
+   *
+   * История. Сначала лист был `overflow: hidden` и молча терял всё, что не
+   * влезло (бланк с длинными полями печатался без диагноза/заключения —
+   * жалоба клиники 08.09.2026). Затем — фиксированная высота с видимым
+   * оверфлоу: блок полей ужимался до свободного места (`minHeight: 0`), а
+   * подпись оставалась прижатой к низу листа, и хвост заключения печатался
+   * прямо под «Врач/Подпись» (жалоба 14.09.2026). Заодно перенос на вторую
+   * страницу и не мог работать: обёртка листа была фиксированной высоты, и
+   * html2canvas снимал только её.
    */
   printMode?: boolean;
 }
@@ -132,8 +139,16 @@ const SheetField: React.FC<{
   highlighted: boolean;
 }> = ({ field, value, highlighted }) => {
   const multiline = field.type === "multiline";
+  // Двоеточие ровно одно: в бланках его часто пишут прямо в подписи.
+  const caption = fieldCaption(field.label);
+  // Пустые строки в начале значения печать не тянет (в старых заключениях они
+  // сохранены вместе с нормой), а «с новой строки под подписью» решает норма
+  // поля — так её задумал администратор, ставя перенос первым символом.
+  const stripped = stripLeadingBlankLines(value);
+  const shown = multiline && stripped && startsOnNewLine(field) ? `\n${stripped}` : stripped;
   return (
     <Box
+      data-print-block
       sx={{
         gridColumn: field.width === "half" ? "span 1" : "span 2",
         mb: "2.5mm",
@@ -148,13 +163,13 @@ const SheetField: React.FC<{
           {/* Пробел после двоеточия — иначе текст врача прилипает к подписи
               («Семейный анамнез:без особенностей»), и администратору
               приходилось дописывать пробел в саму подпись поля. */}
-          {field.label.trim() && <Label>{field.label}: </Label>}
-          <FieldValue value={value} multiline rows={field.rows ?? 3} />
+          {caption && <Label>{caption} </Label>}
+          <FieldValue value={shown} multiline rows={field.rows ?? 3} />
         </>
       ) : (
         <Box sx={{ display: "flex", alignItems: "baseline", gap: "2mm" }}>
-          {field.label.trim() && <Label>{field.label}:</Label>}
-          <FieldValue value={value} />
+          {caption && <Label>{caption}</Label>}
+          <FieldValue value={shown} />
         </Box>
       )}
     </Box>
@@ -208,29 +223,31 @@ export const FormSheet: React.FC<FormSheetProps> = ({
         // Обёртка занимает место уже отмасштабированного листа: scale не влияет
         // на поток, без этого в конструкторе появлялась бы пустая полоса.
         width: `${width * scale}mm`,
-        height: `${height * scale}mm`,
+        // Обёртка растёт за листом: html2canvas снимает область по границам
+        // элемента, и всё, что выходит за фиксированную высоту, не попадает в
+        // снимок. На страницы экранный лист режет FormSheetPreview.
+        minHeight: `${height * scale}mm`,
         flexShrink: 0,
       }}
     >
       <Box
+        data-print-sheet
         sx={{
           boxSizing: "border-box",
           position: "relative",
-          // В печати — видимый оверфлоу, а не обрезка: высота листа остаётся
-          // ровно физической страницей (letterhead/подложка должны занимать
-          // её целиком, а подпись — стоять у низа листа, как на бумаге), но
-          // контент, который в неё не влез, не пропадает — просто продолжается
-          // ниже границы коробки в обычном потоке документа. html2pdf режет
-          // весь получившийся поток (лист + случившийся довесок + хвост
-          // заключения следом) на страницы нужного формата сам. Раньше здесь
-          // была авто-высота с min-height — «резервировала» физическую
-          // страницу пустым местом, только когда бланк короче листа контент
-          // не дотягивался до низа (flex внутри auto-родителя не тянется), и
-          // хвост заключения печатался куда ниже подписи, с большим разрывом
-          // (баг найден в проде 08.09.2026).
-          overflow: printMode ? "visible" : "hidden",
+          // Страница — минимум, а не потолок:
+          // лист растёт с контентом, а подпись, будучи последним flex-элементом
+          // колонки, стоит у низа короткого листа и уезжает вниз за длинным.
+          // Прежняя авто-высота (08.09.2026) ломала прижим подписи потому, что
+          // блок содержимого был `height: 100%`, а проценты от min-height
+          // родителя не считаются; теперь он flex-элемент — см. ниже.
+          overflow: "visible",
           width: `${width}mm`,
-          height: `${height}mm`,
+          // Минимум — страница (короткий бланк: подпись у низа листа), дальше
+          // лист растёт с контентом — и в печати, и на экране. Обрезка по
+          // странице на экране теряла всё, что не влезло (карта гинеколога,
+          // 21.09.2026); по страницам лист раскладывает FormSheetPreview.
+          minHeight: `${height}mm`,
           transform: `scale(${scale})`,
           transformOrigin: "top left",
           bgcolor: "#fff",
@@ -254,11 +271,17 @@ export const FormSheet: React.FC<FormSheetProps> = ({
             component="img"
             src={template.background.imageUrl}
             alt=""
+            data-sheet-background
             sx={{
               position: "absolute",
-              inset: 0,
+              top: 0,
+              left: 0,
               width: "100%",
-              height: "100%",
+              // Высота страницы, а не листа: подложка — это одна страница
+              // фирменной бумаги. Когда лист вырос на несколько страниц, её
+              // не растягивают на все, а повторяют на каждой
+              // (`layoutSheetPages` в printConclusionSheet.tsx).
+              height: `${pageHeight}mm`,
               objectFit: "cover",
               opacity: template.background.opacity,
               pointerEvents: "none",
@@ -284,13 +307,15 @@ export const FormSheet: React.FC<FormSheetProps> = ({
           />
         )}
 
-        {/* Содержимое поверх подложки. */}
+        {/* Содержимое поверх подложки. Заполняет лист как flex-элемент, а не
+            `height: 100%`: в печати высота листа — min-height, и процент от
+            неё не считается, а flex тянется и до минимума, и дальше по контенту. */}
         <Box
           sx={{
             position: "relative",
             display: "flex",
             flexDirection: "column",
-            height: "100%",
+            flex: "1 1 auto",
           }}
         >
           {template.showClinicHeader && (
@@ -360,8 +385,12 @@ export const FormSheet: React.FC<FormSheetProps> = ({
           </Box>
 
           {/* Поля шаблона и хвост заключения — вместе занимают остаток листа,
-              чтобы подпись осталась прижатой к низу страницы. */}
-          <Box sx={{ flex: 1, minHeight: 0 }}>
+              чтобы подпись осталась прижатой к низу страницы. Ниже своего
+              контента блок не ужимается (min-height остаётся auto): именно
+              `minHeight: 0` здесь давал заключение, напечатанное поверх
+              «Врач/Подпись», — блок сжимался до свободного места, а текст
+              вытекал из него под прижатую подпись. */}
+          <Box sx={{ flex: "1 1 auto" }}>
             <Box
               sx={{
                 display: "grid",
@@ -383,7 +412,7 @@ export const FormSheet: React.FC<FormSheetProps> = ({
           </Box>
 
           {template.footerNote?.trim() && (
-            <Box sx={{ fontSize: "0.75em", mt: "3mm", whiteSpace: "pre-wrap" }}>
+            <Box data-print-block sx={{ fontSize: "0.75em", mt: "3mm", whiteSpace: "pre-wrap" }}>
               {template.footerNote}
             </Box>
           )}
@@ -391,7 +420,7 @@ export const FormSheet: React.FC<FormSheetProps> = ({
           {/* Подпись — всегда внизу листа. Линейка короткая и фиксированной
               длины: во всю ширину листа она читалась как пустая графа для
               текста, а росписи хватает пары сантиметров. */}
-          <Box sx={{ mt: "5mm", pt: "3mm" }}>
+          <Box data-print-block data-print-keep sx={{ mt: "5mm", pt: "3mm" }}>
             <Box>
               <Label>{REQUIRED_BLOCK_LABELS.doctorFio}:</Label> {context.doctorFio}
             </Box>
