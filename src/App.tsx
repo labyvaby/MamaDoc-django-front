@@ -120,6 +120,7 @@ const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
 const PatientProgramPage = lazy(() => import("./pages/patient-program"));
 const RegistryPage = lazy(() => import("./pages/registry"));
+const RegistryPackagesPage = lazy(() => import("./pages/registry/packages/PackagesPage"));
 const HotelIntegrationsPage = lazy(() => import("./dev/HotelIntegrationsPage"));
 const HotelKitchenPage = lazy(() => import("./dev/HotelKitchenPage"));
 const HotelRoomsPage = lazy(() => import("./dev/HotelRoomsPage"));
@@ -762,6 +763,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.registry}>
                               <Suspense fallback={<LinearProgress />}>
                                 <RegistryPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="registry/packages"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.registryPackages}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <RegistryPackagesPage />
                               </Suspense>
                             </RequirePermission>
                           }
