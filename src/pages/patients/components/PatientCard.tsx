@@ -36,6 +36,7 @@ import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
+import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 
 import { AppCard, InfoTile, UserAvatar, ListEmptyState } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
@@ -369,18 +370,16 @@ const PatientCard: React.FC<Props> = ({
                 </Box>
               </Stack>
 
-              {/* Дата рождения + адрес */}
-              {(patient.birthDate || patient.address) && (
+              {/* Дата рождения, адрес, свидетельство о рождении */}
+              {(patient.birthDate || patient.address || patient.birthCertificateNumber) && (
                 <Box
                   sx={{
                     display: "grid",
                     gap: 1,
                     // The card column can be narrow on desktop too, so respond
                     // to its actual width instead of the viewport breakpoint.
-                    gridTemplateColumns:
-                      patient.birthDate && patient.address
-                        ? "repeat(auto-fit, minmax(min(240px, 100%), 1fr))"
-                        : "minmax(0, 1fr)",
+                    // auto-fit stretches a single tile to the full width.
+                    gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))",
                   }}
                 >
                   {patient.birthDate && (
@@ -393,6 +392,18 @@ const PatientCard: React.FC<Props> = ({
                   )}
                   {patient.address && (
                     <InfoTile icon={<PlaceOutlined />} label={t("card.address")} value={patient.address} wrapValue />
+                  )}
+                  {patient.birthCertificateNumber && (
+                    <InfoTile
+                      icon={<BadgeOutlined />}
+                      label={t("card.birthCertificate")}
+                      value={
+                        patient.birthCertificateIssuedOn
+                          ? `${patient.birthCertificateNumber}, ${formatDateRu(patient.birthCertificateIssuedOn)}`
+                          : patient.birthCertificateNumber
+                      }
+                      wrapValue
+                    />
                   )}
                 </Box>
               )}

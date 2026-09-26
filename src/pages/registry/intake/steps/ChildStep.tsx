@@ -1,11 +1,15 @@
 import React from "react";
-import { FormHelperText, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import { Button, FormHelperText, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import dayjs from "dayjs";
 
+import type { DjangoPatient } from "../../../../api/patients";
+import DjangoAddPatientDrawer from "../../../../components/patients/DjangoAddPatientDrawer";
 import { CustomDatePicker } from "../../../../components/ui";
 import type { ActiveScope } from "../../../../hooks/useActiveScope";
+import { useCanChecker } from "../../../../hooks/useCan";
 import { useT } from "../../../../i18n/VerticalProvider";
-import type { ChildState, StepErrors } from "../intakeState";
+import { toExistingPerson } from "../../registryConstants";
+import type { ChildState, ExistingPerson, StepErrors } from "../intakeState";
 import { PersonSearch } from "../PersonSearch";
 
 interface ChildStepProps {
@@ -15,62 +19,53 @@ interface ChildStepProps {
   onChange: (next: ChildState) => void;
 }
 
+/**
+ * Как в окне приёма: сначала поиск по базе, новую карточку заводит обычная
+ * форма пациента и сразу выбирает её. Дата рождения, пол и свидетельство —
+ * дозаполняются у выбранной карточки.
+ */
 export const ChildStep: React.FC<ChildStepProps> = ({ scope, value, errors, onChange }) => {
   const { t } = useT("registry");
+  const { can } = useCanChecker();
+  const [addOpen, setAddOpen] = React.useState(false);
   const error = (key: string) => (errors[key] ? t(errors[key]) : undefined);
+
+  const pick = (person: ExistingPerson | null) =>
+    onChange({
+      ...value,
+      mode: "existing",
+      existing: person,
+      fullName: person?.fullName ?? "",
+      phone: person?.phone ?? "",
+      birthDate: person?.birthDate ?? value.birthDate,
+      gender: person && person.gender !== "unknown" ? person.gender : value.gender,
+      birthCertificateNumber: person?.birthCertificateNumber ?? "",
+      birthCertificateIssuedOn: person?.birthCertificateIssuedOn ?? "",
+    });
 
   return (
     <Stack gap={2}>
-      <ToggleButtonGroup
-        exclusive
-        size="small"
-        value={value.mode}
-        onChange={(_, mode: ChildState["mode"] | null) => mode && onChange({ ...value, mode })}
-      >
-        <ToggleButton value="new">{t("wizard.child.new")}</ToggleButton>
-        <ToggleButton value="existing">{t("wizard.child.existing")}</ToggleButton>
-      </ToggleButtonGroup>
-
-      {value.mode === "existing" ? (
+      <Stack gap={0.5}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+            {t("wizard.child.label")}
+          </Typography>
+          {can("patients.create") && (
+            <Button size="small" onClick={() => setAddOpen(true)}>
+              {t("wizard.child.add")}
+            </Button>
+          )}
+        </Stack>
         <PersonSearch
           scope={scope}
           label={t("wizard.child.search")}
           value={value.existing}
           error={error("existing")}
-          onChange={(person) =>
-            onChange({
-              ...value,
-              existing: person,
-              fullName: person?.fullName ?? "",
-              phone: person?.phone ?? "",
-              birthDate: person?.birthDate ?? value.birthDate,
-              gender: person && person.gender !== "unknown" ? person.gender : value.gender,
-            })
-          }
+          onChange={pick}
         />
-      ) : (
-        <>
-          <TextField
-            size="small"
-            label={t("wizard.child.fullName")}
-            value={value.fullName}
-            onChange={(e) => onChange({ ...value, fullName: e.target.value })}
-            error={Boolean(errors.fullName)}
-            helperText={error("fullName")}
-            autoFocus
-          />
-          <TextField
-            size="small"
-            label={t("wizard.child.phone")}
-            value={value.phone}
-            onChange={(e) => onChange({ ...value, phone: e.target.value })}
-            helperText={t("wizard.child.phoneHint")}
-            inputProps={{ inputMode: "tel" }}
-          />
-        </>
-      )}
+      </Stack>
 
-      {(value.mode === "new" || value.existing) && (
+      {value.existing && (
         <>
           <CustomDatePicker
             label={t("wizard.child.birthDate")}
@@ -96,8 +91,38 @@ export const ChildStep: React.FC<ChildStepProps> = ({ scope, value, errors, onCh
             </ToggleButtonGroup>
             {errors.gender && <FormHelperText error>{error("gender")}</FormHelperText>}
           </Stack>
+          <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
+            <TextField
+              size="small"
+              label={t("wizard.child.birthCertificateNumber")}
+              value={value.birthCertificateNumber}
+              onChange={(e) => onChange({ ...value, birthCertificateNumber: e.target.value.slice(0, 32) })}
+              sx={{ flex: 1 }}
+            />
+            <CustomDatePicker
+              label={t("wizard.child.birthCertificateIssuedOn")}
+              value={value.birthCertificateIssuedOn ? dayjs(value.birthCertificateIssuedOn) : null}
+              onChange={(date) =>
+                onChange({
+                  ...value,
+                  birthCertificateIssuedOn: date && date.isValid() ? date.format("YYYY-MM-DD") : "",
+                })
+              }
+              disableFuture
+              slotProps={{ textField: { size: "small" } }}
+            />
+          </Stack>
         </>
       )}
+
+      <DjangoAddPatientDrawer
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onCreated={(patient: DjangoPatient) => {
+          pick(toExistingPerson(patient));
+          setAddOpen(false);
+        }}
+      />
     </Stack>
   );
 };

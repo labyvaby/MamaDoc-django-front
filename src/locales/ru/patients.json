@@ -66,6 +66,7 @@
     "noPhone": "Телефон не указан",
     "birthDate": "Дата рождения",
     "address": "Адрес",
+    "birthCertificate": "Свидетельство о рождении",
     "family": "Семья",
     "familyMembers_one": "{{count}} участник",
     "familyMembers_few": "{{count}} участника",

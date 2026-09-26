@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { CancelReason, EnrollmentTerm, PaymentState } from "./registry";
+import type { CancelReason, EnrollmentTerm, PaymentState, ResidenceStatus } from "./registry";
 import { Scope, scopeParams } from "./scope";
 
 export type ProgramState = "draft" | "active" | "archived";
@@ -71,6 +71,10 @@ export interface ProgramEnrollment {
   onboardingCompletedAt: string | null;
   cancelReason: CancelReason | "";
   cancelComment: string;
+  /** Титул ф. 112/у: проживание, откуда прибыл, адрес выбытия (при снятии «Выбыл»). */
+  residenceStatus: ResidenceStatus | "";
+  arrivedFrom: string;
+  movedToAddress: string;
   terms: EnrollmentTerm[];
   currentTerm: EnrollmentTerm | null;
   paymentState: PaymentState;

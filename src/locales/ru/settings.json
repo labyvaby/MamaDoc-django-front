@@ -28,6 +28,7 @@
       "diagnoses": "{{diagnosis.nomPl, capitalize}}",
       "integrations": "Интеграции",
       "conclusionForms": "Бланки заключений",
+      "printBlanks": "Печатные бланки",
       "tasks": "Задачи",
       "deals": "Воронка продаж",
       "cleaning": "Уборка",

@@ -29,4 +29,14 @@ describe("document print", () => {
     expect(html).toContain("<th>child.cardNumber</th><td>МД-7</td>");
     expect(html).toContain("<th>branch.phones</th><td>+996 1, +996 2</td>");
   });
+
+  it("prints the blank text with filled placeholders instead of the table", () => {
+    const html = renderDocumentHtml(
+      render({ body: "Ребёнок: {child.fullName}\n\nКарта {child.cardNumber}", fields: [{ label: "X", slot: "child.fullName" }] }),
+    );
+    expect(html).toContain("<p>Ребёнок: Иванов &lt;Али&gt;</p>");
+    expect(html).toContain("<p>&nbsp;</p>");
+    expect(html).toContain("<p>Карта МД-7</p>");
+    expect(html).not.toContain("<table>");
+  });
 });

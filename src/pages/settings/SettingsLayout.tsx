@@ -32,6 +32,7 @@ import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOu
 
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
+import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
 import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
@@ -192,6 +193,12 @@ const TAB_DEFS: TabDef[] = [
     key: "conclusionForms",
     to: "/settings/conclusion-forms",
     icon: <DescriptionOutlined fontSize="small" />,
+    group: "catalogs",
+  },
+  {
+    key: "printBlanks",
+    to: "/settings/print-blanks",
+    icon: <PrintOutlined fontSize="small" />,
     group: "catalogs",
   },
   {

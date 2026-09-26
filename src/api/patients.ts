@@ -57,6 +57,9 @@ export interface DjangoPatient {
   inn: string;
   /** Номер карты: уникален в организации, пустая строка — не выдан. */
   cardNumber?: string;
+  /** Свидетельство о рождении: номер одной строкой и дата выдачи. */
+  birthCertificateNumber?: string;
+  birthCertificateIssuedOn?: string | null;
   isBlacklisted: boolean;
   blacklistReason: string;
   isActive: boolean;

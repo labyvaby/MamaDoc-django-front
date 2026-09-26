@@ -1,6 +1,6 @@
 import type { RegistryTab } from "../../api/registry";
 
-export const REGISTRY_TABS: RegistryTab[] = ["active", "onboarding", "unpaid", "expiring", "cancelled"];
+export const REGISTRY_TABS: RegistryTab[] = ["active", "onboarding", "unpaid", "expiring", "inactive", "cancelled"];
 
 export function tabLabelKey(tab: RegistryTab): `tabs.${RegistryTab}` {
   return `tabs.${tab}`;
