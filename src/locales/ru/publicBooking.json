@@ -197,9 +197,9 @@
     "statusHintConfirmed": "Ждём вас в назначенное время. Если не сможете прийти, предупредите заранее.",
     "statusTitleCancelled": "{{record.nom, capitalize}} отменена",
     "statusHintCancelled": "Время освобождено. Можно записаться заново.",
-    "statusTitleCompleted": "{{visit.nom, capitalize}} состоялся",
+    "statusTitleCompleted": "{{visit.nom, capitalize}} {{visit.gender, gender(m: состоялся; f: состоялась; n: состоялось)}}",
     "statusHintCompleted": "Спасибо, что выбрали нас!",
-    "statusTitleNoShow": "{{visit.nom, capitalize}} пропущен",
+    "statusTitleNoShow": "{{visit.nom, capitalize}} {{visit.gender, gender(m: пропущен; f: пропущена; n: пропущено)}}",
     "statusHintNoShow": "Чтобы прийти в другое время, запишитесь заново."
   },
 

@@ -408,10 +408,10 @@
     },
     "overlapMode": {
       "sectionTitle": "Пересечение {{visit.genPl}}",
-      "sectionHint": "Как поступать, когда новый {{visit.nom}} пересекается по времени с другим {{visit.ins}} {{employee.gen}}.",
+      "sectionHint": "Как поступать, когда {{visit.gender, gender(m: новый; f: новая; n: новое)}} {{visit.nom}} пересекается по времени с {{visit.gender, gender(m: другим; f: другой; n: другим)}} {{visit.ins}} {{employee.gen}}.",
       "forbid": {
         "label": "Запрещать пересечение",
-        "hint": "Если {{visit.nom}} пересекается с другим {{visit.ins}} {{employee.gen}}, сохранить нельзя."
+        "hint": "Если {{visit.nom}} пересекается с {{visit.gender, gender(m: другим; f: другой; n: другим)}} {{visit.ins}} {{employee.gen}}, сохранить нельзя."
       },
       "warn": {
         "label": "Разрешать после подтверждения",

@@ -72,6 +72,12 @@ const namespaces = Object.fromEntries(
 
 const capitalize = (v) => (v ? v.charAt(0).toUpperCase() + v.slice(1) : v);
 const lower = (v) => (v ? v.charAt(0).toLowerCase() + v.slice(1) : v);
+// Держать в синхроне с src/i18n/formatters.ts:genderForm.
+const genderForm = (value, forms) => {
+  const pick = (g) => (typeof forms[g] === "string" ? forms[g] : "");
+  const gender = value === "f" || value === "n" ? value : "m";
+  return pick(gender) || pick("m");
+};
 
 await i18next.init({
   resources: { ru: namespaces },
@@ -85,6 +91,7 @@ await i18next.init({
 });
 i18next.services.formatter.add("capitalize", (v) => (typeof v === "string" ? capitalize(v) : String(v)));
 i18next.services.formatter.add("lower", (v) => (typeof v === "string" ? lower(v) : String(v)));
+i18next.services.formatter.add("gender", (v, _lng, options) => genderForm(v, options || {}));
 
 const PLURAL_SUFFIX = /_(one|few|many|other)$/;
 

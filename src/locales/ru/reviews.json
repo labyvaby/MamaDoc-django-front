@@ -11,6 +11,6 @@
   },
   "public": {
     "visitLabel": "{{visit.nom, capitalize}}: {{name}}",
-    "rateYourVisit": "Оцените ваш {{visit.acc}}"
+    "rateYourVisit": "Оцените {{visit.gender, gender(m: ваш; f: вашу; n: ваше)}} {{visit.acc}}"
   }
 }

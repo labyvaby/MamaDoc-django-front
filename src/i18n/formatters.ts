@@ -21,3 +21,15 @@ export const agree = (gender: Gender, [m, f, n]: [string, string, string]): stri
   if (gender === "n") return n;
   return m;
 };
+
+/**
+ * Форма слова по роду термина — для шаблонов:
+ *   {{visit.gender, gender(m: создан; f: создана; n: создано)}}
+ * Значение — род из глоссария ("m" | "f" | "n"), параметры — формы.
+ * Неизвестный род или пропущенная форма — мужская форма (как было в шаблонах).
+ */
+export const genderForm = (value: unknown, forms: Record<string, unknown>): string => {
+  const pick = (g: string): string => (typeof forms[g] === "string" ? (forms[g] as string) : "");
+  const gender = value === "f" || value === "n" ? value : "m";
+  return pick(gender) || pick("m");
+};

@@ -23,7 +23,7 @@ import print from "../locales/ru/print.json";
 import services from "../locales/ru/services.json";
 import waitlist from "../locales/ru/waitlist.json";
 import deals from "../locales/ru/deals.json";
-import { capitalize, lower } from "./formatters";
+import { capitalize, genderForm, lower } from "./formatters";
 
 /**
  * Неймспейсы = модули приложения. Один JSON на модуль, чтобы файлы
@@ -62,6 +62,9 @@ i18n.services.formatter?.add("capitalize", (value) =>
 );
 i18n.services.formatter?.add("lower", (value) =>
   typeof value === "string" ? lower(value) : String(value)
+);
+i18n.services.formatter?.add("gender", (value, _lng, options) =>
+  genderForm(value, (options ?? {}) as Record<string, unknown>)
 );
 
 export default i18n;
