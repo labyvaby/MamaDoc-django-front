@@ -39,6 +39,7 @@ import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import DeleteSweepOutlined from "@mui/icons-material/DeleteSweepOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
+import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 
 import {
   AppButton,
@@ -90,6 +91,7 @@ import BatchDialog from "../../components/vaccinations/BatchDialog";
 import BatchWriteOffDialog from "../../components/vaccinations/BatchWriteOffDialog";
 import CalendarTemplateDialog from "../../components/vaccinations/CalendarTemplateDialog";
 import DraftsTab from "./DraftsTab";
+import Form5Tab from "./Form5Tab";
 import KrCalendarDialog from "../../components/vaccinations/KrCalendarDialog";
 import {
   ExemptionDialog,
@@ -97,7 +99,7 @@ import {
 } from "../../components/vaccinations/ExemptionRefusalDialogs";
 import { injectionSiteLabel, scheduleDateInfo } from "./meta";
 
-type VaccTab = "drafts" | "due" | "records" | "vaccines" | "batches" | "calendar" | "report";
+type VaccTab = "drafts" | "due" | "records" | "vaccines" | "batches" | "calendar" | "report" | "form5";
 
 /** «Не оформлено» — только тем, кто оформляет прививки (vaccinations.record). */
 const RECORD_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
@@ -122,6 +124,7 @@ const MANAGE_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
 const READ_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
   { id: "calendar", label: "Календарь", icon: EventAvailableOutlined },
   { id: "report", label: "Отчёт", icon: SummarizeOutlined },
+  { id: "form5", label: "Форма 5", icon: DescriptionOutlined },
 ];
 
 /**
@@ -136,6 +139,7 @@ const TAB_GROUP: Record<VaccTab, "work" | "ref" | "analytics"> = {
   batches: "ref",
   calendar: "ref",
   report: "analytics",
+  form5: "analytics",
 };
 
 /** Компактная плитка сводки — тот же стиль, что в задачах/бронях. */
@@ -1276,7 +1280,7 @@ const VaccinationsPage: React.FC = () => {
           )}
         </Stack>
 
-        {branchId == null && tab !== "calendar" && tab !== "report" && tab !== "due" && (
+        {branchId == null && tab !== "calendar" && tab !== "report" && tab !== "form5" && tab !== "due" && (
           <Alert severity="info" sx={{ mb: 1.5 }}>
             Выберите активный филиал, чтобы увидеть вакцины по нему.
           </Alert>
@@ -1300,6 +1304,8 @@ const VaccinationsPage: React.FC = () => {
         )}
 
         {/* ── Таблица ── */}
+        {tab === "form5" && <Form5Tab branchId={branchId} orgId={orgId} />}
+
         {tab === "drafts" && canRecord && (
           <DraftsTab
             branchId={branchId}

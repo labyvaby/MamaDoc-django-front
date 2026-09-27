@@ -41,6 +41,7 @@ import PatientListPanel from "./components/PatientListPanel";
 import PatientCard from "./components/PatientCard";
 import PatientHistoryPanel from "./components/PatientHistoryPanel";
 import PatientVaccinationsPanel from "./components/PatientVaccinationsPanel";
+import PatientCalendarPanel from "./components/PatientCalendarPanel";
 import BalanceTopUpDrawer from "./components/BalanceTopUpDrawer";
 import AppointmentDetailsPanel from "../appointments/components/AppointmentDetailsPanel";
 import DjangoConclusionSlotsPanel from "../appointments/DjangoConclusionSlotsPanel";
@@ -57,7 +58,7 @@ import type { OldConclusion } from "./useOldConclusions";
 
 const MotionBox = motion(Box);
 
-type RightTabKey = "card" | "history" | "old" | "vaccinations";
+type RightTabKey = "card" | "history" | "old" | "vaccinations" | "vaccineCalendar";
 
 const DjangoPatientsPage: React.FC = () => {
   const { t } = useT("patients");
@@ -385,6 +386,9 @@ const DjangoPatientsPage: React.FC = () => {
   const vaccinationsNode = (
     <PatientVaccinationsPanel patient={selected} onEditPatient={canUpdate ? handleEdit : undefined} />
   );
+  const vaccineCalendarNode = (
+    <PatientCalendarPanel patient={selected} onEditPatient={canUpdate ? handleEdit : undefined} />
+  );
 
   const oldConclusionsNode = (
     <PatientOldConclusionsPanel
@@ -420,6 +424,7 @@ const DjangoPatientsPage: React.FC = () => {
     { key: "history", label: t("tabs.history") },
     { key: "old", label: t("tabs.old") },
     ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
+    ...(canViewVaccinations ? [{ key: "vaccineCalendar" as const, label: t("tabs.vaccineCalendar") }] : []),
   ];
 
   // Десктоп: карточка уже отдельной колонкой, правая колонка — история/архив.
@@ -427,6 +432,7 @@ const DjangoPatientsPage: React.FC = () => {
     { key: "history", label: t("tabs.historyFull") },
     { key: "old", label: t("tabs.oldFull") },
     ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
+    ...(canViewVaccinations ? [{ key: "vaccineCalendar" as const, label: t("tabs.vaccineCalendar") }] : []),
   ];
 
   return (
@@ -476,6 +482,7 @@ const DjangoPatientsPage: React.FC = () => {
                   {tabletTab === "history" && historyNode}
                   {tabletTab === "old" && oldConclusionsNode}
                   {tabletTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
+                  {tabletTab === "vaccineCalendar" && canViewVaccinations && vaccineCalendarNode}
                 </Box>
               </>
             ) : (
@@ -502,6 +509,7 @@ const DjangoPatientsPage: React.FC = () => {
                 {desktopRightTab === "history" && historyNode}
                 {desktopRightTab === "old" && oldConclusionsNode}
                 {desktopRightTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
+                {desktopRightTab === "vaccineCalendar" && canViewVaccinations && vaccineCalendarNode}
               </Box>
             </MotionBox>
           </>
@@ -524,6 +532,7 @@ const DjangoPatientsPage: React.FC = () => {
             {mobileTab === "history" && historyNode}
             {mobileTab === "old" && oldConclusionsNode}
             {mobileTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
+            {mobileTab === "vaccineCalendar" && canViewVaccinations && vaccineCalendarNode}
           </Box>
         </AppBottomSheet>
       )}
