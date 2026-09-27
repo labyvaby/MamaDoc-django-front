@@ -15,10 +15,12 @@ interface Props {
   action?: React.ReactNode;
   /** Суперпользователю — переключатели модулей товара. */
   operator?: React.ReactNode;
+  /** Может ли смотрящий отправить заявку: без права шаги «Как подключается» и «Оставьте заявку» — лишние. */
+  canRequest?: boolean;
 }
 
 /** «Подробнее»: справа, на телефоне — на весь экран. */
-export const ProductDrawer: React.FC<Props> = ({ item, onClose, action, operator }) => (
+export const ProductDrawer: React.FC<Props> = ({ item, onClose, action, operator, canRequest = true }) => (
   <Drawer
     anchor="right"
     open={item !== null}
@@ -74,7 +76,7 @@ export const ProductDrawer: React.FC<Props> = ({ item, onClose, action, operator
         )}
         {item.product.soon && (
           <Alert severity="info" variant="outlined">
-            В разработке. Оставьте заявку — менеджер расскажет о запуске.
+            {canRequest ? "В разработке. Оставьте заявку — менеджер расскажет о запуске." : "В разработке."}
           </Alert>
         )}
         {item.status !== "connected" && item.extraRequirementNames.length > 0 && (
@@ -82,7 +84,7 @@ export const ProductDrawer: React.FC<Props> = ({ item, onClose, action, operator
             Сначала нужно: {item.extraRequirementNames.join(", ")}. Они войдут в заявку.
           </Alert>
         )}
-        {item.status === "available" && (
+        {item.status === "available" && canRequest && (
           <Box>
             <Typography variant="subtitle2" fontWeight={700} gutterBottom>
               Как подключается

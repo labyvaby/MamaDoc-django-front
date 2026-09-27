@@ -56,8 +56,13 @@ describe("buildStorefront", () => {
     const view = build([mod("chatwoot"), mod("appointments", true), mod("achievements", true), mod("reports", true)]);
     expect(onSale(view)).toEqual(["chats"]);
     expect(view.included.map((i) => i.card.id)).toEqual([
-      "dashboard", "automations", "conclusions", "appointments", "reports", "staff", "achievements",
+      "automations", "conclusions", "appointments", "reports", "staff", "achievements",
     ]);
+  });
+
+  it("never turns a catalog module into a second product with a taken id", () => {
+    // Модуль «lab» уже есть на стенде test, а товар «lab» — «Скоро».
+    expect(build([mod("lab")]).items.filter((i) => i.product.id === "lab")).toHaveLength(1);
   });
 
   it("shows a product only when all its modules are in the organization's catalog", () => {
@@ -182,9 +187,29 @@ describe("inactive products", () => {
     expect(view.bundles[0].items.map((i) => i.product.id)).toEqual(["chats", "waitlist"]);
     expect(view.bundles[0].price).toBe(5500);
   });
+
+  it("stay visible to a clinic that already has them, as connected", () => {
+    const hidden = new Map([["chats", "Снято с продажи"]]);
+    const clinic = build([mod("chatwoot", true)], "clinic", [], null, false, hidden);
+    expect(item(clinic, "chats")).toMatchObject({ status: "connected", inactive: false, inactiveReason: "" });
+    expect(clinic.connectedCount).toBe(1);
+    expect(item(build([mod("chatwoot", true)], "clinic", [], null, true, hidden), "chats")!.inactive).toBe(true);
+  });
+
+  it("do not make a partner free inside a bundle when they are left out of it", () => {
+    // «Зарплата» скрыта и не подключена: СКУД в подборке платный.
+    const view = build([mod("payroll"), mod("attendance"), mod("tasks")], "clinic", [], null, false, new Map([["payroll", ""]]));
+    const team = view.bundles.find((b) => b.bundle.id === "team")!;
+    expect(team.items.map((i) => i.product.id)).toEqual(["attendance", "tasks"]);
+    expect(team.price).toBe(2500);
+  });
 });
 
 describe("upcoming products", () => {
+  it("stay out of «Доступно» even once requested", () => {
+    expect(build([], "clinic", [request("lab", [])]).availableCount).toBe(0);
+  });
+
   it("are shown as soon, and a request marks them requested", () => {
     expect(item(build([]), "lab")!.status).toBe("soon");
     expect(item(build([], "clinic", [request("lab", [])]), "lab")!.status).toBe("requested");
@@ -233,6 +258,17 @@ describe("the package section", () => {
     expect(included(view, "reports")!.selfService).toBe(false);
     expect(included(view, "staff")!.selfService).toBe(false);
   });
+
+  it("shows conclusions as off while appointments are off, with nothing to switch", () => {
+    const off = included(build([pkg("appointments")]), "conclusions")!;
+    expect(off).toMatchObject({ status: "off", module: null, selfService: false });
+    expect(included(build([pkg("appointments", true)]), "conclusions")!.status).toBe("included");
+  });
+
+  it("keeps the dashboard for the operator: organizations cannot open it yet", () => {
+    expect(included(build([mod("reports", true)]), "dashboard")).toBeUndefined();
+    expect(included(build([mod("reports", true)], "clinic", [], null, true), "dashboard")).toBeDefined();
+  });
 });
 
 describe("switching a paid product off", () => {
@@ -243,9 +279,9 @@ describe("switching a paid product off", () => {
     expect(item(idle, "chats")!.pendingDisconnect).toBe(false);
   });
 
-  it("does not count as a request to connect", () => {
+  it("does not count as a request to connect, and waits only for a connected product", () => {
     const view = build([mod("chatwoot")], "clinic", [request("chats", ["chatwoot"], "disconnect")]);
-    expect(item(view, "chats")!.status).toBe("available");
+    expect(item(view, "chats")).toMatchObject({ status: "available", pendingDisconnect: false });
   });
 
   it("targets the product's modules", () => {

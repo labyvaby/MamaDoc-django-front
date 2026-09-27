@@ -35,7 +35,7 @@ import {
   setPackageModule,
   setStorefrontProductState,
 } from "../../api/tenancy";
-import { useCan } from "../../hooks/useCan";
+import { membershipGrants } from "../../config/platformGrantedPermissions";
 import { useInactiveProducts } from "../../hooks/useInactiveProducts";
 import { useModulesCatalog } from "../../hooks/useModulesCatalog";
 import { useModuleRequests } from "../../hooks/useModuleRequests";
@@ -76,7 +76,7 @@ type PendingToggle = {
 /** Заявка клиники — тоже с организацией на момент нажатия. */
 type PendingRequest = RequestTarget & { organizationId: number };
 /** Скрыть товар от всех клиник или показать снова — решение оператора платформы. */
-type PendingVisibility = { productId: string; title: string; inactive: boolean };
+type PendingVisibility = { productId: string; title: string; inactive: boolean; modules: string[] };
 type Notice = { severity: "success" | "error"; text: string };
 
 const GRID = { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", lg: "repeat(3, minmax(0, 1fr))" };
@@ -101,6 +101,7 @@ const ModulesCatalogPage: React.FC = () => {
     isPlatformAdmin,
     activeOrganization,
     activeEmployee,
+    activeMembership,
     organizationModules,
     viewAsOrganization,
     setViewAsOrganization,
@@ -108,8 +109,9 @@ const ModulesCatalogPage: React.FC = () => {
   // Любые модули переключает суперпользователь платформы. Клиника с правом
   // сама включает и выключает модули своего пакета, платные — заявкой.
   const isOperator = Boolean(isPlatformAdmin && activeOrganization);
-  const canConnect = useCan("tenancy.catalog.connect");
-  const canDisconnect = useCan("tenancy.catalog.disconnect");
+  // Права — именно в этой организации: так их проверяет сервер (без обхода по имени роли).
+  const canConnect = membershipGrants(activeMembership, "tenancy.catalog.connect");
+  const canDisconnect = membershipGrants(activeMembership, "tenancy.catalog.disconnect");
   const orgName = activeOrganization?.name ?? "организации";
   const vertical = storefrontVertical(activeOrganization?.vertical);
 
@@ -164,6 +166,17 @@ const ModulesCatalogPage: React.FC = () => {
     if (pending && pending.organizationId !== orgId) setToggleOpen(false);
     if (requestTarget && requestTarget.organizationId !== orgId) setRequestOpen(false);
   }, [activeOrganization?.id, pending, requestTarget]);
+
+  // «Подробнее» относится к товару этой организации: при смене организации
+  // закрываем, а пропавший товар (скрыли, сменился вид бизнеса) — забываем,
+  // иначе панель сама откроется, когда он вернётся.
+  useEffect(() => {
+    setDrawerId(null);
+  }, [activeOrganization?.id]);
+  const storefrontReady = Boolean(catalogQuery.data && requestsQuery.data && inactiveQuery.data);
+  useEffect(() => {
+    if (drawerId && storefrontReady && !drawerItem) setDrawerId(null);
+  }, [drawerId, storefrontReady, drawerItem]);
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tenancy.all });
@@ -222,7 +235,7 @@ const ModulesCatalogPage: React.FC = () => {
 
   const changeVisibility = useMutation({
     mutationFn: (p: PendingVisibility & { reason: string }) =>
-      setStorefrontProductState(p.productId, p.inactive, p.reason),
+      setStorefrontProductState(p.productId, p.inactive, p.reason, p.modules),
     onSuccess: (state, p) =>
       setNotice({
         severity: "success",
@@ -240,7 +253,12 @@ const ModulesCatalogPage: React.FC = () => {
   });
 
   const askVisibility = (item: StorefrontItem, makeInactive: boolean) => {
-    setVisibility({ productId: item.product.id, title: item.product.title, inactive: makeInactive });
+    setVisibility({
+      productId: item.product.id,
+      title: item.product.title,
+      inactive: makeInactive,
+      modules: item.product.modules,
+    });
     setVisibilityReason("");
     setVisibilityOpen(true);
   };
@@ -367,7 +385,7 @@ const ModulesCatalogPage: React.FC = () => {
         </Button>
       ) : (
         <Typography variant="body2" color="text.secondary">
-          Подключить может сотрудник с правом «Подключение модулей».
+          Подключить может сотрудник с правом «Подключение модулей» — его выдаёт ErkinAI.
         </Typography>
       );
     }
@@ -459,7 +477,7 @@ const ModulesCatalogPage: React.FC = () => {
     ) : null;
   };
 
-  if (catalogQuery.isLoading || featuresQuery.isLoading || inactiveQuery.isLoading) {
+  if (catalogQuery.isLoading || featuresQuery.isLoading || inactiveQuery.isLoading || requestsQuery.isLoading) {
     return (
       <SettingsLayout>
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
@@ -468,7 +486,9 @@ const ModulesCatalogPage: React.FC = () => {
       </SettingsLayout>
     );
   }
-  if (catalogQuery.isError) {
+  // Без списка скрытых клиника увидела бы снятое с продажи, без заявок — предложения
+  // «Подключить» на уже заказанное: такую витрину не показываем.
+  if (catalogQuery.isError || inactiveQuery.isError || requestsQuery.isError) {
     return (
       <SettingsLayout>
         <Alert severity="error">Не удалось загрузить каталог модулей. Обновите страницу.</Alert>
@@ -689,6 +709,7 @@ const ModulesCatalogPage: React.FC = () => {
         onClose={() => setDrawerId(null)}
         action={drawerItem ? drawerAction(drawerItem) : null}
         operator={drawerItem ? drawerOperator(drawerItem) : null}
+        canRequest={!isOperator && canConnect}
       />
 
       <RequestDialog

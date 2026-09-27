@@ -162,7 +162,11 @@ export function buildStorefront(input: {
   const hidden = input.inactive ?? new Map<string, string>();
   const vertical = storefrontVertical(input.vertical);
   const byCode = new Map(catalog.map((m) => [m.code, m]));
-  const configured = new Set(STOREFRONT_PRODUCTS.flatMap((p) => p.modules));
+  // И id товаров: модуль реестра с тем же кодом (например, «lab») не становится вторым товаром.
+  const configured = new Set([
+    ...STOREFRONT_PRODUCTS.map((p) => p.id),
+    ...STOREFRONT_PRODUCTS.flatMap((p) => p.modules),
+  ]);
   const inPackage = new Set([
     ...STOREFRONT_CORE_MODULES,
     ...STOREFRONT_INCLUDED.flatMap((c) => (c.module ? [c.module] : [])),
@@ -170,29 +174,30 @@ export function buildStorefront(input: {
   const products = [
     ...STOREFRONT_PRODUCTS.filter((p) => suits(p.verticals, vertical)),
     ...catalog.filter((m) => !configured.has(m.code) && !inPackage.has(m.code)).map(productFromModule),
-  ]
-    .filter((p) => p.modules.every((code) => byCode.has(code)))
-    // Неактивное клиникам не показываем; оператор видит с пометкой.
-    .filter((p) => operator || !hidden.has(p.id));
+  ].filter((p) => p.modules.every((code) => byCode.has(code)));
 
   const base = products
     .map((p) => toItem(p, byCode, catalog, openRequests, signals))
     .filter((i): i is StorefrontItem => i !== null);
   const statusById = new Map(base.map((i) => [i.product.id, i.status]));
   const titleById = new Map(STOREFRONT_PRODUCTS.map((p) => [p.id, p.title]));
-  const items = base.map((item) => {
+  const all = base.map((item) => {
     const freeWith = item.product.freeWith;
     return {
       ...item,
       free: Boolean(freeWith && statusById.get(freeWith) === "connected"),
       freeWithTitle: freeWith ? titleById.get(freeWith) ?? null : null,
-      inactive: hidden.has(item.product.id),
-      inactiveReason: hidden.get(item.product.id) ?? "",
+      // Пометку «Неактивен» и её причину видит только оператор.
+      inactive: operator && hidden.has(item.product.id),
+      inactiveReason: operator ? hidden.get(item.product.id) ?? "" : "",
     };
   });
-  // Счётчики и подборки — по тому, что продаётся: у оператора они те же, что у клиники.
-  const onSale = items.filter((i) => !i.inactive);
-  const itemById = new Map(onSale.map((i) => [i.product.id, i]));
+  // Неактивное клиника не видит — кроме того, чем уже пользуется (решение владельца 2026-09-26).
+  const clinicSees = (i: StorefrontItem) => !hidden.has(i.product.id) || i.status === "connected";
+  const forClinic = all.filter(clinicSees);
+  const items = operator ? all : forClinic;
+  // Счётчики и подборки — как их видит клиника: у оператора те же цифры.
+  const itemById = new Map(forClinic.map((i) => [i.product.id, i]));
   const bundles = STOREFRONT_BUNDLES[vertical]
     .map((b) => toBundleView(b, itemById))
     .filter((v): v is StorefrontBundleView => v !== null)
@@ -204,8 +209,11 @@ export function buildStorefront(input: {
     bundles,
     included: buildIncluded({ catalog, byCode, vertical, openRequests, operator, onShelf }),
     categories: STOREFRONT_CATEGORIES.filter((c) => present.has(c.id)),
-    connectedCount: onSale.filter((i) => i.status === "connected").length,
-    availableCount: onSale.filter((i) => i.status === "available" || i.status === "requested").length,
+    connectedCount: forClinic.filter((i) => i.status === "connected").length,
+    // «Скоро» не продаётся, даже когда на него оставили заявку.
+    availableCount: forClinic.filter(
+      (i) => !i.product.soon && (i.status === "available" || i.status === "requested"),
+    ).length,
   };
 }
 
@@ -244,7 +252,8 @@ function toItem(
     status,
     missingModules,
     ...requirementsOf(missingModules, product.modules, byCode, catalog),
-    pendingDisconnect: isPendingDisconnect(product.id, product.modules, openRequests),
+    // Ждать отключения может только подключённое.
+    pendingDisconnect: status === "connected" && isPendingDisconnect(product.id, product.modules, openRequests),
   };
 }
 
@@ -272,6 +281,14 @@ function buildIncluded(input: {
   const items: IncludedItem[] = [];
   for (const card of STOREFRONT_INCLUDED) {
     if (!suits(card.verticals, vertical)) continue;
+    if (card.operatorOnly && !operator) continue;
+    if (card.followsModule) {
+      // Работает внутри чужого модуля: показываем его статус, переключают там.
+      const host = byCode.get(card.followsModule);
+      if (host === undefined) continue;
+      items.push({ card, status: host.isEnabled ? "included" : "off", module: null, selfService: false });
+      continue;
+    }
     const module = card.module ? byCode.get(card.module) : null;
     // Модуля нет в каталоге организации — этой возможности у неё быть не может.
     if (module === undefined) continue;
@@ -292,8 +309,11 @@ function toBundleView(bundle: StorefrontBundle, itemById: Map<string, Storefront
   const items = bundle.products.map((id) => itemById.get(id)).filter((i): i is StorefrontItem => Boolean(i));
   const toConnect = items.filter((i) => i.status === "available");
   if (toConnect.length === 0) return null;
+  // Бесплатен, только если партнёр подключается этой же подборкой или уже подключён:
+  // скрытый и выпавший из подборки партнёр бесплатным его не делает.
+  const connecting = new Set(toConnect.map((i) => i.product.id));
   const freeInBundle = (freeWith: string | undefined) =>
-    Boolean(freeWith && (bundle.products.includes(freeWith) || itemById.get(freeWith)?.status === "connected"));
+    Boolean(freeWith && (connecting.has(freeWith) || itemById.get(freeWith)?.status === "connected"));
   let price: number | null = 0;
   for (const item of toConnect) {
     if (freeInBundle(item.product.freeWith)) continue;

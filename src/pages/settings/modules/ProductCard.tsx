@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Card, Chip, Stack, Typography } from "@mui/material";
+import { Box, ButtonBase, Card, Chip, Stack, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
@@ -68,22 +68,17 @@ interface Props {
   highlight?: string[];
 }
 
-/** Карточка товара: клик — «Подробнее»; кнопка действия клик не пропускает. */
+/**
+ * Карточка товара: клик по ней — «Подробнее». Для клавиатуры и экранных
+ * читалок кнопка «Подробнее» — название товара: сама карточка не кнопка,
+ * чтобы кнопки действий не оказались вложенными в другую кнопку.
+ */
 export const ProductCard: React.FC<Props> = ({ item, action, onOpen, highlight }) => {
   const { product } = item;
   return (
     <Card
       variant="outlined"
-      role="button"
-      tabIndex={0}
-      aria-label={`${product.title} — подробнее`}
       onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
       sx={{
         p: 2,
         display: "flex",
@@ -99,17 +94,29 @@ export const ProductCard: React.FC<Props> = ({ item, action, onOpen, highlight }
           bgcolor: (theme) => alpha(theme.palette.warning.main, 0.06),
         }),
         transition: "border-color .15s ease",
-        "&:hover": { borderColor: "primary.main" },
-        "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },
+        "&:hover, &:focus-within": { borderColor: "primary.main" },
       }}
     >
       <Stack direction="row" spacing={1.5} alignItems="flex-start">
         <StorefrontTile icon={product.icon} tone={categoryTone(product.category)} />
         <Box sx={{ minWidth: 0 }}>
           <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-            <Typography variant="subtitle2" fontWeight={700}>
-              {product.title}
-            </Typography>
+            <ButtonBase
+              aria-label={`${product.title} — подробнее`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen();
+              }}
+              sx={{
+                borderRadius: 1,
+                textAlign: "left",
+                "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },
+              }}
+            >
+              <Typography variant="subtitle2" fontWeight={700}>
+                {product.title}
+              </Typography>
+            </ButtonBase>
             {product.soon && <SoonChip />}
             {item.inactive && <InactiveChip />}
           </Stack>
@@ -126,11 +133,7 @@ export const ProductCard: React.FC<Props> = ({ item, action, onOpen, highlight }
       )}
       <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mt: "auto" }}>
         <ProductStatus item={item} />
-        {action && (
-          <Box onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-            {action}
-          </Box>
-        )}
+        {action && <Box onClick={(e) => e.stopPropagation()}>{action}</Box>}
       </Stack>
     </Card>
   );

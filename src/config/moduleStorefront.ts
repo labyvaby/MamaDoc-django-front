@@ -91,15 +91,15 @@ export const STOREFRONT_PRODUCTS: StorefrontProduct[] = [
   {
     id: "online_booking", title: "Онлайн-запись", modules: [], signal: "onlineBooking", category: "clients", icon: "booking",
     price: 3500, verticals: SERVICES, route: "/bookings",
-    tagline: "Клиенты записываются сами в свободные окна — без звонков",
-    features: ["Свободные окна — прямо из расписания", "Заявки ждут подтверждения в CRM", "Выше те, у кого есть окна сегодня"],
+    tagline: "Настроим онлайн-запись под ключ: клиенты записываются сами в свободные окна",
+    features: ["Настраиваем за вас: расписание, услуги и публикацию", "Свободные окна — прямо из расписания", "Заявки ждут подтверждения в CRM", "Выше те, у кого есть окна сегодня"],
     parts: ["Публичная страница записи", "Заявки на запись"],
   },
   {
     id: "site", title: "Сайт-визитка", modules: [], signal: "site", category: "clients", icon: "site",
     price: 1000, verticals: SERVICES, route: "/settings/site",
-    tagline: "Своя страница в интернете: услуги, специалисты, филиалы и запись",
-    features: ["Услуги и специалисты — из CRM", "Филиалы, часы работы и соцсети", "Кнопка записи на странице"],
+    tagline: "Соберём сайт клиники под ключ: услуги, специалисты, филиалы и запись",
+    features: ["Оформляем и наполняем за вас", "Услуги и специалисты — из CRM", "Филиалы, часы работы и соцсети", "Кнопка записи на странице"],
   },
   {
     id: "odoctor", title: "oDoctor", modules: [], signal: "odoctor", category: "clients", icon: "odoctor",
@@ -129,8 +129,8 @@ export const STOREFRONT_PRODUCTS: StorefrontProduct[] = [
   {
     id: "insurers", title: "Страховые компании", modules: [], signal: "insurers", category: "medicine", icon: "insurance",
     price: 1000, verticals: ["clinic"], route: "/settings/insurers",
-    tagline: "Оплата приёма страховкой — видно, какая страховая платит",
-    features: ["Справочник страховых и договоров", "Оплата приёма страховкой", "Страховые оплаты видны в кассе"],
+    tagline: "Настроим работу со страховыми под ключ: договоры и оплата приёма полисом",
+    features: ["Заводим страховые и договоры за вас", "Справочник страховых и договоров", "Оплата приёма страховкой", "Страховые оплаты видны в кассе"],
   },
   {
     id: "lab", title: "Лаборатория", modules: [], soon: true, category: "medicine", icon: "lab",
@@ -201,14 +201,19 @@ export interface StorefrontIncluded {
   parts?: string[];
   /** Модуль реестра; нет — возможность без модуля, всегда в пакете. */
   module?: string;
+  /** Своего модуля нет, но работает внутри этого: статус — его, переключать нечего. */
+  followsModule?: string;
   verticals?: readonly StorefrontVertical[];
   /** Снято с продажи: клинике — только пока включено. */
   hiddenWhenOff?: boolean;
+  /** Организациям пока не открыто — видит только оператор платформы. */
+  operatorOnly?: boolean;
 }
 
 export const STOREFRONT_INCLUDED: StorefrontIncluded[] = [
   {
-    id: "dashboard", title: "Сводка", icon: "insights", tone: "blue", module: "reports",
+    // Решение 27.08.2026: «Сводка» пока только суперадминистратору, организациям скрыта.
+    id: "dashboard", title: "Сводка", icon: "insights", tone: "blue", module: "reports", operatorOnly: true,
     tagline: "Главное на одном экране: выручка, записи, загрузка и что требует внимания",
     parts: ["Требует внимания", "Средний чек", "Загрузка специалистов", "План на месяц"],
   },
@@ -218,7 +223,9 @@ export const STOREFRONT_INCLUDED: StorefrontIncluded[] = [
     parts: ["Правила «событие → сообщение»", "Сообщения по расписанию", "История отправок"],
   },
   {
+    // Заключения — часть приёмов (модуль medical на бэке гейтится appointments).
     id: "conclusions", title: "Заключения с ИИ-помощником", icon: "note", tone: "pink", verticals: ["clinic"],
+    followsModule: "appointments",
     tagline: "Заключение по шаблону: ИИ предлагает текст и диагноз по МКБ-10, врач решает, что оставить",
     parts: ["Шаблоны заключений", "Бланки для печати", "Диагнозы МКБ-10", "Помощь AI"],
   },

@@ -79,15 +79,19 @@ export function getInactiveProducts(organizationId?: number | null): Promise<Sto
   return apiRequest<StorefrontProductState[]>(`/tenancy/storefront/products/${orgQuery(organizationId)}`);
 }
 
-/** Скрыть товар от клиник или снова показать — только суперпользователь платформы. */
+/**
+ * Скрыть товар от клиник или снова показать — только суперпользователь платформы.
+ * moduleCodes — модули товара: пока он скрыт, сервер не примет и подборку с ними.
+ */
 export function setStorefrontProductState(
   productId: string,
   isInactive: boolean,
   reason = "",
+  moduleCodes: string[] = [],
 ): Promise<StorefrontProductState> {
   return apiRequest<StorefrontProductState>(`/tenancy/storefront/products/${encodeURIComponent(productId)}/`, {
     method: "PATCH",
-    body: { isInactive, reason },
+    body: { isInactive, reason, moduleCodes },
   });
 }
 

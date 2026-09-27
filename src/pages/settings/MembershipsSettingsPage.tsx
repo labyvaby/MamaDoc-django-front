@@ -45,6 +45,7 @@ import {
 } from "../../api/rbac";
 import { ApiError } from "../../api/client";
 import { usePermissions } from "../../hooks/usePermissions";
+import { isPermissionEditable } from "../../config/platformGrantedPermissions";
 import type { RbacBranch } from "../../api/auth";
 import { useT } from "../../i18n/VerticalProvider";
 
@@ -94,6 +95,7 @@ function MembershipFormDrawer({
     return t("memberships.unknownError");
   }
 
+  const { isPlatformAdmin } = usePermissions();
   const [roleId, setRoleId] = React.useState<number | "">("");
   const [crmBranches, setCrmBranches] = React.useState<RbacBranch[]>([]);
   const [isActive, setIsActive] = React.useState(true);
@@ -132,6 +134,9 @@ function MembershipFormDrawer({
     const query = permissionSearch.trim().toLowerCase();
     const groups = new Map<string, RbacPermission[]>();
     for (const permission of permissions) {
+      // Права, которые выдаёт только платформа, клинике не показываем:
+      // сервер всё равно оставит их как были (platformGrantedPermissions).
+      if (!isPermissionEditable(permission.code, Boolean(isPlatformAdmin))) continue;
       if (
         query &&
         !permission.code.toLowerCase().includes(query) &&
@@ -145,7 +150,7 @@ function MembershipFormDrawer({
       groups.set(category, items);
     }
     return [...groups.entries()];
-  }, [permissions, permissionSearch]);
+  }, [permissions, permissionSearch, isPlatformAdmin]);
 
   const setOverride = (code: string, effect: "grant" | "deny", enabled: boolean) => {
     setPermissionData((current) => {

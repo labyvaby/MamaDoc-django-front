@@ -123,6 +123,7 @@ export const RequestDialog: React.FC<Props> = ({
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             placeholder="Например: когда удобно созвониться"
+            slotProps={{ htmlInput: { maxLength: 1000 } }}
             fullWidth
             multiline
             minRows={2}
