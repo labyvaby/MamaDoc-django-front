@@ -72,6 +72,7 @@ const DjangoPatientsPage: React.FC = () => {
     loading: permLoading,
     activeBranch,
     activeMembership,
+    hasModule,
   } = usePermissions();
 
   const canView = isSuperAdmin() || hasPermission("patients.view");
@@ -80,7 +81,10 @@ const DjangoPatientsPage: React.FC = () => {
   const canManagePatients = isSuperAdmin() || hasPermission("patients.manage");
   const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
   const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
-  const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
+  // Вкладка прививок — только при модуле вакцинации: суперадмину тоже, иначе
+  // в салоне или отеле он видел бы пустую медицинскую вкладку.
+  const canViewVaccinations =
+    hasModule("vaccinations") && (isSuperAdmin() || hasPermission("vaccinations.view"));
   const defaultBranchId = activeBranch?.id ?? null;
 
   // ── List data ──────────────────────────────────────────────────────────────
