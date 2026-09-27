@@ -1222,14 +1222,19 @@ function App() {
                               }
                             />
                             <Route
-                              path="reviews/settings"
+                              path="settings/reviews"
                               element={
-                                <RequirePermission permission="reviews.manage">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.reviews}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <ReviewsSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }
+                            />
+                            {/* Старый адрес — закладки и ссылки из сообщений. */}
+                            <Route
+                              path="reviews/settings"
+                              element={<Navigate to="/settings/reviews" replace />}
                             />
                             <Route
                               path="settings/diagnoses"
