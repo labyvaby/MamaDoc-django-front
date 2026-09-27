@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { fillBlank, formatBlankValue, hasBrokenBraces, unknownPlaceholders } from "./blankText";
+import {
+  fillBlank,
+  formatBlankValue,
+  hasBrokenBraces,
+  SAMPLE_CONTRACT_TEXT,
+  unknownPlaceholders,
+} from "./blankText";
 
 const data = {
   today: "2026-09-26",
@@ -19,6 +25,18 @@ describe("blank text", () => {
   it("prints empty for missing values and joins lists", () => {
     expect(fillBlank("[{representative.fullName}] {branch.phones}", data)).toBe("[] +996 1, +996 2");
     expect(formatBlankValue({ a: 1 })).toBe("");
+  });
+
+  it("prints money like people write it", () => {
+    expect(formatBlankValue("24000.00")).toBe("24 000");
+    expect(formatBlankValue("1250.50")).toBe("1 250,50");
+    expect(formatBlankValue("0.00")).toBe("0");
+    expect(formatBlankValue("1101")).toBe("1101");
+  });
+
+  it("uses only known placeholders in the contract sample", () => {
+    expect(hasBrokenBraces(SAMPLE_CONTRACT_TEXT)).toBe(false);
+    expect(unknownPlaceholders(SAMPLE_CONTRACT_TEXT)).toEqual([]);
   });
 
   it("finds broken braces and unknown placeholders", () => {

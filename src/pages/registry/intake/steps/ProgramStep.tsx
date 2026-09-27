@@ -1,30 +1,26 @@
 import React from "react";
-import { Alert, ListSubheader, MenuItem, Stack, TextField } from "@mui/material";
+import { Alert, Box, ListSubheader, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
 import { getBranches } from "../../../../api/organization";
 import { getProgramPackages, getPrograms, type Program } from "../../../../api/programs";
 import { djangoQueryKeys } from "../../../../api/queryKeys";
-import { getNextCardNumber, type PriceQuote } from "../../../../api/registry";
+import type { PriceQuote } from "../../../../api/registry";
 import { CustomDatePicker } from "../../../../components/ui";
 import type { ActiveScope } from "../../../../hooks/useActiveScope";
 import { doctorEmployeesOnly, useAllActiveEmployees } from "../../../../hooks/useAllActiveEmployees";
 import { usePermissions } from "../../../../hooks/usePermissions";
 import { useT } from "../../../../i18n/VerticalProvider";
-import { quoteMessage } from "../../priceQuote";
-import { programCardPrefix, programSpecializationIds, RESIDENCE_STATUSES } from "../../registryConstants";
+import { subtleBg } from "../../../../theme/uiHelpers";
+import { programSpecializationIds, RESIDENCE_STATUSES } from "../../registryConstants";
 import { formatMoney } from "../../registryTabs";
 import type { ProgramState, StepErrors } from "../intakeState";
-
-const MONEY_RE = /^\d{0,10}(?:[.,]\d{0,2})?$/;
 
 interface ProgramStepProps {
   scope: ActiveScope;
   value: ProgramState;
   errors: StepErrors;
-  /** Номер карты уже есть у выбранного ребёнка — поле не нужно. */
-  childCardNumber: string;
   /** Расчёт цены с сервера: цена пакета и семейная скидка. */
   quote?: PriceQuote;
   onChange: (next: ProgramState) => void;
@@ -35,7 +31,6 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
   scope,
   value,
   errors,
-  childCardNumber,
   quote,
   onChange,
   onProgramLoaded,
@@ -83,13 +78,6 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
       : pool.filter((e) => e.branch == null || e.branch.id === value.branchId
         || e.operationalBranches.some((b) => b.id === value.branchId));
   }, [employees, wanted, value.branchId]);
-  const prefix = programCardPrefix(program);
-  const suggestion = useQuery({
-    queryKey: ["django", "patients", "next-card-number", scope, prefix],
-    queryFn: ({ signal }) => getNextCardNumber(scope, prefix, signal),
-    enabled: ready && program != null && !childCardNumber,
-  });
-
   React.useEffect(() => {
     onProgramLoaded(program);
   }, [program, onProgramLoaded]);
@@ -122,8 +110,6 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
       {item.name} · {formatMoney(item.priceAmount)} сом
     </MenuItem>,
   ]);
-  const message = quote ? quoteMessage(quote) : null;
-
   return (
     <Stack gap={2}>
       <TextField
@@ -145,6 +131,32 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
       >
         {packageOptions}
       </TextField>
+      {pkg && (
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="baseline"
+          gap={1}
+          sx={(theme) => ({ px: 1.5, py: 1, borderRadius: "12px", bgcolor: subtleBg(theme) })}
+        >
+          <Typography variant="body2" color="text.secondary">
+            {t("wizard.program.priceLabel")}
+          </Typography>
+          <Box sx={{ textAlign: "right" }}>
+            <Typography fontWeight={700}>
+              {t("wizard.program.priceValue", { price: formatMoney(quote?.priceAmount ?? pkg.priceAmount) })}
+            </Typography>
+            {quote && quote.familyDiscountPercent > 0 && (
+              <Typography variant="caption" color="text.secondary">
+                {t("wizard.payment.familyNote", {
+                  percent: quote.familyDiscountPercent,
+                  base: formatMoney(quote.basePriceAmount),
+                })}
+              </Typography>
+            )}
+          </Box>
+        </Stack>
+      )}
       {!activeBranch && (
         <TextField
           select
@@ -178,7 +190,7 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
           </MenuItem>
         ))}
       </TextField>
-      <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
+      <Stack direction={{ xs: "column", md: "row" }} gap={1.5} alignItems="flex-start">
         <TextField
           size="small"
           type="number"
@@ -188,26 +200,21 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
           error={Boolean(errors.termMonths)}
           helperText={error("termMonths")}
           inputProps={{ min: 1, max: 60 }}
+          sx={{ width: { xs: "100%", md: 160 }, flexShrink: 0 }}
         />
-        <TextField
-          size="small"
-          label={t("wizard.program.price")}
-          value={value.priceAmount}
-          onChange={(e) => {
-            if (MONEY_RE.test(e.target.value)) onChange({ ...value, priceAmount: e.target.value });
-          }}
-          helperText={message ? t(message.key, message.values) : undefined}
-          inputProps={{ inputMode: "decimal" }}
-        />
+        <Box sx={{ flex: 1, width: "100%", minWidth: 0 }}>
+          <CustomDatePicker
+            label={t("wizard.program.startsOn")}
+            value={value.termStartsOn ? dayjs(value.termStartsOn) : null}
+            onChange={(date) =>
+              onChange({ ...value, termStartsOn: date && date.isValid() ? date.format("YYYY-MM-DD") : "" })
+            }
+            slotProps={{
+              textField: { size: "small", fullWidth: true, helperText: t("wizard.program.startsOnHint") },
+            }}
+          />
+        </Box>
       </Stack>
-      <CustomDatePicker
-        label={t("wizard.program.startsOn")}
-        value={value.termStartsOn ? dayjs(value.termStartsOn) : null}
-        onChange={(date) =>
-          onChange({ ...value, termStartsOn: date && date.isValid() ? date.format("YYYY-MM-DD") : "" })
-        }
-        slotProps={{ textField: { size: "small", helperText: t("wizard.program.startsOnHint") } }}
-      />
       <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
         <TextField
           select
@@ -233,16 +240,6 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
           sx={{ flex: 1 }}
         />
       </Stack>
-      {!childCardNumber && (
-        <TextField
-          size="small"
-          label={t("wizard.child.cardNumber")}
-          value={value.cardNumber}
-          placeholder={suggestion.data?.cardNumber}
-          onChange={(e) => onChange({ ...value, cardNumber: e.target.value.slice(0, 32) })}
-          helperText={t("wizard.child.cardNumberHint")}
-        />
-      )}
     </Stack>
   );
 };

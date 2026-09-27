@@ -47,6 +47,8 @@ export interface EnrollmentTerm {
   package: { id: number; name: string; visitDiscountPercent: number } | null;
   /** Семейная скидка, применённая к цене периода; 0 — нет или цена вручную. */
   familyDiscountPercent: number;
+  /** Скидка на кассе, сом; `priceAmount` уже без неё. */
+  discountAmount: string;
   createdAt: string;
 }
 
@@ -74,6 +76,8 @@ export interface CreateTermPayload {
   months?: number | null;
   startsOn?: string | null;
   priceAmount?: string | null;
+  /** Скидка на кассе, сом — после семейной. */
+  discountAmount?: string | null;
 }
 
 export interface TermPaymentPayload {
@@ -300,6 +304,8 @@ export interface IntakePayload {
   termMonths?: number | null;
   termStartsOn?: string | null;
   priceAmount?: string | null;
+  /** Скидка на кассе, сом — после семейной. */
+  discountAmount?: string | null;
   payment?: TermPaymentPayload | null;
   notes?: string;
   residenceStatus?: ResidenceStatus | "";
@@ -468,6 +474,21 @@ export interface PrintRender {
   /** Текст бланка с подстановками; пусто — печать таблицей полей. */
   body?: string;
   data: Record<string, unknown>;
+}
+
+/**
+ * Договор до постановки: сервер проводит постановку из данных мастера,
+ * заполняет бланк и всё откатывает — ничего не сохраняется, оплата не нужна.
+ */
+export function previewIntakeDocument(
+  scope: Scope,
+  payload: IntakePayload,
+  templateId: number,
+): Promise<{ render: PrintRender }> {
+  return apiRequest("/program-enrollments/intake/print-preview/", {
+    method: "POST",
+    body: { ...payload, payment: null, templateId, organizationId: scope.organizationId },
+  });
 }
 
 export function printEnrollmentDocument(

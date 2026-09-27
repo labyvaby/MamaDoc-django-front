@@ -47,6 +47,18 @@ export function programInactivityMonths(program: Program | undefined): number {
   return typeof value === "number" && Number.isInteger(value) ? value : DEFAULT_INACTIVITY_MONTHS;
 }
 
+/** С какого номера продолжать нумерацию карт (бумажные карты были до него). */
+export function programCardStart(program: Program | undefined): number {
+  const value = program?.settings?.cardNumberStart;
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : 1;
+}
+
+/** Бланк договора: печатается на шаге «Оплата» до приёма денег. */
+export function programContractTemplateId(program: Program | undefined): number | null {
+  const value = program?.settings?.contractTemplateId;
+  return typeof value === "number" && Number.isInteger(value) ? value : null;
+}
+
 export function programCardPrefix(program: Program | undefined): string {
   const prefix = program?.settings?.cardNumberPrefix;
   return typeof prefix === "string" ? prefix : "";

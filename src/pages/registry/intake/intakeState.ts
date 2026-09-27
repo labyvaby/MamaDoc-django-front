@@ -1,3 +1,5 @@
+import dayjs from "dayjs";
+
 import {
   LEGAL_RELATIONS,
   type ChildGender,
@@ -59,22 +61,29 @@ export interface ProgramState {
   branchId: number | null;
   responsibleEmployeeId: number | null;
   termMonths: string;
-  /** YYYY-MM-DD; пусто — период начнётся сегодня. */
+  /** YYYY-MM-DD; по умолчанию сегодня, для наблюдавшихся раньше — прошлая дата. */
   termStartsOn: string;
-  /** Пусто — цена пакета с семейной скидкой (считает сервер). */
-  priceAmount: string;
-  /** Пусто — номер выдаст бэк по префиксу программы. */
+  /** Пусто — номер выдаст бэк по префиксу и начальному номеру программы. */
   cardNumber: string;
   /** Титул ф. 112/у: проживает постоянно / временно / приезжий; пусто — не указано. */
   residenceStatus: ResidenceStatus | "";
   arrivedFrom: string;
 }
 
+/** Оплата как в «Приёмах»: пустые суммы — постановка с долгом. */
 export interface PaymentState {
-  mode: "now" | "later";
+  /** Скидка на кассе, сом: поле «% / с» пересчитывает проценты в сомы. */
+  discount: number;
   cash: string;
   card: string;
   cashlessMethodId: number | null;
+}
+
+export interface PaymentPreview {
+  payable: number;
+  paid: number;
+  debt: number;
+  state: "paid" | "partial" | "unpaid";
 }
 
 export interface IntakeState {
@@ -95,6 +104,18 @@ export function hasPhone(phone: string | null | undefined): boolean {
 export function toAmount(raw: string): number {
   const value = Number(raw.trim().replace(",", ".") || "0");
   return Number.isFinite(value) ? value : 0;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** К оплате после скидки, внесено, долг и статус периода — до отправки. */
+export function paymentPreview(payment: PaymentState, price: number): PaymentPreview {
+  const payable = round2(Math.max(0, price - payment.discount));
+  const paid = round2(toAmount(payment.cash) + toAmount(payment.card));
+  const debt = round2(Math.max(0, payable - paid));
+  return { payable, paid, debt, state: debt <= 0 ? "paid" : paid > 0 ? "partial" : "unpaid" };
 }
 
 let keySeed = 0;
@@ -149,13 +170,12 @@ export function initialIntakeState(existing?: ExistingPerson | null): IntakeStat
       branchId: null,
       responsibleEmployeeId: null,
       termMonths: "12",
-      termStartsOn: "",
-      priceAmount: "",
+      termStartsOn: dayjs().format("YYYY-MM-DD"),
       cardNumber: "",
       residenceStatus: "",
       arrivedFrom: "",
     },
-    payment: { mode: "now", cash: "", card: "", cashlessMethodId: null },
+    payment: { discount: 0, cash: "", card: "", cashlessMethodId: null },
   };
 }
 
@@ -174,8 +194,11 @@ function repPhone(rep: RepresentativeState): string {
 }
 
 export interface ValidationContext {
-  /** Цена периода для проверки переплаты (из программы или вручную). */
+  /** Стоимость периода (пакет с семейной скидкой) — до скидки на кассе. */
   price?: number;
+  /** У программы есть бланк договора: без подписи постановку не завершить. */
+  contractRequired?: boolean;
+  contractSigned?: boolean;
 }
 
 export function validateStep(step: StepKey, state: IntakeState, context: ValidationContext = {}): StepErrors {
@@ -205,10 +228,13 @@ export function validateStep(step: StepKey, state: IntakeState, context: Validat
     const months = Number(program.termMonths);
     if (!Number.isInteger(months) || months < 1 || months > 60) errors.termMonths = "wizard.program.termInvalid";
   }
-  if (step === "payment" && state.payment.mode === "now") {
-    const total = toAmount(state.payment.cash) + toAmount(state.payment.card);
-    if (total <= 0) errors.payment = "wizard.payment.empty";
-    else if (context.price != null && total > context.price + 0.001) errors.payment = "wizard.payment.overpaid";
+  if (step === "payment") {
+    if (context.price != null) {
+      if (state.payment.discount > context.price + 0.001) errors.discount = "wizard.payment.discountTooBig";
+      const preview = paymentPreview(state.payment, context.price);
+      if (preview.paid > preview.payable + 0.001) errors.payment = "wizard.payment.overpaid";
+    }
+    if (context.contractRequired && !context.contractSigned) errors.contract = "wizard.payment.contractRequired";
   }
   return errors;
 }
@@ -263,9 +289,9 @@ export function buildIntakePayload(state: IntakeState): IntakePayload {
     responsibleEmployeeId: program.responsibleEmployeeId,
     termMonths: Number(program.termMonths),
     termStartsOn: program.termStartsOn || null,
-    priceAmount: amountOrNull(program.priceAmount),
+    discountAmount: payment.discount > 0 ? payment.discount.toFixed(2) : null,
     payment:
-      payment.mode === "now"
+      toAmount(payment.cash) + toAmount(payment.card) > 0
         ? {
             cashAmount: amountOrNull(payment.cash) ?? "0",
             cardAmount: amountOrNull(payment.card) ?? "0",

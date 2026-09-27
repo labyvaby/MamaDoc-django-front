@@ -15,10 +15,14 @@ import { useCanChecker } from "../../hooks/useCan";
 import { subtleBg } from "../../theme/uiHelpers";
 import {
   programCardPrefix,
+  programCardStart,
+  programContractTemplateId,
   programInactivityMonths,
   programSpecializationIds,
   programTemplateIds,
 } from "../registry/registryConstants";
+
+const CARD_START_MAX = 1_000_000_000;
 
 interface ProgramProductSettingsProps {
   program: Program;
@@ -28,7 +32,8 @@ interface ProgramProductSettingsProps {
 
 /**
  * Настройки учёта программы: кого закреплять врачом, какие бланки печатать
- * в мастере, префикс номера карты и порог «Не приходили». Что продаётся —
+ * в мастере и какой из них — договор, префикс и начальный номер карты, порог
+ * «Не приходили». Что продаётся —
  * пакеты (экран «Пакеты» в «Учёте»). Ключи сохраняются сразу PATCH-ом и не
  * зависят от версий конструктора — публикация их не трогает.
  *
@@ -42,12 +47,16 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
   const [specializationIds, setSpecializationIds] = React.useState<number[]>(programSpecializationIds(program));
   const [templateIds, setTemplateIds] = React.useState<number[]>(programTemplateIds(program));
   const [inactivity, setInactivity] = React.useState(String(programInactivityMonths(program)));
+  const [cardStart, setCardStart] = React.useState(String(programCardStart(program)));
+  const [contractId, setContractId] = React.useState<number | "">(programContractTemplateId(program) ?? "");
 
   React.useEffect(() => {
     setPrefix(programCardPrefix(program));
     setSpecializationIds(programSpecializationIds(program));
     setTemplateIds(programTemplateIds(program));
     setInactivity(String(programInactivityMonths(program)));
+    setCardStart(String(programCardStart(program)));
+    setContractId(programContractTemplateId(program) ?? "");
   }, [program]);
 
   const specializations = useQuery({
@@ -64,6 +73,10 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
 
   const inactivityValue = Number(inactivity);
   const inactivityInvalid = !Number.isInteger(inactivityValue) || inactivityValue < 1 || inactivityValue > 24;
+  const cardStartValue = Number(cardStart);
+  const cardStartInvalid =
+    !Number.isInteger(cardStartValue) || cardStartValue < 1 || cardStartValue > CARD_START_MAX;
+  const contractOptions = templates.data ?? [];
 
   const save = useMutation({
     mutationFn: () =>
@@ -71,6 +84,8 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
         settings: {
           ...program.settings,
           cardNumberPrefix: prefix.trim(),
+          cardNumberStart: cardStartValue,
+          contractTemplateId: contractId === "" ? null : contractId,
           responsibleSpecializationIds: specializationIds,
           documentTemplateIds: templateIds,
           inactivityMonths: inactivityValue,
@@ -86,7 +101,8 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
     <Box sx={(theme) => ({ p: 1.5, border: 1, borderColor: "divider", borderRadius: "12px", bgcolor: subtleBg(theme) })}>
       <Typography variant="subtitle2">Настройки учёта</Typography>
       <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 1.5 }}>
-        Кого закреплять врачом, какие бланки печатать при постановке, номер карты и порог «Не приходили».
+        Кого закреплять врачом, какие бланки печатать при постановке и какой из них договор, номер карты и порог
+        «Не приходили».
       </Typography>
       <Stack gap={1.5}>
         <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
@@ -96,6 +112,17 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
             value={prefix}
             onChange={(event) => setPrefix(event.target.value.slice(0, 16))}
             placeholder="МД-"
+          />
+          <TextField
+            size="small"
+            label="Номер карты начинается с"
+            value={cardStart}
+            onChange={(event) => {
+              if (/^\d{0,10}$/.test(event.target.value)) setCardStart(event.target.value);
+            }}
+            error={cardStartInvalid}
+            helperText="Новые карты — не меньше этого номера"
+            inputProps={{ inputMode: "numeric" }}
           />
           <TextField
             size="small"
@@ -139,6 +166,25 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
             </MenuItem>
           ))}
         </TextField>
+        <TextField
+          select
+          size="small"
+          label="Бланк договора"
+          value={contractId}
+          onChange={(event) => setContractId(event.target.value === "" ? "" : Number(event.target.value))}
+          helperText="Печатается на шаге «Оплата» до приёма денег; без отметки «Договор подписан» постановку не завершить"
+          disabled={!contractOptions.length}
+        >
+          <MenuItem value="">Без договора</MenuItem>
+          {contractId !== "" && !contractOptions.some((template) => template.id === contractId) && (
+            <MenuItem value={contractId}>Бланк №{contractId}</MenuItem>
+          )}
+          {contractOptions.map((template) => (
+            <MenuItem key={template.id} value={template.id}>
+              {template.name}
+            </MenuItem>
+          ))}
+        </TextField>
         {can("printforms.manage") && (
           <Link component={RouterLink} to="/settings/print-blanks" variant="caption" sx={{ alignSelf: "flex-start" }}>
             Изменить тексты бланков
@@ -148,7 +194,7 @@ export const ProgramProductSettings: React.FC<ProgramProductSettingsProps> = ({ 
         <AppButton
           variant="contained"
           size="small"
-          disabled={save.isPending || inactivityInvalid}
+          disabled={save.isPending || inactivityInvalid || cardStartInvalid}
           onClick={() => save.mutate()}
           sx={{ alignSelf: "flex-start" }}
         >
