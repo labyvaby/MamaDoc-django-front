@@ -63,6 +63,19 @@ const PROFILES: Record<Vertical, Glossary> = {
 /** Список поддерживаемых вертикалей — для настроек и валидации. */
 export const SUPPORTED_VERTICALS = Object.keys(PROFILES) as Vertical[];
 
+/**
+ * Вертикали, которых ещё нет в `OrganizationVertical` бэка: терминология
+ * готова (DEV-просмотр через `mamadoc:vertical`), но выбрать их в настройках
+ * организации нельзя — бэк такое значение не примет. Убрать из списка, когда
+ * бэк зарегистрирует вертикаль.
+ */
+const VERTICALS_PENDING_BACKEND: readonly Vertical[] = ["realestate"];
+
+/** Вертикали, которые можно выбрать в настройках организации. */
+export const SELECTABLE_VERTICALS = SUPPORTED_VERTICALS.filter(
+  (v) => !VERTICALS_PENDING_BACKEND.includes(v),
+);
+
 /** Человекочитаемые названия вертикалей (для UI настроек). */
 export const VERTICAL_LABELS: Record<Vertical, string> = {
   clinic: "Медицинская клиника",
