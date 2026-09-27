@@ -65,7 +65,11 @@ export function useAppointmentReview(appointmentId: number) {
   const latest = query.data?.[0] ?? null;
   const isActive = latest != null && ACTIVE_STATUSES.has(latest.status);
   const answered = latest?.status === "completed";
-  const showButton = canRequest && !isActive && !answered && !mutation.isPending;
+  // По приёму — один запрос: если он уже уходил пациенту, повторно не шлём
+  // (бэк отвечает 409 ALREADY_SENT). Не дошедший (ошибка доставки) — можно.
+  const everSent = (query.data ?? []).some((r) => r.sentAt != null);
+  const showButton =
+    canRequest && !isActive && !answered && !everSent && !mutation.isPending;
   const statusMeta = latest ? REQUEST_STATUS_META[latest.status] : null;
 
   return {
