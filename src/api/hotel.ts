@@ -588,16 +588,16 @@ export function simulatePricingRule(
 
 // ── Номера (Room) ─────────────────────────────────────────────────────────
 //
-// Поля hasTerrace/terraceArea/roomZones/photos — ПРЕДЛОЖЕНИЕ фронта, бэком
-// ЕЩЁ НЕ ПОДТВЕРЖДЕНО (25.09.2026, по образцу карточки квартиры
-// crm-building.adamtech.dev — терраса, «Экспликация помещений», фото).
-// hasTerrace/terraceArea/roomZones уходят в POST/PATCH как обычные поля;
-// photos — только чтение, у бэка нет эндпоинта загрузки, просьба завести
-// (POST multipart .../rooms/{id}/photos/ → фото объект, DELETE по id — тот
-// же паттерн, что uploadGuestPhoto/deleteGuestPhoto). Пока не подтверждено,
-// PATCH/POST с hasTerrace/terraceArea/roomZones либо получит 400 (при
-// forbid_unknown_fields), либо будет тихо проигнорирован; photos на GET
-// всегда [] — форма и диалог защищены `?? []`/условным рендером.
+// Терраса/экспликация/фото — контракт подтверждён и выложен, «Ответ бэкенда:
+// API номера — терраса, экспликация и фото» (room-terrace-zones-photos-api.md),
+// backend-коммит 6e739de6 ветки test, миграция hotel.0012. hasTerrace/
+// terraceArea/roomZones — обычные поля POST/PATCH (см. семантику null/clear*
+// у HotelRoomUpdateData ниже). Фото — POST multipart .../rooms/{id}/photos/
+// (поле file, JPG/JPEG/PNG/WebP/HEIC до 10 МБ, hotel.manage) → HotelRoomPhoto,
+// DELETE .../rooms/{id}/photos/{photoId}/ → 204 (см. uploadRoomPhoto/
+// deleteRoomPhoto). На 27.09.2026 два blue-green прохода тестового контура
+// не прошли health-check — активен предыдущий blue без этих полей; на
+// test.crm.operator.kg код может недоступен, пока green не восстановят.
 
 export interface HotelRoom {
   id: number;
@@ -626,15 +626,13 @@ export interface HotelRoom {
   bathrooms: number | null;
   roomsCount: number | null;
   layoutDescription: string;
-  // ── Терраса/лоджия и разбивка на зоны — ПРЕДЛОЖЕНИЕ фронта по образцу
-  // crm-building.adamtech.dev (карточка квартиры: «Терраса 18.6 м²»,
-  // «Экспликация помещений»), бэком ЕЩЁ НЕ ПОДТВЕРЖДЕНО — см. комментарий
-  // у createRoom ниже. Все поля необязательные.
+  // ── Терраса/лоджия и разбивка на зоны — см. комментарий над HotelRoom.
+  // Все поля необязательные.
   hasTerrace: boolean;
   terraceArea: string | null;
   /** Именованные зоны номера («Кухня-гостиная», «Спальня»…) с площадью — для суитов из нескольких помещений. [] — не заполнено. */
   roomZones: HotelRoomZone[];
-  /** Фото номера — та же ПРЕДЛОЖЕНИЕ-пометка; эндпоинта загрузки пока нет, поле только на чтение и защищено ?? []. */
+  /** Фото номера, по sortOrder затем id — см. uploadRoomPhoto/deleteRoomPhoto. */
   photos: HotelRoomPhoto[];
 }
 
@@ -727,6 +725,17 @@ export function setRoomHousekeeping(id: number, state: string): Promise<HotelRoo
 /** 409 HAS_DEPENDENTS, если номер когда-либо бронировали → updateRoom(id, {status: "out_of_service"}). */
 export function deleteRoom(id: number): Promise<void> {
   return apiRequest<void>(`/v2/hotel/rooms/${id}/`, { method: "DELETE" });
+}
+
+/** JPG/JPEG/PNG/WebP/HEIC до 10 МБ, право hotel.manage. Новое фото получает следующий sortOrder. */
+export function uploadRoomPhoto(roomId: number, file: File): Promise<HotelRoomPhoto> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequest<HotelRoomPhoto>(`/v2/hotel/rooms/${roomId}/photos/`, { method: "POST", formData });
+}
+
+export function deleteRoomPhoto(roomId: number, photoId: number): Promise<void> {
+  return apiRequest<void>(`/v2/hotel/rooms/${roomId}/photos/${photoId}/`, { method: "DELETE" });
 }
 
 // ── Шахматка (Calendar) и доступность номера ─────────────────────────────────
