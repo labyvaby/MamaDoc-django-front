@@ -470,12 +470,14 @@ const BookingByCodePage: React.FC = () => {
             sx={{ p: { xs: 2, md: 2.5 }, borderRadius: BOOKING_RADIUS, boxShadow: BOOKING_SHADOW }}
           >
             <Stack spacing={2}>
-              <StatusCard status={booking.status} t={t} />
-
-              {/* ── Онлайн-предоплата: главный экран для неоплаченной брони ── */}
+              {/* ── Онлайн-предоплата — первой: оплата либо главное действие
+                  (ещё не оплачено), либо главная хорошая новость (оплачено);
+                  статус и «что дальше» идут следом (заказчик, 24.09.2026). ── */}
               {booking.payment && (
                 <PaymentBlock payment={booking.payment} t={t} />
               )}
+
+              <StatusCard status={booking.status} t={t} />
 
               <Row icon={<EventOutlined sx={{ fontSize: 20 }} />}>
                 <Typography sx={{ fontSize: 18, fontWeight: 700 }}>

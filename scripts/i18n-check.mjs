@@ -72,6 +72,31 @@ const namespaces = Object.fromEntries(
 
 const capitalize = (v) => (v ? v.charAt(0).toUpperCase() + v.slice(1) : v);
 const lower = (v) => (v ? v.charAt(0).toLowerCase() + v.slice(1) : v);
+// Держать в синхроне с src/i18n/formatters.ts:genderForm.
+const genderForm = (value, forms) => {
+  const pick = (g) => (typeof forms[g] === "string" ? forms[g] : "");
+  const gender = value === "f" || value === "n" ? value : "m";
+  return pick(gender) || pick("m");
+};
+// Держать в синхроне с src/i18n/formatters.ts:prepForm.
+const RU_CONSONANTS = "бвгджзклмнпрстфхцчшщ";
+const isConsonantAt = (word, index) => {
+  const ch = word[index]?.toLowerCase();
+  return !!ch && RU_CONSONANTS.includes(ch);
+};
+const needsEuphonicO = (p, word) => {
+  const w = word.toLowerCase();
+  if (p === "в") return (w[0] === "в" || w[0] === "ф") && isConsonantAt(w, 1);
+  return w.startsWith("вс") || w.startsWith("вз") || (["с", "з", "ш", "ж", "щ"].includes(w[0] ?? "") && isConsonantAt(w, 1));
+};
+const prepForm = (value, options) => {
+  const word = typeof value === "string" ? value : String(value);
+  const p = typeof options.p === "string" ? options.p : "";
+  const pLower = p.toLowerCase();
+  if (pLower !== "с" && pLower !== "в") return `${p} ${word}`.trim();
+  const prep = needsEuphonicO(pLower, word) ? `${p}о` : p;
+  return `${prep} ${word}`;
+};
 
 await i18next.init({
   resources: { ru: namespaces },
@@ -85,6 +110,8 @@ await i18next.init({
 });
 i18next.services.formatter.add("capitalize", (v) => (typeof v === "string" ? capitalize(v) : String(v)));
 i18next.services.formatter.add("lower", (v) => (typeof v === "string" ? lower(v) : String(v)));
+i18next.services.formatter.add("gender", (v, _lng, options) => genderForm(v, options || {}));
+i18next.services.formatter.add("prep", (v, _lng, options) => prepForm(v, options || {}));
 
 const PLURAL_SUFFIX = /_(one|few|many|other)$/;
 

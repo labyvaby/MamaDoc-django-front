@@ -8,6 +8,14 @@ export type DjangoRoleShortLocal = {
   code: string;
 };
 
+/** Кто и когда уволил / восстановил — для плашки в карточке. */
+export type DjangoEmploymentInfoLocal = {
+  firedAt: string | null;
+  firedBy: string;
+  restoredAt: string | null;
+  restoredBy: string;
+};
+
 /** Minimal specialization shape stored on EmployesRow in Django mode */
 export type DjangoSpecializationShortLocal = {
   id: number;
@@ -66,6 +74,11 @@ export type Employee = {
   _djangoOperationalBranches?: DjangoBranchShortLocal[];
   /** Django-mode only: признак, что подгружены полные детали сотрудника */
   _fullDetailsLoaded?: boolean;
+  /**
+   * Django-mode only: кто и когда уволил / восстановил. `null` — не увольняли,
+   * `undefined` — карточка из списка (там этих полей нет) либо бэк без релиза.
+   */
+  _employment?: DjangoEmploymentInfoLocal | null;
 };
 
 export type Specialization = {

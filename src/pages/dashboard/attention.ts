@@ -1,5 +1,7 @@
 import { pluralRu } from "../../utility/amountInWords";
 import { formatKGS } from "../../utility/format";
+import type { DashboardSections } from "../../api/dashboard";
+import { num } from "./widgetUtils";
 
 /**
  * Правила блока «Требует внимания» — отдельно от разметки: они и есть суть
@@ -46,12 +48,14 @@ export interface AttentionInput {
     refundCount: number;
   };
   /**
-   * ⚠ Числа «ждут оплаты» (`summary.waitingCount`) здесь нет намеренно: на
-   * проде статус приёма почти не переходит в «оплачен» при оплате, и отчёт
-   * считал «неоплаченными» почти все записи месяца (1585 из 1765 при 1491
-   * оплате, 23.09.2026). Надёжный источник — тикет бэку по сводке.
+   * Прошедшие визиты периода, оплаченные не полностью, — деньги, которые
+   * заработали, но не получили. Считается бэком по журналу платежей, а не по
+   * статусу приёма (`money.unpaidPastCount/Amount` агрегата, ответ 24.09.2026).
+   *
+   * ⚠ `summary.waitingCount` месячного отчёта для этого не годится — это
+   * счётчик жизненного цикла, включая будущие записи (1585 при 1299 приёмах).
    */
-  month?: { debtSum: number };
+  unpaid?: { count: number; amount: number };
   staff?: { total: number; free: number };
 }
 
@@ -149,17 +153,15 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
     });
   }
 
-  const m = input.month;
-  if (m) {
-    if (m.debtSum > 0) {
-      add({
-        id: "month-debt",
-        severity: "today",
-        value: formatKGS(m.debtSum),
-        text: "долгов с начала месяца — по месячному отчёту",
-        href: "/reports",
-      });
-    }
+  const u = input.unpaid;
+  if (u && u.count > 0 && u.amount > 0) {
+    add({
+      id: "unpaid-visits",
+      severity: "today",
+      value: formatKGS(u.amount),
+      text: `не получено за ${u.count} ${pluralRu(u.count, ["прошедший визит", "прошедших визита", "прошедших визитов"])} ${input.periodLabel}`,
+      href: "/reports",
+    });
   }
 
   const d = input.deals;
@@ -201,4 +203,41 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
 
   // sort стабилен: внутри одной срочности порядок — как в правилах выше.
   return items.sort((a, b2) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b2.severity]);
+}
+
+/**
+ * Снимок для правил из разделов сводки. Раздел, которого нет (нет права, ещё
+ * грузится), остаётся undefined.
+ */
+export function attentionInputFromSections(
+  sections: DashboardSections,
+  periodLabel: string,
+): AttentionInput {
+  const { bookings, tasks, deals, reviews, money, load } = sections;
+  return {
+    periodLabel,
+    bookings: bookings
+      ? { pending: bookings.pendingCount, overdue: bookings.overdueCount }
+      : undefined,
+    tasks: tasks ? { overdue: tasks.overdue, awaitingApproval: tasks.awaitingApproval } : undefined,
+    deals: deals
+      ? { overdueActions: deals.overdueActionsCount, todayActions: deals.todayActionsCount }
+      : undefined,
+    reviews: reviews ? { negative: reviews.negative } : undefined,
+    cash: money
+      ? {
+          netCashFlow: num(money.netCashFlow),
+          grossIncome: num(money.grossIncome),
+          refundedTotal: num(money.refundedTotal),
+          refundCount: money.refundCount,
+        }
+      : undefined,
+    unpaid:
+      money && money.unpaidPastCount != null
+        ? { count: money.unpaidPastCount, amount: num(money.unpaidPastAmount) }
+        : undefined,
+    staff: load
+      ? { total: load.overallEmployeeCount, free: load.overallFreeEmployeeCount }
+      : undefined,
+  };
 }

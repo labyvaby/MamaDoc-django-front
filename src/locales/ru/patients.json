@@ -73,7 +73,7 @@
     "bonuses": "Бонусы",
     "amountWithCurrency": "{{amount}} сом",
     "ageYearsMonths": "({{years}} {{yearWord}} и {{months}} {{monthWord}})",
-    "lastVisit": "Последний {{visit.nom}}",
+    "lastVisit": "{{visit.gender, gender(m: Последний; f: Последняя; n: Последнее)}} {{visit.nom}}",
     "serviceLabel": "{{service.nom, capitalize}}:",
     "complaintsLabel": "{{complaint.nomPl, capitalize}}:",
     "notes": "Примечания",

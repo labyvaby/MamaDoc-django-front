@@ -20,6 +20,7 @@ export type WidgetId =
   | "branches"
   | "month"
   | "staff"
+  | "services"
   | "ops";
 
 /**
@@ -47,10 +48,11 @@ export interface WidgetMeta {
  * 1. «Пульс» — сколько заработали и куда идёт месяц (единственная крупная цифра);
  * 2. «Требует внимания» — что решить сегодня, из всех разделов одним списком;
  * 3. разбор денег и потока записей — почему цифра такая;
- * 4. операционка «сейчас» (задачи, воронка, отзывы) и люди;
- * 5. справочное: филиалы, месяц целиком.
+ * 4. операционка «сейчас» (задачи, воронка, отзывы);
+ * 5. кто и что приносит деньги: сотрудники и услуги;
+ * 6. справочное: филиалы, итоги периода.
  *
- * Ряды на широком экране: 8+4 · 6+6 · 7+5 · 12 · 12.
+ * Ряды на широком экране: 8+4 · 6+6 · 12 · 6+6 · 12 · 12.
  */
 export const WIDGETS: WidgetMeta[] = [
   { id: "pulse", label: "Пульс: выручка и темп", permission: PAGE_PERMISSIONS.cashbox, span: 8 },
@@ -82,13 +84,19 @@ export const WIDGETS: WidgetMeta[] = [
     // Секции внутри гейтятся каждая своим правом; карточка нужна, если есть
     // хотя бы одна.
     permission: [PAGE_PERMISSIONS.tasks, ...PAGE_PERMISSIONS.deals, ...PAGE_PERMISSIONS.reviews],
-    span: 7,
+    span: 12,
   },
   {
     id: "staff",
     label: "Сотрудники",
     permission: PAGE_PERMISSIONS.payroll,
-    span: 5,
+    span: 6,
+  },
+  {
+    id: "services",
+    label: "Что продаётся",
+    permission: PAGE_PERMISSIONS.appointments,
+    span: 6,
   },
   {
     id: "branches",
@@ -98,11 +106,12 @@ export const WIDGETS: WidgetMeta[] = [
     needsManyBranches: true,
   },
   {
+    // Ключ «month» сохранён ради личных раскладок: раньше блок был «Месяц
+    // целиком» на месячном отчёте, теперь — итоги любого периода из агрегата.
     id: "month",
-    label: "Месяц целиком",
-    permission: PAGE_PERMISSIONS.reports,
+    label: "Итоги периода",
+    permission: [PAGE_PERMISSIONS.appointments, PAGE_PERMISSIONS.cashbox],
     span: 12,
-    onlyPeriod: "month",
   },
   // Подробности того, что уже есть в «Пульсе» (загрузка) и «Требует внимания»
   // (заявки). По умолчанию спрятаны, но их можно вернуть в настройках состава.

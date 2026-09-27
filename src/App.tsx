@@ -76,6 +76,7 @@ const DjangoProductsPage = lazy(() => import("./pages/products/django"));
 const DjangoInventoryPage = lazy(() => import("./pages/inventory/django"));
 const ProcurementInvoicesPage = lazy(() => import("./pages/procurement"));
 const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
+const DjangoLabPage = lazy(() => import("./pages/lab/django"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
 const DjangoSchedulePage = lazy(() => import("./pages/schedule/django"));
 const DjangoWorkShiftsPage = lazy(() => import("./pages/work-shifts/django"));
@@ -103,6 +104,7 @@ const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
+const ReviewShortLinkPage = lazy(() => import("./pages/reviews/ShortLinkPage"));
 const PublicBookSpecialtiesPage = lazy(() => import("./pages/public-booking/SpecialtiesPage"));
 const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsPage"));
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
@@ -134,7 +136,9 @@ const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
 const OdoctorSettingsPage = lazy(() => import("./pages/settings/OdoctorSettingsPage"));
+const LabSettingsPage = lazy(() => import("./pages/settings/LabSettingsPage"));
 const ChatwootLeadsSettingsPage = lazy(() => import("./pages/settings/ChatwootLeadsSettingsPage"));
+const AltegioSettingsPage = lazy(() => import("./pages/settings/AltegioSettingsPage"));
 const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const ClientsSettingsPage = lazy(() => import("./pages/settings/ClientsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
@@ -329,6 +333,11 @@ function App() {
                         name: "sales",
                         list: "/sales",
                         meta: { label: "Продажи" }
+                      },
+                      {
+                        name: "lab",
+                        list: "/lab",
+                        meta: { label: "Лаборатория" }
                       },
                       {
                         name: "storage",
@@ -793,6 +802,16 @@ function App() {
                           }
                         />
                         <Route
+                          path="lab"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.lab}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoLabPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="cashbox"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.cashbox}>
@@ -863,6 +882,16 @@ function App() {
                           }
                         />
                         <Route
+                          path="settings/lab"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.lab}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <LabSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="settings/chatwoot"
                           element={
                             <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.chatwoot}>
@@ -870,6 +899,19 @@ function App() {
                                 <ChatwootLeadsSettingsPage />
                               </Suspense>
                             </RequirePermission>
+                          }
+                        />
+                        {/* Altegio → ErkinAI: новая закрытая страница — только
+                            суперадминистратору, как и её API, пока заказчик
+                            отдельно не откроет раздел ролям организации. */}
+                        <Route
+                          path="settings/altegio"
+                          element={
+                            <RequireSuperAdmin>
+                              <Suspense fallback={<LinearProgress />}>
+                                <AltegioSettingsPage />
+                              </Suspense>
+                            </RequireSuperAdmin>
                           }
                         />
                         <Route
@@ -1209,14 +1251,19 @@ function App() {
                               }
                             />
                             <Route
-                              path="reviews/settings"
+                              path="settings/reviews"
                               element={
-                                <RequirePermission permission="reviews.manage">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.reviews}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <ReviewsSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }
+                            />
+                            {/* Старый адрес — закладки и ссылки из сообщений. */}
+                            <Route
+                              path="reviews/settings"
+                              element={<Navigate to="/settings/reviews" replace />}
                             />
                             <Route
                               path="settings/diagnoses"
@@ -1290,6 +1337,14 @@ function App() {
                       <Route
                         path="update-password"
                         element={<Navigate to="/profile" replace />}
+                      />
+                      <Route
+                        path="r/:code"
+                        element={
+                          <Suspense fallback={<LinearProgress />}>
+                            <ReviewShortLinkPage />
+                          </Suspense>
+                        }
                       />
                       <Route
                         path="review/:token"

@@ -1,4 +1,5 @@
 import { tt } from "../i18n/t";
+import { accessEndedMessage, rememberAccessEnded } from "./accessEnded";
 
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
@@ -448,6 +449,9 @@ export async function apiRequest<T>(
   // usePermissions переведёт authStatus в unauthenticated и RequireAuth
   // уведёт на /login вместо бесконечных «Ошибка загрузки».
   if (response.status === 401) {
+    // Сессию закрыли из-за увольнения — объяснение ждёт на странице входа.
+    const ended = accessEndedMessage(response.status, payload);
+    if (ended) rememberAccessEnded(ended);
     window.dispatchEvent(new Event("mamadoc:api-unauthorized"));
   }
   // A role may have been changed while this tab was open. Refresh the cached
@@ -508,6 +512,9 @@ export async function apiRequestWithHeaders<T>(
   const payload = await readJsonBody(response);
 
   if (response.status === 401) {
+    // Сессию закрыли из-за увольнения — объяснение ждёт на странице входа.
+    const ended = accessEndedMessage(response.status, payload);
+    if (ended) rememberAccessEnded(ended);
     window.dispatchEvent(new Event("mamadoc:api-unauthorized"));
   }
   // Выключенный модуль (MODULE_DISABLED) правами не лечится — см. apiRequest.

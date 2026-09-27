@@ -12,7 +12,13 @@ import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKey
 import { useCan } from "../../hooks/useCan";
 import { REQUEST_STATUS_META } from "./meta";
 
-const ACTIVE_STATUSES = new Set(["created", "sent", "rated", "awaiting_comment"]);
+const ACTIVE_STATUSES = new Set([
+  "created",
+  "scheduled",
+  "sent",
+  "rated",
+  "awaiting_comment",
+]);
 
 /**
  * Данные и действие отзыва по приёму — раньше жили внутри AppointmentReviewBlock
@@ -23,12 +29,12 @@ const ACTIVE_STATUSES = new Set(["created", "sent", "rated", "awaiting_comment"]
  * кнопку — в AppointmentDetailsPanel.
  */
 export function useAppointmentReview(appointmentId: number) {
-  const canView = useCan("reviews.view");
-  const canManage = useCan("reviews.manage");
+  const canView = useCan(["reviews.view", "reviews.view_own"]);
+  const canRequest = useCan("reviews.request");
   const queryClient = useQueryClient();
   const { open: notify } = useNotification();
 
-  const enabled = canView || canManage;
+  const enabled = canView || canRequest;
 
   const query = useQuery({
     queryKey: djangoQueryKeys.reviews.byAppointment(appointmentId),
@@ -39,12 +45,18 @@ export function useAppointmentReview(appointmentId: number) {
 
   const mutation = useMutation({
     mutationFn: () => createReviewRequest(appointmentId),
-    onSuccess: () => {
+    onSuccess: (request) => {
       queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.reviews.byAppointment(appointmentId),
       });
       queryClient.invalidateQueries({ queryKey: djangoQueryKeys.reviews.all });
-      notify?.({ type: "success", message: "Запрос отзыва отправлен" });
+      notify?.({
+        type: "success",
+        message:
+          request.status === "scheduled" && request.sendAfter
+            ? `Сейчас тихие часы — пациент получит запрос ${dayjs(request.sendAfter).format("DD.MM в HH:mm")}`
+            : "Запрос отзыва отправлен",
+      });
     },
     onError: (e) =>
       notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка" }),
@@ -52,7 +64,12 @@ export function useAppointmentReview(appointmentId: number) {
 
   const latest = query.data?.[0] ?? null;
   const isActive = latest != null && ACTIVE_STATUSES.has(latest.status);
-  const showButton = canManage && !isActive && !mutation.isPending;
+  const answered = latest?.status === "completed";
+  // По приёму — один запрос: если он уже уходил пациенту, повторно не шлём
+  // (бэк отвечает 409 ALREADY_SENT). Не дошедший (ошибка доставки) — можно.
+  const everSent = (query.data ?? []).some((r) => r.sentAt != null);
+  const showButton =
+    canRequest && !isActive && !answered && !everSent && !mutation.isPending;
   const statusMeta = latest ? REQUEST_STATUS_META[latest.status] : null;
 
   return {
@@ -72,7 +89,7 @@ interface Props {
 
 /**
  * Индикатор статуса отзыва (чип статуса + оценка + попытка + время отправки)
- * внутри карточки приёма. Самогейтится по правам reviews.view/manage — для
+ * внутри карточки приёма. Самогейтится по правам reviews.view/view_own/request — для
  * ролей без доступа не рендерит ничего. Кнопка запроса — в шапке карточки,
  * см. useAppointmentReview.
  */
@@ -94,9 +111,14 @@ const AppointmentReviewStatus: React.FC<Props> = ({ appointmentId }) => {
         latest && (
           <>
             {statusMeta && (
-              <Tooltip title="Отзыв">
+              <Tooltip title={latest.status === "failed" && latest.error ? `Отзыв: ${latest.error}` : "Отзыв"}>
                 <Chip label={statusMeta.label} color={statusMeta.color} size="small" />
               </Tooltip>
+            )}
+            {latest.deliveredChannel && (
+              <Typography variant="caption" color="text.disabled">
+                через {latest.deliveredChannel === "whatsapp" ? "WhatsApp" : "SMS"}
+              </Typography>
             )}
             {latest.rating != null && (
               <Rating value={latest.rating} readOnly size="small" />
@@ -109,6 +131,11 @@ const AppointmentReviewStatus: React.FC<Props> = ({ appointmentId }) => {
             {latest.sentAt && (
               <Typography variant="caption" color="text.disabled">
                 {dayjs(latest.sentAt).format("DD.MM HH:mm")}
+              </Typography>
+            )}
+            {latest.status === "scheduled" && latest.sendAfter && (
+              <Typography variant="caption" color="text.disabled">
+                в {dayjs(latest.sendAfter).format("DD.MM HH:mm")}
               </Typography>
             )}
           </>
