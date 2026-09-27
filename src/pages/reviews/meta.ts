@@ -24,6 +24,7 @@ export const REQUEST_STATUS_META: Record<
   { label: string; color: ChipColor }
 > = {
   created: { label: "Создан", color: "default" },
+  scheduled: { label: "Уйдёт утром", color: "default" },
   sent: { label: "Отправлен", color: "info" },
   rated: { label: "Оценён", color: "info" },
   awaiting_comment: { label: "Ждём комментарий", color: "warning" },
