@@ -10,6 +10,7 @@ export type ReviewChannel = "whatsapp" | "sms" | "whatsapp_then_sms";
 
 export type ReviewRequestStatus =
   | "created"
+  | "scheduled"
   | "sent"
   | "rated"
   | "awaiting_comment"
@@ -105,6 +106,8 @@ export interface ReviewRequest {
   branchId: number | null;
   deliveredChannel: "whatsapp" | "sms" | null;
   error: string | null;
+  /** «Запланирован»: запросили в тихие часы — уйдёт в это время. */
+  sendAfter?: string | null;
 }
 
 export interface BranchMaps {
