@@ -43,7 +43,6 @@ import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 
 import {
   AppButton,
-  CustomDatePicker,
   DateRangeField,
   PageHeader,
   UserAvatar,
@@ -92,6 +91,7 @@ import BatchWriteOffDialog from "../../components/vaccinations/BatchWriteOffDial
 import CalendarTemplateDialog from "../../components/vaccinations/CalendarTemplateDialog";
 import DraftsTab from "./DraftsTab";
 import Form5Tab from "./Form5Tab";
+import PeriodStepper from "../../components/vaccinations/PeriodStepper";
 import KrCalendarDialog from "../../components/vaccinations/KrCalendarDialog";
 import {
   ExemptionDialog,
@@ -1264,18 +1264,7 @@ const VaccinationsPage: React.FC = () => {
                   </ToggleButton>
                 </ToggleButtonGroup>
               )}
-              <CustomDatePicker
-                label="Месяц"
-                value={reportMonth ? dayjs(`${reportMonth}-01`) : null}
-                onChange={(next) => {
-                  if (next && next.isValid()) setReportMonth(next.format("YYYY-MM"));
-                }}
-                views={["year", "month"]}
-                openTo="month"
-                format="MM.YY"
-                shortYearMode="nearest"
-                slotProps={{ textField: { size: "small", sx: { minWidth: 170 } } }}
-              />
+              <PeriodStepper value={reportMonth} onChange={setReportMonth} />
             </Stack>
           )}
         </Stack>

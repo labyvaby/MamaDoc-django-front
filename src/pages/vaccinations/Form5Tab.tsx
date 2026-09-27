@@ -18,7 +18,8 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 
-import { AppButton, CustomDatePicker } from "../../components/ui";
+import { AppButton } from "../../components/ui";
+import PeriodStepper from "../../components/vaccinations/PeriodStepper";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { downloadForm5Docx, getForm5 } from "../../api/vaccinations";
 import {
@@ -86,18 +87,7 @@ const Form5Tab: React.FC<Props> = ({ branchId, orgId }) => {
             Год
           </ToggleButton>
         </ToggleButtonGroup>
-        <CustomDatePicker
-          label={mode === "year" ? "Год" : "Месяц"}
-          value={dayjs(`${month}-01`)}
-          onChange={(next) => {
-            if (next && next.isValid()) setMonth(next.format("YYYY-MM"));
-          }}
-          views={mode === "year" ? ["year"] : ["year", "month"]}
-          openTo={mode === "year" ? "year" : "month"}
-          format={mode === "year" ? "YYYY" : "MM.YY"}
-          shortYearMode="nearest"
-          slotProps={{ textField: { size: "small", sx: { minWidth: 150 } } }}
-        />
+        <PeriodStepper value={month} onChange={setMonth} mode={mode} />
         {branchId != null && (
           <ToggleButtonGroup
             exclusive
