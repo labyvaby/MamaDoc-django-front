@@ -109,5 +109,5 @@ export function getPnlReport(dateFrom?: string, dateTo?: string, signal?: AbortS
   const query = new URLSearchParams();
   if (dateFrom) query.set("dateFrom", dateFrom);
   if (dateTo) query.set("dateTo", dateTo);
-  return apiRequest<PnlReport>(`/finance/pnl/${query.size ? `?${query}` : ""}`, { signal });
+  return apiRequest<PnlReport>(`/v2/retail/reports/pnl/${query.size ? `?${query}` : ""}`, { signal });
 }

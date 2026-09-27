@@ -41,13 +41,13 @@ export const emptyBenefits: Benefits = {
   certificateCode: "",
 };
 
-/** Ручная скидка всегда остаётся в допустимом диапазоне 0–100%. */
+/** Денежная скидка вводится в сомах; допустимую сумму проверяет сервер. */
 const normalizeManualDiscount = (value: string): string => {
   const normalized = value.replace(",", ".").replace(/[^\d.]/g, "");
   const [whole = "", fraction = ""] = normalized.split(".");
   const numeric = Number(`${whole || "0"}.${fraction.slice(0, 2)}`);
   if (!Number.isFinite(numeric)) return "0";
-  return String(Math.min(100, Math.max(0, numeric)));
+  return String(Math.max(0, numeric));
 };
 
 /**
@@ -453,7 +453,7 @@ export function LivePaymentPanel({
               {actions.discount && showManual && (
                 <Stack direction="row" alignItems="center" gap="8px">
                   <Typography sx={{ flex: 1, fontSize: 12, lineHeight: 1.2, color: c.textDim }}>
-                    {showKinds ? "или свой процент" : "Своя скидка"}
+                    {showKinds ? "или скидка суммой" : "Скидка на чек"}
                   </Typography>
                   <InputBase
                     value={benefits.discount === "0" ? "" : benefits.discount}
@@ -465,8 +465,8 @@ export function LivePaymentPanel({
                     // Quote refetches after every edit. Keep this input enabled
                     // during that request, or only the first digit is accepted.
                     disabled={locked || selectedKind !== null}
-                    inputProps={{ inputMode: "decimal", max: 100, style: { textAlign: "right" } }}
-                    endAdornment={<Box component="span" sx={{ pl: "4px", color: c.textDim }}>%</Box>}
+                    inputProps={{ inputMode: "decimal", style: { textAlign: "right" } }}
+                    endAdornment={<Box component="span" sx={{ pl: "4px", color: c.textDim }}>сом</Box>}
                     sx={{
                       width: 96,
                       height: 32,

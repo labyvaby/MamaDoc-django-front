@@ -18,6 +18,7 @@ type Props = {
   onChangeColor: (lineId: string, colorId: string) => void;
   onChangeSize: (lineId: string, sizeId: string) => void;
   onChangeQuantity: (lineId: string, quantity: number) => void;
+  onChangeLineDiscount: (lineId: string, discountAmount: number) => void;
   onRemoveLine: (lineId: string) => void;
   onRestoreLine: (lineId: string) => void;
   onHold: () => void;
@@ -40,6 +41,7 @@ export const PosReceipt: React.FC<Props> = ({
   onChangeColor,
   onChangeSize,
   onChangeQuantity,
+  onChangeLineDiscount,
   onRemoveLine,
   onRestoreLine,
   onHold,
@@ -123,6 +125,7 @@ export const PosReceipt: React.FC<Props> = ({
             onChangeColor={(colorId) => onChangeColor(line.id, colorId)}
             onChangeSize={(sizeId) => onChangeSize(line.id, sizeId)}
             onChangeQuantity={(quantity) => onChangeQuantity(line.id, quantity)}
+            onChangeLineDiscount={(amount) => onChangeLineDiscount(line.id, amount)}
             onRemove={() => onRemoveLine(line.id)}
             onRestore={() => onRestoreLine(line.id)}
           />

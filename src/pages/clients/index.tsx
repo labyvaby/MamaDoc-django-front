@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Button, CircularProgress, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Button, CircularProgress, MenuItem, Select, Typography, useMediaQuery, useTheme } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
@@ -35,6 +35,7 @@ export default function ClientsPage() {
   usePageTitle("Все клиенты");
   const [search, setSearch] = React.useState("");
   const [debouncedSearch, setDebouncedSearch] = React.useState("");
+  const [birthMonth, setBirthMonth] = React.useState<number | "">("");
   const [selected, setSelected] = React.useState<DjangoClient | null>(null);
   const [editorClient, setEditorClient] = React.useState<DjangoClient | null>(null);
   const [editorOpen, setEditorOpen] = React.useState(false);
@@ -54,8 +55,8 @@ export default function ClientsPage() {
   }, [layoutQuery.data]);
 
   const clients = useQuery({
-    queryKey: ["clients", organizationId, debouncedSearch],
-    queryFn: ({ signal }) => getClients(organizationId as number, { query: debouncedSearch }, signal),
+    queryKey: ["clients", organizationId, debouncedSearch, birthMonth],
+    queryFn: ({ signal }) => getClients(organizationId as number, { query: debouncedSearch, birthMonth: birthMonth || null }, signal),
     enabled: Boolean(organizationId && canView),
   });
   const statuses = useQuery({
@@ -87,6 +88,12 @@ export default function ClientsPage() {
 
   return <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
     <PageHeader title="Клиенты" showTitle={false} onAdd={canCreate ? openCreate : undefined} addButtonText="Добавить клиента" addButtonIcon={<AddOutlined />} showSearch searchVal={search} onSearchChange={setSearch} searchPlaceholder="Поиск..." loading={clients.isFetching} />
+    <Box sx={{ px: { xs: 1, md: 2 }, pb: 1 }}>
+      <Select size="small" displayEmpty value={birthMonth} onChange={(event) => setBirthMonth(event.target.value === "" ? "" : Number(event.target.value))} sx={{ minWidth: 220 }}>
+        <MenuItem value="">Все месяцы рождения</MenuItem>
+        {Array.from({ length: 12 }, (_, index) => <MenuItem key={index + 1} value={index + 1}>{new Intl.DateTimeFormat("ru-RU", { month: "long" }).format(new Date(2020, index, 1))}</MenuItem>)}
+      </Select>
+    </Box>
     <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: isMobile ? "column" : "row", gap: 1.5, px: { xs: 1, md: 2 }, pb: 1.5, overflow: isMobile ? "auto" : "hidden" }}>
       <Box sx={{ flex: isMobile ? "0 0 42%" : isTablet ? "5 1 0" : "3 1 0", minWidth: 0, minHeight: 0 }}><ClientListPanel clients={clients.data ?? []} selectedId={selected?.id ?? null} loading={clients.isLoading} error={clients.error instanceof Error ? clients.error.message : null} onSelect={setSelected} /></Box>
       {!isMobile && !isTablet && selected && <Box sx={{ flex: "3.5 1 0", minWidth: 0, minHeight: 0 }}><ClientCard client={selected} settings={cardSettings} canUpdate={canUpdate} onEdit={openEdit} /></Box>}

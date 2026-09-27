@@ -73,6 +73,9 @@ export function printReceipt(receipt: GoodsReceipt, payments: SupplierPayment[])
     <tbody>${rows}</tbody>
   </table>
   <div class="totals">
+    ${Number(receipt.customsCost) > 0 ? `<div>Растаможка: ${escape(formatMoney(receipt.customsCost))} сом</div>` : ""}
+    ${Number(receipt.deliveryCost) > 0 ? `<div>Доставка: ${escape(formatMoney(receipt.deliveryCost))} сом</div>` : ""}
+    ${Number(receipt.otherCosts) > 0 ? `<div>Прочие расходы: ${escape(formatMoney(receipt.otherCosts))} сом</div>` : ""}
     <div>Итого по накладной: <b>${escape(formatMoney(receipt.totalCost))} сом</b></div>
     ${Number(receipt.returnedTotal) > 0 ? `<div>Возвращено поставщику: −${escape(formatMoney(receipt.returnedTotal))} сом</div>` : ""}
     <div>Оплачено: −${escape(formatMoney(receipt.paidTotal))} сом</div>

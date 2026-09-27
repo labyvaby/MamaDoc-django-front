@@ -32,6 +32,7 @@ export type PosReceiptLine = {
   selectedSizeId: string;
   quantity: number;
   price: number;
+  discountAmount?: number;
   /** Удалённая строка остаётся в чеке зачёркнутой — её можно вернуть. */
   removed?: boolean;
 };
