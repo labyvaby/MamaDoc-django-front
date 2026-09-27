@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { salaryReportBranchId } from "./branchScope";
+import { bonusBranchId, salaryReportBranchId } from "./branchScope";
 
 describe("salaryReportBranchId", () => {
   it("организация с одним филиалом — отчёт по всей организации", () => {
@@ -11,5 +11,15 @@ describe("salaryReportBranchId", () => {
   });
   it("старый бэкенд без activeBranchCount — как раньше", () => {
     expect(salaryReportBranchId(5, {})).toBe(5);
+  });
+});
+
+describe("bonusBranchId", () => {
+  it("в организации с одним филиалом премия всё равно в активном филиале", () => {
+    expect(bonusBranchId(5)).toBe(5);
+  });
+  it("нет активного филиала — undefined", () => {
+    expect(bonusBranchId(null)).toBeUndefined();
+    expect(bonusBranchId(undefined)).toBeUndefined();
   });
 });

@@ -32,8 +32,9 @@ import { activeBranchesOf, isSwitcherInteractive, showsOrgWideItem } from "./con
  *
  * Behavior:
  *  - Hidden entirely outside Django mode.
- *  - When user has 1 membership and no branches — renders read-only chip
- *    (nothing to switch to).
+ *  - When user has 1 membership and no branches, or 1 membership and 1
+ *    branch (unless the session is still org-wide) — renders read-only
+ *    chip (nothing to switch to).
  *  - Otherwise — chip opens a popover menu with organizations grouped,
  *    each listing its accessible branches (plus the org-wide «Все филиалы»
  *    mode). Selecting a branch calls switchContext({ membershipId, branchId }).
@@ -66,8 +67,10 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
   if (memberships.length === 0) return null;
 
   // Меню нужно, только если есть из чего выбрать. При одном филиале сессия
-  // сама стоит в нём (бэкенд), а «Все филиалы» не показывается.
-  const isInteractive = isSwitcherInteractive(memberships);
+  // сама стоит в нём (бэкенд), а «Все филиалы» не показывается. Если бэкенд
+  // старый (или сессия ещё не обновилась) и activeBranch всё ещё пуст —
+  // меню остаётся, чтобы войти в единственный филиал вручную.
+  const isInteractive = isSwitcherInteractive(memberships, activeBranch?.id);
 
   const handleOpen = (e: React.MouseEvent<HTMLElement>) => {
     if (!isInteractive || switching) return;

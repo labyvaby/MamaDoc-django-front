@@ -11,6 +11,17 @@ export const activeBranchesOf = (m: RbacMembership): RbacBranch[] =>
  */
 export const showsOrgWideItem = (branchCount: number): boolean => branchCount !== 1;
 
-/** Меню нужно, только если есть из чего выбрать. */
-export const isSwitcherInteractive = (memberships: RbacMembership[]): boolean =>
-  memberships.length > 1 || memberships.some((m) => activeBranchesOf(m).length > 1);
+/**
+ * Меню нужно, только если есть из чего выбрать. Отдельный случай —
+ * старый бэкенд или ещё не обновившаяся сессия: единственный филиал есть,
+ * но activeBranchId всё ещё пуст (сессия в «Все филиалы») — тогда меню
+ * всё равно нужно, чтобы войти в свой единственный филиал вручную
+ * (пункта «Все филиалы» в нём при этом не будет — см. showsOrgWideItem).
+ */
+export const isSwitcherInteractive = (
+  memberships: RbacMembership[],
+  activeBranchId: number | null | undefined,
+): boolean =>
+  memberships.length > 1
+  || memberships.some((m) => activeBranchesOf(m).length > 1)
+  || (activeBranchId == null && memberships.some((m) => activeBranchesOf(m).length === 1));
