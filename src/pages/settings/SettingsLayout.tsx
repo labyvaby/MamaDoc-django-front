@@ -47,6 +47,7 @@ import PercentOutlined from "@mui/icons-material/PercentOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import HubOutlined from "@mui/icons-material/HubOutlined";
+import ManageHistoryOutlined from "@mui/icons-material/ManageHistoryOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
@@ -145,6 +146,12 @@ const TAB_DEFS: TabDef[] = [
     icon: <GroupsOutlined fontSize="small" />,
     group: "access",
     tone: "success",
+  },
+  {
+    key: "audit",
+    to: "/settings/security/audit",
+    icon: <ManageHistoryOutlined fontSize="small" />,
+    group: "access",
   },
   {
     key: "specializations",
@@ -272,7 +279,7 @@ const TAB_DEFS: TabDef[] = [
 export function useVisibleSettingsTabs(): TabDef[] {
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
-  const { activeOrganization } = usePermissions();
+  const { activeOrganization, activeMembership, isSuperAdmin } = usePermissions();
   // Клиническая специфика (специализации врачей, диагнозы, бланки
   // заключений, страховые) не подходит ни рознице, ни отелю — то же самое
   // применимо к Viva, что и к retail, не отдельный список.
@@ -300,6 +307,11 @@ export function useVisibleSettingsTabs(): TabDef[] {
     // Воронка продаж: на проде эндпоинтов ещё нет — вкладку прячем тем же
     // флагом, что и роут с пунктом меню (api/deals.ts).
     if (tab.key === "deals" && !DEALS_MODULE_ENABLED) return false;
+    // Журнал действий владелец и суперадмин видят без отдельного кода —
+    // так же решает бэк (audit.selectors.audit_access_for).
+    if (tab.key === "audit") {
+      return isSuperAdmin() || Boolean(activeMembership?.isOwner) || can(SETTINGS_TAB_PERMISSIONS.audit);
+    }
     // Уборка на моках: гейт единый с роутом и сайдбаром (см. useModuleGate).
     return tab.key === "cleaning"
       ? moduleGate("cleaning", [SETTINGS_TAB_PERMISSIONS.cleaning])
