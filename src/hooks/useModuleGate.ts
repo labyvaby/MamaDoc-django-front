@@ -37,14 +37,18 @@ export const MOCKED_MODULE_GATES = {
 } as const;
 
 /**
- * DEV-переключатель модулей, которых бэк ещё не выдаёт ни одной организации:
+ * Переключатель модулей, которых бэк ещё не выдаёт ни одной организации:
  *   localStorage.setItem("mamadoc:modules", "realestate"); location.reload();
- * Работает только в dev-сборке и только для модулей на моках.
+ * Работает только для модулей на моках, в dev-сборке и на тестовом стенде —
+ * чтобы показать модуль до бэка. Сборки теста и прода собираются из одного кода,
+ * поэтому стенд различаем по хосту во время работы: на проде переключатель мёртв.
  */
 const DEV_MODULES_KEY = "mamadoc:modules";
+const TEST_STAND_HOSTS = ["test.crm.operator.kg"];
 
 function devEnabledModules(): string[] {
-  if (!import.meta.env.DEV) return [];
+  const onTestStand = typeof window !== "undefined" && TEST_STAND_HOSTS.includes(window.location.hostname);
+  if (!import.meta.env.DEV && !onTestStand) return [];
   try {
     return (localStorage.getItem(DEV_MODULES_KEY) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   } catch {
