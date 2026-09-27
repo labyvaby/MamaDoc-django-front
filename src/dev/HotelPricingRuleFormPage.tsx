@@ -398,6 +398,116 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
   return (
     <Stack gap={2} sx={{ maxWidth: 760 }}>
       <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+          Категории номеров
+        </Typography>
+
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={form.allCategories}
+              onChange={(e) => patchForm({ allCategories: e.target.checked })}
+              disabled={saving || roomTypes.length === 0}
+            />
+          }
+          label="Все категории, включая те, что заведут позже"
+        />
+
+        {!form.allCategories && (
+          <>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 1.5 }}>
+              Или выберите конкретные:
+            </Typography>
+            {roomTypes.length === 0 ? (
+              <Typography variant="body2" color="text.disabled">
+                Категорий пока нет — сначала заведите их в «Категории и тарифы».
+              </Typography>
+            ) : (
+              <ToggleButtonGroup
+                value={form.roomTypeIds}
+                onChange={(_, value: number[]) => patchForm({ roomTypeIds: value })}
+                disabled={saving}
+                sx={{ flexWrap: "wrap", gap: 0.75, "& .MuiToggleButtonGroup-grouped": { border: "1px solid", borderColor: "divider !important", borderRadius: "8px !important", m: 0 } }}
+              >
+                {roomTypes.map((rt) => (
+                  <ToggleButton key={rt.id} value={rt.id} size="small">
+                    {rt.name}
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
+            )}
+          </>
+        )}
+
+        {amountValue !== 0 && selectedRoomTypes.length > 0 && (
+          <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem", mt: 2 }}>
+            {!anyConditionEnabled && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                Ни одно условие не включено — правило действует на каждую ночь.
+              </Typography>
+            )}
+            {simLoading && !simResult ? (
+              <Typography variant="body2">Считаем…</Typography>
+            ) : simResult && simResult.roomTypes.length > 0 ? (
+              <Stack gap={0.25}>
+                {simResult.roomTypes.map((rt) => {
+                  // Одному правилу без других пересечений цена обычно одна на все ночи —
+                  // берём первую как представительную, а не считаем среднее/диапазон.
+                  const first = rt.nights[0];
+                  if (!first) return null;
+                  const before = Number(first.before);
+                  const after = Number(first.after);
+                  const delta = Number(first.delta);
+                  // См. комментарий у HotelPricingRuleSimulateNight в api/hotel.ts —
+                  // isManualOverride и ruleApplied вместе различают 4 случая.
+                  let note = "";
+                  if (first.isManualOverride) {
+                    note = delta === 0 ? " (здесь стоит ручная цена)" : " (ручная цена, донастроена условиями брони)";
+                  } else if (!first.ruleApplied && delta === 0) {
+                    note = " (не сработало — не подошли условия или проиграло другому правилу в группе)";
+                  } else if (first.ruleApplied && delta === 0) {
+                    note = " (упёрлось в мин/макс цену категории)";
+                  } else if (after < before) {
+                    note = " (скидка)";
+                  } else if (after > before) {
+                    note = " (дороже)";
+                  }
+                  return (
+                    <Typography key={rt.roomTypeId} variant="body2" component="span">
+                      {rt.roomTypeName}: {before.toLocaleString("ru-RU")} → <strong>{after.toLocaleString("ru-RU")} сом</strong>
+                      {note}
+                    </Typography>
+                  );
+                })}
+              </Stack>
+            ) : (
+              // Предпросчёт недоступен (сеть, условия не покрывают окно) — грубая
+              // локальная оценка БЕЗ учёта других правил и БЕЗ учёта условий загрузки/
+              // срока/длительности/дня недели, чтобы блок не пустовал молча.
+              <Stack gap={0.25}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                  Предпросчёт с сервера недоступен — грубая оценка без учёта условий и других правил:
+                </Typography>
+                {selectedRoomTypes.map((rt) => {
+                  const base = Number(rt.totalPrice);
+                  const adjusted =
+                    form.adjustmentType === "percent"
+                      ? Math.round(base * (1 + amountValue / 100))
+                      : Math.max(0, base + amountValue);
+                  return (
+                    <Typography key={rt.id} variant="body2" component="span">
+                      {rt.name}: {base.toLocaleString("ru-RU")} → <strong>{adjusted.toLocaleString("ru-RU")} сом</strong>
+                      {isDiscount ? " (скидка)" : " (дороже)"}
+                    </Typography>
+                  );
+                })}
+              </Stack>
+            )}
+          </Alert>
+        )}
+      </Paper>
+
+      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
         <Stack gap={2}>
           <Typography variant="subtitle2" fontWeight={600}>
             Основное
@@ -642,116 +752,6 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
             </Collapse>
           </Box>
         </Stack>
-      </Paper>
-
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
-        <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
-          Категории номеров
-        </Typography>
-
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={form.allCategories}
-              onChange={(e) => patchForm({ allCategories: e.target.checked })}
-              disabled={saving || roomTypes.length === 0}
-            />
-          }
-          label="Все категории, включая те, что заведут позже"
-        />
-
-        {!form.allCategories && (
-          <>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 1.5 }}>
-              Или выберите конкретные:
-            </Typography>
-            {roomTypes.length === 0 ? (
-              <Typography variant="body2" color="text.disabled">
-                Категорий пока нет — сначала заведите их в «Категории и тарифы».
-              </Typography>
-            ) : (
-              <ToggleButtonGroup
-                value={form.roomTypeIds}
-                onChange={(_, value: number[]) => patchForm({ roomTypeIds: value })}
-                disabled={saving}
-                sx={{ flexWrap: "wrap", gap: 0.75, "& .MuiToggleButtonGroup-grouped": { border: "1px solid", borderColor: "divider !important", borderRadius: "8px !important", m: 0 } }}
-              >
-                {roomTypes.map((rt) => (
-                  <ToggleButton key={rt.id} value={rt.id} size="small">
-                    {rt.name}
-                  </ToggleButton>
-                ))}
-              </ToggleButtonGroup>
-            )}
-          </>
-        )}
-
-        {amountValue !== 0 && selectedRoomTypes.length > 0 && (
-          <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem", mt: 2 }}>
-            {!anyConditionEnabled && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                Ни одно условие не включено — правило действует на каждую ночь.
-              </Typography>
-            )}
-            {simLoading && !simResult ? (
-              <Typography variant="body2">Считаем…</Typography>
-            ) : simResult && simResult.roomTypes.length > 0 ? (
-              <Stack gap={0.25}>
-                {simResult.roomTypes.map((rt) => {
-                  // Одному правилу без других пересечений цена обычно одна на все ночи —
-                  // берём первую как представительную, а не считаем среднее/диапазон.
-                  const first = rt.nights[0];
-                  if (!first) return null;
-                  const before = Number(first.before);
-                  const after = Number(first.after);
-                  const delta = Number(first.delta);
-                  // См. комментарий у HotelPricingRuleSimulateNight в api/hotel.ts —
-                  // isManualOverride и ruleApplied вместе различают 4 случая.
-                  let note = "";
-                  if (first.isManualOverride) {
-                    note = delta === 0 ? " (здесь стоит ручная цена)" : " (ручная цена, донастроена условиями брони)";
-                  } else if (!first.ruleApplied && delta === 0) {
-                    note = " (не сработало — не подошли условия или проиграло другому правилу в группе)";
-                  } else if (first.ruleApplied && delta === 0) {
-                    note = " (упёрлось в мин/макс цену категории)";
-                  } else if (after < before) {
-                    note = " (скидка)";
-                  } else if (after > before) {
-                    note = " (дороже)";
-                  }
-                  return (
-                    <Typography key={rt.roomTypeId} variant="body2" component="span">
-                      {rt.roomTypeName}: {before.toLocaleString("ru-RU")} → <strong>{after.toLocaleString("ru-RU")} сом</strong>
-                      {note}
-                    </Typography>
-                  );
-                })}
-              </Stack>
-            ) : (
-              // Предпросчёт недоступен (сеть, условия не покрывают окно) — грубая
-              // локальная оценка БЕЗ учёта других правил и БЕЗ учёта условий загрузки/
-              // срока/длительности/дня недели, чтобы блок не пустовал молча.
-              <Stack gap={0.25}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                  Предпросчёт с сервера недоступен — грубая оценка без учёта условий и других правил:
-                </Typography>
-                {selectedRoomTypes.map((rt) => {
-                  const base = Number(rt.totalPrice);
-                  const adjusted =
-                    form.adjustmentType === "percent"
-                      ? Math.round(base * (1 + amountValue / 100))
-                      : Math.max(0, base + amountValue);
-                  return (
-                    <Typography key={rt.id} variant="body2" component="span">
-                      {rt.name}: {base.toLocaleString("ru-RU")} → <strong>{adjusted.toLocaleString("ru-RU")} сом</strong>
-                      {isDiscount ? " (скидка)" : " (дороже)"}
-                    </Typography>
-                  );
-                })}
-              </Stack>
-            )}
-          </Alert>
-        )}
       </Paper>
 
       <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
