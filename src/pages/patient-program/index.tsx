@@ -19,6 +19,7 @@ import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import BiotechOutlined from "@mui/icons-material/BiotechOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
+import EventNoteOutlined from "@mui/icons-material/EventNoteOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import FitnessCenterOutlined from "@mui/icons-material/FitnessCenterOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
@@ -48,14 +49,19 @@ import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { subtleBg } from "../../theme/uiHelpers";
+import { BookAppointments } from "./BookAppointments";
 import { ConnectProgramDialog } from "./ConnectProgramDialog";
 import { EnrollmentActionsDrawer } from "./EnrollmentActionsDrawer";
 import { InteractionHistory } from "./InteractionHistory";
 import { ModuleRecords } from "./ModuleRecords";
+import { isGrowthModule } from "./growth/growthData";
+import { GrowthModule } from "./growth/GrowthModule";
+import { isVisionModule } from "./vision/visionData";
+import { VisionModule } from "./vision/VisionModule";
 import { UpcomingEvents } from "./UpcomingEvents";
 import { ProgramConstructorDrawer } from "./ProgramConstructorDrawer";
 
-type ViewKey = "overview" | `module:${number}`;
+type ViewKey = "overview" | "appointments" | `module:${number}`;
 
 const STATUS_LABELS: Record<EnrollmentState, string> = {
   draft: "Черновик",
@@ -185,6 +191,7 @@ const PatientProgramPage: React.FC = () => {
   const canCreateTask = canAccess("tasks.create");
   const canManageTasks = canAccess("tasks.manage");
   const canNotifyClients = canAccess("notifications.manage");
+  const canViewAppointments = canAccess("appointments.view");
 
   usePageTitle("Книжка клиента");
 
@@ -248,7 +255,17 @@ const PatientProgramPage: React.FC = () => {
   const patient = patientQuery.data;
 
   return (
-    <Box sx={{ px: (t) => t.appLayout.page.paddingX, pb: 2, minHeight: "100%" }}>
+    <Box
+      sx={{
+        px: (t) => t.appLayout.page.paddingX,
+        pb: 2,
+        height: "100%",
+        minHeight: 0,
+        overflowY: "auto",
+        overflowX: "hidden",
+        WebkitOverflowScrolling: "touch",
+      }}
+    >
       <Stack
         direction={{ xs: "column", sm: "row" }}
         justifyContent="space-between"
@@ -353,6 +370,14 @@ const PatientProgramPage: React.FC = () => {
                 label="Обзор"
                 onClick={() => setView("overview")}
               />
+              {canViewAppointments && (
+                <Chip
+                  clickable
+                  color={view === "appointments" ? "primary" : "default"}
+                  label="Приёмы"
+                  onClick={() => setView("appointments")}
+                />
+              )}
               {modules.map((module) => (
                 <Chip
                   key={module.id}
@@ -390,6 +415,14 @@ const PatientProgramPage: React.FC = () => {
                     label="Обзор"
                     onClick={() => setView("overview")}
                   />
+                  {canViewAppointments && (
+                    <NavigationItem
+                      active={view === "appointments"}
+                      icon={<EventNoteOutlined />}
+                      label="Приёмы"
+                      onClick={() => setView("appointments")}
+                    />
+                  )}
                   {modules.map((module) => (
                     <NavigationItem
                       key={module.id}
@@ -491,7 +524,30 @@ const PatientProgramPage: React.FC = () => {
                 </Stack>
               )}
 
-              {selectedModule && (
+              {view === "appointments" && canViewAppointments && (
+                <BookAppointments patientId={patient.id} scope={scope} />
+              )}
+
+              {selectedModule && (isGrowthModule(selectedModule) ? (
+                <GrowthModule
+                  enrollmentId={selectedEnrollment.id}
+                  module={selectedModule}
+                  scope={scope}
+                  canManage={canManageEnrollments && selectedEnrollment.isEffectivelyActive}
+                  icon={moduleIcon(selectedModule)}
+                  birthDate={patient.birthDate ?? null}
+                  gender={patient.gender}
+                />
+              ) : isVisionModule(selectedModule) ? (
+                <VisionModule
+                  enrollmentId={selectedEnrollment.id}
+                  module={selectedModule}
+                  scope={scope}
+                  canManage={canManageEnrollments && selectedEnrollment.isEffectivelyActive}
+                  icon={moduleIcon(selectedModule)}
+                  birthDate={patient.birthDate ?? null}
+                />
+              ) : (
                 <ModuleRecords
                   enrollmentId={selectedEnrollment.id}
                   module={selectedModule}
@@ -499,7 +555,7 @@ const PatientProgramPage: React.FC = () => {
                   canManage={canManageEnrollments && selectedEnrollment.isEffectivelyActive}
                   icon={moduleIcon(selectedModule)}
                 />
-              )}
+              ))}
             </Box>
           </Box>
         </Box>
