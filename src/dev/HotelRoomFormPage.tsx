@@ -60,6 +60,7 @@ import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import AddPhotoAlternateOutlined from "@mui/icons-material/AddPhotoAlternateOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useLocation, useNavigate, useParams } from "react-router";
 import { useSnackbar } from "notistack";
@@ -72,10 +73,13 @@ import {
   listRooms,
   createRoom,
   updateRoom,
+  uploadRoomPhoto,
+  deleteRoomPhoto,
   type HotelRoom,
   type HotelRoomType,
   type HotelRoomUpdateData,
   type HotelRoomZone,
+  type HotelRoomPhoto,
 } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 import { RoomStateControl } from "./RoomStateControl";
@@ -188,12 +192,12 @@ function toForm(room: HotelRoom): RoomFormState {
   };
 }
 
-/** Пустые строки (без названия и площади) не отправляем — черновик недописанной зоны. */
+/** Название обязательно на бэке (1–120 символов) — строку без него не отправляем, черновик недописанной зоны. */
 function buildZonesPayload(zones: ZoneFormRow[]): HotelRoomZone[] {
   return zones
-    .filter((z) => z.name.trim() !== "" || z.area.trim() !== "")
+    .filter((z) => z.name.trim() !== "")
     .map((z) => ({
-      name: z.name.trim(),
+      name: z.name.trim().slice(0, 120),
       area: z.area.trim(),
       width: z.width.trim() || null,
       length: z.length.trim() || null,
@@ -222,6 +226,49 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const patchForm = (patch: Partial<RoomFormState>) => setForm((prev) => ({ ...prev, ...patch }));
+
+  // Фото номера — независимо от остальной формы: сразу грузятся/удаляются на
+  // сервер (нет черновика/кнопки «Сохранить» для них). Доступно только у уже
+  // созданного номера (нужен roomId) — см. секцию «Фото номера» в разметке.
+  const [photos, setPhotos] = React.useState<HotelRoomPhoto[]>(editing?.photos ?? []);
+  const [photoBusy, setPhotoBusy] = React.useState(false);
+  const [photoError, setPhotoError] = React.useState<string | null>(null);
+  const photoInputRef = React.useRef<HTMLInputElement | null>(null);
+  const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+
+  const handlePhotoUpload = async (file: File | undefined) => {
+    if (!file || !editing) return;
+    if (file.size > MAX_PHOTO_BYTES) {
+      setPhotoError("Файл больше 10 МБ");
+      return;
+    }
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      const photo = await uploadRoomPhoto(editing.id, file);
+      setPhotos((prev) => [...prev, photo]);
+      void queryClient.invalidateQueries({ queryKey: ["hotel", "rooms", propertyId] });
+    } catch (err) {
+      setPhotoError(getErrorMessage(err, "Не удалось загрузить фото"));
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const handlePhotoDelete = async (photoId: number) => {
+    if (!editing) return;
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      await deleteRoomPhoto(editing.id, photoId);
+      setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+      void queryClient.invalidateQueries({ queryKey: ["hotel", "rooms", propertyId] });
+    } catch (err) {
+      setPhotoError(getErrorMessage(err, "Не удалось удалить фото"));
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   // Снимок при открытии: «грязная» форма — та, что от него отличается.
   const initial = React.useRef(editing ? toForm(editing) : emptyForm(roomTypes)).current;
@@ -560,6 +607,12 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
                       zones[i] = { ...zones[i], name: e.target.value };
                       patchForm({ zones });
                     }}
+                    error={zone.name.trim() === "" && (zone.area.trim() !== "" || zone.width.trim() !== "" || zone.length.trim() !== "")}
+                    helperText={
+                      zone.name.trim() === "" && (zone.area.trim() !== "" || zone.width.trim() !== "" || zone.length.trim() !== "")
+                        ? "Без названия строка не сохранится"
+                        : undefined
+                    }
                     disabled={saving}
                     size="small"
                     sx={{ flex: "2 1 220px" }}
@@ -628,6 +681,79 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
           >
             Добавить помещение
           </Button>
+        </Stack>
+      </Paper>
+
+      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+        <Stack gap={1.5}>
+          <Typography variant="subtitle2" fontWeight={600}>
+            Фото номера
+          </Typography>
+          {!editing ? (
+            <Typography variant="body2" color="text.secondary">
+              Фото можно добавить после создания номера — сначала «Добавить», затем вернитесь сюда.
+            </Typography>
+          ) : (
+            <>
+              <Typography variant="body2" color="text.secondary">
+                Необязательно — JPG, PNG, WebP или HEIC до 10 МБ. Грузится и удаляется сразу, без кнопки «Сохранить».
+              </Typography>
+              {photos.length > 0 && (
+                <Stack direction="row" flexWrap="wrap" gap={1.5}>
+                  {photos.map((p) => (
+                    <Box key={p.id} sx={{ position: "relative", width: 120, height: 90 }}>
+                      <Box
+                        component="img"
+                        src={p.url}
+                        alt=""
+                        sx={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "8px" }}
+                      />
+                      <IconButton
+                        aria-label="Удалить фото"
+                        size="small"
+                        disabled={photoBusy}
+                        onClick={() => void handlePhotoDelete(p.id)}
+                        sx={{
+                          position: "absolute",
+                          top: 2,
+                          right: 2,
+                          bgcolor: "rgba(0,0,0,0.55)",
+                          color: "#fff",
+                          "&:hover": { bgcolor: "rgba(0,0,0,0.75)" },
+                        }}
+                      >
+                        <DeleteOutlineOutlined fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  ))}
+                </Stack>
+              )}
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic"
+                hidden
+                onChange={(e) => {
+                  void handlePhotoUpload(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                size="small"
+                startIcon={<AddPhotoAlternateOutlined fontSize="small" />}
+                disabled={photoBusy}
+                onClick={() => photoInputRef.current?.click()}
+                sx={{ alignSelf: "flex-start" }}
+              >
+                {photoBusy ? "Загружаем…" : "Добавить фото"}
+              </Button>
+              {photoError && (
+                <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }} onClose={() => setPhotoError(null)}>
+                  {photoError}
+                </Alert>
+              )}
+            </>
+          )}
         </Stack>
       </Paper>
 
