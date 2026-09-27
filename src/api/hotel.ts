@@ -587,6 +587,17 @@ export function simulatePricingRule(
 }
 
 // ── Номера (Room) ─────────────────────────────────────────────────────────
+//
+// Поля hasTerrace/terraceArea/roomZones/photos — ПРЕДЛОЖЕНИЕ фронта, бэком
+// ЕЩЁ НЕ ПОДТВЕРЖДЕНО (25.09.2026, по образцу карточки квартиры
+// crm-building.adamtech.dev — терраса, «Экспликация помещений», фото).
+// hasTerrace/terraceArea/roomZones уходят в POST/PATCH как обычные поля;
+// photos — только чтение, у бэка нет эндпоинта загрузки, просьба завести
+// (POST multipart .../rooms/{id}/photos/ → фото объект, DELETE по id — тот
+// же паттерн, что uploadGuestPhoto/deleteGuestPhoto). Пока не подтверждено,
+// PATCH/POST с hasTerrace/terraceArea/roomZones либо получит 400 (при
+// forbid_unknown_fields), либо будет тихо проигнорирован; photos на GET
+// всегда [] — форма и диалог защищены `?? []`/условным рендером.
 
 export interface HotelRoom {
   id: number;
@@ -615,6 +626,31 @@ export interface HotelRoom {
   bathrooms: number | null;
   roomsCount: number | null;
   layoutDescription: string;
+  // ── Терраса/лоджия и разбивка на зоны — ПРЕДЛОЖЕНИЕ фронта по образцу
+  // crm-building.adamtech.dev (карточка квартиры: «Терраса 18.6 м²»,
+  // «Экспликация помещений»), бэком ЕЩЁ НЕ ПОДТВЕРЖДЕНО — см. комментарий
+  // у createRoom ниже. Все поля необязательные.
+  hasTerrace: boolean;
+  terraceArea: string | null;
+  /** Именованные зоны номера («Кухня-гостиная», «Спальня»…) с площадью — для суитов из нескольких помещений. [] — не заполнено. */
+  roomZones: HotelRoomZone[];
+  /** Фото номера — та же ПРЕДЛОЖЕНИЕ-пометка; эндпоинта загрузки пока нет, поле только на чтение и защищено ?? []. */
+  photos: HotelRoomPhoto[];
+}
+
+export interface HotelRoomZone {
+  name: string;
+  /** Десятичная строка, м², как area у номера. */
+  area: string;
+  /** Ширина/длина, м — десятичная строка либо не указана. */
+  width: string | null;
+  length: string | null;
+}
+
+export interface HotelRoomPhoto {
+  id: number;
+  url: string;
+  sortOrder: number;
 }
 
 export interface HotelRoomListParams {
@@ -638,6 +674,9 @@ export interface HotelRoomCreateData {
   bathrooms?: number | null;
   roomsCount?: number | null;
   layoutDescription?: string;
+  hasTerrace?: boolean;
+  terraceArea?: string | null;
+  roomZones?: HotelRoomZone[];
 }
 
 export interface HotelRoomUpdateData {
@@ -655,11 +694,15 @@ export interface HotelRoomUpdateData {
   bathrooms?: number | null;
   roomsCount?: number | null;
   layoutDescription?: string;
+  hasTerrace?: boolean;
+  terraceArea?: string | null;
+  roomZones?: HotelRoomZone[];
   /** null у area/ceilingHeight/bathrooms/roomsCount значит «поле не прислали» — для очистки шлём этот флаг. */
   clearArea?: boolean;
   clearCeilingHeight?: boolean;
   clearBathrooms?: boolean;
   clearRoomsCount?: boolean;
+  clearTerraceArea?: boolean;
 }
 
 export function listRooms(params: HotelRoomListParams, signal?: AbortSignal): Promise<HotelRoom[]> {

@@ -58,6 +58,8 @@ import {
 } from "@mui/material";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
+import AddOutlined from "@mui/icons-material/AddOutlined";
+import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useLocation, useNavigate, useParams } from "react-router";
 import { useSnackbar } from "notistack";
@@ -73,6 +75,7 @@ import {
   type HotelRoom,
   type HotelRoomType,
   type HotelRoomUpdateData,
+  type HotelRoomZone,
 } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 import { RoomStateControl } from "./RoomStateControl";
@@ -101,6 +104,18 @@ interface RoomFormState {
   bathrooms: string;
   roomsCount: string;
   layoutDescription: string;
+  hasTerrace: boolean;
+  terraceArea: string;
+  /** Экспликация помещений — именованные зоны с площадью, см. HotelRoomZone. */
+  zones: ZoneFormRow[];
+}
+
+/** Строка формы для одной зоны — числа как строки, как у остальных полей формы. */
+interface ZoneFormRow {
+  name: string;
+  area: string;
+  width: string;
+  length: string;
 }
 
 const EMPTY_FORM: Omit<RoomFormState, "roomTypeId"> = {
@@ -117,6 +132,9 @@ const EMPTY_FORM: Omit<RoomFormState, "roomTypeId"> = {
   bathrooms: "",
   roomsCount: "",
   layoutDescription: "",
+  hasTerrace: false,
+  terraceArea: "",
+  zones: [],
 };
 
 /**
@@ -159,7 +177,27 @@ function toForm(room: HotelRoom): RoomFormState {
     bathrooms: room.bathrooms != null ? String(room.bathrooms) : "",
     roomsCount: room.roomsCount != null ? String(room.roomsCount) : "",
     layoutDescription: room.layoutDescription ?? "",
+    hasTerrace: room.hasTerrace ?? false,
+    terraceArea: room.terraceArea ?? "",
+    zones: (room.roomZones ?? []).map((z) => ({
+      name: z.name,
+      area: z.area,
+      width: z.width ?? "",
+      length: z.length ?? "",
+    })),
   };
+}
+
+/** Пустые строки (без названия и площади) не отправляем — черновик недописанной зоны. */
+function buildZonesPayload(zones: ZoneFormRow[]): HotelRoomZone[] {
+  return zones
+    .filter((z) => z.name.trim() !== "" || z.area.trim() !== "")
+    .map((z) => ({
+      name: z.name.trim(),
+      area: z.area.trim(),
+      width: z.width.trim() || null,
+      length: z.length.trim() || null,
+    }));
 }
 
 interface RoomFormProps {
@@ -201,6 +239,9 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
     form.bathrooms !== initial.bathrooms ||
     form.roomsCount !== initial.roomsCount ||
     form.layoutDescription !== initial.layoutDescription ||
+    form.hasTerrace !== initial.hasTerrace ||
+    form.terraceArea !== initial.terraceArea ||
+    JSON.stringify(form.zones) !== JSON.stringify(initial.zones) ||
     form.meals.length !== initial.meals.length ||
     form.meals.some((m) => !initial.meals.includes(m));
   React.useEffect(() => {
@@ -252,9 +293,11 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
           view: form.view.trim(),
           isCorner: form.isCorner,
           layoutDescription: form.layoutDescription.trim(),
+          hasTerrace: form.hasTerrace,
+          roomZones: buildZonesPayload(form.zones),
         };
-        // area/ceilingHeight/bathrooms/roomsCount: null в PATCH значит «не прислали» —
-        // очистка идёт отдельным флагом, только если поле реально было заполнено.
+        // area/ceilingHeight/bathrooms/roomsCount/terraceArea: null в PATCH значит
+        // «не прислали» — очистка идёт отдельным флагом, только если поле реально было заполнено.
         const area = form.area.trim();
         if (area) patch.area = area;
         else if (initial.area.trim()) patch.clearArea = true;
@@ -267,6 +310,9 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
         const roomsCount = form.roomsCount.trim();
         if (roomsCount) patch.roomsCount = Number(roomsCount);
         else if (initial.roomsCount.trim()) patch.clearRoomsCount = true;
+        const terraceArea = form.terraceArea.trim();
+        if (terraceArea) patch.terraceArea = terraceArea;
+        else if (initial.terraceArea.trim()) patch.clearTerraceArea = true;
 
         await updateRoom(editing.id, patch);
         invalidateAfterSave();
@@ -287,6 +333,9 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
           bathrooms: form.bathrooms.trim() ? Number(form.bathrooms) : undefined,
           roomsCount: form.roomsCount.trim() ? Number(form.roomsCount) : undefined,
           layoutDescription: form.layoutDescription.trim() || undefined,
+          hasTerrace: form.hasTerrace || undefined,
+          terraceArea: form.terraceArea.trim() || undefined,
+          roomZones: buildZonesPayload(form.zones),
         });
         invalidateAfterSave();
         enqueueSnackbar(`Номер ${number} добавлен`, { variant: "success" });
@@ -454,10 +503,28 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
               sx={{ flex: "1 1 220px" }}
             />
           </Stack>
-          <FormControlLabel
-            control={<Checkbox checked={form.isCorner} onChange={(e) => patchForm({ isCorner: e.target.checked })} disabled={saving} />}
-            label="Угловой номер"
-          />
+          <Stack direction="row" flexWrap="wrap" alignItems="center" gap={2}>
+            <FormControlLabel
+              control={<Checkbox checked={form.isCorner} onChange={(e) => patchForm({ isCorner: e.target.checked })} disabled={saving} />}
+              label="Угловой номер"
+            />
+            <FormControlLabel
+              control={<Checkbox checked={form.hasTerrace} onChange={(e) => patchForm({ hasTerrace: e.target.checked })} disabled={saving} />}
+              label="Есть терраса/лоджия"
+            />
+            {form.hasTerrace && (
+              <TextField
+                label="Площадь террасы, м²"
+                type="number"
+                value={form.terraceArea}
+                onChange={(e) => patchForm({ terraceArea: e.target.value })}
+                slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+                disabled={saving}
+                size="small"
+                sx={{ flex: "1 1 180px" }}
+              />
+            )}
+          </Stack>
           <TextField
             label="Описание планировки"
             placeholder="Необязательно"
@@ -468,6 +535,99 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
             minRows={2}
             fullWidth
           />
+        </Stack>
+      </Paper>
+
+      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+        <Stack gap={1.5}>
+          <Typography variant="subtitle2" fontWeight={600}>
+            Экспликация помещений
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Необязательно — если у номера несколько помещений (гостиная, спальня и т.п.), распишите их по
+            отдельности с площадью, как в плане БТИ.
+          </Typography>
+          {form.zones.length > 0 && (
+            <Stack gap={1.5}>
+              {form.zones.map((zone, i) => (
+                <Stack key={i} direction="row" flexWrap="wrap" gap={1.5} alignItems="flex-start">
+                  <TextField
+                    label="Помещение"
+                    placeholder="Кухня-гостиная"
+                    value={zone.name}
+                    onChange={(e) => {
+                      const zones = [...form.zones];
+                      zones[i] = { ...zones[i], name: e.target.value };
+                      patchForm({ zones });
+                    }}
+                    disabled={saving}
+                    size="small"
+                    sx={{ flex: "2 1 220px" }}
+                  />
+                  <TextField
+                    label="Площадь, м²"
+                    type="number"
+                    value={zone.area}
+                    onChange={(e) => {
+                      const zones = [...form.zones];
+                      zones[i] = { ...zones[i], area: e.target.value };
+                      patchForm({ zones });
+                    }}
+                    slotProps={{ htmlInput: { min: 0, step: "0.1" } }}
+                    disabled={saving}
+                    size="small"
+                    sx={{ flex: "1 1 120px" }}
+                  />
+                  <TextField
+                    label="Ширина, м"
+                    type="number"
+                    value={zone.width}
+                    onChange={(e) => {
+                      const zones = [...form.zones];
+                      zones[i] = { ...zones[i], width: e.target.value };
+                      patchForm({ zones });
+                    }}
+                    slotProps={{ htmlInput: { min: 0, step: "0.1" } }}
+                    disabled={saving}
+                    size="small"
+                    sx={{ flex: "1 1 110px" }}
+                  />
+                  <TextField
+                    label="Длина, м"
+                    type="number"
+                    value={zone.length}
+                    onChange={(e) => {
+                      const zones = [...form.zones];
+                      zones[i] = { ...zones[i], length: e.target.value };
+                      patchForm({ zones });
+                    }}
+                    slotProps={{ htmlInput: { min: 0, step: "0.1" } }}
+                    disabled={saving}
+                    size="small"
+                    sx={{ flex: "1 1 110px" }}
+                  />
+                  <IconButton
+                    aria-label="Удалить помещение"
+                    size="small"
+                    disabled={saving}
+                    onClick={() => patchForm({ zones: form.zones.filter((_, j) => j !== i) })}
+                    sx={{ mt: 0.5 }}
+                  >
+                    <DeleteOutlineOutlined fontSize="small" />
+                  </IconButton>
+                </Stack>
+              ))}
+            </Stack>
+          )}
+          <Button
+            size="small"
+            startIcon={<AddOutlined fontSize="small" />}
+            disabled={saving}
+            onClick={() => patchForm({ zones: [...form.zones, { name: "", area: "", width: "", length: "" }] })}
+            sx={{ alignSelf: "flex-start" }}
+          >
+            Добавить помещение
+          </Button>
         </Stack>
       </Paper>
 

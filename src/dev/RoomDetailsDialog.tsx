@@ -30,6 +30,14 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
+import SquareFootOutlined from "@mui/icons-material/SquareFootOutlined";
+import HeightOutlined from "@mui/icons-material/HeightOutlined";
+import BathtubOutlined from "@mui/icons-material/BathtubOutlined";
+import MeetingRoomOutlined from "@mui/icons-material/MeetingRoomOutlined";
+import ExploreOutlined from "@mui/icons-material/ExploreOutlined";
+import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
+import CropFreeOutlined from "@mui/icons-material/CropFreeOutlined";
+import DeckOutlined from "@mui/icons-material/DeckOutlined";
 import dayjs from "dayjs";
 
 import { getRoomAvailability, type HotelRoom, type HotelRoomType } from "../api/hotel";
@@ -50,48 +58,119 @@ interface RoomCharacteristicsProps {
   room: HotelRoom;
 }
 
+/** Одна карточка-чип характеристики — по образцу блока «Характеристики» crm-building.adamtech.dev. */
+const CharacteristicChip: React.FC<{ icon: React.ReactNode; text: string }> = ({ icon, text }) => {
+  const theme = useTheme();
+  return (
+    <Stack
+      direction="row"
+      alignItems="center"
+      gap={1}
+      sx={{
+        px: 1.25,
+        py: 1,
+        border: "1px solid",
+        borderColor: "divider",
+        borderRadius: "10px",
+        bgcolor: theme.palette.mode === "dark" ? alpha("#fff", 0.03) : alpha("#000", 0.02),
+        minWidth: 0,
+      }}
+    >
+      <Box sx={{ color: "text.secondary", display: "flex", flexShrink: 0 }}>{icon}</Box>
+      <Typography variant="body2" fontWeight={600} sx={{ whiteSpace: "nowrap" }}>
+        {text}
+      </Typography>
+    </Stack>
+  );
+};
+
 /**
- * Физические характеристики ЭТОГО номера (площадь, санузлы и т.п.) — поверх общих
- * характеристик категории выше. Все поля необязательные (см. api/hotel.ts,
- * HotelRoomFormPage.tsx) — секция скрыта целиком, если ни одно не заполнено (у
- * старых номеров, заведённых до 23.09.2026, так и есть).
+ * Физические характеристики ЭТОГО номера (площадь, санузлы, терраса, зоны и т.п.)
+ * — поверх общих характеристик категории выше. Все поля необязательные (см.
+ * api/hotel.ts, HotelRoomFormPage.tsx) — секция скрыта целиком, если ни одно не
+ * заполнено (у старых номеров, заведённых до 23.09.2026, так и есть).
+ * hasTerrace/terraceArea/roomZones/photos — ПРЕДЛОЖЕНИЕ фронта, бэком ещё не
+ * подтверждено (см. комментарий над HotelRoom в api/hotel.ts), поэтому везде `?? `.
  */
 const RoomCharacteristics: React.FC<RoomCharacteristicsProps> = ({ room }) => {
-  const rows: { label: string; value: string }[] = [];
-  if (room.area) rows.push({ label: "Площадь", value: `${room.area} м²` });
-  if (room.ceilingHeight) rows.push({ label: "Высота потолков", value: `${room.ceilingHeight} м` });
-  if (room.bathrooms != null) rows.push({ label: "Санузлов", value: String(room.bathrooms) });
-  if (room.roomsCount != null) rows.push({ label: "Жилых комнат", value: String(room.roomsCount) });
-  if (room.windowSide) rows.push({ label: "Сторона света", value: room.windowSide });
-  if (room.view) rows.push({ label: "Вид из окна", value: room.view });
-  if (room.isCorner) rows.push({ label: "Угловой номер", value: "да" });
+  const chips: { key: string; icon: React.ReactNode; text: string }[] = [];
+  if (room.area) chips.push({ key: "area", icon: <SquareFootOutlined fontSize="small" />, text: `${room.area} м²` });
+  if (room.ceilingHeight) chips.push({ key: "ceiling", icon: <HeightOutlined fontSize="small" />, text: `Потолки ${room.ceilingHeight} м` });
+  if (room.bathrooms != null) chips.push({ key: "bathrooms", icon: <BathtubOutlined fontSize="small" />, text: `${room.bathrooms} санузл.` });
+  if (room.roomsCount != null) chips.push({ key: "rooms", icon: <MeetingRoomOutlined fontSize="small" />, text: `${room.roomsCount} комн.` });
+  if (room.windowSide) chips.push({ key: "windowSide", icon: <ExploreOutlined fontSize="small" />, text: `${room.windowSide} сторона` });
+  if (room.view) chips.push({ key: "view", icon: <VisibilityOutlined fontSize="small" />, text: room.view });
+  if (room.isCorner) chips.push({ key: "corner", icon: <CropFreeOutlined fontSize="small" />, text: "Угловой номер" });
+  if (room.hasTerrace) {
+    chips.push({
+      key: "terrace",
+      icon: <DeckOutlined fontSize="small" />,
+      text: room.terraceArea ? `Терраса ${room.terraceArea} м²` : "Терраса",
+    });
+  }
 
-  if (rows.length === 0 && !room.layoutDescription) return null;
+  const zones = room.roomZones ?? [];
+  const photos = room.photos ?? [];
+
+  if (chips.length === 0 && zones.length === 0 && photos.length === 0 && !room.layoutDescription) return null;
 
   return (
     <>
       <Divider sx={{ mb: 2 }} />
+
+      {photos.length > 0 && (
+        <Stack direction="row" gap={1} sx={{ mb: 2.5, overflowX: "auto" }}>
+          {photos.map((p) => (
+            <Box
+              key={p.id}
+              component="img"
+              src={p.url}
+              alt=""
+              sx={{ width: 120, height: 90, objectFit: "cover", borderRadius: "8px", flexShrink: 0 }}
+            />
+          ))}
+        </Stack>
+      )}
+
       <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
         Характеристики номера
       </Typography>
-      {rows.length > 0 && (
-        <Stack direction="row" gap={3} flexWrap="wrap" sx={{ mb: room.layoutDescription ? 1.5 : 2.5 }}>
-          {rows.map((r) => (
-            <Box key={r.label}>
-              <Typography variant="caption" color="text.secondary" display="block">
-                {r.label}
-              </Typography>
-              <Typography variant="body2" fontWeight={600}>
-                {r.value}
-              </Typography>
-            </Box>
+      {chips.length > 0 && (
+        <Stack
+          direction="row"
+          flexWrap="wrap"
+          sx={{
+            gap: 1,
+            mb: room.layoutDescription || zones.length > 0 ? 1.5 : 2.5,
+          }}
+        >
+          {chips.map((c) => (
+            <CharacteristicChip key={c.key} icon={c.icon} text={c.text} />
           ))}
         </Stack>
       )}
       {room.layoutDescription && (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, whiteSpace: "pre-wrap" }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: zones.length > 0 ? 1.5 : 2.5, whiteSpace: "pre-wrap" }}>
           {room.layoutDescription}
         </Typography>
+      )}
+
+      {zones.length > 0 && (
+        <Box sx={{ mb: 2.5 }}>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
+            Экспликация помещений
+          </Typography>
+          <Stack gap={0.5}>
+            {zones.map((z, i) => (
+              <Stack key={i} direction="row" justifyContent="space-between" gap={1}>
+                <Typography variant="body2">{z.name}</Typography>
+                <Typography variant="body2" fontWeight={600} sx={{ flexShrink: 0 }}>
+                  {z.area} м²{z.width && z.length ? ` · ${z.width}×${z.length} м` : ""}
+                </Typography>
+              </Stack>
+            ))}
+          </Stack>
+        </Box>
       )}
     </>
   );
