@@ -1,13 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError } from "./client";
+import { ApiError, apiRequest } from "./client";
 import {
   AI_ASSIST_BATCH_MAX,
+  AI_ASSIST_FORM_ROWS_MAX,
+  fitAiFormRows,
   isAiUnavailableError,
   normalizeAiBatchSuggestions,
   normalizeAiText,
   requestAiAssistBatch,
 } from "./medical";
+
+vi.mock("./client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./client")>()),
+  apiRequest: vi.fn(),
+}));
 
 /**
  * Ответ AI-помощника — предложение рядом с полем, и показывать его есть
@@ -84,8 +91,9 @@ describe("isAiUnavailableError", () => {
 });
 
 /**
- * Пакетный эндпоинт (ответ бэка 16.09.2026): ключи `suggestions` — ровно
- * запрошенные поля, пустой `text` — «добавить нечего», не ошибка.
+ * Пакетный эндпоинт (ответы бэка 16.09 и 27.09.2026): ключи `suggestions` —
+ * ровно запрошенные колонки, `formSuggestions` — ровно id отправленных строк
+ * бланка; пустой `text` — «добавить нечего», не ошибка.
  */
 describe("normalizeAiBatchSuggestions", () => {
   it("раскладывает ответ по запрошенным полям, пустой text → null", () => {
@@ -99,7 +107,7 @@ describe("normalizeAiBatchSuggestions", () => {
           },
         },
         ["complaints", "anamnesis", "conclusion"],
-      ),
+      ).fields,
     ).toEqual({
       complaints: "Жалуется на боль в горле.",
       anamnesis: null,
@@ -112,23 +120,70 @@ describe("normalizeAiBatchSuggestions", () => {
       normalizeAiBatchSuggestions(
         { suggestions: { diagnosis: { text: "Нет данных" } } },
         ["complaints", "diagnosis"],
-      ),
+      ).fields,
     ).toEqual({ complaints: null, diagnosis: null });
-    expect(normalizeAiBatchSuggestions({}, ["objective"])).toEqual({ objective: null });
-    expect(normalizeAiBatchSuggestions(null, ["objective"])).toEqual({ objective: null });
+    expect(normalizeAiBatchSuggestions({}, ["objective"]).fields).toEqual({ objective: null });
+    expect(normalizeAiBatchSuggestions(null, ["objective"]).fields).toEqual({ objective: null });
   });
 
   it("лишние ключи ответа не попадают в результат", () => {
     const result = normalizeAiBatchSuggestions(
-      { suggestions: { complaints: { text: "a" }, anamnesis: { text: "b" } } },
+      {
+        suggestions: { complaints: { text: "a" }, anamnesis: { text: "b" } },
+        formSuggestions: { f_liver: { text: "c" }, f_extra: { text: "d" } },
+      },
       ["complaints"],
+      ["f_liver"],
     );
-    expect(Object.keys(result)).toEqual(["complaints"]);
+    expect(Object.keys(result.fields)).toEqual(["complaints"]);
+    expect(result.rows).toEqual({ f_liver: "c" });
+  });
+
+  it("строки бланка — из formSuggestions, id строки не путается с колонкой", () => {
+    expect(
+      normalizeAiBatchSuggestions(
+        {
+          suggestions: { conclusion: { text: "колонка" } },
+          formSuggestions: {
+            conclusion: { text: "строка с id conclusion" },
+            f_gb: { text: "", confidence: 0.75 },
+          },
+        },
+        [],
+        ["conclusion", "f_gb", "f_missing"],
+      ).rows,
+    ).toEqual({ conclusion: "строка с id conclusion", f_gb: null, f_missing: null });
+  });
+});
+
+describe("fitAiFormRows", () => {
+  it("режет до 40 строк, выкидывает дубли и id длиннее 64 символов", () => {
+    const rows = Array.from({ length: 45 }, (_, i) => ({ id: `r${i}`, label: `Строка ${i}`, text: "" }));
+    rows.splice(1, 0, { id: "r0", label: "дубль", text: "" }, { id: "x".repeat(65), label: "длинный", text: "" });
+    const fitted = fitAiFormRows(rows);
+    expect(fitted).toHaveLength(AI_ASSIST_FORM_ROWS_MAX);
+    expect(fitted.map((r) => r.id)).toEqual(Array.from({ length: 40 }, (_, i) => `r${i}`));
+  });
+
+  it("multiline шлём только когда он есть", () => {
+    expect(
+      fitAiFormRows([
+        { id: "a", label: "A", text: "1", multiline: false },
+        { id: "b", label: "B", text: "", multiline: true },
+      ]),
+    ).toEqual([
+      { id: "a", label: "A", text: "1" },
+      { id: "b", label: "B", text: "", multiline: true },
+    ]);
   });
 });
 
 describe("requestAiAssistBatch", () => {
-  it("не шлёт пакет, который бэк отверг бы 400: пусто, дубль поля, больше пяти", async () => {
+  beforeEach(() => {
+    vi.mocked(apiRequest).mockReset();
+  });
+
+  it("не шлёт пакет, который бэк отверг бы 422: пусто, дубль поля, больше пяти", async () => {
     await expect(requestAiAssistBatch([])).rejects.toThrow(/уникальных полей/);
     await expect(
       requestAiAssistBatch([
@@ -137,5 +192,78 @@ describe("requestAiAssistBatch", () => {
       ]),
     ).rejects.toThrow(/уникальных полей/);
     expect(AI_ASSIST_BATCH_MAX).toBe(5);
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("без бланка тело прежнее: только fields и serviceLineId", async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ suggestions: { complaints: { text: "Ок." } } });
+    const result = await requestAiAssistBatch([{ field: "complaints", text: "ок" }], {
+      serviceLineId: 42,
+    });
+    expect(vi.mocked(apiRequest).mock.calls[0][1]?.body).toEqual({
+      fields: [{ field: "complaints", text: "ок" }],
+      serviceLineId: 42,
+    });
+    expect(result).toEqual({ fields: { complaints: "Ок." }, rows: {} });
+  });
+
+  it("с бланком: target убран из fields, строки ушли в form.rows, ответ по id строк", async () => {
+    vi.mocked(apiRequest).mockResolvedValue({
+      suggestions: { complaints: { text: "Жалобы." } },
+      formSuggestions: { f_liver: { text: "Не увеличена." }, f_gb: { text: "" } },
+    });
+    const result = await requestAiAssistBatch(
+      [
+        { field: "complaints", text: "боль" },
+        { field: "conclusion", text: "проекция бланка" },
+      ],
+      {
+        form: {
+          title: " УЗИ ОБП ",
+          target: "conclusion",
+          rows: [
+            { id: "f_liver", label: "Печень", text: "не увеличена" },
+            { id: "f_gb", label: "Желчный пузырь", text: "", multiline: true },
+          ],
+        },
+      },
+    );
+    expect(vi.mocked(apiRequest).mock.calls[0][1]?.body).toEqual({
+      fields: [{ field: "complaints", text: "боль" }],
+      form: {
+        title: "УЗИ ОБП",
+        target: "conclusion",
+        rows: [
+          { id: "f_liver", label: "Печень", text: "не увеличена" },
+          { id: "f_gb", label: "Желчный пузырь", text: "", multiline: true },
+        ],
+      },
+    });
+    expect(result).toEqual({
+      fields: { complaints: "Жалобы." },
+      rows: { f_liver: "Не увеличена.", f_gb: null },
+    });
+  });
+
+  it("бланк без свободных строк не шлётся, target остаётся колонкой", async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ suggestions: {} });
+    await requestAiAssistBatch([{ field: "conclusion", text: "" }], {
+      form: { target: "conclusion", rows: [] },
+    });
+    expect(vi.mocked(apiRequest).mock.calls[0][1]?.body).toEqual({
+      fields: [{ field: "conclusion", text: "" }],
+    });
+  });
+
+  it("только строки бланка, без колонок — допустимый запрос", async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ suggestions: {}, formSuggestions: { a: { text: "x" } } });
+    const result = await requestAiAssistBatch([], {
+      form: { target: "conclusion", rows: [{ id: "a", label: "A", text: "" }] },
+    });
+    expect(vi.mocked(apiRequest).mock.calls[0][1]?.body).toEqual({
+      fields: [],
+      form: { target: "conclusion", rows: [{ id: "a", label: "A", text: "" }] },
+    });
+    expect(result.rows).toEqual({ a: "x" });
   });
 });

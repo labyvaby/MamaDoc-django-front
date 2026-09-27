@@ -597,8 +597,17 @@ export function normalizeAiText(raw: unknown): string | null {
   return text;
 }
 
-/** Бэк принимает от 1 до 5 полей, каждое не более одного раза (иначе 400). */
+/** Бэк принимает до 5 колонок, каждую не более одного раза (иначе 422). */
 export const AI_ASSIST_BATCH_MAX = AI_ASSIST_FIELDS.length;
+
+/**
+ * Строк бланка в одном запросе — не больше 40 (ответ бэка 27.09.2026): бэк
+ * сам режет их на параллельные чанки по 8, так что по времени это один чанк.
+ */
+export const AI_ASSIST_FORM_ROWS_MAX = 40;
+
+/** Длина `id` строки бланка: длиннее бэк отвергает 422. Наши id — UUID (36). */
+export const AI_ASSIST_FORM_ROW_ID_MAX = 64;
 
 export interface AiAssistBatchEntry {
   field: AiAssistField;
@@ -606,15 +615,49 @@ export interface AiAssistBatchEntry {
   text: string;
 }
 
+/** Свободная строка бланка (без `slot`) — то, что врач правит сам. */
+export interface AiAssistFormRow {
+  /** Стабильный id поля из конструктора бланка. */
+  id: string;
+  /** Подпись строки, как её видит врач, — контекст модели. */
+  label: string;
+  /**
+   * Значение без подписи: «Печень: …» задвоилось бы в ответе (гайд, правило 3).
+   * Пустая строка — просьба предложить черновик.
+   */
+  text: string;
+  multiline?: boolean;
+}
+
+export interface AiAssistForm {
+  /** Название протокола: модели понятно, что за исследование. */
+  title?: string;
+  /** Колонка, которую бланк собирает; в `fields` её не шлём. */
+  target: AiAssistField;
+  rows: AiAssistFormRow[];
+}
+
+interface AiAssistSuggestionDto {
+  text?: string | null;
+  confidence?: number;
+}
+
 interface AiAssistBatchResponse {
-  suggestions?: Partial<Record<string, { text?: string | null; confidence?: number } | null>> | null;
+  suggestions?: Partial<Record<string, AiAssistSuggestionDto | null>> | null;
+  formSuggestions?: Partial<Record<string, AiAssistSuggestionDto | null>> | null;
 }
 
 /** Подсказки по запрошенным полям: null — модели нечего сказать, плашки нет. */
-export type AiAssistBatchResult = Record<AiAssistField, string | null>;
+export type AiAssistFieldsResult = Partial<Record<AiAssistField, string | null>>;
+
+export interface AiAssistBatchResult {
+  fields: AiAssistFieldsResult;
+  /** По `id` строк бланка; ключи — ровно отправленные строки. */
+  rows: Record<string, string | null>;
+}
 
 /**
- * Разложить ответ пакетного эндпоинта по запрошенным полям.
+ * Разложить ответ пакетного эндпоинта по запрошенным колонкам и строкам.
  *
  * Бэк обещает ключи ровно по запросу и пустой `text` там, где добавить
  * нечего (частичный успех — это 200, а не 502). Отсутствующий ключ читаем
@@ -624,49 +667,95 @@ export type AiAssistBatchResult = Record<AiAssistField, string | null>;
 export function normalizeAiBatchSuggestions(
   response: unknown,
   fields: readonly AiAssistField[],
+  rowIds: readonly string[] = [],
 ): AiAssistBatchResult {
-  const suggestions = (response as AiAssistBatchResponse | null)?.suggestions ?? {};
-  const result = {} as AiAssistBatchResult;
-  for (const field of fields) result[field] = normalizeAiText(suggestions[field]?.text);
+  const dto = response as AiAssistBatchResponse | null;
+  const suggestions = dto?.suggestions ?? {};
+  const formSuggestions = dto?.formSuggestions ?? {};
+  const result: AiAssistBatchResult = { fields: {}, rows: {} };
+  for (const field of fields) result.fields[field] = normalizeAiText(suggestions[field]?.text);
+  for (const id of rowIds) result.rows[id] = normalizeAiText(formSuggestions[id]?.text);
   return result;
 }
 
 /**
- * POST /api/medical/ai/assist/batch/ — подсказки сразу по нескольким полям
- * заключения одним вызовом модели (ответ бэка на
- * `MamaDoc/backend_ticket_ai_assist_batch.md`, 16.09.2026).
+ * Строки бланка, которые бэк примет: id не длиннее 64 символов, без
+ * дублей, не больше 40. Строки сверх лимита остаются без подсказки, а не
+ * валят весь запрос: у присланных заказчиком протоколов 10–25 строк, и
+ * бланк на 40+ — редкость, ради которой не стоит лишать врача остального.
+ */
+export function fitAiFormRows(rows: readonly AiAssistFormRow[]): AiAssistFormRow[] {
+  const seen = new Set<string>();
+  const out: AiAssistFormRow[] = [];
+  for (const row of rows) {
+    if (out.length >= AI_ASSIST_FORM_ROWS_MAX) break;
+    if (!row.id || row.id.length > AI_ASSIST_FORM_ROW_ID_MAX || seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push({
+      id: row.id,
+      label: row.label,
+      text: row.text,
+      ...(row.multiline ? { multiline: true } : {}),
+    });
+  }
+  return out;
+}
+
+/**
+ * POST /api/medical/ai/assist/batch/ — подсказки сразу по колонкам
+ * заключения и строкам бланка одним HTTP-запросом (ответы бэка на
+ * `MamaDoc/backend_ticket_ai_assist_batch.md`, 16.09.2026, и
+ * `MamaDoc/backend_ticket_ai_assist_form_rows.md`, 27.09.2026).
  *
- * Один вызов вместо пяти: разделы согласованы между собой, а ждать 48–60 с
- * на 5 полей, не 2–3 минуты. ⚠ Таймаута у клиента нет — и не добавлять:
+ * Разделы согласованы между собой, а ждать 48–60 с на 5 полей, не 2–3
+ * минуты. ⚠ Таймаута у клиента нет — и не добавлять:
  * цепочка бэка 120 с (gunicorn) > 110 с > 100 с (модель), обрыв на нашей
  * стороне выкинул бы нормальный ответ. Оборванный ответ модели бэк отдаёт
  * как 502, а не как 200 с половиной фразы. После 502 ничего не ретраить:
  * лимит провайдера общий на всех, и повторы только сжигают его.
+ *
+ * Бланк (`form`) шлём, только если в нём есть свободные строки; колонку,
+ * которую бланк собирает (`form.target`), из `fields` убираем здесь же —
+ * бэк просит её не слать (подсказка по проекции строк бессмысленна).
  */
 export async function requestAiAssistBatch(
   entries: readonly AiAssistBatchEntry[],
-  serviceLineId?: number | null,
-  signal?: AbortSignal,
+  options: {
+    serviceLineId?: number | null;
+    form?: AiAssistForm | null;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<AiAssistBatchResult> {
-  const fields = entries.map((entry) => entry.field);
+  const rows = options.form ? fitAiFormRows(options.form.rows) : [];
+  const form = options.form && rows.length > 0 ? { ...options.form, rows } : null;
+  const sent = form ? entries.filter((entry) => entry.field !== form.target) : [...entries];
+  const fields = sent.map((entry) => entry.field);
   if (
-    fields.length === 0 ||
+    (fields.length === 0 && !form) ||
     fields.length > AI_ASSIST_BATCH_MAX ||
     new Set(fields).size !== fields.length
   ) {
-    // 400 бэка здесь — баг фронта; ловим его до запроса.
+    // 422 бэка здесь — баг фронта; ловим его до запроса.
     throw new Error(`AI assist batch: 1–${AI_ASSIST_BATCH_MAX} уникальных полей, получено [${fields.join(", ")}]`);
   }
-  const body: { fields: AiAssistBatchEntry[]; serviceLineId?: number } = {
-    fields: entries.map(({ field, text }) => ({ field, text })),
+  const body: {
+    fields: AiAssistBatchEntry[];
+    serviceLineId?: number;
+    form?: { title?: string; target: AiAssistField; rows: AiAssistFormRow[] };
+  } = {
+    fields: sent.map(({ field, text }) => ({ field, text })),
   };
-  if (serviceLineId != null) body.serviceLineId = serviceLineId;
+  if (options.serviceLineId != null) body.serviceLineId = options.serviceLineId;
+  if (form) {
+    body.form = { target: form.target, rows };
+    if (form.title?.trim()) body.form.title = form.title.trim();
+  }
   const response = await apiRequest<AiAssistBatchResponse>("/medical/ai/assist/batch/", {
     method: "POST",
     body,
-    signal,
+    signal: options.signal,
   });
-  return normalizeAiBatchSuggestions(response, fields);
+  return normalizeAiBatchSuggestions(response, fields, rows.map((row) => row.id));
 }
 
 /**
