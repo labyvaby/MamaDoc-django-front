@@ -42,6 +42,20 @@ export function ageTick(months: number): string {
   return `${formatNumber(months / 12, 1)} г.`;
 }
 
+/**
+ * Окно графика по возрасту замеров (3 мес. до первого, 6 после последнего);
+ * коридоры ВОЗ — только в пределах таблицы (`tableEnd`, месяцы), null — без них.
+ */
+export function chartRange(
+  ages: ReadonlyArray<number>,
+  tableEnd: number | null,
+): { from: number; to: number; curveTo: number | null } {
+  const from = Math.max(0, Math.floor(Math.min(...ages) - 3));
+  const to = Math.ceil(Math.max(...ages) + 6);
+  const curveTo = tableEnd == null ? null : Math.min(tableEnd, to);
+  return { from, to, curveTo: curveTo != null && curveTo > from ? curveTo : null };
+}
+
 /** Деления оси возраста: через 3, 6 или 12 месяцев — по длине периода. */
 export function ageTicks(from: number, to: number): number[] {
   const span = to - from;

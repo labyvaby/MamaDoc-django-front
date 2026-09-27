@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ageTick, ageTicks, formatNumber } from "./growthUi";
+import { ageTick, ageTicks, chartRange, formatNumber } from "./growthUi";
 
 describe("growth ui helpers", () => {
   it("labels the age axis without repeats", () => {
@@ -11,6 +11,14 @@ describe("growth ui helpers", () => {
     expect(ageTicks(42, 70)).toEqual([42, 48, 54, 60, 66]);
     expect(ageTicks(0, 12)).toEqual([0, 3, 6, 9, 12]);
     expect(ageTicks(40, 130)).toEqual([48, 60, 72, 84, 96, 108, 120]);
+  });
+
+  it("keeps the age axis on the measurements and the WHO corridors inside their table", () => {
+    expect(chartRange([30, 42], 60)).toEqual({ from: 27, to: 48, curveTo: 48 });
+    expect(chartRange([50, 62], 60)).toEqual({ from: 47, to: 68, curveTo: 60 });
+    // Вес в 12,5 лет: таблица ВОЗ по весу кончается на 10 годах — ось по замеру, коридоров нет.
+    expect(chartRange([150], 120)).toEqual({ from: 147, to: 156, curveTo: null });
+    expect(chartRange([1], null)).toEqual({ from: 0, to: 7, curveTo: null });
   });
 
   it("prints numbers the Russian way", () => {
