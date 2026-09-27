@@ -161,14 +161,23 @@ const RoomCharacteristics: React.FC<RoomCharacteristicsProps> = ({ room }) => {
             Экспликация помещений
           </Typography>
           <Stack gap={0.5}>
-            {zones.map((z, i) => (
-              <Stack key={i} direction="row" justifyContent="space-between" gap={1}>
-                <Typography variant="body2">{z.name}</Typography>
-                <Typography variant="body2" fontWeight={600} sx={{ flexShrink: 0 }}>
-                  {z.area} м²{z.width && z.length ? ` · ${z.width}×${z.length} м` : ""}
-                </Typography>
-              </Stack>
-            ))}
+            {zones.map((z, i) => {
+              const dimensions = [
+                z.area ? `${z.area} м²` : "",
+                z.width ? `ширина ${z.width} м` : "",
+                z.length ? `длина ${z.length} м` : "",
+              ].filter(Boolean).join(" · ");
+              return (
+                <Stack key={i} direction="row" justifyContent="space-between" gap={1}>
+                  <Typography variant="body2">{z.name}</Typography>
+                  {dimensions && (
+                    <Typography variant="body2" fontWeight={600} sx={{ flexShrink: 0 }}>
+                      {dimensions}
+                    </Typography>
+                  )}
+                </Stack>
+              );
+            })}
           </Stack>
         </Box>
       )}
