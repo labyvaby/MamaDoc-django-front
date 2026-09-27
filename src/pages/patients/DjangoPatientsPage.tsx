@@ -71,6 +71,7 @@ const DjangoPatientsPage: React.FC = () => {
 
   const {
     hasPermission,
+    canAccess,
     isSuperAdmin,
     loading: permLoading,
     activeBranch,
@@ -81,9 +82,11 @@ const DjangoPatientsPage: React.FC = () => {
   const canCreate = isSuperAdmin() || hasPermission("patients.create");
   const canUpdate = isSuperAdmin() || hasPermission("patients.update");
   const canManagePatients = isSuperAdmin() || hasPermission("patients.manage");
-  const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
-  const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
-  const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
+  // Разделы других модулей — через canAccess (модуль + право): без модуля у
+  // организации (и в «Меню как у клиники») их нет, как и данных на бэке.
+  const canViewFinance = canAccess("finance.view");
+  const canManageFinance = canAccess("finance.manage");
+  const canViewVaccinations = canAccess("vaccinations.view");
   // canAccess (не hasPermission) — так панель истории анализов исчезает и без
   // права, и при выключенном у организации модуле lab, одной проверкой
   // (usePermissions().canAccess уже сверяет оба условия по moduleMapping.ts).

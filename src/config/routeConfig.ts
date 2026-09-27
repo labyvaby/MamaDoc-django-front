@@ -115,6 +115,10 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     path: '/settings/announcements',
     requiredPermissions: ['announcements.view', 'announcements.manage'],
   },
+  {
+    path: '/settings/modules',
+    requiredPermissions: ['tenancy.catalog.view'],
+  },
 
   // База знаний (страница статьи /knowledge/:articleId — те же права)
   {
