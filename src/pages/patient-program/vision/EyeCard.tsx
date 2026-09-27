@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Chip, Stack, Typography, alpha, useTheme } from "@mui/material";
+import { Box, Chip, Stack, Typography, alpha, useMediaQuery, useTheme } from "@mui/material";
 import TrendingDownRounded from "@mui/icons-material/TrendingDownRounded";
 import TrendingFlatRounded from "@mui/icons-material/TrendingFlatRounded";
 import TrendingUpRounded from "@mui/icons-material/TrendingUpRounded";
@@ -28,10 +28,18 @@ export interface EyeCardProps {
   refraction: RefractionEye | null;
 }
 
-/** Глаз последнего осмотра: цвет нормы, острота, стрелка к прошлому, рефракция. */
+/**
+ * Глаз последнего осмотра: цвет нормы, острота, стрелка к прошлому, рефракция.
+ * Как у ребёнка: левый глаз слева, правый справа; рисунки обращены к центру,
+ * текст прижат к внешнему краю. На телефоне рисунок над текстом.
+ */
 export const EyeCard: React.FC<EyeCardProps> = ({ side, raw, status, norm, corrected, previous, trend, refraction }) => {
   const theme = useTheme();
+  const narrow = useMediaQuery(theme.breakpoints.down("md"));
   const color = statusColor(theme, status);
+  const left = side === "OS";
+  const outer = left ? "flex-start" : "flex-end";
+  const inner = left ? "flex-end" : "flex-start";
   const TrendIcon = trend === "up" ? TrendingUpRounded : trend === "down" ? TrendingDownRounded : TrendingFlatRounded;
   const trendColor =
     trend === "up" ? theme.palette.success.main : trend === "down" ? theme.palette.error.main : theme.palette.text.secondary;
@@ -39,22 +47,25 @@ export const EyeCard: React.FC<EyeCardProps> = ({ side, raw, status, norm, corre
   return (
     <Box
       sx={{
-        p: 1.75,
+        p: { xs: 1.25, md: 1.75 },
         borderRadius: "16px",
         border: `1px solid ${alpha(color, 0.45)}`,
         bgcolor: alpha(color, 0.06),
         display: "flex",
-        gap: 1.75,
-        alignItems: "center",
+        flexDirection: { xs: "column", md: left ? "row-reverse" : "row" },
+        alignItems: { xs: "stretch", md: "center" },
+        gap: { xs: 1, md: 1.75 },
         minWidth: 0,
       }}
     >
-      <EyeGraphic status={status} mirrored={side === "OS"} />
-      <Box sx={{ minWidth: 0 }}>
+      <Box sx={{ display: "flex", justifyContent: { xs: inner, md: "center" }, flexShrink: 0 }}>
+        <EyeGraphic status={status} mirrored={left} size={narrow ? 76 : 92} />
+      </Box>
+      <Box sx={{ flex: 1, minWidth: 0, textAlign: left ? "left" : "right" }}>
         <Typography variant="caption" color="text.secondary">
-          {side === "OD" ? "Правый глаз · OD" : "Левый глаз · OS"}
+          {left ? "Левый глаз · OS" : "Правый глаз · OD"}
         </Typography>
-        <Stack direction="row" alignItems="baseline" gap={1} flexWrap="wrap">
+        <Stack direction="row" alignItems="baseline" justifyContent={outer} gap={1} flexWrap="wrap">
           <Typography sx={{ fontSize: 34, fontWeight: 700, lineHeight: 1.1 }}>
             {raw.trim() ? displayAcuity(raw) : "—"}
           </Typography>

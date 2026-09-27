@@ -10,7 +10,7 @@ import { CONCLUSIONS, CORRECTIONS, optionLabel } from "./visionCatalog";
 import type { VisionExam } from "./visionData";
 import { acuityNorm, acuityStatus, ageInMonths, parseAcuity } from "./visionNorms";
 import { acuityTrend, type VisionSignal } from "./visionSignals";
-import { pairGridSx, signalText } from "./visionUi";
+import { signalText } from "./visionUi";
 
 /** «Следующий осмотр — дата» и «Провести». */
 export const NextCheckLine: React.FC<{
@@ -79,9 +79,10 @@ export const VisionLatest: React.FC<VisionLatestProps> = ({
   };
   return (
     <Stack gap={1.5}>
-      <Box sx={pairGridSx}>
-        {eye("OD")}
+      {/* Как у ребёнка: левый глаз слева, правый справа — рисунки встречаются в центре. */}
+      <Box sx={{ display: "grid", gap: { xs: 1, md: 1.5 }, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
         {eye("OS")}
+        {eye("OD")}
       </Box>
       {signals.map((signal) => {
         const { severity, text } = signalText(signal);
