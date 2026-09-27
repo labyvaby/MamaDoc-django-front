@@ -15,13 +15,10 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
-import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
-import { Link as RouterLink } from "react-router";
 
-import { PageHeader } from "../../components/ui";
+import { SettingsLayout } from "../settings/SettingsLayout";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -126,8 +123,7 @@ const TagEditor: React.FC<{
 
 const ReviewsSettingsPage: React.FC = () => {
   const { t } = useT("reviews");
-  usePageTitle("Настройки отзывов");
-  const theme = useTheme();
+  usePageTitle("Сбор отзывов");
   const canManage = useCan("reviews.manage");
   const {
     isSuperAdmin,
@@ -201,32 +197,15 @@ const ReviewsSettingsPage: React.FC = () => {
   };
 
   return (
-    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <PageHeader
-        title="Настройки отзывов"
-        showTitle={false}
-        showSearch={false}
-        leftActions={
-          <Button
-            size="small"
-            startIcon={<ArrowBackOutlined />}
-            component={RouterLink}
-            to="/reviews"
-          >
-            К отзывам
-          </Button>
-        }
-      />
-
-      <Box
-        sx={{
-          flex: 1,
-          overflow: "auto",
-          px: theme.appLayout.page.paddingX,
-          pb: 4,
-          maxWidth: 760,
-        }}
-      >
+    <SettingsLayout>
+      <Box sx={{ maxWidth: 760 }}>
+        <Typography variant="h6" fontWeight={600}>
+          Сбор отзывов
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Когда и как просить пациентов оценить приём, страница отзыва и
+          ссылки на карты.
+        </Typography>
         {query.error ? (
           <Alert severity="error" sx={{ mt: 2 }}>
             {query.error instanceof Error
@@ -428,7 +407,7 @@ const ReviewsSettingsPage: React.FC = () => {
           </Stack>
         )}
       </Box>
-    </Box>
+    </SettingsLayout>
   );
 };
 
