@@ -93,4 +93,8 @@ describe("planScopeKeyFor", () => {
     expect(planScopeKeyFor(7, { activeBranchCount: 2 })).toBe("branch:7");
     expect(planScopeKeyFor(null, { activeBranchCount: 2 })).toBe("org");
   });
+  it("старый бэкенд без activeBranchCount — как раньше", () => {
+    expect(planScopeKeyFor(7, {})).toBe("branch:7");
+    expect(planScopeKeyFor(7, null)).toBe("branch:7");
+  });
 });

@@ -15,7 +15,7 @@
  * конкретные месяцы — сезон, праздники. Точечный побеждает.
  */
 
-import { isSingleBranchOrg } from "../../hooks/useActiveScope";
+import { isSingleBranchOrg } from "../../utility/organization";
 
 export const DASHBOARD_CONFIG_KEY = "dashboard";
 

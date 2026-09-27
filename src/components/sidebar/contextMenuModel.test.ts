@@ -14,12 +14,20 @@ describe("меню организаций и филиалов", () => {
   it("неактивные филиалы не считаются", () => {
     expect(activeBranchesOf(m(1, [{ id: 1, isActive: true }, { id: 2, isActive: false }]))).toHaveLength(1);
   });
-  it("одно членство с одним филиалом — выбирать нечего", () => {
-    expect(isSwitcherInteractive([m(1, [{ id: 1, isActive: true }])])).toBe(false);
-    expect(isSwitcherInteractive([m(1, [])])).toBe(false);
+  it("одно членство с одним филиалом, сессия уже в нём — выбирать нечего", () => {
+    expect(isSwitcherInteractive([m(1, [{ id: 1, isActive: true }])], 1)).toBe(false);
+    expect(isSwitcherInteractive([m(1, [])], null)).toBe(false);
   });
   it("два членства или два филиала — меню нужно", () => {
-    expect(isSwitcherInteractive([m(1, [{ id: 1, isActive: true }]), m(2, [])])).toBe(true);
-    expect(isSwitcherInteractive([m(1, [{ id: 1, isActive: true }, { id: 2, isActive: true }])])).toBe(true);
+    expect(isSwitcherInteractive([m(1, [{ id: 1, isActive: true }]), m(2, [])], null)).toBe(true);
+    expect(
+      isSwitcherInteractive([m(1, [{ id: 1, isActive: true }, { id: 2, isActive: true }])], 1),
+    ).toBe(true);
+  });
+  it("старый бэкенд или не обновившаяся сессия: activeBranchId ещё пуст — меню нужно, чтобы войти в единственный филиал", () => {
+    expect(isSwitcherInteractive([m(1, [{ id: 1, isActive: true }])], null)).toBe(true);
+  });
+  it("активный филиал уже проставлен — меню не нужно (тот же случай, что и выше)", () => {
+    expect(isSwitcherInteractive([m(1, [{ id: 1, isActive: true }])], 1)).toBe(false);
   });
 });
