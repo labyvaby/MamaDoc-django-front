@@ -45,6 +45,7 @@ import { formatDayLong, formatPhone, formatPrice, formatServicesCount, telHref }
 import { primaryPhone, useBookingOrg } from "./useBookingOrg";
 import { useT } from "../../i18n/VerticalProvider";
 import { StepIndicator, type BookingStep } from "./booking/StepIndicator";
+import { submitErrorKey } from "./booking/submitError";
 import { ScheduleCard } from "./booking/ScheduleCard";
 import { BranchesCard } from "./booking/BranchesCard";
 import {
@@ -672,17 +673,18 @@ const DoctorBookingPage: React.FC = () => {
       })
       .catch((e) => {
         // Тексты ошибок бэка адресованы разработчику — гостю показываем
-        // понятное объяснение по коду ответа.
-        if (!(e instanceof ApiError)) setSubmitError(t("bookingFailed"));
-        // 405 — эндпоинта создания нет (было до 03.08.2026). 404 с живым POST
-        // значит другое: врач, филиал или услуга не найдены — предлагать
-        // «скоро заработает» здесь неуместно.
-        else if (e.status === 405) setSubmitError(t("onlineBookingSoon"));
-        else if (e.status === 404) setSubmitError(t("bookingTargetGone"));
-        else if (e.status === 409) setSubmitError(t("slotTaken"));
-        else if (e.status === 429) setSubmitError(t("tooManyAttempts"));
-        else if (e.status === 400) setSubmitError(t("bookingFailed"));
-        else setSubmitError(e.message || t("bookingFailed"));
+        // понятное объяснение по статусу и коду (см. submitErrorKey).
+        const key = submitErrorKey(e);
+        setSubmitError(t(key));
+        // Сервер закрыл это время (расписание сменили, пока гость выбирал):
+        // показанные окна уже неправда — перечитываем календарь и слоты,
+        // как после сгоревшей оплаты (handleRetry), чтобы гость не тыкал
+        // в них снова.
+        if (key === "bookingClosedForTime") {
+          setSelectedTime(null);
+          setCalendarReloadKey((k) => k + 1);
+          if (selectedDate) void reloadTimes(selectedDate, selectedServices);
+        }
       })
       .finally(() => setSubmitting(false));
   };

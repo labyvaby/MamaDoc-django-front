@@ -4,9 +4,14 @@ import { ApiError } from "./client";
 import {
   DEAL_MOVED,
   STAGE_NOT_EMPTY,
+  getBots,
+  getDealsMeta,
   getMovedDeal,
   getStageDealsCount,
+  issueBotKey,
+  moveDeal,
   moveDealTo,
+  revokeBotKey,
   type Deal,
 } from "./deals";
 
@@ -19,7 +24,9 @@ function deal(over: Partial<Deal> = {}): Deal {
     stageName: "Новое обращение",
     stageKind: "open",
     contactName: "Тест",
+    contactUsername: "",
     phone: "+996700000001",
+    customValues: {},
     comment: "",
     patientId: null,
     patientName: null,
@@ -47,6 +54,15 @@ function deal(over: Partial<Deal> = {}): Deal {
     updatedAt: "2026-09-01T10:43:02.859115+00:00",
     isSlaBreached: false,
     daysInStage: 0,
+    conversationId: null,
+    contactId: null,
+    channel: "other",
+    inboxName: "",
+    chatUrl: null,
+    lastActivityAt: null,
+    createdByBotId: null,
+    actorKind: "employee",
+    actorColor: null,
     ...over,
   };
 }
@@ -145,5 +161,50 @@ describe("moveDealTo", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(res.deal.lostReasonName).toBe("Дорого");
+  });
+});
+
+describe("боты и ключи", () => {
+  it("список ботов — конверт results", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ results: [{ id: 1, name: "Chatwoot" }] }));
+    const bots = await getBots(1);
+    expect(bots).toHaveLength(1);
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/deals/bots/");
+  });
+
+  it("выпуск ключа — POST на keys/, секрет приходит один раз", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ key: { id: 5, label: "prod", prefix: "abcdefgh", isActive: true }, secret: "abcdefgh-rest" }, 201),
+    );
+    const issued = await issueBotKey(3, { label: "prod" }, 1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/deals/bots/3/keys/");
+    expect(init.method).toBe("POST");
+    expect(issued.secret.startsWith(issued.key.prefix)).toBe(true);
+  });
+
+  it("отзыв ключа — DELETE на keys/<id>/", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 204, headers: { get: () => null }, text: async () => "" } as unknown as Response);
+    await revokeBotKey(3, 5, 1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/deals/bots/3/keys/5/");
+    expect(init.method).toBe("DELETE");
+  });
+
+  it("meta — одна ручка с воронками и справочниками", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ pipelines: [], sources: [], lostReasons: [] }));
+    const meta = await getDealsMeta(1);
+    expect(meta.pipelines).toEqual([]);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/deals/meta/");
+  });
+});
+
+describe("перенос по коду этапа", () => {
+  it("moveDeal шлёт stageCode вместо stageId", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ deal: deal({ stageId: 2 }), columns: [] }, 201));
+    await moveDeal(2, { stageCode: "contacted", position: 0 }, 1);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body as string)).toEqual({ stageCode: "contacted", position: 0 });
   });
 });

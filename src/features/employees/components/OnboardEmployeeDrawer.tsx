@@ -825,7 +825,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                     <StatusBadge
                       value={status}
                       onChange={setStatus}
-                      options={["active", "inactive", "fired"]}
+                      // «Уволен» при онбординге бэк отклоняет: онбординг выдаёт доступ.
+                      options={["active", "inactive"]}
                       disabled={busy}
                     />
                   </Box>

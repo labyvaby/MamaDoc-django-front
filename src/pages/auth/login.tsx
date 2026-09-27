@@ -29,9 +29,9 @@ import {
 import { applyMeResponse, refreshAuthContext, usePermissions } from "../../hooks/usePermissions";
 import { markBranchPickerPending } from "../../components/auth/BranchPickerDialog";
 import { ApiError } from "../../api/client";
+import { clearAccessEnded, peekAccessEnded } from "../../api/accessEnded";
 import AuthLayout from "../../components/auth/AuthLayout";
 import AuthCard from "../../components/auth/AuthCard";
-import AximoLogo from "../../components/auth/AximoLogo";
 import OtpCodeInput from "../../components/auth/OtpCodeInput";
 import { useWebOtpAutofill } from "../../components/auth/useWebOtpAutofill";
 import { PhoneCountryCodeSelect } from "../../components/ui";
@@ -195,7 +195,9 @@ const LoginPage: React.FC = () => {
 
   // -- COMMON --
   const [loading, setLoading] = React.useState(false);
-  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  // Сюда уводит закрытая из-за увольнения сессия — показываем почему.
+  const [errorMsg, setErrorMsg] = React.useState<string | null>(() => peekAccessEnded());
+  React.useEffect(() => clearAccessEnded(), []);
   const [infoMsg, setInfoMsg] = React.useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = React.useState(0);
   const [redirecting, setRedirecting] = React.useState(false);
@@ -422,21 +424,30 @@ const LoginPage: React.FC = () => {
     <AuthLayout>
       <AuthCard>
         <Box sx={{ mb: 3 }}>
-          <Stack
-            direction="row"
-            alignItems="center"
-            gap={1.25}
-            mb={3.5}
-            sx={{ display: { xs: "none", md: "flex" } }}
+          {/* Шапка формы — как в макете erkinai-login-variants: надзаголовок,
+              крупное приветствие, подпись. */}
+          <Typography
+            variant="caption"
+            component="div"
+            sx={{ color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.14em", fontWeight: 700, fontSize: 12 }}
           >
-            <AximoLogo />
-          </Stack>
-
-          <Typography variant="h5" fontWeight={600} sx={{ mb: 0.5 }}>
+            Личный кабинет
+          </Typography>
+          <Typography
+            component="h1"
+            sx={{
+              fontFamily: '"Manrope", "Inter", system-ui, sans-serif',
+              fontWeight: 800,
+              fontSize: "clamp(34px, 3.1vw, 48px)",
+              lineHeight: 1.05,
+              letterSpacing: "-0.05em",
+              m: "11px 0 12px",
+            }}
+          >
             Вход в систему
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-            Рады видеть вас снова
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, fontSize: 15 }}>
+            Войдите, чтобы продолжить работу в CRM.
           </Typography>
 
           {/* Сегмент-контрол: способ входа. Логика через тот же handleMethodChange. */}

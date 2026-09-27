@@ -46,7 +46,7 @@ export const PosHoldReceiptDialog: React.FC<Props> = ({ open, onClose, onConfirm
         },
       }}
     >
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: "24px", py: "16px", borderBottom: `1px solid ${c.outline}` }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: "24px", py: "16px", bgcolor: c.page, borderBottom: `1px solid ${c.outline}` }}>
         <Typography sx={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2, color: c.text }}>Отложить чек?</Typography>
         <IconButton size="small" onClick={onClose} sx={{ p: 0, color: c.textSoft }} aria-label="Закрыть">
           <CloseOutlined sx={{ fontSize: 16 }} />

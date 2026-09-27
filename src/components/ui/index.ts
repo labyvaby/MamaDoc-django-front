@@ -20,6 +20,8 @@ export { ReasonDialog } from "./ReasonDialog";
 export type { ReasonDialogProps } from "./ReasonDialog";
 export { PhoneCountryCodeSelect } from "./PhoneCountryCodeSelect";
 export type { PhoneCountryCodeSelectProps } from "./PhoneCountryCodeSelect";
+export { default as PhoneNumberField } from "./PhoneNumberField";
+export type { PhoneNumberFieldProps } from "./PhoneNumberField";
 export { PaymentInfoBlock } from "./PaymentInfoBlock";
 export { DateNavigation } from "./DateNavigation";
 export type { DateNavigationProps } from "./DateNavigation";

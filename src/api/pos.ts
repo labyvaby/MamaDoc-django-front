@@ -51,6 +51,8 @@ export type PosQuote = {
   bonuses: string;
   certificateAmount: string;
   due: string;
+  /** True only when a promotion produced a larger discount than the manual one. */
+  promotionApplied?: boolean;
   lines: Array<{
     productId: number;
     quantity: string;

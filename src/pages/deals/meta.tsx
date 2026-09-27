@@ -12,6 +12,12 @@ import {
 
 /** Доска общая: чужие переносы должны проявляться без ручного F5. */
 export const DEALS_REFRESH_MS = 60_000;
+/** Тот же polling, когда открыт realtime-сокет: только страховка от «тихого» обрыва. */
+export const DEALS_REFRESH_LIVE_MS = 300_000;
+/** Сколько светится карточка, пришедшая по realtime. */
+export const DEAL_HIGHLIGHT_MS = 3_000;
+/** localStorage-ключ переключателя звука новых сделок. */
+export const DEALS_SOUND_KEY = "dealsSound";
 
 /** Сколько карточек тянем в колонку: доска — оперативный вид, не архив. */
 export const DEALS_COLUMN_SIZE = 50;

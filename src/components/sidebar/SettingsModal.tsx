@@ -107,7 +107,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           display="block"
           textAlign="center"
         >
-          Версия Aximo CRM {appVersion}
+          Версия ErkinAI {appVersion}
         </Typography>
       </DialogContent>
     </Dialog>

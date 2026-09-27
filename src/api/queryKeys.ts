@@ -194,6 +194,12 @@ export const djangoQueryKeys = {
       ["django", "reviews", "settings", organizationId ?? null] as const,
     byAppointment: (appointmentId: number) =>
       ["django", "reviews", "appointment", appointmentId] as const,
+    staff: (params: Record<string, unknown>) =>
+      ["django", "reviews", "staff", params] as const,
+    tags: (params: Record<string, unknown>) =>
+      ["django", "reviews", "tags", params] as const,
+    mapClicks: (params: Record<string, unknown>) =>
+      ["django", "reviews", "map-clicks", params] as const,
   },
 
   tasks: {
@@ -225,8 +231,13 @@ export const djangoQueryKeys = {
       ["django", "deals", "stages", pipelineId ?? null, orgId ?? null] as const,
     sources: (orgId?: number) => ["django", "deals", "sources", orgId ?? null] as const,
     lostReasons: (orgId?: number) => ["django", "deals", "lost-reasons", orgId ?? null] as const,
+    bots: (orgId?: number) => ["django", "deals", "bots", orgId ?? null] as const,
+    botKeys: (botId: number, orgId?: number) => ["django", "deals", "bots", botId, "keys", orgId ?? null] as const,
     duplicates: (phone: string, orgId?: number) =>
       ["django", "deals", "duplicates", phone, orgId ?? null] as const,
+    /** Клиенты с тем же телефоном — подсказка «Привязать» в карточке. */
+    patientCandidates: (dealId: number, orgId?: number) =>
+      ["django", "deals", dealId, "patient-candidates", orgId ?? null] as const,
     funnel: (params: Record<string, unknown>) => ["django", "deals", "funnel", params] as const,
     /** Пикер услуг в карточке сделки: прайс общий по организации. */
     servicePicker: (search: string, orgId?: number) =>
@@ -433,6 +444,21 @@ export const djangoQueryKeys = {
     cabinetDoctors: (branchId: number) =>
       ["django", "odoctor", "cabinet-doctors", branchId] as const,
   },
+  altegio: {
+    // Подключение одно на организацию.
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "settings", organizationId ?? null] as const,
+    // Списки из самого Altegio — не кешируются надолго: запрос уходит во
+    // внешнюю систему, вчерашний список специалистов выдавал бы ушедших.
+    locations: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "locations", organizationId ?? null] as const,
+    staff: (organizationId: number | null | undefined, altegioLocationId: number) =>
+      ["django", "altegio", "staff", organizationId ?? null, altegioLocationId] as const,
+    services: (organizationId: number | null | undefined, altegioLocationId: number) =>
+      ["django", "altegio", "services", organizationId ?? null, altegioLocationId] as const,
+    journal: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "journal", organizationId ?? null] as const,
+  },
 
   scheduling: {
     rules: (params: Record<string, unknown>) =>
@@ -465,5 +491,73 @@ export const djangoQueryKeys = {
     employees: ["django", "reference", "employees"] as const,
     services: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
       ["django", "reference", "services", context] as const,
+  },
+
+  tenancy: {
+    all: ["django", "tenancy"] as const,
+    // Витрина «Модули» — у каждой организации своя: после смены организации
+    // кнопки бьют в новую, значит и карточки должны быть её.
+    catalog: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "catalog", organizationId ?? null] as const,
+    // Открытые заявки на подключение с витрины — тоже у каждой организации свои.
+    requests: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "requests", organizationId ?? null] as const,
+    // Чем из товаров без модуля (запись, сайт, страховые…) организация уже пользуется.
+    features: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "features", organizationId ?? null] as const,
+    // Товары витрины, скрытые от клиник («Неактивен»).
+    inactive: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "inactive", organizationId ?? null] as const,
+  },
+
+  lab: {
+    all: ["django", "lab"] as const,
+    /**
+     * Врачи для поля «направивший врач». Ключ параметризован запросом:
+     * пустой — уже известные, непустой — живой поиск по справочнику ЛИС,
+     * и кэшировать их под одним ключом нельзя.
+     */
+    doctors: (query: string) =>
+      ["django", "lab", "doctors", query] as const,
+    /** Типы клиента ЛИС — готовый список скидок, зеркало синка. */
+    clientTypes: ["django", "lab", "clientTypes"] as const,
+    /**
+     * Лента заказов лаборатории. Сегодня страница всегда шлёт пустые params —
+     * плитки-фильтры над лентой (LabOrdersSummaryBar) режут уже загруженный
+     * список на клиенте (см. filterLabOrders) и в сеть не ходят. Ключ всё
+     * равно параметризован по образцу соседних list(): дровер приёма должен
+     * уметь инвалидировать ленту после создания заказа, не зная её текущих
+     * фильтров.
+     */
+    orders: (params: Record<string, unknown>) =>
+      ["django", "lab", "orders", params] as const,
+    /**
+     * Карточка одного заказа (Task 11). Ключ вложен под тот же префикс
+     * `["django", "lab"]`, что и `all` — инвалидация ленты после приёма или
+     * повтора отправки (`djangoQueryKeys.lab.all`) рефетчит и открытую
+     * карточку тоже, без отдельного вызова.
+     */
+    order: (orderId: number) => ["django", "lab", "orders", orderId] as const,
+    /** Каталог анализов — грузится один раз при открытии дровера приёма. */
+    tests: ["django", "lab", "tests"] as const,
+    /**
+     * Настройки раздела — плата за пробирки и «настроен ли раздел вообще»
+     * (`GET /lab/settings/`). Грузятся один раз при открытии дровера приёма,
+     * тем же моментом, что и каталог; параметров нет — организация, как и у
+     * каталога, берётся из контекста пользователя, а не передаётся явно.
+     */
+    settings: ["django", "lab", "settings"] as const,
+    /** Настройка ЛИС управляющим (`GET /lab/settings/config/`). */
+    config: ["django", "lab", "settings", "config"] as const,
+    /**
+     * Пробирки/вопросы/подготовка зависят от состава корзины (`?tests=`) и
+     * перезагружаются при её изменении, с debounce — ключ по строке
+     * идентификаторов (`testIdsQuery`), а не по самому массиву: одинаковая
+     * корзина обязана давать одинаковый ключ независимо от порядка добавления
+     * строк.
+     */
+    instruments: (testIds: string) => ["django", "lab", "instruments", testIds] as const,
+    questions: (testIds: string) => ["django", "lab", "questions", testIds] as const,
+    preparation: (testIds: string) => ["django", "lab", "preparation", testIds] as const,
   },
 };

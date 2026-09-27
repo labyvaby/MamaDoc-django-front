@@ -9,12 +9,13 @@ import { POS_RADIUS, posColors } from "./layout";
 import { PosAmount } from "./ui";
 
 type CheckoutLine = { name: string; quantity: string; total: number };
+type CheckoutBenefit = { label: string; value: number; tone?: "discount" | "bonus" | "cashback" | "certificate" };
 const cents = (value: string) => /^\d+(?:[.,]\d{0,2})?$/.test(value) ? Math.round(Number(value.replace(",", ".")) * 100) : NaN;
 const METHOD_LABELS = { cash: "Наличные", card: "Карта", cashless: "QR", split: "Частями" } as const;
 
 export function CheckoutDialog({ open, due, bootstrap, lines, subtotal, discount, benefits, pending, error, onClose, onPay }: {
   open: boolean; due: string; bootstrap: PosBootstrap; lines: CheckoutLine[]; subtotal: number; discount: number;
-  benefits: Array<{ label: string; value: number; positive?: boolean }>; pending: boolean; error: string | null;
+  benefits: CheckoutBenefit[]; pending: boolean; error: string | null;
   onClose: () => void; onPay: (payments: PosTender[]) => void;
 }) {
   const c = posColors(useTheme());
@@ -46,7 +47,7 @@ export function CheckoutDialog({ open, due, bootstrap, lines, subtotal, discount
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}><Typography sx={{ fontSize: 14, fontWeight: 800 }}>Оплата</Typography><Typography sx={{ fontSize: 11, color: c.textDim, whiteSpace: "nowrap" }}>{lines.length} товаров · Чек</Typography></Stack>
           <Typography sx={{ mt: "24px", mb: "10px", fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: c.textDim }}>Содержание чека</Typography>
           <Stack gap="7px" sx={{ overflowY: "auto", minHeight: 0 }}>{lines.map((line, index) => <Stack key={`${line.name}-${index}`} direction="row" justifyContent="space-between" gap={1}><Box sx={{ minWidth: 0 }}><Typography sx={{ fontSize: 12, lineHeight: 1.3, color: c.textSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{line.name}</Typography><Typography sx={{ fontSize: 10, color: c.textDim }}>{line.quantity} шт.</Typography></Box><Typography sx={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}><PosAmount value={line.total} /></Typography></Stack>)}</Stack>
-          <Stack gap="5px" sx={{ mt: "auto", pt: "20px" }}><SummaryRow label="Подытог" value={subtotal} /><SummaryRow label="Скидка" value={discount} negative />{benefits.map((item) => <SummaryRow key={item.label} label={item.label} value={item.value} negative={!item.positive} />)}<Box sx={{ height: 1, bgcolor: c.hairline, my: "8px" }} /><Stack direction="row" justifyContent="space-between" alignItems="flex-end"><Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: c.textDim }}>К оплате</Typography><Typography sx={{ fontSize: 24, fontWeight: 900 }}><PosAmount value={Number(due)} /></Typography></Stack></Stack>
+          <Stack gap="5px" sx={{ mt: "auto", pt: "20px" }}><SummaryRow label="Подытог" value={subtotal} /><SummaryRow label="Скидка" value={discount} negative tone="discount" />{benefits.map((item) => <SummaryRow key={item.label} label={item.label} value={item.value} negative tone={item.tone} />)}<Box sx={{ height: 1, bgcolor: c.hairline, my: "8px" }} /><Stack direction="row" justifyContent="space-between" alignItems="flex-end"><Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: c.textDim }}>К оплате</Typography><Typography sx={{ fontSize: 24, fontWeight: 900 }}><PosAmount value={Number(due)} /></Typography></Stack></Stack>
         </Box>
         <Box sx={{ p: { xs: "18px", sm: "22px" }, minWidth: 0, overflowY: "auto" }}>
           <Stack direction="row" justifyContent="flex-end"><IconButton onClick={onClose} disabled={pending} size="small" sx={{ color: c.textDim }}><CloseOutlined fontSize="small" /></IconButton></Stack>
@@ -64,6 +65,10 @@ export function CheckoutDialog({ open, due, bootstrap, lines, subtotal, discount
   );
 }
 
-function SummaryRow({ label, value, negative = false }: { label: string; value: number; negative?: boolean }) { return <Stack direction="row" justifyContent="space-between"><Typography sx={{ fontSize: 11, color: "text.secondary" }}>{label}</Typography><Typography sx={{ fontSize: 11, color: negative ? "success.main" : "text.primary" }}><PosAmount value={value} negative={negative} /></Typography></Stack>; }
+function SummaryRow({ label, value, negative = false, tone }: { label: string; value: number; negative?: boolean; tone?: "discount" | "bonus" | "cashback" | "certificate" }) {
+  const c = posColors(useTheme());
+  const toneColor = tone === "discount" ? c.discount : tone === "bonus" ? c.bonus : tone === "cashback" ? c.cashback : tone === "certificate" ? c.certificate : c.text;
+  return <Stack direction="row" justifyContent="space-between"><Typography sx={{ fontSize: 11, color: "text.secondary" }}>{label}</Typography><Typography sx={{ fontSize: 11, color: toneColor }}><PosAmount value={value} negative={negative} /></Typography></Stack>;
+}
 function Metric({ label, value }: { label: string; value: number }) { return <Stack gap="2px"><Typography sx={{ fontSize: 9, textTransform: "uppercase", color: "text.secondary", letterSpacing: ".06em" }}>{label}</Typography><Typography sx={{ fontSize: 25, fontWeight: 900, lineHeight: 1.1 }}><PosAmount value={value} /></Typography></Stack>; }
-function MethodButton({ active, disabled, onClick, label }: { active: boolean; disabled: boolean; onClick: () => void; label: string }) { const c = posColors(useTheme()); return <ButtonBase onClick={onClick} disabled={disabled} sx={{ minWidth: 84, flex: 1, px: "10px", py: "11px", borderRadius: `${POS_RADIUS.control}px`, bgcolor: active ? c.accentBg : c.page, border: `1px solid ${active ? c.accent : c.hairline}`, color: active ? c.text : c.textSoft, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>{label}<Box component="span" sx={{ ml: "6px", px: "4px", py: "2px", borderRadius: `${POS_RADIUS.chip}px`, border: "1px solid currentColor", opacity: .65, fontSize: 8, fontWeight: 500 }}>F1</Box></ButtonBase>; }
+function MethodButton({ active, disabled, onClick, label }: { active: boolean; disabled: boolean; onClick: () => void; label: string }) { const c = posColors(useTheme()); return <ButtonBase onClick={onClick} disabled={disabled} sx={{ minWidth: 84, flex: 1, px: "10px", py: "11px", borderRadius: `${POS_RADIUS.control}px`, bgcolor: active ? c.accentBg : c.page, border: `1px solid ${active ? c.accent : c.hairline}`, color: active ? c.text : c.textSoft, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>{label}</ButtonBase>; }

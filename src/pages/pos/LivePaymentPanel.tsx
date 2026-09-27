@@ -214,7 +214,8 @@ const CodeField: React.FC<{
               sx={{
                 flex: 1,
                 minWidth: 0,
-                height: 32,
+                height: 40,
+                boxSizing: "border-box",
                 px: "14px",
                 display: "flex",
                 alignItems: "center",
@@ -223,6 +224,7 @@ const CodeField: React.FC<{
                 borderRadius: `${POS_RADIUS.pill}px`,
                 fontSize: 12,
                 color: c.text,
+                "& input": { height: "100%", boxSizing: "border-box", py: 0 },
                 "& input::placeholder": { color: c.textDim, opacity: 1 },
               }}
             />
@@ -230,7 +232,8 @@ const CodeField: React.FC<{
               onClick={submit}
               disabled={disabled}
               sx={{
-                height: 32,
+                height: 40,
+                boxSizing: "border-box",
                 px: "14px",
                 flexShrink: 0,
                 borderRadius: `${POS_RADIUS.pill}px`,
@@ -253,12 +256,13 @@ const CodeField: React.FC<{
 };
 
 /** Строка блока итогов. */
-const SummaryLine: React.FC<{ label: string; value: React.ReactNode; tone?: "accent" | "positive" }> = ({ label, value, tone }) => {
+const SummaryLine: React.FC<{ label: string; value: React.ReactNode; tone?: "discount" | "bonus" | "cashback" | "certificate" }> = ({ label, value, tone }) => {
   const c = posColors(useTheme());
+  const toneColor = tone === "discount" ? c.discount : tone === "bonus" ? c.bonus : tone === "cashback" ? c.cashback : tone === "certificate" ? c.certificate : c.textSoft;
   return (
     <Stack direction="row" alignItems="center" justifyContent="space-between">
       <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>{label}</Typography>
-      <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: tone === "positive" ? c.positive : tone === "accent" ? c.accentText : c.textSoft }}>
+      <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: toneColor }}>
         {value}
       </Typography>
     </Stack>
@@ -320,9 +324,9 @@ export function LivePaymentPanel({
   } as const;
 
   const summary = [
-    { label: "Скидка", value: amount(quote?.discount) },
-    { label: "Бонусы", value: amount(quote?.bonuses), tone: "accent" as const },
-    { label: "Сертификат", value: amount(quote?.certificateAmount), tone: "positive" as const },
+    { label: "Скидка", value: amount(quote?.discount), tone: "discount" as const },
+    { label: "Бонусы", value: amount(quote?.bonuses), tone: "bonus" as const },
+    { label: "Сертификат", value: amount(quote?.certificateAmount), tone: "certificate" as const },
   ].filter((line) => line.value > 0);
 
   return (
@@ -458,7 +462,9 @@ export function LivePaymentPanel({
                       discountKindId: null,
                     })}
                     placeholder="0"
-                    disabled={frozen || selectedKind !== null}
+                    // Quote refetches after every edit. Keep this input enabled
+                    // during that request, or only the first digit is accepted.
+                    disabled={locked || selectedKind !== null}
                     inputProps={{ inputMode: "decimal", max: 100, style: { textAlign: "right" } }}
                     endAdornment={<Box component="span" sx={{ pl: "4px", color: c.textDim }}>%</Box>}
                     sx={{
@@ -483,9 +489,19 @@ export function LivePaymentPanel({
           {actions.promotions && (
             <RedemptionCard
               title="Акции"
-              hint="автоматические скидки по акциям"
-              applied={benefits.promotions}
-              appliedLabel="Учтены"
+              hint={
+                !benefits.promotions
+                  ? "автоматические скидки по акциям"
+                  : busy
+                    ? "Проверяем подходящие акции…"
+                    : quote?.promotionApplied
+                      ? "Акция применена к этому чеку"
+                      : quote
+                        ? "Нет подходящих акций или скидка меньше уже выбранной"
+                        : "автоматические скидки по акциям"
+              }
+              applied={Boolean(benefits.promotions && quote?.promotionApplied)}
+              appliedLabel="Применена"
               disabled={frozen}
               onToggle={() => patch({ promotions: !benefits.promotions })}
             />
@@ -561,20 +577,6 @@ export function LivePaymentPanel({
               }}
             >
               Принять оплату
-              <Box
-                sx={{
-                  px: "6px",
-                  py: "4px",
-                  borderRadius: `${POS_RADIUS.chip}px`,
-                  border: "1px solid currentColor",
-                  opacity: 0.6,
-                  fontSize: 12,
-                  fontWeight: 400,
-                  lineHeight: 0.9,
-                }}
-              >
-                F5
-              </Box>
             </ButtonBase>
           )}
         </Stack>

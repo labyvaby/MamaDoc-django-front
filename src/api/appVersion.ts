@@ -18,8 +18,8 @@ function fetchBackendCommitCount(): Promise<number | null> {
 }
 
 /**
- * Строка версии вида `vFRONT.BACK.2`, где FRONT/BACK — число коммитов
- * фронт- и бэк-репозиториев. Оба числа считаются сами по себе: фронтовое
+ * Строка версии вида `v2.BACK.FRONT`, где BACK/FRONT — число коммитов
+ * бэк- и фронт-репозиториев (2 — мажорная линейка продукта). Оба числа считаются сами по себе: фронтовое
  * зашито при сборке, бэкенд отдаёт своё через `/api/system/version/`.
  */
 export function useAppVersion(): string {
@@ -36,5 +36,5 @@ export function useAppVersion(): string {
   }, []);
 
   const backendLabel = backendCommitCount ?? "…";
-  return `v${FRONTEND_COMMIT_COUNT}.${backendLabel}.2`;
+  return `v2.${backendLabel}.${FRONTEND_COMMIT_COUNT}`;
 }
