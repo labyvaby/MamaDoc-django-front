@@ -28,8 +28,9 @@ describe("blank text", () => {
   });
 
   it("prints money like people write it", () => {
-    expect(formatBlankValue("24000.00")).toBe("24 000");
-    expect(formatBlankValue("1250.50")).toBe("1 250,50");
+    const nbsp = String.fromCharCode(0xa0);
+    expect(formatBlankValue("24000.00")).toBe(`24${nbsp}000`);
+    expect(formatBlankValue("1250.50")).toBe(`1${nbsp}250,50`);
     expect(formatBlankValue("0.00")).toBe("0");
     expect(formatBlankValue("1101")).toBe("1101");
   });
