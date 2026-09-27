@@ -940,6 +940,8 @@ const CategoryEditor: React.FC<CategoryEditorProps> = ({
     const [name, setName] = React.useState("");
     const [attributeIds, setAttributeIds] = React.useState<number[]>([]);
     const [active, setActive] = React.useState(true);
+    const [markupMultiplier, setMarkupMultiplier] = React.useState("");
+    const [markupRoundingStep, setMarkupRoundingStep] = React.useState("100");
     const [busy, setBusy] = React.useState(false);
 
     React.useEffect(() => {
@@ -947,6 +949,8 @@ const CategoryEditor: React.FC<CategoryEditorProps> = ({
         setName(item?.name ?? "");
         setAttributeIds(item?.attributeIds ?? []);
         setActive(item?.isActive ?? true);
+        setMarkupMultiplier(item?.markupMultiplier ?? "");
+        setMarkupRoundingStep(String(item?.markupRoundingStep ?? 100));
         setBusy(false);
     }, [item, open]);
 
@@ -972,12 +976,16 @@ const CategoryEditor: React.FC<CategoryEditorProps> = ({
                     name: name.trim(),
                     attributeIds,
                     isActive: active,
+                    markupMultiplier: markupMultiplier.trim() || null,
+                    markupRoundingStep: Number(markupRoundingStep) || 100,
                 });
             } else {
                 await createProductCategory({
                     name: name.trim(),
                     attributeIds,
                     organizationId,
+                    markupMultiplier: markupMultiplier.trim() || null,
+                    markupRoundingStep: Number(markupRoundingStep) || 100,
                 });
             }
             notify?.({ type: "success", message: item ? "Категория обновлена" : "Категория добавлена" });
@@ -1025,6 +1033,25 @@ const CategoryEditor: React.FC<CategoryEditorProps> = ({
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Одежда"
             />
+            <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.25 }}>
+                <TextField
+                    label="Множитель наценки"
+                    size="small"
+                    value={markupMultiplier}
+                    onChange={(event) => setMarkupMultiplier(event.target.value.replace(",", "."))}
+                    inputProps={{ inputMode: "decimal" }}
+                    helperText="Например, 2,8 от полной себестоимости; цена округляется вверх"
+                />
+                <TextField
+                    label="Округление цены, сом"
+                    size="small"
+                    type="number"
+                    value={markupRoundingStep}
+                    onChange={(event) => setMarkupRoundingStep(event.target.value)}
+                    inputProps={{ min: 1, step: 1 }}
+                    helperText="Например, 100 или 1000"
+                />
+            </Box>
             {hasColor && hasSize && (
                 <Box
                     sx={{

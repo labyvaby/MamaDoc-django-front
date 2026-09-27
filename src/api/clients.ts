@@ -27,6 +27,7 @@ export interface DjangoClient {
   email: string;
   photoUrl: string | null;
   dob: string | null;
+  individualDiscountPercent: string;
   address: string;
   managerId: number | null;
   familyGroupId: number | null;
@@ -54,6 +55,7 @@ export interface CreateClientPayload {
   phone: string;
   email?: string;
   dob?: string | null;
+  individualDiscountPercent?: number | string;
   address?: string;
   clientType?: ClientType;
   customerStatusId?: number | null;
@@ -73,12 +75,13 @@ export type UpdateClientPayload = Omit<Partial<CreateClientPayload>, "organizati
 
 export function getClients(
   organizationId: number,
-  params: { query?: string; clientType?: string } = {},
+  params: { query?: string; clientType?: string; birthMonth?: number | null } = {},
   signal?: AbortSignal,
 ): Promise<DjangoClient[]> {
   const search = new URLSearchParams({ organizationId: String(organizationId) });
   if (params.query?.trim()) search.set("q", params.query.trim());
   if (params.clientType) search.set("clientType", params.clientType);
+  if (params.birthMonth) search.set("birthMonth", String(params.birthMonth));
   return apiRequest<DjangoClient[]>(`/clients/?${search.toString()}`, { signal });
 }
 

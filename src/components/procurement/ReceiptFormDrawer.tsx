@@ -9,6 +9,7 @@ import {
   Divider,
   Drawer,
   IconButton,
+  InputAdornment,
   LinearProgress,
   MenuItem,
   Stack,
@@ -16,6 +17,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import { createFilterOptions } from "@mui/material/Autocomplete";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
@@ -30,6 +32,8 @@ import AddAPhotoOutlined from "@mui/icons-material/AddAPhotoOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
 import PersonAddAltOutlined from "@mui/icons-material/PersonAddAltOutlined";
+import AddCircleOutlineOutlined from "@mui/icons-material/AddCircleOutlineOutlined";
+import NewReleasesOutlined from "@mui/icons-material/NewReleasesOutlined";
 
 import { ApiError, getErrorMessage } from "../../api/client";
 import {
@@ -41,22 +45,48 @@ import {
   type ProcurementSupplier,
   type RecognitionResult,
   type RecognizedCandidate,
+  type RecognizedLine,
 } from "../../api/procurement";
 import { djangoQueryKeys } from "../../api/queryKeys";
-import { getProducts, getWarehouses, type DjangoProduct, type DjangoWarehouse } from "../../api/warehouse";
+import {
+  getProductAttributes,
+  getProductCategories,
+  getProductCategoryTree,
+  getProducts,
+  getUnitsOfMeasure,
+  getWarehouses,
+  type DjangoProduct,
+  type DjangoWarehouse,
+} from "../../api/warehouse";
 import { useInvoicePhotos } from "../../hooks/useInvoicePhotos";
+import { usePermissions } from "../../hooks/usePermissions";
 import { INVOICE_DOCUMENT_ACCEPT } from "../../utility/imageCompression";
 import { CustomDateTimePicker, CustomDatePicker, InvoicePhotosField } from "../ui";
 import { CloseGuardDialog } from "../common/CloseGuardDialog";
 import { formatMoney } from "./meta";
+import { NewProductFields } from "./NewProductFields";
+import {
+  buildCategoryOptions,
+  draftFromRecognized,
+  draftProblem,
+  emptyDraft,
+  newProductInput,
+  type NewProductDraft,
+} from "./newProductDraft";
 
 const CURRENCIES = ["KGS", "USD", "RUB", "KZT", "EUR", "CNY"];
 
-type ProductOption = { id: number; label: string; unit: string; sku: string };
+/** `create` — не товар каталога, а пункт «Создать товар «…»» по введённому тексту. */
+type ProductOption = { id: number; label: string; unit: string; sku: string; create?: boolean };
+
+const CREATE_OPTION_ID = -1;
+const filterProductOptions = createFilterOptions<ProductOption>();
 
 interface FormLine {
   key: string;
   product: ProductOption | null;
+  /** Товара нет в каталоге — карточка заведётся вместе с приходом. */
+  newProduct?: NewProductDraft;
   quantity: string;
   price: string;
   lotNumber: string;
@@ -67,12 +97,18 @@ interface FormLine {
     modelCode: string | null;
     color: string | null;
     size: string | null;
+    barcode: string | null;
+    sku: string | null;
+    unit: string | null;
     candidates: RecognizedCandidate[];
     matchScore: number | null;
   };
 }
 
-/** Колонки позиции на sm+: товар, кол-во, цена, сумма, удаление. Шапка и строки — по одной сетке. */
+/**
+ * Колонки позиции на md+ (десктоп; телефон в проекте — всё, что уже md, см.
+ * APP_BREAKPOINTS): товар, кол-во, цена, сумма, удаление. Шапка и строки — по одной сетке.
+ */
 const LINE_COLUMNS = "minmax(0, 1fr) 88px 100px 84px 32px";
 
 const newLine = (): FormLine => ({
@@ -82,6 +118,19 @@ const newLine = (): FormLine => ({
   price: "",
   lotNumber: "",
   expiresAt: null,
+});
+
+/** Что строка документа говорит о товаре — для подсказок и для новой карточки. */
+const recognizedOf = (line: RecognizedLine): NonNullable<FormLine["recognized"]> => ({
+  name: line.name,
+  modelCode: line.modelCode,
+  color: line.color,
+  size: line.size,
+  barcode: line.barcode,
+  sku: line.sku,
+  unit: line.unit,
+  candidates: line.candidates,
+  matchScore: line.match?.score ?? null,
 });
 
 /** Пикер даты-времени шагает по 15 минут: «сейчас» округляем вниз, иначе поле красное. */
@@ -104,13 +153,22 @@ export interface ReceiptFormDrawerProps {
   recognitionEnabled: boolean;
   recognitionHint?: string | null;
   onCreateSupplier?: () => void;
+  /**
+   * Право `procurement.receipts.create_products`: товара нет в каталоге — он
+   * заводится прямо из строки. Без права кнопок создания в форме нет вовсе.
+   */
+  canCreateProducts?: boolean;
+  /** Настройка модуля «Закуп в валюте»; false — накладная только в сомах, полей валюты и курса нет. */
+  foreignCurrency?: boolean;
 }
 
 /**
  * «Новая накладная»: приход от поставщика. Снимок или PDF накладной — не только фото
  * к документу: если распознавание включено, модель читает его, и форма
  * заполняется поставщиком, номером, датой и позициями; несопоставленные
- * позиции остаются с подсказками, выбор — за человеком. Ничего не пишется,
+ * позиции остаются с подсказками, выбор — за человеком. Товара нет в каталоге —
+ * с правом его можно завести прямо в строке: карточка создаётся вместе с
+ * приходом, а количество строки сразу становится остатком. Ничего не пишется,
  * пока приход не проведён.
  */
 export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
@@ -123,10 +181,14 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
   recognitionEnabled,
   recognitionHint,
   onCreateSupplier,
+  canCreateProducts = false,
+  foreignCurrency = true,
 }) => {
   const theme = useTheme();
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
+  const { activeOrganization } = usePermissions();
+  const isRetail = activeOrganization?.vertical === "retail";
 
   const [supplierId, setSupplierId] = React.useState<number | "">("");
   const [warehouseId, setWarehouseId] = React.useState<number | "">("");
@@ -136,6 +198,9 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
   const [dueAt, setDueAt] = React.useState<Dayjs | null>(null);
   const [currency, setCurrency] = React.useState("KGS");
   const [exchangeRate, setExchangeRate] = React.useState("1");
+  const [customsCost, setCustomsCost] = React.useState("0");
+  const [deliveryCost, setDeliveryCost] = React.useState("0");
+  const [otherCosts, setOtherCosts] = React.useState("0");
   const [comment, setComment] = React.useState("");
   const [lines, setLines] = React.useState<FormLine[]>([newLine()]);
   const [saving, setSaving] = React.useState(false);
@@ -182,6 +247,39 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
     staleTime: 0,
   });
 
+  // Справочники новой карточки — только тем, кто может её завести. Розница
+  // ведёт дерево категорий со схемой формы (цвет × размер), клиника —
+  // категорию строкой с подсказками уже заведённых значений.
+  const directoriesEnabled = open && canCreateProducts;
+  const categoryTreeQuery = useQuery({
+    queryKey: ["django", "procurement", "form-categories", orgId ?? null],
+    queryFn: async ({ signal }) => {
+      const [nodes, attributes] = await Promise.all([getProductCategoryTree(signal, orgId), getProductAttributes(signal, orgId)]);
+      return buildCategoryOptions(nodes, attributes);
+    },
+    enabled: directoriesEnabled && isRetail,
+    staleTime: 60_000,
+  });
+  const legacyCategoriesQuery = useQuery({
+    queryKey: ["django", "procurement", "form-legacy-categories", orgId ?? null],
+    queryFn: ({ signal }) => getProductCategories(signal, orgId),
+    enabled: directoriesEnabled && !isRetail,
+    staleTime: 60_000,
+  });
+  const unitsQuery = useQuery({
+    queryKey: ["django", "procurement", "form-units", orgId ?? null],
+    queryFn: ({ signal }) => getUnitsOfMeasure(signal, orgId),
+    enabled: directoriesEnabled,
+    staleTime: 60_000,
+  });
+  const categoryOptions = React.useMemo(() => categoryTreeQuery.data ?? [], [categoryTreeQuery.data]);
+  const categoryById = React.useMemo(() => new Map(categoryOptions.map((option) => [option.id, option])), [categoryOptions]);
+  const units = React.useMemo(() => unitsQuery.data ?? [], [unitsQuery.data]);
+  // Как в карточке товара: у розницы со справочником категория обязательна.
+  const categoryRequired = isRetail && categoryOptions.length > 0;
+  /** Последняя выбранная категория — новые черновики начинают с неё. */
+  const lastCategoryRef = React.useRef<number | null>(null);
+
   const productOptions = React.useMemo<ProductOption[]>(
     () =>
       (productsQuery.data ?? [])
@@ -215,24 +313,88 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
     if (primary) setWarehouseId(primary.id);
   }, [open, warehouses, warehouseId, activeBranchId]);
 
-  // Валюта поставщика — в форму по умолчанию.
+  // Валюта поставщика — в форму по умолчанию; при закупе только в сомах — всегда сом.
   React.useEffect(() => {
+    if (!foreignCurrency) {
+      setCurrency("KGS");
+      setExchangeRate("1");
+      return;
+    }
     const supplier = suppliers.find((s) => s.id === supplierId);
     if (supplier?.defaultCurrency) setCurrency(supplier.defaultCurrency);
-  }, [supplierId, suppliers]);
+  }, [foreignCurrency, supplierId, suppliers]);
 
   const updateLine = (key: string, patch: Partial<FormLine>) =>
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const removeLine = (key: string) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.key !== key) : [newLine()]));
 
+  // ── Новый товар из строки ────────────────────────────────────────────────
+
+  const updateDraft = (key: string, patch: Partial<NewProductDraft>) => {
+    if (patch.categoryId !== undefined) lastCategoryRef.current = patch.categoryId;
+    setLines((prev) =>
+      prev.map((l) => (l.key === key && l.newProduct ? { ...l, newProduct: { ...l.newProduct, ...patch } } : l)),
+    );
+  };
+
+  /** Черновик для строки: из распознанного документа либо из набранного названия. */
+  const draftFor = (line: FormLine, typedName: string | undefined, allLines: FormLine[]): NewProductDraft => {
+    const base = line.recognized
+      ? draftFromRecognized(line.recognized, {
+          units,
+          // Артикул поставщика общий у размеров одной модели — такой не берём.
+          skuIsUnique:
+            Boolean(line.recognized.sku) &&
+            allLines.filter((l) => l.recognized?.sku && l.recognized.sku === line.recognized?.sku).length === 1,
+        })
+      : emptyDraft();
+    const name = typedName?.trim();
+    // Запомненная категория — только если она есть в справочнике этой организации.
+    const remembered = lastCategoryRef.current;
+    const categoryId = remembered != null && categoryById.has(remembered) ? remembered : null;
+    return { ...base, name: name || base.name, categoryId };
+  };
+
+  const startNewProduct = (key: string, typedName?: string) =>
+    setLines((prev) =>
+      prev.map((l) => (l.key === key ? { ...l, product: null, newProduct: draftFor(l, typedName, prev) } : l)),
+    );
+
+  const cancelNewProduct = (key: string) => updateLine(key, { newProduct: undefined });
+
+  /** «Создать все»: каждая несопоставленная строка документа — новой карточкой. */
+  const createAllUnmatched = () =>
+    setLines((prev) =>
+      prev.map((l) => (l.recognized && !l.product && !l.newProduct ? { ...l, newProduct: draftFor(l, undefined, prev) } : l)),
+    );
+
+  const applyCategoryToNew = (categoryId: number | null) => {
+    lastCategoryRef.current = categoryId;
+    setLines((prev) => prev.map((l) => (l.newProduct ? { ...l, newProduct: { ...l.newProduct, categoryId } } : l)));
+  };
+
+  const problemOf = (line: FormLine): string | null =>
+    line.newProduct
+      ? draftProblem(line.newProduct, {
+          categoryRequired,
+          category: line.newProduct.categoryId != null ? categoryById.get(line.newProduct.categoryId) : null,
+        })
+      : null;
+
   const lineTotal = (line: FormLine) => toNumber(line.quantity) * toNumber(line.price);
   const rate = currency === "KGS" ? 1 : toNumber(exchangeRate) || 1;
   const total = lines.reduce((sum, l) => sum + lineTotal(l), 0);
-  const filledLines = lines.filter((l) => l.product && toNumber(l.quantity) > 0);
-  const unmatched = lines.filter((l) => l.recognized && !l.product);
+  const landedExpenses = toNumber(customsCost) + toNumber(deliveryCost) + toNumber(otherCosts);
+  const hasProduct = (l: FormLine) => Boolean(l.product || l.newProduct);
+  const filledLines = lines.filter((l) => hasProduct(l) && toNumber(l.quantity) > 0);
+  const unmatched = lines.filter((l) => l.recognized && !hasProduct(l));
+  const newLines = lines.filter((l) => l.newProduct);
+  const sharedNewCategory = newLines.every((l) => l.newProduct?.categoryId === newLines[0]?.newProduct?.categoryId)
+    ? newLines[0]?.newProduct?.categoryId ?? null
+    : null;
 
   const hasLineDraft = lines.some((line) =>
-    Boolean(line.product || line.quantity || line.price || line.lotNumber || line.expiresAt || line.recognized),
+    Boolean(line.product || line.newProduct || line.quantity || line.price || line.lotNumber || line.expiresAt || line.recognized),
   );
   const isDirty = Boolean(
     supplierId !== "" ||
@@ -241,6 +403,7 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
     dueAt ||
     currency !== "KGS" ||
     exchangeRate !== "1" ||
+    landedExpenses > 0 ||
     comment.trim() ||
     hasLineDraft ||
     recognition ||
@@ -256,6 +419,9 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
     setDueAt(null);
     setCurrency("KGS");
     setExchangeRate("1");
+    setCustomsCost("0");
+    setDeliveryCost("0");
+    setOtherCosts("0");
     setComment("");
     setLines([newLine()]);
     setError(null);
@@ -277,7 +443,12 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
     onClose();
   }, [onClose, resetForm]);
 
-  const isValid = supplierId !== "" && warehouseId !== "" && filledLines.length > 0 && lines.every((l) => !l.product || toNumber(l.quantity) > 0);
+  const isValid =
+    supplierId !== "" &&
+    warehouseId !== "" &&
+    filledLines.length > 0 &&
+    lines.every((l) => !hasProduct(l) || toNumber(l.quantity) > 0) &&
+    lines.every((l) => problemOf(l) == null);
 
   // ── Распознавание ────────────────────────────────────────────────────────
 
@@ -290,7 +461,9 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
         const parsed = dayjs(result.document.date);
         if (parsed.isValid()) setReceivedAt(roundToStep(parsed.hour(dayjs().hour()).minute(dayjs().minute())));
       }
-      if (result.document.currency && CURRENCIES.includes(result.document.currency)) setCurrency(result.document.currency);
+      if (foreignCurrency && result.document.currency && CURRENCIES.includes(result.document.currency)) {
+        setCurrency(result.document.currency);
+      }
       const recognizedLines: FormLine[] = result.lines.map((line) => {
         const matched = line.match ? productById.get(line.match.id) ?? null : null;
         const expires = line.expiresAt ? dayjs(line.expiresAt) : null;
@@ -301,24 +474,17 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
           price: line.price ? String(Number(line.price)) : "",
           lotNumber: line.lotNumber ?? "",
           expiresAt: expires && expires.isValid() ? expires : null,
-          recognized: {
-            name: line.name,
-            modelCode: line.modelCode,
-            color: line.color,
-            size: line.size,
-            candidates: line.candidates,
-            matchScore: line.match?.score ?? null,
-          },
+          recognized: recognizedOf(line),
         };
       });
       if (recognizedLines.length > 0) {
         setLines((prev) => {
-          const kept = prev.filter((l) => l.product || l.quantity || l.price);
+          const kept = prev.filter((l) => l.product || l.newProduct || l.quantity || l.price);
           return [...kept, ...recognizedLines];
         });
       }
     },
-    [productById, supplierId, supplierNumber],
+    [foreignCurrency, productById, supplierId, supplierNumber],
   );
 
   const handlePhoto = async (files: FileList | null) => {
@@ -363,8 +529,18 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
           receivedAt: receivedAt ? receivedAt.toISOString() : null,
           dueAt: dueAt ? dueAt.endOf("day").toISOString() : null,
           comment: comment.trim(),
+          customsCost: String(toNumber(customsCost)),
+          deliveryCost: String(toNumber(deliveryCost)),
+          otherCosts: String(toNumber(otherCosts)),
           lines: filledLines.map((l) => ({
-            productId: l.product!.id,
+            ...(l.product
+              ? { productId: l.product.id }
+              : {
+                  newProduct: newProductInput(
+                    l.newProduct!,
+                    l.newProduct!.categoryId != null ? categoryById.get(l.newProduct!.categoryId) : null,
+                  ),
+                }),
             quantity: String(toNumber(l.quantity)),
             costAmount: String(toNumber(l.price)),
             costCurrency: currency,
@@ -375,11 +551,17 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
         },
         scope,
       );
+      const createdProducts = filledLines.filter((l) => l.newProduct).length;
       const { failed } = await photos.flush(created.id);
       await queryClient.invalidateQueries({ queryKey: djangoQueryKeys.procurement.all });
+      // Новые карточки — в каталог и во все пикеры товаров, не только в эту форму.
+      if (createdProducts > 0) await queryClient.invalidateQueries({ queryKey: ["django", "warehouse"] });
+      const withProducts = createdProducts > 0 ? ` · новых товаров: ${createdProducts}` : "";
       notify?.({
         type: failed ? "error" : "success",
-        message: failed ? `Накладная ${created.number} проведена, но ${failed} фото не загрузилось` : `Накладная ${created.number} проведена`,
+        message: failed
+          ? `Накладная ${created.number} проведена${withProducts}, но ${failed} фото не загрузилось`
+          : `Накладная ${created.number} проведена${withProducts}`,
       });
       resetForm();
       onCreated(created);
@@ -410,7 +592,7 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
         <Box>
           <Typography variant="h6">Новая накладная</Typography>
           <Typography variant="caption" color="text.secondary">
-            Приход от поставщика · себестоимость партий зафиксируется по курсу дня
+            Количество встанет на склад при проведении · {foreignCurrency ? "себестоимость — по курсу дня" : "всё в сомах"}
           </Typography>
         </Box>
         <IconButton onClick={requestClose} disabled={busy} aria-label="Закрыть">
@@ -591,26 +773,29 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
               )}
             </Stack>
           </Box>
-          <Box>
-            <Label>Склад *</Label>
-            <TextField
-              select
-              fullWidth
-              size="small"
-              value={warehouseId}
-              onChange={(e) => setWarehouseId(e.target.value === "" ? "" : Number(e.target.value))}
-              SelectProps={{ displayEmpty: true }}
-            >
-              <MenuItem value="">
-                <em>Выберите склад</em>
-              </MenuItem>
-              {warehouses.map((w) => (
-                <MenuItem key={w.id} value={w.id}>
-                  {w.isLinked ? `${w.name} — филиал: ${w.branchName}` : w.name}
+          {/* Склад один — выбирать нечего: он подставлен сам, поле не нужно. */}
+          {warehouses.length !== 1 && (
+            <Box>
+              <Label>Склад *</Label>
+              <TextField
+                select
+                fullWidth
+                size="small"
+                value={warehouseId}
+                onChange={(e) => setWarehouseId(e.target.value === "" ? "" : Number(e.target.value))}
+                SelectProps={{ displayEmpty: true }}
+              >
+                <MenuItem value="">
+                  <em>Выберите склад</em>
                 </MenuItem>
-              ))}
-            </TextField>
-          </Box>
+                {warehouses.map((w) => (
+                  <MenuItem key={w.id} value={w.id}>
+                    {w.isLinked ? `${w.name} — филиал: ${w.branchName}` : w.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Box>
+          )}
           <Box>
             <Label>Номер накладной</Label>
             <TextField fullWidth size="small" value={number} onChange={(e) => setNumber(e.target.value)} placeholder={nextNumberQuery.data?.number ?? "ПН-…"} />
@@ -636,27 +821,44 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
               slotProps={{ textField: { size: "small", fullWidth: true, placeholder: "Не оговорён" } }}
             />
           </Box>
+          {/* Закуп только в сомах (настройка модуля) — валюта и курс не нужны. */}
+          {foreignCurrency && (
+            <>
+              <Box>
+                <Label>Валюта закупа</Label>
+                <TextField select fullWidth size="small" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                  {CURRENCIES.map((c) => (
+                    <MenuItem key={c} value={c}>
+                      {c}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Box>
+              <Box>
+                <Label>Курс к сому</Label>
+                <TextField
+                  fullWidth
+                  size="small"
+                  value={currency === "KGS" ? "1" : exchangeRate}
+                  disabled={currency === "KGS"}
+                  onChange={(e) => setExchangeRate(e.target.value)}
+                  inputProps={{ inputMode: "decimal" }}
+                  helperText={currency === "KGS" ? undefined : `Себестоимость = цена × ${rate}`}
+                />
+              </Box>
+            </>
+          )}
           <Box>
-            <Label>Валюта закупа</Label>
-            <TextField select fullWidth size="small" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              {CURRENCIES.map((c) => (
-                <MenuItem key={c} value={c}>
-                  {c}
-                </MenuItem>
-              ))}
-            </TextField>
+            <Label>Растаможка, сом</Label>
+            <TextField fullWidth size="small" value={customsCost} onChange={(e) => setCustomsCost(e.target.value)} inputProps={{ inputMode: "decimal" }} />
           </Box>
           <Box>
-            <Label>Курс к сому</Label>
-            <TextField
-              fullWidth
-              size="small"
-              value={currency === "KGS" ? "1" : exchangeRate}
-              disabled={currency === "KGS"}
-              onChange={(e) => setExchangeRate(e.target.value)}
-              inputProps={{ inputMode: "decimal" }}
-              helperText={currency === "KGS" ? undefined : `Себестоимость = цена × ${rate}`}
-            />
+            <Label>Доставка, сом</Label>
+            <TextField fullWidth size="small" value={deliveryCost} onChange={(e) => setDeliveryCost(e.target.value)} inputProps={{ inputMode: "decimal" }} />
+          </Box>
+          <Box>
+            <Label>Прочие расходы, сом</Label>
+            <TextField fullWidth size="small" value={otherCosts} onChange={(e) => setOtherCosts(e.target.value)} inputProps={{ inputMode: "decimal" }} />
           </Box>
         </Box>
 
@@ -671,15 +873,57 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                 {filledLines.length > 0 ? `· ${filledLines.length}` : ""}
               </Typography>
             </Typography>
-            {unmatched.length > 0 && (
-              <Chip size="small" color="warning" variant="outlined" label={`${unmatched.length} без товара`} sx={{ height: 22 }} />
-            )}
+            <Stack direction="row" spacing={0.75} alignItems="center">
+              {unmatched.length > 0 && (
+                <Chip size="small" color="warning" variant="outlined" label={`${unmatched.length} без товара`} sx={{ height: 22 }} />
+              )}
+              {canCreateProducts && unmatched.length > 1 && (
+                <Button
+                  size="small"
+                  color="success"
+                  startIcon={<AddCircleOutlineOutlined />}
+                  onClick={createAllUnmatched}
+                  sx={{ py: 0.25, whiteSpace: "nowrap" }}
+                >
+                  Создать все ({unmatched.length})
+                </Button>
+              )}
+            </Stack>
           </Stack>
+          {newLines.length > 1 && categoryOptions.length > 0 && (
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+              <NewReleasesOutlined sx={{ fontSize: 18, color: "success.main", flexShrink: 0 }} />
+              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
+                Новых: {newLines.length}
+              </Typography>
+              <TextField
+                select
+                size="small"
+                label="Категория для всех новых"
+                value={sharedNewCategory ?? ""}
+                onChange={(e) => applyCategoryToNew(e.target.value === "" ? null : Number(e.target.value))}
+                SelectProps={{ displayEmpty: true, MenuProps: { PaperProps: { sx: { maxHeight: 360 } } } }}
+                InputLabelProps={{ shrink: true }}
+                sx={{ flex: 1, minWidth: 0 }}
+              >
+                <MenuItem value="">
+                  <em>
+                    {sharedNewCategory == null && newLines.some((l) => l.newProduct?.categoryId != null) ? "Разные" : "Не выбрана"}
+                  </em>
+                </MenuItem>
+                {categoryOptions.map((option) => (
+                  <MenuItem key={option.id} value={option.id}>
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Stack>
+          )}
           {productsQuery.isLoading && <LinearProgress sx={{ mb: 1, borderRadius: 1 }} />}
           <Box sx={{ border: 1, borderColor: "divider", borderRadius: "12px", overflow: "hidden" }}>
             <Box
               sx={{
-                display: { xs: "none", sm: "grid" },
+                display: { xs: "none", md: "grid" },
                 gridTemplateColumns: LINE_COLUMNS,
                 gap: 1,
                 px: 1.25,
@@ -709,6 +953,8 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                   ]
                 : productOptions;
               const scoreOf = (id: number) => line.recognized?.candidates.find((c) => c.id === id)?.score;
+              const draft = line.newProduct;
+              const unitLabel = line.product?.unit ?? (draft ? units.find((u) => u.id === draft.unitId)?.shortName ?? "шт" : undefined);
               return (
                 <Box
                   key={line.key}
@@ -718,19 +964,24 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                     borderBottom: 1,
                     borderColor: "divider",
                     // Строка из документа, которой не нашлось товара, — акцент
-                    // полосой слева, а не отдельной карточкой.
-                    ...(line.recognized && !line.product
-                      ? {
-                          bgcolor: alpha(t.palette.warning.main, 0.06),
-                          boxShadow: `inset 3px 0 0 ${t.palette.warning.main}`,
-                        }
-                      : {}),
+                    // полосой слева, а не отдельной карточкой; новая карточка —
+                    // зелёной полосой.
+                    ...(draft
+                      ? { boxShadow: `inset 3px 0 0 ${t.palette.success.main}` }
+                      : line.recognized && !line.product
+                        ? {
+                            bgcolor: alpha(t.palette.warning.main, 0.06),
+                            boxShadow: `inset 3px 0 0 ${t.palette.warning.main}`,
+                          }
+                        : {}),
                   })}
                 >
                   {line.recognized && (
                     <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.75 }}>
                       {line.product ? (
                         <CheckCircleOutlined sx={{ fontSize: 16, color: "success.main" }} />
+                      ) : draft ? (
+                        <NewReleasesOutlined sx={{ fontSize: 16, color: "success.main" }} />
                       ) : (
                         <ErrorOutlineOutlined sx={{ fontSize: 16, color: "warning.main" }} />
                       )}
@@ -742,49 +993,122 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                           .join("")}
                         {line.recognized.matchScore != null && line.product ? ` · совпадение ${line.recognized.matchScore}%` : ""}
                       </Typography>
+                      {canCreateProducts && !line.product && !draft && (
+                        <Button
+                          size="small"
+                          color="success"
+                          startIcon={<AddCircleOutlineOutlined sx={{ fontSize: 16 }} />}
+                          onClick={() => startNewProduct(line.key)}
+                          sx={{ py: 0, flexShrink: 0, whiteSpace: "nowrap", fontSize: "0.75rem" }}
+                        >
+                          Создать товар
+                        </Button>
+                      )}
                     </Stack>
                   )}
                   <Box
                     sx={{
                       display: "grid",
-                      gridTemplateColumns: { xs: "minmax(0, 1fr) minmax(0, 1fr) auto 32px", sm: LINE_COLUMNS },
-                      gridTemplateAreas: {
-                        xs: '"product product product product" "qty price total del"',
-                        sm: '"product qty price total del"',
-                      },
+                      gridTemplateColumns: { xs: "minmax(0, 1fr) minmax(0, 1fr) auto 32px", md: LINE_COLUMNS },
+                      // Название нового товара вводят руками — ему вся ширина строки,
+                      // количество и цена — строкой ниже, как на телефоне.
+                      gridTemplateAreas: draft
+                        ? {
+                            xs: '"product product product product" "qty price total del"',
+                            md: '"product product product product product" ". qty price total del"',
+                          }
+                        : {
+                            xs: '"product product product product" "qty price total del"',
+                            md: '"product qty price total del"',
+                          },
                       gap: 1,
                       alignItems: "center",
                     }}
                   >
-                    <Autocomplete<ProductOption, false, false, false>
-                      options={options}
-                      value={line.product}
-                      onChange={(_, value) => updateLine(line.key, { product: value })}
-                      getOptionLabel={(o) => o.label}
-                      isOptionEqualToValue={(a, b) => a.id === b.id}
-                      loading={productsQuery.isLoading}
-                      size="small"
-                      sx={{ minWidth: 0, gridArea: "product" }}
-                      renderOption={(props, option) => {
-                        const score = scoreOf(option.id);
-                        return (
-                          <li {...props} key={option.id}>
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                              <Typography variant="body2" noWrap>
-                                {option.label}
-                              </Typography>
-                              {option.sku && (
-                                <Typography variant="caption" color="text.secondary">
-                                  {option.sku}
+                    {draft ? (
+                      <TextField
+                        size="small"
+                        value={draft.name}
+                        onChange={(e) => updateDraft(line.key, { name: e.target.value })}
+                        placeholder="Название нового товара"
+                        error={!draft.name.trim()}
+                        sx={{ minWidth: 0, gridArea: "product" }}
+                        inputProps={{ "aria-label": "Название нового товара" }}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <Chip size="small" color="success" label="Новый" sx={{ height: 20, fontSize: "0.68rem", fontWeight: 700 }} />
+                            </InputAdornment>
+                          ),
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <Tooltip title="Выбрать из каталога">
+                                <IconButton size="small" edge="end" onClick={() => cancelNewProduct(line.key)} aria-label="Выбрать товар из каталога">
+                                  <CloseOutlined fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    ) : (
+                      <Autocomplete<ProductOption, false, false, false>
+                        options={options}
+                        value={line.product}
+                        onChange={(_, value) => {
+                          if (value?.create) startNewProduct(line.key, value.label);
+                          else updateLine(line.key, { product: value });
+                        }}
+                        filterOptions={(all, state) => {
+                          const filtered = filterProductOptions(all, state);
+                          const typed = state.inputValue.trim();
+                          // Нет в каталоге — «Создать товар «…»» последним пунктом,
+                          // и только у тех, кому это право выдано.
+                          if (canCreateProducts && typed && !all.some((o) => o.label.toLowerCase() === typed.toLowerCase())) {
+                            filtered.push({ id: CREATE_OPTION_ID, label: typed, unit: "", sku: "", create: true });
+                          }
+                          return filtered;
+                        }}
+                        getOptionLabel={(o) => o.label}
+                        isOptionEqualToValue={(a, b) => a.id === b.id}
+                        loading={productsQuery.isLoading}
+                        size="small"
+                        sx={{ minWidth: 0, gridArea: "product" }}
+                        // Колонка товара узкая — список шире поля, иначе названия не прочесть.
+                        slotProps={{ popper: { placement: "bottom-start", sx: { minWidth: 320 } } }}
+                        renderOption={(props, option) => {
+                          if (option.create) {
+                            return (
+                              <li {...props} key={CREATE_OPTION_ID}>
+                                <AddCircleOutlineOutlined fontSize="small" sx={{ mr: 1, color: "success.main", flexShrink: 0 }} />
+                                <Typography variant="body2" noWrap sx={{ color: "success.main", fontWeight: 600 }}>
+                                  Создать товар «{option.label}»
                                 </Typography>
-                              )}
-                            </Box>
-                            {score != null && <Chip size="small" label={`${score}%`} sx={{ height: 20, fontSize: "0.7rem" }} />}
-                          </li>
-                        );
-                      }}
-                      renderInput={(params) => <TextField {...params} placeholder={`Товар ${index + 1}`} />}
-                    />
+                              </li>
+                            );
+                          }
+                          const score = scoreOf(option.id);
+                          return (
+                            <li {...props} key={option.id}>
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography variant="body2" noWrap>
+                                  {option.label}
+                                </Typography>
+                                {option.sku && (
+                                  <Typography variant="caption" color="text.secondary">
+                                    {option.sku}
+                                  </Typography>
+                                )}
+                              </Box>
+                              {score != null && <Chip size="small" label={`${score}%`} sx={{ height: 20, fontSize: "0.7rem" }} />}
+                            </li>
+                          );
+                        }}
+                        renderInput={(params) => (
+                          <TextField {...params} placeholder={`Товар ${index + 1}`} />
+                        )}
+                      />
+                    )}
                     <TextField
                       size="small"
                       value={line.quantity}
@@ -793,9 +1117,9 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                       sx={{ gridArea: "qty", minWidth: 0 }}
                       inputProps={{ inputMode: "decimal", style: { textAlign: "right" }, "aria-label": "Количество" }}
                       InputProps={{
-                        endAdornment: line.product?.unit ? (
+                        endAdornment: unitLabel ? (
                           <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
-                            {line.product.unit}
+                            {unitLabel}
                           </Typography>
                         ) : undefined,
                       }}
@@ -830,9 +1154,26 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                       <DeleteOutlineOutlined fontSize="small" />
                     </IconButton>
                   </Box>
+                  {draft && (
+                    <NewProductFields
+                      draft={draft}
+                      onChange={(patch) => updateDraft(line.key, patch)}
+                      categories={categoryOptions}
+                      legacyCategories={legacyCategoriesQuery.data ?? []}
+                      units={units}
+                      problem={problemOf(line)}
+                      disabled={saving}
+                    />
+                  )}
                 </Box>
               );
             })}
+            {unmatched.length > 0 && (
+              <Typography variant="caption" color="warning.main" sx={{ display: "block", px: 1.25, py: 0.75, borderBottom: 1, borderColor: "divider" }}>
+                Позиции без товара не войдут в приход — выберите товар из каталога
+                {canCreateProducts ? " или создайте новый." : "."}
+              </Typography>
+            )}
             <Stack
               direction="row"
               alignItems="center"
@@ -849,12 +1190,12 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
                   Итого{" "}
                 </Typography>
                 <Typography component="span" sx={{ fontWeight: 800 }}>
-                  {formatMoney(total)} {currency}
+                  {formatMoney(total + (currency === "KGS" ? landedExpenses : 0))} {currency}
                 </Typography>
                 {currency !== "KGS" && (
                   <Typography component="span" variant="caption" color="text.secondary">
                     {" "}
-                    ≈ {formatMoney(total * rate)} сом
+                    ≈ {formatMoney(total * rate + landedExpenses)} сом
                   </Typography>
                 )}
               </Typography>

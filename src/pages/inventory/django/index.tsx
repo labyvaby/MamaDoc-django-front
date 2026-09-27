@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Chip, LinearProgress, Stack, Typography } from "@mui/material";
+import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, LinearProgress, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
 import { useNotification } from "@refinedev/core";
 import QrCodeScannerOutlined from "@mui/icons-material/QrCodeScannerOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
@@ -151,6 +151,10 @@ const DjangoInventoryPage: React.FC = () => {
     const [onlyWithStock, setOnlyWithStock] = React.useState(true);
     const [loading, setLoading] = React.useState(true);
     const [busy, setBusy] = React.useState(false);
+    const [compareFirst, setCompareFirst] = React.useState<number | "">("");
+    const [compareSecond, setCompareSecond] = React.useState<number | "">("");
+    const [comparison, setComparison] = React.useState<[WarehouseInventoryDetail, WarehouseInventoryDetail] | null>(null);
+    const [compareBusy, setCompareBusy] = React.useState(false);
 
     const [countDocument, setCountDocument] = React.useState<WarehouseInventoryDetail | null>(null);
     const [rows, setRows] = React.useState<CountRow[]>([]);
@@ -199,7 +203,7 @@ const DjangoInventoryPage: React.FC = () => {
                     { warehouseId: id, organizationId: orgId ?? undefined },
                     signal,
                 );
-                setHistory(rows.slice(0, 6));
+                setHistory(rows.slice(0, 50));
             } catch (error) {
                 if (!isAbortError(error)) setHistory([]);
             } finally {
@@ -461,6 +465,24 @@ const DjangoInventoryPage: React.FC = () => {
         } finally {
             setBusy(false);
         }
+    };
+
+    const compareInventoryCounts = async () => {
+        if (typeof compareFirst !== "number" || typeof compareSecond !== "number" || compareFirst === compareSecond) return;
+        setCompareBusy(true);
+        try {
+            const [first, second] = await Promise.all([
+                getInventoryCountDetail(compareFirst, orgId ?? undefined),
+                getInventoryCountDetail(compareSecond, orgId ?? undefined),
+            ]);
+            if (first.document.warehouseId !== second.document.warehouseId) {
+                notify?.({ type: "error", message: "Сравнивать можно документы одного склада" });
+                return;
+            }
+            setComparison([first, second]);
+        } catch (error) {
+            notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось сравнить документы" });
+        } finally { setCompareBusy(false); }
     };
 
     const handleScan = (barcode: string) => {
@@ -791,6 +813,7 @@ const DjangoInventoryPage: React.FC = () => {
                 )}
 
                 {step === "setup" && (
+                    <>
                     <InventoryHistoryCard
                         items={history}
                         loading={historyLoading}
@@ -800,6 +823,26 @@ const DjangoInventoryPage: React.FC = () => {
                         onRefresh={warehouseId == null ? undefined : () => void loadHistory(warehouseId)}
                         disabled={busy}
                     />
+                    {history.filter((item) => item.status === "completed").length > 1 && (
+                        <Paper variant="outlined" sx={{ p: 2, mt: 1 }}>
+                            <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
+                                <FormControl size="small" sx={{ minWidth: 190, flex: 1 }}>
+                                    <InputLabel id="compare-count-a-label">Первая дата</InputLabel>
+                                    <Select labelId="compare-count-a-label" value={compareFirst} label="Первая дата" onChange={(event) => setCompareFirst(event.target.value === "" ? "" : Number(event.target.value))}>
+                                        {history.filter((item) => item.status === "completed").map((item) => <MenuItem key={item.id} value={item.id}>{new Date(item.completedAt ?? item.createdAt).toLocaleString("ru-RU")}</MenuItem>)}
+                                    </Select>
+                                </FormControl>
+                                <FormControl size="small" sx={{ minWidth: 190, flex: 1 }}>
+                                    <InputLabel id="compare-count-b-label">Вторая дата</InputLabel>
+                                    <Select labelId="compare-count-b-label" value={compareSecond} label="Вторая дата" onChange={(event) => setCompareSecond(event.target.value === "" ? "" : Number(event.target.value))}>
+                                        {history.filter((item) => item.status === "completed").map((item) => <MenuItem key={item.id} value={item.id}>{new Date(item.completedAt ?? item.createdAt).toLocaleString("ru-RU")}</MenuItem>)}
+                                    </Select>
+                                </FormControl>
+                                <Button variant="outlined" onClick={() => void compareInventoryCounts()} disabled={compareBusy || compareFirst === "" || compareSecond === "" || compareFirst === compareSecond}>{compareBusy ? "Сравниваем…" : "Сравнить остатки"}</Button>
+                            </Stack>
+                        </Paper>
+                    )}
+                    </>
                 )}
 
                 {step === "count" && (
@@ -842,6 +885,27 @@ const DjangoInventoryPage: React.FC = () => {
                 onClose={() => setNewProductBarcode(null)}
                 onSaved={handleProductSaved}
             />
+
+            <Dialog open={comparison != null} onClose={() => setComparison(null)} fullWidth maxWidth="md">
+                <DialogTitle>Сравнение инвентаризаций</DialogTitle>
+                <DialogContent>
+                    {comparison && (() => {
+                        const [first, second] = comparison;
+                        const firstDate = new Date(first.document.completedAt ?? first.document.createdAt).toLocaleDateString("ru-RU");
+                        const secondDate = new Date(second.document.completedAt ?? second.document.createdAt).toLocaleDateString("ru-RU");
+                        const byId = (detail: WarehouseInventoryDetail) => new Map(detail.lines.map((line) => [line.productId, line]));
+                        const left = byId(first); const right = byId(second);
+                        const ids = [...new Set([...left.keys(), ...right.keys()])];
+                        const names = new Map([...first.lines, ...second.lines].map((line) => [line.productId, line.productName]));
+                        return <Table size="small"><TableHead><TableRow><TableCell>Товар</TableCell><TableCell>{firstDate}</TableCell><TableCell>{secondDate}</TableCell><TableCell>Изменение</TableCell></TableRow></TableHead><TableBody>{ids.map((id) => {
+                            const a = left.get(id)?.counted; const b = right.get(id)?.counted;
+                            const delta = a != null && b != null ? toNumber(b) - toNumber(a) : null;
+                            return <TableRow key={id}><TableCell>{names.get(id) ?? `Товар #${id}`}</TableCell><TableCell>{a ?? "не посчитан"}</TableCell><TableCell>{b ?? "не посчитан"}</TableCell><TableCell>{delta == null ? "—" : `${delta > 0 ? "+" : ""}${delta}`}</TableCell></TableRow>;
+                        })}</TableBody></Table>;
+                    })()}
+                </DialogContent>
+                <DialogActions><Button onClick={() => setComparison(null)}>Закрыть</Button></DialogActions>
+            </Dialog>
 
             <ConfirmDialog />
         </Box>

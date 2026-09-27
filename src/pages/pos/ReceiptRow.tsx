@@ -5,6 +5,7 @@ import IconButton from "@mui/material/IconButton";
 import Popover from "@mui/material/Popover";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import TextField from "@mui/material/TextField";
 import { useTheme } from "@mui/material/styles";
 
 import AddOutlined from "@mui/icons-material/AddOutlined";
@@ -25,6 +26,7 @@ type Props = {
   onChangeColor: (colorId: string) => void;
   onChangeSize: (sizeId: string) => void;
   onChangeQuantity: (quantity: number) => void;
+  onChangeLineDiscount: (discountAmount: number) => void;
   onRemove: () => void;
   onRestore: () => void;
 };
@@ -55,11 +57,12 @@ const RemovedBadge: React.FC = () => {
 };
 
 /** Строка чека: товар, варианты, количество, цена и сумма. */
-export const PosReceiptRow: React.FC<Props> = ({ line, onChangeColor, onChangeSize, onChangeQuantity, onRemove, onRestore, readOnly = false }) => {
+export const PosReceiptRow: React.FC<Props> = ({ line, onChangeColor, onChangeSize, onChangeQuantity, onChangeLineDiscount, onRemove, onRestore, readOnly = false }) => {
   const theme = useTheme();
   const c = posColors(theme);
   const [colorAnchor, setColorAnchor] = React.useState<HTMLElement | null>(null);
   const [sizeAnchor, setSizeAnchor] = React.useState<HTMLElement | null>(null);
+  const [discountAnchor, setDiscountAnchor] = React.useState<HTMLElement | null>(null);
 
   const color = line.colors.find((item) => item.id === line.selectedColorId) ?? line.colors[0];
   const size = line.sizes.find((item) => item.id === line.selectedSizeId) ?? line.sizes[0];
@@ -100,6 +103,15 @@ export const PosReceiptRow: React.FC<Props> = ({ line, onChangeColor, onChangeSi
             <Typography sx={{ fontSize: 12, lineHeight: 1.2, color: c.textDim }}>{line.sku}</Typography>
             <Box sx={{ width: 2, height: 2, borderRadius: "50%", bgcolor: c.textDim }} />
             <Typography sx={{ fontSize: 12, lineHeight: 1.2, color: c.textDim }}>{line.barcode}</Typography>
+            {!dimmed && (
+              <ButtonBase
+                disabled={readOnly}
+                onClick={(event) => setDiscountAnchor(event.currentTarget)}
+                sx={{ px: "5px", py: "2px", borderRadius: `${POS_RADIUS.chip}px`, bgcolor: line.discountAmount ? c.accentBg : "transparent", color: line.discountAmount ? c.accent : c.textDim, fontSize: 10, lineHeight: 1.2 }}
+              >
+                {line.discountAmount ? `−${line.discountAmount} сом` : "Скидка"}
+              </ButtonBase>
+            )}
           </Stack>
         </Stack>
       </Stack>
@@ -191,6 +203,27 @@ export const PosReceiptRow: React.FC<Props> = ({ line, onChangeColor, onChangeSi
           )}
         </PosColumn>
       </Box>
+
+      <Popover
+        open={Boolean(discountAnchor)}
+        anchorEl={discountAnchor}
+        onClose={() => setDiscountAnchor(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        slotProps={{ paper: { sx: { p: 1.25, bgcolor: c.card, border: `1px solid ${c.hairline}`, borderRadius: `${POS_RADIUS.card}px` } } }}
+      >
+        <Stack gap={0.75} sx={{ width: 190 }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 700, color: c.text }}>Скидка на товар, сом</Typography>
+          <TextField
+            autoFocus
+            size="small"
+            type="number"
+            value={line.discountAmount || ""}
+            inputProps={{ min: 0, step: "0.01" }}
+            onChange={(event) => onChangeLineDiscount(Math.max(0, Number(event.target.value) || 0))}
+            helperText={`Сумма позиции: ${(line.price * line.quantity).toLocaleString("ru-RU")} сом`}
+          />
+        </Stack>
+      </Popover>
 
       <Popover
         open={Boolean(colorAnchor)}

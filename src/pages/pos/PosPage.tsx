@@ -218,6 +218,7 @@ export default function PosPage() {
             onChangeColor={(lineId, colorId) => patchLine(lineId, { selectedColorId: colorId })}
             onChangeSize={(lineId, sizeId) => patchLine(lineId, { selectedSizeId: sizeId })}
             onChangeQuantity={(lineId, quantity) => patchLine(lineId, { quantity })}
+            onChangeLineDiscount={(lineId, discountAmount) => patchLine(lineId, { discountAmount })}
             onRemoveLine={(lineId) => patchLine(lineId, { removed: true })}
             onRestoreLine={(lineId) => patchLine(lineId, { removed: false })}
             onHold={() => setHoldOpen(true)}

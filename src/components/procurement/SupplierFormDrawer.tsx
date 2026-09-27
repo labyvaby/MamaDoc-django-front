@@ -45,6 +45,7 @@ export const SupplierFormDrawer: React.FC<SupplierFormDrawerProps> = ({ open, on
     contactPerson: "",
     paymentTerms: "",
     defaultCurrency: "KGS",
+    defaultBrand: "",
     comment: "",
     isActive: true,
   });
@@ -62,6 +63,7 @@ export const SupplierFormDrawer: React.FC<SupplierFormDrawerProps> = ({ open, on
       contactPerson: supplier?.contactPerson ?? "",
       paymentTerms: supplier?.paymentTerms ?? "",
       defaultCurrency: supplier?.defaultCurrency || "KGS",
+      defaultBrand: supplier?.defaultBrand ?? "",
       comment: supplier?.comment ?? "",
       isActive: supplier?.isActive ?? true,
     });
@@ -83,6 +85,7 @@ export const SupplierFormDrawer: React.FC<SupplierFormDrawerProps> = ({ open, on
         contactPerson: form.contactPerson.trim(),
         paymentTerms: form.paymentTerms.trim(),
         defaultCurrency: form.defaultCurrency,
+        defaultBrand: form.defaultBrand.trim(),
         comment: form.comment.trim(),
       };
       const saved = supplier
@@ -134,6 +137,10 @@ export const SupplierFormDrawer: React.FC<SupplierFormDrawerProps> = ({ open, on
               ))}
             </TextField>
           </Box>
+        </Box>
+        <Box>
+          <Label>Бренд по умолчанию для новых товаров</Label>
+          <TextField fullWidth size="small" value={form.defaultBrand} onChange={(e) => set("defaultBrand", e.target.value)} placeholder="Например, Monogram" />
         </Box>
         <Box>
           <Label>Контактное лицо</Label>

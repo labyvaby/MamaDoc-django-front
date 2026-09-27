@@ -55,7 +55,7 @@ import { posColors } from "./layout";
 import type { PosCatalogItem, PosClient, PosReceiptLine } from "./types";
 import { PosAmount } from "./ui";
 
-type CartRow = { product: PosProduct; quantity: number; removed?: boolean };
+type CartRow = { product: PosProduct; quantity: number; discountAmount?: number; removed?: boolean };
 type PosDraft = {
   rows: CartRow[];
   client: PosClient | null;
@@ -80,6 +80,9 @@ const canStartProductSearch = (value: string) => {
   const term = value.trim();
   return Boolean(term) && (!/^\d+$/.test(term) || term.length >= 3);
 };
+
+const brandOf = (attributes: PosProduct["attributes"]) =>
+  attributes.find((attribute) => attribute.role === "generic" && /^(бренд|brand)$/i.test(attribute.name.trim()))?.value;
 
 function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
   const p = row.product;
@@ -110,10 +113,12 @@ function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
   return {
     id: String(p.id),
     name: p.name,
+    brand: brandOf(p.attributes),
     sku: p.sku,
     barcode: p.barcode,
     quantity: row.quantity,
     price: Number(p.price),
+    discountAmount: row.discountAmount ?? 0,
     imageUrl: p.imageThumbnailUrl ?? p.imageUrl,
     colors: colors.map((a) => ({
       id: String(a.id),
@@ -166,6 +171,7 @@ function toCatalogItem(product: PosProduct, family: PosProduct[]): PosCatalogIte
   return {
     id: String(product.id),
     name: commonName || product.name,
+    brand: brandOf(product.attributes),
     price: Number(product.price),
     imageUrl: product.imageThumbnailUrl ?? product.imageUrl,
     stock: family.reduce((total, item) => total + Number(item.stock), 0),
@@ -395,8 +401,9 @@ export default function LivePosPage() {
       .map((row) => ({
         productId: row.product.id,
         quantity: String(row.quantity),
+        discountAmount: String(row.discountAmount ?? 0),
       })),
-    discountPercent: benefits.discount || "0",
+    discountAmount: benefits.discount || "0",
     discountKindId: benefits.discountKindId ?? undefined,
     clientDiscount: benefits.clientDiscount,
     promotions: benefits.promotions,
@@ -792,6 +799,7 @@ export default function LivePosPage() {
     ? quote.lines.map((line) => ({
         name: line.name,
         quantity: line.quantity,
+        discountAmount: Number(line.discountAmount),
         total: Number(line.subtotal) - Number(line.discountAmount),
       }))
     : [];
@@ -943,6 +951,7 @@ export default function LivePosPage() {
                 }
                 update(id, { quantity });
               }}
+              onChangeLineDiscount={(id, discountAmount) => update(id, { discountAmount })}
               onRemoveLine={(id) => update(id, { removed: true })}
               onRestoreLine={(id) => update(id, { removed: false })}
               onHold={() => setHoldOpen(true)}
