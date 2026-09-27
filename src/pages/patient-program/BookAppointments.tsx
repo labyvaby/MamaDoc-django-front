@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
 import { getErrorMessage } from "../../api/client";
+import { orgWide } from "../../api/scope";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useSheetBackClose } from "../../hooks/useSheetBackClose";
@@ -18,8 +19,9 @@ interface BookAppointmentsProps {
 
 /**
  * История приёмов ребёнка в клинике — тот же список, что в карточке пациента
- * («История приёмов»); нажатие открывает приём и его заключение (только
- * просмотр, как там же). Раздел книжки, не модуль конструктора.
+ * («История приёмов»), но по всем филиалам, как в быстром просмотре пациента:
+ * книжка общая на клинику. Нажатие открывает приём и его заключение (только
+ * просмотр). Раздел книжки, не модуль конструктора.
  */
 export const BookAppointments: React.FC<BookAppointmentsProps> = ({ patientId, scope }) => {
   const theme = useTheme();
@@ -30,8 +32,8 @@ export const BookAppointments: React.FC<BookAppointmentsProps> = ({ patientId, s
   const [conclusionOpen, setConclusionOpen] = React.useState(false);
 
   const history = useQuery({
-    queryKey: ["django", "appointments", "patient-history", patientId, scope],
-    queryFn: ({ signal }) => getAppointments(scope, { patientId }, signal),
+    queryKey: ["django", "appointments", "patient-history", patientId, scope.organizationId],
+    queryFn: ({ signal }) => getAppointments(orgWide(scope.organizationId), { patientId }, signal),
     enabled: scope.isReady && scope.orgReady,
     select: (rows) => [...rows].sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt)),
   });
