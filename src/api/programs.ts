@@ -25,11 +25,8 @@ export interface Program {
   isEnabled: boolean;
   grantsVip: boolean;
   settings: Record<string, unknown>;
-  /** Услуга-взнос: медицинская программа с ней — учётная. */
-  feeServiceId: number | null;
-  feeServiceName: string | null;
-  defaultTermMonths: number;
-  memberDiscountPercent: number;
+  /** Учётная: медицинская, и у неё есть хотя бы один пакет (§4.7 ТЗ). */
+  isRegistry: boolean;
   modules: Array<EffectiveProgramModule & { isEnabled: boolean }>;
   createdAt: string;
   updatedAt: string;
@@ -82,9 +79,9 @@ export interface ProgramEnrollment {
   updatedAt: string;
 }
 
-/** Учётная программа: медицинская и продаётся через услугу-взнос. */
-export function isRegistryProgram(program: Pick<Program, "businessDomain" | "feeServiceId">): boolean {
-  return program.businessDomain === "medical" && program.feeServiceId != null;
+/** Учётная программа: медицинская и с пакетами — её видят мастер и реестр. */
+export function isRegistryProgram(program: Pick<Program, "isRegistry">): boolean {
+  return program.isRegistry;
 }
 
 export type ProgramUpdatePayload = Partial<
@@ -96,9 +93,6 @@ export type ProgramUpdatePayload = Partial<
     | "isEnabled"
     | "grantsVip"
     | "settings"
-    | "feeServiceId"
-    | "defaultTermMonths"
-    | "memberDiscountPercent"
   >
 >;
 
@@ -556,4 +550,71 @@ export function cancelProgramNotification(
     `/program-enrollments/${enrollmentId}/notifications/${notificationId}/cancel/?${query.toString()}`,
     { method: "POST" },
   );
+}
+
+// ── Пакеты учёта ─────────────────────────────────────────────────────────────
+
+/** Пакет учёта: что продаётся по учётной программе — цена, срок, условия. */
+export interface ProgramPackage {
+  id: number;
+  programId: number;
+  programName: string;
+  name: string;
+  priceAmount: string;
+  /** «Официальная» цена — показывается зачёркнутой. */
+  listPriceAmount: string | null;
+  termMonths: number;
+  /** Скидка второму и следующему ребёнку семьи. */
+  familyDiscountPercent: number;
+  /** Скидка на приёмы: пока подсказка кассе, применяется в этапе 1.3. */
+  visitDiscountPercent: number;
+  description: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface ProgramPackagePayload {
+  name: string;
+  priceAmount: string;
+  listPriceAmount: string | null;
+  termMonths: number;
+  familyDiscountPercent: number;
+  visitDiscountPercent: number;
+  description: string;
+  isActive: boolean;
+  sortOrder?: number;
+}
+
+function withScopeQuery(path: string, scope: Scope): string {
+  const query = scopeParams(scope).toString();
+  return query ? `${path}?${query}` : path;
+}
+
+export function getProgramPackages(
+  scope: Scope,
+  params: { programId?: number; active?: boolean } = {},
+  signal?: AbortSignal,
+): Promise<ProgramPackage[]> {
+  const query = scopeParams(scope);
+  if (params.programId != null) query.set("programId", String(params.programId));
+  if (params.active) query.set("active", "1");
+  return apiRequest<ProgramPackage[]>(`/programs/packages/?${query.toString()}`, { signal });
+}
+
+export function createProgramPackage(
+  scope: Scope,
+  payload: ProgramPackagePayload & { programId: number },
+): Promise<ProgramPackage> {
+  return apiRequest<ProgramPackage>(withScopeQuery("/programs/packages/", scope), { method: "POST", body: payload });
+}
+
+export function updateProgramPackage(
+  scope: Scope,
+  packageId: number,
+  payload: Partial<ProgramPackagePayload>,
+): Promise<ProgramPackage> {
+  return apiRequest<ProgramPackage>(withScopeQuery(`/programs/packages/${packageId}/`, scope), {
+    method: "PATCH",
+    body: payload,
+  });
 }

@@ -21,6 +21,7 @@ import type { ActiveScope } from "../../../hooks/useActiveScope";
 import {
   BLANK_PLACEHOLDERS,
   SAMPLE_BLANK_DATA,
+  SAMPLE_CONTRACT_TEXT,
   SAMPLE_OBLIGATION_TEXT,
   fillBlank,
   hasBrokenBraces,
@@ -69,10 +70,10 @@ export const BlankEditorDialog: React.FC<BlankEditorDialogProps> = ({ scope, tem
     });
   };
 
-  const applySample = () => {
-    if (body.trim() && !window.confirm("Заменить текст образцом расписки?")) return;
-    setBody(SAMPLE_OBLIGATION_TEXT);
-    if (!name.trim()) setName("Расписка-обязательство");
+  const applySample = (text: string, title: string, what: string) => {
+    if (body.trim() && !window.confirm(`Заменить текст образцом ${what}?`)) return;
+    setBody(text);
+    if (!name.trim()) setName(title);
   };
 
   return (
@@ -116,9 +117,22 @@ export const BlankEditorDialog: React.FC<BlankEditorDialogProps> = ({ scope, tem
               Незнакомые подстановки напечатаются пустыми: {unknown.map((path) => `{${path}}`).join(", ")}
             </Alert>
           )}
-          <AppButton variant="text" size="small" onClick={applySample} sx={{ alignSelf: "flex-start" }}>
-            Вставить образец расписки
-          </AppButton>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            <AppButton
+              variant="text"
+              size="small"
+              onClick={() => applySample(SAMPLE_CONTRACT_TEXT, "Договор на медицинское наблюдение", "договора")}
+            >
+              Вставить образец договора
+            </AppButton>
+            <AppButton
+              variant="text"
+              size="small"
+              onClick={() => applySample(SAMPLE_OBLIGATION_TEXT, "Расписка-обязательство", "расписки")}
+            >
+              Вставить образец расписки
+            </AppButton>
+          </Stack>
           {body.trim() && (
             <>
               <Typography variant="caption" color="text.secondary">

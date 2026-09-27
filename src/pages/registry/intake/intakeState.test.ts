@@ -1,9 +1,12 @@
+import dayjs from "dayjs";
 import { describe, expect, it } from "vitest";
 
 import {
   buildIntakePayload,
+  existingRepresentativeIds,
   initialIntakeState,
   newRepresentative,
+  paymentPreview,
   validateStep,
   withRelation,
   type IntakeState,
@@ -27,17 +30,16 @@ function filled(): IntakeState {
       newRepresentative({ key: "r1", fullName: "Мама", phone: "+996700000012", isPrimaryContact: true }),
     ],
     program: {
-      programId: 3,
+      packageId: 3,
       branchId: 14,
       responsibleEmployeeId: 7,
       termMonths: "12",
       termStartsOn: "",
-      priceAmount: "",
       cardNumber: "",
       residenceStatus: "",
       arrivedFrom: "",
     },
-    payment: { mode: "now", cash: "5000", card: "", cashlessMethodId: null },
+    payment: { discount: 0, cash: "5000", card: "", cashlessMethodId: null },
   };
 }
 
@@ -93,19 +95,48 @@ describe("intake state", () => {
 
   it("checks the program step and payment totals", () => {
     const state = filled();
-    state.program.programId = null;
+    state.program.packageId = null;
     state.program.termMonths = "61";
     expect(validateStep("program", state)).toEqual({
-      programId: "wizard.program.programRequired",
+      packageId: "wizard.program.packageRequired",
       termMonths: "wizard.program.termInvalid",
     });
     const pay = filled();
     pay.payment.cash = "6000";
     expect(validateStep("payment", pay, { price: 5000 })).toEqual({ payment: "wizard.payment.overpaid" });
-    pay.payment = { mode: "now", cash: "", card: "", cashlessMethodId: null };
-    expect(validateStep("payment", pay, { price: 5000 })).toEqual({ payment: "wizard.payment.empty" });
-    pay.payment.mode = "later";
+    pay.payment = { discount: 1000, cash: "4000", card: "", cashlessMethodId: null };
     expect(validateStep("payment", pay, { price: 5000 })).toEqual({});
+    pay.payment.cash = "4500";
+    expect(validateStep("payment", pay, { price: 5000 })).toEqual({ payment: "wizard.payment.overpaid" });
+    pay.payment = { discount: 5000.01, cash: "", card: "", cashlessMethodId: null };
+    expect(validateStep("payment", pay, { price: 5000 })).toEqual({ discount: "wizard.payment.discountTooBig" });
+  });
+
+  it("lets the child be put on file with a debt, but not without the signed contract", () => {
+    const state = filled();
+    state.payment = { discount: 0, cash: "", card: "", cashlessMethodId: null };
+    expect(validateStep("payment", state, { price: 5000 })).toEqual({});
+    expect(validateStep("payment", state, { price: 5000, contractRequired: true })).toEqual({
+      contract: "wizard.payment.contractRequired",
+    });
+    expect(validateStep("payment", state, { price: 5000, contractRequired: true, contractSigned: true })).toEqual({});
+  });
+
+  it("counts the total, the debt and the state like the appointment payment", () => {
+    const payment = { discount: 1000, cash: "1000", card: "", cashlessMethodId: null };
+    expect(paymentPreview(payment, 5000)).toEqual({ payable: 4000, paid: 1000, debt: 3000, state: "partial" });
+    expect(paymentPreview({ ...payment, card: "3000" }, 5000).state).toBe("paid");
+    expect(paymentPreview({ ...payment, cash: "" }, 5000).state).toBe("unpaid");
+    expect(paymentPreview({ ...payment, discount: 5000, cash: "" }, 5000)).toEqual({
+      payable: 0,
+      paid: 0,
+      debt: 0,
+      state: "paid",
+    });
+  });
+
+  it("starts the term today unless it is back-dated", () => {
+    expect(initialIntakeState().program.termStartsOn).toBe(dayjs().format("YYYY-MM-DD"));
   });
 
   it("builds the intake payload for a new child with a first payment", () => {
@@ -125,9 +156,10 @@ describe("intake state", () => {
       isLegalRepresentative: true,
       new: { fullName: "Мама", phone: "+996700000012" },
     });
+    expect(payload.packageId).toBe(3);
     expect(payload.termMonths).toBe(12);
     expect(payload.termStartsOn).toBeNull();
-    expect(payload.priceAmount).toBeNull();
+    expect(payload.discountAmount).toBeNull();
     expect(payload.payment).toEqual({ cashAmount: "5000", cardAmount: "0", cashlessMethodId: null });
   });
 
@@ -147,9 +179,8 @@ describe("intake state", () => {
       id: 55, fullName: "Мама", phone: "+996700000012", birthDate: null, gender: "female", cardNumber: "",
     } };
     state.program.termStartsOn = "2026-03-01";
-    state.program.priceAmount = "4500,50";
     state.program.cardNumber = "МД-7";
-    state.payment.mode = "later";
+    state.payment = { discount: 499.5, cash: "", card: "", cashlessMethodId: null };
 
     const payload = buildIntakePayload(state);
     expect(payload.patient).toEqual({
@@ -163,7 +194,7 @@ describe("intake state", () => {
     expect(payload.representatives[0]).toMatchObject({ patientId: 55 });
     expect(payload.representatives[0]).not.toHaveProperty("new");
     expect(payload.termStartsOn).toBe("2026-03-01");
-    expect(payload.priceAmount).toBe("4500.50");
+    expect(payload.discountAmount).toBe("499.50");
     expect(payload.payment).toBeNull();
   });
 
@@ -177,6 +208,19 @@ describe("intake state", () => {
     const payload = buildIntakePayload(state);
     expect(payload.patient.birthCertificateNumber).toBeNull();
     expect(payload.patient.birthCertificateIssuedOn).toBeNull();
+  });
+
+  it("collects the adults already in the base for the family discount", () => {
+    const state = filled();
+    state.representatives = [
+      newRepresentative({
+        key: "r1",
+        mode: "existing",
+        existing: { id: 55, fullName: "Мама", phone: "+996700000012", birthDate: null, gender: "female", cardNumber: "" },
+      }),
+      newRepresentative({ key: "r2", fullName: "Папа", phone: "+996700000013" }),
+    ];
+    expect(existingRepresentativeIds(state)).toEqual([55]);
   });
 
   it("passes the title page fields of form 112", () => {

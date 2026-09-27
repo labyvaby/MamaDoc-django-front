@@ -3,7 +3,7 @@ import { FormControlLabel, MenuItem, Stack, Switch, TextField } from "@mui/mater
 import { useQuery } from "@tanstack/react-query";
 
 import { getBranches } from "../../api/organization";
-import { getPrograms, isRegistryProgram } from "../../api/programs";
+import { getProgramPackages, getPrograms, isRegistryProgram } from "../../api/programs";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import { doctorEmployeesOnly, useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
@@ -14,6 +14,7 @@ export interface RegistryFilterValues {
   branchId?: number;
   employeeId?: number;
   programId?: number;
+  packageId?: number;
   ageFromMonths?: number;
   ageToMonths?: number;
   q: string;
@@ -49,6 +50,12 @@ export const RegistryFilters: React.FC<RegistryFiltersProps> = ({ scope, value, 
   const { employees } = useAllActiveEmployees(ready);
   const doctors = React.useMemo(() => doctorEmployeesOnly(employees), [employees]);
   const registryPrograms = (programs.data?.results ?? []).filter(isRegistryProgram);
+  const packages = useQuery({
+    queryKey: djangoQueryKeys.programs.packages(scope, {}),
+    queryFn: ({ signal }) => getProgramPackages(scope, {}, signal),
+    enabled: ready,
+  });
+  const packageOptions = packages.data ?? [];
 
   return (
     <Stack direction={{ xs: "column", md: "row" }} gap={1} alignItems={{ md: "center" }} flexWrap="wrap">
@@ -105,6 +112,23 @@ export const RegistryFilters: React.FC<RegistryFiltersProps> = ({ scope, value, 
           {registryPrograms.map((program) => (
             <MenuItem key={program.id} value={program.id}>
               {program.name}
+            </MenuItem>
+          ))}
+        </TextField>
+      )}
+      {packageOptions.length > 1 && (
+        <TextField
+          select
+          size="small"
+          label={t("page.package")}
+          value={value.packageId ?? ""}
+          onChange={(e) => onChange({ ...value, packageId: toNumber(e.target.value) })}
+          sx={{ minWidth: { md: 200 } }}
+        >
+          <MenuItem value="">{t("page.allBranches")}</MenuItem>
+          {packageOptions.map((item) => (
+            <MenuItem key={item.id} value={item.id}>
+              {registryPrograms.length > 1 ? `${item.programName} · ${item.name}` : item.name}
             </MenuItem>
           ))}
         </TextField>

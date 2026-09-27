@@ -43,6 +43,12 @@ export interface EnrollmentTerm {
   priceAmount: string;
   paidAmount: string;
   paymentState: TermPaymentState;
+  /** Пакет периода; `null` — период оформлен до пакетов. */
+  package: { id: number; name: string; visitDiscountPercent: number } | null;
+  /** Семейная скидка, применённая к цене периода; 0 — нет или цена вручную. */
+  familyDiscountPercent: number;
+  /** Скидка на кассе, сом; `priceAmount` уже без неё. */
+  discountAmount: string;
   createdAt: string;
 }
 
@@ -64,9 +70,14 @@ export interface TermPayment {
 }
 
 export interface CreateTermPayload {
-  months: number;
+  /** Пусто — пакет последнего периода или единственный пакет программы. */
+  packageId?: number | null;
+  /** Пусто — срок пакета. */
+  months?: number | null;
   startsOn?: string | null;
   priceAmount?: string | null;
+  /** Скидка на кассе, сом — после семейной. */
+  discountAmount?: string | null;
 }
 
 export interface TermPaymentPayload {
@@ -205,6 +216,7 @@ export interface RegistryParams {
   branchId?: number;
   employeeId?: number;
   programId?: number;
+  packageId?: number;
   ageFromMonths?: number;
   ageToMonths?: number;
   q?: string;
@@ -221,6 +233,7 @@ export function getRegistry(scope: Scope, params: RegistryParams, signal?: Abort
   if (params.branchId != null) query.set("branchId", String(params.branchId));
   if (params.employeeId != null) query.set("employeeId", String(params.employeeId));
   if (params.programId != null) query.set("programId", String(params.programId));
+  if (params.packageId != null) query.set("packageId", String(params.packageId));
   if (params.ageFromMonths != null) query.set("ageFromMonths", String(params.ageFromMonths));
   if (params.ageToMonths != null) query.set("ageToMonths", String(params.ageToMonths));
   if (params.q) query.set("q", params.q);
@@ -228,6 +241,27 @@ export function getRegistry(scope: Scope, params: RegistryParams, signal?: Abort
   query.set("limit", String(params.limit ?? 50));
   if (params.offset) query.set("offset", String(params.offset));
   return apiRequest<RegistryList>(`/program-enrollments/registry/?${query.toString()}`, { signal });
+}
+
+export interface PriceQuote {
+  packageId: number;
+  basePriceAmount: string;
+  familyDiscountPercent: number;
+  priceAmount: string;
+  siblingsCount: number;
+}
+
+/** Цена нового периода до его создания: пакет и семейная скидка. */
+export function getPriceQuote(
+  scope: Scope,
+  params: { packageId: number; patientId?: number | null; representativeIds?: number[] },
+  signal?: AbortSignal,
+): Promise<PriceQuote> {
+  const query = scopeParams(scope);
+  query.set("packageId", String(params.packageId));
+  if (params.patientId != null) query.set("patientId", String(params.patientId));
+  if (params.representativeIds?.length) query.set("representativeIds", params.representativeIds.join(","));
+  return apiRequest<PriceQuote>(`/program-enrollments/price-quote/?${query.toString()}`, { signal });
 }
 
 // ── Постановка на учёт ───────────────────────────────────────────────────────
@@ -264,12 +298,14 @@ export interface IntakePayload {
     birthCertificateIssuedOn?: string | null;
   };
   representatives: IntakeRepresentative[];
-  programId: number;
+  packageId: number;
   branchId: number;
   responsibleEmployeeId?: number | null;
   termMonths?: number | null;
   termStartsOn?: string | null;
   priceAmount?: string | null;
+  /** Скидка на кассе, сом — после семейной. */
+  discountAmount?: string | null;
   payment?: TermPaymentPayload | null;
   notes?: string;
   residenceStatus?: ResidenceStatus | "";
@@ -438,6 +474,21 @@ export interface PrintRender {
   /** Текст бланка с подстановками; пусто — печать таблицей полей. */
   body?: string;
   data: Record<string, unknown>;
+}
+
+/**
+ * Договор до постановки: сервер проводит постановку из данных мастера,
+ * заполняет бланк и всё откатывает — ничего не сохраняется, оплата не нужна.
+ */
+export function previewIntakeDocument(
+  scope: Scope,
+  payload: IntakePayload,
+  templateId: number,
+): Promise<{ render: PrintRender }> {
+  return apiRequest("/program-enrollments/intake/print-preview/", {
+    method: "POST",
+    body: { ...payload, payment: null, templateId, organizationId: scope.organizationId },
+  });
 }
 
 export function printEnrollmentDocument(

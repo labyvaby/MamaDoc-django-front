@@ -1,28 +1,28 @@
 import React from "react";
-import { Alert, MenuItem, Stack, TextField } from "@mui/material";
+import { Alert, Box, ListSubheader, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
 import { getBranches } from "../../../../api/organization";
-import { getPrograms, isRegistryProgram, type Program } from "../../../../api/programs";
+import { getProgramPackages, getPrograms, type Program } from "../../../../api/programs";
 import { djangoQueryKeys } from "../../../../api/queryKeys";
-import { getNextCardNumber } from "../../../../api/registry";
+import type { PriceQuote } from "../../../../api/registry";
 import { CustomDatePicker } from "../../../../components/ui";
 import type { ActiveScope } from "../../../../hooks/useActiveScope";
 import { doctorEmployeesOnly, useAllActiveEmployees } from "../../../../hooks/useAllActiveEmployees";
 import { usePermissions } from "../../../../hooks/usePermissions";
 import { useT } from "../../../../i18n/VerticalProvider";
-import { programCardPrefix, programSpecializationIds, RESIDENCE_STATUSES } from "../../registryConstants";
+import { subtleBg } from "../../../../theme/uiHelpers";
+import { programSpecializationIds, RESIDENCE_STATUSES } from "../../registryConstants";
+import { formatMoney } from "../../registryTabs";
 import type { ProgramState, StepErrors } from "../intakeState";
-
-const MONEY_RE = /^\d{0,10}(?:[.,]\d{0,2})?$/;
 
 interface ProgramStepProps {
   scope: ActiveScope;
   value: ProgramState;
   errors: StepErrors;
-  /** Номер карты уже есть у выбранного ребёнка — поле не нужно. */
-  childCardNumber: string;
+  /** Расчёт цены с сервера: цена пакета и семейная скидка. */
+  quote?: PriceQuote;
   onChange: (next: ProgramState) => void;
   onProgramLoaded: (program: Program | undefined) => void;
 }
@@ -31,7 +31,7 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
   scope,
   value,
   errors,
-  childCardNumber,
+  quote,
   onChange,
   onProgramLoaded,
 }) => {
@@ -43,6 +43,11 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
     queryFn: ({ signal }) => getPrograms(scope, signal),
     enabled: ready,
   });
+  const packages = useQuery({
+    queryKey: djangoQueryKeys.programs.packages(scope, { active: true }),
+    queryFn: ({ signal }) => getProgramPackages(scope, { active: true }, signal),
+    enabled: ready,
+  });
   const branches = useQuery({
     queryKey: ["django", "organization", "branches", activeOrganization?.id ?? null],
     queryFn: () => getBranches(activeOrganization?.id),
@@ -50,11 +55,16 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
   });
   const { employees } = useAllActiveEmployees(ready);
 
-  const registryPrograms = React.useMemo(
-    () => (programs.data?.results ?? []).filter((p) => p.status === "active" && p.isEnabled && isRegistryProgram(p)),
+  const livePrograms = React.useMemo(
+    () => (programs.data?.results ?? []).filter((p) => p.status === "active" && p.isEnabled && p.isRegistry),
     [programs.data?.results],
   );
-  const program = registryPrograms.find((p) => p.id === value.programId);
+  const offered = React.useMemo(
+    () => (packages.data ?? []).filter((item) => livePrograms.some((p) => p.id === item.programId)),
+    [packages.data, livePrograms],
+  );
+  const pkg = offered.find((item) => item.id === value.packageId);
+  const program = livePrograms.find((p) => p.id === pkg?.programId);
   const branchOptions = activeBranch
     ? [{ id: activeBranch.id, name: activeBranch.name }]
     : (branches.data ?? []).filter((b) => b.isActive);
@@ -68,61 +78,85 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
       : pool.filter((e) => e.branch == null || e.branch.id === value.branchId
         || e.operationalBranches.some((b) => b.id === value.branchId));
   }, [employees, wanted, value.branchId]);
-  const prefix = programCardPrefix(program);
-  const suggestion = useQuery({
-    queryKey: ["django", "patients", "next-card-number", scope, prefix],
-    queryFn: ({ signal }) => getNextCardNumber(scope, prefix, signal),
-    enabled: ready && program != null && !childCardNumber,
-  });
-
   React.useEffect(() => {
     onProgramLoaded(program);
   }, [program, onProgramLoaded]);
 
-  // Единственную программу и единственный филиал подставляем сами.
-  const onlyProgram = registryPrograms.length === 1 ? registryPrograms[0] : undefined;
+  // Единственный пакет и единственный филиал подставляем сами.
+  const onlyPackage = offered.length === 1 ? offered[0] : undefined;
   const onlyBranchId = branchOptions.length === 1 ? branchOptions[0].id : undefined;
   React.useEffect(() => {
     const patch: Partial<ProgramState> = {};
-    if (value.programId == null && onlyProgram) {
-      patch.programId = onlyProgram.id;
-      patch.termMonths = String(onlyProgram.defaultTermMonths);
+    if (value.packageId == null && onlyPackage) {
+      patch.packageId = onlyPackage.id;
+      patch.termMonths = String(onlyPackage.termMonths);
     }
     if (value.branchId == null && onlyBranchId != null) patch.branchId = onlyBranchId;
     if (Object.keys(patch).length) onChange({ ...value, ...patch });
-  }, [onlyProgram, onlyBranchId, value, onChange]);
+  }, [onlyPackage, onlyBranchId, value, onChange]);
 
   const error = (key: string) => (errors[key] ? t(errors[key]) : undefined);
 
-  if (programs.isSuccess && registryPrograms.length === 0) {
-    return <Alert severity="info">{t("wizard.program.noPrograms")}</Alert>;
+  if (programs.isSuccess && packages.isSuccess && offered.length === 0) {
+    return <Alert severity="info">{t("wizard.program.noPackages")}</Alert>;
   }
 
+  const showPrograms = new Set(offered.map((item) => item.programId)).size > 1;
+  const packageOptions = offered.flatMap((item, index) => [
+    ...(showPrograms && offered[index - 1]?.programId !== item.programId
+      ? [<ListSubheader key={`program-${item.programId}`}>{item.programName}</ListSubheader>]
+      : []),
+    <MenuItem key={item.id} value={item.id}>
+      {item.name} · {formatMoney(item.priceAmount)} сом
+    </MenuItem>,
+  ]);
   return (
     <Stack gap={2}>
       <TextField
         select
         size="small"
-        label={t("wizard.program.program")}
-        value={value.programId ?? ""}
-        error={Boolean(errors.programId)}
-        helperText={error("programId")}
+        label={t("wizard.program.package")}
+        value={value.packageId ?? ""}
+        error={Boolean(errors.packageId)}
+        helperText={error("packageId")}
         onChange={(e) => {
-          const next = registryPrograms.find((p) => p.id === Number(e.target.value));
+          const next = offered.find((item) => item.id === Number(e.target.value));
           onChange({
             ...value,
-            programId: next?.id ?? null,
-            termMonths: next ? String(next.defaultTermMonths) : value.termMonths,
-            responsibleEmployeeId: null,
+            packageId: next?.id ?? null,
+            termMonths: next ? String(next.termMonths) : value.termMonths,
+            responsibleEmployeeId: next?.programId === pkg?.programId ? value.responsibleEmployeeId : null,
           });
         }}
       >
-        {registryPrograms.map((p) => (
-          <MenuItem key={p.id} value={p.id}>
-            {p.name}
-          </MenuItem>
-        ))}
+        {packageOptions}
       </TextField>
+      {pkg && (
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="baseline"
+          gap={1}
+          sx={(theme) => ({ px: 1.5, py: 1, borderRadius: "12px", bgcolor: subtleBg(theme) })}
+        >
+          <Typography variant="body2" color="text.secondary">
+            {t("wizard.program.priceLabel")}
+          </Typography>
+          <Box sx={{ textAlign: "right" }}>
+            <Typography fontWeight={700}>
+              {t("wizard.program.priceValue", { price: formatMoney(quote?.priceAmount ?? pkg.priceAmount) })}
+            </Typography>
+            {quote && quote.familyDiscountPercent > 0 && (
+              <Typography variant="caption" color="text.secondary">
+                {t("wizard.payment.familyNote", {
+                  percent: quote.familyDiscountPercent,
+                  base: formatMoney(quote.basePriceAmount),
+                })}
+              </Typography>
+            )}
+          </Box>
+        </Stack>
+      )}
       {!activeBranch && (
         <TextField
           select
@@ -156,7 +190,7 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
           </MenuItem>
         ))}
       </TextField>
-      <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
+      <Stack direction={{ xs: "column", md: "row" }} gap={1.5} alignItems="flex-start">
         <TextField
           size="small"
           type="number"
@@ -166,26 +200,21 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
           error={Boolean(errors.termMonths)}
           helperText={error("termMonths")}
           inputProps={{ min: 1, max: 60 }}
+          sx={{ width: { xs: "100%", md: 160 }, flexShrink: 0 }}
         />
-        <TextField
-          size="small"
-          label={t("wizard.program.price")}
-          value={value.priceAmount}
-          onChange={(e) => {
-            if (MONEY_RE.test(e.target.value)) onChange({ ...value, priceAmount: e.target.value });
-          }}
-          helperText={program?.feeServiceName ? t("wizard.program.priceHint", { service: program.feeServiceName }) : undefined}
-          inputProps={{ inputMode: "decimal" }}
-        />
+        <Box sx={{ flex: 1, width: "100%", minWidth: 0 }}>
+          <CustomDatePicker
+            label={t("wizard.program.startsOn")}
+            value={value.termStartsOn ? dayjs(value.termStartsOn) : null}
+            onChange={(date) =>
+              onChange({ ...value, termStartsOn: date && date.isValid() ? date.format("YYYY-MM-DD") : "" })
+            }
+            slotProps={{
+              textField: { size: "small", fullWidth: true, helperText: t("wizard.program.startsOnHint") },
+            }}
+          />
+        </Box>
       </Stack>
-      <CustomDatePicker
-        label={t("wizard.program.startsOn")}
-        value={value.termStartsOn ? dayjs(value.termStartsOn) : null}
-        onChange={(date) =>
-          onChange({ ...value, termStartsOn: date && date.isValid() ? date.format("YYYY-MM-DD") : "" })
-        }
-        slotProps={{ textField: { size: "small", helperText: t("wizard.program.startsOnHint") } }}
-      />
       <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
         <TextField
           select
@@ -211,16 +240,6 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
           sx={{ flex: 1 }}
         />
       </Stack>
-      {!childCardNumber && (
-        <TextField
-          size="small"
-          label={t("wizard.child.cardNumber")}
-          value={value.cardNumber}
-          placeholder={suggestion.data?.cardNumber}
-          onChange={(e) => onChange({ ...value, cardNumber: e.target.value.slice(0, 32) })}
-          helperText={t("wizard.child.cardNumberHint")}
-        />
-      )}
     </Stack>
   );
 };

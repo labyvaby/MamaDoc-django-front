@@ -23,6 +23,8 @@ export const PAGE_PERMISSIONS = {
   patientPrograms: "enrollments.view",
   // Учёт детей — реестр подключений учётных программ (только клиника).
   registry: "enrollments.view",
+  // Пакеты учёта — экран управляющего.
+  registryPackages: "programs.manage",
   employees: "staff.view",
   services: "catalog.view",
   expenses: ["finance.view", "finance.expense.view"],

@@ -10,6 +10,7 @@ export interface EnrollmentTarget {
   patientId: number;
   patientName: string;
   programName: string;
+  programId: number;
   branchId: number;
   responsibleEmployeeId: number | null;
   onboardingCompletedAt: string | null;
@@ -22,6 +23,7 @@ export function targetFromRow(row: RegistryRow): EnrollmentTarget {
     patientId: row.patient.id,
     patientName: row.patient.fullName,
     programName: row.program.name,
+    programId: row.program.id,
     branchId: row.branch.id,
     responsibleEmployeeId: row.responsibleEmployee?.id ?? null,
     onboardingCompletedAt: row.onboardingCompletedAt,
@@ -35,6 +37,7 @@ export function targetFromEnrollment(enrollment: ProgramEnrollment): EnrollmentT
     patientId: enrollment.patient.id,
     patientName: enrollment.patient.fullName,
     programName: enrollment.program.name,
+    programId: enrollment.program.id,
     branchId: enrollment.branch.id,
     responsibleEmployeeId: enrollment.responsibleEmployee?.id ?? null,
     onboardingCompletedAt: enrollment.onboardingCompletedAt ?? null,

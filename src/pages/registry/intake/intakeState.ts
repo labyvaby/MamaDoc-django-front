@@ -1,3 +1,5 @@
+import dayjs from "dayjs";
+
 import {
   LEGAL_RELATIONS,
   type ChildGender,
@@ -54,26 +56,34 @@ export interface RepresentativeState {
 }
 
 export interface ProgramState {
-  programId: number | null;
+  /** Пакет учёта; программа (книжка) берётся из пакета. */
+  packageId: number | null;
   branchId: number | null;
   responsibleEmployeeId: number | null;
   termMonths: string;
-  /** YYYY-MM-DD; пусто — период начнётся сегодня. */
+  /** YYYY-MM-DD; по умолчанию сегодня, для наблюдавшихся раньше — прошлая дата. */
   termStartsOn: string;
-  /** Пусто — цена услуги-взноса. */
-  priceAmount: string;
-  /** Пусто — номер выдаст бэк по префиксу программы. */
+  /** Пусто — номер выдаст бэк по префиксу и начальному номеру программы. */
   cardNumber: string;
   /** Титул ф. 112/у: проживает постоянно / временно / приезжий; пусто — не указано. */
   residenceStatus: ResidenceStatus | "";
   arrivedFrom: string;
 }
 
+/** Оплата как в «Приёмах»: пустые суммы — постановка с долгом. */
 export interface PaymentState {
-  mode: "now" | "later";
+  /** Скидка на кассе, сом: поле «% / с» пересчитывает проценты в сомы. */
+  discount: number;
   cash: string;
   card: string;
   cashlessMethodId: number | null;
+}
+
+export interface PaymentPreview {
+  payable: number;
+  paid: number;
+  debt: number;
+  state: "paid" | "partial" | "unpaid";
 }
 
 export interface IntakeState {
@@ -94,6 +104,18 @@ export function hasPhone(phone: string | null | undefined): boolean {
 export function toAmount(raw: string): number {
   const value = Number(raw.trim().replace(",", ".") || "0");
   return Number.isFinite(value) ? value : 0;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** К оплате после скидки, внесено, долг и статус периода — до отправки. */
+export function paymentPreview(payment: PaymentState, price: number): PaymentPreview {
+  const payable = round2(Math.max(0, price - payment.discount));
+  const paid = round2(toAmount(payment.cash) + toAmount(payment.card));
+  const debt = round2(Math.max(0, payable - paid));
+  return { payable, paid, debt, state: debt <= 0 ? "paid" : paid > 0 ? "partial" : "unpaid" };
 }
 
 let keySeed = 0;
@@ -144,17 +166,16 @@ export function initialIntakeState(existing?: ExistingPerson | null): IntakeStat
         },
     representatives: [newRepresentative({ isPrimaryContact: true })],
     program: {
-      programId: null,
+      packageId: null,
       branchId: null,
       responsibleEmployeeId: null,
       termMonths: "12",
-      termStartsOn: "",
-      priceAmount: "",
+      termStartsOn: dayjs().format("YYYY-MM-DD"),
       cardNumber: "",
       residenceStatus: "",
       arrivedFrom: "",
     },
-    payment: { mode: "now", cash: "", card: "", cashlessMethodId: null },
+    payment: { discount: 0, cash: "", card: "", cashlessMethodId: null },
   };
 }
 
@@ -163,13 +184,21 @@ export function withRelation(rep: RepresentativeState, relation: Relation): Repr
   return { ...rep, relation, isLegalRepresentative: LEGAL_RELATIONS.includes(relation) };
 }
 
+/** Уже заведённые взрослые: по их семьям сервер ищет братьев и сестёр. */
+export function existingRepresentativeIds(state: IntakeState): number[] {
+  return state.representatives.flatMap((rep) => (rep.mode === "existing" && rep.existing ? [rep.existing.id] : []));
+}
+
 function repPhone(rep: RepresentativeState): string {
   return rep.mode === "existing" ? rep.existing?.phone ?? "" : rep.phone;
 }
 
 export interface ValidationContext {
-  /** Цена периода для проверки переплаты (из программы или вручную). */
+  /** Стоимость периода (пакет с семейной скидкой) — до скидки на кассе. */
   price?: number;
+  /** У программы есть бланк договора: без подписи постановку не завершить. */
+  contractRequired?: boolean;
+  contractSigned?: boolean;
 }
 
 export function validateStep(step: StepKey, state: IntakeState, context: ValidationContext = {}): StepErrors {
@@ -194,15 +223,18 @@ export function validateStep(step: StepKey, state: IntakeState, context: Validat
   }
   if (step === "program") {
     const program = state.program;
-    if (program.programId == null) errors.programId = "wizard.program.programRequired";
+    if (program.packageId == null) errors.packageId = "wizard.program.packageRequired";
     if (program.branchId == null) errors.branchId = "wizard.program.branchRequired";
     const months = Number(program.termMonths);
     if (!Number.isInteger(months) || months < 1 || months > 60) errors.termMonths = "wizard.program.termInvalid";
   }
-  if (step === "payment" && state.payment.mode === "now") {
-    const total = toAmount(state.payment.cash) + toAmount(state.payment.card);
-    if (total <= 0) errors.payment = "wizard.payment.empty";
-    else if (context.price != null && total > context.price + 0.001) errors.payment = "wizard.payment.overpaid";
+  if (step === "payment") {
+    if (context.price != null) {
+      if (state.payment.discount > context.price + 0.001) errors.discount = "wizard.payment.discountTooBig";
+      const preview = paymentPreview(state.payment, context.price);
+      if (preview.paid > preview.payable + 0.001) errors.payment = "wizard.payment.overpaid";
+    }
+    if (context.contractRequired && !context.contractSigned) errors.contract = "wizard.payment.contractRequired";
   }
   return errors;
 }
@@ -250,16 +282,16 @@ export function buildIntakePayload(state: IntakeState): IntakePayload {
       receivesNotifications: rep.receivesNotifications,
       joinFamily: rep.joinFamily,
     })),
-    programId: program.programId as number,
+    packageId: program.packageId as number,
     branchId: program.branchId as number,
     residenceStatus: program.residenceStatus,
     arrivedFrom: program.arrivedFrom.trim(),
     responsibleEmployeeId: program.responsibleEmployeeId,
     termMonths: Number(program.termMonths),
     termStartsOn: program.termStartsOn || null,
-    priceAmount: amountOrNull(program.priceAmount),
+    discountAmount: payment.discount > 0 ? payment.discount.toFixed(2) : null,
     payment:
-      payment.mode === "now"
+      toAmount(payment.cash) + toAmount(payment.card) > 0
         ? {
             cashAmount: amountOrNull(payment.cash) ?? "0",
             cardAmount: amountOrNull(payment.card) ?? "0",

@@ -17,27 +17,35 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
-import { getService } from "../../../api/catalog";
 import { getErrorMessage } from "../../../api/client";
 import type { Program } from "../../../api/programs";
-import { intakeEnrollment, type IntakeResult } from "../../../api/registry";
+import { djangoQueryKeys } from "../../../api/queryKeys";
+import {
+  getBlankTemplates,
+  getPriceQuote,
+  intakeEnrollment,
+  previewIntakeDocument,
+  type IntakeResult,
+} from "../../../api/registry";
 import { AppButton } from "../../../components/ui";
 import type { ActiveScope } from "../../../hooks/useActiveScope";
+import { useCanChecker } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useT } from "../../../i18n/VerticalProvider";
 import {
   buildIntakePayload,
+  existingRepresentativeIds,
   FORM_STEPS,
   initialIntakeState,
   STEPS,
-  toAmount,
   validateStep,
   type ExistingPerson,
   type IntakeState,
   type StepErrors,
   type StepKey,
 } from "./intakeState";
-import { programTemplateIds } from "../registryConstants";
+import { programContractTemplateId, programTemplateIds } from "../registryConstants";
+import { openPrintWindow } from "./documentPrint";
 import { ChildStep } from "./steps/ChildStep";
 import { DocumentsStep } from "./steps/DocumentsStep";
 import { PaymentStep } from "./steps/PaymentStep";
@@ -55,8 +63,10 @@ export interface IntakeWizardProps {
 
 /**
  * Постановка на учёт: ребёнок → представители → программа и врач → оплата
- * → документы. Всё до документов уходит одним запросом (бэк создаёт всё или
- * ничего); документы привязываются к уже созданному подключению.
+ * → документы. На шаге «Оплата» договор печатается из данных мастера и
+ * подписывается до денег (сервер заполняет бланк и ничего не сохраняет).
+ * Всё до документов уходит одним запросом (бэк создаёт всё или ничего);
+ * документы привязываются к уже созданному подключению.
  */
 export const IntakeWizard: React.FC<IntakeWizardProps> = ({ open, scope, initialPatient = null, onClose, onDone }) => {
   const { t } = useT("registry");
@@ -70,6 +80,9 @@ export const IntakeWizard: React.FC<IntakeWizardProps> = ({ open, scope, initial
   const [errors, setErrors] = React.useState<StepErrors>({});
   const [result, setResult] = React.useState<IntakeResult | null>(null);
   const [program, setProgram] = React.useState<Program | undefined>(undefined);
+  // Подпись договора действует, пока не поменялось то, что в него попало.
+  const [signedKey, setSignedKey] = React.useState<string | null>(null);
+  const { can } = useCanChecker();
 
   React.useEffect(() => {
     if (!open) return;
@@ -79,19 +92,48 @@ export const IntakeWizard: React.FC<IntakeWizardProps> = ({ open, scope, initial
     setStep("child");
     setErrors({});
     setResult(null);
+    setSignedKey(null);
   }, [open, initialPatient, activeBranch?.id]);
 
-  const feeService = useQuery({
-    queryKey: ["django", "catalog", "service", program?.feeServiceId ?? null],
-    queryFn: () => getService(program!.feeServiceId as number),
-    enabled: open && program?.feeServiceId != null,
-    staleTime: 60_000,
+  const quoteParams = {
+    packageId: state.program.packageId ?? 0,
+    patientId: state.child.existing?.id ?? null,
+    representativeIds: existingRepresentativeIds(state),
+  };
+  const quote = useQuery({
+    queryKey: djangoQueryKeys.programs.priceQuote(scope, quoteParams),
+    queryFn: ({ signal }) => getPriceQuote(scope, quoteParams, signal),
+    enabled: open && state.program.packageId != null && scope.isReady && scope.orgReady,
   });
-  const price = state.program.priceAmount.trim()
-    ? toAmount(state.program.priceAmount)
-    : feeService.data
-      ? Number(feeService.data.basePrice)
-      : null;
+  const price = quote.data ? Number(quote.data.priceAmount) : null;
+  // Другой пакет или семья — другая стоимость: скидку на кассе задают заново.
+  const quotedPrice = quote.data?.priceAmount;
+  React.useEffect(() => {
+    setState((current) =>
+      current.payment.discount === 0 ? current : { ...current, payment: { ...current.payment, discount: 0 } },
+    );
+  }, [quotedPrice]);
+
+  const contractTemplateId = programContractTemplateId(program);
+  const blankTemplates = useQuery({
+    queryKey: djangoQueryKeys.programs.blankTemplates(scope),
+    queryFn: ({ signal }) => getBlankTemplates(scope, signal),
+    enabled: open && contractTemplateId != null && can("printforms.view"),
+    retry: false,
+  });
+  const contractName =
+    blankTemplates.data?.find((template) => template.id === contractTemplateId)?.name ??
+    t("wizard.payment.contract");
+  const contractKey = JSON.stringify([state.child, state.representatives, state.program, state.payment.discount]);
+  const contractSigned = signedKey === contractKey;
+  const printContract = useMutation({
+    mutationFn: () => previewIntakeDocument(scope, buildIntakePayload(state), contractTemplateId as number),
+    onSuccess: ({ render }) => {
+      if (!openPrintWindow(render, contractName)) {
+        enqueueSnackbar(t("wizard.payment.popupBlocked"), { variant: "warning" });
+      }
+    },
+  });
 
   const submit = useMutation({
     mutationFn: () => intakeEnrollment(scope, buildIntakePayload(state)),
@@ -116,7 +158,12 @@ export const IntakeWizard: React.FC<IntakeWizardProps> = ({ open, scope, initial
 
   const index = STEPS.indexOf(step);
   const isLastFormStep = step === FORM_STEPS[FORM_STEPS.length - 1];
-  const validate = (key: StepKey) => validateStep(key, state, { price: price ?? undefined });
+  const validate = (key: StepKey) =>
+    validateStep(key, state, {
+      price: price ?? undefined,
+      contractRequired: contractTemplateId != null,
+      contractSigned,
+    });
 
   const goNext = () => {
     const found = validate(step);
@@ -137,8 +184,6 @@ export const IntakeWizard: React.FC<IntakeWizardProps> = ({ open, scope, initial
     if (result) onDone(result);
     else onClose();
   };
-
-  const childCardNumber = state.child.mode === "existing" ? state.child.existing?.cardNumber ?? "" : "";
 
   return (
     <Drawer
@@ -181,7 +226,7 @@ export const IntakeWizard: React.FC<IntakeWizardProps> = ({ open, scope, initial
             scope={scope}
             value={state.program}
             errors={errors}
-            childCardNumber={childCardNumber}
+            quote={quote.data}
             onChange={setProgramState}
             onProgramLoaded={setProgram}
           />
@@ -190,11 +235,27 @@ export const IntakeWizard: React.FC<IntakeWizardProps> = ({ open, scope, initial
           <PaymentStep
             scope={scope}
             branchId={state.program.branchId}
-            price={price}
+            quote={quote.data}
             value={state.payment}
             errors={errors}
             onChange={setPayment}
+            contract={
+              contractTemplateId == null
+                ? null
+                : {
+                    name: contractName,
+                    signed: contractSigned,
+                    printing: printContract.isPending,
+                    onPrint: () => printContract.mutate(),
+                    onSigned: (signed) => setSignedKey(signed ? contractKey : null),
+                  }
+            }
           />
+        )}
+        {step === "payment" && printContract.error && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {t("wizard.payment.printFailed")}: {getErrorMessage(printContract.error)}
+          </Alert>
         )}
         {step === "documents" && result && (
           <DocumentsStep
