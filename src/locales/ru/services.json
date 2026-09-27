@@ -97,7 +97,7 @@
     "addPlaceholder": "Добавить товар — например: Гель для УЗИ",
     "addHelperEmpty": "Необязательно: товары со склада, которые расходуются на {{service.acc}}",
     "addHelperNonEmpty": "Чип — платный товар или в цене {{service.gen}}, тумблер — списывать ли со склада",
-    "extraInVisit": "Платные товары в {{visit.pre}}"
+    "extraInVisit": "Платные товары {{visit.pre, prep(p: в)}}"
   },
   "list": {
     "performerCount_one": "{{count}} исполнитель",

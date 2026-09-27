@@ -10,6 +10,7 @@ export type ReviewChannel = "whatsapp" | "sms" | "whatsapp_then_sms";
 
 export type ReviewRequestStatus =
   | "created"
+  | "scheduled"
   | "sent"
   | "rated"
   | "awaiting_comment"
@@ -105,6 +106,8 @@ export interface ReviewRequest {
   branchId: number | null;
   deliveredChannel: "whatsapp" | "sms" | null;
   error: string | null;
+  /** «Запланирован»: запросили в тихие часы — уйдёт в это время. */
+  sendAfter?: string | null;
 }
 
 export interface BranchMaps {
@@ -150,6 +153,8 @@ export interface ReviewSettings {
   branchMaps: BranchMaps[];
   /** Сценарий Raven этой организации; пусто — приглашения не отправляются. */
   ravenScenario: string;
+  instagram: string;
+  pageTheme: PageTheme;
   /** Кто отправляет: свой ключ Raven организации или платформенный. */
   ravenKey: "own" | "platform";
 }
@@ -166,11 +171,15 @@ export interface ReviewSettingsPatch {
   negativeTags?: string[];
   branchReviewLinks?: BranchReviewLinkPatch[];
   ravenScenario?: string;
+  instagram?: string;
+  pageTheme?: PageTheme;
   /** Суперадмин может адресовать чужую организацию. */
   organizationId?: number;
 }
 
 /** Контекст публичной страницы отзыва. */
+export type PageTheme = "default" | "kids";
+
 export interface RateContext {
   token: string;
   status: ReviewRequestStatus;
@@ -178,6 +187,10 @@ export interface RateContext {
   doctorName: string | null;
   hasDoctor: boolean;
   clinicName: string;
+  /** Логотип организации (/media/...), пусто — нет логотипа. */
+  clinicLogo: string;
+  /** Оформление страницы: обычное или детское (фон с мишкой). */
+  pageTheme: PageTheme;
   answered: boolean;
   rating: number | null;
   doctorRating: number | null;
@@ -191,6 +204,8 @@ export interface RateContext {
   negativeTags: string[];
   canEdit: boolean;
   maps: MapLink[];
+  /** Instagram клиники без @; пусто — строка без ссылки. */
+  instagram: string;
 }
 
 export interface RateSubmit {

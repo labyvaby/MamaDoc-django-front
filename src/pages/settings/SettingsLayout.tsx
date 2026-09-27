@@ -15,6 +15,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { Link as RouterLink, useLocation } from "react-router";
 
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
+import RateReviewOutlined from "@mui/icons-material/RateReviewOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
@@ -74,6 +75,7 @@ export const SETTINGS_GROUPS = [
   "access",
   "catalogs",
   "operations",
+  "platform",
 ] as const;
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
@@ -228,6 +230,12 @@ const TAB_DEFS: TabDef[] = [
     key: "notifications",
     to: "/settings/notifications",
     icon: <NotificationsOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "reviews",
+    to: "/settings/reviews",
+    icon: <RateReviewOutlined fontSize="small" />,
     group: "operations",
   },
   {

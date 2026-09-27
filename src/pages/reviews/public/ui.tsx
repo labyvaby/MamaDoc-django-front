@@ -5,6 +5,9 @@ import CheckRounded from "@mui/icons-material/CheckRounded";
 import ArrowOutwardRounded from "@mui/icons-material/ArrowOutwardRounded";
 
 import type { MapPlatform } from "../../../api/reviews";
+import { MapLogo, isFullTile } from "./mapLogos";
+import kidsThanksUrl from "./logos/kids-bg-thanks.webp";
+import kidsFormUrl from "./logos/kids-bg-form.webp";
 import {
   AMBER,
   CARD,
@@ -25,19 +28,105 @@ import {
   starPop,
 } from "./theme";
 
+/** Шапка страницы: логотип и название клиники, которой ставят оценку. */
+export const ClinicHeader: React.FC<{ name: string; logo?: string }> = ({
+  name,
+  logo,
+}) => (
+  <Stack
+    direction="row"
+    spacing={1.25}
+    alignItems="center"
+    justifyContent="center"
+    sx={{ mb: 1 }}
+  >
+    {logo && (
+      <Box
+        component="img"
+        src={logo}
+        alt=""
+        sx={{
+          width: 40,
+          height: 40,
+          borderRadius: "12px",
+          objectFit: "contain",
+          bgcolor: "#FFFFFF",
+          border: `1px solid ${LINE}`,
+          flexShrink: 0,
+        }}
+      />
+    )}
+    <Typography
+      sx={{ fontWeight: 700, fontSize: 15, color: INK, lineHeight: 1.2 }}
+    >
+      {name}
+    </Typography>
+  </Stack>
+);
+
+/** Детское оформление: свой фон для опроса и для экранов «Спасибо». */
+export type KidsScreen = "form" | "thanks";
+
+const KIDS_BG_MAX_WIDTH = 560;
+const KIDS_BG: Record<
+  KidsScreen,
+  { url: string; ratio: number; bearShare: number; color: string }
+> = {
+  // 919×1712, мишка выглядывает справа — верхние ~25% высоты.
+  form: { url: kidsFormUrl, ratio: 1712 / 919, bearShare: 0.26, color: "#F3ECE1" },
+  // 919×1712, мишка со звездой — верхние ~21% высоты.
+  thanks: { url: kidsThanksUrl, ratio: 1712 / 919, bearShare: 0.22, color: "#F3ECE1" },
+};
+
+// Картинка «cover» в колонке шириной до 560px: её высота — большее из высоты
+// экрана и ширины × пропорция. Контент начинается сразу под мишкой.
+const kidsTop = (screen: KidsScreen) => {
+  const { ratio, bearShare } = KIDS_BG[screen];
+  return `calc(${bearShare} * max(100dvh, min(100vw, ${KIDS_BG_MAX_WIDTH}px) * ${ratio}))`;
+};
+
 export const Shell: React.FC<
-  React.PropsWithChildren<{ footer?: React.ReactNode }>
-> = ({ children, footer }) => (
+  React.PropsWithChildren<{
+    footer?: React.ReactNode;
+    header?: React.ReactNode;
+    /** Детское оформление (фон с мишкой) — из настроек клиники. */
+    kids?: KidsScreen;
+  }>
+> = ({ children, footer, header, kids }) => (
   <Box
     sx={{
       minHeight: "100dvh",
-      bgcolor: PAPER,
+      bgcolor: kids ? KIDS_BG[kids].color : PAPER,
       color: INK,
-      backgroundImage: `${GRAIN}, radial-gradient(120% 60% at 110% -10%, rgba(233,162,59,0.22), transparent 60%), radial-gradient(90% 55% at -20% 105%, rgba(30,91,85,0.16), transparent 60%)`,
+      backgroundImage: kids
+        ? "none"
+        : `${GRAIN}, radial-gradient(120% 60% at 110% -10%, rgba(233,162,59,0.22), transparent 60%), radial-gradient(90% 55% at -20% 105%, rgba(30,91,85,0.16), transparent 60%)`,
       display: "flex",
       flexDirection: "column",
+      position: "relative",
+      isolation: "isolate",
     }}
   >
+    {kids && (
+      <Box
+        aria-hidden
+        sx={{
+          position: "fixed",
+          top: 0,
+          bottom: 0,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "100%",
+          maxWidth: KIDS_BG_MAX_WIDTH,
+          zIndex: -1,
+          pointerEvents: "none",
+          backgroundImage: `url(${KIDS_BG[kids].url})`,
+          backgroundSize: "cover",
+          backgroundPosition: "top center",
+          backgroundRepeat: "no-repeat",
+        }}
+      />
+    )}
     <Box
       component="main"
       sx={{
@@ -46,12 +135,13 @@ export const Shell: React.FC<
         maxWidth: 480,
         mx: "auto",
         px: 2.5,
-        pt: { xs: 4, sm: 7 },
+        pt: kids ? kidsTop(kids) : { xs: 4, sm: 7 },
         pb: 4,
         display: "flex",
         flexDirection: "column",
       }}
     >
+      {header}
       {children}
     </Box>
     {footer}
@@ -216,15 +306,9 @@ export const RatingRow: React.FC<{
   value: number | null;
   onChange: (v: number) => void;
 }> = ({ title, caption, value, onChange }) => (
-  <Stack
-    direction="row"
-    alignItems="center"
-    justifyContent="space-between"
-    flexWrap="wrap"
-    rowGap={1}
-    columnGap={2}
-    sx={{ py: 1.25 }}
-  >
+  // Всегда в столбик: подпись сверху, звёзды под ней — строки с короткой и
+  // длинной подписью выглядят одинаково на любой ширине.
+  <Stack spacing={1} sx={{ py: 1.25 }}>
     <Box sx={{ minWidth: 0 }}>
       <Typography sx={{ fontWeight: 600, fontSize: 15 }}>{title}</Typography>
       {caption && (
@@ -233,7 +317,7 @@ export const RatingRow: React.FC<{
         </Typography>
       )}
     </Box>
-    <StarPicker label={title} value={value} onChange={onChange} size={30} />
+    <StarPicker label={title} value={value} onChange={onChange} size={32} />
   </Stack>
 );
 
@@ -274,13 +358,10 @@ export const TagPill: React.FC<{
   );
 };
 
-const MAP_BRANDS: Record<
-  MapPlatform,
-  { name: string; mark: string; bg: string; fg: string }
-> = {
-  "2gis": { name: "2ГИС", mark: "2Г", bg: "#19AA1E", fg: "#FFFFFF" },
-  yandex: { name: "Яндекс Карты", mark: "Я", bg: "#FC3F1D", fg: "#FFFFFF" },
-  google: { name: "Google Maps", mark: "G", bg: "#FFFFFF", fg: "#4285F4" },
+const MAP_NAMES: Record<MapPlatform, string> = {
+  "2gis": "2ГИС",
+  yandex: "Яндекс Карты",
+  google: "Google Maps",
 };
 
 export const MapCard: React.FC<{
@@ -288,7 +369,6 @@ export const MapCard: React.FC<{
   opened: boolean;
   onOpen: () => void;
 }> = ({ platform, opened, onOpen }) => {
-  const brand = MAP_BRANDS[platform];
   return (
     <ButtonBase
       onClick={onOpen}
@@ -319,21 +399,18 @@ export const MapCard: React.FC<{
           height: 48,
           flexShrink: 0,
           borderRadius: "14px",
+          overflow: "hidden",
           display: "grid",
           placeItems: "center",
-          bgcolor: brand.bg,
-          color: brand.fg,
-          border: brand.bg === "#FFFFFF" ? `1px solid ${LINE}` : "none",
-          fontWeight: 800,
-          fontSize: 18,
-          letterSpacing: "-0.03em",
+          bgcolor: "#FFFFFF",
+          border: isFullTile(platform) ? "none" : `1px solid ${LINE}`,
         }}
       >
-        {brand.mark}
+        <MapLogo platform={platform} />
       </Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography sx={{ fontWeight: 700, fontSize: 16, color: INK }}>
-          {brand.name}
+          {MAP_NAMES[platform]}
         </Typography>
         <Typography sx={{ fontSize: 13, color: opened ? TEAL : MUTED }}>
           {opened ? "Открыли — спасибо!" : "Оставить отзыв"}

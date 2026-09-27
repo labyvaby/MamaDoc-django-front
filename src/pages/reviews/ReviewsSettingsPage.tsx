@@ -8,19 +8,17 @@ import {
   CircularProgress,
   Divider,
   FormControlLabel,
+  MenuItem,
   Paper,
   Stack,
   Switch,
   TextField,
   Typography,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
-import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
-import { Link as RouterLink } from "react-router";
 
-import { PageHeader } from "../../components/ui";
+import { SettingsLayout } from "../settings/SettingsLayout";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -55,6 +53,8 @@ type FormState = Pick<
   | "positiveTags"
   | "negativeTags"
   | "ravenScenario"
+  | "instagram"
+  | "pageTheme"
 >;
 
 const FORM_KEYS: (keyof FormState)[] = [
@@ -67,6 +67,8 @@ const FORM_KEYS: (keyof FormState)[] = [
   "positiveTags",
   "negativeTags",
   "ravenScenario",
+  "instagram",
+  "pageTheme",
 ];
 
 const same = (a: unknown, b: unknown) =>
@@ -121,8 +123,7 @@ const TagEditor: React.FC<{
 
 const ReviewsSettingsPage: React.FC = () => {
   const { t } = useT("reviews");
-  usePageTitle("Настройки отзывов");
-  const theme = useTheme();
+  usePageTitle("Сбор отзывов");
   const canManage = useCan("reviews.manage");
   const {
     isSuperAdmin,
@@ -196,32 +197,15 @@ const ReviewsSettingsPage: React.FC = () => {
   };
 
   return (
-    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <PageHeader
-        title="Настройки отзывов"
-        showTitle={false}
-        showSearch={false}
-        leftActions={
-          <Button
-            size="small"
-            startIcon={<ArrowBackOutlined />}
-            component={RouterLink}
-            to="/reviews"
-          >
-            К отзывам
-          </Button>
-        }
-      />
-
-      <Box
-        sx={{
-          flex: 1,
-          overflow: "auto",
-          px: theme.appLayout.page.paddingX,
-          pb: 4,
-          maxWidth: 760,
-        }}
-      >
+    <SettingsLayout>
+      <Box sx={{ maxWidth: 760 }}>
+        <Typography variant="h6" fontWeight={600}>
+          Сбор отзывов
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Когда и как просить пациентов оценить приём, страница отзыва и
+          ссылки на карты.
+        </Typography>
         {query.error ? (
           <Alert severity="error" sx={{ mt: 2 }}>
             {query.error instanceof Error
@@ -368,6 +352,38 @@ const ReviewsSettingsPage: React.FC = () => {
               </Stack>
             </Paper>
 
+            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: "14px" }}>
+              <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+                Страница отзыва
+              </Typography>
+              <TextField
+                select
+                size="small"
+                label="Оформление"
+                value={form.pageTheme}
+                onChange={(e) =>
+                  set("pageTheme", e.target.value as ReviewSettings["pageTheme"])
+                }
+                helperText="Детское — фон с мишкой, для детских клиник."
+                sx={{ maxWidth: 420, mb: 2 }}
+                fullWidth
+              >
+                <MenuItem value="default">Обычное</MenuItem>
+                <MenuItem value="kids">Детское (мишка)</MenuItem>
+              </TextField>
+              <TextField
+                size="small"
+                label="Профиль Instagram"
+                placeholder="mama.doctor.kg"
+                value={form.instagram}
+                onChange={(e) => set("instagram", e.target.value.trim())}
+                inputProps={{ maxLength: 80 }}
+                helperText="После 5★ пациент увидит «Отметьте нас в Instagram» со ссылкой на профиль. Можно вставить ссылку или @имя."
+                sx={{ maxWidth: 420 }}
+                fullWidth
+              />
+            </Paper>
+
             <ReviewLinksEditor
               branches={original.branchMaps}
               draft={links}
@@ -391,7 +407,7 @@ const ReviewsSettingsPage: React.FC = () => {
           </Stack>
         )}
       </Box>
-    </Box>
+    </SettingsLayout>
   );
 };
 

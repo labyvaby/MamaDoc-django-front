@@ -56,7 +56,7 @@
   },
   "confirm": {
     "deleteTitle": "Удалить {{visit.acc}}?",
-    "deleteText": "{{visit.nom, capitalize}} будет удалён без возможности восстановления.",
+    "deleteText": "{{visit.nom, capitalize}} будет {{visit.gender, gender(m: удалён; f: удалена; n: удалено)}} без возможности восстановления.",
     "deleteSubmit": "Удалить",
     "cancelTitle": "Отменить {{record.acc}}?",
     "cancelText": "{{record.nom, capitalize}} будет помечена как отменённая.",
@@ -142,7 +142,7 @@
     "phoneCopied": "Номер скопирован",
     "editPatient": "Изменить данные {{patient.gen}}",
     "editPatientFailed": "Не удалось загрузить карту {{patient.gen}}",
-    "nightVisit": "Ночной {{visit.nom}}",
+    "nightVisit": "{{visit.gender, gender(m: Ночной; f: Ночная; n: Ночное)}} {{visit.nom}}",
     "relToday": "сегодня",
     "relTomorrow": "завтра",
     "relYesterday": "вчера",
@@ -182,7 +182,7 @@
     "vaccineNotRecorded": "Не внесена в карту",
     "vaccineNotRecordedHint": "Вакцина в счёте есть, а записи в карте нет. Оформлять её кнопкой «Оформить вакцину» нельзя — в счёт добавится вторая строка и спишется ещё одна доза. Вакцину не продают товаром: её вводят через «Оформить вакцину», строка в счёт попадёт сама.",
     "deleteTitle": "Удалить {{visit.acc}}?",
-    "deleteText": "Удалить можно только ошибочно созданный {{visit.acc}} без оплат, возвратов и медицинских {{conclusion.genPl}}.",
+    "deleteText": "Удалить можно только ошибочно {{visit.gender, gender(m: созданный; f: созданную; n: созданное)}} {{visit.acc}} без оплат, возвратов и медицинских {{conclusion.genPl}}.",
     "cancelTitle": "Отменить {{record.acc}}?",
     "cancelText": "{{record.nom, capitalize}} будет переведена в статус «Отменено». Она не удалится из истории.",
     "cancelSubmit": "Подтвердить отмену"
@@ -242,7 +242,8 @@
   "serviceLine": {
     "conclusionReady": "{{conclusion.nom, capitalize}}: готово",
     "conclusionDraft": "{{conclusion.nom, capitalize}}: черновик",
-    "conclusionsProgress": "{{conclusion.nomPl, capitalize}}: готово {{done}} из {{count}}"
+    "conclusionsProgress": "{{conclusion.nomPl, capitalize}}: готово {{done}} из {{count}}",
+    "conclusionsCount": "{{conclusion.nomPl, capitalize}}: {{count}}, есть черновики"
   },
   "serviceRow": {
     "addSpecialist": "+ Добавить {{specialist.acc}}",
@@ -342,7 +343,7 @@
       "performerMismatch": "Исполнитель не оказывает выбранную {{service.acc}}",
       "overStock": "Количество товара больше остатка на складе"
     },
-    "created": "{{visit.nom, capitalize}} успешно создан!"
+    "created": "{{visit.nom, capitalize}} успешно {{visit.gender, gender(m: создан; f: создана; n: создано)}}!"
   },
   "editDrawer": {
     "title": "Редактирование {{visit.gen}}",
@@ -353,11 +354,11 @@
     "cannotDeleteHasConclusion": "Нельзя удалить: по {{service.dat}} уже создано медзаключение",
     "hasConclusionHint": "По {{service.dat}} есть медзаключение: можно изменить {{service.acc}} ({{conclusion.nom}} сохранится), сменить исполнителя или удалить строку нельзя",
     "hasConclusionLocked": "По {{service.dat}} создано медзаключение — изменить {{service.acc}}, сменить исполнителя или удалить строку нельзя",
-    "productsLocked": "Изменить товары созданного {{visit.gen}} пока нельзя. Дополнительные расходники оформляются отдельной продажей в разделе «Продажи».",
-    "productsHint": "Товары добавляются при создании {{visit.gen}}. К созданному {{visit.dat}} расходники (шприц, зонд и т.п.) оформляются отдельной продажей в разделе «Продажи».",
+    "productsLocked": "Изменить товары {{visit.gender, gender(m: созданного; f: созданной; n: созданного)}} {{visit.gen}} пока нельзя. Дополнительные расходники оформляются отдельной продажей в разделе «Продажи».",
+    "productsHint": "Товары добавляются при создании {{visit.gen}}. К {{visit.gender, gender(m: созданному; f: созданной; n: созданному)}} {{visit.dat}} расходники (шприц, зонд и т.п.) оформляются отдельной продажей в разделе «Продажи».",
     "doctorComplaints": "{{complaint.nomPl, capitalize}} ({{specialist.nom}})",
     "adminComment": "Комментарий администратора",
-    "updated": "{{visit.nom, capitalize}} обновлён",
+    "updated": "{{visit.nom, capitalize}} {{visit.gender, gender(m: обновлён; f: обновлена; n: обновлено)}}",
     "draftRestored": "Восстановлены несохранённые данные",
     "draftDiscard": "Очистить",
     "lineTotalSuffix": " · итого {{amount}}"
@@ -377,8 +378,8 @@
   },
   "overlapDialog": {
     "title": "Время {{visit.gen}} пересекается",
-    "text": "Пересекается с {{visit.insPl}}:",
-    "newVisit": "Новый {{visit.nom}}:",
+    "text": "Пересекается {{visit.insPl, prep(p: с)}}:",
+    "newVisit": "{{visit.gender, gender(m: Новый; f: Новая; n: Новое)}} {{visit.nom}}:",
     "employee": "{{employee.nom, capitalize}}: {{name}}",
     "patient": "{{patient.nom, capitalize}}: {{name}}",
     "otherBranch": "{{employee.nom, capitalize}} в это время принимает в другом филиале",
@@ -387,7 +388,7 @@
   },
   "cashDateDialog": {
     "title": "Какой датой провести оплату в кассе?",
-    "text": "Дата {{visit.gen}} отличается от сегодняшней. Выберите, каким числом оплата картой/страховкой попадёт в кассу и отчёты — это не влияет на дату самого {{visit.gen}}.",
+    "text": "Дата {{visit.gen}} отличается от сегодняшней. Выберите, каким числом оплата картой/страховкой попадёт в кассу и отчёты — это не влияет на дату {{visit.gender, gender(m: самого; f: самой; n: самого)}} {{visit.gen}}.",
     "today": "Сегодня ({{date}})",
     "appointmentDate": "Дата {{visit.gen}} ({{date}})",
     "cancel": "Отмена"
@@ -431,14 +432,14 @@
   },
   "payment": {
     "title": "Оплата {{visit.gen}}",
-    "cancelledNotice": "{{visit.nom, capitalize}} отменён или помечен как неявка — оплата недоступна.",
+    "cancelledNotice": "{{visit.nom, capitalize}} {{visit.gender, gender(m: отменён; f: отменена; n: отменено)}} или {{visit.gender, gender(m: помечен; f: помечена; n: помечено)}} как неявка — оплата недоступна.",
     "patient": "{{patient.nom, capitalize}}",
     "patientAccount": "Счёт {{patient.gen}}",
     "cost": "Стоимость",
     "discount": "Скидка",
     "cash": "Наличные",
     "cashless": "Безналичные",
-    "cashlessBranchNote": "Способы филиала «{{branch}}» — {{visit.nom}} заведён там",
+    "cashlessBranchNote": "Способы филиала «{{branch}}» — {{visit.nom}} {{visit.gender, gender(m: заведён; f: заведена; n: заведено)}} там",
     "insurance": "Страховка",
     "coverRemainder": "Покрыть остаток",
     "insuranceCompany": "Страховая компания",
@@ -465,7 +466,7 @@
     "lockedBonuses": "Изменение оплаты недоступно — по {{visit.dat}} уже списаны бонусы. Для корректировки оформите возврат.",
     "history": "История платежей",
     "adminComment": "Комментарий администратора",
-    "noAppointment": "Нет выбранного {{visit.gen}}",
+    "noAppointment": "Нет {{visit.gender, gender(m: выбранного; f: выбранной; n: выбранного)}} {{visit.gen}}",
     "booking": "Бронирование",
     "saved": "Оплата сохранена",
     "remove": "Убрать",
@@ -489,7 +490,7 @@
     "draftRestored": "Восстановлены несохранённые данные",
     "draftDiscard": "Очистить",
     "errors": {
-      "balanceAlreadyUsed": "Этот {{visit.nom}} уже оплачивался с баланса или бонусами. Изменение состава оплаты недоступно без возврата.",
+      "balanceAlreadyUsed": "{{visit.gender, gender(m: Этот; f: Эта; n: Это)}} {{visit.nom}} уже {{visit.gender, gender(m: оплачивался; f: оплачивалась; n: оплачивалось)}} с баланса или бонусами. Изменение состава оплаты недоступно без возврата.",
       "notEnoughBonuses": "Недостаточно бонусов на счёте {{patient.gen}}.",
       "insurerNotFound": "Страховая компания не найдена или неактивна. Обновите список и выберите заново."
     }
@@ -552,7 +553,7 @@
   "conclusionSlots": {
     "title": "{{conclusion.nom, capitalize}}",
     "sectionTitle": "Врачебные {{conclusion.nomPl}}",
-    "empty": "Для этого {{visit.gen}} нет врачебных {{conclusion.genPl}}",
+    "empty": "Для {{visit.gender, gender(m: этого; f: этой; n: этого)}} {{visit.gen}} нет врачебных {{conclusion.genPl}}",
     "notCreatedYet": "{{conclusion.nom, capitalize}} ещё не {{created}}",
     "create": "Создать",
     "edit": "Редактировать",
@@ -623,7 +624,7 @@
       "heightPrecision": "Рост — не больше 2 знаков после запятой, например 57,5 см",
       "temperaturePrecision": "Температура — не больше 1 знака после запятой, например 36,6 °C",
       "fillBeforeComplete": "Заполните {{conclusion.acc}} перед завершением",
-      "serviceLineGone": "Состав услуг {{visit.gen}} изменился, пока форма была открыта: услуги «{{service}}» в нём больше нет. Скопируйте текст, обновите карточку {{visit.gen}} и создайте {{conclusion.acc}} заново."
+      "serviceLineGone": "Состав услуг {{visit.gen}} изменился, пока форма была открыта: услуги «{{service}}» в {{visit.gender, gender(m: нём; f: ней; n: нём)}} больше нет. Скопируйте текст, обновите карточку {{visit.gen}} и создайте {{conclusion.acc}} заново."
     },
     "expandText": "Показать весь текст",
     "collapseText": "Свернуть текст",
@@ -945,7 +946,7 @@
     "confirmed": "Оплата подтверждена банком",
     "noneFound": "Подходящие платежи в банке не найдены. Проверьте сумму и время {{visit.gen}}.",
     "available": "Доступные платежи",
-    "usedElsewhere": "Уже привязаны к другому {{visit.dat}}",
+    "usedElsewhere": "Уже привязаны к {{visit.gender, gender(m: другому; f: другой; n: другому)}} {{visit.dat}}",
     "cancel": "Отмена",
     "confirming": "...",
     "select": "Выбрать",
