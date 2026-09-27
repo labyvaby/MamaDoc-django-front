@@ -364,6 +364,10 @@ export const djangoQueryKeys = {
     refusals: (params: Record<string, unknown>) =>
       ["django", "vaccinations", "refusals", params] as const,
     form5Rows: (orgId?: number) => ["django", "vaccinations", "form5-rows", orgId] as const,
+    krPositions: (orgId?: number) => ["django", "vaccinations", "kr-positions", orgId] as const,
+    patientCalendar: (patientId: number, orgId?: number) =>
+      ["django", "vaccinations", "patients", patientId, "calendar", orgId] as const,
+    form5: (params: Record<string, unknown>) => ["django", "vaccinations", "form5", params] as const,
   },
 
   staff: {

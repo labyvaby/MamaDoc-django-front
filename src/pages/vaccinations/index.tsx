@@ -90,6 +90,7 @@ import BatchDialog from "../../components/vaccinations/BatchDialog";
 import BatchWriteOffDialog from "../../components/vaccinations/BatchWriteOffDialog";
 import CalendarTemplateDialog from "../../components/vaccinations/CalendarTemplateDialog";
 import DraftsTab from "./DraftsTab";
+import KrCalendarDialog from "../../components/vaccinations/KrCalendarDialog";
 import {
   ExemptionDialog,
   RefusalDialog,
@@ -265,6 +266,7 @@ const VaccinationsPage: React.FC = () => {
   // (branchId не передаём — бэк строит по доступному скоупу орг).
   const [reportOrgWide, setReportOrgWide] = React.useState(false);
   const [deleteConfirm, setDeleteConfirm] = React.useState<CalendarTemplateRow | null>(null);
+  const [krDialogOpen, setKrDialogOpen] = React.useState(false);
   // Пропуск дозы с причиной (пишем в notes слота): улучшает семантику календаря
   // и точность отчёта (отказ родителя / медотвод / отложено).
   const [skipTarget, setSkipTarget] = React.useState<VaccinationScheduleSlot | null>(null);
@@ -880,6 +882,14 @@ const VaccinationsPage: React.FC = () => {
         ),
       },
       {
+        field: "sex",
+        headerName: "Кому",
+        width: 110,
+        sortable: false,
+        valueGetter: (_v, row) =>
+          row.sex === "female" ? "Девочкам" : row.sex === "male" ? "Мальчикам" : "Всем",
+      },
+      {
         field: "ageMonths",
         headerName: "Возраст",
         width: 150,
@@ -1220,13 +1230,18 @@ const VaccinationsPage: React.FC = () => {
             </AppButton>
           )}
           {tab === "calendar" && canManage && (
-            <AppButton
-              variant="contained"
-              startIcon={<AddOutlined />}
-              onClick={() => setCalendarDialog({ open: true, row: null })}
-            >
-              Добавить строку
-            </AppButton>
+            <>
+              <AppButton variant="outlined" onClick={() => setKrDialogOpen(true)}>
+                Загрузить календарь КР
+              </AppButton>
+              <AppButton
+                variant="contained"
+                startIcon={<AddOutlined />}
+                onClick={() => setCalendarDialog({ open: true, row: null })}
+              >
+                Добавить строку
+              </AppButton>
+            </>
           )}
           {tab === "report" && (
             <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
@@ -1464,6 +1479,8 @@ const VaccinationsPage: React.FC = () => {
         initialPatient={drawerPatient}
         lockedScenario="external"
       />
+
+      <KrCalendarDialog open={krDialogOpen} onClose={() => setKrDialogOpen(false)} />
 
       <ExemptionDialog
         open={exemptionTarget != null}

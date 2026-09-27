@@ -1,4 +1,4 @@
-import { ApiError, apiRequest } from "./client";
+import { API_BASE, ApiError, apiRequest } from "./client";
 
 /**
  * Модуль «Вакцины» (vaccinations).
@@ -1291,7 +1291,13 @@ export interface CalendarTemplateRow {
   mandatory: boolean;
   label: string;
   isActive: boolean;
+  /** Кому строка: всем / девочкам (ВПЧ) / мальчикам. */
+  sex?: CalendarSex;
+  /** Позиция встроенного календаря КР (пусто у своих строк). */
+  krKey?: string;
 }
+
+export type CalendarSex = "any" | "female" | "male";
 
 export interface CreateCalendarTemplatePayload {
   vaccineId: number;
@@ -1303,6 +1309,7 @@ export interface CreateCalendarTemplatePayload {
   mandatory?: boolean;
   label?: string;
   isActive?: boolean;
+  sex?: CalendarSex;
 }
 
 export type UpdateCalendarTemplatePayload = Partial<CreateCalendarTemplatePayload>;
@@ -1396,4 +1403,148 @@ export function getMonthlyReport(
     withOrg(`/vaccinations/monthly-report/?${q.toString()}`, opts.organizationId),
     { signal },
   );
+}
+
+// ── Календарь КР ──────────────────────────────────────────────────────────────
+
+/** Позиция встроенного календаря КР (для диалога сопоставления). */
+export interface KrPosition {
+  key: string;
+  antigen: string;
+  antigenLabel: string;
+  dose: number;
+  label: string;
+  form5Row: string;
+  sex: CalendarSex;
+  adult: boolean;
+}
+
+export function getKrPositions(organizationId?: number, signal?: AbortSignal): Promise<KrPosition[]> {
+  return apiRequest<KrPosition[]>(withOrg("/vaccinations/calendar-template/kr/", organizationId), {
+    signal,
+  });
+}
+
+/** Применить календарь КР: антиген → своя карточка вакцины. */
+export function applyKrCalendar(
+  payload: { vaccines: Record<string, number>; includeAdult: boolean },
+  organizationId?: number,
+): Promise<CalendarTemplateRow[]> {
+  return apiRequest<CalendarTemplateRow[]>(
+    withOrg("/vaccinations/calendar-template/apply-kr/", organizationId),
+    { method: "POST", body: payload },
+  );
+}
+
+// ── Календарь прививок ребёнка ────────────────────────────────────────────────
+
+export type CalendarCellState =
+  | "done"
+  | "done_external"
+  | "draft"
+  | "due"
+  | "overdue"
+  | "planned"
+  | "exempt"
+  | "refused"
+  | "skipped";
+
+export interface CalendarCell {
+  templateId: number;
+  vaccineId: number;
+  vaccineName: string;
+  doseNumber: number;
+  dueDate: string;
+  windowEnd: string;
+  state: CalendarCellState;
+  record: { id: number; administeredAt: string; isExternal: boolean; status: VaccinationRecordStatus } | null;
+  slotId: number | null;
+  exemptionUntil: string | null;
+  exemptionKind: string | null;
+  refusalDate: string | null;
+  refusalReason: string | null;
+}
+
+export interface CalendarGroup {
+  label: string;
+  ageDays: number;
+  cells: CalendarCell[];
+}
+
+export interface PatientCalendar {
+  patientId: number;
+  birthDate: string | null;
+  gender: PatientGenderValue;
+  groups: CalendarGroup[];
+}
+
+export function getPatientCalendar(
+  patientId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<PatientCalendar> {
+  return apiRequest<PatientCalendar>(
+    withOrg(`/vaccinations/patients/${patientId}/calendar/`, organizationId),
+    { signal },
+  );
+}
+
+// ── Форма 5 ────────────────────────────────────────────────────────────────────
+
+export interface Form5ReportRow {
+  key: string;
+  label: string;
+  values: (number | null)[];
+}
+
+export interface Form5Report {
+  periodStart: string;
+  periodEnd: string;
+  periodLabel: string;
+  section1: Form5ReportRow[];
+  section2: Form5ReportRow[];
+  section3: Form5ReportRow[];
+  section5: Form5ReportRow[];
+  section6: Form5ReportRow[];
+  warnings: string[];
+}
+
+function form5Query(period: string, branchId?: number | null): string {
+  const q = new URLSearchParams({ period });
+  if (branchId != null) q.set("branchId", String(branchId));
+  return q.toString();
+}
+
+export function getForm5(
+  opts: { period: string; branchId?: number | null; organizationId?: number },
+  signal?: AbortSignal,
+): Promise<Form5Report> {
+  return apiRequest<Form5Report>(
+    withOrg(`/vaccinations/form5/?${form5Query(opts.period, opts.branchId)}`, opts.organizationId),
+    { signal },
+  );
+}
+
+/** Скачать заполненный бланк формы 5 (.docx). */
+export async function downloadForm5Docx(opts: {
+  period: string;
+  periodLabel: string;
+  branchId?: number | null;
+  organizationId?: number;
+}): Promise<void> {
+  const path = withOrg(
+    `/vaccinations/form5/docx/?${form5Query(opts.period, opts.branchId)}`,
+    opts.organizationId,
+  );
+  const response = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  if (!response.ok) throw new Error("Не удалось сформировать форму 5");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `Форма 5 ${opts.periodLabel}.docx`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }

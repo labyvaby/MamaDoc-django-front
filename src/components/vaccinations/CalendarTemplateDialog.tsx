@@ -22,6 +22,7 @@ import {
   getVaccines,
   updateCalendarTemplate,
   type CalendarTemplateRow,
+  type CalendarSex,
   type CreateCalendarTemplatePayload,
 } from "../../api/vaccinations";
 
@@ -55,6 +56,7 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
   const [mandatory, setMandatory] = React.useState(true);
   const [label, setLabel] = React.useState("");
   const [isActive, setIsActive] = React.useState(true);
+  const [sex, setSex] = React.useState<CalendarSex>("any");
 
   const isEdit = row != null;
 
@@ -74,6 +76,7 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
     setMaxAgeMonths(row?.maxAgeMonths != null ? String(row.maxAgeMonths) : "");
     setDueWindowDays(row ? String(row.dueWindowDays) : "30");
     setMandatory(row?.mandatory ?? true);
+    setSex(row?.sex ?? "any");
     setLabel(row?.label ?? "");
     setIsActive(row?.isActive ?? true);
     setError(null);
@@ -93,6 +96,7 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
         mandatory,
         label: label.trim(),
         isActive,
+        sex,
       };
       if (isEdit && row) return updateCalendarTemplate(row.id, payload, orgId);
       return createCalendarTemplate(payload, orgId);
@@ -183,6 +187,19 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
             inputProps={{ inputMode: "numeric" }}
             {...form.field("dueWindowDays")}
           />
+          <TextField
+            select
+            label="Кому"
+            size="small"
+            fullWidth
+            value={sex}
+            onChange={(e) => setSex(e.target.value as CalendarSex)}
+            helperText="ВПЧ — только девочкам"
+          >
+            <MenuItem value="any">Всем</MenuItem>
+            <MenuItem value="female">Девочкам</MenuItem>
+            <MenuItem value="male">Мальчикам</MenuItem>
+          </TextField>
           <TextField
             label="Подпись"
             size="small"
