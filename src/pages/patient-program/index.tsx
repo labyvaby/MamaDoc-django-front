@@ -255,7 +255,17 @@ const PatientProgramPage: React.FC = () => {
   const patient = patientQuery.data;
 
   return (
-    <Box sx={{ px: (t) => t.appLayout.page.paddingX, pb: 2, minHeight: "100%" }}>
+    <Box
+      sx={{
+        px: (t) => t.appLayout.page.paddingX,
+        pb: 2,
+        height: "100%",
+        minHeight: 0,
+        overflowY: "auto",
+        overflowX: "hidden",
+        WebkitOverflowScrolling: "touch",
+      }}
+    >
       <Stack
         direction={{ xs: "column", sm: "row" }}
         justifyContent="space-between"

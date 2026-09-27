@@ -15,43 +15,44 @@ const FIGURE_X = 138;
 
 interface ChildFigureProps {
   sex: GrowthSex | null;
-  shirt: string;
-  skin: string;
+  accent: string;
 }
 
-/** Дружелюбная векторная иллюстрация ребёнка без внешних растровых ассетов. */
-const ChildFigure: React.FC<ChildFigureProps> = ({ sex, shirt, skin }) => {
+/** Контурный медицинский скан: антропометрический чертёж вместо персонажа. */
+const ChildFigure: React.FC<ChildFigureProps> = ({ sex, accent }) => {
   const isGirl = sex === "female";
-  const hair = "#5A3B2E";
-  const shorts = isGirl ? "#9B6BD3" : "#365A80";
-  const shoes = "#303B4A";
+  const id = React.useId().replace(/:/g, "");
+  const glowId = `scan-glow-${id}`;
+  const gradientId = `scan-gradient-${id}`;
+  const anatomy = isGirl
+    ? "M36 75Q56 65 76 75L86 119M76 76L72 128 82 207M36 76L40 128 30 207M40 128Q56 137 72 128M26 119L36 75"
+    : "M34 74Q56 66 78 74L88 119M77 75L72 128 82 207M35 75L40 128 30 207M40 128H72M24 119L35 75";
 
   return (
-    <svg viewBox="0 5 112 214" width="100%" height="100%" role="presentation">
-      <ellipse cx="56" cy="219" rx="35" ry="4.5" fill="rgba(38, 47, 61, .12)" />
-      <path d="M40 202v10c0 4-4 7-9 7h-9c-3 0-5-2-5-4 0-5 10-8 18-13z" fill={shoes} />
-      <path d="M72 202v10c0 4 4 7 9 7h9c3 0 5-2 5-4 0-5-10-8-18-13z" fill={shoes} />
-      <path d="M32 128l4 77c0 5 4 8 9 8s9-4 9-9l2-54 2 54c0 5 4 9 9 9s9-3 9-8l4-77z" fill={shorts} />
-      <path d="M29 75c-8 8-14 24-17 42-1 5 2 9 6 10 5 1 9-2 10-7l7-25-3 42h48l-3-42 7 25c1 5 5 8 10 7 4-1 7-5 6-10-3-18-9-34-17-42-7-7-18-10-27-10s-20 3-27 10z" fill={shirt} />
-      <path d="M35 95c7 6 14 9 21 9s14-3 21-9l3 42H32z" fill="rgba(255,255,255,.09)" />
-      <circle cx="18" cy="126" r="7" fill={skin} />
-      <circle cx="94" cy="126" r="7" fill={skin} />
-      <path d="M48 58h16v16c0 5-4 9-8 9s-8-4-8-9z" fill={skin} />
-      {isGirl && <path d="M26 38c-5 8-7 21-3 31 3 7 10 9 16 5l4-9h26l4 9c6 4 13 2 16-5 4-10 2-23-3-31z" fill={hair} />}
-      <circle cx="56" cy="39" r="30" fill={skin} />
-      <path
-        d={isGirl ? "M28 39C27 18 39 5 57 5c19 0 30 13 28 34-8-3-15-9-19-17-8 9-20 14-38 17z" : "M28 37C28 17 40 5 57 5c15 0 25 8 29 22-7-4-14-6-21-5-8 1-14 6-21 8-5 2-10 3-16 3z"}
-        fill={hair}
-      />
-      <circle cx="45" cy="42" r="2.4" fill="#30343B" />
-      <circle cx="67" cy="42" r="2.4" fill="#30343B" />
-      <circle cx="44.5" cy="41.3" r=".8" fill="#FFF" />
-      <circle cx="66.5" cy="41.3" r=".8" fill="#FFF" />
-      <path d="M49 54c4 4 10 4 14 0" fill="none" stroke="#B86464" strokeWidth="2" strokeLinecap="round" />
-      <circle cx="38" cy="51" r="4" fill="rgba(238,132,132,.22)" />
-      <circle cx="74" cy="51" r="4" fill="rgba(238,132,132,.22)" />
-      <path d="M51 74l5 5 5-5" fill="none" stroke="rgba(255,255,255,.72)" strokeWidth="2" strokeLinecap="round" />
-      {sex == null && <path d="M44 113h24" stroke="rgba(255,255,255,.7)" strokeWidth="3" strokeLinecap="round" />}
+    <svg viewBox="0 0 112 214" width="100%" height="100%" role="presentation">
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+          <stop stopColor={accent} />
+          <stop offset="1" stopColor="#7B61FF" />
+        </linearGradient>
+        <filter id={glowId} x="-60%" y="-30%" width="220%" height="170%">
+          <feGaussianBlur stdDeviation="2.2" result="blur" />
+          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+      </defs>
+      <g fill="none" stroke={`url(#${gradientId})`} strokeLinecap="round" strokeLinejoin="round">
+        <ellipse cx="56" cy="31" rx="23" ry="27" strokeWidth="2.2" filter={`url(#${glowId})`} />
+        <path d={isGirl ? "M34 31Q35 4 56 4t22 27M35 24Q47 22 56 13q8 9 21 11" : "M34 28Q37 4 57 4q18 0 21 22M38 18q18-10 35 0"} strokeWidth="1.6" />
+        <path d={anatomy} strokeWidth="2.2" filter={`url(#${glowId})`} />
+        <path d="M56 59v73M49 45q7 5 14 0M48 31h1M63 31h1" strokeWidth="1.2" opacity=".76" />
+        <path d="M43 88h26M40 105h32M36 157h40M33 183h46" strokeWidth=".8" strokeDasharray="3 4" opacity=".46" />
+        <path d="M15 31H4m104 0H97M18 119H7m98 0H94M18 207H7m98 0H94" strokeWidth="1" opacity=".6" />
+        {[{ x: 35, y: 75 }, { x: 77, y: 75 }, { x: 24, y: 119 }, { x: 88, y: 119 }, { x: 40, y: 128 }, { x: 72, y: 128 }, { x: 30, y: 207 }, { x: 82, y: 207 }].map((point) => (
+          <circle key={`${point.x}-${point.y}`} cx={point.x} cy={point.y} r="3.2" strokeWidth="1" fill="rgba(255,255,255,.86)" />
+        ))}
+        <circle cx="56" cy="96" r="5" strokeWidth="1" opacity=".7" />
+        <circle cx="56" cy="96" r="1.5" fill={accent} stroke="none" />
+      </g>
     </svg>
   );
 };
@@ -156,7 +157,7 @@ export const Stadiometer: React.FC<StadiometerProps> = ({ heightCm, previousCm, 
               animation: animate ? `${grow} 1.4s cubic-bezier(.2,.8,.2,1) both` : "none",
             }}
           >
-            <ChildFigure sex={sex} shirt={figureColor} skin="#F2BF9B" />
+            <ChildFigure sex={sex} accent={figureColor} />
           </Box>
           <Box
             sx={{
