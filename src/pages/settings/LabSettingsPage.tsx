@@ -28,9 +28,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { SettingsLayout } from "./SettingsLayout";
 import { InfoTile } from "../../components/ui";
-import { getLabConfig, saveLabConfig, type LabConfig } from "../../api/lab";
+import {
+  getLabConfig,
+  saveLabConfig,
+  startLabCatalogSync,
+  type LabConfig,
+} from "../../api/lab";
 import { getErrorMessage } from "../../api/client";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
+import dayjs from "dayjs";
+
 import { formatDateRu } from "../../utility/format";
 import {
   findLabSettingsProblem,
@@ -56,6 +63,8 @@ const LabSettingsPage: React.FC = () => {
   const [busy, setBusy] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState(false);
+  const [syncBusy, setSyncBusy] = React.useState(false);
+  const [syncError, setSyncError] = React.useState<string | null>(null);
 
   const configQuery = useQuery({
     queryKey: djangoQueryKeys.lab.config,
@@ -111,6 +120,31 @@ const LabSettingsPage: React.FC = () => {
   };
 
   const mirror = config?.mirror;
+  const sync = config?.sync;
+  const syncRunning = sync?.state === "running";
+
+  // Пока обход идёт, страница переспрашивает состояние: задача пишет итог
+  // в базу, а не в ответ, и без опроса «идёт» висело бы до перезагрузки.
+  React.useEffect(() => {
+    if (!syncRunning) return undefined;
+    const timer = window.setInterval(() => {
+      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.lab.config });
+    }, 10000);
+    return () => window.clearInterval(timer);
+  }, [syncRunning, queryClient]);
+
+  const handleSync = async () => {
+    setSyncBusy(true);
+    setSyncError(null);
+    try {
+      const next = await startLabCatalogSync();
+      queryClient.setQueryData(djangoQueryKeys.lab.config, next);
+    } catch (err) {
+      setSyncError(getErrorMessage(err, "Не удалось запустить обновление"));
+    } finally {
+      setSyncBusy(false);
+    }
+  };
 
   return (
     <SettingsLayout>
@@ -166,6 +200,35 @@ const LabSettingsPage: React.FC = () => {
                 disabled={busy}
                 inputMode="numeric"
                 helperText="doctor_id, если направивший врач не выбран"
+                sx={{ maxWidth: 320 }}
+              />
+            </Stack>
+
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField
+                label="Логин в ЛИС"
+                size="small"
+                value={form.lisUsername}
+                onChange={(e) => patch({ lisUsername: e.target.value })}
+                disabled={busy}
+                autoComplete="off"
+                helperText="Учётная запись, выданная лабораторией этой клинике"
+                sx={{ maxWidth: 320 }}
+              />
+              <TextField
+                label="Пароль в ЛИС"
+                size="small"
+                type="password"
+                value={form.lisPassword}
+                onChange={(e) => patch({ lisPassword: e.target.value })}
+                disabled={busy}
+                autoComplete="new-password"
+                placeholder={form.hasPassword ? "сохранён — оставьте пустым" : ""}
+                helperText={
+                  form.hasPassword
+                    ? "Пустое поле — пароль не меняется"
+                    : "Пароль от учётной записи ЛИС"
+                }
                 sx={{ maxWidth: 320 }}
               />
             </Stack>
@@ -268,11 +331,41 @@ const LabSettingsPage: React.FC = () => {
                 Зеркало каталога ЛИС
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Каталог, врачи и типы клиента копируются из ЛИС командой синхронизации
-                (`sync_lab_catalog`); её запускает администратор платформы — полный проход
-                занимает больше часа.
+                Анализы, цены, пробирки, памятки, врачи и типы клиента — копия справочников
+                лаборатории. Обновляется сама раз в неделю; кнопкой — когда лаборатория
+                поменяла прайс. Полный проход идёт в фоне до часа, страницу можно закрыть.
               </Typography>
             </Box>
+
+            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Button
+                variant="outlined"
+                onClick={handleSync}
+                disabled={busy || syncBusy || syncRunning || !config?.configured}
+                startIcon={
+                  syncBusy || syncRunning ? (
+                    <CircularProgress size={16} />
+                  ) : (
+                    <SyncOutlined />
+                  )
+                }
+              >
+                {syncRunning ? "Обновление идёт…" : "Обновить каталог"}
+              </Button>
+              {sync && sync.state !== "idle" && (
+                <Typography variant="body2" color="text.secondary">
+                  {syncRunning
+                    ? `начато ${dayjs(sync.startedAt).format("DD.MM.YYYY HH:mm")}`
+                    : sync.state === "ok"
+                      ? `последнее обновление ${dayjs(sync.finishedAt).format("DD.MM.YYYY HH:mm")}`
+                      : ""}
+                </Typography>
+              )}
+            </Stack>
+            {sync?.state === "failed" && sync.error && (
+              <Alert severity="error">Лаборатория отказала: {sync.error}</Alert>
+            )}
+            {syncError && <Alert severity="error">{syncError}</Alert>}
             {mirror && (
               <Box
                 sx={{

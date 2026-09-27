@@ -13,6 +13,9 @@ const config: LabConfig = {
   lisOrganizationId: 2497,
   lisDoctorId: 123,
   chargeInstruments: true,
+  lisUsername: "avicenna",
+  hasPassword: true,
+  sync: { state: "idle", startedAt: null, finishedAt: null, error: "" },
   branches: [
     { branchId: 1, branchName: "Центр", lisRegistryId: 259269, lisLaboratoryId: 950463 },
     { branchId: 2, branchName: "Филиал", lisRegistryId: null, lisLaboratoryId: null },
@@ -31,6 +34,9 @@ describe("labConfigToForm", () => {
       lisOrganizationId: "2497",
       lisDoctorId: "123",
       chargeInstruments: true,
+      lisUsername: "avicenna",
+      lisPassword: "",
+      hasPassword: true,
       branches: [
         { branchId: 1, branchName: "Центр", lisRegistryId: "259269", lisLaboratoryId: "950463" },
         { branchId: 2, branchName: "Филиал", lisRegistryId: "", lisLaboratoryId: "" },
@@ -67,12 +73,30 @@ describe("findLabSettingsProblem", () => {
   });
 });
 
+describe("учётная запись ЛИС", () => {
+  it("без логина не сохраняем — его выдаёт лаборатория", () => {
+    expect(findLabSettingsProblem(form({ lisUsername: "  " }))).toContain("логин");
+  });
+
+  it("первое подключение требует пароль", () => {
+    expect(
+      findLabSettingsProblem(form({ hasPassword: false, lisPassword: "" })),
+    ).toContain("пароль");
+  });
+
+  it("сохранённый пароль не заставляет вводить его заново", () => {
+    expect(findLabSettingsProblem(form({ hasPassword: true, lisPassword: "" }))).toBeNull();
+  });
+});
+
 describe("labFormToInput", () => {
   it("пустая точка уезжает как null — бэкенд отвяжет филиал", () => {
     expect(labFormToInput(form())).toEqual({
       lisOrganizationId: 2497,
       lisDoctorId: 123,
       chargeInstruments: true,
+      lisUsername: "avicenna",
+      lisPassword: "",
       branches: [
         { branchId: 1, lisRegistryId: 259269, lisLaboratoryId: 950463 },
         { branchId: 2, lisRegistryId: null, lisLaboratoryId: null },
