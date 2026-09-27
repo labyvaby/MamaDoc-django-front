@@ -242,7 +242,8 @@
   "serviceLine": {
     "conclusionReady": "{{conclusion.nom, capitalize}}: готово",
     "conclusionDraft": "{{conclusion.nom, capitalize}}: черновик",
-    "conclusionsProgress": "{{conclusion.nomPl, capitalize}}: готово {{done}} из {{count}}"
+    "conclusionsProgress": "{{conclusion.nomPl, capitalize}}: готово {{done}} из {{count}}",
+    "conclusionsCount": "{{conclusion.nomPl, capitalize}}: {{count}}, есть черновики"
   },
   "serviceRow": {
     "addSpecialist": "+ Добавить {{specialist.acc}}",

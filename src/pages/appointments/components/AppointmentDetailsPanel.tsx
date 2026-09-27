@@ -552,7 +552,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         durationMinutes: sl.durationMinutes,
         amount: som(lineAmount),
         conclusionState: sl.conclusionState,
-        conclusionsTotal: sl.conclusionsTotal,
+        // conclusionsTotal бэк обещал, но отдаёт только conclusionIds (27.09.2026).
+        conclusionsTotal: sl.conclusionsTotal ?? sl.conclusionIds?.length,
         conclusionsCompleted: sl.conclusionsCompleted,
         action:
           canOverridePrice &&
