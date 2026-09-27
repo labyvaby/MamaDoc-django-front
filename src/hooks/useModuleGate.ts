@@ -3,6 +3,7 @@ import { usePermissions } from "./usePermissions";
 import { DOCUMENTS_USE_MOCKS } from "../api/documents";
 import { CLEANING_USE_MOCKS } from "../api/cleaning";
 import { KNOWLEDGE_USE_MOCKS } from "../api/knowledge";
+import { REALESTATE_USE_MOCKS } from "../api/realestate";
 
 /**
  * Единая точка доступа к модулям, работающим на моках до готовности бэка.
@@ -27,7 +28,29 @@ export const MOCKED_MODULE_GATES = {
     mocksEnabled: KNOWLEDGE_USE_MOCKS,
     permissions: ["knowledge.view"],
   },
+  // Квартиры и шахматка застройщика (вертикаль realestate). Ключ модуля и
+  // код права — предположение фронта, бэк их ещё не завёл (см. api/realestate.ts).
+  realestate: {
+    mocksEnabled: REALESTATE_USE_MOCKS,
+    permissions: ["realestate.view"],
+  },
 } as const;
+
+/**
+ * DEV-переключатель модулей, которых бэк ещё не выдаёт ни одной организации:
+ *   localStorage.setItem("mamadoc:modules", "realestate"); location.reload();
+ * Работает только в dev-сборке и только для модулей на моках.
+ */
+const DEV_MODULES_KEY = "mamadoc:modules";
+
+function devEnabledModules(): string[] {
+  if (!import.meta.env.DEV) return [];
+  try {
+    return (localStorage.getItem(DEV_MODULES_KEY) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
 
 export type MockedModule = keyof typeof MOCKED_MODULE_GATES;
 
@@ -46,6 +69,7 @@ export function useModuleGate() {
     loading,
     moduleGate: (module: MockedModule, permissions?: readonly string[]): boolean => {
       const gate = MOCKED_MODULE_GATES[module];
+      if (gate.mocksEnabled && devEnabledModules().includes(module)) return true;
       return hasModule(module) && (gate.mocksEnabled || can([...(permissions ?? gate.permissions)]));
     },
   };

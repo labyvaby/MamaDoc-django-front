@@ -1,6 +1,12 @@
 import React from "react";
 
-import { isAiUnavailableError, requestAiAssistBatch, type AiAssistField } from "../../api/medical";
+import {
+  fitAiFormRows,
+  isAiUnavailableError,
+  requestAiAssistBatch,
+  type AiAssistField,
+  type AiAssistForm,
+} from "../../api/medical";
 
 /** Состояние подсказки у одного поля. */
 export interface AiAssistFieldState {
@@ -8,6 +14,15 @@ export interface AiAssistFieldState {
   /** Текст, который врач ещё не применил и не отклонил. */
   suggestion: string | null;
 }
+
+/**
+ * Ключ подсказки: колонка заключения или строка бланка (`row:<id>`).
+ * Префикс нужен, потому что id строки задаёт администратор, и строка с id
+ * `conclusion` иначе слилась бы с колонкой.
+ */
+export type AiAssistKey = AiAssistField | `row:${string}`;
+
+export const aiRowKey = (rowId: string): AiAssistKey => `row:${rowId}`;
 
 /** Итог одного нажатия «Помощь AI» — по нему дровер показывает один тост. */
 export interface AiAssistSummary {
@@ -21,7 +36,7 @@ export interface AiAssistSummary {
   failed: number;
 }
 
-type StateMap = Partial<Record<AiAssistField, AiAssistFieldState>>;
+type StateMap = Partial<Record<AiAssistKey, AiAssistFieldState>>;
 
 interface UseAiAssistOptions {
   /** Строка приёма — контекст для модели; без неё черновик приходит пустым. */
@@ -33,12 +48,13 @@ interface UseAiAssistOptions {
 /**
  * Подсказки AI-помощника для полей заключения — одна кнопка на всю форму.
  *
- * Нажатие — один пакетный запрос по всем доступным полям
- * (`POST /medical/ai/assist/batch/`, бэк 16.09.2026): модель отвечает
- * одним вызовом, разделы согласованы между собой, 48–60 с на 5 полей.
- * Подсказки появляются все разом, когда вернётся ответ. По 502 (сервис лёг
- * или кончилась квота провайдера) ничего не дозапрашиваем и не повторяем:
- * квота общая на всех, повторы её только сжигают.
+ * Нажатие — один пакетный запрос по всем доступным колонкам и свободным
+ * строкам бланка (`POST /medical/ai/assist/batch/`, бэк 16.09 и 27.09.2026):
+ * разделы согласованы между собой, 48–60 с на 5 полей; строки бэк режет на
+ * параллельные чанки, по времени это один чанк. Подсказки появляются все
+ * разом, когда вернётся ответ. По 502 (сервис лёг или кончилась квота
+ * провайдера) ничего не дозапрашиваем и не повторяем: квота общая на всех,
+ * повторы её только сжигают.
  *
  * Держится отдельно от текста полей: ответ модели — предложение рядом с
  * оригиналом, а не значение. В само поле текст попадает только когда
@@ -55,48 +71,65 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
   const settledRef = React.useRef(onSettled);
   settledRef.current = onSettled;
 
-  const patch = React.useCallback((field: AiAssistField, next: Partial<AiAssistFieldState>) => {
+  const patch = React.useCallback((key: AiAssistKey, next: Partial<AiAssistFieldState>) => {
     setState((prev) => ({
       ...prev,
-      [field]: { loading: false, suggestion: null, ...prev[field], ...next },
+      [key]: { loading: false, suggestion: null, ...prev[key], ...next },
     }));
   }, []);
 
-  /** Запросить подсказки по всем переданным полям разом. */
+  /**
+   * Запросить подсказки по всем переданным колонкам и строкам бланка разом.
+   * Колонку, которую бланк собирает (`form.target`), вызывающий может и не
+   * убирать — её отсеет `requestAiAssistBatch`, и плашки по ней не будет.
+   */
   const requestAll = React.useCallback(
-    async (entries: Array<{ field: AiAssistField; text: string }>) => {
-      if (entries.length === 0) return;
+    async (
+      entries: Array<{ field: AiAssistField; text: string }>,
+      form?: AiAssistForm | null,
+    ) => {
+      const rows = form ? fitAiFormRows(form.rows) : [];
+      const sentForm = form && rows.length > 0 ? { ...form, rows } : null;
+      const fields = sentForm ? entries.filter((e) => e.field !== sentForm.target) : entries;
+      const keys: AiAssistKey[] = [
+        ...fields.map((e) => e.field),
+        ...rows.map((row) => aiRowKey(row.id)),
+      ];
+      if (keys.length === 0) return;
       controller.current?.abort();
       const ctrl = new AbortController();
       controller.current = ctrl;
       // Прежние неприменённые подсказки уходят: врач попросил заново.
       setState(
-        Object.fromEntries(
-          entries.map(({ field }) => [field, { loading: true, suggestion: null }]),
-        ) as StateMap,
+        Object.fromEntries(keys.map((key) => [key, { loading: true, suggestion: null }])) as StateMap,
       );
 
       const summary: AiAssistSummary = {
-        total: entries.length,
+        total: keys.length,
         suggested: 0,
         empty: 0,
         unavailable: 0,
         failed: 0,
       };
       try {
-        const result = await requestAiAssistBatch(entries, serviceLineId, ctrl.signal);
+        const result = await requestAiAssistBatch(fields, {
+          serviceLineId,
+          form: sentForm,
+          signal: ctrl.signal,
+        });
         if (ctrl.signal.aborted) return;
-        for (const { field } of entries) {
-          const suggestion = result[field];
-          patch(field, { loading: false, suggestion });
+        const got = (key: AiAssistKey, suggestion: string | null | undefined) => {
+          patch(key, { loading: false, suggestion: suggestion ?? null });
           if (suggestion == null) summary.empty += 1;
           else summary.suggested += 1;
-        }
+        };
+        for (const { field } of fields) got(field, result.fields[field]);
+        for (const row of rows) got(aiRowKey(row.id), result.rows[row.id]);
       } catch (err) {
         if (ctrl.signal.aborted) return;
-        for (const { field } of entries) patch(field, { loading: false, suggestion: null });
-        if (isAiUnavailableError(err)) summary.unavailable = entries.length;
-        else summary.failed = entries.length;
+        for (const key of keys) patch(key, { loading: false, suggestion: null });
+        if (isAiUnavailableError(err)) summary.unavailable = keys.length;
+        else summary.failed = keys.length;
       }
       if (controller.current === ctrl) controller.current = null;
       settledRef.current(summary);
@@ -105,15 +138,15 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
   );
 
   const dismiss = React.useCallback(
-    (field: AiAssistField) => patch(field, { suggestion: null }),
+    (key: AiAssistKey) => patch(key, { suggestion: null }),
     [patch],
   );
 
   /** Забрать текст предложения; применяет его к полю сам дровер. */
   const take = React.useCallback(
-    (field: AiAssistField): string | null => {
-      const text = state[field]?.suggestion ?? null;
-      if (text != null) patch(field, { suggestion: null });
+    (key: AiAssistKey): string | null => {
+      const text = state[key]?.suggestion ?? null;
+      if (text != null) patch(key, { suggestion: null });
       return text;
     },
     [patch, state],
@@ -129,14 +162,14 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
   React.useEffect(() => reset, [reset]);
 
   const of = React.useCallback(
-    (field: AiAssistField): AiAssistFieldState => state[field] ?? { loading: false, suggestion: null },
+    (key: AiAssistKey): AiAssistFieldState => state[key] ?? { loading: false, suggestion: null },
     [state],
   );
 
-  const fields = Object.keys(state) as AiAssistField[];
-  const loadingCount = fields.filter((f) => state[f]?.loading).length;
+  const keys = Object.keys(state) as AiAssistKey[];
+  const loadingCount = keys.filter((k) => state[k]?.loading).length;
   /** Поля с неприменёнными подсказками — для «Применить все». */
-  const suggestedFields = fields.filter((f) => state[f]?.suggestion != null);
+  const suggestedKeys = keys.filter((k) => state[k]?.suggestion != null);
 
   return {
     of,
@@ -147,6 +180,6 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
     loading: loadingCount > 0,
     /** Сколько полей ждут ответа — для «AI заполняет 5 полей…». */
     loadingCount,
-    suggestedFields,
+    suggestedKeys,
   };
 }

@@ -220,6 +220,9 @@ export const PERMISSIONS = {
   KNOWLEDGE_VIEW: 'knowledge.view',
   KNOWLEDGE_MANAGE: 'knowledge.manage',
 
+  // Квартиры и шахматка застройщика — код предполагаемый, бэк модуль ещё делает
+  REALESTATE_VIEW: 'realestate.view',
+
   // Вакцины (контракт: frontend-vaccinations-guide.md)
   VACCINATIONS_VIEW: 'vaccinations.view',
   VACCINATIONS_MANAGE: 'vaccinations.manage',

@@ -125,6 +125,12 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     path: '/knowledge/:articleId',
     requiredPermissions: [PERMISSIONS.KNOWLEDGE_VIEW],
   },
+
+  // Квартиры и шахматка застройщика (модуль realestate, пока на моках)
+  {
+    path: '/realestate/chessboard',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
 ];
 
 /**

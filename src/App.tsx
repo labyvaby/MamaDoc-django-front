@@ -101,6 +101,7 @@ const CleaningSettingsPage = lazy(() => import("./pages/settings/CleaningSetting
 const AnnouncementsSettingsPage = lazy(() => import("./pages/settings/AnnouncementsSettingsPage"));
 const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
+const RealEstateChessboardPage = lazy(() => import("./pages/realestate"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ReviewShortLinkPage = lazy(() => import("./pages/reviews/ShortLinkPage"));
@@ -1396,6 +1397,17 @@ function App() {
                                 <RequireModule module="knowledge">
                                   <Suspense fallback={<LinearProgress />}>
                                     <KnowledgePage />
+                                  </Suspense>
+                                </RequireModule>
+                              }
+                            />
+                            {/* Квартиры и шахматка застройщика — вертикаль realestate, на моках. */}
+                            <Route
+                              path="realestate/chessboard"
+                              element={
+                                <RequireModule module="realestate">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <RealEstateChessboardPage />
                                   </Suspense>
                                 </RequireModule>
                               }

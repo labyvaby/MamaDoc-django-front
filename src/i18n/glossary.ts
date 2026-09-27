@@ -1,6 +1,7 @@
 import clinicGlossary from "../locales/glossary/clinic.json";
 import beautyGlossary from "../locales/glossary/beauty.json";
 import hotelGlossary from "../locales/glossary/hotel.json";
+import realestateGlossary from "../locales/glossary/realestate.json";
 import {
   applyGlossaryOverrides,
   type GlossaryOverrides,
@@ -40,6 +41,7 @@ const PROFILES: Record<Vertical, Glossary> = {
   beauty: beautyGlossary as Glossary,
   retail: retailGlossary,
   hotel: hotelGlossary as Glossary,
+  realestate: realestateGlossary as Glossary,
 };
 
 /** Список поддерживаемых вертикалей — для настроек и валидации. */
@@ -51,6 +53,7 @@ export const VERTICAL_LABELS: Record<Vertical, string> = {
   beauty: "Салон красоты",
   retail: "Магазин / ритейл",
   hotel: "Отель",
+  realestate: "Застройщик / недвижимость",
 };
 
 /** Проверка, что строка с бэкенда — известная нам вертикаль. */
