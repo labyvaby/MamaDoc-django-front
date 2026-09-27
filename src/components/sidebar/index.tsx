@@ -29,6 +29,7 @@ import { useT } from "../../i18n/VerticalProvider";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
+import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
@@ -414,6 +415,7 @@ const SidebarSecondary: React.FC = () => {
     deals: DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals),
     expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
+    realestate: moduleGate("realestate"),
     achievements: can(PAGE_PERMISSIONS.achievements),
     // ОРГАНИЗАЦИЯ
     employees: can(PAGE_PERMISSIONS.employees),
@@ -609,7 +611,7 @@ const SidebarSecondary: React.FC = () => {
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
+    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.realestate || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
     "storage": can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
@@ -769,6 +771,11 @@ const SidebarSecondary: React.FC = () => {
             label="Воронка продаж"
             collapsed={siderCollapsed}
           />
+        )}
+
+        {/* Квартиры и шахматка застройщика (модуль realestate, пока на моках) */}
+        {show("my-work") && can_.realestate && (
+          <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />
         )}
 
         {/* Кабинет врача */}
