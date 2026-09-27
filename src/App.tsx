@@ -103,6 +103,7 @@ const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
+const ReviewShortLinkPage = lazy(() => import("./pages/reviews/ShortLinkPage"));
 const PublicBookSpecialtiesPage = lazy(() => import("./pages/public-booking/SpecialtiesPage"));
 const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsPage"));
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
@@ -144,8 +145,9 @@ const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
 const OdoctorSettingsPage = lazy(() => import("./pages/settings/OdoctorSettingsPage"));
-const ChatwootLeadsSettingsPage = lazy(() => import("./pages/settings/ChatwootLeadsSettingsPage"));
 const LabSettingsPage = lazy(() => import("./pages/settings/LabSettingsPage"));
+const ChatwootLeadsSettingsPage = lazy(() => import("./pages/settings/ChatwootLeadsSettingsPage"));
+const AltegioSettingsPage = lazy(() => import("./pages/settings/AltegioSettingsPage"));
 const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const ClientsSettingsPage = lazy(() => import("./pages/settings/ClientsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
@@ -1031,6 +1033,16 @@ function App() {
                           }
                         />
                         <Route
+                          path="settings/lab"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.lab}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <LabSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="settings/chatwoot"
                           element={
                             <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.chatwoot}>
@@ -1040,14 +1052,17 @@ function App() {
                             </RequirePermission>
                           }
                         />
+                        {/* Altegio → ErkinAI: новая закрытая страница — только
+                            суперадминистратору, как и её API, пока заказчик
+                            отдельно не откроет раздел ролям организации. */}
                         <Route
-                          path="settings/lab"
+                          path="settings/altegio"
                           element={
-                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.lab}>
+                            <RequireSuperAdmin>
                               <Suspense fallback={<LinearProgress />}>
-                                <LabSettingsPage />
+                                <AltegioSettingsPage />
                               </Suspense>
-                            </RequirePermission>
+                            </RequireSuperAdmin>
                           }
                         />
                         <Route
@@ -1477,6 +1492,14 @@ function App() {
                       <Route
                         path="update-password"
                         element={<Navigate to="/profile" replace />}
+                      />
+                      <Route
+                        path="r/:code"
+                        element={
+                          <Suspense fallback={<LinearProgress />}>
+                            <ReviewShortLinkPage />
+                          </Suspense>
+                        }
                       />
                       <Route
                         path="review/:token"

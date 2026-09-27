@@ -199,6 +199,24 @@ function fromLiveConclusion(row: DjangoPatientConclusion): OldConclusion {
 }
 
 /**
+ * Адрес печати живого заключения — тот же документ, что из приёма; у архивной
+ * записи своей страницы печати нет (null).
+ *
+ * `conclusionId` обязателен: с 22.09.2026 у строки услуги бывает несколько
+ * документов, и без него печать открыла бы первый документ строки, а не тот,
+ * что врач смотрит в карточке.
+ */
+export function livePrintPath(item: OldConclusion): string | null {
+  if (item.source !== "current" || !item.appointment_id || !item.service_line_id) {
+    return null;
+  }
+  const params = new URLSearchParams({ lineId: String(item.service_line_id) });
+  const conclusionId = Number(item.id.replace(/^live-/, ""));
+  if (Number.isFinite(conclusionId)) params.set("conclusionId", String(conclusionId));
+  return `/print/conclusion/${item.appointment_id}?${params}`;
+}
+
+/**
  * Вся история заключений пациента: архив прошлых систем плюс живые записи
  * текущей системы.
  *

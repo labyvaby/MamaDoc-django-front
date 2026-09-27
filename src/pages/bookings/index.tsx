@@ -785,7 +785,8 @@ const BookingsPage: React.FC = () => {
       cols.push({
         field: "claimedBy",
         headerName: "В работе",
-        width: 120,
+        // Шире, чтобы имя + крестик «снять отметку» помещались в ячейке.
+        width: 150,
         sortable: false,
         renderCell: ({ row }) => (
           <Box onClick={(e) => e.stopPropagation()}>

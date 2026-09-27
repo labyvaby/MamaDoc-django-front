@@ -35,7 +35,7 @@ export const PAGE_PERMISSIONS = {
   reports: "reports.view",
   payroll: ["payroll.view", "payroll.view_own"],
   notifications: "notifications.page.view",
-  reviews: ["reviews.view", "reviews.manage"],
+  reviews: ["reviews.view", "reviews.view_own", "reviews.handle", "reviews.manage"],
   bookings: ["bookings.view", "bookings.manage"],
   // Раздел «Чаты» — встроенный Chatwoot. Право выдаётся ролям в редакторе
   // ролей; сам аккаунт в Chatwoot заводит его администратор отдельно.
@@ -131,6 +131,9 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // (chatwoot.manage), отдельное от chatwoot.view — видеть чаты и
   // настраивать секрет приёмника не одно и то же.
   chatwoot: "chatwoot.manage",
+  // Синхронизация с Altegio. Страница закрыта: маршрут под RequireSuperAdmin,
+  // API — только суперадмину; код не выдан ни одной роли.
+  altegio: "altegio.manage",
   // Подключение ЛИС: код организации, точки регистрации филиалов.
   lab: "lab.settings.manage",
   // Каналы продаж Viva (Booking.com и др.) — вкладка видна только

@@ -115,6 +115,11 @@ export const posColors = (t: Theme) => ({
   dangerBg: t.palette.error.lighter,
   /** Списания в итогах (бонусы, кешбэк, сертификат) и возврат строки. */
   positive: t.palette.success.onSurface,
+  /** Разные типы списаний в итогах не должны сливаться в один цвет. */
+  discount: t.palette.error.onSurface,
+  bonus: t.palette.info.main,
+  cashback: t.palette.warning.main,
+  certificate: t.palette.success.main,
 });
 
 export type PosColors = ReturnType<typeof posColors>;

@@ -260,6 +260,7 @@ const TAB_DEFS: TabDef[] = [
     icon: <ScienceOutlined fontSize="small" />,
     group: "operations",
   },
+  { key: "altegio", to: "/settings/altegio", icon: <RouterOutlined fontSize="small" />, group: "operations" },
 ];
 
 /**

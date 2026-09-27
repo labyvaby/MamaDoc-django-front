@@ -226,6 +226,12 @@ export const djangoQueryKeys = {
       ["django", "reviews", "settings", organizationId ?? null] as const,
     byAppointment: (appointmentId: number) =>
       ["django", "reviews", "appointment", appointmentId] as const,
+    staff: (params: Record<string, unknown>) =>
+      ["django", "reviews", "staff", params] as const,
+    tags: (params: Record<string, unknown>) =>
+      ["django", "reviews", "tags", params] as const,
+    mapClicks: (params: Record<string, unknown>) =>
+      ["django", "reviews", "map-clicks", params] as const,
   },
 
   tasks: {
@@ -469,6 +475,21 @@ export const djangoQueryKeys = {
     // отправил бы оператора сопоставлять то, чего там уже нет.
     cabinetDoctors: (branchId: number) =>
       ["django", "odoctor", "cabinet-doctors", branchId] as const,
+  },
+  altegio: {
+    // Подключение одно на организацию.
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "settings", organizationId ?? null] as const,
+    // Списки из самого Altegio — не кешируются надолго: запрос уходит во
+    // внешнюю систему, вчерашний список специалистов выдавал бы ушедших.
+    locations: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "locations", organizationId ?? null] as const,
+    staff: (organizationId: number | null | undefined, altegioLocationId: number) =>
+      ["django", "altegio", "staff", organizationId ?? null, altegioLocationId] as const,
+    services: (organizationId: number | null | undefined, altegioLocationId: number) =>
+      ["django", "altegio", "services", organizationId ?? null, altegioLocationId] as const,
+    journal: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "journal", organizationId ?? null] as const,
   },
 
   scheduling: {
