@@ -52,6 +52,8 @@ import { ConnectProgramDialog } from "./ConnectProgramDialog";
 import { EnrollmentActionsDrawer } from "./EnrollmentActionsDrawer";
 import { InteractionHistory } from "./InteractionHistory";
 import { ModuleRecords } from "./ModuleRecords";
+import { isVisionModule } from "./vision/visionData";
+import { VisionModule } from "./vision/VisionModule";
 import { UpcomingEvents } from "./UpcomingEvents";
 import { ProgramConstructorDrawer } from "./ProgramConstructorDrawer";
 
@@ -491,7 +493,16 @@ const PatientProgramPage: React.FC = () => {
                 </Stack>
               )}
 
-              {selectedModule && (
+              {selectedModule && (isVisionModule(selectedModule) ? (
+                <VisionModule
+                  enrollmentId={selectedEnrollment.id}
+                  module={selectedModule}
+                  scope={scope}
+                  canManage={canManageEnrollments && selectedEnrollment.isEffectivelyActive}
+                  icon={moduleIcon(selectedModule)}
+                  birthDate={patient.birthDate ?? null}
+                />
+              ) : (
                 <ModuleRecords
                   enrollmentId={selectedEnrollment.id}
                   module={selectedModule}
@@ -499,7 +510,7 @@ const PatientProgramPage: React.FC = () => {
                   canManage={canManageEnrollments && selectedEnrollment.isEffectivelyActive}
                   icon={moduleIcon(selectedModule)}
                 />
-              )}
+              ))}
             </Box>
           </Box>
         </Box>

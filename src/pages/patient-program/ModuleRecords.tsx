@@ -295,7 +295,11 @@ export const ModuleRecords: React.FC<ModuleRecordsProps> = ({ enrollmentId, modu
       <AppCard
         variant="outlined"
         title={module.name}
-        subheader={typeof module.settings.description === "string" ? module.settings.description : module.moduleType}
+        subheader={
+          typeof module.settings.description === "string" && module.settings.description.trim()
+            ? module.settings.description
+            : undefined
+        }
         headerActions={canManage ? (
           <AppButton variant="contained" size="small" startIcon={<AddOutlined />} onClick={() => setDrawerOpen(true)}>
             Добавить запись
