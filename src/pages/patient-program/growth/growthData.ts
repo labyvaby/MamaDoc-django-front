@@ -121,9 +121,14 @@ export function parseMeasure(raw: string): number | null {
   return positive(raw);
 }
 
-/** Данные записи: только заполненное, числами. */
-export function buildGrowthData(form: GrowthForm): Record<string, number> {
-  const data: Record<string, number> = {};
+const MEASURE_KEYS: ReadonlySet<string> = new Set(["heightCm", "weightKg", "headCircumferenceCm", "chestCircumferenceCm"]);
+
+/**
+ * Данные записи: замеры — только заполненные, числами; прочие поля раздела
+ * (клиника могла добавить их в конструкторе) при правке не теряются.
+ */
+export function buildGrowthData(form: GrowthForm, previous: Record<string, unknown> = {}): Record<string, unknown> {
+  const data: Record<string, unknown> = Object.fromEntries(Object.entries(previous).filter(([key]) => !MEASURE_KEYS.has(key)));
   const put = (key: string, raw: string) => {
     const value = parseMeasure(raw);
     if (value != null) data[key] = value;

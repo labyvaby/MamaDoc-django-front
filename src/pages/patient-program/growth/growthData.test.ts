@@ -77,4 +77,10 @@ describe("growth data", () => {
     expect(stepValue("24,3", -0.1, 1)).toBe("24.2");
     expect(stepValue("0.1", -0.5, 1)).toBe("0");
   });
+
+  it("keeps the section's other fields when a measurement is edited", () => {
+    const form = { ...emptyGrowthForm(), heightCm: "123,5", weightKg: "24" };
+    const previous = { heightCm: 120, weightKg: 23, headCircumferenceCm: 50, motorSkills: "ходит" };
+    expect(buildGrowthData(form, previous)).toEqual({ motorSkills: "ходит", heightCm: 123.5, weightKg: 24 });
+  });
 });

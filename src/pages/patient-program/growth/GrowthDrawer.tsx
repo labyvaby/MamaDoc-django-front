@@ -127,7 +127,7 @@ export const GrowthDrawer: React.FC<GrowthDrawerProps> = ({ open, enrollmentId, 
         title: record?.title || "Антропометрия",
         status: "completed",
         notes: form.notes.trim(),
-        data: buildGrowthData(form),
+        data: buildGrowthData(form, record?.data),
       };
       return record
         ? updateProgramModuleRecord(scope, enrollmentId, record.id, payload)
