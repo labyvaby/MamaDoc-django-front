@@ -54,6 +54,8 @@ import { ConnectProgramDialog } from "./ConnectProgramDialog";
 import { EnrollmentActionsDrawer } from "./EnrollmentActionsDrawer";
 import { InteractionHistory } from "./InteractionHistory";
 import { ModuleRecords } from "./ModuleRecords";
+import { isGrowthModule } from "./growth/growthData";
+import { GrowthModule } from "./growth/GrowthModule";
 import { isVisionModule } from "./vision/visionData";
 import { VisionModule } from "./vision/VisionModule";
 import { UpcomingEvents } from "./UpcomingEvents";
@@ -516,7 +518,17 @@ const PatientProgramPage: React.FC = () => {
                 <BookAppointments patientId={patient.id} scope={scope} />
               )}
 
-              {selectedModule && (isVisionModule(selectedModule) ? (
+              {selectedModule && (isGrowthModule(selectedModule) ? (
+                <GrowthModule
+                  enrollmentId={selectedEnrollment.id}
+                  module={selectedModule}
+                  scope={scope}
+                  canManage={canManageEnrollments && selectedEnrollment.isEffectivelyActive}
+                  icon={moduleIcon(selectedModule)}
+                  birthDate={patient.birthDate ?? null}
+                  gender={patient.gender}
+                />
+              ) : isVisionModule(selectedModule) ? (
                 <VisionModule
                   enrollmentId={selectedEnrollment.id}
                   module={selectedModule}
