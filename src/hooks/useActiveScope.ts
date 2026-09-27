@@ -62,4 +62,14 @@ export function useActiveScope(): ActiveScope {
   });
 }
 
+/**
+ * У организации ровно один действующий филиал. Такая организация для
+ * зарплатного отчёта и плана выручки считается «всей организацией»:
+ * сессия там всегда стоит в филиале (бэкенд, 2026-09-27), а заморозка
+ * расчёта и общий план живут на уровне организации.
+ */
+export const isSingleBranchOrg = (
+  org: { activeBranchCount?: number } | null | undefined,
+): boolean => org?.activeBranchCount === 1;
+
 export default useActiveScope;
