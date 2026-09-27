@@ -69,6 +69,7 @@ import {
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../../api/queryKeys";
 import { formatKGS } from "../../../utility/format";
+import { salaryReportBranchId } from "./branchScope";
 
 const DjangoSalaryReportsPage: React.FC = () => {
   const { t } = useT("salaryReports");
@@ -108,11 +109,12 @@ const DjangoSalaryReportsPage: React.FC = () => {
   const month = parsed.month() + 1;
   const selectedMonth = parsed.startOf("month").format("YYYY-MM-DD");
 
-  // Филиальный срез следует за выбранным в сайдбаре филиалом (как остальные
-  // страницы): «Все филиалы» — полный org-wide расчёт (участвует в заморозке),
-  // конкретный филиал — живой срез (приёмы и авансы филиала, без часов СКУД —
-  // у смен нет филиала). Заморозка в срезе недоступна.
-  const branchFilterId = activeBranch?.id ?? undefined;
+  // Филиальный срез следует за выбранным в сайдбаре филиалом: «Все филиалы» —
+  // полный org-wide расчёт (участвует в заморозке), конкретный филиал —
+  // живой срез (приёмы, авансы, премии и часы СКУД филиала). Заморозка в
+  // срезе недоступна. Организация с одним филиалом всегда получает org-wide
+  // отчёт (branchScope.ts).
+  const branchFilterId = salaryReportBranchId(activeBranch?.id, activeOrganization);
 
   const query = useQuery({
     queryKey: djangoQueryKeys.payroll.report({

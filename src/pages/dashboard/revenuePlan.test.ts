@@ -3,6 +3,7 @@ import {
   buildPlanThemeConfig,
   planProgress,
   planScopeKey,
+  planScopeKeyFor,
   readRevenuePlans,
   resolvePlan,
   setPlan,
@@ -81,5 +82,15 @@ describe("план выручки: прогресс", () => {
   it("без темпа неизвестно, успеваем ли", () => {
     expect(planProgress(100, 10, 2, 30, null).onTrack).toBeNull();
     expect(planProgress(100, 10, 5, 30, 60).onTrack).toBe(false);
+  });
+});
+
+describe("planScopeKeyFor", () => {
+  it("организация с одним филиалом — общий план", () => {
+    expect(planScopeKeyFor(7, { activeBranchCount: 1 })).toBe("org");
+  });
+  it("несколько филиалов — план филиала или организации", () => {
+    expect(planScopeKeyFor(7, { activeBranchCount: 2 })).toBe("branch:7");
+    expect(planScopeKeyFor(null, { activeBranchCount: 2 })).toBe("org");
   });
 });
