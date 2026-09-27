@@ -46,7 +46,7 @@ import {
   BranchesWidget,
 } from "./operationsWidgets";
 import { exportDashboardXlsx } from "./exportDashboardXlsx";
-import { planScopeKey, readRevenuePlans, resolvePlan } from "./revenuePlan";
+import { planScopeKeyFor, readRevenuePlans, resolvePlan } from "./revenuePlan";
 import { StaffWidget } from "./StaffWidget";
 import { PulseWidget } from "./PulseWidget";
 import { AttentionWidget } from "./AttentionWidget";
@@ -185,7 +185,7 @@ export const DashboardPage: React.FC = () => {
         data,
         plan: resolvePlan(
           readRevenuePlans(activeOrganization?.themeConfig),
-          planScopeKey(scope.branchId),
+          planScopeKeyFor(scope.branchId, activeOrganization),
           resolvePeriod("month", dayjs(range.dateTo)).month,
         )?.amount,
         organizationName: activeOrganization?.name ?? "",
