@@ -10,15 +10,6 @@ export function growthColor(theme: Theme, status: GrowthStatus): string {
   return theme.palette.grey[400];
 }
 
-/**
- * Где в поле 24×24 у силуэтов Material Icons макушка и пятки:
- * `BoyRounded`/`GirlRounded` — 4 и 20, `AccessibilityNewRounded` — 2 и 21.
- */
-export const FIGURE_BOUNDS = {
-  child: { top: 4, bottom: 20 },
-  neutral: { top: 2, bottom: 21 },
-} as const;
-
 /** 24 → «24», 24.5 → «24,5», 15.86 при одном знаке → «15,9». */
 export function formatNumber(value: number, digits: number): string {
   return value.toFixed(digits).replace(".", ",").replace(/,0+$/, "");
