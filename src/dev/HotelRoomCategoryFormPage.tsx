@@ -47,17 +47,16 @@ import {
   IconButton,
   InputAdornment,
   MenuItem,
-  Paper,
   Stack,
   TextField,
   Tooltip,
   Typography,
-  useTheme,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
-import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import { FormCard, HotelPage, HotelPageHeader, StickyActions } from "./hotelUi";
+import { subtleBg } from "../theme/uiHelpers";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate, useParams } from "react-router";
 import { useSnackbar } from "notistack";
@@ -379,8 +378,8 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
     }, 0);
 
   return (
-    <Stack gap={2} sx={{ maxWidth: 760 }}>
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+    <Stack gap={2.5}>
+      <FormCard>
         <Stack gap={2}>
           <Typography variant="subtitle2" fontWeight={600}>
             Основное
@@ -429,17 +428,34 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
               sx={{ flex: "1 1 130px" }}
             />
           </Stack>
-          <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem", py: 0.5 }}>
-            Итого за ночь: <strong>{totalPrice.toLocaleString("ru-RU")} сом</strong>
-          </Alert>
+          {/* Итог — главная цифра формы, поэтому крупно, а не строкой в инфо-плашке. */}
+          <Stack
+            direction="row"
+            alignItems="baseline"
+            justifyContent="space-between"
+            gap={2}
+            sx={(t) => ({ px: 2, py: 1.5, borderRadius: "10px", bgcolor: subtleBg(t, true) })}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Итого за ночь, с характеристиками
+            </Typography>
+            <Stack direction="row" alignItems="baseline" gap={0.75}>
+              <Typography sx={{ fontSize: 24, fontWeight: 700, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                {totalPrice.toLocaleString("ru-RU")}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                сом
+              </Typography>
+            </Stack>
+          </Stack>
           <FormControlLabel
             control={<Checkbox checked={form.luxury} onChange={(e) => patchForm({ luxury: e.target.checked })} disabled={saving} />}
             label="Люкс-категория (акцентный бейдж в шахматке)"
           />
         </Stack>
-      </Paper>
+      </FormCard>
 
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+      <FormCard>
         <Stack gap={2}>
           <Typography variant="subtitle2" fontWeight={600}>
             Описание номера
@@ -481,9 +497,9 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
             fullWidth
           />
         </Stack>
-      </Paper>
+      </FormCard>
 
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+      <FormCard>
         <Stack gap={2}>
           <Typography variant="subtitle2" fontWeight={600}>
             Значения по умолчанию для номеров
@@ -582,9 +598,9 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
             fullWidth
           />
         </Stack>
-      </Paper>
+      </FormCard>
 
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+      <FormCard>
         <Stack direction="row" alignItems="flex-start" justifyContent="space-between" flexWrap="wrap" gap={1}>
           <Typography variant="subtitle2" fontWeight={600}>
             Характеристики
@@ -778,7 +794,7 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
             </Box>
           )}
         </Box>
-      </Paper>
+      </FormCard>
 
       {error && (
         <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
@@ -786,14 +802,17 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
         </Alert>
       )}
 
-      <Stack direction="row" gap={1} justifyContent="flex-end" sx={{ pb: 2 }}>
+      <StickyActions>
+        <Typography variant="body2" color="text.secondary" sx={{ mr: "auto" }}>
+          {totalPrice.toLocaleString("ru-RU")} сом / ночь
+        </Typography>
         <Button component={RouterLink} to={LIST_PATH} disabled={saving}>
           Отмена
         </Button>
-        <Button variant="contained" disabled={!form.name.trim() || saving} onClick={() => void submit()}>
-          {saving ? "Сохраняем…" : editing ? "Сохранить" : "Добавить"}
+        <Button variant="contained" disableElevation disabled={!form.name.trim() || saving} onClick={() => void submit()} sx={{ px: 3 }}>
+          {saving ? "Сохраняем…" : editing ? "Сохранить" : "Добавить категорию"}
         </Button>
-      </Stack>
+      </StickyActions>
     </Stack>
   );
 };
@@ -802,7 +821,6 @@ export const HotelRoomCategoryFormPage: React.FC = () => {
   const { categoryId } = useParams();
   const isEdit = categoryId != null;
   usePageTitle(isEdit ? "Категория номеров" : "Новая категория");
-  const theme = useTheme();
   const { property } = useHotelProperty();
 
   const catalogsQuery = useQuery({
@@ -820,19 +838,18 @@ export const HotelRoomCategoryFormPage: React.FC = () => {
   const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading;
 
   return (
-    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
-      <Stack spacing={2}>
-        <Stack direction="row" alignItems="center" gap={1}>
-          <Tooltip title="К списку категорий">
-            <IconButton size="small" component={RouterLink} to={LIST_PATH} aria-label="К списку категорий">
-              <ArrowBackOutlined fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <CategoryOutlined color="action" />
-          <Typography variant="h6" fontWeight={600}>
-            {isEdit ? (editing ? `Категория «${editing.name}»` : "Категория") : "Новая категория (тариф)"}
-          </Typography>
-        </Stack>
+    <HotelPage maxWidth={760}>
+        <HotelPageHeader
+          leading={
+            <Tooltip title="К списку категорий">
+              <IconButton component={RouterLink} to={LIST_PATH} aria-label="К списку категорий" sx={{ ml: -1, mr: 0.5 }}>
+                <ArrowBackOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          }
+          title={isEdit ? (editing ? editing.name : "Категория") : "Новая категория"}
+          subtitle={isEdit ? "Категория номеров (тариф)" : "Тип номера с ценой за ночь и характеристиками"}
+        />
 
         {loading ? (
           <Stack alignItems="center" sx={{ py: 4 }}>
@@ -863,8 +880,7 @@ export const HotelRoomCategoryFormPage: React.FC = () => {
             mealChoices={catalogsQuery.data?.mealOptions ?? []}
           />
         )}
-      </Stack>
-    </Box>
+    </HotelPage>
   );
 };
 

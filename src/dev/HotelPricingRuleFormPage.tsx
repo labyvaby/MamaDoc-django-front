@@ -53,18 +53,16 @@ import {
   IconButton,
   InputAdornment,
   MenuItem,
-  Paper,
   Stack,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
   Typography,
-  useTheme,
 } from "@mui/material";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
-import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
+import { FormCard, HotelPage, HotelPageHeader, StickyActions } from "./hotelUi";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate, useParams } from "react-router";
 import dayjs, { type Dayjs } from "dayjs";
@@ -396,8 +394,8 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
   ]);
 
   return (
-    <Stack gap={2} sx={{ maxWidth: 760 }}>
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+    <Stack gap={2.5}>
+      <FormCard>
         <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
           Категории номеров
         </Typography>
@@ -505,9 +503,9 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
             )}
           </Alert>
         )}
-      </Paper>
+      </FormCard>
 
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+      <FormCard>
         <Stack gap={2}>
           <Typography variant="subtitle2" fontWeight={600}>
             Основное
@@ -576,9 +574,9 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
             label="Активно — если выключить, цена в эти условия останется обычной"
           />
         </Stack>
-      </Paper>
+      </FormCard>
 
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+      <FormCard>
         <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>
           Условия
         </Typography>
@@ -752,9 +750,9 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
             </Collapse>
           </Box>
         </Stack>
-      </Paper>
+      </FormCard>
 
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+      <FormCard>
         <Stack
           direction="row"
           alignItems="center"
@@ -798,7 +796,7 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
             </Stack>
           </Stack>
         </Collapse>
-      </Paper>
+      </FormCard>
 
       {error && (
         <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
@@ -806,14 +804,14 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
         </Alert>
       )}
 
-      <Stack direction="row" gap={1} justifyContent="flex-end" sx={{ pb: 2 }}>
+      <StickyActions>
         <Button component={RouterLink} to={LIST_PATH} disabled={saving}>
           Отмена
         </Button>
-        <Button variant="contained" disabled={!canSubmit || saving} onClick={() => void submit()}>
-          {saving ? "Сохраняем…" : editing ? "Сохранить" : "Добавить"}
+        <Button variant="contained" disableElevation disabled={!canSubmit || saving} onClick={() => void submit()} sx={{ px: 3 }}>
+          {saving ? "Сохраняем…" : editing ? "Сохранить" : "Добавить правило"}
         </Button>
-      </Stack>
+      </StickyActions>
     </Stack>
   );
 };
@@ -822,7 +820,6 @@ export const HotelPricingRuleFormPage: React.FC = () => {
   const { ruleId } = useParams();
   const isEdit = ruleId != null;
   usePageTitle(isEdit ? "Правило цены" : "Новое правило");
-  const theme = useTheme();
   const { property } = useHotelProperty();
   const canManageRates = useCan("hotel.rates.manage");
 
@@ -841,19 +838,18 @@ export const HotelPricingRuleFormPage: React.FC = () => {
   const loading = roomTypesQuery.isLoading || (isEdit && rulesQuery.isLoading);
 
   return (
-    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
-      <Stack spacing={2}>
-        <Stack direction="row" alignItems="center" gap={1}>
-          <Tooltip title="К списку правил">
-            <IconButton size="small" component={RouterLink} to={LIST_PATH} aria-label="К списку правил">
-              <ArrowBackOutlined fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <PriceChangeOutlined color="action" />
-          <Typography variant="h6" fontWeight={600}>
-            {isEdit ? (editing ? `Правило «${editing.name}»` : "Правило") : "Новое правило"}
-          </Typography>
-        </Stack>
+    <HotelPage maxWidth={760}>
+        <HotelPageHeader
+          leading={
+            <Tooltip title="К списку правил">
+              <IconButton component={RouterLink} to={LIST_PATH} aria-label="К списку правил" sx={{ ml: -1, mr: 0.5 }}>
+                <ArrowBackOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          }
+          title={isEdit ? (editing ? editing.name : "Правило") : "Новое правило"}
+          subtitle="Наценка или скидка на категории номеров при заданных условиях"
+        />
 
         {!canManageRates ? (
           <Alert
@@ -890,8 +886,7 @@ export const HotelPricingRuleFormPage: React.FC = () => {
         ) : (
           <RuleForm key={ruleId ?? "new"} propertyId={property.id} editing={editing} roomTypes={roomTypesQuery.data ?? []} />
         )}
-      </Stack>
-    </Box>
+    </HotelPage>
   );
 };
 

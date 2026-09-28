@@ -26,16 +26,14 @@ import React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   Checkbox,
-  Chip,
   CircularProgress,
   Collapse,
   Dialog,
   DialogContent,
-  DialogTitle,
-  Divider,
   FormControlLabel,
   IconButton,
   MenuItem,
@@ -73,7 +71,9 @@ import {
   HOTEL_BOOKING_SOURCE_LABELS,
   HOTEL_GUARANTEE_METHOD_LABELS,
 } from "./hotelDisplay";
-import { formatHotelDateRange, nightsBetween } from "./mockDemoData";
+import { formatHotelDateRange, initialsOf, nightsBetween } from "./mockDemoData";
+import { StatusPill } from "./hotelUi";
+import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 
 /** "cash" — единственный способ, для которого не уточняем конкретный безналичный канал. */
 function isCashlessPaymentMethod(method: string): boolean {
@@ -296,88 +296,148 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const canCheckOut = canManageStays && item?.stayStatus === "checked_in";
   const hasStatusActions = canConfirm || canCancel || canCheckIn || canCheckOut;
 
+
+  const money = (v: string | number) => `${Number(v).toLocaleString("ru-RU")} ${reservation?.currency === "KGS" || !reservation ? "сом" : reservation.currency}`;
+  const total = Number(reservation?.totalAmount ?? 0);
+  const paid = Number(reservation?.paidAmount ?? 0);
+  const balance = Number(reservation?.balanceDue ?? 0);
+  const paidShare = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+  const stayStatus = item ? mapStayDisplayStatus(item.stayStatus) : null;
+  const stayColor = stayStatus ? hotelStayStatusColor(stayStatus, theme) : theme.palette.text.disabled;
+
+  const detailRows: { label: string; value: React.ReactNode }[] =
+    reservation && item
+      ? [
+          { label: "Номер", value: `${item.roomNumber ?? "не назначен"} · ${item.roomTypeName}` },
+          { label: "Гости", value: `${item.adults} взр.${item.children > 0 ? ` + ${item.children} дет.` : ""}` },
+          { label: "Питание", value: HOTEL_BOARD_TYPE_LABELS[item.boardType] ?? item.boardType },
+          { label: "Источник", value: HOTEL_BOOKING_SOURCE_LABELS[reservation.source] ?? reservation.source },
+          ...(reservation.guaranteeMethod
+            ? [{ label: "Гарантия", value: HOTEL_GUARANTEE_METHOD_LABELS[reservation.guaranteeMethod] ?? reservation.guaranteeMethod }]
+            : []),
+        ]
+      : [];
+
+  // Главное действие по статусу — одной заметной кнопкой, остальное рядом тише.
+  const primaryAction = canCheckIn
+    ? { label: "Заселить", onClick: () => void handleCheckIn() }
+    : canCheckOut
+      ? { label: "Выселить", onClick: () => void handleCheckOut() }
+      : canConfirm
+        ? { label: "Подтвердить", onClick: () => void handleConfirm() }
+        : null;
+
+  const sectionLabelSx = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary", mb: 1.25 } as const;
+  const line = `1px solid ${subtleBorder(theme)}`;
+
   return (
-    <Dialog open={reservationId != null} onClose={onClose} maxWidth="sm" fullWidth>
-      {reservationId != null && (
+    <Dialog
+      open={reservationId != null}
+      onClose={onClose}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{ sx: { borderRadius: "16px", overflow: "hidden", backgroundImage: "none" } }}
+    >
+      {reservationId != null && !reservation && (
+        <Stack alignItems="center" justifyContent="center" gap={1.5} sx={{ py: 8 }}>
+          {query.isError ? (
+            <>
+              <Typography color="text.secondary">Не удалось загрузить бронь</Typography>
+              <Button size="small" onClick={onClose}>
+                Закрыть
+              </Button>
+            </>
+          ) : (
+            <CircularProgress size={28} />
+          )}
+        </Stack>
+      )}
+
+      {reservationId != null && reservation && item && (
         <>
-          <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1.5, pr: 6 }}>
-            <Typography variant="h6" component="span" fontWeight={700}>
-              Бронь {reservation ? `№${reservation.number}` : ""}
-            </Typography>
-            {item && (
-              <Chip
-                label={HOTEL_STAY_STATUS_LABELS[mapStayDisplayStatus(item.stayStatus)]}
-                size="small"
-                sx={{
-                  bgcolor: alpha(hotelStayStatusColor(mapStayDisplayStatus(item.stayStatus), theme), theme.palette.mode === "dark" ? 0.25 : 0.14),
-                  color: hotelStayStatusColor(mapStayDisplayStatus(item.stayStatus), theme),
-                  fontWeight: 600,
-                }}
-              />
-            )}
-            {reservation && reservation.status !== "confirmed" && (
-              <Chip label={HOTEL_RESERVATION_STATUS_LABELS[reservation.status] ?? reservation.status} size="small" variant="outlined" />
-            )}
-            {item?.isOverbooking && <Chip label="Овербукинг" size="small" color="warning" />}
-            <IconButton onClick={onClose} sx={{ position: "absolute", right: 12, top: 12 }}>
-              <CloseOutlined fontSize="small" />
-            </IconButton>
-          </DialogTitle>
-
-          <DialogContent sx={{ pt: 0 }}>
-            {query.isLoading && (
-              <Stack alignItems="center" sx={{ py: 4 }}>
-                <CircularProgress size={28} />
-              </Stack>
-            )}
-            {query.isError && <Alert severity="error">Не удалось загрузить бронь.</Alert>}
-            {reservation && item && (
-              <>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  {reservation.customerName || "Без заказчика"} · номер {item.roomNumber ?? "—"} ({item.roomTypeName})
+          {/* ── Шапка ── */}
+          <Box sx={{ px: { xs: 2.5, md: 3.5 }, pt: 2.5, pb: 3, borderBottom: line }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ mb: 1.5 }}>
+              <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary" }}>
+                  Бронь №{reservation.number}
                 </Typography>
-
-                {hasStatusActions && (
-                  <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mb: 2 }}>
-                    {canConfirm && (
-                      <Button size="small" variant="outlined" disabled={actionBusy} onClick={() => void handleConfirm()}>
-                        Подтвердить
-                      </Button>
-                    )}
-                    {canCheckIn && (
-                      <Button size="small" variant="outlined" disabled={actionBusy} onClick={() => void handleCheckIn()}>
-                        Заселить
-                      </Button>
-                    )}
-                    {canCheckOut && (
-                      <Button size="small" variant="outlined" disabled={actionBusy} onClick={() => void handleCheckOut()}>
-                        Выселить
-                      </Button>
-                    )}
-                    {canCancel && (
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        color="error"
-                        disabled={actionBusy}
-                        onClick={() => setCancelPromptOpen((v) => !v)}
-                      >
-                        Отменить
-                      </Button>
-                    )}
-                  </Stack>
+                {stayStatus && <StatusPill color={stayColor} label={HOTEL_STAY_STATUS_LABELS[stayStatus]} />}
+                {reservation.status !== "confirmed" && (
+                  <StatusPill color={theme.palette.text.secondary} label={HOTEL_RESERVATION_STATUS_LABELS[reservation.status] ?? reservation.status} />
                 )}
+                {item.isOverbooking && <StatusPill color={theme.palette.warning.main} label="Овербукинг" />}
+              </Stack>
+              <IconButton
+                onClick={onClose}
+                aria-label="Закрыть"
+                sx={{ width: 34, height: 34, border: line, color: "text.secondary", flexShrink: 0, "&:hover": { color: "text.primary" } }}
+              >
+                <CloseOutlined sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Stack>
 
+            <Stack direction="row" alignItems="flex-end" justifyContent="space-between" gap={2} flexWrap="wrap">
+              <Typography sx={{ fontSize: { xs: 26, md: 32 }, fontWeight: 700, lineHeight: 1.1, letterSpacing: "-0.02em", minWidth: 0 }}>
+                {reservation.customerName || item.guests[0]?.fullName || "Без заказчика"}
+              </Typography>
+              <Box sx={{ textAlign: { xs: "left", md: "right" } }}>
+                <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 700, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                  {money(reservation.totalAmount)}
+                </Typography>
+                <Typography variant="caption" color={balance > 0 ? "error.main" : "success.main"} fontWeight={600}>
+                  {balance > 0 ? `к оплате ${money(balance)}` : "оплачено полностью"}
+                </Typography>
+              </Box>
+            </Stack>
+
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              alignItems={{ xs: "stretch", md: "center" }}
+              justifyContent="space-between"
+              gap={1.5}
+              sx={{ mt: 2 }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                {formatHotelDateRange(item.checkIn, item.checkOut)} · {nightsBetween(item.checkIn, item.checkOut)} ноч. · номер {item.roomNumber ?? "—"}
+              </Typography>
+              {hasStatusActions && (
+                <Stack direction="row" gap={1} flexWrap="wrap" justifyContent={{ xs: "flex-start", md: "flex-end" }}>
+                  {canCancel && (
+                    <Button color="error" disabled={actionBusy} onClick={() => setCancelPromptOpen((v) => !v)}>
+                      Отменить бронь
+                    </Button>
+                  )}
+                  {canConfirm && primaryAction?.label !== "Подтвердить" && (
+                    <Button variant="outlined" disabled={actionBusy} onClick={() => void handleConfirm()}>
+                      Подтвердить
+                    </Button>
+                  )}
+                  {primaryAction && (
+                    <Button
+                      variant="contained"
+                      disableElevation
+                      disabled={actionBusy}
+                      onClick={primaryAction.onClick}
+                      sx={{ px: 2.5, borderRadius: "10px", fontWeight: 700 }}
+                    >
+                      {primaryAction.label}
+                    </Button>
+                  )}
+                </Stack>
+              )}
+            </Stack>
+
+            {(actionError || checkInNeedsForce || checkOutNeedsForce || cancelPromptOpen) && (
+              <Stack gap={1.5} sx={{ mt: 2 }}>
                 {actionError && (
-                  <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+                  <Alert severity="error" onClose={() => setActionError(null)}>
                     {actionError}
                   </Alert>
                 )}
-
                 {checkInNeedsForce && (
                   <Alert
                     severity="warning"
-                    sx={{ mb: 2 }}
                     action={
                       canForceCheckIn ? (
                         <Button size="small" color="inherit" onClick={() => void handleCheckIn(true)}>
@@ -389,23 +449,20 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                     Номер не готов (грязный или в ремонте){!canForceCheckIn && " — нет прав заселить принудительно"}.
                   </Alert>
                 )}
-
                 {checkOutNeedsForce && (
                   <Alert
                     severity="warning"
-                    sx={{ mb: 2 }}
                     action={
                       <Button size="small" color="inherit" onClick={() => void handleCheckOut(true)}>
                         Выселить с долгом
                       </Button>
                     }
                   >
-                    Остаток к оплате: {Number(reservation.balanceDue).toLocaleString("ru-RU")} {reservation.currency}.
+                    Остаток к оплате: {money(reservation.balanceDue)}.
                   </Alert>
                 )}
-
                 <Collapse in={cancelPromptOpen}>
-                  <Stack gap={1.5} sx={{ mb: 2, p: 1.5, border: 1, borderColor: "divider", borderRadius: "10px" }}>
+                  <Stack gap={1.5} sx={{ p: 2, borderRadius: "12px", bgcolor: subtleBg(theme, true) }}>
                     <TextField
                       label="Причина отмены"
                       value={cancelReason}
@@ -416,157 +473,134 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                       minRows={2}
                       autoFocus
                     />
-                    <FormControlLabel
-                      control={<Checkbox size="small" checked={cancelAsNoShow} onChange={(e) => setCancelAsNoShow(e.target.checked)} />}
-                      label={<Typography variant="body2">Гость не явился (no-show)</Typography>}
-                    />
-                    <Stack direction="row" gap={1} justifyContent="flex-end">
-                      <Button size="small" onClick={() => setCancelPromptOpen(false)} disabled={actionBusy}>
-                        Закрыть
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="contained"
-                        color="error"
-                        disabled={!cancelReason.trim() || actionBusy}
-                        onClick={() => void handleCancelSubmit()}
-                      >
-                        Подтвердить отмену
-                      </Button>
+                    <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap">
+                      <FormControlLabel
+                        control={<Checkbox size="small" checked={cancelAsNoShow} onChange={(e) => setCancelAsNoShow(e.target.checked)} />}
+                        label={<Typography variant="body2">Гость не явился (no-show)</Typography>}
+                      />
+                      <Stack direction="row" gap={1}>
+                        <Button size="small" onClick={() => setCancelPromptOpen(false)} disabled={actionBusy}>
+                          Не отменять
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          color="error"
+                          disableElevation
+                          disabled={!cancelReason.trim() || actionBusy}
+                          onClick={() => void handleCancelSubmit()}
+                        >
+                          Отменить бронь
+                        </Button>
+                      </Stack>
                     </Stack>
                   </Stack>
                 </Collapse>
+              </Stack>
+            )}
+          </Box>
 
-                <Stack direction="row" gap={3} flexWrap="wrap" sx={{ mb: 2 }}>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Проживание
+          {/* ── Тело ── */}
+          <DialogContent sx={{ px: { xs: 2.5, md: 3.5 }, py: 3 }}>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: { xs: 3.5, md: 5 } }}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography component="div" sx={sectionLabelSx}>
+                  Детали
+                </Typography>
+                {detailRows.map((r, i) => (
+                  <Stack key={r.label} direction="row" gap={2} sx={{ py: 1.1, borderTop: i === 0 ? "none" : line }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>
+                      {r.label}
                     </Typography>
-                    <Typography variant="body2" fontWeight={600}>
-                      {formatHotelDateRange(item.checkIn, item.checkOut)} · {nightsBetween(item.checkIn, item.checkOut)} ноч.
+                    <Typography variant="body2" fontWeight={600} sx={{ flex: 1, textAlign: "right", minWidth: 0 }}>
+                      {r.value}
                     </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Гости
-                    </Typography>
-                    <Typography variant="body2" fontWeight={600}>
-                      {item.adults} взр. {item.children > 0 ? `+ ${item.children} дет.` : ""}
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Тариф
-                    </Typography>
-                    <Typography variant="body2" fontWeight={600}>
-                      {HOTEL_BOARD_TYPE_LABELS[item.boardType] ?? item.boardType}
-                    </Typography>
-                  </Box>
-                </Stack>
-
-                <Stack direction="row" gap={3} flexWrap="wrap" sx={{ mb: 2 }}>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Источник
-                    </Typography>
-                    <Typography variant="body2" fontWeight={600}>
-                      {HOTEL_BOOKING_SOURCE_LABELS[reservation.source] ?? reservation.source}
-                    </Typography>
-                  </Box>
-                  {reservation.guaranteeMethod && (
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        Гарантия
-                      </Typography>
-                      <Typography variant="body2" fontWeight={600}>
-                        {HOTEL_GUARANTEE_METHOD_LABELS[reservation.guaranteeMethod] ?? reservation.guaranteeMethod}
-                      </Typography>
-                    </Box>
-                  )}
-                </Stack>
+                  </Stack>
+                ))}
 
                 {reservation.guestComment && (
-                  <Alert severity="info" variant="outlined" sx={{ mb: 2, fontSize: "0.8rem" }}>
-                    {reservation.guestComment}
-                  </Alert>
+                  <Box sx={{ mt: 2, pl: 1.5, borderLeft: `3px solid ${subtleBorder(theme)}` }}>
+                    <Typography variant="caption" color="text.secondary">
+                      Пожелание гостя
+                    </Typography>
+                    <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                      {reservation.guestComment}
+                    </Typography>
+                  </Box>
                 )}
 
-                <Divider sx={{ mb: 2 }} />
-
-                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+                <Typography component="div" sx={{ ...sectionLabelSx, mt: 3.5 }}>
                   Проживающие
                 </Typography>
-                <Stack gap={1} sx={{ mb: 2.5 }}>
-                  {item.guests.map((g) => (
-                    <Stack key={g.id} direction="row" alignItems="center" justifyContent="space-between" gap={1}>
-                      <Typography variant="body2">
-                        {g.fullName}
-                        {g.isPrimary && (
-                          <Typography component="span" variant="caption" color="text.secondary">
-                            {" "}
-                            (заказчик)
+                {item.guests.length === 0 ? (
+                  <Typography variant="body2" color="text.disabled">
+                    Проживающие не указаны.
+                  </Typography>
+                ) : (
+                  <Stack gap={1}>
+                    {item.guests.map((g) => (
+                      <Stack key={g.id} direction="row" alignItems="center" gap={1.25}>
+                        <Avatar sx={{ width: 34, height: 34, fontSize: 12, fontWeight: 700 }}>{initialsOf(g.fullName)}</Avatar>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap>
+                            {g.fullName}
                           </Typography>
-                        )}
-                      </Typography>
-                      {g.phone && (
-                        <Typography variant="caption" color="text.secondary">
-                          {g.phone}
-                        </Typography>
-                      )}
-                    </Stack>
-                  ))}
-                  {item.guests.length === 0 && (
-                    <Typography variant="body2" color="text.disabled">
-                      Проживающие не указаны.
-                    </Typography>
-                  )}
-                </Stack>
+                          <Typography variant="caption" color="text.secondary" noWrap component="div">
+                            {[g.isPrimary ? "заказчик" : null, g.phone].filter(Boolean).join(" · ") || "—"}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    ))}
+                  </Stack>
+                )}
+              </Box>
 
-                <Divider sx={{ mb: 2 }} />
-
-                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-                  <Typography variant="subtitle2" fontWeight={600}>
+              <Box sx={{ minWidth: 0 }}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.25 }}>
+                  <Typography component="div" sx={{ ...sectionLabelSx, mb: 0 }}>
                     Оплата
                   </Typography>
                   {canManagePayments && !paymentFormOpen && (
                     <Button size="small" startIcon={<PaymentsOutlined fontSize="small" />} onClick={() => setPaymentFormOpen(true)}>
-                      Добавить оплату
+                      Принять оплату
                     </Button>
                   )}
                 </Stack>
-                <Stack direction="row" gap={3} flexWrap="wrap">
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Сумма
-                    </Typography>
-                    <Typography variant="body2" fontWeight={600}>
-                      {Number(reservation.totalAmount).toLocaleString("ru-RU")} {reservation.currency}
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">
+
+                <Box sx={{ p: 2, borderRadius: "12px", bgcolor: subtleBg(theme, true) }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 1 }}>
+                    <Typography variant="body2" color="text.secondary">
                       Оплачено
                     </Typography>
-                    <Typography variant="body2" fontWeight={600}>
-                      {Number(reservation.paidAmount).toLocaleString("ru-RU")} {reservation.currency}
+                    <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                      {money(paid)}{" "}
+                      <Typography component="span" variant="body2" color="text.secondary">
+                        из {money(total)}
+                      </Typography>
                     </Typography>
+                  </Stack>
+                  <Box sx={{ height: 6, borderRadius: 3, bgcolor: alpha(theme.palette.text.primary, 0.08), overflow: "hidden" }}>
+                    <Box
+                      sx={{
+                        width: `${paidShare}%`,
+                        height: "100%",
+                        borderRadius: 3,
+                        bgcolor: balance > 0 ? theme.palette.warning.main : theme.palette.success.main,
+                      }}
+                    />
                   </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Остаток
+                  <Stack direction="row" justifyContent="space-between" sx={{ mt: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      {paidShare}%
                     </Typography>
-                    <Typography
-                      variant="body2"
-                      fontWeight={600}
-                      color={Number(reservation.balanceDue) > 0 ? "error.main" : "text.primary"}
-                    >
-                      {Number(reservation.balanceDue).toLocaleString("ru-RU")} {reservation.currency}
+                    <Typography variant="caption" fontWeight={600} color={balance > 0 ? "error.main" : "success.main"}>
+                      {balance > 0 ? `Остаток ${money(balance)}` : "Долга нет"}
                     </Typography>
-                  </Box>
-                </Stack>
+                  </Stack>
+                </Box>
 
                 <Collapse in={paymentFormOpen}>
-                  <Stack gap={1.5} sx={{ mt: 1.5, p: 1.5, border: 1, borderColor: "divider", borderRadius: "10px" }}>
+                  <Stack gap={1.5} sx={{ mt: 1.5, p: 2, borderRadius: "12px", border: line }}>
                     {paymentError && <Alert severity="error">{paymentError}</Alert>}
                     <Stack direction="row" gap={1.5}>
                       <TextField
@@ -598,6 +632,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                         size="small"
                         sx={{ flex: 1 }}
                         disabled={paymentSaving}
+                        helperText={balance > 0 && !paymentAmount ? `Остаток ${money(balance)}` : undefined}
                       />
                     </Stack>
                     {CASHLESS_METHODS_ENABLED && paymentIsCashless && (
@@ -626,6 +661,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                       <Button
                         size="small"
                         variant="contained"
+                        disableElevation
                         disabled={paymentSaving || !paymentMethod || !paymentAmount}
                         onClick={() => void handleAddPayment()}
                       >
@@ -636,47 +672,35 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                 </Collapse>
 
                 {payments.length > 0 && (
-                  <Stack gap={0.75} sx={{ mt: 1.5 }}>
-                    {payments.map((p) => (
-                      <Stack
-                        key={p.id}
-                        direction="row"
-                        alignItems="center"
-                        justifyContent="space-between"
-                        gap={1}
-                        sx={{ px: 1.25, py: 0.75, borderRadius: "8px", border: 1, borderColor: "divider" }}
-                      >
-                        <Box>
-                          <Typography variant="body2" fontWeight={600} color={p.kind === "refund" ? "error.main" : undefined}>
-                            {p.kind === "refund" ? "− " : ""}
-                            {Number(p.amount).toLocaleString("ru-RU")} {p.currency} · {p.methodLabel || p.method}
+                  <Box sx={{ mt: 1.5 }}>
+                    {payments.map((p, i) => (
+                      <Stack key={p.id} direction="row" alignItems="center" gap={1.5} sx={{ py: 1.1, borderTop: i === 0 ? "none" : line }}>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600}>
+                            {p.methodLabel || p.method}
                             {p.cashlessMethodName ? ` · ${p.cashlessMethodName}` : ""}
                           </Typography>
-                          {p.note && (
-                            <Typography variant="caption" color="text.secondary">
-                              {p.note}
-                            </Typography>
-                          )}
-                        </Box>
-                        <Box sx={{ textAlign: "right", flexShrink: 0 }}>
-                          <Typography variant="caption" color="text.secondary" display="block">
-                            {p.acceptedByName || "—"}
-                          </Typography>
-                          <Typography variant="caption" color="text.disabled">
-                            {dayjs(p.acceptedAt).format("D MMM, HH:mm")}
+                          <Typography variant="caption" color="text.secondary" noWrap component="div">
+                            {[p.acceptedByName, dayjs(p.acceptedAt).format("D MMM, HH:mm"), p.note].filter(Boolean).join(" · ")}
                           </Typography>
                         </Box>
+                        <Typography
+                          sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", flexShrink: 0, color: p.kind === "refund" ? "error.main" : "text.primary" }}
+                        >
+                          {p.kind === "refund" ? "−" : "+"}
+                          {Number(p.amount).toLocaleString("ru-RU")}
+                        </Typography>
                       </Stack>
                     ))}
-                  </Stack>
+                  </Box>
                 )}
+              </Box>
+            </Box>
 
-                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.5 }}>
-                  Создана: {dayjs(reservation.createdAt).format("D MMMM YYYY, HH:mm")}
-                  {reservation.createdByName ? ` · ${reservation.createdByName}` : ""}
-                </Typography>
-              </>
-            )}
+            <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 3.5 }}>
+              Создана {dayjs(reservation.createdAt).format("D MMMM YYYY, HH:mm")}
+              {reservation.createdByName ? ` · ${reservation.createdByName}` : ""}
+            </Typography>
           </DialogContent>
         </>
       )}

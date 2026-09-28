@@ -15,13 +15,16 @@
  * номера остаётся на «Расписании» (CreateBookingButton).
  */
 import React from "react";
-import { Box, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Button, InputAdornment, TextField, useMediaQuery, useTheme } from "@mui/material";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import PersonAddAltOutlined from "@mui/icons-material/PersonAddAltOutlined";
+import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
 import IconButton from "@mui/material/IconButton";
 import { useQuery } from "@tanstack/react-query";
 
-import { PageHeader } from "../components/ui";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { EmptyState, HotelPageHeader, plural, Surface } from "./hotelUi";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { listGuests } from "../api/hotel";
 import { GuestListPanel } from "./GuestListPanel";
@@ -57,18 +60,46 @@ export const HotelGuestsPage: React.FC = () => {
   const cardNode = <GuestCardPanel clientId={selectedClientId} state={state} />;
   const historyNode = <GuestHistoryPanel state={state} />;
 
+  const blacklisted = guests.filter((g) => g.isBlacklisted).length;
+
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <PageHeader
-        title="Гости"
-        showTitle={false}
-        addButtonText="Добавить"
-        onAdd={() => setAddOpen(true)}
-        showSearch
-        searchVal={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="Имя, телефон, документ или ИНН"
-      />
+      <Box sx={(t) => ({ px: t.appLayout.page.paddingX, pt: { xs: 2, md: 3 }, pb: 2.5 })}>
+        <HotelPageHeader
+          title="Гости"
+          subtitle={
+            guestsQuery.isSuccess
+              ? debouncedSearch
+                ? `Найдено: ${guests.length}`
+                : `${guests.length} ${plural(guests.length, "гость", "гостя", "гостей")} в базе` +
+                  (blacklisted > 0 ? ` · ${blacklisted} в чёрном списке` : "")
+              : undefined
+          }
+          actions={
+            <>
+              <TextField
+                size="small"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Имя, телефон, документ, ИНН"
+                sx={{ width: { xs: "100%", sm: 300 } }}
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchOutlined fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+              />
+              <Button variant="contained" disableElevation startIcon={<PersonAddAltOutlined />} onClick={() => setAddOpen(true)}>
+                Добавить гостя
+              </Button>
+            </>
+          }
+        />
+      </Box>
       <AddGuestDrawer
         open={addOpen}
         onClose={() => setAddOpen(false)}
@@ -110,8 +141,21 @@ export const HotelGuestsPage: React.FC = () => {
         ) : (
           <>
             <Box sx={{ flex: "4.5 1 0", minWidth: 0, height: "100%" }}>{listNode}</Box>
-            <Box sx={{ flex: "3.5 1 0", minWidth: 0, height: "100%" }}>{cardNode}</Box>
-            <Box sx={{ flex: "4 1 0", minWidth: 0, height: "100%" }}>{historyNode}</Box>
+            {selectedClientId == null ? (
+              // Две одинаковые заглушки «Гость не выбран» рядом — шум; одна на обе колонки.
+              <Surface sx={{ flex: "7.5 1 0", minWidth: 0, height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <EmptyState
+                  icon={<PersonSearchOutlined />}
+                  title="Выберите гостя"
+                  description="Слева — все гости отеля. Карточка с документами и история проживаний с оплатами откроются здесь."
+                />
+              </Surface>
+            ) : (
+              <>
+                <Box sx={{ flex: "3.5 1 0", minWidth: 0, height: "100%" }}>{cardNode}</Box>
+                <Box sx={{ flex: "4 1 0", minWidth: 0, height: "100%" }}>{historyNode}</Box>
+              </>
+            )}
           </>
         )}
       </Box>

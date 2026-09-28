@@ -23,7 +23,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 
+import ArrowForwardOutlined from "@mui/icons-material/ArrowForwardOutlined";
 import { getSelectedHotelDate, subscribeSelectedHotelDate, useIsVivaActive, formatHotelDate } from "./mockDemoData";
+import { hotelRoomStateColor } from "./hotelDisplay";
 import { useHotelProperty } from "./useHotelProperty";
 import { getDashboard, listHousekeepingTasks } from "../api/hotel";
 
@@ -34,38 +36,34 @@ import { getDashboard, listHousekeepingTasks } from "../api/hotel";
  * либо ничего — тогда просто обычная белая карточка. `onClick` — карточка
  * ведёт на страницу с деталями (сейчас только «Задачи уборки» → /housekeeping).
  */
-const CardShell: React.FC<{ title: string; tint?: string; onClick?: () => void; children: React.ReactNode }> = ({
-  title,
-  tint,
-  onClick,
-  children,
-}) => {
-  const theme = useTheme();
-  const dark = theme.palette.mode === "dark";
-  return (
-    <Paper
-      elevation={0}
-      variant="outlined"
-      onClick={onClick}
-      sx={{
-        p: 1.75,
-        display: "flex",
-        flexDirection: "column",
-        gap: 1,
-        minWidth: 0,
-        ...(onClick ? { cursor: "pointer", "&:hover": { borderColor: "text.secondary" } } : {}),
-        ...(tint
-          ? { bgcolor: alpha(tint, dark ? 0.16 : 0.1), borderColor: alpha(tint, dark ? 0.32 : 0.18) }
-          : {}),
-      }}
-    >
-      <Typography variant="subtitle2" fontWeight={600} color="text.secondary">
+const CardShell: React.FC<{ title: string; onClick?: () => void; children: React.ReactNode }> = ({ title, onClick, children }) => (
+  // Нейтральная карточка: цвет несут точки и цифры, а не заливка — тонированные
+  // подложки в тёмной теме давали грязно-бурые плашки.
+  <Paper
+    elevation={0}
+    variant="outlined"
+    onClick={onClick}
+    sx={{
+      p: 2,
+      borderRadius: "14px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 1.25,
+      minWidth: 0,
+      ...(onClick
+        ? { cursor: "pointer", transition: "border-color .15s", "&:hover": { borderColor: "text.secondary" }, "&:hover .card-go": { opacity: 1 } }
+        : {}),
+    }}
+  >
+    <Stack direction="row" alignItems="center" justifyContent="space-between">
+      <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary" }}>
         {title}
       </Typography>
-      {children}
-    </Paper>
-  );
-};
+      {onClick && <ArrowForwardOutlined className="card-go" sx={{ fontSize: 16, color: "text.secondary", opacity: 0.4, transition: "opacity .15s" }} />}
+    </Stack>
+    {children}
+  </Paper>
+);
 
 const Dot: React.FC<{ color: string }> = ({ color }) => (
   <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: color, flexShrink: 0 }} />
@@ -81,7 +79,11 @@ const StatRow: React.FC<{ color: string; label: string; value: React.ReactNode }
     <Typography variant="body2" color="text.secondary" sx={{ flex: 1, minWidth: 0 }} noWrap>
       {label}
     </Typography>
-    <Typography variant="body2" fontWeight={600} sx={{ fontVariantNumeric: "tabular-nums" }}>
+    <Typography
+      variant="body2"
+      fontWeight={600}
+      sx={{ fontVariantNumeric: "tabular-nums", color: value === 0 || value === "0 / 0" ? "text.disabled" : "text.primary" }}
+    >
       {value}
     </Typography>
   </Stack>
@@ -147,11 +149,13 @@ export const HotelOccupancyBanner: React.FC = () => {
   const occupancyPercent = Number(dashboard.occupancyPercent);
   const occupancyColor = occupancyPercent >= 90 ? p.success.main : occupancyPercent >= 70 ? p.warning.main : p.error.main;
 
+  // Цвета — те же, что точки в шахматке и на «Номерах» (hotelRoomStateColor), иначе
+  // «Ремонт» здесь был оранжевым, а там серым.
   const roomStatusRows: Array<[label: string, color: string, value: number]> = [
-    ["Грязно", p.error.main, dashboard.roomState.dirty],
-    ["Убрано", p.success.main, dashboard.roomState.clean],
-    ["Проверено", p.info.main, dashboard.roomState.inspected],
-    ["Ремонт", p.warning.main, dashboard.roomState.repair],
+    ["Грязно", hotelRoomStateColor("dirty", theme), dashboard.roomState.dirty],
+    ["Убрано", hotelRoomStateColor("clean", theme), dashboard.roomState.clean],
+    ["Проверено", hotelRoomStateColor("inspected", theme), dashboard.roomState.inspected],
+    ["Ремонт", hotelRoomStateColor("repair", theme), dashboard.roomState.repair],
   ];
   const roomStatusTotal = roomStatusRows.reduce((sum, [, , v]) => sum + v, 0);
   // Донат рисуем только по ненулевым срезам — нулевой value рисует Recharts как
@@ -163,41 +167,29 @@ export const HotelOccupancyBanner: React.FC = () => {
       sx={{
         display: "grid",
         gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" },
-        gap: 1.5,
+        gap: 2,
         flexShrink: 0,
       }}
     >
-      <CardShell title={`Загрузка на ${dateSuffix}`} tint={occupancyColor}>
-        <Stack direction="row" alignItems="center" gap={1.5}>
-          <Box
-            sx={{
-              width: 56,
-              height: 56,
-              borderRadius: "12px",
-              bgcolor: occupancyColor,
-              color: "#fff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: 700,
-              fontSize: "1.05rem",
-              flexShrink: 0,
-            }}
-          >
-            {occupancyPercent}%
-          </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="body2" fontWeight={600}>
-              {dashboard.occupiedRooms} занято
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {dashboard.totalRooms} всего номеров
-            </Typography>
-          </Box>
+      <CardShell title={`Загрузка на ${dateSuffix}`}>
+        <Stack direction="row" alignItems="baseline" gap={1}>
+          <Typography sx={{ fontSize: 34, fontWeight: 700, lineHeight: 1, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
+            {Math.round(occupancyPercent)}%
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {dashboard.occupiedRooms} из {dashboard.totalRooms} занято
+          </Typography>
         </Stack>
+        <Box sx={{ height: 6, borderRadius: 3, bgcolor: alpha(theme.palette.text.primary, 0.08), overflow: "hidden" }}>
+          <Box sx={{ width: `${Math.min(100, occupancyPercent)}%`, height: "100%", borderRadius: 3, bgcolor: occupancyColor, transition: "width .4s" }} />
+        </Box>
+        <Typography variant="caption" color="text.secondary">
+          {dashboard.freeRooms} {dashboard.freeRooms === 1 ? "номер свободен" : "номеров свободно"}
+          {dashboard.activeHolds > 0 ? ` · ${dashboard.activeHolds} в удержании` : ""}
+        </Typography>
       </CardShell>
 
-      <CardShell title={isToday ? "Гости сегодня" : `Гости на ${dateSuffix}`} tint={p.info.main}>
+      <CardShell title={isToday ? "Гости сегодня" : `Гости на ${dateSuffix}`}>
         <Box>
           <StatRow color={p.success.main} label="Заезды / уже заехало" value={`${dashboard.arrivals} / ${dashboard.arrived}`} />
           <StatRow color={p.error.main} label="Выезды / уже выехало" value={`${dashboard.departures} / ${dashboard.departed}`} />
@@ -207,7 +199,7 @@ export const HotelOccupancyBanner: React.FC = () => {
         </Box>
       </CardShell>
 
-      <CardShell title="Задачи уборки" tint={p.warning.main} onClick={() => navigate("/housekeeping")}>
+      <CardShell title="Задачи уборки" onClick={() => navigate("/housekeeping")}>
         <Box>
           <StatRow color={p.warning.main} label="Запланировано на сегодня" value={taskBuckets.scheduledToday} />
           <StatRow color={p.error.main} label="Просрочено" value={taskBuckets.overdue} />

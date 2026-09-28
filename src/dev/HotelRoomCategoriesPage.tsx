@@ -19,16 +19,20 @@
  * характеристик) — фронт его не пересчитывает.
  */
 import React from "react";
-import { Alert, Box, Button, Chip, CircularProgress, Paper, Stack, Typography, useTheme } from "@mui/material";
+import { Alert, Box, Button, Chip, CircularProgress, Stack, Typography, useTheme } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
 import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
-import { getHotelCatalogs, listRoomTypes } from "../api/hotel";
+import { getHotelCatalogs, listRoomTypes, listRooms } from "../api/hotel";
+import { EmptyState, HotelPage, HotelPageHeader, plural, Surface } from "./hotelUi";
+import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 
 export const HotelRoomCategoriesPage: React.FC = () => {
   usePageTitle("Категории и тарифы");
@@ -49,6 +53,18 @@ export const HotelRoomCategoriesPage: React.FC = () => {
   });
   const roomTypes = roomTypesQuery.data ?? [];
 
+  // Тот же ключ, что у «Номеров» и формы брони — обычно уже в кэше.
+  const roomsQuery = useQuery({
+    queryKey: ["hotel", "rooms", property?.id],
+    queryFn: ({ signal }) => listRooms({ propertyId: property!.id }, signal),
+    enabled: property != null,
+  });
+  const roomCounts = React.useMemo(() => {
+    const map = new Map<number, number>();
+    for (const r of roomsQuery.data ?? []) map.set(r.roomTypeId, (map.get(r.roomTypeId) ?? 0) + 1);
+    return map;
+  }, [roomsQuery.data]);
+
   const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading;
   // Ошибку загрузки не выдаём за «Категорий пока нет»: при сбое сети это увело бы человека заводить дубли.
   const loadError = catalogsQuery.isError || roomTypesQuery.isError;
@@ -57,32 +73,24 @@ export const HotelRoomCategoriesPage: React.FC = () => {
     void roomTypesQuery.refetch();
   };
 
-  return (
-    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
-      <Stack spacing={2}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
-        <Stack direction="row" alignItems="center" gap={1}>
-          <CategoryOutlined color="action" />
-          <Typography variant="h6" fontWeight={600}>
-            Категории и тарифы
-          </Typography>
-        </Stack>
-        <Button
-          size="small"
-          variant="contained"
-          startIcon={<AddOutlined />}
-          component={RouterLink}
-          to="/room-categories/new"
-          disabled={!property}
-        >
-          Добавить категорию
-        </Button>
-      </Stack>
+  const prices = roomTypes.map((c) => Number(c.totalPrice));
+  const priceRange =
+    prices.length > 0
+      ? `${Math.min(...prices).toLocaleString("ru-RU")} – ${Math.max(...prices).toLocaleString("ru-RU")} сом за ночь`
+      : undefined;
 
-      <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-        Категория (тариф) — цена за ночь и набор характеристик. Цена задаётся без характеристик: каждая
-        отмеченная характеристика добавляет свою наценку сверху, итог считает бэкенд и показан в списке.
-      </Alert>
+  return (
+    <HotelPage>
+      <HotelPageHeader
+        title="Категории и тарифы"
+        subtitle={roomTypes.length > 0 ? `${roomTypes.length} ${plural(roomTypes.length, "категория", "категории", "категорий")} · ${priceRange}` : undefined}
+        info="Категория (тариф) — цена за ночь и набор характеристик. Базовая цена задаётся без характеристик: каждая отмеченная характеристика добавляет свою наценку, итог считает бэкенд."
+        actions={
+          <Button variant="contained" disableElevation startIcon={<AddOutlined />} component={RouterLink} to="/room-categories/new" disabled={!property}>
+            Добавить категорию
+          </Button>
+        }
+      />
 
       {loading ? (
         <Stack alignItems="center" sx={{ py: 4 }}>
@@ -105,69 +113,124 @@ export const HotelRoomCategoriesPage: React.FC = () => {
           Не удалось загрузить категории.
         </Alert>
       ) : (
-        <Stack gap={2} sx={{ maxWidth: 640 }}>
-          {roomTypes.length === 0 && (
-            <Typography variant="body2" color="text.disabled">
-              Категорий пока нет — начните с «Добавить категорию».
-            </Typography>
-          )}
-          {roomTypes.map((cat) => {
-            const totalPrice = Number(cat.totalPrice);
-            const basePrice = Number(cat.basePrice);
-            return (
-              <Paper key={cat.id} elevation={0} variant="outlined" sx={{ p: 1.75 }}>
-                <Stack direction="row" alignItems="flex-start" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: cat.amenities.length > 0 ? 1.25 : 0 }}>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="subtitle2" fontWeight={700}>
-                      {cat.name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      до {cat.capacity} гостей
-                    </Typography>
-                  </Box>
-                  {/* Цена за ночь (тариф) — главное значение карточки, поэтому крупно, а не мелким серым. */}
-                  <Stack direction="row" alignItems="center" gap={1.5}>
-                    <Box sx={{ textAlign: "right" }}>
-                      <Typography variant="subtitle1" fontWeight={700} sx={{ lineHeight: 1.2 }}>
-                        {totalPrice.toLocaleString("ru-RU")} сом
-                        <Typography component="span" variant="caption" color="text.secondary">
-                          {" "}
-                          / ночь
+        roomTypes.length === 0 ? (
+          <Surface>
+            <EmptyState
+              icon={<CategoryOutlined />}
+              title="Категорий пока нет"
+              description="Категория — это тип номера с ценой за ночь и характеристиками. Заведите первую, затем добавьте в неё номера."
+              action={
+                <Button variant="contained" disableElevation startIcon={<AddOutlined />} component={RouterLink} to="/room-categories/new">
+                  Добавить категорию
+                </Button>
+              }
+            />
+          </Surface>
+        ) : (
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 2, alignItems: "start" }}>
+            {roomTypes.map((cat) => {
+              const totalPrice = Number(cat.totalPrice);
+              const basePrice = Number(cat.basePrice);
+              const roomCount = roomCounts.get(cat.id) ?? 0;
+              const facts = [`до ${cat.capacity} гостей`, cat.bedType, cat.roomLayout].filter(Boolean);
+              return (
+                <Box
+                  key={cat.id}
+                  component={RouterLink}
+                  to={`/room-categories/${cat.id}`}
+                  sx={{
+                    display: "block",
+                    color: "inherit",
+                    textDecoration: "none",
+                    borderRadius: "14px",
+                    "&:hover .cat-card, &:focus-visible .cat-card": { borderColor: "text.secondary", bgcolor: subtleBg(theme) },
+                    "&:hover .cat-edit, &:focus-visible .cat-edit": { opacity: 1 },
+                  }}
+                >
+                <Surface
+                  className="cat-card"
+                  sx={{ height: "100%", display: "flex", flexDirection: "column", gap: 2, transition: "border-color .15s, background-color .15s" }}
+                >
+                  <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2}>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Stack direction="row" alignItems="center" gap={1}>
+                        <Typography sx={{ fontSize: 17, fontWeight: 700 }} noWrap>
+                          {cat.name}
                         </Typography>
+                        {cat.isLuxury && (
+                          <Chip
+                            icon={<WorkspacePremiumOutlined sx={{ fontSize: 14 }} />}
+                            label="Люкс"
+                            size="small"
+                            sx={{
+                              height: 22,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              bgcolor: alpha("#d4af37", 0.16),
+                              color: theme.palette.mode === "dark" ? "#e9c766" : "#8a6d1a",
+                              "& .MuiChip-icon": { color: "inherit" },
+                            }}
+                          />
+                        )}
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                        {facts.join(" · ")}
                       </Typography>
+                    </Box>
+                    <EditOutlined className="cat-edit" sx={{ fontSize: 18, color: "text.secondary", opacity: 0.4, transition: "opacity .15s", flexShrink: 0 }} />
+                  </Stack>
+
+                  <Stack direction="row" alignItems="flex-end" justifyContent="space-between" gap={2}>
+                    <Box>
+                      <Stack direction="row" alignItems="baseline" gap={0.75}>
+                        <Typography sx={{ fontSize: 26, fontWeight: 700, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                          {totalPrice.toLocaleString("ru-RU")}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                          сом / ночь
+                        </Typography>
+                      </Stack>
                       {totalPrice !== basePrice && (
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          база {basePrice.toLocaleString("ru-RU")}
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                          база {basePrice.toLocaleString("ru-RU")} + характеристики {(totalPrice - basePrice).toLocaleString("ru-RU")}
                         </Typography>
                       )}
                     </Box>
-                    <Button
-                      size="small"
-                      startIcon={<EditOutlined fontSize="small" />}
-                      component={RouterLink}
-                      to={`/room-categories/${cat.id}`}
-                    >
-                      Изменить
-                    </Button>
+                    <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>
+                      {roomCount} {plural(roomCount, "номер", "номера", "номеров")}
+                    </Typography>
                   </Stack>
-                </Stack>
-                {cat.amenities.length > 0 && (
-                  <Stack direction="row" flexWrap="wrap" gap={0.5}>
-                    {cat.amenities.map((key) => {
-                      const def = amenitiesCatalog.find((a) => a.key === key);
-                      const extra = def ? Number(def.extraPrice) : 0;
-                      const label = def ? (extra > 0 ? `${def.label} +${extra.toLocaleString("ru-RU")}` : def.label) : key;
-                      return <Chip key={key} label={label} size="small" variant="outlined" sx={{ height: 22, fontSize: "0.75rem" }} />;
-                    })}
-                  </Stack>
-                )}
-              </Paper>
-            );
-          })}
-        </Stack>
+
+                  {cat.amenities.length > 0 && (
+                    <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ pt: 2, borderTop: `1px solid ${subtleBorder(theme)}` }}>
+                      {cat.amenities.map((key) => {
+                        const def = amenitiesCatalog.find((a) => a.key === key);
+                        const extra = def ? Number(def.extraPrice) : 0;
+                        return (
+                          <Box
+                            key={key}
+                            component="span"
+                            sx={{ px: 1, py: 0.25, borderRadius: "6px", bgcolor: subtleBg(theme, true), fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap" }}
+                          >
+                            {def?.label ?? key}
+                            {extra > 0 && (
+                              <Box component="span" sx={{ color: "text.secondary", ml: 0.5 }}>
+                                +{extra.toLocaleString("ru-RU")}
+                              </Box>
+                            )}
+                          </Box>
+                        );
+                      })}
+                    </Stack>
+                  )}
+                </Surface>
+                </Box>
+              );
+            })}
+          </Box>
+        )
       )}
-      </Stack>
-    </Box>
+    </HotelPage>
   );
 };
 
