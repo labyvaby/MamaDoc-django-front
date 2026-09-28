@@ -678,7 +678,60 @@
     "save": "Сохранить",
     "saveTemplateTitle": "Сохранить как шаблон",
     "close": "Закрыть",
-    "templateNamePlaceholder": "Название шаблона"
+    "templateNamePlaceholder": "Название шаблона",
+    "document": {
+      "button": "Документ",
+      "form": "Бланк",
+      "freeText": "Свободный текст",
+      "freeTextHint": "Без бланка — поля по порядку",
+      "insertTemplate": "Вставить шаблон",
+      "saveTemplate": "Сохранить текущее как шаблон…",
+      "deleteTemplate": "Удалить шаблон"
+    },
+    "sections": {
+      "vitals": "Показатели",
+      "protocol": "Протокол",
+      "byForm": "по бланку «{{name}}»",
+      "result": "{{conclusion.nom, capitalize}} и рекомендации",
+      "service": "Служебное",
+      "serviceHint": "Не видно {{patient.dat}} и не выходит на печать",
+      "serviceAdd": "Комментарий или фото"
+    },
+    "manual": {
+      "label": "Дополнительно",
+      "placeholder": "Вывод, назначения, рекомендации — то, чего нет в строках бланка",
+      "hint": "Текст в «{{target}}» собирается из строк бланка и этого дополнения. Пустые строки в документ не попадают."
+    },
+    "sheet": {
+      "toggle": "Лист",
+      "show": "Показать лист рядом с формой",
+      "hide": "Скрыть лист",
+      "showTab": "Показать лист",
+      "backToForm": "К форме",
+      "caption": "Так выйдет на печать после сохранения",
+      "captionSaved": "Так выйдет на печать"
+    },
+    "progress": "Заполнено {{filled}} из {{total}}",
+    "progressGo": "к пустому",
+    "progressHint": "Перейти к первому незаполненному полю",
+    "statusNew": "Не сохранено",
+    "savedLocal": "Черновик на этом устройстве · {{time}}",
+    "savedServer": "Сохранено {{time}}",
+    "completeHotkey": "Ctrl+Enter",
+    "deletePhoto": "Удалить фото",
+    "progressNorm": "по норме: {{count}}",
+    "progressNormHint": "Строки с нормой из бланка, которые вы не меняли. Нажмите, чтобы перейти к первой и проверить",
+    "historyDiagnoses": "Ранее у {{patient.gen}}:",
+    "templateSavedTextOnly": "Шаблон сохранён только текстом: строки бланка сервер пока не хранит",
+    "previous": {
+      "title": "Как в прошлый раз",
+      "applied": "Перенесено из {{conclusion.gen}} от {{date}}"
+    },
+    "presetConfirm": {
+      "title": "Заменить заполненное?",
+      "text": "Строки бланка и текст полей заменятся содержимым заготовки. Вернуть прежний текст после замены не получится.",
+      "apply": "Заменить"
+    }
   },
   "slots": {
     "noShifts": "В расписании {{specialist.genPl}} нет {{shift.genPl}}",
