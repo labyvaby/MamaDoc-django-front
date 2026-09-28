@@ -75,6 +75,7 @@ import {
   uploadStayDocumentPhotoBack,
   getReservationConflicts,
   isOverbookingConfirmable,
+  getQuote,
   type HotelRoom,
   type HotelGuestSearchResult,
   type HotelGuest,
@@ -251,6 +252,26 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     enabled: property != null,
   });
   const rooms = React.useMemo(() => roomsQuery.data ?? [], [roomsQuery.data]);
+
+  // Живой предпросмотр суммы — необязательный, контракт эндпоинта не
+  // подтверждён бэком (см. getQuote в src/api/hotel.ts). 404/ошибка формы
+  // ответа гасится молча (retry: false, throwOnError: false) — предпросмотра
+  // просто нет, бронь создаётся как обычно.
+  const checkInStr = checkIn?.format("YYYY-MM-DD");
+  const checkOutStr = checkOut?.format("YYYY-MM-DD");
+  const quoteQuery = useQuery({
+    queryKey: ["hotel", "quote", property?.id, roomId, checkInStr, checkOutStr, boardType],
+    queryFn: ({ signal }) =>
+      getQuote(
+        { propertyId: property!.id, roomId: roomId === "" ? undefined : roomId, checkIn: checkInStr!, checkOut: checkOutStr!, boardType: boardType || undefined },
+        signal,
+      ),
+    enabled: open && property != null && roomId !== "" && !!checkInStr && !!checkOutStr && checkOutStr > checkInStr,
+    retry: false,
+    throwOnError: false,
+    staleTime: 30_000,
+  });
+  const quote = quoteQuery.isError ? null : quoteQuery.data;
 
   // Поиск гостя по имени/телефону — ≥2 символа, бэкенд ищет по всем клиентам
   // организации (не только бывшим гостям).
@@ -675,6 +696,11 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
               <Typography variant="caption" color="text.secondary">
                 В номере доступно: {selectedRoom.mealOptions.join(", ")}
               </Typography>
+            )}
+            {quote && (
+              <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem", py: 0.25 }}>
+                Ожидаемая сумма по действующим тарифам: {Number(quote.total).toLocaleString("ru-RU")} {quote.currency}
+              </Alert>
             )}
 
             {/* ── 2. Гость ── */}

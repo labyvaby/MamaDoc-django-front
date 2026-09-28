@@ -586,6 +586,40 @@ export function simulatePricingRule(
   });
 }
 
+// ── Предпросчёт суммы брони (quote) ──────────────────────────────────────────
+//
+// ПРЕДЛОЖЕНИЕ фронта, бэком НЕ ПОДТВЕРЖДЕНО. Точного контракта нет — есть
+// только упоминание в комментарии выше («та же цена, что в pricing/quote/»):
+// эндпоинт существует, форма запроса/ответа неизвестна. Путь и поля ниже —
+// предположение по аналогии с HotelReservationItemInput/simulatePricingRule,
+// на подтверждение бэком.
+//
+// Используется ТОЛЬКО как необязательный живой предпросмотр суммы в форме
+// брони (CreateBookingButton) — 404/неожиданная форма ответа тихо гасится,
+// предпросмотр просто не показывается, бронь всё равно создаётся как раньше.
+// В payload createReservation ничего отсюда не добавляем: бэк уже проявлял
+// forbid_unknown_fields на других ручках (см. комментарий у default* полей
+// HotelRoomType), а создание брони — самая чувствительная запись модуля,
+// ломать её угадыванием поля нельзя.
+export interface HotelQuoteRequest {
+  propertyId: number;
+  roomId?: number | null;
+  roomTypeId?: number | null;
+  checkIn: string;
+  checkOut: string;
+  ratePlanId?: number | null;
+  boardType?: string;
+}
+
+export interface HotelQuoteResult {
+  currency: string;
+  total: Money;
+}
+
+export function getQuote(request: HotelQuoteRequest, signal?: AbortSignal): Promise<HotelQuoteResult> {
+  return apiRequest<HotelQuoteResult>("/v2/hotel/pricing/quote/", { method: "POST", body: request, signal });
+}
+
 // ── Номера (Room) ─────────────────────────────────────────────────────────
 //
 // Терраса/экспликация/фото — контракт подтверждён и выложен, «Ответ бэкенда:
