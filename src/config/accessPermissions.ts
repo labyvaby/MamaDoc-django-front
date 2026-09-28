@@ -73,6 +73,13 @@ export const PAGE_PERMISSIONS = {
   // которого нет у «Ресепшена». Страницы проверяют его сами через
   // useCan("hotel.rates.manage"), не через PAGE_PERMISSIONS.
   hotelPricingRules: "hotel.view",
+  // «Уборка» (HotelHousekeepingPage.tsx) — задачи горничным. hotel.housekeeping.view
+  // уже реальный бэковый код (см. комментарий у setRoomHousekeeping в hotel.ts
+  // и RoomStateControl.tsx §шапка) — используем его как право страницы,
+  // а не открываем всем сотрудникам Viva через один isHotelOrg, как раньше
+  // ошибочно сделали по образцу «Кухни». hotel.manage — суперпользователи
+  // отеля видят страницу и без отдельно выданного housekeeping-права.
+  hotelHousekeeping: ["hotel.housekeeping.view", "hotel.manage"],
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {

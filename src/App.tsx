@@ -665,13 +665,17 @@ function App() {
                             </Suspense>
                           }
                         />
-                        {/* Уборка (задачи горничным) — тот же гейт, что «Кухня». */}
+                        {/* Уборка (задачи горничным) — своё право
+                            hotel.housekeeping.view/hotel.manage, не общий
+                            «это Viva»: тут назначение и закрытие задач. */}
                         <Route
                           path="housekeeping"
                           element={
-                            <Suspense fallback={<LinearProgress />}>
-                              <HotelHousekeepingPage />
-                            </Suspense>
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelHousekeeping}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelHousekeepingPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         {/* Номера и категории (тарифы) Viva — самостоятельные
