@@ -16,6 +16,7 @@ import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 import { AppCard, ListEmptyState, UserAvatar } from "../components/ui";
 import { subtleBg } from "../theme/uiHelpers";
 import { HOTEL_BOOKING_SOURCE_LABELS } from "./hotelDisplay";
+import { plural } from "./hotelUi";
 import type { HotelGuest } from "../api/hotel";
 
 export interface GuestListPanelProps {
@@ -30,11 +31,10 @@ export const GuestListPanel: React.FC<GuestListPanelProps> = ({ guests, totalCou
     variant="outlined"
     header={
       <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ px: 2, pt: 2, pb: 1.5 }}>
-        <Stack direction="row" alignItems="center" gap={1.25}>
-          <PeopleOutlineOutlined color="primary" />
-          <Typography variant="h6">Гости</Typography>
-        </Stack>
-        <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
+        <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary" }}>
+          Список
+        </Typography>
+        <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ fontVariantNumeric: "tabular-nums" }}>
           {totalCount}
         </Typography>
       </Stack>
@@ -129,14 +129,14 @@ export const GuestListPanel: React.FC<GuestListPanelProps> = ({ guests, totalCou
                 </Box>
 
                 <Stack alignItems="flex-end" spacing={0.25} sx={{ flexShrink: 0 }}>
+                  <Typography variant="caption" fontWeight={600} color={g.staysCount > 0 ? "text.primary" : "text.disabled"} sx={{ fontVariantNumeric: "tabular-nums" }}>
+                    {g.staysCount > 0 ? `${g.staysCount} ${plural(g.staysCount, "заезд", "заезда", "заездов")}` : "нет заездов"}
+                  </Typography>
                   {g.source && (
-                    <Typography variant="caption" color="text.secondary" noWrap sx={{ fontSize: "0.65rem" }}>
+                    <Typography variant="caption" color="text.secondary" noWrap sx={{ fontSize: 11 }}>
                       {HOTEL_BOOKING_SOURCE_LABELS[g.source] ?? g.source}
                     </Typography>
                   )}
-                  <Typography variant="caption" color="text.secondary">
-                    {g.staysCount}
-                  </Typography>
                 </Stack>
               </Box>
             );

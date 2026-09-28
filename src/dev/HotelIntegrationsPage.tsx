@@ -447,8 +447,15 @@ const ChannexPanel: React.FC<{ status: HotelChannexStatus; propertyId: number }>
         </Stack>
       </Stack>
 
-      <Alert severity="info" variant="outlined" sx={{ mb: 2.5, fontSize: "0.8rem" }}>
-        Channex синхронизирует брони, цены и доступность номеров с Booking.com, Airbnb и Expedia в реальном времени.
+      {/* Раньше этот баннер показывался всегда, даже при state === "disconnected" —
+          живьём это читалось как «Не подключён» и «синхронизирует в реальном
+          времени» одновременно (Viva-босс, живой QA 29.09.2026). Текст теперь
+          зависит от статуса: обещание синхронизации — только когда она правда
+          идёт, иначе — приглашение подключить. */}
+      <Alert severity={status.connected ? "info" : "warning"} variant="outlined" sx={{ mb: 2.5, fontSize: "0.8rem" }}>
+        {status.connected
+          ? "Channex синхронизирует брони, цены и доступность номеров с Booking.com, Airbnb и Expedia в реальном времени."
+          : "Channex ещё не подключён — брони, цены и доступность номеров не синхронизируются с Booking.com, Airbnb и Expedia. Нажмите «Подключить» выше."}
       </Alert>
 
       {actionError && (
@@ -473,6 +480,12 @@ const ChannexPanel: React.FC<{ status: HotelChannexStatus; propertyId: number }>
         </Alert>
       )}
 
+      {/* Карточки и списки ниже — статистика реальной синхронизации. Пока
+          Channex не подключён, показывать их (пусть даже пустыми/нулевыми)
+          вместе с «Всё в порядке, вмешательство не требуется» читается как
+          обманчивое заверение о работающей интеграции — прячем весь блок
+          целиком до первого «Подключить». */}
+      {status.connected && (
       <Box
         sx={{
           display: "grid",
@@ -496,7 +509,9 @@ const ChannexPanel: React.FC<{ status: HotelChannexStatus; propertyId: number }>
           tint="primary"
         />
       </Box>
+      )}
 
+      {status.connected && (
       <Stack direction={{ xs: "column", md: "row" }} gap={3} sx={{ maxWidth: 1100 }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
@@ -588,6 +603,7 @@ const ChannexPanel: React.FC<{ status: HotelChannexStatus; propertyId: number }>
           )}
         </Box>
       </Stack>
+      )}
 
       <Dialog open={mappingSession != null} onClose={() => setMappingSession(null)} maxWidth="lg" fullWidth>
         <DialogTitle sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>

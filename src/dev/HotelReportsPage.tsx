@@ -13,42 +13,30 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   CircularProgress,
-  IconButton,
-  Paper,
   Stack,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
-  ToggleButton,
-  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
-import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
-import PieChartOutlined from "@mui/icons-material/PieChartOutlined";
-import MeetingRoomOutlined from "@mui/icons-material/MeetingRoomOutlined";
-import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
-import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
-import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
-import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { useQuery } from "@tanstack/react-query";
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 
 import { CustomDatePicker } from "../components/ui";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { formatHotelDate } from "./mockDemoData";
+import { subtleBg, subtleBorder } from "../theme/uiHelpers";
+import { formatHotelDate, formatHotelDateRange } from "./mockDemoData";
 import { mapStayDisplayStatus, hotelStayStatusColor, HOTEL_STAY_STATUS_LABELS } from "./hotelDisplay";
 import { useHotelProperty } from "./useHotelProperty";
 import { getDailyReport, getOccupancyReport, type HotelDailyReportRow } from "../api/hotel";
 import { exportHotelDailyReportXlsx } from "./exportHotelDailyReportXlsx";
-import { HotelStatCard } from "./HotelStatCard";
+import { DateStepper, FilterChip, HotelPage, HotelPageHeader, MetricTile, SectionLabel, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 
 type ReportMode = "day" | "period";
 
@@ -70,6 +58,7 @@ const sourceLabel = (key: string) => SOURCE_LABELS[key] ?? key;
 export const HotelReportsPage: React.FC = () => {
   usePageTitle("Отчёты");
   const theme = useTheme();
+  const tableSx = useHotelTableSx();
   const { property } = useHotelProperty();
 
   const [mode, setMode] = React.useState<ReportMode>("day");
@@ -77,7 +66,6 @@ export const HotelReportsPage: React.FC = () => {
   const [exporting, setExporting] = React.useState(false);
 
   const dateStr = date.format("YYYY-MM-DD");
-  const isToday = dateStr === dayjs().format("YYYY-MM-DD");
 
   const reportQuery = useQuery({
     queryKey: ["hotel", "reports", "daily", property?.id, dateStr],
@@ -152,74 +140,76 @@ export const HotelReportsPage: React.FC = () => {
     }
   };
 
-  return (
-    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap" sx={{ mb: 2 }}>
-        <Stack direction="row" alignItems="center" gap={2}>
-          <Typography variant="h6" fontWeight={700}>
-            Отчёты
-          </Typography>
-          <ToggleButtonGroup
-            value={mode}
-            exclusive
-            size="small"
-            onChange={(_, v: ReportMode | null) => v && setMode(v)}
-          >
-            <ToggleButton value="day">День</ToggleButton>
-            <ToggleButton value="period">Период (ADR/RevPAR)</ToggleButton>
-          </ToggleButtonGroup>
-        </Stack>
 
-        {mode === "day" ? (
-          <Stack direction="row" alignItems="center" gap={1}>
-            <IconButton size="small" onClick={() => setDate((d) => d.subtract(1, "day"))}>
-              <ChevronLeftOutlined fontSize="small" />
-            </IconButton>
-            <CustomDatePicker
-              label="Дата отчёта"
-              value={date}
-              onChange={(v) => v && setDate(v)}
-              disableFuture
-              slotProps={{ textField: { size: "small" } }}
-              sx={{ width: 160 }}
-            />
-            <IconButton size="small" onClick={() => setDate((d) => d.add(1, "day"))} disabled={isToday}>
-              <ChevronRightOutlined fontSize="small" />
-            </IconButton>
-            {!isToday && (
-              <Button size="small" onClick={() => setDate(dayjs())}>
-                Сегодня
+  const chartTooltipStyle = {
+    borderRadius: 10,
+    border: `1px solid ${subtleBorder(theme)}`,
+    backgroundColor: theme.palette.background.paper,
+    color: theme.palette.text.primary,
+    fontSize: 13,
+  };
+  const axisTick = { fontSize: 12, fill: theme.palette.text.secondary };
+  const money = (v: string | number, currency: string) => `${Number(v).toLocaleString("ru-RU")} ${currency === "KGS" ? "сом" : currency}`;
+
+  const periodLabel =
+    periodFrom.isSame(periodTo, "day")
+      ? formatHotelDate(periodFromStr)
+      : `${formatHotelDate(periodFromStr)} – ${formatHotelDate(periodToStr)}`;
+
+  return (
+    <HotelPage>
+      <HotelPageHeader
+        title="Отчёты"
+        subtitle={mode === "day" ? `Сводка по номерам за ${formatHotelDate(dateStr)}` : `Показатели за ${periodLabel}`}
+        info={
+          mode === "day"
+            ? "Кто заселён на выбранную дату, по какой цене и сколько номеров свободно. Считает бэкенд; выгрузка — реальный .xlsx."
+            : "ADR — средняя цена проданной ночи. RevPAR — выручка на каждый доступный номер (с учётом пустых). Загрузка — доля проданных номере-ночей."
+        }
+        actions={
+          mode === "day" ? (
+            <>
+              <DateStepper value={date} onChange={setDate} disableFuture />
+              <Button
+                variant="outlined"
+                startIcon={<FileDownloadOutlined />}
+                onClick={() => void handleExport()}
+                disabled={exporting || !report}
+              >
+                {exporting ? "Готовим…" : "Excel"}
               </Button>
-            )}
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<FileDownloadOutlined />}
-              onClick={() => void handleExport()}
-              disabled={exporting || !report}
-            >
-              {exporting ? "Готовим файл…" : "Скачать .xlsx"}
-            </Button>
-          </Stack>
-        ) : (
-          <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-            <CustomDatePicker
-              label="С"
-              value={periodFrom}
-              onChange={(v) => v && setPeriodFrom(v)}
-              disableFuture
-              slotProps={{ textField: { size: "small" } }}
-              sx={{ width: 150 }}
-            />
-            <CustomDatePicker
-              label="По"
-              value={periodTo}
-              onChange={(v) => v && setPeriodTo(v)}
-              disableFuture
-              minDate={periodFrom}
-              slotProps={{ textField: { size: "small" } }}
-              sx={{ width: 150 }}
-            />
+            </>
+          ) : (
+            <Stack direction="row" alignItems="center" gap={1}>
+              <CustomDatePicker
+                label="С"
+                value={periodFrom}
+                onChange={(v) => v && setPeriodFrom(v)}
+                disableFuture
+                slotProps={{ textField: { size: "small" } }}
+                sx={{ width: 140 }}
+              />
+              <CustomDatePicker
+                label="По"
+                value={periodTo}
+                onChange={(v) => v && setPeriodTo(v)}
+                disableFuture
+                minDate={periodFrom}
+                slotProps={{ textField: { size: "small" } }}
+                sx={{ width: 140 }}
+              />
+            </Stack>
+          )
+        }
+      />
+
+      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
+        <Stack direction="row" gap={1}>
+          <FilterChip label="День" active={mode === "day"} onClick={() => setMode("day")} />
+          <FilterChip label="Период" active={mode === "period"} onClick={() => setMode("period")} />
+        </Stack>
+        {mode === "period" && (
+          <Stack direction="row" gap={0.5} flexWrap="wrap">
             <Button size="small" onClick={() => applyPreset("thisMonth")}>
               Этот месяц
             </Button>
@@ -239,239 +229,198 @@ export const HotelReportsPage: React.FC = () => {
             Дата «По» раньше даты «С»
           </Alert>
         ) : !occupancy ? (
-          <Stack alignItems="center" sx={{ py: 4 }}>
+          <Stack alignItems="center" sx={{ py: 6 }}>
             <CircularProgress size={28} />
           </Stack>
         ) : (
           <>
-            <Box
-              sx={{
-                display: "grid",
-                gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(4, 1fr)" },
-                gap: 1.5,
-                mb: 2.5,
-              }}
-            >
-              <HotelStatCard
-                label="Загрузка за период"
-                value={`${occupancy.occupancyPercent}%`}
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
+              <MetricTile
+                label="Загрузка"
+                value={`${Number(occupancy.occupancyPercent).toLocaleString("ru-RU")}%`}
                 hint={`${occupancy.soldRoomNights} из ${occupancy.availableRoomNights} номере-ночей`}
-                icon={<PieChartOutlined fontSize="small" />}
-                tint="info"
+                accent={theme.palette.info.main}
               />
-              <HotelStatCard
-                label="ADR"
-                value={`${Number(occupancy.adr).toLocaleString("ru-RU")} ${occupancy.currency}`}
-                hint="средняя цена проданной ночи"
-                icon={<TrendingUpOutlined fontSize="small" />}
-                tint="primary"
-              />
-              <HotelStatCard
-                label="RevPAR"
-                value={`${Number(occupancy.revpar).toLocaleString("ru-RU")} ${occupancy.currency}`}
-                hint="выручка на доступный номер"
-                icon={<PaymentsOutlined fontSize="small" />}
-                tint="success"
-              />
-              <HotelStatCard
+              <MetricTile label="ADR" value={money(occupancy.adr, occupancy.currency)} hint="средняя цена проданной ночи" />
+              <MetricTile label="RevPAR" value={money(occupancy.revpar, occupancy.currency)} hint="выручка на доступный номер" />
+              <MetricTile
                 label="Выручка номеров"
-                value={`${Number(occupancy.roomRevenue).toLocaleString("ru-RU")} ${occupancy.currency}`}
-                icon={<PaymentsOutlined fontSize="small" />}
-                tint="warning"
+                value={money(occupancy.roomRevenue, occupancy.currency)}
+                accent={theme.palette.success.main}
               />
             </Box>
 
-            <Box
-              sx={{
-                display: "grid",
-                gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(3, 1fr)" },
-                gap: 1.5,
-                mb: 2.5,
-              }}
-            >
-              <HotelStatCard
-                label="Заезды"
-                value={occupancy.arrivals}
-                icon={<SwapHorizOutlined fontSize="small" />}
-                tint="info"
-              />
-              <HotelStatCard
-                label="Выезды"
-                value={occupancy.departures}
-                icon={<SwapHorizOutlined fontSize="small" />}
-                tint="info"
-              />
-              <HotelStatCard
-                label="Отмены"
-                value={occupancy.cancellations}
-                icon={<EventBusyOutlined fontSize="small" />}
-                tint="error"
-              />
-            </Box>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 2fr" }, gap: 2 }}>
+              <Surface>
+                <SectionLabel>Движение гостей</SectionLabel>
+                {[
+                  { label: "Заезды", value: occupancy.arrivals, color: theme.palette.info.main },
+                  { label: "Выезды", value: occupancy.departures, color: theme.palette.text.secondary },
+                  { label: "Отмены", value: occupancy.cancellations, color: theme.palette.error.main },
+                ].map((r, i) => (
+                  <Stack
+                    key={r.label}
+                    direction="row"
+                    alignItems="center"
+                    gap={1.25}
+                    sx={{ py: 1.25, borderTop: i === 0 ? "none" : `1px solid ${subtleBorder(theme)}` }}
+                  >
+                    <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: r.color }} />
+                    <Typography variant="body2" sx={{ flex: 1 }}>
+                      {r.label}
+                    </Typography>
+                    <Typography sx={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{r.value}</Typography>
+                  </Stack>
+                ))}
+              </Surface>
 
-            {bySourceRows.length > 0 && (
-              <Paper elevation={0} variant="outlined" sx={{ p: 2, mb: 2.5 }}>
-                <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
-                  Брони по источникам
-                </Typography>
-                <Box sx={{ height: 220 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={bySourceRows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                      <XAxis dataKey="name" tick={{ fontSize: 12, fill: theme.palette.text.secondary }} />
-                      <YAxis tick={{ fontSize: 12, fill: theme.palette.text.secondary }} width={40} allowDecimals={false} />
-                      <RechartsTooltip
-                        contentStyle={{
-                          borderRadius: 10,
-                          border: `1px solid ${theme.palette.divider}`,
-                          backgroundColor: theme.palette.background.paper,
-                          color: theme.palette.text.primary,
-                        }}
-                        formatter={(value?: number) => [`${value ?? 0} броней`, "Источник"]}
-                      />
-                      <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={48}>
-                        {bySourceRows.map((row, i) => (
-                          <Cell
-                            key={row.name}
-                            fill={
-                              [theme.palette.primary.main, theme.palette.info.main, theme.palette.success.main, theme.palette.warning.main][
-                                i % 4
-                              ]
-                            }
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </Box>
-              </Paper>
-            )}
+              <Surface>
+                <SectionLabel>Брони по источникам</SectionLabel>
+                {bySourceRows.length === 0 ? (
+                  <Typography variant="body2" color="text.disabled" sx={{ py: 4, textAlign: "center" }}>
+                    За период броней нет
+                  </Typography>
+                ) : (
+                  <Box sx={{ height: 220 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={bySourceRows} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={subtleBorder(theme)} />
+                        <XAxis type="number" tick={axisTick} allowDecimals={false} axisLine={false} tickLine={false} />
+                        <YAxis type="category" dataKey="name" tick={axisTick} width={130} axisLine={false} tickLine={false} />
+                        <RechartsTooltip
+                          cursor={{ fill: subtleBg(theme, true) }}
+                          contentStyle={chartTooltipStyle}
+                          formatter={(value?: number) => [`${value ?? 0}`, "Броней"]}
+                        />
+                        <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={22} fill={theme.palette.primary.main} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Box>
+                )}
+              </Surface>
+            </Box>
           </>
         )
       ) : !report ? (
-        <Stack alignItems="center" sx={{ py: 4 }}>
+        <Stack alignItems="center" sx={{ py: 6 }}>
           <CircularProgress size={28} />
         </Stack>
       ) : (
         <>
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(4, 1fr)" },
-              gap: 1.5,
-              mb: 2.5,
-            }}
-          >
-            <HotelStatCard
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
+            <MetricTile
               label="Загрузка"
-              value={`${report.occupancyPercent}%`}
+              value={`${Number(report.occupancyPercent).toLocaleString("ru-RU")}%`}
               hint={`${report.occupiedRooms} занято из ${report.totalRooms}`}
-              icon={<PieChartOutlined fontSize="small" />}
-              tint="info"
+              accent={theme.palette.info.main}
             />
-            <HotelStatCard
-              label="Свободно номеров"
+            <MetricTile
+              label="Свободно"
               value={report.freeRooms}
-              icon={<MeetingRoomOutlined fontSize="small" />}
-              tint="success"
+              hint={report.blockedRooms > 0 ? `ещё ${report.blockedRooms} заблокировано` : "номеров"}
+              accent={theme.palette.success.main}
             />
-            <HotelStatCard
-              label="Заездов / выездов"
-              value={`${report.arrivals} / ${report.departures}`}
-              icon={<SwapHorizOutlined fontSize="small" />}
-              tint="warning"
-            />
-            <HotelStatCard
-              label="Выручка за ночь"
-              value={`${Number(report.revenue).toLocaleString("ru-RU")} ${report.currency}`}
-              hint="по тарифам занятых номеров"
-              icon={<PaymentsOutlined fontSize="small" />}
-              tint="primary"
-            />
+            <MetricTile label="Заезды / выезды" value={`${report.arrivals} / ${report.departures}`} hint="за день" />
+            <MetricTile label="Выручка за ночь" value={money(report.revenue, report.currency)} hint="по тарифам занятых номеров" />
           </Box>
 
           {revenueByCategory.length > 0 && (
-            <Paper elevation={0} variant="outlined" sx={{ p: 2, mb: 2.5 }}>
-              <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
-                Выручка по категориям номеров
-              </Typography>
-              <Box sx={{ height: 220 }}>
+            <Surface>
+              <SectionLabel>Выручка по категориям</SectionLabel>
+              <Box sx={{ height: 200 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={revenueByCategory} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                    <XAxis dataKey="name" tick={{ fontSize: 12, fill: theme.palette.text.secondary }} />
-                    <YAxis tick={{ fontSize: 12, fill: theme.palette.text.secondary }} width={56} allowDecimals={false} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
+                    <XAxis dataKey="name" tick={axisTick} axisLine={false} tickLine={false} />
+                    <YAxis tick={axisTick} width={56} allowDecimals={false} axisLine={false} tickLine={false} />
                     <RechartsTooltip
-                      contentStyle={{
-                        borderRadius: 10,
-                        border: `1px solid ${theme.palette.divider}`,
-                        backgroundColor: theme.palette.background.paper,
-                        color: theme.palette.text.primary,
-                      }}
-                      formatter={(value?: number) => [`${(value ?? 0).toLocaleString("ru-RU")} ${report.currency}`, "Выручка"]}
+                      cursor={{ fill: subtleBg(theme, true) }}
+                      contentStyle={chartTooltipStyle}
+                      formatter={(value?: number) => [money(value ?? 0, report.currency), "Выручка"]}
                     />
-                    <Bar dataKey="value" radius={[6, 6, 0, 0]} fill={theme.palette.primary.main} maxBarSize={48} />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]} fill={theme.palette.primary.main} maxBarSize={44} />
                   </BarChart>
                 </ResponsiveContainer>
               </Box>
-            </Paper>
+            </Surface>
           )}
 
-          <Paper elevation={0} variant="outlined" sx={{ overflow: "hidden" }}>
-            <Box sx={{ overflowX: "auto" }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Номер</TableCell>
-                    <TableCell>Категория</TableCell>
-                    <TableCell>Гость</TableCell>
-                    <TableCell>Статус</TableCell>
-                    <TableCell>Заезд</TableCell>
-                    <TableCell>Выезд</TableCell>
-                    <TableCell align="right">Цена/ночь</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {report.rows.map((row) => {
-                    const status = rowStatus(row);
-                    return (
-                      <TableRow key={row.roomId} hover>
-                        <TableCell sx={{ fontWeight: 600 }}>{row.roomNumber}</TableCell>
-                        <TableCell>
-                          {row.roomTypeName}
-                          {row.isLuxury && (
-                            <Chip
-                              label="Люкс"
-                              size="small"
-                              sx={{ ml: 1, height: 18, fontSize: "0.65rem", fontWeight: 700 }}
-                            />
-                          )}
-                        </TableCell>
-                        <TableCell>{row.guestName || <Typography color="text.disabled">—</Typography>}</TableCell>
-                        <TableCell>
-                          <Chip
-                            label={status.label}
-                            size="small"
-                            sx={{
-                              bgcolor: alpha(status.color, theme.palette.mode === "dark" ? 0.25 : 0.14),
-                              color: status.color,
-                              fontWeight: 600,
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell>{row.checkIn ? formatHotelDate(row.checkIn) : "—"}</TableCell>
-                        <TableCell>{row.checkOut ? formatHotelDate(row.checkOut) : "—"}</TableCell>
-                        <TableCell align="right">{row.nightPrice ? Number(row.nightPrice).toLocaleString("ru-RU") : "—"}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </Box>
-          </Paper>
+          <Box>
+            <SectionLabel>Номера</SectionLabel>
+            <Surface padded={false} sx={{ overflow: "hidden" }}>
+              <Box sx={{ overflowX: "auto" }}>
+                <Table sx={tableSx}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ pl: 2.5 }}>Номер</TableCell>
+                      <TableCell>Категория</TableCell>
+                      <TableCell>Гость</TableCell>
+                      <TableCell>Статус</TableCell>
+                      <TableCell>Даты</TableCell>
+                      <TableCell align="right" sx={{ pr: 2.5 }}>
+                        Цена / ночь
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {report.rows.map((row) => {
+                      const status = rowStatus(row);
+                      return (
+                        <TableRow key={row.roomId}>
+                          <TableCell sx={{ pl: 2.5 }}>
+                            <Typography sx={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{row.roomNumber}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Stack direction="row" alignItems="center" gap={1}>
+                              <Typography variant="body2">{row.roomTypeName}</Typography>
+                              {row.isLuxury && (
+                                <Box
+                                  component="span"
+                                  sx={{
+                                    px: 0.75,
+                                    borderRadius: "5px",
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    bgcolor: alpha("#d4af37", 0.16),
+                                    color: theme.palette.mode === "dark" ? "#e9c766" : "#8a6d1a",
+                                  }}
+                                >
+                                  Люкс
+                                </Box>
+                              )}
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            {row.guestName ? (
+                              <Typography variant="body2" fontWeight={600}>
+                                {row.guestName}
+                              </Typography>
+                            ) : (
+                              <Typography variant="body2" color="text.disabled">
+                                —
+                              </Typography>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <StatusPill color={status.color} label={status.label} />
+                          </TableCell>
+                          <TableCell sx={{ whiteSpace: "nowrap", color: row.checkIn ? "text.primary" : "text.disabled" }}>
+                            {row.checkIn && row.checkOut ? formatHotelDateRange(row.checkIn, row.checkOut) : "—"}
+                          </TableCell>
+                          <TableCell align="right" sx={{ pr: 2.5, fontVariantNumeric: "tabular-nums", fontWeight: row.nightPrice ? 600 : 400, color: row.nightPrice ? "text.primary" : "text.disabled" }}>
+                            {row.nightPrice ? Number(row.nightPrice).toLocaleString("ru-RU") : "—"}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </Box>
+            </Surface>
+          </Box>
         </>
       )}
-    </Box>
+    </HotelPage>
   );
 };
 

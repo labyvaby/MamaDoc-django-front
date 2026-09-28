@@ -23,7 +23,10 @@
  * нигде, кроме живого предпросчёта в форме (simulatePricingRule).
  */
 import React from "react";
-import { Alert, Box, Button, Chip, CircularProgress, Paper, Stack, Switch, Typography, useTheme } from "@mui/material";
+import { Alert, Box, Button, CircularProgress, IconButton, Stack, Switch, Tooltip, Typography, useTheme } from "@mui/material";
+import { alpha } from "@mui/material/styles";
+import { EmptyState, HotelPage, HotelPageHeader, plural, Surface } from "./hotelUi";
+import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
@@ -123,36 +126,42 @@ export const HotelPricingRulesPage: React.FC = () => {
     }
   };
 
-  return (
-    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
-      <Stack spacing={2}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
-          <Stack direction="row" alignItems="center" gap={1}>
-            <PriceChangeOutlined color="action" />
-            <Typography variant="h6" fontWeight={600}>
-              Ценообразование
-            </Typography>
-          </Stack>
-          {canManageRates && (
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<AddOutlined />}
-              component={RouterLink}
-              to="/pricing-rules/new"
-              disabled={!property || roomTypes.length === 0}
-            >
-              Добавить правило
-            </Button>
-          )}
-        </Stack>
+  const activeCount = rules.filter((r) => r.isActive).length;
 
-        <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-          Правило меняет цену выбранных категорий на процент или сумму за ночь при выполнении условий —
-          даты, загрузка, срок до заезда, длительность, день недели, любая комбинация сразу. {canManageRates
-            ? "Переключатель ниже выключает правило, не удаляя его — например, чтобы на праздники в этом году цена осталась обычной."
-            : "Изменение правил недоступно вашей роли — здесь только просмотр."}
-        </Alert>
+  return (
+    <HotelPage>
+        <HotelPageHeader
+          title="Ценообразование"
+          subtitle={
+            rules.length > 0
+              ? `${rules.length} ${plural(rules.length, "правило", "правила", "правил")} · ${activeCount} активно` +
+                (canManageRates ? "" : " · только просмотр")
+              : canManageRates
+                ? undefined
+                : "Только просмотр — изменение правил недоступно вашей роли"
+          }
+          info={
+            <>
+              Правило меняет цену выбранных категорий на процент или сумму за ночь при выполнении условий — даты,
+              загрузка, срок до заезда, длительность, день недели, любая комбинация сразу. Переключатель выключает
+              правило, не удаляя его — например, чтобы на праздники в этом году цена осталась обычной.
+            </>
+          }
+          actions={
+            canManageRates && (
+              <Button
+                variant="contained"
+                disableElevation
+                startIcon={<AddOutlined />}
+                component={RouterLink}
+                to="/pricing-rules/new"
+                disabled={!property || roomTypes.length === 0}
+              >
+                Добавить правило
+              </Button>
+            )
+          }
+        />
 
         {toggleError && (
           <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }} onClose={() => setToggleError(null)}>
@@ -181,92 +190,125 @@ export const HotelPricingRulesPage: React.FC = () => {
             Не удалось загрузить правила.
           </Alert>
         ) : (
-          <Stack gap={2} sx={{ maxWidth: 720 }}>
-            {roomTypes.length === 0 && (
-              <Typography variant="body2" color="text.disabled">
-                Сначала заведите категории номеров в разделе «Категории и тарифы» — правило применяется к ним.
-              </Typography>
-            )}
-            {roomTypes.length > 0 && rules.length === 0 && (
-              <Typography variant="body2" color="text.disabled">
-                Правил пока нет{canManageRates ? " — начните с «Добавить правило»." : "."}
-              </Typography>
-            )}
-            {rules.map((rule) => {
-              const amount = Number(rule.adjustmentValue);
-              const isDiscount = amount < 0;
-              // Пустой roomTypeIds — не «ни одной категории», а «все категории объекта,
-              // включая заведённые позже» (см. комментарий у HotelPricingRule.roomTypeIds).
-              const allCategories = rule.roomTypeIds.length === 0;
-              const conditionChips = describeConditions(rule);
-              return (
-                <Paper
-                  key={rule.id}
-                  elevation={0}
-                  variant="outlined"
-                  sx={{ p: 1.75, opacity: rule.isActive ? 1 : 0.6 }}
-                >
-                  <Stack direction="row" alignItems="flex-start" justifyContent="space-between" flexWrap="wrap" gap={1}>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-                        <Typography variant="subtitle2" fontWeight={700}>
+          roomTypes.length === 0 || rules.length === 0 ? (
+            <Surface>
+              <EmptyState
+                icon={<PriceChangeOutlined />}
+                title={roomTypes.length === 0 ? "Сначала нужны категории" : "Правил пока нет"}
+                description={
+                  roomTypes.length === 0
+                    ? "Правило меняет цену категорий номеров — заведите их в «Категориях и тарифах»."
+                    : "Например: +15% на выходные, −10% при бронировании за 30 дней, +20% при загрузке выше 80%."
+                }
+                action={
+                  roomTypes.length === 0 ? (
+                    <Button variant="contained" disableElevation component={RouterLink} to="/room-categories">
+                      Перейти к категориям
+                    </Button>
+                  ) : canManageRates ? (
+                    <Button variant="contained" disableElevation startIcon={<AddOutlined />} component={RouterLink} to="/pricing-rules/new">
+                      Добавить правило
+                    </Button>
+                  ) : undefined
+                }
+              />
+            </Surface>
+          ) : (
+            <Surface padded={false} sx={{ overflow: "hidden" }}>
+              {rules.map((rule, i) => {
+                const amount = Number(rule.adjustmentValue);
+                const isDiscount = amount < 0;
+                const tone = isDiscount ? theme.palette.success.main : theme.palette.warning.main;
+                // Пустой roomTypeIds — не «ни одной категории», а «все категории объекта,
+                // включая заведённые позже» (см. комментарий у HotelPricingRule.roomTypeIds).
+                const allCategories = rule.roomTypeIds.length === 0;
+                const conditions = describeConditions(rule);
+                const tags = [
+                  ...(conditions.length === 0 ? ["Действует всегда"] : conditions),
+                  ...(allCategories ? ["Все категории"] : rule.roomTypeIds.map(roomTypeName)),
+                ];
+                return (
+                  <Stack
+                    key={rule.id}
+                    direction="row"
+                    alignItems="center"
+                    gap={2}
+                    sx={{
+                      px: { xs: 2, md: 2.5 },
+                      py: 2,
+                      borderTop: i === 0 ? "none" : `1px solid ${subtleBorder(theme)}`,
+                      transition: "background-color .12s",
+                      "&:hover": { bgcolor: subtleBg(theme) },
+                    }}
+                  >
+                    {/* Величина правила — крупной плашкой слева: это то, ради чего правило читают. */}
+                    <Box
+                      sx={{
+                        width: 76,
+                        flexShrink: 0,
+                        py: 1,
+                        borderRadius: "10px",
+                        textAlign: "center",
+                        bgcolor: rule.isActive ? alpha(tone, theme.palette.mode === "dark" ? 0.18 : 0.12) : subtleBg(theme, true),
+                        color: rule.isActive ? tone : "text.disabled",
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1, fontVariantNumeric: "tabular-nums", color: "inherit" }}>
+                        {amount > 0 ? "+" : ""}
+                        {amount}
+                        {rule.adjustmentType === "percent" ? "%" : ""}
+                      </Typography>
+                      <Typography sx={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.04em", color: "inherit", opacity: 0.85 }}>
+                        {rule.adjustmentType === "percent" ? (isDiscount ? "СКИДКА" : "НАЦЕНКА") : "СОМ / НОЧЬ"}
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ flex: 1, minWidth: 0, opacity: rule.isActive ? 1 : 0.6 }}>
+                      <Stack direction="row" alignItems="center" gap={1}>
+                        <Typography sx={{ fontSize: 15.5, fontWeight: 700 }} noWrap>
                           {rule.name}
                         </Typography>
                         {!rule.isActive && (
-                          <Chip label="Выключено" size="small" color="default" sx={{ height: 20, fontSize: "0.7rem" }} />
+                          <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                            · выключено
+                          </Typography>
                         )}
                       </Stack>
-                      {conditionChips.length === 0 ? (
-                        <Typography variant="caption" color="text.secondary">
-                          Действует всегда
-                        </Typography>
-                      ) : (
-                        <Typography variant="caption" color="text.secondary">
-                          {conditionChips.join(" · ")}
-                        </Typography>
-                      )}
+                      <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mt: 0.75 }}>
+                        {tags.map((t) => (
+                          <Box
+                            key={t}
+                            component="span"
+                            sx={{ px: 1, py: 0.25, borderRadius: "6px", bgcolor: subtleBg(theme, true), fontSize: 12.5, color: "text.secondary", whiteSpace: "nowrap" }}
+                          >
+                            {t}
+                          </Box>
+                        ))}
+                      </Stack>
                     </Box>
-                    <Stack direction="row" alignItems="center" gap={1}>
-                      <Typography
-                        variant="subtitle1"
-                        fontWeight={700}
-                        color={isDiscount ? "success.main" : "text.primary"}
-                        sx={{ fontVariantNumeric: "tabular-nums" }}
-                      >
-                        {amount > 0 ? "+" : ""}
-                        {amount}
-                        {rule.adjustmentType === "percent" ? "%" : " сом"}
-                      </Typography>
+
+                    <Stack direction="row" alignItems="center" gap={0.5} sx={{ flexShrink: 0 }}>
                       <Switch
-                        size="small"
                         checked={rule.isActive}
                         disabled={!canManageRates || togglingId === rule.id}
                         onChange={() => void toggleActive(rule)}
                         inputProps={{ "aria-label": `${rule.isActive ? "Выключить" : "Включить"} правило «${rule.name}»` }}
                       />
                       {canManageRates && (
-                        <Button size="small" startIcon={<EditOutlined fontSize="small" />} component={RouterLink} to={`/pricing-rules/${rule.id}`}>
-                          Изменить
-                        </Button>
+                        <Tooltip title="Изменить">
+                          <IconButton component={RouterLink} to={`/pricing-rules/${rule.id}`} aria-label={`Изменить правило «${rule.name}»`}>
+                            <EditOutlined sx={{ fontSize: 19 }} />
+                          </IconButton>
+                        </Tooltip>
                       )}
                     </Stack>
                   </Stack>
-                  <Stack direction="row" flexWrap="wrap" gap={0.5} sx={{ mt: 1.25 }}>
-                    {allCategories ? (
-                      <Chip label="Все категории" size="small" variant="outlined" sx={{ height: 22, fontSize: "0.75rem" }} />
-                    ) : (
-                      rule.roomTypeIds.map((id) => (
-                        <Chip key={id} label={roomTypeName(id)} size="small" variant="outlined" sx={{ height: 22, fontSize: "0.75rem" }} />
-                      ))
-                    )}
-                  </Stack>
-                </Paper>
-              );
-            })}
-          </Stack>
+                );
+              })}
+            </Surface>
+          )
         )}
-      </Stack>
-    </Box>
+    </HotelPage>
   );
 };
 

@@ -19,14 +19,12 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   IconButton,
-  Paper,
   Stack,
   Table,
   TableBody,
@@ -34,20 +32,19 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
-import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
-import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
+import { useTheme } from "@mui/material/styles";
 import EditOutlined from "@mui/icons-material/EditOutlined";
-import InventoryOutlined from "@mui/icons-material/InventoryOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { Navigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { CustomDatePicker } from "../components/ui";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { subtleBg, subtleBorder } from "../theme/uiHelpers";
+import { DateStepper, HotelPage, HotelPageHeader, MetricTile, plural, SectionLabel, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 import { useIsVivaActive, MEAL_LABELS, MEAL_SERVING_WINDOW, type MealType } from "./mockDemoData";
 import { useHotelProperty } from "./useHotelProperty";
 import { getKitchenDayPlan, upsertPurchase, deletePurchase, updateStock, type HotelShoppingLine } from "../api/hotel";
@@ -71,6 +68,7 @@ interface StockEditTarget {
 export const HotelKitchenPage: React.FC = () => {
   usePageTitle("Кухня");
   const theme = useTheme();
+  const tableSx = useHotelTableSx();
   const vivaActive = useIsVivaActive();
   const { property } = useHotelProperty();
   const queryClient = useQueryClient();
@@ -174,116 +172,98 @@ export const HotelKitchenPage: React.FC = () => {
   const totalPlanned = plan ? plan.shoppingList.reduce((sum, i) => sum + Number(i.plannedAmount), 0) : 0;
   const purchasedCount = plan ? plan.shoppingList.filter((i) => i.purchase).length : 0;
 
-  return (
-    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap" sx={{ mb: 2 }}>
-        <Typography variant="h6" fontWeight={700}>
-          Кухня
-        </Typography>
+  const toBuyCount = plan ? plan.shoppingList.filter((i) => Number(i.toBuyQty) > 0).length : 0;
 
-        <Stack direction="row" alignItems="center" gap={1}>
-          <IconButton size="small" onClick={() => setDate((d) => d.subtract(1, "day"))}>
-            <ChevronLeftOutlined fontSize="small" />
-          </IconButton>
-          <CustomDatePicker
-            label="Дата"
-            value={date}
-            onChange={(v) => v && setDate(v)}
-            slotProps={{ textField: { size: "small" } }}
-            sx={{ width: 150 }}
-          />
-          <IconButton size="small" onClick={() => setDate((d) => d.add(1, "day"))}>
-            <ChevronRightOutlined fontSize="small" />
-          </IconButton>
-          {!isToday && (
-            <Button size="small" onClick={() => setDate(dayjs())}>
-              Сегодня
-            </Button>
-          )}
-        </Stack>
-      </Stack>
+  return (
+    <HotelPage>
+      <HotelPageHeader
+        title="Кухня"
+        subtitle={plan ? `Меню и закупка на ${plan.occupiedRooms} ${plural(plan.occupiedRooms, "занятый номер", "занятых номера", "занятых номеров")}` : undefined}
+        info={
+          <>
+            Порции и норма продуктов считаются от числа занятых на эту дату номеров. «Нужно» и «Докупить» не
+            редактируются: «Докупить» = нужно минус то, что есть на складе. «На складе» и «Куплено» — ввод
+            сотрудника, их всегда можно поправить.
+          </>
+        }
+        actions={<DateStepper value={date} onChange={setDate} />}
+      />
 
       {!plan ? (
-        <Stack alignItems="center" sx={{ py: 4 }}>
+        <Stack alignItems="center" sx={{ py: 6 }}>
           <CircularProgress size={28} />
         </Stack>
       ) : (
         <>
-          <Alert severity="info" variant="outlined" sx={{ mb: 2.5, fontSize: "0.8rem" }}>
-            Порции и норма продуктов посчитаны от {plan.occupiedRooms} занятых на эту дату номеров. «Нужно по
-            рецепту» и «Докупить» не редактируются напрямую — «Докупить» = нужно минус то, что уже есть на
-            складе. И «Есть на складе», и «Куплено» — реальный ввод сотрудника, оба всегда можно поправить.
-          </Alert>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
+            <MetricTile label="Занято номеров" value={plan.occupiedRooms} hint={isToday ? "на сегодня" : "на выбранную дату"} />
+            <MetricTile label="Блюд в меню" value={plan.dishes.length} hint={`${plan.dishes.reduce((s, d) => s + d.portions, 0)} порций всего`} />
+            <MetricTile
+              label="Куплено"
+              value={`${purchasedCount} / ${plan.shoppingList.length}`}
+              hint={toBuyCount > 0 ? `${toBuyCount} ${plural(toBuyCount, "позицию", "позиции", "позиций")} докупить` : "всего хватает"}
+              accent={purchasedCount === plan.shoppingList.length ? theme.palette.success.main : undefined}
+            />
+            <MetricTile label="Докупить на сумму" value={`${totalPlanned.toLocaleString("ru-RU")} сом`} hint="по плановым ценам" />
+          </Box>
 
-          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-            Расписание готовки
-          </Typography>
-          <Paper elevation={0} variant="outlined" sx={{ overflow: "hidden", mb: 3 }}>
-            <Box sx={{ overflowX: "auto" }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Приём пищи</TableCell>
-                    <TableCell>Время подачи</TableCell>
-                    <TableCell>Блюдо</TableCell>
-                    <TableCell align="right">Порций</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {MEAL_ORDER.flatMap((meal) => {
-                    const window = MEAL_SERVING_WINDOW[meal];
-                    return plan.dishes
-                      .filter((d) => d.meal === meal)
-                      .map((dish, idx) => (
-                        <TableRow key={dish.dishId} hover>
-                          <TableCell>
-                            {idx === 0 && (
-                              <Chip
-                                label={MEAL_LABELS[meal]}
-                                size="small"
-                                sx={{ fontWeight: 600, bgcolor: alpha(theme.palette.primary.main, 0.14), color: "primary.main" }}
-                              />
-                            )}
-                          </TableCell>
-                          <TableCell sx={{ fontWeight: 600 }}>
-                            {idx === 0 && `${window.from} – ${window.to}`}
-                          </TableCell>
-                          <TableCell>{dish.name}</TableCell>
-                          <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
-                            {dish.portions}
-                          </TableCell>
-                        </TableRow>
-                      ));
-                  })}
-                </TableBody>
-              </Table>
+          <Box>
+            <SectionLabel>Расписание готовки</SectionLabel>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 2 }}>
+              {MEAL_ORDER.map((meal) => {
+                const window = MEAL_SERVING_WINDOW[meal];
+                const dishes = plan.dishes.filter((d) => d.meal === meal);
+                return (
+                  <Surface key={meal}>
+                    <Stack direction="row" alignItems="baseline" justifyContent="space-between" sx={{ mb: 1.5 }}>
+                      <Typography sx={{ fontSize: 16, fontWeight: 700 }}>{MEAL_LABELS[meal]}</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                        {window.from} – {window.to}
+                      </Typography>
+                    </Stack>
+                    {dishes.length === 0 ? (
+                      <Typography variant="body2" color="text.disabled">
+                        Блюд нет
+                      </Typography>
+                    ) : (
+                      dishes.map((dish, i) => (
+                        <Stack
+                          key={dish.dishId}
+                          direction="row"
+                          justifyContent="space-between"
+                          gap={1}
+                          sx={{ py: 0.9, borderTop: i === 0 ? "none" : `1px solid ${subtleBorder(theme)}` }}
+                        >
+                          <Typography variant="body2">{dish.name}</Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
+                            {dish.portions} порц.
+                          </Typography>
+                        </Stack>
+                      ))
+                    )}
+                  </Surface>
+                );
+              })}
             </Box>
-          </Paper>
+          </Box>
 
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-            <Typography variant="subtitle1" fontWeight={700}>
-              Закупка продуктов
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Куплено: {purchasedCount} из {plan.shoppingList.length} · Докупить на сумму:{" "}
-              {totalPlanned.toLocaleString("ru-RU")} сом
-            </Typography>
-          </Stack>
-          <Paper elevation={0} variant="outlined" sx={{ overflow: "hidden" }}>
+          <Box>
+          <SectionLabel>Закупка продуктов</SectionLabel>
+          <Surface padded={false} sx={{ overflow: "hidden" }}>
             <Box sx={{ overflowX: "auto" }}>
-              <Table size="small">
+              <Table sx={tableSx}>
                 <TableHead>
                   <TableRow>
-                    <TableCell>Продукт</TableCell>
-                    <TableCell align="right">Нужно по рецепту</TableCell>
-                    <TableCell align="right">Есть на складе</TableCell>
+                    <TableCell sx={{ pl: 2.5 }}>Продукт</TableCell>
+                    <TableCell align="right">Нужно</TableCell>
+                    <TableCell align="right">На складе</TableCell>
                     <TableCell align="right">Докупить</TableCell>
-                    <TableCell align="right">Цена/ед план</TableCell>
+                    <TableCell align="right">План, сом/ед</TableCell>
                     <TableCell align="right">Куплено</TableCell>
-                    <TableCell align="right">Цена/ед факт</TableCell>
+                    <TableCell align="right">Факт, сом/ед</TableCell>
                     <TableCell align="right">Отклонение</TableCell>
                     <TableCell>Купил</TableCell>
-                    <TableCell align="right">Действие</TableCell>
+                    <TableCell align="right" sx={{ pr: 2 }} />
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -299,69 +279,92 @@ export const HotelKitchenPage: React.FC = () => {
                         : deviationPercent > 0
                         ? theme.palette.warning.main
                         : theme.palette.error.main;
+                    const num = { fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" } as const;
                     return (
-                      <TableRow key={item.ingredientId} hover>
-                        <TableCell sx={{ fontWeight: 600 }}>{item.ingredientName}</TableCell>
-                        <TableCell align="right">
+                      <TableRow key={item.ingredientId}>
+                        <TableCell sx={{ pl: 2.5, fontWeight: 600 }}>{item.ingredientName}</TableCell>
+                        <TableCell align="right" sx={{ ...num, color: "text.secondary" }}>
                           {Number(item.neededQty)} {item.unit}
                         </TableCell>
                         <TableCell align="right">
-                          <Button
-                            size="small"
-                            color="inherit"
-                            startIcon={<InventoryOutlined fontSize="small" />}
-                            onClick={() => openStockEdit(item)}
-                            sx={{ fontWeight: 600, minWidth: 0 }}
-                          >
-                            {Number(item.inStockQty)} {item.unit}
-                          </Button>
+                          <Tooltip title="Поправить остаток на складе">
+                            <Box
+                              component="button"
+                              type="button"
+                              onClick={() => openStockEdit(item)}
+                              sx={{
+                                ...num,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 0.5,
+                                px: 0.75,
+                                py: 0.25,
+                                border: 0,
+                                borderRadius: "6px",
+                                bgcolor: "transparent",
+                                color: "text.primary",
+                                font: "inherit",
+                                fontSize: 14,
+                                cursor: "pointer",
+                                textDecoration: "underline dotted",
+                                textUnderlineOffset: 3,
+                                "&:hover": { bgcolor: subtleBg(theme, true) },
+                              }}
+                            >
+                              {Number(item.inStockQty)} {item.unit}
+                            </Box>
+                          </Tooltip>
                         </TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700 }}>
+                        <TableCell align="right" sx={num}>
                           {toBuyQty > 0 ? (
-                            `${toBuyQty} ${item.unit}`
+                            <Typography variant="body2" fontWeight={700} sx={num}>
+                              {toBuyQty} {item.unit}
+                            </Typography>
                           ) : (
                             <Typography variant="body2" color="success.main" fontWeight={600}>
                               Хватает
                             </Typography>
                           )}
                         </TableCell>
-                        <TableCell align="right">{Number(item.pricePerUnit).toLocaleString("ru-RU")}</TableCell>
+                        <TableCell align="right" sx={{ ...num, color: "text.secondary" }}>
+                          {Number(item.pricePerUnit).toLocaleString("ru-RU")}
+                        </TableCell>
                         <TableCell align="right">
                           {purchase ? (
-                            <Chip
-                              icon={<CheckCircleOutlined fontSize="small" />}
-                              label={`${Number(purchase.purchasedQty)} ${item.unit}`}
-                              size="small"
-                              sx={{
-                                bgcolor: alpha(theme.palette.success.main, theme.palette.mode === "dark" ? 0.25 : 0.14),
-                                color: theme.palette.success.main,
-                                fontWeight: 600,
-                              }}
-                            />
+                            <StatusPill color={theme.palette.success.main} label={`${Number(purchase.purchasedQty)} ${item.unit}`} />
                           ) : (
-                            <Typography variant="body2" color="text.disabled">
-                              Не куплено
+                            <Typography variant="body2" color="text.disabled" sx={{ whiteSpace: "nowrap" }}>
+                              —
                             </Typography>
                           )}
                         </TableCell>
-                        <TableCell align="right">
+                        <TableCell align="right" sx={num}>
                           {purchase ? Number(purchase.actualPricePerUnit).toLocaleString("ru-RU") : "—"}
                         </TableCell>
-                        <TableCell align="right" sx={{ color: deviationColor, fontWeight: 600 }}>
+                        <TableCell align="right" sx={{ ...num, color: deviationColor, fontWeight: 600 }}>
                           {purchase ? `${deviationQty > 0 ? "+" : ""}${deviationQty.toFixed(1)} ${item.unit}` : "—"}
                         </TableCell>
-                        <TableCell>{purchase?.purchasedByName || "—"}</TableCell>
-                        <TableCell align="right">
-                          <Stack direction="row" gap={0.5} justifyContent="flex-end">
+                        <TableCell sx={{ whiteSpace: "nowrap", color: purchase?.purchasedByName ? "text.primary" : "text.disabled" }}>
+                          {purchase?.purchasedByName || "—"}
+                        </TableCell>
+                        <TableCell align="right" sx={{ pr: 2 }}>
+                          {purchase ? (
+                            <Tooltip title="Изменить закупку">
+                              <IconButton size="small" onClick={() => openPurchaseEdit(item)} aria-label={`Изменить закупку: ${item.ingredientName}`}>
+                                <EditOutlined sx={{ fontSize: 18 }} />
+                              </IconButton>
+                            </Tooltip>
+                          ) : (
                             <Button
                               size="small"
-                              variant={purchase ? "outlined" : "contained"}
-                              startIcon={<EditOutlined fontSize="small" />}
+                              variant="outlined"
+                              startIcon={<CheckCircleOutlined sx={{ fontSize: 16 }} />}
                               onClick={() => openPurchaseEdit(item)}
+                              sx={{ whiteSpace: "nowrap", borderRadius: "8px" }}
                             >
-                              {purchase ? "Изменить" : "Отметить купленным"}
+                              Купил
                             </Button>
-                          </Stack>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -369,7 +372,8 @@ export const HotelKitchenPage: React.FC = () => {
                 </TableBody>
               </Table>
             </Box>
-          </Paper>
+          </Surface>
+          </Box>
         </>
       )}
 
@@ -379,11 +383,11 @@ export const HotelKitchenPage: React.FC = () => {
             <DialogTitle>{purchaseEdit.item.ingredientName}</DialogTitle>
             <DialogContent>
               <Stack gap={2} sx={{ mt: 0.5 }}>
-                <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-                  Докупить: {Number(purchaseEdit.item.toBuyQty)} {purchaseEdit.item.unit} (нужно {Number(purchaseEdit.item.neededQty)}
-                  , на складе {Number(purchaseEdit.item.inStockQty)}) по {Number(purchaseEdit.item.pricePerUnit).toLocaleString("ru-RU")} сом.
-                  Ниже — сколько купили на самом деле; запись всегда можно открыть и поправить.
-                </Alert>
+                <Typography variant="body2" color="text.secondary">
+                  По плану докупить <b>{Number(purchaseEdit.item.toBuyQty)} {purchaseEdit.item.unit}</b> по{" "}
+                  {Number(purchaseEdit.item.pricePerUnit).toLocaleString("ru-RU")} сом (нужно {Number(purchaseEdit.item.neededQty)}, на складе{" "}
+                  {Number(purchaseEdit.item.inStockQty)}). Укажите, сколько купили на самом деле.
+                </Typography>
                 {purchaseError && <Alert severity="error">{purchaseError}</Alert>}
                 <TextField
                   label={`Куплено, ${purchaseEdit.item.unit}`}
@@ -429,10 +433,10 @@ export const HotelKitchenPage: React.FC = () => {
             <DialogTitle>Остаток на складе — {stockEdit.name}</DialogTitle>
             <DialogContent>
               <Stack gap={2} sx={{ mt: 0.5 }}>
-                <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-                  Сколько продукта физически есть на кухне прямо сейчас — общий остаток, не привязан к
-                  конкретному дню. Поправьте после переучёта или получения новой партии.
-                </Alert>
+                <Typography variant="body2" color="text.secondary">
+                  Сколько продукта физически есть на кухне прямо сейчас — общий остаток, не привязан к дню.
+                  Поправьте после переучёта или новой партии.
+                </Typography>
                 {stockError && <Alert severity="error">{stockError}</Alert>}
                 <TextField
                   label={`Остаток, ${stockEdit.unit}`}
@@ -457,7 +461,7 @@ export const HotelKitchenPage: React.FC = () => {
           </>
         )}
       </Dialog>
-    </Box>
+    </HotelPage>
   );
 };
 

@@ -108,15 +108,31 @@ import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
  * Даты подгружаются кусками по CHUNK_DAYS дней (лимит бэка на один запрос
  * календаря — 62): первый кусок (номер 0, от «сегодня − 2») грузится сразу,
  * соседние — когда прокрутка подходит к левому или правому краю
- * (LOAD_MORE_THRESHOLD_PX). В памяти держим не больше MAX_CHUNKS кусков
- * (≈ год): дальше окно скользит — с одной стороны кусок добавляется, с
- * противоположной самый дальний отбрасывается (maxPages), и число колонок в DOM
- * не растёт, сколько ни листай. Колонки рисуем только для загруженных кусков —
- * иначе незагруженные дни выглядели бы «свободными».
+ * (LOAD_MORE_THRESHOLD_PX). В памяти держим не больше MAX_CHUNKS кусков:
+ * дальше окно скользит — с одной стороны кусок добавляется, с противоположной
+ * самый дальний отбрасывается (maxPages). Раньше держали 6 (год данных) —
+ * живой аудит (60 номеров) показал реальную проблему не в данных, а в DOM:
+ * см. VISIBLE_DAYS_BUFFER ниже, который решает её виртуализацией колонок;
+ * MAX_CHUNKS всё равно снижен до 3 (≈полгода) — держать данные на год вперёд
+ * незачем даже с виртуализацией, это просто лишняя память и лишние перезапросы
+ * при быстрой перемотке.
  */
 const CHUNK_DAYS = 60;
-const MAX_CHUNKS = 6;
+const MAX_CHUNKS = 3;
 const LOAD_MORE_THRESHOLD_PX = 600;
+/**
+ * Виртуализация колонок дат — главный фикс из живого аудита («2849
+ * кнопок-ячеек на 12 номеров, на 60 номеров в год это было бы 20+ тысяч»,
+ * автоматизация браузера дважды подвисала на странице). Рисуем DOM (шапку
+ * дат, фоновые ячейки, бары) только для дат в видимой области прокрутки ±
+ * этот запас с каждой стороны — остальные загруженные даты числятся в
+ * данных (freeMask, подгрузка чанков), но узлов в DOM не создают. Запас в
+ * днях, а не в пикселях: при мелком масштабе (много дней в ширину окна)
+ * лишние колонки не расползаются на тысячи. Кисти клавиатуры/мыши не знают
+ * о виртуализации вовсе: ячейка, до которой можно дотянуться мышью или
+ * стрелками, по построению уже видна на экране — то есть уже отрисована.
+ */
+const VISIBLE_DAYS_BUFFER = 45;
 /**
  * Шаги масштаба — сколько дней помещается в ширину окна: от «1 неделя»
  * (детальнее) до 60. Остальные загруженные дни — правее, за горизонтальной
@@ -332,6 +348,32 @@ export const RoomBookingGrid: React.FC = () => {
   const dayColWidth =
     viewportWidth > 0 ? Math.max(MIN_DAY_COL_WIDTH, (viewportWidth - ROOM_COL_WIDTH) / numVisibleDays) : MIN_DAY_COL_WIDTH;
 
+  // ── Виртуализация колонок — см. комментарий у VISIBLE_DAYS_BUFFER выше.
+  // Шаг квантования (не пересчитывать на каждый пиксель прокрутки; запас
+  // VISIBLE_DAYS_BUFFER = 45 с каждой стороны втрое больше шага, так что
+  // область рендера никогда не «прыгает» мимо видимой части).
+  const RANGE_STEP_DAYS = 15;
+  const computeVisibleRange = React.useCallback((): { start: number; end: number } => {
+    if (!scrollEl || dayColWidth <= 0 || dates.length === 0) return { start: 0, end: dates.length };
+    const firstVisibleIdx = Math.floor(scrollEl.scrollLeft / dayColWidth);
+    const lastVisibleIdx = Math.ceil((scrollEl.scrollLeft + scrollEl.clientWidth) / dayColWidth);
+    const start = Math.max(0, Math.floor((firstVisibleIdx - VISIBLE_DAYS_BUFFER) / RANGE_STEP_DAYS) * RANGE_STEP_DAYS);
+    const end = Math.min(dates.length, Math.ceil((lastVisibleIdx + VISIBLE_DAYS_BUFFER) / RANGE_STEP_DAYS) * RANGE_STEP_DAYS);
+    return { start, end };
+  }, [scrollEl, dayColWidth, dates.length]);
+  const [visibleRange, setVisibleRange] = React.useState<{ start: number; end: number }>({ start: 0, end: 0 });
+  const updateVisibleRange = React.useCallback(() => {
+    const next = computeVisibleRange();
+    setVisibleRange((prev) => (prev.start === next.start && prev.end === next.end ? prev : next));
+  }, [computeVisibleRange]);
+  // Пересчёт при монтировании, ресайзе, смене масштаба, догрузке кусков — не
+  // только по скроллу (см. handleScroll ниже, тот же updateVisibleRange).
+  // useLayoutEffect, не useEffect: иначе первый кадр красился бы с {0,0}
+  // (пустая сетка), и только следующим тиком — с настоящими ячейками.
+  React.useLayoutEffect(() => {
+    updateVisibleRange();
+  }, [updateVisibleRange]);
+
   // Выделение периода зажатием мыши (подробнее — ниже, у startSelection). Объявлено
   // здесь: пока идёт протяжка, подгрузку кусков откладываем — индексы выделения
   // это позиции в dates, а слева или справа они сдвинулись бы.
@@ -391,6 +433,7 @@ export const RoomBookingGrid: React.FC = () => {
   const handleScroll = () => {
     if (scrollEl && dayColWidth > 0) leftDayRef.current = firstIdx * CHUNK_DAYS + scrollEl.scrollLeft / dayColWidth;
     loadMoreIfNeeded();
+    updateVisibleRange();
   };
   // Не только по скроллу: при крупном окне и мелком масштабе все загруженные дни
   // могут уместиться без прокрутки — тогда соседний кусок нужен сразу; при первом
@@ -836,6 +879,9 @@ export const RoomBookingGrid: React.FC = () => {
                 ))}
 
                 {dates.map((d, i) => {
+                  // Виртуализация — см. VISIBLE_DAYS_BUFFER: даты вне текущего окна
+                  // просто не рисуем (данные и позиция в сетке не зависят от этого).
+                  if (i < visibleRange.start || i >= visibleRange.end) return null;
                   const dateStr = d.format("YYYY-MM-DD");
                   const isToday = i === todayIdx;
                   const isSelected = dateStr === selectedDate;
@@ -1084,6 +1130,10 @@ export const RoomBookingGrid: React.FC = () => {
                         const selection =
                           dragSel && dragSel.roomId === room.id ? selectionBounds(dragSel.startIdx, dragSel.endIdx) : null;
                         return dates.map((d, i) => {
+                          // Виртуализация — см. VISIBLE_DAYS_BUFFER. freeMask/выделение считаются
+                          // по ВСЕМ загруженным датам (индексы важны для соседних ночей и клавиатуры),
+                          // не рисуем в DOM только то, что сейчас вне окна ± запас.
+                          if (i < visibleRange.start || i >= visibleRange.end) return null;
                           const dateStr = d.format("YYYY-MM-DD");
                           const isFree = freeMask[i];
                           const inSelection = selection != null && i >= selection[0] && i <= selection[1];
@@ -1165,6 +1215,10 @@ export const RoomBookingGrid: React.FC = () => {
                     const startCol = Math.max(0, rawStart);
                     const endCol = Math.min(dates.length, rawEnd);
                     if (endCol <= startCol) return null;
+                    // Виртуализация — см. VISIBLE_DAYS_BUFFER: пропускаем только бары, целиком
+                    // лежащие вне окна ± запас (пересечение, не просто индекс начала — бар может
+                    // начинаться раньше окна и всё ещё быть частично виден).
+                    if (endCol <= visibleRange.start || startCol >= visibleRange.end) return null;
                     const status = mapStayDisplayStatus(it.stayStatus);
                     const color = it.isOverbooking ? theme.palette.warning.main : hotelStayStatusColor(status, theme);
                     const nights = nightsBetween(it.checkIn, it.checkOut);

@@ -1547,7 +1547,9 @@ const DjangoSchedulePage: React.FC = () => {
               График
             </Button>
           )}
-          {tabsNode}
+          {/* На Viva переключатель «Календарь / Настройка» не нужен: «Настройка» —
+              недельные графики смен персонала клиники, отелю не подходит. */}
+          {!vivaActive && tabsNode}
         </Stack>
       </Box>
 

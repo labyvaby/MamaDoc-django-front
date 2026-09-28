@@ -11,6 +11,8 @@ export interface HomeRouteContext {
   hasActiveEmployee?: boolean;
   /** Настроенный организацией безопасный стартовый экран. */
   defaultHomeRoute?: string | null;
+  /** activeOrganization.vertical — отель заходит в шахматку, а не в «Регистратуру». */
+  vertical?: string | null;
 }
 
 /**
@@ -26,6 +28,7 @@ export function resolveHomeRoute({
   canOpenModule,
   hasActiveEmployee = false,
   defaultHomeRoute,
+  vertical,
 }: HomeRouteContext): string {
   const role = String(roleCode ?? "").toLowerCase();
 
@@ -34,6 +37,16 @@ export function resolveHomeRoute({
   // обычного permission/module-гейта для текущего сотрудника.
   if (defaultHomeRoute === "/pos" && can(PAGE_PERMISSIONS.pos)) {
     return "/pos";
+  }
+
+  // Отель (Viva): рабочее место администратора — «Бронирования» (шахматка
+  // номеров на /schedule, см. HotelOnly-ветку в src/pages/schedule/django/index.tsx),
+  // не клиничная «Регистратура». Проверяем ДО общих permissionRoutes ниже:
+  // роль Viva могла унаследовать appointmentsRegistry/bookings из общего
+  // шаблона ролей (найдено на живом стенде — сотрудник отеля попадал в
+  // «Регистратуру» приёма к врачу), а порядок ниже отдал бы им приоритет.
+  if (vertical === "hotel" && can(PAGE_PERMISSIONS.schedule)) {
+    return "/schedule";
   }
 
   if (role === "doctor" && can(PAGE_PERMISSIONS.doctorRoom)) return "/doctor";

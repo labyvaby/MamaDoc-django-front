@@ -27,6 +27,7 @@ import { AppButton } from "../../components/ui/AppButton";
 import { CanAccess } from "../../components/rbac/CanAccess";
 import { usePermissions, retryAuth } from "../../hooks/usePermissions";
 import { useFormValidation } from "../../hooks/useFormValidation";
+import { usePageTitle } from "../../hooks/usePageTitle";
 import {
   getOrganization,
   updateOrganization,
@@ -53,6 +54,11 @@ import TerminologyDrawer from "./terminology/TerminologyDrawer";
 
 const OrganizationSettingsPage: React.FC = () => {
   const { t } = useT("settings");
+  // Единственная вкладка настроек без usePageTitle: без него заголовок в
+  // шапке и вкладке браузера остаётся «Aximo» (дефолт из usePageTitle.ts) —
+  // это ровно то, что увидел живьём Viva-босс, когда «Организация» стала
+  // первой доступной вкладкой отеля (см. useVisibleSettingsTabs).
+  usePageTitle(t("organization.title"));
 
   function extractErrorMessage(err: unknown): string {
     if (err instanceof ApiError) {

@@ -156,6 +156,11 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // без этого кода (см. useVisibleSettingsTabs) — код нужен, чтобы выдать
   // журнал кому-то ещё. В шаблоны ролей не входит (safe-start).
   audit: "audit.view",
+  // «Отель» — заезд/выезд, правила проживания, выезд с задолженностью
+  // (HotelPropertySettingsPage.tsx). Та же строгость, что у номеров и
+  // категорий (hotelRooms/hotelRoomCategories в PAGE_PERMISSIONS) — не
+  // hotel.view, эта вкладка только пишет. Видна только vertical==="hotel".
+  hotelProperty: "hotel.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

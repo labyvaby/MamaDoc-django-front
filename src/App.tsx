@@ -121,6 +121,7 @@ const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
 const PatientProgramPage = lazy(() => import("./pages/patient-program"));
 const HotelIntegrationsPage = lazy(() => import("./dev/HotelIntegrationsPage"));
+const HotelPropertySettingsPage = lazy(() => import("./dev/HotelPropertySettingsPage"));
 const HotelKitchenPage = lazy(() => import("./dev/HotelKitchenPage"));
 const HotelHousekeepingPage = lazy(() => import("./dev/HotelHousekeepingPage"));
 const HotelRoomsPage = lazy(() => import("./dev/HotelRoomsPage"));
@@ -184,6 +185,7 @@ const RootRedirect = () => {
     canOpenModule: moduleGate,
     hasActiveEmployee: activeEmployee != null,
     defaultHomeRoute: activeOrganization?.themeConfig?.defaultHomeRoute,
+    vertical: activeOrganization?.vertical,
   });
   return <Navigate to={path} replace />;
 };
@@ -1134,6 +1136,16 @@ function App() {
                                 <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.branches}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <BranchesSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/hotel-property"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.hotelProperty}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <HotelPropertySettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

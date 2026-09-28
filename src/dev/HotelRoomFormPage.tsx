@@ -48,16 +48,14 @@ import {
   FormControlLabel,
   IconButton,
   MenuItem,
-  Paper,
   Stack,
   Switch,
   TextField,
   Tooltip,
   Typography,
-  useTheme,
 } from "@mui/material";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
-import HotelOutlined from "@mui/icons-material/HotelOutlined";
+import { FormCard, HotelPage, HotelPageHeader, StickyActions } from "./hotelUi";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import AddPhotoAlternateOutlined from "@mui/icons-material/AddPhotoAlternateOutlined";
@@ -396,8 +394,8 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
   };
 
   return (
-    <Stack gap={2} sx={{ maxWidth: 640 }}>
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+    <Stack gap={2.5}>
+      <FormCard>
         <Stack gap={2}>
           <Typography variant="subtitle2" fontWeight={600}>
             Основное
@@ -482,9 +480,9 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
             fullWidth
           />
         </Stack>
-      </Paper>
+      </FormCard>
 
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+      <FormCard>
         <Stack gap={2}>
           <Typography variant="subtitle2" fontWeight={600}>
             Доп. характеристики
@@ -583,9 +581,9 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
             fullWidth
           />
         </Stack>
-      </Paper>
+      </FormCard>
 
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+      <FormCard>
         <Stack gap={1.5}>
           <Typography variant="subtitle2" fontWeight={600}>
             Экспликация помещений
@@ -682,9 +680,9 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
             Добавить помещение
           </Button>
         </Stack>
-      </Paper>
+      </FormCard>
 
-      <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+      <FormCard>
         <Stack gap={1.5}>
           <Typography variant="subtitle2" fontWeight={600}>
             Фото номера
@@ -755,10 +753,10 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
             </>
           )}
         </Stack>
-      </Paper>
+      </FormCard>
 
       {editing && (
-        <Paper elevation={0} variant="outlined" sx={{ p: 2 }}>
+        <FormCard>
           <Stack gap={1.5}>
             <Typography variant="subtitle2" fontWeight={600}>
               Продажа и состояние
@@ -780,7 +778,7 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
               </Typography>
             </Stack>
           </Stack>
-        </Paper>
+        </FormCard>
       )}
 
       {error && (
@@ -789,7 +787,12 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
         </Alert>
       )}
 
-      <Stack direction="row" gap={1} justifyContent="flex-end">
+      <StickyActions>
+        {isDirty && (
+          <Typography variant="caption" color="text.secondary" sx={{ mr: "auto" }}>
+            Есть несохранённые изменения
+          </Typography>
+        )}
         <Button
           component={RouterLink}
           to={backPath}
@@ -803,10 +806,16 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
         >
           Отмена
         </Button>
-        <Button variant="contained" disabled={!form.number.trim() || form.roomTypeId === "" || saving} onClick={() => void submit()}>
-          {saving ? "Сохраняем…" : editing ? "Сохранить" : "Добавить"}
+        <Button
+          variant="contained"
+          disableElevation
+          disabled={!form.number.trim() || form.roomTypeId === "" || saving}
+          onClick={() => void submit()}
+          sx={{ px: 3 }}
+        >
+          {saving ? "Сохраняем…" : editing ? "Сохранить" : "Добавить номер"}
         </Button>
-      </Stack>
+      </StickyActions>
     </Stack>
   );
 };
@@ -815,7 +824,6 @@ export const HotelRoomFormPage: React.FC = () => {
   const { roomId } = useParams();
   const isEdit = roomId != null;
   usePageTitle(isEdit ? "Номер" : "Новый номер");
-  const theme = useTheme();
   const location = useLocation();
   const { property } = useHotelProperty();
   const backPath = backPathFrom(location.state);
@@ -854,30 +862,35 @@ export const HotelRoomFormPage: React.FC = () => {
   const [leaveTo, setLeaveTo] = React.useState<string | null>(null);
 
   return (
-    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
-      <Stack spacing={2}>
-        <Stack direction="row" alignItems="center" gap={1}>
-          <Tooltip title="Назад">
-            <IconButton
-              size="small"
-              component={RouterLink}
-              to={backPath}
-              aria-label="Назад"
-              onClick={(e: React.MouseEvent) => {
-                if (dirty) {
-                  e.preventDefault();
-                  setLeaveTo(backPath);
-                }
-              }}
-            >
-              <ArrowBackOutlined fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <HotelOutlined color="action" />
-          <Typography variant="h6" fontWeight={600}>
-            {isEdit ? (room ? `Номер ${room.number}` : "Номер") : "Новый номер"}
-          </Typography>
-        </Stack>
+    <HotelPage maxWidth={760}>
+        <HotelPageHeader
+          leading={
+            <Tooltip title="Назад">
+              <IconButton
+                component={RouterLink}
+                to={backPath}
+                aria-label="Назад"
+                sx={{ ml: -1, mr: 0.5 }}
+                onClick={(e: React.MouseEvent) => {
+                  if (dirty) {
+                    e.preventDefault();
+                    setLeaveTo(backPath);
+                  }
+                }}
+              >
+                <ArrowBackOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          }
+          title={isEdit ? (room ? `Номер ${room.number}` : "Номер") : "Новый номер"}
+          subtitle={
+            isEdit
+              ? room
+                ? [room.roomTypeName, room.floor && `${room.floor} этаж`, room.status === "out_of_service" ? "снят с продажи" : null].filter(Boolean).join(" · ")
+                : undefined
+              : "Номер сразу появится в шахматке и в форме брони"
+          }
+        />
 
         {loading ? (
           <Stack alignItems="center" sx={{ py: 4 }}>
@@ -935,7 +948,6 @@ export const HotelRoomFormPage: React.FC = () => {
             onLeave={setLeaveTo}
           />
         )}
-      </Stack>
 
       <Dialog open={leaveTo != null} onClose={() => setLeaveTo(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Выйти без сохранения?</DialogTitle>
@@ -962,7 +974,7 @@ export const HotelRoomFormPage: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </HotelPage>
   );
 };
 

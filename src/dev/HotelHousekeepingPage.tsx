@@ -17,9 +17,9 @@
 import React from "react";
 import {
   Alert,
+  Avatar,
   Box,
   Button,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -29,7 +29,6 @@ import {
   FormControlLabel,
   IconButton,
   MenuItem,
-  Paper,
   Stack,
   Switch,
   Table,
@@ -38,16 +37,20 @@ import {
   TableHead,
   TableRow,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
-import { alpha, useTheme, type Theme } from "@mui/material/styles";
+import { useTheme, type Theme } from "@mui/material/styles";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import ArrowDropDownOutlined from "@mui/icons-material/ArrowDropDownOutlined";
+import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
+import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
+import AutorenewOutlined from "@mui/icons-material/AutorenewOutlined";
+import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
+import BuildOutlined from "@mui/icons-material/BuildOutlined";
 import Menu from "@mui/material/Menu";
+import { EmptyState, FilterChip, HotelPage, HotelPageHeader, plural, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 import dayjs from "dayjs";
 import { Navigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -55,9 +58,9 @@ import { useSnackbar } from "notistack";
 
 import { CustomDateTimePicker } from "../components/ui";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { useIsVivaActive } from "./mockDemoData";
+import { initialsOf, useIsVivaActive } from "./mockDemoData";
 import { useHotelProperty } from "./useHotelProperty";
-import { HOTEL_ROOM_STATE_LABELS, HOTEL_ROOM_STATES } from "./hotelDisplay";
+import { HOTEL_ROOM_STATE_LABELS, HOTEL_ROOM_STATES, hotelRoomStateColor } from "./hotelDisplay";
 import {
   listRooms,
   listHousekeepingTasks,
@@ -89,6 +92,21 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
 };
 const TASK_STATUSES: TaskStatus[] = ["open", "in_progress", "done", "cancelled"];
 
+const KIND_ICONS: Record<TaskKind, React.ReactNode> = {
+  checkout: <LogoutOutlined sx={{ fontSize: 17 }} />,
+  stayover: <AutorenewOutlined sx={{ fontSize: 17 }} />,
+  inspection: <FactCheckOutlined sx={{ fontSize: 17 }} />,
+  maintenance: <BuildOutlined sx={{ fontSize: 17 }} />,
+};
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: "open", label: "Открытые" },
+  { value: "in_progress", label: "В работе" },
+  { value: "done", label: "Готово" },
+  { value: "cancelled", label: "Отменено" },
+  { value: "all", label: "Все" },
+];
+
 function statusColor(status: TaskStatus, theme: Theme): string {
   switch (status) {
     case "open":
@@ -117,6 +135,7 @@ const emptyForm: TaskFormState = { roomId: "", kind: "checkout", assignedToId: "
 export const HotelHousekeepingPage: React.FC = () => {
   usePageTitle("Уборка");
   const theme = useTheme();
+  const tableSx = useHotelTableSx();
   const vivaActive = useIsVivaActive();
   const { property } = useHotelProperty();
   const queryClient = useQueryClient();
@@ -264,97 +283,149 @@ export const HotelHousekeepingPage: React.FC = () => {
 
   if (!vivaActive) return <Navigate to="/" replace />;
 
+  const now = dayjs();
+  const isOverdue = (t: HotelHousekeepingTask) =>
+    t.dueAt != null && (t.status === "open" || t.status === "in_progress") && dayjs(t.dueAt).isBefore(now);
+  const overdueCount = tasks.filter(isOverdue).length;
+
   return (
-    <Box sx={{ height: "100%", overflow: "auto", px: theme.appLayout.page.paddingX, py: 2 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap" sx={{ mb: 2 }}>
-        <Typography variant="h6" fontWeight={700}>
-          Уборка
-        </Typography>
-        <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
-          <ToggleButtonGroup
-            value={statusFilter}
-            exclusive
-            size="small"
-            onChange={(_, v: StatusFilter | null) => v && setStatusFilter(v)}
-          >
-            <ToggleButton value="open">Открытые</ToggleButton>
-            <ToggleButton value="in_progress">В работе</ToggleButton>
-            <ToggleButton value="done">Готово</ToggleButton>
-            <ToggleButton value="cancelled">Отменено</ToggleButton>
-            <ToggleButton value="all">Все</ToggleButton>
-          </ToggleButtonGroup>
-          <FormControlLabel
-            control={<Switch size="small" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} />}
-            label={<Typography variant="body2">Мои задачи</Typography>}
-          />
-          <Button size="small" variant="contained" startIcon={<AddOutlined />} onClick={openCreate}>
+    <HotelPage>
+      <HotelPageHeader
+        title="Уборка"
+        subtitle={
+          tasksQuery.isSuccess
+            ? tasks.length === 0
+              ? undefined
+              : `${tasks.length} ${plural(tasks.length, "задача", "задачи", "задач")}` + (overdueCount > 0 ? ` · ${overdueCount} просрочено` : "")
+            : undefined
+        }
+        info="Задачи горничным: после выезда, текущая уборка, проверка, обслуживание. Статус меняется кликом по нему; при закрытии задачи можно сразу поставить состояние номера."
+        actions={
+          <Button variant="contained" disableElevation startIcon={<AddOutlined />} onClick={openCreate}>
             Новая задача
           </Button>
+        }
+      />
+
+      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
+        <Stack direction="row" gap={1} flexWrap="wrap">
+          {STATUS_FILTERS.map((f) => (
+            <FilterChip key={f.value} label={f.label} active={statusFilter === f.value} onClick={() => setStatusFilter(f.value)} />
+          ))}
         </Stack>
+        <FormControlLabel
+          sx={{ mr: 0 }}
+          control={<Switch size="small" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} />}
+          label={<Typography variant="body2">Только мои</Typography>}
+        />
       </Stack>
 
       {tasksQuery.isLoading ? (
-        <Stack alignItems="center" sx={{ py: 4 }}>
+        <Stack alignItems="center" sx={{ py: 6 }}>
           <CircularProgress size={28} />
         </Stack>
       ) : tasksQuery.isError ? (
-        <Alert severity="error">{getErrorMessage(tasksQuery.error, "Не удалось загрузить задачи уборки")}</Alert>
+        <Alert severity="error" variant="outlined">
+          {getErrorMessage(tasksQuery.error, "Не удалось загрузить задачи уборки")}
+        </Alert>
       ) : tasks.length === 0 ? (
-        <Paper elevation={0} variant="outlined" sx={{ p: 4, textAlign: "center" }}>
-          <Typography color="text.secondary">Задач нет</Typography>
-        </Paper>
+        <Surface>
+          <EmptyState
+            icon={<CleaningServicesOutlined />}
+            title={statusFilter === "open" ? "Открытых задач нет" : "Задач нет"}
+            description={statusFilter === "open" ? "Все номера в порядке. Задачи после выезда появляются здесь автоматически." : "Попробуйте другой фильтр."}
+            action={
+              <Button variant="outlined" startIcon={<AddOutlined />} onClick={openCreate}>
+                Создать задачу
+              </Button>
+            }
+          />
+        </Surface>
       ) : (
-        <Paper elevation={0} variant="outlined" sx={{ overflow: "hidden" }}>
+        <Surface padded={false} sx={{ overflow: "hidden" }}>
           <Box sx={{ overflowX: "auto" }}>
-            <Table size="small">
+            <Table sx={tableSx}>
               <TableHead>
                 <TableRow>
-                  <TableCell>Номер</TableCell>
-                  <TableCell>Вид</TableCell>
+                  <TableCell sx={{ pl: 2.5 }}>Номер</TableCell>
+                  <TableCell>Задача</TableCell>
                   <TableCell>Статус</TableCell>
                   <TableCell>Исполнитель</TableCell>
                   <TableCell>Срок</TableCell>
                   <TableCell>Заметка</TableCell>
-                  <TableCell align="right">Действия</TableCell>
+                  <TableCell align="right" sx={{ pr: 2 }} />
                 </TableRow>
               </TableHead>
               <TableBody>
                 {tasks.map((task) => {
-                  const color = statusColor(task.status, theme);
-                  const dark = theme.palette.mode === "dark";
+                  const overdue = isOverdue(task);
                   return (
-                    <TableRow key={task.id} hover>
-                      <TableCell sx={{ fontWeight: 600 }}>{task.roomNumber}</TableCell>
-                      <TableCell>{KIND_LABELS[task.kind]}</TableCell>
+                    <TableRow key={task.id}>
+                      <TableCell sx={{ pl: 2.5 }}>
+                        <Stack direction="row" alignItems="center" gap={1}>
+                          <Tooltip title={`Номер сейчас: ${HOTEL_ROOM_STATE_LABELS[task.roomHousekeepingState as keyof typeof HOTEL_ROOM_STATE_LABELS] ?? task.roomHousekeepingState}`}>
+                            <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: hotelRoomStateColor(task.roomHousekeepingState, theme) }} />
+                          </Tooltip>
+                          <Typography sx={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{task.roomNumber}</Typography>
+                        </Stack>
+                      </TableCell>
                       <TableCell>
-                        <Chip
-                          label={
-                            <Stack component="span" direction="row" alignItems="center" gap={0.5}>
-                              {STATUS_LABELS[task.status]}
-                              <ArrowDropDownOutlined fontSize="small" />
-                            </Stack>
-                          }
-                          size="small"
+                        <Stack direction="row" alignItems="center" gap={1}>
+                          <Box sx={{ color: "text.secondary", display: "flex" }}>{KIND_ICONS[task.kind]}</Box>
+                          <Typography variant="body2" fontWeight={500}>
+                            {KIND_LABELS[task.kind]}
+                          </Typography>
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        <StatusPill
+                          color={statusColor(task.status, theme)}
+                          label={STATUS_LABELS[task.status]}
+                          endIcon={<ArrowDropDownOutlined sx={{ fontSize: 18, ml: -0.5, color: "text.secondary" }} />}
                           onClick={(e) => setStatusMenuAnchor({ el: e.currentTarget, task })}
-                          sx={{
-                            bgcolor: alpha(color, dark ? 0.25 : 0.14),
-                            color: "text.primary",
-                            fontWeight: 600,
-                            cursor: "pointer",
-                          }}
                         />
                       </TableCell>
-                      <TableCell>{task.assignedToName || <Typography color="text.disabled">—</Typography>}</TableCell>
-                      <TableCell>{formatDue(task.dueAt)}</TableCell>
-                      <TableCell sx={{ maxWidth: 240 }}>
+                      <TableCell>
+                        {task.assignedToName ? (
+                          <Stack direction="row" alignItems="center" gap={1}>
+                            <Avatar sx={{ width: 26, height: 26, fontSize: 11, fontWeight: 700 }}>{initialsOf(task.assignedToName)}</Avatar>
+                            <Typography variant="body2" noWrap>
+                              {task.assignedToName}
+                            </Typography>
+                          </Stack>
+                        ) : (
+                          <Typography variant="body2" color="text.disabled">
+                            Не назначен
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {task.dueAt ? (
+                          <Box>
+                            <Typography variant="body2" sx={{ fontVariantNumeric: "tabular-nums", color: overdue ? "error.main" : "text.primary", fontWeight: overdue ? 600 : 400 }}>
+                              {formatDue(task.dueAt)}
+                            </Typography>
+                            {overdue && (
+                              <Typography variant="caption" color="error.main">
+                                просрочено
+                              </Typography>
+                            )}
+                          </Box>
+                        ) : (
+                          <Typography variant="body2" color="text.disabled">
+                            Без срока
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell sx={{ maxWidth: 260 }}>
                         <Typography variant="body2" color="text.secondary" noWrap title={task.note}>
                           {task.note || "—"}
                         </Typography>
                       </TableCell>
-                      <TableCell align="right">
+                      <TableCell align="right" sx={{ pr: 2 }}>
                         <Tooltip title="Изменить">
-                          <IconButton size="small" onClick={() => openEdit(task)}>
-                            <EditOutlined fontSize="small" />
+                          <IconButton size="small" onClick={() => openEdit(task)} aria-label={`Изменить задачу по номеру ${task.roomNumber}`}>
+                            <EditOutlined sx={{ fontSize: 18 }} />
                           </IconButton>
                         </Tooltip>
                       </TableCell>
@@ -364,7 +435,7 @@ export const HotelHousekeepingPage: React.FC = () => {
               </TableBody>
             </Table>
           </Box>
-        </Paper>
+        </Surface>
       )}
 
       {/* Смена статуса — тот же приём, что чип в RoomStateControl. */}
@@ -485,7 +556,7 @@ export const HotelHousekeepingPage: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </HotelPage>
   );
 };
 

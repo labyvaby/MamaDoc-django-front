@@ -49,6 +49,7 @@ import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import HubOutlined from "@mui/icons-material/HubOutlined";
 import ManageHistoryOutlined from "@mui/icons-material/ManageHistoryOutlined";
+import HotelOutlined from "@mui/icons-material/HotelOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
@@ -127,6 +128,15 @@ const TAB_DEFS: TabDef[] = [
     key: "branches",
     to: "/settings/branches",
     icon: <StoreOutlined fontSize="small" />,
+    group: "clinic",
+  },
+  {
+    // Заезд/выезд, правила проживания — видна только vertical==="hotel"
+    // (useVisibleSettingsTabs), в той же группе, что «Организация» и
+    // «Филиалы»: у отеля группа "clinic" и есть их единственный раздел.
+    key: "hotelProperty",
+    to: "/settings/hotel-property",
+    icon: <HotelOutlined fontSize="small" />,
     group: "clinic",
   },
   {
@@ -299,6 +309,21 @@ export function useVisibleSettingsTabs(): TabDef[] {
     "diagnoses",
     "conclusionForms",
   ];
+  // Товарная розница (продажа штучных товаров через кассу) не подходит
+  // отелю — с живого стенда: босс открыл «Магазин» по умолчанию (первая
+  // видимая вкладка) и увидел «Правила продажи товаров», «Открыть кассу»
+  // и тупиковое «Выберите филиал в верхней панели» (см. Выберите филиал в
+  // PosModuleSettingsPage.tsx — в шапке отеля такого селектора нет вовсе).
+  // Скрываем весь товарный блок: без него первой видимой вкладкой отеля
+  // становится «Организация», так что это заодно чинит и дефолтный роут.
+  const hotelHiddenTabs: SettingsTabKey[] = [
+    "store",
+    "procurement",
+    "discountKinds",
+    "promotions",
+    // Виджет записи на odoctor.kg — клиничный сервис, у отеля нет приёмов.
+    "odoctor",
+  ];
   return TAB_DEFS.filter((tab) => {
     if (
       (activeOrganization?.vertical === "retail" || activeOrganization?.vertical === "hotel") &&
@@ -306,9 +331,13 @@ export function useVisibleSettingsTabs(): TabDef[] {
     ) {
       return false;
     }
+    if (activeOrganization?.vertical === "hotel" && hotelHiddenTabs.includes(tab.key)) {
+      return false;
+    }
     if (tab.key === "productAttributes" && activeOrganization?.vertical !== "retail") return false;
     if (tab.key === "clients" && activeOrganization?.vertical !== "retail") return false;
     if (tab.key === "integrations" && activeOrganization?.vertical !== "hotel") return false;
+    if (tab.key === "hotelProperty" && activeOrganization?.vertical !== "hotel") return false;
     // Справочник способов безнала: на бэке эндпоинта ещё нет — вкладку
     // показываем только вместе с остальным UI, по флагу (api/cashlessMethods.ts).
     if (tab.key === "cashlessMethods" && !CASHLESS_METHODS_ENABLED) return false;
