@@ -56,6 +56,8 @@ import {
 } from "@mui/material";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import { FormCard, HotelPage, HotelPageHeader, StickyActions } from "./hotelUi";
+import { useTheme } from "@mui/material/styles";
+import { subtleBorder } from "../theme/uiHelpers";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import AddPhotoAlternateOutlined from "@mui/icons-material/AddPhotoAlternateOutlined";
@@ -394,7 +396,8 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
   };
 
   return (
-    <Stack gap={2.5}>
+    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1fr) 340px" }, gap: 3, alignItems: "start" }}>
+    <Stack gap={2.5} sx={{ minWidth: 0 }}>
       <FormCard>
         <Stack gap={2}>
           <Typography variant="subtitle2" fontWeight={600}>
@@ -817,6 +820,85 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
         </Button>
       </StickyActions>
     </Stack>
+    <RoomPreview form={form} category={roomTypes.find((rt) => rt.id === form.roomTypeId)} mealChoices={mealChoices} />
+    </Box>
+  );
+};
+
+/**
+ * Живое превью справа — как номер будет выглядеть в карточке номера на
+ * шахматке: номер, категория и цена, вместимость и заполненные характеристики.
+ */
+const RoomPreview: React.FC<{ form: RoomFormState; category: HotelRoomType | undefined; mealChoices: { value: string; label: string }[] }> = ({
+  form,
+  category,
+  mealChoices,
+}) => {
+  const theme = useTheme();
+  const line = `1px solid ${subtleBorder(theme)}`;
+  const rows: [string, string][] = [];
+  if (form.floor.trim()) rows.push(["Этаж", form.floor.trim()]);
+  if (form.area.trim()) rows.push(["Площадь", `${form.area.trim()} м²`]);
+  if (form.roomsCount.trim()) rows.push(["Комнат", form.roomsCount.trim()]);
+  if (form.bathrooms.trim()) rows.push(["Санузлов", form.bathrooms.trim()]);
+  if (form.ceilingHeight.trim()) rows.push(["Потолки", `${form.ceilingHeight.trim()} м`]);
+  const view = form.view.trim() || category?.view;
+  if (view) rows.push(["Вид из окна", view]);
+  if (form.windowSide.trim()) rows.push(["Окна выходят", form.windowSide.trim()]);
+  if (form.hasTerrace) rows.push(["Терраса", form.terraceArea.trim() ? `${form.terraceArea.trim()} м²` : "есть"]);
+  if (form.isCorner) rows.push(["Расположение", "угловой"]);
+  if (form.meals.length > 0) rows.push(["Питание", form.meals.map((m) => mealChoices.find((c) => c.value === m)?.label ?? m).join(", ")]);
+  return (
+    <Box sx={{ position: { lg: "sticky" }, top: 24, display: { xs: "none", lg: "block" } }}>
+      <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary", mb: 1.25 }}>
+        Карточка номера
+      </Typography>
+      <Box sx={{ p: 2.5, borderRadius: "14px", border: `1px solid ${theme.palette.divider}`, bgcolor: "background.paper" }}>
+        <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary" }} noWrap>
+          {category?.name ?? "Категория не выбрана"}
+        </Typography>
+        <Stack direction="row" alignItems="flex-end" justifyContent="space-between" gap={1.5} sx={{ mt: 0.5 }}>
+          <Typography sx={{ fontSize: 26, fontWeight: 700, lineHeight: 1.1, letterSpacing: "-0.015em", textDecoration: form.onSale ? "none" : "line-through" }} noWrap>
+            Номер {form.number.trim() || "—"}
+          </Typography>
+          {category && (
+            <Box sx={{ textAlign: "right", flexShrink: 0 }}>
+              <Typography sx={{ fontSize: 17, fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>
+                {Number(category.totalPrice).toLocaleString("ru-RU")}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                сом / ночь
+              </Typography>
+            </Box>
+          )}
+        </Stack>
+        {category && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+            до {category.adultsCapacity} взр.{category.childrenCapacity > 0 ? ` + ${category.childrenCapacity} дет.` : ""}
+            {!form.onSale ? " · снят с продажи" : ""}
+          </Typography>
+        )}
+
+        <Box sx={{ mt: 2, pt: 0.5, borderTop: line }}>
+          {rows.length === 0 ? (
+            <Typography variant="caption" color="text.disabled" sx={{ display: "block", pt: 1.5 }}>
+              Характеристики появятся здесь по мере заполнения
+            </Typography>
+          ) : (
+            rows.map(([label, value], i) => (
+              <Stack key={label} direction="row" justifyContent="space-between" gap={2} sx={{ py: 0.9, borderTop: i === 0 ? "none" : line }}>
+                <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>
+                  {label}
+                </Typography>
+                <Typography variant="body2" fontWeight={600} sx={{ textAlign: "right", minWidth: 0 }}>
+                  {value}
+                </Typography>
+              </Stack>
+            ))
+          )}
+        </Box>
+      </Box>
+    </Box>
   );
 };
 
@@ -862,7 +944,7 @@ export const HotelRoomFormPage: React.FC = () => {
   const [leaveTo, setLeaveTo] = React.useState<string | null>(null);
 
   return (
-    <HotelPage maxWidth={760}>
+    <HotelPage maxWidth={1180}>
         <HotelPageHeader
           leading={
             <Tooltip title="Назад">

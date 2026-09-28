@@ -42,7 +42,6 @@ import {
   Box,
   Button,
   Collapse,
-  Divider,
   Drawer,
   FormControlLabel,
   IconButton,
@@ -56,7 +55,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
@@ -73,6 +71,7 @@ import { capitalizeFullName } from "../utility/name";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../utility/formDraft";
 import { initialsOf, type GuestType } from "./mockDemoData";
 import { HOTEL_GUEST_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS, formatGuestMatchedBy } from "./hotelDisplay";
+import { DRAWER_WIDTH, DrawerFooter, DrawerHeader, DrawerSection } from "./hotelUi";
 import { isDocumentFile, prepareDocumentFile, useDocumentScan } from "./useDocumentScan";
 import { DocumentDropzone } from "./DocumentDropzone";
 import {
@@ -658,30 +657,27 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
       open={open}
       onClose={handleClose}
       PaperProps={{
-        sx: { width: { xs: 320, sm: 480, md: 520 }, maxWidth: "100vw", display: "flex", flexDirection: "column" },
+        sx: { width: DRAWER_WIDTH, maxWidth: "100vw", display: "flex", flexDirection: "column", backgroundImage: "none" },
       }}
     >
       <Box sx={{ width: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
-        {/* header */}
-        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1 }}>
-          <Typography variant="h6">Новый гость</Typography>
-          <Stack direction="row" alignItems="center" gap={0.5}>
-            {draftRestored && (
-              <Tooltip title="Восстановлен черновик — стереть?">
-                <IconButton onClick={handleDiscardDraft} aria-label="Стереть черновик">
-                  <RestoreOutlined fontSize="small" />
+        <DrawerHeader
+          title="Новый гость"
+          subtitle={draftRestored ? "Восстановлен незаконченный черновик" : "Карточка гостя — отдельно от брони"}
+          onClose={handleClose}
+          actions={
+            draftRestored && (
+              <Tooltip title="Стереть черновик">
+                <IconButton onClick={handleDiscardDraft} aria-label="Стереть черновик" sx={{ width: 34, height: 34 }}>
+                  <RestoreOutlined sx={{ fontSize: 18 }} />
                 </IconButton>
               </Tooltip>
-            )}
-            <IconButton onClick={handleClose} aria-label="Закрыть">
-              <CloseOutlined />
-            </IconButton>
-          </Stack>
-        </Box>
-        <Divider />
+            )
+          }
+        />
 
         {/* body */}
-        <Box sx={{ p: 2, flex: 1, overflowY: "auto", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
+        <Box sx={{ px: 3, py: 3, flex: 1, overflowY: "auto" }}>
           <MotionStack spacing={3} variants={cascadeContainer} initial="hidden" animate="show">
             {submitError && (
               <MotionBox variants={cascadeItem}>
@@ -705,12 +701,9 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
               )}
             </MotionBox>
 
-            {/* ── ФИО ── */}
+            {/* ── ФИО и телефон ── */}
             <MotionBox variants={cascadeItem}>
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  Гость
-                </Typography>
+              <DrawerSection label="Гость" first>
                 <Autocomplete<HotelGuestSearchResult, false, false, true>
                   freeSolo
                   options={guestOptions}
@@ -753,10 +746,10 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                       onBlur={() => setName(capitalizeFullName(name))}
                       onKeyDown={submitOnEnter}
                       fullWidth
-                      size="small"
                       autoFocus
                       disabled={submitting}
-                      placeholder="Имя и фамилия — начните вводить, чтобы найти гостя"
+                      label="Имя и фамилия"
+                      placeholder="Начните вводить — проверим, нет ли гостя в базе"
                       {...v.field("name")}
                       InputProps={{
                         ...params.InputProps,
@@ -779,34 +772,21 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                     />
                   )}
                 />
-              </Stack>
-            </MotionBox>
-
-            {/* ── Телефон ── */}
-            <MotionBox variants={cascadeItem}>
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  Телефон
-                </Typography>
                 <TextField
+                  label="Телефон"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   onKeyDown={submitOnEnter}
                   fullWidth
-                  size="small"
                   disabled={submitting}
                   placeholder="+996 700 000 000"
                 />
-              </Stack>
+              </DrawerSection>
             </MotionBox>
 
             {/* ── Документ ── */}
             <MotionBox variants={cascadeItem}>
-              <Stack spacing={1.5}>
-                <Divider />
-                <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
-                  Документ
-                </Typography>
+              <DrawerSection label="Документ · необязательно">
 
                 {/* Тип документа — выбираем ДО фото: от него зависит, сколько сторон грузить
                     (ID-карта резидента — лицевая и оборотная, загранпаспорт иностранца — один
@@ -928,7 +908,6 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                         label="Пол"
                         value={gender}
                         onChange={(e) => setGender(e.target.value as "" | "male" | "female")}
-                        size="small"
                         disabled={submitting}
                         sx={{ flex: 1 }}
                       >
@@ -942,7 +921,6 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                         label="Место рождения"
                         value={placeOfBirth}
                         onChange={(e) => setPlaceOfBirth(e.target.value)}
-                        size="small"
                         disabled={submitting}
                         sx={{ flex: 1 }}
                       />
@@ -950,7 +928,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                         label="Дата выдачи"
                         value={issueDate}
                         onChange={setIssueDate}
-                        slotProps={{ textField: { size: "small", disabled: submitting } }}
+                        slotProps={{ textField: { disabled: submitting } }}
                         sx={{ flex: 1 }}
                       />
                     </Stack>
@@ -959,14 +937,13 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                         label="Действителен до"
                         value={documentExpiry}
                         onChange={setDocumentExpiry}
-                        slotProps={{ textField: { size: "small", disabled: submitting } }}
+                        slotProps={{ textField: { disabled: submitting } }}
                         sx={{ flex: 1 }}
                       />
                       <TextField
                         label="Орган, выдавший документ"
                         value={issuingAuthority}
                         onChange={(e) => setIssuingAuthority(e.target.value)}
-                        size="small"
                         disabled={submitting}
                         sx={{ flex: 1 }}
                       />
@@ -979,7 +956,6 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                             label="Паспорт (ID-карта)"
                             value={idNumber}
                             onChange={(e) => setIdNumber(e.target.value)}
-                            size="small"
                             disabled={submitting}
                             sx={{ flex: 1 }}
                           />
@@ -987,7 +963,6 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                             label="ИНН"
                             value={inn}
                             onChange={(e) => setInn(e.target.value)}
-                            size="small"
                             disabled={submitting}
                             sx={{ flex: 1 }}
                           />
@@ -996,7 +971,6 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                           label="Адрес регистрации"
                           value={registrationAddress}
                           onChange={(e) => setRegistrationAddress(e.target.value)}
-                          size="small"
                           disabled={submitting}
                           fullWidth
                         />
@@ -1008,7 +982,6 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                             label="Гражданство"
                             value={citizenship}
                             onChange={(e) => setCitizenship(e.target.value)}
-                            size="small"
                             disabled={submitting}
                             sx={{ flex: 1 }}
                           />
@@ -1016,7 +989,6 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                             label="Номер загранпаспорта"
                             value={passportNumber}
                             onChange={(e) => setPassportNumber(e.target.value)}
-                            size="small"
                             disabled={submitting}
                             sx={{ flex: 1 }}
                           />
@@ -1025,7 +997,6 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                           label="Страна выдачи"
                           value={passportCountry}
                           onChange={(e) => setPassportCountry(e.target.value)}
-                          size="small"
                           disabled={submitting}
                           fullWidth
                         />
@@ -1033,23 +1004,20 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                     )}
                   </Stack>
                 </Collapse>
-              </Stack>
+              </DrawerSection>
             </MotionBox>
 
-            {/* ── Источник ── */}
+            {/* ── Источник и чёрный список ── */}
             <MotionBox variants={cascadeItem}>
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  Источник
-                </Typography>
+              <DrawerSection label="Дополнительно">
                 <TextField
                   select
+                  label="Откуда пришёл гость"
                   value={source}
                   onChange={(e) => setSource(e.target.value)}
                   fullWidth
-                  size="small"
                   disabled={submitting}
-                  helperText="Откуда пришёл гость — сайт, звонок, Booking.com и т.п."
+                  helperText="Сайт, звонок, Booking.com и т.п."
                 >
                   <MenuItem value="">Не указан</MenuItem>
                   {Object.entries(HOTEL_BOOKING_SOURCE_LABELS).map(([key, label]) => (
@@ -1058,13 +1026,6 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                     </MenuItem>
                   ))}
                 </TextField>
-              </Stack>
-            </MotionBox>
-
-            {/* ── Чёрный список ── */}
-            <MotionBox variants={cascadeItem}>
-              <Stack spacing={1}>
-                <Divider />
                 <FormControlLabel
                   control={
                     <Switch
@@ -1096,15 +1057,15 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                     {...v.field("blacklistReason")}
                   />
                 </Collapse>
-              </Stack>
+              </DrawerSection>
             </MotionBox>
           </MotionStack>
         </Box>
 
-        {/* footer */}
-        <Box sx={{ borderTop: 1, borderColor: "divider", bgcolor: "background.paper" }}>
+        <DrawerFooter
+          top={
           <Collapse in={hasDuplicates}>
-            <Box sx={{ px: 2, pt: 1.5 }}>
+            <Box sx={{ px: 3, pt: 2 }}>
               <Alert severity="warning" icon={<WarningAmberOutlined fontSize="small" />} sx={{ py: 0.5 }}>
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   Похожий {duplicates.length === 1 ? "гость уже есть" : "гости уже есть"} в базе
@@ -1124,16 +1085,21 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
               </Alert>
             </Box>
           </Collapse>
-
-          <Stack direction="row" gap={1} justifyContent="flex-end" sx={{ p: 2 }}>
+          }
+        >
             <Button onClick={handleClose} disabled={submitting}>
               Отмена
             </Button>
-            <Button variant="contained" onClick={() => void handleSubmit()} disabled={submitting}>
-              {submitting ? "Сохраняем…" : "Сохранить"}
+            <Button
+              variant="contained"
+              disableElevation
+              onClick={() => void handleSubmit()}
+              disabled={submitting}
+              sx={{ px: 3, borderRadius: "10px", fontWeight: 700 }}
+            >
+              {submitting ? "Сохраняем…" : "Добавить гостя"}
             </Button>
-          </Stack>
-        </Box>
+        </DrawerFooter>
       </Box>
     </Drawer>
   );
