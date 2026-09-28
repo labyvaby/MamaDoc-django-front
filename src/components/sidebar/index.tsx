@@ -448,6 +448,7 @@ const SidebarSecondary: React.FC = () => {
     hotelRooms: isHotelOrg && can(PAGE_PERMISSIONS.hotelRooms),
     hotelRoomCategories: isHotelOrg && can(PAGE_PERMISSIONS.hotelRoomCategories),
     hotelPricingRules: isHotelOrg && can(PAGE_PERMISSIONS.hotelPricingRules),
+    hotelHousekeeping: isHotelOrg && can(PAGE_PERMISSIONS.hotelHousekeeping),
     // СКЛАДЫ
     pos: can(PAGE_PERMISSIONS.pos),
     products: can(PAGE_PERMISSIONS.products),
@@ -914,9 +915,10 @@ const SidebarSecondary: React.FC = () => {
             collapsed={siderCollapsed}
           />
         )}
-        {/* Уборка (задачи горничным) — тот же гейт, что «Кухня»: своего права
-            у этого раздела нет. */}
-        {show("org") && isHotelOrg && (
+        {/* Уборка (задачи горничным) — своё право hotel.housekeeping.view
+            (или hotel.manage), не общий isHotelOrg: тут назначение и закрытие
+            задач, не справочная страница вроде «Кухни». */}
+        {show("org") && can_.hotelHousekeeping && (
           <SidebarMenuItem
             to="/housekeeping"
             icon={<CleaningServicesOutlined />}
