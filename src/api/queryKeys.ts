@@ -67,12 +67,18 @@ export const djangoQueryKeys = {
       ["django", "appointments", appointmentId, "payments"] as const,
     conclusionSlots: (appointmentId: number) =>
       ["django", "appointments", appointmentId, "conclusion-slots"] as const,
+    /** Шапка заключения: пациент и время приёма (см. getConclusionContext). */
+    conclusionContext: (appointmentId: number) =>
+      ["django", "appointments", appointmentId, "conclusion-context"] as const,
   },
 
   patients: {
     detail: (patientId: number) => ["django", "patients", patientId] as const,
     balance: (patientId: number) =>
       ["django", "patients", patientId, "balance"] as const,
+    /** Живые заключения пациента (patient-conclusions) — «как в прошлый раз». */
+    conclusions: (patientId: number) =>
+      ["django", "patients", patientId, "conclusions"] as const,
     // Root key — use for invalidateQueries to bust all pages.
     transactions: (patientId: number) =>
       ["django", "patients", patientId, "balance-transactions"] as const,
