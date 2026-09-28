@@ -68,14 +68,19 @@ export const AiAssistHeaderButton: React.FC<{
 };
 
 /**
- * Полоса под шапкой: сколько подсказок ждут решения, и массовые действия.
+ * Полоса под шапкой: сколько подсказок ждут решения, и что с ними делать.
  * Есть только пока подсказки не разобраны — места у полей не отнимает.
+ *
+ * Главная кнопка — «Проверить» (AiReviewDialog): правки по очереди со
+ * сравнением. «Применить все» оставлена второстепенной — вслепую принимать
+ * текст AI в медицинский документ не должно быть путём по умолчанию.
  */
 export const AiAssistPendingStrip: React.FC<{
   pendingCount: number;
+  onReview: () => void;
   onApplyAll: () => void;
   onDismissAll: () => void;
-}> = ({ pendingCount, onApplyAll, onDismissAll }) => {
+}> = ({ pendingCount, onReview, onApplyAll, onDismissAll }) => {
   const { t } = useT("appointments");
   if (pendingCount <= 0) return null;
   return (
@@ -94,8 +99,11 @@ export const AiAssistPendingStrip: React.FC<{
           {t("conclusion.aiAssist.pending", { count: pendingCount })}
         </Typography>
       </Stack>
-      <Stack direction="row" spacing={1} alignItems="center">
-        <Button size="small" variant="contained" disableElevation onClick={onApplyAll}>
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+        <Button size="small" variant="contained" disableElevation onClick={onReview}>
+          {t("conclusion.aiAssist.review.open")}
+        </Button>
+        <Button size="small" color="inherit" onClick={onApplyAll}>
           {t("conclusion.aiAssist.applyAll")}
         </Button>
         <Button size="small" color="inherit" onClick={onDismissAll}>
