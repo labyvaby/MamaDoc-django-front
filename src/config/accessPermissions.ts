@@ -145,6 +145,10 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // (hotel-viva-frontend-api.md §3.1). «Номера» и «Категории и тарифы» —
   // не вкладки настроек, их права в PAGE_PERMISSIONS (hotelRooms, hotelRoomCategories).
   integrations: "hotel.channels.manage",
+  // Журнал действий. Владельцу организации и суперадмину бэк открывает его
+  // без этого кода (см. useVisibleSettingsTabs) — код нужен, чтобы выдать
+  // журнал кому-то ещё. В шаблоны ролей не входит (safe-start).
+  audit: "audit.view",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

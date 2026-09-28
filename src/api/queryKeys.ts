@@ -148,6 +148,16 @@ export const djangoQueryKeys = {
     ravenConnections: ["django", "whatsapp", "raven-connections"] as const,
   },
 
+  audit: {
+    all: ["django", "audit"] as const,
+    catalog: (organizationId: number | null | undefined) =>
+      ["django", "audit", "catalog", organizationId ?? null] as const,
+    events: (
+      organizationId: number | null | undefined,
+      filters: Record<string, unknown>,
+    ) => ["django", "audit", "events", organizationId ?? null, filters] as const,
+  },
+
   automations: {
     all: ["django", "automations"] as const,
     // Всё, что меняется при сохранении правила. Каталог сюда НЕ входит: он

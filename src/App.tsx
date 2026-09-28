@@ -141,6 +141,7 @@ const ProcurementSettingsPage = lazy(() => import("./pages/settings/ProcurementS
 const DiscountKindsSettingsPage = lazy(() => import("./pages/settings/DiscountKindsSettingsPage"));
 const PromotionsSettingsPage = lazy(() => import("./pages/settings/PromotionsSettingsPage"));
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
+const AuditLogSettingsPage = lazy(() => import("./pages/settings/security/AuditLogSettingsPage"));
 const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
@@ -1141,6 +1142,17 @@ function App() {
                                     <RolesSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/security/audit"
+                              element={
+                                // Без RequirePermission: владельцу журнал открыт
+                                // без кода audit.view, доступ решает бэк, а
+                                // страница на 403 показывает «Нет доступа».
+                                <Suspense fallback={<LinearProgress />}>
+                                  <AuditLogSettingsPage />
+                                </Suspense>
                               }
                             />
                             <Route
