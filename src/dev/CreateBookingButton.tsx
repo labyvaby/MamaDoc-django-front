@@ -68,6 +68,7 @@ import { DocumentDropzone } from "./DocumentDropzone";
 import {
   getHotelCatalogs,
   listRooms,
+  listRoomTypes,
   searchGuests,
   getGuest,
   createReservation,
@@ -253,6 +254,15 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   });
   const rooms = React.useMemo(() => roomsQuery.data ?? [], [roomsQuery.data]);
 
+  // Категории — ради вместимости выбранного номера (тот же ключ кэша, что у
+  // «Номеров» и «Категорий», обычно уже загружено).
+  const roomTypesQuery = useQuery({
+    queryKey: ["hotel", "roomTypes", property?.id],
+    queryFn: ({ signal }) => listRoomTypes(property!.id, {}, signal),
+    enabled: property != null,
+  });
+  const roomTypes = React.useMemo(() => roomTypesQuery.data ?? [], [roomTypesQuery.data]);
+
   // Живой предпросмотр суммы — необязательный, контракт эндпоинта не
   // подтверждён бэком (см. getQuote в src/api/hotel.ts). 404/ошибка формы
   // ответа гасится молча (retry: false, throwOnError: false) — предпросмотра
@@ -351,8 +361,38 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     clearQuickBookingRequest();
   }, [quickBookingRequest, rooms, reset]);
 
+  // Вместимость — из категории номера (adultsCapacity/childrenCapacity/capacity).
+  // Раньше поля «Взрослые/Дети» знали только min и форма спокойно отправляла
+  // 100 человек в двухместный номер. Дети могут занимать и взрослые места,
+  // поэтому два правила: взрослых ≤ adultsCapacity и всего ≤ capacity.
+  const selectedRoomType = React.useMemo(() => {
+    const room = rooms.find((r) => r.id === roomId);
+    return room ? roomTypes.find((rt) => rt.id === room.roomTypeId) : undefined;
+  }, [rooms, roomTypes, roomId]);
+  const adultsNum = Number(adults);
+  const childrenNum = Number(children);
+  const guestCountError = (() => {
+    if (!Number.isInteger(adultsNum) || adultsNum < 1) return { field: "adults" as const, text: "Минимум 1 взрослый" };
+    if (!Number.isInteger(childrenNum) || childrenNum < 0) return { field: "children" as const, text: "Не меньше 0" };
+    if (!selectedRoomType) return null;
+    const { adultsCapacity, capacity } = selectedRoomType;
+    if (adultsNum > adultsCapacity) {
+      return { field: "adults" as const, text: `В номере максимум ${adultsCapacity} взр.` };
+    }
+    if (adultsNum + childrenNum > capacity) {
+      return { field: "children" as const, text: `Всего не больше ${capacity} ${capacity === 1 ? "гостя" : "гостей"}` };
+    }
+    return null;
+  })();
+
   const canSubmit =
-    guestName.trim() !== "" && roomId !== "" && !!checkIn && !!checkOut && checkOut.isAfter(checkIn) && property != null;
+    guestName.trim() !== "" &&
+    roomId !== "" &&
+    !!checkIn &&
+    !!checkOut &&
+    checkOut.isAfter(checkIn) &&
+    property != null &&
+    guestCountError == null;
 
   /**
    * Подставляет то, что прочитано с документа. Любое поле скана может быть
@@ -463,7 +503,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
    * у пересечения смен в реальном расписании.
    */
   const handleSubmit = async (allowOverbooking = false) => {
-    if (!checkIn || !checkOut || roomId === "" || !property) return;
+    if (!checkIn || !checkOut || roomId === "" || !property || guestCountError) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -633,12 +673,31 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
               value={roomId}
               onChange={(e) => setRoomId(e.target.value === "" ? "" : Number(e.target.value))}
               fullWidth
+              SelectProps={{
+                renderValue: (value) => {
+                  const r = rooms.find((x) => x.id === value);
+                  return r ? `${r.number} — ${r.roomTypeName}` : "";
+                },
+              }}
             >
-              {rooms.map((r) => (
-                <MenuItem key={r.id} value={r.id}>
-                  {r.number} — {r.roomTypeName}
-                </MenuItem>
-              ))}
+              {rooms.map((r) => {
+                const rt = roomTypes.find((t) => t.id === r.roomTypeId);
+                // Номер, куда текущее число гостей не помещается, не прячем (вдруг
+                // гостей ещё поправят), а подписываем — видно сразу при выборе.
+                const tooSmall = rt != null && (adultsNum > rt.adultsCapacity || adultsNum + childrenNum > rt.capacity);
+                return (
+                  <MenuItem key={r.id} value={r.id} sx={tooSmall ? { color: "text.disabled" } : undefined}>
+                    <Box sx={{ flex: 1 }}>
+                      {r.number} — {r.roomTypeName}
+                    </Box>
+                    {rt && (
+                      <Typography variant="caption" color={tooSmall ? "error.main" : "text.secondary"} sx={{ ml: 2 }}>
+                        {tooSmall ? "не вместит · " : ""}до {rt.capacity} {rt.capacity === 1 ? "гостя" : "гостей"}
+                      </Typography>
+                    )}
+                  </MenuItem>
+                );
+              })}
             </TextField>
             <Stack direction="row" gap={2}>
               <CustomDatePicker label="Заезд" value={checkIn} onChange={setCheckIn} sx={{ flex: 1 }} />
@@ -656,7 +715,15 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 type="number"
                 value={adults}
                 onChange={(e) => setAdults(e.target.value)}
-                slotProps={{ htmlInput: { min: 1 } }}
+                slotProps={{ htmlInput: { min: 1, max: selectedRoomType?.adultsCapacity, step: 1 } }}
+                error={guestCountError?.field === "adults"}
+                helperText={
+                  guestCountError?.field === "adults"
+                    ? guestCountError.text
+                    : selectedRoomType
+                      ? `до ${selectedRoomType.adultsCapacity}`
+                      : undefined
+                }
                 sx={{ flex: 1 }}
               />
               <TextField
@@ -664,7 +731,21 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 type="number"
                 value={children}
                 onChange={(e) => setChildren(e.target.value)}
-                slotProps={{ htmlInput: { min: 0 } }}
+                slotProps={{
+                  htmlInput: {
+                    min: 0,
+                    max: selectedRoomType ? Math.max(0, selectedRoomType.capacity - (adultsNum || 0)) : undefined,
+                    step: 1,
+                  },
+                }}
+                error={guestCountError?.field === "children"}
+                helperText={
+                  guestCountError?.field === "children"
+                    ? guestCountError.text
+                    : selectedRoomType
+                      ? `всего в номере до ${selectedRoomType.capacity}`
+                      : undefined
+                }
                 sx={{ flex: 1 }}
               />
             </Stack>
