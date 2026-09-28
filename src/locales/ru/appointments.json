@@ -722,6 +722,8 @@
     "progressNorm": "по норме: {{count}}",
     "progressNormHint": "Строки с нормой из бланка, которые вы не меняли. Нажмите, чтобы перейти к первой и проверить",
     "historyDiagnoses": "Ранее у {{patient.gen}}:",
+    "frequentDiagnoses": "Частые у вас:",
+    "frequentDiagnosesHint": "Сколько раз вы ставили за полгода: {{count}}",
     "templateSavedTextOnly": "Шаблон сохранён только текстом: строки бланка сервер пока не хранит",
     "previous": {
       "title": "Как в прошлый раз",

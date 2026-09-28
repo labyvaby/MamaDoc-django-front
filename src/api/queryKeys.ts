@@ -403,6 +403,15 @@ export const djangoQueryKeys = {
       ] as const,
   },
 
+  diagnoses: {
+    /**
+     * «Частые у меня» — топ кодов текущего врача. Организация в ключе: счётчик
+     * считается по её каталогу, у другой орг он свой.
+     */
+    frequent: (organizationId: number | null | undefined) =>
+      ["django", "diagnoses", "frequent", organizationId ?? null] as const,
+  },
+
   conclusionForms: {
     // Филиал — часть ключа: бэк режет выдачу по нему (бланки филиала + общие),
     // и список филиала A не должен подставляться в филиале B.
