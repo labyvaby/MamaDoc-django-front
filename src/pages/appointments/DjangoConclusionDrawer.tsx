@@ -84,6 +84,11 @@ import {
   AiAssistSuggestion,
 } from "../../components/conclusion-forms/AiAssistControls";
 import {
+  AiReviewDialog,
+  type AiReviewEntry,
+  type AiReviewTarget,
+} from "../../components/conclusion-forms/AiReviewDialog";
+import {
   aiRowKey,
   useAiAssist,
   type AiAssistKey,
@@ -422,12 +427,15 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     // Один тост на нажатие, и только когда подсказок нет совсем: в поле, где
     // модели нечего сказать, плашки просто нет. Пакет — всё или ничего,
     // «часть полей упала» не бывает (частичный ответ бэк отдаёт как 200).
-    onSettled: ({ suggested, unavailable, failed }) => {
+    onSettled: ({ suggested, empty, unchanged, unavailable, failed }) => {
       if (suggested > 0) return;
       if (unavailable > 0) {
         notify?.({ type: "error", message: t("conclusion.aiAssist.unavailable") });
       } else if (failed > 0) {
         notify?.({ type: "error", message: t("conclusion.aiAssist.failed") });
+      } else if (unchanged > 0 && empty === 0) {
+        // Текст уже хорош — это не «мало данных», а хороший итог.
+        notify?.({ type: "progress", message: t("conclusion.aiAssist.unchanged") });
       } else {
         notify?.({ type: "progress", message: t("conclusion.aiAssist.empty") });
       }
@@ -435,8 +443,11 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   });
   // Предложения принадлежат открытой строке: при смене строки или закрытии
   // дровера старый ответ модели не должен всплыть над другим заключением.
+  /** Очередь режима проверки, замороженная при открытии; null — окно закрыто. */
+  const [aiReview, setAiReview] = React.useState<AiReviewEntry[] | null>(null);
   React.useEffect(() => {
     ai.reset();
+    setAiReview(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, draftId]);
 
@@ -1575,6 +1586,87 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         : null,
     );
 
+  /** Подпись колонки для проверки: из бланка, если он её занял (как в форме). */
+  const aiColumnLabel = (field: AiAssistField): string => {
+    const fromForm = attachedForm?.fields.find((f) => f.slot === field)?.label ?? "";
+    const caption = fieldCaption(fromForm).replace(/:$/, "");
+    if (caption) return caption;
+    switch (field) {
+      case "complaints":
+        return t("conclusion.doctorComplaints");
+      case "anamnesis":
+        return t("conclusion.anamnesis");
+      case "objective":
+        return t("conclusion.objectively");
+      case "diagnosis":
+        return t("conclusion.diagnosisIcd");
+      default:
+        return t("conclusion.conclusionRequired");
+    }
+  };
+
+  /**
+   * Поля для режима проверки — в том порядке, в каком врач видит их в
+   * форме: строки бланка и занятые им колонки по бланку, остальные колонки
+   * следом. Снимок для отмены у текста — строка, у диагноза — набор
+   * выбранных диагнозов: из текста он точно не восстанавливается.
+   */
+  const aiReviewTargets = (): AiReviewTarget[] => {
+    const columns = new Map(
+      aiTargets().map(({ field, text, apply }): [AiAssistField, AiReviewTarget] => [
+        field,
+        {
+          key: field,
+          label: aiColumnLabel(field),
+          current: text,
+          apply,
+          capture:
+            field === "diagnosis"
+              ? () => {
+                  const prev = selectedDiagnoses;
+                  return () => setSelectedDiagnoses(prev);
+                }
+              : () => () => apply(text),
+        },
+      ]),
+    );
+    const rows = new Map(aiFormRows().map((row) => [row.id, row]));
+    const ordered: AiReviewTarget[] = [];
+    for (const field of attachedForm?.fields ?? []) {
+      if (field.slot) {
+        const column = columns.get(field.slot as AiAssistField);
+        if (column) {
+          ordered.push(column);
+          columns.delete(field.slot as AiAssistField);
+        }
+        continue;
+      }
+      const row = rows.get(field.id);
+      if (!row) continue;
+      ordered.push({
+        key: aiRowKey(row.id),
+        label: fieldCaption(row.label).replace(/:$/, "") || row.label,
+        current: row.text,
+        apply: (text) => setFormRowValue(row.id, text),
+        capture: () => () => setFormRowValue(row.id, row.text),
+      });
+    }
+    return [...ordered, ...columns.values()];
+  };
+
+  const handleAiReview = () => {
+    // Очередь — по порядку формы, а не по порядку ответа модели.
+    const order = aiReviewTargets().map((target) => target.key);
+    const entries = order
+      .filter((key) => ai.of(key).suggestion != null)
+      .map((key) => ({
+        key,
+        suggestion: ai.of(key).suggestion as string,
+        source: ai.of(key).source,
+      }));
+    if (entries.length > 0) setAiReview(entries);
+  };
+
   const handleAiApplyAll = () => {
     for (const target of aiTargets()) {
       const text = ai.take(target.field);
@@ -2610,11 +2702,21 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         <>
           <AiAssistPendingStrip
             pendingCount={ai.suggestedKeys.length}
+            onReview={handleAiReview}
             onApplyAll={handleAiApplyAll}
             onDismissAll={handleAiDismissAll}
           />
           <Divider />
         </>
+      )}
+      {canAiAssist && aiReview && (
+        <AiReviewDialog
+          open
+          entries={aiReview}
+          targets={aiReviewTargets()}
+          onResolve={ai.dismiss}
+          onClose={() => setAiReview(null)}
+        />
       )}
 
       {/* ── inline-просмотр: тулбар действий под шапкой (единая высота) ── */}
