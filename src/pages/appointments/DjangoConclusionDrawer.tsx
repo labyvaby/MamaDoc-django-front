@@ -2048,8 +2048,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       setTplName("");
       notify?.(
         formData && created.formData == null
-          ? // Бэк пока молча отбрасывает formData (тикет от 28.09.2026) —
-            // врач должен знать, что строки бланка в шаблон не попали.
+          ? // Бэк без поля (прод до выкладки тикета 28.09.2026) молча
+            // отбрасывает formData — врач должен знать, что строки бланка
+            // в шаблон не попали.
             { type: "progress", message: t("conclusion.templateSavedTextOnly") }
           : { type: "success", message: t("conclusion.templateSaved") },
       );
