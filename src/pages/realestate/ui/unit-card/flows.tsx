@@ -737,15 +737,20 @@ export function OperationScreen({ unit, go, onBack, onOpenUnit }: FlowProps) {
           <Controller
             control={control}
             name="actor"
-            render={({ field }) => (
-              <TextField select label="Ответственный" {...field}>
-                {managers.map((name) => (
-                  <MenuItem key={name} value={name}>
-                    {name}
-                  </MenuItem>
-                ))}
-              </TextField>
-            )}
+            render={({ field }) =>
+              // Справочника менеджеров у бэка нет — тогда ответственный вводится текстом.
+              managers.length ? (
+                <TextField select label="Ответственный" {...field}>
+                  {managers.map((name) => (
+                    <MenuItem key={name} value={name}>
+                      {name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              ) : (
+                <TextField label="Ответственный" placeholder="ФИО менеджера" {...field} />
+              )
+            }
           />
           <TextField label="Покупатель" placeholder="ФИО покупателя" sx={wide} {...register("buyer")} />
           <Controller

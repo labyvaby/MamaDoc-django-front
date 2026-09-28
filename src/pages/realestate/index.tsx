@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getProjectUnits, getRealEstateProjects, realEstateKeys, type Project, type Unit } from "../../api/realestate";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { autoBoardView, boundsOf, buildBoard } from "./model/board";
+import { autoBoardView, boundsOf, buildBoard, withUnitLayout } from "./model/board";
 import { downloadPriceList } from "./model/priceList";
 import { useChessboardParams } from "./model/useChessboardParams";
 import { countByStatus, hasActiveFilters, matchesUnitFilters } from "./model/units";
@@ -82,11 +82,13 @@ function PageSkeleton() {
   );
 }
 
-function ProjectChessboard({ project, projects, onSelectProject }: { project: Project; projects: Project[]; onSelectProject: (projectId: string) => void }) {
+function ProjectChessboard({ project: baseProject, projects, onSelectProject }: { project: Project; projects: Project[]; onSelectProject: (projectId: string) => void }) {
   const toast = useRealEstateToast();
   const [params, updateParams] = useChessboardParams();
-  const unitsQuery = useQuery({ queryKey: realEstateKeys.units(project.id), queryFn: () => getProjectUnits(project.id), staleTime: 30_000 });
+  const unitsQuery = useQuery({ queryKey: realEstateKeys.units(baseProject.id), queryFn: () => getProjectUnits(baseProject.id), staleTime: 30_000 });
   const units = unitsQuery.data;
+  // Бэк не отдаёт секции ЖК и первый жилой этаж — достраиваем по квартирам.
+  const project = React.useMemo(() => (units ? withUnitLayout(baseProject, units) : baseProject), [baseProject, units]);
 
   const [selected, setSelected] = React.useState<string[]>([]);
   const [selectMode, setSelectMode] = React.useState(false);

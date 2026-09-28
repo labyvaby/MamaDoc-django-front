@@ -130,7 +130,7 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.KNOWLEDGE_VIEW],
   },
 
-  // Квартиры и шахматка застройщика (модуль realestate, пока на моках)
+  // Квартиры и шахматка застройщика (модуль бэка realty)
   {
     path: '/realestate/chessboard',
     requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],

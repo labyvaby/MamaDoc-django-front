@@ -424,7 +424,7 @@ const SidebarSecondary: React.FC = () => {
     deals: DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals),
     expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
-    realestate: moduleGate("realestate"),
+    realestate: moduleGate("realty"),
     achievements: can(PAGE_PERMISSIONS.achievements),
     // ОРГАНИЗАЦИЯ
     employees: can(PAGE_PERMISSIONS.employees),
@@ -782,7 +782,7 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
-        {/* Квартиры и шахматка застройщика (модуль realestate, пока на моках) */}
+        {/* Квартиры и шахматка застройщика (модуль бэка realty) */}
         {show("my-work") && can_.realestate && (
           <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />
         )}

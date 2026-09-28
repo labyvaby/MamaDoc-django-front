@@ -37,6 +37,28 @@ export function statsOf(units: Unit[]): FloorStats {
   return stats;
 }
 
+/**
+ * Досчитывает по квартирам то, чего бэк не отдаёт в ЖК: секции (в порядке
+ * осей слева направо) и первый жилой этаж (`startFloor` бэка = 1, хотя
+ * квартиры начинаются выше).
+ */
+export function withUnitLayout(project: Project, units: Unit[]): Project {
+  if (!units.length) return project;
+  const firstAxis = new Map<string, number>();
+  for (const unit of units) {
+    firstAxis.set(unit.section, Math.min(firstAxis.get(unit.section) ?? Infinity, unit.axis));
+  }
+  const sections = project.sections.length
+    ? project.sections
+    : [...firstAxis.keys()].sort((a, b) => (firstAxis.get(a) ?? 0) - (firstAxis.get(b) ?? 0));
+  const lowestFloor = Math.min(...units.map((u) => u.floor));
+  return {
+    ...project,
+    sections,
+    firstResidentialFloor: Math.max(project.firstResidentialFloor, lowestFloor),
+  };
+}
+
 export function buildBoard(project: Project, units: Unit[]): BoardModel {
   const floors: number[] = [];
   for (let f = project.floorsCount; f >= project.firstResidentialFloor; f--) floors.push(f);
