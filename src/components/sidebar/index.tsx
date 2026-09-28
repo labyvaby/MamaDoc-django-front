@@ -914,6 +914,16 @@ const SidebarSecondary: React.FC = () => {
             collapsed={siderCollapsed}
           />
         )}
+        {/* Уборка (задачи горничным) — тот же гейт, что «Кухня»: своего права
+            у этого раздела нет. */}
+        {show("org") && isHotelOrg && (
+          <SidebarMenuItem
+            to="/housekeeping"
+            icon={<CleaningServicesOutlined />}
+            label="Уборка"
+            collapsed={siderCollapsed}
+          />
+        )}
 
         {/* Номера и категории (тарифы) Viva — самостоятельные страницы, не
             вкладки «Настроек». Форма категории (/room-categories/new и
@@ -1068,16 +1078,27 @@ type SidebarMenuItemProps = {
  * На Viva в навигации остаются только страницы, реально переделанные под
  * отель (см. src/dev/*.tsx): «Расписание» — шахматка броней
  * (RoomBookingGrid), «Все гости» — HotelGuestsPage, «Отчёты» —
- * HotelReportsPage, «Кухня» — HotelKitchenPage, «Настройки» — реальный
- * SettingsIndexPage/SettingsLayout (рельс сам показывает только доступные по
- * правам разделы + «Интеграции» — каналы продаж живут там). «Номера»
- * (HotelRoomsPage), «Категории и тарифы» (HotelRoomCategoriesPage) и
- * «Ценообразование» (HotelPricingRulesPage) — свои страницы, не «Настройки».
- * Остальные ~30 пунктов (Вакцины, СКУД, Кабинет врача и т.п.) ведут либо на
- * несуществующие для синтетической организации данные, либо просто не
- * имеют отношения к отелю.
+ * HotelReportsPage (день + период ADR/RevPAR), «Кухня» — HotelKitchenPage,
+ * «Уборка» — HotelHousekeepingPage (задачи горничным), «Настройки» —
+ * реальный SettingsIndexPage/SettingsLayout (рельс сам показывает только
+ * доступные по правам разделы + «Интеграции» — каналы продаж живут там).
+ * «Номера» (HotelRoomsPage), «Категории и тарифы»
+ * (HotelRoomCategoriesPage) и «Ценообразование» (HotelPricingRulesPage) —
+ * свои страницы, не «Настройки». Остальные ~30 пунктов (Вакцины, СКУД,
+ * Кабинет врача и т.п.) ведут либо на несуществующие для синтетической
+ * организации данные, либо просто не имеют отношения к отелю.
  */
-const HOTEL_ONLY_NAV_PATHS = ["/schedule", "/patients", "/reports", "/kitchen", "/rooms", "/room-categories", "/pricing-rules", "/settings"];
+const HOTEL_ONLY_NAV_PATHS = [
+  "/schedule",
+  "/patients",
+  "/reports",
+  "/kitchen",
+  "/housekeeping",
+  "/rooms",
+  "/room-categories",
+  "/pricing-rules",
+  "/settings",
+];
 
 const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   to,

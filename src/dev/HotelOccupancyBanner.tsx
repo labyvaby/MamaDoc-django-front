@@ -20,6 +20,7 @@ import { Box, CircularProgress, Paper, Stack, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import dayjs from "dayjs";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 
 import { getSelectedHotelDate, subscribeSelectedHotelDate, useIsVivaActive, formatHotelDate } from "./mockDemoData";
@@ -30,21 +31,29 @@ import { getDashboard, listHousekeepingTasks } from "../api/hotel";
  * `tint` — мягкая цветная подложка карточки (по образцу пастельных KPI-карточек
  * референс-дизайна), необязательна: не задана — карточка нейтральная, как раньше.
  * Принимает либо готовый цвет (для «Загрузки», где цвет зависит от процента),
- * либо ничего — тогда просто обычная белая карточка.
+ * либо ничего — тогда просто обычная белая карточка. `onClick` — карточка
+ * ведёт на страницу с деталями (сейчас только «Задачи уборки» → /housekeeping).
  */
-const CardShell: React.FC<{ title: string; tint?: string; children: React.ReactNode }> = ({ title, tint, children }) => {
+const CardShell: React.FC<{ title: string; tint?: string; onClick?: () => void; children: React.ReactNode }> = ({
+  title,
+  tint,
+  onClick,
+  children,
+}) => {
   const theme = useTheme();
   const dark = theme.palette.mode === "dark";
   return (
     <Paper
       elevation={0}
       variant="outlined"
+      onClick={onClick}
       sx={{
         p: 1.75,
         display: "flex",
         flexDirection: "column",
         gap: 1,
         minWidth: 0,
+        ...(onClick ? { cursor: "pointer", "&:hover": { borderColor: "text.secondary" } } : {}),
         ...(tint
           ? { bgcolor: alpha(tint, dark ? 0.16 : 0.1), borderColor: alpha(tint, dark ? 0.32 : 0.18) }
           : {}),
@@ -80,6 +89,7 @@ const StatRow: React.FC<{ color: string; label: string; value: React.ReactNode }
 
 export const HotelOccupancyBanner: React.FC = () => {
   const theme = useTheme();
+  const navigate = useNavigate();
   // Хуки вызываются безусловно (Rules of Hooks) — если Viva не активна, их
   // результат просто не идёт в дело (useQuery остаётся выключенным через enabled).
   const selectedDate = React.useSyncExternalStore(subscribeSelectedHotelDate, getSelectedHotelDate);
@@ -197,7 +207,7 @@ export const HotelOccupancyBanner: React.FC = () => {
         </Box>
       </CardShell>
 
-      <CardShell title="Задачи уборки" tint={p.warning.main}>
+      <CardShell title="Задачи уборки" tint={p.warning.main} onClick={() => navigate("/housekeeping")}>
         <Box>
           <StatRow color={p.warning.main} label="Запланировано на сегодня" value={taskBuckets.scheduledToday} />
           <StatRow color={p.error.main} label="Просрочено" value={taskBuckets.overdue} />
