@@ -32,8 +32,6 @@ import {
   Avatar,
   Box,
   Button,
-  Card,
-  CardContent,
   Checkbox,
   Collapse,
   Dialog,
@@ -41,10 +39,8 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
-  Divider,
   Drawer,
   FormControlLabel,
-  IconButton,
   MenuItem,
   Snackbar,
   Stack,
@@ -56,13 +52,13 @@ import {
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
-import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker } from "../components/ui";
 import { useHotelProperty } from "./useHotelProperty";
-import { formatGuestMatchedBy } from "./hotelDisplay";
+import { formatGuestMatchedBy, HOTEL_BOARD_TYPE_LABELS } from "./hotelDisplay";
+import { CountStepper, DRAWER_WIDTH, DrawerBody, DrawerFooter, DrawerHeader, DrawerSection } from "./hotelUi";
 import { isDocumentFile, prepareDocumentFile, useDocumentScan } from "./useDocumentScan";
 import { DocumentDropzone } from "./DocumentDropzone";
 import {
@@ -98,12 +94,6 @@ const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
 /** "" → undefined — необязательные текстовые поля не должны улетать в бронь пустыми строками. */
 const orUndefined = (value: string): string | undefined => (value.trim() ? value.trim() : undefined);
-
-const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <Typography variant="h6" sx={{ fontWeight: 600 }}>
-    {children}
-  </Typography>
-);
 
 export interface CreateBookingButtonProps {
   /**
@@ -385,6 +375,36 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     return null;
   })();
 
+  // Границы счётчиков: взрослых — сколько взрослых мест, детей — сколько
+  // осталось до общей вместимости. Без выбранного номера — без верхней границы.
+  const maxAdults = selectedRoomType?.adultsCapacity;
+  const maxChildren = selectedRoomType ? Math.max(0, selectedRoomType.capacity - (adultsNum || 1)) : undefined;
+  // Сменили номер на меньший — гостей прижимаем к его вместимости, а не
+  // оставляем форму в невалидном состоянии.
+  React.useEffect(() => {
+    if (!selectedRoomType) return;
+    const a = Math.min(Math.max(1, Number(adults) || 1), selectedRoomType.adultsCapacity);
+    const c = Math.min(Math.max(0, Number(children) || 0), Math.max(0, selectedRoomType.capacity - a));
+    if (String(a) !== adults) setAdults(String(a));
+    if (String(c) !== children) setChildren(String(c));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRoomType]);
+
+  const nights = checkIn && checkOut && checkOut.isAfter(checkIn) ? checkOut.startOf("day").diff(checkIn.startOf("day"), "day") : 0;
+  const estimatedTotal = quote ? Number(quote.total) : selectedRoomType && nights > 0 ? Number(selectedRoomType.totalPrice) * nights : null;
+  const footerSummary =
+    nights > 0 ? (
+      <Box>
+        <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+          {estimatedTotal != null ? `${estimatedTotal.toLocaleString("ru-RU")} сом` : "—"}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {nights} {nights % 10 === 1 && nights % 100 !== 11 ? "ночь" : [2, 3, 4].includes(nights % 10) && ![12, 13, 14].includes(nights % 100) ? "ночи" : "ночей"}
+          {estimatedTotal != null && !quote ? " · по тарифу категории" : ""}
+        </Typography>
+      </Box>
+    ) : null;
+
   const canSubmit =
     guestName.trim() !== "" &&
     roomId !== "" &&
@@ -645,28 +665,15 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         open={open}
         onClose={requestClose}
         PaperProps={{
-          sx: { width: { xs: 390, sm: 480, md: 520 }, maxWidth: "100vw", display: "flex", flexDirection: "column" },
+          sx: { width: DRAWER_WIDTH, maxWidth: "100vw", display: "flex", flexDirection: "column", backgroundImage: "none" },
         }}
       >
-        {/* ── header ── */}
-        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1, flexShrink: 0 }}>
-          <Typography variant="h6">Новая бронь</Typography>
-          <IconButton onClick={requestClose}>
-            <CloseOutlined />
-          </IconButton>
-        </Box>
-        <Divider />
+        <DrawerHeader title="Новая бронь" subtitle="Обязательны только номер, даты и гость" onClose={requestClose} />
 
-        {/* ── scrollable body ── */}
-        <Box sx={{ p: 2, flex: 1, overflowY: "auto", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
-          <Stack spacing={2.5}>
-            <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-              Обязательны только гость, номер и даты — остальное можно оставить пустым.
-            </Alert>
+        <DrawerBody>
             {submitError && <Alert severity="error">{submitError}</Alert>}
 
-            {/* ── 1. Проживание ── */}
-            <SectionTitle>Проживание</SectionTitle>
+            <DrawerSection label="Проживание" first>
             <TextField
               select
               label="Номер"
@@ -709,44 +716,24 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 sx={{ flex: 1 }}
               />
             </Stack>
-            <Stack direction="row" gap={2}>
-              <TextField
+            {/* Число гостей — счётчиками с границами из категории номера: больше, чем
+                вмещает номер, ввести нельзя ни кнопками, ни с клавиатуры. */}
+            <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
+              <CountStepper
                 label="Взрослые"
-                type="number"
-                value={adults}
-                onChange={(e) => setAdults(e.target.value)}
-                slotProps={{ htmlInput: { min: 1, max: selectedRoomType?.adultsCapacity, step: 1 } }}
-                error={guestCountError?.field === "adults"}
-                helperText={
-                  guestCountError?.field === "adults"
-                    ? guestCountError.text
-                    : selectedRoomType
-                      ? `до ${selectedRoomType.adultsCapacity}`
-                      : undefined
-                }
-                sx={{ flex: 1 }}
+                hint={selectedRoomType ? `до ${selectedRoomType.adultsCapacity} в номере` : "выберите номер"}
+                value={adultsNum || 1}
+                min={1}
+                max={maxAdults}
+                onChange={(n) => setAdults(String(n))}
               />
-              <TextField
+              <CountStepper
                 label="Дети"
-                type="number"
-                value={children}
-                onChange={(e) => setChildren(e.target.value)}
-                slotProps={{
-                  htmlInput: {
-                    min: 0,
-                    max: selectedRoomType ? Math.max(0, selectedRoomType.capacity - (adultsNum || 0)) : undefined,
-                    step: 1,
-                  },
-                }}
-                error={guestCountError?.field === "children"}
-                helperText={
-                  guestCountError?.field === "children"
-                    ? guestCountError.text
-                    : selectedRoomType
-                      ? `всего в номере до ${selectedRoomType.capacity}`
-                      : undefined
-                }
-                sx={{ flex: 1 }}
+                hint={selectedRoomType ? `всего до ${selectedRoomType.capacity}` : undefined}
+                value={childrenNum || 0}
+                min={0}
+                max={maxChildren}
+                onChange={(n) => setChildren(String(n))}
               />
             </Stack>
             <Stack direction="row" gap={2}>
@@ -774,21 +761,13 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
               </TextField>
             </Stack>
             {selectedRoom && selectedRoom.mealOptions.length > 0 && (
-              <Typography variant="caption" color="text.secondary">
-                В номере доступно: {selectedRoom.mealOptions.join(", ")}
+              <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+                В номере доступно: {selectedRoom.mealOptions.map((m) => HOTEL_BOARD_TYPE_LABELS[m] ?? m).join(", ")}
               </Typography>
             )}
-            {quote && (
-              <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem", py: 0.25 }}>
-                Ожидаемая сумма по действующим тарифам: {Number(quote.total).toLocaleString("ru-RU")} {quote.currency}
-              </Alert>
-            )}
+            </DrawerSection>
 
-            {/* ── 2. Гость ── */}
-            <Stack spacing={1}>
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                Гость
-              </Typography>
+            <DrawerSection label="Гость">
               <Autocomplete<HotelGuestSearchResult, false, false, true>
                 freeSolo
                 options={guestOptions}
@@ -833,7 +812,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                   </li>
                 )}
                 renderInput={(params) => (
-                  <TextField {...params} placeholder="Имя и фамилия — или начните вводить, чтобы найти гостя" fullWidth />
+                  <TextField {...params} label="Имя и фамилия" placeholder="Начните вводить — найдём гостя в базе" fullWidth />
                 )}
               />
 
@@ -880,18 +859,13 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                   </Stack>
                 </Alert>
               )}
-            </Stack>
+            </DrawerSection>
 
             {/* Как в реальной форме секция услуг открывается только с выбранным
                 пациентом — документ и допполя появляются только когда есть гость. */}
             {guestName.trim() !== "" && (
-              <Card variant="outlined" sx={{ bgcolor: "background.paper" }}>
-                <CardContent sx={{ p: 2 }}>
-                  <Stack spacing={2}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                      Документ (необязательно)
-                    </Typography>
-                    <Divider />
+              <>
+                <DrawerSection label="Документ · необязательно">
 
                     {/* Тип документа — выбираем ДО фото: от него зависит, сколько сторон грузить
                         (ID-карта резидента — лицевая и оборотная, загранпаспорт иностранца — один
@@ -1112,11 +1086,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         )}
                       </Stack>
                     </Collapse>
+                </DrawerSection>
 
-                    <Divider />
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                      Дополнительно (необязательно)
-                    </Typography>
+                <DrawerSection label="Дополнительно · необязательно">
                     <Stack direction="row" gap={2}>
                       <TextField
                         select
@@ -1156,23 +1128,23 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         </Typography>
                       }
                     />
-                  </Stack>
-                </CardContent>
-              </Card>
+                </DrawerSection>
+              </>
             )}
-          </Stack>
-        </Box>
+        </DrawerBody>
 
-        {/* ── footer ── */}
-        <Divider />
-        <Box sx={{ p: 2, flexShrink: 0, bgcolor: "background.paper", borderTop: "1px solid", borderColor: "divider" }}>
-          <Stack direction="row" spacing={1} justifyContent="flex-end">
-            <Button onClick={requestClose}>Отмена</Button>
-            <Button variant="contained" disabled={!canSubmit || submitting} onClick={() => void handleSubmit()}>
-              {submitting ? "Создаём…" : "Создать"}
-            </Button>
-          </Stack>
-        </Box>
+        <DrawerFooter summary={footerSummary}>
+          <Button onClick={requestClose}>Отмена</Button>
+          <Button
+            variant="contained"
+            disableElevation
+            disabled={!canSubmit || submitting}
+            onClick={() => void handleSubmit()}
+            sx={{ px: 3, borderRadius: "10px", fontWeight: 700 }}
+          >
+            {submitting ? "Создаём…" : "Создать бронь"}
+          </Button>
+        </DrawerFooter>
       </Drawer>
 
       {/* Подтверждение закрытия при незаполненной до конца форме — тот же

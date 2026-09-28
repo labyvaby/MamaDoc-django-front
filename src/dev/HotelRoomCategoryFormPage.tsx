@@ -55,12 +55,12 @@ import {
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
-import { FormCard, HotelPage, HotelPageHeader, StickyActions } from "./hotelUi";
-import { subtleBg } from "../theme/uiHelpers";
+import { CountStepper, FormCard, HotelPage, HotelPageHeader, StickyActions } from "./hotelUi";
+import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate, useParams } from "react-router";
 import { useSnackbar } from "notistack";
-import { alpha } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
@@ -378,7 +378,8 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
     }, 0);
 
   return (
-    <Stack gap={2.5}>
+    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1fr) 340px" }, gap: 3, alignItems: "start" }}>
+    <Stack gap={2.5} sx={{ minWidth: 0 }}>
       <FormCard>
         <Stack gap={2}>
           <Typography variant="subtitle2" fontWeight={600}>
@@ -398,34 +399,36 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
           />
           {/* Поля переносятся по ширине области (flex-wrap), а не по брейкпоинту окна:
               форма ограничена maxWidth и на узких экранах сжимается вместе с окном. */}
-          <Stack direction="row" flexWrap="wrap" gap={2}>
-            <TextField
-              label="Цена без характеристик, сом"
-              type="number"
-              value={form.price}
-              onChange={(e) => patchForm({ price: e.target.value })}
-              slotProps={{ htmlInput: { min: 0 } }}
-              helperText="Номер «без ничего» — характеристики ниже добавляются к ней"
-              disabled={saving}
-              sx={{ flex: "2 1 300px" }}
-            />
-            <TextField
+          <TextField
+            label="Цена без характеристик, сом"
+            type="number"
+            value={form.price}
+            onChange={(e) => patchForm({ price: e.target.value })}
+            slotProps={{ htmlInput: { min: 0 } }}
+            helperText="Номер «без ничего» — характеристики ниже добавляются к ней"
+            disabled={saving}
+            fullWidth
+          />
+          {/* Вместимость — счётчиками, как гости в форме брони: именно эти числа
+              потом ограничивают, сколько гостей можно вписать в бронь. */}
+          <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
+            <CountStepper
               label="Взрослых"
-              type="number"
-              value={form.adultsCapacity}
-              onChange={(e) => patchForm({ adultsCapacity: e.target.value })}
-              slotProps={{ htmlInput: { min: 1 } }}
+              hint="мест для взрослых"
+              value={Number(form.adultsCapacity) || 1}
+              min={1}
+              max={20}
+              onChange={(n) => patchForm({ adultsCapacity: String(n) })}
               disabled={saving}
-              sx={{ flex: "1 1 130px" }}
             />
-            <TextField
+            <CountStepper
               label="Детей"
-              type="number"
-              value={form.childrenCapacity}
-              onChange={(e) => patchForm({ childrenCapacity: e.target.value })}
-              slotProps={{ htmlInput: { min: 0 } }}
+              hint="дополнительно"
+              value={Number(form.childrenCapacity) || 0}
+              min={0}
+              max={20}
+              onChange={(n) => patchForm({ childrenCapacity: String(n) })}
               disabled={saving}
-              sx={{ flex: "1 1 130px" }}
             />
           </Stack>
           {/* Итог — главная цифра формы, поэтому крупно, а не строкой в инфо-плашке. */}
@@ -814,6 +817,93 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
         </Button>
       </StickyActions>
     </Stack>
+    <CategoryPreview form={form} totalPrice={totalPrice} amenitiesCatalog={amenitiesCatalog} />
+    </Box>
+  );
+};
+
+/**
+ * Живое превью справа — как категория будет выглядеть в списке «Категории и
+ * тарифы» и в карточке номера: сразу видно итоговую цену и что получит гость.
+ */
+const CategoryPreview: React.FC<{ form: CategoryFormState; totalPrice: number; amenitiesCatalog: HotelAmenity[] }> = ({
+  form,
+  totalPrice,
+  amenitiesCatalog,
+}) => {
+  const theme = useTheme();
+  const base = Number(form.price) || 0;
+  const adults = Number(form.adultsCapacity) || 1;
+  const kids = Number(form.childrenCapacity) || 0;
+  const facts = [form.bedType, form.roomLayout, form.view && `вид: ${form.view}`].filter(Boolean);
+  const chosen = [...form.amenities].map((key) => amenitiesCatalog.find((a) => a.key === key)).filter((a): a is HotelAmenity => a != null);
+  return (
+    <Box sx={{ position: { lg: "sticky" }, top: 24, display: { xs: "none", lg: "block" } }}>
+      <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary", mb: 1.25 }}>
+        Как увидят сотрудники
+      </Typography>
+      <Box sx={{ p: 2.5, borderRadius: "14px", border: `1px solid ${theme.palette.divider}`, bgcolor: "background.paper" }}>
+        <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 0.5 }}>
+          <Typography sx={{ fontSize: 18, fontWeight: 700, minWidth: 0 }} noWrap>
+            {form.name.trim() || "Название категории"}
+          </Typography>
+          {form.luxury && (
+            <Box
+              component="span"
+              sx={{
+                px: 0.75,
+                borderRadius: "5px",
+                fontSize: 11,
+                fontWeight: 700,
+                bgcolor: alpha("#d4af37", 0.16),
+                color: theme.palette.mode === "dark" ? "#e9c766" : "#8a6d1a",
+              }}
+            >
+              Люкс
+            </Box>
+          )}
+        </Stack>
+        <Typography variant="body2" color="text.secondary">
+          до {adults} взр.{kids > 0 ? ` + ${kids} дет.` : ""}
+          {facts.length > 0 ? ` · ${facts.join(" · ")}` : ""}
+        </Typography>
+
+        <Stack direction="row" alignItems="baseline" gap={0.75} sx={{ mt: 2.5 }}>
+          <Typography sx={{ fontSize: 30, fontWeight: 700, lineHeight: 1, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.01em" }}>
+            {totalPrice.toLocaleString("ru-RU")}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" fontWeight={600}>
+            сом / ночь
+          </Typography>
+        </Stack>
+
+        <Stack gap={0.75} sx={{ mt: 2, pt: 2, borderTop: `1px solid ${subtleBorder(theme)}` }}>
+          <Stack direction="row" justifyContent="space-between">
+            <Typography variant="body2" color="text.secondary">
+              Базовая цена
+            </Typography>
+            <Typography variant="body2" sx={{ fontVariantNumeric: "tabular-nums" }}>
+              {base.toLocaleString("ru-RU")}
+            </Typography>
+          </Stack>
+          {chosen.map((a) => (
+            <Stack key={a.key} direction="row" justifyContent="space-between" gap={2}>
+              <Typography variant="body2" color="text.secondary" noWrap>
+                {a.label}
+              </Typography>
+              <Typography variant="body2" sx={{ fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
+                {Number(a.extraPrice) > 0 ? `+${Number(a.extraPrice).toLocaleString("ru-RU")}` : "включено"}
+              </Typography>
+            </Stack>
+          ))}
+          {chosen.length === 0 && (
+            <Typography variant="caption" color="text.disabled">
+              Характеристики не отмечены
+            </Typography>
+          )}
+        </Stack>
+      </Box>
+    </Box>
   );
 };
 
@@ -838,7 +928,7 @@ export const HotelRoomCategoryFormPage: React.FC = () => {
   const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading;
 
   return (
-    <HotelPage maxWidth={760}>
+    <HotelPage maxWidth={1180}>
         <HotelPageHeader
           leading={
             <Tooltip title="К списку категорий">

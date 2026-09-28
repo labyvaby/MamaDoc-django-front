@@ -11,6 +11,9 @@ import { alpha, useTheme } from "@mui/material/styles";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import AddOutlined from "@mui/icons-material/AddOutlined";
+import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { DateCalendar } from "@mui/x-date-pickers/DateCalendar";
@@ -121,6 +124,174 @@ export const StickyActions: React.FC<{ children: React.ReactNode }> = ({ childre
         {children}
       </Stack>
     </Box>
+  );
+};
+
+// ── Боковые панели-формы (Drawer): «Новая бронь», «Новый гость» ─────────────
+
+export const DRAWER_WIDTH = { xs: "100vw", sm: 520, md: 560 } as const;
+
+export const DrawerHeader: React.FC<{ title: string; subtitle?: React.ReactNode; onClose: () => void; actions?: React.ReactNode }> = ({
+  title,
+  subtitle,
+  onClose,
+  actions,
+}) => {
+  const theme = useTheme();
+  return (
+    <Stack
+      direction="row"
+      alignItems="flex-start"
+      justifyContent="space-between"
+      gap={2}
+      sx={{ px: 3, pt: 2.5, pb: 2, borderBottom: `1px solid ${subtleBorder(theme)}`, flexShrink: 0 }}
+    >
+      <Box sx={{ minWidth: 0 }}>
+        <Typography sx={{ fontSize: 21, fontWeight: 700, letterSpacing: "-0.015em", lineHeight: 1.25 }}>{title}</Typography>
+        {subtitle && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+            {subtitle}
+          </Typography>
+        )}
+      </Box>
+      <Stack direction="row" gap={0.75} sx={{ flexShrink: 0 }}>
+        {actions}
+        <IconButton
+          onClick={onClose}
+          aria-label="Закрыть"
+          sx={{ width: 34, height: 34, border: `1px solid ${subtleBorder(theme)}`, color: "text.secondary", "&:hover": { color: "text.primary" } }}
+        >
+          <CloseOutlined sx={{ fontSize: 18 }} />
+        </IconButton>
+      </Stack>
+    </Stack>
+  );
+};
+
+/** Секция панели: волосяная линия сверху (кроме первой), подпись капсом, поля. */
+export const DrawerSection: React.FC<{ label: React.ReactNode; action?: React.ReactNode; first?: boolean; children: React.ReactNode }> = ({
+  label,
+  action,
+  first,
+  children,
+}) => {
+  const theme = useTheme();
+  return (
+    <Box sx={{ pt: first ? 0 : 3, borderTop: first ? "none" : `1px solid ${subtleBorder(theme)}` }}>
+      <SectionLabel action={action} sx={{ mb: 2 }}>
+        {label}
+      </SectionLabel>
+      <Stack gap={2}>{children}</Stack>
+    </Box>
+  );
+};
+
+export const DrawerBody: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <Box sx={{ px: 3, py: 3, flex: 1, overflowY: "auto" }}>
+    <Stack gap={3}>{children}</Stack>
+  </Box>
+);
+
+export const DrawerFooter: React.FC<{ summary?: React.ReactNode; top?: React.ReactNode; children: React.ReactNode }> = ({ summary, top, children }) => {
+  const theme = useTheme();
+  return (
+    <Box sx={{ borderTop: `1px solid ${subtleBorder(theme)}`, bgcolor: "background.paper", flexShrink: 0 }}>
+      {top}
+      <Stack direction="row" alignItems="center" gap={1} sx={{ px: 3, py: 2 }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>{summary}</Box>
+        {children}
+      </Stack>
+    </Box>
+  );
+};
+
+/**
+ * Счётчик «− 2 +» — для числа гостей. За пределы [min, max] не выйти ни
+ * кнопками (гаснут на краях), ни вводом с клавиатуры (значение прижимается
+ * к границе). max не задан — ограничения сверху нет.
+ */
+export const CountStepper: React.FC<{
+  label: string;
+  hint?: React.ReactNode;
+  value: number;
+  min: number;
+  max?: number;
+  onChange: (n: number) => void;
+  disabled?: boolean;
+}> = ({ label, hint, value, min, max, onChange, disabled }) => {
+  const theme = useTheme();
+  const clamp = (n: number) => Math.max(min, max != null ? Math.min(max, n) : n);
+  const [draft, setDraft] = React.useState(String(value));
+  React.useEffect(() => setDraft(String(value)), [value]);
+  const btnSx = {
+    width: 32,
+    height: 32,
+    border: `1px solid ${subtleBorder(theme)}`,
+    borderRadius: "8px",
+    color: "text.primary",
+    "&.Mui-disabled": { color: "text.disabled", borderColor: subtleBorder(theme) },
+  } as const;
+  return (
+    <Stack
+      direction="row"
+      alignItems="center"
+      gap={1.5}
+      sx={{ flex: 1, minWidth: 0, px: 1.75, py: 1.25, borderRadius: "12px", border: `1px solid ${subtleBorder(theme)}` }}
+    >
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="body2" fontWeight={600}>
+          {label}
+        </Typography>
+        {hint && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }} noWrap>
+            {hint}
+          </Typography>
+        )}
+      </Box>
+      <IconButton size="small" aria-label={`${label}: меньше`} onClick={() => onChange(clamp(value - 1))} disabled={disabled || value <= min} sx={btnSx}>
+        <RemoveOutlined sx={{ fontSize: 16 }} />
+      </IconButton>
+      <Box
+        component="input"
+        inputMode="numeric"
+        aria-label={label}
+        value={draft}
+        disabled={disabled}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+          const digits = e.target.value.replace(/\D/g, "");
+          if (digits === "") {
+            setDraft("");
+            return;
+          }
+          const next = clamp(Number(digits));
+          setDraft(String(next));
+          onChange(next);
+        }}
+        onBlur={() => setDraft(String(value))}
+        sx={{
+          width: 28,
+          border: 0,
+          outline: "none",
+          bgcolor: "transparent",
+          color: "text.primary",
+          font: "inherit",
+          fontSize: 16,
+          fontWeight: 700,
+          textAlign: "center",
+          fontVariantNumeric: "tabular-nums",
+          p: 0,
+        }}
+      />
+      <IconButton
+        size="small"
+        aria-label={`${label}: больше`}
+        onClick={() => onChange(clamp(value + 1))}
+        disabled={disabled || (max != null && value >= max)}
+        sx={btnSx}
+      >
+        <AddOutlined sx={{ fontSize: 16 }} />
+      </IconButton>
+    </Stack>
   );
 };
 

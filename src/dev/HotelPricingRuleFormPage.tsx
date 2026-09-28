@@ -46,23 +46,30 @@ import {
   Alert,
   Box,
   Button,
-  Checkbox,
   CircularProgress,
   Collapse,
   FormControlLabel,
   IconButton,
   InputAdornment,
-  MenuItem,
   Stack,
+  Switch,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
-import { FormCard, HotelPage, HotelPageHeader, StickyActions } from "./hotelUi";
+import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
+import TrendingDownOutlined from "@mui/icons-material/TrendingDownOutlined";
+import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
+import PieChartOutlineOutlined from "@mui/icons-material/PieChartOutlineOutlined";
+import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
+import NightsStayOutlined from "@mui/icons-material/NightsStayOutlined";
+import ViewWeekOutlined from "@mui/icons-material/ViewWeekOutlined";
+import { FilterChip, FormCard, HotelPage, HotelPageHeader, SectionLabel, StickyActions, Surface } from "./hotelUi";
+import { subtleBg, subtleBorder } from "../theme/uiHelpers";
+import { formatHotelDate } from "./mockDemoData";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate, useParams } from "react-router";
 import dayjs, { type Dayjs } from "dayjs";
@@ -242,6 +249,7 @@ interface RuleFormProps {
 }
 
 const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) => {
+  const theme = useTheme();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -393,428 +401,643 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
     form.roomTypeIds, form.allCategories,
   ]);
 
-  return (
-    <Stack gap={2.5}>
-      <FormCard>
-        <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
-          Категории номеров
-        </Typography>
 
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={form.allCategories}
-              onChange={(e) => patchForm({ allCategories: e.target.checked })}
-              disabled={saving || roomTypes.length === 0}
+  // «Дороже / дешевле» — отдельным выбором, а не знаком минус в поле: в поле
+  // всегда модуль, знак хранится в form.amount как раньше (бэк ждёт signed).
+  const [direction, setDirection] = React.useState<"up" | "down">(() => (Number(editing?.adjustmentValue ?? 0) < 0 ? "down" : "up"));
+  const absAmount = form.amount.replace("-", "");
+  const setAbsAmount = (raw: string) => {
+    const clean = raw.replace(/[^\d.,]/g, "").replace(",", ".");
+    patchForm({ amount: clean === "" ? "" : direction === "down" ? `-${clean}` : clean });
+  };
+  const chooseDirection = (d: "up" | "down") => {
+    setDirection(d);
+    if (absAmount !== "") patchForm({ amount: d === "down" ? `-${absAmount}` : absAmount });
+  };
+  const applyPreset = (value: number) => {
+    const d = value < 0 ? "down" : "up";
+    setDirection(d);
+    patchForm({ adjustmentType: "percent", amount: String(value) });
+  };
+
+  const unit = form.adjustmentType === "percent" ? "%" : " сом";
+  const summaryParts: string[] = [];
+  summaryParts.push(form.allCategories ? "все категории" : selectedRoomTypes.length > 0 ? selectedRoomTypes.map((rt) => rt.name).join(", ") : "категории не выбраны");
+  if (form.datesEnabled && form.dateFrom && form.dateTo) {
+    summaryParts.push(
+      (form.dateFrom.isSame(form.dateTo, "day")
+        ? formatHotelDate(form.dateFrom.format("YYYY-MM-DD"))
+        : `${formatHotelDate(form.dateFrom.format("YYYY-MM-DD"))} – ${formatHotelDate(form.dateTo.format("YYYY-MM-DD"))}`) +
+        (form.recurringYearly ? " каждый год" : ""),
+    );
+  }
+  if (form.occupancyEnabled && (form.occupancyFrom || form.occupancyTo)) summaryParts.push(`загрузка ${form.occupancyFrom || 0}–${form.occupancyTo || 100}%`);
+  if (form.leadTimeEnabled && (form.leadTimeFrom || form.leadTimeTo)) summaryParts.push(`за ${form.leadTimeFrom || 0}–${form.leadTimeTo || "∞"} дн. до заезда`);
+  if (form.nightsEnabled && (form.nightsFrom || form.nightsTo)) summaryParts.push(`от ${form.nightsFrom || 1} до ${form.nightsTo || "∞"} ноч.`);
+  if (form.daysOfWeekEnabled && form.daysOfWeek.length > 0)
+    summaryParts.push(DAYS_OF_WEEK.filter((d) => form.daysOfWeek.includes(d.key)).map((d) => d.label).join(", "));
+  if (!anyConditionEnabled) summaryParts.push("всегда");
+
+  // Цены «было → стало» для превью: с сервера (simulate) или грубая локальная оценка.
+  const pricePreview: { key: string | number; name: string; before: number; after: number; note?: string }[] =
+    simResult && simResult.roomTypes.length > 0
+      ? simResult.roomTypes.flatMap((rt) => {
+          // Представительная ночь — та, где правило сработало (у «Сб, Вс» первая
+          // ночь окна — будний день, и превью врало «не сработало»); нет таких — первая.
+          const first = rt.nights.find((n) => n.ruleApplied) ?? rt.nights[0];
+          if (!first) return [];
+          const delta = Number(first.delta);
+          let note: string | undefined;
+          if (first.isManualOverride) note = delta === 0 ? "ручная цена" : "ручная цена, донастроена";
+          else if (!first.ruleApplied && delta === 0) note = "не сработало";
+          else if (first.ruleApplied && delta === 0) note = "упёрлось в мин/макс";
+          return [{ key: rt.roomTypeId, name: rt.roomTypeName, before: Number(first.before), after: Number(first.after), note }];
+        })
+      : selectedRoomTypes.map((rt) => {
+          const base = Number(rt.totalPrice);
+          const after = form.adjustmentType === "percent" ? Math.round(base * (1 + amountValue / 100)) : Math.max(0, base + amountValue);
+          return { key: rt.id, name: rt.name, before: base, after };
+        });
+  const previewIsEstimate = !(simResult && simResult.roomTypes.length > 0);
+
+  const conditionTiles: {
+    key: string;
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+    enabled: boolean;
+    toggle: (v: boolean) => void;
+    body: React.ReactNode;
+  }[] = [
+    {
+      key: "dates",
+      icon: <CalendarMonthOutlined />,
+      title: "Даты",
+      description: "Сезон, праздник, конкретный период",
+      enabled: form.datesEnabled,
+      toggle: (v) => patchForm({ datesEnabled: v }),
+      body: (
+        <Stack gap={1.5}>
+          <Stack direction="row" flexWrap="wrap" gap={2}>
+            <CustomDatePicker
+              label="С"
+              value={form.dateFrom}
+              onChange={(v) => {
+                if (!form.recurringYearly && v && (!form.dateTo || form.dateTo.isBefore(v, "day"))) {
+                  patchForm({ dateFrom: v, dateTo: v });
+                } else {
+                  patchForm({ dateFrom: v });
+                }
+              }}
+              slotProps={{ textField: { size: "small", disabled: saving } }}
+              sx={{ flex: "1 1 180px" }}
             />
-          }
-          label="Все категории, включая те, что заведут позже"
+            <CustomDatePicker
+              label="По"
+              value={form.dateTo}
+              onChange={(v) => patchForm({ dateTo: v })}
+              minDate={form.recurringYearly ? undefined : (form.dateFrom ?? undefined)}
+              slotProps={{
+                textField: {
+                  size: "small",
+                  disabled: saving,
+                  helperText: form.recurringYearly ? "Может быть раньше «С» — через Новый год" : "Для одного дня — та же дата",
+                },
+              }}
+              sx={{ flex: "1 1 180px" }}
+            />
+          </Stack>
+          <FormControlLabel
+            control={<Switch size="small" checked={form.recurringYearly} onChange={(e) => patchForm({ recurringYearly: e.target.checked })} disabled={saving} />}
+            label={<Typography variant="body2">Каждый год в эти же числа</Typography>}
+          />
+        </Stack>
+      ),
+    },
+    {
+      key: "occupancy",
+      icon: <PieChartOutlineOutlined />,
+      title: "Загрузка отеля",
+      description: "Сколько % номеров занято на эту ночь",
+      enabled: form.occupancyEnabled,
+      toggle: (v) => patchForm({ occupancyEnabled: v }),
+      body: (
+        <RangeFields
+          fromLabel="От"
+          toLabel="До (не включая)"
+          unit="%"
+          from={form.occupancyFrom}
+          to={form.occupancyTo}
+          min={0}
+          max={100}
+          disabled={saving}
+          onFrom={(v) => patchForm({ occupancyFrom: v })}
+          onTo={(v) => patchForm({ occupancyTo: v })}
         />
+      ),
+    },
+    {
+      key: "leadTime",
+      icon: <ScheduleOutlined />,
+      title: "Срок до заезда",
+      description: "Горящие номера или раннее бронирование",
+      enabled: form.leadTimeEnabled,
+      toggle: (v) => patchForm({ leadTimeEnabled: v }),
+      body: (
+        <RangeFields
+          fromLabel="От"
+          toLabel="До"
+          unit="дн."
+          from={form.leadTimeFrom}
+          to={form.leadTimeTo}
+          min={0}
+          max={730}
+          disabled={saving}
+          onFrom={(v) => patchForm({ leadTimeFrom: v })}
+          onTo={(v) => patchForm({ leadTimeTo: v })}
+        />
+      ),
+    },
+    {
+      key: "nights",
+      icon: <NightsStayOutlined />,
+      title: "Длительность",
+      description: "Сколько ночей в брони",
+      enabled: form.nightsEnabled,
+      toggle: (v) => patchForm({ nightsEnabled: v }),
+      body: (
+        <RangeFields
+          fromLabel="От"
+          toLabel="До"
+          unit="ноч."
+          from={form.nightsFrom}
+          to={form.nightsTo}
+          min={1}
+          max={365}
+          disabled={saving}
+          onFrom={(v) => patchForm({ nightsFrom: v })}
+          onTo={(v) => patchForm({ nightsTo: v })}
+        />
+      ),
+    },
+    {
+      key: "days",
+      icon: <ViewWeekOutlined />,
+      title: "Дни недели",
+      description: "Например, только выходные",
+      enabled: form.daysOfWeekEnabled,
+      toggle: (v) => patchForm({ daysOfWeekEnabled: v }),
+      body: (
+        <Stack direction="row" gap={0.75} flexWrap="wrap">
+          {DAYS_OF_WEEK.map((d) => (
+            <FilterChip
+              key={d.key}
+              label={d.label}
+              active={form.daysOfWeek.includes(d.key)}
+              onClick={() =>
+                patchForm({
+                  daysOfWeek: form.daysOfWeek.includes(d.key) ? form.daysOfWeek.filter((x) => x !== d.key) : [...form.daysOfWeek, d.key],
+                })
+              }
+            />
+          ))}
+        </Stack>
+      ),
+    },
+  ];
 
-        {!form.allCategories && (
-          <>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 1.5 }}>
-              Или выберите конкретные:
+  return (
+    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1fr) 360px" }, gap: 3, alignItems: "start" }}>
+      <Stack gap={2.5} sx={{ minWidth: 0 }}>
+        {/* ── К каким категориям ── */}
+        <FormCard>
+          <Stack gap={2}>
+            <Typography variant="subtitle2" fontWeight={600}>
+              Категории номеров
             </Typography>
             {roomTypes.length === 0 ? (
               <Typography variant="body2" color="text.disabled">
                 Категорий пока нет — сначала заведите их в «Категории и тарифы».
               </Typography>
             ) : (
-              <ToggleButtonGroup
-                value={form.roomTypeIds}
-                onChange={(_, value: number[]) => patchForm({ roomTypeIds: value })}
-                disabled={saving}
-                sx={{ flexWrap: "wrap", gap: 0.75, "& .MuiToggleButtonGroup-grouped": { border: "1px solid", borderColor: "divider !important", borderRadius: "8px !important", m: 0 } }}
-              >
-                {roomTypes.map((rt) => (
-                  <ToggleButton key={rt.id} value={rt.id} size="small">
-                    {rt.name}
-                  </ToggleButton>
-                ))}
-              </ToggleButtonGroup>
+              <Stack direction="row" gap={0.75} flexWrap="wrap">
+                <FilterChip
+                  label="Все категории"
+                  active={form.allCategories}
+                  onClick={() => patchForm({ allCategories: !form.allCategories })}
+                />
+                {roomTypes.map((rt) => {
+                  const active = !form.allCategories && form.roomTypeIds.includes(rt.id);
+                  return (
+                    <FilterChip
+                      key={rt.id}
+                      label={rt.name}
+                      active={active}
+                      onClick={() =>
+                        patchForm({
+                          allCategories: false,
+                          roomTypeIds: active ? form.roomTypeIds.filter((id) => id !== rt.id) : [...form.roomTypeIds, rt.id],
+                        })
+                      }
+                    />
+                  );
+                })}
+              </Stack>
             )}
-          </>
-        )}
-
-        {amountValue !== 0 && selectedRoomTypes.length > 0 && (
-          <Alert severity="info" variant="outlined" sx={{ fontSize: "0.8rem", mt: 2 }}>
-            {!anyConditionEnabled && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                Ни одно условие не включено — правило действует на каждую ночь.
+            {form.allCategories && (
+              <Typography variant="caption" color="text.secondary">
+                Включая категории, которые заведут позже
               </Typography>
             )}
-            {simLoading && !simResult ? (
-              <Typography variant="body2">Считаем…</Typography>
-            ) : simResult && simResult.roomTypes.length > 0 ? (
-              <Stack gap={0.25}>
-                {simResult.roomTypes.map((rt) => {
-                  // Одному правилу без других пересечений цена обычно одна на все ночи —
-                  // берём первую как представительную, а не считаем среднее/диапазон.
-                  const first = rt.nights[0];
-                  if (!first) return null;
-                  const before = Number(first.before);
-                  const after = Number(first.after);
-                  const delta = Number(first.delta);
-                  // См. комментарий у HotelPricingRuleSimulateNight в api/hotel.ts —
-                  // isManualOverride и ruleApplied вместе различают 4 случая.
-                  let note = "";
-                  if (first.isManualOverride) {
-                    note = delta === 0 ? " (здесь стоит ручная цена)" : " (ручная цена, донастроена условиями брони)";
-                  } else if (!first.ruleApplied && delta === 0) {
-                    note = " (не сработало — не подошли условия или проиграло другому правилу в группе)";
-                  } else if (first.ruleApplied && delta === 0) {
-                    note = " (упёрлось в мин/макс цену категории)";
-                  } else if (after < before) {
-                    note = " (скидка)";
-                  } else if (after > before) {
-                    note = " (дороже)";
-                  }
-                  return (
-                    <Typography key={rt.roomTypeId} variant="body2" component="span">
-                      {rt.roomTypeName}: {before.toLocaleString("ru-RU")} → <strong>{after.toLocaleString("ru-RU")} сом</strong>
-                      {note}
-                    </Typography>
-                  );
-                })}
-              </Stack>
-            ) : (
-              // Предпросчёт недоступен (сеть, условия не покрывают окно) — грубая
-              // локальная оценка БЕЗ учёта других правил и БЕЗ учёта условий загрузки/
-              // срока/длительности/дня недели, чтобы блок не пустовал молча.
-              <Stack gap={0.25}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                  Предпросчёт с сервера недоступен — грубая оценка без учёта условий и других правил:
-                </Typography>
-                {selectedRoomTypes.map((rt) => {
-                  const base = Number(rt.totalPrice);
-                  const adjusted =
-                    form.adjustmentType === "percent"
-                      ? Math.round(base * (1 + amountValue / 100))
-                      : Math.max(0, base + amountValue);
-                  return (
-                    <Typography key={rt.id} variant="body2" component="span">
-                      {rt.name}: {base.toLocaleString("ru-RU")} → <strong>{adjusted.toLocaleString("ru-RU")} сом</strong>
-                      {isDiscount ? " (скидка)" : " (дороже)"}
-                    </Typography>
-                  );
-                })}
-              </Stack>
-            )}
-          </Alert>
-        )}
-      </FormCard>
-
-      <FormCard>
-        <Stack gap={2}>
-          <Typography variant="subtitle2" fontWeight={600}>
-            Основное
-          </Typography>
-          <TextField
-            label="Название"
-            placeholder="Например, Новогодние праздники"
-            value={form.name}
-            onChange={(e) => {
-              patchForm({ name: e.target.value });
-              setError(null);
-            }}
-            autoFocus={!editing}
-            disabled={saving}
-            fullWidth
-          />
-
-          <Stack direction="row" flexWrap="wrap" gap={2} alignItems="flex-start">
-            <ToggleButtonGroup
-              value={form.adjustmentType}
-              exclusive
-              size="small"
-              disabled={saving}
-              onChange={(_, value: "percent" | "amount" | null) => value && patchForm({ adjustmentType: value })}
-            >
-              <ToggleButton value="percent">Процент</ToggleButton>
-              <ToggleButton value="amount">Сумма за ночь</ToggleButton>
-            </ToggleButtonGroup>
-            <TextField
-              label={form.adjustmentType === "percent" ? "Процент" : "Сумма"}
-              type="number"
-              value={form.amount}
-              onChange={(e) => patchForm({ amount: e.target.value })}
-              helperText={
-                form.adjustmentType === "percent"
-                  ? "Положительный — дороже (20), отрицательный — скидка (-15); от −99 до 1000"
-                  : "Сом за ночь; положительный — дороже, отрицательный — скидка"
-              }
-              disabled={saving}
-              slotProps={{
-                htmlInput: form.adjustmentType === "percent" ? { step: "0.01", min: -99, max: 1000 } : { step: "1" },
-                input: { endAdornment: <InputAdornment position="end">{form.adjustmentType === "percent" ? "%" : "сом"}</InputAdornment> },
-              }}
-              sx={{ maxWidth: 260 }}
-            />
           </Stack>
+        </FormCard>
 
-          <TextField
-            select
-            label="Тип (для списка)"
-            value={form.category}
-            onChange={(e) => patchForm({ category: e.target.value as HotelPricingRuleCategory })}
-            disabled={saving}
-            helperText="Только подпись в списке правил — на расчёт цены не влияет, влияют условия ниже"
-            sx={{ maxWidth: 320 }}
-          >
-            {(Object.keys(CATEGORY_LABELS) as HotelPricingRuleCategory[]).map((key) => (
-              <MenuItem key={key} value={key}>
-                {CATEGORY_LABELS[key]}
-              </MenuItem>
-            ))}
-          </TextField>
-
-          <FormControlLabel
-            control={<Checkbox checked={form.isActive} onChange={(e) => patchForm({ isActive: e.target.checked })} disabled={saving} />}
-            label="Активно — если выключить, цена в эти условия останется обычной"
-          />
-        </Stack>
-      </FormCard>
-
-      <FormCard>
-        <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>
-          Условия
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Включённые условия действуют одновременно (И). Ничего не включено — правило действует всегда.
-        </Typography>
-
-        <Stack gap={2}>
-          {/* ── Даты ── */}
-          <Box>
-            <FormControlLabel
-              control={<Checkbox checked={form.datesEnabled} onChange={(e) => patchForm({ datesEnabled: e.target.checked })} disabled={saving} />}
-              label="Даты — конкретный период (сезон, праздник)"
-            />
-            <Collapse in={form.datesEnabled}>
-              <Stack gap={1.5} sx={{ pl: 4, pt: 1 }}>
-                <Stack direction="row" flexWrap="wrap" gap={2}>
-                  <CustomDatePicker
-                    label="Дата с"
-                    value={form.dateFrom}
-                    onChange={(v) => {
-                      if (!form.recurringYearly && v && (!form.dateTo || form.dateTo.isBefore(v, "day"))) {
-                        patchForm({ dateFrom: v, dateTo: v });
-                      } else {
-                        patchForm({ dateFrom: v });
-                      }
-                    }}
-                    slotProps={{ textField: { size: "small", disabled: saving } }}
-                    sx={{ flex: "1 1 200px" }}
-                  />
-                  <CustomDatePicker
-                    label="Дата по"
-                    value={form.dateTo}
-                    onChange={(v) => patchForm({ dateTo: v })}
-                    minDate={form.recurringYearly ? undefined : (form.dateFrom ?? undefined)}
-                    slotProps={{
-                      textField: {
-                        size: "small",
-                        disabled: saving,
-                        helperText: form.recurringYearly ? "Может быть раньше «с» — переход через Новый год" : "Для одного дня — та же дата",
-                      },
-                    }}
-                    sx={{ flex: "1 1 200px" }}
-                  />
-                </Stack>
-                <FormControlLabel
-                  control={<Checkbox checked={form.recurringYearly} onChange={(e) => patchForm({ recurringYearly: e.target.checked })} disabled={saving} />}
-                  label="Каждый год — действует в эти же числа, без привязки к году"
-                />
-              </Stack>
-            </Collapse>
-          </Box>
-
-          {/* ── Загрузка ── */}
-          <Box>
-            <FormControlLabel
-              control={<Checkbox checked={form.occupancyEnabled} onChange={(e) => patchForm({ occupancyEnabled: e.target.checked })} disabled={saving} />}
-              label="Загрузка — % занятых номеров на эту ночь"
-            />
-            <Collapse in={form.occupancyEnabled}>
-              <Stack direction="row" gap={2} sx={{ pl: 4, pt: 1 }}>
-                <TextField
-                  label="От, %"
-                  type="number"
-                  value={form.occupancyFrom}
-                  onChange={(e) => patchForm({ occupancyFrom: e.target.value })}
-                  slotProps={{ htmlInput: { min: 0, max: 100 } }}
-                  disabled={saving}
-                  size="small"
-                  sx={{ flex: "1 1 140px" }}
-                />
-                <TextField
-                  label="До (не включая), %"
-                  type="number"
-                  value={form.occupancyTo}
-                  onChange={(e) => patchForm({ occupancyTo: e.target.value })}
-                  slotProps={{ htmlInput: { min: 0, max: 100 } }}
-                  disabled={saving}
-                  size="small"
-                  sx={{ flex: "1 1 140px" }}
-                />
-              </Stack>
-            </Collapse>
-          </Box>
-
-          {/* ── Срок до заезда ── */}
-          <Box>
-            <FormControlLabel
-              control={<Checkbox checked={form.leadTimeEnabled} onChange={(e) => patchForm({ leadTimeEnabled: e.target.checked })} disabled={saving} />}
-              label="Срок до заезда — дней от сегодня (горящие / раннее бронирование)"
-            />
-            <Collapse in={form.leadTimeEnabled}>
-              <Stack direction="row" gap={2} sx={{ pl: 4, pt: 1 }}>
-                <TextField
-                  label="От, дней"
-                  type="number"
-                  value={form.leadTimeFrom}
-                  onChange={(e) => patchForm({ leadTimeFrom: e.target.value })}
-                  slotProps={{ htmlInput: { min: 0, max: 730 } }}
-                  disabled={saving}
-                  size="small"
-                  sx={{ flex: "1 1 140px" }}
-                />
-                <TextField
-                  label="До, дней"
-                  type="number"
-                  value={form.leadTimeTo}
-                  onChange={(e) => patchForm({ leadTimeTo: e.target.value })}
-                  slotProps={{ htmlInput: { min: 0, max: 730 } }}
-                  disabled={saving}
-                  size="small"
-                  sx={{ flex: "1 1 140px" }}
-                />
-              </Stack>
-            </Collapse>
-          </Box>
-
-          {/* ── Длительность ── */}
-          <Box>
-            <FormControlLabel
-              control={<Checkbox checked={form.nightsEnabled} onChange={(e) => patchForm({ nightsEnabled: e.target.checked })} disabled={saving} />}
-              label="Длительность — ночей в брони"
-            />
-            <Collapse in={form.nightsEnabled}>
-              <Stack direction="row" gap={2} sx={{ pl: 4, pt: 1 }}>
-                <TextField
-                  label="От, ночей"
-                  type="number"
-                  value={form.nightsFrom}
-                  onChange={(e) => patchForm({ nightsFrom: e.target.value })}
-                  slotProps={{ htmlInput: { min: 1, max: 365 } }}
-                  disabled={saving}
-                  size="small"
-                  sx={{ flex: "1 1 140px" }}
-                />
-                <TextField
-                  label="До, ночей"
-                  type="number"
-                  value={form.nightsTo}
-                  onChange={(e) => patchForm({ nightsTo: e.target.value })}
-                  slotProps={{ htmlInput: { min: 1, max: 365 } }}
-                  disabled={saving}
-                  size="small"
-                  sx={{ flex: "1 1 140px" }}
-                />
-              </Stack>
-            </Collapse>
-          </Box>
-
-          {/* ── Дни недели ── */}
-          <Box>
-            <FormControlLabel
-              control={<Checkbox checked={form.daysOfWeekEnabled} onChange={(e) => patchForm({ daysOfWeekEnabled: e.target.checked })} disabled={saving} />}
-              label="Дни недели"
-            />
-            <Collapse in={form.daysOfWeekEnabled}>
-              <Box sx={{ pl: 4, pt: 1 }}>
-                <ToggleButtonGroup
-                  value={form.daysOfWeek}
-                  onChange={(_, value: string[]) => patchForm({ daysOfWeek: value })}
-                  disabled={saving}
-                  sx={{ flexWrap: "wrap", gap: 0.75, "& .MuiToggleButtonGroup-grouped": { border: "1px solid", borderColor: "divider !important", borderRadius: "8px !important", m: 0 } }}
-                >
-                  {DAYS_OF_WEEK.map((d) => (
-                    <ToggleButton key={d.key} value={d.key} size="small">
-                      {d.label}
-                    </ToggleButton>
-                  ))}
-                </ToggleButtonGroup>
-              </Box>
-            </Collapse>
-          </Box>
-        </Stack>
-      </FormCard>
-
-      <FormCard>
-        <Stack
-          direction="row"
-          alignItems="center"
-          gap={1}
-          sx={{ cursor: "pointer" }}
-          onClick={() => setAdvancedOpen((v) => !v)}
-        >
-          <ExpandMoreOutlined fontSize="small" sx={{ transform: advancedOpen ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
-          <Typography variant="subtitle2" fontWeight={600}>
-            Дополнительно
-          </Typography>
-        </Stack>
-        <Collapse in={advancedOpen}>
-          <Stack gap={2} sx={{ pt: 2 }}>
-            <Typography variant="body2" color="text.secondary">
-              Нужно, только если несколько правил могут сработать на одну ночь одновременно —
-              например, ступени загрузки 0–50% / 50–80% / 80–100%: дайте им одну «Группу»,
-              чтобы сработала только одна ступень, а не все разом.
+        {/* ── Что меняем ── */}
+        <FormCard>
+          <Stack gap={2.5}>
+            <Typography variant="subtitle2" fontWeight={600}>
+              Поправка к цене
             </Typography>
-            <Stack direction="row" flexWrap="wrap" gap={2}>
+            <TextField
+              label="Название правила"
+              placeholder="Например, Новогодние праздники"
+              value={form.name}
+              onChange={(e) => {
+                patchForm({ name: e.target.value });
+                setError(null);
+              }}
+              autoFocus={!editing}
+              disabled={saving}
+              fullWidth
+            />
+
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.5 }}>
+              {(
+                [
+                  { d: "up", title: "Дороже", hint: "наценка", icon: <TrendingUpOutlined /> },
+                  { d: "down", title: "Дешевле", hint: "скидка", icon: <TrendingDownOutlined /> },
+                ] as const
+              ).map((o) => {
+                const active = direction === o.d;
+                const tone = o.d === "up" ? theme.palette.warning.main : theme.palette.success.main;
+                return (
+                  <Box
+                    key={o.d}
+                    component="button"
+                    type="button"
+                    disabled={saving}
+                    onClick={() => chooseDirection(o.d)}
+                    aria-pressed={active}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1.5,
+                      p: 1.75,
+                      borderRadius: "12px",
+                      border: `1.5px solid ${active ? tone : subtleBorder(theme)}`,
+                      bgcolor: active ? alpha(tone, theme.palette.mode === "dark" ? 0.12 : 0.07) : "transparent",
+                      color: "text.primary",
+                      font: "inherit",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      transition: "border-color .15s, background-color .15s",
+                      "&:hover": { borderColor: active ? tone : "text.secondary" },
+                    }}
+                  >
+                    <Box sx={{ color: active ? tone : "text.secondary", display: "flex" }}>{o.icon}</Box>
+                    <Box>
+                      <Typography fontWeight={700}>{o.title}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {o.hint}
+                      </Typography>
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+
+            <Stack direction={{ xs: "column", sm: "row" }} gap={1.5} alignItems={{ sm: "center" }}>
               <TextField
-                label="Приоритет"
-                type="number"
-                value={form.priority}
-                onChange={(e) => patchForm({ priority: e.target.value })}
-                helperText="Меньше — раньше. Пусто — по умолчанию (100)"
+                label={direction === "down" ? "Размер скидки" : "Размер наценки"}
+                value={absAmount}
+                onChange={(e) => setAbsAmount(e.target.value)}
                 disabled={saving}
-                size="small"
-                sx={{ flex: "1 1 180px" }}
+                inputMode="decimal"
+                slotProps={{
+                  input: {
+                    startAdornment: <InputAdornment position="start">{direction === "down" ? "−" : "+"}</InputAdornment>,
+                    endAdornment: <InputAdornment position="end">{form.adjustmentType === "percent" ? "%" : "сом / ночь"}</InputAdornment>,
+                    sx: { fontSize: 18, fontWeight: 700 },
+                  },
+                }}
+                helperText={form.adjustmentType === "percent" ? "До 99% скидки, до 1000% наценки" : "Фиксированная сумма к цене каждой ночи"}
+                sx={{ flex: 1 }}
               />
-              <TextField
-                label="Группа (exclusiveGroup)"
-                placeholder="Например, occupancy"
-                value={form.exclusiveGroup}
-                onChange={(e) => patchForm({ exclusiveGroup: e.target.value })}
-                helperText="Правила одной группы — сработает только первое по приоритету"
-                disabled={saving}
-                size="small"
-                sx={{ flex: "1 1 220px" }}
-              />
+              <Stack direction="row" gap={0.75} sx={{ alignSelf: { sm: "flex-start" }, pt: { sm: 0.75 } }}>
+                <FilterChip label="%" active={form.adjustmentType === "percent"} onClick={() => patchForm({ adjustmentType: "percent" })} />
+                <FilterChip label="сом" active={form.adjustmentType === "amount"} onClick={() => patchForm({ adjustmentType: "amount" })} />
+              </Stack>
+            </Stack>
+
+            <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap">
+              <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+                Быстро:
+              </Typography>
+              {[10, 20, 30, -10, -15, -20].map((v) => (
+                <FilterChip
+                  key={v}
+                  label={`${v > 0 ? "+" : "−"}${Math.abs(v)}%`}
+                  active={form.adjustmentType === "percent" && amountValue === v}
+                  onClick={() => applyPreset(v)}
+                />
+              ))}
+            </Stack>
+
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                Тип — только подпись в списке, на расчёт не влияет
+              </Typography>
+              <Stack direction="row" gap={0.75} flexWrap="wrap">
+                {(Object.keys(CATEGORY_LABELS) as HotelPricingRuleCategory[]).map((key) => (
+                  <FilterChip key={key} label={CATEGORY_LABELS[key]} active={form.category === key} onClick={() => patchForm({ category: key })} />
+                ))}
+              </Stack>
+            </Box>
+
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
+              gap={2}
+              sx={{ px: 2, py: 1.25, borderRadius: "12px", bgcolor: subtleBg(theme, true) }}
+            >
+              <Box>
+                <Typography variant="body2" fontWeight={600}>
+                  Правило включено
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Выключенное хранится, но цену не меняет
+                </Typography>
+              </Box>
+              <Switch checked={form.isActive} onChange={(e) => patchForm({ isActive: e.target.checked })} disabled={saving} />
             </Stack>
           </Stack>
-        </Collapse>
-      </FormCard>
+        </FormCard>
 
-      {error && (
-        <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
-          {error}
-        </Alert>
-      )}
+        {/* ── Когда действует ── */}
+        <FormCard>
+          <Stack gap={1.5}>
+            <Typography variant="subtitle2" fontWeight={600}>
+              Когда действует
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: -0.5, mb: 0.5 }}>
+              Включённые условия должны выполняться одновременно. Ничего не включено — правило действует всегда.
+            </Typography>
+            {conditionTiles.map((c) => (
+              <Box
+                key={c.key}
+                sx={{
+                  borderRadius: "12px",
+                  border: `1px solid ${c.enabled ? theme.palette.text.secondary : subtleBorder(theme)}`,
+                  transition: "border-color .15s",
+                  overflow: "hidden",
+                }}
+              >
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  gap={1.5}
+                  onClick={() => !saving && c.toggle(!c.enabled)}
+                  sx={{ px: 2, py: 1.25, cursor: saving ? "default" : "pointer" }}
+                >
+                  <Box
+                    sx={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: "10px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                      bgcolor: subtleBg(theme, true),
+                      color: c.enabled ? "text.primary" : "text.secondary",
+                      "& svg": { fontSize: 19 },
+                    }}
+                  >
+                    {c.icon}
+                  </Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="body2" fontWeight={600}>
+                      {c.title}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {c.description}
+                    </Typography>
+                  </Box>
+                  <Switch
+                    checked={c.enabled}
+                    disabled={saving}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => c.toggle(e.target.checked)}
+                    inputProps={{ "aria-label": c.title }}
+                  />
+                </Stack>
+                <Collapse in={c.enabled}>
+                  <Box sx={{ px: 2, pb: 2, pt: 0.5 }}>{c.body}</Box>
+                </Collapse>
+              </Box>
+            ))}
+          </Stack>
+        </FormCard>
 
-      <StickyActions>
-        <Button component={RouterLink} to={LIST_PATH} disabled={saving}>
-          Отмена
-        </Button>
-        <Button variant="contained" disableElevation disabled={!canSubmit || saving} onClick={() => void submit()} sx={{ px: 3 }}>
-          {saving ? "Сохраняем…" : editing ? "Сохранить" : "Добавить правило"}
-        </Button>
-      </StickyActions>
-    </Stack>
+        {/* ── Дополнительно ── */}
+        <FormCard>
+          <Stack direction="row" alignItems="center" gap={1} sx={{ cursor: "pointer" }} onClick={() => setAdvancedOpen((v) => !v)}>
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="body2" fontWeight={700}>
+                Несколько правил на одну ночь
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Приоритет и группа — нужно редко
+              </Typography>
+            </Box>
+            <ExpandMoreOutlined sx={{ color: "text.secondary", transform: advancedOpen ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
+          </Stack>
+          <Collapse in={advancedOpen}>
+            <Stack gap={2} sx={{ pt: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                Например, ступени загрузки 0–50% / 50–80% / 80–100%: дайте им одну группу, чтобы сработала только одна
+                ступень, а не все разом.
+              </Typography>
+              <Stack direction="row" flexWrap="wrap" gap={2}>
+                <TextField
+                  label="Приоритет"
+                  type="number"
+                  value={form.priority}
+                  onChange={(e) => patchForm({ priority: e.target.value })}
+                  helperText="Меньше — раньше. Пусто — 100"
+                  disabled={saving}
+                  size="small"
+                  sx={{ flex: "1 1 180px" }}
+                />
+                <TextField
+                  label="Группа"
+                  placeholder="Например, occupancy"
+                  value={form.exclusiveGroup}
+                  onChange={(e) => patchForm({ exclusiveGroup: e.target.value })}
+                  helperText="В группе сработает только первое по приоритету"
+                  disabled={saving}
+                  size="small"
+                  sx={{ flex: "1 1 220px" }}
+                />
+              </Stack>
+            </Stack>
+          </Collapse>
+        </FormCard>
+
+        {error && (
+          <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
+            {error}
+          </Alert>
+        )}
+
+        <StickyActions>
+          <Button component={RouterLink} to={LIST_PATH} disabled={saving}>
+            Отмена
+          </Button>
+          <Button variant="contained" disableElevation disabled={!canSubmit || saving} onClick={() => void submit()} sx={{ px: 3 }}>
+            {saving ? "Сохраняем…" : editing ? "Сохранить" : "Добавить правило"}
+          </Button>
+        </StickyActions>
+      </Stack>
+
+      {/* ── Живое превью ── */}
+      <Box sx={{ position: { lg: "sticky" }, top: 24 }}>
+        <SectionLabel>Предпросмотр</SectionLabel>
+        <Surface>
+          <Stack direction="row" alignItems="center" gap={1.75}>
+            <Box
+              sx={{
+                minWidth: 84,
+                px: 1,
+                py: 1.1,
+                borderRadius: "12px",
+                textAlign: "center",
+                bgcolor: amountValue === 0 ? subtleBg(theme, true) : alpha(isDiscount ? theme.palette.success.main : theme.palette.warning.main, theme.palette.mode === "dark" ? 0.18 : 0.12),
+                color: amountValue === 0 ? "text.disabled" : isDiscount ? "success.main" : "warning.main",
+              }}
+            >
+              <Typography sx={{ fontSize: 20, fontWeight: 800, lineHeight: 1.1, color: "inherit", fontVariantNumeric: "tabular-nums" }}>
+                {amountValue === 0 ? "±0" : `${amountValue > 0 ? "+" : "−"}${Math.abs(amountValue).toLocaleString("ru-RU")}${form.adjustmentType === "percent" ? "%" : ""}`}
+              </Typography>
+              <Typography sx={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.04em", color: "inherit", opacity: 0.85 }}>
+                {form.adjustmentType === "amount" ? "СОМ / НОЧЬ" : isDiscount ? "СКИДКА" : "НАЦЕНКА"}
+              </Typography>
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontSize: 16, fontWeight: 700 }} noWrap>
+                {form.name.trim() || "Новое правило"}
+              </Typography>
+              <Typography variant="caption" color={form.isActive ? "success.main" : "text.disabled"} fontWeight={600}>
+                {form.isActive ? "● включено" : "○ выключено"}
+              </Typography>
+            </Box>
+          </Stack>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2, lineHeight: 1.55 }}>
+            {amountValue === 0
+              ? "Укажите размер поправки — здесь появятся новые цены."
+              : `${isDiscount ? "Скидка" : "Наценка"} ${Math.abs(amountValue).toLocaleString("ru-RU")}${unit} — ${summaryParts.join(" · ")}.`}
+          </Typography>
+
+          {amountValue !== 0 && pricePreview.length > 0 && (
+            <Box sx={{ mt: 2, pt: 1, borderTop: `1px solid ${subtleBorder(theme)}` }}>
+              {pricePreview.map((p, i) => {
+                const delta = p.after - p.before;
+                return (
+                  <Stack
+                    key={p.key}
+                    direction="row"
+                    alignItems="baseline"
+                    gap={1}
+                    sx={{ py: 1, borderTop: i === 0 ? "none" : `1px solid ${subtleBorder(theme)}` }}
+                  >
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="body2" noWrap>
+                        {p.name}
+                      </Typography>
+                      {p.note && (
+                        <Typography variant="caption" color="text.secondary">
+                          {p.note}
+                        </Typography>
+                      )}
+                    </Box>
+                    <Typography variant="caption" color="text.disabled" sx={{ textDecoration: delta !== 0 ? "line-through" : "none", fontVariantNumeric: "tabular-nums" }}>
+                      {p.before.toLocaleString("ru-RU")}
+                    </Typography>
+                    <Typography fontWeight={700} sx={{ fontVariantNumeric: "tabular-nums", minWidth: 64, textAlign: "right" }}>
+                      {p.after.toLocaleString("ru-RU")}
+                    </Typography>
+                  </Stack>
+                );
+              })}
+              <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 1 }}>
+                {simLoading
+                  ? "Пересчитываем…"
+                  : previewIsEstimate
+                    ? "Примерно — без учёта условий и других правил"
+                    : "Цена ночи с учётом остальных правил, сом"}
+              </Typography>
+            </Box>
+          )}
+          {amountValue !== 0 && pricePreview.length === 0 && (
+            <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 2 }}>
+              Выберите категории — покажем новые цены.
+            </Typography>
+          )}
+        </Surface>
+      </Box>
+    </Box>
   );
 };
+
+/** Пара «от — до» для условий правила. */
+const RangeFields: React.FC<{
+  fromLabel: string;
+  toLabel: string;
+  unit: string;
+  from: string;
+  to: string;
+  min: number;
+  max: number;
+  disabled: boolean;
+  onFrom: (v: string) => void;
+  onTo: (v: string) => void;
+}> = ({ fromLabel, toLabel, unit, from, to, min, max, disabled, onFrom, onTo }) => (
+  <Stack direction="row" gap={1.5} alignItems="center">
+    <TextField
+      label={fromLabel}
+      type="number"
+      value={from}
+      onChange={(e) => onFrom(e.target.value)}
+      slotProps={{ htmlInput: { min, max }, input: { endAdornment: <InputAdornment position="end">{unit}</InputAdornment> } }}
+      disabled={disabled}
+      size="small"
+      sx={{ flex: 1 }}
+    />
+    <Typography color="text.secondary">—</Typography>
+    <TextField
+      label={toLabel}
+      type="number"
+      value={to}
+      onChange={(e) => onTo(e.target.value)}
+      slotProps={{ htmlInput: { min, max }, input: { endAdornment: <InputAdornment position="end">{unit}</InputAdornment> } }}
+      disabled={disabled}
+      size="small"
+      sx={{ flex: 1 }}
+    />
+  </Stack>
+);
 
 export const HotelPricingRuleFormPage: React.FC = () => {
   const { ruleId } = useParams();
@@ -838,7 +1061,7 @@ export const HotelPricingRuleFormPage: React.FC = () => {
   const loading = roomTypesQuery.isLoading || (isEdit && rulesQuery.isLoading);
 
   return (
-    <HotelPage maxWidth={760}>
+    <HotelPage maxWidth={1180}>
         <HotelPageHeader
           leading={
             <Tooltip title="К списку правил">
