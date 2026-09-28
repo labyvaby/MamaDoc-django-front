@@ -378,6 +378,14 @@ export interface ConclusionTemplate {
   conclusion: string;
   anamnesis: string;
   objective: string;
+  /**
+   * Заполненный бланк шаблона — та же структура, что у заключения
+   * (api/conclusionFormData). ⚠ Не факт контракта, а запрос фронта: на тесте
+   * 28.09.2026 бэк поле молча отбрасывает (POST → 201 без formData), тикет
+   * MamaDoc/backend_ticket_conclusion_template_form_data.md. Пока поля нет,
+   * шаблон при бланке применяется текстом (см. conclusionPresets).
+   */
+  formData?: ConclusionFormData | null;
 }
 
 /** GET /api/medical/conclusion-templates/ — the doctor's saved templates. */
@@ -395,6 +403,8 @@ export function createConclusionTemplate(payload: {
   conclusion?: string;
   anamnesis?: string;
   objective?: string;
+  /** См. ConclusionTemplate.formData — пока бэк его не хранит. */
+  formData?: ConclusionFormData | null;
 }): Promise<ConclusionTemplate> {
   return apiRequest<ConclusionTemplate>("/medical/conclusion-templates/", {
     method: "POST",
@@ -407,6 +417,34 @@ export function deleteConclusionTemplate(id: number): Promise<void> {
   return apiRequest<void>(`/medical/conclusion-templates/${id}/`, {
     method: "DELETE",
   });
+}
+
+/** Заключение из истории пациента — строка `patient-conclusions`. */
+export interface PatientConclusionSummary {
+  id: number;
+  appointmentId: number;
+  serviceLineId: number;
+  occurredAt: string;
+  doctor: { id: number; fullName: string } | null;
+  serviceName: string;
+  diagnosisData: Array<{ title?: string; diagnosis_code?: string; diagnosisCode?: string }>;
+  status: ConclusionStatus;
+}
+
+/**
+ * GET /api/medical/patient-conclusions/?patientId= — живые заключения пациента
+ * по всем филиалам, от новых к старым, без финансовых полей. `formData` здесь
+ * нет (проверено 28.09.2026) — его отдаёт карточка заключения
+ * (getMedicalConclusion). Фильтра по врачу нет: без patientId ответ пустой.
+ */
+export function getPatientConclusions(
+  patientId: number,
+  signal?: AbortSignal,
+): Promise<PatientConclusionSummary[]> {
+  return apiRequest<PatientConclusionSummary[]>(
+    `/medical/patient-conclusions/?patientId=${encodeURIComponent(String(patientId))}&limit=50`,
+    { signal },
+  );
 }
 
 /**
