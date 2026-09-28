@@ -133,6 +133,11 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // (hotel-viva-frontend-api.md §3.1). «Номера» и «Категории и тарифы» —
   // не вкладки настроек, их права в PAGE_PERMISSIONS (hotelRooms, hotelRoomCategories).
   integrations: "hotel.channels.manage",
+  // «Отель» — заезд/выезд, правила проживания, выезд с задолженностью
+  // (HotelPropertySettingsPage.tsx). Та же строгость, что у номеров и
+  // категорий (hotelRooms/hotelRoomCategories в PAGE_PERMISSIONS) — не
+  // hotel.view, эта вкладка только пишет. Видна только vertical==="hotel".
+  hotelProperty: "hotel.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

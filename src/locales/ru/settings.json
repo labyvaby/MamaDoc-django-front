@@ -18,6 +18,7 @@
       "promotions": "Акции и промокоды",
       "organization": "Организация",
       "branches": "{{branch.nomPl, capitalize}}",
+      "hotelProperty": "Отель",
       "roles": "Роли",
       "memberships": "{{employee.nomPl, capitalize}} и доступы",
       "specializations": "Специализации",
