@@ -318,6 +318,38 @@ export async function getDiagnosesPaginated(
 
 
 
+/** Строка «частых диагнозов» врача: запись каталога + сколько раз поставлен. */
+export interface FrequentDiagnosis {
+  id: number;
+  code: string;
+  title: string;
+  displayName: string;
+  count: number;
+}
+
+/**
+ * GET /api/medical/diagnoses/frequent/ — коды, которые врач ставил чаще всего.
+ * Без `doctorId` — по текущему пользователю (нет карточки сотрудника → `[]`).
+ * Код считается один раз на заключение; только активные коды каталога, без
+ * свободного текста. По умолчанию 6 месяцев и 8 кодов (пределы 24 и 20).
+ * Проверено на тесте 28.09.2026 (чужой doctorId → 404). На проде ручки пока
+ * нет (404) — фронт молчит, строки «Частые у вас» просто нет.
+ */
+export function getFrequentDiagnoses(
+  opts: { doctorId?: number; limit?: number; months?: number } = {},
+  signal?: AbortSignal,
+): Promise<FrequentDiagnosis[]> {
+  const params = new URLSearchParams();
+  if (opts.doctorId != null) params.set("doctorId", String(opts.doctorId));
+  if (opts.limit != null) params.set("limit", String(opts.limit));
+  if (opts.months != null) params.set("months", String(opts.months));
+  const qs = params.toString();
+  return apiRequest<FrequentDiagnosis[]>(
+    `/medical/diagnoses/frequent/${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+}
+
 /** POST /api/medical/diagnoses/ — add a diagnosis to the catalog. */
 export function createDiagnosis(payload: {
   code: string;
@@ -380,10 +412,11 @@ export interface ConclusionTemplate {
   objective: string;
   /**
    * Заполненный бланк шаблона — та же структура, что у заключения
-   * (api/conclusionFormData). ⚠ Не факт контракта, а запрос фронта: на тесте
-   * 28.09.2026 бэк поле молча отбрасывает (POST → 201 без formData), тикет
-   * MamaDoc/backend_ticket_conclusion_template_form_data.md. Пока поля нет,
-   * шаблон при бланке применяется текстом (см. conclusionPresets).
+   * (api/conclusionFormData); `null` — текстовый шаблон. Проверено на тесте
+   * 28.09.2026: POST принимает и отдаёт, GET списка отдаёт, не-объект → 400,
+   * лимит 256 КБ как у заключения; PATCH у шаблонов нет. Прод ещё без поля
+   * (старый бэк его отбрасывает) — тогда шаблон при бланке применяется
+   * текстом (см. conclusionPresets).
    */
   formData?: ConclusionFormData | null;
 }
@@ -403,7 +436,7 @@ export function createConclusionTemplate(payload: {
   conclusion?: string;
   anamnesis?: string;
   objective?: string;
-  /** См. ConclusionTemplate.formData — пока бэк его не хранит. */
+  /** См. ConclusionTemplate.formData — старый бэк (прод) его отбрасывает. */
   formData?: ConclusionFormData | null;
 }): Promise<ConclusionTemplate> {
   return apiRequest<ConclusionTemplate>("/medical/conclusion-templates/", {

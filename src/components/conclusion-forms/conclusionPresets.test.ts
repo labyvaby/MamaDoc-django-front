@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  frequentDiagnoses,
   historyDiagnoses,
   mergeManual,
   planPresetTexts,
@@ -114,5 +115,23 @@ describe("historyDiagnoses", () => {
   it("уже выбранные не предлагает, лимит соблюдает", () => {
     expect(historyDiagnoses(history, ["J06.9"])).toEqual([{ code: "Z00.1", title: "Осмотр" }]);
     expect(historyDiagnoses(history, [], 1)).toHaveLength(1);
+  });
+});
+
+describe("frequentDiagnoses", () => {
+  const top = [
+    { code: "J06.9", title: "ОРВИ" },
+    { code: "Z00.1", title: "Осмотр" },
+    { code: " ", title: "пусто" },
+    { code: "z00.1", title: "повтор" },
+    { code: "K59.0", title: "Запор" },
+  ];
+
+  it("убирает выбранные и уже предложенные, без пустых и повторов", () => {
+    expect(frequentDiagnoses(top, ["j06.9 "]).map((d) => d.code)).toEqual(["Z00.1", "K59.0"]);
+  });
+
+  it("сохраняет порядок сервера и лимит", () => {
+    expect(frequentDiagnoses(top, [], 2).map((d) => d.code)).toEqual(["J06.9", "Z00.1"]);
   });
 });

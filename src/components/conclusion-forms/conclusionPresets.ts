@@ -181,3 +181,25 @@ export function historyDiagnoses(
   }
   return out;
 }
+
+/**
+ * «Частые у меня» — топ кодов врача за вычетом уже выбранных и тех, что уже
+ * предложены строкой «Ранее у пациента»: один код не должен висеть дважды.
+ * Порядок — как отдал сервер (по убыванию частоты); пустой код отбрасываем.
+ */
+export function frequentDiagnoses<T extends { code: string }>(
+  frequent: T[],
+  excludeCodes: string[],
+  limit = 8,
+): T[] {
+  const taken = new Set(excludeCodes.map((code) => code.trim().toUpperCase()).filter(Boolean));
+  const out: T[] = [];
+  for (const item of frequent) {
+    const key = (item.code ?? "").trim().toUpperCase();
+    if (!key || taken.has(key)) continue;
+    taken.add(key);
+    out.push(item);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
