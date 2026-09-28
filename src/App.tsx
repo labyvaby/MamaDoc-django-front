@@ -118,6 +118,7 @@ const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
 const HotelIntegrationsPage = lazy(() => import("./dev/HotelIntegrationsPage"));
 const HotelKitchenPage = lazy(() => import("./dev/HotelKitchenPage"));
+const HotelHousekeepingPage = lazy(() => import("./dev/HotelHousekeepingPage"));
 const HotelRoomsPage = lazy(() => import("./dev/HotelRoomsPage"));
 const HotelRoomFormPage = lazy(() => import("./dev/HotelRoomFormPage"));
 const HotelRoomCategoriesPage = lazy(() => import("./dev/HotelRoomCategoriesPage"));
@@ -661,6 +662,15 @@ function App() {
                           element={
                             <Suspense fallback={<LinearProgress />}>
                               <HotelKitchenPage />
+                            </Suspense>
+                          }
+                        />
+                        {/* Уборка (задачи горничным) — тот же гейт, что «Кухня». */}
+                        <Route
+                          path="housekeeping"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <HotelHousekeepingPage />
                             </Suspense>
                           }
                         />
