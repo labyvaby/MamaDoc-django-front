@@ -666,6 +666,15 @@ export const RoomBookingGrid: React.FC = () => {
   // место справа от «Шахматка номеров» (см. actions).
   const toolbar = (
     <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" useFlexGap>
+      {(isFetchingNextPage || isFetchingPreviousPage) && (
+        <Stack direction="row" alignItems="center" gap={0.75}>
+          <CircularProgress size={14} />
+          <Typography variant="caption" color="text.secondary">
+            Подгружаем даты…
+          </Typography>
+        </Stack>
+      )}
+
       {/* Период: пилюля с прокруткой на неделю и возвратом к сегодня — стиль тулбара макета. */}
       <Stack direction="row" alignItems="center" sx={{ border: 1, borderColor: "divider", borderRadius: "8px" }}>
         <IconButton size="small" onClick={() => scrollByDays(-7)} aria-label="Неделя назад">
@@ -729,14 +738,6 @@ export const RoomBookingGrid: React.FC = () => {
         <Typography variant="caption" color="primary.main" fontWeight={600}>
           {dragHint}
         </Typography>
-      )}
-      {(isFetchingNextPage || isFetchingPreviousPage) && (
-        <Stack direction="row" alignItems="center" gap={0.75}>
-          <CircularProgress size={14} />
-          <Typography variant="caption" color="text.secondary">
-            Подгружаем даты…
-          </Typography>
-        </Stack>
       )}
       {(isFetchNextPageError || isFetchPreviousPageError) && (
         <Stack direction="row" alignItems="center" gap={0.75}>
