@@ -1,8 +1,8 @@
 /**
  * «Кухня» — во сколько какие блюда готовить и сколько продуктов на это надо
  * купить. Реальный бэкенд — GET /hotel/kitchen/day-plan/ (см. src/api/hotel.ts)
- * одним вызовом отдаёт блюда+порции+список закупки; occupiedRooms из того же
- * источника, что дашборд, не оторванные случайные числа.
+ * одним вызовом отдаёт блюда+порции+список закупки. Порции — от числа гостей
+ * (occupiedGuests × portionsPerGuest блюда), считает бэк.
  *
  * Три числа на продукт, не два: «Нужно по рецепту» (весь расход) — норма,
  * не редактируется; «Есть на складе» — то, что уже лежит на кухне с прошлой
@@ -190,25 +190,25 @@ export const HotelKitchenPage: React.FC = () => {
     }
   };
 
-  // Пустой отель — ноль порций и ноль закупки. ВРЕМЕННАЯ заплатка: бэк отдаёт
-  // по порции на блюдо даже при 0 занятых номеров (selectors.py, max(1, …)).
-  // Чинится на бэке; когда он начнёт отдавать 0, этот пересчёт убрать.
-  // На «справочном» меню (noGuests) закупку не отмечаем — покупать нечего.
-  const noGuests = plan != null && plan.occupiedRooms === 0;
-  const portionsOf = (d: { portions: number }) => (noGuests ? 0 : d.portions);
-  const totalPlanned = plan && !noGuests ? plan.shoppingList.reduce((sum, i) => sum + Number(i.plannedAmount), 0) : 0;
+  // Порции, «Нужно», «Докупить» и суммы — как есть от бэка: он считает
+  // round(гостей × порций на гостя) без минимума, при 0 гостей — 0. Фронт
+  // ничего не пересчитывает. noGuests — только для подсказки и чтобы не
+  // предлагать «Купил» на меню, по которому готовить не для кого.
+  const noGuests = plan != null && plan.occupiedGuests === 0;
+  const totalPlanned = plan ? Number(plan.plannedTotal) : 0;
+  const totalPortions = plan ? plan.dishes.reduce((sum, d) => sum + d.portions, 0) : 0;
   const purchasedCount = plan ? plan.shoppingList.filter((i) => i.purchase).length : 0;
 
-  const toBuyCount = plan && !noGuests ? plan.shoppingList.filter((i) => Number(i.toBuyQty) > 0).length : 0;
+  const toBuyCount = plan ? plan.shoppingList.filter((i) => Number(i.toBuyQty) > 0).length : 0;
 
   return (
     <HotelPage>
       <HotelPageHeader
         title="Кухня"
-        subtitle={plan ? `Меню и закупка на ${plan.occupiedRooms} ${plural(plan.occupiedRooms, "занятый номер", "занятых номера", "занятых номеров")}` : undefined}
+        subtitle={plan ? `Меню и закупка на ${plan.occupiedGuests} ${plural(plan.occupiedGuests, "гостя", "гостей", "гостей")}` : undefined}
         info={
           <>
-            Порции и норма продуктов считаются от числа занятых на эту дату номеров. «Нужно» и «Докупить» не
+            Порции считаются от числа гостей на эту дату (взрослые и дети): гостей × порций на гостя у блюда. «Нужно» и «Докупить» не
             редактируются: «Докупить» = нужно минус то, что есть на складе. «На складе» и «Куплено» — ввод
             сотрудника, их всегда можно поправить.
           </>
@@ -225,8 +225,12 @@ export const HotelKitchenPage: React.FC = () => {
       ) : (
         <>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
-            <MetricTile label="Занято номеров" value={plan.occupiedRooms} hint={isToday ? "на сегодня" : "на выбранную дату"} />
-            <MetricTile label="Блюд в меню" value={plan.dishes.length} hint={noGuests ? "готовить не для кого" : `${plan.dishes.reduce((s, d) => s + portionsOf(d), 0)} порций всего`} />
+            <MetricTile
+              label="Гостей"
+              value={plan.occupiedGuests}
+              hint={`в ${plan.occupiedRooms} ${plural(plan.occupiedRooms, "номере", "номерах", "номерах")} · ${isToday ? "сегодня" : "на выбранную дату"}`}
+            />
+            <MetricTile label="Блюд в меню" value={plan.dishes.length} hint={noGuests ? "готовить не для кого" : `${totalPortions} порций всего`} />
             <MetricTile
               label="Куплено"
               value={`${purchasedCount} / ${plan.shoppingList.length}`}
@@ -239,7 +243,7 @@ export const HotelKitchenPage: React.FC = () => {
           {noGuests && (
             <Surface sx={{ py: 1.75, bgcolor: "transparent", borderStyle: "dashed" }}>
               <Typography variant="body2" color="text.secondary">
-                На эту дату нет занятых номеров — готовить и закупать ничего не нужно. Меню ниже показано для справки.
+                На эту дату гостей нет — готовить и закупать ничего не нужно. Меню ниже показано для справки.
               </Typography>
             </Surface>
           )}
@@ -273,7 +277,7 @@ export const HotelKitchenPage: React.FC = () => {
                         >
                           <Typography variant="body2">{dish.name}</Typography>
                           <Typography variant="body2" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
-                            {portionsOf(dish)} порц.
+                            {dish.portions} порц.
                           </Typography>
                         </Stack>
                       ))
@@ -306,7 +310,7 @@ export const HotelKitchenPage: React.FC = () => {
                 <TableBody>
                   {plan.shoppingList.map((item) => {
                     const purchase = item.purchase;
-                    const toBuyQty = noGuests ? 0 : Number(item.toBuyQty);
+                    const toBuyQty = Number(item.toBuyQty);
                     const deviationQty = purchase ? Number(purchase.purchasedQty) - toBuyQty : 0;
                     const deviationBase = toBuyQty || 1;
                     const deviationPercent = purchase ? Math.round((deviationQty / deviationBase) * 100) : 0;
@@ -321,7 +325,7 @@ export const HotelKitchenPage: React.FC = () => {
                       <TableRow key={item.ingredientId}>
                         <TableCell sx={{ pl: 2.5, fontWeight: 600 }}>{item.ingredientName}</TableCell>
                         <TableCell align="right" sx={{ ...num, color: "text.secondary" }}>
-                          {noGuests ? 0 : Number(item.neededQty)} {unitRu(item.unit)}
+                          {Number(item.neededQty)} {unitRu(item.unit)}
                         </TableCell>
                         <TableCell align="right">
                           <Tooltip title={canPurchase ? "Поправить остаток на складе" : ""}>

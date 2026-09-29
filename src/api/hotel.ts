@@ -1770,6 +1770,9 @@ export interface HotelDish {
   propertyId: number;
   meal: "breakfast" | "lunch" | "dinner";
   name: string;
+  /** Порций на одного гостя (> 0). */
+  portionsPerGuest: string;
+  /** @deprecated Старое имя portionsPerGuest; бэк ещё отдаёт его как alias — не показывать отдельно. */
   portionsPerRoom: string;
   sortOrder: number;
   isActive: boolean;
@@ -1780,7 +1783,8 @@ export interface HotelDishCreateData {
   propertyId: number;
   meal: "breakfast" | "lunch" | "dinner";
   name: string;
-  portionsPerRoom?: string;
+  /** Порций на одного гостя (> 0). Старое portionsPerRoom не отправляем. */
+  portionsPerGuest?: string;
   sortOrder?: number;
   ingredients?: HotelRecipeLineInput[];
 }
@@ -1788,7 +1792,7 @@ export interface HotelDishCreateData {
 export interface HotelDishUpdateData {
   meal?: "breakfast" | "lunch" | "dinner";
   name?: string;
-  portionsPerRoom?: string;
+  portionsPerGuest?: string;
   sortOrder?: number;
   isActive?: boolean;
   /** Полная замена рецепта. */
@@ -1799,7 +1803,10 @@ export interface HotelPlannedDish {
   dishId: number;
   meal: string;
   name: string;
+  portionsPerGuest: string;
+  /** @deprecated Старое имя portionsPerGuest; бэк ещё отдаёт его как alias — не показывать отдельно. */
   portionsPerRoom: string;
+  /** round(occupiedGuests × portionsPerGuest), без минимума: нет гостей — 0. */
   portions: number;
 }
 
@@ -1834,6 +1841,8 @@ export interface HotelKitchenDayPlan {
   propertyId: number;
   date: string;
   occupiedRooms: number;
+  /** Взрослые + дети в подтверждённых проживаниях на дату — база порций. */
+  occupiedGuests: number;
   dishes: HotelPlannedDish[];
   shoppingList: HotelShoppingLine[];
   plannedTotal: Money;
@@ -1893,7 +1902,7 @@ export function deleteDish(id: number): Promise<void> {
   return apiRequest<void>(`/v2/hotel/kitchen/dishes/${id}/`, { method: "DELETE" });
 }
 
-/** Блюда+порции+список закупки на дату одним вызовом — occupiedRooms из того же источника, что дашборд. */
+/** Блюда+порции+список закупки на дату одним вызовом; порции бэк считает от occupiedGuests. */
 export function getKitchenDayPlan(propertyId: number, date: string, signal?: AbortSignal): Promise<HotelKitchenDayPlan> {
   const qs = buildQuery({ propertyId, date });
   return apiRequest<HotelKitchenDayPlan>(`/v2/hotel/kitchen/day-plan/${qs}`, { signal });
