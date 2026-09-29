@@ -609,9 +609,20 @@ export async function scheduleUnitMeeting(unitId: string, input: MeetingInput, o
   return postUnitCommand(unitId, "meetings", input, organizationId);
 }
 
-export async function sendUnitProposal(unitId: string, input: ProposalInput, organizationId?: number): Promise<UnitDetails> {
-  if (REALESTATE_USE_MOCKS) return mockDelay(mock.sendProposal(unitId, input));
-  return postUnitCommand(unitId, "proposals", input, organizationId);
+/** Отправленное КП: свежая карточка и ссылка WhatsApp с текстом, который бэк сохранил в истории. */
+export interface SentProposal {
+  unit: UnitDetails;
+  /** null — только в моках: ссылку собирает интерфейс. */
+  whatsappUrl: string | null;
+}
+
+export async function sendUnitProposal(unitId: string, input: ProposalInput, organizationId?: number): Promise<SentProposal> {
+  if (REALESTATE_USE_MOCKS) return mockDelay({ unit: mock.sendProposal(unitId, input), whatsappUrl: null });
+  const proposal = await apiRequest<{ whatsappUrl: string }>(withOrg(`${REALTY_API}/units/${unitId}/proposals/`, organizationId), {
+    method: "POST",
+    body: input,
+  });
+  return { unit: await getUnit(unitId, organizationId), whatsappUrl: proposal.whatsappUrl || null };
 }
 
 /**

@@ -487,7 +487,15 @@ export function SuccessScreen({ unit, onBack, go }: FlowProps) {
 
 export function ProposalScreen({ project, unit, offer, organizationId, onBack, onClose }: FlowProps) {
   const toast = useRealEstateToast();
-  const send = useUnitCommand((input: Parameters<typeof sendUnitProposal>[1]) => sendUnitProposal(unit.id, input, organizationId));
+  const queryClient = useQueryClient();
+  const send = useMutation({
+    mutationFn: (input: Parameters<typeof sendUnitProposal>[1]) => sendUnitProposal(unit.id, input, organizationId),
+    onSuccess: ({ unit: next }) => {
+      queryClient.setQueryData(realEstateKeys.unit(next.id), next);
+      void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
+    },
+    onError: (error) => toast(errorMessage(error)),
+  });
   const finalPrice = priceWithOffer(unit, offer);
   const perMeter = money(Math.round(finalPrice / unit.totalArea));
   const { register, control, handleSubmit, formState } = useForm<{ phone: string; includePlan: boolean }>({
@@ -495,6 +503,7 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
   });
 
   const submit = handleSubmit(({ phone, includePlan }) => {
+    // Текст для моков; на живом API текст и ссылку собирает бэк — тот же, что он сохранил в истории.
     const message = [
       "Коммерческое предложение",
       "",
@@ -513,8 +522,9 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
     send.mutate(
       { phone: phone.trim(), includePlan, offerId: offer.id },
       {
-        onSuccess: () => {
-          window.open(`https://wa.me/${phone.replace(/\D/g, "")}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
+        onSuccess: ({ whatsappUrl }) => {
+          const url = whatsappUrl ?? `https://wa.me/${phone.replace(/\D/g, "")}?text=${encodeURIComponent(message)}`;
+          window.open(url, "_blank", "noopener");
           onClose();
           toast("КП подготовлено в WhatsApp", `квартира №${unit.number} · ${phone}`);
         },
