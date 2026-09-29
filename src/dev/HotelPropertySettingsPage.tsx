@@ -15,6 +15,11 @@
  * бек-разработчику, не эта страница.
  */
 import React from "react";
+import LoginOutlined from "@mui/icons-material/LoginOutlined";
+import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
+import GavelOutlined from "@mui/icons-material/GavelOutlined";
+import { FormField } from "./formField";
+import { FieldIcon } from "./FieldIcon";
 import {
   Alert,
   Box,
@@ -144,8 +149,8 @@ export const HotelPropertySettingsPage: React.FC = () => {
                 size="small"
                 value={checkInTime}
                 onChange={(e) => setCheckInTime(e.target.value)}
-                slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ width: 160 }}
+                slotProps={{ inputLabel: { shrink: true }, input: { startAdornment: <FieldIcon icon={<LoginOutlined />} /> } }}
+                sx={{ width: 180 }}
               />
               <TextField
                 label="Выезд до"
@@ -153,8 +158,8 @@ export const HotelPropertySettingsPage: React.FC = () => {
                 size="small"
                 value={checkOutTime}
                 onChange={(e) => setCheckOutTime(e.target.value)}
-                slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ width: 160 }}
+                slotProps={{ inputLabel: { shrink: true }, input: { startAdornment: <FieldIcon icon={<LogoutOutlined />} /> } }}
+                sx={{ width: 180 }}
               />
             </Stack>
           </Box>
@@ -169,13 +174,15 @@ export const HotelPropertySettingsPage: React.FC = () => {
               Условия отмены, депозит, домашние животные и другие правила — свободный текст для гостя. Время заезда и
               выезда сюда не пишите: гость видит его из полей выше, и оно не устареет, когда вы его поменяете.
             </Typography>
-            <TextField
+            <FormField
+              icon={<GavelOutlined />}
               fullWidth
               multiline
               minRows={4}
               placeholder="Например: бесплатная отмена за 24 часа до заезда, депозит 2000 сом наличными…"
               value={houseRules}
-              onChange={(e) => setHouseRules(e.target.value)}
+              onValueChange={setHouseRules}
+              rules={{ maxLength: 3000 }}
             />
             {timesInRules.length > 0 && (
               <Alert severity="warning" variant="outlined" sx={{ mt: 1.5, fontSize: "0.8rem" }}>

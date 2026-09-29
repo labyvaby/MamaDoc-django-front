@@ -15,6 +15,11 @@
  * (purchasedByName), поле для ручного ввода убрано.
  */
 import React from "react";
+import ShoppingBasketOutlined from "@mui/icons-material/ShoppingBasketOutlined";
+import SellOutlined from "@mui/icons-material/SellOutlined";
+import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
+import { FormField } from "./formField";
+import { hasFieldErrors, type FieldRules } from "./formRules";
 import {
   Alert,
   Box,
@@ -31,7 +36,6 @@ import {
   TableCell,
   TableHead,
   TableRow,
-  TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -68,6 +72,13 @@ const UNIT_RU: Record<string, string> = {
 };
 /** «kg» → «кг»: справочник ингредиентов хранит единицы латиницей. */
 const unitRu = (unit: string) => UNIT_RU[unit.trim().toLowerCase()] ?? unit;
+
+/** Количество — с десятыми (0,5 кг), цена — с копейками; остаток может быть нулём. */
+const KITCHEN_RULES = {
+  qty: { kind: "decimal", required: true, min: 0.01, max: 100_000, maxDecimals: 2 },
+  price: { kind: "decimal", required: true, min: 0, max: 10_000_000, maxDecimals: 2 },
+  stock: { kind: "decimal", required: true, min: 0, max: 100_000, maxDecimals: 2 },
+} satisfies Record<string, FieldRules>;
 
 const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner"];
 
@@ -443,22 +454,24 @@ export const HotelKitchenPage: React.FC = () => {
                   {Number(purchaseEdit.item.inStockQty)}). Укажите, сколько купили на самом деле.
                 </Typography>
                 {purchaseError && <Alert severity="error">{purchaseError}</Alert>}
-                <TextField
-                  label={`Куплено, ${unitRu(purchaseEdit.item.unit)}`}
-                  type="number"
+                <FormField
+                  icon={<ShoppingBasketOutlined />}
+                  label="Куплено"
+                  unit={unitRu(purchaseEdit.item.unit)}
                   value={purchaseEdit.purchasedQty}
-                  onChange={(e) => setPurchaseEdit({ ...purchaseEdit, purchasedQty: e.target.value })}
-                  slotProps={{ htmlInput: { min: 0, step: "0.1" } }}
+                  onValueChange={(purchasedQty) => setPurchaseEdit({ ...purchaseEdit, purchasedQty })}
+                  rules={KITCHEN_RULES.qty}
                   autoFocus
                   disabled={purchaseSaving}
                   fullWidth
                 />
-                <TextField
-                  label="Цена за единицу, сом (факт)"
-                  type="number"
+                <FormField
+                  icon={<SellOutlined />}
+                  label="Цена за единицу (факт)"
+                  unit="сом"
                   value={purchaseEdit.actualPricePerUnit}
-                  onChange={(e) => setPurchaseEdit({ ...purchaseEdit, actualPricePerUnit: e.target.value })}
-                  slotProps={{ htmlInput: { min: 0 } }}
+                  onValueChange={(actualPricePerUnit) => setPurchaseEdit({ ...purchaseEdit, actualPricePerUnit })}
+                  rules={KITCHEN_RULES.price}
                   disabled={purchaseSaving}
                   fullWidth
                 />
@@ -473,7 +486,17 @@ export const HotelKitchenPage: React.FC = () => {
               <Button onClick={() => setPurchaseEdit(null)} disabled={purchaseSaving}>
                 Отмена
               </Button>
-              <Button variant="contained" onClick={() => void savePurchaseEdit()} disabled={purchaseSaving}>
+              <Button
+                variant="contained"
+                onClick={() => void savePurchaseEdit()}
+                disabled={
+                  purchaseSaving ||
+                  hasFieldErrors([
+                    [purchaseEdit.purchasedQty, KITCHEN_RULES.qty],
+                    [purchaseEdit.actualPricePerUnit, KITCHEN_RULES.price],
+                  ])
+                }
+              >
                 {purchaseSaving ? "Сохраняем…" : "Сохранить"}
               </Button>
             </DialogActions>
@@ -492,12 +515,13 @@ export const HotelKitchenPage: React.FC = () => {
                   Поправьте после переучёта или новой партии.
                 </Typography>
                 {stockError && <Alert severity="error">{stockError}</Alert>}
-                <TextField
-                  label={`Остаток, ${unitRu(stockEdit.unit)}`}
-                  type="number"
+                <FormField
+                  icon={<Inventory2Outlined />}
+                  label="Остаток"
+                  unit={unitRu(stockEdit.unit)}
                   value={stockEdit.qty}
-                  onChange={(e) => setStockEdit({ ...stockEdit, qty: e.target.value })}
-                  slotProps={{ htmlInput: { min: 0, step: "0.1" } }}
+                  onValueChange={(qty) => setStockEdit({ ...stockEdit, qty })}
+                  rules={KITCHEN_RULES.stock}
                   autoFocus
                   disabled={stockSaving}
                   fullWidth
@@ -508,7 +532,11 @@ export const HotelKitchenPage: React.FC = () => {
               <Button onClick={() => setStockEdit(null)} disabled={stockSaving}>
                 Отмена
               </Button>
-              <Button variant="contained" onClick={() => void saveStockEdit()} disabled={stockSaving}>
+              <Button
+                variant="contained"
+                onClick={() => void saveStockEdit()}
+                disabled={stockSaving || hasFieldErrors([[stockEdit.qty, KITCHEN_RULES.stock]])}
+              >
                 {stockSaving ? "Сохраняем…" : "Сохранить"}
               </Button>
             </DialogActions>

@@ -42,6 +42,11 @@
  * от сегодня, представительное окно для оценки.
  */
 import React from "react";
+import DriveFileRenameOutlineOutlined from "@mui/icons-material/DriveFileRenameOutlineOutlined";
+import LowPriorityOutlined from "@mui/icons-material/LowPriorityOutlined";
+import WorkspacesOutlined from "@mui/icons-material/WorkspacesOutlined";
+import { FormField } from "./formField";
+import { sanitizeFieldInput } from "./formRules";
 import {
   Alert,
   Box,
@@ -659,12 +664,14 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
             <Typography variant="subtitle2" fontWeight={600}>
               Поправка к цене
             </Typography>
-            <TextField
+            <FormField
+              icon={<DriveFileRenameOutlineOutlined />}
               label="Название правила"
               placeholder="Например, Новогодние праздники"
               value={form.name}
-              onChange={(e) => {
-                patchForm({ name: e.target.value });
+              rules={{ required: true, maxLength: 80 }}
+              onValueChange={(name) => {
+                patchForm({ name });
                 setError(null);
               }}
               autoFocus={!editing}
@@ -721,7 +728,7 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
               <TextField
                 label={direction === "down" ? "Размер скидки" : "Размер наценки"}
                 value={absAmount}
-                onChange={(e) => setAbsAmount(e.target.value)}
+                onChange={(e) => setAbsAmount(sanitizeFieldInput(e.target.value, { kind: "decimal", min: 0 }))}
                 disabled={saving}
                 inputMode="decimal"
                 slotProps={{
@@ -871,21 +878,24 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
                 ступень, а не все разом.
               </Typography>
               <Stack direction="row" flexWrap="wrap" gap={2}>
-                <TextField
+                <FormField
+                  icon={<LowPriorityOutlined />}
                   label="Приоритет"
-                  type="number"
                   value={form.priority}
-                  onChange={(e) => patchForm({ priority: e.target.value })}
+                  rules={{ kind: "int", min: 0, max: 10_000 }}
+                  onValueChange={(priority) => patchForm({ priority })}
                   helperText="Меньше — раньше. Пусто — 100"
                   disabled={saving}
                   size="small"
                   sx={{ flex: "1 1 180px" }}
                 />
-                <TextField
+                <FormField
+                  icon={<WorkspacesOutlined />}
                   label="Группа"
                   placeholder="Например, occupancy"
                   value={form.exclusiveGroup}
-                  onChange={(e) => patchForm({ exclusiveGroup: e.target.value })}
+                  rules={{ maxLength: 40 }}
+                  onValueChange={(exclusiveGroup) => patchForm({ exclusiveGroup })}
                   helperText="В группе сработает только первое по приоритету"
                   disabled={saving}
                   size="small"
@@ -1016,23 +1026,23 @@ const RangeFields: React.FC<{
   onTo: (v: string) => void;
 }> = ({ fromLabel, toLabel, unit, from, to, min, max, disabled, onFrom, onTo }) => (
   <Stack direction="row" gap={1.5} alignItems="center">
-    <TextField
+    <FormField
       label={fromLabel}
-      type="number"
+      unit={unit}
       value={from}
-      onChange={(e) => onFrom(e.target.value)}
-      slotProps={{ htmlInput: { min, max }, input: { endAdornment: <InputAdornment position="end">{unit}</InputAdornment> } }}
+      onValueChange={onFrom}
+      rules={{ kind: "int", min, max }}
       disabled={disabled}
       size="small"
       sx={{ flex: 1 }}
     />
     <Typography color="text.secondary">—</Typography>
-    <TextField
+    <FormField
       label={toLabel}
-      type="number"
+      unit={unit}
       value={to}
-      onChange={(e) => onTo(e.target.value)}
-      slotProps={{ htmlInput: { min, max }, input: { endAdornment: <InputAdornment position="end">{unit}</InputAdornment> } }}
+      onValueChange={onTo}
+      rules={{ kind: "int", min, max }}
       disabled={disabled}
       size="small"
       sx={{ flex: 1 }}

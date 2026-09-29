@@ -15,6 +15,12 @@
  * конкретного действия проверяет бэк, 403 показываем как есть.
  */
 import React from "react";
+import MeetingRoomOutlined from "@mui/icons-material/MeetingRoomOutlined";
+import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
+import NotesOutlined from "@mui/icons-material/NotesOutlined";
+import { FormField } from "./formField";
+import { FieldIcon } from "./FieldIcon";
 import {
   Alert,
   Avatar,
@@ -515,7 +521,14 @@ export const HotelHousekeepingPage: React.FC = () => {
           <DialogContentText sx={{ mb: 2 }}>
             Можно сразу поставить состояние номера — как в чипе состояния номера.
           </DialogContentText>
-          <TextField select label="Состояние номера" value={doneRoomState} onChange={(e) => setDoneRoomState(e.target.value)} fullWidth>
+          <TextField
+            select
+            label="Состояние номера"
+            value={doneRoomState}
+            onChange={(e) => setDoneRoomState(e.target.value)}
+            slotProps={{ input: { startAdornment: <FieldIcon icon={<CleaningServicesOutlined />} /> } }}
+            fullWidth
+          >
             <MenuItem value="">Не менять</MenuItem>
             {HOTEL_ROOM_STATES.map((s) => (
               <MenuItem key={s} value={s}>
@@ -545,6 +558,8 @@ export const HotelHousekeepingPage: React.FC = () => {
                   label="Номер"
                   value={form.roomId}
                   onChange={(e) => setForm((f) => ({ ...f, roomId: e.target.value === "" ? "" : Number(e.target.value) }))}
+                  slotProps={{ input: { startAdornment: <FieldIcon icon={<MeetingRoomOutlined />} /> } }}
+                  required
                   fullWidth
                 >
                   {rooms.map((r) => (
@@ -558,6 +573,7 @@ export const HotelHousekeepingPage: React.FC = () => {
                   label="Вид задачи"
                   value={form.kind}
                   onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as TaskKind }))}
+                  slotProps={{ input: { startAdornment: <FieldIcon icon={<AssignmentOutlined />} /> } }}
                   fullWidth
                 >
                   {TASK_KINDS.map((k) => (
@@ -573,6 +589,7 @@ export const HotelHousekeepingPage: React.FC = () => {
               label="Исполнитель"
               value={form.assignedToId}
               onChange={(e) => setForm((f) => ({ ...f, assignedToId: e.target.value === "" ? "" : Number(e.target.value) }))}
+              slotProps={{ input: { startAdornment: <FieldIcon icon={<PersonOutlineOutlined />} /> } }}
               fullWidth
             >
               <MenuItem value="">Без исполнителя</MenuItem>
@@ -588,10 +605,12 @@ export const HotelHousekeepingPage: React.FC = () => {
               onChange={(v) => setForm((f) => ({ ...f, dueAt: v }))}
               slotProps={{ textField: { fullWidth: true }, field: { clearable: true } }}
             />
-            <TextField
+            <FormField
+              icon={<NotesOutlined />}
               label="Заметка"
               value={form.note}
-              onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+              onValueChange={(note) => setForm((f) => ({ ...f, note }))}
+              rules={{ maxLength: 500 }}
               multiline
               minRows={2}
               fullWidth

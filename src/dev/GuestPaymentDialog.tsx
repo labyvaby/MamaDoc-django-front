@@ -7,6 +7,12 @@
  * форма — общий компонент для колонки на «Гостях».
  */
 import React from "react";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
+import ChatBubbleOutlineOutlined from "@mui/icons-material/ChatBubbleOutlineOutlined";
+import { FormField } from "./formField";
+import { FieldIcon } from "./FieldIcon";
+import { hasFieldErrors, type FieldRules } from "./formRules";
 import {
   Alert,
   Button,
@@ -28,6 +34,12 @@ import type { GuestDetailsState } from "./useGuestDetails";
 export interface GuestPaymentDialogProps {
   state: GuestDetailsState;
 }
+
+/** Сумма платежа — число с копейками, больше нуля; комментарий — короткий. */
+const PAYMENT_RULES = {
+  amount: { kind: "decimal", required: true, min: 1, max: 100_000_000 },
+  note: { maxLength: 300 },
+} satisfies Record<string, FieldRules>;
 
 export const GuestPaymentDialog: React.FC<GuestPaymentDialogProps> = ({ state }) => {
   const { employee, paymentMethods, cashlessState, paymentEdit, setPaymentEdit, savePayment, savingPayment, paymentError } = state;
@@ -62,6 +74,7 @@ export const GuestPaymentDialog: React.FC<GuestPaymentDialogProps> = ({ state })
                       : "",
                   });
                 }}
+                slotProps={{ input: { startAdornment: <FieldIcon icon={<AccountBalanceWalletOutlined />} /> } }}
                 fullWidth
               >
                 {paymentMethods.map((c) => (
@@ -80,20 +93,23 @@ export const GuestPaymentDialog: React.FC<GuestPaymentDialogProps> = ({ state })
                   disabled={savingPayment}
                 />
               )}
-              <TextField
-                label="Сумма, сом"
-                type="number"
+              <FormField
+                icon={<PaymentsOutlined />}
+                label="Сумма"
+                unit="сом"
                 value={paymentEdit.amount}
-                onChange={(e) => setPaymentEdit({ ...paymentEdit, amount: e.target.value })}
-                slotProps={{ htmlInput: { min: 0 } }}
+                onValueChange={(amount) => setPaymentEdit({ ...paymentEdit, amount })}
+                rules={PAYMENT_RULES.amount}
                 autoFocus
                 fullWidth
               />
-              <TextField
+              <FormField
+                icon={<ChatBubbleOutlineOutlined />}
                 label="Комментарий"
                 placeholder="Необязательно"
                 value={paymentEdit.note}
-                onChange={(e) => setPaymentEdit({ ...paymentEdit, note: e.target.value })}
+                onValueChange={(note) => setPaymentEdit({ ...paymentEdit, note })}
+                rules={PAYMENT_RULES.note}
                 fullWidth
               />
               <Typography variant="caption" color="text.secondary">
@@ -105,7 +121,11 @@ export const GuestPaymentDialog: React.FC<GuestPaymentDialogProps> = ({ state })
             <Button onClick={() => setPaymentEdit(null)} disabled={savingPayment}>
               Отмена
             </Button>
-            <Button variant="contained" onClick={() => void savePayment()} disabled={savingPayment}>
+            <Button
+              variant="contained"
+              onClick={() => void savePayment()}
+              disabled={savingPayment || hasFieldErrors([[paymentEdit.amount, PAYMENT_RULES.amount], [paymentEdit.note, PAYMENT_RULES.note]])}
+            >
               {savingPayment ? "Сохраняем…" : "Провести оплату"}
             </Button>
           </DialogActions>

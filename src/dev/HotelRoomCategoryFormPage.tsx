@@ -53,6 +53,32 @@ import {
   Typography,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import DriveFileRenameOutlineOutlined from "@mui/icons-material/DriveFileRenameOutlineOutlined";
+import SellOutlined from "@mui/icons-material/SellOutlined";
+import LandscapeOutlined from "@mui/icons-material/LandscapeOutlined";
+import BedOutlined from "@mui/icons-material/BedOutlined";
+import ArchitectureOutlined from "@mui/icons-material/ArchitectureOutlined";
+import NotesOutlined from "@mui/icons-material/NotesOutlined";
+import SquareFootOutlined from "@mui/icons-material/SquareFootOutlined";
+import HeightOutlined from "@mui/icons-material/HeightOutlined";
+import BathtubOutlined from "@mui/icons-material/BathtubOutlined";
+import MeetingRoomOutlined from "@mui/icons-material/MeetingRoomOutlined";
+import ExploreOutlined from "@mui/icons-material/ExploreOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
+import { FormField } from "./formField";
+import { focusFirstFieldError, hasFieldErrors, sanitizeFieldInput, type FieldRules } from "./formRules";
+
+/** Правила полей категории — те же проверяют «Сохранить». */
+const CATEGORY_RULES = {
+  name: { required: true, maxLength: 60 },
+  price: { kind: "decimal", min: 0, max: 10_000_000, maxDecimals: 2 },
+  short: { maxLength: 100 },
+  long: { maxLength: 2000 },
+  area: { kind: "decimal", min: 1, max: 2000 },
+  ceilingHeight: { kind: "decimal", min: 1.8, max: 15 },
+  bathrooms: { kind: "int", min: 0, max: 20 },
+  roomsCount: { kind: "int", min: 0, max: 50 },
+} satisfies Record<string, FieldRules>;
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import { CountStepper, FormCard, HotelPage, HotelPageHeader, StickyActions } from "./hotelUi";
@@ -195,16 +221,15 @@ const AmenityTile: React.FC<AmenityTileProps> = ({ amenity, checked, disabled, p
     />
     <TextField
       size="small"
-      type="number"
       value={price}
       placeholder="0"
-      onChange={(e) => onPriceChange(e.target.value)}
+      onChange={(e) => onPriceChange(sanitizeFieldInput(e.target.value, { kind: "decimal", min: 0 }))}
       onBlur={onPriceCommit}
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
       }}
       slotProps={{
-        htmlInput: { min: 0, "aria-label": `Наценка за «${amenity.label}», сом за ночь`, style: { textAlign: "right" } },
+        htmlInput: { inputMode: "decimal", "aria-label": `Наценка за «${amenity.label}», сом за ночь`, style: { textAlign: "right" } },
         input: {
           startAdornment: <InputAdornment position="start">+</InputAdornment>,
           endAdornment: <InputAdornment position="end">сом</InputAdornment>,
@@ -246,6 +271,8 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
   const [form, setForm] = React.useState<CategoryFormState>(() => (editing ? toForm(editing) : EMPTY_FORM));
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // После первой попытки сохранить — ошибки всех полей, даже не тронутых.
+  const [showErrors, setShowErrors] = React.useState(false);
   const patchForm = (patch: Partial<CategoryFormState>) => setForm((prev) => ({ ...prev, ...patch }));
 
   // Новая характеристика — заводится прямо в форме (createAmenity кладёт её в
@@ -326,8 +353,24 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
 
   const submit = async () => {
     const trimmed = form.name.trim();
-    if (!trimmed) {
-      setError("Введите название категории");
+    const invalid = hasFieldErrors([
+      [form.name, CATEGORY_RULES.name],
+      [form.price, CATEGORY_RULES.price],
+      [form.view, CATEGORY_RULES.short],
+      [form.bedType, CATEGORY_RULES.short],
+      [form.roomLayout, CATEGORY_RULES.short],
+      [form.description, CATEGORY_RULES.long],
+      [form.defaultArea, CATEGORY_RULES.area],
+      [form.defaultCeilingHeight, CATEGORY_RULES.ceilingHeight],
+      [form.defaultBathrooms, CATEGORY_RULES.bathrooms],
+      [form.defaultRoomsCount, CATEGORY_RULES.roomsCount],
+      [form.defaultWindowSide, CATEGORY_RULES.short],
+      [form.defaultLayoutDescription, CATEGORY_RULES.long],
+    ]);
+    if (invalid) {
+      setShowErrors(true);
+      setError("Проверьте поля, отмеченные красным");
+      focusFirstFieldError();
       return;
     }
     setSaving(true);
@@ -386,12 +429,15 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
           <Typography variant="subtitle2" fontWeight={600}>
             Основное
           </Typography>
-          <TextField
+          <FormField
+            icon={<DriveFileRenameOutlineOutlined />}
+            rules={CATEGORY_RULES.name}
+            showErrors={showErrors}
             label="Название"
             placeholder="Например, Полулюкс"
             value={form.name}
-            onChange={(e) => {
-              patchForm({ name: e.target.value });
+            onValueChange={(v) => {
+              patchForm({ name: v });
               setError(null);
             }}
             autoFocus={!editing}
@@ -400,12 +446,14 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
           />
           {/* Поля переносятся по ширине области (flex-wrap), а не по брейкпоинту окна:
               форма ограничена maxWidth и на узких экранах сжимается вместе с окном. */}
-          <TextField
-            label="Цена без характеристик, сом"
-            type="number"
+          <FormField
+            icon={<SellOutlined />}
+            unit="сом"
+            rules={CATEGORY_RULES.price}
+            showErrors={showErrors}
+            label="Цена без характеристик"
             value={form.price}
-            onChange={(e) => patchForm({ price: e.target.value })}
-            slotProps={{ htmlInput: { min: 0 } }}
+            onValueChange={(v) => patchForm({ price: v })}
             helperText="Номер «без ничего» — характеристики ниже добавляются к ней"
             disabled={saving}
             fullWidth
@@ -465,36 +513,48 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
             Описание номера
           </Typography>
           <Stack direction="row" flexWrap="wrap" gap={2}>
-            <TextField
+            <FormField
+              icon={<LandscapeOutlined />}
+              rules={CATEGORY_RULES.short}
+              showErrors={showErrors}
               label="Вид из окна"
               placeholder="Двор, Улица, Горы…"
               value={form.view}
-              onChange={(e) => patchForm({ view: e.target.value })}
+              onValueChange={(v) => patchForm({ view: v })}
               disabled={saving}
               sx={{ flex: "1 1 220px" }}
             />
-            <TextField
+            <FormField
+              icon={<BedOutlined />}
+              rules={CATEGORY_RULES.short}
+              showErrors={showErrors}
               label="Тип кровати"
               placeholder="Двуспальная кровать King-size"
               value={form.bedType}
-              onChange={(e) => patchForm({ bedType: e.target.value })}
+              onValueChange={(v) => patchForm({ bedType: v })}
               disabled={saving}
               sx={{ flex: "1 1 220px" }}
             />
-            <TextField
+            <FormField
+              icon={<ArchitectureOutlined />}
+              rules={CATEGORY_RULES.short}
+              showErrors={showErrors}
               label="Планировка"
               placeholder="1 комната, Студия, Апартаменты…"
               value={form.roomLayout}
-              onChange={(e) => patchForm({ roomLayout: e.target.value })}
+              onValueChange={(v) => patchForm({ roomLayout: v })}
               disabled={saving}
               sx={{ flex: "1 1 220px" }}
             />
           </Stack>
-          <TextField
+          <FormField
+            icon={<NotesOutlined />}
+            rules={CATEGORY_RULES.long}
+            showErrors={showErrors}
             label="Описание"
             placeholder="Необязательно"
             value={form.description}
-            onChange={(e) => patchForm({ description: e.target.value })}
+            onValueChange={(v) => patchForm({ description: v })}
             multiline
             minRows={2}
             disabled={saving}
@@ -513,49 +573,58 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
             заведении сразу нескольких номеров останется поправить только то, что отличается.
           </Typography>
           <Stack direction="row" flexWrap="wrap" gap={2}>
-            <TextField
-              label="Площадь, м²"
-              type="number"
+            <FormField
+              icon={<SquareFootOutlined />}
+              unit="м²"
+              rules={CATEGORY_RULES.area}
+              showErrors={showErrors}
+              label="Площадь"
               value={form.defaultArea}
-              onChange={(e) => patchForm({ defaultArea: e.target.value })}
-              slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+              onValueChange={(v) => patchForm({ defaultArea: v })}
               disabled={saving}
               sx={{ flex: "1 1 160px" }}
             />
-            <TextField
-              label="Высота потолков, м"
-              type="number"
+            <FormField
+              icon={<HeightOutlined />}
+              unit="м"
+              rules={CATEGORY_RULES.ceilingHeight}
+              showErrors={showErrors}
+              label="Высота потолков"
               value={form.defaultCeilingHeight}
-              onChange={(e) => patchForm({ defaultCeilingHeight: e.target.value })}
-              slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+              onValueChange={(v) => patchForm({ defaultCeilingHeight: v })}
               disabled={saving}
               sx={{ flex: "1 1 160px" }}
             />
-            <TextField
+            <FormField
+              icon={<BathtubOutlined />}
+              rules={CATEGORY_RULES.bathrooms}
+              showErrors={showErrors}
               label="Санузлов"
-              type="number"
               value={form.defaultBathrooms}
-              onChange={(e) => patchForm({ defaultBathrooms: e.target.value })}
-              slotProps={{ htmlInput: { min: 0, step: 1 } }}
+              onValueChange={(v) => patchForm({ defaultBathrooms: v })}
               disabled={saving}
               sx={{ flex: "1 1 130px" }}
             />
-            <TextField
+            <FormField
+              icon={<MeetingRoomOutlined />}
+              rules={CATEGORY_RULES.roomsCount}
+              showErrors={showErrors}
               label="Жилых комнат"
-              type="number"
               value={form.defaultRoomsCount}
-              onChange={(e) => patchForm({ defaultRoomsCount: e.target.value })}
-              slotProps={{ htmlInput: { min: 0, step: 1 } }}
+              onValueChange={(v) => patchForm({ defaultRoomsCount: v })}
               disabled={saving}
               sx={{ flex: "1 1 130px" }}
             />
           </Stack>
           <Stack direction="row" flexWrap="wrap" gap={2} alignItems="flex-start">
-            <TextField
+            <FormField
+              icon={<ExploreOutlined />}
+              rules={CATEGORY_RULES.short}
+              showErrors={showErrors}
               label="Сторона света"
               placeholder="Юг, Северо-Восток…"
               value={form.defaultWindowSide}
-              onChange={(e) => patchForm({ defaultWindowSide: e.target.value })}
+              onValueChange={(v) => patchForm({ defaultWindowSide: v })}
               disabled={saving}
               sx={{ flex: "1 1 200px" }}
             />
@@ -568,6 +637,15 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
                 patchForm({ defaultMeals: typeof v === "string" ? v.split(",") : (v as string[]) });
               }}
               disabled={saving}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start" sx={{ color: "text.disabled", "& svg": { fontSize: 20 } }}>
+                      <RestaurantOutlined />
+                    </InputAdornment>
+                  ),
+                },
+              }}
               SelectProps={{
                 multiple: true,
                 renderValue: (selected) => (
@@ -591,11 +669,14 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
             control={<Checkbox checked={form.defaultIsCorner} onChange={(e) => patchForm({ defaultIsCorner: e.target.checked })} disabled={saving} />}
             label="Угловой номер"
           />
-          <TextField
+          <FormField
+            icon={<ArchitectureOutlined />}
+            rules={CATEGORY_RULES.long}
+            showErrors={showErrors}
             label="Описание планировки"
             placeholder="Необязательно"
             value={form.defaultLayoutDescription}
-            onChange={(e) => patchForm({ defaultLayoutDescription: e.target.value })}
+            onValueChange={(v) => patchForm({ defaultLayoutDescription: v })}
             disabled={saving}
             multiline
             minRows={2}
@@ -753,12 +834,11 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
                 <TextField
                   size="small"
                   label="Наценка"
-                  type="number"
                   value={newCharPrice}
-                  onChange={(e) => setNewCharPrice(e.target.value)}
+                  onChange={(e) => setNewCharPrice(sanitizeFieldInput(e.target.value, { kind: "decimal", min: 0 }))}
                   placeholder="0"
                   slotProps={{
-                    htmlInput: { min: 0 },
+                    htmlInput: { inputMode: "decimal" },
                     input: {
                       startAdornment: <InputAdornment position="start">+</InputAdornment>,
                       endAdornment: <InputAdornment position="end">сом</InputAdornment>,
@@ -813,7 +893,7 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
         <Button component={RouterLink} to={LIST_PATH} disabled={saving}>
           Отмена
         </Button>
-        <Button variant="contained" disableElevation disabled={!form.name.trim() || saving} onClick={() => void submit()} sx={{ px: 3 }}>
+        <Button variant="contained" disableElevation disabled={saving} onClick={() => void submit()} sx={{ px: 3 }}>
           {saving ? "Сохраняем…" : editing ? "Сохранить" : "Добавить категорию"}
         </Button>
       </StickyActions>

@@ -41,7 +41,6 @@ import {
   DialogTitle,
   Drawer,
   FormControlLabel,
-  InputAdornment,
   MenuItem,
   Snackbar,
   Stack,
@@ -51,6 +50,31 @@ import {
   Typography,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
+import AlternateEmailOutlined from "@mui/icons-material/AlternateEmailOutlined";
+import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
+import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
+import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+import HomeOutlined from "@mui/icons-material/HomeOutlined";
+import PublicOutlined from "@mui/icons-material/PublicOutlined";
+import FlagOutlined from "@mui/icons-material/FlagOutlined";
+import ConfirmationNumberOutlined from "@mui/icons-material/ConfirmationNumberOutlined";
+import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
+import ChatBubbleOutlineOutlined from "@mui/icons-material/ChatBubbleOutlineOutlined";
+import { FormField } from "./formField";
+import { FieldIcon } from "./FieldIcon";
+import { fieldError, focusFirstFieldError, GUEST_RULES, hasFieldErrors, type FieldRules } from "./formRules";
+import HotelOutlined from "@mui/icons-material/HotelOutlined";
+import ShieldOutlined from "@mui/icons-material/ShieldOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import WcOutlined from "@mui/icons-material/WcOutlined";
+import LuggageOutlined from "@mui/icons-material/LuggageOutlined";
+import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
+import FingerprintOutlined from "@mui/icons-material/FingerprintOutlined";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
+
+
 import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
@@ -138,6 +162,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // сколько заплачено и сколько осталось. Сумма уходит платежом сразу после
   // создания брони (POST /reservations/{id}/payments/).
   const [prepaymentAmount, setPrepaymentAmount] = React.useState("");
+  // После первой попытки создать бронь — ошибки всех полей, даже не тронутых.
+  const [showErrors, setShowErrors] = React.useState(false);
   const [prepaymentMethod, setPrepaymentMethod] = React.useState("");
   const [boardType, setBoardType] = React.useState("");
 
@@ -204,6 +230,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setGuaranteeMethod("");
     setPrepaymentAmount("");
     setPrepaymentMethod("");
+    setShowErrors(false);
     setBoardType("");
     setGuestType("resident");
     setDocumentFieldsVisible(false);
@@ -406,15 +433,32 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const prepaymentMethods = catalogs?.paymentMethods ?? [];
   const effectivePrepaymentMethod = prepaymentMethod || prepaymentMethods[0]?.value || "";
   const prepaymentValue = Number(prepaymentAmount.replace(",", "."));
-  const prepaymentError = (() => {
-    if (!isPrepayment) return null;
-    if (prepaymentAmount.trim() === "") return "Укажите, сколько внесено";
-    if (!Number.isFinite(prepaymentValue) || prepaymentValue <= 0) return "Сумма должна быть больше нуля";
-    if (estimatedTotal != null && prepaymentValue > estimatedTotal) {
-      return `Больше стоимости брони (${estimatedTotal.toLocaleString("ru-RU")} сом)`;
-    }
-    return null;
-  })();
+  const prepaymentRules: FieldRules = {
+    kind: "decimal",
+    required: true,
+    min: 1,
+    validate: (v) =>
+      estimatedTotal != null && Number(v) > estimatedTotal
+        ? `Больше стоимости брони (${estimatedTotal.toLocaleString("ru-RU")} сом)`
+        : null,
+  };
+  const prepaymentError = isPrepayment ? fieldError(prepaymentAmount, prepaymentRules) : null;
+  // Поля гостя и документа — та же проверка, что показывают сами поля.
+  const bookingFieldsInvalid = hasFieldErrors([
+    [guestPhone, GUEST_RULES.phone],
+    [guestEmail, GUEST_RULES.email],
+    [placeOfBirth, GUEST_RULES.short],
+    [issuingAuthority, GUEST_RULES.short],
+    [guestType === "resident" ? idNumber : "", GUEST_RULES.idNumber],
+    [guestType === "resident" ? inn : "", GUEST_RULES.inn],
+    [guestType === "resident" ? registrationAddress : "", GUEST_RULES.long],
+    [guestType === "foreign" ? citizenship : "", GUEST_RULES.short],
+    [guestType === "foreign" ? passportNumber : "", GUEST_RULES.docNumber],
+    [guestType === "foreign" ? passportCountry : "", GUEST_RULES.short],
+    [guestType === "foreign" ? migrationCardNumber : "", GUEST_RULES.docNumber],
+    [companyInfo, GUEST_RULES.long],
+    [specialRequests, GUEST_RULES.comment],
+  ]);
   const footerSummary =
     nights > 0 ? (
       <Box>
@@ -439,7 +483,6 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     checkOut.isAfter(checkIn) &&
     property != null &&
     guestCountError == null &&
-    prepaymentError == null &&
     (!isPrepayment || effectivePrepaymentMethod !== "");
 
   /**
@@ -551,7 +594,13 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
    * у пересечения смен в реальном расписании.
    */
   const handleSubmit = async (allowOverbooking = false) => {
-    if (!checkIn || !checkOut || roomId === "" || !property || guestCountError || prepaymentError) return;
+    if (!checkIn || !checkOut || roomId === "" || !property || guestCountError) return;
+    if (prepaymentError || bookingFieldsInvalid) {
+      setShowErrors(true);
+      setSubmitError("Проверьте поля, отмеченные красным");
+      focusFirstFieldError();
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -728,6 +777,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
               label="Номер"
               value={roomId}
               onChange={(e) => setRoomId(e.target.value === "" ? "" : Number(e.target.value))}
+              slotProps={{ input: { startAdornment: <FieldIcon icon={<HotelOutlined />} /> } }}
               fullWidth
               SelectProps={{
                 renderValue: (value) => {
@@ -791,6 +841,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 label="Гарантия брони"
                 value={guaranteeMethod}
                 onChange={(e) => setGuaranteeMethod(e.target.value)}
+                slotProps={{ input: { startAdornment: <FieldIcon icon={<ShieldOutlined />} /> } }}
                 sx={{ flex: 1 }}
               >
                 <MenuItem value="">Не указана</MenuItem>
@@ -800,7 +851,14 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                   </MenuItem>
                 ))}
               </TextField>
-              <TextField select label="Тариф" value={boardType} onChange={(e) => setBoardType(e.target.value)} sx={{ flex: 1 }}>
+              <TextField
+                select
+                label="Тариф"
+                value={boardType}
+                onChange={(e) => setBoardType(e.target.value)}
+                slotProps={{ input: { startAdornment: <FieldIcon icon={<RestaurantOutlined />} /> } }}
+                sx={{ flex: 1 }}
+              >
                 <MenuItem value="">Не указан</MenuItem>
                 {(catalogs?.boardTypes ?? []).map((c) => (
                   <MenuItem key={c.value} value={c.value}>
@@ -811,29 +869,27 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
             </Stack>
             {isPrepayment && (
               <Stack direction="row" gap={2}>
-                <TextField
+                <FormField
+                  icon={<PaymentsOutlined />}
                   label="Сумма предоплаты"
+                  unit="сом"
                   value={prepaymentAmount}
-                  onChange={(e) => setPrepaymentAmount(e.target.value.replace(/[^\d.,]/g, ""))}
-                  error={prepaymentAmount.trim() !== "" && prepaymentError != null}
+                  onValueChange={setPrepaymentAmount}
+                  rules={prepaymentRules}
+                  showErrors={showErrors}
                   helperText={
-                    prepaymentError ??
-                    (estimatedTotal != null
-                      ? `Остаток к оплате: ${Math.max(0, estimatedTotal - prepaymentValue).toLocaleString("ru-RU")} сом`
-                      : " ")
+                    estimatedTotal != null
+                      ? `Остаток к оплате: ${Math.max(0, estimatedTotal - (prepaymentError ? 0 : prepaymentValue)).toLocaleString("ru-RU")} сом`
+                      : " "
                   }
-                  required
                   sx={{ flex: 1 }}
-                  slotProps={{
-                    htmlInput: { inputMode: "decimal" },
-                    input: { endAdornment: <InputAdornment position="end">сом</InputAdornment> },
-                  }}
                 />
                 <TextField
                   select
                   label="Способ оплаты"
                   value={effectivePrepaymentMethod}
                   onChange={(e) => setPrepaymentMethod(e.target.value)}
+                  slotProps={{ input: { startAdornment: <FieldIcon icon={<PaymentsOutlined />} /> } }}
                   sx={{ flex: 1 }}
                   helperText=" "
                 >
@@ -897,23 +953,43 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                   </li>
                 )}
                 renderInput={(params) => (
-                  <TextField {...params} label="Имя и фамилия" placeholder="Начните вводить — найдём гостя в базе" fullWidth />
+                  <TextField
+                    {...params}
+                    label="Имя и фамилия"
+                    placeholder="Начните вводить — найдём гостя в базе"
+                    fullWidth
+                    InputProps={{
+                      ...params.InputProps,
+                      startAdornment: (
+                        <>
+                          <FieldIcon icon={<PersonOutlineOutlined />} />
+                          {params.InputProps.startAdornment}
+                        </>
+                      ),
+                    }}
+                  />
                 )}
               />
 
               <Stack direction="row" gap={2}>
-                <TextField
+                <FormField
+                  icon={<PhoneOutlined />}
+                  rules={GUEST_RULES.phone}
+                  showErrors={showErrors}
                   label="Телефон"
                   placeholder="+996 700 000 000"
                   value={guestPhone}
-                  onChange={(e) => setGuestPhone(e.target.value)}
+                  onValueChange={(v) => setGuestPhone(v)}
                   sx={{ flex: 1 }}
                 />
-                <TextField
+                <FormField
+                  icon={<AlternateEmailOutlined />}
+                  rules={GUEST_RULES.email}
+                  showErrors={showErrors}
                   label="Email"
                   placeholder="guest@mail.com"
                   value={guestEmail}
-                  onChange={(e) => setGuestEmail(e.target.value)}
+                  onValueChange={(v) => setGuestEmail(v)}
                   sx={{ flex: 1 }}
                 />
               </Stack>
@@ -1064,6 +1140,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                             label="Пол"
                             value={gender}
                             onChange={(e) => setGender(e.target.value)}
+                            slotProps={{ input: { startAdornment: <FieldIcon icon={<WcOutlined />} /> } }}
                             sx={{ flex: 1 }}
                           >
                             <MenuItem value="">Не указан</MenuItem>
@@ -1073,10 +1150,13 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                               </MenuItem>
                             ))}
                           </TextField>
-                          <TextField
+                          <FormField
+                            icon={<PlaceOutlined />}
+                            rules={GUEST_RULES.short}
+                            showErrors={showErrors}
                             label="Место рождения"
                             value={placeOfBirth}
-                            onChange={(e) => setPlaceOfBirth(e.target.value)}
+                            onValueChange={(v) => setPlaceOfBirth(v)}
                             sx={{ flex: 1 }}
                           />
                         </Stack>
@@ -1089,52 +1169,78 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                             sx={{ flex: 1 }}
                           />
                         </Stack>
-                        <TextField
+                        <FormField
+                          icon={<AccountBalanceOutlined />}
+                          rules={GUEST_RULES.short}
+                          showErrors={showErrors}
                           label="Орган, выдавший документ"
                           value={issuingAuthority}
-                          onChange={(e) => setIssuingAuthority(e.target.value)}
+                          onValueChange={(v) => setIssuingAuthority(v)}
                           fullWidth
                         />
 
                         {guestType === "resident" ? (
                           <Stack gap={2}>
                             <Stack direction="row" gap={2}>
-                              <TextField
+                              <FormField
+                                icon={<BadgeOutlined />}
+                                rules={GUEST_RULES.idNumber}
+                                showErrors={showErrors}
                                 label="Паспорт (ID-карта)"
                                 value={idNumber}
-                                onChange={(e) => setIdNumber(e.target.value)}
+                                onValueChange={(v) => setIdNumber(v)}
                                 sx={{ flex: 1 }}
                               />
-                              <TextField label="ИНН" value={inn} onChange={(e) => setInn(e.target.value)} sx={{ flex: 1 }} />
+                              <FormField
+                                icon={<FingerprintOutlined />}
+                                label="ИНН"
+                                value={inn}
+                                onValueChange={setInn}
+                                rules={GUEST_RULES.inn}
+                                showErrors={showErrors}
+                                sx={{ flex: 1 }}
+                              />
                             </Stack>
-                            <TextField
+                            <FormField
+                              icon={<HomeOutlined />}
+                              rules={GUEST_RULES.long}
+                              showErrors={showErrors}
                               label="Адрес регистрации"
                               value={registrationAddress}
-                              onChange={(e) => setRegistrationAddress(e.target.value)}
+                              onValueChange={(v) => setRegistrationAddress(v)}
                               fullWidth
                             />
                           </Stack>
                         ) : (
                           <Stack gap={2}>
                             <Stack direction="row" gap={2}>
-                              <TextField
+                              <FormField
+                                icon={<PublicOutlined />}
+                                rules={GUEST_RULES.short}
+                                showErrors={showErrors}
                                 label="Гражданство"
                                 value={citizenship}
-                                onChange={(e) => setCitizenship(e.target.value)}
+                                onValueChange={(v) => setCitizenship(v)}
                                 sx={{ flex: 1 }}
                               />
-                              <TextField
+                              <FormField
+                                icon={<BadgeOutlined />}
+                                rules={GUEST_RULES.docNumber}
+                                showErrors={showErrors}
                                 label="Номер загранпаспорта"
                                 value={passportNumber}
-                                onChange={(e) => setPassportNumber(e.target.value)}
+                                onValueChange={(v) => setPassportNumber(v)}
                                 sx={{ flex: 1 }}
                               />
                             </Stack>
                             <Stack direction="row" gap={2}>
-                              <TextField
+                              <FormField
+                                icon={<FlagOutlined />}
+                                rules={GUEST_RULES.short}
+                                showErrors={showErrors}
                                 label="Страна выдачи"
                                 value={passportCountry}
-                                onChange={(e) => setPassportCountry(e.target.value)}
+                                onValueChange={(v) => setPassportCountry(v)}
                                 sx={{ flex: 1 }}
                               />
                               <CustomDatePicker
@@ -1146,10 +1252,13 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                               />
                             </Stack>
                             <Stack direction="row" gap={2}>
-                              <TextField
+                              <FormField
+                                icon={<ConfirmationNumberOutlined />}
+                                rules={GUEST_RULES.docNumber}
+                                showErrors={showErrors}
                                 label="Номер миграционной карты"
                                 value={migrationCardNumber}
-                                onChange={(e) => setMigrationCardNumber(e.target.value)}
+                                onValueChange={(v) => setMigrationCardNumber(v)}
                                 sx={{ flex: 1 }}
                               />
                               <TextField
@@ -1157,6 +1266,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                                 label="Цель визита"
                                 value={visitPurpose}
                                 onChange={(e) => setVisitPurpose(e.target.value)}
+                                slotProps={{ input: { startAdornment: <FieldIcon icon={<LuggageOutlined />} /> } }}
                                 sx={{ flex: 1 }}
                               >
                                 <MenuItem value="">Не указана</MenuItem>
@@ -1180,6 +1290,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         label="Источник брони"
                         value={bookingSource}
                         onChange={(e) => setBookingSource(e.target.value)}
+                        slotProps={{ input: { startAdornment: <FieldIcon icon={<LanguageOutlined />} /> } }}
                         sx={{ flex: 1 }}
                       >
                         <MenuItem value="">Не указан</MenuItem>
@@ -1189,18 +1300,24 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                           </MenuItem>
                         ))}
                       </TextField>
-                      <TextField
+                      <FormField
+                        icon={<BusinessOutlined />}
+                        rules={GUEST_RULES.long}
+                        showErrors={showErrors}
                         label="Юрлицо / командировка"
                         value={companyInfo}
-                        onChange={(e) => setCompanyInfo(e.target.value)}
+                        onValueChange={(v) => setCompanyInfo(v)}
                         sx={{ flex: 1 }}
                       />
                     </Stack>
-                    <TextField
+                    <FormField
+                      icon={<ChatBubbleOutlineOutlined />}
+                      rules={GUEST_RULES.comment}
+                      showErrors={showErrors}
                       label="Особые пожелания"
                       placeholder="Ранний заезд, вид на горы, детская кроватка…"
                       value={specialRequests}
-                      onChange={(e) => setSpecialRequests(e.target.value)}
+                      onValueChange={(v) => setSpecialRequests(v)}
                       multiline
                       minRows={2}
                       fullWidth
