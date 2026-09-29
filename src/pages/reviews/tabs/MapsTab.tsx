@@ -76,7 +76,7 @@ const MapsTab: React.FC<TabProps> = ({ period }) => {
   const [page, setPage] = React.useState(0);
   const [dialog, setDialog] = React.useState<{ reviewId: number; platform: MapPlatform } | null>(null);
   const [url, setUrl] = React.useState("");
-  React.useEffect(() => setPage(0), [period.from, period.to, period.branchId]);
+  React.useEffect(() => setPage(0), [period.from, period.to]);
 
   const query = useQuery({
     queryKey: djangoQueryKeys.reviews.mapClicks({ ...periodKey(period), page: page + 1 }),

@@ -268,7 +268,6 @@ export interface ReviewStatsFilters {
   /** YYYY-MM-DD — фильтр по дате запроса отзыва. */
   from: string;
   to: string;
-  branchId?: number;
   organizationId?: number;
 }
 
@@ -284,7 +283,6 @@ export interface ReviewsFilters extends ReviewStatsFilters {
 
 function periodQuery(f: ReviewStatsFilters): URLSearchParams {
   const q = new URLSearchParams({ from: f.from, to: f.to });
-  if (f.branchId != null) q.set("branchId", String(f.branchId));
   if (f.organizationId != null)
     q.set("organizationId", String(f.organizationId));
   return q;

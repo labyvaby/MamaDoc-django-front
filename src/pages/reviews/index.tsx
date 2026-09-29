@@ -3,17 +3,15 @@ import {
   Alert,
   Box,
   IconButton,
-  MenuItem,
   Stack,
   Tab,
   Tabs,
-  TextField,
   Tooltip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useSearchParams } from "react-router";
 import dayjs from "dayjs";
 
@@ -22,8 +20,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCan, useCanChecker } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
-import { getBranches } from "../../api/organization";
-import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
+import { djangoQueryKeys } from "../../api/queryKeys";
 import type { ReviewPeriod } from "./tabs/filters";
 import OverviewTab from "./tabs/OverviewTab";
 import ReviewsTab from "./tabs/ReviewsTab";
@@ -62,31 +59,20 @@ const ReviewsPage: React.FC = () => {
 
   const [from, setFrom] = React.useState(() => dayjs().startOf("month"));
   const [to, setTo] = React.useState(() => dayjs().endOf("month"));
-  const [branchId, setBranchId] = React.useState<number | "">("");
   const [searchParams, setSearchParams] = useSearchParams();
 
   const visibleTabs = TABS.filter((t) => can([...t.perms]));
   const requested = searchParams.get("tab") as TabKey | null;
   const tab: TabKey = visibleTabs.find((t) => t.key === requested)?.key ?? visibleTabs[0]?.key ?? "overview";
 
-  const branchesQuery = useQuery({
-    queryKey: [...djangoQueryKeys.organization.branches, activeOrganization?.id ?? null],
-    queryFn: () => getBranches(activeOrganization?.id),
-    enabled: !permLoading && !needsOrg && !activeBranch,
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-  });
-  const branches = branchesQuery.data ?? [];
-  const multiBranch = !activeBranch && branches.length > 1;
-
   if (!permLoading && visibleTabs.length === 0) return <AccessDenied />;
 
   const period: ReviewPeriod = {
     from: from.format("YYYY-MM-DD"),
     to: to.format("YYYY-MM-DD"),
-    branchId: branchId === "" ? undefined : branchId,
     organizationId,
   };
-  const props = { period, multiBranch };
+  const props = { period };
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -130,23 +116,6 @@ const ReviewsPage: React.FC = () => {
               }}
               minWidth={220}
             />
-            {multiBranch && (
-              <TextField
-                select
-                size="small"
-                label="Филиал"
-                value={branchId === "" ? "" : String(branchId)}
-                onChange={(e) => setBranchId(e.target.value === "" ? "" : Number(e.target.value))}
-                sx={{ minWidth: 180 }}
-              >
-                <MenuItem value="">Все филиалы</MenuItem>
-                {branches.map((b) => (
-                  <MenuItem key={b.id} value={String(b.id)}>
-                    {b.name}
-                  </MenuItem>
-                ))}
-              </TextField>
-            )}
           </Stack>
 
           <Tabs
