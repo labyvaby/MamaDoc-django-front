@@ -76,7 +76,7 @@ import { FilterChip, FormCard, HotelPage, HotelPageHeader, SectionLabel, StickyA
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { formatHotelDate } from "./mockDemoData";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link as RouterLink, useNavigate, useParams } from "react-router";
+import { Link as RouterLink, useNavigate, useParams, useLocation } from "react-router";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker } from "../components/ui";
@@ -160,6 +160,37 @@ interface RuleFormState {
   /** «Дополнительно» — приоритет и эксклюзивная группа, см. комментарий в шапке файла. */
   priority: string;
   exclusiveGroup: string;
+}
+
+/**
+ * Заполнение новой формы извне — «Поднять цены на эти даты» в «Событиях»
+ * (HotelEventsPage) передаёт его в state навигации. Правило всё равно
+ * сохраняет человек: форма открывается заполненной, но не сохраняется сама.
+ */
+export interface PricingRulePrefill {
+  name: string;
+  category: HotelPricingRuleCategory;
+  adjustmentType: "percent" | "amount";
+  /** Со знаком, как form.amount: наценка — положительная. */
+  amount: string;
+  /** Даты включительно (YYYY-MM-DD). */
+  dateFrom: string;
+  dateTo: string;
+}
+
+function prefilledForm(prefill: PricingRulePrefill): RuleFormState {
+  return {
+    ...emptyForm(),
+    name: prefill.name,
+    category: prefill.category,
+    adjustmentType: prefill.adjustmentType,
+    amount: prefill.amount,
+    // Событие поднимает спрос на все номера, не на одну категорию.
+    allCategories: true,
+    datesEnabled: true,
+    dateFrom: dayjs(prefill.dateFrom),
+    dateTo: dayjs(prefill.dateTo),
+  };
 }
 
 function emptyForm(): RuleFormState {
@@ -259,7 +290,11 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [form, setForm] = React.useState<RuleFormState>(() => (editing ? toForm(editing) : emptyForm()));
+  const location = useLocation();
+  const prefill = (location.state as { prefill?: PricingRulePrefill } | null)?.prefill;
+  const [form, setForm] = React.useState<RuleFormState>(() =>
+    editing ? toForm(editing) : prefill ? prefilledForm(prefill) : emptyForm(),
+  );
   const [advancedOpen, setAdvancedOpen] = React.useState(() => Boolean(editing?.exclusiveGroup));
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);

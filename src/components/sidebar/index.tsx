@@ -29,6 +29,7 @@ import { fetchChatwootCounts } from "../../api/chatwoot";
 import { useT } from "../../i18n/VerticalProvider";
 import { useIsVivaActive } from "../../dev/mockDemoData";
 import { useHotelProperty } from "../../dev/useHotelProperty";
+import CelebrationOutlined from "@mui/icons-material/CelebrationOutlined";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
@@ -418,6 +419,7 @@ const HotelSidebarMenu: React.FC = () => {
   const canRooms = can(PAGE_PERMISSIONS.hotelRooms);
   const canCategories = can(PAGE_PERMISSIONS.hotelRoomCategories);
   const canPricing = can(PAGE_PERMISSIONS.hotelPricingRules);
+  const canEvents = can(PAGE_PERMISSIONS.hotelEvents);
 
   const sectionLabel = (text: string) =>
     siderCollapsed && !isMobile ? (
@@ -438,10 +440,11 @@ const HotelSidebarMenu: React.FC = () => {
       {canKitchen && <SidebarMenuItem to="/kitchen" icon={<RestaurantOutlined />} label="Кухня" collapsed={siderCollapsed} />}
       {canReports && <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчёты" collapsed={siderCollapsed} />}
 
-      {(canRooms || canCategories || canPricing) && sectionLabel("Отель")}
+      {(canRooms || canCategories || canPricing || canEvents) && sectionLabel("Отель")}
       {canRooms && <SidebarMenuItem to="/rooms" icon={<HotelOutlined />} label="Номера" collapsed={siderCollapsed} />}
       {canCategories && <SidebarMenuItem to="/room-categories" icon={<CategoryOutlined />} label="Категории и тарифы" collapsed={siderCollapsed} />}
       {canPricing && <SidebarMenuItem to="/pricing-rules" icon={<PriceChangeOutlined />} label="Ценообразование" collapsed={siderCollapsed} />}
+      {canEvents && <SidebarMenuItem to="/events" icon={<CelebrationOutlined />} label="События" collapsed={siderCollapsed} />}
       {canSettings && (
         <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
       )}
@@ -1159,6 +1162,7 @@ const HOTEL_ONLY_NAV_PATHS = [
   "/rooms",
   "/room-categories",
   "/pricing-rules",
+  "/events",
   "/settings",
 ];
 

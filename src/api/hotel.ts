@@ -2002,3 +2002,66 @@ export function updateHousekeepingTask(
 ): Promise<HotelHousekeepingTask> {
   return apiRequest<HotelHousekeepingTask>(`/v2/hotel/housekeeping-tasks/${id}/`, { method: "PATCH", body: data });
 }
+
+// ── События города (календарь событий) ────────────────────────────────────
+//
+// Концерты, фестивали, праздники и форумы, из-за которых растёт спрос на
+// номера (пример заказчика: концерт звезды в Бишкеке — цены на эти ночи надо
+// поднять). Фронт пока работает на моках (src/dev/cityEventsMock.ts, флаг
+// CITY_EVENTS_FROM_API в src/dev/useCityEvents.ts); эндпоинт ниже — контракт
+// для бэка. Откуда бэк берёт события (афиши, госкалендарь, ручной ввод) —
+// его решение; фронту важен только этот ответ.
+
+export type HotelCityEventCategory = "concert" | "festival" | "holiday" | "sport" | "business" | "other";
+
+/** Ожидаемый рост спроса на номера: заметный / высокий / пиковый (город переполнен). */
+export type HotelCityEventDemand = "moderate" | "high" | "peak";
+
+export interface HotelCityEvent {
+  /** Строка: у внешних источников свои идентификаторы. */
+  id: string;
+  title: string;
+  category: HotelCityEventCategory;
+  city: string;
+  venue: string;
+  /** Первый и последний день события, включительно (YYYY-MM-DD). */
+  dateFrom: string;
+  dateTo: string;
+  /** Ожидаемое число посетителей; null — неизвестно. */
+  expectedAttendance: number | null;
+  demand: HotelCityEventDemand;
+  /** Рекомендованная наценка к цене ночи, % (целое, > 0). */
+  suggestedMarkupPercent: number;
+  description: string;
+  /** Откуда событие: «Афиша», «Госкалендарь», «Добавлено вручную»… */
+  source: string;
+  sourceUrl: string | null;
+  /** Добавлено сотрудником отеля, а не пришло из источника. */
+  isManual: boolean;
+}
+
+export interface HotelCityEventCreateData {
+  propertyId: number;
+  title: string;
+  category: HotelCityEventCategory;
+  venue?: string;
+  dateFrom: string;
+  dateTo: string;
+  expectedAttendance?: number | null;
+  demand: HotelCityEventDemand;
+  suggestedMarkupPercent: number;
+  description?: string;
+}
+
+/** GET /v2/hotel/city-events/?propertyId&dateFrom&dateTo — события города объекта, пересекающие период. */
+export function listCityEvents(
+  params: { propertyId: number; dateFrom: string; dateTo: string },
+  signal?: AbortSignal,
+): Promise<HotelCityEvent[]> {
+  return apiRequest<HotelCityEvent[]>(`/v2/hotel/city-events/${buildQuery(params)}`, { signal });
+}
+
+/** POST /v2/hotel/city-events/ — событие, добавленное вручную (isManual: true в ответе). */
+export function createCityEvent(data: HotelCityEventCreateData): Promise<HotelCityEvent> {
+  return apiRequest<HotelCityEvent>("/v2/hotel/city-events/", { method: "POST", body: data });
+}
