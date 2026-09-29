@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { usePermissions } from "./usePermissions";
-import { getCurrentUser, DjangoUser } from "../api/auth";
 import { useLocation } from "react-router";
 
 export type MissingFieldItem = {
@@ -19,10 +18,12 @@ function dismissKey(userId: string): string {
 }
 
 export function useProfileCompleteness() {
-  const { activeEmployee, employee: permEmp, employeeId } = usePermissions();
+  // Пользователь — из того же /auth/me/, что права: раньше хук запрашивал его
+  // второй раз на каждой загрузке приложения (лишний запрос в общей очереди).
+  const { activeEmployee, employee: permEmp, employeeId, user } = usePermissions();
+  const djangoUser = user ?? null;
   const location = useLocation();
 
-  const [djangoUser, setDjangoUser] = useState<DjangoUser | null>(null);
   const [dismissed, setDismissed] = useState<boolean>(false);
 
   const emp = activeEmployee || permEmp;
@@ -38,22 +39,6 @@ export function useProfileCompleteness() {
       setDismissed(false);
     }
   }, [storageKey]);
-
-  useEffect(() => {
-    let isMounted = true;
-    getCurrentUser()
-      .then((me) => {
-        if (isMounted && me?.user) {
-          setDjangoUser(me.user);
-        }
-      })
-      .catch(() => {
-        /* ignore */
-      });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   const dismissReminder = useCallback(() => {
     try {

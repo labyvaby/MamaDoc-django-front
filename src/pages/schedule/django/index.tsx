@@ -1321,18 +1321,11 @@ const DjangoSchedulePage: React.FC = () => {
   // API 20.07.2026. Суперадмин без активного филиала не фильтрует.
   const branchId = activeBranch?.id ?? undefined;
 
-  // У Viva на этой странице — шахматка номеров (RoomBookingGrid), смены
-  // персонала не показываются. Спрятать вкладку мало: запросы правил,
-  // исключений и сотрудников (по ~2 с каждый) шли бы и дальше, поэтому
-  // клиничные запросы у отеля выключены целиком.
-  const clinicScheduleEnabled = !vivaActive;
-
   const rulesParams = { employeeId: employeeFilter?.id ?? null, branchId: branchId ?? null, orgId: orgId ?? null };
   const rulesQuery = useQuery({
     queryKey: djangoQueryKeys.scheduling.rules(rulesParams),
     queryFn: ({ signal }) =>
       getScheduleRules({ employeeId: employeeFilter?.id, branchId, organizationId: orgId }, signal),
-    enabled: clinicScheduleEnabled,
   });
 
   const exceptionsParams = {
@@ -1353,7 +1346,6 @@ const DjangoSchedulePage: React.FC = () => {
         },
         signal,
       ),
-    enabled: clinicScheduleEnabled,
   });
 
   // Исключения за видимый диапазон месячной сетки (шире месяца — грид
@@ -1372,14 +1364,14 @@ const DjangoSchedulePage: React.FC = () => {
     }),
     queryFn: ({ signal }) =>
       getScheduleExceptions({ ...monthRange, branchId, organizationId: orgId }, signal),
-    enabled: clinicScheduleEnabled && tab === "calendar",
+    enabled: tab === "calendar",
   });
 
   const employeesQuery = useQuery({
     queryKey: [...djangoQueryKeys.reference.employees, branchId ?? null, orgId ?? null],
     queryFn: ({ signal }) =>
       getDjangoEmployees({ pageSize: 200, branchId, organizationId: orgId }, signal),
-    enabled: clinicScheduleEnabled && tab === "calendar",
+    enabled: tab === "calendar",
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
@@ -1451,7 +1443,7 @@ const DjangoSchedulePage: React.FC = () => {
   const absenceConflicts = useAbsenceConflicts(
     React.useMemo(() => [...exceptions, ...monthExceptions], [exceptions, monthExceptions]),
     orgId,
-    canViewAppointments && clinicScheduleEnabled,
+    canViewAppointments,
   );
 
   /** Открыть разбор по строке исключения — днём или всей пачкой периода. */

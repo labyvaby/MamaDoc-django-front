@@ -13,7 +13,6 @@ import {
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../api/queryKeys";
 import { useCanChecker } from "../../hooks/useCan";
-import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { AchievementBadge } from "./AchievementBadge";
 import { tierTone } from "./meta";
@@ -28,15 +27,12 @@ export const AchievementToast: React.FC = () => {
   const queryClient = useQueryClient();
   const { can } = useCanChecker();
   const orgId = useApiOrgId();
-  // У отеля (Viva) раздела достижений нет — не опрашиваем.
-  const { activeOrganization } = usePermissions();
-  const isHotelOrg = activeOrganization?.vertical === "hotel";
   const [dismissed, setDismissed] = React.useState(false);
 
   const unseenQuery = useQuery({
     queryKey: djangoQueryKeys.achievements.unseen,
     queryFn: ({ signal }) => getUnseenAchievements(orgId, signal),
-    enabled: can("achievements.view") && !isHotelOrg,
+    enabled: can("achievements.view"),
     staleTime: Infinity,
   });
   const definitionsQuery = useQuery({

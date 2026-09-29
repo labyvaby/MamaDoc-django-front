@@ -18,6 +18,7 @@ import {
   DialogContentText,
   DialogActions,
   Button,
+  Skeleton,
 } from "@mui/material";
 import Backdrop from "@mui/material/Backdrop";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -162,7 +163,7 @@ export const Sidebar: React.FC = () => {
     </>
   );
 
-  const nav = <SidebarSecondary />;
+  const nav = <SidebarNav />;
 
   const footer = (
     <>
@@ -355,6 +356,99 @@ const DesktopSidebarHeader: React.FC = () => {
   );
 };
 
+/** Есть ли у сотрудника хоть одна доступная вкладка «Настроек» — иначе пункт не показываем. */
+function useHasVisibleSettingsTab(): boolean {
+  const { can } = useCanChecker();
+  const { moduleGate } = useModuleGate();
+  return Object.entries(SETTINGS_TAB_PERMISSIONS).some(([key, permission]) =>
+    key === "cleaning" ? moduleGate("cleaning", [SETTINGS_TAB_PERMISSIONS.cleaning]) : can(permission),
+  );
+}
+
+/**
+ * Меню по вертикали — одно место вместо проверок «это отель?» в каждом бейдже.
+ * У отеля (Viva) клиничное меню SidebarSecondary не монтируется вовсе, а с ним
+ * и его запросы: сводка задач, лист ожидания, записи клиники, Chatwoot, СКУД.
+ * Новый клиничный бейдж отелю грузить не начнёт. Пока /auth/me/ не ответил и
+ * вертикаль неизвестна — нейтральная заглушка, а не клиничные пункты
+ * («Процедурный кабинет» у отеля на секунду при каждой перезагрузке).
+ */
+const SidebarNav: React.FC = () => {
+  const { activeOrganization, loading } = usePermissions();
+  if (loading) return <SidebarMenuSkeleton />;
+  if (activeOrganization?.vertical === "hotel") return <HotelSidebarMenu />;
+  return <SidebarSecondary />;
+};
+
+const SidebarMenuSkeleton: React.FC = () => {
+  const { siderCollapsed } = useThemedLayoutContext();
+  return (
+    <Stack gap={1} sx={{ px: 1.5, py: 1 }} aria-busy="true" aria-label="Меню загружается">
+      {[0, 1, 2, 3, 4].map((i) => (
+        <Skeleton key={i} variant="rounded" height={32} width={siderCollapsed ? 32 : "100%"} />
+      ))}
+    </Stack>
+  );
+};
+
+/**
+ * Отель (Viva): одно плоское меню без клиничных групп «Моя работа /
+ * Организация». С группами в «Моей работе» оставались одни «Бронирования»,
+ * а открытые «Гости/Кухня/Уборка/Отчёты» жили в другой группе — подсвечивать
+ * в видимом списке было нечего, и человек не видел, где он находится.
+ */
+const HotelSidebarMenu: React.FC = () => {
+  const { siderCollapsed } = useThemedLayoutContext();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const { isSuperAdmin } = usePermissions();
+  const { can } = useCanChecker();
+  const canSettings = useHasVisibleSettingsTab();
+  // Список объектов отеля запрашиваем отсюда: сайдбар монтируется сразу после
+  // /auth/me/, раньше, чем догрузится код страницы, — объект размещения
+  // уходит первым, и отельные запросы не стоят за ним цепочкой.
+  useHotelProperty();
+
+  const isSuper = isSuperAdmin();
+  const canSchedule = isSuper || can(PAGE_PERMISSIONS.schedule);
+  const canGuests = can(PAGE_PERMISSIONS.patients) || can(PAGE_PERMISSIONS.clients);
+  const canHousekeeping = can(PAGE_PERMISSIONS.hotelHousekeeping);
+  const canKitchen = can(PAGE_PERMISSIONS.hotelKitchen);
+  const canReports = can(PAGE_PERMISSIONS.hotelReports);
+  const canRooms = can(PAGE_PERMISSIONS.hotelRooms);
+  const canCategories = can(PAGE_PERMISSIONS.hotelRoomCategories);
+  const canPricing = can(PAGE_PERMISSIONS.hotelPricingRules);
+
+  const sectionLabel = (text: string) =>
+    siderCollapsed && !isMobile ? (
+      <Box sx={{ mx: 1.5, my: 1, borderTop: 1, borderColor: "divider" }} />
+    ) : (
+      <Typography
+        sx={{ px: 2, pt: 2, pb: 0.75, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary" }}
+      >
+        {text}
+      </Typography>
+    );
+
+  return (
+    <List sx={{ py: 0, mt: 0.5 }}>
+      {canSchedule && <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Бронирования" collapsed={siderCollapsed} />}
+      {canGuests && <SidebarMenuItem to="/patients" icon={<PeopleOutlineOutlined />} label="Гости" collapsed={siderCollapsed} />}
+      {canHousekeeping && <SidebarMenuItem to="/housekeeping" icon={<CleaningServicesOutlined />} label="Уборка" collapsed={siderCollapsed} />}
+      {canKitchen && <SidebarMenuItem to="/kitchen" icon={<RestaurantOutlined />} label="Кухня" collapsed={siderCollapsed} />}
+      {canReports && <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчёты" collapsed={siderCollapsed} />}
+
+      {(canRooms || canCategories || canPricing) && sectionLabel("Отель")}
+      {canRooms && <SidebarMenuItem to="/rooms" icon={<HotelOutlined />} label="Номера" collapsed={siderCollapsed} />}
+      {canCategories && <SidebarMenuItem to="/room-categories" icon={<CategoryOutlined />} label="Категории и тарифы" collapsed={siderCollapsed} />}
+      {canPricing && <SidebarMenuItem to="/pricing-rules" icon={<PriceChangeOutlined />} label="Ценообразование" collapsed={siderCollapsed} />}
+      {canSettings && (
+        <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
+      )}
+    </List>
+  );
+};
+
 // Extra static sections: mimic the provided design with many items
 const SidebarSecondary: React.FC = () => {
   const { t } = useT("sidebar");
@@ -370,23 +464,12 @@ const SidebarSecondary: React.FC = () => {
   } = usePermissions();
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
-  const hasVisibleSettingsTab = Object.entries(
-    SETTINGS_TAB_PERMISSIONS,
-  ).some(([key, permission]) =>
-    key === "cleaning"
-      ? moduleGate("cleaning", [SETTINGS_TAB_PERMISSIONS.cleaning])
-      : can(permission),
-  );
+  const hasVisibleSettingsTab = useHasVisibleSettingsTab();
   const orgId = useApiOrgId();
   const activeBranchId = useActiveScope().branchId;
   const isSuper = isSuperAdmin();
   const isRetail = activeOrganization?.vertical === "retail";
   const isHotelOrg = activeOrganization?.vertical === "hotel";
-  // Список объектов отеля запрашиваем отсюда: сайдбар монтируется сразу после
-  // /auth/me/, раньше, чем догрузится код страницы. Иначе /hotel/properties/
-  // уходил только из страницы, и вся отельная загрузка стояла цепочкой за ним.
-  // Для клиники хук ничего не запрашивает.
-  useHotelProperty();
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -445,8 +528,6 @@ const SidebarSecondary: React.FC = () => {
     hotelRoomCategories: isHotelOrg && can(PAGE_PERMISSIONS.hotelRoomCategories),
     hotelPricingRules: isHotelOrg && can(PAGE_PERMISSIONS.hotelPricingRules),
     hotelHousekeeping: isHotelOrg && can(PAGE_PERMISSIONS.hotelHousekeeping),
-    hotelReports: isHotelOrg && can(PAGE_PERMISSIONS.hotelReports),
-    hotelKitchen: isHotelOrg && can(PAGE_PERMISSIONS.hotelKitchen),
     // СКЛАДЫ
     pos: can(PAGE_PERMISSIONS.pos),
     products: can(PAGE_PERMISSIONS.products),
@@ -475,10 +556,7 @@ const SidebarSecondary: React.FC = () => {
   const tasksSummaryQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.summary(orgId),
     queryFn: ({ signal }) => getTasksSummary(orgId, signal),
-    // Бейджи клиничных разделов у отеля не показываются (плоское меню Viva) —
-    // и запросы за ними не шлём: на «Бронированиях» они стояли в одной очереди
-    // с отельными.
-    enabled: can_.tasks && !permissionsLoading && !isHotelOrg,
+    enabled: can_.tasks && !permissionsLoading,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     // Бейдж живёт в сайдбаре на всех страницах, а задачи закрывают несколько
     // человек параллельно: без поллинга и рефетча по возврату на вкладку цифра
@@ -506,7 +584,7 @@ const SidebarSecondary: React.FC = () => {
   const waitlistSummaryQuery = useQuery({
     queryKey: djangoQueryKeys.waitlist.summary(orgId, activeBranchId),
     queryFn: ({ signal }) => getWaitlistSummary(orgId, activeBranchId, signal),
-    enabled: can_.waitlist && !permissionsLoading && !isHotelOrg,
+    enabled: can_.waitlist && !permissionsLoading,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     refetchInterval: DJANGO_POLL_INTERVAL_MS,
     refetchOnWindowFocus: true,
@@ -536,7 +614,7 @@ const SidebarSecondary: React.FC = () => {
   // должен — орг-скоупные эндпоинты отвечают на него 400 (та же причина, что
   // enabled/needsOrg на самой странице «Брони»).
   const bookingsBadgeEnabled =
-    can_.bookings && !permissionsLoading && (!isSuper || orgId != null) && !isHotelOrg;
+    can_.bookings && !permissionsLoading && (!isSuper || orgId != null);
   // Филиал в бейдже обязателен: бэк скоупит брони только по явному `branchId`
   // (без параметра отдаёт всю организацию), поэтому иначе бейдж показывал бы
   // одно и то же число во всех филиалах — не то, что человек увидит в списке.
@@ -604,7 +682,7 @@ const SidebarSecondary: React.FC = () => {
   const chatsCountsQuery = useQuery({
     queryKey: ["chatwoot", "counts"],
     queryFn: fetchChatwootCounts,
-    enabled: can_.chats && !isHotelOrg,
+    enabled: can_.chats,
     retry: false,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     refetchInterval: DJANGO_POLL_INTERVAL_MS,
@@ -656,49 +734,6 @@ const SidebarSecondary: React.FC = () => {
     );
   }
 
-  // Отель (Viva): одно плоское меню без клиничных групп «Моя работа /
-  // Организация». С группами в «Моей работе» оставались одни «Бронирования»,
-  // а открытые «Гости/Кухня/Уборка/Отчёты» жили в другой группе — подсвечивать
-  // в видимом списке было нечего, и человек не видел, где он находится.
-  if (hotelOnly) {
-    const sectionLabel = (text: string) =>
-      siderCollapsed && !isMobile ? (
-        <Box sx={{ mx: 1.5, my: 1, borderTop: 1, borderColor: "divider" }} />
-      ) : (
-        <Typography
-          sx={{ px: 2, pt: 2, pb: 0.75, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary" }}
-        >
-          {text}
-        </Typography>
-      );
-    return (
-      <List sx={{ py: 0, mt: 0.5 }}>
-        {can_.schedule && (
-          <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Бронирования" collapsed={siderCollapsed} />
-        )}
-        {(can_.patients || can_.clients) && (
-          <SidebarMenuItem to="/patients" icon={<PeopleOutlineOutlined />} label="Гости" collapsed={siderCollapsed} />
-        )}
-        {can_.hotelHousekeeping && (
-          <SidebarMenuItem to="/housekeeping" icon={<CleaningServicesOutlined />} label="Уборка" collapsed={siderCollapsed} />
-        )}
-        {can_.hotelKitchen && <SidebarMenuItem to="/kitchen" icon={<RestaurantOutlined />} label="Кухня" collapsed={siderCollapsed} />}
-        {can_.hotelReports && <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчёты" collapsed={siderCollapsed} />}
-
-        {(can_.hotelRooms || can_.hotelRoomCategories || can_.hotelPricingRules) && sectionLabel("Отель")}
-        {can_.hotelRooms && <SidebarMenuItem to="/rooms" icon={<HotelOutlined />} label="Номера" collapsed={siderCollapsed} />}
-        {can_.hotelRoomCategories && (
-          <SidebarMenuItem to="/room-categories" icon={<CategoryOutlined />} label="Категории и тарифы" collapsed={siderCollapsed} />
-        )}
-        {can_.hotelPricingRules && (
-          <SidebarMenuItem to="/pricing-rules" icon={<PriceChangeOutlined />} label="Ценообразование" collapsed={siderCollapsed} />
-        )}
-        {can_.settings && (
-          <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
-        )}
-      </List>
-    );
-  }
 
   return (
     <>

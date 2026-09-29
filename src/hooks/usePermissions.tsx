@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentUser, switchAuthContext } from "../api";
-import type { MeResponse, RbacMembership, RbacOrganization, RbacBranch, ActiveEmployee, SwitchContextPayload } from "../api/auth";
+import type { DjangoUser, MeResponse, RbacMembership, RbacOrganization, RbacBranch, ActiveEmployee, SwitchContextPayload } from "../api/auth";
 import { ApiError } from "../api/client";
 import type { Role, Permission, UserPermissions, RoleName, PermissionCheck, AuthStatus } from "../types/rbac";
 import { getModuleCodeForPermission } from "../utils/moduleMapping";
@@ -22,13 +22,15 @@ type GlobalState = {
   enabledModules: string[];
   authStatus: AuthStatus;
   authError: string | null;
+  /** Пользователь из того же /auth/me/ — чтобы виджеты не запрашивали его повторно. */
+  user: DjangoUser | null;
 };
 
 let globalState: GlobalState = {
   role: null, employee: null, permissions: [], loading: true, loaded: false,
   lastFetchedAt: 0, employeeId: null, memberships: [], activeMembership: null,
   activeOrganization: null, activeBranch: null, activeEmployee: null,
-  switching: false, enabledModules: [], authStatus: "loading", authError: null,
+  switching: false, enabledModules: [], authStatus: "loading", authError: null, user: null,
 };
 let inFlight: Promise<void> | null = null;
 const listeners = new Set<(state: GlobalState) => void>();
@@ -68,6 +70,7 @@ function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
     activeOrganization: meData.activeOrganization ?? null, activeBranch: meData.activeBranch ?? null,
     activeEmployee: meData.activeEmployee ?? null,
     enabledModules: meData.enabledModules ?? [], authStatus: "authenticated" as AuthStatus, authError: null,
+    user,
   };
 }
 
@@ -91,7 +94,7 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       const meData = await getCurrentUser();
       if (epoch !== authEpoch) return;
       if (!meData?.user) {
-        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null });
+        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, user: null });
       } else {
         setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
       }
@@ -99,7 +102,7 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       if (epoch !== authEpoch) return;
       const status = error instanceof ApiError ? error.status : -1;
       if (status === 401) {
-        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null });
+        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, user: null });
       } else {
         const message = error instanceof ApiError ? `Сервер недоступен (${status || "сеть"})` : "Сетевая ошибка";
         const authenticated = globalState.authStatus === "authenticated";
@@ -201,7 +204,7 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
     employee: state.employee, memberships: state.memberships, activeMembership: state.activeMembership,
     activeOrganization: state.activeOrganization, activeBranch: state.activeBranch, activeEmployee: state.activeEmployee,
     switching: state.switching, switchContext, enabledModules: state.enabledModules, hasModule, canAccess,
-    authStatus: state.authStatus, authError: state.authError, retryAuth,
+    authStatus: state.authStatus, authError: state.authError, retryAuth, user: state.user,
   };
 };
 

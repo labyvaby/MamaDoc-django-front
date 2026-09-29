@@ -198,10 +198,7 @@ export function useNewBookings(): NewBookings {
     };
   }, []);
 
-  // Онлайн-записи пациентов — клиничный поток; у отеля брони идут через
-  // /hotel/reservations/, и этот опрос ему только добавлял запрос раз в минуту.
-  const { activeOrganization } = usePermissions();
-  const enabled = canView && isReady && orgReady && activeOrganization?.vertical !== "hotel";
+  const enabled = canView && isReady && orgReady;
 
   const query = useQuery({
     queryKey: djangoQueryKeys.bookings.list({

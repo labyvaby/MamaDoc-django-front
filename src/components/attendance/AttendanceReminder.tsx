@@ -40,10 +40,8 @@ function hasReminderBeenShown(storageKey: string | null): boolean {
  * раза за календарный день для каждого сотрудника.
  */
 export const AttendanceReminder: React.FC = () => {
-  const { activeEmployee, activeOrganization } = usePermissions();
-  // У отеля (Viva) СКУД не используется — раздел и настройки скрыты. Без этого
-  // гейта напоминание на каждой странице отеля тянуло два запроса смен.
-  const canShowReminder = useCan("attendance.reminder") && activeOrganization?.vertical !== "hotel";
+  const canShowReminder = useCan("attendance.reminder");
+  const { activeEmployee } = usePermissions();
   const today = dayjs().format("YYYY-MM-DD");
   const historyFrom = dayjs().subtract(1, "day").format("YYYY-MM-DD");
   const storageKey = activeEmployee
