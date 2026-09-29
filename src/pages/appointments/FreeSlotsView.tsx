@@ -11,7 +11,6 @@ import {
   ListItemText,
   Menu,
   MenuItem,
-  Slider,
   Stack,
   TextField,
   Tooltip,
@@ -22,6 +21,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import KeyboardArrowLeftOutlined from "@mui/icons-material/KeyboardArrowLeftOutlined";
 import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOutlined";
 import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
@@ -151,6 +151,7 @@ const PAGER_EDGE_MASK = `linear-gradient(90deg, transparent 0, #000 ${PAGER_ARRO
 const DESKTOP_DOCTOR_COLUMN_MIN = 180;
 const DESKTOP_DOCTOR_COLUMN_MAX = 380;
 const DESKTOP_DOCTOR_COLUMN_DEFAULT = 280;
+const DESKTOP_DOCTOR_COLUMN_STEP = 20;
 
 /**
  * Курсор «тащу» и запрет выделения на время перетаскивания — прямо в style,
@@ -2323,8 +2324,8 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
               <Stack
                 direction="row"
                 alignItems="center"
-                spacing={1.25}
-                sx={{ ml: "auto", minWidth: 250, maxWidth: 320 }}
+                spacing={0.75}
+                sx={{ ml: "auto", flexShrink: 0 }}
               >
                 <Typography
                   variant="caption"
@@ -2333,26 +2334,44 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                 >
                   {t("slots.columnWidth")}
                 </Typography>
-                <Slider
+                <IconButton
                   size="small"
-                  min={DESKTOP_DOCTOR_COLUMN_MIN}
-                  max={DESKTOP_DOCTOR_COLUMN_MAX}
-                  step={20}
-                  value={desktopDoctorColumnWidth}
-                  onChange={(_, value) => {
-                    setDesktopDoctorColumnWidth(Array.isArray(value) ? value[0] : value);
+                  aria-label={t("slots.columnNarrower")}
+                  disabled={desktopDoctorColumnWidth <= DESKTOP_DOCTOR_COLUMN_MIN}
+                  onClick={() => {
+                    setDesktopDoctorColumnWidth((value) =>
+                      Math.max(DESKTOP_DOCTOR_COLUMN_MIN, value - DESKTOP_DOCTOR_COLUMN_STEP),
+                    );
                   }}
-                  valueLabelDisplay="auto"
-                  aria-label={t("slots.columnWidth")}
-                  sx={{ flex: 1, minWidth: 120 }}
-                />
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ width: 44, textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+                  sx={{
+                    width: 28,
+                    height: 28,
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: "8px",
+                  }}
                 >
-                  {desktopDoctorColumnWidth}px
-                </Typography>
+                  <RemoveOutlined sx={{ fontSize: 16 }} />
+                </IconButton>
+                <IconButton
+                  size="small"
+                  aria-label={t("slots.columnWider")}
+                  disabled={desktopDoctorColumnWidth >= DESKTOP_DOCTOR_COLUMN_MAX}
+                  onClick={() => {
+                    setDesktopDoctorColumnWidth((value) =>
+                      Math.min(DESKTOP_DOCTOR_COLUMN_MAX, value + DESKTOP_DOCTOR_COLUMN_STEP),
+                    );
+                  }}
+                  sx={{
+                    width: 28,
+                    height: 28,
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: "8px",
+                  }}
+                >
+                  <AddOutlined sx={{ fontSize: 16 }} />
+                </IconButton>
               </Stack>
             )}
           </Stack>
