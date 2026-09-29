@@ -14,7 +14,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import { useQuery } from "@tanstack/react-query";
 
-import { getProducts } from "../../api/warehouse";
+import { getProducts, getProductCostPrice } from "../../api/warehouse";
 import { DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useCan } from "../../hooks/useCan";
@@ -47,6 +47,7 @@ const DjangoProductQuickViewDrawer: React.FC<Props> = ({
   const orgId = useApiOrgId();
   const canViewWarehouse = useCan("warehouse.view");
   const canViewSales = useCan("warehouse.sales.view");
+  const canViewCost = useCan("procurement.view");
   const enabled = open && productId != null && (canViewWarehouse || canViewSales);
 
   const query = useQuery({
@@ -57,6 +58,12 @@ const DjangoProductQuickViewDrawer: React.FC<Props> = ({
   });
 
   const product = query.data?.find((p) => p.id === productId) ?? null;
+  const costQuery = useQuery({
+    queryKey: ["django", "warehouse", "products", "cost", orgId, productId],
+    queryFn: ({ signal }) => getProductCostPrice(productId!, signal),
+    enabled: enabled && canViewCost,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
 
   return (
     <Drawer anchor="right" open={open} onClose={onClose}>
@@ -109,6 +116,9 @@ const DjangoProductQuickViewDrawer: React.FC<Props> = ({
         ) : (
           <Stack spacing={1.5}>
             <Row label={t("productQuickView.price")} value={formatKGS(product.price)} />
+            {canViewCost && costQuery.data && (
+              <Row label="Себестоимость" value={formatKGS(Number(costQuery.data.costPrice))} />
+            )}
             <Row
               label={t("productQuickView.stock")}
               value={

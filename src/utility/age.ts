@@ -48,3 +48,36 @@ export function formatPatientAge(birthDate: string | null | undefined): string {
   const weekStr = `${weeks} ${plural(weeks, WEEK_FORMS)}`;
   return months >= 1 ? `${weekStr} (${months} ${plural(months, MONTH_FORMS)})` : weekStr;
 }
+
+/**
+ * Возраст взрослого — только полные годы («30 лет»), как в карточке пациента.
+ * До года — детская запись из `formatPatientAge` («3 недели»).
+ */
+export function formatAgeYears(birthDate: string | null | undefined): string {
+  if (!birthDate) return "";
+  const b = dayjs(birthDate);
+  if (!b.isValid() || b.isAfter(dayjs())) return "";
+  const years = dayjs().diff(b, "year");
+  return years >= 1 ? `${years} ${plural(years, YEAR_FORMS)}` : formatPatientAge(birthDate);
+}
+
+/**
+ * Сколько дней до ближайшего дня рождения: 0 — сегодня. `null` — даты нет.
+ * 29 февраля в невисокосный год dayjs переносит на 1 марта.
+ */
+export function daysUntilBirthday(birthDate: string | null | undefined, now = dayjs()): number | null {
+  if (!birthDate) return null;
+  const b = dayjs(birthDate);
+  if (!b.isValid()) return null;
+  const today = now.startOf("day");
+  let next = b.year(today.year()).startOf("day");
+  if (next.isBefore(today)) next = b.year(today.year() + 1).startOf("day");
+  return next.diff(today, "day");
+}
+
+/** «через 3 дня» / «завтра» / «сегодня» — подпись к ближайшему дню рождения. */
+export function birthdayCountdownLabel(days: number): string {
+  if (days === 0) return "сегодня";
+  if (days === 1) return "завтра";
+  return `через ${days} ${plural(days, DAY_FORMS)}`;
+}

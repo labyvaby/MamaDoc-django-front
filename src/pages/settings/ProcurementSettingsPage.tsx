@@ -42,7 +42,7 @@ export default function ProcurementSettingsPage() {
   const [threshold, setThreshold] = React.useState<number | null>(null);
   const effectiveThreshold = threshold ?? settings.data?.autoMatchThreshold ?? 75;
 
-  const saveRules = async (data: { photoRecognition?: boolean; autoMatchThreshold?: number }) => {
+  const saveRules = async (data: { photoRecognition?: boolean; autoMatchThreshold?: number; foreignCurrency?: boolean }) => {
     if (pending) return;
     setPending(true);
     setError("");
@@ -71,6 +71,26 @@ export default function ProcurementSettingsPage() {
           Права сотрудников (кто оформляет накладные, проводит оплаты, распознаёт по фото) назначаются в ролях и правах —
           группа «Закупки». Сам модуль подключает администратор платформы; здесь только общие правила организации.
         </Typography>
+
+        {settings.data && (
+          <Stack gap={1} sx={{ mt: 1, p: 2, border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
+            <Typography variant="h6">Валюта закупа</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Выключите, если с поставщиками рассчитываетесь только в сомах: в накладной не будет полей валюты и курса, а
+              себестоимость сразу считается в сомах.
+            </Typography>
+            <FormControlLabel
+              label="Закуп в валюте (доллары, рубли и др. по курсу)"
+              control={
+                <Switch
+                  checked={settings.data.foreignCurrency ?? true}
+                  disabled={pending || !canManageRules}
+                  onChange={(_, checked) => void saveRules({ foreignCurrency: checked })}
+                />
+              }
+            />
+          </Stack>
+        )}
 
         <Stack gap={1.5} sx={{ mt: 1, p: 2, border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
           <Typography variant="h6">Распознавание накладных по фото</Typography>

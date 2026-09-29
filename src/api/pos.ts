@@ -35,8 +35,8 @@ export type PosCart = {
   warehouseId: number;
   branchId: number;
   clientId?: number;
-  lines: Array<{ productId: number; quantity: string }>;
-  discountPercent: string;
+  lines: Array<{ productId: number; quantity: string; discountAmount?: string }>;
+  discountAmount: string;
   discountKindId?: number;
   clientDiscount: boolean;
   promotions: boolean;

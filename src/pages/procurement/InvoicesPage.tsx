@@ -99,6 +99,7 @@ const InvoicesPage: React.FC = () => {
     cancel: can([P.receiptCancel, P.manage]),
     photos: can([P.receiptPhotos, P.manage]),
     recognize: can([P.receiptRecognize, P.manage]),
+    createProducts: can([P.receiptCreateProducts, P.manage]),
     returns: can([P.returnCreate, P.manage]),
     suppliers: can([P.suppliersManage, P.manage]),
     pay: can(P.paymentsManage),
@@ -481,6 +482,8 @@ const InvoicesPage: React.FC = () => {
         recognitionEnabled={recognitionEnabled}
         recognitionHint={recognitionHint}
         onCreateSupplier={perms.suppliers ? () => setSupplierForm({ open: true, supplier: null }) : undefined}
+        canCreateProducts={perms.createProducts}
+        foreignCurrency={settings?.foreignCurrency ?? true}
       />
 
       <SupplierReturnDrawer
