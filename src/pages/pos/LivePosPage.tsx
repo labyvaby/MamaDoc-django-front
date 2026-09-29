@@ -1,5 +1,5 @@
 import React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Box,
@@ -41,7 +41,7 @@ import { ActiveContextSwitcher } from "../../components/sidebar/ActiveContextSwi
 import { PosClientFooter } from "./ClientFooter";
 import { PosHoldReceiptDialog } from "./HoldReceiptDialog";
 import { PosConfirmDialog, type PosConfirmRequest } from "./ConfirmDialog";
-import { PosProductCards } from "./ProductCards";
+import { PosProductResults, type PosProductResultsHandle } from "./ProductCards";
 import { PosReceipt } from "./Receipt";
 import { PosTopBar } from "./TopBar";
 import { CheckoutDialog } from "./CheckoutDialog";
@@ -55,7 +55,14 @@ import { posColors } from "./layout";
 import type { PosCatalogItem, PosClient, PosReceiptLine } from "./types";
 import { PosAmount } from "./ui";
 
-type CartRow = { product: PosProduct; quantity: number; discountAmount?: number; removed?: boolean };
+type CartRow = {
+  product: PosProduct;
+  quantity: number;
+  discountAmount?: number;
+  /** Скидка процентом: сумма пересчитывается при смене количества. */
+  discountPercent?: number;
+  removed?: boolean;
+};
 type PosDraft = {
   rows: CartRow[];
   client: PosClient | null;
@@ -83,6 +90,15 @@ const canStartProductSearch = (value: string) => {
 
 const brandOf = (attributes: PosProduct["attributes"]) =>
   attributes.find((attribute) => attribute.role === "generic" && /^(бренд|brand)$/i.test(attribute.name.trim()))?.value;
+
+/** Скидка на позицию в сомах: процент — от текущей суммы, сумма — не больше позиции. */
+const lineDiscount = (row: CartRow) => {
+  const subtotal = Number(row.product.price) * row.quantity;
+  const raw = row.discountPercent
+    ? (subtotal * row.discountPercent) / 100
+    : row.discountAmount ?? 0;
+  return Math.round(Math.min(Math.max(raw, 0), subtotal) * 100) / 100;
+};
 
 function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
   const p = row.product;
@@ -118,8 +134,8 @@ function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
     barcode: p.barcode,
     quantity: row.quantity,
     price: Number(p.price),
-    discountAmount: row.discountAmount ?? 0,
-    imageUrl: p.imageThumbnailUrl ?? p.imageUrl,
+    discountAmount: lineDiscount(row),
+    discountPercent: row.discountPercent,
     colors: colors.map((a) => ({
       id: String(a.id),
       label: a.value,
@@ -173,7 +189,6 @@ function toCatalogItem(product: PosProduct, family: PosProduct[]): PosCatalogIte
     name: commonName || product.name,
     brand: brandOf(product.attributes),
     price: Number(product.price),
-    imageUrl: product.imageThumbnailUrl ?? product.imageUrl,
     stock: family.reduce((total, item) => total + Number(item.stock), 0),
     colors: colors.map((attribute) => ({
       id: String(attribute.id),
@@ -226,6 +241,9 @@ export default function LivePosPage() {
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
   const [selectedCategoryId, setSelectedCategoryId] = React.useState<number | null>(null);
+  const [resultsOpen, setResultsOpen] = React.useState(true);
+  const [activeResult, setActiveResult] = React.useState(-1);
+  const resultsRef = React.useRef<PosProductResultsHandle>(null);
   const [rows, setRows] = React.useState<CartRow[]>([]);
   const [variants, setVariants] = React.useState<PosProduct[]>([]);
   const [client, setClient] = React.useState<PosClient | null>(null);
@@ -298,6 +316,12 @@ export default function LivePosPage() {
     }, 250);
     return () => window.clearTimeout(id);
   }, [search]);
+
+  // Новый запрос или категория — список снова раскрыт, подсветка сброшена.
+  React.useEffect(() => {
+    setResultsOpen(true);
+    setActiveResult(-1);
+  }, [search, selectedCategoryId]);
 
   // Поиск клиента запускается после короткой паузы в наборе: отдельная кнопка
   // «Найти» в кассе не нужна, а запрос на каждый символ создавал бы лишнюю
@@ -401,7 +425,7 @@ export default function LivePosPage() {
       .map((row) => ({
         productId: row.product.id,
         quantity: String(row.quantity),
-        discountAmount: String(row.discountAmount ?? 0),
+        discountAmount: lineDiscount(row).toFixed(2),
       })),
     discountAmount: benefits.discount || "0",
     discountKindId: benefits.discountKindId ?? undefined,
@@ -417,6 +441,8 @@ export default function LivePosPage() {
     enabled: ready && !!warehouseId && cart.lines.length > 0 && !held,
     staleTime: 0,
     retry: false,
+    // Пока сервер пересчитывает, панель не мигает «—»: показываем оценку ниже.
+    placeholderData: keepPreviousData,
   });
   const discountKindsQuery = useQuery({
     queryKey: ["django", "promotions", "discount-kinds", scope.branchId],
@@ -448,9 +474,79 @@ export default function LivePosPage() {
         lines: [],
       }
     : undefined;
-  const quote =
+  const serverQuote =
     heldQuote ??
     (quoteQuery.isError || !cart.lines.length ? undefined : quoteQuery.data);
+  const activeRows = rows.filter((row) => !row.removed);
+  const localSubtotal = activeRows.reduce(
+    (total, row) => total + Number(row.product.price) * row.quantity,
+    0
+  );
+  const localLineDiscount = activeRows.reduce(
+    (total, row) => total + lineDiscount(row),
+    0
+  );
+  // Ответ сервера для текущей корзины ещё не пришёл — считаем итог сами, чтобы
+  // скидка на товар и количество отражались в панели сразу, а не после запроса.
+  const quoteStale =
+    !held &&
+    cart.lines.length > 0 &&
+    !quoteQuery.isError &&
+    (quoteQuery.isPlaceholderData || (!quoteQuery.data && quoteQuery.isFetching));
+  const estimateQuote = (previous: PosQuote | undefined): PosQuote => {
+    const afterLines = localSubtotal - localLineDiscount;
+    const kind = discountKinds.find((item) => item.id === benefits.discountKindId);
+    const cartDiscount = kind
+      ? (afterLines * Number(kind.percent)) / 100
+      : Math.min(Number(benefits.discount) || 0, afterLines);
+    let discount = localLineDiscount + cartDiscount;
+    // Без ручных скидок держим прошлую (акция) — иначе итог мигнёт на полную сумму.
+    if (!discount && previous)
+      discount = Math.min(Number(previous.discount), localSubtotal);
+    if (benefits.clientDiscount && client)
+      discount = Math.max(discount, (localSubtotal * client.discountPercent) / 100);
+    const total = Math.max(0, localSubtotal - discount);
+    const bonusesUsed =
+      benefits.bonuses && previous ? Math.min(Number(previous.bonuses), total) : 0;
+    const certificate = previous
+      ? Math.min(Number(previous.certificateAmount), total - bonusesUsed)
+      : 0;
+    return {
+      subtotal: localSubtotal.toFixed(2),
+      discount: discount.toFixed(2),
+      total: total.toFixed(2),
+      bonuses: bonusesUsed.toFixed(2),
+      certificateAmount: certificate.toFixed(2),
+      due: (total - bonusesUsed - certificate).toFixed(2),
+      promotionApplied: previous?.promotionApplied,
+      lines: [],
+    };
+  };
+  const quote = quoteStale ? estimateQuote(serverQuote) : serverQuote;
+  // Сервер без поддержки скидки на позицию молча её отбрасывает — не прячем это.
+  const lineDiscountIgnored =
+    !held &&
+    !quoteStale &&
+    !!quote &&
+    localLineDiscount > 0 &&
+    Number(quote.discount) + 0.01 < localLineDiscount;
+  const panelLineDiscounts = held
+    ? held.lines
+        .filter((line) => Number(line.discountAmount ?? 0) > 0)
+        .map((line) => ({
+          id: String(line.id),
+          name: line.productName,
+          label: "",
+          amount: Number(line.discountAmount),
+        }))
+    : activeRows
+        .filter((row) => lineDiscount(row) > 0)
+        .map((row) => ({
+          id: String(row.product.id),
+          name: row.product.name,
+          label: row.discountPercent ? `${row.discountPercent}%` : "",
+          amount: lineDiscount(row),
+        }));
   const busy = pending || (!held && quoteQuery.isFetching);
   const reset = () => {
     setRows([]);
@@ -666,36 +762,6 @@ export default function LivePosPage() {
           },
         }))
       );
-      // Строка чека хранит только снимок названия и цены — фото подтягиваем
-      // из каталога. Не вышло — чек всё равно открыт, просто без картинок.
-      const productIds = [...new Set(receipt.lines.map((line) => line.productId))];
-      if (productIds.length)
-        getPosProducts(scope, {
-          warehouseId: receipt.warehouseId,
-          ids: productIds.join(","),
-          limit: 100,
-        })
-          .then((result) => {
-            const photos = new Map(
-              result.results.map((product) => [product.id, product])
-            );
-            setRows((previous) =>
-              previous.map((row) => {
-                const found = photos.get(row.product.id);
-                return found
-                  ? {
-                      ...row,
-                      product: {
-                        ...row.product,
-                        imageUrl: found.imageUrl,
-                        imageThumbnailUrl: found.imageThumbnailUrl,
-                      },
-                    }
-                  : row;
-              })
-            );
-          })
-          .catch(() => undefined);
       if (receipt.clientId && actions.clients) {
         const result = await posRequest<PosClient[]>(
           scope,
@@ -709,21 +775,17 @@ export default function LivePosPage() {
     const handler = (event: KeyboardEvent) => {
       if (event.key === "F2") {
         event.preventDefault();
-        document
-          .querySelector<HTMLInputElement>(
-            'input[placeholder^="Поиск по названию"]'
-          )
-          ?.focus();
+        searchInputRef.current?.focus();
       }
       if (event.key === "F5") {
         event.preventDefault();
-        if (actions.sell && quote && !busy && !list)
+        if (actions.sell && quote && !busy && !list && !lineDiscountIgnored)
           setCheckoutOpen(true);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [actions.sell, quote, busy, list]);
+  }, [actions.sell, quote, busy, list, lineDiscountIgnored]);
 
   React.useEffect(() => {
     let buffer = "";
@@ -808,6 +870,63 @@ export default function LivePosPage() {
     { label: "Сертификат", value: Number(quote?.certificateAmount ?? 0), tone: "certificate" as const },
   ].filter((item) => item.value > 0);
 
+  const dropdownVisible = !held && resultsOpen && canShowProducts;
+  const dropdownLoading = isSearchPending || products.isFetching;
+  const dropdownItems =
+    dropdownVisible && !dropdownLoading && groupedProducts.length > 0
+      ? groupedProducts
+      : null;
+  const dropdown = !dropdownVisible ? null : dropdownLoading ? (
+    <Box sx={{ py: 1.5, px: 1.5 }}>
+      <LinearProgress sx={{ borderRadius: 1 }} />
+      <Typography color="text.secondary" fontSize={12} textAlign="center" sx={{ mt: 1 }}>
+        Ищем товары…
+      </Typography>
+    </Box>
+  ) : products.isError ? null : dropdownItems ? (
+    <>
+      <Typography
+        sx={{
+          px: 1.5,
+          pt: 1,
+          pb: 0.25,
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: ".06em",
+          textTransform: "uppercase",
+          color: c.textDim,
+        }}
+      >
+        Найдено: {dropdownItems.length}
+        {products.data && products.data.count > products.data.results.length
+          ? ` · показаны первые, уточните запрос`
+          : ""}
+      </Typography>
+      <PosProductResults
+        ref={resultsRef}
+        items={dropdownItems}
+        activeIndex={activeResult}
+        onActiveIndexChange={setActiveResult}
+        onAdd={(item, selectedVariant) => {
+          const product =
+            selectedVariant ??
+            products.data?.results.find((candidate) => String(candidate.id) === item.id);
+          if (product) void add(product);
+        }}
+        disabled={!actions.sell || pending}
+      />
+    </>
+  ) : (
+    <Stack direction="row" alignItems="center" justifyContent="center" gap={1} sx={{ px: 2, py: 2.5 }}>
+      <SearchOffOutlined sx={{ color: c.textDim, fontSize: 20 }} />
+      <Typography color="text.secondary" fontSize={13}>
+        {categoryId != null
+          ? "В выбранной категории товары не найдены."
+          : "Товары не найдены. Попробуйте другое название."}
+      </Typography>
+    </Stack>
+  );
+
   return (
     <Box
       sx={{
@@ -824,6 +943,36 @@ export default function LivePosPage() {
         inputRef={searchInputRef}
         search={search}
         onSearchChange={setSearch}
+        onSearchFocus={() => setResultsOpen(true)}
+        onSearchKeyDown={(event) => {
+          if (!dropdownItems) {
+            if (event.key === "Escape" && (search || selectedCategoryId != null)) {
+              setResultsOpen(false);
+              return true;
+            }
+            return false;
+          }
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const step = event.key === "ArrowDown" ? 1 : -1;
+            setActiveResult((index) =>
+              Math.min(Math.max(index + step, 0), dropdownItems.length - 1)
+            );
+            return true;
+          }
+          if (event.key === "Enter" && activeResult >= 0) {
+            event.preventDefault();
+            resultsRef.current?.pick(activeResult);
+            return true;
+          }
+          if (event.key === "Escape") {
+            setResultsOpen(false);
+            return true;
+          }
+          return false;
+        }}
+        dropdown={dropdown}
+        onDropdownClose={() => setResultsOpen(false)}
         categories={data.categories}
         categoryId={selectedCategoryId}
         onCategoryChange={setSelectedCategoryId}
@@ -837,109 +986,65 @@ export default function LivePosPage() {
         onScan={() => void scanProduct(search)}
       />
       {visibleError && (
-        <Alert severity="error" onClose={() => setError(null)}>
+        <Alert severity="error" onClose={() => setError(null)} sx={{ borderRadius: 0 }}>
           {visibleError}
         </Alert>
       )}
       {!warehouseId && (
-        <Alert severity="warning">
+        <Alert severity="warning" sx={{ borderRadius: 0 }}>
           В этом филиале пока нет склада и товаров для продажи. Добавьте склад в
-          разделе «Склады», затем загрузите каталог и оформите приход. Суммы и
-          товары не подменяются демонстрационными данными.
+          разделе «Склады», затем загрузите каталог и оформите приход.
         </Alert>
       )}
       {held && (
-        <Alert severity="info">
+        <Alert severity="info" sx={{ borderRadius: 0 }}>
           Отложенный чек №{held.number.slice(0, 8)}. Состав и цены сохранены;
           оплатите его или начните новый чек.
         </Alert>
       )}
-      {!held && canShowProducts && (
-        <>
-          {(isSearchPending || products.isFetching) && <LinearProgress />}
-          {!isSearchPending &&
-            !products.isFetching &&
-            products.data?.results.length === 0 && (
-              <Box
-                sx={{
-                  minHeight: 76,
-                  px: 2,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 1,
-                  bgcolor: c.page,
-                  borderBottom: `1px solid ${c.outline}`,
-                }}
-              >
-                <SearchOffOutlined sx={{ color: c.textDim, fontSize: 20 }} />
-                <Typography color="text.secondary" fontSize={13}>
-                  {categoryId != null
-                    ? "В выбранной категории товары не найдены."
-                    : "Товары не найдены. Попробуйте другое название."}
-                </Typography>
-              </Box>
-            )}
-          {!isSearchPending &&
-            !products.isFetching &&
-            groupedProducts.length > 0 && (
-          <PosProductCards
-            items={groupedProducts}
-            onAdd={(item, selectedVariant) => {
-              const product = selectedVariant ?? products.data?.results.find(
-                (candidate) => String(candidate.id) === item.id
-              );
-              if (product) void add(product);
-            }}
-            disabled={!actions.sell || pending}
-          />
-            )}
-        </>
-      )}
       <Box
         sx={{
           flex: 1,
-          minHeight: { xs: 480, lg: 0 },
+          minHeight: { xs: "auto", lg: 0 },
           display: "flex",
           flexDirection: { xs: "column", lg: "row" },
         }}
       >
-        <Stack sx={{ flex: 1, minWidth: 0, px: 1.5, pb: 1.5 }} gap={1.5}>
-          <Box
-            sx={{
-              flex: 1,
-              minHeight: 260,
-              display: "flex",
-              overflowX: "auto",
-              "& > div": { minWidth: 780 },
-            }}
-          >
+        <Stack
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: { xs: "auto", lg: 0 },
+            p: { xs: 1.25, md: 1.5 },
+          }}
+          gap={{ xs: 1.25, md: 1.5 }}
+        >
+          <Box sx={{ flex: 1, minHeight: { xs: 200, lg: 0 }, display: "flex" }}>
             <PosReceipt
               number={held?.number.slice(0, 8) ?? "новый"}
-              lines={rows.map((row) => ({
-                ...toLine(row, variants),
-                total: held
-                  ? Number(
-                      held.lines.find(
-                        (line) => line.productId === row.product.id
-                      )?.total ?? row.product.price
-                    )
-                  : quote?.lines.find(
+              lines={rows.map((row) => {
+                const quoted = quoteStale
+                  ? undefined
+                  : serverQuote?.lines.find(
                       (line) => line.productId === row.product.id
-                    )
-                  ? Number(
-                      quote.lines.find(
-                        (line) => line.productId === row.product.id
-                      )!.subtotal
-                    ) -
-                    Number(
-                      quote.lines.find(
-                        (line) => line.productId === row.product.id
-                      )!.discountAmount
-                    )
-                  : undefined,
-              }))}
+                    );
+                const heldLine = held?.lines.find(
+                  (line) => line.productId === row.product.id
+                );
+                return {
+                  ...toLine(row, variants),
+                  ...(heldLine
+                    ? { discountAmount: Number(heldLine.discountAmount ?? 0) }
+                    : {}),
+                  total: held
+                    ? Number(heldLine?.total ?? row.product.price)
+                    : quoted
+                    ? Number(quoted.subtotal) - Number(quoted.discountAmount)
+                    : undefined,
+                };
+              })}
               canHold={actions.hold && !!quote && !held && !busy}
+              canDiscount={Boolean(actions.discount)}
               readOnly={!actions.sell || !!held || pending}
               onChangeColor={(id, value) => variant(id, "color", value)}
               onChangeSize={(id, value) => variant(id, "size", value)}
@@ -951,33 +1056,28 @@ export default function LivePosPage() {
                 }
                 update(id, { quantity });
               }}
-              onChangeLineDiscount={(id, discountAmount) => update(id, { discountAmount })}
+              onChangeLineDiscount={(id, discountAmount, discountPercent) =>
+                update(id, { discountAmount, discountPercent })
+              }
               onRemoveLine={(id) => update(id, { removed: true })}
               onRestoreLine={(id) => update(id, { removed: false })}
               onHold={() => setHoldOpen(true)}
               onCancel={newReceipt}
             />
           </Box>
-          {rows.length === 0 && (
-            <Typography textAlign="center" color="text.secondary">
-              Найдите товар по названию или отсканируйте штрихкод, чтобы начать
-              продажу.
-            </Typography>
-          )}
           {actions.clients && (
             <Box
               sx={{
-                overflowX: "auto",
                 opacity: pending ? 0.6 : 1,
                 pointerEvents: pending || held ? "none" : "auto",
-                "& > div": { minWidth: 760 },
               }}
             >
               <PosClientFooter
                 client={client}
                 query={clientQuery}
                 onQueryChange={setClientQuery}
-                results={clientSearch ? clients.data ?? [] : null}
+                results={clientSearch && !clients.isFetching ? clients.data ?? [] : null}
+                searching={Boolean(clientSearch) && clients.isFetching}
                 onSelectClient={(value) => {
                   setClient(value);
                   setClientQuery("");
@@ -986,8 +1086,9 @@ export default function LivePosPage() {
                 }}
                 canRegister={actions.client_create}
                 canHistory={actions.history}
-                onRegister={(name, phone) =>
-                  void act(async () => {
+                onRegister={async (name, phone) => {
+                  let created = false;
+                  await act(async () => {
                     const result = await posRequest<PosClient>(
                       scope,
                       "clients/",
@@ -999,9 +1100,12 @@ export default function LivePosPage() {
                     setClient(result);
                     setClientQuery("");
                     setClientSearch("");
-                    invalidate();
-                  })
-                }
+                    setBenefits(emptyBenefits);
+                    void cache.invalidateQueries({ queryKey: [...prefix, "clients"] });
+                    created = true;
+                  });
+                  return created;
+                }}
                 onChangeClient={() => {
                   setClient(null);
                   setClientQuery("");
@@ -1031,6 +1135,8 @@ export default function LivePosPage() {
           locked={!!held || pending}
           discountKinds={discountKinds}
           discountMode={discountMode}
+          lineDiscounts={panelLineDiscounts}
+          lineDiscountIgnored={lineDiscountIgnored}
         />
       </Box>
       <PosConfirmDialog
@@ -1198,7 +1304,7 @@ export default function LivePosPage() {
               <Box id="pos-print" sx={{ bgcolor: "#fff", color: "#141722", p: { xs: 2, sm: 2.5 }, borderRadius: 1.5, boxShadow: "0 18px 50px rgba(0,0,0,.35)", minHeight: { md: 470 } }}>
                 <Stack alignItems="center" gap={.25} mb={2}><Typography fontWeight={900} letterSpacing=".12em">{data.organization.name.toUpperCase()}</Typography><Typography variant="caption">{data.branch.name}</Typography><Typography variant="caption" color="#6e7280">Товарный чек · не фискальный</Typography></Stack>
                 <Stack direction="row" justifyContent="space-between" mb={1}><Typography variant="caption">ЧЕК №{saved.number.slice(0, 8)}</Typography><Typography variant="caption">{new Date(saved.createdAt).toLocaleDateString("ru-RU")}</Typography></Stack>
-                <Box sx={{ borderTop: "1px dashed #adb0ba", borderBottom: "1px dashed #adb0ba", py: 1 }}>{saved.lines.map((line) => <Stack key={line.id} direction="row" justifyContent="space-between" gap={1} py={.55}><Box sx={{ minWidth: 0 }}><Typography fontSize={12} fontWeight={600} noWrap>{line.productName}</Typography><Typography fontSize={10} color="#6e7280">{line.quantity} × {Number(line.unitPrice).toLocaleString("ru-RU")} сом</Typography></Box><Typography fontSize={12} fontWeight={700} whiteSpace="nowrap">{Number(line.total).toLocaleString("ru-RU")} сом</Typography></Stack>)}</Box>
+                <Box sx={{ borderTop: "1px dashed #adb0ba", borderBottom: "1px dashed #adb0ba", py: 1 }}>{saved.lines.map((line) => <Stack key={line.id} direction="row" justifyContent="space-between" gap={1} py={.55}><Box sx={{ minWidth: 0 }}><Typography fontSize={12} fontWeight={600} noWrap>{line.productName}</Typography><Typography fontSize={10} color="#6e7280">{line.quantity} × {Number(line.unitPrice).toLocaleString("ru-RU")} сом{Number(line.discountAmount ?? 0) > 0 ? ` · скидка −${Number(line.discountAmount).toLocaleString("ru-RU")} сом` : ""}</Typography></Box><Typography fontSize={12} fontWeight={700} whiteSpace="nowrap">{Number(line.total).toLocaleString("ru-RU")} сом</Typography></Stack>)}</Box>
                 <Stack gap={.5} mt={1.5}><Stack direction="row" justifyContent="space-between"><Typography variant="caption">Подытог</Typography><Typography variant="caption">{Number(saved.subtotal).toLocaleString("ru-RU")} сом</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography variant="caption">Скидка</Typography><Typography variant="caption">− {Number(saved.discountTotal).toLocaleString("ru-RU")} сом</Typography></Stack><Stack direction="row" justifyContent="space-between" mt={.5}><Typography fontWeight={800}>ИТОГО</Typography><Typography fontWeight={900}>{Number(saved.totalAmount).toLocaleString("ru-RU")} сом</Typography></Stack></Stack>
                 <Stack alignItems="center" mt={2}><QrCode2Rounded sx={{ fontSize: 76, color: "#191c26" }} /><Typography fontSize={9} color="#777">Проверить чек</Typography></Stack>
               </Box>

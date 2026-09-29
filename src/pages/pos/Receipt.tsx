@@ -5,33 +5,61 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
-import { POS_RADIUS, RECEIPT_COLUMN_SPECS, posColors } from "./layout";
-import { PosColumn } from "./columns";
-import { PosReceiptRow } from "./ReceiptRow";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+
+import { POS_RADIUS, posColors } from "./layout";
+import { PosReceiptRow, RECEIPT_GRID } from "./ReceiptRow";
 import type { PosReceiptLine } from "./types";
 
 type Props = {
   canHold?: boolean;
+  /** Право `pos.discount` — показывать ли кнопку скидки на позицию. */
+  canDiscount?: boolean;
   readOnly?: boolean;
   number: string;
   lines: PosReceiptLine[];
   onChangeColor: (lineId: string, colorId: string) => void;
   onChangeSize: (lineId: string, sizeId: string) => void;
   onChangeQuantity: (lineId: string, quantity: number) => void;
-  onChangeLineDiscount: (lineId: string, discountAmount: number) => void;
+  onChangeLineDiscount: (lineId: string, discountAmount: number, discountPercent?: number) => void;
   onRemoveLine: (lineId: string) => void;
   onRestoreLine: (lineId: string) => void;
   onHold: () => void;
   onCancel: () => void;
 };
 
-const COLUMN_LABELS: Record<string, string> = {
-  color: "цвет",
-  size: "размер",
-  quantity: "кол-во",
-  price: "цена",
-  sum: "сумма",
-  remove: "",
+const HEADER_LABELS = ["товар", "кол-во", "цена", "сумма", ""];
+
+/** Кнопка-«таблетка» шапки чека. */
+const HeaderButton: React.FC<{ label: string; onClick: () => void; disabled?: boolean; danger?: boolean }> = ({
+  label,
+  onClick,
+  disabled,
+  danger,
+}) => {
+  const theme = useTheme();
+  const c = posColors(theme);
+  return (
+    <ButtonBase
+      onClick={onClick}
+      disabled={disabled}
+      sx={{
+        height: 30,
+        px: "12px",
+        borderRadius: `${POS_RADIUS.pill}px`,
+        bgcolor: danger ? "transparent" : c.tile,
+        border: `1px solid ${c.outline}`,
+        color: danger ? c.danger : c.textSoft,
+        fontSize: 12,
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+        "&:hover": { borderColor: danger ? c.danger : c.accent },
+        "&.Mui-disabled": { opacity: 0.45 },
+      }}
+    >
+      {label}
+    </ButtonBase>
+  );
 };
 
 /** Чек: номер, счётчики позиций, действия и таблица товаров. */
@@ -47,6 +75,7 @@ export const PosReceipt: React.FC<Props> = ({
   onHold,
   onCancel,
   canHold = false,
+  canDiscount = false,
   readOnly = false,
 }) => {
   const theme = useTheme();
@@ -54,86 +83,102 @@ export const PosReceipt: React.FC<Props> = ({
 
   const activeCount = lines.filter((line) => !line.removed).length;
   const removedCount = lines.length - activeCount;
+  const units = lines.filter((line) => !line.removed).reduce((total, line) => total + line.quantity, 0);
 
   return (
-    <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", bgcolor: c.checkArea, borderRadius: `${POS_RADIUS.card}px` }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ py: "16px", px: "16px", flexShrink: 0 }}>
-        <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: c.text }}>Чек №{number}</Typography>
-
-        <Stack direction="row" alignItems="center" gap="16px">
-          <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>{activeCount} товаров</Typography>
-          {removedCount > 0 ? (
-            <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.danger }}>удалено: {removedCount}</Typography>
-          ) : null}
-          <ButtonBase
-            onClick={onHold}
-            disabled={!canHold}
-            sx={{
-              px: "12px",
-              py: "8px",
-              borderRadius: `${POS_RADIUS.pill}px`,
-              bgcolor: c.tile,
-              border: `1px solid ${c.outline}`,
-              color: c.textSoft,
-              fontSize: 12,
-              fontWeight: 600,
-              lineHeight: 1.2,
-            }}
-          >
-            Отложить
-          </ButtonBase>
-          <ButtonBase
-            onClick={onCancel}
-            sx={{
-              px: "12px",
-              py: "8px",
-              borderRadius: `${POS_RADIUS.pill}px`,
-              bgcolor: c.page,
-              border: `1px solid ${c.outline}`,
-              color: c.danger,
-              fontSize: 12,
-              fontWeight: 600,
-              lineHeight: 1.2,
-            }}
-          >
-            Отменить чек
-          </ButtonBase>
+    <Box
+      sx={{
+        flex: 1,
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
+        bgcolor: c.checkArea,
+        border: `1px solid ${c.outline}`,
+        borderRadius: `${POS_RADIUS.card}px`,
+        overflow: "hidden",
+      }}
+    >
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        flexWrap="wrap"
+        gap="8px"
+        sx={{ px: { xs: "12px", md: "16px" }, py: "10px", flexShrink: 0, borderBottom: `1px solid ${c.hairline}` }}
+      >
+        <Stack direction="row" alignItems="baseline" gap="10px" sx={{ minWidth: 0 }}>
+          <Typography noWrap sx={{ fontSize: 15, fontWeight: 800, color: c.text }}>Чек №{number}</Typography>
+          <Typography noWrap sx={{ fontSize: 12, color: c.textDim }}>
+            {activeCount ? `${activeCount} поз. · ${units} шт.` : "пусто"}
+            {removedCount > 0 ? (
+              <Box component="span" sx={{ color: c.danger }}> · удалено {removedCount}</Box>
+            ) : null}
+          </Typography>
         </Stack>
+
+        {lines.length > 0 && (
+          <Stack direction="row" alignItems="center" gap="6px">
+            <HeaderButton label="Отложить" onClick={onHold} disabled={!canHold} />
+            <HeaderButton label="Отменить чек" onClick={onCancel} danger />
+          </Stack>
+        )}
       </Stack>
 
-      <Box sx={{ px: "16px", flexShrink: 0, display: "flex", alignItems: "center" }}>
-        <Typography sx={{ flex: 1, fontSize: 12, fontWeight: 500, lineHeight: 1.2, textTransform: "uppercase", color: c.textDim }}>
-          товар
-        </Typography>
-        <Box sx={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-          {RECEIPT_COLUMN_SPECS.map((spec) => (
-            <PosColumn key={spec.key} spec={spec}>
-              <Typography sx={{ fontSize: 12, fontWeight: 500, lineHeight: 1.2, textTransform: "uppercase", color: c.textDim, whiteSpace: "nowrap" }}>
-                {COLUMN_LABELS[spec.key]}
-              </Typography>
-            </PosColumn>
+      {lines.length > 0 && (
+        <Box
+          sx={{
+            display: { xs: "none", md: "grid" },
+            gridTemplateColumns: RECEIPT_GRID,
+            columnGap: "12px",
+            px: "16px",
+            pt: "8px",
+            pb: "2px",
+            flexShrink: 0,
+          }}
+        >
+          {HEADER_LABELS.map((label, index) => (
+            <Typography
+              key={index}
+              sx={{
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: ".04em",
+                textTransform: "uppercase",
+                color: c.textDim,
+                textAlign: index === 0 ? "left" : index === 1 ? "center" : "right",
+              }}
+            >
+              {label}
+            </Typography>
           ))}
         </Box>
-      </Box>
+      )}
 
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: "16px", mt: "6px" }}>
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: { xs: "12px", md: "16px" } }}>
         {lines.map((line) => (
           <PosReceiptRow
             key={line.id}
             line={line}
             readOnly={readOnly}
+            canDiscount={canDiscount}
             onChangeColor={(colorId) => onChangeColor(line.id, colorId)}
             onChangeSize={(sizeId) => onChangeSize(line.id, sizeId)}
             onChangeQuantity={(quantity) => onChangeQuantity(line.id, quantity)}
-            onChangeLineDiscount={(amount) => onChangeLineDiscount(line.id, amount)}
+            onChangeLineDiscount={(amount, percent) => onChangeLineDiscount(line.id, amount, percent)}
             onRemove={() => onRemoveLine(line.id)}
             onRestore={() => onRestoreLine(line.id)}
           />
         ))}
         {lines.length === 0 ? (
-          <Typography sx={{ py: "24px", fontSize: 14, color: c.textDim, textAlign: "center" }}>
-            Чек пуст — отсканируйте товар или выберите категорию
-          </Typography>
+          <Stack alignItems="center" justifyContent="center" gap="8px" sx={{ py: { xs: "28px", md: "48px" }, textAlign: "center" }}>
+            <Box sx={{ width: 44, height: 44, borderRadius: "50%", bgcolor: c.tile, display: "grid", placeItems: "center" }}>
+              <ReceiptLongOutlined sx={{ fontSize: 22, color: c.textDim }} />
+            </Box>
+            <Typography sx={{ fontSize: 14, fontWeight: 700, color: c.textSoft }}>Чек пуст</Typography>
+            <Typography sx={{ fontSize: 12, color: c.textDim, maxWidth: 320 }}>
+              Найдите товар по названию или отсканируйте штрихкод — он появится здесь.
+            </Typography>
+          </Stack>
         ) : null}
       </Box>
     </Box>

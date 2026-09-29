@@ -19,48 +19,16 @@ import { subtleBg, subtleBorder } from "../../theme/uiHelpers";
 
 /** Высоты и отступы каркаса страницы. */
 export const POS_LAYOUT = {
-  /** Верхняя полоса с поиском и кассиром. */
-  topBarHeight: 63,
   /** Полоса категорий под шапкой. */
   categoryBarHeight: 41,
   /** Ширина правой панели оплаты. */
   paymentPanelWidth: 340,
   /** Горизонтальный отступ левой колонки (Check x=10 внутри контейнера 1028). */
   contentPaddingX: 10,
-  /** Полоса карточек товаров выбранной категории. */
-  productCardsHeight: 136,
-  /** Карточка товара в этой полосе. */
-  productCardWidth: 261.6,
   /** Высота футера с клиентом (макет: 108, поиск клиента — 163, регистрация — 198). */
   clientFooterHeight: 108,
   /** Плашка «Рекомендовать клиенту». */
   recommendationHeight: 62,
-} as const;
-
-/**
- * Колонки строки чека, справа налево от кнопки удаления.
- *
- * Ширины и зазоры — из макета (Product info: 545px = 54+60+61+62+66+54+52+45+57+16+18).
- * Шапка таблицы в макете набрана отдельными зазорами, но центры её подписей
- * совпадают с центрами колонок строки, поэтому и шапка, и строки рисуются по
- * одной сетке: так подпись не разъезжается с содержимым на других ширинах.
- */
-export const RECEIPT_COLUMNS = {
-  color: 54,
-  size: 61,
-  quantity: 66,
-  price: 52,
-  sum: 57,
-  remove: 18,
-} as const;
-
-/** Зазоры между колонками строки чека (макет: gap-60/62/54/45/16). */
-export const RECEIPT_GAPS = {
-  colorToSize: 60,
-  sizeToQuantity: 62,
-  quantityToPrice: 54,
-  priceToSum: 45,
-  sumToRemove: 16,
 } as const;
 
 /** Радиусы макета. */
@@ -123,21 +91,3 @@ export const posColors = (t: Theme) => ({
 });
 
 export type PosColors = ReturnType<typeof posColors>;
-
-/**
- * Сетка правой части строки чека: цвет, размер, кол-во, цена, сумма, удаление.
- *
- * Шапка таблицы и строки рисуются по одной и той же сетке — в макете подписи
- * набраны своими зазорами, но их центры совпадают с центрами колонок, так что
- * общая сетка держит выравнивание и на другой ширине окна.
- */
-export const RECEIPT_COLUMN_SPECS = [
-  { key: "color", width: RECEIPT_COLUMNS.color, gapBefore: 0 },
-  { key: "size", width: RECEIPT_COLUMNS.size, gapBefore: RECEIPT_GAPS.colorToSize },
-  { key: "quantity", width: RECEIPT_COLUMNS.quantity, gapBefore: RECEIPT_GAPS.sizeToQuantity },
-  { key: "price", width: RECEIPT_COLUMNS.price, gapBefore: RECEIPT_GAPS.quantityToPrice },
-  { key: "sum", width: RECEIPT_COLUMNS.sum, gapBefore: RECEIPT_GAPS.priceToSum },
-  { key: "remove", width: RECEIPT_COLUMNS.remove, gapBefore: RECEIPT_GAPS.sumToRemove },
-] as const;
-
-
