@@ -56,6 +56,20 @@ import {
   Typography,
 } from "@mui/material";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
+import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
+import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
+import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
+import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+import FingerprintOutlined from "@mui/icons-material/FingerprintOutlined";
+import HomeOutlined from "@mui/icons-material/HomeOutlined";
+import PublicOutlined from "@mui/icons-material/PublicOutlined";
+import FlagOutlined from "@mui/icons-material/FlagOutlined";
+import { FormField } from "./formField";
+import { FieldIcon } from "./FieldIcon";
+import { focusFirstFieldError, GUEST_RULES, hasFieldErrors } from "./formRules";
+import WcOutlined from "@mui/icons-material/WcOutlined";
+import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
+import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
@@ -220,6 +234,8 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
   const [draftRestored, setDraftRestored] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
+  // После попытки сохранить — ошибки полей документа видны, даже если их не трогали.
+  const [showErrors, setShowErrors] = React.useState(false);
 
   const handlePickPhoto = (file: File | null) => {
     setPhotoError(null);
@@ -566,12 +582,33 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
   });
 
   React.useEffect(() => {
-    if (open) v.reset();
+    if (open) {
+      v.reset();
+      setShowErrors(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const handleSubmit = async () => {
-    if (!v.validate()) return;
+    // Имя и причину чёрного списка ведёт useFormValidation (он и фокусирует
+    // первое пустое), формат телефона и документа — правила FormField.
+    const fieldsInvalid = hasFieldErrors([
+      [phone, GUEST_RULES.phone],
+      [placeOfBirth, GUEST_RULES.short],
+      [issuingAuthority, GUEST_RULES.short],
+      [guestType === "resident" ? idNumber : "", GUEST_RULES.idNumber],
+      [guestType === "resident" ? inn : "", GUEST_RULES.inn],
+      [guestType === "resident" ? registrationAddress : "", GUEST_RULES.long],
+      [guestType === "foreign" ? citizenship : "", GUEST_RULES.short],
+      [guestType === "foreign" ? passportNumber : "", GUEST_RULES.docNumber],
+      [guestType === "foreign" ? passportCountry : "", GUEST_RULES.short],
+    ]);
+    const requiredOk = v.validate();
+    if (!requiredOk || fieldsInvalid) {
+      setShowErrors(true);
+      if (requiredOk) focusFirstFieldError();
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -772,10 +809,13 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                     />
                   )}
                 />
-                <TextField
+                <FormField
+                  icon={<PhoneOutlined />}
+                  rules={GUEST_RULES.phone}
+                  showErrors={showErrors}
                   label="Телефон"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onValueChange={setPhone}
                   onKeyDown={submitOnEnter}
                   fullWidth
                   disabled={submitting}
@@ -908,6 +948,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                         label="Пол"
                         value={gender}
                         onChange={(e) => setGender(e.target.value as "" | "male" | "female")}
+                        slotProps={{ input: { startAdornment: <FieldIcon icon={<WcOutlined />} /> } }}
                         disabled={submitting}
                         sx={{ flex: 1 }}
                       >
@@ -917,10 +958,13 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                       </TextField>
                     </Stack>
                     <Stack direction="row" gap={2}>
-                      <TextField
+                      <FormField
+                        icon={<PlaceOutlined />}
+                        rules={GUEST_RULES.short}
+                        showErrors={showErrors}
                         label="Место рождения"
                         value={placeOfBirth}
-                        onChange={(e) => setPlaceOfBirth(e.target.value)}
+                        onValueChange={setPlaceOfBirth}
                         disabled={submitting}
                         sx={{ flex: 1 }}
                       />
@@ -940,10 +984,13 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                         slotProps={{ textField: { disabled: submitting } }}
                         sx={{ flex: 1 }}
                       />
-                      <TextField
+                      <FormField
+                        icon={<AccountBalanceOutlined />}
+                        rules={GUEST_RULES.short}
+                        showErrors={showErrors}
                         label="Орган, выдавший документ"
                         value={issuingAuthority}
-                        onChange={(e) => setIssuingAuthority(e.target.value)}
+                        onValueChange={setIssuingAuthority}
                         disabled={submitting}
                         sx={{ flex: 1 }}
                       />
@@ -952,25 +999,34 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                     {guestType === "resident" ? (
                       <Stack gap={2}>
                         <Stack direction="row" gap={2}>
-                          <TextField
+                          <FormField
+                            icon={<BadgeOutlined />}
+                            rules={GUEST_RULES.idNumber}
+                            showErrors={showErrors}
                             label="Паспорт (ID-карта)"
                             value={idNumber}
-                            onChange={(e) => setIdNumber(e.target.value)}
+                            onValueChange={setIdNumber}
                             disabled={submitting}
                             sx={{ flex: 1 }}
                           />
-                          <TextField
+                          <FormField
+                            icon={<FingerprintOutlined />}
+                            rules={GUEST_RULES.inn}
+                            showErrors={showErrors}
                             label="ИНН"
                             value={inn}
-                            onChange={(e) => setInn(e.target.value)}
+                            onValueChange={setInn}
                             disabled={submitting}
                             sx={{ flex: 1 }}
                           />
                         </Stack>
-                        <TextField
+                        <FormField
+                          icon={<HomeOutlined />}
+                          rules={GUEST_RULES.long}
+                          showErrors={showErrors}
                           label="Адрес регистрации"
                           value={registrationAddress}
-                          onChange={(e) => setRegistrationAddress(e.target.value)}
+                          onValueChange={setRegistrationAddress}
                           disabled={submitting}
                           fullWidth
                         />
@@ -978,25 +1034,34 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                     ) : (
                       <Stack gap={2}>
                         <Stack direction="row" gap={2}>
-                          <TextField
+                          <FormField
+                            icon={<PublicOutlined />}
+                            rules={GUEST_RULES.short}
+                            showErrors={showErrors}
                             label="Гражданство"
                             value={citizenship}
-                            onChange={(e) => setCitizenship(e.target.value)}
+                            onValueChange={setCitizenship}
                             disabled={submitting}
                             sx={{ flex: 1 }}
                           />
-                          <TextField
+                          <FormField
+                            icon={<BadgeOutlined />}
+                            rules={GUEST_RULES.docNumber}
+                            showErrors={showErrors}
                             label="Номер загранпаспорта"
                             value={passportNumber}
-                            onChange={(e) => setPassportNumber(e.target.value)}
+                            onValueChange={setPassportNumber}
                             disabled={submitting}
                             sx={{ flex: 1 }}
                           />
                         </Stack>
-                        <TextField
+                        <FormField
+                          icon={<FlagOutlined />}
+                          rules={GUEST_RULES.short}
+                          showErrors={showErrors}
                           label="Страна выдачи"
                           value={passportCountry}
-                          onChange={(e) => setPassportCountry(e.target.value)}
+                          onValueChange={setPassportCountry}
                           disabled={submitting}
                           fullWidth
                         />
@@ -1015,6 +1080,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                   label="Откуда пришёл гость"
                   value={source}
                   onChange={(e) => setSource(e.target.value)}
+                  slotProps={{ input: { startAdornment: <FieldIcon icon={<LanguageOutlined />} /> } }}
                   fullWidth
                   disabled={submitting}
                   helperText="Сайт, звонок, Booking.com и т.п."
@@ -1045,9 +1111,11 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                   }
                 />
                 <Collapse in={isBlacklisted}>
-                  <TextField
+                  <FormField
+                    icon={<BlockOutlined />}
                     value={blacklistReason}
-                    onChange={(e) => setBlacklistReason(e.target.value)}
+                    onValueChange={setBlacklistReason}
+                    rules={{ maxLength: 500 }}
                     fullWidth
                     multiline
                     minRows={2}

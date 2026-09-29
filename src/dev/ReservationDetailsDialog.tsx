@@ -23,6 +23,11 @@
  * для заезда/выезда, hotel.payments.manage для оплаты.
  */
 import React from "react";
+import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
+import ChatBubbleOutlineOutlined from "@mui/icons-material/ChatBubbleOutlineOutlined";
+import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
+import { FormField } from "./formField";
+import { FieldIcon } from "./FieldIcon";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -463,10 +468,12 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                 )}
                 <Collapse in={cancelPromptOpen}>
                   <Stack gap={1.5} sx={{ p: 2, borderRadius: "12px", bgcolor: subtleBg(theme, true) }}>
-                    <TextField
+                    <FormField
+                      icon={<EventBusyOutlined />}
                       label="Причина отмены"
                       value={cancelReason}
-                      onChange={(e) => setCancelReason(e.target.value)}
+                      onValueChange={setCancelReason}
+                      rules={{ maxLength: 500 }}
                       size="small"
                       fullWidth
                       multiline
@@ -608,6 +615,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                         label="Способ оплаты"
                         value={paymentMethod}
                         onChange={(e) => setPaymentMethod(e.target.value)}
+                        slotProps={{ input: { startAdornment: <FieldIcon icon={<AccountBalanceWalletOutlined />} /> } }}
                         size="small"
                         sx={{ flex: 1 }}
                         disabled={paymentSaving}
@@ -623,12 +631,13 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                           </MenuItem>
                         ))}
                       </TextField>
-                      <TextField
-                        label="Сумма, сом"
-                        type="number"
+                      <FormField
+                        icon={<PaymentsOutlined />}
+                        label="Сумма"
+                        unit="сом"
                         value={paymentAmount}
-                        onChange={(e) => setPaymentAmount(e.target.value)}
-                        slotProps={{ htmlInput: { min: 0 } }}
+                        onValueChange={setPaymentAmount}
+                        rules={{ kind: "decimal", min: 1, max: 100_000_000 }}
                         size="small"
                         sx={{ flex: 1 }}
                         disabled={paymentSaving}
@@ -645,11 +654,13 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                         disabled={paymentSaving}
                       />
                     )}
-                    <TextField
+                    <FormField
+                      icon={<ChatBubbleOutlineOutlined />}
                       label="Комментарий"
                       placeholder="Необязательно"
                       value={paymentNote}
-                      onChange={(e) => setPaymentNote(e.target.value)}
+                      onValueChange={setPaymentNote}
+                      rules={{ maxLength: 300 }}
                       size="small"
                       fullWidth
                       disabled={paymentSaving}

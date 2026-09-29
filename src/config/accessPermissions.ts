@@ -75,6 +75,9 @@ export const PAGE_PERMISSIONS = {
   // которого нет у «Ресепшена». Страницы проверяют его сами через
   // useCan("hotel.rates.manage"), не через PAGE_PERMISSIONS.
   hotelPricingRules: "hotel.view",
+  // «События» (HotelEventsPage) — календарь событий города; смотреть может
+  // любой сотрудник отеля, «Поднять цены» проверяет hotel.rates.manage сама.
+  hotelEvents: "hotel.view",
   // «Уборка» (HotelHousekeepingPage.tsx) — задачи горничным. hotel.housekeeping.view
   // уже реальный бэковый код (см. комментарий у setRoomHousekeeping в hotel.ts
   // и RoomStateControl.tsx §шапка) — используем его как право страницы,

@@ -47,6 +47,7 @@ import {
   DialogTitle,
   FormControlLabel,
   IconButton,
+  InputAdornment,
   MenuItem,
   Stack,
   Switch,
@@ -55,6 +56,23 @@ import {
   Typography,
 } from "@mui/material";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
+import MeetingRoomOutlined from "@mui/icons-material/MeetingRoomOutlined";
+import StairsOutlined from "@mui/icons-material/StairsOutlined";
+import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
+import NotesOutlined from "@mui/icons-material/NotesOutlined";
+import SquareFootOutlined from "@mui/icons-material/SquareFootOutlined";
+import HeightOutlined from "@mui/icons-material/HeightOutlined";
+import BathtubOutlined from "@mui/icons-material/BathtubOutlined";
+import BedOutlined from "@mui/icons-material/BedOutlined";
+import ExploreOutlined from "@mui/icons-material/ExploreOutlined";
+import LandscapeOutlined from "@mui/icons-material/LandscapeOutlined";
+import DeckOutlined from "@mui/icons-material/DeckOutlined";
+import ArchitectureOutlined from "@mui/icons-material/ArchitectureOutlined";
+import DoorFrontOutlined from "@mui/icons-material/DoorFrontOutlined";
+import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
+import { FormField } from "./formField";
+import { focusFirstFieldError, hasFieldErrors, type FieldRules } from "./formRules";
 import { FormCard, HotelPage, HotelPageHeader, StickyActions } from "./hotelUi";
 import { RoomDeleteDialog } from "./RoomDeleteDialog";
 import { useTheme } from "@mui/material/styles";
@@ -206,6 +224,32 @@ function buildZonesPayload(zones: ZoneFormRow[]): HotelRoomZone[] {
     }));
 }
 
+/**
+ * Правила полей номера: что можно набрать и какие значения разумны. Этаж —
+ * целое (цокольный до −5), площади и высоты — числа с точкой, текст — с
+ * ограничением длины. Те же правила проверяют «Сохранить» (hasFieldErrors).
+ */
+const ROOM_RULES = {
+  number: {
+    required: true,
+    maxLength: 10,
+    validate: (v: string) => (/^[\p{L}\d/-]+$/u.test(v) ? null : "Только буквы, цифры, «-» и «/»"),
+  },
+  floor: { kind: "int", min: -5, max: 200 },
+  area: { kind: "decimal", min: 1, max: 2000 },
+  ceilingHeight: { kind: "decimal", min: 1.8, max: 15 },
+  bathrooms: { kind: "int", min: 0, max: 20 },
+  roomsCount: { kind: "int", min: 0, max: 50 },
+  windowSide: { maxLength: 60 },
+  view: { maxLength: 100 },
+  terraceArea: { kind: "decimal", min: 0.5, max: 1000 },
+  note: { maxLength: 1000 },
+  layoutDescription: { maxLength: 2000 },
+  zoneName: { maxLength: 60 },
+  zoneArea: { kind: "decimal", min: 0.1, max: 1000, maxDecimals: 1 },
+  zoneSide: { kind: "decimal", min: 0.1, max: 100, maxDecimals: 1 },
+} satisfies Record<string, FieldRules>;
+
 interface RoomFormProps {
   propertyId: number;
   /** null — создание нового номера, иначе правящийся. */
@@ -227,6 +271,8 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
   const [form, setForm] = React.useState<RoomFormState>(() => (editing ? toForm(editing) : emptyForm(roomTypes)));
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // После первой попытки сохранить показываем ошибки всех полей, даже не тронутых.
+  const [showErrors, setShowErrors] = React.useState(false);
   // Удаление — только отсюда, из карточки номера (на плитке «Номеров» его нет).
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const patchForm = (patch: Partial<RoomFormState>) => setForm((prev) => ({ ...prev, ...patch }));
@@ -319,14 +365,36 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
     void queryClient.invalidateQueries({ queryKey: ["hotel", "dashboard"] });
   };
 
+  const fieldsInvalid = hasFieldErrors([
+    [form.number, ROOM_RULES.number],
+    [form.floor, ROOM_RULES.floor],
+    [form.area, ROOM_RULES.area],
+    [form.ceilingHeight, ROOM_RULES.ceilingHeight],
+    [form.bathrooms, ROOM_RULES.bathrooms],
+    [form.roomsCount, ROOM_RULES.roomsCount],
+    [form.windowSide, ROOM_RULES.windowSide],
+    [form.view, ROOM_RULES.view],
+    [form.hasTerrace ? form.terraceArea : "", ROOM_RULES.terraceArea],
+    [form.note, ROOM_RULES.note],
+    [form.layoutDescription, ROOM_RULES.layoutDescription],
+    ...form.zones.flatMap((z): Array<[string, FieldRules]> => [
+      [z.name, ROOM_RULES.zoneName],
+      [z.area, ROOM_RULES.zoneArea],
+      [z.width, ROOM_RULES.zoneSide],
+      [z.length, ROOM_RULES.zoneSide],
+    ]),
+  ]);
+
   const submit = async () => {
     const number = form.number.trim();
-    if (!number) {
-      setError("Введите номер комнаты");
-      return;
-    }
     if (form.roomTypeId === "") {
       setError("Выберите категорию");
+      return;
+    }
+    if (fieldsInvalid) {
+      setShowErrors(true);
+      setError("Проверьте поля, отмеченные красным");
+      focusFirstFieldError();
       return;
     }
     setSaving(true);
@@ -407,12 +475,15 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
           <Typography variant="subtitle2" fontWeight={600}>
             Основное
           </Typography>
-          <TextField
+          <FormField
             select
+            icon={<CategoryOutlined />}
             label="Категория"
-            value={form.roomTypeId}
-            onChange={(e) => {
-              const id = Number(e.target.value);
+            required
+            value={form.roomTypeId === "" ? "" : String(form.roomTypeId)}
+            showErrors={showErrors}
+            onValueChange={(value) => {
+              const id = Number(value);
               // Дефолты категории подставляем только у нового номера: у уже
               // существующего (правка) его «Доп. характеристики» — свои,
               // смена категории их переписывать не должна.
@@ -423,30 +494,38 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
             fullWidth
           >
             {roomTypes.map((cat) => (
-              <MenuItem key={cat.id} value={cat.id}>
+              <MenuItem key={cat.id} value={String(cat.id)}>
                 {cat.name}
               </MenuItem>
             ))}
-          </TextField>
+          </FormField>
           <Stack direction="row" flexWrap="wrap" gap={2}>
-            <TextField
+            <FormField
+              icon={<MeetingRoomOutlined />}
               label="Номер"
               placeholder={editing ? undefined : "Например, 205"}
               value={form.number}
-              onChange={(e) => {
-                patchForm({ number: e.target.value });
+              rules={ROOM_RULES.number}
+              showErrors={showErrors}
+              onValueChange={(number) => {
+                patchForm({ number });
                 setError(null);
               }}
               autoFocus={!editing}
               disabled={saving}
               sx={{ flex: "1 1 200px" }}
             />
-            <TextField
+            <FormField
+              icon={<StairsOutlined />}
               label="Этаж"
+              placeholder="Например, 2"
               value={form.floor}
-              onChange={(e) => patchForm({ floor: e.target.value })}
+              rules={ROOM_RULES.floor}
+              showErrors={showErrors}
+              onValueChange={(floor) => patchForm({ floor })}
+              helperText="Цифрами; цокольный — со знаком минус"
               disabled={saving}
-              sx={{ flex: "1 1 120px" }}
+              sx={{ flex: "1 1 160px" }}
             />
           </Stack>
           <TextField
@@ -458,6 +537,15 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
               patchForm({ meals: typeof v === "string" ? v.split(",") : (v as string[]) });
             }}
             disabled={saving}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start" sx={{ color: "text.disabled", "& svg": { fontSize: 20 } }}>
+                    <RestaurantOutlined />
+                  </InputAdornment>
+                ),
+              },
+            }}
             SelectProps={{
               multiple: true,
               renderValue: (selected) => (
@@ -477,10 +565,13 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
               </MenuItem>
             ))}
           </TextField>
-          <TextField
+          <FormField
+            icon={<NotesOutlined />}
             label="Примечание"
             value={form.note}
-            onChange={(e) => patchForm({ note: e.target.value })}
+            rules={ROOM_RULES.note}
+            showErrors={showErrors}
+            onValueChange={(note) => patchForm({ note })}
             disabled={saving}
             multiline
             minRows={2}
@@ -499,58 +590,70 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
             {!editing && " Поля ниже подставлены по умолчанию для выбранной категории — поменяйте, что отличается у этого номера."}
           </Typography>
           <Stack direction="row" flexWrap="wrap" gap={2}>
-            <TextField
-              label="Площадь, м²"
-              type="number"
+            <FormField
+              icon={<SquareFootOutlined />}
+              label="Площадь"
               value={form.area}
-              onChange={(e) => patchForm({ area: e.target.value })}
-              slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+              rules={ROOM_RULES.area}
+              showErrors={showErrors}
+              onValueChange={(area) => patchForm({ area })}
+              unit="м²"
               disabled={saving}
-              sx={{ flex: "1 1 160px" }}
+              sx={{ flex: "1 1 170px" }}
             />
-            <TextField
-              label="Высота потолков, м"
-              type="number"
+            <FormField
+              icon={<HeightOutlined />}
+              label="Высота потолков"
               value={form.ceilingHeight}
-              onChange={(e) => patchForm({ ceilingHeight: e.target.value })}
-              slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+              rules={ROOM_RULES.ceilingHeight}
+              showErrors={showErrors}
+              onValueChange={(ceilingHeight) => patchForm({ ceilingHeight })}
+              unit="м"
               disabled={saving}
-              sx={{ flex: "1 1 160px" }}
+              sx={{ flex: "1 1 190px" }}
             />
-            <TextField
+            <FormField
+              icon={<BathtubOutlined />}
               label="Санузлов"
-              type="number"
               value={form.bathrooms}
-              onChange={(e) => patchForm({ bathrooms: e.target.value })}
-              slotProps={{ htmlInput: { min: 0, step: 1 } }}
+              rules={ROOM_RULES.bathrooms}
+              showErrors={showErrors}
+              onValueChange={(bathrooms) => patchForm({ bathrooms })}
               disabled={saving}
-              sx={{ flex: "1 1 130px" }}
+              sx={{ flex: "1 1 140px" }}
             />
-            <TextField
+            <FormField
+              icon={<BedOutlined />}
               label="Жилых комнат"
-              type="number"
               value={form.roomsCount}
-              onChange={(e) => patchForm({ roomsCount: e.target.value })}
-              slotProps={{ htmlInput: { min: 0, step: 1 } }}
+              rules={ROOM_RULES.roomsCount}
+              showErrors={showErrors}
+              onValueChange={(roomsCount) => patchForm({ roomsCount })}
               disabled={saving}
-              sx={{ flex: "1 1 130px" }}
+              sx={{ flex: "1 1 150px" }}
             />
           </Stack>
           <Stack direction="row" flexWrap="wrap" gap={2}>
-            <TextField
+            <FormField
+              icon={<ExploreOutlined />}
               label="Сторона света"
               placeholder="Юг, Северо-Восток…"
               value={form.windowSide}
-              onChange={(e) => patchForm({ windowSide: e.target.value })}
+              rules={ROOM_RULES.windowSide}
+              showErrors={showErrors}
+              onValueChange={(windowSide) => patchForm({ windowSide })}
               disabled={saving}
               sx={{ flex: "1 1 200px" }}
             />
-            <TextField
+            <FormField
+              icon={<LandscapeOutlined />}
               label="Вид из окна этого номера"
               placeholder="Двор, Улица, Горы…"
               helperText="Если отличается от вида категории"
               value={form.view}
-              onChange={(e) => patchForm({ view: e.target.value })}
+              rules={ROOM_RULES.view}
+              showErrors={showErrors}
+              onValueChange={(view) => patchForm({ view })}
               disabled={saving}
               sx={{ flex: "1 1 220px" }}
             />
@@ -565,23 +668,28 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
               label="Есть терраса/лоджия"
             />
             {form.hasTerrace && (
-              <TextField
-                label="Площадь террасы, м²"
-                type="number"
+              <FormField
+                icon={<DeckOutlined />}
+                label="Площадь террасы"
+                unit="м²"
                 value={form.terraceArea}
-                onChange={(e) => patchForm({ terraceArea: e.target.value })}
-                slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+                rules={ROOM_RULES.terraceArea}
+                showErrors={showErrors}
+                onValueChange={(terraceArea) => patchForm({ terraceArea })}
                 disabled={saving}
                 size="small"
-                sx={{ flex: "1 1 180px" }}
+                sx={{ flex: "1 1 200px" }}
               />
             )}
           </Stack>
-          <TextField
+          <FormField
+            icon={<ArchitectureOutlined />}
             label="Описание планировки"
             placeholder="Необязательно"
             value={form.layoutDescription}
-            onChange={(e) => patchForm({ layoutDescription: e.target.value })}
+            rules={ROOM_RULES.layoutDescription}
+            showErrors={showErrors}
+            onValueChange={(layoutDescription) => patchForm({ layoutDescription })}
             disabled={saving}
             multiline
             minRows={2}
@@ -603,13 +711,16 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
             <Stack gap={1.5}>
               {form.zones.map((zone, i) => (
                 <Stack key={i} direction="row" flexWrap="wrap" gap={1.5} alignItems="flex-start">
-                  <TextField
+                  <FormField
+                    icon={<DoorFrontOutlined />}
                     label="Помещение"
                     placeholder="Кухня-гостиная"
                     value={zone.name}
-                    onChange={(e) => {
+                    rules={ROOM_RULES.zoneName}
+                    showErrors={showErrors}
+                    onValueChange={(name) => {
                       const zones = [...form.zones];
-                      zones[i] = { ...zones[i], name: e.target.value };
+                      zones[i] = { ...zones[i], name };
                       patchForm({ zones });
                     }}
                     error={zone.name.trim() === "" && (zone.area.trim() !== "" || zone.width.trim() !== "" || zone.length.trim() !== "")}
@@ -622,44 +733,50 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
                     size="small"
                     sx={{ flex: "2 1 220px" }}
                   />
-                  <TextField
-                    label="Площадь, м²"
-                    type="number"
+                  <FormField
+                    icon={<SquareFootOutlined />}
+                    label="Площадь"
+                    unit="м²"
                     value={zone.area}
-                    onChange={(e) => {
+                    rules={ROOM_RULES.zoneArea}
+                    showErrors={showErrors}
+                    onValueChange={(area) => {
                       const zones = [...form.zones];
-                      zones[i] = { ...zones[i], area: e.target.value };
+                      zones[i] = { ...zones[i], area };
                       patchForm({ zones });
                     }}
-                    slotProps={{ htmlInput: { min: 0, step: "0.1" } }}
                     disabled={saving}
                     size="small"
                     sx={{ flex: "1 1 120px" }}
                   />
-                  <TextField
-                    label="Ширина, м"
-                    type="number"
+                  <FormField
+                    icon={<StraightenOutlined />}
+                    label="Ширина"
+                    unit="м"
                     value={zone.width}
-                    onChange={(e) => {
+                    rules={ROOM_RULES.zoneSide}
+                    showErrors={showErrors}
+                    onValueChange={(width) => {
                       const zones = [...form.zones];
-                      zones[i] = { ...zones[i], width: e.target.value };
+                      zones[i] = { ...zones[i], width };
                       patchForm({ zones });
                     }}
-                    slotProps={{ htmlInput: { min: 0, step: "0.1" } }}
                     disabled={saving}
                     size="small"
                     sx={{ flex: "1 1 110px" }}
                   />
-                  <TextField
-                    label="Длина, м"
-                    type="number"
+                  <FormField
+                    icon={<StraightenOutlined />}
+                    label="Длина"
+                    unit="м"
                     value={zone.length}
-                    onChange={(e) => {
+                    rules={ROOM_RULES.zoneSide}
+                    showErrors={showErrors}
+                    onValueChange={(length) => {
                       const zones = [...form.zones];
-                      zones[i] = { ...zones[i], length: e.target.value };
+                      zones[i] = { ...zones[i], length };
                       patchForm({ zones });
                     }}
-                    slotProps={{ htmlInput: { min: 0, step: "0.1" } }}
                     disabled={saving}
                     size="small"
                     sx={{ flex: "1 1 110px" }}
@@ -827,7 +944,7 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
         <Button
           variant="contained"
           disableElevation
-          disabled={!form.number.trim() || form.roomTypeId === "" || saving}
+          disabled={saving}
           onClick={() => void submit()}
           sx={{ px: 3 }}
         >
