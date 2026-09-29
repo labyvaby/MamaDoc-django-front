@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type { PosSavedReceipt } from "./pos";
 
 const POS_API_BASE = "/v2/pos";
 
@@ -20,16 +21,12 @@ export type RetailReceipt = {
   createdAt: string;
 };
 
-export type ClientPurchase = {
-  id: number;
-  number: string;
-  status: string;
-  totalAmount: string;
-  createdAt: string;
-  completedAt: string | null;
-  lines: Array<{ id: number; productName: string; quantity: string; total: string }>;
-  audit: Array<{ id: number; action: string; reason: string; userId: number | null; userName: string | null; metadata: Record<string, unknown>; createdAt: string }>;
-};
+/**
+ * Чек клиента. `/v2/pos/receipts/` отдаёт тот же `ReceiptPayload`, что и
+ * история кассы (оплаты, скидки, продавец, журнал), поэтому тип общий —
+ * подробный чек открывается тем же дровером, что и в истории продаж.
+ */
+export type ClientPurchase = PosSavedReceipt;
 
 export function getClientPurchases(clientId: number, signal?: AbortSignal) {
   return apiRequest<ClientPurchase[]>(`${POS_API_BASE}/receipts/?clientId=${clientId}&limit=100`, { signal });

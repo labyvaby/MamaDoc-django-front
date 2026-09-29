@@ -27,7 +27,6 @@ export interface DjangoClient {
   email: string;
   photoUrl: string | null;
   dob: string | null;
-  individualDiscountPercent: string;
   address: string;
   managerId: number | null;
   familyGroupId: number | null;
@@ -55,7 +54,6 @@ export interface CreateClientPayload {
   phone: string;
   email?: string;
   dob?: string | null;
-  individualDiscountPercent?: number | string;
   address?: string;
   clientType?: ClientType;
   customerStatusId?: number | null;
