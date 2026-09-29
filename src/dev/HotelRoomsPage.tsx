@@ -33,11 +33,6 @@ import {
   Box,
   Button,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  IconButton,
   Stack,
   Tooltip,
   Typography,
@@ -46,16 +41,13 @@ import {
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
-import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate } from "react-router";
-import { useSnackbar } from "notistack";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
-import { getHotelCatalogs, listRoomTypes, listRooms, updateRoom, deleteRoom, type HotelRoom } from "../api/hotel";
-import { ApiError, getErrorMessage } from "../api/client";
+import { getHotelCatalogs, listRoomTypes, listRooms, type HotelRoom } from "../api/hotel";
 import { HOTEL_ROOM_STATE_LABELS, HOTEL_ROOM_STATES, hotelRoomStateColor, type HotelRoomState } from "./hotelDisplay";
 import { CountChip, DisabledReason, EmptyState, HotelPage, HotelPageHeader, plural, Surface } from "./hotelUi";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
@@ -65,8 +57,6 @@ export const HotelRoomsPage: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
   const { property, isLoading: propertyLoading, missingReason } = useHotelProperty();
-  const queryClient = useQueryClient();
-  const { enqueueSnackbar } = useSnackbar();
 
   const catalogsQuery = useQuery({
     queryKey: ["hotel", "catalogs", property?.id],
@@ -96,65 +86,6 @@ export const HotelRoomsPage: React.FC = () => {
     }
     return map;
   }, [roomsQuery.data]);
-
-  const invalidateRoomTypes = () => void queryClient.invalidateQueries({ queryKey: ["hotel", "roomTypes", property?.id] });
-  const invalidateRooms = () => void queryClient.invalidateQueries({ queryKey: ["hotel", "rooms", property?.id] });
-
-  // Удаление: сначала подтверждение. Если номер уже фигурировал в бронях (HAS_DEPENDENTS),
-  // второй шаг предлагает снять его с продажи — раньше это делалось молча, хотя человек
-  // нажал «удалить». Ошибки показываем внутри диалога, рядом с действием.
-  type DeleteStep = "confirm" | "deactivate" | "blocked";
-  const [deleteTarget, setDeleteTarget] = React.useState<{ room: HotelRoom; step: DeleteStep } | null>(null);
-  const [deleteBusy, setDeleteBusy] = React.useState(false);
-  const [deleteDialogError, setDeleteDialogError] = React.useState<string | null>(null);
-
-  const askDelete = (room: HotelRoom) => {
-    setDeleteDialogError(null);
-    setDeleteTarget({ room, step: "confirm" });
-  };
-  const closeDelete = () => {
-    if (!deleteBusy) setDeleteTarget(null);
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    const { room } = deleteTarget;
-    setDeleteBusy(true);
-    setDeleteDialogError(null);
-    try {
-      await deleteRoom(room.id);
-      invalidateRooms();
-      invalidateRoomTypes();
-      setDeleteTarget(null);
-      enqueueSnackbar(`Номер ${room.number} удалён`, { variant: "success" });
-    } catch (err) {
-      if (err instanceof ApiError && err.code === "HAS_DEPENDENTS") {
-        // Номер уже в бронях — удалить нельзя. Уже снятому с продажи предлагать нечего.
-        setDeleteTarget({ room, step: room.status === "out_of_service" ? "blocked" : "deactivate" });
-      } else {
-        setDeleteDialogError(getErrorMessage(err, "Не удалось удалить номер"));
-      }
-    } finally {
-      setDeleteBusy(false);
-    }
-  };
-
-  const confirmDeactivate = async () => {
-    if (!deleteTarget) return;
-    const { room } = deleteTarget;
-    setDeleteBusy(true);
-    setDeleteDialogError(null);
-    try {
-      await updateRoom(room.id, { status: "out_of_service" });
-      invalidateRooms();
-      setDeleteTarget(null);
-      enqueueSnackbar(`Номер ${room.number} снят с продажи`, { variant: "success" });
-    } catch (err) {
-      setDeleteDialogError(getErrorMessage(err, "Не удалось снять номер с продажи"));
-    } finally {
-      setDeleteBusy(false);
-    }
-  };
 
   const loading = propertyLoading || catalogsQuery.isLoading || roomTypesQuery.isLoading || roomsQuery.isLoading;
   // Ошибку загрузки не выдаём за «пусто»: иначе при сбое сети список выглядит как «Номеров пока нет».
@@ -326,7 +257,6 @@ export const HotelRoomsPage: React.FC = () => {
                           room={room}
                           mealLabels={room.mealOptions.map((mo) => mealOptionChoices.find((c) => c.value === mo)?.label ?? mo)}
                           onOpen={() => navigate(`/rooms/${room.id}`)}
-                          onDelete={() => askDelete(room)}
                         />
                       ))}
                     </Box>
@@ -338,57 +268,20 @@ export const HotelRoomsPage: React.FC = () => {
         )
       )}
 
-      <Dialog open={deleteTarget != null} onClose={closeDelete} maxWidth="xs" fullWidth>
-        <DialogTitle>
-          {deleteTarget?.step === "confirm" && `Удалить номер ${deleteTarget.room.number}?`}
-          {deleteTarget?.step === "deactivate" && `Номер ${deleteTarget.room.number} есть в бронях`}
-          {deleteTarget?.step === "blocked" && `Номер ${deleteTarget.room.number} нельзя удалить`}
-        </DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">
-            {deleteTarget?.step === "confirm" &&
-              "Номер будет удалён из объекта и пропадёт из шахматки. Если он уже фигурирует в бронях, удалить его нельзя — тогда вам предложат снять его с продажи."}
-            {deleteTarget?.step === "deactivate" &&
-              "Удалить нельзя: номер уже фигурирует в бронях. Снять его с продажи вместо удаления? Существующие брони не пострадают, вернуть номер в продажу можно на странице номера."}
-            {deleteTarget?.step === "blocked" &&
-              "Номер уже фигурирует в бронях, поэтому удалить его нельзя. Он уже снят с продажи."}
-          </Typography>
-          {deleteDialogError && (
-            <Alert severity="error" variant="outlined" sx={{ mt: 2, fontSize: "0.8rem" }}>
-              {deleteDialogError}
-            </Alert>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={closeDelete} disabled={deleteBusy}>
-            {deleteTarget?.step === "blocked" ? "Закрыть" : "Отмена"}
-          </Button>
-          {deleteTarget?.step === "confirm" && (
-            <Button color="error" variant="contained" disabled={deleteBusy} onClick={() => void confirmDelete()}>
-              {deleteBusy ? "Удаляем…" : "Удалить"}
-            </Button>
-          )}
-          {deleteTarget?.step === "deactivate" && (
-            <Button variant="contained" disabled={deleteBusy} onClick={() => void confirmDeactivate()}>
-              {deleteBusy ? "Снимаем…" : "Снять с продажи"}
-            </Button>
-          )}
-        </DialogActions>
-      </Dialog>
     </HotelPage>
   );
 };
 
 /**
  * Плитка номера: крупный номер, под ним состояние точкой и словом. Клик —
- * редактирование; корзина проявляется при наведении (раньше — ✕ на чипе,
- * который легко задеть). Снятый с продажи — пунктирная рамка и «снят».
+ * карточка номера. Удаления на плитке нет: корзина при наведении и клавиша
+ * Delete легко удаляли номер случайно — удаляют теперь из карточки номера
+ * (RoomDeleteDialog). Снятый с продажи — пунктирная рамка и «снят».
  */
-const RoomTile: React.FC<{ room: HotelRoom; mealLabels: string[]; onOpen: () => void; onDelete: () => void }> = ({
+const RoomTile: React.FC<{ room: HotelRoom; mealLabels: string[]; onOpen: () => void }> = ({
   room,
   mealLabels,
   onOpen,
-  onDelete,
 }) => {
   const theme = useTheme();
   const offSale = room.status === "out_of_service";
@@ -408,9 +301,8 @@ const RoomTile: React.FC<{ room: HotelRoom; mealLabels: string[]; onOpen: () => 
             e.preventDefault();
             onOpen();
           }
-          if (e.key === "Delete") onDelete();
         }}
-        aria-label={`Номер ${room.number}, ${stateLabel}${offSale ? ", снят с продажи" : ""}. Enter — открыть, Delete — удалить`}
+        aria-label={`Номер ${room.number}, ${stateLabel}${offSale ? ", снят с продажи" : ""}. Enter — открыть`}
         sx={{
           position: "relative",
           px: 1.25,
@@ -421,7 +313,6 @@ const RoomTile: React.FC<{ room: HotelRoom; mealLabels: string[]; onOpen: () => 
           cursor: "pointer",
           transition: "border-color .12s, background-color .12s",
           "&:hover, &:focus-visible": { borderColor: "text.secondary", bgcolor: subtleBg(theme, true), outline: "none" },
-          "&:hover .room-tile-delete, &:focus-visible .room-tile-delete": { opacity: 1 },
         }}
       >
         <Typography
@@ -442,18 +333,6 @@ const RoomTile: React.FC<{ room: HotelRoom; mealLabels: string[]; onOpen: () => 
             {offSale ? "снят" : stateLabel}
           </Typography>
         </Stack>
-        <IconButton
-          className="room-tile-delete"
-          size="small"
-          aria-label={`Удалить номер ${room.number}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          sx={{ position: "absolute", top: 2, right: 2, opacity: 0, transition: "opacity .12s", color: "text.secondary", "&:hover": { color: "error.main" } }}
-        >
-          <DeleteOutlineOutlined sx={{ fontSize: 16 }} />
-        </IconButton>
       </Box>
     </Tooltip>
   );

@@ -56,6 +56,7 @@ import {
 } from "@mui/material";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import { FormCard, HotelPage, HotelPageHeader, StickyActions } from "./hotelUi";
+import { RoomDeleteDialog } from "./RoomDeleteDialog";
 import { useTheme } from "@mui/material/styles";
 import { subtleBorder } from "../theme/uiHelpers";
 import AddOutlined from "@mui/icons-material/AddOutlined";
@@ -226,6 +227,8 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
   const [form, setForm] = React.useState<RoomFormState>(() => (editing ? toForm(editing) : emptyForm(roomTypes)));
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // Удаление — только отсюда, из карточки номера (на плитке «Номеров» его нет).
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
   const patchForm = (patch: Partial<RoomFormState>) => setForm((prev) => ({ ...prev, ...patch }));
 
   // Фото номера — независимо от остальной формы: сразу грузятся/удаляются на
@@ -792,6 +795,17 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
       )}
 
       <StickyActions>
+        {editing && (
+          <Button
+            color="error"
+            startIcon={<DeleteOutlineOutlined />}
+            disabled={saving}
+            onClick={() => setDeleteOpen(true)}
+            sx={{ mr: isDirty ? 1 : "auto" }}
+          >
+            Удалить номер
+          </Button>
+        )}
         {isDirty && (
           <Typography variant="caption" color="text.secondary" sx={{ mr: "auto" }}>
             Есть несохранённые изменения
@@ -820,6 +834,15 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
           {saving ? "Сохраняем…" : editing ? "Сохранить" : "Добавить номер"}
         </Button>
       </StickyActions>
+      <RoomDeleteDialog
+        room={deleteOpen ? editing : null}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => {
+          // Номера больше нет — правки сохранять некуда, уходим к списку без вопроса.
+          onDirtyChange(false);
+          navigate(backPath);
+        }}
+      />
     </Stack>
     <RoomPreview form={form} category={roomTypes.find((rt) => rt.id === form.roomTypeId)} mealChoices={mealChoices} />
     </Box>

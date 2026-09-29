@@ -41,6 +41,7 @@ import {
   DialogTitle,
   Drawer,
   FormControlLabel,
+  InputAdornment,
   MenuItem,
   Snackbar,
   Stack,
@@ -73,6 +74,7 @@ import {
   getReservationConflicts,
   isOverbookingConfirmable,
   getQuote,
+  addPayment,
   type HotelRoom,
   type HotelGuestSearchResult,
   type HotelGuest,
@@ -108,7 +110,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const { property } = useHotelProperty();
   const queryClient = useQueryClient();
   const [open, setOpen] = React.useState(false);
-  const [toast, setToast] = React.useState<string | null>(null);
+  const [toast, setToast] = React.useState<{ text: string; severity: "success" | "warning" } | null>(null);
   const [confirmCloseOpen, setConfirmCloseOpen] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
@@ -131,6 +133,12 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [adults, setAdults] = React.useState("1");
   const [children, setChildren] = React.useState("0");
   const [guaranteeMethod, setGuaranteeMethod] = React.useState("");
+  // Предоплата: сколько сомов гость уже внёс и каким способом. Раньше гарантия
+  // «Предоплата» выбиралась, а сумма нигде не фиксировалась — не было видно,
+  // сколько заплачено и сколько осталось. Сумма уходит платежом сразу после
+  // создания брони (POST /reservations/{id}/payments/).
+  const [prepaymentAmount, setPrepaymentAmount] = React.useState("");
+  const [prepaymentMethod, setPrepaymentMethod] = React.useState("");
   const [boardType, setBoardType] = React.useState("");
 
   // Документ
@@ -194,6 +202,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setAdults("1");
     setChildren("0");
     setGuaranteeMethod("");
+    setPrepaymentAmount("");
+    setPrepaymentMethod("");
     setBoardType("");
     setGuestType("resident");
     setDocumentFieldsVisible(false);
@@ -392,6 +402,19 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
 
   const nights = checkIn && checkOut && checkOut.isAfter(checkIn) ? checkOut.startOf("day").diff(checkIn.startOf("day"), "day") : 0;
   const estimatedTotal = quote ? Number(quote.total) : selectedRoomType && nights > 0 ? Number(selectedRoomType.totalPrice) * nights : null;
+  const isPrepayment = guaranteeMethod === "prepayment";
+  const prepaymentMethods = catalogs?.paymentMethods ?? [];
+  const effectivePrepaymentMethod = prepaymentMethod || prepaymentMethods[0]?.value || "";
+  const prepaymentValue = Number(prepaymentAmount.replace(",", "."));
+  const prepaymentError = (() => {
+    if (!isPrepayment) return null;
+    if (prepaymentAmount.trim() === "") return "Укажите, сколько внесено";
+    if (!Number.isFinite(prepaymentValue) || prepaymentValue <= 0) return "Сумма должна быть больше нуля";
+    if (estimatedTotal != null && prepaymentValue > estimatedTotal) {
+      return `Больше стоимости брони (${estimatedTotal.toLocaleString("ru-RU")} сом)`;
+    }
+    return null;
+  })();
   const footerSummary =
     nights > 0 ? (
       <Box>
@@ -401,6 +424,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         <Typography variant="caption" color="text.secondary">
           {nights} {nights % 10 === 1 && nights % 100 !== 11 ? "ночь" : [2, 3, 4].includes(nights % 10) && ![12, 13, 14].includes(nights % 100) ? "ночи" : "ночей"}
           {estimatedTotal != null && !quote ? " · по тарифу категории" : ""}
+          {isPrepayment && prepaymentError == null && estimatedTotal != null
+            ? ` · предоплата ${prepaymentValue.toLocaleString("ru-RU")}, остаток ${Math.max(0, estimatedTotal - prepaymentValue).toLocaleString("ru-RU")}`
+            : ""}
         </Typography>
       </Box>
     ) : null;
@@ -412,7 +438,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     !!checkOut &&
     checkOut.isAfter(checkIn) &&
     property != null &&
-    guestCountError == null;
+    guestCountError == null &&
+    prepaymentError == null &&
+    (!isPrepayment || effectivePrepaymentMethod !== "");
 
   /**
    * Подставляет то, что прочитано с документа. Любое поле скана может быть
@@ -523,7 +551,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
    * у пересечения смен в реальном расписании.
    */
   const handleSubmit = async (allowOverbooking = false) => {
-    if (!checkIn || !checkOut || roomId === "" || !property || guestCountError) return;
+    if (!checkIn || !checkOut || roomId === "" || !property || guestCountError || prepaymentError) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -596,12 +624,31 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         }
       }
 
+      // Предоплата — отдельным платежом: бронь уже создана, поэтому сбой здесь
+      // бронь не откатывает, а честно говорит, что сумму надо внести в карточке.
+      let prepaymentFailed: string | null = null;
+      if (isPrepayment && prepaymentValue > 0) {
+        try {
+          await addPayment(reservation.id, {
+            method: effectivePrepaymentMethod,
+            amount: String(prepaymentValue),
+            note: "Предоплата при бронировании",
+          });
+        } catch (payErr) {
+          prepaymentFailed = getErrorMessage(payErr, "ошибка сервера");
+        }
+      }
+
       void queryClient.invalidateQueries({ queryKey: ["hotel", "calendar"] });
       void queryClient.invalidateQueries({ queryKey: ["hotel", "reservations"] });
       // Новая бронь на сегодня/завтра двигает «Загрузку» и «Заезды» в карточках над шахматкой.
       void queryClient.invalidateQueries({ queryKey: ["hotel", "dashboard"] });
       setOpen(false);
-      setToast(`Бронь №${reservation.number} для «${guestName.trim()}» добавлена в шахматку`);
+      setToast(
+        prepaymentFailed
+          ? { text: `Бронь №${reservation.number} создана, но предоплату записать не удалось (${prepaymentFailed}). Внесите её в карточке брони.`, severity: "warning" }
+          : { text: `Бронь №${reservation.number} для «${guestName.trim()}» добавлена в шахматку`, severity: "success" },
+      );
       reset();
     } catch (err) {
       const conflicts = getReservationConflicts(err);
@@ -762,6 +809,42 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 ))}
               </TextField>
             </Stack>
+            {isPrepayment && (
+              <Stack direction="row" gap={2}>
+                <TextField
+                  label="Сумма предоплаты"
+                  value={prepaymentAmount}
+                  onChange={(e) => setPrepaymentAmount(e.target.value.replace(/[^\d.,]/g, ""))}
+                  error={prepaymentAmount.trim() !== "" && prepaymentError != null}
+                  helperText={
+                    prepaymentError ??
+                    (estimatedTotal != null
+                      ? `Остаток к оплате: ${Math.max(0, estimatedTotal - prepaymentValue).toLocaleString("ru-RU")} сом`
+                      : " ")
+                  }
+                  required
+                  sx={{ flex: 1 }}
+                  slotProps={{
+                    htmlInput: { inputMode: "decimal" },
+                    input: { endAdornment: <InputAdornment position="end">сом</InputAdornment> },
+                  }}
+                />
+                <TextField
+                  select
+                  label="Способ оплаты"
+                  value={effectivePrepaymentMethod}
+                  onChange={(e) => setPrepaymentMethod(e.target.value)}
+                  sx={{ flex: 1 }}
+                  helperText=" "
+                >
+                  {prepaymentMethods.map((m) => (
+                    <MenuItem key={m.value} value={m.value}>
+                      {m.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Stack>
+            )}
             {selectedRoom && selectedRoom.mealOptions.length > 0 && (
               <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
                 В номере доступно: {selectedRoom.mealOptions.map((m) => HOTEL_BOARD_TYPE_LABELS[m] ?? m).join(", ")}
@@ -1228,12 +1311,12 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
 
       <Snackbar
         open={toast != null}
-        autoHideDuration={4000}
+        autoHideDuration={toast?.severity === "warning" ? 9000 : 4000}
         onClose={() => setToast(null)}
         anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
       >
-        <Alert onClose={() => setToast(null)} severity="success" variant="filled" sx={{ width: "100%" }}>
-          {toast}
+        <Alert onClose={() => setToast(null)} severity={toast?.severity ?? "success"} variant="filled" sx={{ width: "100%" }}>
+          {toast?.text}
         </Alert>
       </Snackbar>
     </>
