@@ -176,6 +176,24 @@ const recognizedOf = (line: RecognizedLine): NonNullable<FormLine["recognized"]>
 /** Пикер даты-времени шагает по 15 минут: «сейчас» округляем вниз, иначе поле красное. */
 const roundToStep = (value: Dayjs): Dayjs => value.minute(Math.floor(value.minute() / 15) * 15).second(0).millisecond(0);
 
+/** Срок из условий оплаты; банковские реквизиты не интерпретируем как срок. */
+const paymentDueDate = (terms: string | null, invoiceDate: string | null): Dayjs | null => {
+  if (!terms || !invoiceDate) return null;
+  const base = dayjs(invoiceDate);
+  if (!base.isValid()) return null;
+  const relative = terms.match(/\b(\d{1,4})\s*(?:дн(?:ей|я)?|days?|gg|giorni)\b/i);
+  if (relative) {
+    const days = Number(relative[1]);
+    return days >= 0 && days <= 3650 ? base.add(days, "day").endOf("day") : null;
+  }
+  const explicitDate = terms.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (explicitDate) {
+    const due = dayjs(explicitDate[1]);
+    return due.isValid() ? due.endOf("day") : null;
+  }
+  return null;
+};
+
 const toNumber = (raw: string): number => {
   const n = Number(String(raw).replace(",", ".").replace(/\s/g, ""));
   return Number.isFinite(n) ? n : 0;
@@ -663,17 +681,32 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
         const parsed = dayjs(result.document.date);
         if (parsed.isValid()) setReceivedAt(roundToStep(parsed.hour(dayjs().hour()).minute(dayjs().minute())));
       }
+      const recognizedDueAt = paymentDueDate(result.document.paymentTerms, result.document.date);
+      if (recognizedDueAt) setDueAt(recognizedDueAt);
       if (foreignCurrency && result.document.currency && CURRENCIES.includes(result.document.currency)) {
         setCurrency(result.document.currency);
       }
       const recognizedLines: FormLine[] = result.lines.map((line) => {
-        const matched = line.match ? productById.get(line.match.id) ?? null : null;
+        const matched = line.match
+          ? productById.get(line.match.id) ?? {
+              id: line.match.id,
+              label: line.match.name,
+              unit: line.unit || "шт",
+              sku: line.sku ?? "",
+            }
+          : null;
         const expires = line.expiresAt ? dayjs(line.expiresAt) : null;
+        const quantity = line.quantity ? Number(line.quantity) : null;
+        const totalPrice = line.total && quantity && quantity > 0 ? Number(line.total) / quantity : null;
         return {
           ...newLine(),
           product: matched,
-          quantity: line.quantity ? String(Number(line.quantity)) : "",
-          price: line.price ? String(Number(line.price)) : "",
+          quantity: quantity != null && Number.isFinite(quantity) ? String(quantity) : "",
+          price: line.price
+            ? String(Number(line.price))
+            : totalPrice != null && Number.isFinite(totalPrice)
+              ? String(totalPrice)
+              : "",
           lotNumber: line.lotNumber ?? "",
           expiresAt: expires && expires.isValid() ? expires : null,
           recognized: recognizedOf(line),
@@ -1168,7 +1201,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
             {recognizing
               ? RECOGNITION_STAGES[recognitionStage]
               : recognition
-                ? `${recognition.totals.linesCount} поз., сопоставлено ${recognition.totals.matchedCount} · уверенность ${Math.round(recognition.confidence * 100)}%`
+                ? `${recognition.totals.linesCount} поз., сопоставлено ${recognition.totals.matchedCount} · итого ${recognition.document.total ?? recognition.totals.linesTotal} ${recognition.document.currency ?? ""} · уверенность ${Math.round(recognition.confidence * 100)}%`
                 : recognitionEnabled
                   ? "Снимите документ или выберите PDF — поставщик, номер, дата и позиции заполнятся сами."
                   : recognitionHint ?? "Распознавание недоступно — файл сохранится к накладной."}
@@ -1201,6 +1234,21 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           Поставщик «{recognition.document.supplier.name}» не найден в справочнике — выберите вручную
           {onCreateSupplier ? " или создайте нового." : "."}
         </Alert>
+      )}
+      {recognition && (
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+          {[
+            recognition.document.supplier.name,
+            recognition.document.supplier.taxId && `ИНН: ${recognition.document.supplier.taxId}`,
+            recognition.document.supplier.phone && `Тел.: ${recognition.document.supplier.phone}`,
+            recognition.document.supplier.address,
+            recognition.document.buyerName && `Покупатель: ${recognition.document.buyerName}`,
+            recognition.document.vatTotal && `НДС: ${recognition.document.vatTotal} ${recognition.document.currency ?? ""}`,
+            recognition.document.paymentTerms && `Оплата: ${recognition.document.paymentTerms}`,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </Typography>
       )}
       {recognition && <RecognitionDetails result={recognition} />}
     </Box>
@@ -1285,7 +1333,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
             value={dueAt}
             onChange={(v) => setDueAt(v as Dayjs | null)}
             shortYearMode="future"
-            slotProps={{ textField: { size: "small", fullWidth: true, placeholder: "Не оговорён" } }}
+            slotProps={{ textField: { size: "small", fullWidth: true, placeholder: "Не оговорён", helperText: recognition?.document.paymentTerms ?? undefined } }}
           />
         </Box>
         {/* Закуп только в сомах (настройка модуля) — валюта и курс не нужны. */}
@@ -1402,7 +1450,9 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
         const candidateIds = new Set((line.recognized?.candidates ?? []).map((c) => c.id));
         const options = line.recognized
           ? [
-              ...(line.recognized.candidates.map((c) => productById.get(c.id)).filter(Boolean) as ProductOption[]),
+              ...(line.recognized.candidates
+                .map((c) => productById.get(c.id) ?? (line.product?.id === c.id ? line.product : null))
+                .filter(Boolean) as ProductOption[]),
               ...productOptions.filter((p) => !candidateIds.has(p.id)),
             ]
           : productOptions;
@@ -1442,6 +1492,10 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
                 <Typography variant="caption" color="text.secondary" sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   В документе: «{line.recognized.name}»
                   {[line.recognized.modelCode, line.recognized.color, line.recognized.size]
+                    .filter(Boolean)
+                    .map((part) => ` · ${part}`)
+                    .join("")}
+                  {[line.recognized.sku && `Артикул ${line.recognized.sku}`, line.recognized.barcode && `ШК ${line.recognized.barcode}`]
                     .filter(Boolean)
                     .map((part) => ` · ${part}`)
                     .join("")}
