@@ -37,7 +37,7 @@ function ChessboardPage() {
   const [params, updateParams] = useChessboardParams();
   const organizationId = useApiOrgId();
   const projectsQuery = useQuery({
-    queryKey: realEstateKeys.projects(),
+    queryKey: realEstateKeys.projects(organizationId),
     queryFn: () => getRealEstateProjects(organizationId),
     staleTime: 5 * 60_000,
   });
@@ -93,7 +93,7 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
   const [params, updateParams] = useChessboardParams();
   const organizationId = useApiOrgId();
   const unitsQuery = useQuery({
-    queryKey: realEstateKeys.units(baseProject.id),
+    queryKey: realEstateKeys.units(organizationId, baseProject.id),
     queryFn: () => getProjectUnits(baseProject.id, organizationId),
     staleTime: 30_000,
   });

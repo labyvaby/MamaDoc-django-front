@@ -46,7 +46,7 @@ export function UnitPreview({ unit, anchor }: { unit: Unit; anchor: HTMLElement 
           borderRadius: "14px",
           bgcolor: "background.paper",
           color: "text.primary",
-          boxShadow: (t) => t.shadows[4],
+          boxShadow: (t) => t.shadows[2],
         }}
       >
         <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 1 }}>

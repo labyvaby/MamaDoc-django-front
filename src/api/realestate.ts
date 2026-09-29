@@ -655,11 +655,18 @@ export async function signUnitContract(unitId: string, input: ContractInput, org
   return postUnitCommand(unitId, "sell", { ...input, signCode: "" }, organizationId);
 }
 
-/** Ключи react-query модуля: команды инвалидируют всё дерево `realestate`. */
+/**
+ * Ключи react-query модуля: команды инвалидируют всё дерево `realestate`.
+ * Организация — в ключе: при смене контекста страница пересоздаётся, а кэш
+ * остаётся, и без неё суперпользователь увидел бы ЖК прошлой организации.
+ */
+type OrgKey = number | undefined;
+
 export const realEstateKeys = {
   all: ["realestate"] as const,
-  projects: () => [...realEstateKeys.all, "projects"] as const,
-  units: (projectId: string) => [...realEstateKeys.all, "units", projectId] as const,
-  unit: (unitId: string) => [...realEstateKeys.all, "unit", unitId] as const,
-  managers: () => [...realEstateKeys.all, "managers"] as const,
+  org: (org: OrgKey) => [...realEstateKeys.all, org ?? "session"] as const,
+  projects: (org: OrgKey) => [...realEstateKeys.org(org), "projects"] as const,
+  units: (org: OrgKey, projectId: string) => [...realEstateKeys.org(org), "units", projectId] as const,
+  unit: (org: OrgKey, unitId: string) => [...realEstateKeys.org(org), "unit", unitId] as const,
+  managers: (org: OrgKey) => [...realEstateKeys.org(org), "managers"] as const,
 };

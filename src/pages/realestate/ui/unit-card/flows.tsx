@@ -53,6 +53,7 @@ import {
 } from "../../model/unitCard";
 import { formatMoney as money, num } from "../../model/units";
 import { eyebrowSx } from "../tones";
+import { PhoneController } from "./PhoneController";
 import { useRealEstateToast } from "../toast";
 
 export type Screen =
@@ -92,13 +93,13 @@ const tomorrowAt11 = () => dayjs().add(1, "day").hour(11).minute(0).second(0).mi
  * Команда над квартирой: ответ — свежая карточка. Шахматка и соседние карточки
  * перезапрашиваются, потому что меняются статусы.
  */
-function useUnitCommand<Input>(run: (input: Input) => Promise<UnitDetails>) {
+function useUnitCommand<Input>(organizationId: number | undefined, run: (input: Input) => Promise<UnitDetails>) {
   const queryClient = useQueryClient();
   const toast = useRealEstateToast();
   return useMutation({
     mutationFn: run,
     onSuccess: (next) => {
-      queryClient.setQueryData(realEstateKeys.unit(next.id), next);
+      queryClient.setQueryData(realEstateKeys.unit(organizationId, next.id), next);
       void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
     },
     onError: (error) => toast(errorMessage(error)),
@@ -142,7 +143,7 @@ function Summary({ items }: { items: [string, React.ReactNode][] }) {
   );
 }
 
-const formGridSx = { display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.5 } as const;
+const formGridSx = { display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 1.5 } as const;
 const wide = { gridColumn: "1 / -1" } as const;
 
 /** Галочка с заголовком и пояснением — «Поставить задачу „Встреча“». */
@@ -189,7 +190,7 @@ interface ReserveForm {
 
 export function ReserveScreen({ project, unit, offer, organizationId, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
-  const reserve = useUnitCommand((input: Parameters<typeof reserveUnit>[1]) => reserveUnit(unit.id, input, organizationId));
+  const reserve = useUnitCommand(organizationId, (input: Parameters<typeof reserveUnit>[1]) => reserveUnit(unit.id, input, organizationId));
   const finalPrice = priceWithOffer(unit, offer);
   const { register, control, handleSubmit, watch, formState } = useForm<ReserveForm>({
     defaultValues: { buyer: "", phone: "", term: "48", type: "free", withMeeting: true, meetingAt: tomorrowAt11() },
@@ -222,7 +223,7 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
       <Box
         sx={(t) => ({
           display: "grid",
-          gridTemplateColumns: { xs: "1fr", sm: "1.5fr 0.8fr 1fr" },
+          gridTemplateColumns: { xs: "1fr", md: "1.5fr 0.8fr 1fr" },
           gap: 1.25,
           mb: 2,
           p: 1.6,
@@ -266,14 +267,7 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
             error={Boolean(formState.errors.buyer)}
             helperText={formState.errors.buyer?.message}
           />
-          <TextField
-            label="Номер телефона"
-            type="tel"
-            placeholder="+996 555 000 000"
-            {...register("phone", { required: "Укажите телефон" })}
-            error={Boolean(formState.errors.phone)}
-            helperText={formState.errors.phone?.message}
-          />
+          <PhoneController control={control} name="phone" label="Номер телефона" requiredMessage="Укажите телефон" />
           <Controller
             control={control}
             name="term"
@@ -290,7 +284,7 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
           control={control}
           name="type"
           render={({ field }) => (
-            <Box role="radiogroup" aria-label="Тип брони" sx={{ mt: 1.5, display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.25 }}>
+            <Box role="radiogroup" aria-label="Тип брони" sx={{ mt: 1.5, display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 1.25 }}>
               {(
                 [
                   ["free", "○", "Бесплатная бронь", "Без оплаты · квартира закрепляется на 48 часов"],
@@ -411,7 +405,7 @@ function DemoQr() {
 
 export function PaymentScreen({ project, unit, organizationId, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
-  const confirm = useUnitCommand(() => confirmUnitPrepayment(unit, organizationId));
+  const confirm = useUnitCommand(organizationId, () => confirmUnitPrepayment(unit, organizationId));
   const amount = unit.reservation?.amount || PREPAYMENT;
   return (
     <Box>
@@ -491,14 +485,14 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
   const send = useMutation({
     mutationFn: (input: Parameters<typeof sendUnitProposal>[1]) => sendUnitProposal(unit.id, input, organizationId),
     onSuccess: ({ unit: next }) => {
-      queryClient.setQueryData(realEstateKeys.unit(next.id), next);
+      queryClient.setQueryData(realEstateKeys.unit(organizationId, next.id), next);
       void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
     },
     onError: (error) => toast(errorMessage(error)),
   });
   const finalPrice = priceWithOffer(unit, offer);
   const perMeter = money(Math.round(finalPrice / unit.totalArea));
-  const { register, control, handleSubmit, formState } = useForm<{ phone: string; includePlan: boolean }>({
+  const { control, handleSubmit } = useForm<{ phone: string; includePlan: boolean }>({
     defaultValues: { phone: unit.reservation?.phone ?? "", includePlan: true },
   });
 
@@ -535,7 +529,7 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
   return (
     <Box>
       <FlowHead eyebrow="Персональное коммерческое предложение" title={`Квартира №${unit.number}`} intro="Готовое КП для отправки покупателю в WhatsApp" />
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "240px 1fr" }, gap: 2, p: 1.5, mb: 2, borderRadius: "14px", border: 1, borderColor: "divider" }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "240px 1fr" }, gap: 2, p: 1.5, mb: 2, borderRadius: "14px", border: 1, borderColor: "divider" }}>
         <Box component="img" decoding="async" src="/realestate/renders/living-room.jpg" alt="Интерьер квартиры" sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: "10px" }} />
         <Box>
           <Typography component="span" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
@@ -569,15 +563,7 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
         </Box>
       </Box>
       <form onSubmit={submit} noValidate>
-        <TextField
-          fullWidth
-          label="WhatsApp покупателя"
-          type="tel"
-          placeholder="+996 555 000 000"
-          {...register("phone", { required: "Укажите номер WhatsApp" })}
-          error={Boolean(formState.errors.phone)}
-          helperText={formState.errors.phone?.message}
-        />
+        <PhoneController control={control} name="phone" label="WhatsApp покупателя" requiredMessage="Укажите номер WhatsApp" />
         <Controller
           control={control}
           name="includePlan"
@@ -607,7 +593,7 @@ interface MeetingForm {
 
 export function MeetingScreen({ project, unit, organizationId, onBack, onClose }: FlowProps) {
   const toast = useRealEstateToast();
-  const schedule = useUnitCommand((input: Parameters<typeof scheduleUnitMeeting>[1]) => scheduleUnitMeeting(unit.id, input, organizationId));
+  const schedule = useUnitCommand(organizationId, (input: Parameters<typeof scheduleUnitMeeting>[1]) => scheduleUnitMeeting(unit.id, input, organizationId));
   const { register, control, handleSubmit, formState } = useForm<MeetingForm>({
     defaultValues: { buyer: unit.reservation?.buyer ?? "", phone: unit.reservation?.phone ?? "", meetingAt: tomorrowAt11(), note: "" },
   });
@@ -638,14 +624,7 @@ export function MeetingScreen({ project, unit, organizationId, onBack, onClose }
             error={Boolean(formState.errors.buyer)}
             helperText={formState.errors.buyer?.message}
           />
-          <TextField
-            label="Телефон"
-            type="tel"
-            placeholder="+996 555 000 000"
-            {...register("phone", { required: "Укажите телефон" })}
-            error={Boolean(formState.errors.phone)}
-            helperText={formState.errors.phone?.message}
-          />
+          <PhoneController control={control} name="phone" label="Телефон" requiredMessage="Укажите телефон" />
           <Controller
             control={control}
             name="meetingAt"
@@ -693,15 +672,15 @@ interface OperationForm {
 
 export function OperationScreen({ unit, organizationId, go, onBack, onOpenUnit }: FlowProps) {
   const toast = useRealEstateToast();
-  const run = useUnitCommand((input: Parameters<typeof runUnitOperation>[1]) => runUnitOperation(unit.id, input, organizationId));
+  const run = useUnitCommand(organizationId, (input: Parameters<typeof runUnitOperation>[1]) => runUnitOperation(unit.id, input, organizationId));
   const managersData = useQuery({
-    queryKey: realEstateKeys.managers(),
+    queryKey: realEstateKeys.managers(organizationId),
     queryFn: () => getSalesManagers(organizationId),
     staleTime: Infinity,
   }).data;
   const managers = React.useMemo(() => managersData ?? [], [managersData]);
   const projectUnits =
-    useQuery({ queryKey: realEstateKeys.units(unit.projectId), queryFn: () => getProjectUnits(unit.projectId, organizationId) }).data ?? [];
+    useQuery({ queryKey: realEstateKeys.units(organizationId, unit.projectId), queryFn: () => getProjectUnits(unit.projectId, organizationId) }).data ?? [];
   const freeUnits = projectUnits.filter((u) => u.status === "free" && u.id !== unit.id).slice(0, 20);
 
   const options: [UnitOperation, string][] = [
@@ -915,7 +894,7 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
     const { buyer, passport, phone, email, payment, signCode } = form;
     sign.mutate({ buyer, passport, phone, email, payment, signCode }, {
       onSuccess: (next) => {
-        queryClient.setQueryData(realEstateKeys.unit(next.id), next);
+        queryClient.setQueryData(realEstateKeys.unit(organizationId, next.id), next);
         void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
         go("signed");
         toast("Договор подписан", next.contract?.number);
@@ -955,14 +934,7 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
             error={Boolean(formState.errors.passport)}
             helperText={formState.errors.passport?.message}
           />
-          <TextField
-            label="Телефон"
-            type="tel"
-            placeholder="+996 555 000 000"
-            {...register("phone", required("Укажите телефон"))}
-            error={Boolean(formState.errors.phone)}
-            helperText={formState.errors.phone?.message}
-          />
+          <PhoneController control={control} name="phone" label="Телефон" requiredMessage="Укажите телефон" />
           <TextField
             label="Email"
             type="email"

@@ -42,7 +42,8 @@ export function SelectionBar({
         pr: 1,
         pl: 2,
         borderRadius: "14px",
-        boxShadow: (t) => t.shadows[6],
+        // Плавающая панель над шахматкой: хайрлайн (outlined) + лёгкая тень вместо тяжёлой (ui-style-guide §4).
+        boxShadow: (t) => t.shadows[2],
       }}
     >
       <Typography component="b" sx={{ mr: 0.5, fontWeight: 600, whiteSpace: "nowrap", fontSize: "0.85rem" }}>

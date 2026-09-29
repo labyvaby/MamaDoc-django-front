@@ -102,7 +102,7 @@ export function ApartmentHead({ project, unit }: { project: Project; unit: Unit 
           {unitType(unit)} · {unit.floor} этаж · {num(unit.totalArea)} м²
         </Typography>
       </div>
-      <Box sx={{ display: "flex", flexDirection: "column", alignItems: { xs: "flex-start", sm: "flex-end" }, gap: 0.6 }}>
+      <Box sx={{ display: "flex", flexDirection: "column", alignItems: { xs: "flex-start", md: "flex-end" }, gap: 0.6 }}>
         <Typography component="strong" sx={{ fontSize: "1.55rem", fontWeight: 700, letterSpacing: "-0.4px" }}>
           {money(unit.price)}
         </Typography>
@@ -991,7 +991,7 @@ export function TechCard({ project, unit }: { project: Project; unit: UnitDetail
         <ExpandMoreOutlined sx={{ color: "text.secondary", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
       </ButtonBase>
       {open && (
-        <Box sx={{ mt: 1.5, display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)" }, gap: 1 }}>
+        <Box sx={{ mt: 1.5, display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", lg: "repeat(3, 1fr)" }, gap: 1 }}>
           {rows.map(([label, value]) => (
             <Box key={label} sx={(t) => ({ display: "flex", flexDirection: "column", gap: 0.25, p: 1.25, borderRadius: "10px", border: 1, borderColor: "divider", bgcolor: subtleBg(t) })}>
               <Typography component="span" sx={{ fontSize: "0.7rem", color: "text.secondary" }}>

@@ -81,9 +81,9 @@ function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare }: Omit<Unit
   const { can } = useCanChecker();
   // Команды над квартирой — realty.manage; без него карточка только для чтения.
   const canManage = REALESTATE_USE_MOCKS || can("realty.manage");
-  const query = useQuery({ queryKey: realEstateKeys.unit(unitId), queryFn: () => getUnit(unitId, organizationId) });
+  const query = useQuery({ queryKey: realEstateKeys.unit(organizationId, unitId), queryFn: () => getUnit(unitId, organizationId) });
   const projectUnits = useQuery({
-    queryKey: realEstateKeys.units(project.id),
+    queryKey: realEstateKeys.units(organizationId, project.id),
     queryFn: () => getProjectUnits(project.id, organizationId),
   }).data;
   const [screen, setScreen] = React.useState<Screen>("unit");
