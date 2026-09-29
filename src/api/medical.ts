@@ -318,6 +318,38 @@ export async function getDiagnosesPaginated(
 
 
 
+/** Строка «частых диагнозов» врача: запись каталога + сколько раз поставлен. */
+export interface FrequentDiagnosis {
+  id: number;
+  code: string;
+  title: string;
+  displayName: string;
+  count: number;
+}
+
+/**
+ * GET /api/medical/diagnoses/frequent/ — коды, которые врач ставил чаще всего.
+ * Без `doctorId` — по текущему пользователю (нет карточки сотрудника → `[]`).
+ * Код считается один раз на заключение; только активные коды каталога, без
+ * свободного текста. По умолчанию 6 месяцев и 8 кодов (пределы 24 и 20).
+ * Проверено на тесте 28.09.2026 (чужой doctorId → 404). На проде ручки пока
+ * нет (404) — фронт молчит, строки «Частые у вас» просто нет.
+ */
+export function getFrequentDiagnoses(
+  opts: { doctorId?: number; limit?: number; months?: number } = {},
+  signal?: AbortSignal,
+): Promise<FrequentDiagnosis[]> {
+  const params = new URLSearchParams();
+  if (opts.doctorId != null) params.set("doctorId", String(opts.doctorId));
+  if (opts.limit != null) params.set("limit", String(opts.limit));
+  if (opts.months != null) params.set("months", String(opts.months));
+  const qs = params.toString();
+  return apiRequest<FrequentDiagnosis[]>(
+    `/medical/diagnoses/frequent/${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+}
+
 /** POST /api/medical/diagnoses/ — add a diagnosis to the catalog. */
 export function createDiagnosis(payload: {
   code: string;
@@ -378,6 +410,15 @@ export interface ConclusionTemplate {
   conclusion: string;
   anamnesis: string;
   objective: string;
+  /**
+   * Заполненный бланк шаблона — та же структура, что у заключения
+   * (api/conclusionFormData); `null` — текстовый шаблон. Проверено на тесте
+   * 28.09.2026: POST принимает и отдаёт, GET списка отдаёт, не-объект → 400,
+   * лимит 256 КБ как у заключения; PATCH у шаблонов нет. Прод ещё без поля
+   * (старый бэк его отбрасывает) — тогда шаблон при бланке применяется
+   * текстом (см. conclusionPresets).
+   */
+  formData?: ConclusionFormData | null;
 }
 
 /** GET /api/medical/conclusion-templates/ — the doctor's saved templates. */
@@ -395,6 +436,8 @@ export function createConclusionTemplate(payload: {
   conclusion?: string;
   anamnesis?: string;
   objective?: string;
+  /** См. ConclusionTemplate.formData — старый бэк (прод) его отбрасывает. */
+  formData?: ConclusionFormData | null;
 }): Promise<ConclusionTemplate> {
   return apiRequest<ConclusionTemplate>("/medical/conclusion-templates/", {
     method: "POST",
@@ -407,6 +450,34 @@ export function deleteConclusionTemplate(id: number): Promise<void> {
   return apiRequest<void>(`/medical/conclusion-templates/${id}/`, {
     method: "DELETE",
   });
+}
+
+/** Заключение из истории пациента — строка `patient-conclusions`. */
+export interface PatientConclusionSummary {
+  id: number;
+  appointmentId: number;
+  serviceLineId: number;
+  occurredAt: string;
+  doctor: { id: number; fullName: string } | null;
+  serviceName: string;
+  diagnosisData: Array<{ title?: string; diagnosis_code?: string; diagnosisCode?: string }>;
+  status: ConclusionStatus;
+}
+
+/**
+ * GET /api/medical/patient-conclusions/?patientId= — живые заключения пациента
+ * по всем филиалам, от новых к старым, без финансовых полей. `formData` здесь
+ * нет (проверено 28.09.2026) — его отдаёт карточка заключения
+ * (getMedicalConclusion). Фильтра по врачу нет: без patientId ответ пустой.
+ */
+export function getPatientConclusions(
+  patientId: number,
+  signal?: AbortSignal,
+): Promise<PatientConclusionSummary[]> {
+  return apiRequest<PatientConclusionSummary[]>(
+    `/medical/patient-conclusions/?patientId=${encodeURIComponent(String(patientId))}&limit=50`,
+    { signal },
+  );
 }
 
 /**

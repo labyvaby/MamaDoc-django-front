@@ -7,12 +7,19 @@ import {
   type AiAssistField,
   type AiAssistForm,
 } from "../../api/medical";
+import { sameText } from "./textDiff";
 
 /** Состояние подсказки у одного поля. */
 export interface AiAssistFieldState {
   loading: boolean;
   /** Текст, который врач ещё не применил и не отклонил. */
   suggestion: string | null;
+  /**
+   * Текст поля, который ушёл в AI. Ответ идёт до минуты, и врач за это
+   * время может поле поправить — режим проверки сравнивает с ним и
+   * предупреждает, что предложение составлено по старому тексту.
+   */
+  source?: string;
 }
 
 /**
@@ -31,6 +38,8 @@ export interface AiAssistSummary {
   suggested: number;
   /** Модели не на что опереться — ответ пустой или заглушка. */
   empty: number;
+  /** Модель вернула тот же текст — править нечего, плашки нет. */
+  unchanged: number;
   /** 502–504: AI-сервис за бэком недоступен (в том числе квота провайдера). */
   unavailable: number;
   failed: number;
@@ -91,23 +100,27 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
       const rows = form ? fitAiFormRows(form.rows) : [];
       const sentForm = form && rows.length > 0 ? { ...form, rows } : null;
       const fields = sentForm ? entries.filter((e) => e.field !== sentForm.target) : entries;
-      const keys: AiAssistKey[] = [
-        ...fields.map((e) => e.field),
-        ...rows.map((row) => aiRowKey(row.id)),
-      ];
+      const sources = new Map<AiAssistKey, string>([
+        ...fields.map((e) => [e.field, e.text] as [AiAssistKey, string]),
+        ...rows.map((row) => [aiRowKey(row.id), row.text] as [AiAssistKey, string]),
+      ]);
+      const keys = [...sources.keys()];
       if (keys.length === 0) return;
       controller.current?.abort();
       const ctrl = new AbortController();
       controller.current = ctrl;
       // Прежние неприменённые подсказки уходят: врач попросил заново.
       setState(
-        Object.fromEntries(keys.map((key) => [key, { loading: true, suggestion: null }])) as StateMap,
+        Object.fromEntries(
+          keys.map((key) => [key, { loading: true, suggestion: null, source: sources.get(key) }]),
+        ) as StateMap,
       );
 
       const summary: AiAssistSummary = {
         total: keys.length,
         suggested: 0,
         empty: 0,
+        unchanged: 0,
         unavailable: 0,
         failed: 0,
       };
@@ -119,6 +132,13 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
         });
         if (ctrl.signal.aborted) return;
         const got = (key: AiAssistKey, suggestion: string | null | undefined) => {
+          // Слово в слово тот же текст — не предложение, а шум: врач
+          // открыл бы проверку и увидел «без изменений».
+          if (suggestion != null && sameText(suggestion, sources.get(key) ?? "")) {
+            patch(key, { loading: false, suggestion: null });
+            summary.unchanged += 1;
+            return;
+          }
           patch(key, { loading: false, suggestion: suggestion ?? null });
           if (suggestion == null) summary.empty += 1;
           else summary.suggested += 1;
