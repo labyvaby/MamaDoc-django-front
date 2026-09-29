@@ -119,6 +119,22 @@ describe("переходники realty → модель шахматки", () =
     ]);
   });
 
+  it("секции ЖК не совпадают с секциями квартир → раскладка по квартирам", () => {
+    const units = withSectionPositions([fromRawUnit(rawUnit(1, "А", 2, 1)), fromRawUnit(rawUnit(53, "Б", 2, 5))]);
+    const project = withUnitLayout(
+      fromRawProject({
+        ...rawProject,
+        sections: [
+          { id: 1, name: "Корпус А", floors: 14, progress: 75, deadline: "2027-03-01", deadlineLabel: "Q2 2027" },
+          { id: 2, name: "Корпус Б", floors: 14, progress: 60, deadline: "2027-06-01", deadlineLabel: "Q4 2027" },
+        ],
+      }),
+      units,
+    );
+    expect(project.sections).toEqual(["А", "Б"]);
+    expect(buildBoard(project, units).sections.map((s) => s.columns)).toEqual([1, 1]);
+  });
+
   it("карточка: бронь, договор, история с человеческими датами, скидка числом", () => {
     const raw: RawUnitDetails = {
       ...rawUnit(1, "А", 2, 1, {

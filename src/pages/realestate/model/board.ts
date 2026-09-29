@@ -41,6 +41,10 @@ export function statsOf(units: Unit[]): FloorStats {
  * Досчитывает по квартирам то, чего бэк не отдаёт в ЖК: секции (в порядке
  * осей слева направо) и первый жилой этаж (`startFloor` бэка = 1, хотя
  * квартиры начинаются выше).
+ *
+ * Секциям ЖК верим, только если в них попадает каждая квартира: на test2
+ * 29.09.2026 у ЖК «Корпус А», а у квартир `section: "А"` — без проверки
+ * шахматка пустая, хотя квартиры есть.
  */
 export function withUnitLayout(project: Project, units: Unit[]): Project {
   if (!units.length) return project;
@@ -48,7 +52,8 @@ export function withUnitLayout(project: Project, units: Unit[]): Project {
   for (const unit of units) {
     firstAxis.set(unit.section, Math.min(firstAxis.get(unit.section) ?? Infinity, unit.axis));
   }
-  const sections = project.sections.length
+  const coversUnits = [...firstAxis.keys()].every((name) => project.sections.includes(name));
+  const sections = coversUnits
     ? project.sections
     : [...firstAxis.keys()].sort((a, b) => (firstAxis.get(a) ?? 0) - (firstAxis.get(b) ?? 0));
   const lowestFloor = Math.min(...units.map((u) => u.floor));
