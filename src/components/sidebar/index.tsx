@@ -29,6 +29,7 @@ import { fetchChatwootCounts } from "../../api/chatwoot";
 import { useT } from "../../i18n/VerticalProvider";
 import { useIsVivaActive } from "../../dev/mockDemoData";
 import { useHotelProperty } from "../../dev/useHotelProperty";
+import { prefetchHotelPages } from "../../dev/prefetchHotelPages";
 import CelebrationOutlined from "@mui/icons-material/CelebrationOutlined";
 
 
@@ -409,6 +410,9 @@ const HotelSidebarMenu: React.FC = () => {
   // /auth/me/, раньше, чем догрузится код страницы, — объект размещения
   // уходит первым, и отельные запросы не стоят за ним цепочкой.
   useHotelProperty();
+  // Код страниц отеля — заранее, пока браузер простаивает: переходы по меню
+  // открываются сразу, без «адрес новый, а страница старая».
+  React.useEffect(() => prefetchHotelPages(), []);
 
   const isSuper = isSuperAdmin();
   const canSchedule = isSuper || can(PAGE_PERMISSIONS.schedule);

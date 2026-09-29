@@ -54,12 +54,12 @@ import { useSnackbar } from "notistack";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useCan } from "../hooks/useCan";
 import { CustomDatePicker } from "../components/ui";
-import { listPricingRules, type HotelCityEvent, type HotelCityEventCategory, type HotelCityEventDemand, type HotelPricingRule } from "../api/hotel";
+import { listPricingRules, listRoomTypes, type HotelCityEvent, type HotelCityEventCategory, type HotelCityEventDemand, type HotelPricingRule } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { useIsVivaActive } from "./mockDemoData";
-import { CITY_EVENTS_FROM_API, useCityEvents, useCreateCityEvent } from "./useCityEvents";
+import { useCityEvents, useCreateCityEvent } from "./useCityEvents";
 import { FormField } from "./formField";
 import { focusFirstFieldError, hasFieldErrors, type FieldRules } from "./formRules";
 import type { PricingRulePrefill } from "./HotelPricingRuleFormPage";
@@ -426,9 +426,21 @@ const EventDrawer: React.FC<{
 }> = ({ event, rule, canManageRates, onClose }) => {
   const theme = useTheme();
   const navigate = useNavigate();
+  const [opening, setOpening] = React.useState(false);
 
-  const raisePrices = () => {
+  const raisePrices = async () => {
     if (!event) return;
+    // Сначала код формы, потом переход: иначе BrowserRouter менял адрес, а на
+    // экране до загрузки формы оставалась карточка события — «ничего не
+    // происходит». Обычно форма уже предзагружена и это мгновенно.
+    setOpening(true);
+    try {
+      await import("./HotelPricingRuleFormPage");
+    } catch {
+      // Не загрузилось — переход всё равно, там сработает обычная загрузка.
+    } finally {
+      setOpening(false);
+    }
     const prefill: PricingRulePrefill = {
       name: event.title,
       category: "event",
@@ -511,8 +523,11 @@ const EventDrawer: React.FC<{
             <Button onClick={onClose}>Закрыть</Button>
             {!rule && (
               <DisabledReason reason={canManageRates ? null : "Менять цены может сотрудник с правом «Тарифы и цены»"}>
-                <Button variant="contained" disableElevation startIcon={<TrendingUpOutlined />} disabled={!canManageRates} onClick={raisePrices} sx={{ px: 2.5, borderRadius: "10px", fontWeight: 700 }}>
-                  Поднять цены на эти даты
+                <Button variant="contained" disableElevation startIcon={<TrendingUpOutlined />} disabled={!canManageRates || opening}
+                  onClick={() => void raisePrices()}
+                  sx={{ px: 2.5, borderRadius: "10px", fontWeight: 700 }}
+                >
+                  {opening ? "Открываем форму…" : "Поднять цены на эти даты"}
                 </Button>
               </DisabledReason>
             )}
@@ -748,6 +763,14 @@ export const HotelEventsPage: React.FC = () => {
     enabled: property != null,
   });
   const rules = React.useMemo(() => rulesQuery.data ?? [], [rulesQuery.data]);
+  // Категории номеров нужны форме правила цены («Поднять цены»): грузим заранее
+  // под тем же ключом, что у формы, — она откроется с готовыми данными, а не
+  // будет ждать медленный бэк после перехода.
+  useQuery({
+    queryKey: ["hotel", "roomTypes", property?.id],
+    queryFn: ({ signal }) => listRoomTypes(property!.id, {}, signal),
+    enabled: property != null,
+  });
 
   // В конце месяца текущий месяц часто пуст — открываем месяц ближайшего
   // события, чтобы календарь с первого взгляда показывал, что впереди.
@@ -755,16 +778,18 @@ export const HotelEventsPage: React.FC = () => {
   const initialMonthPicked = React.useRef(false);
   React.useEffect(() => {
     if (initialMonthPicked.current || !eventsQuery.data) return;
+    const loaded = eventsQuery.data.events;
     initialMonthPicked.current = true;
     const todayStr = dayjs().format("YYYY-MM-DD");
     const monthEnd = dayjs().endOf("month").format("YYYY-MM-DD");
-    const next = eventsQuery.data.find((e) => e.dateTo >= todayStr);
+    const next = loaded.find((e) => e.dateTo >= todayStr);
     if (next && next.dateFrom > monthEnd) setMonth(dayjs(next.dateFrom).startOf("month"));
   }, [eventsQuery.data]);
 
   if (!vivaActive) return <Navigate to="/" replace />;
 
-  const all = eventsQuery.data ?? [];
+  const all = eventsQuery.data?.events ?? [];
+  const isDemo = eventsQuery.data?.isDemo ?? false;
   const filtered = filter === "all" ? all : all.filter((e) => e.category === filter);
   const today = dayjs().format("YYYY-MM-DD");
   const horizon = dayjs().add(90, "day").format("YYYY-MM-DD");
@@ -791,13 +816,22 @@ export const HotelEventsPage: React.FC = () => {
           <>
             Концерты, фестивали, праздники и форумы, из-за которых растёт спрос на номера. На каждое событие — рекомендация,
             на сколько поднять цену ночи; «Поднять цены» открывает правило цены с уже заполненными датами.
-            {!CITY_EVENTS_FROM_API && " Сейчас события демонстрационные — список из источника подключим вместе с бэкендом."}
+            {isDemo && " Сейчас события демонстрационные: бэкенд их ещё не отдаёт. Как только отдаст, здесь появятся настоящие."}
           </>
         }
         actions={
-          <Button variant="contained" disableElevation startIcon={<AddOutlined />} onClick={() => setAddOpen(true)} disabled={!property}>
-            Добавить событие
-          </Button>
+          <>
+            {isDemo && (
+              <Tooltip title="Бэкенд ещё не отдаёт события — показаны примеры. Настоящие появятся здесь сами, как только он их отдаст.">
+                <Box component="span">
+                  <StatusPill color={theme.palette.warning.main} label="Демо-данные" />
+                </Box>
+              </Tooltip>
+            )}
+            <Button variant="contained" disableElevation startIcon={<AddOutlined />} onClick={() => setAddOpen(true)} disabled={!property}>
+              Добавить событие
+            </Button>
+          </>
         }
       />
 
