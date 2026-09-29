@@ -8,7 +8,6 @@ import { alpha, type Theme } from "@mui/material/styles";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CompareArrowsOutlined from "@mui/icons-material/CompareArrowsOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
-import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 
 import type { Project, Unit, UnitDetails, UnitEventType, UnitOffer } from "../../../../api/realestate";
@@ -28,7 +27,6 @@ import {
 } from "../../model/unitCard";
 import { formatMoney as money, num, unitStatusMeta } from "../../model/units";
 import { eyebrowSx, offerTone, sectionSx, statusTone } from "../tones";
-import { useRealEstateToast } from "../toast";
 import { roomTileSx } from "../UnitPreview";
 
 export function StatusPill({ status }: { status: Unit["status"] }) {
@@ -116,7 +114,6 @@ export function ApartmentHead({ project, unit }: { project: Project; unit: Unit 
 }
 
 export function RenderGallery() {
-  const toast = useRealEstateToast();
   const [active, setActive] = React.useState(0);
   const current = apartmentRenders[active]!;
   return (
@@ -124,13 +121,9 @@ export function RenderGallery() {
       <SectionTitle
         eyebrow="Визуализация интерьера"
         title="Как может выглядеть квартира"
-        text="Концепция отделки и меблировки для презентации покупателю"
+        text="Пример отделки и меблировки — общие изображения, не фото этой квартиры"
         size="0.95rem"
-      >
-        <Button size="small" variant="outlined" startIcon={<FileDownloadOutlined />} onClick={() => toast("Рендеры подготовлены", "4 изображения · демо ZIP")}>
-          Скачать рендеры
-        </Button>
-      </SectionTitle>
+      />
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "136px minmax(0, 1fr)" }, gap: 1.5 }}>
         <Box sx={{ display: "grid", gap: 1, alignContent: "start", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "1fr" } }}>
           {apartmentRenders.map((item, index) => (
@@ -360,16 +353,22 @@ function TotalCell({ label, value }: { label: string; value: string }) {
 export function Characteristics({ unit, onCompare }: { unit: Unit; onCompare: (unitId: string) => void }) {
   const hall = unit.roomsBreakdown.find((room) => /прихожая/i.test(room.name));
   const outdoor = unit.outdoor?.type === "terrace" ? "Терраса" : (outdoorKind(unit) ?? "Без балкона");
-  const items: [string, string][] = [
-    ["↕", `Потолки ${num(unit.ceilingHeight)} м`],
-    ["⌗", unit.isCorner ? "Угловая квартира" : "Рациональная планировка"],
-    ["◉", unit.view],
-    ["⌂", "Кухня-гостиная"],
-    ["▥", hall ? `Прихожая ${num(hall.area)} м²` : "Место для хранения"],
-    ["▯", outdoor],
-    ["②", bathroomsLabel(unit)],
-    ["☀", `${unit.orientation} сторона`],
-  ];
+  const kitchen = unit.roomsBreakdown.find((room) => /кухня/i.test(room.name));
+  // Только факты о квартире: без данных пункт не показываем, а не подставляем общие слова.
+  const items = (
+    [
+      ["↕", `Потолки ${num(unit.ceilingHeight)} м`],
+      ["⌗", `${unitType(unit)} · ${num(unit.totalArea)} м²`],
+      ["◉", unit.view],
+      ["⌂", kitchen ? `${kitchen.name} ${num(kitchen.area)} м²` : null],
+      ["▥", hall ? `Прихожая ${num(hall.area)} м²` : null],
+      ["▯", outdoor],
+      ["②", bathroomsLabel(unit)],
+      ["☀", `${unit.orientation} сторона`],
+      ["◢", unit.isCorner ? "Угловая квартира" : null],
+      ["▭", unit.hasPanoramicWindows ? "Панорамные окна" : null],
+    ] as [string, string | null][]
+  ).filter((item): item is [string, string] => Boolean(item[1]));
   return (
     <Box component="section" sx={sectionSx}>
       <SectionTitle eyebrow="Преимущества квартиры" title="Характеристики" text="Главное для презентации покупателю" size="1rem">
@@ -722,16 +721,19 @@ const planRoomSx = (t: Theme) => ({
 });
 
 export function FloorPlan({ unit }: { unit: Unit }) {
-  const toast = useRealEstateToast();
   const balcony = balconyLabel(unit);
   const terrace = terraceLabel(unit);
+  if (!unit.roomsBreakdown.length) {
+    return (
+      <Box component="section" sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
+        <SectionTitle title="Планировка" text="Площади и размеры помещений" />
+        <EmptyNote>Экспликация помещений для этой квартиры ещё не заполнена — схема появится, когда её внесут.</EmptyNote>
+      </Box>
+    );
+  }
   return (
     <Box component="section" sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
-      <SectionTitle title="Планировка" text="Площади и размеры помещений">
-        <Button size="small" variant="outlined" startIcon={<FileDownloadOutlined />} onClick={() => toast("Планировка подготовлена", "демо PDF")}>
-          PDF
-        </Button>
-      </SectionTitle>
+      <SectionTitle title="Планировка" text="Площади и размеры помещений" />
       <Box
         sx={(t) => ({
           position: "relative",
@@ -815,7 +817,7 @@ export function FloorPlan({ unit }: { unit: Unit }) {
         </Box>
       </Box>
       <Typography component="small" sx={{ display: "block", mt: 1, fontSize: "0.7rem", color: "text.secondary" }}>
-        Схема демонстрационная, размеры указаны по проектной документации.
+        Схема условная: площади и размеры — по экспликации, расположение комнат примерное.
       </Typography>
     </Box>
   );
@@ -904,6 +906,9 @@ export function RoomTable({ unit }: { unit: Unit }) {
       <Typography component="h3" sx={cardTitleSx}>
         Экспликация помещений
       </Typography>
+      {rows.length === 0 ? (
+        <EmptyNote>Пока не заполнена.</EmptyNote>
+      ) : (
       <Box component="table" sx={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem", "& th, & td": { py: 0.9, borderBottom: 1, borderColor: "divider", textAlign: "left" } }}>
         <thead>
           <tr>
@@ -926,11 +931,17 @@ export function RoomTable({ unit }: { unit: Unit }) {
           ))}
         </tbody>
       </Box>
+      )}
     </Box>
   );
 }
 
-export function PaymentCard({ unit }: { unit: Unit }) {
+function EmptyNote({ children }: { children: React.ReactNode }) {
+  return <Typography sx={{ fontSize: "0.78rem", color: "text.secondary" }}>{children}</Typography>;
+}
+
+/** `mortgageFrom` — минимальная ставка активных банков; null — банков нет или список недоступен. */
+export function PaymentCard({ unit, mortgageFrom }: { unit: Unit; mortgageFrom: number | null }) {
   const { down, monthly } = paymentPlan(unit.price);
   return (
     <Box component="section" sx={cardSx}>
@@ -941,7 +952,7 @@ export function PaymentCard({ unit }: { unit: Unit }) {
         rows={[
           ["Первоначальный взнос 30%", money(down)],
           ["Рассрочка на 24 месяца", `${money(monthly)} / мес.`],
-          ["Ипотека", "от 14% годовых"],
+          ...(mortgageFrom !== null ? [["Ипотека", `от ${num(mortgageFrom)}% годовых`] as [string, string]] : []),
         ]}
       />
       <Typography sx={{ mt: 1.25, fontSize: "0.72rem", color: "text.secondary" }}>Цена фиксируется после бронирования квартиры.</Typography>
@@ -951,28 +962,26 @@ export function PaymentCard({ unit }: { unit: Unit }) {
 
 export function TechCard({ project, unit }: { project: Project; unit: UnitDetails }) {
   const [open, setOpen] = React.useState(true);
-  const planType = unit.isCorner ? "Угловая" : unit.outdoor?.type === "terrace" ? "С террасой" : unit.rooms >= 3 ? "Семейная" : "Стандартная";
-  const rows: [string, string | number][] = [
-    ["Номер помещения", unit.number],
-    ["Подъезд / секция", `Секция ${unit.section}`],
-    ["Этаж", unit.floor],
-    ["Название дома", unit.building],
-    ["Название ЖК", project.name],
-    ["Площадь, м²", num(unit.totalArea)],
-    ["Код планировки", unit.layoutCode],
-    ["Стадия строительства", project.stage],
-    ["Куда выходят окна", unit.view],
-    ["Сторона света", unit.orientation],
-    ["Номенклатура", `Квартира ${unit.number}`],
-    ["Ось", `Ось ${unit.axis}`],
-    ["Вид планировки", planType],
-    ["Высота потолка", `${num(unit.ceilingHeight)} м`],
-    ["Идентификатор 1С", unit.externalId],
-    ["Планировка", `${unit.building} · ${unit.floor} этаж · ${num(unit.totalArea)} м²`],
-    ["Отделка", project.finish],
-    ["Срок сдачи", project.completionLabel],
-    ["Статус", unitStatusMeta[unit.status].label],
-  ];
+  // Только данные бэка: пустые поля (код планировки, 1С) не показываем.
+  const rows = (
+    [
+      ["Номер помещения", unit.number],
+      ["Подъезд / секция", `Секция ${unit.section}`],
+      ["Этаж", unit.floor],
+      ["Название ЖК", project.name],
+      ["Площадь, м²", num(unit.totalArea)],
+      ["Код планировки", unit.layoutCode],
+      ["Стадия строительства", project.stage],
+      ["Куда выходят окна", unit.view],
+      ["Сторона света", unit.orientation],
+      ["Ось", `Ось ${unit.axis}`],
+      ["Высота потолка", `${num(unit.ceilingHeight)} м`],
+      ["Идентификатор 1С", unit.externalId],
+      ["Отделка", project.finish],
+      ["Срок сдачи", project.completionLabel],
+      ["Статус", unitStatusMeta[unit.status].label],
+    ] as [string, string | number][]
+  ).filter(([, value]) => value !== "" && value !== null && value !== undefined);
   return (
     <Box component="section" sx={sectionSx}>
       <ButtonBase
@@ -1012,7 +1021,7 @@ const historyIcons: Record<UnitEventType, string> = {
   inventory: "⌂",
   reserve: "◷",
   cancel: "×",
-  payment: "₽",
+  payment: "с",
   meeting: "⌖",
   proposal: "◉",
   sale: "✓",

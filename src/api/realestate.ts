@@ -149,6 +149,8 @@ export interface Contract {
   number: string;
   buyer: string;
   payment: string;
+  /** Цена по договору, сом (с учётом акции брони). */
+  price: number;
   signedAt: string;
 }
 
@@ -323,6 +325,7 @@ export interface RawContract {
   buyer: string;
   payment: string;
   paymentLabel?: string;
+  price?: Decimal;
   signedAt: string;
 }
 
@@ -495,6 +498,7 @@ export function fromRawUnitDetails(raw: RawUnitDetails, layoutCode = ""): UnitDe
           number: raw.contract.number,
           buyer: raw.contract.buyer,
           payment: raw.contract.paymentLabel || raw.contract.payment,
+          price: toMoney(raw.contract.price),
           signedAt: toHumanDate(raw.contract.signedAt),
         }
       : null,
@@ -567,6 +571,21 @@ export async function getSalesManagers(organizationId?: number): Promise<SalesMa
     return employees.map((employee) => ({ id: String(employee.id), name: employee.fullName }));
   } catch {
     return [];
+  }
+}
+
+/**
+ * Минимальная ставка ипотеки среди активных банков организации, % годовых.
+ * null — банков нет или справочник недоступен: тогда строку ипотеки не показываем.
+ */
+export async function getMortgageRateFrom(organizationId?: number): Promise<number | null> {
+  if (REALESTATE_USE_MOCKS) return mockDelay(14);
+  try {
+    const banks = await apiRequest<{ mortgageRate: number; isActive: boolean }[]>(withOrg(`${REALTY_API}/banks/?active=true`, organizationId));
+    const rates = banks.filter((bank) => bank.isActive && bank.mortgageRate > 0).map((bank) => bank.mortgageRate);
+    return rates.length ? Math.min(...rates) : null;
+  } catch {
+    return null;
   }
 }
 
@@ -669,4 +688,5 @@ export const realEstateKeys = {
   units: (org: OrgKey, projectId: string) => [...realEstateKeys.org(org), "units", projectId] as const,
   unit: (org: OrgKey, unitId: string) => [...realEstateKeys.org(org), "unit", unitId] as const,
   managers: (org: OrgKey) => [...realEstateKeys.org(org), "managers"] as const,
+  mortgageRate: (org: OrgKey) => [...realEstateKeys.org(org), "mortgage-rate"] as const,
 };

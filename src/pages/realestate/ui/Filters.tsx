@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, ButtonBase, InputBase, Slider, Typography } from "@mui/material";
-import { alpha, useTheme, type Theme } from "@mui/material/styles";
+import { alpha, type Theme } from "@mui/material/styles";
 import CheckBoxOutlineBlankOutlined from "@mui/icons-material/CheckBoxOutlineBlankOutlined";
 import CheckBoxOutlined from "@mui/icons-material/CheckBoxOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -66,36 +66,6 @@ function FilterGroup({ label, children }: { label: string; children: React.React
 
 // ─── KPI ───────────────────────────────────────────────────────────────────
 
-/**
- * Демо-тренды за 8 недель (0…1), как в прототипе.
- * Реальная динамика придёт с бэкенда, когда появится история статусов.
- */
-const trends: Record<StatusFilter, number[]> = {
-  all: [1, 0.73, 0.45, 0.19, 0.16, 0, 0, 0.79],
-  free: [0.06, 0, 0.05, 0.34, 0.58, 0.86, 0.79, 1],
-  reserved: [1, 0.7, 0.51, 0.22, 0.07, 0, 0.02, 0.91],
-  sold: [0, 0.28, 0.09, 0.64, 0.53, 1, 0.9, 0.78],
-};
-
-function Sparkline({ values }: { values: number[] }) {
-  const theme = useTheme();
-  const step = 120 / (values.length - 1);
-  const points = values.map((v, i) => `${(i * step).toFixed(1)},${(32 - v * 28).toFixed(1)}`);
-  const color = theme.palette.primary.main;
-  return (
-    <Box
-      component="svg"
-      aria-hidden
-      viewBox="0 0 120 36"
-      preserveAspectRatio="none"
-      sx={{ position: "absolute", top: 12, right: 14, height: { xs: 26, lg: 32 }, width: { xs: 74, lg: 104 } }}
-    >
-      <polygon points={`0,36 ${points.join(" ")} 120,36`} fill={color} opacity=".12" />
-      <polyline points={points.join(" ")} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
-    </Box>
-  );
-}
-
 export function KpiRow({ counts }: { counts: Record<StatusFilter, number> }) {
   const items: { key: StatusFilter; label: string; color?: (t: Theme) => string }[] = [
     { key: "all", label: "Квартир в корпусе" },
@@ -141,7 +111,6 @@ export function KpiRow({ counts }: { counts: Record<StatusFilter, number> }) {
           >
             {counts[item.key]}
           </Typography>
-          <Sparkline values={trends[item.key]} />
         </Box>
       ))}
     </Box>

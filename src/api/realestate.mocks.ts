@@ -664,6 +664,7 @@ export function signContract(unitId: string, input: ContractInput): UnitDetails 
     number: `ДКП-${new Date().getFullYear()}-${unit.number}`,
     buyer: input.buyer,
     payment: CONTRACT_PAYMENT_LABELS[input.payment],
+    price: stateOf(unit).reservation?.finalPrice || unit.price,
     signedAt: new Date().toLocaleString("ru-RU"),
   };
   addEvent(unit, {

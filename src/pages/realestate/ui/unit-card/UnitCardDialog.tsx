@@ -6,7 +6,7 @@ import EventOutlined from "@mui/icons-material/EventOutlined";
 import SendOutlined from "@mui/icons-material/SendOutlined";
 import { useQuery } from "@tanstack/react-query";
 
-import { REALESTATE_USE_MOCKS, getProjectUnits, getUnit, realEstateKeys, type Project, type Unit, type UnitDetails } from "../../../../api/realestate";
+import { REALESTATE_USE_MOCKS, getMortgageRateFrom, getProjectUnits, getUnit, realEstateKeys, type Project, type Unit, type UnitDetails } from "../../../../api/realestate";
 import { AppButton } from "../../../../components/ui";
 import { useApiOrgId } from "../../../../hooks/useApiOrgId";
 import { useCanChecker } from "../../../../hooks/useCan";
@@ -86,6 +86,9 @@ function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare }: Omit<Unit
     queryKey: realEstateKeys.units(organizationId, project.id),
     queryFn: () => getProjectUnits(project.id, organizationId),
   }).data;
+  const mortgageFrom =
+    useQuery({ queryKey: realEstateKeys.mortgageRate(organizationId), queryFn: () => getMortgageRateFrom(organizationId), staleTime: 30 * 60_000 })
+      .data ?? null;
   const [screen, setScreen] = React.useState<Screen>("unit");
   const [offerId, setOfferId] = React.useState(DEFAULT_OFFER);
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -149,6 +152,7 @@ function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare }: Omit<Unit
           }}
           onCompare={onCompare}
           canManage={canManage}
+          mortgageFrom={mortgageFrom}
         />
       ) : (
         flows[screen]()
@@ -168,6 +172,7 @@ function ApartmentDetail({
   onChangeFloor,
   onCompare,
   canManage,
+  mortgageFrom,
 }: {
   project: Project;
   unit: UnitDetails;
@@ -179,6 +184,7 @@ function ApartmentDetail({
   onChangeFloor: (direction: -1 | 1) => void;
   onCompare: (unitId: string) => void;
   canManage: boolean;
+  mortgageFrom: number | null;
 }) {
   const toast = useRealEstateToast();
   const offer = pickOffer(unit.offers, offerId);
@@ -207,7 +213,7 @@ function ApartmentDetail({
       </Box>
       <Box sx={{ mt: 2, display: "grid", gridTemplateColumns: { xs: "1fr", md: "1.2fr 0.8fr" }, gap: 2 }}>
         <RoomTable unit={unit} />
-        <PaymentCard unit={unit} />
+        <PaymentCard unit={unit} mortgageFrom={mortgageFrom} />
       </Box>
       <TechCard project={project} unit={unit} />
       <History key={unit.history.length} unit={unit} onOperation={canManage ? () => go("operation") : undefined} />
@@ -249,11 +255,11 @@ function ApartmentDetail({
             </AppButton>
           ) : unit.status === "reserved" && reservation?.paymentStatus === "pending" ? (
             <AppButton variant="contained" onClick={() => go("payment")}>
-              Показать QR для оплаты
+              Отметить оплату
             </AppButton>
           ) : unit.status === "reserved" ? (
             <AppButton variant="contained" onClick={() => go("contract")}>
-              Подписать договор
+              Оформить договор
             </AppButton>
           ) : (
             <AppButton variant="contained" onClick={() => go("signed")}>

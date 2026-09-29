@@ -65,7 +65,7 @@ export const apartmentRenders = [
   { src: `${RENDERS}/bathroom.jpg`, label: "Ванная", note: "Ванная с душевой и тёплой подсветкой" },
 ] as const;
 
-/** Первый взнос 30% и рассрочка на 24 месяца — демо-условия прототипа. */
+/** Первый взнос 30% и рассрочка на 24 месяца — умолчания бэка для договора (`sell`: downPayment 30%, term 24). */
 export function paymentPlan(price: number) {
   const down = Math.round((price * 0.3) / 1000) * 1000;
   return { down, monthly: Math.round((price - down) / 24 / 1000) * 1000 };

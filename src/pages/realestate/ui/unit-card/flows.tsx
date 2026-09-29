@@ -16,7 +16,6 @@ import {
 } from "@mui/material";
 import { alpha, type Theme } from "@mui/material/styles";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
-import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Controller, useForm } from "react-hook-form";
 import dayjs, { type Dayjs } from "dayjs";
@@ -82,11 +81,12 @@ export interface FlowProps {
   onOpenUnit: (unitId: string) => void;
 }
 
+/** Сумма prepaid-брони по умолчанию — `DEFAULT_DEPOSIT` бэка (realty/sales_services.py); в API её пока нет. */
 const PREPAYMENT = 50_000;
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : "Не удалось выполнить операцию");
 
-/** Демо-время встречи: завтра в 11:00. */
+/** Время встречи по умолчанию: завтра в 11:00. */
 const tomorrowAt11 = () => dayjs().add(1, "day").hour(11).minute(0).second(0).millisecond(0);
 
 /**
@@ -211,7 +211,7 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
       {
         onSuccess: (next) => {
           go(next.reservation?.paymentStatus === "pending" ? "payment" : "success");
-          toast("Бронь создана", form.withMeeting ? "задача «Встреча» добавлена" : `до ${next.reservation?.expiresAt ?? ""}`);
+          toast("Бронь создана", form.withMeeting ? "встреча назначена" : `до ${next.reservation?.expiresAt ?? ""}`);
         },
       },
     );
@@ -288,7 +288,7 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
               {(
                 [
                   ["free", "○", "Бесплатная бронь", "Без оплаты · квартира закрепляется на 48 часов"],
-                  ["prepaid", "₽", "Бронь с предоплатой", `${money(PREPAYMENT)} · оплата по QR после сохранения`],
+                  ["prepaid", "с", "Бронь с предоплатой", `${money(PREPAYMENT)} · поступление подтверждает менеджер`],
                 ] as const
               ).map(([value, icon, title, hint]) => {
                 const checked = field.value === value;
@@ -332,7 +332,7 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
               Предоплата {money(PREPAYMENT)}
             </Typography>
             <Typography component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
-              Сумма учитывается в стоимости квартиры. После сохранения появится QR-код.
+              Сумма учитывается в стоимости квартиры. После сохранения отметьте получение оплаты.
             </Typography>
           </Box>
         )}
@@ -340,7 +340,7 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
           control={control}
           name="withMeeting"
           render={({ field }) => (
-            <OptionCheckbox checked={field.value} onChange={field.onChange} title="Поставить задачу «Встреча»" hint="Менеджеру будет добавлена задача в план дня" />
+            <OptionCheckbox checked={field.value} onChange={field.onChange} title="Назначить встречу" hint="Встреча сохранится в истории квартиры" />
           )}
         />
         {withMeeting && (
@@ -385,48 +385,27 @@ function OfferCell({ label, value, hint, strong }: { label: string; value: strin
   );
 }
 
-/** Демонстрационный QR 13×13 из прототипа. */
-function DemoQr() {
-  return (
-    <Box
-      aria-label="Демонстрационный QR-код"
-      sx={{ display: "grid", gridTemplateColumns: "repeat(13, 1fr)", gap: "2px", width: 196, height: 196, p: 1.5, borderRadius: "12px", border: 1, borderColor: "divider", bgcolor: "common.white" }}
-    >
-      {Array.from({ length: 169 }, (_, index) => {
-        const row = Math.floor(index / 13);
-        const col = index % 13;
-        const finder = (row < 4 && col < 4) || (row < 4 && col > 8) || (row > 8 && col < 4);
-        const filled = finder || (row * 7 + col * 5 + row * col) % 11 < 5;
-        return <Box key={index} component="i" sx={{ borderRadius: "1px", bgcolor: filled ? "common.black" : "transparent" }} />;
-      })}
-    </Box>
-  );
-}
-
 export function PaymentScreen({ project, unit, organizationId, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
   const confirm = useUnitCommand(organizationId, () => confirmUnitPrepayment(unit, organizationId));
   const amount = unit.reservation?.amount || PREPAYMENT;
   return (
     <Box>
-      <FlowHead eyebrow="Предоплата за бронирование" title={`Оплатите ${money(amount)}`} intro={`ЖК «${project.name}» · квартира №${unit.number}`} />
-      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 3 }}>
-        <DemoQr />
-        <Box sx={{ display: "grid", gap: 0.5, "& span": { fontSize: "0.72rem", color: "text.secondary" }, "& b": { fontSize: "0.875rem", fontWeight: 600, mb: 0.75 } }}>
-          <span>Назначение платежа</span>
-          <b>Бронь квартиры №{unit.number}</b>
-          <span>Покупатель</span>
-          <b>{unit.reservation?.buyer || "—"}</b>
-          <span>Срок QR-кода</span>
-          <b>15 минут</b>
-          <Typography component="small" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-            Демонстрационный QR: реального списания не происходит.
-          </Typography>
-        </Box>
-      </Box>
+      <FlowHead
+        eyebrow="Предоплата за бронирование"
+        title={`Предоплата ${money(amount)}`}
+        intro="Примите оплату от покупателя и отметьте её получение — бронь станет оплаченной."
+      />
+      <Summary
+        items={[
+          ["Назначение платежа", `Бронь квартиры №${unit.number}, ЖК «${project.name}»`],
+          ["Покупатель", unit.reservation?.buyer || "—"],
+          ["Бронь действует до", unit.reservation?.expiresAt || "—"],
+        ]}
+      />
       <Actions>
         <Button variant="outlined" onClick={onBack}>
-          Оплатить позже
+          Отметить позже
         </Button>
         <AppButton
           variant="contained"
@@ -441,7 +420,7 @@ export function PaymentScreen({ project, unit, organizationId, onBack, go }: Flo
             })
           }
         >
-          Я оплатил
+          Оплата получена
         </AppButton>
       </Actions>
     </Box>
@@ -492,11 +471,14 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
   });
   const finalPrice = priceWithOffer(unit, offer);
   const perMeter = money(Math.round(finalPrice / unit.totalArea));
-  const { control, handleSubmit } = useForm<{ phone: string; includePlan: boolean }>({
-    defaultValues: { phone: unit.reservation?.phone ?? "", includePlan: true },
+  const { control, handleSubmit } = useForm<{ phone: string }>({
+    defaultValues: { phone: unit.reservation?.phone ?? "" },
   });
 
-  const submit = handleSubmit(({ phone, includePlan }) => {
+  const submit = handleSubmit(({ phone }) => {
+    // Вложений WhatsApp-ссылка не передаёт, поэтому includePlan: false — иначе бэк
+    // пишет в текст «планировка включена», а её у покупателя не будет.
+    const includePlan = false;
     // Текст для моков; на живом API текст и ссылку собирает бэк — тот же, что он сохранил в истории.
     const message = [
       "Коммерческое предложение",
@@ -528,9 +510,8 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
 
   return (
     <Box>
-      <FlowHead eyebrow="Персональное коммерческое предложение" title={`Квартира №${unit.number}`} intro="Готовое КП для отправки покупателю в WhatsApp" />
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "240px 1fr" }, gap: 2, p: 1.5, mb: 2, borderRadius: "14px", border: 1, borderColor: "divider" }}>
-        <Box component="img" decoding="async" src="/realestate/renders/living-room.jpg" alt="Интерьер квартиры" sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: "10px" }} />
+      <FlowHead eyebrow="Персональное коммерческое предложение" title={`Квартира №${unit.number}`} intro="Текст КП откроется в WhatsApp — проверьте и отправьте покупателю" />
+      <Box sx={{ display: "grid", gap: 2, p: 1.5, mb: 2, borderRadius: "14px", border: 1, borderColor: "divider" }}>
         <Box>
           <Typography component="span" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
             ЖК «{project.name}»
@@ -555,7 +536,7 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
             <li>
               Потолки {num(unit.ceilingHeight)} м · {project.finish}
             </li>
-            <li>{terraceLabel(unit) || balconyLabel(unit) || "Рациональная планировка"}</li>
+            {(terraceLabel(unit) || balconyLabel(unit)) && <li>{terraceLabel(unit) || balconyLabel(unit)}</li>}
           </Box>
           <Typography component="em" sx={{ display: "block", mt: 1, fontSize: "0.75rem", fontStyle: "normal", fontWeight: 600, color: "primary.onSurface" }}>
             ★ {offer.title}
@@ -564,13 +545,6 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
       </Box>
       <form onSubmit={submit} noValidate>
         <PhoneController control={control} name="phone" label="WhatsApp покупателя" requiredMessage="Укажите номер WhatsApp" />
-        <Controller
-          control={control}
-          name="includePlan"
-          render={({ field }) => (
-            <OptionCheckbox checked={field.value} onChange={field.onChange} title="Приложить планировку и схему этажа" hint="Покупатель получит карточку именно этой квартиры" />
-          )}
-        />
         <Actions>
           <Button variant="outlined" onClick={onBack}>
             Назад
@@ -841,9 +815,6 @@ export function OfferScreen({ project, unit, offer, onBack, go }: FlowProps) {
           ["Фиксация условий", "После бронирования"],
         ]}
       />
-      <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
-        Предложение демонстрационное. Точные условия менеджер подтвердит перед бронированием.
-      </Typography>
       <Actions>
         <Button variant="outlined" onClick={onBack}>
           Назад к квартире
@@ -876,8 +847,9 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
     mutationFn: (input: Parameters<typeof signUnitContract>[1]) => signUnitContract(unit.id, input, organizationId),
   });
   const queryClient = useQueryClient();
-  const contractNo = `ДКП-${new Date().getFullYear()}-${unit.number}`;
-  const { down } = paymentPlan(unit.price);
+  // Договор заключается по цене брони (с акцией), без брони — по цене квартиры, как на бэке.
+  const price = unit.reservation?.finalPrice || unit.price;
+  const { down } = paymentPlan(price);
   const { register, control, handleSubmit, formState } = useForm<ContractForm>({
     defaultValues: {
       buyer: unit.reservation?.buyer ?? "",
@@ -897,10 +869,12 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
         queryClient.setQueryData(realEstateKeys.unit(organizationId, next.id), next);
         void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
         go("signed");
-        toast("Договор подписан", next.contract?.number);
+        toast("Договор оформлен", next.contract?.number);
       },
       onError: (error) =>
-        error instanceof Error && /код/i.test(error.message) ? toast("Неверный код", "для демо используйте 4826") : toast(errorMessage(error)),
+        REALESTATE_USE_MOCKS && error instanceof Error && /код/i.test(error.message)
+          ? toast("Неверный код", "в моках код подписи — 4826")
+          : toast(errorMessage(error)),
     });
   });
 
@@ -908,11 +882,11 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
 
   return (
     <Box>
-      <FlowHead eyebrow="Электронное подписание · демо" title="Договор купли-продажи" intro={`${contractNo} · ЖК «${project.name}», квартира №${unit.number}`} />
+      <FlowHead eyebrow="Оформление договора" title="Договор купли-продажи" intro={`ЖК «${project.name}», квартира №${unit.number}`} />
       <Summary
         items={[
           ["Объект", `${unitType(unit)}, ${num(unit.totalArea)} м²`],
-          ["Стоимость", money(unit.price)],
+          ["Стоимость", money(price)],
           ["Первый взнос", money(down)],
           ["Срок сдачи", project.completionLabel],
         ]}
@@ -972,29 +946,24 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
         <Controller
           control={control}
           name="accept"
-          rules={{ validate: (v) => v || "Подтвердите согласие" }}
+          rules={{ validate: (v) => v || "Подтвердите проверку данных" }}
           render={({ field, fieldState }) => (
             <FormControlLabel
               sx={{ mt: 1.5, alignItems: "flex-start", color: fieldState.error ? "error.main" : "text.primary" }}
               control={<Checkbox checked={field.value} onChange={(e) => field.onChange(e.target.checked)} sx={{ p: 0.25, mr: 1 }} />}
-              label={<Typography sx={{ fontSize: "0.8125rem" }}>Подтверждаю ознакомление с условиями договора и согласие на электронное подписание.</Typography>}
+              label={<Typography sx={{ fontSize: "0.8125rem" }}>Данные покупателя сверены с документом, условия договора согласованы с покупателем.</Typography>}
             />
           )}
         />
-        <Box sx={(t) => ({ mt: 1.5, p: 1.5, borderRadius: "10px", border: 1, borderColor: "divider", bgcolor: subtleBg(t), display: "flex", flexDirection: "column", gap: 0.25 })}>
-          <Typography component="b" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-            К подписанию подготовлен документ {contractNo}
-          </Typography>
-          <Typography component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
-            Продавец: ОсОО «AIVIO Development» · Покупатель будет указан после подписания
-          </Typography>
-        </Box>
+        <Typography sx={{ mt: 1.5, fontSize: "0.75rem", color: "text.secondary" }}>
+          Номер договору присвоится при оформлении, квартира перейдёт в статус «Продана».
+        </Typography>
         <Actions>
           <Button variant="outlined" onClick={onBack}>
             Назад к квартире
           </Button>
           <AppButton variant="contained" type="submit" loading={sign.isPending}>
-            Подписать договор
+            Оформить договор
           </AppButton>
         </Actions>
       </form>
@@ -1003,37 +972,25 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
 }
 
 export function SignedScreen({ project, unit, onBack }: FlowProps) {
-  const toast = useRealEstateToast();
   const c = unit.contract;
   return (
     <Box>
       <Box sx={successMarkSx}>
         <CheckOutlined />
       </Box>
-      <FlowHead eyebrow="Подписано электронной подписью" title={c?.number ?? `ДКП-${new Date().getFullYear()}-${unit.number}`} intro={`ЖК «${project.name}» · квартира №${unit.number}`} />
+      <FlowHead eyebrow="Договор оформлен" title={c?.number || "Договор купли-продажи"} intro={`ЖК «${project.name}» · квартира №${unit.number}`} />
       <Summary
         items={[
-          ["Покупатель", c?.buyer ?? "Покупатель"],
-          ["Стоимость", money(unit.price)],
-          ["Способ оплаты", c?.payment ?? "По договору"],
-          ["Дата подписания", c?.signedAt ?? "Сегодня"],
+          ["Покупатель", c?.buyer || "—"],
+          ["Стоимость", money(c?.price || unit.price)],
+          ["Способ оплаты", c?.payment || "—"],
+          ["Дата оформления", c?.signedAt || "—"],
         ]}
       />
-      <Box sx={(t) => ({ p: 1.5, borderRadius: "10px", border: `1px dashed ${alpha(t.palette.success.main, 0.6)}`, bgcolor: alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.12 : 0.06), display: "flex", flexDirection: "column", gap: 0.25 })}>
-        <Typography component="b" sx={{ fontSize: "0.8125rem", fontWeight: 600, color: "success.onSurface" }}>
-          Электронная подпись подтверждена
-        </Typography>
-        <Typography component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
-          Идентификатор: AIVIO-{unit.id.toUpperCase()}-{unit.number.slice(-3)}
-        </Typography>
-      </Box>
       <Actions>
         <Button variant="outlined" onClick={onBack}>
           Карточка квартиры
         </Button>
-        <AppButton variant="contained" startIcon={<FileDownloadOutlined />} onClick={() => toast("Договор подготовлен", "демо PDF с электронной подписью")}>
-          Скачать договор
-        </AppButton>
       </Actions>
     </Box>
   );
