@@ -1673,7 +1673,13 @@ export interface HotelDashboard {
   date: string;
   totalRooms: number;
   occupiedRooms: number;
+  /** Свободные в продаже: total − occupied − снятые с продажи на дату. */
   freeRooms: number;
+  /**
+   * Сняты с продажи на дату. Дашборд бэка пока его не сериализует (считает
+   * внутри, из того же дневного отчёта) — фронт тогда берёт total − occupied − free.
+   */
+  blockedRooms?: number;
   occupancyPercent: string;
   arrivals: number;
   arrived: number;

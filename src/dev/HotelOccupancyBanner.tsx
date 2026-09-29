@@ -25,7 +25,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 
 import ArrowForwardOutlined from "@mui/icons-material/ArrowForwardOutlined";
 import { getSelectedHotelDate, subscribeSelectedHotelDate, useIsVivaActive, formatHotelDate } from "./mockDemoData";
-import { hotelRoomStateColor } from "./hotelDisplay";
+import { formatSellableSummary, hotelRoomStateColor } from "./hotelDisplay";
 import { useHotelProperty } from "./useHotelProperty";
 import { getDashboard, listHousekeepingTasks } from "../api/hotel";
 
@@ -96,7 +96,7 @@ export const HotelOccupancyBanner: React.FC = () => {
   // результат просто не идёт в дело (useQuery остаётся выключенным через enabled).
   const selectedDate = React.useSyncExternalStore(subscribeSelectedHotelDate, getSelectedHotelDate);
   const vivaActive = useIsVivaActive();
-  const { property } = useHotelProperty();
+  const { property, isLoading: propertyLoading } = useHotelProperty();
 
   const dashboardQuery = useQuery({
     queryKey: ["hotel", "dashboard", property?.id, selectedDate],
@@ -132,6 +132,10 @@ export const HotelOccupancyBanner: React.FC = () => {
   }, [tasksQuery.data, todayStr, tomorrowStr]);
 
   if (!vivaActive) return null;
+  // Без объекта (не выбран филиал) грузить нечего: шахматка ниже сама покажет
+  // выбор филиала, а вечный спиннер над ним только сбивал с толку.
+  if (!property && !propertyLoading) return null;
+  if (dashboardQuery.isError) return null;
 
   if (!dashboard) {
     return (
@@ -147,6 +151,11 @@ export const HotelOccupancyBanner: React.FC = () => {
   const stayingColor = theme.palette.mode === "dark" ? "#a78bfa" : "#7c3aed";
 
   const occupancyPercent = Number(dashboard.occupancyPercent);
+  // Снятые с продажи на дату. Бэк строит дашборд из дневного отчёта
+  // (free = total − occupied − blocked), поле blocked пока не отдаёт — берём
+  // его из тех же итогов, а не пересчитываем по статусам номеров.
+  const blockedRooms =
+    dashboard.blockedRooms ?? Math.max(0, dashboard.totalRooms - dashboard.occupiedRooms - dashboard.freeRooms);
   const occupancyColor = occupancyPercent >= 90 ? p.success.main : occupancyPercent >= 70 ? p.warning.main : p.error.main;
 
   // Цвета — те же, что точки в шахматке и на «Номерах» (hotelRoomStateColor), иначе
@@ -177,7 +186,7 @@ export const HotelOccupancyBanner: React.FC = () => {
             {Math.round(occupancyPercent)}%
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {dashboard.occupiedRooms} из {dashboard.totalRooms} занято
+            занято {formatSellableSummary(dashboard.occupiedRooms, dashboard.totalRooms, blockedRooms)}
           </Typography>
         </Stack>
         <Box sx={{ height: 6, borderRadius: 3, bgcolor: alpha(theme.palette.text.primary, 0.08), overflow: "hidden" }}>

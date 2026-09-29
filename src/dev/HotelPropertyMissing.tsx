@@ -14,9 +14,13 @@ import { usePermissions } from "../hooks/usePermissions";
 import { useHotelProperty } from "./useHotelProperty";
 import { EmptyState, Surface } from "./hotelUi";
 
+// Автовыбор пробуем один раз на membership за загрузку страницы: если бэк
+// отказал, не долбим его повторно при каждом монтировании экрана.
+const autoPickTried = new Set<number>();
+
 export const HotelPropertyMissing: React.FC = () => {
   const { missingReason, properties } = useHotelProperty();
-  const { activeMembership, switchContext, switching } = usePermissions();
+  const { activeMembership, activeBranch, switchContext, switching } = usePermissions();
   const [pendingBranchId, setPendingBranchId] = React.useState<number | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -38,6 +42,18 @@ export const HotelPropertyMissing: React.FC = () => {
       setPendingBranchId(null);
     }
   };
+
+  // Единственный доступный филиал с объектом, а филиал ещё не выбран, —
+  // выбирать нечего, переключаем сами. Если филиал выбран, но объекта в нём
+  // нет, молча уводить человека в другой филиал нельзя — только кнопкой.
+  const autoBranchId = activeBranch == null && choices.length === 1 ? choices[0].branchId : null;
+  React.useEffect(() => {
+    if (autoBranchId == null || !activeMembership || autoPickTried.has(activeMembership.id)) return;
+    autoPickTried.add(activeMembership.id);
+    void choose(autoBranchId);
+    // choose пересоздаётся на каждом рендере; запуск — только по смене условия.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoBranchId, activeMembership?.id]);
 
   return (
     <Surface>

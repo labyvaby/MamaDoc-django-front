@@ -20,6 +20,32 @@ import { listHotelProperties, type HotelProperty } from "../api/hotel";
 
 const HOTEL_PROPERTIES_STALE_TIME_MS = 5 * 60_000;
 
+// Последний известный список объектов организации — чтобы при повторном входе
+// все отельные запросы (номера, шахматка, дашборд) стартовали сразу, а не
+// ждали /hotel/properties/ (~1,5–3 с цепочкой). Кэш сразу считается
+// устаревшим и перечитывается в фоне; список объектов меняется редко, а если
+// объект удалили — после перечитывания страница это увидит.
+const cacheKey = (orgId: number) => `mamadoc:hotel-properties:${orgId}`;
+
+function readCachedProperties(orgId: number | undefined): HotelProperty[] | undefined {
+  if (orgId == null) return undefined;
+  try {
+    const raw = window.localStorage.getItem(cacheKey(orgId));
+    const parsed: unknown = raw ? JSON.parse(raw) : undefined;
+    return Array.isArray(parsed) ? (parsed as HotelProperty[]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeCachedProperties(orgId: number, properties: HotelProperty[]): void {
+  try {
+    window.localStorage.setItem(cacheKey(orgId), JSON.stringify(properties));
+  } catch {
+    // Хранилище недоступно (приватный режим, квота) — просто без кэша.
+  }
+}
+
 export interface UseHotelPropertyResult {
   /** Текущий объект — null, пока список не загружен или объектов нет вовсе. */
   property: HotelProperty | null;
@@ -34,11 +60,19 @@ export interface UseHotelPropertyResult {
 export function useHotelProperty(): UseHotelPropertyResult {
   const { activeBranch, activeOrganization, loading: permissionsLoading } = usePermissions();
   const isHotelOrg = activeOrganization?.vertical === "hotel";
+  const orgId = activeOrganization?.id;
   const query = useQuery({
-    queryKey: ["hotel", "properties", activeOrganization?.id],
-    queryFn: ({ signal }) => listHotelProperties(signal),
+    queryKey: ["hotel", "properties", orgId],
+    queryFn: async ({ signal }) => {
+      const list = await listHotelProperties(signal);
+      if (orgId != null) writeCachedProperties(orgId, list);
+      return list;
+    },
     enabled: isHotelOrg,
     staleTime: HOTEL_PROPERTIES_STALE_TIME_MS,
+    initialData: () => (isHotelOrg ? readCachedProperties(orgId) : undefined),
+    // 0 — кэш «устарел с рождения»: показываем его и сразу перечитываем.
+    initialDataUpdatedAt: 0,
   });
   const properties = isHotelOrg ? query.data ?? [] : [];
   // Только объект активного филиала. Отката на properties[0] нет: без филиала

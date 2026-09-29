@@ -113,6 +113,8 @@ export interface UserPermissions {
   authStatus?: AuthStatus;
   /** Последняя ошибка при проверке сессии (только Django-режим, только unavailable). */
   authError?: string | null;
+  /** Текущий пользователь из /auth/me/ (тот же ответ, что права и контекст). */
+  user?: import('../api/auth').DjangoUser | null;
   /** Принудительно повторить запрос /auth/me/ без reload страницы (только Django-режим). */
   retryAuth?: () => void;
   /** Есть ли у пользователя пароль (из /auth/me/): false → в шапке кнопка

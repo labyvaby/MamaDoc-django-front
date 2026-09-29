@@ -31,6 +31,7 @@ import { AchievementToast } from "./components/achievements/AchievementToast";
 import { NewBookingToast } from "./components/bookings/NewBookingToast";
 import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
 import { FloatingTopBanners } from "./components/layout/FloatingTopBanners";
+import { ClinicOnly } from "./components/layout/ClinicOnly";
 import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
@@ -77,7 +78,7 @@ const ProcurementInvoicesPage = lazy(() => import("./pages/procurement"));
 const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
 const DjangoLabPage = lazy(() => import("./pages/lab/django"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
-const DjangoSchedulePage = lazy(() => import("./pages/schedule/django"));
+const DjangoSchedulePage = lazy(() => import("./pages/schedule/ScheduleRouter"));
 const DjangoWorkShiftsPage = lazy(() => import("./pages/work-shifts/django"));
 const AccessDeniedPage = lazy(() => import("./pages/AccessDenied"));
 const DjangoSkudSettingsPage = lazy(() => import("./pages/settings/django/SkudSettingsPage"));
@@ -582,15 +583,21 @@ function App() {
                               >
                                 <DjangoContextRemount>
                                   <>
-                                    <AnnouncementBanner />
+                                    {/* Клиничные глобальные виджеты у отеля не
+                                        монтируются — одно место, см. ClinicOnly. */}
+                                    <ClinicOnly>
+                                      <AnnouncementBanner />
+                                    </ClinicOnly>
                                      <Outlet />
                                      <FloatingTopBanners />
                                   </>
                                 </DjangoContextRemount>
-                                {/* Новая заявка онлайн-записи: тост из любого экрана */}
-                                <NewBookingToast />
-                                {/* Поздравление с новыми достижениями (mark-seen при закрытии) */}
-                                <AchievementToast />
+                                <ClinicOnly>
+                                  {/* Новая заявка онлайн-записи: тост из любого экрана */}
+                                  <NewBookingToast />
+                                  {/* Поздравление с новыми достижениями (mark-seen при закрытии) */}
+                                  <AchievementToast />
+                                </ClinicOnly>
                                 {/* Выбор филиала после логина (флаг ставит login.tsx) */}
                                 <BranchPickerDialog />
                               </ThemedLayout>

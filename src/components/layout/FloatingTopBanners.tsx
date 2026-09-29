@@ -4,6 +4,7 @@ import { AnimatePresence } from "framer-motion";
 
 import { ProfileCompletionBanner } from "../profile/ProfileCompletionBanner";
 import { AttendanceReminder } from "../attendance/AttendanceReminder";
+import { ClinicOnly } from "./ClinicOnly";
 
 /**
  * Плавающий стек уведомлений сверху по центру под шапкой.
@@ -34,7 +35,10 @@ export const FloatingTopBanners: React.FC = () => {
       >
         <AnimatePresence mode="sync">
           <ProfileCompletionBanner key="profile-completion" />
-          <AttendanceReminder key="attendance-reminder" />
+          {/* СКУД у отеля не используется — см. ClinicOnly. */}
+          <ClinicOnly key="attendance-reminder">
+            <AttendanceReminder />
+          </ClinicOnly>
         </AnimatePresence>
       </Box>
     </Portal>

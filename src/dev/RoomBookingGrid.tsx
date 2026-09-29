@@ -868,12 +868,25 @@ export const RoomBookingGrid: React.FC = () => {
                       borderColor: "divider",
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "center",
+                      justifyContent: "flex-start",
                       height: 26,
                       cursor: "grab",
+                      // Граница между месяцами — чтобы начало нового месяца читалось и в шапке.
+                      borderLeft: m.startCol > 0 ? 1 : 0,
                     }}
                   >
-                    <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                    {/* Ячейка месяца тянется на все подгруженные дни (до двух
+                        месяцев), и подпись по центру уходила за край экрана:
+                        над 27–30 сентября пусто, «Октябрь» — у 17-го числа.
+                        Липкая подпись держится у левого края видимой части
+                        своего месяца (сразу за колонкой «Номер»). */}
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      fontWeight={600}
+                      noWrap
+                      sx={{ position: "sticky", left: ROOM_COL_WIDTH, px: 1, maxWidth: "100%", minWidth: 0 }}
+                    >
                       {m.label}
                     </Typography>
                   </Box>

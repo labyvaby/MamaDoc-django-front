@@ -86,6 +86,24 @@ export function hotelRoomStateColor(state: string, theme: Theme): string {
   }
 }
 
+/**
+ * Номер, снятый с продажи на дату (RoomBlock: ремонт или ручная блокировка).
+ * Причину бэк пока отдаёт технической склейкой («Статус номера: выведен из
+ * продажи») — в подпись её не выносим, человек видит одно «Снят с продажи».
+ */
+export const HOTEL_OFF_SALE_LABEL = "Снят с продажи";
+
+/**
+ * «0 из 11 в продаже · 1 снят» — одна подпись для отчёта, Excel и полосы над
+ * шахматкой. Все три числа — итоги бэка на дату (total/occupied/blocked);
+ * статусы номеров фронт не пересчитывает. База «в продаже» = total − blocked —
+ * та же, от которой бэк считает occupancyPercent.
+ */
+export function formatSellableSummary(occupied: number, total: number, blocked: number): string {
+  const sellable = Math.max(0, total - blocked);
+  return `${occupied} из ${sellable} в продаже` + (blocked > 0 ? ` · ${blocked} снят` : "");
+}
+
 /** Ключи из catalogs.bookingSources/guaranteeMethods/boardTypes и т.п. — русские подписи для UI. */
 export const HOTEL_BOARD_TYPE_LABELS: Record<string, string> = {
   none: "Без питания",

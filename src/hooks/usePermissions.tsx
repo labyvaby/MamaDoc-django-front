@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentUser, switchAuthContext, userHasPassword } from "../api";
-import type { MeResponse, RbacMembership, RbacOrganization, RbacBranch, ActiveEmployee, SwitchContextPayload } from "../api/auth";
+import type { DjangoUser, MeResponse, RbacMembership, RbacOrganization, RbacBranch, ActiveEmployee, SwitchContextPayload } from "../api/auth";
 import { ApiError } from "../api/client";
 import { clearAccessEnded } from "../api/accessEnded";
 import type { Role, Permission, UserPermissions, RoleName, PermissionCheck, AuthStatus } from "../types/rbac";
@@ -34,6 +34,8 @@ type GlobalState = {
   /** Режим «Меню как у клиники» (только суперпользователь). Живёт в памяти
    *  вкладки: /auth/me/ и смена организации его не трогают. */
   viewAsOrganization: boolean;
+  /** Пользователь из того же /auth/me/ — чтобы виджеты не запрашивали его повторно. */
+  user: DjangoUser | null;
 };
 
 let globalState: GlobalState = {
@@ -41,7 +43,7 @@ let globalState: GlobalState = {
   lastFetchedAt: 0, employeeId: null, memberships: [], activeMembership: null,
   activeOrganization: null, activeBranch: null, activeEmployee: null,
   switching: false, enabledModules: [], authStatus: "loading", authError: null, hasPassword: null,
-  isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false,
+  isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false, user: null,
 };
 let inFlight: Promise<void> | null = null;
 const listeners = new Set<(state: GlobalState) => void>();
@@ -84,6 +86,7 @@ export function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
     hasPassword: userHasPassword(user),
     isPlatformAdmin: Boolean(user.isSuperuser),
     organizationModules: meData.organizationModules ?? null,
+    user,
   };
 }
 
@@ -116,7 +119,7 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       const meData = await getCurrentUser();
       if (epoch !== authEpoch) return;
       if (!meData?.user) {
-        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false });
+        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false, user: null });
       } else {
         setGlobal({
           ...buildStateFromMe(meData),
@@ -128,7 +131,7 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       if (epoch !== authEpoch) return;
       const status = error instanceof ApiError ? error.status : -1;
       if (status === 401) {
-        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false });
+        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false, user: null });
       } else {
         const message = error instanceof ApiError ? `Сервер недоступен (${status || "сеть"})` : "Сетевая ошибка";
         const authenticated = globalState.authStatus === "authenticated";
@@ -249,6 +252,7 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
     organizationModules: state.organizationModules,
     viewAsOrganization: state.viewAsOrganization,
     setViewAsOrganization,
+    user: state.user,
   };
 };
 
