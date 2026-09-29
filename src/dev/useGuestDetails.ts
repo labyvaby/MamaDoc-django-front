@@ -43,6 +43,9 @@ export function useGuestDetails(clientId: number | null) {
     queryKey: ["hotel", "guest", clientId],
     queryFn: ({ signal }) => getGuest(clientId!, signal),
     enabled: clientId != null,
+    // Без прошлых данных Refine (keepPreviousData): при переключении гостя на
+    // медленной сети карточка показывала предыдущего гостя.
+    placeholderData: undefined,
   });
   const guest = guestQuery.data;
 
@@ -50,6 +53,7 @@ export function useGuestDetails(clientId: number | null) {
     queryKey: ["hotel", "reservations", "byGuest", clientId, property?.id],
     queryFn: ({ signal }) => listReservations({ propertyId: property!.id, customerId: clientId!, limit: 50 }, signal),
     enabled: clientId != null && property != null,
+    placeholderData: undefined,
   });
   const reservations = reservationsQuery.data?.results ?? [];
 

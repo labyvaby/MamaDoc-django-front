@@ -106,8 +106,14 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     queryKey: ["hotel", "reservation", reservationId],
     queryFn: ({ signal }) => getReservation(reservationId!, signal),
     enabled: reservationId != null,
+    // Refine по умолчанию держит прошлые данные при смене ключа
+    // (placeholderData: keepPreviousData) — при медленной сети модалка другого
+    // номера показывала данные предыдущего. Здесь данные одной записи: пока
+    // новые не пришли, честный спиннер, а не чужая запись.
+    placeholderData: undefined,
   });
-  const reservation = query.data;
+  // И на всякий случай — только данные именно открытой брони.
+  const reservation = query.data && query.data.id === reservationId ? query.data : undefined;
   const item = reservation?.items[0];
 
   // Кто принял оплату и когда — по каждой записи, не только агрегат
@@ -116,15 +122,16 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     queryKey: ["hotel", "reservation", reservationId, "payments"],
     queryFn: ({ signal }) => listPayments(reservationId!, signal),
     enabled: reservationId != null,
+    placeholderData: undefined,
   });
-  const payments = paymentsQuery.data?.results ?? [];
+  const payments = paymentsQuery.data?.reservationId === reservationId ? paymentsQuery.data.results : [];
 
   const catalogsQuery = useQuery({
     queryKey: ["hotel", "catalogs", reservation?.propertyId],
     queryFn: ({ signal }) => getHotelCatalogs(reservation!.propertyId, signal),
     enabled: reservation != null,
   });
-  const paymentMethodChoices = catalogsQuery.data?.paymentMethods ?? [];
+  const paymentMethodChoices = React.useMemo(() => catalogsQuery.data?.paymentMethods ?? [], [catalogsQuery.data]);
 
   const [actionBusy, setActionBusy] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
@@ -160,6 +167,10 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setCashlessMethodId("");
     setPaymentError(null);
   }, [reservationId]);
+
+  React.useEffect(() => {
+    if (paymentFormOpen && !paymentMethod && paymentMethodChoices.length > 0) setPaymentMethod(paymentMethodChoices[0].value);
+  }, [paymentFormOpen, paymentMethod, paymentMethodChoices]);
 
   // Способ безнала — только пока выбран небезналовый метод; смена метода
   // обратно на «Наличные» сбрасывает выбор, иначе он молча уедет в payload.
@@ -306,6 +317,16 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const total = Number(reservation?.totalAmount ?? 0);
   const paid = Number(reservation?.paidAmount ?? 0);
   const balance = Number(reservation?.balanceDue ?? 0);
+
+  // «Принять оплату» — сразу с полной суммой остатка и первым способом
+  // оплаты: чаще всего гость платит всё, что осталось, и администратору
+  // остаётся нажать «Провести оплату». Частичную сумму можно поправить.
+  const openPaymentForm = () => {
+    setPaymentError(null);
+    setPaymentAmount(balance > 0 ? String(balance) : "");
+    setPaymentMethod((current) => current || paymentMethodChoices[0]?.value || "");
+    setPaymentFormOpen(true);
+  };
   const paidShare = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
   const stayStatus = item ? mapStayDisplayStatus(item.stayStatus) : null;
   const stayColor = stayStatus ? hotelStayStatusColor(stayStatus, theme) : theme.palette.text.disabled;
@@ -353,7 +374,12 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               </Button>
             </>
           ) : (
-            <CircularProgress size={28} />
+            <>
+              <CircularProgress size={28} />
+              <Typography variant="body2" color="text.secondary">
+                Загружаем бронь…
+              </Typography>
+            </>
           )}
         </Stack>
       )}
@@ -568,7 +594,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                     Оплата
                   </Typography>
                   {canManagePayments && !paymentFormOpen && (
-                    <Button size="small" startIcon={<PaymentsOutlined fontSize="small" />} onClick={() => setPaymentFormOpen(true)}>
+                    <Button size="small" startIcon={<PaymentsOutlined fontSize="small" />} onClick={openPaymentForm}>
                       Принять оплату
                     </Button>
                   )}
