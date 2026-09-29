@@ -16,6 +16,8 @@ const Details = ({ rows }: { rows: Array<{ label: string; value: string }> }) =>
 export function RecognitionDetails({ result }: { result: RecognitionResult }) {
   const { document } = result;
   const header = [
+    { label: "Номер документа", value: document.number },
+    { label: "Дата документа", value: document.date },
     { label: "Поставщик", value: document.supplier.name },
     { label: "ИНН поставщика", value: document.supplier.taxId },
     { label: "Телефон", value: document.supplier.phone },
@@ -52,6 +54,7 @@ export function RecognitionDetails({ result }: { result: RecognitionResult }) {
             <Typography component="summary" variant="body2" sx={{ cursor: "pointer", overflowWrap: "anywhere" }}>{index + 1}. {line.name}</Typography>
             <Box sx={{ mt: 1 }}>
               <Details rows={[
+                { label: "Страница", value: line.page == null ? null : String(line.page) },
                 { label: "Бренд", value: line.brand },
                 { label: "Название в документе", value: line.sourceName },
                 { label: "Описание", value: line.description },
