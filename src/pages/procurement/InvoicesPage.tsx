@@ -43,7 +43,7 @@ import { AppBottomSheet, MonthNavigation, PageHeader, ReasonDialog, SegmentedTab
 import { PaymentsList, ReturnsList } from "../../components/procurement/DocumentLists";
 import { ProcurementStatTiles } from "../../components/procurement/ProcurementStatTiles";
 import { ReceiptDetails } from "../../components/procurement/ReceiptDetails";
-import { ReceiptFormDrawer } from "../../components/procurement/ReceiptFormDrawer";
+import { ReceiptFormDialog } from "../../components/procurement/ReceiptFormDialog";
 import { ReceiptHeaderDialog } from "../../components/procurement/ReceiptHeaderDialog";
 import { ReceiptList } from "../../components/procurement/ReceiptList";
 import { SupplierFormDrawer } from "../../components/procurement/SupplierFormDrawer";
@@ -467,7 +467,7 @@ const InvoicesPage: React.FC = () => {
         </AppBottomSheet>
       )}
 
-      <ReceiptFormDrawer
+      <ReceiptFormDialog
         open={receiptFormOpen}
         onClose={() => setReceiptFormOpen(false)}
         onCreated={(created) => {
