@@ -6,8 +6,10 @@ import EventOutlined from "@mui/icons-material/EventOutlined";
 import SendOutlined from "@mui/icons-material/SendOutlined";
 import { useQuery } from "@tanstack/react-query";
 
-import { getProjectUnits, getUnit, realEstateKeys, type Project, type Unit, type UnitDetails } from "../../../../api/realestate";
+import { REALESTATE_USE_MOCKS, getProjectUnits, getUnit, realEstateKeys, type Project, type Unit, type UnitDetails } from "../../../../api/realestate";
 import { AppButton } from "../../../../components/ui";
+import { useApiOrgId } from "../../../../hooks/useApiOrgId";
+import { useCanChecker } from "../../../../hooks/useCan";
 import { DEFAULT_OFFER, pickFloorUnit, pickOffer, priceWithOffer } from "../../model/unitCard";
 import { formatMoney } from "../../model/units";
 import { useRealEstateToast } from "../toast";
@@ -75,8 +77,15 @@ export function UnitCardDialog({ project, unitId, onClose, onOpenUnit, onCompare
 }
 
 function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare }: Omit<UnitCardDialogProps, "unitId"> & { unitId: string }) {
-  const query = useQuery({ queryKey: realEstateKeys.unit(unitId), queryFn: () => getUnit(unitId) });
-  const projectUnits = useQuery({ queryKey: realEstateKeys.units(project.id), queryFn: () => getProjectUnits(project.id) }).data;
+  const organizationId = useApiOrgId();
+  const { can } = useCanChecker();
+  // Команды над квартирой — realty.manage; без него карточка только для чтения.
+  const canManage = REALESTATE_USE_MOCKS || can("realty.manage");
+  const query = useQuery({ queryKey: realEstateKeys.unit(unitId), queryFn: () => getUnit(unitId, organizationId) });
+  const projectUnits = useQuery({
+    queryKey: realEstateKeys.units(project.id),
+    queryFn: () => getProjectUnits(project.id, organizationId),
+  }).data;
   const [screen, setScreen] = React.useState<Screen>("unit");
   const [offerId, setOfferId] = React.useState(DEFAULT_OFFER);
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -109,7 +118,7 @@ function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare }: Omit<Unit
   }
 
   const offer = pickOffer(unit.offers, offerId);
-  const flow: FlowProps = { project, unit, offer, onBack: () => setScreen("unit"), onClose, go: setScreen, onOpenUnit };
+  const flow: FlowProps = { project, unit, offer, organizationId, canManage, onBack: () => setScreen("unit"), onClose, go: setScreen, onOpenUnit };
   const flows: Record<Exclude<Screen, "unit">, () => React.ReactElement> = {
     reserve: () => <ReserveScreen {...flow} />,
     payment: () => <PaymentScreen {...flow} />,
@@ -139,6 +148,7 @@ function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare }: Omit<Unit
             if (next && next.id !== unit.id) onOpenUnit(next.id);
           }}
           onCompare={onCompare}
+          canManage={canManage}
         />
       ) : (
         flows[screen]()
@@ -157,6 +167,7 @@ function ApartmentDetail({
   onOpenUnit,
   onChangeFloor,
   onCompare,
+  canManage,
 }: {
   project: Project;
   unit: UnitDetails;
@@ -167,6 +178,7 @@ function ApartmentDetail({
   onOpenUnit: (unitId: string) => void;
   onChangeFloor: (direction: -1 | 1) => void;
   onCompare: (unitId: string) => void;
+  canManage: boolean;
 }) {
   const toast = useRealEstateToast();
   const offer = pickOffer(unit.offers, offerId);
@@ -185,7 +197,7 @@ function ApartmentDetail({
           toast("Акция выбрана", `${next.title} · итог ${formatMoney(priceWithOffer(unit, next))}`);
         }}
         onDetails={() => go("offer")}
-        onReserve={() => go("reserve")}
+        onReserve={canManage ? () => go("reserve") : undefined}
       />
       <Characteristics unit={unit} onCompare={onCompare} />
       <FloorScheme unit={unit} floorUnits={floorUnits} onOpenUnit={onOpenUnit} onChangeFloor={onChangeFloor} />
@@ -198,51 +210,58 @@ function ApartmentDetail({
         <PaymentCard unit={unit} />
       </Box>
       <TechCard project={project} unit={unit} />
-      <History key={unit.history.length} unit={unit} onOperation={() => go("operation")} />
-      <Box
-        component="footer"
-        sx={{
-          position: "sticky",
-          bottom: 0,
-          zIndex: 1,
-          mt: 2,
-          mx: { xs: -2, md: -3.5 },
-          mb: { xs: -2, md: -3.5 },
-          px: { xs: 2, md: 3.5 },
-          py: 1.75,
-          display: "flex",
-          flexWrap: "wrap",
-          justifyContent: "flex-end",
-          gap: 1.25,
-          borderTop: 1,
-          borderColor: "divider",
-          bgcolor: "background.paper",
-        }}
-      >
-        <Button variant="outlined" startIcon={<SendOutlined />} onClick={() => go("proposal")}>
-          Отправить КП
-        </Button>
-        <Button variant="outlined" startIcon={<EventOutlined />} onClick={() => go("meeting")}>
-          Поставить встречу
-        </Button>
-        {unit.status === "free" ? (
-          <AppButton variant="contained" onClick={() => go("reserve")}>
-            Забронировать квартиру
-          </AppButton>
-        ) : unit.status === "reserved" && reservation?.paymentStatus === "pending" ? (
-          <AppButton variant="contained" onClick={() => go("payment")}>
-            Показать QR для оплаты
-          </AppButton>
-        ) : unit.status === "reserved" ? (
-          <AppButton variant="contained" onClick={() => go("contract")}>
-            Подписать договор
-          </AppButton>
-        ) : (
-          <AppButton variant="contained" onClick={() => go("signed")}>
-            Открыть договор
-          </AppButton>
-        )}
-      </Box>
+      <History key={unit.history.length} unit={unit} onOperation={canManage ? () => go("operation") : undefined} />
+      {/* Без realty.manage остаётся только просмотр договора. */}
+      {(canManage || unit.status === "sold") && (
+        <Box
+          component="footer"
+          sx={{
+            position: "sticky",
+            bottom: 0,
+            zIndex: 1,
+            mt: 2,
+            mx: { xs: -2, md: -3.5 },
+            mb: { xs: -2, md: -3.5 },
+            px: { xs: 2, md: 3.5 },
+            py: 1.75,
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+            gap: 1.25,
+            borderTop: 1,
+            borderColor: "divider",
+            bgcolor: "background.paper",
+          }}
+        >
+          {canManage && (
+            <>
+              <Button variant="outlined" startIcon={<SendOutlined />} onClick={() => go("proposal")}>
+                Отправить КП
+              </Button>
+              <Button variant="outlined" startIcon={<EventOutlined />} onClick={() => go("meeting")}>
+                Поставить встречу
+              </Button>
+            </>
+          )}
+          {unit.status === "free" ? (
+            <AppButton variant="contained" onClick={() => go("reserve")}>
+              Забронировать квартиру
+            </AppButton>
+          ) : unit.status === "reserved" && reservation?.paymentStatus === "pending" ? (
+            <AppButton variant="contained" onClick={() => go("payment")}>
+              Показать QR для оплаты
+            </AppButton>
+          ) : unit.status === "reserved" ? (
+            <AppButton variant="contained" onClick={() => go("contract")}>
+              Подписать договор
+            </AppButton>
+          ) : (
+            <AppButton variant="contained" onClick={() => go("signed")}>
+              Открыть договор
+            </AppButton>
+          )}
+        </Box>
+      )}
     </Box>
   );
 }

@@ -3,6 +3,7 @@ import { Box, Button, Skeleton, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 
 import { getProjectUnits, getRealEstateProjects, realEstateKeys, type Project, type Unit } from "../../api/realestate";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { autoBoardView, boundsOf, buildBoard, withUnitLayout } from "./model/board";
 import { downloadPriceList } from "./model/priceList";
@@ -34,7 +35,12 @@ export default function RealEstateChessboardPage() {
 
 function ChessboardPage() {
   const [params, updateParams] = useChessboardParams();
-  const projectsQuery = useQuery({ queryKey: realEstateKeys.projects(), queryFn: getRealEstateProjects, staleTime: 5 * 60_000 });
+  const organizationId = useApiOrgId();
+  const projectsQuery = useQuery({
+    queryKey: realEstateKeys.projects(),
+    queryFn: () => getRealEstateProjects(organizationId),
+    staleTime: 5 * 60_000,
+  });
 
   const projects = projectsQuery.data;
   const project = projects?.find((p) => p.id === params.projectId) ?? projects?.[0];
@@ -85,7 +91,12 @@ function PageSkeleton() {
 function ProjectChessboard({ project: baseProject, projects, onSelectProject }: { project: Project; projects: Project[]; onSelectProject: (projectId: string) => void }) {
   const toast = useRealEstateToast();
   const [params, updateParams] = useChessboardParams();
-  const unitsQuery = useQuery({ queryKey: realEstateKeys.units(baseProject.id), queryFn: () => getProjectUnits(baseProject.id), staleTime: 30_000 });
+  const organizationId = useApiOrgId();
+  const unitsQuery = useQuery({
+    queryKey: realEstateKeys.units(baseProject.id),
+    queryFn: () => getProjectUnits(baseProject.id, organizationId),
+    staleTime: 30_000,
+  });
   const units = unitsQuery.data;
   // Бэк не отдаёт секции ЖК и первый жилой этаж — достраиваем по квартирам.
   const project = React.useMemo(() => (units ? withUnitLayout(baseProject, units) : baseProject), [baseProject, units]);

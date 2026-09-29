@@ -211,7 +211,8 @@ export function Promotions({
   active: UnitOffer;
   onSelect: (offer: UnitOffer) => void;
   onDetails: () => void;
-  onReserve: () => void;
+  /** Нет — бронировать нельзя (без realty.manage). */
+  onReserve?: () => void;
 }) {
   const finalPrice = priceWithOffer(unit, active);
   return (
@@ -333,7 +334,7 @@ export function Promotions({
         <Button variant="outlined" onClick={onDetails}>
           Условия акции
         </Button>
-        {unit.status === "free" && (
+        {unit.status === "free" && onReserve && (
           <AppButton variant="contained" onClick={onReserve}>
             Забронировать по этой цене
           </AppButton>
@@ -1036,7 +1037,8 @@ function historyTone(t: Theme, type: UnitEventType) {
     : { bgcolor: subtleBg(t, true), color: t.palette.text.secondary };
 }
 
-export function History({ unit, onOperation }: { unit: UnitDetails; onOperation: () => void }) {
+/** `onOperation` нет — операции недоступны (без realty.manage). */
+export function History({ unit, onOperation }: { unit: UnitDetails; onOperation?: () => void }) {
   const [openIds, setOpenIds] = React.useState(() => new Set(unit.history.slice(0, 1).map((e) => e.id)));
   const toggle = (id: string) =>
     setOpenIds((prev) => {
@@ -1049,9 +1051,11 @@ export function History({ unit, onOperation }: { unit: UnitDetails; onOperation:
   return (
     <Box component="section" sx={sectionSx}>
       <SectionTitle eyebrow="Аудит действий" title="История квартиры" text={`${unit.history.length} событий · сохраняются в карточке квартиры`} size="1rem">
-        <Button size="small" variant="outlined" startIcon={<AddOutlined />} onClick={onOperation}>
-          Операция
-        </Button>
+        {onOperation && (
+          <Button size="small" variant="outlined" startIcon={<AddOutlined />} onClick={onOperation}>
+            Операция
+          </Button>
+        )}
       </SectionTitle>
       <Box sx={{ display: "grid", gap: 0.75 }}>
         {unit.history.map((event) => {

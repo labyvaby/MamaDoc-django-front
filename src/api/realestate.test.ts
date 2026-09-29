@@ -124,6 +124,7 @@ describe("переходники realty → модель шахматки", () =
       ...rawUnit(1, "А", 2, 1, {
         status: "reserved",
         reservation: {
+          id: 7,
           buyer: "Бакыт Усупов",
           phone: "+996700333444",
           type: "prepaid",
@@ -168,12 +169,30 @@ describe("переходники realty → модель шахматки", () =
       ],
     };
     const details = fromRawUnitDetails(raw);
-    expect(details.reservation).toMatchObject({ termHours: 72, amount: 100_000, finalPrice: 6_681_000 });
+    expect(details.reservation).toMatchObject({ id: "7", termHours: 72, amount: 100_000, finalPrice: 6_681_000 });
+    expect(details.building).toBe("А");
     expect(details.reservation?.expiresAt).toMatch(/^\d{2}\.\d{2}\.2026 \d{2}:\d{2}$/);
     expect(details.contract).toMatchObject({ number: "ДКП-2026-001", payment: "Рассрочка 24 месяца" });
     expect(details.contract?.signedAt).toMatch(/^\d{2}\.09\.2026 \d{2}:\d{2}$/);
     expect(details.history[0]).toMatchObject({ id: "1", details: "" });
     expect(details.history[0].date).toMatch(/^\d{2}\.\d{2}\.2026 \d{2}:\d{2}$/);
     expect(details.offers[0].discount).toBe(0);
+  });
+
+  it("секции ЖК — объекты по порядку; дом = название секции", () => {
+    const project = fromRawProject({
+      ...rawProject,
+      sections: [
+        { id: 1, name: "А", floors: 13, progress: 60, deadline: null, deadlineLabel: "III квартал 2027" },
+        { id: 2, name: "Б", floors: 13, progress: 40, deadline: null, deadlineLabel: "IV квартал 2027" },
+      ],
+    });
+    expect(project.sections).toEqual(["А", "Б"]);
+    expect(project.buildings).toEqual(["А", "Б"]);
+  });
+
+  it("площадь помещения читается из size", () => {
+    const unit = fromRawUnit(rawUnit(1, "А", 2, 1, { roomData: [{ name: "Гостиная", size: 22.5, width: 4.5, length: 5 }] }));
+    expect(unit.roomsBreakdown).toEqual([{ name: "Гостиная", area: 22.5, width: 4.5, length: 5 }]);
   });
 });

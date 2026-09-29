@@ -22,6 +22,8 @@ import { Controller, useForm } from "react-hook-form";
 import dayjs, { type Dayjs } from "dayjs";
 
 import {
+  CONTRACT_PAYMENT_LABELS,
+  REALESTATE_USE_MOCKS,
   confirmUnitPrepayment,
   getProjectUnits,
   getSalesManagers,
@@ -31,7 +33,9 @@ import {
   scheduleUnitMeeting,
   sendUnitProposal,
   signUnitContract,
+  type ContractPayment,
   type Project,
+  type ReservationTerm,
   type ReservationType,
   type UnitDetails,
   type UnitOffer,
@@ -67,6 +71,10 @@ export interface FlowProps {
   project: Project;
   unit: UnitDetails;
   offer: UnitOffer;
+  /** Суперпользователю бэк без него отвечает 400. */
+  organizationId: number | undefined;
+  /** realty.manage — команды над квартирой. */
+  canManage: boolean;
   onBack: () => void;
   onClose: () => void;
   go: (screen: Screen) => void;
@@ -179,9 +187,9 @@ interface ReserveForm {
   meetingAt: Dayjs | null;
 }
 
-export function ReserveScreen({ project, unit, offer, onBack, go }: FlowProps) {
+export function ReserveScreen({ project, unit, offer, organizationId, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
-  const reserve = useUnitCommand((input: Parameters<typeof reserveUnit>[1]) => reserveUnit(unit.id, input));
+  const reserve = useUnitCommand((input: Parameters<typeof reserveUnit>[1]) => reserveUnit(unit.id, input, organizationId));
   const finalPrice = priceWithOffer(unit, offer);
   const { register, control, handleSubmit, watch, formState } = useForm<ReserveForm>({
     defaultValues: { buyer: "", phone: "", term: "48", type: "free", withMeeting: true, meetingAt: tomorrowAt11() },
@@ -194,7 +202,7 @@ export function ReserveScreen({ project, unit, offer, onBack, go }: FlowProps) {
       {
         buyer: form.buyer.trim(),
         phone: form.phone.trim(),
-        termHours: Number(form.term) || 48,
+        termHours: Number(form.term) as ReservationTerm,
         type: form.type,
         offerId: offer.id,
         meetingAt: form.withMeeting && form.meetingAt ? form.meetingAt.format("YYYY-MM-DDTHH:mm") : null,
@@ -401,9 +409,9 @@ function DemoQr() {
   );
 }
 
-export function PaymentScreen({ project, unit, onBack, go }: FlowProps) {
+export function PaymentScreen({ project, unit, organizationId, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
-  const confirm = useUnitCommand(() => confirmUnitPrepayment(unit.id));
+  const confirm = useUnitCommand(() => confirmUnitPrepayment(unit, organizationId));
   const amount = unit.reservation?.amount || PREPAYMENT;
   return (
     <Box>
@@ -477,9 +485,9 @@ export function SuccessScreen({ unit, onBack, go }: FlowProps) {
 
 // ─── КП, встреча ───────────────────────────────────────────────────────────
 
-export function ProposalScreen({ project, unit, offer, onBack, onClose }: FlowProps) {
+export function ProposalScreen({ project, unit, offer, organizationId, onBack, onClose }: FlowProps) {
   const toast = useRealEstateToast();
-  const send = useUnitCommand((input: Parameters<typeof sendUnitProposal>[1]) => sendUnitProposal(unit.id, input));
+  const send = useUnitCommand((input: Parameters<typeof sendUnitProposal>[1]) => sendUnitProposal(unit.id, input, organizationId));
   const finalPrice = priceWithOffer(unit, offer);
   const perMeter = money(Math.round(finalPrice / unit.totalArea));
   const { register, control, handleSubmit, formState } = useForm<{ phone: string; includePlan: boolean }>({
@@ -587,9 +595,9 @@ interface MeetingForm {
   note: string;
 }
 
-export function MeetingScreen({ project, unit, onBack, onClose }: FlowProps) {
+export function MeetingScreen({ project, unit, organizationId, onBack, onClose }: FlowProps) {
   const toast = useRealEstateToast();
-  const schedule = useUnitCommand((input: Parameters<typeof scheduleUnitMeeting>[1]) => scheduleUnitMeeting(unit.id, input));
+  const schedule = useUnitCommand((input: Parameters<typeof scheduleUnitMeeting>[1]) => scheduleUnitMeeting(unit.id, input, organizationId));
   const { register, control, handleSubmit, formState } = useForm<MeetingForm>({
     defaultValues: { buyer: unit.reservation?.buyer ?? "", phone: unit.reservation?.phone ?? "", meetingAt: tomorrowAt11(), note: "" },
   });
@@ -673,12 +681,17 @@ interface OperationForm {
   comment: string;
 }
 
-export function OperationScreen({ unit, go, onBack, onOpenUnit }: FlowProps) {
+export function OperationScreen({ unit, organizationId, go, onBack, onOpenUnit }: FlowProps) {
   const toast = useRealEstateToast();
-  const run = useUnitCommand((input: Parameters<typeof runUnitOperation>[1]) => runUnitOperation(unit.id, input));
-  const managersData = useQuery({ queryKey: realEstateKeys.managers(), queryFn: getSalesManagers, staleTime: Infinity }).data;
+  const run = useUnitCommand((input: Parameters<typeof runUnitOperation>[1]) => runUnitOperation(unit.id, input, organizationId));
+  const managersData = useQuery({
+    queryKey: realEstateKeys.managers(),
+    queryFn: () => getSalesManagers(organizationId),
+    staleTime: Infinity,
+  }).data;
   const managers = React.useMemo(() => managersData ?? [], [managersData]);
-  const projectUnits = useQuery({ queryKey: realEstateKeys.units(unit.projectId), queryFn: () => getProjectUnits(unit.projectId) }).data ?? [];
+  const projectUnits =
+    useQuery({ queryKey: realEstateKeys.units(unit.projectId), queryFn: () => getProjectUnits(unit.projectId, organizationId) }).data ?? [];
   const freeUnits = projectUnits.filter((u) => u.status === "free" && u.id !== unit.id).slice(0, 20);
 
   const options: [UnitOperation, string][] = [
@@ -700,12 +713,20 @@ export function OperationScreen({ unit, go, onBack, onOpenUnit }: FlowProps) {
   // Список менеджеров приходит позже формы — первого подставляем, как селект прототипа.
   const actor = watch("actor");
   React.useEffect(() => {
-    if (!actor && managers[0]) setValue("actor", managers[0]);
+    if (!actor && managers[0]) setValue("actor", managers[0].name);
   }, [actor, managers, setValue]);
 
   const submit = handleSubmit((form) => {
     run.mutate(
-      { operation: form.operation, actor: form.actor, buyer: form.buyer.trim(), targetUnitId: form.target || null, comment: form.comment.trim() },
+      {
+        operation: form.operation,
+        // Выбран из справочника — шлём и id сотрудника (у бэка он приоритетнее ФИО).
+        actorId: managers.find((m) => m.name === form.actor)?.id || null,
+        actor: form.actor.trim(),
+        buyer: form.buyer.trim(),
+        targetUnitId: form.target || null,
+        comment: form.comment.trim(),
+      },
       {
         onSuccess: (next) => {
           if (next.id !== unit.id) onOpenUnit(next.id);
@@ -738,12 +759,12 @@ export function OperationScreen({ unit, go, onBack, onOpenUnit }: FlowProps) {
             control={control}
             name="actor"
             render={({ field }) =>
-              // Справочника менеджеров у бэка нет — тогда ответственный вводится текстом.
+              // Справочник сотрудников недоступен (нет права) — ответственный вводится текстом.
               managers.length ? (
                 <TextField select label="Ответственный" {...field}>
-                  {managers.map((name) => (
-                    <MenuItem key={name} value={name}>
-                      {name}
+                  {managers.map((manager) => (
+                    <MenuItem key={manager.id || manager.name} value={manager.name}>
+                      {manager.name}
                     </MenuItem>
                   ))}
                 </TextField>
@@ -855,14 +876,16 @@ interface ContractForm {
   passport: string;
   phone: string;
   email: string;
-  payment: string;
+  payment: ContractPayment;
   signCode: string;
   accept: boolean;
 }
 
-export function ContractScreen({ project, unit, onBack, go }: FlowProps) {
+export function ContractScreen({ project, unit, organizationId, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
-  const sign = useMutation({ mutationFn: (input: Parameters<typeof signUnitContract>[1]) => signUnitContract(unit.id, input) });
+  const sign = useMutation({
+    mutationFn: (input: Parameters<typeof signUnitContract>[1]) => signUnitContract(unit.id, input, organizationId),
+  });
   const queryClient = useQueryClient();
   const contractNo = `ДКП-${new Date().getFullYear()}-${unit.number}`;
   const { down } = paymentPlan(unit.price);
@@ -872,7 +895,7 @@ export function ContractScreen({ project, unit, onBack, go }: FlowProps) {
       passport: "",
       phone: unit.reservation?.phone ?? "",
       email: "",
-      payment: "Рассрочка 24 месяца",
+      payment: "installment",
       signCode: "",
       accept: false,
     },
@@ -943,23 +966,26 @@ export function ContractScreen({ project, unit, onBack, go }: FlowProps) {
             name="payment"
             render={({ field }) => (
               <TextField select label="Способ оплаты" {...field}>
-                {["Рассрочка 24 месяца", "100% оплата", "Ипотека"].map((p) => (
-                  <MenuItem key={p} value={p}>
-                    {p}
+                {(Object.entries(CONTRACT_PAYMENT_LABELS) as [ContractPayment, string][]).map(([value, label]) => (
+                  <MenuItem key={value} value={value}>
+                    {label}
                   </MenuItem>
                 ))}
               </TextField>
             )}
           />
-          <TextField
-            label="Код электронной подписи"
-            placeholder="Демо-код: 4826"
-            sx={wide}
-            inputProps={{ inputMode: "numeric", maxLength: 4 }}
-            {...register("signCode", { required: "Введите код подписи", pattern: { value: /^\d{4}$/, message: "Код — 4 цифры" } })}
-            error={Boolean(formState.errors.signCode)}
-            helperText={formState.errors.signCode?.message}
-          />
+          {/* SMS-подписания на бэке пока нет, код он не проверяет — поле только в демо на моках. */}
+          {REALESTATE_USE_MOCKS && (
+            <TextField
+              label="Код электронной подписи"
+              placeholder="Демо-код: 4826"
+              sx={wide}
+              inputProps={{ inputMode: "numeric", maxLength: 4 }}
+              {...register("signCode", { required: "Введите код подписи", pattern: { value: /^\d{4}$/, message: "Код — 4 цифры" } })}
+              error={Boolean(formState.errors.signCode)}
+              helperText={formState.errors.signCode?.message}
+            />
+          )}
         </Box>
         <Controller
           control={control}

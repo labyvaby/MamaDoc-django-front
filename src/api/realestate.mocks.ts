@@ -8,6 +8,7 @@
  * структурно, и мутация общего объекта «спрятала» бы смену статуса.
  */
 import { ApiError } from "./client";
+import { CONTRACT_PAYMENT_LABELS } from "./realestate";
 import type {
   Contract,
   ContractInput,
@@ -493,6 +494,7 @@ export function reserve(unitId: string, input: ReserveUnitInput): UnitDetails {
   historyOf(unit);
   unit.status = "reserved";
   stateOf(unit).reservation = {
+    id: `r-${unit.id}-${Date.now()}`,
     buyer: input.buyer,
     phone: input.phone,
     type: input.type,
@@ -661,7 +663,7 @@ export function signContract(unitId: string, input: ContractInput): UnitDetails 
   s.contract = {
     number: `ДКП-${new Date().getFullYear()}-${unit.number}`,
     buyer: input.buyer,
-    payment: input.payment,
+    payment: CONTRACT_PAYMENT_LABELS[input.payment],
     signedAt: new Date().toLocaleString("ru-RU"),
   };
   addEvent(unit, {
@@ -670,7 +672,7 @@ export function signContract(unitId: string, input: ContractInput): UnitDetails 
     actor: projectOf(unit).manager,
     buyer: input.buyer,
     stage: "Договор подписан",
-    details: `Договор ${s.contract.number}. Стоимость ${money(unit.price)}. Способ оплаты: ${input.payment}.`,
+    details: `Договор ${s.contract.number}. Стоимость ${money(unit.price)}. Способ оплаты: ${CONTRACT_PAYMENT_LABELS[input.payment]}.`,
   });
   return unitDetails(unit);
 }
