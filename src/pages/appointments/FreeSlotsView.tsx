@@ -148,7 +148,7 @@ const PAGER_ARROW_ZONE = 34;
 const PAGER_COUNTER_ZONE = 72;
 /** Края трека гасим, чтобы уезжающее имя не сталкивалось со стрелками. */
 const PAGER_EDGE_MASK = `linear-gradient(90deg, transparent 0, #000 ${PAGER_ARROW_ZONE}px, #000 calc(100% - ${PAGER_COUNTER_ZONE}px), transparent 100%)`;
-const DESKTOP_DOCTOR_COLUMN_MIN = 220;
+const DESKTOP_DOCTOR_COLUMN_MIN = 180;
 const DESKTOP_DOCTOR_COLUMN_MAX = 380;
 const DESKTOP_DOCTOR_COLUMN_DEFAULT = 280;
 
