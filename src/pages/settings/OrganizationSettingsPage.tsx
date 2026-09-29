@@ -191,6 +191,7 @@ const OrganizationSettingsPage: React.FC = () => {
   // Основа терминологии — СОХРАНЁННАЯ вертикаль: несохранённое переключение
   // радиокнопки не должно менять эталон, от которого считаются оверрайды.
   const termBase = getGlossary(org?.vertical);
+  const isHotelOrg = (org?.vertical ?? activeOrganization?.vertical) === "hotel";
   const changedCount = changedTermKeys(termBase, overrides).length;
   const dirty =
     nameDirty || scopeDirty || overlapDirty || verticalDirty || confirmStepDirty;
@@ -474,7 +475,9 @@ const OrganizationSettingsPage: React.FC = () => {
               </RadioGroup>
             </FormControl>
 
-            {/* Appointment overlap policy */}
+            {/* Appointment overlap policy — у отеля пересечения броней проверяет сам
+                номер (NO_AVAILABILITY), «бронь сотрудника» ему не про что. */}
+            {!isHotelOrg && (
             <FormControl disabled={!canUpdate || busy}>
               <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
                 <LayersOutlined fontSize="small" color="action" />
@@ -512,8 +515,10 @@ const OrganizationSettingsPage: React.FC = () => {
                 ))}
               </RadioGroup>
             </FormControl>
+            )}
 
-            {/* Ход приёма: шаг «Подтверждён» */}
+            {/* Ход приёма: шаг «Подтверждён» — клиничный шаг визита, у отеля свой цикл брони. */}
+            {!isHotelOrg && (
             <FormControl disabled={!canUpdate || busy}>
               <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
                 <EventAvailableOutlined fontSize="small" color="action" />
@@ -548,8 +553,11 @@ const OrganizationSettingsPage: React.FC = () => {
                 }
               />
             </FormControl>
+            )}
 
-            {/* Профиль терминологии: стандартный набор вертикалей */}
+            {/* Профиль терминологии: варианты только «клиника/салон» — у отеля сохранение
+                молча сменило бы вертикаль, и текст про «слова медицинской клиники» тоже не к месту. */}
+            {!isHotelOrg && (
             <FormControl disabled={!canUpdate || busy}>
               <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
                 <TranslateOutlined fontSize="small" color="action" />
@@ -590,9 +598,11 @@ const OrganizationSettingsPage: React.FC = () => {
                 ))}
               </RadioGroup>
             </FormControl>
+            )}
 
-            {/* Свои термины организации — поверх выбранного профиля */}
-            {org && (
+            {/* Свои термины организации — поверх выбранного профиля. У отеля свой
+                фиксированный словарь, а примеры тут клиничные («пациент», «приём»). */}
+            {org && !isHotelOrg && (
               <Box>
                 <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
                   <SpellcheckOutlined fontSize="small" color="action" />

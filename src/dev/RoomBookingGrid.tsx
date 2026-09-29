@@ -231,9 +231,10 @@ export const RoomBookingGrid: React.FC = () => {
   // Общий с HotelOccupancyBanner стор — клик по числу ниже сразу двигает
   // карточки «Загрузка»/«Гости» сверху страницы.
   const selectedDate = React.useSyncExternalStore(subscribeSelectedHotelDate, getSelectedHotelDate);
-  // Индекс в ZOOM_LEVELS — по умолчанию последний (60 дней), то же поведение,
-  // что было раньше с фиксированным NUM_DAYS: оба месяца видны сразу.
-  const [zoomIndex, setZoomIndex] = React.useState(ZOOM_LEVELS.length - 1);
+  // Индекс в ZOOM_LEVELS — по умолчанию 21 день: при 60 колонка дня была 20px,
+  // даты и бары не читались, а слабые ноутбуки тормозили на тысячах ячеек.
+  // Обзорнее — кнопкой «−» в тулбаре.
+  const [zoomIndex, setZoomIndex] = React.useState(ZOOM_LEVELS.indexOf(21));
   const numVisibleDays = ZOOM_LEVELS[zoomIndex];
   // «Приблизить» (+) = меньше дней в ширину окна, крупнее каждый; «отдалить» (−) —
   // больше дней, мельче. Тот же смысл, что у зума карты/картинки: «+» — ближе и
@@ -799,8 +800,6 @@ export const RoomBookingGrid: React.FC = () => {
     <Box sx={{ flexShrink: 0 }}>
       <BoardShell actions={toolbar}>
         <Stack gap={1.5}>
-          {/* relative-обёртка нужна только затем, чтобы стрелки ниже (position: absolute)
-              позиционировались от видимой области грида, а не от края документа. */}
           <Box sx={{ position: "relative" }}>
             <Box
               ref={setScrollEl}
@@ -808,7 +807,8 @@ export const RoomBookingGrid: React.FC = () => {
               onKeyDown={handleGridKeyDown}
               sx={{
                 overflow: "auto",
-                maxHeight: 440,
+                // Высота по экрану: фиксированные 440px показывали половину номеров.
+                maxHeight: { xs: 520, md: "max(440px, calc(100vh - 330px))" },
                 // Фокус с клавиатуры не должен уезжать под липкую колонку номеров и шапку.
                 scrollPaddingLeft: `${ROOM_COL_WIDTH}px`,
                 scrollPaddingTop: "80px",
@@ -1334,48 +1334,6 @@ export const RoomBookingGrid: React.FC = () => {
               </Box>
             </Box>
 
-          {/* Стрелки на краях шапки дат — то же самое, что «‹ ›» в тулбаре выше, но
-              рядом с самими датами: не нужно тянуться к шапке карточки. Левая стоит
-              сразу после липкой колонки номеров, правая — у правого края видимой
-              области; обе поверх шапки (zIndex выше её sticky-ячеек). */}
-          <IconButton
-            size="small"
-            onClick={() => scrollByDays(-7)}
-            aria-label="Дни назад"
-            sx={{
-              position: "absolute",
-              top: 26,
-              left: ROOM_COL_WIDTH + 4,
-              height: 35,
-              zIndex: 5,
-              bgcolor: "background.paper",
-              border: 1,
-              borderColor: "divider",
-              boxShadow: 1,
-              "&:hover": { bgcolor: "action.hover" },
-            }}
-          >
-            <ChevronLeftOutlined fontSize="small" />
-          </IconButton>
-          <IconButton
-            size="small"
-            onClick={() => scrollByDays(7)}
-            aria-label="Дни вперёд"
-            sx={{
-              position: "absolute",
-              top: 26,
-              right: 4,
-              height: 35,
-              zIndex: 5,
-              bgcolor: "background.paper",
-              border: 1,
-              borderColor: "divider",
-              boxShadow: 1,
-              "&:hover": { bgcolor: "action.hover" },
-            }}
-          >
-            <ChevronRightOutlined fontSize="small" />
-          </IconButton>
           </Box>
 
           {/* Подвал — легенда состояний и статусов + сколько номеров показано и часы

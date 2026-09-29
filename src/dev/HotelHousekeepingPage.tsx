@@ -153,6 +153,7 @@ export const HotelHousekeepingPage: React.FC = () => {
   const [statusMenuAnchor, setStatusMenuAnchor] = React.useState<{ el: HTMLElement; task: HotelHousekeepingTask } | null>(null);
   const [doneTask, setDoneTask] = React.useState<HotelHousekeepingTask | null>(null);
   const [doneRoomState, setDoneRoomState] = React.useState<string>("clean");
+  const [closingStale, setClosingStale] = React.useState(false);
 
   const tasksQuery = useQuery({
     queryKey: ["hotel", "housekeepingTasks", property?.id, statusFilter, mineOnly],
@@ -287,6 +288,27 @@ export const HotelHousekeepingPage: React.FC = () => {
   const isOverdue = (t: HotelHousekeepingTask) =>
     t.dueAt != null && (t.status === "open" || t.status === "in_progress") && dayjs(t.dueAt).isBefore(now);
   const overdueCount = tasks.filter(isOverdue).length;
+  // Задача на уборку по номеру, который уже «Убрано»/«Проверено», — противоречие
+  // (номер 201 «Убрано», а «После выезда» висит 12 дней). Показываем и даём
+  // закрыть одним кликом; новые такие не появятся — RoomStateControl теперь
+  // сам закрывает задачи при смене состояния.
+  const isStale = (t: HotelHousekeepingTask) =>
+    (t.status === "open" || t.status === "in_progress") &&
+    (t.kind === "checkout" || t.kind === "stayover") &&
+    (t.roomHousekeepingState === "clean" || t.roomHousekeepingState === "inspected");
+  const staleTasks = tasks.filter(isStale);
+  const closeStale = async (list: HotelHousekeepingTask[]) => {
+    setClosingStale(true);
+    try {
+      await Promise.all(list.map((t) => updateHousekeepingTask(t.id, { status: "done" })));
+      invalidateAfterChange(false);
+      enqueueSnackbar(list.length === 1 ? "Задача закрыта" : `Закрыто задач: ${list.length}`, { variant: "success" });
+    } catch (err) {
+      enqueueSnackbar(getErrorMessage(err, "Не удалось закрыть задачи"), { variant: "error" });
+    } finally {
+      setClosingStale(false);
+    }
+  };
 
   return (
     <HotelPage>
@@ -319,6 +341,20 @@ export const HotelHousekeepingPage: React.FC = () => {
           label={<Typography variant="body2">Только мои</Typography>}
         />
       </Stack>
+
+      {staleTasks.length > 0 && (
+        <Surface sx={{ py: 1.5, display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+          <Typography variant="body2" sx={{ flex: 1, minWidth: 240 }}>
+            <b>
+              {staleTasks.length} {plural(staleTasks.length, "задача", "задачи", "задач")}
+            </b>{" "}
+            по уже убранным номерам ({staleTasks.map((t) => t.roomNumber).join(", ")}) — уборка не нужна.
+          </Typography>
+          <Button variant="outlined" disabled={closingStale} onClick={() => void closeStale(staleTasks)}>
+            {closingStale ? "Закрываем…" : "Закрыть все"}
+          </Button>
+        </Surface>
+      )}
 
       {tasksQuery.isLoading ? (
         <Stack alignItems="center" sx={{ py: 6 }}>
@@ -372,9 +408,16 @@ export const HotelHousekeepingPage: React.FC = () => {
                       <TableCell>
                         <Stack direction="row" alignItems="center" gap={1}>
                           <Box sx={{ color: "text.secondary", display: "flex" }}>{KIND_ICONS[task.kind]}</Box>
-                          <Typography variant="body2" fontWeight={500}>
-                            {KIND_LABELS[task.kind]}
-                          </Typography>
+                          <Box>
+                            <Typography variant="body2" fontWeight={500}>
+                              {KIND_LABELS[task.kind]}
+                            </Typography>
+                            {isStale(task) && (
+                              <Typography variant="caption" color="success.main" fontWeight={600}>
+                                номер уже убран
+                              </Typography>
+                            )}
+                          </Box>
                         </Stack>
                       </TableCell>
                       <TableCell>
@@ -422,7 +465,12 @@ export const HotelHousekeepingPage: React.FC = () => {
                           {task.note || "—"}
                         </Typography>
                       </TableCell>
-                      <TableCell align="right" sx={{ pr: 2 }}>
+                      <TableCell align="right" sx={{ pr: 2, whiteSpace: "nowrap" }}>
+                        {isStale(task) && (
+                          <Button size="small" disabled={closingStale} onClick={() => void closeStale([task])} sx={{ mr: 0.5 }}>
+                            Закрыть
+                          </Button>
+                        )}
                         <Tooltip title="Изменить">
                           <IconButton size="small" onClick={() => openEdit(task)} aria-label={`Изменить задачу по номеру ${task.roomNumber}`}>
                             <EditOutlined sx={{ fontSize: 18 }} />

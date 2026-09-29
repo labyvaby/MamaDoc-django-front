@@ -8,7 +8,7 @@
  * Источник (g.source, справа в строке) — платформа, с которой пришёл гость.
  */
 import React from "react";
-import { Box, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, CircularProgress, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import PeopleOutlineOutlined from "@mui/icons-material/PeopleOutlineOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
@@ -24,9 +24,11 @@ export interface GuestListPanelProps {
   totalCount: number;
   selectedClientId: number | null;
   onSelect: (clientId: number) => void;
+  /** Пока список грузится — спиннер, а не «Гостей пока нет». */
+  loading?: boolean;
 }
 
-export const GuestListPanel: React.FC<GuestListPanelProps> = ({ guests, totalCount, selectedClientId, onSelect }) => (
+export const GuestListPanel: React.FC<GuestListPanelProps> = ({ guests, totalCount, selectedClientId, onSelect, loading }) => (
   <AppCard
     variant="outlined"
     header={
@@ -52,7 +54,11 @@ export const GuestListPanel: React.FC<GuestListPanelProps> = ({ guests, totalCou
         minHeight: 0,
       }}
     >
-      {guests.length === 0 ? (
+      {loading ? (
+        <Stack alignItems="center" sx={{ py: 6 }}>
+          <CircularProgress size={26} />
+        </Stack>
+      ) : guests.length === 0 ? (
         <ListEmptyState
           icon={<PeopleOutlineOutlined />}
           title={totalCount === 0 ? "Гостей пока нет" : "Ничего не найдено"}

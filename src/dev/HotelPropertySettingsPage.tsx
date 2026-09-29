@@ -63,6 +63,14 @@ export const HotelPropertySettingsPage: React.FC = () => {
     setAllowCheckoutWithDebt(property.allowCheckoutWithDebt);
   }, [property]);
 
+  // Время в свободном тексте правил («заезд с 14:00») — дубль полей выше,
+  // который устаревает при смене времени. Нормализуем «9.00» → «09:00».
+  const timesInRules = Array.from(
+    new Set(
+      Array.from(houseRules.matchAll(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/g), (m) => `${m[1].padStart(2, "0")}:${m[2]}`),
+    ),
+  );
+
   const dirty =
     !!property &&
     (toTimeInput(property.checkInTime) !== checkInTime ||
@@ -156,7 +164,8 @@ export const HotelPropertySettingsPage: React.FC = () => {
               Правила проживания
             </Typography>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-              Условия отмены, депозит, домашние животные и другие правила — свободный текст для гостя.
+              Условия отмены, депозит, домашние животные и другие правила — свободный текст для гостя. Время заезда и
+              выезда сюда не пишите: гость видит его из полей выше, и оно не устареет, когда вы его поменяете.
             </Typography>
             <TextField
               fullWidth
@@ -166,6 +175,29 @@ export const HotelPropertySettingsPage: React.FC = () => {
               value={houseRules}
               onChange={(e) => setHouseRules(e.target.value)}
             />
+            {timesInRules.length > 0 && (
+              <Alert severity="warning" variant="outlined" sx={{ mt: 1.5, fontSize: "0.8rem" }}>
+                В тексте есть время: {timesInRules.join(", ")}.
+                {timesInRules.some((t) => t !== checkInTime && t !== checkOutTime)
+                  ? ` Оно не совпадает с полями (заезд ${checkInTime}, выезд ${checkOutTime}) — гость прочитает неправду.`
+                  : " Оно дублирует поля выше и устареет при следующей смене времени."}{" "}
+                Уберите его из правил.
+              </Alert>
+            )}
+
+            <Box sx={{ mt: 2, p: 2, borderRadius: "12px", border: 1, borderColor: "divider" }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary", mb: 1 }}>
+                Так увидит гость
+              </Typography>
+              <Typography variant="body2" fontWeight={600}>
+                Заезд с {checkInTime || "—"} · выезд до {checkOutTime || "—"}
+              </Typography>
+              {houseRules.trim() && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, whiteSpace: "pre-wrap" }}>
+                  {houseRules.trim()}
+                </Typography>
+              )}
+            </Box>
           </Box>
 
           <Divider />

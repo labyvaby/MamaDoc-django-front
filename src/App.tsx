@@ -64,8 +64,8 @@ import { WAITLIST_MODULE_ENABLED } from "./api/waitlist";
 import { djangoDataProvider } from "./config/djangoDataProvider";
 
 // ОПТИМИЗАЦИЯ: Все страницы загружаются через lazy() для code splitting
-const UnderConstruction = lazy(() =>
-  import("./pages/placeholder").then((m) => ({ default: m.UnderConstruction })),
+const NotFoundPage = lazy(() =>
+  import("./pages/placeholder").then((m) => ({ default: m.NotFoundPage })),
 );
 const DashboardPage = lazy(() => import("./pages/dashboard"));
 const EmployeesPage = lazy(() => import("./pages/employes"));
@@ -1402,7 +1402,7 @@ function App() {
                           path="*"
                           element={
                             <Suspense fallback={<LinearProgress />}>
-                              <UnderConstruction />
+                              <NotFoundPage />
                             </Suspense>
                           }
                         />

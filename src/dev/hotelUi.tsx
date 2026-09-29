@@ -44,14 +44,31 @@ export interface HotelPageHeaderProps {
   actions?: React.ReactNode;
 }
 
-export const HotelPageHeader: React.FC<HotelPageHeaderProps> = ({ leading, title, subtitle, info, actions }) => (
-  <Stack direction={{ xs: "column", md: "row" }} alignItems={{ xs: "stretch", md: "flex-end" }} justifyContent="space-between" gap={2}>
+export const HotelPageHeader: React.FC<HotelPageHeaderProps> = ({ leading, title, subtitle, info, actions }) => {
+  // Название раздела уже стоит в шапке приложения (usePageTitle) — второй раз
+  // крупнее под ней не повторяем. Показываем, только если заголовок несёт
+  // содержание сверх названия раздела: у форм (есть leading — «Назад») это
+  // «Номер 401», «Выходные» и т.п.
+  const showTitle = leading != null;
+  return (
+  <Stack direction={{ xs: "column", md: "row" }} alignItems={{ xs: "stretch", md: showTitle ? "flex-end" : "center" }} justifyContent="space-between" gap={2}>
     <Box sx={{ minWidth: 0 }}>
       <Stack direction="row" alignItems="center" gap={0.5}>
         {leading}
-        <Typography component="h1" sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 700, letterSpacing: "-0.015em", lineHeight: 1.2 }}>
-          {title}
-        </Typography>
+        {showTitle ? (
+          <Typography component="h1" sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 700, letterSpacing: "-0.015em", lineHeight: 1.2 }}>
+            {title}
+          </Typography>
+        ) : (
+          <Typography component="h1" sx={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+            {title}
+          </Typography>
+        )}
+        {!showTitle && subtitle && (
+          <Typography variant="body2" color="text.secondary" sx={{ fontSize: 14 }}>
+            {subtitle}
+          </Typography>
+        )}
         {info && (
           <Tooltip
             title={<Box sx={{ fontSize: 13, lineHeight: 1.5, p: 0.5 }}>{info}</Box>}
@@ -64,7 +81,7 @@ export const HotelPageHeader: React.FC<HotelPageHeaderProps> = ({ leading, title
           </Tooltip>
         )}
       </Stack>
-      {subtitle && (
+      {showTitle && subtitle && (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           {subtitle}
         </Typography>
@@ -76,7 +93,8 @@ export const HotelPageHeader: React.FC<HotelPageHeaderProps> = ({ leading, title
       </Stack>
     )}
   </Stack>
-);
+  );
+};
 
 /**
  * Секция формы: поверхность с заголовком. Формы номера/категории/правила
@@ -294,6 +312,22 @@ export const CountStepper: React.FC<{
     </Stack>
   );
 };
+
+/**
+ * Серая кнопка без объяснения — повод звонить начальству. Оборачивает
+ * disabled-элемент и показывает причину в тултипе (span нужен: отключённая
+ * кнопка сама событий мыши не получает). reason = null — просто children.
+ */
+export const DisabledReason: React.FC<{ reason: React.ReactNode | null; children: React.ReactElement }> = ({ reason, children }) =>
+  reason ? (
+    <Tooltip title={reason}>
+      <Box component="span" sx={{ display: "inline-flex", cursor: "not-allowed" }}>
+        {children}
+      </Box>
+    </Tooltip>
+  ) : (
+    children
+  );
 
 /** Подпись секции — мелкий капс с разрядкой. */
 export const SectionLabel: React.FC<{ children: React.ReactNode; sx?: object; action?: React.ReactNode }> = ({ children, sx, action }) => (

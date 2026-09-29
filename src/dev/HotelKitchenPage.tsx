@@ -50,6 +50,22 @@ import { useHotelProperty } from "./useHotelProperty";
 import { getKitchenDayPlan, upsertPurchase, deletePurchase, updateStock, type HotelShoppingLine } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 
+const UNIT_RU: Record<string, string> = {
+  kg: "кг",
+  g: "г",
+  gr: "г",
+  l: "л",
+  ml: "мл",
+  pcs: "шт",
+  pc: "шт",
+  piece: "шт",
+  pieces: "шт",
+  pack: "уп",
+  bunch: "пучок",
+};
+/** «kg» → «кг»: справочник ингредиентов хранит единицы латиницей. */
+const unitRu = (unit: string) => UNIT_RU[unit.trim().toLowerCase()] ?? unit;
+
 const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner"];
 
 interface PurchaseEditTarget {
@@ -169,10 +185,15 @@ export const HotelKitchenPage: React.FC = () => {
     }
   };
 
-  const totalPlanned = plan ? plan.shoppingList.reduce((sum, i) => sum + Number(i.plannedAmount), 0) : 0;
+  // Пустой отель — ноль порций и ноль закупки. Бэк сейчас отдаёт по порции на
+  // блюдо даже при 0 занятых номеров («шашлык для пустоты»), поэтому считаем
+  // от occupiedRooms, а не верим portions/neededQty.
+  const noGuests = plan != null && plan.occupiedRooms === 0;
+  const portionsOf = (d: { portions: number }) => (noGuests ? 0 : d.portions);
+  const totalPlanned = plan && !noGuests ? plan.shoppingList.reduce((sum, i) => sum + Number(i.plannedAmount), 0) : 0;
   const purchasedCount = plan ? plan.shoppingList.filter((i) => i.purchase).length : 0;
 
-  const toBuyCount = plan ? plan.shoppingList.filter((i) => Number(i.toBuyQty) > 0).length : 0;
+  const toBuyCount = plan && !noGuests ? plan.shoppingList.filter((i) => Number(i.toBuyQty) > 0).length : 0;
 
   return (
     <HotelPage>
@@ -197,7 +218,7 @@ export const HotelKitchenPage: React.FC = () => {
         <>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
             <MetricTile label="Занято номеров" value={plan.occupiedRooms} hint={isToday ? "на сегодня" : "на выбранную дату"} />
-            <MetricTile label="Блюд в меню" value={plan.dishes.length} hint={`${plan.dishes.reduce((s, d) => s + d.portions, 0)} порций всего`} />
+            <MetricTile label="Блюд в меню" value={plan.dishes.length} hint={noGuests ? "готовить не для кого" : `${plan.dishes.reduce((s, d) => s + portionsOf(d), 0)} порций всего`} />
             <MetricTile
               label="Куплено"
               value={`${purchasedCount} / ${plan.shoppingList.length}`}
@@ -206,6 +227,14 @@ export const HotelKitchenPage: React.FC = () => {
             />
             <MetricTile label="Докупить на сумму" value={`${totalPlanned.toLocaleString("ru-RU")} сом`} hint="по плановым ценам" />
           </Box>
+
+          {noGuests && (
+            <Surface sx={{ py: 1.75, bgcolor: "transparent", borderStyle: "dashed" }}>
+              <Typography variant="body2" color="text.secondary">
+                На эту дату нет занятых номеров — готовить и закупать ничего не нужно. Меню ниже показано для справки.
+              </Typography>
+            </Surface>
+          )}
 
           <Box>
             <SectionLabel>Расписание готовки</SectionLabel>
@@ -236,7 +265,7 @@ export const HotelKitchenPage: React.FC = () => {
                         >
                           <Typography variant="body2">{dish.name}</Typography>
                           <Typography variant="body2" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
-                            {dish.portions} порц.
+                            {portionsOf(dish)} порц.
                           </Typography>
                         </Stack>
                       ))
@@ -269,7 +298,7 @@ export const HotelKitchenPage: React.FC = () => {
                 <TableBody>
                   {plan.shoppingList.map((item) => {
                     const purchase = item.purchase;
-                    const toBuyQty = Number(item.toBuyQty);
+                    const toBuyQty = noGuests ? 0 : Number(item.toBuyQty);
                     const deviationQty = purchase ? Number(purchase.purchasedQty) - toBuyQty : 0;
                     const deviationBase = toBuyQty || 1;
                     const deviationPercent = purchase ? Math.round((deviationQty / deviationBase) * 100) : 0;
@@ -284,7 +313,7 @@ export const HotelKitchenPage: React.FC = () => {
                       <TableRow key={item.ingredientId}>
                         <TableCell sx={{ pl: 2.5, fontWeight: 600 }}>{item.ingredientName}</TableCell>
                         <TableCell align="right" sx={{ ...num, color: "text.secondary" }}>
-                          {Number(item.neededQty)} {item.unit}
+                          {noGuests ? 0 : Number(item.neededQty)} {unitRu(item.unit)}
                         </TableCell>
                         <TableCell align="right">
                           <Tooltip title="Поправить остаток на складе">
@@ -311,14 +340,14 @@ export const HotelKitchenPage: React.FC = () => {
                                 "&:hover": { bgcolor: subtleBg(theme, true) },
                               }}
                             >
-                              {Number(item.inStockQty)} {item.unit}
+                              {Number(item.inStockQty)} {unitRu(item.unit)}
                             </Box>
                           </Tooltip>
                         </TableCell>
                         <TableCell align="right" sx={num}>
                           {toBuyQty > 0 ? (
                             <Typography variant="body2" fontWeight={700} sx={num}>
-                              {toBuyQty} {item.unit}
+                              {toBuyQty} {unitRu(item.unit)}
                             </Typography>
                           ) : (
                             <Typography variant="body2" color="success.main" fontWeight={600}>
@@ -331,7 +360,7 @@ export const HotelKitchenPage: React.FC = () => {
                         </TableCell>
                         <TableCell align="right">
                           {purchase ? (
-                            <StatusPill color={theme.palette.success.main} label={`${Number(purchase.purchasedQty)} ${item.unit}`} />
+                            <StatusPill color={theme.palette.success.main} label={`${Number(purchase.purchasedQty)} ${unitRu(item.unit)}`} />
                           ) : (
                             <Typography variant="body2" color="text.disabled" sx={{ whiteSpace: "nowrap" }}>
                               —
@@ -342,7 +371,7 @@ export const HotelKitchenPage: React.FC = () => {
                           {purchase ? Number(purchase.actualPricePerUnit).toLocaleString("ru-RU") : "—"}
                         </TableCell>
                         <TableCell align="right" sx={{ ...num, color: deviationColor, fontWeight: 600 }}>
-                          {purchase ? `${deviationQty > 0 ? "+" : ""}${deviationQty.toFixed(1)} ${item.unit}` : "—"}
+                          {purchase ? `${deviationQty > 0 ? "+" : ""}${deviationQty.toFixed(1)} ${unitRu(item.unit)}` : "—"}
                         </TableCell>
                         <TableCell sx={{ whiteSpace: "nowrap", color: purchase?.purchasedByName ? "text.primary" : "text.disabled" }}>
                           {purchase?.purchasedByName || "—"}
@@ -384,13 +413,13 @@ export const HotelKitchenPage: React.FC = () => {
             <DialogContent>
               <Stack gap={2} sx={{ mt: 0.5 }}>
                 <Typography variant="body2" color="text.secondary">
-                  По плану докупить <b>{Number(purchaseEdit.item.toBuyQty)} {purchaseEdit.item.unit}</b> по{" "}
+                  По плану докупить <b>{Number(purchaseEdit.item.toBuyQty)} {unitRu(purchaseEdit.item.unit)}</b> по{" "}
                   {Number(purchaseEdit.item.pricePerUnit).toLocaleString("ru-RU")} сом (нужно {Number(purchaseEdit.item.neededQty)}, на складе{" "}
                   {Number(purchaseEdit.item.inStockQty)}). Укажите, сколько купили на самом деле.
                 </Typography>
                 {purchaseError && <Alert severity="error">{purchaseError}</Alert>}
                 <TextField
-                  label={`Куплено, ${purchaseEdit.item.unit}`}
+                  label={`Куплено, ${unitRu(purchaseEdit.item.unit)}`}
                   type="number"
                   value={purchaseEdit.purchasedQty}
                   onChange={(e) => setPurchaseEdit({ ...purchaseEdit, purchasedQty: e.target.value })}
@@ -439,7 +468,7 @@ export const HotelKitchenPage: React.FC = () => {
                 </Typography>
                 {stockError && <Alert severity="error">{stockError}</Alert>}
                 <TextField
-                  label={`Остаток, ${stockEdit.unit}`}
+                  label={`Остаток, ${unitRu(stockEdit.unit)}`}
                   type="number"
                   value={stockEdit.qty}
                   onChange={(e) => setStockEdit({ ...stockEdit, qty: e.target.value })}

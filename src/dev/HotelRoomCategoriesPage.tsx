@@ -31,13 +31,13 @@ import { Link as RouterLink } from "react-router";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
 import { getHotelCatalogs, listRoomTypes, listRooms } from "../api/hotel";
-import { EmptyState, HotelPage, HotelPageHeader, plural, Surface } from "./hotelUi";
+import { DisabledReason, EmptyState, HotelPage, HotelPageHeader, plural, Surface } from "./hotelUi";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 
 export const HotelRoomCategoriesPage: React.FC = () => {
   usePageTitle("Категории и тарифы");
   const theme = useTheme();
-  const { property } = useHotelProperty();
+  const { property, isLoading: propertyLoading } = useHotelProperty();
 
   const catalogsQuery = useQuery({
     queryKey: ["hotel", "catalogs", property?.id],
@@ -61,11 +61,12 @@ export const HotelRoomCategoriesPage: React.FC = () => {
   });
   const roomCounts = React.useMemo(() => {
     const map = new Map<number, number>();
-    for (const r of roomsQuery.data ?? []) map.set(r.roomTypeId, (map.get(r.roomTypeId) ?? 0) + 1);
+    // Только номера в продаже — то же число, что на «Номерах», в отчёте и над шахматкой.
+    for (const r of roomsQuery.data ?? []) if (r.status !== "out_of_service") map.set(r.roomTypeId, (map.get(r.roomTypeId) ?? 0) + 1);
     return map;
   }, [roomsQuery.data]);
 
-  const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading;
+  const loading = propertyLoading || catalogsQuery.isLoading || roomTypesQuery.isLoading;
   // Ошибку загрузки не выдаём за «Категорий пока нет»: при сбое сети это увело бы человека заводить дубли.
   const loadError = catalogsQuery.isError || roomTypesQuery.isError;
   const retryLoad = () => {
@@ -86,9 +87,18 @@ export const HotelRoomCategoriesPage: React.FC = () => {
         subtitle={roomTypes.length > 0 ? `${roomTypes.length} ${plural(roomTypes.length, "категория", "категории", "категорий")} · ${priceRange}` : undefined}
         info="Категория (тариф) — цена за ночь и набор характеристик. Базовая цена задаётся без характеристик: каждая отмеченная характеристика добавляет свою наценку, итог считает бэкенд."
         actions={
-          <Button variant="contained" disableElevation startIcon={<AddOutlined />} component={RouterLink} to="/room-categories/new" disabled={!property}>
-            Добавить категорию
-          </Button>
+          <DisabledReason reason={loading ? "Загружаем категории…" : !property ? "Не найден объект размещения для текущего филиала" : null}>
+            <Button
+              variant="contained"
+              disableElevation
+              startIcon={<AddOutlined />}
+              component={RouterLink}
+              to="/room-categories/new"
+              disabled={loading || !property}
+            >
+              Добавить категорию
+            </Button>
+          </DisabledReason>
         }
       />
 
@@ -197,7 +207,7 @@ export const HotelRoomCategoriesPage: React.FC = () => {
                       )}
                     </Box>
                     <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>
-                      {roomCount} {plural(roomCount, "номер", "номера", "номеров")}
+                      {roomCount} {plural(roomCount, "номер", "номера", "номеров")} в продаже
                     </Typography>
                   </Stack>
 

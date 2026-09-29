@@ -82,6 +82,8 @@ type TabDef = {
   icon: React.ReactElement;
   group: SettingsGroup;
   tone?: "primary" | "success";
+  /** Своя подпись вместо layout.tabs.<key> — например, у отеля. */
+  labelOverride?: string;
 };
 
 /** Labels come from t(`layout.tabs.${key}`) — see useVisibleSettingsTabs. */
@@ -286,7 +288,14 @@ export function useVisibleSettingsTabs(): TabDef[] {
     "promotions",
     // Виджет записи на odoctor.kg — клиничный сервис, у отеля нет приёмов.
     "odoctor",
+    // CRM-/клиничные разделы, которым в отеле нечего настраивать (живой QA
+    // 30.09.2026): воронка продаж, задачи сотрудникам, СКУД, объявления.
+    "deals",
+    "tasks",
+    "skud",
+    "announcements",
   ];
+  const isHotel = activeOrganization?.vertical === "hotel";
   return TAB_DEFS.filter((tab) => {
     if (
       (activeOrganization?.vertical === "retail" || activeOrganization?.vertical === "hotel") &&
@@ -311,7 +320,11 @@ export function useVisibleSettingsTabs(): TabDef[] {
     return tab.key === "cleaning"
       ? moduleGate("cleaning", [SETTINGS_TAB_PERMISSIONS.cleaning])
       : can(SETTINGS_TAB_PERMISSIONS[tab.key]);
-  });
+  }).map((tab) =>
+    // В отеле «Уборка» — задачи горничным (/housekeeping); эта вкладка — ставки
+    // за уборку для зарплаты. Одно слово на два разных раздела путало.
+    isHotel && tab.key === "cleaning" ? { ...tab, labelOverride: "Ставки за уборку" } : tab,
+  );
 }
 
 /**
@@ -446,7 +459,7 @@ export const SettingsHub: React.FC = () => {
                         textOverflow: "ellipsis",
                       }}
                     >
-                      {t(`layout.tabs.${tab.key}`)}
+                      {(tab.labelOverride ?? t(`layout.tabs.${tab.key}`))}
                     </Typography>
                     {tab.key === "organization" && activeOrganization?.name ? (
                       <Typography
@@ -752,7 +765,7 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
   const railQuery = railSearch.trim().toLowerCase();
   const matchesQuery = (tab: TabDef) =>
     !railQuery ||
-    t(`layout.tabs.${tab.key}`).toLowerCase().includes(railQuery) ||
+    (tab.labelOverride ?? t(`layout.tabs.${tab.key}`)).toLowerCase().includes(railQuery) ||
     t(`layout.groups.${tab.group}`).toLowerCase().includes(railQuery);
   const foundTabs = visibleTabs.filter(matchesQuery);
 
@@ -913,7 +926,7 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
                               fontWeight: active ? 600 : 500,
                             }}
                           >
-                            {t(`layout.tabs.${tab.key}`)}
+                            {(tab.labelOverride ?? t(`layout.tabs.${tab.key}`))}
                           </Typography>
                         </Box>
                       );

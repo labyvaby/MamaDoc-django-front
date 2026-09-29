@@ -42,5 +42,10 @@ export function useHotelProperty(): UseHotelPropertyResult {
   const properties = isHotelOrg ? query.data ?? [] : [];
   const property =
     properties.find((p) => activeBranch != null && p.branchId === activeBranch.id) ?? properties[0] ?? null;
-  return { property, properties, isLoading: query.isLoading, isError: query.isError };
+  // «Загружается», пока ещё не известно, какая это организация, и пока у
+  // отеля не пришёл список объектов. query.isLoading тут не годится: выключенный
+  // запрос (организация ещё не загружена) не считается загрузкой, и страницы
+  // на долю секунды показывали «Не найден объект размещения» вместо спиннера.
+  const isLoading = activeOrganization == null || (isHotelOrg && query.isPending);
+  return { property, properties, isLoading, isError: query.isError };
 }

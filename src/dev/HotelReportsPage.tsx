@@ -34,7 +34,7 @@ import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { formatHotelDate, formatHotelDateRange } from "./mockDemoData";
 import { mapStayDisplayStatus, hotelStayStatusColor, HOTEL_STAY_STATUS_LABELS } from "./hotelDisplay";
 import { useHotelProperty } from "./useHotelProperty";
-import { getDailyReport, getOccupancyReport, type HotelDailyReportRow } from "../api/hotel";
+import { getDailyReport, getOccupancyReport, listRooms, type HotelDailyReportRow } from "../api/hotel";
 import { exportHotelDailyReportXlsx } from "./exportHotelDailyReportXlsx";
 import { DateStepper, FilterChip, HotelPage, HotelPageHeader, MetricTile, SectionLabel, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 
@@ -73,6 +73,29 @@ export const HotelReportsPage: React.FC = () => {
     enabled: property != null && mode === "day",
   });
   const report = reportQuery.data;
+
+  // Снятый с продажи номер — не «свободен»: его нельзя продать. Дневной отчёт
+  // бэка такого статуса не знает (отдаёт occupancy "free"), поэтому сверяем с
+  // номерами объекта (тот же кэш, что у «Номеров»). Итоги ниже считаем по
+  // номерам в продаже — то же число, что на «Номерах» и над шахматкой.
+  const roomsQuery = useQuery({
+    queryKey: ["hotel", "rooms", property?.id],
+    queryFn: ({ signal }) => listRooms({ propertyId: property!.id }, signal),
+    enabled: property != null,
+  });
+  const offSaleIds = React.useMemo(
+    () => new Set((roomsQuery.data ?? []).filter((r) => r.status === "out_of_service").map((r) => r.id)),
+    [roomsQuery.data],
+  );
+  const dayStats = React.useMemo(() => {
+    if (!report) return null;
+    const onSale = report.rows.filter((r) => !offSaleIds.has(r.roomId));
+    const occupied = onSale.filter((r) => r.occupancy === "occupied").length;
+    const free = onSale.filter((r) => r.occupancy === "free").length;
+    const blocked = onSale.filter((r) => r.occupancy === "blocked").length;
+    const total = onSale.length;
+    return { total, occupied, free, blocked, offSale: report.rows.length - total, percent: total > 0 ? Math.round((occupied / total) * 1000) / 10 : 0 };
+  }, [report, offSaleIds]);
 
   // Период отчёта ADR/RevPAR — по умолчанию текущий месяц с начала до сегодня.
   const [periodFrom, setPeriodFrom] = React.useState<Dayjs>(dayjs().startOf("month"));
@@ -120,6 +143,7 @@ export const HotelReportsPage: React.FC = () => {
   }, [report]);
 
   const rowStatus = (row: HotelDailyReportRow) => {
+    if (offSaleIds.has(row.roomId)) return { label: "Снят с продажи", color: theme.palette.text.disabled };
     if (row.occupancy === "occupied" && row.stayStatus) {
       const status = mapStayDisplayStatus(row.stayStatus);
       return { label: HOTEL_STAY_STATUS_LABELS[status], color: hotelStayStatusColor(status, theme) };
@@ -301,7 +325,7 @@ export const HotelReportsPage: React.FC = () => {
             </Box>
           </>
         )
-      ) : !report ? (
+      ) : !report || roomsQuery.isPending ? (
         <Stack alignItems="center" sx={{ py: 6 }}>
           <CircularProgress size={28} />
         </Stack>
@@ -310,14 +334,17 @@ export const HotelReportsPage: React.FC = () => {
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
             <MetricTile
               label="Загрузка"
-              value={`${Number(report.occupancyPercent).toLocaleString("ru-RU")}%`}
-              hint={`${report.occupiedRooms} занято из ${report.totalRooms}`}
+              value={`${(dayStats?.percent ?? 0).toLocaleString("ru-RU")}%`}
+              hint={`${dayStats?.occupied ?? 0} занято из ${dayStats?.total ?? 0} в продаже`}
               accent={theme.palette.info.main}
             />
             <MetricTile
               label="Свободно"
-              value={report.freeRooms}
-              hint={report.blockedRooms > 0 ? `ещё ${report.blockedRooms} заблокировано` : "номеров"}
+              value={dayStats?.free ?? 0}
+              hint={[
+                dayStats && dayStats.blocked > 0 ? `${dayStats.blocked} заблокировано` : null,
+                dayStats && dayStats.offSale > 0 ? `${dayStats.offSale} снят с продажи` : null,
+              ].filter(Boolean).join(" · ") || "номеров"}
               accent={theme.palette.success.main}
             />
             <MetricTile label="Заезды / выезды" value={`${report.arrivals} / ${report.departures}`} hint="за день" />
