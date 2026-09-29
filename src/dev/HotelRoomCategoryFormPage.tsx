@@ -911,7 +911,7 @@ export const HotelRoomCategoryFormPage: React.FC = () => {
   const { categoryId } = useParams();
   const isEdit = categoryId != null;
   usePageTitle(isEdit ? "Категория номеров" : "Новая категория");
-  const { property } = useHotelProperty();
+  const { property, isLoading: propertyLoading } = useHotelProperty();
 
   const catalogsQuery = useQuery({
     queryKey: ["hotel", "catalogs", property?.id],
@@ -925,7 +925,7 @@ export const HotelRoomCategoryFormPage: React.FC = () => {
   });
 
   const editing = isEdit ? (roomTypesQuery.data ?? []).find((rt) => String(rt.id) === categoryId) ?? null : null;
-  const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading;
+  const loading = propertyLoading || catalogsQuery.isLoading || roomTypesQuery.isLoading;
 
   return (
     <HotelPage maxWidth={1180}>

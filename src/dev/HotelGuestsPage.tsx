@@ -55,7 +55,13 @@ export const HotelGuestsPage: React.FC = () => {
   const state = useGuestDetails(selectedClientId);
 
   const listNode = (
-    <GuestListPanel guests={guests} totalCount={guests.length} selectedClientId={selectedClientId} onSelect={setSelectedClientId} />
+    <GuestListPanel
+      guests={guests}
+      totalCount={guests.length}
+      selectedClientId={selectedClientId}
+      onSelect={setSelectedClientId}
+      loading={guestsQuery.isPending}
+    />
   );
   const cardNode = <GuestCardPanel clientId={selectedClientId} state={state} />;
   const historyNode = <GuestHistoryPanel state={state} />;

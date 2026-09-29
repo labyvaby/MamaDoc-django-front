@@ -56,14 +56,14 @@ import { useHotelProperty } from "./useHotelProperty";
 import { getHotelCatalogs, listRoomTypes, listRooms, updateRoom, deleteRoom, type HotelRoom } from "../api/hotel";
 import { ApiError, getErrorMessage } from "../api/client";
 import { HOTEL_ROOM_STATE_LABELS, HOTEL_ROOM_STATES, hotelRoomStateColor, type HotelRoomState } from "./hotelDisplay";
-import { CountChip, EmptyState, HotelPage, HotelPageHeader, plural, Surface } from "./hotelUi";
+import { CountChip, DisabledReason, EmptyState, HotelPage, HotelPageHeader, plural, Surface } from "./hotelUi";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 
 export const HotelRoomsPage: React.FC = () => {
   usePageTitle("Номера");
   const theme = useTheme();
   const navigate = useNavigate();
-  const { property } = useHotelProperty();
+  const { property, isLoading: propertyLoading } = useHotelProperty();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
 
@@ -155,7 +155,7 @@ export const HotelRoomsPage: React.FC = () => {
     }
   };
 
-  const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading || roomsQuery.isLoading;
+  const loading = propertyLoading || catalogsQuery.isLoading || roomTypesQuery.isLoading || roomsQuery.isLoading;
   // Ошибку загрузки не выдаём за «пусто»: иначе при сбое сети список выглядит как «Номеров пока нет».
   const loadError = catalogsQuery.isError || roomTypesQuery.isError || roomsQuery.isError;
   const retryLoad = () => {
@@ -169,7 +169,14 @@ export const HotelRoomsPage: React.FC = () => {
   const stateCounts = HOTEL_ROOM_STATES.map((s) => ({ state: s, count: onSale.filter((r) => r.state === s).length })).filter(
     (s) => s.count > 0,
   );
-  const [stateFilter, setStateFilter] = React.useState<HotelRoomState | null>(null);
+  // Фильтр: состояние номера в продаже либо «сняты с продажи». Счётчики
+  // состояний считают только номера в продаже — ровно то число, что в отчёте и
+  // над шахматкой («11 в продаже»); снятые — отдельной таблеткой.
+  const [stateFilter, setStateFilter] = React.useState<HotelRoomState | "offSale" | null>(null);
+  const offSaleCount = allRooms.length - onSale.length;
+  const matchesFilter = (r: HotelRoom) =>
+    stateFilter === null ||
+    (stateFilter === "offSale" ? r.status === "out_of_service" : r.status !== "out_of_service" && r.state === stateFilter);
 
   return (
     <HotelPage>
@@ -177,8 +184,8 @@ export const HotelRoomsPage: React.FC = () => {
         title="Номера"
         subtitle={
           allRooms.length > 0
-            ? `${allRooms.length} ${plural(allRooms.length, "номер", "номера", "номеров")} в ${roomTypes.length} ${plural(roomTypes.length, "категории", "категориях", "категориях")}` +
-              (allRooms.length !== onSale.length ? ` · ${allRooms.length - onSale.length} снято с продажи` : "")
+            ? `${allRooms.length} ${plural(allRooms.length, "номер", "номера", "номеров")} · ${onSale.length} в продаже` +
+              (offSaleCount > 0 ? ` · ${offSaleCount} ${plural(offSaleCount, "снят", "сняты", "сняты")} с продажи` : "")
             : undefined
         }
         info={
@@ -194,23 +201,35 @@ export const HotelRoomsPage: React.FC = () => {
             <Button variant="outlined" startIcon={<CategoryOutlined />} component={RouterLink} to="/room-categories">
               Категории и тарифы
             </Button>
-            <Button
-              variant="contained"
-              disableElevation
-              startIcon={<AddOutlined />}
-              component={RouterLink}
-              to="/rooms/new"
-              disabled={!property || roomTypes.length === 0}
+            <DisabledReason
+              reason={
+                loading
+                  ? "Загружаем номера…"
+                  : !property
+                    ? "Не найден объект размещения для текущего филиала"
+                    : roomTypes.length === 0
+                      ? "Сначала заведите категорию — номер добавляется в неё"
+                      : null
+              }
             >
-              Добавить номер
-            </Button>
+              <Button
+                variant="contained"
+                disableElevation
+                startIcon={<AddOutlined />}
+                component={RouterLink}
+                to="/rooms/new"
+                disabled={loading || !property || roomTypes.length === 0}
+              >
+                Добавить номер
+              </Button>
+            </DisabledReason>
           </>
         }
       />
 
       {stateCounts.length > 0 && (
         <Stack direction="row" gap={1} flexWrap="wrap">
-          <CountChip label="Все" count={onSale.length} active={stateFilter === null} onClick={() => setStateFilter(null)} />
+          <CountChip label="Все" count={allRooms.length} active={stateFilter === null} onClick={() => setStateFilter(null)} />
           {stateCounts.map((s) => (
             <CountChip
               key={s.state}
@@ -221,6 +240,15 @@ export const HotelRoomsPage: React.FC = () => {
               onClick={() => setStateFilter(stateFilter === s.state ? null : s.state)}
             />
           ))}
+          {offSaleCount > 0 && (
+            <CountChip
+              color={theme.palette.text.disabled}
+              label="Сняты с продажи"
+              count={offSaleCount}
+              active={stateFilter === "offSale"}
+              onClick={() => setStateFilter(stateFilter === "offSale" ? null : "offSale")}
+            />
+          )}
         </Stack>
       )}
 
@@ -261,9 +289,11 @@ export const HotelRoomsPage: React.FC = () => {
         ) : (
           <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 2, alignItems: "start" }}>
             {roomTypes.map((cat) => {
-              const rooms = (roomsByType.get(cat.id) ?? []).filter((r) => stateFilter === null || r.state === stateFilter);
+              const rooms = (roomsByType.get(cat.id) ?? []).filter(matchesFilter);
               if (stateFilter !== null && rooms.length === 0) return null;
-              const totalRooms = roomsByType.get(cat.id)?.length ?? 0;
+              const catRooms = roomsByType.get(cat.id) ?? [];
+              const catOnSale = catRooms.filter((r) => r.status !== "out_of_service").length;
+              const catOff = catRooms.length - catOnSale;
               return (
                 <Surface key={cat.id} sx={{ display: "flex", flexDirection: "column" }}>
                   <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2} sx={{ mb: 2 }}>
@@ -272,7 +302,7 @@ export const HotelRoomsPage: React.FC = () => {
                         {cat.name}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {totalRooms} {plural(totalRooms, "номер", "номера", "номеров")} · до {cat.capacity} гостей
+                        {catOnSale} {plural(catOnSale, "номер", "номера", "номеров")} в продаже{catOff > 0 ? ` · ${catOff} снят` : ""} · до {cat.capacity} гостей
                       </Typography>
                     </Box>
                     <Box sx={{ textAlign: "right", flexShrink: 0 }}>

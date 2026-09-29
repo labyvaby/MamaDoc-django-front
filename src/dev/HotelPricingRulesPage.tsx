@@ -25,7 +25,7 @@
 import React from "react";
 import { Alert, Box, Button, CircularProgress, IconButton, Stack, Switch, Tooltip, Typography, useTheme } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { EmptyState, HotelPage, HotelPageHeader, plural, Surface } from "./hotelUi";
+import { DisabledReason, EmptyState, HotelPage, HotelPageHeader, plural, Surface } from "./hotelUi";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
@@ -81,7 +81,7 @@ function describeConditions(rule: HotelPricingRule): string[] {
 export const HotelPricingRulesPage: React.FC = () => {
   usePageTitle("Ценообразование");
   const theme = useTheme();
-  const { property } = useHotelProperty();
+  const { property, isLoading: propertyLoading } = useHotelProperty();
   const queryClient = useQueryClient();
   const canManageRates = useCan("hotel.rates.manage");
   const [toggleError, setToggleError] = React.useState<string | null>(null);
@@ -102,7 +102,7 @@ export const HotelPricingRulesPage: React.FC = () => {
   });
   const rules = rulesQuery.data ?? [];
 
-  const loading = roomTypesQuery.isLoading || rulesQuery.isLoading;
+  const loading = propertyLoading || roomTypesQuery.isLoading || rulesQuery.isLoading;
   // Ошибку загрузки не выдаём за «Правил пока нет»: при сбое сети это увело бы человека заводить дубли.
   const loadError = roomTypesQuery.isError || rulesQuery.isError;
   const retryLoad = () => {
@@ -148,17 +148,35 @@ export const HotelPricingRulesPage: React.FC = () => {
             </>
           }
           actions={
-            canManageRates && (
-              <Button
-                variant="contained"
-                disableElevation
-                startIcon={<AddOutlined />}
-                component={RouterLink}
-                to="/pricing-rules/new"
-                disabled={!property || roomTypes.length === 0}
+            canManageRates ? (
+              <DisabledReason
+                reason={
+                  loading
+                    ? "Загружаем объект и категории…"
+                    : !property
+                      ? "Не найден объект размещения для текущего филиала"
+                      : roomTypes.length === 0
+                        ? "Сначала заведите категории номеров — правило меняет их цену"
+                        : null
+                }
               >
-                Добавить правило
-              </Button>
+                <Button
+                  variant="contained"
+                  disableElevation
+                  startIcon={<AddOutlined />}
+                  component={RouterLink}
+                  to="/pricing-rules/new"
+                  disabled={loading || !property || roomTypes.length === 0}
+                >
+                  Добавить правило
+                </Button>
+              </DisabledReason>
+            ) : (
+              <Tooltip title="Изменять правила может роль с правом «Управление тарифами»">
+                <Typography variant="body2" color="text.secondary" sx={{ cursor: "help" }}>
+                  Только просмотр
+                </Typography>
+              </Tooltip>
             )
           }
         />

@@ -66,6 +66,7 @@ import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
 import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
+import PeopleOutlineOutlined from "@mui/icons-material/PeopleOutlineOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
@@ -660,6 +661,48 @@ const SidebarSecondary: React.FC = () => {
         <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
         <SidebarSkudItem collapsed={siderCollapsed} />
+      </List>
+    );
+  }
+
+  // Отель (Viva): одно плоское меню без клиничных групп «Моя работа /
+  // Организация». С группами в «Моей работе» оставались одни «Бронирования»,
+  // а открытые «Гости/Кухня/Уборка/Отчёты» жили в другой группе — подсвечивать
+  // в видимом списке было нечего, и человек не видел, где он находится.
+  if (hotelOnly) {
+    const sectionLabel = (text: string) =>
+      siderCollapsed && !isMobile ? (
+        <Box sx={{ mx: 1.5, my: 1, borderTop: 1, borderColor: "divider" }} />
+      ) : (
+        <Typography
+          sx={{ px: 2, pt: 2, pb: 0.75, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary" }}
+        >
+          {text}
+        </Typography>
+      );
+    return (
+      <List sx={{ py: 0, mt: 0.5 }}>
+        {can_.schedule && (
+          <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Бронирования" collapsed={siderCollapsed} />
+        )}
+        {(can_.patients || can_.clients) && (
+          <SidebarMenuItem to="/patients" icon={<PeopleOutlineOutlined />} label="Гости" collapsed={siderCollapsed} />
+        )}
+        {can_.hotelHousekeeping && (
+          <SidebarMenuItem to="/housekeeping" icon={<CleaningServicesOutlined />} label="Уборка" collapsed={siderCollapsed} />
+        )}
+        <SidebarMenuItem to="/kitchen" icon={<RestaurantOutlined />} label="Кухня" collapsed={siderCollapsed} />
+        <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчёты" collapsed={siderCollapsed} />
+
+        {(can_.hotelRooms || can_.hotelRoomCategories || can_.hotelPricingRules) && sectionLabel("Отель")}
+        {can_.hotelRooms && <SidebarMenuItem to="/rooms" icon={<HotelOutlined />} label="Номера" collapsed={siderCollapsed} />}
+        {can_.hotelRoomCategories && (
+          <SidebarMenuItem to="/room-categories" icon={<CategoryOutlined />} label="Категории и тарифы" collapsed={siderCollapsed} />
+        )}
+        {can_.hotelPricingRules && (
+          <SidebarMenuItem to="/pricing-rules" icon={<PriceChangeOutlined />} label="Ценообразование" collapsed={siderCollapsed} />
+        )}
+        <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
       </List>
     );
   }

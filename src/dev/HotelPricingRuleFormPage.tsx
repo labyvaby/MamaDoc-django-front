@@ -1043,7 +1043,7 @@ export const HotelPricingRuleFormPage: React.FC = () => {
   const { ruleId } = useParams();
   const isEdit = ruleId != null;
   usePageTitle(isEdit ? "Правило цены" : "Новое правило");
-  const { property } = useHotelProperty();
+  const { property, isLoading: propertyLoading } = useHotelProperty();
   const canManageRates = useCan("hotel.rates.manage");
 
   const roomTypesQuery = useQuery({
@@ -1058,7 +1058,7 @@ export const HotelPricingRuleFormPage: React.FC = () => {
   });
 
   const editing = isEdit ? (rulesQuery.data ?? []).find((r) => String(r.id) === ruleId) ?? null : null;
-  const loading = roomTypesQuery.isLoading || (isEdit && rulesQuery.isLoading);
+  const loading = propertyLoading || roomTypesQuery.isLoading || (isEdit && rulesQuery.isLoading);
 
   return (
     <HotelPage maxWidth={1180}>

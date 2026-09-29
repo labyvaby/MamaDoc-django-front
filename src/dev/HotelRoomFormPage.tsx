@@ -907,7 +907,7 @@ export const HotelRoomFormPage: React.FC = () => {
   const isEdit = roomId != null;
   usePageTitle(isEdit ? "Номер" : "Новый номер");
   const location = useLocation();
-  const { property } = useHotelProperty();
+  const { property, isLoading: propertyLoading } = useHotelProperty();
   const backPath = backPathFrom(location.state);
 
   const catalogsQuery = useQuery({
@@ -928,7 +928,7 @@ export const HotelRoomFormPage: React.FC = () => {
   });
 
   const room = isEdit ? (roomsQuery.data ?? []).find((r) => String(r.id) === roomId) ?? null : null;
-  const loading = catalogsQuery.isLoading || roomTypesQuery.isLoading || (isEdit && roomsQuery.isLoading);
+  const loading = propertyLoading || catalogsQuery.isLoading || roomTypesQuery.isLoading || (isEdit && roomsQuery.isLoading);
   // Ошибку загрузки не выдаём за «Номер не найден»: при сбое сети это ввело бы в заблуждение.
   const loadError = catalogsQuery.isError || roomTypesQuery.isError || (isEdit && roomsQuery.isError);
   const retryLoad = () => {
