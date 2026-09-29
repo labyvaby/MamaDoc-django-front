@@ -1,5 +1,6 @@
 import clinicGlossary from "../locales/glossary/clinic.json";
 import beautyGlossary from "../locales/glossary/beauty.json";
+import realestateGlossary from "../locales/glossary/realestate.json";
 import {
   applyGlossaryOverrides,
   type GlossaryOverrides,
@@ -56,10 +57,24 @@ const PROFILES: Record<Vertical, Glossary> = {
   beauty: beautyGlossary as Glossary,
   retail: retailGlossary,
   projects: projectsGlossary,
+  realestate: realestateGlossary as Glossary,
 };
 
 /** Список поддерживаемых вертикалей — для настроек и валидации. */
 export const SUPPORTED_VERTICALS = Object.keys(PROFILES) as Vertical[];
+
+/**
+ * Вертикали, которых ещё нет в `OrganizationVertical` бэка: терминология
+ * готова (DEV-просмотр через `mamadoc:vertical`), но выбрать их в настройках
+ * организации нельзя — бэк такое значение не примет. Убрать из списка, когда
+ * бэк зарегистрирует вертикаль.
+ */
+const VERTICALS_PENDING_BACKEND: readonly Vertical[] = ["realestate"];
+
+/** Вертикали, которые можно выбрать в настройках организации. */
+export const SELECTABLE_VERTICALS = SUPPORTED_VERTICALS.filter(
+  (v) => !VERTICALS_PENDING_BACKEND.includes(v),
+);
 
 /** Человекочитаемые названия вертикалей (для UI настроек). */
 export const VERTICAL_LABELS: Record<Vertical, string> = {
@@ -67,6 +82,7 @@ export const VERTICAL_LABELS: Record<Vertical, string> = {
   beauty: "Салон красоты",
   retail: "Магазин / ритейл",
   projects: "Проектная компания",
+  realestate: "Застройщик / недвижимость",
 };
 
 /** Проверка, что строка с бэкенда — известная нам вертикаль. */

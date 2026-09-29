@@ -58,6 +58,7 @@ import { subtleBg } from "../../theme/uiHelpers";
 import { useT } from "../../i18n/VerticalProvider";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCanChecker } from "../../hooks/useCan";
+import { usePermissions } from "../../hooks/usePermissions";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { doctorEmployeesOnly, useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
@@ -472,6 +473,10 @@ const WaitlistPage: React.FC = () => {
   const scope = useActiveScope();
   const orgId = scope.organizationId;
   const { can, loading: permLoading } = useCanChecker();
+  const { hasModule } = usePermissions();
+  // Блок «Ждут вакцину» и остатки со склада — только при модуле вакцинации.
+  // Чипы вакцины в строках не гейтим: это данные уже заведённых записей.
+  const vaccinesOn = WAITLIST_VACCINE_LIVE && hasModule("vaccinations");
 
   usePageTitle(t("title"));
 
@@ -573,7 +578,7 @@ const WaitlistPage: React.FC = () => {
     // кому можно звонить — препарат уже на складе.
     enabled:
       enabled &&
-      WAITLIST_VACCINE_LIVE &&
+      vaccinesOn &&
       (vaccineDemand.length > 0 || (query.data?.results ?? []).some((e) => e.vaccine != null)),
   });
   const vaccineStock = React.useMemo(() => {
@@ -911,7 +916,7 @@ const WaitlistPage: React.FC = () => {
           />
         </Box>
 
-        {WAITLIST_VACCINE_LIVE && vaccineDemand.length > 0 && (
+        {vaccinesOn && vaccineDemand.length > 0 && (
           <Box sx={{ mt: 2 }}>
             <Stack direction="row" alignItems="center" gap={0.75} sx={{ mb: 1 }}>
               <VaccinesOutlined sx={{ fontSize: 18, color: "text.secondary" }} />

@@ -493,6 +493,23 @@ export const djangoQueryKeys = {
       ["django", "reference", "services", context] as const,
   },
 
+  tenancy: {
+    all: ["django", "tenancy"] as const,
+    // Витрина «Модули» — у каждой организации своя: после смены организации
+    // кнопки бьют в новую, значит и карточки должны быть её.
+    catalog: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "catalog", organizationId ?? null] as const,
+    // Открытые заявки на подключение с витрины — тоже у каждой организации свои.
+    requests: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "requests", organizationId ?? null] as const,
+    // Чем из товаров без модуля (запись, сайт, страховые…) организация уже пользуется.
+    features: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "features", organizationId ?? null] as const,
+    // Товары витрины, скрытые от клиник («Неактивен»).
+    inactive: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "inactive", organizationId ?? null] as const,
+  },
+
   lab: {
     all: ["django", "lab"] as const,
     /**

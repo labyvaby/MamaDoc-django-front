@@ -1,0 +1,337 @@
+import { describe, it, expect } from "vitest";
+
+import type { CatalogModule, FeatureSignals, ModuleRequest, ModuleRequestKind } from "../api/tenancy";
+import {
+  buildStorefront,
+  bundleTarget,
+  disconnectTarget,
+  formatPrice,
+  itemTarget,
+  searchStorefront,
+  shelfOrder,
+  storefrontVertical,
+  type StorefrontView,
+} from "./moduleStorefrontModel";
+
+const mod = (code: string, isEnabled = false, requires: string[] = [], name = code, category = "ops"): CatalogModule => ({
+  code, name, description: `${name} — описание`, category, tier: "shared", isEnabled, requires,
+});
+/** Модуль пакета: клиника с правом включает его сама. */
+const pkg = (code: string, isEnabled = false): CatalogModule => ({ ...mod(code, isEnabled), inPackage: true });
+const request = (productId: string, moduleCodes: string[], kind?: ModuleRequestKind): ModuleRequest => ({
+  id: 1, productId, productTitle: productId, moduleCodes, status: "new", createdAt: "2026-09-26T10:00:00Z", kind,
+});
+const NO_FEATURES: FeatureSignals = { onlineBooking: false, site: false, insurers: false, notifications: false, odoctor: false };
+const build = (
+  catalog: CatalogModule[],
+  vertical: string | null = "clinic",
+  openRequests: ModuleRequest[] = [],
+  signals: FeatureSignals | null = null,
+  operator = false,
+  inactive: Map<string, string> | null = null,
+) => buildStorefront({ catalog, vertical, openRequests, signals, operator, inactive });
+
+const item = (view: StorefrontView, id: string) => view.items.find((i) => i.product.id === id);
+const included = (view: StorefrontView, id: string) => view.included.find((i) => i.card.id === id);
+/** Что продаётся сейчас: без «Скоро». */
+const onSale = (view: StorefrontView) => view.items.filter((i) => !i.product.soon).map((i) => i.product.id);
+
+describe("formatPrice", () => {
+  it("prints som per month with a non-breaking thousands gap", () => {
+    expect(formatPrice(5000)).toBe("5 000 сом/мес");
+    expect(formatPrice(500)).toBe("500 сом/мес");
+  });
+});
+
+describe("storefrontVertical", () => {
+  it("keeps known kinds of business and shows the clinic storefront to the rest", () => {
+    expect(["beauty", "retail", "clinic", "fitness", null].map(storefrontVertical)).toEqual([
+      "beauty", "retail", "clinic", "clinic", "clinic",
+    ]);
+  });
+});
+
+describe("buildStorefront", () => {
+  it("sells paid products and moves base and retired modules to the package", () => {
+    const view = build([mod("chatwoot"), mod("appointments", true), mod("achievements", true), mod("reports", true)]);
+    expect(onSale(view)).toEqual(["chats"]);
+    expect(view.included.map((i) => i.card.id)).toEqual([
+      "automations", "conclusions", "appointments", "reports", "staff", "achievements",
+    ]);
+  });
+
+  it("never turns a catalog module into a second product with a taken id", () => {
+    // Модуль «lab» уже есть на стенде test, а товар «lab» — «Скоро».
+    expect(build([mod("lab")]).items.filter((i) => i.product.id === "lab")).toHaveLength(1);
+  });
+
+  it("shows a product only when all its modules are in the organization's catalog", () => {
+    expect(build([mod("warehouse")]).items.map((i) => i.product.id)).not.toContain("trade");
+  });
+
+  it("counts a multi-module product as connected only when every module is on", () => {
+    const trade = item(build([mod("warehouse", true), mod("pos", false, ["warehouse"])]), "trade")!;
+    expect(trade.status).toBe("available");
+    expect(trade.requestModules).toEqual(["pos"]);
+  });
+
+  it("adds missing requirements to the request, naming those outside the product", () => {
+    const view = build(
+      [
+        mod("loyalty", false, ["pos", "clients"]),
+        mod("pos", false, ["warehouse"], "Касса магазина (POS)"),
+        mod("warehouse", false, [], "Склад"),
+        mod("clients", true),
+      ],
+      "retail",
+    );
+    const loyalty = item(view, "loyalty")!;
+    expect(loyalty.requestModules).toEqual(["warehouse", "pos", "loyalty"]);
+    expect(loyalty.extraRequirementNames).toEqual(["Склад", "Касса магазина (POS)"]);
+  });
+
+  it("marks a product requested by its own or a covering bundle request", () => {
+    const own = build([mod("chatwoot")], "clinic", [request("chats", ["chatwoot"])]);
+    expect(item(own, "chats")!.status).toBe("requested");
+    const viaBundle = build([mod("deals")], "clinic", [request("bundle:more-bookings", ["chatwoot", "deals", "waitlist"])]);
+    expect(item(viaBundle, "deals")!.status).toBe("requested");
+  });
+
+  it("puts an unknown module on sale at a price on request, in its own words", () => {
+    const gizmo = item(build([mod("gizmo", false, [], "Гизмо", "communication")]), "gizmo")!;
+    expect(gizmo.product).toMatchObject({
+      id: "gizmo", title: "Гизмо", price: null, category: "communication", tagline: "Гизмо — описание",
+    });
+  });
+
+  it("makes attendance free once payroll is connected", () => {
+    const attendance = item(build([mod("payroll", true), mod("attendance")]), "attendance")!;
+    expect(attendance.free).toBe(true);
+    expect(attendance.freeWithTitle).toBe("Зарплата");
+  });
+
+  it("recommends bundles with something left to connect, pricing only what is missing", () => {
+    const view = build([mod("chatwoot", true), mod("deals"), mod("waitlist"), mod("payroll"), mod("attendance"), mod("tasks")]);
+    expect(view.bundles.map((b) => [b.bundle.id, b.price])).toEqual([["more-bookings", 3500], ["team", 6000]]);
+    expect(view.bundles[0].requestModules).toEqual(["deals", "waitlist"]);
+  });
+
+  it("prices a bundle on request when a missing product has no price", () => {
+    const view = build([mod("loyalty"), mod("promotions"), mod("telegram_bot")], "retail");
+    expect(view.bundles[0]).toMatchObject({ price: null });
+    expect(view.bundles[0].bundle.id).toBe("returning-buyers");
+  });
+
+  it("hides a bundle when everything missing is already requested or connected", () => {
+    const view = build([mod("chatwoot", true), mod("deals"), mod("waitlist")], "clinic", [
+      request("bundle:more-bookings", ["deals", "waitlist"]),
+    ]);
+    expect(view.bundles.map((b) => b.bundle.id)).not.toContain("more-bookings");
+  });
+
+  it("falls back to clinic bundles for an unknown vertical", () => {
+    expect(build([mod("deals")], "hotel").bundles.map((b) => b.bundle.id)).toEqual(["more-bookings"]);
+  });
+
+  it("counts connected and available products, leaving upcoming ones out, and lists present categories", () => {
+    const view = build([mod("chatwoot", true), mod("deals"), mod("payroll")]);
+    expect([view.connectedCount, view.availableCount]).toEqual([1, 2]);
+    expect(view.categories.map((c) => c.id)).toEqual(["clients", "communication", "team", "medicine"]);
+  });
+});
+
+describe("features without a module", () => {
+  it("take their status from the server signals and an open request", () => {
+    const view = build([], "clinic", [request("site", [])], { ...NO_FEATURES, onlineBooking: true });
+    expect(
+      ["online_booking", "site", "insurers", "notifications", "odoctor"].map((id) => item(view, id)!.status),
+    ).toEqual(["connected", "requested", "available", "available", "available"]);
+    expect(item(view, "insurers")!.requestModules).toEqual([]);
+  });
+
+  it("stay hidden while the signals are unknown", () => {
+    expect(onSale(build([]))).toEqual([]);
+  });
+
+  it("are offered only to the kinds of business they are for", () => {
+    const retail = build([], "retail", [], NO_FEATURES).items.map((i) => i.product.id);
+    expect(retail).toEqual(["ai_analyst"]);
+    const beauty = build([], "beauty", [], NO_FEATURES).items.map((i) => i.product.id);
+    expect(beauty).toEqual(["online_booking", "site", "ai_analyst", "notifications"]);
+  });
+});
+
+describe("inactive products", () => {
+  const HIDDEN = new Map([["notifications", "Отправка сломана"]]);
+
+  it("are hidden from the clinic and shown to the operator with the reason", () => {
+    expect(item(build([], "clinic", [], NO_FEATURES, false, HIDDEN), "notifications")).toBeUndefined();
+    const notifications = item(build([], "clinic", [], NO_FEATURES, true, HIDDEN), "notifications")!;
+    expect(notifications).toMatchObject({ status: "available", inactive: true, inactiveReason: "Отправка сломана" });
+    expect(item(build([], "clinic", [], NO_FEATURES, true, HIDDEN), "site")).toMatchObject({ inactive: false });
+  });
+
+  it("are not counted and stand last on the operator's shelf", () => {
+    const catalog = [mod("chatwoot", true), mod("deals")];
+    const clinic = build(catalog, "clinic", [], NO_FEATURES, false, HIDDEN);
+    const operator = build(catalog, "clinic", [], NO_FEATURES, true, HIDDEN);
+    expect(operator.items.length).toBe(clinic.items.length + 1);
+    expect([operator.connectedCount, operator.availableCount]).toEqual([clinic.connectedCount, clinic.availableCount]);
+    const shelf = shelfOrder(operator.items).map((i) => i.product.id);
+    expect(shelf[shelf.length - 1]).toBe("notifications");
+  });
+
+  it("drop out of the bundles, and the bundle price with them", () => {
+    const catalog = [mod("chatwoot"), mod("deals"), mod("waitlist")];
+    const view = build(catalog, "clinic", [], null, true, new Map([["deals", ""]]));
+    expect(view.bundles[0].items.map((i) => i.product.id)).toEqual(["chats", "waitlist"]);
+    expect(view.bundles[0].price).toBe(5500);
+  });
+
+  it("stay visible to a clinic that already has them, as connected", () => {
+    const hidden = new Map([["chats", "Снято с продажи"]]);
+    const clinic = build([mod("chatwoot", true)], "clinic", [], null, false, hidden);
+    expect(item(clinic, "chats")).toMatchObject({ status: "connected", inactive: false, inactiveReason: "" });
+    expect(clinic.connectedCount).toBe(1);
+    expect(item(build([mod("chatwoot", true)], "clinic", [], null, true, hidden), "chats")!.inactive).toBe(true);
+  });
+
+  it("do not make a partner free inside a bundle when they are left out of it", () => {
+    // «Зарплата» скрыта и не подключена: СКУД в подборке платный.
+    const view = build([mod("payroll"), mod("attendance"), mod("tasks")], "clinic", [], null, false, new Map([["payroll", ""]]));
+    const team = view.bundles.find((b) => b.bundle.id === "team")!;
+    expect(team.items.map((i) => i.product.id)).toEqual(["attendance", "tasks"]);
+    expect(team.price).toBe(2500);
+  });
+});
+
+describe("upcoming products", () => {
+  it("stay out of «Доступно» even once requested", () => {
+    expect(build([], "clinic", [request("lab", [])]).availableCount).toBe(0);
+  });
+
+  it("are shown as soon, and a request marks them requested", () => {
+    expect(item(build([]), "lab")!.status).toBe("soon");
+    expect(item(build([], "clinic", [request("lab", [])]), "lab")!.status).toBe("requested");
+    expect(itemTarget(item(build([]), "lab")!)).toEqual({
+      productId: "lab", title: "Лаборатория", modules: [], extraRequirementNames: [], kind: "soon",
+    });
+  });
+});
+
+describe("the package section", () => {
+  it("shows base modules as included, off or requested, and features without a module as included", () => {
+    const view = build([mod("reports", true), mod("finance"), mod("documents")], "clinic", [
+      request("documents", ["documents"]),
+    ]);
+    expect(["reports", "finance", "documents", "staff"].map((id) => included(view, id)!.status)).toEqual([
+      "included", "off", "requested", "included",
+    ]);
+    expect(included(view, "staff")!.module).toBeNull();
+  });
+
+  it("hides a retired module from the clinic while it is off, but not from the operator", () => {
+    expect(included(build([mod("achievements")]), "achievements")).toBeUndefined();
+    expect(included(build([mod("achievements")], "clinic", [], null, true), "achievements")!.status).toBe("off");
+  });
+
+  it("gives the operator every catalog module that has no product or card", () => {
+    const clients = mod("clients", false, [], "Клиенты");
+    expect(included(build([clients]), "clients")).toBeUndefined();
+    const operator = included(build([clients], "clinic", [], null, true), "clients")!;
+    expect(operator).toMatchObject({ status: "off", module: clients });
+    expect(operator.card).toMatchObject({ title: "Клиенты", tagline: "Клиенты — описание" });
+  });
+
+  it("uses the words of the kind of business", () => {
+    const catalog = [mod("appointments", true), mod("patients", true), mod("clients", true)];
+    const ids = (vertical: string) => build(catalog, vertical).included.map((i) => i.card.id);
+    expect(ids("clinic")).toEqual(expect.arrayContaining(["appointments", "patients"]));
+    expect(ids("clinic")).not.toContain("visits");
+    expect(ids("beauty")).toEqual(expect.arrayContaining(["visits", "clients"]));
+    expect(ids("beauty")).not.toContain("conclusions");
+  });
+
+  it("lets the clinic switch only the modules the server marks as its package", () => {
+    const view = build([pkg("documents"), mod("reports", true)]);
+    expect(included(view, "documents")!.selfService).toBe(true);
+    expect(included(view, "reports")!.selfService).toBe(false);
+    expect(included(view, "staff")!.selfService).toBe(false);
+  });
+
+  it("shows conclusions as off while appointments are off, with nothing to switch", () => {
+    const off = included(build([pkg("appointments")]), "conclusions")!;
+    expect(off).toMatchObject({ status: "off", module: null, selfService: false });
+    expect(included(build([pkg("appointments", true)]), "conclusions")!.status).toBe("included");
+  });
+
+  it("keeps the dashboard for the operator: organizations cannot open it yet", () => {
+    expect(included(build([mod("reports", true)]), "dashboard")).toBeUndefined();
+    expect(included(build([mod("reports", true)], "clinic", [], null, true), "dashboard")).toBeDefined();
+  });
+});
+
+describe("switching a paid product off", () => {
+  it("is a request, and it marks the product pending while it waits", () => {
+    const pending = build([mod("chatwoot", true)], "clinic", [request("chats", ["chatwoot"], "disconnect")]);
+    expect(item(pending, "chats")).toMatchObject({ status: "connected", pendingDisconnect: true });
+    const idle = build([mod("chatwoot", true)]);
+    expect(item(idle, "chats")!.pendingDisconnect).toBe(false);
+  });
+
+  it("does not count as a request to connect, and waits only for a connected product", () => {
+    const view = build([mod("chatwoot")], "clinic", [request("chats", ["chatwoot"], "disconnect")]);
+    expect(item(view, "chats")).toMatchObject({ status: "available", pendingDisconnect: false });
+  });
+
+  it("targets the product's modules", () => {
+    expect(disconnectTarget(item(build([mod("chatwoot", true)]), "chats")!)).toEqual({
+      productId: "chats", title: "Чаты", modules: ["chatwoot"], extraRequirementNames: [], kind: "disconnect",
+    });
+  });
+});
+
+describe("request targets", () => {
+  it("builds a product request and a bundle request", () => {
+    const view = build([mod("chatwoot"), mod("deals"), mod("waitlist")]);
+    expect(itemTarget(item(view, "chats")!)).toEqual({
+      productId: "chats", title: "Чаты", modules: ["chatwoot"], extraRequirementNames: [], kind: "product",
+    });
+    expect(bundleTarget(view.bundles[0])).toMatchObject({
+      productId: "bundle:more-bookings", title: "Больше записей, меньше потерь", modules: ["chatwoot", "deals", "waitlist"], kind: "bundle",
+    });
+  });
+});
+
+describe("shelfOrder", () => {
+  it("shows what can be connected first, then requested, then upcoming, then connected", () => {
+    const view = build([mod("chatwoot", true), mod("deals"), mod("waitlist")], "clinic", [request("waitlist", ["waitlist"])]);
+    expect(shelfOrder(view.items).map((i) => i.product.id)).toEqual(["deals", "waitlist", "ai_analyst", "lab", "chats"]);
+  });
+});
+
+describe("searchStorefront", () => {
+  it("finds a product by one of its parts and names the part", () => {
+    const view = build([mod("warehouse"), mod("pos", false, ["warehouse"])]);
+    const found = searchStorefront(view, "инвентар");
+    expect(found.items.map((r) => [r.item.product.id, r.parts])).toEqual([["trade", ["Инвентаризация"]]]);
+  });
+
+  it("ignores case and ё, and needs every word", () => {
+    const view = build([mod("payroll"), mod("tasks")]);
+    expect(searchStorefront(view, "ОТЧЕТ по зп").items.map((r) => r.item.product.id)).toEqual(["payroll"]);
+    expect(searchStorefront(view, "отчёт склад").items).toEqual([]);
+  });
+
+  it("looks into the package cards too", () => {
+    const found = searchStorefront(build([mod("appointments", true)]), "регистратура");
+    expect(found.included.map((r) => [r.item.card.id, r.parts])).toEqual([["appointments", ["Регистратура"]]]);
+  });
+
+  it("returns everything in shelf order for an empty query", () => {
+    const view = build([mod("chatwoot", true), mod("deals")]);
+    const found = searchStorefront(view, "  ");
+    expect(found.items.map((r) => r.item)).toEqual(shelfOrder(view.items));
+    expect(found.included.map((r) => r.item)).toEqual(view.included);
+  });
+});

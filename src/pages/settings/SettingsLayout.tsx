@@ -14,6 +14,7 @@ import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { Link as RouterLink, useLocation } from "react-router";
 
+import ExtensionOutlined from "@mui/icons-material/ExtensionOutlined";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import RateReviewOutlined from "@mui/icons-material/RateReviewOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
@@ -73,6 +74,7 @@ export const SETTINGS_GROUPS = [
   "access",
   "catalogs",
   "operations",
+  "platform",
 ] as const;
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
@@ -254,6 +256,7 @@ const TAB_DEFS: TabDef[] = [
     group: "operations",
   },
   { key: "altegio", to: "/settings/altegio", icon: <RouterOutlined fontSize="small" />, group: "operations" },
+  { key: "modules", to: "/settings/modules", icon: <ExtensionOutlined fontSize="small" />, group: "platform" },
 ];
 
 /**

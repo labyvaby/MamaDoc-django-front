@@ -58,10 +58,24 @@ function conclusionMark(
   const state = line.conclusionState;
   const total = line.conclusionsTotal ?? 0;
   if (total > 1) {
-    const done = Math.min(line.conclusionsCompleted ?? 0, total);
+    // Бэк сводит state по всем документам: «completed» = готовы все. Без
+    // conclusionsCompleted (на 27.09.2026 бэк его не отдаёт) прогресс
+    // неизвестен — показываем число документов, а не выдуманное «0/2».
+    const done =
+      line.conclusionsCompleted != null
+        ? Math.min(line.conclusionsCompleted, total)
+        : state === "completed"
+          ? total
+          : null;
     const allDone = done === total;
     return (
-      <Tooltip title={t("serviceLine.conclusionsProgress", { done, count: total })}>
+      <Tooltip
+        title={
+          done != null
+            ? t("serviceLine.conclusionsProgress", { done, count: total })
+            : t("serviceLine.conclusionsCount", { count: total })
+        }
+      >
         <Stack
           direction="row"
           alignItems="center"
@@ -74,7 +88,7 @@ function conclusionMark(
             <EditNoteOutlined sx={{ fontSize: 16 }} />
           )}
           <Typography component="span" variant="caption" fontWeight={600} lineHeight={1}>
-            {done}/{total}
+            {done != null ? `${done}/${total}` : total}
           </Typography>
         </Stack>
       </Tooltip>

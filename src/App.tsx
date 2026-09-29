@@ -68,6 +68,7 @@ const UnderConstruction = lazy(() =>
   import("./pages/placeholder").then((m) => ({ default: m.UnderConstruction })),
 );
 const DashboardPage = lazy(() => import("./pages/dashboard"));
+const ModulesCatalogPage = lazy(() => import("./pages/settings/ModulesCatalogPage"));
 const EmployeesPage = lazy(() => import("./pages/employes"));
 const ServicesPage = lazy(() => import("./pages/services/DjangoServicesPage"));
 const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
@@ -101,6 +102,7 @@ const CleaningSettingsPage = lazy(() => import("./pages/settings/CleaningSetting
 const AnnouncementsSettingsPage = lazy(() => import("./pages/settings/AnnouncementsSettingsPage"));
 const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
+const RealEstateChessboardPage = lazy(() => import("./pages/realestate"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ReviewShortLinkPage = lazy(() => import("./pages/reviews/ShortLinkPage"));
@@ -955,6 +957,7 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            <Route path="settings/modules" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.modules}><Suspense fallback={<LinearProgress />}><ModulesCatalogPage /></Suspense></RequirePermission>} />
                             <Route path="settings/store" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.store}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
                             <Route path="settings/pos-module" element={<Navigate to="/settings/store" replace />} />
                             <Route path="settings/procurement" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.procurement}><Suspense fallback={<LinearProgress />}><ProcurementSettingsPage /></Suspense></RequirePermission>} />
@@ -1234,6 +1237,17 @@ function App() {
                                 <RequireModule module="knowledge">
                                   <Suspense fallback={<LinearProgress />}>
                                     <KnowledgePage />
+                                  </Suspense>
+                                </RequireModule>
+                              }
+                            />
+                            {/* Квартиры и шахматка застройщика — вертикаль realestate, на моках. */}
+                            <Route
+                              path="realestate/chessboard"
+                              element={
+                                <RequireModule module="realestate">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <RealEstateChessboardPage />
                                   </Suspense>
                                 </RequireModule>
                               }

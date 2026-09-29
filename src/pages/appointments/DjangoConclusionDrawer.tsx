@@ -78,7 +78,11 @@ import {
   AiAssistPendingStrip,
   AiAssistSuggestion,
 } from "../../components/conclusion-forms/AiAssistControls";
-import { useAiAssist } from "../../components/conclusion-forms/useAiAssist";
+import {
+  aiRowKey,
+  useAiAssist,
+  type AiAssistKey,
+} from "../../components/conclusion-forms/useAiAssist";
 import { CollapsibleTextField } from "../../components/conclusion-forms/CollapsibleTextField";
 import { useCan } from "../../hooks/useCan";
 import {
@@ -1187,7 +1191,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
    * Плашка с предложением AI под полем. Текст поля не трогает: в него
    * попадает только то, что врач применил сам (`apply`).
    */
-  const aiSuggestionNode = (aiField: AiAssistField, apply: (text: string) => void) =>
+  const aiSuggestionNode = (aiField: AiAssistKey, apply: (text: string) => void) =>
     canAiAssist ? (
       <AiAssistSuggestion
         state={ai.of(aiField)}
@@ -1497,18 +1501,50 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     return targets;
   };
 
+  /**
+   * Свободные строки прикреплённого бланка — для AI (бэк 27.09.2026).
+   * Привязанные к колонке (`slot`) сюда не идут: они уже в `aiTargets` как
+   * колонки. Значение — без подписи, подпись модель получает отдельно.
+   */
+  const aiFormRows = () =>
+    (attachedForm?.fields ?? [])
+      .filter((field) => !field.slot)
+      .map((field) => ({
+        id: field.id,
+        label: field.label || field.placeholder || "Строка бланка",
+        text: formValues[field.id] ?? "",
+        multiline: field.type === "multiline",
+      }));
+
+  const setFormRowValue = (fieldId: string, value: string) =>
+    setFormValues((prev) => ({ ...prev, [fieldId]: value }));
+
   const handleAiRequest = () =>
-    void ai.requestAll(aiTargets().map(({ field, text }) => ({ field, text })));
+    void ai.requestAll(
+      aiTargets().map(({ field, text }) => ({ field, text })),
+      // Колонку `target` из пачки уберёт сам запрос: бэк просит её не слать.
+      attachedForm
+        ? {
+            title: attachedForm.title || attachedForm.name,
+            target: attachedForm.target,
+            rows: aiFormRows(),
+          }
+        : null,
+    );
 
   const handleAiApplyAll = () => {
     for (const target of aiTargets()) {
       const text = ai.take(target.field);
       if (text != null) target.apply(text);
     }
+    for (const row of aiFormRows()) {
+      const text = ai.take(aiRowKey(row.id));
+      if (text != null) setFormRowValue(row.id, text);
+    }
   };
 
   const handleAiDismissAll = () => {
-    for (const field of ai.suggestedFields) ai.dismiss(field);
+    for (const key of ai.suggestedKeys) ai.dismiss(key);
   };
 
   const handleDetachForm = () => {
@@ -2136,10 +2172,10 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       )}
 
       {/* ── подсказки AI: массовые действия, пока есть неразобранные ── */}
-      {canAiAssist && ai.suggestedFields.length > 0 && (
+      {canAiAssist && ai.suggestedKeys.length > 0 && (
         <>
           <AiAssistPendingStrip
-            pendingCount={ai.suggestedFields.length}
+            pendingCount={ai.suggestedKeys.length}
             onApplyAll={handleAiApplyAll}
             onDismissAll={handleAiDismissAll}
           />
@@ -2488,10 +2524,14 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               form={attachedForm}
               values={formValues}
               onSelectForm={handleSelectForm}
-              onChangeValue={(fieldId, value) =>
-                setFormValues((prev) => ({ ...prev, [fieldId]: value }))
-              }
+              onChangeValue={setFormRowValue}
               onDetach={handleDetachForm}
+              rowAddon={
+                canAiAssist
+                  ? (field) =>
+                      aiSuggestionNode(aiRowKey(field.id), (text) => setFormRowValue(field.id, text))
+                  : undefined
+              }
               slotNodes={slotNodes}
               manual={manualText}
               onManualChange={setManualText}

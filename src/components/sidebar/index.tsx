@@ -29,6 +29,7 @@ import { useT } from "../../i18n/VerticalProvider";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
+import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
@@ -82,6 +83,7 @@ import { ActiveContextSwitcher } from "./ActiveContextSwitcher";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { useCanChecker } from "../../hooks/useCan";
+import { superSeesAllPages } from "../../config/moduleView";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import {
@@ -360,6 +362,8 @@ const SidebarSecondary: React.FC = () => {
     activeBranch,
     activeOrganization,
     loading: permissionsLoading,
+    isPlatformAdmin,
+    viewAsOrganization,
   } = usePermissions();
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
@@ -373,6 +377,8 @@ const SidebarSecondary: React.FC = () => {
   const orgId = useApiOrgId();
   const activeBranchId = useActiveScope().branchId;
   const isSuper = isSuperAdmin();
+  // Обход «isSuper ||» у пунктов ниже; в «Меню как у клиники» выключен.
+  const superSeesAll = superSeesAllPages(isSuper, Boolean(isPlatformAdmin), Boolean(viewAsOrganization));
   const isRetail = activeOrganization?.vertical === "retail";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
@@ -399,17 +405,17 @@ const SidebarSecondary: React.FC = () => {
     // правами (appointments.*_room/registry.view): организация сама решает в
     // редакторе ролей, кому какой кабинет показывать. Данные внутри страниц
     // по-прежнему требуют appointments.view.
-    registratura: !isRetail && (isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry)),
-    bookings: !isRetail && (isSuper || can(PAGE_PERMISSIONS.bookings)),
-    chats: !isRetail && (isSuper || can(PAGE_PERMISSIONS.chats)),
-    doctorRoom: !isRetail && (isSuper || can(PAGE_PERMISSIONS.doctorRoom)),
-    nurseRoom: !isRetail && (isSuper || can(PAGE_PERMISSIONS.nurseRoom)),
+    registratura: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.appointmentsRegistry)),
+    bookings: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.bookings)),
+    chats: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.chats)),
+    doctorRoom: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.doctorRoom)),
+    nurseRoom: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.nurseRoom)),
     // Клинический раздел: ретейлу приём анализов не нужен, поэтому под тем
     // же !isRetail, что и остальные медицинские пункты. Отдельной проверки
     // модуля не нужно — `can` уже сверяется с картой префикс→модуль.
-    lab: !isRetail && (isSuper || can(PAGE_PERMISSIONS.lab)),
-    schedule: !isRetail && (isSuper || can(PAGE_PERMISSIONS.schedule)),
-    skud: isSuper || can(PAGE_PERMISSIONS.attendance),
+    lab: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.lab)),
+    schedule: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.schedule)),
+    skud: superSeesAll || can(PAGE_PERMISSIONS.attendance),
     cleaning: moduleGate("cleaning"),
     tasks: can(PAGE_PERMISSIONS.tasks),
     // Лист ожидания и воронка ждут бэкенда на проде — гейт по правам их не
@@ -418,6 +424,7 @@ const SidebarSecondary: React.FC = () => {
     deals: DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals),
     expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
+    realestate: moduleGate("realestate"),
     achievements: can(PAGE_PERMISSIONS.achievements),
     // ОРГАНИЗАЦИЯ
     employees: can(PAGE_PERMISSIONS.employees),
@@ -426,8 +433,8 @@ const SidebarSecondary: React.FC = () => {
     vaccinations: !isRetail && can(PAGE_PERMISSIONS.vaccinations),
     // Исторические реестры — по page-visibility праву, как Регистратура;
     // по умолчанию право ни у кого, поэтому без явной выдачи видит только суперадмин.
-    allAppointments: !isRetail && (isSuper || can(PAGE_PERMISSIONS.allAppointments)),
-    allProcedures: !isRetail && (isSuper || can(PAGE_PERMISSIONS.allProcedures)),
+    allAppointments: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.allAppointments)),
+    allProcedures: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.allProcedures)),
     services: !isRetail && can(PAGE_PERMISSIONS.services),
     documents: moduleGate("documents"),
     // СКЛАДЫ
@@ -613,7 +620,7 @@ const SidebarSecondary: React.FC = () => {
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
+    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.realestate || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
     "storage": can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
@@ -773,6 +780,11 @@ const SidebarSecondary: React.FC = () => {
             label="Воронка продаж"
             collapsed={siderCollapsed}
           />
+        )}
+
+        {/* Квартиры и шахматка застройщика (модуль realestate, пока на моках) */}
+        {show("my-work") && can_.realestate && (
+          <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />
         )}
 
         {/* Кабинет врача */}

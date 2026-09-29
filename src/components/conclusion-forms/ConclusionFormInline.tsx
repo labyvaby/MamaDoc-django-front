@@ -57,6 +57,11 @@ type Props = {
   /** Подпись поля, куда уедет собранный текст («Заключение»). */
   targetLabel: string;
   disabled: boolean;
+  /**
+   * Что показать под свободной строкой бланка — плашку предложения AI.
+   * Привязанные строки (`slot`) свою плашку несут в `slotNodes`.
+   */
+  rowAddon?: (field: FormField) => React.ReactNode;
 };
 
 const fieldSpan = (field: FormField) => (field.width === "half" ? "span 1" : "span 2");
@@ -74,6 +79,7 @@ export const ConclusionFormInline: React.FC<Props> = ({
   onManualChange,
   targetLabel,
   disabled,
+  rowAddon,
 }) => {
   if (loading) {
     return (
@@ -166,6 +172,8 @@ export const ConclusionFormInline: React.FC<Props> = ({
                 ) : null;
               }
 
+              const span = { gridColumn: { xs: "span 1", md: fieldSpan(field) } };
+              const addon = rowAddon?.(field);
               const rowProps = {
                 label: field.label || undefined,
                 placeholder: field.placeholder,
@@ -175,14 +183,24 @@ export const ConclusionFormInline: React.FC<Props> = ({
                 onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
                   onChangeValue(field.id, e.target.value),
                 disabled,
-                sx: { gridColumn: { xs: "span 1", md: fieldSpan(field) } },
+                sx: addon ? undefined : span,
               };
               // Многострочная строка бланка сворачивается, как штатные поля:
               // иначе один длинный «Зев» растягивал форму на экран.
-              return field.type === "multiline" ? (
-                <CollapsibleTextField key={field.id} {...rowProps} minRows={field.rows ?? 3} />
+              const input =
+                field.type === "multiline" ? (
+                  <CollapsibleTextField key={field.id} {...rowProps} minRows={field.rows ?? 3} />
+                ) : (
+                  <TextField key={field.id} {...rowProps} />
+                );
+              // Плашка AI встаёт под своей строкой, в той же ячейке сетки.
+              return addon ? (
+                <Stack key={field.id} spacing={0.75} sx={{ ...span, minWidth: 0 }}>
+                  {input}
+                  {addon}
+                </Stack>
               ) : (
-                <TextField key={field.id} {...rowProps} />
+                input
               );
             })}
           </Box>

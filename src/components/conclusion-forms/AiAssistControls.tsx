@@ -25,7 +25,7 @@ import type { AiAssistFieldState } from "./useAiAssist";
  */
 export const AiAssistHeaderButton: React.FC<{
   loading: boolean;
-  /** Сколько полей ждут ответа — подпись кнопки, пока запрос идёт. */
+  /** Сколько полей ждут ответа — тултип кнопки, пока запрос идёт. */
   fieldCount: number;
   compact?: boolean;
   disabled?: boolean;
@@ -56,7 +56,10 @@ export const AiAssistHeaderButton: React.FC<{
             startIcon={icon}
             sx={{ whiteSpace: "nowrap" }}
           >
-            {loading ? progressText : t("conclusion.aiAssist.button")}
+            {/* Подпись не меняем на «AI заполняет N полей…»: со строками
+                бланка полей бывает 10–40, и кнопка вылезала из шапки
+                (27.09.2026). Число — в тултипе, на кнопке — спиннер. */}
+            {t("conclusion.aiAssist.button")}
           </Button>
         )}
       </span>

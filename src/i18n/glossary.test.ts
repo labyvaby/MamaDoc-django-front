@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { SUPPORTED_VERTICALS, VERTICAL_LABELS, getGlossary, isVertical } from "./glossary";
+import { SELECTABLE_VERTICALS, SUPPORTED_VERTICALS, VERTICAL_LABELS, getGlossary, isVertical } from "./glossary";
 import { isValidTermForms } from "./glossaryOverrides";
 import { TERM_KEYS } from "./types";
 import settings from "../locales/ru/settings.json";
@@ -54,5 +54,13 @@ describe("подписи типов бизнеса в настройках", () 
     expect(entry, vertical).toBeDefined();
     expect(entry.label, `${vertical}.label`).toBeTruthy();
     expect(entry.hint, `${vertical}.hint`).toBeTruthy();
+  });
+});
+
+describe("выбор вертикали в настройках", () => {
+  it("застройщика не предлагает, пока его нет в OrganizationVertical бэка", () => {
+    expect(SUPPORTED_VERTICALS).toContain("realestate");
+    expect(SELECTABLE_VERTICALS).not.toContain("realestate");
+    expect(SELECTABLE_VERTICALS).toEqual(expect.arrayContaining(["clinic", "beauty", "retail", "projects"]));
   });
 });
