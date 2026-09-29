@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type { ClinicalRole } from "./staff";
 
 // ── Domain types ─────────────────────────────────────────────────────────────
 // Backend contract: docs `reviews-contract.md`. Все имена полей — camelCase.
@@ -143,6 +144,8 @@ export interface ReviewSettings {
   quietFrom: string;
   quietTo: string;
   minDaysBetween: number;
+  /** Клинические типы сотрудников, по приёмам которых можно отправлять запрос. */
+  appointmentClinicalRoles: ClinicalRole[];
   positiveTags: string[];
   negativeTags: string[];
   /** Глобальный флаг авторассылки на платформе. */
@@ -162,6 +165,7 @@ export interface ReviewSettingsPatch {
   quietFrom?: string;
   quietTo?: string;
   minDaysBetween?: number;
+  appointmentClinicalRoles?: ClinicalRole[];
   positiveTags?: string[];
   negativeTags?: string[];
   branchReviewLinks?: BranchReviewLinkPatch[];
