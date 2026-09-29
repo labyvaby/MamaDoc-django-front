@@ -1,7 +1,9 @@
 import React from "react";
 import { Box, ButtonBase, Typography } from "@mui/material";
 import { alpha, type Theme } from "@mui/material/styles";
+import BalconyOutlined from "@mui/icons-material/BalconyOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
+import DeckOutlined from "@mui/icons-material/DeckOutlined";
 
 import type { Project, Unit } from "../../../api/realestate";
 import { subtleBg } from "../../../theme/uiHelpers";
@@ -474,10 +476,14 @@ const UnitCell = React.memo(function UnitCell({
       </Box>
       <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.72rem" }}>
         <small>№{unit.number}</small>
+        {/* Иконка, а не буква «Б/Т»: буква путалась с названием секции «Б». */}
         <Box
           component="i"
-          aria-hidden
+          title={isTerrace ? "Терраса" : outdoor ? "Балкон / лоджия" : undefined}
+          aria-label={isTerrace ? "Терраса" : outdoor ? "Балкон или лоджия" : undefined}
+          aria-hidden={!isTerrace && !outdoor}
           sx={(t) => ({
+            "& .MuiSvgIcon-root": { fontSize: 13 },
             width: 17,
             height: 17,
             display: "grid",
@@ -493,7 +499,7 @@ const UnitCell = React.memo(function UnitCell({
                 : null),
           })}
         >
-          {isTerrace ? "Т" : outdoor ? "Б" : ""}
+          {isTerrace ? <DeckOutlined /> : outdoor ? <BalconyOutlined /> : null}
         </Box>
       </Box>
       <Box component="b" sx={{ fontWeight: 700 }}>

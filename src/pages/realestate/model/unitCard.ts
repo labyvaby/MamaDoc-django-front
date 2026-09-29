@@ -1,6 +1,7 @@
 import type { Project, Unit, UnitOffer } from "../../../api/realestate";
 import { formatMoney, formatRooms, num } from "./units";
 
+/** То же правило, что у бэка (`realty/selectors.floor_type`, поле `floorType` в `/projects/<id>/floors/`). */
 export function floorTypeLabel(project: Project, floor: number) {
   if (floor === project.floorsCount) return "Пентхаус";
   if (floor >= project.floorsCount - 2) return "Клубный этаж";

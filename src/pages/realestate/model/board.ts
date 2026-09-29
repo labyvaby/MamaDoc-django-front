@@ -92,6 +92,7 @@ export const autoBoardView = (board: BoardModel): BoardView =>
     ? "compact"
     : "detailed";
 
+/** Правило бэка (`realty/selectors.floor_type`), во множественном числе для шахматки. */
 export function floorType(project: Project, floor: number) {
   if (floor === project.floorsCount) return "Пентхаусы";
   if (floor >= project.floorsCount - 2) return "Клубный этаж";

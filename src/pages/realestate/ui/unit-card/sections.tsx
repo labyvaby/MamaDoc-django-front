@@ -364,7 +364,7 @@ export function Characteristics({ unit, onCompare }: { unit: Unit; onCompare: (u
       ["▥", hall ? `Прихожая ${num(hall.area)} м²` : null],
       ["▯", outdoor],
       ["②", bathroomsLabel(unit)],
-      ["☀", `${unit.orientation} сторона`],
+      ["☀", `Сторона: ${unit.orientation.toLowerCase()}`],
       ["◢", unit.isCorner ? "Угловая квартира" : null],
       ["▭", unit.hasPanoramicWindows ? "Панорамные окна" : null],
     ] as [string, string | null][]
@@ -899,8 +899,9 @@ export function KeyParams({ project, unit }: { project: Project; unit: Unit }) {
 export function RoomTable({ unit }: { unit: Unit }) {
   const kind = outdoorKind(unit);
   const rows: [string, string, string][] = unit.roomsBreakdown.map((r) => [r.name, `${num(r.area)} м²`, `${num(r.width)} × ${num(r.length)} м`]);
-  if (kind && unit.outdoor) rows.push([kind, `${num(unit.outdoor.area)} м²`, kind === "Лоджия" ? "Остеклённая" : "Открытый"]);
-  if (unit.outdoor?.type === "terrace") rows.push(["Терраса", `${num(unit.outdoor.area)} м²`, "Открытая"]);
+  // Размеров и остекления балкона/террасы бэк не отдаёт — только площадь.
+  if (kind && unit.outdoor) rows.push([kind, `${num(unit.outdoor.area)} м²`, "—"]);
+  if (unit.outdoor?.type === "terrace") rows.push(["Терраса", `${num(unit.outdoor.area)} м²`, "—"]);
   return (
     <Box component="section" sx={cardSx}>
       <Typography component="h3" sx={cardTitleSx}>
