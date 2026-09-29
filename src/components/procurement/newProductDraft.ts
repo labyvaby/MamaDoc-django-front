@@ -165,11 +165,11 @@ export function matchUnit(units: DjangoUnitOfMeasure[], raw: string | null | und
  * карточки уникален.
  */
 export function draftFromRecognized(
-  line: Pick<RecognizedLine, "name" | "color" | "size" | "barcode" | "sku" | "unit">,
+  line: Pick<RecognizedLine, "name" | "color" | "size" | "barcode" | "sku" | "unit" | "productName">,
   options: { units: DjangoUnitOfMeasure[]; skuIsUnique: boolean },
 ): NewProductDraft {
   return {
-    ...emptyDraft(line.name.trim()),
+    ...emptyDraft((line.productName || line.name).trim()),
     color: line.color?.trim() ?? "",
     size: line.size?.trim() ?? "",
     barcode: line.barcode?.trim() ?? "",
