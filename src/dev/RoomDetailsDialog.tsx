@@ -336,8 +336,14 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, ro
     queryKey: ["hotel", "room-availability", roomId, from, to],
     queryFn: ({ signal }) => getRoomAvailability(roomId!, from, to, signal),
     enabled: roomId != null,
+    // Refine по умолчанию держит прошлые данные при смене ключа
+    // (placeholderData: keepPreviousData) — при медленной сети модалка другого
+    // номера показывала данные предыдущего. Здесь данные одной записи: пока
+    // новые не пришли, честный спиннер, а не чужая запись.
+    placeholderData: undefined,
   });
-  const availability = query.data;
+  // И на всякий случай — только данные именно открытого номера.
+  const availability = query.data && query.data.room.id === roomId ? query.data : undefined;
   const room = availability?.room;
   const category = room ? roomTypes.find((c) => c.id === room.roomTypeId) : undefined;
 
@@ -392,7 +398,12 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, ro
               </Button>
             </>
           ) : (
-            <CircularProgress size={28} />
+            <>
+              <CircularProgress size={28} />
+              <Typography variant="body2" color="text.secondary">
+                Загружаем данные номера…
+              </Typography>
+            </>
           )}
         </Stack>
       )}

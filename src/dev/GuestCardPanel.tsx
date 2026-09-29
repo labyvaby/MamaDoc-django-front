@@ -138,8 +138,11 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ clientId, state 
     >
       <Box sx={{ flex: 1, overflowY: "auto", minHeight: 0, borderTop: 1, borderColor: "divider" }}>
         {guestLoading ? (
-          <Stack alignItems="center" sx={{ py: 4 }}>
+          <Stack alignItems="center" gap={1.5} sx={{ py: 4 }}>
             <CircularProgress size={28} />
+            <Typography variant="body2" color="text.secondary">
+              Загружаем карточку гостя…
+            </Typography>
           </Stack>
         ) : guest ? (
           <Stack spacing={1.5} sx={{ p: 2 }}>
