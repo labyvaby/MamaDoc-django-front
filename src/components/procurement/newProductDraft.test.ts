@@ -156,6 +156,13 @@ describe("draftFromRecognized", () => {
     expect(draftFromRecognized(line, { units, skuIsUnique: false }).sku).toBe("");
   });
 
+  it("название модели сохраняет бренд и код, а цвет с размером остаются осями", () => {
+    const recognized = { ...line, name: "NORTH TEST · Linen jacket · DOLIE-GZ · LIGHT BLUE · 42", productName: "NORTH TEST · Linen jacket · DOLIE-GZ", color: "LIGHT BLUE", size: "42" };
+    const draft = draftFromRecognized(recognized, { units, skuIsUnique: false });
+    expect(newProductInput({ ...draft, categoryId: 7 }, matrix)).toMatchObject({ name: "NORTH TEST · Linen jacket · DOLIE-GZ", color: "LIGHT BLUE", size: "42" });
+    expect(newProductInput({ ...draft, categoryId: 8 }, flat).name).toBe("NORTH TEST · Linen jacket · DOLIE-GZ, LIGHT BLUE, 42");
+  });
+
   it("незнакомая единица остаётся пустой", () => {
     expect(matchUnit(units, "pcs")).toBeNull();
     expect(matchUnit(units, "УП")).toEqual(units[1]);

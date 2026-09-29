@@ -65,6 +65,7 @@ import { CustomDateTimePicker, CustomDatePicker, InvoicePhotosField } from "../u
 import { CloseGuardDialog } from "../common/CloseGuardDialog";
 import { formatMoney } from "./meta";
 import { NewProductFields } from "./NewProductFields";
+import { RecognitionDetails } from "./RecognitionDetails";
 import {
   buildCategoryOptions,
   draftFromRecognized,
@@ -94,6 +95,7 @@ interface FormLine {
   /** Строка пришла из распознавания: показываем исходный текст и кандидатов. */
   recognized?: {
     name: string;
+    productName?: string | null;
     modelCode: string | null;
     color: string | null;
     size: string | null;
@@ -123,6 +125,7 @@ const newLine = (): FormLine => ({
 /** Что строка документа говорит о товаре — для подсказок и для новой карточки. */
 const recognizedOf = (line: RecognizedLine): NonNullable<FormLine["recognized"]> => ({
   name: line.name,
+  productName: line.productName,
   modelCode: line.modelCode,
   color: line.color,
   size: line.size,
@@ -736,6 +739,7 @@ export const ReceiptFormDrawer: React.FC<ReceiptFormDrawerProps> = ({
               {onCreateSupplier ? " или создайте нового." : "."}
             </Alert>
           )}
+          {recognition && <RecognitionDetails result={recognition} />}
         </Box>
 
         {error && <Alert severity="error">{error}</Alert>}

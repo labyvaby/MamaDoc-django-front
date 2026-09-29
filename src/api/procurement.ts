@@ -298,6 +298,13 @@ export interface RecognizedCandidate {
 
 export interface RecognizedLine {
   name: string;
+  sourceName?: string | null;
+  productName?: string | null;
+  brand?: string | null;
+  description?: string | null;
+  rawText?: string | null;
+  page?: number | null;
+  details?: Array<{ label: string; value: string }>;
   modelCode: string | null;
   color: string | null;
   size: string | null;
@@ -324,6 +331,11 @@ export interface RecognitionResult {
     vatTotal: string | null;
     paymentTerms: string | null;
     buyerName: string | null;
+    details?: Array<{ label: string; value: string }>;
+    fullText?: string | null;
+    totalQuantity?: string | null;
+    subtotal?: string | null;
+    pagesRead?: number | null;
     supplier: { name: string | null; taxId: string | null; phone: string | null; address: string | null };
   };
   supplierMatch: RecognizedCandidate | null;
@@ -467,14 +479,15 @@ export function cancelReceipt(id: number, reason: string, scope?: ProcurementSco
 }
 
 /**
- * Черновик накладной по фото или PDF. Изображение ужимаем до 1600 px, а PDF
+ * Черновик накладной по фото или PDF. Сохраняем детали изображения, а PDF
  * передаём Gemini целиком: модель видит все страницы и возвращает один
  * черновик. Ничего не записано, пока человек не проверит позиции и не
  * проведёт приход.
  */
 export async function recognizeReceiptPhoto(file: File, scope?: ProcurementScope, signal?: AbortSignal) {
   const formData = new FormData();
-  formData.append("image", await preparePhotoIfImage(file));
+  const directlySupported = /\.(jpe?g|png|webp|pdf)$/i.test(file.name) || /^(image\/(jpeg|png|webp)|application\/pdf)$/.test(file.type);
+  formData.append("image", directlySupported ? file : await preparePhotoIfImage(file));
   return withUploadErrors(() =>
     apiRequest<RecognitionResult>(`${BASE}/receipts/recognize/${query({ branchId: scope?.branchId })}`, {
       method: "POST",
