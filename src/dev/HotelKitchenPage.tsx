@@ -38,6 +38,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { Navigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,7 +46,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useCan } from "../hooks/useCan";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
-import { DateStepper, HotelPage, HotelPageHeader, MetricTile, plural, SectionLabel, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
+import { DateStepper, EmptyState, HotelPage, HotelPageHeader, MetricTile, plural, SectionLabel, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 import { useIsVivaActive, MEAL_LABELS, MEAL_SERVING_WINDOW, type MealType } from "./mockDemoData";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
@@ -222,6 +223,17 @@ export const HotelKitchenPage: React.FC = () => {
         <Stack alignItems="center" sx={{ py: 6 }}>
           <CircularProgress size={28} />
         </Stack>
+      ) : noGuests && purchasedCount === 0 ? (
+        // Пустой день — одна строка, а не меню и таблица закупки из нулей.
+        // Если на этот день уже что-то отмечено купленным, таблицу показываем
+        // (ниже), чтобы отметку можно было поправить или убрать.
+        <Surface>
+          <EmptyState
+            icon={<RestaurantOutlined />}
+            title={isToday ? "Сегодня готовить нечего" : "На эту дату готовить нечего"}
+            description="Гостей нет — ни блюд, ни закупки. Выберите другую дату, чтобы посмотреть меню и список продуктов."
+          />
+        </Surface>
       ) : (
         <>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>

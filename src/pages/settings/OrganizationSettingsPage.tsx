@@ -314,13 +314,16 @@ const OrganizationSettingsPage: React.FC = () => {
   return (
     <SettingsLayout>
       <Stack spacing={2.5} sx={{ maxWidth: 640 }}>
-        {/* Header */}
-        <Stack direction="row" alignItems="center" gap={1}>
-          <BusinessOutlined color="action" />
-          <Typography variant="h6" fontWeight={600}>
-            {t("organization.title")}
-          </Typography>
-        </Stack>
+        {/* Header. У отеля не дублируем: «Организация» уже в шапке приложения
+            и подсвечена в списке разделов — третий заголовок подряд (жалоба QA). */}
+        {!isHotelOrg && (
+          <Stack direction="row" alignItems="center" gap={1}>
+            <BusinessOutlined color="action" />
+            <Typography variant="h6" fontWeight={600}>
+              {t("organization.title")}
+            </Typography>
+          </Stack>
+        )}
 
         {loading && (
           <Stack spacing={1.5}>

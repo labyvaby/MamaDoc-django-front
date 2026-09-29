@@ -32,7 +32,7 @@ import { CustomDatePicker } from "../components/ui";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { formatHotelDate, formatHotelDateRange } from "./mockDemoData";
-import { mapStayDisplayStatus, hotelStayStatusColor, HOTEL_STAY_STATUS_LABELS } from "./hotelDisplay";
+import { mapStayDisplayStatus, hotelStayStatusColor, formatSellableSummary, HOTEL_OFF_SALE_LABEL, HOTEL_STAY_STATUS_LABELS } from "./hotelDisplay";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { getDailyReport, getOccupancyReport, type HotelDailyReportRow } from "../api/hotel";
@@ -126,7 +126,7 @@ export const HotelReportsPage: React.FC = () => {
       return { label: HOTEL_STAY_STATUS_LABELS[status], color: hotelStayStatusColor(status, theme) };
     }
     if (row.occupancy === "blocked") {
-      return { label: row.blockReason ? `Блок: ${row.blockReason}` : "Блок", color: theme.palette.warning.main };
+      return { label: HOTEL_OFF_SALE_LABEL, color: theme.palette.text.disabled };
     }
     return { label: "Свободен", color: theme.palette.text.disabled };
   };
@@ -320,13 +320,13 @@ export const HotelReportsPage: React.FC = () => {
             <MetricTile
               label="Загрузка"
               value={`${Number(report.occupancyPercent).toLocaleString("ru-RU")}%`}
-              hint={`${report.occupiedRooms} занято из ${report.totalRooms}`}
+              hint={`занято ${formatSellableSummary(report.occupiedRooms, report.totalRooms, report.blockedRooms)}`}
               accent={theme.palette.info.main}
             />
             <MetricTile
               label="Свободно"
               value={report.freeRooms}
-              hint={report.blockedRooms > 0 ? `ещё ${report.blockedRooms} заблокировано` : "номеров"}
+              hint="номеров в продаже"
               accent={theme.palette.success.main}
             />
             <MetricTile label="Заезды / выезды" value={`${report.arrivals} / ${report.departures}`} hint="за день" />

@@ -8,7 +8,7 @@
  */
 import { downloadBlob } from "../utility/download";
 import { formatHotelDate } from "./mockDemoData";
-import { mapStayDisplayStatus, HOTEL_STAY_STATUS_LABELS } from "./hotelDisplay";
+import { formatSellableSummary, mapStayDisplayStatus, HOTEL_OFF_SALE_LABEL, HOTEL_STAY_STATUS_LABELS } from "./hotelDisplay";
 import type { HotelDailyReport } from "../api/hotel";
 
 export async function exportHotelDailyReportXlsx(report: HotelDailyReport): Promise<void> {
@@ -29,7 +29,7 @@ export async function exportHotelDailyReportXlsx(report: HotelDailyReport): Prom
   const title = ws.insertRow(1, [`Отчёт по отелю Viva — ${formatHotelDate(report.date)}`]);
   title.font = { bold: true, size: 14 };
   ws.insertRow(2, [
-    `Занято: ${report.occupiedRooms} из ${report.totalRooms} (${report.occupancyPercent}%) · ` +
+    `Занято: ${formatSellableSummary(report.occupiedRooms, report.totalRooms, report.blockedRooms)} (${report.occupancyPercent}%) · ` +
       `Свободно: ${report.freeRooms} · Заездов: ${report.arrivals} · Выездов: ${report.departures} · ` +
       `Выручка за ночь: ${Number(report.revenue).toLocaleString("ru-RU")} ${report.currency}`,
   ]);
@@ -43,7 +43,7 @@ export async function exportHotelDailyReportXlsx(report: HotelDailyReport): Prom
       row.occupancy === "occupied" && row.stayStatus
         ? HOTEL_STAY_STATUS_LABELS[mapStayDisplayStatus(row.stayStatus)]
         : row.occupancy === "blocked"
-          ? `Блок${row.blockReason ? `: ${row.blockReason}` : ""}`
+          ? HOTEL_OFF_SALE_LABEL
           : "Свободен";
     ws.addRow({
       room: row.roomNumber,

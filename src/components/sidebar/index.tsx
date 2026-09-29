@@ -27,6 +27,7 @@ import { useAppVersion } from "../../api/appVersion";
 import { fetchChatwootCounts } from "../../api/chatwoot";
 import { useT } from "../../i18n/VerticalProvider";
 import { useIsVivaActive } from "../../dev/mockDemoData";
+import { useHotelProperty } from "../../dev/useHotelProperty";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
@@ -381,6 +382,11 @@ const SidebarSecondary: React.FC = () => {
   const isSuper = isSuperAdmin();
   const isRetail = activeOrganization?.vertical === "retail";
   const isHotelOrg = activeOrganization?.vertical === "hotel";
+  // Список объектов отеля запрашиваем отсюда: сайдбар монтируется сразу после
+  // /auth/me/, раньше, чем догрузится код страницы. Иначе /hotel/properties/
+  // уходил только из страницы, и вся отельная загрузка стояла цепочкой за ним.
+  // Для клиники хук ничего не запрашивает.
+  useHotelProperty();
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -469,7 +475,10 @@ const SidebarSecondary: React.FC = () => {
   const tasksSummaryQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.summary(orgId),
     queryFn: ({ signal }) => getTasksSummary(orgId, signal),
-    enabled: can_.tasks && !permissionsLoading,
+    // Бейджи клиничных разделов у отеля не показываются (плоское меню Viva) —
+    // и запросы за ними не шлём: на «Бронированиях» они стояли в одной очереди
+    // с отельными.
+    enabled: can_.tasks && !permissionsLoading && !isHotelOrg,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     // Бейдж живёт в сайдбаре на всех страницах, а задачи закрывают несколько
     // человек параллельно: без поллинга и рефетча по возврату на вкладку цифра
@@ -497,7 +506,7 @@ const SidebarSecondary: React.FC = () => {
   const waitlistSummaryQuery = useQuery({
     queryKey: djangoQueryKeys.waitlist.summary(orgId, activeBranchId),
     queryFn: ({ signal }) => getWaitlistSummary(orgId, activeBranchId, signal),
-    enabled: can_.waitlist && !permissionsLoading,
+    enabled: can_.waitlist && !permissionsLoading && !isHotelOrg,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     refetchInterval: DJANGO_POLL_INTERVAL_MS,
     refetchOnWindowFocus: true,
@@ -527,7 +536,7 @@ const SidebarSecondary: React.FC = () => {
   // должен — орг-скоупные эндпоинты отвечают на него 400 (та же причина, что
   // enabled/needsOrg на самой странице «Брони»).
   const bookingsBadgeEnabled =
-    can_.bookings && !permissionsLoading && (!isSuper || orgId != null);
+    can_.bookings && !permissionsLoading && (!isSuper || orgId != null) && !isHotelOrg;
   // Филиал в бейдже обязателен: бэк скоупит брони только по явному `branchId`
   // (без параметра отдаёт всю организацию), поэтому иначе бейдж показывал бы
   // одно и то же число во всех филиалах — не то, что человек увидит в списке.
@@ -595,7 +604,7 @@ const SidebarSecondary: React.FC = () => {
   const chatsCountsQuery = useQuery({
     queryKey: ["chatwoot", "counts"],
     queryFn: fetchChatwootCounts,
-    enabled: can_.chats,
+    enabled: can_.chats && !isHotelOrg,
     retry: false,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     refetchInterval: DJANGO_POLL_INTERVAL_MS,
