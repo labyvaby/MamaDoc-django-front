@@ -27,7 +27,7 @@ import ArrowForwardOutlined from "@mui/icons-material/ArrowForwardOutlined";
 import { getSelectedHotelDate, subscribeSelectedHotelDate, useIsVivaActive, formatHotelDate } from "./mockDemoData";
 import { hotelRoomStateColor } from "./hotelDisplay";
 import { useHotelProperty } from "./useHotelProperty";
-import { getDashboard, listHousekeepingTasks, listRooms } from "../api/hotel";
+import { getDashboard, listHousekeepingTasks } from "../api/hotel";
 
 /**
  * `tint` — мягкая цветная подложка карточки (по образцу пастельных KPI-карточек
@@ -105,15 +105,6 @@ export const HotelOccupancyBanner: React.FC = () => {
   });
   const dashboard = dashboardQuery.data;
 
-  // Снятые с продажи номера дашборд бэка считает «свободными» — продать их
-  // нельзя, поэтому вычитаем: то же число номеров, что на «Номерах» и в отчёте.
-  const roomsQuery = useQuery({
-    queryKey: ["hotel", "rooms", property?.id],
-    queryFn: ({ signal }) => listRooms({ propertyId: property!.id }, signal),
-    enabled: vivaActive && property != null,
-  });
-  const offSaleCount = (roomsQuery.data ?? []).filter((r) => r.status === "out_of_service").length;
-
   const tasksQuery = useQuery({
     queryKey: ["hotel", "housekeepingTasks", property?.id, "open"],
     queryFn: ({ signal }) => listHousekeepingTasks({ propertyId: property!.id, status: "open" }, signal),
@@ -155,9 +146,7 @@ export const HotelOccupancyBanner: React.FC = () => {
   const dateSuffix = isToday ? "сегодня" : formatHotelDate(selectedDate);
   const stayingColor = theme.palette.mode === "dark" ? "#a78bfa" : "#7c3aed";
 
-  const sellableRooms = Math.max(0, dashboard.totalRooms - offSaleCount);
-  const freeSellable = Math.max(0, dashboard.freeRooms - offSaleCount);
-  const occupancyPercent = sellableRooms > 0 ? Math.round((dashboard.occupiedRooms / sellableRooms) * 1000) / 10 : 0;
+  const occupancyPercent = Number(dashboard.occupancyPercent);
   const occupancyColor = occupancyPercent >= 90 ? p.success.main : occupancyPercent >= 70 ? p.warning.main : p.error.main;
 
   // Цвета — те же, что точки в шахматке и на «Номерах» (hotelRoomStateColor), иначе
@@ -188,15 +177,14 @@ export const HotelOccupancyBanner: React.FC = () => {
             {Math.round(occupancyPercent)}%
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {dashboard.occupiedRooms} из {sellableRooms} занято
+            {dashboard.occupiedRooms} из {dashboard.totalRooms} занято
           </Typography>
         </Stack>
         <Box sx={{ height: 6, borderRadius: 3, bgcolor: alpha(theme.palette.text.primary, 0.08), overflow: "hidden" }}>
           <Box sx={{ width: `${Math.min(100, occupancyPercent)}%`, height: "100%", borderRadius: 3, bgcolor: occupancyColor, transition: "width .4s" }} />
         </Box>
         <Typography variant="caption" color="text.secondary">
-          {freeSellable} {freeSellable === 1 ? "номер свободен" : "номеров свободно"}
-          {offSaleCount > 0 ? ` · ${offSaleCount} снят с продажи` : ""}
+          {dashboard.freeRooms} {dashboard.freeRooms === 1 ? "номер свободен" : "номеров свободно"}
           {dashboard.activeHolds > 0 ? ` · ${dashboard.activeHolds} в удержании` : ""}
         </Typography>
       </CardShell>
@@ -207,7 +195,7 @@ export const HotelOccupancyBanner: React.FC = () => {
           <StatRow color={p.error.main} label="Выезды / уже выехало" value={`${dashboard.departures} / ${dashboard.departed}`} />
           <StatRow color={stayingColor} label="Проживают" value={dashboard.staying} />
           <StatRow color={p.warning.main} label="Просрочено (не заехали)" value={dashboard.overdueArrivals} />
-          <StatRow color={p.text.disabled} label="Свободные номера" value={freeSellable} />
+          <StatRow color={p.text.disabled} label="Свободные номера" value={dashboard.freeRooms} />
         </Box>
       </CardShell>
 

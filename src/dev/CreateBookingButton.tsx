@@ -58,7 +58,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import { CustomDatePicker } from "../components/ui";
 import { useHotelProperty } from "./useHotelProperty";
 import { formatGuestMatchedBy, HOTEL_BOARD_TYPE_LABELS } from "./hotelDisplay";
-import { CountStepper, DRAWER_WIDTH, DrawerBody, DrawerFooter, DrawerHeader, DrawerSection } from "./hotelUi";
+import { CountStepper, DisabledReason, DRAWER_WIDTH, DrawerBody, DrawerFooter, DrawerHeader, DrawerSection } from "./hotelUi";
 import { isDocumentFile, prepareDocumentFile, useDocumentScan } from "./useDocumentScan";
 import { DocumentDropzone } from "./DocumentDropzone";
 import {
@@ -655,9 +655,11 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   return (
     <>
       {!hideTrigger && (
-        <Button size="small" variant="contained" startIcon={<AddOutlined />} onClick={() => setOpen(true)}>
-          Создать бронь
-        </Button>
+        <DisabledReason reason={property ? null : "Сначала выберите филиал с объектом размещения"}>
+          <Button size="small" variant="contained" startIcon={<AddOutlined />} disabled={!property} onClick={() => setOpen(true)}>
+            Создать бронь
+          </Button>
+        </DisabledReason>
       )}
 
       <Drawer

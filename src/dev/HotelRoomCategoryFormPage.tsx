@@ -64,6 +64,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
+import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import {
   getHotelCatalogs,
   listRoomTypes,
@@ -946,9 +947,7 @@ export const HotelRoomCategoryFormPage: React.FC = () => {
             <CircularProgress size={28} />
           </Stack>
         ) : !property ? (
-          <Alert severity="warning" variant="outlined">
-            Не найден объект размещения для текущего филиала.
-          </Alert>
+          <HotelPropertyMissing />
         ) : isEdit && !editing ? (
           <Alert
             severity="warning"

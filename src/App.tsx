@@ -670,15 +670,17 @@ function App() {
                         {/* Интеграции (каналы продаж) переехали в «Настройки»
                             (/settings/integrations) — старую ссылку не ломаем. */}
                         <Route path="integrations" element={<Navigate to="/settings/integrations" replace />} />
-                        {/* Кухня (меню/закупка) — пока только Viva: своего
-                            права в PAGE_PERMISSIONS нет, страница сама
-                            редиректит на "/", если открыта не из Viva. */}
+                        {/* Кухня (меню/закупка) — только Viva, право
+                            hotel.kitchen.view; вне Viva страница сама
+                            редиректит на "/". */}
                         <Route
                           path="kitchen"
                           element={
-                            <Suspense fallback={<LinearProgress />}>
-                              <HotelKitchenPage />
-                            </Suspense>
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelKitchen}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelKitchenPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         {/* Уборка (задачи горничным) — своё право
@@ -983,11 +985,11 @@ function App() {
                         <Route
                           path="reports"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.reports}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <DjangoReportsPage />
-                              </Suspense>
-                            </RequirePermission>
+                            // Право проверяет ReportsRouter: у отеля свой код
+                            // hotel.reports.view, у клиники — reports.view.
+                            <Suspense fallback={<LinearProgress />}>
+                              <DjangoReportsPage />
+                            </Suspense>
                           }
                         />
                         <Route

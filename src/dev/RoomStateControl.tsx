@@ -18,8 +18,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import ArrowDropDownOutlined from "@mui/icons-material/ArrowDropDownOutlined";
 import { useSnackbar } from "notistack";
 
-import { listHousekeepingTasks, setRoomHousekeeping, updateHousekeepingTask } from "../api/hotel";
-import { useHotelProperty } from "./useHotelProperty";
+import { setRoomHousekeeping } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 import { HOTEL_ROOM_STATES, HOTEL_ROOM_STATE_LABELS, hotelRoomStateColor, type HotelRoomState } from "./hotelDisplay";
 
@@ -29,25 +28,8 @@ export interface RoomStateControlProps {
   state: string;
 }
 
-/**
- * Закрывает открытые задачи уборки номера, которые смена состояния сделала
- * ненужными: «Убрано» закрывает после выезда/текущую, «Проверено» — ещё и
- * проверку. Ремонтные (maintenance) не трогаем — уборка их не отменяет.
- */
-export async function closeCleaningTasksForRoom(propertyId: number, roomId: number, state: "clean" | "inspected"): Promise<number> {
-  const kinds = state === "inspected" ? ["checkout", "stayover", "inspection"] : ["checkout", "stayover"];
-  const [open, inProgress] = await Promise.all([
-    listHousekeepingTasks({ propertyId, status: "open" }),
-    listHousekeepingTasks({ propertyId, status: "in_progress" }),
-  ]);
-  const stale = [...open, ...inProgress].filter((t) => t.roomId === roomId && kinds.includes(t.kind));
-  await Promise.all(stale.map((t) => updateHousekeepingTask(t.id, { status: "done" })));
-  return stale.length;
-}
-
 export const RoomStateControl: React.FC<RoomStateControlProps> = ({ roomId, state }) => {
   const theme = useTheme();
-  const { property } = useHotelProperty();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
   const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
@@ -63,12 +45,9 @@ export const RoomStateControl: React.FC<RoomStateControlProps> = ({ roomId, stat
     setSaving(true);
     try {
       await setRoomHousekeeping(roomId, next);
-      // Номер убран/проверен — открытые задачи уборки по нему больше не нужны.
-      // Иначе номер «Убрано», а на нём висит просроченная «После выезда»
-      // (живой QA 30.09.2026). Лучшее усилие: сбой не отменяет смену состояния.
-      if (property && (next === "clean" || next === "inspected")) {
-        await closeCleaningTasksForRoom(property.id, roomId, next).catch(() => undefined);
-      }
+      // Открытые задачи уборки по убранному номеру здесь не закрываем: это
+      // делает бэкенд одной транзакцией (статус «Отменена»), а не фронт пачкой
+      // PATCH-запросов. Список задач перечитываем ниже — он покажет результат.
       // Состояние видно в шахматке (точка у номера), в карточках над ней и в списке
       // задач уборки — перечитываем всё это. Ждём только лёгкие запросы самого
       // номера, чтобы чип не показывал старое состояние; шахматка перечитывается

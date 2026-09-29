@@ -53,6 +53,7 @@ import { useSnackbar } from "notistack";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
+import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { getHotelCatalogs, listRoomTypes, listRooms, updateRoom, deleteRoom, type HotelRoom } from "../api/hotel";
 import { ApiError, getErrorMessage } from "../api/client";
 import { HOTEL_ROOM_STATE_LABELS, HOTEL_ROOM_STATES, hotelRoomStateColor, type HotelRoomState } from "./hotelDisplay";
@@ -63,7 +64,7 @@ export const HotelRoomsPage: React.FC = () => {
   usePageTitle("Номера");
   const theme = useTheme();
   const navigate = useNavigate();
-  const { property, isLoading: propertyLoading } = useHotelProperty();
+  const { property, isLoading: propertyLoading, missingReason } = useHotelProperty();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
 
@@ -206,7 +207,7 @@ export const HotelRoomsPage: React.FC = () => {
                 loading
                   ? "Загружаем номера…"
                   : !property
-                    ? "Не найден объект размещения для текущего филиала"
+                    ? missingReason
                     : roomTypes.length === 0
                       ? "Сначала заведите категорию — номер добавляется в неё"
                       : null
@@ -257,9 +258,7 @@ export const HotelRoomsPage: React.FC = () => {
           <CircularProgress size={28} />
         </Stack>
       ) : !property ? (
-        <Alert severity="warning" variant="outlined">
-          Не найден объект размещения для текущего филиала.
-        </Alert>
+        <HotelPropertyMissing />
       ) : loadError ? (
         <Alert
           severity="error"

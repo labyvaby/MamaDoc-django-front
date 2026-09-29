@@ -67,6 +67,7 @@ import { useSnackbar } from "notistack";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
+import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import {
   getHotelCatalogs,
   listRoomTypes,
@@ -979,9 +980,7 @@ export const HotelRoomFormPage: React.FC = () => {
             <CircularProgress size={28} />
           </Stack>
         ) : !property ? (
-          <Alert severity="warning" variant="outlined">
-            Не найден объект размещения для текущего филиала.
-          </Alert>
+          <HotelPropertyMissing />
         ) : loadError ? (
           <Alert
             severity="error"

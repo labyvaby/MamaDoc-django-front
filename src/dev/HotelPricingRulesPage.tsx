@@ -37,6 +37,7 @@ import dayjs from "dayjs";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useCan } from "../hooks/useCan";
 import { useHotelProperty } from "./useHotelProperty";
+import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { formatHotelDate } from "./mockDemoData";
 import { listRoomTypes, listPricingRules, updatePricingRule, type HotelPricingRule } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
@@ -81,7 +82,7 @@ function describeConditions(rule: HotelPricingRule): string[] {
 export const HotelPricingRulesPage: React.FC = () => {
   usePageTitle("Ценообразование");
   const theme = useTheme();
-  const { property, isLoading: propertyLoading } = useHotelProperty();
+  const { property, isLoading: propertyLoading, missingReason } = useHotelProperty();
   const queryClient = useQueryClient();
   const canManageRates = useCan("hotel.rates.manage");
   const [toggleError, setToggleError] = React.useState<string | null>(null);
@@ -154,7 +155,7 @@ export const HotelPricingRulesPage: React.FC = () => {
                   loading
                     ? "Загружаем объект и категории…"
                     : !property
-                      ? "Не найден объект размещения для текущего филиала"
+                      ? missingReason
                       : roomTypes.length === 0
                         ? "Сначала заведите категории номеров — правило меняет их цену"
                         : null
@@ -192,9 +193,7 @@ export const HotelPricingRulesPage: React.FC = () => {
             <CircularProgress size={28} />
           </Stack>
         ) : !property ? (
-          <Alert severity="warning" variant="outlined">
-            Не найден объект размещения для текущего филиала.
-          </Alert>
+          <HotelPropertyMissing />
         ) : loadError ? (
           <Alert
             severity="error"

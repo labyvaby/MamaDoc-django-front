@@ -43,10 +43,12 @@ import { Navigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useCan } from "../hooks/useCan";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { DateStepper, HotelPage, HotelPageHeader, MetricTile, plural, SectionLabel, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 import { useIsVivaActive, MEAL_LABELS, MEAL_SERVING_WINDOW, type MealType } from "./mockDemoData";
 import { useHotelProperty } from "./useHotelProperty";
+import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { getKitchenDayPlan, upsertPurchase, deletePurchase, updateStock, type HotelShoppingLine } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 
@@ -86,8 +88,11 @@ export const HotelKitchenPage: React.FC = () => {
   const theme = useTheme();
   const tableSx = useHotelTableSx();
   const vivaActive = useIsVivaActive();
-  const { property } = useHotelProperty();
+  const { property, isLoading: propertyLoading } = useHotelProperty();
   const queryClient = useQueryClient();
+  // Страница открыта по hotel.kitchen.view; закупки и остатки бэк пишет только
+  // по hotel.kitchen.purchases — без него таблица только для чтения.
+  const canPurchase = useCan("hotel.kitchen.purchases");
 
   const [date, setDate] = React.useState<Dayjs>(dayjs());
   const dateStr = date.format("YYYY-MM-DD");
@@ -185,9 +190,10 @@ export const HotelKitchenPage: React.FC = () => {
     }
   };
 
-  // Пустой отель — ноль порций и ноль закупки. Бэк сейчас отдаёт по порции на
-  // блюдо даже при 0 занятых номеров («шашлык для пустоты»), поэтому считаем
-  // от occupiedRooms, а не верим portions/neededQty.
+  // Пустой отель — ноль порций и ноль закупки. ВРЕМЕННАЯ заплатка: бэк отдаёт
+  // по порции на блюдо даже при 0 занятых номеров (selectors.py, max(1, …)).
+  // Чинится на бэке; когда он начнёт отдавать 0, этот пересчёт убрать.
+  // На «справочном» меню (noGuests) закупку не отмечаем — покупать нечего.
   const noGuests = plan != null && plan.occupiedRooms === 0;
   const portionsOf = (d: { portions: number }) => (noGuests ? 0 : d.portions);
   const totalPlanned = plan && !noGuests ? plan.shoppingList.reduce((sum, i) => sum + Number(i.plannedAmount), 0) : 0;
@@ -210,7 +216,9 @@ export const HotelKitchenPage: React.FC = () => {
         actions={<DateStepper value={date} onChange={setDate} />}
       />
 
-      {!plan ? (
+      {!property && !propertyLoading ? (
+        <HotelPropertyMissing />
+      ) : !plan ? (
         <Stack alignItems="center" sx={{ py: 6 }}>
           <CircularProgress size={28} />
         </Stack>
@@ -316,10 +324,11 @@ export const HotelKitchenPage: React.FC = () => {
                           {noGuests ? 0 : Number(item.neededQty)} {unitRu(item.unit)}
                         </TableCell>
                         <TableCell align="right">
-                          <Tooltip title="Поправить остаток на складе">
+                          <Tooltip title={canPurchase ? "Поправить остаток на складе" : ""}>
                             <Box
                               component="button"
                               type="button"
+                              disabled={!canPurchase}
                               onClick={() => openStockEdit(item)}
                               sx={{
                                 ...num,
@@ -334,10 +343,10 @@ export const HotelKitchenPage: React.FC = () => {
                                 color: "text.primary",
                                 font: "inherit",
                                 fontSize: 14,
-                                cursor: "pointer",
-                                textDecoration: "underline dotted",
+                                cursor: canPurchase ? "pointer" : "default",
+                                textDecoration: canPurchase ? "underline dotted" : "none",
                                 textUnderlineOffset: 3,
-                                "&:hover": { bgcolor: subtleBg(theme, true) },
+                                "&:hover": canPurchase ? { bgcolor: subtleBg(theme, true) } : undefined,
                               }}
                             >
                               {Number(item.inStockQty)} {unitRu(item.unit)}
@@ -377,13 +386,13 @@ export const HotelKitchenPage: React.FC = () => {
                           {purchase?.purchasedByName || "—"}
                         </TableCell>
                         <TableCell align="right" sx={{ pr: 2 }}>
-                          {purchase ? (
+                          {!canPurchase ? null : purchase ? (
                             <Tooltip title="Изменить закупку">
                               <IconButton size="small" onClick={() => openPurchaseEdit(item)} aria-label={`Изменить закупку: ${item.ingredientName}`}>
                                 <EditOutlined sx={{ fontSize: 18 }} />
                               </IconButton>
                             </Tooltip>
-                          ) : (
+                          ) : noGuests ? null : (
                             <Button
                               size="small"
                               variant="outlined"

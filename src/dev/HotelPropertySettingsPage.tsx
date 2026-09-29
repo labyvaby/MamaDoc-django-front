@@ -35,6 +35,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { usePermissions } from "../hooks/usePermissions";
 import { SettingsLayout } from "../pages/settings/SettingsLayout";
 import { useHotelProperty } from "./useHotelProperty";
+import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { updateHotelProperty, type HotelPropertyUpdateData } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 
@@ -114,11 +115,12 @@ export const HotelPropertySettingsPage: React.FC = () => {
         </Stack>
       )}
 
-      {!isLoading && (isError || !property) && (
+      {!isLoading && isError && (
         <Alert severity="error" variant="outlined" sx={{ maxWidth: 640 }}>
           Не удалось загрузить объект размещения.
         </Alert>
       )}
+      {!isLoading && !isError && !property && <HotelPropertyMissing />}
 
       {!isLoading && property && (
         <Stack gap={3} sx={{ maxWidth: 640 }}>

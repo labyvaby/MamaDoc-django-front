@@ -450,6 +450,8 @@ const SidebarSecondary: React.FC = () => {
     hotelRoomCategories: isHotelOrg && can(PAGE_PERMISSIONS.hotelRoomCategories),
     hotelPricingRules: isHotelOrg && can(PAGE_PERMISSIONS.hotelPricingRules),
     hotelHousekeeping: isHotelOrg && can(PAGE_PERMISSIONS.hotelHousekeeping),
+    hotelReports: isHotelOrg && can(PAGE_PERMISSIONS.hotelReports),
+    hotelKitchen: isHotelOrg && can(PAGE_PERMISSIONS.hotelKitchen),
     // СКЛАДЫ
     pos: can(PAGE_PERMISSIONS.pos),
     products: can(PAGE_PERMISSIONS.products),
@@ -691,8 +693,8 @@ const SidebarSecondary: React.FC = () => {
         {can_.hotelHousekeeping && (
           <SidebarMenuItem to="/housekeeping" icon={<CleaningServicesOutlined />} label="Уборка" collapsed={siderCollapsed} />
         )}
-        <SidebarMenuItem to="/kitchen" icon={<RestaurantOutlined />} label="Кухня" collapsed={siderCollapsed} />
-        <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчёты" collapsed={siderCollapsed} />
+        {can_.hotelKitchen && <SidebarMenuItem to="/kitchen" icon={<RestaurantOutlined />} label="Кухня" collapsed={siderCollapsed} />}
+        {can_.hotelReports && <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчёты" collapsed={siderCollapsed} />}
 
         {(can_.hotelRooms || can_.hotelRoomCategories || can_.hotelPricingRules) && sectionLabel("Отель")}
         {can_.hotelRooms && <SidebarMenuItem to="/rooms" icon={<HotelOutlined />} label="Номера" collapsed={siderCollapsed} />}
@@ -702,7 +704,9 @@ const SidebarSecondary: React.FC = () => {
         {can_.hotelPricingRules && (
           <SidebarMenuItem to="/pricing-rules" icon={<PriceChangeOutlined />} label="Ценообразование" collapsed={siderCollapsed} />
         )}
-        <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
+        {can_.settings && (
+          <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
+        )}
       </List>
     );
   }
