@@ -11,6 +11,7 @@ import {
   ListItemText,
   Menu,
   MenuItem,
+  Slider,
   Stack,
   TextField,
   Tooltip,
@@ -147,6 +148,9 @@ const PAGER_ARROW_ZONE = 34;
 const PAGER_COUNTER_ZONE = 72;
 /** Края трека гасим, чтобы уезжающее имя не сталкивалось со стрелками. */
 const PAGER_EDGE_MASK = `linear-gradient(90deg, transparent 0, #000 ${PAGER_ARROW_ZONE}px, #000 calc(100% - ${PAGER_COUNTER_ZONE}px), transparent 100%)`;
+const DESKTOP_DOCTOR_COLUMN_MIN = 220;
+const DESKTOP_DOCTOR_COLUMN_MAX = 380;
+const DESKTOP_DOCTOR_COLUMN_DEFAULT = 280;
 
 /**
  * Курсор «тащу» и запрет выделения на время перетаскивания — прямо в style,
@@ -695,6 +699,8 @@ interface DoctorColumnProps {
   absence: DayAbsence | undefined;
   /** Врачей в дне больше одного: на телефоне шапку колонки заменяет пейджер. */
   multi: boolean;
+  /** Ширина колонки врача в десктопной сетке. */
+  columnWidth: number;
   /**
    * Колонка в окне отрисовки (видна или соседняя). Вне окна рисуем только
    * шапку: тело с окнами дня — самая дорогая часть сетки.
@@ -724,6 +730,7 @@ const DoctorColumn = React.memo(function DoctorColumn({
   noteFullDay,
   absence,
   multi,
+  columnWidth,
   rendered,
   scrollTops,
   onSearchDoctor,
@@ -764,11 +771,10 @@ const DoctorColumn = React.memo(function DoctorColumn({
     <Box
       sx={{
         // Сетка не растягивает карточки по числу врачей:
-        // на десктопе — по трети панели; на телефоне колонка
-        // занимает экран целиком и листается свайпом (ориентир —
-        // полоса аватаров над сеткой).
-        flex: { xs: "0 0 100%", md: "0 0 33.3333%" },
-        minWidth: 175,
+        // на десктопе ширина колонки регулируется, на телефоне
+        // колонка занимает экран целиком и листается свайпом.
+        flex: { xs: "0 0 100%", md: `0 0 ${columnWidth}px` },
+        minWidth: { xs: 175, md: DESKTOP_DOCTOR_COLUMN_MIN },
         scrollSnapAlign: { xs: "start", md: "none" },
         // Один свайп — ровно один врач: без этого инерция
         // пролетала мимо двух-трёх колонок и было непонятно,
@@ -915,6 +921,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
+  const isDesktop = useMediaQuery(theme.breakpoints.up("md"));
 
   // Страница передаёт обработчики стрелками — новая ссылка на каждый её рендер.
   // Колонкам сетки нужны постоянные, иначе мемо не срабатывает (см. DayTimeline).
@@ -941,6 +948,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // Drag-to-scroll мышью нужен только там, где есть мышь: на тач-экране он
   // конкурирует с нативным свайпом и даёт «залипания».
   const isFinePointer = useMediaQuery("(pointer: fine)");
+  const [desktopDoctorColumnWidth, setDesktopDoctorColumnWidth] = React.useState(
+    DESKTOP_DOCTOR_COLUMN_DEFAULT,
+  );
   const [selDocId, setSelDocId] = React.useState<number | null>(null);
   const [selDay, setSelDay] = React.useState<string | null>(null);
   const searchByDoctor = React.useCallback((fullName: string) => {
@@ -1040,6 +1050,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
       React.startTransition(() => setPrefetch(nextPrefetch));
     }
   }, []);
+  React.useEffect(() => {
+    updateRenderRange();
+  }, [desktopDoctorColumnWidth, updateRenderRange]);
   /**
    * Вертикальная прокрутка тел колонок по врачу: тело вне окна отрисовки
    * пустеет, и без запомненной позиции колонка возвращалась бы к 00:00.
@@ -2306,6 +2319,42 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                 {t("slots.foundSpecialists", { count: gridDocs.length })}
               </Typography>
             </Box>
+            {isDesktop && (
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={1.25}
+                sx={{ ml: "auto", minWidth: 250, maxWidth: 320 }}
+              >
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ whiteSpace: "nowrap", fontWeight: 600 }}
+                >
+                  {t("slots.columnWidth")}
+                </Typography>
+                <Slider
+                  size="small"
+                  min={DESKTOP_DOCTOR_COLUMN_MIN}
+                  max={DESKTOP_DOCTOR_COLUMN_MAX}
+                  step={20}
+                  value={desktopDoctorColumnWidth}
+                  onChange={(_, value) => {
+                    setDesktopDoctorColumnWidth(Array.isArray(value) ? value[0] : value);
+                  }}
+                  valueLabelDisplay="auto"
+                  aria-label={t("slots.columnWidth")}
+                  sx={{ flex: 1, minWidth: 120 }}
+                />
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ width: 44, textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+                >
+                  {desktopDoctorColumnWidth}px
+                </Typography>
+              </Stack>
+            )}
           </Stack>
 
           {/* ── Мобильная шапка панели: поиск врача и пейджер по врачам дня.
@@ -2811,6 +2860,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       noteFullDay={docNote?.fullDay ?? false}
                       absence={docNote?.absence}
                       multi={activeDocsOnDay.length > 1}
+                      columnWidth={desktopDoctorColumnWidth}
                       rendered={
                         renderedIds.has(emp.employeeId) || prefetchedIds.has(emp.employeeId)
                       }
