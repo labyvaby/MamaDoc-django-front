@@ -77,6 +77,7 @@ import { PAGE_PERMISSIONS } from "../config/accessPermissions";
 import { useCan } from "../hooks/useCan";
 import { useNowMinute } from "../pages/schedule/django/useNowMinute";
 import { useHotelProperty } from "./useHotelProperty";
+import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import {
   mapStayDisplayStatus,
   hotelStayStatusColor,
@@ -554,7 +555,7 @@ export const RoomBookingGrid: React.FC = () => {
   if (!property) {
     return (
       <BoardShell>
-        <Alert severity="warning">Для этого филиала не найден объект размещения (property).</Alert>
+        <HotelPropertyMissing />
       </BoardShell>
     );
   }

@@ -4,8 +4,7 @@
  * объект — его отельная «надстройка» (см. hotel-viva-frontend-api.md, §1).
  * Соответствие ищем сами: GET /hotel/properties/ → найти запись с
  * branchId === activeBranch.id. Без выбранного филиала (activeBranch: null,
- * например суперадмин без контекста) откатываемся на первый объект — лучше
- * какой-то объект, чем ничего не показывать.
+ * например суперадмин без контекста) объекта нет — см. missingReason.
  *
  * enabled + ключ кэша по activeOrganization.id — HotelOccupancyBanner.tsx
  * вызывает этот хук безусловно (Rules of Hooks, сам решает рендериться ли
@@ -28,10 +27,12 @@ export interface UseHotelPropertyResult {
   properties: HotelProperty[];
   isLoading: boolean;
   isError: boolean;
+  /** Почему property === null после загрузки: не выбран филиал или у филиала нет объекта. */
+  missingReason: string;
 }
 
 export function useHotelProperty(): UseHotelPropertyResult {
-  const { activeBranch, activeOrganization } = usePermissions();
+  const { activeBranch, activeOrganization, loading: permissionsLoading } = usePermissions();
   const isHotelOrg = activeOrganization?.vertical === "hotel";
   const query = useQuery({
     queryKey: ["hotel", "properties", activeOrganization?.id],
@@ -40,12 +41,19 @@ export function useHotelProperty(): UseHotelPropertyResult {
     staleTime: HOTEL_PROPERTIES_STALE_TIME_MS,
   });
   const properties = isHotelOrg ? query.data ?? [] : [];
-  const property =
-    properties.find((p) => activeBranch != null && p.branchId === activeBranch.id) ?? properties[0] ?? null;
-  // «Загружается», пока ещё не известно, какая это организация, и пока у
-  // отеля не пришёл список объектов. query.isLoading тут не годится: выключенный
-  // запрос (организация ещё не загружена) не считается загрузкой, и страницы
-  // на долю секунды показывали «Не найден объект размещения» вместо спиннера.
-  const isLoading = activeOrganization == null || (isHotelOrg && query.isPending);
-  return { property, properties, isLoading, isError: query.isError };
+  // Только объект активного филиала. Отката на properties[0] нет: без филиала
+  // или у филиала без объекта страница честно говорит об этом, а не показывает
+  // и не правит номера/брони чужого филиала.
+  const property = activeBranch != null ? properties.find((p) => p.branchId === activeBranch.id) ?? null : null;
+  // «Загружается», пока грузятся права/контекст (/auth/me/) и пока у отеля не
+  // пришёл список объектов. query.isLoading тут не годится: выключенный запрос
+  // не считается загрузкой, и страницы на долю секунды показывали «Не найден
+  // объект размещения» вместо спиннера. Отсутствие организации само по себе —
+  // не загрузка: суперадмин без контекста иначе смотрел бы на вечный спиннер.
+  const isLoading = permissionsLoading || (isHotelOrg && query.isPending);
+  const missingReason =
+    activeBranch == null
+      ? "Выберите филиал — объект размещения привязан к филиалу."
+      : "У текущего филиала нет объекта размещения.";
+  return { property, properties, isLoading, isError: query.isError, missingReason };
 }

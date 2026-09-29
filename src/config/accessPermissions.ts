@@ -80,6 +80,12 @@ export const PAGE_PERMISSIONS = {
   // ошибочно сделали по образцу «Кухни». hotel.manage — суперпользователи
   // отеля видят страницу и без отдельно выданного housekeeping-права.
   hotelHousekeeping: ["hotel.housekeeping.view", "hotel.manage"],
+  // Отчёты Viva — не клиничный reports.view: бэк отдаёт /hotel/reports/* только
+  // по hotel.reports.view, с одним reports.view горничная открыла бы пустой отказ.
+  hotelReports: "hotel.reports.view",
+  // «Кухня» — чтение меню/плана/склада. Правка закупок и остатков требует
+  // hotel.kitchen.purchases, её страница проверяет сама через useCan.
+  hotelKitchen: "hotel.kitchen.view",
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {

@@ -60,6 +60,7 @@ import { CustomDateTimePicker } from "../components/ui";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { initialsOf, useIsVivaActive } from "./mockDemoData";
 import { useHotelProperty } from "./useHotelProperty";
+import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { HOTEL_ROOM_STATE_LABELS, HOTEL_ROOM_STATES, hotelRoomStateColor } from "./hotelDisplay";
 import {
   listRooms,
@@ -137,7 +138,7 @@ export const HotelHousekeepingPage: React.FC = () => {
   const theme = useTheme();
   const tableSx = useHotelTableSx();
   const vivaActive = useIsVivaActive();
-  const { property } = useHotelProperty();
+  const { property, isLoading: propertyLoading } = useHotelProperty();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
 
@@ -153,7 +154,7 @@ export const HotelHousekeepingPage: React.FC = () => {
   const [statusMenuAnchor, setStatusMenuAnchor] = React.useState<{ el: HTMLElement; task: HotelHousekeepingTask } | null>(null);
   const [doneTask, setDoneTask] = React.useState<HotelHousekeepingTask | null>(null);
   const [doneRoomState, setDoneRoomState] = React.useState<string>("clean");
-  const [closingStale, setClosingStale] = React.useState(false);
+  const [cancellingId, setCancellingId] = React.useState<number | null>(null);
 
   const tasksQuery = useQuery({
     queryKey: ["hotel", "housekeepingTasks", property?.id, statusFilter, mineOnly],
@@ -290,23 +291,25 @@ export const HotelHousekeepingPage: React.FC = () => {
   const overdueCount = tasks.filter(isOverdue).length;
   // Задача на уборку по номеру, который уже «Убрано»/«Проверено», — противоречие
   // (номер 201 «Убрано», а «После выезда» висит 12 дней). Показываем и даём
-  // закрыть одним кликом; новые такие не появятся — RoomStateControl теперь
-  // сам закрывает задачи при смене состояния.
+  // отменить по одной — статусом «Отменена», не «Выполнена»: уборку никто не
+  // делал, и фильтр «Готово» со статистикой горничных не должны это считать.
+  // Массово и автоматически при смене состояния номера такие задачи закрывает
+  // бэкенд (одной транзакцией), не фронт пачкой PATCH-запросов.
   const isStale = (t: HotelHousekeepingTask) =>
     (t.status === "open" || t.status === "in_progress") &&
     (t.kind === "checkout" || t.kind === "stayover") &&
     (t.roomHousekeepingState === "clean" || t.roomHousekeepingState === "inspected");
   const staleTasks = tasks.filter(isStale);
-  const closeStale = async (list: HotelHousekeepingTask[]) => {
-    setClosingStale(true);
+  const cancelStale = async (task: HotelHousekeepingTask) => {
+    setCancellingId(task.id);
     try {
-      await Promise.all(list.map((t) => updateHousekeepingTask(t.id, { status: "done" })));
+      await updateHousekeepingTask(task.id, { status: "cancelled" });
       invalidateAfterChange(false);
-      enqueueSnackbar(list.length === 1 ? "Задача закрыта" : `Закрыто задач: ${list.length}`, { variant: "success" });
+      enqueueSnackbar(`Задача по номеру ${task.roomNumber} отменена`, { variant: "success" });
     } catch (err) {
-      enqueueSnackbar(getErrorMessage(err, "Не удалось закрыть задачи"), { variant: "error" });
+      enqueueSnackbar(getErrorMessage(err, "Не удалось отменить задачу"), { variant: "error" });
     } finally {
-      setClosingStale(false);
+      setCancellingId(null);
     }
   };
 
@@ -348,15 +351,15 @@ export const HotelHousekeepingPage: React.FC = () => {
             <b>
               {staleTasks.length} {plural(staleTasks.length, "задача", "задачи", "задач")}
             </b>{" "}
-            по уже убранным номерам ({staleTasks.map((t) => t.roomNumber).join(", ")}) — уборка не нужна.
+            по уже убранным номерам ({staleTasks.map((t) => t.roomNumber).join(", ")}) — уборка не нужна. Отмените
+            их в строке: задача получит статус «Отменена», а не «Готово».
           </Typography>
-          <Button variant="outlined" disabled={closingStale} onClick={() => void closeStale(staleTasks)}>
-            {closingStale ? "Закрываем…" : "Закрыть все"}
-          </Button>
         </Surface>
       )}
 
-      {tasksQuery.isLoading ? (
+      {!property && !propertyLoading ? (
+        <HotelPropertyMissing />
+      ) : propertyLoading || tasksQuery.isLoading ? (
         <Stack alignItems="center" sx={{ py: 6 }}>
           <CircularProgress size={28} />
         </Stack>
@@ -467,8 +470,8 @@ export const HotelHousekeepingPage: React.FC = () => {
                       </TableCell>
                       <TableCell align="right" sx={{ pr: 2, whiteSpace: "nowrap" }}>
                         {isStale(task) && (
-                          <Button size="small" disabled={closingStale} onClick={() => void closeStale([task])} sx={{ mr: 0.5 }}>
-                            Закрыть
+                          <Button size="small" disabled={cancellingId != null} onClick={() => void cancelStale(task)} sx={{ mr: 0.5 }}>
+                            {cancellingId === task.id ? "Отменяем…" : "Отменить"}
                           </Button>
                         )}
                         <Tooltip title="Изменить">

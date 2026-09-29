@@ -78,6 +78,7 @@ import { CustomDatePicker } from "../components/ui";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useCan } from "../hooks/useCan";
 import { useHotelProperty } from "./useHotelProperty";
+import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import {
   listRoomTypes,
   listPricingRules,
@@ -1091,9 +1092,7 @@ export const HotelPricingRuleFormPage: React.FC = () => {
             <CircularProgress size={28} />
           </Stack>
         ) : !property ? (
-          <Alert severity="warning" variant="outlined">
-            Не найден объект размещения для текущего филиала.
-          </Alert>
+          <HotelPropertyMissing />
         ) : isEdit && !editing ? (
           <Alert
             severity="warning"

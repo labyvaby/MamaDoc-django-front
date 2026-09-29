@@ -30,6 +30,7 @@ import { Link as RouterLink } from "react-router";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useHotelProperty } from "./useHotelProperty";
+import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { getHotelCatalogs, listRoomTypes, listRooms } from "../api/hotel";
 import { DisabledReason, EmptyState, HotelPage, HotelPageHeader, plural, Surface } from "./hotelUi";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
@@ -37,7 +38,7 @@ import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 export const HotelRoomCategoriesPage: React.FC = () => {
   usePageTitle("Категории и тарифы");
   const theme = useTheme();
-  const { property, isLoading: propertyLoading } = useHotelProperty();
+  const { property, isLoading: propertyLoading, missingReason } = useHotelProperty();
 
   const catalogsQuery = useQuery({
     queryKey: ["hotel", "catalogs", property?.id],
@@ -87,7 +88,7 @@ export const HotelRoomCategoriesPage: React.FC = () => {
         subtitle={roomTypes.length > 0 ? `${roomTypes.length} ${plural(roomTypes.length, "категория", "категории", "категорий")} · ${priceRange}` : undefined}
         info="Категория (тариф) — цена за ночь и набор характеристик. Базовая цена задаётся без характеристик: каждая отмеченная характеристика добавляет свою наценку, итог считает бэкенд."
         actions={
-          <DisabledReason reason={loading ? "Загружаем категории…" : !property ? "Не найден объект размещения для текущего филиала" : null}>
+          <DisabledReason reason={loading ? "Загружаем категории…" : !property ? missingReason : null}>
             <Button
               variant="contained"
               disableElevation
@@ -107,9 +108,7 @@ export const HotelRoomCategoriesPage: React.FC = () => {
           <CircularProgress size={28} />
         </Stack>
       ) : !property ? (
-        <Alert severity="warning" variant="outlined">
-          Не найден объект размещения для текущего филиала.
-        </Alert>
+        <HotelPropertyMissing />
       ) : loadError ? (
         <Alert
           severity="error"
