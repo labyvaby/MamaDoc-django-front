@@ -144,7 +144,8 @@ const paymentDueDate = (terms: string | null, invoiceDate: string | null): Dayjs
   if (!terms || !invoiceDate) return null;
   const base = dayjs(invoiceDate);
   if (!base.isValid()) return null;
-  const relative = terms.match(/\b(\d{1,4})\s*(?:дн(?:ей|я)?|days?|gg|giorni)\b/i);
+  // Не `\b` в конце: в JS он знает только латиницу, и «30 дней» не совпадало.
+  const relative = terms.match(/\b(\d{1,4})\s*(?:дн(?:ей|я)?|days?|gg|giorni)(?![\p{L}\d])/iu);
   if (relative) {
     const days = Number(relative[1]);
     return days >= 0 && days <= 3650 ? base.add(days, "day").endOf("day") : null;
