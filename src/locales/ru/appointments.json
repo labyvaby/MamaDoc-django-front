@@ -813,7 +813,8 @@
     "noSlotsShort": "Нет окон",
     "slotsCount": "{{count}} окон",
     "noSlots": "нет окон",
-    "grid": "Сетка {{specialist.genPl}}"
+    "grid": "Сетка {{specialist.genPl}}",
+    "columnWidth": "Ширина окон"
   },
   "journal": {
     "count": {
