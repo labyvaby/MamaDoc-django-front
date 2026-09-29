@@ -14,7 +14,9 @@ import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { Link as RouterLink, useLocation } from "react-router";
 
+import ExtensionOutlined from "@mui/icons-material/ExtensionOutlined";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
+import RateReviewOutlined from "@mui/icons-material/RateReviewOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
@@ -41,6 +43,7 @@ import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
+import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import PercentOutlined from "@mui/icons-material/PercentOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
@@ -71,6 +74,7 @@ export const SETTINGS_GROUPS = [
   "access",
   "catalogs",
   "operations",
+  "platform",
 ] as const;
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
@@ -222,6 +226,12 @@ const TAB_DEFS: TabDef[] = [
     group: "operations",
   },
   {
+    key: "reviews",
+    to: "/settings/reviews",
+    icon: <RateReviewOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
     key: "automations",
     to: "/settings/automations",
     icon: <BoltOutlined fontSize="small" />,
@@ -234,12 +244,19 @@ const TAB_DEFS: TabDef[] = [
     group: "operations",
   },
   {
+    key: "lab",
+    to: "/settings/lab",
+    icon: <ScienceOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
     key: "chatwoot",
     to: "/settings/chatwoot",
     icon: <ForumOutlined fontSize="small" />,
     group: "operations",
   },
   { key: "altegio", to: "/settings/altegio", icon: <RouterOutlined fontSize="small" />, group: "operations" },
+  { key: "modules", to: "/settings/modules", icon: <ExtensionOutlined fontSize="small" />, group: "platform" },
 ];
 
 /**

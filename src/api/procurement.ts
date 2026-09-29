@@ -30,6 +30,8 @@ export const PROCUREMENT_PERMISSIONS = {
   receiptCancel: "procurement.receipts.cancel",
   receiptPhotos: "procurement.receipts.photos",
   receiptRecognize: "procurement.receipts.recognize",
+  /** Новый товар прямо из строки накладной: карточка заводится вместе с приходом. */
+  receiptCreateProducts: "procurement.receipts.create_products",
   returnCreate: "procurement.returns.create",
   suppliersManage: "procurement.suppliers.manage",
   paymentsManage: "procurement.payments.manage",
@@ -55,6 +57,7 @@ export interface ProcurementSupplier {
   contactPerson: string;
   paymentTerms: string;
   defaultCurrency: string;
+  defaultBrand: string;
   comment: string;
   isActive: boolean;
   createdAt: string;
@@ -72,6 +75,7 @@ export interface SupplierWriteData {
   contactPerson?: string;
   paymentTerms?: string;
   defaultCurrency?: string;
+  defaultBrand?: string;
   comment?: string;
   isActive?: boolean;
 }
@@ -91,6 +95,7 @@ export interface GoodsReceiptLine {
   expiresAt: string | null;
   /** Себестоимость позиции в валюте учёта. */
   lineTotal: string;
+  additionalCostPerUnit: string;
 }
 
 export interface GoodsReceipt {
@@ -123,10 +128,37 @@ export interface GoodsReceipt {
   canceledByName: string | null;
   updatedAt: string | null;
   photosCount: number;
+  customsCost: string;
+  deliveryCost: string;
+  otherCosts: string;
 }
 
+/**
+ * Товар, которого нет в каталоге: бэк заводит карточку в транзакции накладной
+ * (право `procurement.receipts.create_products`). `color` + `size` вместе —
+ * вариант модели: `name` тогда название модели, категория должна быть
+ * настроена на цвет и размер, `sku` не используется. Пустые артикул и
+ * штрихкод бэк выдаёт сам.
+ */
+export interface GoodsReceiptNewProductInput {
+  name: string;
+  categoryId?: number;
+  /** Категория строкой — у организаций без справочника категорий. */
+  category?: string;
+  unitId?: number;
+  unit?: string;
+  /** Цена продажи, сом. */
+  price?: string;
+  barcode?: string;
+  sku?: string;
+  color?: string;
+  size?: string;
+}
+
+/** Строка накладной: товар каталога (`productId`) либо новый (`newProduct`) — одно из двух. */
 export interface GoodsReceiptLineInput {
-  productId: number;
+  productId?: number;
+  newProduct?: GoodsReceiptNewProductInput;
   quantity: string | number;
   costAmount: string | number;
   costCurrency?: string;
@@ -147,6 +179,9 @@ export interface GoodsReceiptCreateData {
   comment?: string;
   supplierNumber?: string;
   dueAt?: string | null;
+  customsCost?: string | number;
+  deliveryCost?: string | number;
+  otherCosts?: string | number;
 }
 
 export interface GoodsReceiptUpdateData {
@@ -250,6 +285,8 @@ export interface ProcurementSettings {
   recognitionAvailable: boolean;
   recognitionProvider: string;
   recognitionModel: string;
+  /** Закуп в валюте; false — накладные только в сомах (нет в ответе старого бэка — считаем true). */
+  foreignCurrency?: boolean;
 }
 
 export interface RecognizedCandidate {
@@ -261,6 +298,13 @@ export interface RecognizedCandidate {
 
 export interface RecognizedLine {
   name: string;
+  sourceName?: string | null;
+  productName?: string | null;
+  brand?: string | null;
+  description?: string | null;
+  rawText?: string | null;
+  page?: number | null;
+  details?: Array<{ label: string; value: string }>;
   modelCode: string | null;
   color: string | null;
   size: string | null;
@@ -287,6 +331,11 @@ export interface RecognitionResult {
     vatTotal: string | null;
     paymentTerms: string | null;
     buyerName: string | null;
+    details?: Array<{ label: string; value: string }>;
+    fullText?: string | null;
+    totalQuantity?: string | null;
+    subtotal?: string | null;
+    pagesRead?: number | null;
     supplier: { name: string | null; taxId: string | null; phone: string | null; address: string | null };
   };
   supplierMatch: RecognizedCandidate | null;
@@ -430,14 +479,15 @@ export function cancelReceipt(id: number, reason: string, scope?: ProcurementSco
 }
 
 /**
- * Черновик накладной по фото или PDF. Изображение ужимаем до 1600 px, а PDF
+ * Черновик накладной по фото или PDF. Сохраняем детали изображения, а PDF
  * передаём Gemini целиком: модель видит все страницы и возвращает один
  * черновик. Ничего не записано, пока человек не проверит позиции и не
  * проведёт приход.
  */
 export async function recognizeReceiptPhoto(file: File, scope?: ProcurementScope, signal?: AbortSignal) {
   const formData = new FormData();
-  formData.append("image", await preparePhotoIfImage(file));
+  const directlySupported = /\.(jpe?g|png|webp|pdf)$/i.test(file.name) || /^(image\/(jpeg|png|webp)|application\/pdf)$/.test(file.type);
+  formData.append("image", directlySupported ? file : await preparePhotoIfImage(file));
   return withUploadErrors(() =>
     apiRequest<RecognitionResult>(`${BASE}/receipts/recognize/${query({ branchId: scope?.branchId })}`, {
       method: "POST",
@@ -515,7 +565,7 @@ export function getProcurementSettings(scope?: ProcurementScope, signal?: AbortS
 }
 
 export function updateProcurementSettings(
-  data: { photoRecognition?: boolean; autoMatchThreshold?: number },
+  data: { photoRecognition?: boolean; autoMatchThreshold?: number; foreignCurrency?: boolean },
   scope?: ProcurementScope,
 ) {
   return apiRequest<ProcurementSettings>(`${BASE}/settings/`, {

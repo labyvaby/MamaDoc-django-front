@@ -106,7 +106,7 @@ const ReviewsPage: React.FC = () => {
             </Tooltip>
             {canManage && (
               <Tooltip title="Настройки модуля">
-                <IconButton size="small" component={RouterLink} to="/reviews/settings">
+                <IconButton size="small" component={RouterLink} to="/settings/reviews">
                   <SettingsOutlined fontSize="small" />
                 </IconButton>
               </Tooltip>
