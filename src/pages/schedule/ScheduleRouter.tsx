@@ -1,7 +1,8 @@
-import React, { lazy, Suspense } from "react";
+import React, { Suspense } from "react";
 import { LinearProgress } from "@mui/material";
 
 import { useIsVivaActive } from "../../dev/mockDemoData";
+import { lazyWithProgress as lazy } from "../../utility/lazyWithProgress";
 
 /**
  * /schedule — одна страница меню, две разные по сути: у клиники расписание

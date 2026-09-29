@@ -56,7 +56,11 @@ import { resolveHomeRoute } from "./config/homeRoute";
 import { RateLimitDialog } from "./components/errors/RateLimitDialog";
 // import { RoleDebugNotification } from "./components/debug/RoleDebugNotification"; // ⚠️ Временно отключено
 
-import { Fragment, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { Fragment, Suspense, useEffect, useState, type ReactNode } from "react";
+// lazy со счётчиком загрузки: BrowserRouter переходит внутри startTransition и
+// держит старую страницу, пока грузится код новой, — RouteLoadingBar это покажет.
+import { lazyWithProgress as lazy } from "./utility/lazyWithProgress";
+import { RouteLoadingBar } from "./components/layout/RouteLoadingBar";
 import { djangoQueryKeys } from "./api/queryKeys";
 import { ApiError } from "./api/client";
 import { CASHLESS_METHODS_ENABLED } from "./api/cashlessMethods";
@@ -601,6 +605,7 @@ function App() {
                                 </ClinicOnly>
                                 {/* Выбор филиала после логина (флаг ставит login.tsx) */}
                                 <BranchPickerDialog />
+                                <RouteLoadingBar />
                               </ThemedLayout>
                             </MobileSidebarProvider>
                           </RequireAuth>
