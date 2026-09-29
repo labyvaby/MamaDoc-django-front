@@ -26,7 +26,7 @@ import {
   unitType,
 } from "../../model/unitCard";
 import { formatMoney as money, num, unitStatusMeta } from "../../model/units";
-import { sectionLabel } from "../../model/board";
+import { completionOf, sectionLabel } from "../../model/board";
 import { eyebrowSx, offerTone, sectionSx, statusTone } from "../tones";
 import { roomTileSx } from "../UnitPreview";
 
@@ -871,7 +871,7 @@ export function KeyParams({ project, unit }: { project: Project; unit: Unit }) {
           ["Вид", unit.view],
           ["Потолки", `${num(unit.ceilingHeight)} м`],
           ["Отделка", project.finish],
-          ["Срок сдачи", project.completionLabel],
+          ["Срок сдачи", completionOf(project, unit)],
         ]}
       />
       <Box sx={{ mt: 1.5, display: "flex", flexWrap: "wrap", gap: 0.75 }}>
@@ -980,7 +980,7 @@ export function TechCard({ project, unit }: { project: Project; unit: UnitDetail
       ["Высота потолка", `${num(unit.ceilingHeight)} м`],
       ["Идентификатор 1С", unit.externalId],
       ["Отделка", project.finish],
-      ["Срок сдачи", project.completionLabel],
+      ["Срок сдачи", completionOf(project, unit)],
       ["Статус", unitStatusMeta[unit.status].label],
     ] as [string, string | number][]
   ).filter(([, value]) => value !== "" && value !== null && value !== undefined);

@@ -29,22 +29,23 @@ import { getAllDjangoEmployees } from "./staff";
  *   operations отвечает `{unit, target}` — уже свежие карточки;
  * - sell: `payment` — код installment/full/mortgage, `signCode` бэк не проверяет;
  * - предоплата подтверждается по брони: `reservations/<reservation.id>/confirm-payment/`;
- * - менеджеры — обычный `/staff/employees/`, отдельного справочника нет;
+ * - менеджеры — обычный `/staff/employees/?allBranches=1`, отдельного справочника нет;
  * - `sections` — объекты по порядку слева направо, дом = название секции;
- *   на test2 29.09 названия («Корпус А») не совпадают с `unit.section` («А») →
- *   тогда секции берём из квартир (`withUnitLayout`), вопрос бэку — `sectionId`;
+ *   квартира ссылается на секцию `unit.sectionId` (`withProjectSections`);
  * - `slot` — сквозная позиция по этажу (ось); место внутри секции считаем сами;
  * - суперпользователю нужен `organizationId`, иначе 400 — все функции
  *   принимают его (в компонентах — `useApiOrgId()`);
  * - чтение — `realty.view`, любая команда — `realty.manage`.
  *
+ * С 30.09.2026 (AIVIO `a5010da`, проверено на test2): у ЖК `sellerInfo` и
+ * `defaultReservationAmount` (null — не заполнено; сумму брони тогда ставит бэк),
+ * срок сдачи у каждой секции; у квартиры `sectionId` и `layoutId` (= `id` в
+ * `/layouts/`, код планировки — оттуда); файлы планировок и документов пока
+ * пустые (`[]` / `fileUrl: null`).
+ *
  * Открытые вопросы бэку — предположения фронта, не факты контракта:
  * - тело meetings/proposals ответ не описал — шлём по контракту прототипа;
- * - сумму предоплаты фронт не шлёт (`amount` = null): бэк ставит её сам
- *   (на test2 29.09.2026 — 50 000), источник суммы не описан;
- * - `startFloor = 1` на test2 — ошибка данных (обещали поправить); первый
- *   жилой этаж пока по квартирам;
- * - код планировки только в `/layouts/` (через `unitIds`), идентификатора 1С нет.
+ * - идентификатора 1С нет.
  */
 export const REALESTATE_USE_MOCKS = false;
 
@@ -73,6 +74,19 @@ export interface Project {
   manager: string;
   /** Названия домов по порядку секций: секция [i] находится в доме buildings[i]. */
   buildings: string[];
+  /** Секции ЖК из API: по id квартира находит свою секцию, срок сдачи — у каждой свой. */
+  sectionRefs?: ProjectSection[];
+  /** Юрлицо продавца для договора; null — у ЖК не заполнено. */
+  sellerInfo?: string | null;
+  /** Предоплата брони по умолчанию, сом; null — у ЖК не задана (бэк подставит свою). */
+  defaultPrepayment?: number | null;
+}
+
+export interface ProjectSection {
+  id: string;
+  name: string;
+  /** «I квартал 2027»; пусто — срок не задан. */
+  completionLabel: string;
 }
 
 export type UnitStatus = "free" | "reserved" | "sold";
@@ -101,6 +115,8 @@ export interface Unit {
   id: string;
   projectId: string;
   section: string;
+  /** id секции ЖК (`sectionRefs`); null — бэк не сопоставил. */
+  sectionId?: string | null;
   floor: number;
   /** Позиция на этаже внутри секции, с 1 слева направо. */
   position: number;
@@ -288,6 +304,8 @@ export interface RawProject {
   finish: string;
   deadlineLabel: string;
   manager: string | null;
+  sellerInfo?: string | null;
+  defaultReservationAmount?: Decimal | null;
 }
 
 export interface RawSection {
@@ -338,6 +356,9 @@ export interface RawUnit {
   /** Сквозная позиция на этаже по всему корпусу, с 1 слева. */
   slot: number;
   section: string;
+  sectionId?: number | null;
+  /** Совпадает с `id` в `/layouts/`. */
+  layoutId?: string;
   rooms: number;
   area: number;
   insideArea: number;
@@ -388,6 +409,7 @@ export interface RawUnitDetails extends RawUnit {
 }
 
 export interface RawLayout {
+  id: string;
   code: string;
   projectId: number;
   unitIds: number[];
@@ -418,6 +440,13 @@ export function fromRawProject(raw: RawProject): Project {
     manager: raw.manager ?? "",
     // Домов отдельно бэк не хранит: название дома = название секции.
     buildings: raw.sections.map((section) => section.name),
+    sectionRefs: raw.sections.map((section) => ({
+      id: String(section.id),
+      name: section.name,
+      completionLabel: section.deadlineLabel,
+    })),
+    sellerInfo: raw.sellerInfo || null,
+    defaultPrepayment: raw.defaultReservationAmount == null ? null : toMoney(raw.defaultReservationAmount),
   };
 }
 
@@ -436,6 +465,7 @@ export function fromRawUnit(raw: RawUnit, layoutCode = ""): Unit {
     id: String(raw.id),
     projectId: String(raw.projectId),
     section: raw.section,
+    sectionId: raw.sectionId == null ? null : String(raw.sectionId),
     floor: raw.floor,
     position: raw.slot,
     axis: raw.slot,
@@ -531,14 +561,19 @@ export async function getRealEstateProjects(organizationId?: number): Promise<Pr
   return raw.map(fromRawProject);
 }
 
-async function getLayoutCodes(organizationId?: number, projectId?: string): Promise<Map<number, string>> {
+/** Код планировки квартиры: по `unit.layoutId`, у старого ответа — по `unitIds` планировки. */
+type LayoutCodes = (unit: RawUnit) => string | undefined;
+
+async function getLayoutCodes(organizationId?: number, projectId?: string): Promise<LayoutCodes> {
   const layouts = await apiRequest<RawLayout[]>(withOrg(`${REALTY_API}/layouts/`, organizationId));
-  const codes = new Map<number, string>();
+  const byLayout = new Map<string, string>();
+  const byUnit = new Map<number, string>();
   for (const layout of layouts) {
     if (projectId && String(layout.projectId) !== projectId) continue;
-    for (const unitId of layout.unitIds) codes.set(unitId, layout.code);
+    byLayout.set(layout.id, layout.code);
+    for (const unitId of layout.unitIds) byUnit.set(unitId, layout.code);
   }
-  return codes;
+  return (unit) => (unit.layoutId && byLayout.get(unit.layoutId)) || byUnit.get(unit.id);
 }
 
 /** Все квартиры корпуса целиком: шахматке нужны и отфильтрованные ячейки. */
@@ -548,7 +583,7 @@ export async function getProjectUnits(projectId: string, organizationId?: number
     apiRequest<RawUnit[]>(withOrg(`${REALTY_API}/units/?projectId=${encodeURIComponent(projectId)}`, organizationId)),
     getLayoutCodes(organizationId, projectId),
   ]);
-  return withSectionPositions(raw.map((unit) => fromRawUnit(unit, codes.get(unit.id))));
+  return withSectionPositions(raw.map((unit) => fromRawUnit(unit, codes(unit))));
 }
 
 export async function getUnit(unitId: string, organizationId?: number): Promise<UnitDetails> {
@@ -557,18 +592,19 @@ export async function getUnit(unitId: string, organizationId?: number): Promise<
     apiRequest<RawUnitDetails>(withOrg(`${REALTY_API}/units/${unitId}/`, organizationId)),
     getLayoutCodes(organizationId),
   ]);
-  return fromRawUnitDetails(raw, codes.get(raw.id));
+  return fromRawUnitDetails(raw, codes(raw));
 }
 
 /**
  * Менеджеры — активные сотрудники организации (фильтра «отдел продаж» у бэка
- * нет). Без права на справочник сотрудников — пустой список, и ответственный
- * вводится текстом.
+ * нет). `allBranches` — чтобы попали и «общие» менеджеры без филиала: без флага
+ * список режется по активному филиалу. Без права на справочник сотрудников —
+ * пустой список, и ответственный вводится текстом.
  */
 export async function getSalesManagers(organizationId?: number): Promise<SalesManager[]> {
   if (REALESTATE_USE_MOCKS) return mockDelay(mock.managers.map((name) => ({ id: "", name })));
   try {
-    const employees = await getAllDjangoEmployees({ status: "active", organizationId });
+    const employees = await getAllDjangoEmployees({ status: "active", allBranches: true, organizationId });
     return employees.map((employee) => ({ id: String(employee.id), name: employee.fullName }));
   } catch {
     return [];
@@ -666,7 +702,7 @@ export async function runUnitOperation(unitId: string, input: OperationInput, or
     getLayoutCodes(organizationId),
   ]);
   const card = result.target ?? result.unit;
-  return fromRawUnitDetails(card, codes.get(card.id));
+  return fromRawUnitDetails(card, codes(card));
 }
 
 export async function signUnitContract(unitId: string, input: ContractInput, organizationId?: number): Promise<UnitDetails> {

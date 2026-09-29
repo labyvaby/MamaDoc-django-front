@@ -51,6 +51,7 @@ import {
   unitType,
 } from "../../model/unitCard";
 import { formatMoney as money, num } from "../../model/units";
+import { completionOf } from "../../model/board";
 import { eyebrowSx } from "../tones";
 import { PhoneController } from "./PhoneController";
 import { useRealEstateToast } from "../toast";
@@ -81,8 +82,8 @@ export interface FlowProps {
   onOpenUnit: (unitId: string) => void;
 }
 
-/** Сумма prepaid-брони по умолчанию — `DEFAULT_DEPOSIT` бэка (realty/sales_services.py); в API её пока нет. */
-const PREPAYMENT = 50_000;
+/** Предоплата брони по умолчанию — из настроек ЖК; не задана — сумму ставит бэк при создании брони. */
+const prepaymentText = (project: Project) => (project.defaultPrepayment ? money(project.defaultPrepayment) : "");
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : "Не удалось выполнить операцию");
 
@@ -288,7 +289,7 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
               {(
                 [
                   ["free", "○", "Бесплатная бронь", "Без оплаты · квартира закрепляется на 48 часов"],
-                  ["prepaid", "с", "Бронь с предоплатой", `${money(PREPAYMENT)} · поступление подтверждает менеджер`],
+                  ["prepaid", "с", "Бронь с предоплатой", `${prepaymentText(project) || "Сумма по условиям ЖК"} · поступление подтверждает менеджер`],
                 ] as const
               ).map(([value, icon, title, hint]) => {
                 const checked = field.value === value;
@@ -329,7 +330,7 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
         {type === "prepaid" && (
           <Box sx={(t) => ({ mt: 1.5, p: 1.5, borderRadius: "10px", bgcolor: alpha(t.palette.warning.main, t.palette.mode === "dark" ? 0.16 : 0.1), display: "flex", flexDirection: "column", gap: 0.25 })}>
             <Typography component="b" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-              Предоплата {money(PREPAYMENT)}
+              Предоплата {prepaymentText(project)}
             </Typography>
             <Typography component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
               Сумма учитывается в стоимости квартиры. После сохранения отметьте получение оплаты.
@@ -388,7 +389,7 @@ function OfferCell({ label, value, hint, strong }: { label: string; value: strin
 export function PaymentScreen({ project, unit, organizationId, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
   const confirm = useUnitCommand(organizationId, () => confirmUnitPrepayment(unit, organizationId));
-  const amount = unit.reservation?.amount || PREPAYMENT;
+  const amount = unit.reservation?.amount || project.defaultPrepayment || 0;
   return (
     <Box>
       <FlowHead
@@ -888,7 +889,8 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
           ["Объект", `${unitType(unit)}, ${num(unit.totalArea)} м²`],
           ["Стоимость", money(price)],
           ["Первый взнос", money(down)],
-          ["Срок сдачи", project.completionLabel],
+          ["Срок сдачи", completionOf(project, unit)],
+          ["Продавец", project.sellerInfo || "не указан в настройках ЖК"],
         ]}
       />
       <form onSubmit={submit} noValidate>

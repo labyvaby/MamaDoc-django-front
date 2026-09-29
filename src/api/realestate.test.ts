@@ -9,7 +9,7 @@ import {
   type RawUnit,
   type RawUnitDetails,
 } from "./realestate";
-import { buildBoard, withUnitLayout } from "../pages/realestate/model/board";
+import { buildBoard, completionOf, withProjectSections, withUnitLayout } from "../pages/realestate/model/board";
 
 // Фикстуры — урезанные ответы /api/v2/realty на test2.crm.operator.kg (28.09.2026).
 const rawProject: RawProject = {
@@ -205,6 +205,33 @@ describe("переходники realty → модель шахматки", () =
     });
     expect(project.sections).toEqual(["А", "Б"]);
     expect(project.buildings).toEqual(["А", "Б"]);
+  });
+
+  it("квартира находит секцию по sectionId, срок сдачи — у своей секции", () => {
+    const project = fromRawProject({
+      ...rawProject,
+      sections: [
+        { id: 1, name: "Корпус А", floors: 14, progress: 75, deadline: "2027-03-01", deadlineLabel: "I квартал 2027" },
+        { id: 2, name: "Корпус Б", floors: 14, progress: 60, deadline: "2027-06-01", deadlineLabel: "" },
+      ],
+    });
+    // Название у квартиры другое — связь держится на id.
+    const units = withProjectSections(project, [
+      fromRawUnit(rawUnit(1, "А", 2, 1, { sectionId: 1 })),
+      fromRawUnit(rawUnit(53, "Б", 2, 5, { sectionId: 2 })),
+    ]);
+    expect(units.map((u) => u.section)).toEqual(["Корпус А", "Корпус Б"]);
+    expect(withUnitLayout(project, units).sections).toEqual(["Корпус А", "Корпус Б"]);
+    expect(completionOf(project, units[0])).toBe("I квартал 2027");
+    // Срок секции не задан — общий срок ЖК.
+    expect(completionOf(project, units[1])).toBe("IV квартал 2027");
+  });
+
+  it("продавец и предоплата ЖК: null — не заполнено, сумма — числом", () => {
+    expect(fromRawProject(rawProject)).toMatchObject({ sellerInfo: null, defaultPrepayment: null });
+    expect(
+      fromRawProject({ ...rawProject, sellerInfo: "ОсОО «Ала-Тоо Строительство»", defaultReservationAmount: "50000.00" }),
+    ).toMatchObject({ sellerInfo: "ОсОО «Ала-Тоо Строительство»", defaultPrepayment: 50_000 });
   });
 
   it("площадь помещения читается из size", () => {

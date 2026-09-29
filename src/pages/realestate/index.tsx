@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getProjectUnits, getRealEstateProjects, realEstateKeys, type Project, type Unit } from "../../api/realestate";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { autoBoardView, boundsOf, buildBoard, withUnitLayout } from "./model/board";
+import { autoBoardView, boundsOf, buildBoard, withProjectSections, withUnitLayout } from "./model/board";
 import { downloadPriceList } from "./model/priceList";
 import { useChessboardParams } from "./model/useChessboardParams";
 import { countByStatus, hasActiveFilters, matchesUnitFilters } from "./model/units";
@@ -97,8 +97,11 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
     queryFn: () => getProjectUnits(baseProject.id, organizationId),
     staleTime: 30_000,
   });
-  const units = unitsQuery.data;
-  // Бэк не отдаёт секции ЖК и первый жилой этаж — достраиваем по квартирам.
+  const units = React.useMemo(
+    () => (unitsQuery.data ? withProjectSections(baseProject, unitsQuery.data) : undefined),
+    [baseProject, unitsQuery.data],
+  );
+  // Секции и первый жилой этаж сверяются с квартирами — данные ЖК бывают неполными.
   const project = React.useMemo(() => (units ? withUnitLayout(baseProject, units) : baseProject), [baseProject, units]);
 
   const [selected, setSelected] = React.useState<string[]>([]);

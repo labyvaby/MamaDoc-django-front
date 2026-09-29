@@ -37,6 +37,25 @@ export function statsOf(units: Unit[]): FloorStats {
   return stats;
 }
 
+/**
+ * Квартира находит свою секцию ЖК по `sectionId`, а не по совпадению строк:
+ * так шахматка не опустеет, если названия у ЖК и у квартир разойдутся.
+ */
+export function withProjectSections(project: Project, units: Unit[]): Unit[] {
+  const names = new Map((project.sectionRefs ?? []).map((ref) => [ref.id, ref.name]));
+  if (!names.size) return units;
+  return units.map((unit) => {
+    const name = unit.sectionId ? names.get(unit.sectionId) : undefined;
+    return name && name !== unit.section ? { ...unit, section: name } : unit;
+  });
+}
+
+/** Срок сдачи секции квартиры; у ЖК без секций — общий срок ЖК. */
+export function completionOf(project: Project, unit: Pick<Unit, "section" | "sectionId">): string {
+  const ref = project.sectionRefs?.find((s) => (unit.sectionId ? s.id === unit.sectionId : s.name === unit.section));
+  return ref?.completionLabel || project.completionLabel;
+}
+
 /** «А» → «Секция А»; полное название от бэка («Корпус А») — как есть. */
 export const sectionLabel = (name: string) => (/\s/.test(name.trim()) ? name : `Секция ${name}`);
 
