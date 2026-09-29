@@ -55,7 +55,6 @@ type Draft = {
   phoneCountryCode: PhoneCountryCode;
   email: string;
   dob: string;
-  individualDiscountPercent: string;
   address: string;
   clientType: ClientType;
   note: string;
@@ -77,7 +76,6 @@ const emptyDraft: Draft = {
   phoneCountryCode: DEFAULT_PHONE_COUNTRY_CODE,
   email: "",
   dob: "",
-  individualDiscountPercent: "0",
   address: "",
   clientType: "individual",
   note: "",
@@ -102,7 +100,6 @@ function toDraft(client: DjangoClient | null): Draft {
     phoneCountryCode: parsedPhone.countryCode,
     email: client.email,
     dob: client.dob || "",
-    individualDiscountPercent: client.individualDiscountPercent || "0",
     address: client.address || "",
     clientType: client.clientType,
     note: client.note,
@@ -174,7 +171,6 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
         fullName: draft.fullName.trim(),
         email: draft.email.trim(),
         dob: draft.dob || null,
-        individualDiscountPercent: draft.individualDiscountPercent,
         address: draft.address.trim(),
         clientType: draft.clientType,
         customerStatusId: draft.customerStatusId,
@@ -266,7 +262,6 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
               helperText={client ? "Телефон нельзя изменить в этой форме" : undefined}
             />
             <TextField label="Email" placeholder="client@example.com" value={draft.email} onChange={(event) => set("email", event.target.value)} fullWidth />
-            <TextField label="Индивидуальная скидка в кассе, %" type="number" value={draft.individualDiscountPercent} onChange={(event) => set("individualDiscountPercent", event.target.value)} inputProps={{ min: 0, max: 100, step: "0.01" }} helperText="Применится автоматически при выборе клиента на кассе." fullWidth />
 
             {draft.clientType === "individual" && (
               <>
