@@ -37,6 +37,9 @@ export function statsOf(units: Unit[]): FloorStats {
   return stats;
 }
 
+/** «А» → «Секция А»; полное название от бэка («Корпус А») — как есть. */
+export const sectionLabel = (name: string) => (/\s/.test(name.trim()) ? name : `Секция ${name}`);
+
 /**
  * Досчитывает по квартирам то, чего бэк не отдаёт в ЖК: секции (в порядке
  * осей слева направо) и первый жилой этаж (`startFloor` бэка = 1, хотя

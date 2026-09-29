@@ -26,6 +26,7 @@ import {
   unitType,
 } from "../../model/unitCard";
 import { formatMoney as money, num, unitStatusMeta } from "../../model/units";
+import { sectionLabel } from "../../model/board";
 import { eyebrowSx, offerTone, sectionSx, statusTone } from "../tones";
 import { roomTileSx } from "../UnitPreview";
 
@@ -967,7 +968,7 @@ export function TechCard({ project, unit }: { project: Project; unit: UnitDetail
   const rows = (
     [
       ["Номер помещения", unit.number],
-      ["Подъезд / секция", `Секция ${unit.section}`],
+      ["Подъезд / секция", sectionLabel(unit.section)],
       ["Этаж", unit.floor],
       ["Название ЖК", project.name],
       ["Площадь, м²", num(unit.totalArea)],

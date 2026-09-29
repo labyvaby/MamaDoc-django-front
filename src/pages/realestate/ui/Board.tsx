@@ -7,7 +7,7 @@ import DeckOutlined from "@mui/icons-material/DeckOutlined";
 
 import type { Project, Unit } from "../../../api/realestate";
 import { subtleBg } from "../../../theme/uiHelpers";
-import { floorType, statsOf, type BoardModel, type BoardView, type FloorStats } from "../model/board";
+import { floorType, sectionLabel, statsOf, type BoardModel, type BoardView, type FloorStats } from "../model/board";
 import { canStartBoardNavigation, moveFocus } from "../model/keyboard";
 import { formatArea, formatRooms, millions, unitStatusMeta } from "../model/units";
 import { statusTone } from "./tones";
@@ -155,7 +155,7 @@ function DetailedBoard(p: InnerProps) {
         <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 2.5, rowGap: 0.5, fontSize: "0.75rem" }}>
           {board.sections.map((s) => (
             <Box component="span" key={s.name} sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-              <b>Секция {s.name}</b>
+              <b>{sectionLabel(s.name)}</b>
               <Box component="span" sx={(t) => ({ color: statusTone(t, "free").text })}>
                 {s.freeCount} свободно
               </Box>
@@ -250,7 +250,7 @@ function CompactBoard(p: InnerProps) {
           <Box component="header" key={section.name} sx={{ display: "flex", flexDirection: "column", gap: 0.5, px: 0.25, pt: 0.5, pb: 0.9 }}>
             <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
               <Typography component="span" sx={{ fontSize: "0.8125rem", fontWeight: 700 }}>
-                Секция {section.name}
+                {sectionLabel(section.name)}
               </Typography>
               <Typography component="b" sx={{ fontSize: "0.72rem", fontWeight: 600, color: "text.secondary" }}>
                 {section.freeCount} свободно
