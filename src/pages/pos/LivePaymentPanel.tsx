@@ -285,6 +285,8 @@ export function LivePaymentPanel({
   locked,
   discountKinds,
   discountMode,
+  lineDiscounts = [],
+  lineDiscountIgnored = false,
 }: {
   actions: Record<string, boolean>;
   benefits: Benefits;
@@ -300,6 +302,10 @@ export function LivePaymentPanel({
   locked: boolean;
   discountKinds: DiscountKind[];
   discountMode: "manual" | "kinds" | "both";
+  /** Скидки, заданные кассиром на отдельные позиции чека. */
+  lineDiscounts?: Array<{ id: string; name: string; label: string; amount: number }>;
+  /** Сервер вернул итог без скидок на позиции (старый бэкенд) — предупреждаем. */
+  lineDiscountIgnored?: boolean;
 }) {
   const c = posColors(useTheme());
   const [kindsOpen, setKindsOpen] = React.useState(false);
@@ -323,8 +329,18 @@ export function LivePaymentPanel({
     border: `1px solid ${c.hairline}`,
   } as const;
 
+  const lineDiscountTotal = lineDiscountIgnored
+    ? 0
+    : Math.min(
+        lineDiscounts.reduce((total, line) => total + line.amount, 0),
+        amount(quote?.discount)
+      );
   const summary = [
-    { label: "Скидка", value: amount(quote?.discount), tone: "discount" as const },
+    {
+      label: lineDiscountTotal > 0 ? "Скидка на чек" : "Скидка",
+      value: Math.round((amount(quote?.discount) - lineDiscountTotal) * 100) / 100,
+      tone: "discount" as const,
+    },
     { label: "Бонусы", value: amount(quote?.bonuses), tone: "bonus" as const },
     { label: "Сертификат", value: amount(quote?.certificateAmount), tone: "certificate" as const },
   ].filter((line) => line.value > 0);
@@ -545,9 +561,32 @@ export function LivePaymentPanel({
       <Stack gap="10px" sx={{ ...cardSx, border: "none", flexShrink: 0 }}>
         <Stack gap="4px" sx={{ pb: "10px", borderBottom: `1px solid ${c.hairline}` }}>
           <SummaryLine label="Подытог" value={quote ? <PosAmount value={amount(quote.subtotal)} /> : "—"} />
+          {lineDiscountTotal > 0 && (
+            <>
+              <SummaryLine label="Скидки на товары" value={<PosAmount value={lineDiscountTotal} negative />} tone="discount" />
+              <Stack gap="3px" sx={{ pl: "10px", ml: "2px", borderLeft: `2px solid ${c.hairline}` }}>
+                {lineDiscounts.map((line) => (
+                  <Stack key={line.id} direction="row" alignItems="center" justifyContent="space-between" gap="8px">
+                    <Typography noWrap sx={{ minWidth: 0, fontSize: 12, lineHeight: 1.3, color: c.textDim }}>
+                      {line.name}
+                      {line.label ? <Box component="span" sx={{ color: c.discount }}> · −{line.label}</Box> : null}
+                    </Typography>
+                    <Typography sx={{ flexShrink: 0, fontSize: 12, lineHeight: 1.3, color: c.discount }}>
+                      <PosAmount value={line.amount} negative />
+                    </Typography>
+                  </Stack>
+                ))}
+              </Stack>
+            </>
+          )}
           {summary.map((line) => (
             <SummaryLine key={line.label} label={line.label} value={<PosAmount value={line.value} negative />} tone={line.tone} />
           ))}
+          {lineDiscountIgnored && (
+            <Typography sx={{ mt: "4px", p: "8px", borderRadius: `${POS_RADIUS.tile}px`, bgcolor: c.dangerBg, color: c.danger, fontSize: 12, lineHeight: 1.35 }}>
+              Сервер не применил скидку на товар — итог посчитан без неё. Уберите скидку с позиции или обновите бэкенд кассы.
+            </Typography>
+          )}
         </Stack>
 
         <Stack gap="16px">
@@ -561,7 +600,8 @@ export function LivePaymentPanel({
           {actions.sell && (
             <ButtonBase
               onClick={onCheckout}
-              disabled={busy || !quote}
+              // Не даём пробить чек дороже, чем показано в строках.
+              disabled={busy || !quote || lineDiscountIgnored}
               sx={{
                 px: "20px",
                 py: "16px",
