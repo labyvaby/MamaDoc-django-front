@@ -52,6 +52,7 @@ import {
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import AlternateEmailOutlined from "@mui/icons-material/AlternateEmailOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
@@ -100,6 +101,7 @@ import {
   getReservationConflicts,
   isOverbookingConfirmable,
   getQuote,
+  listRatePlans,
   addPayment,
   type HotelRoom,
   type HotelGuestSearchResult,
@@ -178,6 +180,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [showErrors, setShowErrors] = React.useState(false);
   const [prepaymentMethod, setPrepaymentMethod] = React.useState("");
   const [boardType, setBoardType] = React.useState("");
+  // Тарифный план (RatePlan). "" — основной: бэк сам берёт его, если план не передан.
+  const [ratePlanId, setRatePlanId] = React.useState<number | "">("");
 
   // Документ
   const [guestType, setGuestType] = React.useState<GuestType>("resident");
@@ -247,6 +251,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setPrepaymentMethod("");
     setShowErrors(false);
     setBoardType("");
+    setRatePlanId("");
     setGuestType("resident");
     setDocumentFieldsVisible(false);
     setIdNumber("");
@@ -317,6 +322,15 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   });
   const roomTypes = React.useMemo(() => roomTypesQuery.data ?? [], [roomTypesQuery.data]);
 
+  // Тарифные планы объекта — выбор показываем, только если кроме основного есть ещё.
+  const ratePlansQuery = useQuery({
+    queryKey: ["hotel", "ratePlans", property?.id, "active"],
+    queryFn: ({ signal }) => listRatePlans(property!.id, signal),
+    enabled: formDataEnabled,
+    staleTime: 5 * 60_000,
+  });
+  const ratePlans = React.useMemo(() => ratePlansQuery.data ?? [], [ratePlansQuery.data]);
+
   // Живой предпросмотр суммы — необязательный, контракт эндпоинта не
   // подтверждён бэком (см. getQuote в src/api/hotel.ts). 404/ошибка формы
   // ответа гасится молча (retry: false, throwOnError: false) — предпросмотра
@@ -324,10 +338,17 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const checkInStr = checkIn?.format("YYYY-MM-DD");
   const checkOutStr = checkOut?.format("YYYY-MM-DD");
   const quoteQuery = useQuery({
-    queryKey: ["hotel", "quote", property?.id, roomId, checkInStr, checkOutStr, boardType],
+    queryKey: ["hotel", "quote", property?.id, roomId, checkInStr, checkOutStr, boardType, ratePlanId],
     queryFn: ({ signal }) =>
       getQuote(
-        { propertyId: property!.id, roomId: roomId === "" ? undefined : roomId, checkIn: checkInStr!, checkOut: checkOutStr!, boardType: boardType || undefined },
+        {
+          propertyId: property!.id,
+          roomId: roomId === "" ? undefined : roomId,
+          checkIn: checkInStr!,
+          checkOut: checkOutStr!,
+          boardType: boardType || undefined,
+          ratePlanId: ratePlanId === "" ? undefined : ratePlanId,
+        },
         signal,
       ),
     enabled: open && property != null && roomId !== "" && !!checkInStr && !!checkOutStr && checkOutStr > checkInStr,
@@ -674,6 +695,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         items: [
           {
             roomId,
+            ratePlanId: ratePlanId === "" ? undefined : ratePlanId,
             checkIn: checkIn.format("YYYY-MM-DD"),
             checkOut: checkOut.format("YYYY-MM-DD"),
             adults: Number(adults) || 1,
@@ -708,6 +730,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           },
           ...extraRooms.map((x) => ({
             roomId: x.roomId as number,
+            ratePlanId: ratePlanId === "" ? undefined : ratePlanId,
             checkIn: checkIn.format("YYYY-MM-DD"),
             checkOut: checkOut.format("YYYY-MM-DD"),
             adults: x.adults,
@@ -1013,7 +1036,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
               </TextField>
               <TextField
                 select
-                label="Тариф"
+                label="Питание"
                 value={boardType}
                 onChange={(e) => setBoardType(e.target.value)}
                 slotProps={{ input: { startAdornment: <FieldIcon icon={<RestaurantOutlined />} /> } }}
@@ -1027,6 +1050,45 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 ))}
               </TextField>
             </Stack>
+            {(() => {
+              // Планы для выбранной категории (пустой roomTypeIds — для всех).
+              const typeId = selectedRoomType?.id;
+              const options = ratePlans.filter((p) => p.isActive && (p.roomTypeIds.length === 0 || typeId == null || p.roomTypeIds.includes(typeId)));
+              if (options.length < 2) return null;
+              const chosen = options.find((p) => p.id === ratePlanId);
+              return (
+                <TextField
+                  select
+                  label="Тарифный план"
+                  value={chosen ? ratePlanId : ""}
+                  onChange={(e) => {
+                    const next = e.target.value === "" ? "" : Number(e.target.value);
+                    setRatePlanId(next);
+                    const plan = options.find((p) => p.id === next);
+                    // Питание плана — подставляем, если своё не выбрано.
+                    if (plan && plan.mealPlan && plan.mealPlan !== "none" && !boardType) setBoardType(plan.mealPlan);
+                  }}
+                  slotProps={{ input: { startAdornment: <FieldIcon icon={<LocalOfferOutlined />} /> } }}
+                  helperText={
+                    chosen
+                      ? [chosen.minNights > 1 ? `от ${chosen.minNights} ночей` : "", Number(chosen.prepaymentPercent) > 0 ? `предоплата ${Number(chosen.prepaymentPercent)}%` : "", chosen.cancellationPolicy]
+                          .filter(Boolean)
+                          .join(" · ") || " "
+                      : "Основной — по ценам категорий"
+                  }
+                  fullWidth
+                >
+                  <MenuItem value="">{options.find((p) => p.isBase)?.name ?? "Основной тариф"}</MenuItem>
+                  {options
+                    .filter((p) => !p.isBase)
+                    .map((p) => (
+                      <MenuItem key={p.id} value={p.id}>
+                        {p.name}
+                      </MenuItem>
+                    ))}
+                </TextField>
+              );
+            })()}
             {isPrepayment && (
               <Stack direction="row" gap={2}>
                 <FormField

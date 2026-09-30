@@ -21,10 +21,12 @@ import {
   Drawer,
   FormControlLabel,
   IconButton,
+  MenuItem,
   Stack,
   Switch,
   Tab,
   Tabs,
+  TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -51,6 +53,7 @@ import {
   getPriceCalendar,
   listPricingHistory,
   listPricingRules,
+  listRatePlans,
   setDailyRates,
   type HotelPriceCalendar,
   type HotelPriceCalendarRoomType,
@@ -98,12 +101,21 @@ export const HotelPriceCalendarPage: React.FC = () => {
   const [tab, setTab] = React.useState<"calendar" | "history">("calendar");
   const [start, setStart] = React.useState<Dayjs>(() => dayjs().startOf("day"));
   const [selected, setSelected] = React.useState<{ roomType: HotelPriceCalendarRoomType; night: HotelPriceNight } | null>(null);
+  // Тарифный план: "" — основной. Выбор виден, когда планов больше одного.
+  const [ratePlanId, setRatePlanId] = React.useState<number | "">("");
+  const plansQuery = useQuery({
+    queryKey: ["hotel", "ratePlans", property?.id, "active"],
+    queryFn: ({ signal }) => listRatePlans(property!.id, signal),
+    enabled: property != null,
+    staleTime: 5 * 60_000,
+  });
+  const plans = plansQuery.data ?? [];
 
   const from = start.format("YYYY-MM-DD");
   const to = start.add(DAYS, "day").format("YYYY-MM-DD");
   const calendarQuery = useQuery({
-    queryKey: ["hotel", "priceCalendar", property?.id, from],
-    queryFn: ({ signal }) => getPriceCalendar({ propertyId: property!.id, from, to }, signal),
+    queryKey: ["hotel", "priceCalendar", property?.id, from, ratePlanId],
+    queryFn: ({ signal }) => getPriceCalendar({ propertyId: property!.id, from, to, ratePlanId: ratePlanId === "" ? undefined : ratePlanId }, signal),
     enabled: property != null,
   });
   const calendar = calendarQuery.data;
@@ -134,6 +146,25 @@ export const HotelPriceCalendarPage: React.FC = () => {
         actions={
           tab === "calendar" ? (
             <Stack direction="row" alignItems="center" gap={0.5}>
+              {plans.length > 1 && (
+                <TextField
+                  select
+                  size="small"
+                  value={ratePlanId}
+                  onChange={(e) => setRatePlanId(e.target.value === "" ? "" : Number(e.target.value))}
+                  aria-label="Тарифный план"
+                  sx={{ minWidth: 200, mr: 1 }}
+                >
+                  <MenuItem value="">{plans.find((p) => p.isBase)?.name ?? "Основной тариф"}</MenuItem>
+                  {plans
+                    .filter((p) => !p.isBase)
+                    .map((p) => (
+                      <MenuItem key={p.id} value={p.id}>
+                        {p.name}
+                      </MenuItem>
+                    ))}
+                </TextField>
+              )}
               <Button size="small" onClick={() => setStart(dayjs().startOf("day"))} disabled={isCurrent}>
                 Сегодня
               </Button>

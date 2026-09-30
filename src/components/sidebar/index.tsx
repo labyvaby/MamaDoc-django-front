@@ -32,6 +32,7 @@ import { useHotelProperty } from "../../dev/useHotelProperty";
 import { prefetchHotelPages } from "../../dev/prefetchHotelPages";
 import CelebrationOutlined from "@mui/icons-material/CelebrationOutlined";
 import CalendarViewMonthOutlined from "@mui/icons-material/CalendarViewMonthOutlined";
+import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 import RoomServiceOutlined from "@mui/icons-material/RoomServiceOutlined";
 
 
@@ -427,6 +428,7 @@ const HotelSidebarMenu: React.FC = () => {
   const canPricing = can(PAGE_PERMISSIONS.hotelPricingRules);
   const canEvents = can(PAGE_PERMISSIONS.hotelEvents);
   const canPriceCalendar = can(PAGE_PERMISSIONS.hotelPriceCalendar);
+  const canRatePlans = can(PAGE_PERMISSIONS.hotelRatePlans);
   const canReception = can(PAGE_PERMISSIONS.hotelReception);
 
   const sectionLabel = (text: string) =>
@@ -449,9 +451,10 @@ const HotelSidebarMenu: React.FC = () => {
       {canKitchen && <SidebarMenuItem to="/kitchen" icon={<RestaurantOutlined />} label="Кухня" collapsed={siderCollapsed} />}
       {canReports && <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчёты" collapsed={siderCollapsed} />}
 
-      {(canRooms || canCategories || canPricing || canPriceCalendar || canEvents) && sectionLabel("Отель")}
+      {(canRooms || canCategories || canRatePlans || canPricing || canPriceCalendar || canEvents) && sectionLabel("Отель")}
       {canRooms && <SidebarMenuItem to="/rooms" icon={<HotelOutlined />} label="Номера" collapsed={siderCollapsed} />}
       {canCategories && <SidebarMenuItem to="/room-categories" icon={<CategoryOutlined />} label="Категории и тарифы" collapsed={siderCollapsed} />}
+      {canRatePlans && <SidebarMenuItem to="/rate-plans" icon={<LocalOfferOutlined />} label="Тарифные планы" collapsed={siderCollapsed} />}
       {canPricing && <SidebarMenuItem to="/pricing-rules" icon={<PriceChangeOutlined />} label="Ценообразование" collapsed={siderCollapsed} />}
       {canPriceCalendar && <SidebarMenuItem to="/price-calendar" icon={<CalendarViewMonthOutlined />} label="Календарь цен" collapsed={siderCollapsed} />}
       {canEvents && <SidebarMenuItem to="/events" icon={<CelebrationOutlined />} label="События" collapsed={siderCollapsed} />}
@@ -1173,6 +1176,7 @@ const HOTEL_ONLY_NAV_PATHS = [
   "/room-categories",
   "/pricing-rules",
   "/price-calendar",
+  "/rate-plans",
   "/events",
   "/reception",
   "/settings",

@@ -620,6 +620,67 @@ export function getQuote(request: HotelQuoteRequest, signal?: AbortSignal): Prom
   return apiRequest<HotelQuoteResult>("/v2/hotel/pricing/quote/", { method: "POST", body: request, signal });
 }
 
+// ── Тарифные планы (RatePlan) ───────────────────────────────────────────────
+
+/**
+ * Тарифный план: «Основной» (isBase, один на объект, выключить нельзя) и
+ * производные — цена = цена родителя ± adjustment (percent со знаком, amount —
+ * сумма за ночь со знаком). roomTypeIds пустой — для всех категорий.
+ */
+export interface HotelRatePlan {
+  id: number;
+  propertyId: number;
+  roomTypeIds: number[];
+  name: string;
+  code: string;
+  currency: string;
+  mealPlan: string;
+  minNights: number;
+  prepaymentPercent: string;
+  cancellationPolicy: string;
+  includedServices: string;
+  isActive: boolean;
+  isBase: boolean;
+  parentId: number | null;
+  adjustmentType: "percent" | "amount";
+  adjustmentValue: Money;
+}
+
+export interface HotelRatePlanCreateData {
+  propertyId: number;
+  name: string;
+  roomTypeIds?: number[];
+  code?: string;
+  mealPlan?: string;
+  minNights?: number;
+  prepaymentPercent?: string;
+  cancellationPolicy?: string;
+  includedServices?: string;
+  parentId?: number | null;
+  adjustmentType?: "percent" | "amount";
+  adjustmentValue?: Money;
+}
+
+export interface HotelRatePlanUpdateData extends Omit<Partial<HotelRatePlanCreateData>, "propertyId"> {
+  isActive?: boolean;
+  /** Отвязать от родителя — цена снова от категорий. */
+  clearParent?: boolean;
+}
+
+export function listRatePlans(propertyId: number, signal?: AbortSignal, options: { includeInactive?: boolean } = {}): Promise<HotelRatePlan[]> {
+  const qs = buildQuery({ propertyId, includeInactive: options.includeInactive ? "true" : undefined });
+  return apiRequest<HotelRatePlan[]>(`/v2/hotel/rate-plans/${qs}`, { signal });
+}
+
+/** Право hotel.rates.manage. Удаления нет — план выключают (isActive=false). */
+export function createRatePlan(data: HotelRatePlanCreateData): Promise<HotelRatePlan> {
+  return apiRequest<HotelRatePlan>("/v2/hotel/rate-plans/", { method: "POST", body: data });
+}
+
+export function updateRatePlan(id: number, data: HotelRatePlanUpdateData): Promise<HotelRatePlan> {
+  return apiRequest<HotelRatePlan>(`/v2/hotel/rate-plans/${id}/`, { method: "PATCH", body: data });
+}
+
 // ── Календарь цен и история цен ─────────────────────────────────────────────
 
 /** Шаг расчёта цены ночи: kind — rule | manual | rate_plan | floor | ceiling | rounding. */
