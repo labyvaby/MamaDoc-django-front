@@ -43,10 +43,16 @@ const OTHER = "Другое";
 export interface RoomBlocksSectionProps {
   roomId: number;
   roomNumber: string;
+  /** Блоки из окна карточки номера (ближайшие 45 ночей). */
   blocks: HotelRoomBlock[];
+  /**
+   * Блок, по штриховке которого открыли карточку из шахматки. Он может лежать
+   * дальше окна карточки — без этого его было бы не снять.
+   */
+  focusBlock?: HotelRoomBlock | null;
 }
 
-export const RoomBlocksSection: React.FC<RoomBlocksSectionProps> = ({ roomId, roomNumber, blocks }) => {
+export const RoomBlocksSection: React.FC<RoomBlocksSectionProps> = ({ roomId, roomNumber, blocks, focusBlock }) => {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
@@ -60,14 +66,27 @@ export const RoomBlocksSection: React.FC<RoomBlocksSectionProps> = ({ roomId, ro
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [releasingId, setReleasingId] = React.useState<number | null>(null);
+  // Созданные и снятые здесь — чтобы список сразу был верным, даже если блок
+  // дальше окна карточки и после перечитывания в неё не попадёт.
+  const [created, setCreated] = React.useState<HotelRoomBlock[]>([]);
+  const [releasedIds, setReleasedIds] = React.useState<number[]>([]);
 
   // Другой номер — форма с нуля.
   React.useEffect(() => {
     setFormOpen(false);
     setError(null);
+    setCreated([]);
+    setReleasedIds([]);
   }, [roomId]);
 
-  const active = blocks.filter((b) => b.isActive).sort((a, b) => a.dateFrom.localeCompare(b.dateFrom));
+  const todayStr = dayjs().format("YYYY-MM-DD");
+  const active = React.useMemo(() => {
+    const byId = new Map<number, HotelRoomBlock>();
+    for (const b of [...blocks, ...(focusBlock && focusBlock.roomId === roomId ? [focusBlock] : []), ...created]) byId.set(b.id, b);
+    return [...byId.values()]
+      .filter((b) => b.isActive && !releasedIds.includes(b.id) && b.dateTo > todayStr)
+      .sort((a, b) => a.dateFrom.localeCompare(b.dateFrom));
+  }, [blocks, focusBlock, created, releasedIds, roomId, todayStr]);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["hotel", "room-availability", roomId] });
@@ -103,12 +122,13 @@ export const RoomBlocksSection: React.FC<RoomBlocksSectionProps> = ({ roomId, ro
     setSaving(true);
     setError(null);
     try {
-      await createRoomBlock({
+      const block = await createRoomBlock({
         roomId,
         dateFrom: firstNight.format("YYYY-MM-DD"),
         dateTo: lastNight.add(1, "day").format("YYYY-MM-DD"),
         reason: effectiveReason,
       });
+      setCreated((cur) => [...cur, block]);
       invalidate();
       setFormOpen(false);
       enqueueSnackbar(`Номер ${roomNumber} снят с продажи на ${nights} ${plural(nights, "ночь", "ночи", "ночей")}`, {
@@ -125,6 +145,7 @@ export const RoomBlocksSection: React.FC<RoomBlocksSectionProps> = ({ roomId, ro
     setReleasingId(block.id);
     try {
       await releaseRoomBlock(block.id);
+      setReleasedIds((cur) => [...cur, block.id]);
       invalidate();
       enqueueSnackbar(`Номер ${roomNumber} снова в продаже`, { variant: "success" });
     } catch (err) {

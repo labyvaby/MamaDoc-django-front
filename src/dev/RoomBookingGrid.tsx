@@ -291,7 +291,8 @@ const NowLine: React.FC = () => {
 };
 
 interface GridDialogsHandle {
-  openRoom: (roomId: number) => void;
+  /** block — открыли по штриховке «Снят с продажи»: карточка покажет его, даже если он дальше её окна. */
+  openRoom: (roomId: number, block?: HotelRoomBlock) => void;
   openReservation: (reservationId: number) => void;
 }
 
@@ -302,13 +303,25 @@ interface GridDialogsHandle {
  */
 const GridDialogs = React.forwardRef<GridDialogsHandle, { roomTypes: React.ComponentProps<typeof RoomDetailsDialog>["roomTypes"] }>(({ roomTypes }, ref) => {
   const [roomId, setRoomId] = React.useState<number | null>(null);
+  const [focusBlock, setFocusBlock] = React.useState<HotelRoomBlock | null>(null);
   const [reservationId, setReservationId] = React.useState<number | null>(null);
-  React.useImperativeHandle(ref, () => ({ openRoom: setRoomId, openReservation: setReservationId }), []);
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      openRoom: (id, block) => {
+        setFocusBlock(block ?? null);
+        setRoomId(id);
+      },
+      openReservation: setReservationId,
+    }),
+    [],
+  );
   return (
     <>
       <RoomDetailsDialog
         roomId={roomId}
         roomTypes={roomTypes}
+        focusBlock={focusBlock}
         onClose={() => setRoomId(null)}
         onReservationClick={(id) => {
           setRoomId(null);
@@ -1419,7 +1432,7 @@ export const RoomBookingGrid: React.FC = () => {
                         key={`block-${b.id}`}
                         component="button"
                         type="button"
-                        onClick={() => dialogsRef.current?.openRoom(row.room.id)}
+                        onClick={() => dialogsRef.current?.openRoom(row.room.id, b)}
                         aria-label={description}
                         title={`${description} — открыть номер`}
                         sx={{
