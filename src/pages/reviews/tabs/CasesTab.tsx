@@ -130,7 +130,7 @@ const CaseCard: React.FC<{ review: Review }> = ({ review }) => {
 const CasesTab: React.FC<TabProps> = ({ period }) => {
   const [filter, setFilter] = React.useState<CaseFilter>("open");
   const [page, setPage] = React.useState(0);
-  React.useEffect(() => setPage(0), [filter, period.from, period.to]);
+  React.useEffect(() => setPage(0), [filter, period.from, period.to, period.branchId]);
 
   const caseStatus = filter === "open" ? "open" : filter === "resolved" ? "resolved" : undefined;
   const query = useQuery({

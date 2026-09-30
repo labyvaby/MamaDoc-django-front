@@ -146,7 +146,7 @@ const PUBLICATION_OPTIONS: { value: PublicationFilter; label: string }[] = [
   { value: "hidden", label: "Скрытые" },
 ];
 
-const ReviewsTab: React.FC<TabProps> = ({ period }) => {
+const ReviewsTab: React.FC<TabProps> = ({ period, multiBranch }) => {
   const { t } = useT("reviews");
   const [rating, setRating] = React.useState<number | "">("");
   const [sentiment, setSentiment] = React.useState<ReviewSentiment | "">("");
@@ -167,6 +167,7 @@ const ReviewsTab: React.FC<TabProps> = ({ period }) => {
       publication,
       period.from,
       period.to,
+      period.branchId,
     ]
   );
 
@@ -216,7 +217,7 @@ const ReviewsTab: React.FC<TabProps> = ({ period }) => {
   );
 
   const rows = listQuery.data?.results ?? [];
-  const columns = 10;
+  const columns = multiBranch ? 10 : 9;
 
   return (
     <Stack spacing={2}>
@@ -304,7 +305,7 @@ const ReviewsTab: React.FC<TabProps> = ({ period }) => {
                 <TableCell>Дата</TableCell>
                 <TableCell>{t("list.patientColumn")}</TableCell>
                 <TableCell>{t("list.specialistColumn")}</TableCell>
-                <TableCell>Филиал</TableCell>
+                {multiBranch && <TableCell>Филиал</TableCell>}
                 <TableCell align="center">Общая</TableCell>
                 <TableCell align="center">Врач</TableCell>
                 <TableCell align="center">Регистратура</TableCell>
@@ -339,7 +340,9 @@ const ReviewsTab: React.FC<TabProps> = ({ period }) => {
                       </TableCell>
                       <TableCell>{r.patientName ?? "—"}</TableCell>
                       <TableCell>{r.doctorName ?? "—"}</TableCell>
-                      <TableCell>{r.branchName ?? "—"}</TableCell>
+                      {multiBranch && (
+                        <TableCell>{r.branchName ?? "—"}</TableCell>
+                      )}
                       <TableCell align="center">
                         <Score value={r.rating} />
                       </TableCell>
