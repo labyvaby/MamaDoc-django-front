@@ -17,6 +17,7 @@ import {
   Typography,
 } from "@mui/material";
 import KeyOutlined from "@mui/icons-material/KeyOutlined";
+import AddBusinessOutlined from "@mui/icons-material/AddBusinessOutlined";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import SmsOutlined from "@mui/icons-material/SmsOutlined";
 import WhatsApp from "@mui/icons-material/WhatsApp";
@@ -27,6 +28,7 @@ import { PageHeader } from "../../../components/ui";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/queryKeys";
 import {
+  createRavenClient,
   getNotificationSettings,
   saveNotificationSettings,
   type NotificationSettings,
@@ -130,6 +132,21 @@ const NotificationGatewaySettingsPage: React.FC = () => {
     },
   });
 
+  const createRavenClientMutation = useMutation({
+    mutationFn: () => createRavenClient({ organizationId }),
+    onSuccess: (data) => {
+      setForm(toForm(data));
+      queryClient.setQueryData(djangoQueryKeys.notifications.settings(organizationId ?? null, null), data);
+      setMessage({ type: "success", text: t("notificationGateway.ravenClient.createSuccess") });
+    },
+    onError: (err) => {
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : t("notificationGateway.ravenClient.createError"),
+      });
+    },
+  });
+
   const update = (patch: Partial<FormState>) => {
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
   };
@@ -164,6 +181,57 @@ const NotificationGatewaySettingsPage: React.FC = () => {
         ) : (
           <>
             <Alert severity="info">{t("notificationGateway.info")}</Alert>
+
+            <Card variant="outlined">
+              <CardHeader
+                avatar={<AddBusinessOutlined color="primary" />}
+                title={t("notificationGateway.ravenClient.title")}
+                subheader={
+                  configured?.ravenClientCreated && configured.ravenClientId
+                    ? t("notificationGateway.ravenClient.createdSubtitle", { id: configured.ravenClientId })
+                    : t("notificationGateway.ravenClient.missingSubtitle")
+                }
+                action={
+                  <Chip
+                    size="small"
+                    color={configured?.ravenClientCreated ? "success" : "warning"}
+                    label={
+                      configured?.ravenClientCreated
+                        ? t("notificationGateway.ravenClient.created")
+                        : t("notificationGateway.ravenClient.missing")
+                    }
+                  />
+                }
+              />
+              <Divider />
+              <CardContent>
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  spacing={1.5}
+                  justifyContent="space-between"
+                  alignItems={{ xs: "stretch", sm: "center" }}
+                >
+                  <Typography variant="body2" color="text.secondary">
+                    {t("notificationGateway.ravenClient.description")}
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    startIcon={
+                      createRavenClientMutation.isPending
+                        ? <CircularProgress size={18} />
+                        : <AddBusinessOutlined />
+                    }
+                    disabled={createRavenClientMutation.isPending || configured?.ravenClientCreated}
+                    onClick={() => createRavenClientMutation.mutate()}
+                    sx={{ flexShrink: 0 }}
+                  >
+                    {configured?.ravenClientCreated
+                      ? t("notificationGateway.ravenClient.alreadyCreatedButton")
+                      : t("notificationGateway.ravenClient.createButton")}
+                  </Button>
+                </Stack>
+              </CardContent>
+            </Card>
 
             <Card variant="outlined">
               <CardHeader
