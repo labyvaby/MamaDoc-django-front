@@ -121,6 +121,7 @@ const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
 const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
+const NotificationGatewaySettingsPage = lazy(() => import("./pages/settings/django/NotificationGatewaySettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
 const OrganizationSettingsPage = lazy(() => import("./pages/settings/OrganizationSettingsPage"));
@@ -858,6 +859,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.notifications}>
                               <Suspense fallback={<LinearProgress />}>
                                 <DjangoNotificationSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="settings/notification-gateway"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.notificationGateway}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <NotificationGatewaySettingsPage />
                               </Suspense>
                             </RequirePermission>
                           }

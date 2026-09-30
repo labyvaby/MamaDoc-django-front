@@ -232,6 +232,12 @@ const TAB_DEFS: TabDef[] = [
     group: "operations",
   },
   {
+    key: "notificationGateway",
+    to: "/settings/notification-gateway",
+    icon: <RouterOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
     key: "automations",
     to: "/settings/automations",
     icon: <BoltOutlined fontSize="small" />,
