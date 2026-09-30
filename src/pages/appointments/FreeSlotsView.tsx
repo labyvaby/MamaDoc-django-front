@@ -2057,13 +2057,6 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
             />
           </Box>
           <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: "block", fontWeight: 600, px: 2, pt: 0.5, pb: 1 }}
-            >
-              {t("slots.specialities")}
-            </Typography>
             {specsQuery.isLoading ? (
               <Stack alignItems="center" py={3}>
                 <CircularProgress size={20} />

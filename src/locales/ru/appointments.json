@@ -765,7 +765,7 @@
   "slots": {
     "noShifts": "В расписании {{specialist.genPl}} нет {{shift.genPl}}",
     "specialities": "Специальности",
-    "allSpecialists": "Все специалисты",
+    "allSpecialists": "Показать всех",
     "noSpecialities": "Нет специальностей",
     "noShiftsOnDate": "На эту дату у {{specialist.genPl}} нет рабочих {{shift.genPl}}",
     "noSchedule": "Нет рабочего графика на этот день",
