@@ -131,6 +131,58 @@ export function floorType(project: Project, floor: number) {
   return "Типовой этаж";
 }
 
+export interface ProjectFacts {
+  sections: number;
+  /** Нижний и верхний жилой этаж, где есть квартиры. */
+  floors: NumberPair;
+  /** Сроки сдачи без повторов, в порядке секций. */
+  completion: string[];
+  /** Цена за м², сом: от и до. */
+  pricePerSqm: NumberPair;
+}
+
+type NumberPair = readonly [number, number];
+
+/** Факты о ЖК для шапки шахматки — то, чего не видно в самой сетке. */
+export function projectFacts(project: Project, board: BoardModel, units: Unit[]): ProjectFacts {
+  const refs = project.sectionRefs ?? [];
+  const shown = new Set(board.sections.map((s) => s.name));
+  const labels = refs.length
+    ? refs.filter((ref) => shown.has(ref.name)).map((ref) => ref.completionLabel || project.completionLabel)
+    : [project.completionLabel];
+  const prices = units.map((u) => u.pricePerSqm).filter((v) => v > 0);
+  return {
+    sections: board.sections.length,
+    floors: [board.floors[board.floors.length - 1] ?? 0, board.floors[0] ?? 0],
+    completion: [...new Set(labels.filter(Boolean))],
+    pricePerSqm: prices.length ? [Math.min(...prices), Math.max(...prices)] : [0, 0],
+  };
+}
+
+const plural = (n: number, one: string, few: string, many: string) => {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+};
+
+const thousands = (v: number) => `${Math.round(v / 1000)}`;
+
+/** «2 корпуса · этажи 2–14 · сдача I квартал 2027 · 102–118 тыс. сом/м²». */
+export function factsLine(facts: ProjectFacts, sectionNames: string[]): string {
+  const isBuilding = sectionNames.length > 0 && sectionNames.every((name) => /^корпус/i.test(name.trim()));
+  const n = facts.sections;
+  const parts = [
+    isBuilding ? `${n} ${plural(n, "корпус", "корпуса", "корпусов")}` : `${n} ${plural(n, "секция", "секции", "секций")}`,
+    facts.floors[0] === facts.floors[1] ? `${facts.floors[0]} этаж` : `этажи ${facts.floors[0]}–${facts.floors[1]}`,
+  ];
+  if (facts.completion.length) parts.push(`сдача ${facts.completion.join(" / ")}`);
+  const [lo, hi] = facts.pricePerSqm;
+  if (hi > 0) parts.push(`${lo === hi ? thousands(lo) : `${thousands(lo)}–${thousands(hi)}`} тыс. сом/м²`);
+  return parts.join(" · ");
+}
+
 export interface RangeBounds {
   price: readonly [number, number];
   area: readonly [number, number];

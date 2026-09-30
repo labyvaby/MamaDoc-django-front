@@ -445,6 +445,9 @@ const UnitCell = React.memo(function UnitCell({
     );
   }
 
+  // Свободных квартир большинство, поэтому свободная ячейка спокойная (карточка + точка),
+  // а выделяются бронь и продажа — иначе вся шахматка залита одним цветом.
+  const free = unit.status === "free";
   return (
     <ButtonBase
       {...common}
@@ -464,9 +467,9 @@ const UnitCell = React.memo(function UnitCell({
           textAlign: "left",
           fontSize: "0.78rem",
           borderRadius: "9px",
-          border: `${unit.status === "free" ? 1 : 2}px solid ${tone.border}`,
-          bgcolor: tone.bg,
-          color: tone.text,
+          border: `${unit.status === "reserved" ? 2 : 1}px solid ${free ? t.palette.divider : tone.border}`,
+          bgcolor: free ? "background.paper" : tone.bg,
+          color: free ? "text.primary" : tone.text,
           transition: "transform .15s ease, border-color .15s ease",
           "&:hover": { transform: "translateY(-2px)", borderColor: tone.main },
           ...(isTerrace ? { borderTop: `3px solid ${t.palette.purple.main}` } : null),
@@ -477,25 +480,32 @@ const UnitCell = React.memo(function UnitCell({
       }}
     >
       {mark}
-      <Box
-        component="span"
-        sx={(t) => ({
-          display: "flex",
-          alignItems: "center",
-          minHeight: 20,
-          px: 1,
-          py: 0.5,
-          borderRadius: "7px",
-          fontSize: "0.7rem",
-          fontWeight: 700,
-          bgcolor: statusTone(t, unit.status).solid,
-          color: statusTone(t, unit.status).solidText,
-        })}
-      >
-        {unit.status === "reserved" ? "Бронь" : status}
-      </Box>
-      <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.72rem" }}>
-        <small>№{unit.number}</small>
+      <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 0.5, minHeight: 20, fontSize: "0.72rem" }}>
+        <Box component="span" sx={{ display: "flex", alignItems: "center", gap: 0.6, minWidth: 0 }}>
+          {free ? (
+            <Box component="i" aria-hidden sx={(t) => ({ flexShrink: 0, width: 7, height: 7, borderRadius: "50%", bgcolor: statusTone(t, "free").main })} />
+          ) : (
+            <Box
+              component="span"
+              sx={(t) => ({
+                flexShrink: 0,
+                px: 0.75,
+                py: 0.25,
+                borderRadius: "6px",
+                fontSize: "0.68rem",
+                fontWeight: 700,
+                bgcolor: unit.status === "reserved" ? statusTone(t, "reserved").solid : "transparent",
+                color: unit.status === "reserved" ? statusTone(t, "reserved").solidText : "text.secondary",
+                ...(unit.status === "sold" ? { px: 0 } : null),
+              })}
+            >
+              {unit.status === "reserved" ? "Бронь" : status}
+            </Box>
+          )}
+          <Box component="span" sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
+            №{unit.number}
+          </Box>
+        </Box>
         {/* Иконка, а не буква «Б/Т»: буква путалась с названием секции «Б». */}
         <Box
           component="i"

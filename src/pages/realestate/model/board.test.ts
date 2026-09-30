@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { seedProjects as projects, seedUnits as units } from "../../../api/realestate.mocks";
-import { autoBoardView, buildBoard } from "./board";
+import { autoBoardView, buildBoard, factsLine, projectFacts } from "./board";
 import { priceListCsv } from "./priceList";
 import { parseRange, formatRange, PRICE_SCALE } from "./useChessboardParams";
 
@@ -41,6 +41,32 @@ describe("buildBoard", () => {
     expect(a.columns).toBe(3);
     expect(a.unitAt(14, 1)).toBeDefined();
     expect(a.unitAt(14, 2)).toBeUndefined();
+  });
+
+  it("факты ЖК для шапки: секции, этажи, сроки без повторов, цена за м²", () => {
+    const project = {
+      ...projectById("ala"),
+      sectionRefs: [
+        { id: "1", name: "А", completionLabel: "I квартал 2027" },
+        { id: "2", name: "Б", completionLabel: "I квартал 2027" },
+      ],
+    };
+    const ala = unitsOf("ala");
+    const facts = projectFacts(project, buildBoard(project, ala), ala);
+    expect(facts.sections).toBe(2);
+    expect(facts.floors).toEqual([project.firstResidentialFloor, project.floorsCount]);
+    expect(facts.completion).toEqual(["I квартал 2027"]);
+    expect(facts.pricePerSqm[0]).toBe(Math.min(...ala.map((u) => u.pricePerSqm)));
+  });
+
+  it("строка фактов: корпуса, этажи, срок, цена за м²", () => {
+    const facts = { sections: 2, floors: [2, 14] as const, completion: ["I квартал 2027", "II квартал 2027"], pricePerSqm: [102_400, 118_900] as const };
+    expect(factsLine(facts, ["Корпус А", "Корпус Б"])).toBe(
+      "2 корпуса · этажи 2–14 · сдача I квартал 2027 / II квартал 2027 · 102–119 тыс. сом/м²",
+    );
+    expect(factsLine({ ...facts, sections: 5, floors: [1, 1], completion: [] }, ["2", "3", "4", "5", "6"])).toBe(
+      "5 секций · 1 этаж · 102–119 тыс. сом/м²",
+    );
   });
 
   it("широкий корпус по умолчанию показывается компактно", () => {

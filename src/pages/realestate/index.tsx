@@ -5,13 +5,13 @@ import { useQuery } from "@tanstack/react-query";
 import { getProjectUnits, getRealEstateProjects, realEstateKeys, type Project, type Unit } from "../../api/realestate";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { autoBoardView, boundsOf, buildBoard, withProjectSections, withUnitLayout } from "./model/board";
+import { autoBoardView, boundsOf, buildBoard, projectFacts, withProjectSections, withUnitLayout } from "./model/board";
 import { downloadPriceList } from "./model/priceList";
 import { useChessboardParams } from "./model/useChessboardParams";
 import { countByStatus, hasActiveFilters, matchesUnitFilters } from "./model/units";
 import { Board, CompactNote, FloorGuide } from "./ui/Board";
 import { COMPARE_LIMIT, CompareDialog, SelectionBar } from "./ui/Compare";
-import { BoardToolbar, FilterBar, KpiRow, ProjectTabs, StatusLegend } from "./ui/Filters";
+import { BoardToolbar, FilterBar, ProjectSummary, ProjectTabs } from "./ui/Filters";
 import { RealEstateToastProvider, useRealEstateToast } from "./ui/toast";
 import { UnitCardDialog } from "./ui/unit-card/UnitCardDialog";
 import { UnitPreview } from "./ui/UnitPreview";
@@ -77,11 +77,6 @@ function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void })
 function PageSkeleton() {
   return (
     <Box aria-busy>
-      <Box sx={{ mb: 2.25, display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 1.5 }}>
-        {Array.from({ length: 4 }, (_, i) => (
-          <Skeleton key={i} variant="rounded" height={92} sx={{ borderRadius: "14px" }} />
-        ))}
-      </Box>
       <Skeleton variant="rounded" height={32} sx={{ mb: 2, maxWidth: 560, borderRadius: "9px" }} />
       <Skeleton variant="rounded" height={480} sx={{ borderRadius: "14px" }} />
     </Box>
@@ -113,6 +108,7 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
   const counts = React.useMemo(() => countByStatus(units ?? []), [units]);
   const board = React.useMemo(() => (units ? buildBoard(project, units) : null), [project, units]);
   const bounds = React.useMemo(() => (units?.length ? boundsOf(project, units) : null), [project, units]);
+  const facts = React.useMemo(() => (units && board ? projectFacts(project, board, units) : null), [project, board, units]);
   const visibleIds = React.useMemo(() => new Set(units?.filter((u) => matchesUnitFilters(u, params)).map((u) => u.id)), [units, params]);
   const selectedIds = React.useMemo(() => new Set(selected), [selected]);
   const matches = React.useMemo(() => (search ? (units ?? []).filter((u) => u.number.includes(search)) : []), [units, search]);
@@ -145,7 +141,7 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
   };
 
   if (unitsQuery.isError) return <ErrorState error={unitsQuery.error} onRetry={() => void unitsQuery.refetch()} />;
-  if (!units || !board || !bounds) return <PageSkeleton />;
+  if (!units || !board || !bounds || !facts) return <PageSkeleton />;
 
   // Вид выбирается по ширине корпуса, но его можно переключить вручную (?view=).
   const view = params.view === "auto" ? autoBoardView(board) : params.view;
@@ -153,7 +149,6 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
 
   return (
     <Box sx={{ pb: selected.length ? 10 : 0 }}>
-      <KpiRow counts={counts} />
       <ProjectTabs
         projects={projects}
         activeId={project.id}
@@ -162,17 +157,14 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
       />
 
       <Box component="section" sx={{ overflow: "hidden", border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper", p: { xs: 1.75, xl: 2.1 } }}>
-        <Box sx={{ mb: 1.9, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 2.25 }}>
-          <div>
-            <Typography component="h2" sx={{ fontSize: "0.95rem", fontWeight: 700 }}>
-              Шахматка · ЖК «{project.name}»
-            </Typography>
-            <Typography sx={{ mt: 0.5, fontSize: "0.8125rem", lineHeight: 1.5, color: "text.secondary" }}>
-              Нажмите на квартиру, чтобы открыть карточку и забронировать
-            </Typography>
-          </div>
-          <StatusLegend value={params.status} counts={counts} onChange={updateParams} />
-        </Box>
+        <ProjectSummary
+          project={project}
+          facts={facts}
+          sectionNames={board.sections.map((s) => s.name)}
+          counts={counts}
+          status={params.status}
+          onChange={updateParams}
+        />
 
         <FilterBar filters={params} foundCount={visibleIds.size} onChange={updateParams} />
         <BoardToolbar

@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, ButtonBase, InputBase, Slider, Typography } from "@mui/material";
-import { alpha, type Theme } from "@mui/material/styles";
+import { alpha } from "@mui/material/styles";
 import CheckBoxOutlineBlankOutlined from "@mui/icons-material/CheckBoxOutlineBlankOutlined";
 import CheckBoxOutlined from "@mui/icons-material/CheckBoxOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -10,7 +10,7 @@ import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import type { Project } from "../../../api/realestate";
 import { pillSx } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
-import type { BoardView, RangeBounds } from "../model/board";
+import { factsLine, type BoardView, type ProjectFacts, type RangeBounds } from "../model/board";
 import { formatRange, PRICE_SCALE, type ChessboardPatch } from "../model/useChessboardParams";
 import {
   featureOptions,
@@ -64,55 +64,59 @@ function FilterGroup({ label, children }: { label: string; children: React.React
   );
 }
 
-// ─── KPI ───────────────────────────────────────────────────────────────────
+// ─── Шапка ЖК ──────────────────────────────────────────────────────────────
 
-export function KpiRow({ counts }: { counts: Record<StatusFilter, number> }) {
-  const items: { key: StatusFilter; label: string; color?: (t: Theme) => string }[] = [
-    { key: "all", label: "Квартир в корпусе" },
-    { key: "free", label: "Свободно", color: (t) => statusTone(t, "free").text },
-    { key: "reserved", label: "Забронировано", color: (t) => statusTone(t, "reserved").text },
-    { key: "sold", label: "Продано" },
-  ];
+/**
+ * Шапка шахматки: название ЖК, факты, которых не видно в сетке, и одна полоса
+ * продаж. Счётчики статусов живут только в легенде-фильтре — раньше они
+ * повторялись трижды (плитки, легенда, полоски этажей).
+ */
+export function ProjectSummary({
+  project,
+  facts,
+  sectionNames,
+  counts,
+  status,
+  onChange,
+}: {
+  project: Project;
+  facts: ProjectFacts;
+  sectionNames: string[];
+  counts: Record<StatusFilter, number>;
+  status: StatusFilter;
+  onChange: (patch: ChessboardPatch) => void;
+}) {
+  const share = (n: number) => (counts.all ? Math.round((n / counts.all) * 100) : 0);
+  const part = (n: number) => `${counts.all ? (n / counts.all) * 100 : 0}%`;
   return (
-    <Box
-      component="dl"
-      sx={{ m: 0, mb: 2.25, display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: { xs: 1, md: 1.5 } }}
-    >
-      {items.map((item) => (
-        <Box
-          key={item.key}
-          sx={{
-            position: "relative",
-            minWidth: 0,
-            overflow: "hidden",
-            border: 1,
-            borderColor: "divider",
-            borderRadius: "14px",
-            bgcolor: "background.paper",
-            p: 2,
-            pr: { xs: 11, lg: 16 },
-          }}
-        >
-          <Typography component="dt" noWrap title={item.label} sx={{ fontSize: "0.75rem", fontWeight: 500, color: "text.secondary" }}>
-            {item.label}
+    <Box sx={{ mb: 1.75 }}>
+      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 2.25, rowGap: 1.25 }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography component="h2" sx={{ fontSize: "1.05rem", fontWeight: 700, letterSpacing: "-0.2px" }}>
+            ЖК «{project.name}»
           </Typography>
-          <Typography
-            component="dd"
-            sx={(t) => ({
-              m: 0,
-              mt: 0.6,
-              fontSize: "1.7rem",
-              lineHeight: 1.1,
-              fontWeight: 700,
-              letterSpacing: "-0.8px",
-              fontVariantNumeric: "tabular-nums",
-              color: item.color ? item.color(t) : "text.primary",
-            })}
-          >
-            {counts[item.key]}
-          </Typography>
+          <Typography sx={{ mt: 0.4, fontSize: "0.8125rem", color: "text.secondary" }}>{factsLine(facts, sectionNames)}</Typography>
         </Box>
-      ))}
+        <StatusLegend value={status} counts={counts} onChange={onChange} />
+      </Box>
+      <Box sx={{ mt: 1.5, display: "flex", alignItems: "center", gap: 1.5 }}>
+        <Box
+          role="img"
+          aria-label={`Продано ${share(counts.sold)}%, в брони ${share(counts.reserved)}%, свободно ${share(counts.free)}%`}
+          sx={{ flex: 1, display: "flex", height: 6, overflow: "hidden", borderRadius: 99, bgcolor: "divider" }}
+        >
+          <Box sx={(t) => ({ width: part(counts.sold), bgcolor: statusTone(t, "sold").main })} />
+          <Box sx={(t) => ({ width: part(counts.reserved), bgcolor: statusTone(t, "reserved").main })} />
+          <Box sx={(t) => ({ width: part(counts.free), bgcolor: alpha(statusTone(t, "free").main, 0.35) })} />
+        </Box>
+        <Typography component="span" sx={{ fontSize: "0.75rem", fontWeight: 600, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+          Продано {share(counts.sold)}%
+          <Box component="span" sx={{ fontWeight: 400, color: "text.secondary" }}>
+            {" "}
+            · в брони {share(counts.reserved)}%
+          </Box>
+        </Typography>
+      </Box>
     </Box>
   );
 }
