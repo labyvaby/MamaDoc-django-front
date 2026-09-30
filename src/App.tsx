@@ -173,6 +173,7 @@ const RootRedirect = () => {
     canOpenModule: moduleGate,
     hasActiveEmployee: activeEmployee != null,
     defaultHomeRoute: activeOrganization?.themeConfig?.defaultHomeRoute,
+    vertical: activeOrganization?.vertical,
   });
   return <Navigate to={path} replace />;
 };
