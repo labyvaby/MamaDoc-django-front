@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DjangoProductAttribute, DjangoProductCategoryNode, DjangoUnitOfMeasure } from "../../api/warehouse";
 import {
+  brandOptions,
   buildCategoryOptions,
   draftFromRecognized,
   draftProblem,
@@ -135,6 +136,20 @@ describe("newProductInput", () => {
   it("одна ось в вариантной категории — ещё не вариант", () => {
     expect(isVariantDraft({ ...draft, size: " " }, matrix)).toBe(false);
   });
+
+  it("бренд уходит свойством, пустой — не отправляется (бэк возьмёт бренд поставщика)", () => {
+    expect(newProductInput({ ...emptyDraft("Шарф"), brand: " Zara " }, null)).toMatchObject({ brand: "Zara" });
+    expect(newProductInput({ ...emptyDraft("Шарф"), brand: "  " }, null)).not.toHaveProperty("brand");
+  });
+});
+
+describe("brandOptions", () => {
+  it("значения свойства «Бренд» по алфавиту, без неактивных и без других свойств", () => {
+    const brand = { ...attribute(5, "generic", [["Zara", 0], ["Mango", 1], ["Old", 2, false]]), name: "Бренд" };
+    const material = { ...attribute(6, "generic", [["Хлопок", 0]]), name: "Материал" };
+    expect(brandOptions([material, brand])).toEqual(["Mango", "Zara"]);
+    expect(brandOptions([material])).toEqual([]);
+  });
 });
 
 describe("draftFromRecognized", () => {
@@ -154,6 +169,13 @@ describe("draftFromRecognized", () => {
 
   it("общий у нескольких строк артикул не берёт", () => {
     expect(draftFromRecognized(line, { units, skuIsUnique: false }).sku).toBe("");
+  });
+
+  it("бренд документа берёт уже заведённое написание, новый — как есть", () => {
+    const brands = ["Mango", "Zara"];
+    expect(draftFromRecognized({ ...line, brand: "ZARA" }, { units, skuIsUnique: false, brands }).brand).toBe("Zara");
+    expect(draftFromRecognized({ ...line, brand: " Bershka " }, { units, skuIsUnique: false, brands }).brand).toBe("Bershka");
+    expect(draftFromRecognized(line, { units, skuIsUnique: false, brands }).brand).toBe("");
   });
 
   it("название модели сохраняет бренд и код, а цвет с размером остаются осями", () => {

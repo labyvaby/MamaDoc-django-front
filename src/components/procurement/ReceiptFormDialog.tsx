@@ -78,6 +78,7 @@ import { formatMoney } from "./meta";
 import { NewProductFields } from "./NewProductFields";
 import { RecognitionDetails } from "./RecognitionDetails";
 import {
+  brandOptions,
   buildCategoryOptions,
   draftFromRecognized,
   draftProblem,
@@ -119,6 +120,7 @@ interface FormLine {
     barcode: string | null;
     sku: string | null;
     unit: string | null;
+    brand?: string | null;
     candidates: RecognizedCandidate[];
     matchScore: number | null;
   };
@@ -176,6 +178,7 @@ const recognizedOf = (line: RecognizedLine): NonNullable<FormLine["recognized"]>
   barcode: line.barcode,
   sku: line.sku,
   unit: line.unit,
+  brand: line.brand,
   candidates: line.candidates,
   matchScore: line.match?.score ?? null,
 });
@@ -482,12 +485,17 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
   // ведёт дерево категорий со схемой формы (цвет × размер), клиника —
   // категорию строкой с подсказками уже заведённых значений.
   const directoriesEnabled = open && canCreateProducts;
+  // Свойства нужны и дереву категорий (оси варианта), и подсказкам бренда —
+  // у любой вертикали, не только у розницы.
+  const attributesQuery = useQuery({
+    queryKey: ["django", "procurement", "form-attributes", orgId ?? null],
+    queryFn: ({ signal }) => getProductAttributes(signal, orgId),
+    enabled: directoriesEnabled,
+    staleTime: 60_000,
+  });
   const categoryTreeQuery = useQuery({
-    queryKey: ["django", "procurement", "form-categories", orgId ?? null],
-    queryFn: async ({ signal }) => {
-      const [nodes, attributes] = await Promise.all([getProductCategoryTree(signal, orgId), getProductAttributes(signal, orgId)]);
-      return buildCategoryOptions(nodes, attributes);
-    },
+    queryKey: ["django", "procurement", "form-category-tree", orgId ?? null],
+    queryFn: ({ signal }) => getProductCategoryTree(signal, orgId),
     enabled: directoriesEnabled && isRetail,
     staleTime: 60_000,
   });
@@ -503,7 +511,11 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
     enabled: directoriesEnabled,
     staleTime: 60_000,
   });
-  const categoryOptions = React.useMemo(() => categoryTreeQuery.data ?? [], [categoryTreeQuery.data]);
+  const categoryOptions = React.useMemo(
+    () => (categoryTreeQuery.data && attributesQuery.data ? buildCategoryOptions(categoryTreeQuery.data, attributesQuery.data) : []),
+    [categoryTreeQuery.data, attributesQuery.data],
+  );
+  const brands = React.useMemo(() => brandOptions(attributesQuery.data ?? []), [attributesQuery.data]);
   const categoryById = React.useMemo(() => new Map(categoryOptions.map((option) => [option.id, option])), [categoryOptions]);
   const units = React.useMemo(() => unitsQuery.data ?? [], [unitsQuery.data]);
   // Как в карточке товара: у розницы со справочником категория обязательна.
@@ -589,6 +601,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
     const base = line.recognized
       ? draftFromRecognized(line.recognized, {
           units,
+          brands,
           // Артикул поставщика общий у размеров одной модели — такой не берём.
           skuIsUnique:
             Boolean(line.recognized.sku) &&
@@ -1713,6 +1726,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
                 categories={categoryOptions}
                 legacyCategories={legacyCategoriesQuery.data ?? []}
                 units={units}
+                brands={brands}
                 problem={problemOf(line)}
                 disabled={saving}
               />

@@ -13,6 +13,8 @@ export interface NewProductFieldsProps {
   /** Подсказки к свободной категории — уже заведённые значения (клиника). */
   legacyCategories: string[];
   units: DjangoUnitOfMeasure[];
+  /** Уже заведённые бренды организации — подсказки, чтобы не плодить написания. */
+  brands?: string[];
   /** Текст проблемы черновика или null — см. draftProblem. */
   problem: string | null;
   disabled?: boolean;
@@ -30,6 +32,7 @@ export const NewProductFields: React.FC<NewProductFieldsProps> = ({
   categories,
   legacyCategories,
   units,
+  brands = [],
   problem,
   disabled,
 }) => {
@@ -49,7 +52,7 @@ export const NewProductFields: React.FC<NewProductFieldsProps> = ({
         borderColor: alpha(t.palette.success.main, 0.45),
         bgcolor: alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.08 : 0.04),
         display: "grid",
-        // Три ряда: категория и цена · оси варианта · штрихкод, артикул, единица.
+        // Три ряда: категория, бренд и цена · оси варианта · штрихкод, артикул, единица.
         gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(3, minmax(0, 1fr))" },
         gap: 1,
       })}
@@ -62,7 +65,7 @@ export const NewProductFields: React.FC<NewProductFieldsProps> = ({
           value={draft.categoryId ?? ""}
           disabled={disabled}
           onChange={(e) => onChange({ categoryId: e.target.value === "" ? null : Number(e.target.value) })}
-          sx={{ gridColumn: { xs: "1 / -1", md: "span 2" }, minWidth: 0 }}
+          sx={{ gridColumn: { xs: "1 / -1", md: "span 1" }, minWidth: 0 }}
           SelectProps={{ MenuProps: { PaperProps: { sx: { maxHeight: 360 } } } }}
         >
           <MenuItem value="">
@@ -88,10 +91,28 @@ export const NewProductFields: React.FC<NewProductFieldsProps> = ({
           disabled={disabled}
           onChange={(_, next) => onChange({ category: next ?? "" })}
           onInputChange={(_, next) => onChange({ category: next })}
-          sx={{ gridColumn: { xs: "1 / -1", md: "span 2" }, minWidth: 0 }}
+          sx={{ gridColumn: { xs: "1 / -1", md: "span 1" }, minWidth: 0 }}
           renderInput={(params) => <TextField {...params} label="Категория" />}
         />
       )}
+      <Autocomplete<string, false, false, true>
+        freeSolo
+        size="small"
+        options={brands}
+        value={draft.brand}
+        disabled={disabled}
+        onChange={(_, next) => onChange({ brand: next ?? "" })}
+        onInputChange={(_, next) => onChange({ brand: next })}
+        // Набрали «zara», а «Zara» уже заведена — берём заведённое написание.
+        onBlur={() => {
+          const known = brands.find((b) => b.toLowerCase() === draft.brand.trim().toLowerCase());
+          if (known && known !== draft.brand) onChange({ brand: known });
+        }}
+        sx={{ minWidth: 0 }}
+        renderInput={(params) => (
+          <TextField {...params} label="Бренд" placeholder="Бренд поставщика" InputLabelProps={{ ...params.InputLabelProps, shrink: true }} />
+        )}
+      />
       <TextField
         size="small"
         label="Цена продажи"
