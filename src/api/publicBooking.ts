@@ -372,6 +372,9 @@ export interface ProfessionalReview {
   comment: string;
   /** ISO с таймзоной, напр. "2026-07-20T14:30:00+06:00". */
   date: string;
+  /** Источник публичного отзыва: CRM или внешняя карта. */
+  source?: "crm" | "2gis" | "yandex" | "google" | string;
+  sourceLabel?: string;
 }
 
 /**

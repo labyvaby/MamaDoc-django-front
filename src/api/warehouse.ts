@@ -109,6 +109,12 @@ export type DjangoProduct = {
     updatedAt: string;
 };
 
+export type DjangoProductCost = { productId: number; costPrice: string };
+
+export function getProductCostPrice(productId: number, signal?: AbortSignal): Promise<DjangoProductCost> {
+    return apiRequest<DjangoProductCost>(`/warehouse/products/${productId}/cost/`, { signal });
+}
+
 export type DjangoProductAttributeValue = {
     attributeId: number;
     attributeName: string;
@@ -147,6 +153,8 @@ export type DjangoProductCategoryNode = {
     productCount: number;
     createdAt: string;
     updatedAt: string;
+    markupMultiplier: string | null;
+    markupRoundingStep: number;
 };
 
 export type DjangoProductModel = {
@@ -474,6 +482,8 @@ export function createProductCategory(data: {
     parentId?: number;
     attributeIds?: number[];
     organizationId?: number;
+    markupMultiplier?: string | null;
+    markupRoundingStep?: number;
 }): Promise<DjangoProductCategoryNode> {
     const { organizationId, ...body } = data;
     const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
@@ -485,7 +495,7 @@ export function createProductCategory(data: {
 
 export function updateProductCategory(
     id: number,
-    data: { name?: string; parentId?: number; clearParent?: boolean; attributeIds?: number[]; isActive?: boolean },
+    data: { name?: string; parentId?: number; clearParent?: boolean; attributeIds?: number[]; isActive?: boolean; markupMultiplier?: string | null; markupRoundingStep?: number },
 ): Promise<DjangoProductCategoryNode> {
     return apiRequest<DjangoProductCategoryNode>(`/v2/warehouse/product-categories/${id}/`, {
         method: "PATCH",
@@ -864,6 +874,34 @@ export type WarehouseInventoryDetail = {
     lines: WarehouseInventoryLine[];
 };
 
+export type WarehouseTransferDocument = {
+    id: number;
+    organizationId: number;
+    fromWarehouseId: number;
+    fromWarehouseName: string;
+    toWarehouseId: number;
+    toWarehouseName: string;
+    status: string;
+    comment: string;
+    createdByName: string | null;
+    sentByName: string | null;
+    acceptedByName: string | null;
+    createdAt: string;
+    sentAt: string | null;
+    acceptedAt: string | null;
+    lines: Array<{
+        id: number;
+        productId: number;
+        productName: string;
+        sku: string | null;
+        modelId: number | null;
+        attributes: Array<{ attributeId: number; attributeName: string; role: string; valueId: number; value: string }>;
+        sent: string;
+        received: string | null;
+        shortfall: string | null;
+    }>;
+};
+
 export type WarehouseReprice = {
     id: number;
     organizationId: number;
@@ -970,6 +1008,37 @@ export function cancelWarehouseInventoryCount(id: number, organizationId?: numbe
         method: "POST",
         body: {},
     });
+}
+
+export function getWarehouseTransferDocuments(organizationId?: number, signal?: AbortSignal) {
+    return apiRequest<WarehouseTransferDocument[]>(withQuery("/v2/warehouse/transfer-documents/", { organizationId }), { signal });
+}
+
+export function createWarehouseTransfer(data: {
+    fromWarehouseId: number;
+    toWarehouseId: number;
+    lines: Array<{ productId: number; quantity: string | number }>;
+    comment?: string;
+    organizationId?: number;
+}) {
+    const { organizationId, ...body } = data;
+    return apiRequest<WarehouseTransferDocument>(withQuery("/v2/warehouse/transfer-documents/", { organizationId }), { method: "POST", body });
+}
+
+export function getWarehouseTransferDetail(id: number, organizationId?: number, signal?: AbortSignal) {
+    return apiRequest<WarehouseTransferDocument>(withQuery(`/v2/warehouse/transfer-documents/${id}/`, { organizationId }), { signal });
+}
+
+export function sendWarehouseTransfer(id: number, organizationId?: number) {
+    return apiRequest<WarehouseTransferDocument>(withQuery(`/v2/warehouse/transfer-documents/${id}/send/`, { organizationId }), { method: "POST", body: {} });
+}
+
+export function acceptWarehouseTransfer(id: number, received: Array<{ productId: number; quantity: string }>, organizationId?: number) {
+    return apiRequest<WarehouseTransferDocument>(withQuery(`/v2/warehouse/transfer-documents/${id}/accept/`, { organizationId }), { method: "POST", body: { received } });
+}
+
+export function cancelWarehouseTransfer(id: number, organizationId?: number) {
+    return apiRequest<WarehouseTransferDocument>(withQuery(`/v2/warehouse/transfer-documents/${id}/cancel/`, { organizationId }), { method: "POST", body: {} });
 }
 
 export function getRepriceDocuments(

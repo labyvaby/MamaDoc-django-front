@@ -43,7 +43,7 @@ import { AppBottomSheet, MonthNavigation, PageHeader, ReasonDialog, SegmentedTab
 import { PaymentsList, ReturnsList } from "../../components/procurement/DocumentLists";
 import { ProcurementStatTiles } from "../../components/procurement/ProcurementStatTiles";
 import { ReceiptDetails } from "../../components/procurement/ReceiptDetails";
-import { ReceiptFormDrawer } from "../../components/procurement/ReceiptFormDrawer";
+import { ReceiptFormDialog } from "../../components/procurement/ReceiptFormDialog";
 import { ReceiptHeaderDialog } from "../../components/procurement/ReceiptHeaderDialog";
 import { ReceiptList } from "../../components/procurement/ReceiptList";
 import { SupplierFormDrawer } from "../../components/procurement/SupplierFormDrawer";
@@ -99,6 +99,7 @@ const InvoicesPage: React.FC = () => {
     cancel: can([P.receiptCancel, P.manage]),
     photos: can([P.receiptPhotos, P.manage]),
     recognize: can([P.receiptRecognize, P.manage]),
+    createProducts: can([P.receiptCreateProducts, P.manage]),
     returns: can([P.returnCreate, P.manage]),
     suppliers: can([P.suppliersManage, P.manage]),
     pay: can(P.paymentsManage),
@@ -466,7 +467,7 @@ const InvoicesPage: React.FC = () => {
         </AppBottomSheet>
       )}
 
-      <ReceiptFormDrawer
+      <ReceiptFormDialog
         open={receiptFormOpen}
         onClose={() => setReceiptFormOpen(false)}
         onCreated={(created) => {
@@ -481,6 +482,8 @@ const InvoicesPage: React.FC = () => {
         recognitionEnabled={recognitionEnabled}
         recognitionHint={recognitionHint}
         onCreateSupplier={perms.suppliers ? () => setSupplierForm({ open: true, supplier: null }) : undefined}
+        canCreateProducts={perms.createProducts}
+        foreignCurrency={settings?.foreignCurrency ?? true}
       />
 
       <SupplierReturnDrawer

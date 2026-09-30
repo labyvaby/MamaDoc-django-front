@@ -8,7 +8,7 @@ import type { PosBootstrap, PosTender } from "../../api/pos";
 import { POS_RADIUS, posColors } from "./layout";
 import { PosAmount } from "./ui";
 
-type CheckoutLine = { name: string; quantity: string; total: number };
+type CheckoutLine = { name: string; quantity: string; total: number; discountAmount?: number };
 type CheckoutBenefit = { label: string; value: number; tone?: "discount" | "bonus" | "cashback" | "certificate" };
 const cents = (value: string) => /^\d+(?:[.,]\d{0,2})?$/.test(value) ? Math.round(Number(value.replace(",", ".")) * 100) : NaN;
 const METHOD_LABELS = { cash: "Наличные", card: "Карта", cashless: "QR", split: "Частями" } as const;
@@ -46,7 +46,7 @@ export function CheckoutDialog({ open, due, bootstrap, lines, subtotal, discount
         <Box sx={{ p: { xs: "18px", sm: "22px" }, bgcolor: c.checkArea, borderRight: { md: `1px solid ${c.outline}` }, display: "flex", flexDirection: "column", minWidth: 0 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}><Typography sx={{ fontSize: 14, fontWeight: 800 }}>Оплата</Typography><Typography sx={{ fontSize: 11, color: c.textDim, whiteSpace: "nowrap" }}>{lines.length} товаров · Чек</Typography></Stack>
           <Typography sx={{ mt: "24px", mb: "10px", fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: c.textDim }}>Содержание чека</Typography>
-          <Stack gap="7px" sx={{ overflowY: "auto", minHeight: 0 }}>{lines.map((line, index) => <Stack key={`${line.name}-${index}`} direction="row" justifyContent="space-between" gap={1}><Box sx={{ minWidth: 0 }}><Typography sx={{ fontSize: 12, lineHeight: 1.3, color: c.textSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{line.name}</Typography><Typography sx={{ fontSize: 10, color: c.textDim }}>{line.quantity} шт.</Typography></Box><Typography sx={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}><PosAmount value={line.total} /></Typography></Stack>)}</Stack>
+          <Stack gap="7px" sx={{ overflowY: "auto", minHeight: 0 }}>{lines.map((line, index) => <Stack key={`${line.name}-${index}`} direction="row" justifyContent="space-between" gap={1}><Box sx={{ minWidth: 0 }}><Typography sx={{ fontSize: 12, lineHeight: 1.3, color: c.textSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{line.name}</Typography><Typography sx={{ fontSize: 10, color: c.textDim }}>{line.quantity} шт.{line.discountAmount ? <Box component="span" sx={{ color: c.discount }}> · скидка −{line.discountAmount.toLocaleString("ru-RU")} с</Box> : null}</Typography></Box><Typography sx={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}><PosAmount value={line.total} /></Typography></Stack>)}</Stack>
           <Stack gap="5px" sx={{ mt: "auto", pt: "20px" }}><SummaryRow label="Подытог" value={subtotal} /><SummaryRow label="Скидка" value={discount} negative tone="discount" />{benefits.map((item) => <SummaryRow key={item.label} label={item.label} value={item.value} negative tone={item.tone} />)}<Box sx={{ height: 1, bgcolor: c.hairline, my: "8px" }} /><Stack direction="row" justifyContent="space-between" alignItems="flex-end"><Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: c.textDim }}>К оплате</Typography><Typography sx={{ fontSize: 24, fontWeight: 900 }}><PosAmount value={Number(due)} /></Typography></Stack></Stack>
         </Box>
         <Box sx={{ p: { xs: "18px", sm: "22px" }, minWidth: 0, overflowY: "auto" }}>

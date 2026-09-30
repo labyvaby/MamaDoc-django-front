@@ -69,6 +69,7 @@ import {
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../../api/queryKeys";
 import { formatKGS } from "../../../utility/format";
+import { bonusBranchId, salaryReportBranchId } from "./branchScope";
 
 const DjangoSalaryReportsPage: React.FC = () => {
   const { t } = useT("salaryReports");
@@ -108,11 +109,18 @@ const DjangoSalaryReportsPage: React.FC = () => {
   const month = parsed.month() + 1;
   const selectedMonth = parsed.startOf("month").format("YYYY-MM-DD");
 
-  // Филиальный срез следует за выбранным в сайдбаре филиалом (как остальные
-  // страницы): «Все филиалы» — полный org-wide расчёт (участвует в заморозке),
-  // конкретный филиал — живой срез (приёмы и авансы филиала, без часов СКУД —
-  // у смен нет филиала). Заморозка в срезе недоступна.
-  const branchFilterId = activeBranch?.id ?? undefined;
+  // Филиальный срез следует за выбранным в сайдбаре филиалом: «Все филиалы» —
+  // полный org-wide расчёт (участвует в заморозке), конкретный филиал —
+  // живой срез (приёмы, авансы и часы СКУД филиала). Заморозка в срезе
+  // недоступна. Организация с одним филиалом всегда получает org-wide
+  // отчёт (branchScope.ts).
+  const branchFilterId = salaryReportBranchId(activeBranch?.id, activeOrganization);
+
+  // Премия начисляется в конкретном филиале и не имеет org-wide режима —
+  // в отличие от branchFilterId она следует за активным филиалом сессии
+  // даже в организации с одним филиалом, где branchFilterId — undefined
+  // (branchScope.ts).
+  const activeBonusBranchId = bonusBranchId(activeBranch?.id);
 
   const query = useQuery({
     queryKey: djangoQueryKeys.payroll.report({
@@ -288,7 +296,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
             {canManage && report?.status === "draft" && (
               <Tooltip
                 title={
-                  branchFilterId == null
+                  activeBonusBranchId == null
                     ? t("tooltips.bonusRequiresBranch")
                     : t("tooltips.bonusPerEmployee")
                 }
@@ -297,7 +305,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                   size="small"
                   variant="outlined"
                   color="success"
-                  disabled={branchFilterId == null}
+                  disabled={activeBonusBranchId == null}
                   onClick={() => setBonusDrawerOpen(true)}
                   startIcon={compactHeader ? undefined : <PaidOutlinedIcon />}
                   sx={compactHeader ? { minWidth: "auto", px: 1 } : undefined}
@@ -322,7 +330,9 @@ const DjangoSalaryReportsPage: React.FC = () => {
               </Tooltip>
             )}
             {/* Срез по филиалу — всегда живой расчёт; заморозка (org-wide
-                снимки) доступна только в режиме «Все филиалы». */}
+                снимки) доступна в режиме «Все филиалы», а в организации с
+                одним филиалом — всегда (там отчёт всегда org-wide,
+                branchScope.ts). */}
             {branchFilterId != null && (
               <Tooltip title={t("branchSlice.tooltip")}>
                 <Chip
@@ -752,11 +762,11 @@ const DjangoSalaryReportsPage: React.FC = () => {
           year={year}
           month={month}
           organizationId={report?.organizationId}
-          branchId={branchFilterId}
+          branchId={activeBonusBranchId}
           readOnly={
             !canManage
             || report?.status === "locked"
-            || branchFilterId == null
+            || activeBonusBranchId == null
           }
         />
       )}
@@ -790,7 +800,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
         year={year}
         month={month}
         organizationId={report?.organizationId}
-        branchId={branchFilterId}
+        branchId={activeBonusBranchId}
       />
 
 
