@@ -1884,8 +1884,13 @@ export interface HotelStockLine {
   stockQty: Qty;
 }
 
-export function listIngredients(propertyId: number, signal?: AbortSignal): Promise<HotelIngredient[]> {
-  const qs = buildQuery({ propertyId });
+/** includeInactive — вместе со скрытыми (справочник продуктов на «Кухне»). */
+export function listIngredients(
+  propertyId: number,
+  signal?: AbortSignal,
+  options: { includeInactive?: boolean } = {},
+): Promise<HotelIngredient[]> {
+  const qs = buildQuery({ propertyId, includeInactive: options.includeInactive ? "true" : undefined });
   return apiRequest<HotelIngredient[]>(`/v2/hotel/kitchen/ingredients/${qs}`, { signal });
 }
 
@@ -1914,10 +1919,10 @@ export function updateStock(propertyId: number, lines: HotelStockLine[]): Promis
 
 export function listDishes(
   propertyId: number,
-  options: { meal?: "breakfast" | "lunch" | "dinner" } = {},
+  options: { meal?: "breakfast" | "lunch" | "dinner"; includeInactive?: boolean } = {},
   signal?: AbortSignal,
 ): Promise<HotelDish[]> {
-  const qs = buildQuery({ propertyId, meal: options.meal });
+  const qs = buildQuery({ propertyId, meal: options.meal, includeInactive: options.includeInactive ? "true" : undefined });
   return apiRequest<HotelDish[]>(`/v2/hotel/kitchen/dishes/${qs}`, { signal });
 }
 
