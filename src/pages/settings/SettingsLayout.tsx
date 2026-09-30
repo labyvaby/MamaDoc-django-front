@@ -211,7 +211,7 @@ const TAB_DEFS: TabDef[] = [
     key: "skud",
     to: "/settings/skud",
     icon: <RouterOutlined fontSize="small" />,
-    group: "operations",
+    group: "platform",
   },
   {
     key: "announcements",
@@ -235,33 +235,33 @@ const TAB_DEFS: TabDef[] = [
     key: "notificationGateway",
     to: "/settings/notification-gateway",
     icon: <RouterOutlined fontSize="small" />,
-    group: "operations",
+    group: "platform",
   },
   {
     key: "automations",
     to: "/settings/automations",
     icon: <BoltOutlined fontSize="small" />,
-    group: "operations",
+    group: "platform",
   },
   {
     key: "odoctor",
     to: "/settings/odoctor",
     icon: <StorefrontOutlined fontSize="small" />,
-    group: "operations",
+    group: "platform",
   },
   {
     key: "lab",
     to: "/settings/lab",
     icon: <ScienceOutlined fontSize="small" />,
-    group: "operations",
+    group: "platform",
   },
   {
     key: "chatwoot",
     to: "/settings/chatwoot",
     icon: <ForumOutlined fontSize="small" />,
-    group: "operations",
+    group: "platform",
   },
-  { key: "altegio", to: "/settings/altegio", icon: <RouterOutlined fontSize="small" />, group: "operations" },
+  { key: "altegio", to: "/settings/altegio", icon: <RouterOutlined fontSize="small" />, group: "platform" },
   { key: "modules", to: "/settings/modules", icon: <ExtensionOutlined fontSize="small" />, group: "platform" },
 ];
 
