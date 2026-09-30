@@ -68,3 +68,19 @@ export const sectionSx = {
   borderRadius: "14px",
   bgcolor: "background.paper",
 } as const;
+
+const HEAT_ALPHA = { light: [0.06, 0.14, 0.24, 0.38, 0.55], dark: [0.12, 0.22, 0.34, 0.48, 0.64] } as const;
+
+/**
+ * Тепловая карта цены за м²: одна шкала info от светлого к насыщенному. Не зелёный,
+ * не жёлтый и не серый — они заняты статусами продажи и спутались бы с ними.
+ */
+export function heatTone(t: Theme, step: number) {
+  const alphas = HEAT_ALPHA[t.palette.mode === "dark" ? "dark" : "light"];
+  const a = alphas[Math.max(0, Math.min(alphas.length - 1, step))]!;
+  return {
+    bg: alpha(t.palette.info.main, a),
+    border: alpha(t.palette.info.main, Math.min(1, a + 0.2)),
+    text: t.palette.text.primary,
+  };
+}

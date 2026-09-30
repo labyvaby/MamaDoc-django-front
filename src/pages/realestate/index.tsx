@@ -1,17 +1,18 @@
 import React from "react";
-import { Box, Button, Skeleton, Typography } from "@mui/material";
+import { Box, Button, Skeleton, Typography, useMediaQuery, type Theme } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 
 import { getProjectUnits, getRealEstateProjects, realEstateKeys, type Project, type Unit } from "../../api/realestate";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { autoBoardView, boundsOf, buildBoard, projectFacts, withProjectSections, withUnitLayout } from "./model/board";
+import { autoBoardView, boundsOf, buildBoard, priceScale, projectFacts, withProjectSections, withUnitLayout } from "./model/board";
 import { downloadPriceList } from "./model/priceList";
 import { useChessboardParams } from "./model/useChessboardParams";
 import { countByStatus, hasActiveFilters, matchesUnitFilters } from "./model/units";
 import { Board, CompactNote, FloorGuide } from "./ui/Board";
 import { COMPARE_LIMIT, CompareDialog, SelectionBar } from "./ui/Compare";
-import { BoardToolbar, FilterBar, ProjectSummary, ProjectTabs } from "./ui/Filters";
+import { BoardToolbar, FilterBar, PriceLegend, ProjectSummary, ProjectTabs } from "./ui/Filters";
+import { FloorList } from "./ui/FloorList";
 import { RealEstateToastProvider, useRealEstateToast } from "./ui/toast";
 import { UnitCardDialog } from "./ui/unit-card/UnitCardDialog";
 import { UnitPreview } from "./ui/UnitPreview";
@@ -108,6 +109,9 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
   const counts = React.useMemo(() => countByStatus(units ?? []), [units]);
   const board = React.useMemo(() => (units ? buildBoard(project, units) : null), [project, units]);
   const bounds = React.useMemo(() => (units?.length ? boundsOf(project, units) : null), [project, units]);
+  const scale = React.useMemo(() => priceScale(units ?? []), [units]);
+  // Телефон: сетка шириной в корпус не помещается — этажи списком (брейкпоинт sm темы = 360px, поэтому md).
+  const isPhone = useMediaQuery((t: Theme) => t.breakpoints.down("md"));
   const facts = React.useMemo(() => (units && board ? projectFacts(project, board, units) : null), [project, board, units]);
   const visibleIds = React.useMemo(() => new Set(units?.filter((u) => matchesUnitFilters(u, params)).map((u) => u.id)), [units, params]);
   const selectedIds = React.useMemo(() => new Set(selected), [selected]);
@@ -171,6 +175,7 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
           filters={params}
           bounds={bounds}
           view={view}
+          paint={params.paint}
           canReset={hasActiveFilters(params) || params.status !== "all"}
           search={search}
           searchMatches={matches.length}
@@ -182,20 +187,29 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
           onToggleSelectMode={() => setSelectMode((on) => !on)}
         />
 
-        {view === "compact" && <CompactNote />}
-        <Board
-          project={project}
-          board={board}
-          view={view}
-          isVisible={isVisible}
-          selectedIds={selectedIds}
-          highlightedIds={highlightedIds}
-          selectMode={selectMode}
-          onOpen={openUnit}
-          onToggleSelect={toggleSelect}
-          onPreview={showPreview}
-        />
-        {view === "compact" && <FloorGuide board={board} />}
+        {params.paint === "price" && <PriceLegend scale={scale} />}
+        {isPhone ? (
+          <FloorList project={project} board={board} isVisible={isVisible} paint={params.paint} scale={scale} onOpen={openUnit} />
+        ) : (
+          <>
+            {view === "compact" && params.paint === "status" && <CompactNote />}
+            <Board
+              project={project}
+              board={board}
+              view={view}
+              paint={params.paint}
+              scale={scale}
+              isVisible={isVisible}
+              selectedIds={selectedIds}
+              highlightedIds={highlightedIds}
+              selectMode={selectMode}
+              onOpen={openUnit}
+              onToggleSelect={toggleSelect}
+              onPreview={showPreview}
+            />
+            {view === "compact" && <FloorGuide board={board} />}
+          </>
+        )}
       </Box>
 
       {preview && !params.unitId && <UnitPreview unit={preview.unit} anchor={preview.anchor} />}

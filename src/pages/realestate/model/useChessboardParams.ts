@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router";
-import { boardViews, type BoardView } from "./board";
+import { boardPaints, boardViews, type BoardPaint, type BoardView } from "./board";
 import {
   defaultUnitFilters,
   featureOptions,
@@ -14,12 +14,13 @@ export interface ChessboardParams extends UnitFilters {
   projectId: string | null;
   /** 'auto' — вид выбирается по ширине корпуса. */
   view: BoardView | "auto";
+  paint: BoardPaint;
   unitId: string | null;
 }
 
 export type ChessboardPatch = Partial<
   Record<
-    "project" | "status" | "rooms" | "feature" | "view" | "unit" | "price" | "area" | "floor",
+    "project" | "status" | "rooms" | "feature" | "view" | "paint" | "unit" | "price" | "area" | "floor",
     string | null
   >
 >;
@@ -47,6 +48,7 @@ const defaults: Record<string, string> = {
   rooms: defaultUnitFilters.rooms,
   feature: defaultUnitFilters.feature,
   view: "auto",
+  paint: "status",
 };
 
 /**
@@ -75,6 +77,7 @@ export function useChessboardParams() {
       area: parseRange(searchParams.get("area")),
       floor: parseRange(searchParams.get("floor")),
       view: oneOf<BoardView | "auto">(searchParams.get("view"), [...boardViews, "auto"], "auto"),
+      paint: oneOf(searchParams.get("paint"), boardPaints, "status"),
       unitId: searchParams.get("unit"),
     }),
     [searchParams],

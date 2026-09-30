@@ -10,7 +10,7 @@ import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import type { Project } from "../../../api/realestate";
 import { pillSx } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
-import { factsLine, type BoardView, type ProjectFacts, type RangeBounds } from "../model/board";
+import { factsLine, type BoardPaint, type BoardView, type PriceScale, type ProjectFacts, type RangeBounds } from "../model/board";
 import { formatRange, PRICE_SCALE, type ChessboardPatch } from "../model/useChessboardParams";
 import {
   featureOptions,
@@ -21,7 +21,7 @@ import {
   type StatusFilter,
   type UnitFilters,
 } from "../model/units";
-import { statusTone } from "./tones";
+import { heatTone, statusTone } from "./tones";
 
 /** Переключатель-фильтр: пилюля ряда фильтров ErkinAI, состояние — через aria-pressed. */
 export function Pill({
@@ -310,6 +310,7 @@ export function BoardToolbar({
   filters,
   bounds,
   view,
+  paint,
   canReset,
   search,
   searchMatches,
@@ -323,6 +324,7 @@ export function BoardToolbar({
   filters: UnitFilters;
   bounds: RangeBounds;
   view: BoardView;
+  paint: BoardPaint;
   canReset: boolean;
   search: string;
   searchMatches: number;
@@ -433,24 +435,38 @@ export function BoardToolbar({
         </Box>
       </Box>
 
-      <FilterGroup label="Вид">
-        <Pill active={view === "detailed"} onClick={() => onChange({ view: "detailed" })}>
-          Подробно
+      {/* На телефоне шахматка — список по этажам: вид сетки и выбор нескольких там не работают. */}
+      <Box sx={{ display: { xs: "none", md: "block" } }}>
+        <FilterGroup label="Вид">
+          <Pill active={view === "detailed"} onClick={() => onChange({ view: "detailed" })}>
+            Подробно
+          </Pill>
+          <Pill active={view === "compact"} onClick={() => onChange({ view: "compact" })}>
+            Компактно
+          </Pill>
+        </FilterGroup>
+      </Box>
+
+      <FilterGroup label="Цвет">
+        <Pill active={paint === "status"} onClick={() => onChange({ paint: "status" })}>
+          Статус
         </Pill>
-        <Pill active={view === "compact"} onClick={() => onChange({ view: "compact" })}>
-          Компактно
+        <Pill active={paint === "price"} onClick={() => onChange({ paint: "price" })} title="Свободные квартиры окрашены по цене за м²: светлее — дешевле">
+          Цена за м²
         </Pill>
       </FilterGroup>
 
       <Box sx={{ ml: { md: "auto" }, display: "flex", alignItems: "center", gap: 1 }}>
-        <Pill
-          active={selectMode}
-          onClick={onToggleSelectMode}
-          title="Выбор нескольких квартир для сравнения. Также работает Ctrl+клик."
-          startIcon={selectMode ? <CheckBoxOutlined /> : <CheckBoxOutlineBlankOutlined />}
-        >
-          Выбрать несколько
-        </Pill>
+        <Box sx={{ display: { xs: "none", md: "block" } }}>
+          <Pill
+            active={selectMode}
+            onClick={onToggleSelectMode}
+            title="Выбор нескольких квартир для сравнения. Также работает Ctrl+клик."
+            startIcon={selectMode ? <CheckBoxOutlined /> : <CheckBoxOutlineBlankOutlined />}
+          >
+            Выбрать несколько
+          </Pill>
+        </Box>
         {canReset && (
           <ButtonBase
             onClick={onReset}
@@ -465,6 +481,26 @@ export function BoardToolbar({
             Сбросить фильтры
           </ButtonBase>
         )}
+      </Box>
+    </Box>
+  );
+}
+
+/** Легенда тепловой карты: ступени цены за м², от дешёвых к дорогим. */
+export function PriceLegend({ scale }: { scale: PriceScale }) {
+  if (!scale.ranges.length) return null;
+  const k = (v: number) => Math.round(v / 1000);
+  return (
+    <Box sx={{ mb: 1.5, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, fontSize: "0.72rem", color: "text.secondary" }}>
+      <span>Цена за м², тыс. сом:</span>
+      {scale.ranges.map(([lo, hi], step) => (
+        <Box component="span" key={step} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <Box component="i" sx={(t) => ({ width: 14, height: 14, borderRadius: "4px", border: 1, borderColor: heatTone(t, step).border, bgcolor: heatTone(t, step).bg })} />
+          {k(lo) === k(hi) ? k(lo) : `${k(lo)}–${k(hi)}`}
+        </Box>
+      ))}
+      <Box component="span" sx={{ ml: { md: "auto" } }}>
+        Занятые квартиры приглушены
       </Box>
     </Box>
   );

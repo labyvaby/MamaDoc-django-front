@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { seedProjects as projects, seedUnits as units } from "../../../api/realestate.mocks";
-import { autoBoardView, buildBoard, factsLine, projectFacts } from "./board";
+import { autoBoardView, buildBoard, factsLine, priceScale, projectFacts } from "./board";
 import { priceListCsv } from "./priceList";
 import { parseRange, formatRange, PRICE_SCALE } from "./useChessboardParams";
 
@@ -113,5 +113,29 @@ describe("диапазоны в URL", () => {
   it("перевёрнутый или битый диапазон игнорируется", () => {
     expect(parseRange("9-5")).toBeNull();
     expect(parseRange("abc")).toBeNull();
+  });
+});
+
+describe("priceScale", () => {
+  const withPrice = (pricePerSqm: number) => ({ ...unitsOf("ala")[0]!, pricePerSqm });
+
+  it("пять ступеней по квантилям: дешёвые — 0, дорогие — 4", () => {
+    const scale = priceScale(Array.from({ length: 10 }, (_, i) => withPrice(100_000 + i * 1000)));
+    expect(scale.stepOf(100_000)).toBe(0);
+    expect(scale.stepOf(109_000)).toBe(4);
+    expect(scale.ranges).toHaveLength(5);
+    expect(scale.ranges[0]![0]).toBe(100_000);
+    expect(scale.ranges[4]![1]).toBe(109_000);
+  });
+
+  it("пара дорогих пентхаусов не сбивает шкалу в одну ступень", () => {
+    const units = [...Array.from({ length: 8 }, (_, i) => withPrice(100_000 + i * 500)), withPrice(300_000), withPrice(320_000)];
+    const scale = priceScale(units);
+    const steps = new Set(units.slice(0, 8).map((u) => scale.stepOf(u.pricePerSqm)));
+    expect(steps.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it("без цен — пустая шкала", () => {
+    expect(priceScale([]).ranges).toEqual([]);
   });
 });

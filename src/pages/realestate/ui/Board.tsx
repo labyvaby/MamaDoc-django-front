@@ -8,10 +8,11 @@ import DeckOutlined from "@mui/icons-material/DeckOutlined";
 
 import type { Project, Unit } from "../../../api/realestate";
 import { subtleBg } from "../../../theme/uiHelpers";
-import { floorType, sectionLabel, statsOf, type BoardModel, type BoardView, type FloorStats } from "../model/board";
+import { floorType, sectionLabel, statsOf, type BoardModel, type BoardPaint, type BoardView, type FloorStats, type PriceScale } from "../model/board";
 import { canStartBoardNavigation, moveFocus } from "../model/keyboard";
 import { formatArea, formatRooms, holdLeft, millions, perSqmShort, unitStatusMeta, type HoldLeft } from "../model/units";
-import { statusTone } from "./tones";
+import { useMinuteClock } from "../model/useMinuteClock";
+import { heatTone, statusTone } from "./tones";
 
 export interface CellHandlers {
   /** Клик: открыть карточку. */
@@ -30,21 +31,14 @@ export interface BoardProps extends CellHandlers {
   selectedIds: ReadonlySet<string>;
   highlightedIds: ReadonlySet<string>;
   selectMode: boolean;
+  /** Красить статусом или ценой за м² (тепловая карта). */
+  paint: BoardPaint;
+  scale: PriceScale;
 }
 
 /**
  * Шахматка. Стрелки двигают фокус по квартирам, Enter открывает карточку, пробел — выбирает.
  */
-/** Текущее время с шагом в минуту — таймеры броней на шахматке. */
-function useMinuteClock() {
-  const [now, setNow] = React.useState(() => Date.now());
-  React.useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
-}
-
 export function Board(props: BoardProps) {
   const now = useMinuteClock();
   const [activeId, setActiveId] = React.useState<string | null>(null);
@@ -91,9 +85,10 @@ export function Board(props: BoardProps) {
         const id = (event.target as HTMLElement).dataset.unitId;
         if (id) setActiveId(id);
       }}
-      // overflowX: auto сам по себе делает overflowY: auto — шахматка перехватывала бы колесо
-      // у страницы, поэтому вертикаль явно выключена: по вертикали скроллится страница.
-      sx={{ position: "relative", overflowX: "auto", overflowY: "hidden", pt: 1, pr: 1, pb: 1 }}
+      // Шахматка прокручивается сама и не выше экрана: иначе у высокого ЖК при прокрутке
+      // пропадают подписи корпусов, а при сдвиге вбок — номера этажей (они липкие).
+      // Дойдя до края, колесо переходит к странице.
+      sx={{ position: "relative", overflow: "auto", maxHeight: { md: "calc(100dvh - 140px)" }, pr: 1, pb: 1 }}
     >
       <Box component="p" id="realestate-board-hint" sx={visuallyHidden}>
         Стрелки — переход между квартирами, Enter — открыть карточку, пробел — выбрать для сравнения.
@@ -130,6 +125,7 @@ function cellProps(p: InnerProps, unit: Unit): UnitCellProps {
     tabbable: unit.id === p.tabbableId,
     hold: unit.hold ? holdLeft(unit.hold.endsAt, p.now) : null,
     awaitingPayment: Boolean(unit.hold?.awaitingPayment),
+    priceStep: p.paint === "price" ? p.scale.stepOf(unit.pricePerSqm) : null,
     onOpen: p.onOpen,
     onToggleSelect: p.onToggleSelect,
     onPreview: p.onPreview,
@@ -150,6 +146,10 @@ function StatsBar({ stats, width = "100%", height = 4 }: { stats: FloorStats; wi
 
 const statsTitle = (floor: number, s: FloorStats) =>
   `${floor} этаж: ${s.free} из ${s.total} свободно · бронь ${s.reserved} · продано ${s.sold}`;
+
+/** Липкая шапка и колонка этажей — на фоне бумаги, чтобы ячейки не просвечивали. */
+const stickyTopSx = { position: "sticky", top: 0, zIndex: 3, bgcolor: "background.paper" } as const;
+const stickyLeftSx = { position: "sticky", left: 0, zIndex: 2, bgcolor: "background.paper" } as const;
 
 const floorGridSx = {
   display: "grid",
@@ -178,12 +178,15 @@ function DetailedBoard(p: InnerProps) {
     <Box sx={{ minWidth: 860 }}>
       <Box
         component="p"
-        sx={{ m: 0, mb: 0.5, textAlign: "right", fontSize: "0.7rem", color: "text.secondary", display: { xs: "none", lg: "block" } }}
+        sx={{ m: 0, mt: 1, textAlign: "right", fontSize: "0.7rem", color: "text.secondary", display: { xs: "none", lg: "block" } }}
       >
         ← → ↑ ↓ — по квартирам · Enter — карточка · пробел или Ctrl+клик — к сравнению
       </Box>
-      <Box sx={{ ...floorGridSx, mb: 1, alignItems: "end" }}>
-        <Typography component="span" sx={{ textAlign: "center", fontSize: "0.7rem", fontWeight: 600, color: "text.secondary" }}>
+      <Box sx={{ ...floorGridSx, ...stickyTopSx, mb: 1, pt: 1, alignItems: "end" }}>
+        <Typography
+          component="span"
+          sx={{ ...stickyLeftSx, alignSelf: "stretch", display: "flex", alignItems: "flex-end", justifyContent: "center", fontSize: "0.7rem", fontWeight: 600, color: "text.secondary" }}
+        >
           Этаж
         </Typography>
         <Box sx={{ display: "flex", gap: "7px" }}>
@@ -213,13 +216,15 @@ function DetailedBoard(p: InnerProps) {
             <Box
               title={statsTitle(floor, stats)}
               sx={(t) => ({
+                ...stickyLeftSx,
+                // Полупрозрачная подложка поверх бумаги: под липкой колонкой не просвечивают ячейки.
+                backgroundImage: `linear-gradient(${subtleBg(t, true)}, ${subtleBg(t, true)})`,
                 height: "100%",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
                 borderRadius: "10px",
-                bgcolor: subtleBg(t, true),
                 p: 0.9,
                 color: "text.secondary",
               })}
@@ -267,16 +272,16 @@ function CompactBoard(p: InnerProps) {
         width: "max-content",
         columnGap: { xs: 2, xl: 2.75 },
         rowGap: "5px",
-        px: "5px",
+        pr: "5px",
         pb: 1,
         gridTemplateColumns: `34px repeat(${board.sections.length}, max-content)`,
       }}
     >
-      <div />
+      <Box sx={{ ...stickyTopSx, ...stickyLeftSx, zIndex: 4 }} />
       {board.sections.map((section) => {
         const stats = statsOf(board.floors.flatMap((f) => section.unitsOnFloor(f)));
         return (
-          <Box component="header" key={section.name} sx={{ display: "flex", flexDirection: "column", gap: 0.5, px: 0.25, pt: 0.5, pb: 0.9 }}>
+          <Box component="header" key={section.name} sx={{ ...stickyTopSx, display: "flex", flexDirection: "column", gap: 0.5, px: 0.25, pt: 1, pb: 0.9 }}>
             <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
               <Typography component="span" sx={{ fontSize: "0.8125rem", fontWeight: 700 }}>
                 {sectionLabel(section.name)}
@@ -294,7 +299,7 @@ function CompactBoard(p: InnerProps) {
         const stats = board.floorStats(floor);
         return (
           <React.Fragment key={floor}>
-            <Box title={statsTitle(floor, stats)} sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", gap: 0.25, pr: 0.5 }}>
+            <Box title={statsTitle(floor, stats)} sx={{ ...stickyLeftSx, display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", gap: 0.25, pr: 0.5 }}>
               <Typography component="em" sx={{ fontSize: "0.66rem", fontWeight: 700, fontStyle: "normal", color: "text.secondary" }}>
                 {floor}
               </Typography>
@@ -332,6 +337,8 @@ interface UnitCellProps extends CellHandlers {
   /** Сколько осталось до конца брони; null — не в брони или срок неизвестен. */
   hold: HoldLeft | null;
   awaitingPayment: boolean;
+  /** Ступень тепловой карты цены за м²; null — красим статусом. */
+  priceStep: number | null;
 }
 
 /**
@@ -355,6 +362,7 @@ const UnitCell = React.memo(function UnitCell({
   tabbable,
   hold,
   awaitingPayment,
+  priceStep,
   onOpen,
   onToggleSelect,
   onPreview,
@@ -431,6 +439,9 @@ const UnitCell = React.memo(function UnitCell({
     "&.Mui-focusVisible": { outline: `2px solid ${t.palette.text.primary}`, outlineOffset: 1 },
   });
   const dimmedSx = dimmed ? { pointerEvents: "none", opacity: view === "compact" ? 0.14 : 0.18 } : null;
+  // Тепловая карта красит только свободные: занятые не продать, они уходят на второй план.
+  const heat = priceStep !== null && unit.status === "free" ? priceStep : null;
+  const offHeatSx = priceStep !== null && unit.status !== "free" && !dimmed ? { opacity: 0.4 } : null;
 
   if (view === "compact") {
     return (
@@ -446,11 +457,12 @@ const UnitCell = React.memo(function UnitCell({
             borderRadius: "6px",
             fontSize: "0.8125rem",
             fontWeight: 700,
-            bgcolor: tone.solid,
-            color: tone.solidText,
+            bgcolor: heat === null ? tone.solid : heatTone(t, heat).bg,
+            color: heat === null ? tone.solidText : heatTone(t, heat).text,
             transition: "transform .15s ease",
             "&:hover": { zIndex: 1, transform: "scale(1.12)" },
             ...focusSx(t),
+            ...offHeatSx,
             ...dimmedSx,
             ...ringSx(t, selected, highlighted),
           };
@@ -498,13 +510,14 @@ const UnitCell = React.memo(function UnitCell({
           textAlign: "left",
           fontSize: "0.78rem",
           borderRadius: "9px",
-          border: `${unit.status === "reserved" ? 2 : 1}px solid ${free ? t.palette.divider : tone.border}`,
-          bgcolor: free ? "background.paper" : tone.bg,
-          color: free ? "text.primary" : tone.text,
+          border: `${unit.status === "reserved" ? 2 : 1}px solid ${heat !== null ? heatTone(t, heat).border : free ? t.palette.divider : tone.border}`,
+          bgcolor: heat !== null ? heatTone(t, heat).bg : free ? "background.paper" : tone.bg,
+          color: heat !== null ? heatTone(t, heat).text : free ? "text.primary" : tone.text,
           transition: "transform .15s ease, border-color .15s ease",
           "&:hover": { transform: "translateY(-2px)", borderColor: tone.main },
           ...(isTerrace ? { borderTop: `3px solid ${t.palette.purple.main}` } : null),
           ...focusSx(t),
+          ...offHeatSx,
           ...dimmedSx,
           ...ringSx(t, selected, highlighted),
         };

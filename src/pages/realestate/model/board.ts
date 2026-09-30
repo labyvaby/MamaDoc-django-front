@@ -3,6 +3,38 @@ import type { Project, Unit } from "../../../api/realestate";
 export type BoardView = "detailed" | "compact";
 export const boardViews = ["detailed", "compact"] as const satisfies readonly BoardView[];
 
+/** Чем красить ячейки: статусом продажи или ценой за м² (тепловая карта). */
+export type BoardPaint = "status" | "price";
+export const boardPaints = ["status", "price"] as const satisfies readonly BoardPaint[];
+
+export const PRICE_STEPS = 5;
+
+export interface PriceScale {
+  /** Ступень 0…PRICE_STEPS-1: 0 — самые дешёвые за м². */
+  stepOf: (pricePerSqm: number) => number;
+  /** Границы ступеней, сом/м²: [от, до] для легенды. */
+  ranges: (readonly [number, number])[];
+}
+
+/**
+ * Шкала тепловой карты по квантилям, а не по равным отрезкам: при перекосе
+ * (пара дорогих пентхаусов) линейная шкала красила бы почти всё в одну ступень.
+ */
+export function priceScale(units: Unit[]): PriceScale {
+  const values = units.map((u) => u.pricePerSqm).filter((v) => v > 0).sort((a, b) => a - b);
+  if (!values.length) return { stepOf: () => 0, ranges: [] };
+  const at = (q: number) => values[Math.min(values.length - 1, Math.floor(q * values.length))]!;
+  const cuts = Array.from({ length: PRICE_STEPS - 1 }, (_, i) => at((i + 1) / PRICE_STEPS));
+  const stepOf = (v: number) => {
+    let step = 0;
+    while (step < cuts.length && v >= cuts[step]!) step++;
+    return step;
+  };
+  const edges = [values[0]!, ...cuts, values[values.length - 1]!];
+  const ranges = edges.slice(0, -1).map((lo, i) => [lo, edges[i + 1]!] as const);
+  return { stepOf, ranges };
+}
+
 export interface BoardSection {
   name: string;
   /** Сколько позиций на самом «широком» этаже секции. */
