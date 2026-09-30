@@ -166,16 +166,17 @@ const floorGridSx = {
 } as const;
 
 /**
- * Группа колонок секции. Одинакова в шапке и в каждой строке этажа, поэтому
- * подпись корпуса стоит ровно над своими квартирами, а колонки совпадают по вертикали
- * даже там, где на этаже квартир меньше.
+ * Группа секции. Ширина (`flex`) одинакова в шапке и на каждом этаже — подпись
+ * корпуса стоит ровно над своими квартирами. Внутри группы квартиры этажа, как в
+ * прототипе, делят всю ширину корпуса: на пентхаусном этаже две квартиры
+ * растягиваются, а не жмутся к краю. `cells` — сколько квартир в строке.
  */
-const sectionGroupSx = (columns: number, first: boolean) => (t: Theme) => ({
+const sectionGroupSx = (columns: number, first: boolean, cells = columns) => (t: Theme) => ({
   display: "grid",
   minWidth: 0,
   gap: "7px",
   flex: columns,
-  gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+  gridTemplateColumns: `repeat(${Math.max(1, cells)}, minmax(0, 1fr))`,
   ...(first ? null : { borderLeft: `1px dashed ${alpha(t.palette.text.secondary, 0.4)}`, pl: "7px" }),
 });
 
@@ -255,12 +256,17 @@ function DetailedBoard(p: InnerProps) {
             </Box>
             <Box sx={{ display: "flex", gap: "7px" }}>
               {board.sections.map((section, i) => (
-                <Box key={section.name} sx={sectionGroupSx(section.columns, i === 0)}>
-                  {Array.from({ length: section.columns }, (_, k) => {
-                    const unit = section.unitAt(floor, k + 1);
-                    return unit ? <UnitCell key={unit.id} {...cellProps(p, unit)} /> : <Box key={`empty-${k}`} aria-hidden />;
-                  })}
-                </Box>
+                (() => {
+                  // Корпус без квартир на этаже остаётся пустым местом — соседний не съезжает под чужую подпись.
+                  const units = section.unitsOnFloor(floor);
+                  return (
+                    <Box key={section.name} sx={sectionGroupSx(section.columns, i === 0, units.length)}>
+                      {units.map((unit) => (
+                        <UnitCell key={unit.id} {...cellProps(p, unit)} />
+                      ))}
+                    </Box>
+                  );
+                })()
               ))}
             </Box>
           </Box>
