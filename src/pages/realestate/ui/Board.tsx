@@ -143,33 +143,57 @@ const floorGridSx = {
   gap: 1,
 } as const;
 
-/** Подробная шахматка: строка на этаж, секции разделены пунктиром. */
+/**
+ * Группа колонок секции. Одинакова в шапке и в каждой строке этажа, поэтому
+ * подпись корпуса стоит ровно над своими квартирами, а колонки совпадают по вертикали
+ * даже там, где на этаже квартир меньше.
+ */
+const sectionGroupSx = (columns: number, first: boolean) => (t: Theme) => ({
+  display: "grid",
+  minWidth: 0,
+  gap: "7px",
+  flex: columns,
+  gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+  ...(first ? null : { borderLeft: `1px dashed ${alpha(t.palette.text.secondary, 0.4)}`, pl: "7px" }),
+});
+
+/** Подробная шахматка: строка на этаж, секции — колонками, разделены пунктиром. */
 function DetailedBoard(p: InnerProps) {
   const { project, board } = p;
   return (
     <Box sx={{ minWidth: 860 }}>
-      <Box sx={{ ...floorGridSx, mb: 1, py: 0.75 }}>
+      <Box
+        component="p"
+        sx={{ m: 0, mb: 0.5, textAlign: "right", fontSize: "0.7rem", color: "text.secondary", display: { xs: "none", lg: "block" } }}
+      >
+        ← → ↑ ↓ — по квартирам · Enter — карточка · пробел или Ctrl+клик — к сравнению
+      </Box>
+      <Box sx={{ ...floorGridSx, mb: 1, alignItems: "end" }}>
         <Typography component="span" sx={{ textAlign: "center", fontSize: "0.7rem", fontWeight: 600, color: "text.secondary" }}>
           Этаж
         </Typography>
-        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 2.5, rowGap: 0.5, fontSize: "0.75rem" }}>
-          {board.sections.map((s) => (
-            <Box component="span" key={s.name} sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-              <b>{sectionLabel(s.name)}</b>
-              <Box component="span" sx={(t) => ({ color: statusTone(t, "free").text })}>
-                {s.freeCount} свободно
+        <Box sx={{ display: "flex", gap: "7px" }}>
+          {board.sections.map((s, i) => (
+            <Box key={s.name} sx={sectionGroupSx(s.columns, i === 0)}>
+              <Box
+                component="header"
+                sx={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 0.5, minWidth: 0, pb: 0.5, fontSize: "0.75rem" }}
+              >
+                <Box component="span" sx={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", columnGap: 1 }}>
+                  <b>{sectionLabel(s.name)}</b>
+                  <Box component="span" sx={(t) => ({ color: statusTone(t, "free").text })}>
+                    {s.freeCount} свободно
+                  </Box>
+                </Box>
+                <StatsBar stats={statsOf(board.floors.flatMap((f) => s.unitsOnFloor(f)))} height={3} />
               </Box>
             </Box>
           ))}
-          <Box component="span" sx={{ ml: "auto", fontSize: "0.7rem", color: "text.secondary", display: { xs: "none", lg: "inline" } }}>
-            ← → ↑ ↓ — по квартирам · Enter — карточка · пробел или Ctrl+клик — к сравнению
-          </Box>
         </Box>
       </Box>
 
       {board.floors.map((floor) => {
         const stats = board.floorStats(floor);
-        const groups = board.sections.map((s) => s.unitsOnFloor(floor)).filter((g) => g.length);
         return (
           <Box key={floor} sx={{ ...floorGridSx, mb: 1 }}>
             <Box
@@ -203,21 +227,12 @@ function DetailedBoard(p: InnerProps) {
               </Box>
             </Box>
             <Box sx={{ display: "flex", gap: "7px" }}>
-              {groups.map((units, i) => (
-                <Box
-                  key={i}
-                  sx={(t) => ({
-                    display: "grid",
-                    minWidth: 0,
-                    gap: "7px",
-                    flex: units.length,
-                    gridTemplateColumns: `repeat(${units.length}, minmax(0, 1fr))`,
-                    ...(i > 0 ? { borderLeft: `1px dashed ${alpha(t.palette.text.secondary, 0.4)}`, pl: "7px" } : null),
+              {board.sections.map((section, i) => (
+                <Box key={section.name} sx={sectionGroupSx(section.columns, i === 0)}>
+                  {Array.from({ length: section.columns }, (_, k) => {
+                    const unit = section.unitAt(floor, k + 1);
+                    return unit ? <UnitCell key={unit.id} {...cellProps(p, unit)} /> : <Box key={`empty-${k}`} aria-hidden />;
                   })}
-                >
-                  {units.map((unit) => (
-                    <UnitCell key={unit.id} {...cellProps(p, unit)} />
-                  ))}
                 </Box>
               ))}
             </Box>
@@ -273,9 +288,14 @@ function CompactBoard(p: InnerProps) {
             </Box>
             {board.sections.map((section) => (
               <Box key={section.name} sx={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                {section.unitsOnFloor(floor).map((unit) => (
-                  <UnitCell key={unit.id} {...cellProps(p, unit)} />
-                ))}
+                {Array.from({ length: section.columns }, (_, k) => {
+                  const unit = section.unitAt(floor, k + 1);
+                  return unit ? (
+                    <UnitCell key={unit.id} {...cellProps(p, unit)} />
+                  ) : (
+                    <Box key={`empty-${k}`} aria-hidden sx={{ flexShrink: 0, width: { xs: 32, xl: 36 } }} />
+                  );
+                })}
               </Box>
             ))}
           </React.Fragment>

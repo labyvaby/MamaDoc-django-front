@@ -26,6 +26,23 @@ describe("buildBoard", () => {
     expect(floors[floors.length - 1]).toBe(project.firstResidentialFloor);
   });
 
+  it("этажи и секции без квартир не рисуются", () => {
+    const project = { ...projectById("ala"), sections: ["А", "Б", "В"] };
+    const onlyThird = unitsOf("ala").filter((u) => u.floor === 3);
+    const board = buildBoard(project, onlyThird);
+    expect(board.floors).toEqual([3]);
+    expect(board.sections.map((s) => s.name)).toEqual(["А", "Б"]);
+  });
+
+  it("квартира стоит в своей колонке секции, даже когда на этаже квартир меньше", () => {
+    const board = buildBoard(projectById("ala"), unitsOf("ala"));
+    const [a] = board.sections;
+    // На 14-м этаже Ала-Тоо две квартиры, на 2-м — шесть: колонок у секции столько, сколько на самом широком.
+    expect(a.columns).toBe(3);
+    expect(a.unitAt(14, 1)).toBeDefined();
+    expect(a.unitAt(14, 2)).toBeUndefined();
+  });
+
   it("широкий корпус по умолчанию показывается компактно", () => {
     expect(autoBoardView(buildBoard(projectById("ordo"), unitsOf("ordo")))).toBe("compact");
     expect(autoBoardView(buildBoard(projectById("ala"), unitsOf("ala")))).toBe("detailed");

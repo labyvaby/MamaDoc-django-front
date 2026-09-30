@@ -86,9 +86,14 @@ export function withUnitLayout(project: Project, units: Unit[]): Project {
   };
 }
 
+/**
+ * Этажи и секции без квартир в шахматку не попадают: у ЖК на test2 (30.09.2026)
+ * 5 этажей, а квартиры только на первом — иначе рисуются четыре пустые строки.
+ */
 export function buildBoard(project: Project, units: Unit[]): BoardModel {
+  const occupied = new Set(units.map((u) => u.floor));
   const floors: number[] = [];
-  for (let f = project.floorsCount; f >= project.firstResidentialFloor; f--) floors.push(f);
+  for (let f = project.floorsCount; f >= project.firstResidentialFloor; f--) if (occupied.has(f)) floors.push(f);
 
   const sections = project.sections.map((name): BoardSection => {
     const sectionUnits = units.filter((u) => u.section === name);
@@ -101,7 +106,7 @@ export function buildBoard(project: Project, units: Unit[]): BoardModel {
       unitsOnFloor: (floor) =>
         sectionUnits.filter((u) => u.floor === floor).sort((a, b) => a.position - b.position),
     };
-  });
+  }).filter((section) => section.columns > 0);
 
   return {
     floors,
