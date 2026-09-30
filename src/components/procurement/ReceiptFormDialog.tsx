@@ -188,7 +188,38 @@ const LINE_COLUMNS = "minmax(0, 1fr) 104px 124px 132px 32px";
 /** Поля шапки раскладываются сами по ширине колонки — и в модалке с превью, и без. */
 const FIELD_GRID = "repeat(auto-fill, minmax(220px, 1fr))";
 
-const RECOGNITION_STAGES = ["Сканируем документ и читаем текст…", "Находим поставщика, номер и дату…", "Сопоставляем товары со складом…"];
+/**
+ * Этапы разбора накладной и секунда, с которой каждый начинается. Сервер
+ * отвечает одним запросом, так что это не отчёт о его шагах, а честная по
+ * порядку подсказка: этапы идут только вперёд, последний держится, пока
+ * ответа нет, — по кругу они не бегают. Тайминги — по типичной накладной
+ * (10–40 с); длинная многостраничная просто дольше стоит на последнем.
+ */
+const RECOGNITION_STAGES: Array<{ label: string; from: number }> = [
+  { label: "Загружаем снимок…", from: 0 },
+  { label: "Сканируем документ и читаем текст…", from: 2 },
+  { label: "Находим поставщика, номер и дату…", from: 7 },
+  { label: "Читаем позиции: названия, количество, цены…", from: 13 },
+  { label: "Перепроверяем строки и итоги…", from: 24 },
+  { label: "Сопоставляем товары со складом…", from: 36 },
+  { label: "Почти готово — собираем форму…", from: 48 },
+];
+
+/** Этап по прошедшему времени: последний, чей порог уже пройден. */
+const recognitionStageAt = (seconds: number): number =>
+  RECOGNITION_STAGES.reduce((stage, item, index) => (seconds >= item.from ? index : stage), 0);
+
+/** Потолок процента, пока сервер не ответил: 100% — только когда ответ уже есть. */
+const RECOGNITION_PERCENT_CAP = 97;
+
+/**
+ * Процент по прошедшему времени: быстро в начале и всё медленнее к концу —
+ * 30 с ≈ 65%, 60 с ≈ 88%, дальше подползает к потолку, но не достигает
+ * его. Точным он не бывает (сервер не сообщает прогресс), зато не стоит на
+ * месте и не показывает «готово» раньше времени.
+ */
+const recognitionPercentAt = (seconds: number): number =>
+  Math.min(RECOGNITION_PERCENT_CAP, Math.floor(RECOGNITION_PERCENT_CAP * (1 - Math.exp(-seconds / 28))));
 
 const scanLine = keyframes`
   0% { top: 0%; opacity: 0; }
@@ -477,7 +508,12 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
   const [error, setError] = React.useState<string | null>(null);
 
   const [recognizing, setRecognizing] = React.useState(false);
-  const [recognitionStage, setRecognitionStage] = React.useState(0);
+  /** Сколько секунд идёт разбор — от него этап и процент. */
+  const [recognitionSeconds, setRecognitionSeconds] = React.useState(0);
+  /** Ответ уже пришёл: коротко показываем 100% и только потом открываем форму. */
+  const [recognitionDone, setRecognitionDone] = React.useState(false);
+  const recognitionStage = recognitionDone ? RECOGNITION_STAGES.length - 1 : recognitionStageAt(recognitionSeconds);
+  const recognitionPercent = recognitionDone ? 100 : recognitionPercentAt(recognitionSeconds);
   const [recognition, setRecognition] = React.useState<RecognitionResult | null>(null);
   const [recognitionError, setRecognitionError] = React.useState<string | null>(null);
   const [closeConfirmOpen, setCloseConfirmOpen] = React.useState(false);
@@ -502,12 +538,13 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
 
   React.useEffect(() => {
     if (!recognizing) {
-      setRecognitionStage(0);
+      setRecognitionSeconds(0);
       return undefined;
     }
-    const timer = window.setInterval(() => {
-      setRecognitionStage((stage) => (stage + 1) % 3);
-    }, 2200);
+    // От реального времени, а не от числа тиков: фоновая вкладка тикает
+    // редко, и счётчик тиков отставал бы от того, сколько человек ждёт.
+    const started = Date.now();
+    const timer = window.setInterval(() => setRecognitionSeconds((Date.now() - started) / 1000), 250);
     return () => window.clearInterval(timer);
   }, [recognizing]);
 
@@ -1022,10 +1059,13 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
       return;
     }
     setScanPreview({ url: URL.createObjectURL(file), isPdf: isPdfFile(file) });
-    setRecognitionStage(0);
+    setRecognitionDone(false);
     setRecognizing(true);
     try {
       const result = await recognizeReceiptPhoto(file, scope);
+      // 100% — только теперь, когда ответ есть; полсекунды, чтобы его увидели.
+      setRecognitionDone(true);
+      await new Promise((resolve) => window.setTimeout(resolve, 500));
       applyRecognition(result);
     } catch (e) {
       if (e instanceof ApiError && e.code === "RECOGNITION_DISABLED") {
@@ -1037,6 +1077,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
       }
     } finally {
       setRecognizing(false);
+      setRecognitionDone(false);
       setScanPreview(null);
       // И удачно, и с ошибкой — дальше работа идёт в полной форме, файл уже приложен.
       setMode("form");
@@ -1257,19 +1298,27 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           >
             <AutoAwesomeRounded sx={{ fontSize: 28 }} />
           </Box>
-          <Box sx={{ minWidth: 0 }}>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
             <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
-              AI разбирает накладную…
+              {recognitionDone ? "Готово — открываем форму" : "AI разбирает накладную…"}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Обычно это 10–40 секунд. Форма откроется уже заполненной.
+              {recognitionSeconds >= 60 && !recognitionDone
+                ? "Большая накладная — читаем дольше обычного, осталось немного."
+                : "Обычно это 10–40 секунд. Форма откроется уже заполненной."}
             </Typography>
           </Box>
+          <Typography
+            aria-live="polite"
+            sx={{ fontWeight: 800, fontSize: { xs: "1.4rem", md: "1.75rem" }, fontVariantNumeric: "tabular-nums", color: "primary.main", flexShrink: 0 }}
+          >
+            {recognitionPercent}%
+          </Typography>
         </Stack>
         <Stack spacing={1}>
-          {RECOGNITION_STAGES.map((label, index) => {
-            const done = index < recognitionStage;
-            const current = index === recognitionStage;
+          {RECOGNITION_STAGES.map(({ label }, index) => {
+            const done = recognitionDone || index < recognitionStage;
+            const current = !recognitionDone && index === recognitionStage;
             return (
               <Stack key={label} direction="row" spacing={1.25} alignItems="center">
                 <Box
@@ -1296,7 +1345,11 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
             );
           })}
         </Stack>
-        <LinearProgress sx={{ borderRadius: 1, height: 6 }} />
+        <LinearProgress
+          variant="determinate"
+          value={recognitionPercent}
+          sx={{ borderRadius: 1, height: 8, "& .MuiLinearProgress-bar": { transition: "transform .4s linear" } }}
+        />
       </Stack>
     </Box>
   );
@@ -1583,7 +1636,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           </Typography>
           <Typography variant="caption" color="text.secondary">
             {recognizing
-              ? RECOGNITION_STAGES[recognitionStage]
+              ? `${recognitionPercent}% · ${recognitionDone ? "Готово" : RECOGNITION_STAGES[recognitionStage].label}`
               : recognition
                 ? `${recognition.totals.linesCount} поз., сопоставлено ${recognition.totals.matchedCount} · итого ${recognition.document.total ?? recognition.totals.linesTotal} ${recognition.document.currency ?? ""} · уверенность ${Math.round(recognition.confidence * 100)}%`
                 : recognitionEnabled
@@ -1602,7 +1655,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           {recognition ? "Ещё файл" : "Фото / PDF"}
         </Button>
       </Stack>
-      {recognizing && <LinearProgress sx={{ mt: 1.5, borderRadius: 1, height: 5 }} />}
+      {recognizing && <LinearProgress variant="determinate" value={recognitionPercent} sx={{ mt: 1.5, borderRadius: 1, height: 5 }} />}
       {recognitionError && (
         <Alert severity="warning" sx={{ mt: 1.5 }} onClose={() => setRecognitionError(null)}>
           {recognitionError}
