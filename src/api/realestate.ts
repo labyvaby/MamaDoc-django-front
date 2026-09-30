@@ -507,13 +507,21 @@ export function fromRawUnit(raw: RawUnit, layoutCode = ""): Unit {
   };
 }
 
-/** Место внутри секции: от самой левой оси секции по всему корпусу. */
+/**
+ * Место внутри секции — от самой левой квартиры секции на том же этаже.
+ * Считать от оси всего корпуса нельзя: у сужающихся этажей (как в прототипе,
+ * ЖК «Северный квартал» на test2 30.09.2026) `slot` нумеруется заново на
+ * каждом этаже, и корпус 2 на 10-м этаже начинается с места 3, а на 7-м — с 5:
+ * квартиры съезжали вправо, оставляя пустые колонки. Пропуски внутри этажа
+ * (квартира 1 и 4 — между ними две пустые) сохраняются.
+ */
 export function withSectionPositions(units: Unit[]): Unit[] {
+  const key = (unit: Unit) => `${unit.section}|${unit.floor}`;
   const firstAxis = new Map<string, number>();
   for (const unit of units) {
-    firstAxis.set(unit.section, Math.min(firstAxis.get(unit.section) ?? Infinity, unit.axis));
+    firstAxis.set(key(unit), Math.min(firstAxis.get(key(unit)) ?? Infinity, unit.axis));
   }
-  return units.map((unit) => ({ ...unit, position: unit.axis - (firstAxis.get(unit.section) ?? 1) + 1 }));
+  return units.map((unit) => ({ ...unit, position: unit.axis - (firstAxis.get(key(unit)) ?? 1) + 1 }));
 }
 
 function fromRawReservation(raw: RawReservation): Reservation {

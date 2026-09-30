@@ -100,6 +100,18 @@ describe("переходники realty → модель шахматки", () =
     expect(units.map((u) => u.axis)).toEqual([1, 4, 5, 8]);
   });
 
+  it("сужающиеся этажи: корпус 2 начинается с первой колонки на каждом этаже", () => {
+    // Как «Северный квартал» из прототипа: на 7-м этаже 8 квартир (корпус 2 — места 5–8),
+    // на 10-м — 4 (корпус 2 — места 3–4). Раньше корпус 2 на 7-м этаже съезжал на 2 колонки.
+    const units = withSectionPositions([
+      fromRawUnit(rawUnit(3075, "Корпус 2", 7, 5)),
+      fromRawUnit(rawUnit(3078, "Корпус 2", 7, 8)),
+      fromRawUnit(rawUnit(3103, "Корпус 2", 10, 3)),
+      fromRawUnit(rawUnit(3104, "Корпус 2", 10, 4)),
+    ]);
+    expect(units.map((u) => `${u.floor}:${u.position}`)).toEqual(["7:1", "7:4", "10:1", "10:2"]);
+  });
+
   it("секции и первый этаж ЖК достраиваются по квартирам", () => {
     const units = withSectionPositions([
       fromRawUnit(rawUnit(53, "Б", 2, 5)),
