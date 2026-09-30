@@ -1,10 +1,13 @@
 import { Box, Popper, Typography } from "@mui/material";
+import dayjs from "dayjs";
 import { alpha, type Theme } from "@mui/material/styles";
 
 import type { Unit } from "../../../api/realestate";
+import { useT } from "../../../i18n/VerticalProvider";
 import { subtleBg } from "../../../theme/uiHelpers";
+import { sectionLabel } from "../model/board";
 import { roomKind } from "../model/unitCard";
-import { formatMoney, formatRooms, outdoorLabel, unitStatusMeta } from "../model/units";
+import { formatArea, formatMoney, formatRooms, outdoorLabel, unitStatusMeta } from "../model/units";
 import { statusTone } from "./tones";
 
 /** Плитки комнат на схемах: кухня — акцент, санузлы — info, прихожая — нейтральная. */
@@ -20,12 +23,13 @@ export function roomTileSx(t: Theme, name: string) {
 
 /** Всплывающий предпросмотр квартиры у ячейки шахматки: без открытия карточки. */
 export function UnitPreview({ unit, anchor }: { unit: Unit; anchor: HTMLElement }) {
+  const { t } = useT("realestate");
   const status = unitStatusMeta[unit.status];
   const tags = [
-    unit.outdoor && `${outdoorLabel[unit.outdoor.type]} ${unit.outdoor.area} м²`,
-    unit.hasPanoramicWindows && "Панорамные окна",
-    unit.isCorner && "Угловая",
-    `Потолки ${unit.ceilingHeight} м`,
+    unit.outdoor && t("fmt.outdoorArea", { kind: outdoorLabel(unit.outdoor.type), area: unit.outdoor.area }),
+    unit.hasPanoramicWindows && t("filters.feature.panoramic"),
+    unit.isCorner && t("preview.corner"),
+    t("preview.ceiling", { value: unit.ceilingHeight }),
   ].filter((tag): tag is string => Boolean(tag));
 
   return (
@@ -46,7 +50,7 @@ export function UnitPreview({ unit, anchor }: { unit: Unit; anchor: HTMLElement 
           borderRadius: "14px",
           bgcolor: "background.paper",
           color: "text.primary",
-          boxShadow: (t) => t.shadows[4],
+          boxShadow: (t) => t.shadows[2],
         }}
       >
         <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 1 }}>
@@ -55,7 +59,7 @@ export function UnitPreview({ unit, anchor }: { unit: Unit; anchor: HTMLElement 
               №{unit.number} · {formatRooms(unit.rooms)}
             </Typography>
             <Typography component="span" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-              {unit.floor} этаж · секция {unit.section} · {unit.orientation}
+              {t("preview.place", { floor: unit.floor, section: sectionLabel(unit.section), orientation: unit.orientation })}
             </Typography>
           </div>
           <Box
@@ -80,12 +84,18 @@ export function UnitPreview({ unit, anchor }: { unit: Unit; anchor: HTMLElement 
             {formatMoney(unit.price)}
           </Typography>
           <Typography component="span" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-            {formatMoney(unit.pricePerSqm)} / м²
+            {t("preview.perSqm", { value: formatMoney(unit.pricePerSqm) })}
           </Typography>
         </Box>
         <Typography sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-          Общая {unit.totalArea} м² · жилая {unit.livingArea} м²
+          {t("preview.areas", { total: formatArea(unit.totalArea), living: formatArea(unit.livingArea) })}
         </Typography>
+        {unit.hold?.endsAt && (
+          <Typography sx={{ mt: 0.75, fontSize: "0.72rem", fontWeight: 600, color: "warning.onSurface" }}>
+            {t("preview.holdUntil", { date: dayjs(unit.hold.endsAt).format("DD.MM, HH:mm") })}
+            {unit.hold.awaitingPayment ? ` · ${t("cell.awaitingPaymentLower")}` : ""}
+          </Typography>
+        )}
 
         {/* Схема: плитки комнат пропорциональны площади. */}
         <Box sx={{ mt: 1.25, display: "flex", flexWrap: "wrap", gap: 0.5, p: 0.75, border: 1, borderColor: "divider", borderRadius: "10px" }}>
@@ -110,7 +120,7 @@ export function UnitPreview({ unit, anchor }: { unit: Unit; anchor: HTMLElement 
               <Box component="b" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {room.name}
               </Box>
-              <span>{room.area} м²</span>
+              <span>{formatArea(room.area)}</span>
             </Box>
           ))}
         </Box>
@@ -136,7 +146,7 @@ export function UnitPreview({ unit, anchor }: { unit: Unit; anchor: HTMLElement 
         </Box>
 
         <Typography sx={{ mt: 1, fontSize: "0.66rem", color: "text.secondary" }}>
-          Клик — карточка · Ctrl+клик или пробел — к сравнению
+          {t("preview.hint")}
         </Typography>
       </Box>
     </Popper>

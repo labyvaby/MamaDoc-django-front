@@ -1,20 +1,12 @@
 import type { Project, Unit } from "../../../api/realestate";
+import { tt } from "../../../i18n/t";
 import { formatRooms, outdoorLabel, unitStatusMeta } from "./units";
+
+const COLUMNS = ["number", "section", "floor", "type", "area", "price", "pricePerSqm", "status", "orientation", "outdoor"] as const;
 
 /** Прайс-лист корпуса в CSV (разделитель «;» — так Excel открывает его без мастера импорта). */
 export function priceListCsv(units: Unit[]) {
-  const header = [
-    "Номер",
-    "Секция",
-    "Этаж",
-    "Тип",
-    "Площадь, м²",
-    "Цена, сом",
-    "Цена за м², сом",
-    "Статус",
-    "Сторона света",
-    "Балкон / терраса",
-  ];
+  const header = COLUMNS.map((column) => tt(`realestate:priceList.${column}`));
   const rows = units
     .slice()
     .sort((a, b) => b.floor - a.floor || a.axis - b.axis)
@@ -29,7 +21,7 @@ export function priceListCsv(units: Unit[]) {
       unitStatusMeta[u.status].label,
       u.orientation,
       u.outdoor
-        ? `${outdoorLabel[u.outdoor.type]} ${String(u.outdoor.area).replace(".", ",")}`
+        ? `${outdoorLabel(u.outdoor.type)} ${String(u.outdoor.area).replace(".", ",")}`
         : "",
     ]);
   const escape = (value: string | number) => {

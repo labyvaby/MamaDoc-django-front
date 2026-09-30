@@ -37,17 +37,18 @@ import { formatDateRu } from "../../utility/format";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { AppBottomSheet, ConfirmDialog } from "../../components/ui";
 import {
-  PDF_LINK_TITLE,
   deleteKnowledgeArticle,
   getKnowledgeArticle,
   getKnowledgeCategories,
   getKnowledgeSeries,
+  isSafeImageUrl,
   partLabel,
   splitCover,
   updateKnowledgeArticle,
   type KnowledgeArticlePayload,
 } from "../../api/knowledge";
-import { pdfCardStyles } from "./pdfCard";
+import { attachmentKindOf } from "./attachmentTypes";
+import { FILE_CARD_SELECTOR, fileCardLabel, fileCardStyles } from "./fileCard";
 import ArticleEditorDrawer from "./ArticleEditorDrawer";
 import ArticleLightbox from "./ArticleLightbox";
 import { SeriesFooterNav, SeriesHeader } from "./SeriesNav";
@@ -62,7 +63,7 @@ interface TocItem {
 
 /**
  * Извлекает оглавление из h2/h3 контента и проставляет им id для якорей;
- * попутно готовит к показу PDF-вложения (ссылки с меткой title="pdf").
+ * попутно готовит к показу файлы-вложения (ссылки с меткой title="pdf"/"file").
  */
 function processArticleHtml(html: string): { html: string; toc: TocItem[] } {
   if (typeof DOMParser === "undefined") return { html, toc: [] };
@@ -75,11 +76,27 @@ function processArticleHtml(html: string): { html: string; toc: TocItem[] } {
     if (text) toc.push({ id, text, level: el.tagName === "H2" ? 2 : 3 });
   });
   // Файл открывается в новой вкладке: уходить со статьи на просмотр PDF
-  // (и терять прочитанное место) незачем. target бэк не сохраняет — ставим тут.
-  doc.body.querySelectorAll(`a[title="${PDF_LINK_TITLE}"]`).forEach((el) => {
+  // (и терять прочитанное место) незачем. target бэк не сохраняет — ставим тут,
+  // как и метку формата для карточки (data-ext, см. fileCard.ts).
+  doc.body.querySelectorAll(FILE_CARD_SELECTOR).forEach((el) => {
+    const href = el.getAttribute("href") ?? "";
     el.setAttribute("target", "_blank");
     el.setAttribute("rel", "noopener noreferrer");
-    if (!(el.textContent ?? "").trim()) el.textContent = "Файл PDF";
+    el.setAttribute("data-ext", fileCardLabel(el.getAttribute("title"), href));
+    if (!(el.textContent ?? "").trim()) el.textContent = "Файл";
+    // Аудио и видео слушают/смотрят прямо в статье: плеер собираем здесь, а
+    // храним по-прежнему ссылку — <audio>/<video> санитайзер бэка не пропускает.
+    // Карточка остаётся под плеером: подпись файла и способ скачать его.
+    const kind = attachmentKindOf(href);
+    if ((kind === "audio" || kind === "video") && isSafeImageUrl(href)) {
+      const player = doc.createElement(kind);
+      player.setAttribute("src", href);
+      player.setAttribute("controls", "");
+      player.setAttribute("preload", "metadata");
+      if (kind === "video") player.setAttribute("playsinline", "");
+      player.className = "article-media";
+      el.parentNode?.insertBefore(player, el);
+    }
   });
   // Каждую таблицу — в свой горизонтальный скроллер. Без него таблица в четыре
   // колонки распирала статью на телефоне, и вся страница начинала ездить влево-
@@ -530,8 +547,17 @@ const ArticleViewPage: React.FC = () => {
                 overflowX: "auto",
               },
               "& a": { color: "primary.main" },
-              // PDF-вложение — карточка с меткой формата (см. pdfCard.ts).
-              [`& a[title="${PDF_LINK_TITLE}"]`]: pdfCardStyles(theme),
+              // Файл-вложение — карточка с меткой формата (см. fileCard.ts).
+              [`& :is(${FILE_CARD_SELECTOR})`]: fileCardStyles(theme),
+              // Плеер аудио/видео над карточкой файла (см. processArticleHtml).
+              "& .article-media": {
+                display: "block",
+                width: "100%",
+                maxWidth: 720,
+                mt: 1.5,
+                borderRadius: 1.5,
+              },
+              "& video.article-media": { bgcolor: "common.black" },
               // Картинка открывается на весь экран (ArticleLightbox): в базе
               // знаний половина иллюстраций — сфотографированные памятки, и в
               // колонке шириной в телефон надписи на них не разобрать.

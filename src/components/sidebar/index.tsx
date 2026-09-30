@@ -7,6 +7,7 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  Skeleton,
   Stack,
   Tooltip,
   Typography,
@@ -18,7 +19,6 @@ import {
   DialogContentText,
   DialogActions,
   Button,
-  Skeleton,
 } from "@mui/material";
 import Backdrop from "@mui/material/Backdrop";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -371,7 +371,7 @@ function useHasVisibleSettingsTab(): boolean {
 }
 
 /**
- * Меню по вертикали — одно место вместо проверок «это отель?» в каждом бейдже.
+ * Меню по вертикали — одно место вместо проверок «это отель?» / «это застройщик?» в каждом бейдже.
  * У отеля (Viva) клиничное меню SidebarSecondary не монтируется вовсе, а с ним
  * и его запросы: сводка задач, лист ожидания, записи клиники, Chatwoot, СКУД.
  * Новый клиничный бейдж отелю грузить не начнёт. Пока /auth/me/ не ответил и
@@ -382,6 +382,7 @@ const SidebarNav: React.FC = () => {
   const { activeOrganization, loading } = usePermissions();
   if (loading) return <SidebarMenuSkeleton />;
   if (activeOrganization?.vertical === "hotel") return <HotelSidebarMenu />;
+  if (activeOrganization?.vertical === "realestate") return <RealEstateSidebarMenu />;
   return <SidebarSecondary />;
 };
 
@@ -463,6 +464,77 @@ const HotelSidebarMenu: React.FC = () => {
   );
 };
 
+/**
+ * Застройщик: одно плоское меню без клиничных групп «Моя работа /
+ * Организация» — отдел продаж работает в шахматке, воронке и задачах, а
+ * справочное (сотрудники, настройки) — отдельной секцией «Компания».
+ * Каждый пункт — своим правом или модулем: выключенный у организации модуль
+ * прячет пункт сам.
+ */
+const RealEstateSidebarMenu: React.FC = () => {
+  const { t } = useT("sidebar");
+  const { siderCollapsed } = useThemedLayoutContext();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const { can } = useCanChecker();
+  const { moduleGate } = useModuleGate();
+  const canSettings = useHasVisibleSettingsTab();
+  const orgId = useApiOrgId();
+
+  const canChessboard = moduleGate("realty");
+  const canDeals = DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals);
+  const canTasks = can(PAGE_PERMISSIONS.tasks);
+  const canBuyers = can(PAGE_PERMISSIONS.patients);
+  const canChats = can(PAGE_PERMISSIONS.chats);
+  const canKnowledge = moduleGate("knowledge");
+  const canEmployees = can(PAGE_PERMISSIONS.employees);
+  const canExpenses = can(PAGE_PERMISSIONS.expenses);
+
+  // Бейдж «Задачи» — тот же запрос и ключ, что в клиничном меню (кэш общий):
+  // открытые задачи филиала, красный — если есть просроченные.
+  const tasksSummary = useQuery({
+    queryKey: djangoQueryKeys.tasks.summary(orgId),
+    queryFn: ({ signal }) => getTasksSummary(orgId, signal),
+    enabled: canTasks,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+  }).data;
+  const tasksBadgeCount = (tasksSummary?.new ?? 0) + (tasksSummary?.inProgress ?? 0) + (tasksSummary?.awaitingApproval ?? 0);
+  const tasksBadgeColor: "error" | "primary" = (tasksSummary?.overdue ?? 0) > 0 ? "error" : "primary";
+
+  const sectionLabel = (text: string) =>
+    siderCollapsed && !isMobile ? (
+      <Box sx={{ mx: 1.5, my: 1, borderTop: 1, borderColor: "divider" }} />
+    ) : (
+      <Typography
+        sx={{ px: 2, pt: 2, pb: 0.75, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary" }}
+      >
+        {text}
+      </Typography>
+    );
+
+  return (
+    <List sx={{ py: 0, mt: 0.5 }}>
+      {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
+      {canDeals && <SidebarMenuItem to="/deals" icon={<FilterAltOutlined />} label="Воронка продаж" collapsed={siderCollapsed} />}
+      {canTasks && (
+        <SidebarMenuItem to="/tasks" icon={<AssignmentOutlined />} label="Задачи" collapsed={siderCollapsed} badgeCount={tasksBadgeCount} badgeColor={tasksBadgeColor} />
+      )}
+      {canBuyers && <SidebarMenuItem to="/patients" icon={<SearchOutlined />} label={t("allPatients")} collapsed={siderCollapsed} />}
+      {canChats && <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />}
+      {canKnowledge && <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />}
+
+      {(canEmployees || canExpenses || canSettings) && sectionLabel("Компания")}
+      {canEmployees && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />}
+      {canExpenses && <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />}
+      {canSettings && (
+        <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
+      )}
+    </List>
+  );
+};
+
 // Extra static sections: mimic the provided design with many items
 const SidebarSecondary: React.FC = () => {
   const { t } = useT("sidebar");
@@ -532,7 +604,7 @@ const SidebarSecondary: React.FC = () => {
     deals: DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals),
     expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
-    realestate: moduleGate("realestate"),
+    realestate: moduleGate("realty"),
     achievements: can(PAGE_PERMISSIONS.achievements),
     // ОРГАНИЗАЦИЯ
     employees: can(PAGE_PERMISSIONS.employees),
@@ -903,7 +975,7 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
-        {/* Квартиры и шахматка застройщика (модуль realestate, пока на моках) */}
+        {/* Квартиры и шахматка застройщика (модуль бэка realty) */}
         {show("my-work") && can_.realestate && (
           <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />
         )}

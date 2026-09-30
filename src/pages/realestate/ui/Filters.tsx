@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, ButtonBase, InputBase, Slider, Typography } from "@mui/material";
-import { alpha, useTheme, type Theme } from "@mui/material/styles";
+import { alpha } from "@mui/material/styles";
 import CheckBoxOutlineBlankOutlined from "@mui/icons-material/CheckBoxOutlineBlankOutlined";
 import CheckBoxOutlined from "@mui/icons-material/CheckBoxOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -8,20 +8,21 @@ import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 
 import type { Project } from "../../../api/realestate";
+import { useT } from "../../../i18n/VerticalProvider";
 import { pillSx } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
-import type { BoardView, RangeBounds } from "../model/board";
+import { factsLine, type BoardPaint, type BoardView, type PriceScale, type ProjectFacts, type RangeBounds } from "../model/board";
 import { formatRange, PRICE_SCALE, type ChessboardPatch } from "../model/useChessboardParams";
 import {
   featureOptions,
   roomsOptions,
   statusOptions,
-  unitStatusMeta,
+  type HoldFilter,
   type NumberRange,
   type StatusFilter,
   type UnitFilters,
 } from "../model/units";
-import { statusTone } from "./tones";
+import { heatTone, statusTone } from "./tones";
 
 /** Переключатель-фильтр: пилюля ряда фильтров ErkinAI, состояние — через aria-pressed. */
 export function Pill({
@@ -64,86 +65,61 @@ function FilterGroup({ label, children }: { label: string; children: React.React
   );
 }
 
-// ─── KPI ───────────────────────────────────────────────────────────────────
+// ─── Шапка ЖК ──────────────────────────────────────────────────────────────
 
 /**
- * Демо-тренды за 8 недель (0…1), как в прототипе.
- * Реальная динамика придёт с бэкенда, когда появится история статусов.
+ * Шапка шахматки: название ЖК, факты, которых не видно в сетке, и одна полоса
+ * продаж. Счётчики статусов живут только в легенде-фильтре — раньше они
+ * повторялись трижды (плитки, легенда, полоски этажей).
  */
-const trends: Record<StatusFilter, number[]> = {
-  all: [1, 0.73, 0.45, 0.19, 0.16, 0, 0, 0.79],
-  free: [0.06, 0, 0.05, 0.34, 0.58, 0.86, 0.79, 1],
-  reserved: [1, 0.7, 0.51, 0.22, 0.07, 0, 0.02, 0.91],
-  sold: [0, 0.28, 0.09, 0.64, 0.53, 1, 0.9, 0.78],
-};
-
-function Sparkline({ values }: { values: number[] }) {
-  const theme = useTheme();
-  const step = 120 / (values.length - 1);
-  const points = values.map((v, i) => `${(i * step).toFixed(1)},${(32 - v * 28).toFixed(1)}`);
-  const color = theme.palette.primary.main;
+export function ProjectSummary({
+  project,
+  facts,
+  sectionNames,
+  counts,
+  status,
+  onChange,
+}: {
+  project: Project;
+  facts: ProjectFacts;
+  sectionNames: string[];
+  counts: Record<StatusFilter, number>;
+  status: StatusFilter;
+  onChange: (patch: ChessboardPatch) => void;
+}) {
+  const { t } = useT("realestate");
+  const share = (n: number) => (counts.all ? Math.round((n / counts.all) * 100) : 0);
+  const part = (n: number) => `${counts.all ? (n / counts.all) * 100 : 0}%`;
+  const shares = { sold: share(counts.sold), reserved: share(counts.reserved), free: share(counts.free) };
   return (
-    <Box
-      component="svg"
-      aria-hidden
-      viewBox="0 0 120 36"
-      preserveAspectRatio="none"
-      sx={{ position: "absolute", top: 12, right: 14, height: { xs: 26, lg: 32 }, width: { xs: 74, lg: 104 } }}
-    >
-      <polygon points={`0,36 ${points.join(" ")} 120,36`} fill={color} opacity=".12" />
-      <polyline points={points.join(" ")} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
-    </Box>
-  );
-}
-
-export function KpiRow({ counts }: { counts: Record<StatusFilter, number> }) {
-  const items: { key: StatusFilter; label: string; color?: (t: Theme) => string }[] = [
-    { key: "all", label: "Квартир в корпусе" },
-    { key: "free", label: "Свободно", color: (t) => statusTone(t, "free").text },
-    { key: "reserved", label: "Забронировано", color: (t) => statusTone(t, "reserved").text },
-    { key: "sold", label: "Продано" },
-  ];
-  return (
-    <Box
-      component="dl"
-      sx={{ m: 0, mb: 2.25, display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: { xs: 1, md: 1.5 } }}
-    >
-      {items.map((item) => (
-        <Box
-          key={item.key}
-          sx={{
-            position: "relative",
-            minWidth: 0,
-            overflow: "hidden",
-            border: 1,
-            borderColor: "divider",
-            borderRadius: "14px",
-            bgcolor: "background.paper",
-            p: 2,
-            pr: { xs: 11, lg: 16 },
-          }}
-        >
-          <Typography component="dt" noWrap title={item.label} sx={{ fontSize: "0.75rem", fontWeight: 500, color: "text.secondary" }}>
-            {item.label}
+    <Box sx={{ mb: 1.75 }}>
+      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 2.25, rowGap: 1.25 }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography component="h2" sx={{ fontSize: "1.05rem", fontWeight: 700, letterSpacing: "-0.2px" }}>
+            {t("project.name", { name: project.name })}
           </Typography>
-          <Typography
-            component="dd"
-            sx={(t) => ({
-              m: 0,
-              mt: 0.6,
-              fontSize: "1.7rem",
-              lineHeight: 1.1,
-              fontWeight: 700,
-              letterSpacing: "-0.8px",
-              fontVariantNumeric: "tabular-nums",
-              color: item.color ? item.color(t) : "text.primary",
-            })}
-          >
-            {counts[item.key]}
-          </Typography>
-          <Sparkline values={trends[item.key]} />
+          <Typography sx={{ mt: 0.4, fontSize: "0.8125rem", color: "text.secondary" }}>{factsLine(facts, sectionNames)}</Typography>
         </Box>
-      ))}
+        <StatusLegend value={status} counts={counts} onChange={onChange} />
+      </Box>
+      <Box sx={{ mt: 1.5, display: "flex", alignItems: "center", gap: 1.5 }}>
+        <Box
+          role="img"
+          aria-label={t("summary.barLabel", shares)}
+          sx={{ flex: 1, display: "flex", height: 6, overflow: "hidden", borderRadius: 99, bgcolor: "divider" }}
+        >
+          <Box sx={(t) => ({ width: part(counts.sold), bgcolor: statusTone(t, "sold").main })} />
+          <Box sx={(t) => ({ width: part(counts.reserved), bgcolor: statusTone(t, "reserved").main })} />
+          <Box sx={(t) => ({ width: part(counts.free), bgcolor: alpha(statusTone(t, "free").main, 0.35) })} />
+        </Box>
+        <Typography component="span" sx={{ fontSize: "0.75rem", fontWeight: 600, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+          {t("summary.sold", shares)}
+          <Box component="span" sx={{ fontWeight: 400, color: "text.secondary" }}>
+            {" "}
+            {t("summary.reserved", shares)}
+          </Box>
+        </Typography>
+      </Box>
     </Box>
   );
 }
@@ -159,24 +135,28 @@ export function ProjectTabs({
   projects: Project[];
   activeId: string;
   onSelect: (projectId: string) => void;
-  onExport: () => void;
+  /** Нет квартир — нечего выгружать, кнопку не показываем. */
+  onExport?: () => void;
 }) {
+  const { t } = useT("realestate");
   return (
     <Box sx={{ mb: 2, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
-      <Box role="group" aria-label="Жилой комплекс" sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+      <Box role="group" aria-label={t("project.groupLabel")} sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
         {projects.map((project) => (
           <Pill key={project.id} active={project.id === activeId} onClick={() => onSelect(project.id)}>
-            ЖК «{project.name}»
+            {t("project.name", { name: project.name })}
           </Pill>
         ))}
       </Box>
-      <ButtonBase
-        onClick={onExport}
-        sx={(t) => ({ ...pillSx(t, false), ml: "auto", gap: 0.75, "& .MuiSvgIcon-root": { fontSize: 16 } })}
-      >
-        <FileDownloadOutlined />
-        Выгрузить цены
-      </ButtonBase>
+      {onExport && (
+        <ButtonBase
+          onClick={onExport}
+          sx={(t) => ({ ...pillSx(t, false), ml: "auto", gap: 0.75, "& .MuiSvgIcon-root": { fontSize: 16 } })}
+        >
+          <FileDownloadOutlined />
+          {t("toolbar.exportPrices")}
+        </ButtonBase>
+      )}
     </Box>
   );
 }
@@ -192,8 +172,9 @@ export function StatusLegend({
   counts: Record<StatusFilter, number>;
   onChange: (patch: ChessboardPatch) => void;
 }) {
+  const { t } = useT("realestate");
   return (
-    <Box role="group" aria-label="Статус" sx={{ ml: { md: "auto" }, display: "flex", flexWrap: "wrap", gap: 0.75 }}>
+    <Box role="group" aria-label={t("filters.statusLabel")} sx={{ ml: { md: "auto" }, display: "flex", flexWrap: "wrap", gap: 0.75 }}>
       {statusOptions.map((status) => (
         <Pill
           key={status}
@@ -211,22 +192,29 @@ export function StatusLegend({
             />
           }
         >
-          {status === "all" ? "Все" : unitStatusMeta[status].short} {counts[status]}
+          {t(`statusShort.${status}`)} {counts[status]}
         </Pill>
       ))}
     </Box>
   );
 }
 
+/** Подписи — `realestate:filters.hold.<значение>` и `.<значение>Hint`. */
+const holdPills = ["today", "unpaid"] as const satisfies readonly Exclude<HoldFilter, "all">[];
+
 export function FilterBar({
   filters,
   foundCount,
+  holdCounts,
   onChange,
 }: {
   filters: UnitFilters;
   foundCount: number;
+  holdCounts: Record<Exclude<HoldFilter, "all">, number>;
   onChange: (patch: ChessboardPatch) => void;
 }) {
+  const { t } = useT("realestate");
+  const hasHolds = holdCounts.today + holdCounts.unpaid > 0 || filters.hold !== "all";
   return (
     <Box
       sx={{
@@ -241,22 +229,36 @@ export function FilterBar({
         pb: 2,
       }}
     >
-      <FilterGroup label="Комнаты">
-        {roomsOptions.map(([value, label]) => (
+      <FilterGroup label={t("filters.roomsLabel")}>
+        {roomsOptions.map((value) => (
           <Pill key={value} active={filters.rooms === value} onClick={() => onChange({ rooms: value })}>
-            {label}
+            {t(`filters.rooms.${value}`)}
           </Pill>
         ))}
       </FilterGroup>
-      <FilterGroup label="Особенности">
-        {featureOptions.map(([value, label]) => (
+      <FilterGroup label={t("filters.featureLabel")}>
+        {featureOptions.map((value) => (
           <Pill key={value} active={filters.feature === value} onClick={() => onChange({ feature: value })}>
-            {label}
+            {t(`filters.feature.${value}`)}
           </Pill>
         ))}
       </FilterGroup>
+      {hasHolds && (
+        <FilterGroup label={t("filters.holdLabel")}>
+          {holdPills.map((value) => (
+            <Pill
+              key={value}
+              active={filters.hold === value}
+              title={t(`filters.hold.${value}Hint`)}
+              onClick={() => onChange({ hold: filters.hold === value ? null : value })}
+            >
+              {t(`filters.hold.${value}`)} {holdCounts[value]}
+            </Pill>
+          ))}
+        </FilterGroup>
+      )}
       <Typography aria-live="polite" sx={{ ml: { md: "auto" }, fontSize: "0.75rem", fontWeight: 600, color: "text.secondary" }}>
-        Найдено: {foundCount}
+        {t("filters.found", { count: foundCount })}
       </Typography>
     </Box>
   );
@@ -285,6 +287,7 @@ function RangeSlider({
   onChange: (value: NumberRange | null) => void;
   width: number;
 }) {
+  const { t } = useT("realestate");
   const [min, max] = bounds;
   const [draft, setDraft] = React.useState<NumberRange>(value ?? bounds);
   // Значение сменилось снаружи (сброс фильтров, «назад» в браузере) — подтягиваем бегунки.
@@ -315,7 +318,7 @@ function RangeSlider({
         step={step}
         value={[draft[0], draft[1]]}
         disableSwap
-        getAriaLabel={(i) => `${label}: ${i === 0 ? "от" : "до"}`}
+        getAriaLabel={(i) => t(i === 0 ? "toolbar.rangeFrom" : "toolbar.rangeTo", { label })}
         getAriaValueText={format}
         onChange={(_, next) => {
           const [from, to] = next as number[];
@@ -337,6 +340,7 @@ export function BoardToolbar({
   filters,
   bounds,
   view,
+  paint,
   canReset,
   search,
   searchMatches,
@@ -350,6 +354,7 @@ export function BoardToolbar({
   filters: UnitFilters;
   bounds: RangeBounds;
   view: BoardView;
+  paint: BoardPaint;
   canReset: boolean;
   search: string;
   searchMatches: number;
@@ -360,6 +365,7 @@ export function BoardToolbar({
   onSearchSubmit: () => void;
   onToggleSelectMode: () => void;
 }) {
+  const { t } = useT("realestate");
   const searchRef = React.useRef<HTMLInputElement>(null);
 
   // «/» — быстрый переход к поиску по номеру, как в большинстве таблиц.
@@ -389,7 +395,7 @@ export function BoardToolbar({
       }}
     >
       <RangeSlider
-        label="Цена, млн"
+        label={t("toolbar.price")}
         bounds={bounds.price}
         value={filters.price}
         step={100_000}
@@ -398,7 +404,7 @@ export function BoardToolbar({
         width={200}
       />
       <RangeSlider
-        label="Площадь, м²"
+        label={t("toolbar.area")}
         bounds={bounds.area}
         value={filters.area}
         step={1}
@@ -407,7 +413,7 @@ export function BoardToolbar({
         width={200}
       />
       <RangeSlider
-        label="Этаж"
+        label={t("toolbar.floor")}
         bounds={bounds.floor}
         value={filters.floor}
         step={1}
@@ -418,7 +424,7 @@ export function BoardToolbar({
 
       <Box component="label" sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
         <Typography component="span" sx={groupLabelSx}>
-          № квартиры
+          {t("toolbar.searchLabel")}
         </Typography>
         <Box
           sx={(t) => ({
@@ -438,8 +444,8 @@ export function BoardToolbar({
           <InputBase
             inputRef={searchRef}
             type="search"
-            inputProps={{ inputMode: "numeric", "aria-label": "Найти квартиру по номеру" }}
-            placeholder="Например, 1142"
+            inputProps={{ inputMode: "numeric", "aria-label": t("toolbar.searchAria") }}
+            placeholder={t("toolbar.searchPlaceholder")}
             value={search}
             onChange={(e) => onSearch(e.target.value.replace(/\D/g, ""))}
             onKeyDown={(e) => {
@@ -454,30 +460,44 @@ export function BoardToolbar({
               aria-live="polite"
               sx={{ fontSize: "0.7rem", whiteSpace: "nowrap", color: searchMatches ? "text.secondary" : "error.main" }}
             >
-              {searchMatches ? `${searchMatches} найдено` : "нет"}
+              {searchMatches ? t("toolbar.searchFound", { count: searchMatches }) : t("toolbar.searchNone")}
             </Typography>
           )}
         </Box>
       </Box>
 
-      <FilterGroup label="Вид">
-        <Pill active={view === "detailed"} onClick={() => onChange({ view: "detailed" })}>
-          Подробно
+      {/* На телефоне шахматка — список по этажам: вид сетки и выбор нескольких там не работают. */}
+      <Box sx={{ display: { xs: "none", md: "block" } }}>
+        <FilterGroup label={t("toolbar.viewLabel")}>
+          <Pill active={view === "detailed"} onClick={() => onChange({ view: "detailed" })}>
+            {t("toolbar.viewDetailed")}
+          </Pill>
+          <Pill active={view === "compact"} onClick={() => onChange({ view: "compact" })}>
+            {t("toolbar.viewCompact")}
+          </Pill>
+        </FilterGroup>
+      </Box>
+
+      <FilterGroup label={t("toolbar.paintLabel")}>
+        <Pill active={paint === "status"} onClick={() => onChange({ paint: "status" })}>
+          {t("toolbar.paintStatus")}
         </Pill>
-        <Pill active={view === "compact"} onClick={() => onChange({ view: "compact" })}>
-          Компактно
+        <Pill active={paint === "price"} onClick={() => onChange({ paint: "price" })} title={t("toolbar.paintPriceHint")}>
+          {t("toolbar.paintPrice")}
         </Pill>
       </FilterGroup>
 
       <Box sx={{ ml: { md: "auto" }, display: "flex", alignItems: "center", gap: 1 }}>
-        <Pill
-          active={selectMode}
-          onClick={onToggleSelectMode}
-          title="Выбор нескольких квартир для сравнения. Также работает Ctrl+клик."
-          startIcon={selectMode ? <CheckBoxOutlined /> : <CheckBoxOutlineBlankOutlined />}
-        >
-          Выбрать несколько
-        </Pill>
+        <Box sx={{ display: { xs: "none", md: "block" } }}>
+          <Pill
+            active={selectMode}
+            onClick={onToggleSelectMode}
+            title={t("toolbar.selectManyHint")}
+            startIcon={selectMode ? <CheckBoxOutlined /> : <CheckBoxOutlineBlankOutlined />}
+          >
+            {t("toolbar.selectMany")}
+          </Pill>
+        </Box>
         {canReset && (
           <ButtonBase
             onClick={onReset}
@@ -489,9 +509,30 @@ export function BoardToolbar({
             })}
           >
             <CloseOutlined />
-            Сбросить фильтры
+            {t("toolbar.reset")}
           </ButtonBase>
         )}
+      </Box>
+    </Box>
+  );
+}
+
+/** Легенда тепловой карты: ступени цены за м², от дешёвых к дорогим. */
+export function PriceLegend({ scale }: { scale: PriceScale }) {
+  const { t } = useT("realestate");
+  if (!scale.ranges.length) return null;
+  const k = (v: number) => Math.round(v / 1000);
+  return (
+    <Box sx={{ mb: 1.5, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, fontSize: "0.72rem", color: "text.secondary" }}>
+      <span>{t("legend.priceTitle")}</span>
+      {scale.ranges.map(([lo, hi], step) => (
+        <Box component="span" key={step} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <Box component="i" sx={(t) => ({ width: 14, height: 14, borderRadius: "4px", border: 1, borderColor: heatTone(t, step).border, bgcolor: heatTone(t, step).bg })} />
+          {k(lo) === k(hi) ? k(lo) : `${k(lo)}–${k(hi)}`}
+        </Box>
+      ))}
+      <Box component="span" sx={{ ml: { md: "auto" } }}>
+        {t("legend.priceMuted")}
       </Box>
     </Box>
   );

@@ -132,7 +132,6 @@ import {
 } from "../../api/conclusionFormData";
 import {
   PRESET_COLUMNS,
-  frequentDiagnoses,
   historyDiagnoses,
   mergeManual,
   planPresetTexts,
@@ -156,7 +155,6 @@ import {
   findReplacementSlot,
   isServiceLineGoneError,
   getDiagnoses,
-  getFrequentDiagnoses,
   uploadConclusionPhoto,
   getConclusionTemplates,
   createConclusionTemplate,
@@ -239,15 +237,15 @@ const EMPTY_VALUES: Record<string, string> = {};
 const FORM_COLUMN_WIDTH = 560;
 
 // ── лист рядом с формой: выбор врача помним в браузере ─────────────────────────
-// По умолчанию лист открыт: ради него дровер и стал шире. Кто его скрыл —
-// тому он не нужен и при следующем открытии.
+// По умолчанию лист скрыт (30.09.2026): форма важнее. Кто его открыл —
+// тому он нужен и при следующем открытии.
 const SHEET_PREF_KEY = "mamadoc:conclusion-sheet";
 
 function readSheetPref(): boolean {
   try {
-    return window.localStorage.getItem(SHEET_PREF_KEY) !== "0";
+    return window.localStorage.getItem(SHEET_PREF_KEY) === "1";
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -879,21 +877,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     selectedDiagnoses.map((d) => d.code),
   );
 
-  // «Частые у меня» — топ кодов врача по его заключениям. Считает бэк по
-  // текущему пользователю; без карточки сотрудника ответ пустой, до выкладки
-  // ручки — 404: в обоих случаях строки просто нет.
-  const frequentQuery = useQuery({
-    queryKey: djangoQueryKeys.diagnoses.frequent(defaultsOrgId),
-    queryFn: ({ signal }) => getFrequentDiagnoses({}, signal),
-    enabled: open && !readOnly,
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-    retry: false,
-  });
-  const frequentDx = frequentDiagnoses(frequentQuery.data ?? [], [
-    ...selectedDiagnoses.map((d) => d.code),
-    ...historyDx.map((d) => d.code),
-  ]);
-  /** Чип «добавить диагноз в один клик» — общий для истории и частых. */
+  /** Чип «добавить диагноз в один клик» из истории пациента. */
   const quickDiagnosisChip = (
     dx: { code: string; title: string },
     hint: string,
@@ -1147,29 +1131,6 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 code: dx.code,
                 title: dx.title,
                 displayName: "",
-                isActive: true,
-                sortOrder: 0,
-              },
-            ),
-          )}
-        </Stack>
-      )}
-      {/* Частые коды самого врача — рутину (осмотр, ОРВИ) не ищут в каталоге. */}
-      {!readOnly && frequentDx.length > 0 && (
-        <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ pt: 0.25 }}>
-          <Typography variant="caption" color="text.secondary">
-            {t("conclusion.frequentDiagnoses")}
-          </Typography>
-          {frequentDx.map((dx) =>
-            quickDiagnosisChip(
-              dx,
-              `${dx.code} — ${dx.title}\n${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
-              // Ручка отдаёт запись активного каталога — берём её как есть.
-              catalog.find((c) => c.id === dx.id) ?? {
-                id: dx.id,
-                code: dx.code,
-                title: dx.title,
-                displayName: dx.displayName ?? "",
                 isActive: true,
                 sortOrder: 0,
               },

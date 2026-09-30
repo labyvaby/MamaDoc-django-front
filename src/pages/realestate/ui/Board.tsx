@@ -1,14 +1,22 @@
 import React from "react";
-import { Box, ButtonBase, Typography } from "@mui/material";
+import { Box, ButtonBase, IconButton, Tooltip, Typography } from "@mui/material";
 import { alpha, type Theme } from "@mui/material/styles";
+import BalconyOutlined from "@mui/icons-material/BalconyOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
+import SendOutlined from "@mui/icons-material/SendOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import DeckOutlined from "@mui/icons-material/DeckOutlined";
 
 import type { Project, Unit } from "../../../api/realestate";
+import { useT } from "../../../i18n/VerticalProvider";
+import { tt } from "../../../i18n/t";
 import { subtleBg } from "../../../theme/uiHelpers";
-import { floorType, statsOf, type BoardModel, type BoardView, type FloorStats } from "../model/board";
+import { floorType, sectionLabel, statsOf, type BoardModel, type BoardPaint, type BoardView, type FloorStats, type PriceScale } from "../model/board";
 import { canStartBoardNavigation, moveFocus } from "../model/keyboard";
-import { formatArea, formatRooms, millions, unitStatusMeta } from "../model/units";
-import { statusTone } from "./tones";
+import { formatArea, formatRooms, holdLeft, millions, perSqmShort, unitStatusMeta, type HoldLeft } from "../model/units";
+import { useMinuteClock } from "../model/useMinuteClock";
+import { heatTone, statusTone } from "./tones";
 
 export interface CellHandlers {
   /** Клик: открыть карточку. */
@@ -19,6 +27,8 @@ export interface CellHandlers {
   onPreview: (unit: Unit | null, anchor?: HTMLElement) => void;
 }
 
+export type QuickAction = "reserve" | "proposal";
+
 export interface BoardProps extends CellHandlers {
   project: Project;
   board: BoardModel;
@@ -27,12 +37,19 @@ export interface BoardProps extends CellHandlers {
   selectedIds: ReadonlySet<string>;
   highlightedIds: ReadonlySet<string>;
   selectMode: boolean;
+  /** Красить статусом или ценой за м² (тепловая карта). */
+  paint: BoardPaint;
+  scale: PriceScale;
+  /** Быстрые действия при наведении; undefined — нет права на команды. */
+  onQuickAction?: (unitId: string, action: QuickAction) => void;
 }
 
 /**
  * Шахматка. Стрелки двигают фокус по квартирам, Enter открывает карточку, пробел — выбирает.
  */
 export function Board(props: BoardProps) {
+  const { t } = useT("realestate");
+  const now = useMinuteClock();
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const firstVisible = props.board.floors.flatMap((f) => props.board.unitsOnFloor(f)).find(props.isVisible);
   const tabbableId = activeId ?? firstVisible?.id ?? null;
@@ -68,7 +85,7 @@ export function Board(props: BoardProps) {
         hoveredIdRef.current = null;
       }}
       role="region"
-      aria-label="Шахматка, этажи сверху вниз"
+      aria-label={t("board.regionLabel")}
       aria-describedby="realestate-board-hint"
       onKeyDown={(event: React.KeyboardEvent<HTMLDivElement>) => {
         if (moveFocus(event.currentTarget, event.key)) event.preventDefault();
@@ -77,17 +94,18 @@ export function Board(props: BoardProps) {
         const id = (event.target as HTMLElement).dataset.unitId;
         if (id) setActiveId(id);
       }}
-      // overflowX: auto сам по себе делает overflowY: auto — шахматка перехватывала бы колесо
-      // у страницы, поэтому вертикаль явно выключена: по вертикали скроллится страница.
-      sx={{ position: "relative", overflowX: "auto", overflowY: "hidden", pt: 1, pr: 1, pb: 1 }}
+      // Шахматка прокручивается сама и не выше экрана: иначе у высокого ЖК при прокрутке
+      // пропадают подписи корпусов, а при сдвиге вбок — номера этажей (они липкие).
+      // Дойдя до края, колесо переходит к странице.
+      sx={{ position: "relative", overflow: "auto", maxHeight: { md: "calc(100dvh - 140px)" }, pr: 1, pb: 1 }}
     >
       <Box component="p" id="realestate-board-hint" sx={visuallyHidden}>
-        Стрелки — переход между квартирами, Enter — открыть карточку, пробел — выбрать для сравнения.
+        {t("board.keyboardHelp")}
       </Box>
       {props.view === "compact" ? (
-        <CompactBoard {...props} tabbableId={tabbableId} />
+        <CompactBoard {...props} tabbableId={tabbableId} now={now} />
       ) : (
-        <DetailedBoard {...props} tabbableId={tabbableId} />
+        <DetailedBoard {...props} tabbableId={tabbableId} now={now} />
       )}
     </Box>
   );
@@ -103,7 +121,7 @@ const visuallyHidden = {
   whiteSpace: "nowrap",
 } as const;
 
-type InnerProps = BoardProps & { tabbableId: string | null };
+type InnerProps = BoardProps & { tabbableId: string | null; now: number };
 
 function cellProps(p: InnerProps, unit: Unit): UnitCellProps {
   return {
@@ -114,6 +132,11 @@ function cellProps(p: InnerProps, unit: Unit): UnitCellProps {
     highlighted: p.highlightedIds.has(unit.id),
     selectMode: p.selectMode,
     tabbable: unit.id === p.tabbableId,
+    hold: unit.hold ? holdLeft(unit.hold.endsAt, p.now) : null,
+    awaitingPayment: Boolean(unit.hold?.awaitingPayment),
+    priceStep: p.paint === "price" ? p.scale.stepOf(unit.pricePerSqm) : null,
+    // В режиме выбора клик по ячейке — выбор, кнопки поверх только мешали бы.
+    onQuickAction: p.selectMode ? undefined : p.onQuickAction,
     onOpen: p.onOpen,
     onToggleSelect: p.onToggleSelect,
     onPreview: p.onPreview,
@@ -132,8 +155,11 @@ function StatsBar({ stats, width = "100%", height = 4 }: { stats: FloorStats; wi
   );
 }
 
-const statsTitle = (floor: number, s: FloorStats) =>
-  `${floor} этаж: ${s.free} из ${s.total} свободно · бронь ${s.reserved} · продано ${s.sold}`;
+const statsTitle = (floor: number, s: FloorStats) => tt("realestate:board.floorStats", { floor, ...s });
+
+/** Липкая шапка и колонка этажей — на фоне бумаги, чтобы ячейки не просвечивали. */
+const stickyTopSx = { position: "sticky", top: 0, zIndex: 3, bgcolor: "background.paper" } as const;
+const stickyLeftSx = { position: "sticky", left: 0, zIndex: 2, bgcolor: "background.paper" } as const;
 
 const floorGridSx = {
   display: "grid",
@@ -141,45 +167,76 @@ const floorGridSx = {
   gap: 1,
 } as const;
 
-/** Подробная шахматка: строка на этаж, секции разделены пунктиром. */
+/**
+ * Группа секции. Ширина (`flex`) одинакова в шапке и на каждом этаже — подпись
+ * корпуса стоит ровно над своими квартирами. Внутри группы квартиры этажа, как в
+ * прототипе, делят всю ширину корпуса: на пентхаусном этаже две квартиры
+ * растягиваются, а не жмутся к краю. `cells` — сколько квартир в строке.
+ */
+const sectionGroupSx = (columns: number, first: boolean, cells = columns) => (t: Theme) => ({
+  display: "grid",
+  minWidth: 0,
+  gap: "7px",
+  flex: columns,
+  gridTemplateColumns: `repeat(${Math.max(1, cells)}, minmax(0, 1fr))`,
+  ...(first ? null : { borderLeft: `1px dashed ${alpha(t.palette.text.secondary, 0.4)}`, pl: "7px" }),
+});
+
+/** Подробная шахматка: строка на этаж, секции — колонками, разделены пунктиром. */
 function DetailedBoard(p: InnerProps) {
+  const { t } = useT("realestate");
   const { project, board } = p;
   return (
     <Box sx={{ minWidth: 860 }}>
-      <Box sx={{ ...floorGridSx, mb: 1, py: 0.75 }}>
-        <Typography component="span" sx={{ textAlign: "center", fontSize: "0.7rem", fontWeight: 600, color: "text.secondary" }}>
-          Этаж
+      <Box
+        component="p"
+        sx={{ m: 0, mt: 1, textAlign: "right", fontSize: "0.7rem", color: "text.secondary", display: { xs: "none", lg: "block" } }}
+      >
+        {t("board.keyboardHint")}
+      </Box>
+      <Box sx={{ ...floorGridSx, ...stickyTopSx, mb: 1, pt: 1, alignItems: "end" }}>
+        <Typography
+          component="span"
+          sx={{ ...stickyLeftSx, alignSelf: "stretch", display: "flex", alignItems: "flex-end", justifyContent: "center", fontSize: "0.7rem", fontWeight: 600, color: "text.secondary" }}
+        >
+          {t("board.floorColumn")}
         </Typography>
-        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 2.5, rowGap: 0.5, fontSize: "0.75rem" }}>
-          {board.sections.map((s) => (
-            <Box component="span" key={s.name} sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-              <b>Секция {s.name}</b>
-              <Box component="span" sx={(t) => ({ color: statusTone(t, "free").text })}>
-                {s.freeCount} свободно
+        <Box sx={{ display: "flex", gap: "7px" }}>
+          {board.sections.map((s, i) => (
+            <Box key={s.name} sx={sectionGroupSx(s.columns, i === 0)}>
+              <Box
+                component="header"
+                sx={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 0.5, minWidth: 0, pb: 0.5, fontSize: "0.75rem" }}
+              >
+                <Box component="span" sx={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", columnGap: 1 }}>
+                  <b>{sectionLabel(s.name)}</b>
+                  <Box component="span" sx={(theme) => ({ color: statusTone(theme, "free").text })}>
+                    {t("board.freeCount", { count: s.freeCount })}
+                  </Box>
+                </Box>
+                <StatsBar stats={statsOf(board.floors.flatMap((f) => s.unitsOnFloor(f)))} height={3} />
               </Box>
             </Box>
           ))}
-          <Box component="span" sx={{ ml: "auto", fontSize: "0.7rem", color: "text.secondary", display: { xs: "none", lg: "inline" } }}>
-            ← → ↑ ↓ — по квартирам · Enter — карточка · пробел или Ctrl+клик — к сравнению
-          </Box>
         </Box>
       </Box>
 
       {board.floors.map((floor) => {
         const stats = board.floorStats(floor);
-        const groups = board.sections.map((s) => s.unitsOnFloor(floor)).filter((g) => g.length);
         return (
           <Box key={floor} sx={{ ...floorGridSx, mb: 1 }}>
             <Box
               title={statsTitle(floor, stats)}
               sx={(t) => ({
+                ...stickyLeftSx,
+                // Полупрозрачная подложка поверх бумаги: под липкой колонкой не просвечивают ячейки.
+                backgroundImage: `linear-gradient(${subtleBg(t, true)}, ${subtleBg(t, true)})`,
                 height: "100%",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
                 borderRadius: "10px",
-                bgcolor: subtleBg(t, true),
                 p: 0.9,
                 color: "text.secondary",
               })}
@@ -191,32 +248,28 @@ function DetailedBoard(p: InnerProps) {
                 {floorType(project, floor)}
               </Typography>
               <Typography component="small" sx={{ fontSize: "0.72rem" }}>
-                <Box component="b" sx={(t) => ({ color: statusTone(t, "free").text })}>
+                <Box component="b" sx={(theme) => ({ color: statusTone(theme, "free").text })}>
                   {stats.free}
                 </Box>{" "}
-                из {stats.total} своб.
+                {t("board.ofTotal", { total: stats.total })}
               </Typography>
               <Box sx={{ mt: 0.5, width: "100%", maxWidth: 56 }}>
                 <StatsBar stats={stats} />
               </Box>
             </Box>
             <Box sx={{ display: "flex", gap: "7px" }}>
-              {groups.map((units, i) => (
-                <Box
-                  key={i}
-                  sx={(t) => ({
-                    display: "grid",
-                    minWidth: 0,
-                    gap: "7px",
-                    flex: units.length,
-                    gridTemplateColumns: `repeat(${units.length}, minmax(0, 1fr))`,
-                    ...(i > 0 ? { borderLeft: `1px dashed ${alpha(t.palette.text.secondary, 0.4)}`, pl: "7px" } : null),
-                  })}
-                >
-                  {units.map((unit) => (
-                    <UnitCell key={unit.id} {...cellProps(p, unit)} />
-                  ))}
-                </Box>
+              {board.sections.map((section, i) => (
+                (() => {
+                  // Корпус без квартир на этаже остаётся пустым местом — соседний не съезжает под чужую подпись.
+                  const units = section.unitsOnFloor(floor);
+                  return (
+                    <Box key={section.name} sx={sectionGroupSx(section.columns, i === 0, units.length)}>
+                      {units.map((unit) => (
+                        <UnitCell key={unit.id} {...cellProps(p, unit)} />
+                      ))}
+                    </Box>
+                  );
+                })()
               ))}
             </Box>
           </Box>
@@ -228,6 +281,7 @@ function DetailedBoard(p: InnerProps) {
 
 /** Компактная шахматка: секции рядом, цифра — число комнат. */
 function CompactBoard(p: InnerProps) {
+  const { t } = useT("realestate");
   const { board } = p;
   return (
     <Box
@@ -236,22 +290,22 @@ function CompactBoard(p: InnerProps) {
         width: "max-content",
         columnGap: { xs: 2, xl: 2.75 },
         rowGap: "5px",
-        px: "5px",
+        pr: "5px",
         pb: 1,
         gridTemplateColumns: `34px repeat(${board.sections.length}, max-content)`,
       }}
     >
-      <div />
+      <Box sx={{ ...stickyTopSx, ...stickyLeftSx, zIndex: 4 }} />
       {board.sections.map((section) => {
         const stats = statsOf(board.floors.flatMap((f) => section.unitsOnFloor(f)));
         return (
-          <Box component="header" key={section.name} sx={{ display: "flex", flexDirection: "column", gap: 0.5, px: 0.25, pt: 0.5, pb: 0.9 }}>
+          <Box component="header" key={section.name} sx={{ ...stickyTopSx, display: "flex", flexDirection: "column", gap: 0.5, px: 0.25, pt: 1, pb: 0.9 }}>
             <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
               <Typography component="span" sx={{ fontSize: "0.8125rem", fontWeight: 700 }}>
-                Секция {section.name}
+                {sectionLabel(section.name)}
               </Typography>
               <Typography component="b" sx={{ fontSize: "0.72rem", fontWeight: 600, color: "text.secondary" }}>
-                {section.freeCount} свободно
+                {t("board.freeCount", { count: section.freeCount })}
               </Typography>
             </Box>
             <StatsBar stats={stats} />
@@ -263,7 +317,7 @@ function CompactBoard(p: InnerProps) {
         const stats = board.floorStats(floor);
         return (
           <React.Fragment key={floor}>
-            <Box title={statsTitle(floor, stats)} sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", gap: 0.25, pr: 0.5 }}>
+            <Box title={statsTitle(floor, stats)} sx={{ ...stickyLeftSx, display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", gap: 0.25, pr: 0.5 }}>
               <Typography component="em" sx={{ fontSize: "0.66rem", fontWeight: 700, fontStyle: "normal", color: "text.secondary" }}>
                 {floor}
               </Typography>
@@ -271,9 +325,14 @@ function CompactBoard(p: InnerProps) {
             </Box>
             {board.sections.map((section) => (
               <Box key={section.name} sx={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                {section.unitsOnFloor(floor).map((unit) => (
-                  <UnitCell key={unit.id} {...cellProps(p, unit)} />
-                ))}
+                {Array.from({ length: section.columns }, (_, k) => {
+                  const unit = section.unitAt(floor, k + 1);
+                  return unit ? (
+                    <UnitCell key={unit.id} {...cellProps(p, unit)} />
+                  ) : (
+                    <Box key={`empty-${k}`} aria-hidden sx={{ flexShrink: 0, width: { xs: 32, xl: 36 } }} />
+                  );
+                })}
               </Box>
             ))}
           </React.Fragment>
@@ -293,6 +352,12 @@ interface UnitCellProps extends CellHandlers {
   selectMode: boolean;
   /** Роуминг-фокус: в Tab-порядке только одна ячейка шахматки. */
   tabbable: boolean;
+  /** Сколько осталось до конца брони; null — не в брони или срок неизвестен. */
+  hold: HoldLeft | null;
+  awaitingPayment: boolean;
+  /** Ступень тепловой карты цены за м²; null — красим статусом. */
+  priceStep: number | null;
+  onQuickAction?: (unitId: string, action: QuickAction) => void;
 }
 
 /**
@@ -314,12 +379,29 @@ const UnitCell = React.memo(function UnitCell({
   highlighted,
   selectMode,
   tabbable,
+  hold,
+  awaitingPayment,
+  priceStep,
+  onQuickAction,
   onOpen,
   onToggleSelect,
   onPreview,
 }: UnitCellProps) {
+  const { t } = useT("realestate");
   const status = unitStatusMeta[unit.status].label;
-  const label = `Квартира №${unit.number}, ${formatRooms(unit.rooms)}, ${formatArea(unit.totalArea)}, ${unit.floor} этаж, ${status}${selected ? ", выбрана" : ""}`;
+  const holdText = hold ? (hold.expired ? t("cell.holdExpiredLower") : t("cell.holdLeftLower", { left: hold.label })) : "";
+  const label = [
+    t("cell.unitNumber", { number: unit.number }),
+    formatRooms(unit.rooms),
+    formatArea(unit.totalArea),
+    t("cell.floor", { floor: unit.floor }),
+    status,
+    holdText,
+    awaitingPayment ? t("cell.awaitingPaymentLower") : "",
+    selected ? t("cell.selectedLower") : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
   const outdoor = unit.outdoor?.type;
   const isTerrace = outdoor === "terrace";
 
@@ -378,6 +460,9 @@ const UnitCell = React.memo(function UnitCell({
     "&.Mui-focusVisible": { outline: `2px solid ${t.palette.text.primary}`, outlineOffset: 1 },
   });
   const dimmedSx = dimmed ? { pointerEvents: "none", opacity: view === "compact" ? 0.14 : 0.18 } : null;
+  // Тепловая карта красит только свободные: занятые не продать, они уходят на второй план.
+  const heat = priceStep !== null && unit.status === "free" ? priceStep : null;
+  const offHeatSx = priceStep !== null && unit.status !== "free" && !dimmed ? { opacity: 0.4 } : null;
 
   if (view === "compact") {
     return (
@@ -393,18 +478,19 @@ const UnitCell = React.memo(function UnitCell({
             borderRadius: "6px",
             fontSize: "0.8125rem",
             fontWeight: 700,
-            bgcolor: tone.solid,
-            color: tone.solidText,
+            bgcolor: heat === null ? tone.solid : heatTone(t, heat).bg,
+            color: heat === null ? tone.solidText : heatTone(t, heat).text,
             transition: "transform .15s ease",
             "&:hover": { zIndex: 1, transform: "scale(1.12)" },
             ...focusSx(t),
+            ...offHeatSx,
             ...dimmedSx,
             ...ringSx(t, selected, highlighted),
           };
         }}
       >
         {mark}
-        {unit.rooms === 0 ? "С" : unit.rooms}
+        {unit.rooms === 0 ? t("cell.studioLetter") : unit.rooms}
         <Box
           component="i"
           aria-hidden
@@ -423,109 +509,182 @@ const UnitCell = React.memo(function UnitCell({
     );
   }
 
+  // Свободных квартир большинство, поэтому свободная ячейка спокойная (карточка + точка),
+  // а выделяются бронь и продажа — иначе вся шахматка залита одним цветом.
+  const free = unit.status === "free";
+  // Кнопки — соседи ячейки, а не её дети: кнопка внутри кнопки — невалидный HTML.
+  // Из Tab-порядка убраны: с клавиатуры те же действия есть в карточке (Enter).
+  const actions: [QuickAction, string, React.ReactNode][] = [];
+  if (onQuickAction && !dimmed && unit.status !== "sold") {
+    if (free) actions.push(["reserve", t("cell.quickReserve"), <EventAvailableOutlined />]);
+    actions.push(["proposal", t("cell.quickProposal"), <SendOutlined />]);
+  }
   return (
-    <ButtonBase
-      {...common}
-      sx={(t) => {
-        const tone = statusTone(t, unit.status);
-        return {
-          position: "relative",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "stretch",
-          gap: 0.5,
-          minWidth: 0,
-          minHeight: 79,
-          px: 1,
-          pt: "7px",
-          pb: 1,
-          textAlign: "left",
-          fontSize: "0.78rem",
-          borderRadius: "9px",
-          border: `${unit.status === "free" ? 1 : 2}px solid ${tone.border}`,
-          bgcolor: tone.bg,
-          color: tone.text,
-          transition: "transform .15s ease, border-color .15s ease",
-          "&:hover": { transform: "translateY(-2px)", borderColor: tone.main },
-          ...(isTerrace ? { borderTop: `3px solid ${t.palette.purple.main}` } : null),
-          ...focusSx(t),
-          ...dimmedSx,
-          ...ringSx(t, selected, highlighted),
-        };
-      }}
-    >
-      {mark}
-      <Box
-        component="span"
-        sx={(t) => ({
-          display: "flex",
-          alignItems: "center",
-          minHeight: 20,
-          px: 1,
-          py: 0.5,
-          borderRadius: "7px",
-          fontSize: "0.7rem",
-          fontWeight: 700,
-          bgcolor: statusTone(t, unit.status).solid,
-          color: statusTone(t, unit.status).solidText,
-        })}
+    <Box sx={{ position: "relative", minWidth: 0, display: "flex", "&:hover .unit-actions": { opacity: 1 } }}>
+      <ButtonBase
+        {...common}
+        sx={(t) => {
+          const tone = statusTone(t, unit.status);
+          return {
+            position: "relative",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "stretch",
+            flex: 1,
+            gap: 0.5,
+            minWidth: 0,
+            minHeight: 79,
+            px: 1,
+            pt: "7px",
+            pb: 1,
+            textAlign: "left",
+            fontSize: "0.78rem",
+            borderRadius: "9px",
+            border: `${unit.status === "reserved" ? 2 : 1}px solid ${heat !== null ? heatTone(t, heat).border : free ? t.palette.divider : tone.border}`,
+            bgcolor: heat !== null ? heatTone(t, heat).bg : free ? "background.paper" : tone.bg,
+            color: heat !== null ? heatTone(t, heat).text : free ? "text.primary" : tone.text,
+            transition: "transform .15s ease, border-color .15s ease",
+            "&:hover": { transform: "translateY(-2px)", borderColor: tone.main },
+            ...(isTerrace ? { borderTop: `3px solid ${t.palette.purple.main}` } : null),
+            ...focusSx(t),
+            ...offHeatSx,
+            ...dimmedSx,
+            ...ringSx(t, selected, highlighted),
+          };
+        }}
       >
-        {unit.status === "reserved" ? "Бронь" : status}
-      </Box>
-      <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.72rem" }}>
-        <small>№{unit.number}</small>
+        {mark}
+        <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 0.5, minHeight: 20, fontSize: "0.72rem" }}>
+          <Box component="span" sx={{ display: "flex", alignItems: "center", gap: 0.6, minWidth: 0 }}>
+            {free ? (
+              <Box component="i" aria-hidden sx={(t) => ({ flexShrink: 0, width: 7, height: 7, borderRadius: "50%", bgcolor: statusTone(t, "free").main })} />
+            ) : (
+              <Box
+                component="span"
+                sx={(t) => ({
+                  flexShrink: 0,
+                  px: 0.75,
+                  py: 0.25,
+                  borderRadius: "6px",
+                  fontSize: "0.68rem",
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                  bgcolor: unit.status === "reserved" ? (hold?.urgent ? t.palette.error.main : statusTone(t, "reserved").solid) : "transparent",
+                  color:
+                    unit.status === "reserved"
+                      ? hold?.urgent
+                        ? t.palette.error.contrastText
+                        : statusTone(t, "reserved").solidText
+                      : "text.secondary",
+                  ...(unit.status === "sold" ? { px: 0 } : null),
+                })}
+              >
+                {unit.status === "reserved" ? (hold ? (hold.expired ? t("cell.holdExpired") : t("cell.holdLeft", { left: hold.label })) : t("statusShort.reserved")) : status}
+              </Box>
+            )}
+            <Box component="span" sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
+              №{unit.number}
+            </Box>
+            {awaitingPayment && (
+              <Box component="span" title={t("cell.awaitingPayment")} sx={{ display: "grid", color: "warning.onSurface", "& .MuiSvgIcon-root": { fontSize: 13 } }}>
+                <PaymentsOutlined />
+              </Box>
+            )}
+          </Box>
+          {/* Иконка, а не буква «Б/Т»: буква путалась с названием секции «Б». */}
+          <Box
+            component="i"
+            title={isTerrace ? t("outdoor.terrace") : outdoor ? t("cell.balconyTitle") : undefined}
+            aria-label={isTerrace ? t("outdoor.terrace") : outdoor ? t("cell.balconyAria") : undefined}
+            aria-hidden={!isTerrace && !outdoor}
+            sx={(t) => ({
+              "& .MuiSvgIcon-root": { fontSize: 13 },
+              width: 17,
+              height: 17,
+              display: "grid",
+              placeItems: "center",
+              borderRadius: "5px",
+              fontSize: 11,
+              fontWeight: 800,
+              fontStyle: "normal",
+              ...(isTerrace
+                ? { bgcolor: alpha(t.palette.purple.main, 0.14), color: t.palette.purple.main }
+                : outdoor
+                  ? { bgcolor: alpha(t.palette.teal.main, 0.14), color: t.palette.teal.main }
+                  : null),
+            })}
+          >
+            {isTerrace ? <DeckOutlined /> : outdoor ? <BalconyOutlined /> : null}
+          </Box>
+        </Box>
+        <Box component="b" sx={{ fontWeight: 700 }}>
+          {formatRooms(unit.rooms)}
+        </Box>
+        <Box component="span" sx={{ fontSize: "0.72rem" }}>
+          {t("cell.areaOrientation", { area: unit.totalArea, orientation: unit.orientation })}
+        </Box>
+        <Box component="span" sx={{ mt: "auto", display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 0.75, fontSize: "0.72rem" }}>
+          <Box component="em" sx={{ fontWeight: 700, fontStyle: "normal" }}>
+            {millions(unit.price)}
+          </Box>
+          <Box component="span" sx={{ fontSize: "0.66rem", color: "text.secondary", whiteSpace: "nowrap" }}>
+            {perSqmShort(unit.pricePerSqm)}
+          </Box>
+        </Box>
+      </ButtonBase>
+      {actions.length > 0 && (
         <Box
-          component="i"
-          aria-hidden
+          className="unit-actions"
           sx={(t) => ({
-            width: 17,
-            height: 17,
-            display: "grid",
-            placeItems: "center",
-            borderRadius: "5px",
-            fontSize: 11,
-            fontWeight: 800,
-            fontStyle: "normal",
-            ...(isTerrace
-              ? { bgcolor: alpha(t.palette.purple.main, 0.14), color: t.palette.purple.main }
-              : outdoor
-                ? { bgcolor: alpha(t.palette.teal.main, 0.14), color: t.palette.teal.main }
-                : null),
+            position: "absolute",
+            right: 4,
+            bottom: 4,
+            display: "flex",
+            gap: 0.25,
+            p: 0.25,
+            borderRadius: "8px",
+            bgcolor: "background.paper",
+            border: 1,
+            borderColor: "divider",
+            opacity: 0,
+            transition: "opacity .15s ease",
+            "@media (hover: none)": { display: "none" },
+            "& .MuiIconButton-root": { p: 0.4, color: "text.secondary", "&:hover": { color: t.palette.primary.main } },
+            "& .MuiSvgIcon-root": { fontSize: 15 },
           })}
         >
-          {isTerrace ? "Т" : outdoor ? "Б" : ""}
+          {actions.map(([action, title, icon]) => (
+            <Tooltip key={action} title={title} placement="top">
+              <IconButton
+                aria-label={t("cell.quickAria", { action: title, number: unit.number })}
+                tabIndex={-1}
+                onMouseEnter={() => onPreview(null)}
+                onClick={() => onQuickAction?.(unit.id, action)}
+              >
+                {icon}
+              </IconButton>
+            </Tooltip>
+          ))}
         </Box>
-      </Box>
-      <Box component="b" sx={{ fontWeight: 700 }}>
-        {formatRooms(unit.rooms)}
-      </Box>
-      <Box component="span" sx={{ fontSize: "0.72rem" }}>
-        {unit.totalArea} м² · {unit.orientation}
-      </Box>
-      <Box component="em" sx={{ mt: "auto", fontSize: "0.72rem", fontWeight: 700, fontStyle: "normal" }}>
-        {millions(unit.price)}
-      </Box>
-    </ButtonBase>
+      )}
+    </Box>
   );
 });
 
 /** Легенда над компактной шахматкой. */
 export function CompactNote() {
-  const swatches = [
-    ["Свободно", "free"],
-    ["Забронировано", "reserved"],
-    ["Продано", "sold"],
-  ] as const;
+  const { t } = useT("realestate");
+  const swatches = ["free", "reserved", "sold"] as const;
   return (
     <Box sx={{ mb: 2, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.75, fontSize: "0.75rem", color: "text.secondary" }}>
-      {swatches.map(([label, status]) => (
-        <Box component="span" key={label} sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-          <Box component="i" sx={(t) => ({ width: 12, height: 12, borderRadius: "3px", bgcolor: statusTone(t, status).solid })} />
-          {label}
+      {swatches.map((status) => (
+        <Box component="span" key={status} sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+          <Box component="i" sx={(theme) => ({ width: 12, height: 12, borderRadius: "3px", bgcolor: statusTone(theme, status).solid })} />
+          {t(`legend.compact.${status}`)}
         </Box>
       ))}
       <Box component="small" sx={{ ml: "auto", fontSize: "0.72rem", display: { xs: "none", md: "inline" } }}>
-        Цифра в ячейке — количество комнат · строка = этаж
+        {t("legend.compactHint")}
       </Box>
     </Box>
   );
@@ -533,10 +692,11 @@ export function CompactNote() {
 
 /** Подсказка под компактной шахматкой. */
 export function FloorGuide({ board }: { board: BoardModel }) {
+  const { t } = useT("realestate");
   return (
     <Box sx={(t) => ({ mt: 1.25, display: "flex", width: "max-content", alignItems: "center", gap: 1.5, borderRadius: "10px", bgcolor: subtleBg(t, true), px: 1.5, py: 1.25 })}>
       <Typography component="span" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-        Этажи расположены сверху вниз
+        {t("legend.floorsTopDown")}
       </Typography>
       <Typography component="b" sx={{ fontSize: "0.8rem", fontWeight: 600 }}>
         {board.floors[0]} → {board.floors[board.floors.length - 1]}

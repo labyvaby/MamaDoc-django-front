@@ -233,6 +233,7 @@ export interface AvailabilityDay {
 export interface EmployeeAvailability {
   employeeId: number;
   fullName: string;
+  clinicalRole?: "doctor" | "nurse" | "other";
   specializations?: { id: number; name: string }[];
   nearestFree: { date: string; start: string } | null;
   days: AvailabilityDay[];

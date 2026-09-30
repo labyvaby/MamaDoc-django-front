@@ -8,6 +8,7 @@
  * структурно, и мутация общего объекта «спрятала» бы смену статуса.
  */
 import { ApiError } from "./client";
+import { CONTRACT_PAYMENT_LABELS } from "./realestate";
 import type {
   Contract,
   ContractInput,
@@ -20,6 +21,7 @@ import type {
   Reservation,
   ReserveUnitInput,
   Unit,
+  UnitHold,
   UnitDetails,
   UnitEvent,
   UnitOffer,
@@ -337,7 +339,13 @@ export const listProjects = () => clone(seedProjects);
 
 export function listUnits(projectId: string): Unit[] {
   if (!findProject(projectId)) throw new ApiError("ЖК не найден", 404, { detail: "ЖК не найден" });
-  return clone(units.filter((u) => u.projectId === projectId));
+  return clone(units.filter((u) => u.projectId === projectId).map((u) => ({ ...u, hold: u.status === "reserved" ? (u.hold ?? seedHold(u)) : null })));
+}
+
+/** Бронь из сида: срок от 1 до 47 часов, у чётных номеров — ждёт предоплату. */
+function seedHold(unit: Unit): UnitHold {
+  const n = Number(unit.number);
+  return { endsAt: new Date(Date.now() + ((n % 47) + 1) * 3_600_000).toISOString(), awaitingPayment: n % 2 === 0 };
 }
 
 function stateOf(unit: Unit): UnitState {
@@ -492,7 +500,9 @@ export function reserve(unitId: string, input: ReserveUnitInput): UnitDetails {
   const expiresAt = new Date(Date.now() + input.termHours * 3_600_000).toLocaleString("ru-RU");
   historyOf(unit);
   unit.status = "reserved";
+  unit.hold = { endsAt: new Date(Date.now() + input.termHours * 3_600_000).toISOString(), awaitingPayment: amount > 0 };
   stateOf(unit).reservation = {
+    id: `r-${unit.id}-${Date.now()}`,
     buyer: input.buyer,
     phone: input.phone,
     type: input.type,
@@ -521,6 +531,7 @@ export function confirmPrepayment(unitId: string): UnitDetails {
   if (!reservation || reservation.paymentStatus !== "pending")
     throw conflict("Нет ожидающей предоплаты");
   reservation.paymentStatus = "paid";
+  if (unit.hold) unit.hold = { ...unit.hold, awaitingPayment: false };
   addEvent(unit, {
     type: "payment",
     title: "Предоплата за бронь получена",
@@ -661,7 +672,8 @@ export function signContract(unitId: string, input: ContractInput): UnitDetails 
   s.contract = {
     number: `ДКП-${new Date().getFullYear()}-${unit.number}`,
     buyer: input.buyer,
-    payment: input.payment,
+    payment: CONTRACT_PAYMENT_LABELS[input.payment],
+    price: stateOf(unit).reservation?.finalPrice || unit.price,
     signedAt: new Date().toLocaleString("ru-RU"),
   };
   addEvent(unit, {
@@ -670,7 +682,7 @@ export function signContract(unitId: string, input: ContractInput): UnitDetails 
     actor: projectOf(unit).manager,
     buyer: input.buyer,
     stage: "Договор подписан",
-    details: `Договор ${s.contract.number}. Стоимость ${money(unit.price)}. Способ оплаты: ${input.payment}.`,
+    details: `Договор ${s.contract.number}. Стоимость ${money(unit.price)}. Способ оплаты: ${CONTRACT_PAYMENT_LABELS[input.payment]}.`,
   });
   return unitDetails(unit);
 }

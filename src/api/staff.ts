@@ -392,6 +392,8 @@ export interface GetEmployeesParams {
   search?: string;
   status?: "active" | "inactive" | "fired";
   branchId?: number;
+  /** Все филиалы организации, включая сотрудников без филиала (бэк режет по доступам пользователя). */
+  allBranches?: boolean;
   page?: number;
   pageSize?: number;
   /** Обязателен для суперпользователя/мультиорг-аккаунта (см. useApiOrgId). */
@@ -424,6 +426,7 @@ export function getDjangoEmployees(
   if (params?.search) qs.set("search", params.search);
   if (params?.status) qs.set("status", params.status);
   if (params?.branchId != null) qs.set("branchId", String(params.branchId));
+  if (params?.allBranches) qs.set("allBranches", "1");
   if (params?.page != null) qs.set("page", String(params.page));
   if (params?.pageSize != null) qs.set("pageSize", String(params.pageSize));
   if (params?.organizationId != null) qs.set("organizationId", String(params.organizationId));

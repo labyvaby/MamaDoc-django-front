@@ -8,11 +8,11 @@ import { alpha, type Theme } from "@mui/material/styles";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CompareArrowsOutlined from "@mui/icons-material/CompareArrowsOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
-import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 
 import type { Project, Unit, UnitDetails, UnitEventType, UnitOffer } from "../../../../api/realestate";
 import { AppButton } from "../../../../components/ui";
+import { useT } from "../../../../i18n/VerticalProvider";
 import { subtleBg } from "../../../../theme/uiHelpers";
 import {
   apartmentRenders,
@@ -26,9 +26,9 @@ import {
   terraceLabel,
   unitType,
 } from "../../model/unitCard";
-import { formatMoney as money, num, unitStatusMeta } from "../../model/units";
+import { formatMoney as money, num, outdoorLabel, unitStatusMeta } from "../../model/units";
+import { completionOf, sectionLabel } from "../../model/board";
 import { eyebrowSx, offerTone, sectionSx, statusTone } from "../tones";
-import { useRealEstateToast } from "../toast";
 import { roomTileSx } from "../UnitPreview";
 
 export function StatusPill({ status }: { status: Unit["status"] }) {
@@ -86,6 +86,7 @@ export function SectionTitle({
 }
 
 export function ApartmentHead({ project, unit }: { project: Project; unit: Unit }) {
+  const { t } = useT("realestate");
   return (
     <Box
       component="header"
@@ -93,21 +94,21 @@ export function ApartmentHead({ project, unit }: { project: Project; unit: Unit 
     >
       <div>
         <Typography component="span" sx={eyebrowSx}>
-          ЖК «{project.name}» · секция {unit.section}
+          {t("card.headEyebrow", { name: project.name, section: sectionLabel(unit.section) })}
         </Typography>
         <Typography id="realestate-unit-title" component="h2" sx={{ m: 0, fontSize: { xs: "1.5rem", md: "1.8rem" }, fontWeight: 700, letterSpacing: "-0.5px" }}>
-          Квартира №{unit.number}
+          {t("card.title", { number: unit.number })}
         </Typography>
         <Typography sx={{ mt: 0.75, fontSize: "0.8125rem", color: "text.secondary" }}>
-          {unitType(unit)} · {unit.floor} этаж · {num(unit.totalArea)} м²
+          {unitType(unit)} · {t("cell.floor", { floor: unit.floor })} · {t("fmt.area", { value: num(unit.totalArea) })}
         </Typography>
       </div>
-      <Box sx={{ display: "flex", flexDirection: "column", alignItems: { xs: "flex-start", sm: "flex-end" }, gap: 0.6 }}>
+      <Box sx={{ display: "flex", flexDirection: "column", alignItems: { xs: "flex-start", md: "flex-end" }, gap: 0.6 }}>
         <Typography component="strong" sx={{ fontSize: "1.55rem", fontWeight: 700, letterSpacing: "-0.4px" }}>
           {money(unit.price)}
         </Typography>
         <Typography component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
-          {money(unit.pricePerSqm)} / м²
+          {t("preview.perSqm", { value: money(unit.pricePerSqm) })}
         </Typography>
         <StatusPill status={unit.status} />
       </Box>
@@ -116,27 +117,24 @@ export function ApartmentHead({ project, unit }: { project: Project; unit: Unit 
 }
 
 export function RenderGallery() {
-  const toast = useRealEstateToast();
+  const { t } = useT("realestate");
+  const label = (key: string) => t(`renders.${key}.label`);
   const [active, setActive] = React.useState(0);
   const current = apartmentRenders[active]!;
   return (
     <Box component="section" sx={{ ...sectionSx, overflow: "hidden" }}>
       <SectionTitle
-        eyebrow="Визуализация интерьера"
-        title="Как может выглядеть квартира"
-        text="Концепция отделки и меблировки для презентации покупателю"
+        eyebrow={t("renders.eyebrow")}
+        title={t("renders.title")}
+        text={t("renders.text")}
         size="0.95rem"
-      >
-        <Button size="small" variant="outlined" startIcon={<FileDownloadOutlined />} onClick={() => toast("Рендеры подготовлены", "4 изображения · демо ZIP")}>
-          Скачать рендеры
-        </Button>
-      </SectionTitle>
+      />
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "136px minmax(0, 1fr)" }, gap: 1.5 }}>
         <Box sx={{ display: "grid", gap: 1, alignContent: "start", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "1fr" } }}>
           {apartmentRenders.map((item, index) => (
             <ButtonBase
               key={item.src}
-              aria-label={`Показать: ${item.label}`}
+              aria-label={t("renders.show", { label: label(item.key) })}
               aria-pressed={index === active}
               onClick={() => setActive(index)}
               sx={(t) => ({
@@ -155,15 +153,15 @@ export function RenderGallery() {
                 "&:hover": { borderColor: alpha(t.palette.primary.main, 0.35) },
               })}
             >
-              <Box component="img" src={item.src} alt={item.label} loading="lazy" sx={{ width: 48, height: 42, objectFit: "cover", borderRadius: "7px" }} />
+              <Box component="img" src={item.src} alt={label(item.key)} loading="lazy" sx={{ width: 48, height: 42, objectFit: "cover", borderRadius: "7px" }} />
               <Typography component="span" sx={{ fontSize: "0.7rem", fontWeight: 600, lineHeight: 1.25 }}>
-                {item.label}
+                {label(item.key)}
               </Typography>
             </ButtonBase>
           ))}
         </Box>
         <Box component="figure" sx={{ position: "relative", minWidth: 0, height: { xs: 240, md: 390 }, m: 0, borderRadius: "12px", overflow: "hidden", bgcolor: (t) => subtleBg(t, true) }}>
-          <Box component="img" decoding="async" src={current.src} alt={current.label} sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          <Box component="img" decoding="async" src={current.src} alt={label(current.key)} sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
           {/* Подпись поверх фото — единственное место с затемнением: белый текст на снимке. */}
           <Box
             component="figcaption"
@@ -182,14 +180,14 @@ export function RenderGallery() {
           >
             <Box component="span" sx={{ display: "flex", flexDirection: "column", gap: 0.4 }}>
               <Box component="b" sx={{ fontSize: "0.8125rem" }}>
-                {current.label}
+                {label(current.key)}
               </Box>
               <Box component="small" sx={{ fontSize: "0.7rem", opacity: 0.8 }}>
-                {current.note}
+                {t(`renders.${current.key}.note`)}
               </Box>
             </Box>
             <Box component="em" sx={(t) => ({ fontSize: "0.7rem", fontStyle: "normal", fontWeight: 600, border: `1px solid ${alpha(t.palette.common.white, 0.5)}`, borderRadius: "7px", px: 1, py: 0.5 })}>
-              Концепт
+              {t("renders.concept")}
             </Box>
           </Box>
         </Box>
@@ -211,14 +209,16 @@ export function Promotions({
   active: UnitOffer;
   onSelect: (offer: UnitOffer) => void;
   onDetails: () => void;
-  onReserve: () => void;
+  /** Нет — бронировать нельзя (без realty.manage). */
+  onReserve?: () => void;
 }) {
+  const { t } = useT("realestate");
   const finalPrice = priceWithOffer(unit, active);
   return (
     <Box component="section" sx={{ ...sectionSx, borderRadius: "18px", bgcolor: (t) => subtleBg(t) }}>
-      <SectionTitle eyebrow="Выгода для покупателя" title="Акции и скидки" text="Выберите одно предложение — итоговая цена пересчитается сразу" size="0.95rem">
+      <SectionTitle eyebrow={t("offers.eyebrow")} title={t("offers.title")} text={t("offers.text")} size="0.95rem">
         <Box component="span" sx={(t) => ({ px: 1.25, py: 0.75, borderRadius: "7px", bgcolor: subtleBg(t, true), color: "text.secondary", fontSize: "0.75rem", fontWeight: 600, whiteSpace: "nowrap" })}>
-          {offers.length} предложения
+          {t("offers.count", { count: offers.length })}
         </Box>
       </SectionTitle>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 1.25 }}>
@@ -279,7 +279,7 @@ export function Promotions({
                 </Box>
               </Box>
               <Box component="strong" sx={{ alignSelf: "start", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>
-                {offer.discount ? `− ${money(offer.discount)}` : "0% переплаты"}
+                {offer.discount ? `− ${money(offer.discount)}` : t("offer.noOverpay")}
               </Box>
               <Box
                 component="span"
@@ -297,7 +297,7 @@ export function Promotions({
                     : { bgcolor: subtleBg(t, true), color: "text.secondary" }),
                 })}
               >
-                {selected ? "Выбрано" : "Выбрать"}
+                {selected ? t("offers.picked") : t("offers.pick")}
               </Box>
             </ButtonBase>
           );
@@ -317,25 +317,25 @@ export function Promotions({
           bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.12 : 0.06),
         })}
       >
-        <TotalCell label="Цена квартиры" value={money(unit.price)} />
-        <TotalCell label="Скидка" value={active.discount ? `− ${money(active.discount)}` : "Без скидки"} />
+        <TotalCell label={t("offers.unitPrice")} value={money(unit.price)} />
+        <TotalCell label={t("offers.discount")} value={active.discount ? `− ${money(active.discount)}` : t("offers.noDiscount")} />
         <Box sx={{ display: "flex", flexDirection: "column", gap: 0.4, pl: { md: 1.5 }, borderLeft: { md: 1 }, borderColor: { md: "divider" } }}>
           <Typography component="span" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-            Итоговая цена
+            {t("offers.finalPrice")}
           </Typography>
           <Typography component="strong" sx={{ fontSize: "1.2rem", fontWeight: 700, color: "primary.onSurface" }}>
             {money(finalPrice)}
           </Typography>
           <Typography component="small" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-            {money(Math.round(finalPrice / unit.totalArea))} / м²
+            {t("preview.perSqm", { value: money(Math.round(finalPrice / unit.totalArea)) })}
           </Typography>
         </Box>
         <Button variant="outlined" onClick={onDetails}>
-          Условия акции
+          {t("offers.terms")}
         </Button>
-        {unit.status === "free" && (
+        {unit.status === "free" && onReserve && (
           <AppButton variant="contained" onClick={onReserve}>
-            Забронировать по этой цене
+            {t("offers.reserveAtPrice")}
           </AppButton>
         )}
       </Box>
@@ -357,23 +357,31 @@ function TotalCell({ label, value }: { label: string; value: string }) {
 }
 
 export function Characteristics({ unit, onCompare }: { unit: Unit; onCompare: (unitId: string) => void }) {
+  const { t } = useT("realestate");
+  // Названия комнат — данные бэка, поэтому ищем по ним, а подписываем тем, что пришло.
   const hall = unit.roomsBreakdown.find((room) => /прихожая/i.test(room.name));
-  const outdoor = unit.outdoor?.type === "terrace" ? "Терраса" : (outdoorKind(unit) ?? "Без балкона");
-  const items: [string, string][] = [
-    ["↕", `Потолки ${num(unit.ceilingHeight)} м`],
-    ["⌗", unit.isCorner ? "Угловая квартира" : "Рациональная планировка"],
-    ["◉", unit.view],
-    ["⌂", "Кухня-гостиная"],
-    ["▥", hall ? `Прихожая ${num(hall.area)} м²` : "Место для хранения"],
-    ["▯", outdoor],
-    ["②", bathroomsLabel(unit)],
-    ["☀", `${unit.orientation} сторона`],
-  ];
+  const outdoor = unit.outdoor?.type === "terrace" ? outdoorLabel("terrace") : (outdoorKind(unit) ?? t("card.noBalcony"));
+  const kitchen = unit.roomsBreakdown.find((room) => /кухня/i.test(room.name));
+  // Только факты о квартире: без данных пункт не показываем, а не подставляем общие слова.
+  const items = (
+    [
+      ["↕", t("preview.ceiling", { value: num(unit.ceilingHeight) })],
+      ["⌗", `${unitType(unit)} · ${t("fmt.area", { value: num(unit.totalArea) })}`],
+      ["◉", unit.view],
+      ["⌂", kitchen ? t("fmt.outdoorArea", { kind: kitchen.name, area: num(kitchen.area) }) : null],
+      ["▥", hall ? t("fmt.outdoorArea", { kind: hall.name, area: num(hall.area) }) : null],
+      ["▯", outdoor],
+      ["②", bathroomsLabel(unit)],
+      ["☀", t("card.side", { value: unit.orientation.toLowerCase() })],
+      ["◢", unit.isCorner ? t("card.cornerUnit") : null],
+      ["▭", unit.hasPanoramicWindows ? t("filters.feature.panoramic") : null],
+    ] as [string, string | null][]
+  ).filter((item): item is [string, string] => Boolean(item[1]));
   return (
     <Box component="section" sx={sectionSx}>
-      <SectionTitle eyebrow="Преимущества квартиры" title="Характеристики" text="Главное для презентации покупателю" size="1rem">
+      <SectionTitle eyebrow={t("card.featuresEyebrow")} title={t("card.featuresTitle")} text={t("card.featuresText")} size="1rem">
         <Button size="small" variant="outlined" startIcon={<CompareArrowsOutlined />} onClick={() => onCompare(unit.id)}>
-          Сравнить
+          {t("compare.compare")}
         </Button>
       </SectionTitle>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(4, 1fr)" }, gap: 1.1 }}>
@@ -413,10 +421,11 @@ type FloorFilter = "all" | "free" | "occupied";
 const schemeLine = (t: Theme) => alpha(t.palette.text.primary, t.palette.mode === "dark" ? 0.45 : 0.6);
 
 function FloorSchemeUnit({ unit, selected, muted, onOpen }: { unit: Unit; selected: boolean; muted: boolean; onOpen: (unitId: string) => void }) {
+  const { t } = useT("realestate");
   const rooms = unit.roomsBreakdown.slice(0, Math.min(5, unit.roomsBreakdown.length));
   return (
     <ButtonBase
-      aria-label={`Квартира №${unit.number}, ${unitStatusMeta[unit.status].label}`}
+      aria-label={t("card.schemeUnitAria", { number: unit.number, status: unitStatusMeta[unit.status].label })}
       onClick={() => onOpen(unit.id)}
       sx={(t) => {
         const tone = statusTone(t, unit.status);
@@ -438,7 +447,7 @@ function FloorSchemeUnit({ unit, selected, muted, onOpen }: { unit: Unit; select
     >
       {selected && (
         <Box component="span" sx={{ position: "absolute", zIndex: 3, top: 6, right: 6, px: 0.75, py: 0.25, borderRadius: "6px", fontSize: "0.62rem", fontWeight: 700, bgcolor: "success.main", color: "success.contrastText" }}>
-          Выбрана
+          {t("card.selected")}
         </Box>
       )}
       <Box sx={{ position: "absolute", inset: "7px 7px 38px", display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gridTemplateRows: "1fr 1fr", gap: "2px", opacity: 0.8 }}>
@@ -476,7 +485,7 @@ function FloorSchemeUnit({ unit, selected, muted, onOpen }: { unit: Unit; select
           №{unit.number}
         </Box>
         <Box component="small" sx={{ fontSize: "0.62rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {unitType(unit)} · {num(unit.totalArea)} м²
+          {unitType(unit)} · {t("fmt.area", { value: num(unit.totalArea) })}
         </Box>
         <Box component="b" sx={{ fontSize: "0.62rem", textAlign: "right" }}>
           {money(unit.price)}
@@ -501,6 +510,7 @@ export function FloorScheme({
   onOpenUnit: (unitId: string) => void;
   onChangeFloor: (direction: -1 | 1) => void;
 }) {
+  const { t } = useT("realestate");
   const [filter, setFilter] = React.useState<FloorFilter>("all");
   const units = floorUnits.slice().sort((a, b) => a.axis - b.axis);
   const split = Math.ceil(units.length / 2);
@@ -530,27 +540,29 @@ export function FloorScheme({
   );
 
   const filters: [FloorFilter, string, number][] = [
-    ["all", "Все", units.length],
-    ["free", "Свободно", free],
-    ["occupied", "Занято", reserved + sold],
+    ["all", t("card.floorFilter.all"), units.length],
+    ["free", t("card.floorFilter.free"), free],
+    ["occupied", t("card.floorFilter.occupied"), reserved + sold],
   ];
+  // Подписи над схемой — корпуса этого этажа слева направо, а не «Секция А/Б» из прототипа.
+  const sectionNames = [...new Set(units.map((u) => u.section))];
 
   return (
     <Box component="section" sx={{ ...sectionSx, overflow: "hidden" }}>
       <SectionTitle
-        eyebrow="Шахматка этажа"
-        title={`${unit.floor} этаж`}
-        text={`${units.length} квартир · ${free} свободно · ${reserved + sold} занято`}
+        eyebrow={t("card.floorEyebrow")}
+        title={t("cell.floor", { floor: unit.floor })}
+        text={t("card.floorSummary", { count: units.length, free, occupied: reserved + sold })}
         size="1rem"
       >
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, border: 1, borderColor: "divider", borderRadius: "10px", p: 0.25 }}>
-          <IconButton size="small" aria-label="Этаж ниже" onClick={() => onChangeFloor(-1)}>
+          <IconButton size="small" aria-label={t("card.floorDown")} onClick={() => onChangeFloor(-1)}>
             <RemoveOutlined fontSize="small" />
           </IconButton>
           <Typography component="b" sx={{ minWidth: 24, textAlign: "center", fontWeight: 700 }}>
             {unit.floor}
           </Typography>
-          <IconButton size="small" aria-label="Этаж выше" onClick={() => onChangeFloor(1)}>
+          <IconButton size="small" aria-label={t("card.floorUp")} onClick={() => onChangeFloor(1)}>
             <AddOutlined fontSize="small" />
           </IconButton>
         </Box>
@@ -588,7 +600,7 @@ export function FloorScheme({
           </ButtonBase>
         ))}
         <Typography component="span" sx={{ ml: "auto", fontSize: "0.7rem", color: "text.secondary", display: { xs: "none", md: "inline" }, whiteSpace: "nowrap" }}>
-          Клик по квартире открывает карточку
+          {t("card.floorClickHint")}
         </Typography>
       </Box>
       <Box sx={{ overflowX: "auto", pb: 0.5 }}>
@@ -617,8 +629,9 @@ export function FloorScheme({
               fontWeight: 700,
             }}
           >
-            <span>Секция А</span>
-            <span>Секция Б</span>
+            {sectionNames.map((name) => (
+              <span key={name}>{sectionLabel(name)}</span>
+            ))}
           </Box>
           {side(top, false)}
           <Box
@@ -642,19 +655,19 @@ export function FloorScheme({
                   backgroundImage: `repeating-linear-gradient(0deg, ${t.palette.text.secondary} 0 1px, transparent 1px 6px)`,
                 })}
               />
-              <span>Лестница</span>
+              <span>{t("card.scheme.stairs")}</span>
             </Box>
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.75, px: 2.25, textTransform: "none", fontSize: "0.72rem" }}>
-              <span>Общий коридор</span>
+              <span>{t("card.scheme.corridor")}</span>
               <Box component="i" sx={{ fontStyle: "normal", color: "text.secondary", fontSize: "0.62rem" }}>
-                Вход с этажа
+                {t("card.scheme.floorEntrance")}
               </Box>
             </Box>
             <Box sx={(t) => ({ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 0.6, bgcolor: subtleBg(t, true), borderLeft: 1, borderColor: "divider" })}>
               <Box component="b" sx={{ fontSize: 24, letterSpacing: 5 }}>
                 ◇ ◇
               </Box>
-              <span>Лифты</span>
+              <span>{t("card.scheme.lifts")}</span>
             </Box>
           </Box>
           {side(bottom, true)}
@@ -663,9 +676,9 @@ export function FloorScheme({
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.75, pt: 1.25, fontSize: "0.66rem", color: "text.secondary" }}>
         {(
           [
-            ["free", `Свободно · ${free}`],
-            ["reserved", `Забронировано · ${reserved}`],
-            ["sold", `Продано · ${sold}`],
+            ["free", t("card.legend.free", { count: free })],
+            ["reserved", t("card.legend.reserved", { count: reserved })],
+            ["sold", t("card.legend.sold", { count: sold })],
           ] as const
         ).map(([status, label]) => (
           <Box component="span" key={status} sx={{ display: "flex", alignItems: "center", gap: 0.6 }}>
@@ -675,10 +688,10 @@ export function FloorScheme({
         ))}
         <Box component="span" sx={{ display: "flex", alignItems: "center", gap: 0.6 }}>
           <Box component="i" sx={(t) => ({ width: 12, height: 12, borderRadius: "3px", bgcolor: alpha(t.palette.success.main, 0.28), border: `1px solid ${t.palette.success.main}` })} />
-          Выбрана №{unit.number}
+          {t("card.selectedNumber", { number: unit.number })}
         </Box>
         <Box component="small" sx={{ ml: "auto", fontSize: "0.66rem" }}>
-          Цвет показывает актуальный статус квартиры
+          {t("card.legend.hint")}
         </Box>
       </Box>
     </Box>
@@ -721,16 +734,20 @@ const planRoomSx = (t: Theme) => ({
 });
 
 export function FloorPlan({ unit }: { unit: Unit }) {
-  const toast = useRealEstateToast();
+  const { t } = useT("realestate");
   const balcony = balconyLabel(unit);
   const terrace = terraceLabel(unit);
+  if (!unit.roomsBreakdown.length) {
+    return (
+      <Box component="section" sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
+        <SectionTitle title={t("card.planTitle")} text={t("card.planText")} />
+        <EmptyNote>{t("card.planEmpty")}</EmptyNote>
+      </Box>
+    );
+  }
   return (
     <Box component="section" sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
-      <SectionTitle title="Планировка" text="Площади и размеры помещений">
-        <Button size="small" variant="outlined" startIcon={<FileDownloadOutlined />} onClick={() => toast("Планировка подготовлена", "демо PDF")}>
-          PDF
-        </Button>
-      </SectionTitle>
+      <SectionTitle title={t("card.planTitle")} text={t("card.planText")} />
       <Box
         sx={(t) => ({
           position: "relative",
@@ -751,10 +768,10 @@ export function FloorPlan({ unit }: { unit: Unit }) {
               {room.name}
             </Box>
             <Box component="span" sx={{ fontSize: "0.75rem", fontWeight: 800, my: 0.5 }}>
-              {num(room.area)} м²
+              {t("fmt.area", { value: num(room.area) })}
             </Box>
             <Box component="small" sx={{ fontSize: "0.7rem", color: "text.secondary" }}>
-              {num(room.width)} × {num(room.length)} м
+              {t("card.dims", { width: num(room.width), length: num(room.length) })}
             </Box>
           </Box>
         ))}
@@ -791,9 +808,9 @@ export function FloorPlan({ unit }: { unit: Unit }) {
             fontSize: 11,
             fontWeight: 700,
           }}
-          title="Север"
+          title={t("card.north")}
         >
-          С
+          {t("card.northLetter")}
         </Box>
         <Box
           sx={(t) => ({
@@ -810,11 +827,11 @@ export function FloorPlan({ unit }: { unit: Unit }) {
             fontWeight: 700,
           })}
         >
-          Вход
+          {t("card.entrance")}
         </Box>
       </Box>
       <Typography component="small" sx={{ display: "block", mt: 1, fontSize: "0.7rem", color: "text.secondary" }}>
-        Схема демонстрационная, размеры указаны по проектной документации.
+        {t("card.planNote")}
       </Typography>
     </Box>
   );
@@ -841,13 +858,14 @@ const cardSx = { p: 2, border: 1, borderColor: "divider", borderRadius: "14px", 
 const cardTitleSx = { m: 0, mb: 1.25, fontSize: "0.85rem", fontWeight: 700 } as const;
 
 export function KeyParams({ project, unit }: { project: Project; unit: Unit }) {
+  const { t } = useT("realestate");
   const floorType = floorTypeLabel(project, unit.floor);
   const tags = [
     floorType,
     terraceLabel(unit),
     balconyLabel(unit),
-    unit.hasPanoramicWindows ? "Панорамные окна" : null,
-    unit.isCorner ? "Угловая квартира" : null,
+    unit.hasPanoramicWindows ? t("filters.feature.panoramic") : null,
+    unit.isCorner ? t("card.cornerUnit") : null,
     bathroomsLabel(unit),
     unit.view,
   ].filter((tag): tag is string => Boolean(tag));
@@ -855,19 +873,19 @@ export function KeyParams({ project, unit }: { project: Project; unit: Unit }) {
   return (
     <Box component="aside" sx={cardSx}>
       <Typography component="h3" sx={cardTitleSx}>
-        Ключевые параметры
+        {t("card.keyParams")}
       </Typography>
       <SpecRows
         rows={[
-          ["Общая площадь", `${num(unit.totalArea)} м²`],
-          ["Внутренняя площадь", `${num(unit.livingArea)} м²`],
-          ["Этаж / секция", `${unit.floor} / ${unit.section}`],
-          ["Тип этажа", floorType],
-          ["Сторона света", unit.orientation],
-          ["Вид", unit.view],
-          ["Потолки", `${num(unit.ceilingHeight)} м`],
-          ["Отделка", project.finish],
-          ["Срок сдачи", project.completionLabel],
+          [t("compare.rows.totalArea"), t("fmt.area", { value: num(unit.totalArea) })],
+          [t("card.innerArea"), t("fmt.area", { value: num(unit.livingArea) })],
+          [t("compare.rows.floorSection"), `${unit.floor} / ${sectionLabel(unit.section)}`],
+          [t("card.floorType"), floorType],
+          [t("compare.rows.orientation"), unit.orientation],
+          [t("card.viewShort"), unit.view],
+          [t("compare.rows.ceiling"), t("compare.ceilingValue", { value: num(unit.ceilingHeight) })],
+          [t("card.finish"), project.finish],
+          [t("card.completion"), completionOf(project, unit)],
         ]}
       />
       <Box sx={{ mt: 1.5, display: "flex", flexWrap: "wrap", gap: 0.75 }}>
@@ -894,19 +912,28 @@ export function KeyParams({ project, unit }: { project: Project; unit: Unit }) {
 }
 
 export function RoomTable({ unit }: { unit: Unit }) {
+  const { t } = useT("realestate");
   const kind = outdoorKind(unit);
-  const rows: [string, string, string][] = unit.roomsBreakdown.map((r) => [r.name, `${num(r.area)} м²`, `${num(r.width)} × ${num(r.length)} м`]);
-  if (kind && unit.outdoor) rows.push([kind, `${num(unit.outdoor.area)} м²`, kind === "Лоджия" ? "Остеклённая" : "Открытый"]);
-  if (unit.outdoor?.type === "terrace") rows.push(["Терраса", `${num(unit.outdoor.area)} м²`, "Открытая"]);
+  const rows: [string, string, string][] = unit.roomsBreakdown.map((r) => [
+    r.name,
+    t("fmt.area", { value: num(r.area) }),
+    t("card.dims", { width: num(r.width), length: num(r.length) }),
+  ]);
+  // Размеров и остекления балкона/террасы бэк не отдаёт — только площадь.
+  if (kind && unit.outdoor) rows.push([kind, t("fmt.area", { value: num(unit.outdoor.area) }), "—"]);
+  if (unit.outdoor?.type === "terrace") rows.push([outdoorLabel("terrace"), t("fmt.area", { value: num(unit.outdoor.area) }), "—"]);
   return (
     <Box component="section" sx={cardSx}>
       <Typography component="h3" sx={cardTitleSx}>
-        Экспликация помещений
+        {t("card.roomsTitle")}
       </Typography>
+      {rows.length === 0 ? (
+        <EmptyNote>{t("card.roomsEmpty")}</EmptyNote>
+      ) : (
       <Box component="table" sx={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem", "& th, & td": { py: 0.9, borderBottom: 1, borderColor: "divider", textAlign: "left" } }}>
         <thead>
           <tr>
-            {["Помещение", "Площадь", "Размеры"].map((h) => (
+            {[t("card.roomsHead.room"), t("card.roomsHead.area"), t("card.roomsHead.size")].map((h) => (
               <Box component="th" key={h} sx={{ color: "text.secondary", fontWeight: 500, fontSize: "0.72rem" }}>
                 {h}
               </Box>
@@ -925,53 +952,59 @@ export function RoomTable({ unit }: { unit: Unit }) {
           ))}
         </tbody>
       </Box>
+      )}
     </Box>
   );
 }
 
-export function PaymentCard({ unit }: { unit: Unit }) {
+function EmptyNote({ children }: { children: React.ReactNode }) {
+  return <Typography sx={{ fontSize: "0.78rem", color: "text.secondary" }}>{children}</Typography>;
+}
+
+/** `mortgageFrom` — минимальная ставка активных банков; null — банков нет или список недоступен. */
+export function PaymentCard({ unit, mortgageFrom }: { unit: Unit; mortgageFrom: number | null }) {
+  const { t } = useT("realestate");
   const { down, monthly } = paymentPlan(unit.price);
   return (
     <Box component="section" sx={cardSx}>
       <Typography component="h3" sx={cardTitleSx}>
-        Варианты покупки
+        {t("card.payment.title")}
       </Typography>
       <SpecRows
         rows={[
-          ["Первоначальный взнос 30%", money(down)],
-          ["Рассрочка на 24 месяца", `${money(monthly)} / мес.`],
-          ["Ипотека", "от 14% годовых"],
+          [t("card.payment.downPayment"), money(down)],
+          [t("card.payment.installment"), t("card.payment.perMonth", { value: money(monthly) })],
+          ...(mortgageFrom !== null ? [[t("card.payment.mortgage"), t("card.payment.mortgageFrom", { rate: num(mortgageFrom) })] as [string, string]] : []),
         ]}
       />
-      <Typography sx={{ mt: 1.25, fontSize: "0.72rem", color: "text.secondary" }}>Цена фиксируется после бронирования квартиры.</Typography>
+      <Typography sx={{ mt: 1.25, fontSize: "0.72rem", color: "text.secondary" }}>{t("card.payment.note")}</Typography>
     </Box>
   );
 }
 
 export function TechCard({ project, unit }: { project: Project; unit: UnitDetails }) {
+  const { t } = useT("realestate");
   const [open, setOpen] = React.useState(true);
-  const planType = unit.isCorner ? "Угловая" : unit.outdoor?.type === "terrace" ? "С террасой" : unit.rooms >= 3 ? "Семейная" : "Стандартная";
-  const rows: [string, string | number][] = [
-    ["Номер помещения", unit.number],
-    ["Подъезд / секция", `Секция ${unit.section}`],
-    ["Этаж", unit.floor],
-    ["Название дома", unit.building],
-    ["Название ЖК", project.name],
-    ["Площадь, м²", num(unit.totalArea)],
-    ["Код планировки", unit.layoutCode],
-    ["Стадия строительства", project.stage],
-    ["Куда выходят окна", unit.view],
-    ["Сторона света", unit.orientation],
-    ["Номенклатура", `Квартира ${unit.number}`],
-    ["Ось", `Ось ${unit.axis}`],
-    ["Вид планировки", planType],
-    ["Высота потолка", `${num(unit.ceilingHeight)} м`],
-    ["Идентификатор 1С", unit.externalId],
-    ["Планировка", `${unit.building} · ${unit.floor} этаж · ${num(unit.totalArea)} м²`],
-    ["Отделка", project.finish],
-    ["Срок сдачи", project.completionLabel],
-    ["Статус", unitStatusMeta[unit.status].label],
-  ];
+  // Только данные бэка: пустые поля (код планировки, 1С) не показываем.
+  const rows = (
+    [
+      [t("card.tech.number"), unit.number],
+      [t("card.tech.section"), sectionLabel(unit.section)],
+      [t("card.tech.floor"), unit.floor],
+      [t("card.tech.project"), project.name],
+      [t("card.tech.area"), num(unit.totalArea)],
+      [t("card.tech.layoutCode"), unit.layoutCode],
+      [t("card.tech.stage"), project.stage],
+      [t("card.tech.windows"), unit.view],
+      [t("compare.rows.orientation"), unit.orientation],
+      [t("card.tech.axis"), t("card.tech.axisValue", { axis: unit.axis })],
+      [t("card.tech.ceiling"), t("compare.ceilingValue", { value: num(unit.ceilingHeight) })],
+      [t("card.tech.externalId"), unit.externalId],
+      [t("card.finish"), project.finish],
+      [t("card.completion"), completionOf(project, unit)],
+      [t("compare.rows.status"), unitStatusMeta[unit.status].label],
+    ] as [string, string | number][]
+  ).filter(([, value]) => value !== "" && value !== null && value !== undefined);
   return (
     <Box component="section" sx={sectionSx}>
       <ButtonBase
@@ -981,16 +1014,16 @@ export function TechCard({ project, unit }: { project: Project; unit: UnitDetail
       >
         <Box component="span" sx={{ display: "flex", flexDirection: "column" }}>
           <Typography component="small" sx={{ ...eyebrowSx, mb: 0.25 }}>
-            Техническая карточка
+            {t("card.tech.eyebrow")}
           </Typography>
           <Typography component="b" sx={{ fontSize: "0.95rem", fontWeight: 700 }}>
-            Дополнительные характеристики
+            {t("card.tech.title")}
           </Typography>
         </Box>
         <ExpandMoreOutlined sx={{ color: "text.secondary", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
       </ButtonBase>
       {open && (
-        <Box sx={{ mt: 1.5, display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)" }, gap: 1 }}>
+        <Box sx={{ mt: 1.5, display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", lg: "repeat(3, 1fr)" }, gap: 1 }}>
           {rows.map(([label, value]) => (
             <Box key={label} sx={(t) => ({ display: "flex", flexDirection: "column", gap: 0.25, p: 1.25, borderRadius: "10px", border: 1, borderColor: "divider", bgcolor: subtleBg(t) })}>
               <Typography component="span" sx={{ fontSize: "0.7rem", color: "text.secondary" }}>
@@ -1011,7 +1044,7 @@ const historyIcons: Record<UnitEventType, string> = {
   inventory: "⌂",
   reserve: "◷",
   cancel: "×",
-  payment: "₽",
+  payment: "с",
   meeting: "⌖",
   proposal: "◉",
   sale: "✓",
@@ -1036,7 +1069,9 @@ function historyTone(t: Theme, type: UnitEventType) {
     : { bgcolor: subtleBg(t, true), color: t.palette.text.secondary };
 }
 
-export function History({ unit, onOperation }: { unit: UnitDetails; onOperation: () => void }) {
+/** `onOperation` нет — операции недоступны (без realty.manage). */
+export function History({ unit, onOperation }: { unit: UnitDetails; onOperation?: () => void }) {
+  const { t } = useT("realestate");
   const [openIds, setOpenIds] = React.useState(() => new Set(unit.history.slice(0, 1).map((e) => e.id)));
   const toggle = (id: string) =>
     setOpenIds((prev) => {
@@ -1048,10 +1083,12 @@ export function History({ unit, onOperation }: { unit: UnitDetails; onOperation:
 
   return (
     <Box component="section" sx={sectionSx}>
-      <SectionTitle eyebrow="Аудит действий" title="История квартиры" text={`${unit.history.length} событий · сохраняются в карточке квартиры`} size="1rem">
-        <Button size="small" variant="outlined" startIcon={<AddOutlined />} onClick={onOperation}>
-          Операция
-        </Button>
+      <SectionTitle eyebrow={t("card.history.eyebrow")} title={t("card.history.title")} text={t("card.history.count", { count: unit.history.length })} size="1rem">
+        {onOperation && (
+          <Button size="small" variant="outlined" startIcon={<AddOutlined />} onClick={onOperation}>
+            {t("card.history.operation")}
+          </Button>
+        )}
       </SectionTitle>
       <Box sx={{ display: "grid", gap: 0.75 }}>
         {unit.history.map((event) => {

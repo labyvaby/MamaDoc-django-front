@@ -292,6 +292,7 @@ const REVIEWED_SINGULAR_VISIT_WITHOUT_GENDER = [
   "publicBooking:selectDateRequired",
   "publicBooking:selectTimeRequired",
   "publicBooking:successHint",
+  "realestate:flow.meeting.notePlaceholder",
   "reviews:public.visitLabel",
   "reviews:settings.delayLabel",
   "reviews:settings.pollerHint",

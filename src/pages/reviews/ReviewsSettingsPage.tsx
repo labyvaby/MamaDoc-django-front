@@ -4,6 +4,7 @@ import {
   Autocomplete,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Divider,
@@ -29,6 +30,7 @@ import {
   type ReviewSettings,
   type ReviewSettingsPatch,
 } from "../../api/reviews";
+import type { ClinicalRole } from "../../api/staff";
 import {
   djangoQueryKeys,
   DJANGO_DETAIL_STALE_TIME_MS,
@@ -50,6 +52,7 @@ type FormState = Pick<
   | "quietFrom"
   | "quietTo"
   | "minDaysBetween"
+  | "appointmentClinicalRoles"
   | "positiveTags"
   | "negativeTags"
   | "ravenScenario"
@@ -64,6 +67,7 @@ const FORM_KEYS: (keyof FormState)[] = [
   "quietFrom",
   "quietTo",
   "minDaysBetween",
+  "appointmentClinicalRoles",
   "positiveTags",
   "negativeTags",
   "ravenScenario",
@@ -76,6 +80,12 @@ const same = (a: unknown, b: unknown) =>
 
 const pick = (s: ReviewSettings): FormState =>
   Object.fromEntries(FORM_KEYS.map((k) => [k, s[k]])) as FormState;
+
+const CLINICAL_ROLE_OPTIONS: { value: ClinicalRole; label: string }[] = [
+  { value: "doctor", label: "Врачи" },
+  { value: "nurse", label: "Медсёстры" },
+  { value: "other", label: "Другие сотрудники" },
+];
 
 const TagEditor: React.FC<{
   label: string;
@@ -158,6 +168,16 @@ const ReviewsSettingsPage: React.FC = () => {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => (f ? { ...f, [key]: value } : f));
 
+  const toggleClinicalRole = (role: ClinicalRole, checked: boolean) => {
+    setForm((f) => {
+      if (!f) return f;
+      const roles = checked
+        ? [...new Set([...f.appointmentClinicalRoles, role])]
+        : f.appointmentClinicalRoles.filter((item) => item !== role);
+      return { ...f, appointmentClinicalRoles: roles };
+    });
+  };
+
   const mutation = useMutation({
     mutationFn: (patch: ReviewSettingsPatch) => updateReviewSettings(patch),
     onSuccess: (data) => {
@@ -178,6 +198,7 @@ const ReviewsSettingsPage: React.FC = () => {
   const linksInvalid = linkChanges.some(
     (c) => c.url !== "" && !isReviewUrl(c.url)
   );
+  const rolesInvalid = !!form && form.appointmentClinicalRoles.length === 0;
   const dirty =
     !!form &&
     !!original &&
@@ -237,6 +258,36 @@ const ReviewsSettingsPage: React.FC = () => {
                 }
                 label="Спрашивать отзыв после каждого завершённого приёма"
               />
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 1.5, mb: 0.5 }}
+              >
+                Отправлять запросы по приёмам этих типов сотрудников
+              </Typography>
+              <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+                {CLINICAL_ROLE_OPTIONS.map((option) => (
+                  <FormControlLabel
+                    key={option.value}
+                    control={
+                      <Checkbox
+                        checked={form.appointmentClinicalRoles.includes(
+                          option.value
+                        )}
+                        onChange={(e) =>
+                          toggleClinicalRole(option.value, e.target.checked)
+                        }
+                      />
+                    }
+                    label={option.label}
+                  />
+                ))}
+              </Stack>
+              {form.appointmentClinicalRoles.length === 0 && (
+                <Alert severity="warning" sx={{ mt: 1 }}>
+                  Выберите хотя бы один тип сотрудника.
+                </Alert>
+              )}
               <Typography
                 variant="caption"
                 color="text.secondary"
@@ -402,7 +453,9 @@ const ReviewsSettingsPage: React.FC = () => {
               <Button
                 variant="contained"
                 onClick={handleSave}
-                disabled={!dirty || linksInvalid || mutation.isPending}
+                disabled={
+                  !dirty || linksInvalid || rolesInvalid || mutation.isPending
+                }
                 startIcon={
                   mutation.isPending ? (
                     <CircularProgress size={16} />

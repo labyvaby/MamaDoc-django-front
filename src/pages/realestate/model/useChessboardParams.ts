@@ -1,9 +1,10 @@
 import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router";
-import { boardViews, type BoardView } from "./board";
+import { boardPaints, boardViews, type BoardPaint, type BoardView } from "./board";
 import {
   defaultUnitFilters,
   featureOptions,
+  holdOptions,
   roomsOptions,
   statusOptions,
   type NumberRange,
@@ -14,12 +15,13 @@ export interface ChessboardParams extends UnitFilters {
   projectId: string | null;
   /** 'auto' — вид выбирается по ширине корпуса. */
   view: BoardView | "auto";
+  paint: BoardPaint;
   unitId: string | null;
 }
 
 export type ChessboardPatch = Partial<
   Record<
-    "project" | "status" | "rooms" | "feature" | "view" | "unit" | "price" | "area" | "floor",
+    "project" | "status" | "rooms" | "feature" | "hold" | "view" | "paint" | "unit" | "price" | "area" | "floor",
     string | null
   >
 >;
@@ -46,7 +48,9 @@ const defaults: Record<string, string> = {
   status: defaultUnitFilters.status,
   rooms: defaultUnitFilters.rooms,
   feature: defaultUnitFilters.feature,
+  hold: defaultUnitFilters.hold,
   view: "auto",
+  paint: "status",
 };
 
 /**
@@ -61,20 +65,14 @@ export function useChessboardParams() {
     () => ({
       projectId: searchParams.get("project"),
       status: oneOf(searchParams.get("status"), statusOptions, "all"),
-      rooms: oneOf(
-        searchParams.get("rooms"),
-        roomsOptions.map(([v]) => v),
-        "all",
-      ),
-      feature: oneOf(
-        searchParams.get("feature"),
-        featureOptions.map(([v]) => v),
-        "all",
-      ),
+      rooms: oneOf(searchParams.get("rooms"), roomsOptions, "all"),
+      feature: oneOf(searchParams.get("feature"), featureOptions, "all"),
+      hold: oneOf(searchParams.get("hold"), holdOptions, "all"),
       price: parseRange(searchParams.get("price"), PRICE_SCALE),
       area: parseRange(searchParams.get("area")),
       floor: parseRange(searchParams.get("floor")),
       view: oneOf<BoardView | "auto">(searchParams.get("view"), [...boardViews, "auto"], "auto"),
+      paint: oneOf(searchParams.get("paint"), boardPaints, "status"),
       unitId: searchParams.get("unit"),
     }),
     [searchParams],

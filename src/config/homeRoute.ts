@@ -2,7 +2,7 @@ import { PAGE_PERMISSIONS } from "./accessPermissions";
 import type { RoleName } from "../types/rbac";
 
 type PermissionCheck = (permission: string | string[]) => boolean;
-type ModuleCheck = (module: "cleaning" | "documents" | "knowledge") => boolean;
+type ModuleCheck = (module: "cleaning" | "documents" | "knowledge" | "realty") => boolean;
 
 export interface HomeRouteContext {
   roleCode?: RoleName | string | null;
@@ -48,6 +48,9 @@ export function resolveHomeRoute({
   if (vertical === "hotel" && can(PAGE_PERMISSIONS.schedule)) {
     return "/schedule";
   }
+  // Застройщик работает в шахматке: у суперадмина и широких ролей есть и
+  // клиничная Регистратура, но застройщику она ни к чему.
+  if (vertical === "realestate" && canOpenModule("realty")) return "/realestate/chessboard";
 
   if (role === "doctor" && can(PAGE_PERMISSIONS.doctorRoom)) return "/doctor";
   if (role === "nurse" && can(PAGE_PERMISSIONS.nurseRoom)) return "/nurse";

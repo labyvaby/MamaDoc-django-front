@@ -29,16 +29,16 @@ export const MOCKED_MODULE_GATES = {
     permissions: ["knowledge.view"],
   },
   // Квартиры и шахматка застройщика (вертикаль realestate). Ключ модуля и
-  // код права — предположение фронта, бэк их ещё не завёл (см. api/realestate.ts).
-  realestate: {
+  // право на бэке — realty / realty.view (test2, 28.09.2026; см. api/realestate.ts).
+  realty: {
     mocksEnabled: REALESTATE_USE_MOCKS,
-    permissions: ["realestate.view"],
+    permissions: ["realty.view"],
   },
 } as const;
 
 /**
  * Переключатель модулей, которых бэк ещё не выдаёт ни одной организации:
- *   localStorage.setItem("mamadoc:modules", "realestate"); location.reload();
+ *   localStorage.setItem("mamadoc:modules", "realty"); location.reload();
  * Работает только для модулей на моках, в dev-сборке и на тестовом стенде —
  * чтобы показать модуль до бэка. Сборки теста и прода собираются из одного кода,
  * поэтому стенд различаем по хосту во время работы: на проде переключатель мёртв.

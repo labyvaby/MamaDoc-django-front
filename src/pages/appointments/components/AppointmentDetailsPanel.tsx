@@ -87,6 +87,7 @@ import AppointmentProductLines, {
 import AppointmentConsumptions from "./details/AppointmentConsumptions";
 import AppointmentDueDoses from "./details/AppointmentDueDoses";
 import AppointmentPriceHistory from "./details/AppointmentPriceHistory";
+import { appointmentNetPaid } from "./paymentCancelGuard";
 import { useAppointmentReview } from "../../reviews/AppointmentReviewBlock";
 
 /** Действие шапки карточки — рисуется кнопкой или пунктом меню. */
@@ -398,6 +399,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   // «discounted» без внесённых сумм — скидка 100%, тоже закрытый расчёт.
   const isPaymentAccepted = hasPaid || payStatus === "paid" || payStatus === "discounted";
 
+  // Оплаченный приём не отменяют — сначала возврат всей суммы (правило
+  // заказчика 29.09.2026). Сводка оплаты свежее и знает о возвратах.
+  const netPaid = appointmentNetPaid(pay ?? appt);
+  const cancelBlockedByPayment = netPaid > 0;
+
   // ── чек по оплаченному приёму ─────────────────────────────────────────────
   // Раньше чек печатали только из дровера оплаты и из заключения; кассе он
   // нужен сразу из карточки, без повторного открытия оплаты.
@@ -620,7 +626,21 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     };
 
     const actionBtn =
-      canManageFinance && !isCancelled ? (
+      canManageFinance && isCancelled && netPaid > 0 ? (
+        // Отменённый приём с деньгами (отменили до запрета) — принять оплату
+        // нельзя, но возврат оформить нужно: дровер оплаты у отменённого
+        // приёма показывает только возвраты.
+        <Button
+          variant="outlined"
+          color="error"
+          size="small"
+          startIcon={<PaymentsOutlined />}
+          onClick={() => onPay(appt)}
+          sx={{ boxShadow: "none", textTransform: "none", whiteSpace: "nowrap" }}
+        >
+          {t("details.openRefund")}
+        </Button>
+      ) : canManageFinance && !isCancelled ? (
         <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
           <Button
             variant={hasPaid ? "outlined" : "contained"}
@@ -861,7 +881,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 
   const handleConfirm = () => {
     setConfirmOpen(false);
-    if (confirmAction === "cancel" && onCancelAppt) onCancelAppt(appt);
+    if (confirmAction === "cancel" && onCancelAppt && !cancelBlockedByPayment) onCancelAppt(appt);
     if (confirmAction === "delete" && onDelete) onDelete(appt);
     setConfirmAction(null);
   };
@@ -1389,20 +1409,49 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 
       {/* ── Confirm dialog ── */}
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
-        <DialogTitle>
-          {confirmAction === "delete" ? t("details.deleteTitle") : t("details.cancelTitle")}
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            {confirmAction === "delete" ? t("details.deleteText") : t("details.cancelText")}
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmOpen(false)}>{t("details.back")}</Button>
-          <Button onClick={handleConfirm} color="error" variant="contained" autoFocus>
-            {confirmAction === "delete" ? t("details.delete") : t("details.cancelSubmit")}
-          </Button>
-        </DialogActions>
+        {confirmAction === "cancel" && cancelBlockedByPayment ? (
+          <>
+            <DialogTitle>{t("details.cancelBlockedTitle")}</DialogTitle>
+            <DialogContent>
+              <DialogContentText>
+                {t("details.cancelBlockedText", { amount: som(netPaid) })}
+              </DialogContentText>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setConfirmOpen(false)}>{t("details.back")}</Button>
+              {canManageFinance && (
+                <Button
+                  onClick={() => {
+                    setConfirmOpen(false);
+                    setConfirmAction(null);
+                    onPay(appt);
+                  }}
+                  variant="contained"
+                  autoFocus
+                >
+                  {t("details.openRefund")}
+                </Button>
+              )}
+            </DialogActions>
+          </>
+        ) : (
+          <>
+            <DialogTitle>
+              {confirmAction === "delete" ? t("details.deleteTitle") : t("details.cancelTitle")}
+            </DialogTitle>
+            <DialogContent>
+              <DialogContentText>
+                {confirmAction === "delete" ? t("details.deleteText") : t("details.cancelText")}
+              </DialogContentText>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setConfirmOpen(false)}>{t("details.back")}</Button>
+              <Button onClick={handleConfirm} color="error" variant="contained" autoFocus>
+                {confirmAction === "delete" ? t("details.delete") : t("details.cancelSubmit")}
+              </Button>
+            </DialogActions>
+          </>
+        )}
       </Dialog>
     </>
   );

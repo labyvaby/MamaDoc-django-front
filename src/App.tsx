@@ -1445,11 +1445,11 @@ function App() {
                                 </RequireModule>
                               }
                             />
-                            {/* Квартиры и шахматка застройщика — вертикаль realestate, на моках. */}
+                            {/* Квартиры и шахматка застройщика — вертикаль realestate, модуль бэка realty. */}
                             <Route
                               path="realestate/chessboard"
                               element={
-                                <RequireModule module="realestate">
+                                <RequireModule module="realty">
                                   <Suspense fallback={<LinearProgress />}>
                                     <RealEstateChessboardPage />
                                   </Suspense>
