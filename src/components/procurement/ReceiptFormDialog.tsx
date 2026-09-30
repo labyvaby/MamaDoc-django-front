@@ -100,7 +100,13 @@ interface FormLine {
   /** Товара нет в каталоге — карточка заведётся вместе с приходом. */
   newProduct?: NewProductDraft;
   quantity: string;
+  /** Цена за единицу — именно она уходит на сервер (`costAmount`). */
   price: string;
+  /**
+   * Сумма строки, как её ввели руками (из накладной). Пусто — сумму считаем
+   * из цены. Заполнена — цена за единицу выводится из неё и количества.
+   */
+  amount: string;
   lotNumber: string;
   expiresAt: Dayjs | null;
   /** Строка пришла из распознавания: показываем исходный текст и кандидатов. */
@@ -120,9 +126,9 @@ interface FormLine {
 
 /**
  * Колонки позиции на md+ (десктоп; телефон в проекте — всё, что уже md, см.
- * APP_BREAKPOINTS): товар, кол-во, цена, сумма, удаление. Шапка и строки — по одной сетке.
+ * APP_BREAKPOINTS): товар, кол-во, цена за ед., сумма, удаление. Шапка и строки — по одной сетке.
  */
-const LINE_COLUMNS = "minmax(0, 1fr) 104px 116px 104px 32px";
+const LINE_COLUMNS = "minmax(0, 1fr) 104px 124px 132px 32px";
 
 /** Поля шапки раскладываются сами по ширине колонки — и в модалке с превью, и без. */
 const FIELD_GRID = "repeat(auto-fill, minmax(220px, 1fr))";
@@ -155,6 +161,7 @@ const newLine = (): FormLine => ({
   product: null,
   quantity: "",
   price: "",
+  amount: "",
   lotNumber: "",
   expiresAt: null,
 });
@@ -198,6 +205,16 @@ const paymentDueDate = (terms: string | null, invoiceDate: string | null): Dayjs
 const toNumber = (raw: string): number => {
   const n = Number(String(raw).replace(",", ".").replace(/\s/g, ""));
   return Number.isFinite(n) ? n : 0;
+};
+
+/** Деньги — до копеек: сервер хранит цену за единицу с двумя знаками. */
+const roundMoney = (value: number): number => Math.round(value * 100) / 100;
+
+/** Цена за единицу из суммы строки; без количества её не вывести — пусто. */
+const priceFromAmount = (amount: string, quantity: string): string => {
+  const sum = toNumber(amount);
+  const qty = toNumber(quantity);
+  return sum > 0 && qty > 0 ? String(roundMoney(sum / qty)) : "";
 };
 
 /** Снимок или PDF — то, что принимает распознавание; остальное из drag&drop отбрасываем. */
@@ -542,6 +559,22 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const removeLine = (key: string) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.key !== key) : [newLine()]));
 
+  // Цена и сумма строки — два входа в одно число. Что ввели последним, то и
+  // держим: введённая сумма (как в накладной) при смене количества остаётся,
+  // а цена за единицу пересчитывается; введённая цена — наоборот.
+  const setLineQuantity = (key: string, quantity: string) =>
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.key !== key) return l;
+        return l.amount ? { ...l, quantity, price: priceFromAmount(l.amount, quantity) } : { ...l, quantity };
+      }),
+    );
+  const setLinePrice = (key: string, price: string) => updateLine(key, { price, amount: "" });
+  const setLineAmount = (key: string, amount: string) =>
+    setLines((prev) =>
+      prev.map((l) => (l.key === key ? { ...l, amount, price: priceFromAmount(amount, l.quantity) } : l)),
+    );
+
   // ── Новый товар из строки ────────────────────────────────────────────────
 
   const updateDraft = (key: string, patch: Partial<NewProductDraft>) => {
@@ -608,7 +641,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
     : null;
 
   const hasLineDraft = lines.some((line) =>
-    Boolean(line.product || line.newProduct || line.quantity || line.price || line.lotNumber || line.expiresAt || line.recognized),
+    Boolean(line.product || line.newProduct || line.quantity || line.price || line.amount || line.lotNumber || line.expiresAt || line.recognized),
   );
   const isDirty = Boolean(
     supplierId !== "" ||
@@ -698,16 +731,16 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           : null;
         const expires = line.expiresAt ? dayjs(line.expiresAt) : null;
         const quantity = line.quantity ? Number(line.quantity) : null;
-        const totalPrice = line.total && quantity && quantity > 0 ? Number(line.total) / quantity : null;
+        const quantityText = quantity != null && Number.isFinite(quantity) ? String(quantity) : "";
+        // Цены за единицу в документе нет, есть только сумма строки — её и
+        // показываем как введённую сумму, а цену выводим из неё.
+        const amount = !line.price && line.total ? String(Number(line.total)) : "";
         return {
           ...newLine(),
           product: matched,
-          quantity: quantity != null && Number.isFinite(quantity) ? String(quantity) : "",
-          price: line.price
-            ? String(Number(line.price))
-            : totalPrice != null && Number.isFinite(totalPrice)
-              ? String(totalPrice)
-              : "",
+          quantity: quantityText,
+          price: line.price ? String(Number(line.price)) : priceFromAmount(amount, quantityText),
+          amount,
           lotNumber: line.lotNumber ?? "",
           expiresAt: expires && expires.isValid() ? expires : null,
           recognized: recognizedOf(line),
@@ -1441,7 +1474,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           bgcolor: "action.hover",
         }}
       >
-        {["Товар", "Кол-во", "Цена", "Сумма", ""].map((label, i) => (
+        {["Товар", "Кол-во", "Цена за ед.", "Сумма", ""].map((label, i) => (
           <Typography key={i} variant="caption" color="text.secondary" sx={{ fontWeight: 600, textAlign: i === 0 ? "left" : "right" }}>
             {label}
           </Typography>
@@ -1518,7 +1551,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
             <Box
               sx={{
                 display: "grid",
-                gridTemplateColumns: { xs: "minmax(0, 1fr) minmax(0, 1fr) auto 32px", md: LINE_COLUMNS },
+                gridTemplateColumns: { xs: "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 32px", md: LINE_COLUMNS },
                 // Название нового товара вводят руками — ему вся ширина строки,
                 // количество и цена — строкой ниже, как на телефоне.
                 gridTemplateAreas: draft
@@ -1531,7 +1564,9 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
                       md: '"product qty price total del"',
                     },
                 gap: 1,
-                alignItems: "center",
+                // По верху, не по центру: подсказка «в учёт …» под суммой не
+                // должна сдвигать поле относительно соседей.
+                alignItems: "start",
               }}
             >
               {draft ? (
@@ -1619,8 +1654,10 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
               <TextField
                 size="small"
                 value={line.quantity}
-                onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
+                onChange={(e) => setLineQuantity(line.key, e.target.value)}
                 placeholder="Кол-во"
+                // На телефоне шапки колонок нет — подпись у самого поля.
+                label={isPhone ? "Кол-во" : undefined}
                 sx={{ gridArea: "qty", minWidth: 0 }}
                 inputProps={{ inputMode: "decimal", style: { textAlign: "right" }, "aria-label": "Количество" }}
                 InputProps={{
@@ -1634,29 +1671,37 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
               <TextField
                 size="small"
                 value={line.price}
-                onChange={(e) => updateLine(line.key, { price: e.target.value })}
-                placeholder="Цена"
+                onChange={(e) => setLinePrice(line.key, e.target.value)}
+                placeholder={`за 1 ${unitLabel ?? "шт"}`}
+                // Поле на телефоне ~90px: «Цена за ед.» обрезается.
+                label={isPhone ? "За ед." : undefined}
                 sx={{ gridArea: "price", minWidth: 0 }}
-                inputProps={{ inputMode: "decimal", style: { textAlign: "right" }, "aria-label": "Цена" }}
+                inputProps={{ inputMode: "decimal", style: { textAlign: "right" }, "aria-label": "Цена за единицу" }}
               />
-              <Typography
-                variant="body2"
-                sx={{
-                  gridArea: "total",
-                  fontWeight: 700,
-                  textAlign: "right",
-                  fontVariantNumeric: "tabular-nums",
-                  whiteSpace: "nowrap",
-                  color: lineTotal(line) > 0 ? "text.primary" : "text.disabled",
-                }}
-              >
-                {lineTotal(line) > 0 ? formatMoney(lineTotal(line)) : "—"}
-              </Typography>
+              {(() => {
+                const recorded = roundMoney(lineTotal(line));
+                // Сумма не делится на количество до копейки (1000 на 3 шт) —
+                // в учёт уйдёт цена × количество; показываем, сколько именно.
+                const drift = line.amount !== "" && recorded > 0 && Math.abs(recorded - toNumber(line.amount)) >= 0.005;
+                return (
+                  <TextField
+                    size="small"
+                    value={line.amount !== "" ? line.amount : recorded > 0 ? String(recorded) : ""}
+                    onChange={(e) => setLineAmount(line.key, e.target.value)}
+                    placeholder="Сумма"
+                    label={isPhone ? "Сумма" : undefined}
+                    helperText={drift ? `в учёт ${formatMoney(recorded)}` : undefined}
+                    FormHelperTextProps={{ sx: { mx: 0, textAlign: "right", color: "warning.main" } }}
+                    sx={{ gridArea: "total", minWidth: 0, "& input": { fontWeight: 700 } }}
+                    inputProps={{ inputMode: "decimal", style: { textAlign: "right" }, "aria-label": "Сумма строки" }}
+                  />
+                );
+              })()}
               <IconButton
                 size="small"
                 onClick={() => removeLine(line.key)}
                 aria-label="Удалить позицию"
-                sx={{ gridArea: "del", justifySelf: "end", color: "text.secondary", "&:hover": { color: "error.main" } }}
+                sx={{ gridArea: "del", justifySelf: "end", mt: 0.375, color: "text.secondary", "&:hover": { color: "error.main" } }}
               >
                 <DeleteOutlineOutlined fontSize="small" />
               </IconButton>
