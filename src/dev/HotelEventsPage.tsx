@@ -215,9 +215,11 @@ const DemandMeter: React.FC<{ demand: HotelCityEventDemand; compact?: boolean }>
 const MonthCalendar: React.FC<{
   month: Dayjs;
   events: HotelCityEvent[];
+  /** Месяц ещё подгружается — тонкая полоска под шапкой календаря. */
+  loading?: boolean;
   onMonthChange: (m: Dayjs) => void;
   onOpen: (e: HotelCityEvent) => void;
-}> = ({ month, events, onMonthChange, onOpen }) => {
+}> = ({ month, events, loading, onMonthChange, onOpen }) => {
   const theme = useTheme();
   const today = dayjs().format("YYYY-MM-DD");
   // Сетка с понедельника: 6 недель, чтобы высота не прыгала между месяцами.
@@ -244,6 +246,7 @@ const MonthCalendar: React.FC<{
         </Stack>
       </Stack>
 
+      <Box sx={{ height: 2 }}>{loading && <LinearProgress sx={{ height: 2 }} />}</Box>
       <Box sx={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}>
         {WEEKDAYS.map((w, i) => (
           <Typography
@@ -753,10 +756,14 @@ export const HotelEventsPage: React.FC = () => {
   const [openEvent, setOpenEvent] = React.useState<HotelCityEvent | null>(null);
   const [addOpen, setAddOpen] = React.useState(false);
 
-  // Одна загрузка на год вперёд: и месяц, и «Ближайшие» берут из неё.
-  const rangeFrom = dayjs().startOf("month").subtract(1, "month").format("YYYY-MM-DD");
-  const rangeTo = dayjs().add(12, "month").endOf("month").format("YYYY-MM-DD");
+  // «Ближайшие» и сводка — полгода вперёд; сетка месяца — свой запрос на 42
+  // дня сетки (бэк отдаёт не больше 63 дней за раз, и листать календарь можно
+  // на любой месяц, а не только в пределах заранее загруженного года).
+  const rangeFrom = dayjs().format("YYYY-MM-DD");
+  const rangeTo = dayjs().add(6, "month").format("YYYY-MM-DD");
   const eventsQuery = useCityEvents(property?.id, rangeFrom, rangeTo);
+  const gridStart = month.startOf("month").subtract((month.startOf("month").day() + 6) % 7, "day");
+  const monthQuery = useCityEvents(property?.id, gridStart.format("YYYY-MM-DD"), gridStart.add(41, "day").format("YYYY-MM-DD"));
   const rulesQuery = useQuery({
     queryKey: ["hotel", "pricingRules", property?.id],
     queryFn: ({ signal }) => listPricingRules(property!.id, signal),
@@ -872,7 +879,13 @@ export const HotelEventsPage: React.FC = () => {
           </Stack>
 
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1.65fr) minmax(320px, 1fr)" }, gap: 2.5, alignItems: "start" }}>
-            <MonthCalendar month={month} events={filtered} onMonthChange={setMonth} onOpen={setOpenEvent} />
+            <MonthCalendar
+              month={month}
+              events={(monthQuery.data?.events ?? []).filter((e) => filter === "all" || e.category === filter)}
+              loading={monthQuery.isFetching}
+              onMonthChange={setMonth}
+              onOpen={setOpenEvent}
+            />
             <Box>
               <SectionLabel>Ближайшие</SectionLabel>
               {upcoming.length === 0 ? (
