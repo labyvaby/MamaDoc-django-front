@@ -3,10 +3,15 @@ import { createRoot } from "react-dom/client";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
+import "dayjs/locale/ru";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.tz.setDefault("Asia/Bishkek");
+// Русская локаль — один раз на всё приложение. Раньше её включали отдельные
+// страницы побочным эффектом импорта; экран, который таких страниц не грузил
+// (отель), показывал «We» и «September».
+dayjs.locale("ru");
 
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
