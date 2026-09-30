@@ -77,7 +77,7 @@ export const SETTINGS_GROUPS = [
   "access",
   "catalogs",
   "operations",
-  "platform",
+  "technical",
 ] as const;
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
@@ -207,7 +207,7 @@ const TAB_DEFS: TabDef[] = [
     key: "integrations",
     to: "/settings/integrations",
     icon: <HubOutlined fontSize="small" />,
-    group: "operations",
+    group: "technical",
   },
   {
     key: "conclusionForms",
@@ -237,7 +237,7 @@ const TAB_DEFS: TabDef[] = [
     key: "skud",
     to: "/settings/skud",
     icon: <RouterOutlined fontSize="small" />,
-    group: "operations",
+    group: "technical",
   },
   {
     key: "announcements",
@@ -261,39 +261,39 @@ const TAB_DEFS: TabDef[] = [
     key: "notificationGateway",
     to: "/settings/notification-gateway",
     icon: <RouterOutlined fontSize="small" />,
-    group: "operations",
+    group: "technical",
   },
   {
     key: "automations",
     to: "/settings/automations",
     icon: <BoltOutlined fontSize="small" />,
-    group: "operations",
+    group: "technical",
   },
   {
     key: "whatsapp",
     to: "/settings/whatsapp",
     icon: <WhatsApp fontSize="small" />,
-    group: "operations",
+    group: "technical",
   },
   {
     key: "odoctor",
     to: "/settings/odoctor",
     icon: <StorefrontOutlined fontSize="small" />,
-    group: "operations",
+    group: "technical",
   },
   {
     key: "chatwoot",
     to: "/settings/chatwoot",
     icon: <ForumOutlined fontSize="small" />,
-    group: "operations",
+    group: "technical",
   },
   {
     key: "lab",
     to: "/settings/lab",
     icon: <ScienceOutlined fontSize="small" />,
-    group: "operations",
+    group: "technical",
   },
-  { key: "altegio", to: "/settings/altegio", icon: <RouterOutlined fontSize="small" />, group: "operations" },
+  { key: "altegio", to: "/settings/altegio", icon: <RouterOutlined fontSize="small" />, group: "technical" },
 ];
 
 /**

@@ -9,7 +9,8 @@
       "clinic": "{{org.nom, capitalize}}",
       "access": "Доступы",
       "catalogs": "Справочники",
-      "operations": "Операционные"
+      "operations": "Операционные",
+      "technical": "Технические настройки"
     },
     "tabs": {
       "store": "Магазин",
