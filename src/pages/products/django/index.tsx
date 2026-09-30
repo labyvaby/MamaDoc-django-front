@@ -248,7 +248,11 @@ const DjangoProductsPage: React.FC = () => {
       const matchSearch =
         p.name.toLowerCase().includes(q) ||
         (p.barcode && p.barcode.includes(q)) ||
-        (p.category && p.category.toLowerCase().includes(q));
+        (p.category && p.category.toLowerCase().includes(q)) ||
+        // Бренд-свойство, а не часть названия — как в поиске кассы.
+        (p.attributes ?? []).some(
+          (a) => a.role === "generic" && /^(бренд|brand)$/i.test(a.attributeName.trim()) && a.value.toLowerCase().includes(q),
+        );
 
       if (!matchSearch) return false;
 

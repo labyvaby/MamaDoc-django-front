@@ -153,6 +153,8 @@ export interface GoodsReceiptNewProductInput {
   sku?: string;
   color?: string;
   size?: string;
+  /** Свойство «Бренд»; пусто — бэк возьмёт бренд по умолчанию из карточки поставщика. */
+  brand?: string;
 }
 
 /** Строка накладной: товар каталога (`productId`) либо новый (`newProduct`) — одно из двух. */
