@@ -11,6 +11,7 @@ import {
   LinearProgress,
   IconButton,
   Chip,
+  Snackbar,
   Stack,
   TextField,
   Typography,
@@ -54,6 +55,9 @@ import {
 import { posColors } from "./layout";
 import type { PosCatalogItem, PosClient, PosReceiptLine } from "./types";
 import { PosAmount } from "./ui";
+import { playScanFeedback, useBarcodeScanner } from "./barcodeScanner";
+import { formatPosError, posError, toPosUserError, type PosUserError } from "./errors";
+import { PosErrorNotice } from "./ErrorNotice";
 
 type CartRow = {
   product: PosProduct;
@@ -245,6 +249,10 @@ export default function LivePosPage() {
   const [activeResult, setActiveResult] = React.useState(-1);
   const resultsRef = React.useRef<PosProductResultsHandle>(null);
   const [rows, setRows] = React.useState<CartRow[]>([]);
+  // Сканер срабатывает чаще, чем React перерисовывает страницу: остаток
+  // сверяем с последним составом чека, а не с тем, что был при прошлом рендере.
+  const rowsRef = React.useRef<CartRow[]>(rows);
+  rowsRef.current = rows;
   const [variants, setVariants] = React.useState<PosProduct[]>([]);
   const [client, setClient] = React.useState<PosClient | null>(null);
   const [clientQuery, setClientQuery] = React.useState("");
@@ -259,7 +267,13 @@ export default function LivePosPage() {
   const [pending, setPending] = React.useState(false);
   const sending = React.useRef(false);
   const attempt = React.useRef({ fingerprint: "", key: "" });
-  const [error, setError] = React.useState<string | null>(null);
+  const [error, setErrorState] = React.useState<PosUserError | null>(null);
+  /** Принимает ошибку каталога, ответ API или строку — кассир видит понятный текст. */
+  const setError = React.useCallback(
+    (value: unknown) => setErrorState(value == null ? null : toPosUserError(value)),
+    []
+  );
+  const [addedNotice, setAddedNotice] = React.useState<{ key: number; text: string } | null>(null);
   const [saved, setSaved] = React.useState<PosSavedReceipt | null>(null);
   const [confirmRequest, setConfirmRequest] =
     React.useState<PosConfirmRequest | null>(null);
@@ -584,40 +598,41 @@ export default function LivePosPage() {
     try {
       await callback();
     } catch (e) {
-      setError(message(e));
+      setError(e);
     } finally {
       sending.current = false;
       setPending(false);
     }
   };
-  const add = async (product: PosProduct) => {
-    if (!actions.sell || held || pending) return;
-    if (Number(product.stock) <= 0) {
-      setError("На выбранном складе нет свободного остатка.");
-      return;
+  /** Добавить товар в чек. `true` — позиция добавлена или её количество выросло. */
+  const add = async (product: PosProduct): Promise<boolean> => {
+    if (!actions.sell) {
+      setError(posError("NO_SELL_PERMISSION"));
+      return false;
+    }
+    if (held || pending) return false;
+    const stock = Number(product.stock);
+    if (stock <= 0) {
+      setError(posError("OUT_OF_STOCK", { name: product.name }));
+      return false;
+    }
+    const existing = rowsRef.current.find((row) => row.product.id === product.id);
+    if (existing && !existing.removed && existing.quantity >= stock) {
+      setError(posError("STOCK_LIMIT", { name: product.name, stock }));
+      return false;
     }
     setRows((previous) => {
-      const existing = previous.find((row) => row.product.id === product.id);
-      if (
-        existing &&
-        !existing.removed &&
-        existing.quantity >= Number(product.stock)
-      ) {
-        setError("Достигнут доступный остаток.");
-        return previous;
-      }
-      return existing
+      const current = previous.find((row) => row.product.id === product.id);
+      if (current && !current.removed && current.quantity >= stock) return previous;
+      return current
         ? previous.map((row) =>
             row.product.id === product.id
-              ? {
-                  ...row,
-                  quantity: row.removed ? 1 : row.quantity + 1,
-                  removed: false,
-                }
+              ? { ...row, quantity: row.removed ? 1 : row.quantity + 1, removed: false }
               : row
           )
         : [...previous, { product, quantity: 1 }];
     });
+    setError(null);
     setSearch("");
     searchInputRef.current?.focus();
     if (product.modelId) {
@@ -631,43 +646,78 @@ export default function LivePosPage() {
           ...previous.filter((item) => item.modelId !== product.modelId),
           ...result.results,
         ]);
-      } catch (e) {
-        setError(message(e));
+      } catch {
+        // Без списка вариантов строка просто не предложит сменить цвет/размер.
       }
     }
+    return true;
   };
-  const scanProduct = async (rawCode: string) => {
+
+  /**
+   * Товар по штрихкоду или артикулу — только точное совпадение, без учёта
+   * регистра. Поиск по названию сюда не подходит: частичное совпадение
+   * положило бы в чек не тот товар.
+   */
+  const addByCode = async (rawCode: string, source: "scanner" | "manual") => {
     const code = rawCode.trim();
-    searchInputRef.current?.focus();
-    if (code) setSearch(code);
-    if (
-      !canStartProductSearch(code) ||
-      !actions.sell ||
-      pending ||
-      held
-    )
-      return;
+    if (!code) return;
+    const fail = (value: PosUserError) => {
+      setError(value);
+      if (source === "scanner") playScanFeedback(false);
+    };
+    if (!actions.sell) return fail(posError("NO_SELL_PERMISSION"));
+    if (held) return fail(posError("SCAN_HELD_RECEIPT"));
+    if (pending) return fail(posError("SCAN_BUSY"));
+    if (!warehouseId) return fail(posError("NO_WAREHOUSE"));
+    if (source === "manual" && !canStartProductSearch(code)) return;
     try {
-      const result = await getPosProducts(scope, {
-        warehouseId,
-        search: code,
-        limit: 100,
-      });
-      const exact = result.results.find(
-        (item) =>
-          item.barcode === code ||
-          item.barcodes.includes(code) ||
-          item.sku === code
+      const result = await getPosProducts(scope, { warehouseId, search: code, limit: 50 });
+      const wanted = code.toLocaleLowerCase();
+      const same = (value: string | null | undefined) => (value ?? "").trim().toLocaleLowerCase() === wanted;
+      const exact = result.results.filter(
+        (item) => same(item.barcode) || item.barcodes.some(same) || same(item.sku)
       );
-      if (exact) void add(exact);
-      else if (result.count === 1) void add(result.results[0]);
-      else
-        setError(
-          "Уточните штрихкод или выберите товар в результатах поиска."
-        );
+      const match =
+        exact.length === 1
+          ? exact[0]
+          : source === "manual" && !exact.length && result.count === 1
+          ? result.results[0]
+          : undefined;
+      if (match) {
+        if (await add(match)) {
+          if (source === "scanner") playScanFeedback(true);
+          setAddedNotice({ key: Date.now(), text: `Добавлено: ${match.name}` });
+        } else if (source === "scanner") playScanFeedback(false);
+        return;
+      }
+      if (exact.length > 1) return fail(posError("SCAN_AMBIGUOUS", { code }));
+      // Ручной ввод с несколькими совпадениями по названию — кассир выберет в списке.
+      if (source === "manual" && result.count > 0) return;
+      fail(posError("SCAN_NOT_FOUND", { code }));
     } catch (e) {
-      setError(message(e));
+      fail(toPosUserError(e));
     }
+  };
+
+  /** Код со сканера — сразу в чек, при любом фокусе. */
+  const handleScan = (code: string) => {
+    // Открыто окно (оплата, скидка, выбор варианта): товар в чек не кладём —
+    // иначе сумма поменялась бы прямо во время оплаты.
+    const modalOpen =
+      checkoutOpen ||
+      holdOpen ||
+      list !== null ||
+      saved !== null ||
+      returnTarget !== null ||
+      confirmRequest !== null ||
+      Boolean(document.querySelector(".MuiModal-root:not(.MuiModal-hidden)"));
+    if (modalOpen) {
+      setError(posError("SCAN_BLOCKED_DIALOG"));
+      playScanFeedback(false);
+      return;
+    }
+    setResultsOpen(false);
+    void addByCode(code, "scanner");
   };
   const update = (id: string, change: Partial<CartRow>) => {
     if (!actions.sell || held || pending) return;
@@ -689,15 +739,13 @@ export default function LivePosPage() {
         p.attributes.find((a) => a.role === otherRole)?.id === other
     );
     if (!replacement || Number(replacement.stock) < row.quantity) {
-      setError("Этот вариант недоступен на выбранном складе.");
+      setError(posError("VARIANT_UNAVAILABLE"));
       return;
     }
     if (
       rows.some((item) => item !== row && item.product.id === replacement.id)
     ) {
-      setError(
-        "Этот вариант уже есть в чеке. Измените количество в его строке."
-      );
+      setError(posError("VARIANT_DUPLICATE"));
       return;
     }
     update(id, { product: replacement });
@@ -787,46 +835,7 @@ export default function LivePosPage() {
     return () => window.removeEventListener("keydown", handler);
   }, [actions.sell, quote, busy, list, lineDiscountIgnored]);
 
-  React.useEffect(() => {
-    let buffer = "";
-    let lastDigitAt = 0;
-    let resetTimer: number | undefined;
-
-    const handler = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.matches("input, textarea, select, [contenteditable='true']")
-      )
-        return;
-
-      if (event.key === "Enter") {
-        if (buffer.length >= 3 && /^\d+$/.test(buffer)) {
-          event.preventDefault();
-          const code = buffer;
-          buffer = "";
-          window.clearTimeout(resetTimer);
-          void scanProduct(code);
-        }
-        return;
-      }
-      if (event.key.length !== 1 || !/^\d$/.test(event.key)) return;
-
-      const now = Date.now();
-      if (now - lastDigitAt > 120) buffer = "";
-      buffer += event.key;
-      lastDigitAt = now;
-      window.clearTimeout(resetTimer);
-      resetTimer = window.setTimeout(() => {
-        buffer = "";
-      }, 180);
-    };
-
-    window.addEventListener("keydown", handler);
-    return () => {
-      window.removeEventListener("keydown", handler);
-      window.clearTimeout(resetTimer);
-    };
-  }, [actions.sell, held, pending, scope.branchId, scope.organizationId, warehouseId]);
+  useBarcodeScanner(handleScan, ready && Boolean(data));
 
   if (!ready)
     return (
@@ -841,21 +850,21 @@ export default function LivePosPage() {
   if (bootstrap.isError)
     return (
       <Stack p={3} gap={2}>
-        <Alert severity="error">{message(bootstrap.error)}</Alert>
+        <PosErrorNotice inline error={toPosUserError(bootstrap.error)} />
         <Button onClick={() => bootstrap.refetch()}>Повторить</Button>
       </Stack>
     );
   if (!data) return <LinearProgress />;
   const quoteError =
     quoteQuery.isError && !held ? message(quoteQuery.error) : null;
-  const visibleError =
+  const visibleError: PosUserError | null =
     error ??
     (quoteError && !inlineQuoteErrorField(quoteError)
-      ? quoteError
+      ? toPosUserError(quoteQuery.error)
       : products.isError
-      ? message(products.error)
+      ? toPosUserError(products.error)
       : clients.isError
-      ? message(clients.error)
+      ? toPosUserError(clients.error)
       : null);
   const checkoutLines = quote
     ? quote.lines.map((line) => ({
@@ -983,12 +992,10 @@ export default function LivePosPage() {
         }}
         canSell={actions.sell && !pending}
         canHold={actions.hold}
-        onScan={() => void scanProduct(search)}
+        onScan={() => void addByCode(search, "manual")}
       />
       {visibleError && (
-        <Alert severity="error" onClose={() => setError(null)} sx={{ borderRadius: 0 }}>
-          {visibleError}
-        </Alert>
+        <PosErrorNotice error={visibleError} onClose={() => setError(null)} />
       )}
       {!warehouseId && (
         <Alert severity="warning" sx={{ borderRadius: 0 }}>
@@ -1051,7 +1058,7 @@ export default function LivePosPage() {
               onChangeQuantity={(id, quantity) => {
                 const row = rows.find((r) => String(r.product.id) === id);
                 if (row && quantity > Number(row.product.stock)) {
-                  setError("Недостаточно свободного остатка.");
+                  setError(posError("STOCK_LIMIT", { name: row.product.name, stock: Number(row.product.stock) }));
                   return;
                 }
                 update(id, { quantity });
@@ -1139,6 +1146,15 @@ export default function LivePosPage() {
           lineDiscountIgnored={lineDiscountIgnored}
         />
       </Box>
+      <Snackbar
+        key={addedNotice?.key}
+        open={addedNotice !== null}
+        autoHideDuration={1600}
+        onClose={() => setAddedNotice(null)}
+        message={addedNotice?.text}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        ContentProps={{ sx: { fontWeight: 700 } }}
+      />
       <PosConfirmDialog
         request={confirmRequest}
         onClose={() => setConfirmRequest(null)}
@@ -1158,7 +1174,7 @@ export default function LivePosPage() {
           discount={Number(quote.discount)}
           benefits={checkoutBenefits}
           pending={pending}
-          error={error}
+          error={error ? formatPosError(error) : null}
           onClose={() => setCheckoutOpen(false)}
           onPay={(payments) => void save(payments)}
         />
@@ -1176,7 +1192,7 @@ export default function LivePosPage() {
           <Stack gap={1.5}>
             {receipts.isFetching && <LinearProgress />}
             {receipts.isError && (
-              <Alert severity="error">{message(receipts.error)}</Alert>
+              <PosErrorNotice inline error={toPosUserError(receipts.error)} />
             )}
             {receipts.data?.map((receipt) => (
               <Stack
@@ -1262,7 +1278,7 @@ export default function LivePosPage() {
             {!receipts.isFetching && receipts.data?.length === 0 && (
               <Typography>Чеков нет.</Typography>
             )}
-            {error && <Alert severity="error">{error}</Alert>}
+            {error && <PosErrorNotice inline error={error} />}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -1342,7 +1358,7 @@ export default function LivePosPage() {
               onChange={(event) => setReason(event.target.value)}
               fullWidth
             />
-            {error && <Alert severity="error">{error}</Alert>}
+            {error && <PosErrorNotice inline error={error} />}
           </Stack>
         </DialogContent>
         <DialogActions>
