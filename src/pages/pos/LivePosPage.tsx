@@ -24,6 +24,7 @@ import DownloadRounded from "@mui/icons-material/DownloadRounded";
 import QrCode2Rounded from "@mui/icons-material/QrCode2Rounded";
 import CloseRounded from "@mui/icons-material/CloseRounded";
 import { apiRequest } from "../../api/client";
+import { uploadClientPhoto, type CreateClientPayload, type DjangoClientStatus } from "../../api/clients";
 import { getDiscountKinds, type DiscountKind } from "../../api/promotions";
 import {
   checkoutPosCart,
@@ -39,6 +40,7 @@ import {
 } from "../../api/pos";
 import { usePermissions } from "../../hooks/usePermissions";
 import { ActiveContextSwitcher } from "../../components/sidebar/ActiveContextSwitcher";
+import ClientEditorDrawer from "../clients/ClientEditorDrawer";
 import { PosClientFooter } from "./ClientFooter";
 import { PosHoldReceiptDialog } from "./HoldReceiptDialog";
 import { PosConfirmDialog, type PosConfirmRequest } from "./ConfirmDialog";
@@ -257,6 +259,8 @@ export default function LivePosPage() {
   const [client, setClient] = React.useState<PosClient | null>(null);
   const [clientQuery, setClientQuery] = React.useState("");
   const [clientSearch, setClientSearch] = React.useState("");
+  const [clientEditorOpen, setClientEditorOpen] = React.useState(false);
+  const [clientEditorQuery, setClientEditorQuery] = React.useState("");
   const [benefits, setBenefits] = React.useState<Benefits>(emptyBenefits);
   const [held, setHeld] = React.useState<PosSavedReceipt | null>(null);
   const [holdOpen, setHoldOpen] = React.useState(false);
@@ -412,6 +416,12 @@ export default function LivePosPage() {
         { signal }
       ),
     enabled: ready && !!actions.clients && !held && Boolean(clientSearch),
+  });
+  const clientStatuses = useQuery({
+    queryKey: [...prefix, "client-statuses"],
+    queryFn: ({ signal }) => posRequest<DjangoClientStatus[]>(scope, "client-statuses/", { signal }),
+    enabled: ready && !!actions.client_create && clientEditorOpen,
+    staleTime: 5 * 60 * 1000,
   });
   const receipts = useQuery({
     queryKey: [...prefix, list, listOffset, historyClient],
@@ -1093,25 +1103,9 @@ export default function LivePosPage() {
                 }}
                 canRegister={actions.client_create}
                 canHistory={actions.history}
-                onRegister={async (name, phone) => {
-                  let created = false;
-                  await act(async () => {
-                    const result = await posRequest<PosClient>(
-                      scope,
-                      "clients/",
-                      {
-                        method: "POST",
-                        body: { name, phone, branchId: scope.branchId },
-                      }
-                    );
-                    setClient(result);
-                    setClientQuery("");
-                    setClientSearch("");
-                    setBenefits(emptyBenefits);
-                    void cache.invalidateQueries({ queryKey: [...prefix, "clients"] });
-                    created = true;
-                  });
-                  return created;
+                onCreateClient={(query) => {
+                  setClientEditorQuery(query);
+                  setClientEditorOpen(true);
                 }}
                 onChangeClient={() => {
                   setClient(null);
@@ -1127,6 +1121,39 @@ export default function LivePosPage() {
               />
             </Box>
           )}
+          <ClientEditorDrawer
+            open={clientEditorOpen}
+            organizationId={scope.organizationId || null}
+            client={null}
+            initialQuery={clientEditorQuery}
+            statuses={clientStatuses.data ?? []}
+            showPhoto={auth.hasPermission("clients.update") || auth.isSuperAdmin()}
+            onClose={() => setClientEditorOpen(false)}
+            onCreate={async (payload: CreateClientPayload, photoFile) => {
+              // Организацию касса передаёт заголовком (posRequest), а ФИО ручка
+              // кассы исторически принимает как `name`.
+              const fields: Partial<CreateClientPayload> = { ...payload };
+              delete fields.fullName;
+              delete fields.organizationId;
+              const result = await posRequest<PosClient>(scope, "clients/", {
+                method: "POST",
+                body: { ...fields, name: payload.fullName, branchId: scope.branchId },
+              });
+              setClient(result);
+              setClientQuery("");
+              setClientSearch("");
+              setBenefits(emptyBenefits);
+              void cache.invalidateQueries({ queryKey: [...prefix, "clients"] });
+              void cache.invalidateQueries({ queryKey: ["clients", scope.organizationId] });
+              if (photoFile) {
+                try {
+                  await uploadClientPhoto(Number(result.id), photoFile);
+                } catch {
+                  setError(posError("CLIENT_PHOTO_NOT_SAVED"));
+                }
+              }
+            }}
+          />
         </Stack>
         <LivePaymentPanel
           actions={actions}
