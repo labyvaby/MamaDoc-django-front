@@ -77,13 +77,15 @@ const ReviewsPage: React.FC = () => {
   });
   const branches = branchesQuery.data ?? [];
   const multiBranch = !activeBranch && branches.length > 1;
+  const effectiveBranchId =
+    activeBranch?.id ?? (branchId === "" ? undefined : branchId);
 
   if (!permLoading && visibleTabs.length === 0) return <AccessDenied />;
 
   const period: ReviewPeriod = {
     from: from.format("YYYY-MM-DD"),
     to: to.format("YYYY-MM-DD"),
-    branchId: branchId === "" ? undefined : branchId,
+    branchId: effectiveBranchId,
     organizationId,
   };
   const props = { period, multiBranch };
