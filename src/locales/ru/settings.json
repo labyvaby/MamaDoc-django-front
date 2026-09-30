@@ -445,6 +445,13 @@
       "phoneId": "WhatsApp: phone_number_id",
       "token": "WhatsApp: access token",
       "clear": "Очистить WhatsApp-токен"
+    },
+    "chatwoot": {
+      "title": "Chatwoot",
+      "subtitle": "Источник диалогов Chatwoot для шлюза уведомлений",
+      "source": "Chatwoot: источник / inbox id",
+      "token": "Chatwoot: token / webhook secret",
+      "clear": "Очистить Chatwoot-токен"
     }
   },
   "organization": {
