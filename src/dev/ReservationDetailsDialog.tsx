@@ -62,6 +62,8 @@ import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import { HOTEL_PRINT_DOC_LABELS, printHotelDocument, type HotelPrintDoc } from "./hotelPrintDocs";
+import WhatsApp from "@mui/icons-material/WhatsApp";
+import { buildGuestMessage, GUEST_MESSAGE_LABELS, whatsappLink, type GuestMessageKind } from "./hotelGuestMessages";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import dayjs from "dayjs";
 
@@ -162,6 +164,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const { enqueueSnackbar } = useSnackbar();
   const [cancelReason, setCancelReason] = React.useState("");
   const [printAnchor, setPrintAnchor] = React.useState<HTMLElement | null>(null);
+  const [messageAnchor, setMessageAnchor] = React.useState<HTMLElement | null>(null);
   const [cancelAsNoShow, setCancelAsNoShow] = React.useState(false);
 
   const [paymentFormOpen, setPaymentFormOpen] = React.useState(false);
@@ -435,6 +438,24 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                 {item.isOverbooking && <StatusPill color={theme.palette.warning.main} label="Овербукинг" />}
               </Stack>
               <Stack direction="row" gap={0.75} sx={{ flexShrink: 0 }}>
+                {(() => {
+                  const phone = item.guests.find((g) => g.isPrimary)?.phone || item.guests[0]?.phone || "";
+                  const can = whatsappLink(phone) != null;
+                  return (
+                    <Tooltip title={can ? "Написать гостю в WhatsApp" : "У гостя не указан телефон"}>
+                      <span>
+                        <IconButton
+                          onClick={(e) => setMessageAnchor(e.currentTarget)}
+                          disabled={!can}
+                          aria-label="Написать гостю в WhatsApp"
+                          sx={{ width: 34, height: 34, border: line, color: "#25D366", "&.Mui-disabled": { color: "text.disabled" } }}
+                        >
+                          <WhatsApp sx={{ fontSize: 18 }} />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  );
+                })()}
                 <Tooltip title="Печать: подтверждение, счёт, анкета гостя">
                   <IconButton
                     onClick={(e) => setPrintAnchor(e.currentTarget)}
@@ -452,6 +473,23 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                   <CloseOutlined sx={{ fontSize: 18 }} />
                 </IconButton>
               </Stack>
+              <Menu anchorEl={messageAnchor} open={messageAnchor != null} onClose={() => setMessageAnchor(null)}>
+                {(Object.keys(GUEST_MESSAGE_LABELS) as GuestMessageKind[])
+                  .filter((kind) => kind !== "balance" || balance > 0)
+                  .map((kind) => (
+                    <MenuItem
+                      key={kind}
+                      onClick={() => {
+                        setMessageAnchor(null);
+                        const phone = item.guests.find((g) => g.isPrimary)?.phone || item.guests[0]?.phone || "";
+                        const link = whatsappLink(phone, buildGuestMessage(kind, reservation, property ?? null));
+                        if (link) window.open(link, "_blank", "noopener");
+                      }}
+                    >
+                      {GUEST_MESSAGE_LABELS[kind]}
+                    </MenuItem>
+                  ))}
+              </Menu>
               <Menu anchorEl={printAnchor} open={printAnchor != null} onClose={() => setPrintAnchor(null)}>
                 {(
                   [

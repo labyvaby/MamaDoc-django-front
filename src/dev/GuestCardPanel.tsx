@@ -34,6 +34,8 @@ import { formatHotelDateRange } from "./mockDemoData";
 import type { HotelGuest } from "../api/hotel";
 import type { GuestDetailsState } from "./useGuestDetails";
 import { EditGuestDrawer } from "./EditGuestDrawer";
+import WhatsApp from "@mui/icons-material/WhatsApp";
+import { whatsappLink } from "./hotelGuestMessages";
 
 /** Дата документа с годом — «12 сентября» (formatHotelDate) для рождения и срока действия не годится. */
 const formatDocumentDate = (iso: string): string => dayjs(iso).format("DD.MM.YYYY");
@@ -209,6 +211,21 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ clientId, state,
                   <PhoneInTalkOutlined fontSize="small" color="primary" />
                   <Typography variant="body2">{guest.phone}</Typography>
                 </Link>
+                {whatsappLink(guest.phone) && (
+                  <Tooltip title="Написать в WhatsApp">
+                    <IconButton
+                      size="small"
+                      component="a"
+                      href={whatsappLink(guest.phone) ?? undefined}
+                      target="_blank"
+                      rel="noopener"
+                      aria-label="Написать гостю в WhatsApp"
+                      sx={{ ml: 0.5, color: "#25D366" }}
+                    >
+                      <WhatsApp sx={{ fontSize: 18 }} />
+                    </IconButton>
+                  </Tooltip>
+                )}
                 {guest.email && (
                   <Stack direction="row" alignItems="center" gap={0.75} color="text.secondary" sx={{ mt: 0.5 }}>
                     <EmailOutlined fontSize="small" />
