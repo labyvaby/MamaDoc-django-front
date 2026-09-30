@@ -48,13 +48,17 @@ interface UnitCardDialogProps {
   onOpenUnit: (unitId: string) => void;
   /** «Сравнить» в карточке — добавить квартиру к выбору на шахматке. */
   onCompare: (unitId: string) => void;
+  /** Быстрое действие с шахматки: открыть карточку сразу на брони или КП. */
+  startScreen?: QuickScreen;
 }
+
+export type QuickScreen = Extract<Screen, "reserve" | "proposal">;
 
 /**
  * Карточка квартиры со всеми сценариями. Открытая квартира живёт в URL (?unit=),
  * а экран внутри карточки (бронь, КП, договор…) — локальное состояние.
  */
-export function UnitCardDialog({ project, unitId, onClose, onOpenUnit, onCompare }: UnitCardDialogProps) {
+export function UnitCardDialog({ project, unitId, onClose, onOpenUnit, onCompare, startScreen }: UnitCardDialogProps) {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("md"));
   return (
@@ -71,12 +75,14 @@ export function UnitCardDialog({ project, unitId, onClose, onOpenUnit, onCompare
       <IconButton aria-label="Закрыть" onClick={onClose} sx={{ position: "absolute", right: 14, top: 14, zIndex: 2, bgcolor: "background.paper" }}>
         <CloseOutlined />
       </IconButton>
-      {unitId && <UnitCard key={unitId} project={project} unitId={unitId} onClose={onClose} onOpenUnit={onOpenUnit} onCompare={onCompare} />}
+      {unitId && (
+        <UnitCard key={unitId} project={project} unitId={unitId} onClose={onClose} onOpenUnit={onOpenUnit} onCompare={onCompare} startScreen={startScreen} />
+      )}
     </Dialog>
   );
 }
 
-function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare }: Omit<UnitCardDialogProps, "unitId"> & { unitId: string }) {
+function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare, startScreen }: Omit<UnitCardDialogProps, "unitId"> & { unitId: string }) {
   const organizationId = useApiOrgId();
   const { can } = useCanChecker();
   // Команды над квартирой — realty.manage; без него карточка только для чтения.
@@ -89,7 +95,8 @@ function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare }: Omit<Unit
   const mortgageFrom =
     useQuery({ queryKey: realEstateKeys.mortgageRate(organizationId), queryFn: () => getMortgageRateFrom(organizationId), staleTime: 30 * 60_000 })
       .data ?? null;
-  const [screen, setScreen] = React.useState<Screen>("unit");
+  // Без права на команды быстрый вход в бронь/КП не пускаем — только просмотр карточки.
+  const [screen, setScreen] = React.useState<Screen>(startScreen && canManage ? startScreen : "unit");
   const [offerId, setOfferId] = React.useState(DEFAULT_OFFER);
   const contentRef = React.useRef<HTMLDivElement>(null);
 

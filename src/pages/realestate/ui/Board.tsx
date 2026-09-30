@@ -1,8 +1,10 @@
 import React from "react";
-import { Box, ButtonBase, Typography } from "@mui/material";
+import { Box, ButtonBase, IconButton, Tooltip, Typography } from "@mui/material";
 import { alpha, type Theme } from "@mui/material/styles";
 import BalconyOutlined from "@mui/icons-material/BalconyOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
+import SendOutlined from "@mui/icons-material/SendOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import DeckOutlined from "@mui/icons-material/DeckOutlined";
 
@@ -23,6 +25,8 @@ export interface CellHandlers {
   onPreview: (unit: Unit | null, anchor?: HTMLElement) => void;
 }
 
+export type QuickAction = "reserve" | "proposal";
+
 export interface BoardProps extends CellHandlers {
   project: Project;
   board: BoardModel;
@@ -34,6 +38,8 @@ export interface BoardProps extends CellHandlers {
   /** Красить статусом или ценой за м² (тепловая карта). */
   paint: BoardPaint;
   scale: PriceScale;
+  /** Быстрые действия при наведении; undefined — нет права на команды. */
+  onQuickAction?: (unitId: string, action: QuickAction) => void;
 }
 
 /**
@@ -126,6 +132,8 @@ function cellProps(p: InnerProps, unit: Unit): UnitCellProps {
     hold: unit.hold ? holdLeft(unit.hold.endsAt, p.now) : null,
     awaitingPayment: Boolean(unit.hold?.awaitingPayment),
     priceStep: p.paint === "price" ? p.scale.stepOf(unit.pricePerSqm) : null,
+    // В режиме выбора клик по ячейке — выбор, кнопки поверх только мешали бы.
+    onQuickAction: p.selectMode ? undefined : p.onQuickAction,
     onOpen: p.onOpen,
     onToggleSelect: p.onToggleSelect,
     onPreview: p.onPreview,
@@ -339,6 +347,7 @@ interface UnitCellProps extends CellHandlers {
   awaitingPayment: boolean;
   /** Ступень тепловой карты цены за м²; null — красим статусом. */
   priceStep: number | null;
+  onQuickAction?: (unitId: string, action: QuickAction) => void;
 }
 
 /**
@@ -363,6 +372,7 @@ const UnitCell = React.memo(function UnitCell({
   hold,
   awaitingPayment,
   priceStep,
+  onQuickAction,
   onOpen,
   onToggleSelect,
   onPreview,
@@ -491,117 +501,162 @@ const UnitCell = React.memo(function UnitCell({
   // Свободных квартир большинство, поэтому свободная ячейка спокойная (карточка + точка),
   // а выделяются бронь и продажа — иначе вся шахматка залита одним цветом.
   const free = unit.status === "free";
+  // Кнопки — соседи ячейки, а не её дети: кнопка внутри кнопки — невалидный HTML.
+  // Из Tab-порядка убраны: с клавиатуры те же действия есть в карточке (Enter).
+  const actions: [QuickAction, string, React.ReactNode][] = [];
+  if (onQuickAction && !dimmed && unit.status !== "sold") {
+    if (free) actions.push(["reserve", "Забронировать", <EventAvailableOutlined />]);
+    actions.push(["proposal", "Отправить КП", <SendOutlined />]);
+  }
   return (
-    <ButtonBase
-      {...common}
-      sx={(t) => {
-        const tone = statusTone(t, unit.status);
-        return {
-          position: "relative",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "stretch",
-          gap: 0.5,
-          minWidth: 0,
-          minHeight: 79,
-          px: 1,
-          pt: "7px",
-          pb: 1,
-          textAlign: "left",
-          fontSize: "0.78rem",
-          borderRadius: "9px",
-          border: `${unit.status === "reserved" ? 2 : 1}px solid ${heat !== null ? heatTone(t, heat).border : free ? t.palette.divider : tone.border}`,
-          bgcolor: heat !== null ? heatTone(t, heat).bg : free ? "background.paper" : tone.bg,
-          color: heat !== null ? heatTone(t, heat).text : free ? "text.primary" : tone.text,
-          transition: "transform .15s ease, border-color .15s ease",
-          "&:hover": { transform: "translateY(-2px)", borderColor: tone.main },
-          ...(isTerrace ? { borderTop: `3px solid ${t.palette.purple.main}` } : null),
-          ...focusSx(t),
-          ...offHeatSx,
-          ...dimmedSx,
-          ...ringSx(t, selected, highlighted),
-        };
-      }}
-    >
-      {mark}
-      <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 0.5, minHeight: 20, fontSize: "0.72rem" }}>
-        <Box component="span" sx={{ display: "flex", alignItems: "center", gap: 0.6, minWidth: 0 }}>
-          {free ? (
-            <Box component="i" aria-hidden sx={(t) => ({ flexShrink: 0, width: 7, height: 7, borderRadius: "50%", bgcolor: statusTone(t, "free").main })} />
-          ) : (
-            <Box
-              component="span"
-              sx={(t) => ({
-                flexShrink: 0,
-                px: 0.75,
-                py: 0.25,
-                borderRadius: "6px",
-                fontSize: "0.68rem",
-                fontWeight: 700,
-                whiteSpace: "nowrap",
-                bgcolor: unit.status === "reserved" ? (hold?.urgent ? t.palette.error.main : statusTone(t, "reserved").solid) : "transparent",
-                color:
-                  unit.status === "reserved"
-                    ? hold?.urgent
-                      ? t.palette.error.contrastText
-                      : statusTone(t, "reserved").solidText
-                    : "text.secondary",
-                ...(unit.status === "sold" ? { px: 0 } : null),
-              })}
-            >
-              {unit.status === "reserved" ? (hold ? (hold.expired ? "Бронь истекла" : `Бронь · ${hold.label}`) : "Бронь") : status}
+    <Box sx={{ position: "relative", minWidth: 0, display: "flex", "&:hover .unit-actions": { opacity: 1 } }}>
+      <ButtonBase
+        {...common}
+        sx={(t) => {
+          const tone = statusTone(t, unit.status);
+          return {
+            position: "relative",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "stretch",
+            flex: 1,
+            gap: 0.5,
+            minWidth: 0,
+            minHeight: 79,
+            px: 1,
+            pt: "7px",
+            pb: 1,
+            textAlign: "left",
+            fontSize: "0.78rem",
+            borderRadius: "9px",
+            border: `${unit.status === "reserved" ? 2 : 1}px solid ${heat !== null ? heatTone(t, heat).border : free ? t.palette.divider : tone.border}`,
+            bgcolor: heat !== null ? heatTone(t, heat).bg : free ? "background.paper" : tone.bg,
+            color: heat !== null ? heatTone(t, heat).text : free ? "text.primary" : tone.text,
+            transition: "transform .15s ease, border-color .15s ease",
+            "&:hover": { transform: "translateY(-2px)", borderColor: tone.main },
+            ...(isTerrace ? { borderTop: `3px solid ${t.palette.purple.main}` } : null),
+            ...focusSx(t),
+            ...offHeatSx,
+            ...dimmedSx,
+            ...ringSx(t, selected, highlighted),
+          };
+        }}
+      >
+        {mark}
+        <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 0.5, minHeight: 20, fontSize: "0.72rem" }}>
+          <Box component="span" sx={{ display: "flex", alignItems: "center", gap: 0.6, minWidth: 0 }}>
+            {free ? (
+              <Box component="i" aria-hidden sx={(t) => ({ flexShrink: 0, width: 7, height: 7, borderRadius: "50%", bgcolor: statusTone(t, "free").main })} />
+            ) : (
+              <Box
+                component="span"
+                sx={(t) => ({
+                  flexShrink: 0,
+                  px: 0.75,
+                  py: 0.25,
+                  borderRadius: "6px",
+                  fontSize: "0.68rem",
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                  bgcolor: unit.status === "reserved" ? (hold?.urgent ? t.palette.error.main : statusTone(t, "reserved").solid) : "transparent",
+                  color:
+                    unit.status === "reserved"
+                      ? hold?.urgent
+                        ? t.palette.error.contrastText
+                        : statusTone(t, "reserved").solidText
+                      : "text.secondary",
+                  ...(unit.status === "sold" ? { px: 0 } : null),
+                })}
+              >
+                {unit.status === "reserved" ? (hold ? (hold.expired ? "Бронь истекла" : `Бронь · ${hold.label}`) : "Бронь") : status}
+              </Box>
+            )}
+            <Box component="span" sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
+              №{unit.number}
             </Box>
-          )}
-          <Box component="span" sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
-            №{unit.number}
+            {awaitingPayment && (
+              <Box component="span" title="Ждёт предоплату" sx={{ display: "grid", color: "warning.onSurface", "& .MuiSvgIcon-root": { fontSize: 13 } }}>
+                <PaymentsOutlined />
+              </Box>
+            )}
           </Box>
-          {awaitingPayment && (
-            <Box component="span" title="Ждёт предоплату" sx={{ display: "grid", color: "warning.onSurface", "& .MuiSvgIcon-root": { fontSize: 13 } }}>
-              <PaymentsOutlined />
-            </Box>
-          )}
+          {/* Иконка, а не буква «Б/Т»: буква путалась с названием секции «Б». */}
+          <Box
+            component="i"
+            title={isTerrace ? "Терраса" : outdoor ? "Балкон / лоджия" : undefined}
+            aria-label={isTerrace ? "Терраса" : outdoor ? "Балкон или лоджия" : undefined}
+            aria-hidden={!isTerrace && !outdoor}
+            sx={(t) => ({
+              "& .MuiSvgIcon-root": { fontSize: 13 },
+              width: 17,
+              height: 17,
+              display: "grid",
+              placeItems: "center",
+              borderRadius: "5px",
+              fontSize: 11,
+              fontWeight: 800,
+              fontStyle: "normal",
+              ...(isTerrace
+                ? { bgcolor: alpha(t.palette.purple.main, 0.14), color: t.palette.purple.main }
+                : outdoor
+                  ? { bgcolor: alpha(t.palette.teal.main, 0.14), color: t.palette.teal.main }
+                  : null),
+            })}
+          >
+            {isTerrace ? <DeckOutlined /> : outdoor ? <BalconyOutlined /> : null}
+          </Box>
         </Box>
-        {/* Иконка, а не буква «Б/Т»: буква путалась с названием секции «Б». */}
+        <Box component="b" sx={{ fontWeight: 700 }}>
+          {formatRooms(unit.rooms)}
+        </Box>
+        <Box component="span" sx={{ fontSize: "0.72rem" }}>
+          {unit.totalArea} м² · {unit.orientation}
+        </Box>
+        <Box component="span" sx={{ mt: "auto", display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 0.75, fontSize: "0.72rem" }}>
+          <Box component="em" sx={{ fontWeight: 700, fontStyle: "normal" }}>
+            {millions(unit.price)}
+          </Box>
+          <Box component="span" sx={{ fontSize: "0.66rem", color: "text.secondary", whiteSpace: "nowrap" }}>
+            {perSqmShort(unit.pricePerSqm)}
+          </Box>
+        </Box>
+      </ButtonBase>
+      {actions.length > 0 && (
         <Box
-          component="i"
-          title={isTerrace ? "Терраса" : outdoor ? "Балкон / лоджия" : undefined}
-          aria-label={isTerrace ? "Терраса" : outdoor ? "Балкон или лоджия" : undefined}
-          aria-hidden={!isTerrace && !outdoor}
+          className="unit-actions"
           sx={(t) => ({
-            "& .MuiSvgIcon-root": { fontSize: 13 },
-            width: 17,
-            height: 17,
-            display: "grid",
-            placeItems: "center",
-            borderRadius: "5px",
-            fontSize: 11,
-            fontWeight: 800,
-            fontStyle: "normal",
-            ...(isTerrace
-              ? { bgcolor: alpha(t.palette.purple.main, 0.14), color: t.palette.purple.main }
-              : outdoor
-                ? { bgcolor: alpha(t.palette.teal.main, 0.14), color: t.palette.teal.main }
-                : null),
+            position: "absolute",
+            right: 4,
+            bottom: 4,
+            display: "flex",
+            gap: 0.25,
+            p: 0.25,
+            borderRadius: "8px",
+            bgcolor: "background.paper",
+            border: 1,
+            borderColor: "divider",
+            opacity: 0,
+            transition: "opacity .15s ease",
+            "@media (hover: none)": { display: "none" },
+            "& .MuiIconButton-root": { p: 0.4, color: "text.secondary", "&:hover": { color: t.palette.primary.main } },
+            "& .MuiSvgIcon-root": { fontSize: 15 },
           })}
         >
-          {isTerrace ? <DeckOutlined /> : outdoor ? <BalconyOutlined /> : null}
+          {actions.map(([action, title, icon]) => (
+            <Tooltip key={action} title={title} placement="top">
+              <IconButton
+                aria-label={`${title}: квартира №${unit.number}`}
+                tabIndex={-1}
+                onMouseEnter={() => onPreview(null)}
+                onClick={() => onQuickAction?.(unit.id, action)}
+              >
+                {icon}
+              </IconButton>
+            </Tooltip>
+          ))}
         </Box>
-      </Box>
-      <Box component="b" sx={{ fontWeight: 700 }}>
-        {formatRooms(unit.rooms)}
-      </Box>
-      <Box component="span" sx={{ fontSize: "0.72rem" }}>
-        {unit.totalArea} м² · {unit.orientation}
-      </Box>
-      <Box component="span" sx={{ mt: "auto", display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 0.75, fontSize: "0.72rem" }}>
-        <Box component="em" sx={{ fontWeight: 700, fontStyle: "normal" }}>
-          {millions(unit.price)}
-        </Box>
-        <Box component="span" sx={{ fontSize: "0.66rem", color: "text.secondary", whiteSpace: "nowrap" }}>
-          {perSqmShort(unit.pricePerSqm)}
-        </Box>
-      </Box>
-    </ButtonBase>
+      )}
+    </Box>
   );
 });
 

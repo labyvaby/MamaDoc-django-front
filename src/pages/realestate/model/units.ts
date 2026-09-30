@@ -11,6 +11,8 @@ export type StatusFilter = "all" | UnitStatus;
 /** 'all' | '0'…'3' | '4' (4 и больше) */
 export type RoomsFilter = "all" | "0" | "1" | "2" | "3" | "4";
 export type FeatureFilter = "all" | "terrace" | "balcony" | "south" | "panoramic";
+/** Быстрые фильтры менеджера по броням. */
+export type HoldFilter = "all" | "today" | "unpaid";
 
 /** Включительный диапазон [от, до]. */
 export type NumberRange = readonly [number, number];
@@ -19,6 +21,7 @@ export interface UnitFilters {
   status: StatusFilter;
   rooms: RoomsFilter;
   feature: FeatureFilter;
+  hold: HoldFilter;
   /** Цена, сом; null — без ограничения. */
   price: NumberRange | null;
   /** Общая площадь, м². */
@@ -30,6 +33,7 @@ export const defaultUnitFilters: UnitFilters = {
   status: "all",
   rooms: "all",
   feature: "all",
+  hold: "all",
   price: null,
   area: null,
   floor: null,
@@ -72,11 +76,40 @@ function matchesFeature(unit: Unit, feature: FeatureFilter) {
   }
 }
 
+export const holdOptions = ["all", "today", "unpaid"] as const satisfies readonly HoldFilter[];
+
+/** Конец сегодняшнего дня по местному времени. */
+const endOfDay = (now: number) => {
+  const d = new Date(now);
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+};
+
+/**
+ * «Истекают сегодня» — бронь с концом срока до полуночи, включая уже истёкшие:
+ * по ним тоже нужно действие (продлить или снять). «Ждут предоплату» — предоплата не внесена.
+ */
+export function matchesHold(unit: Unit, hold: HoldFilter, now: number): boolean {
+  if (hold === "all") return true;
+  if (unit.status !== "reserved" || !unit.hold) return false;
+  if (hold === "unpaid") return unit.hold.awaitingPayment;
+  const end = unit.hold.endsAt ? Date.parse(unit.hold.endsAt) : NaN;
+  return !Number.isNaN(end) && end <= endOfDay(now);
+}
+
+export function countHolds(units: Unit[], now: number): Record<Exclude<HoldFilter, "all">, number> {
+  return {
+    today: units.filter((u) => matchesHold(u, "today", now)).length,
+    unpaid: units.filter((u) => matchesHold(u, "unpaid", now)).length,
+  };
+}
+
 const inRange = (value: number, range: NumberRange | null) =>
   !range || (value >= range[0] && value <= range[1]);
 
-export const matchesUnitFilters = (unit: Unit, filters: UnitFilters) =>
+export const matchesUnitFilters = (unit: Unit, filters: UnitFilters, now = Date.now()) =>
   (filters.status === "all" || unit.status === filters.status) &&
+  matchesHold(unit, filters.hold, now) &&
   matchesRooms(unit, filters.rooms) &&
   matchesFeature(unit, filters.feature) &&
   inRange(unit.price, filters.price) &&
@@ -87,6 +120,7 @@ export const matchesUnitFilters = (unit: Unit, filters: UnitFilters) =>
 export const hasActiveFilters = (filters: UnitFilters) =>
   filters.rooms !== "all" ||
   filters.feature !== "all" ||
+  filters.hold !== "all" ||
   filters.price !== null ||
   filters.area !== null ||
   filters.floor !== null;

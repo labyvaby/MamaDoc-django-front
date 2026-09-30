@@ -4,6 +4,7 @@ import { boardPaints, boardViews, type BoardPaint, type BoardView } from "./boar
 import {
   defaultUnitFilters,
   featureOptions,
+  holdOptions,
   roomsOptions,
   statusOptions,
   type NumberRange,
@@ -20,7 +21,7 @@ export interface ChessboardParams extends UnitFilters {
 
 export type ChessboardPatch = Partial<
   Record<
-    "project" | "status" | "rooms" | "feature" | "view" | "paint" | "unit" | "price" | "area" | "floor",
+    "project" | "status" | "rooms" | "feature" | "hold" | "view" | "paint" | "unit" | "price" | "area" | "floor",
     string | null
   >
 >;
@@ -47,6 +48,7 @@ const defaults: Record<string, string> = {
   status: defaultUnitFilters.status,
   rooms: defaultUnitFilters.rooms,
   feature: defaultUnitFilters.feature,
+  hold: defaultUnitFilters.hold,
   view: "auto",
   paint: "status",
 };
@@ -73,6 +75,7 @@ export function useChessboardParams() {
         featureOptions.map(([v]) => v),
         "all",
       ),
+      hold: oneOf(searchParams.get("hold"), holdOptions, "all"),
       price: parseRange(searchParams.get("price"), PRICE_SCALE),
       area: parseRange(searchParams.get("area")),
       floor: parseRange(searchParams.get("floor")),

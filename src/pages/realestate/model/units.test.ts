@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Unit } from "../../../api/realestate";
-import { countByStatus, defaultUnitFilters, holdLeft, matchesUnitFilters } from "./units";
+import { countByStatus, countHolds, defaultUnitFilters, holdLeft, matchesHold, matchesUnitFilters } from "./units";
 
 const unit = (patch: Partial<Unit>): Unit => ({
   id: "u",
@@ -110,5 +110,31 @@ describe("holdLeft", () => {
   it("нет срока или он битый — таймера нет", () => {
     expect(holdLeft(null, now)).toBeNull();
     expect(holdLeft("завтра", now)).toBeNull();
+  });
+});
+
+describe("быстрые фильтры броней", () => {
+  const now = new Date(2026, 8, 30, 10, 0).getTime();
+  const reserved = (hours: number, awaitingPayment = false) =>
+    unit({ status: "reserved", hold: { endsAt: new Date(now + hours * 3_600_000).toISOString(), awaitingPayment } });
+
+  it("«истекают сегодня» — до полуночи, включая истёкшие; завтрашние — нет", () => {
+    expect(matchesHold(reserved(5), "today", now)).toBe(true);
+    expect(matchesHold(reserved(-1), "today", now)).toBe(true);
+    expect(matchesHold(reserved(20), "today", now)).toBe(false);
+  });
+
+  it("«ждут предоплату» — только брони с невнесённой предоплатой", () => {
+    expect(matchesHold(reserved(30, true), "unpaid", now)).toBe(true);
+    expect(matchesHold(reserved(30, false), "unpaid", now)).toBe(false);
+    expect(matchesHold(unit({ status: "free" }), "unpaid", now)).toBe(false);
+  });
+
+  it("счётчики для пилюль", () => {
+    expect(countHolds([reserved(2, true), reserved(40), unit({})], now)).toEqual({ today: 1, unpaid: 1 });
+  });
+
+  it("фильтр брони проходит через общий matchesUnitFilters", () => {
+    expect(matchesUnitFilters(reserved(40), { ...defaultUnitFilters, hold: "today" }, now)).toBe(false);
   });
 });

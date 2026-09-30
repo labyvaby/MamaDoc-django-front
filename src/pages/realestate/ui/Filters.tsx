@@ -17,6 +17,7 @@ import {
   roomsOptions,
   statusOptions,
   unitStatusMeta,
+  type HoldFilter,
   type NumberRange,
   type StatusFilter,
   type UnitFilters,
@@ -132,7 +133,8 @@ export function ProjectTabs({
   projects: Project[];
   activeId: string;
   onSelect: (projectId: string) => void;
-  onExport: () => void;
+  /** Нет квартир — нечего выгружать, кнопку не показываем. */
+  onExport?: () => void;
 }) {
   return (
     <Box sx={{ mb: 2, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
@@ -143,13 +145,15 @@ export function ProjectTabs({
           </Pill>
         ))}
       </Box>
-      <ButtonBase
-        onClick={onExport}
-        sx={(t) => ({ ...pillSx(t, false), ml: "auto", gap: 0.75, "& .MuiSvgIcon-root": { fontSize: 16 } })}
-      >
-        <FileDownloadOutlined />
-        Выгрузить цены
-      </ButtonBase>
+      {onExport && (
+        <ButtonBase
+          onClick={onExport}
+          sx={(t) => ({ ...pillSx(t, false), ml: "auto", gap: 0.75, "& .MuiSvgIcon-root": { fontSize: 16 } })}
+        >
+          <FileDownloadOutlined />
+          Выгрузить цены
+        </ButtonBase>
+      )}
     </Box>
   );
 }
@@ -191,15 +195,23 @@ export function StatusLegend({
   );
 }
 
+const holdPills: [Exclude<HoldFilter, "all">, string, string][] = [
+  ["today", "Истекают сегодня", "Брони, срок которых кончается до полуночи, и уже истёкшие — продлить или снять"],
+  ["unpaid", "Ждут предоплату", "Брони с невнесённой предоплатой"],
+];
+
 export function FilterBar({
   filters,
   foundCount,
+  holdCounts,
   onChange,
 }: {
   filters: UnitFilters;
   foundCount: number;
+  holdCounts: Record<Exclude<HoldFilter, "all">, number>;
   onChange: (patch: ChessboardPatch) => void;
 }) {
+  const hasHolds = holdCounts.today + holdCounts.unpaid > 0 || filters.hold !== "all";
   return (
     <Box
       sx={{
@@ -228,6 +240,20 @@ export function FilterBar({
           </Pill>
         ))}
       </FilterGroup>
+      {hasHolds && (
+        <FilterGroup label="Брони">
+          {holdPills.map(([value, label, title]) => (
+            <Pill
+              key={value}
+              active={filters.hold === value}
+              title={title}
+              onClick={() => onChange({ hold: filters.hold === value ? null : value })}
+            >
+              {label} {holdCounts[value]}
+            </Pill>
+          ))}
+        </FilterGroup>
+      )}
       <Typography aria-live="polite" sx={{ ml: { md: "auto" }, fontSize: "0.75rem", fontWeight: 600, color: "text.secondary" }}>
         Найдено: {foundCount}
       </Typography>
