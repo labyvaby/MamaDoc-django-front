@@ -21,6 +21,8 @@ export interface NotificationSettings {
 
 export interface MessagingCredentials {
   ravenKeyConfigured: boolean;
+  ravenClientId: string;
+  ravenClientCreated: boolean;
   smsLogin: string;
   smsSender: string;
   smsConfigured: boolean;
@@ -100,6 +102,17 @@ export function saveNotificationSettings(
 ): Promise<NotificationSettings> {
   return apiRequest<NotificationSettings>("/notifications/settings/", {
     method: "PUT",
+    body: input,
+    signal,
+  });
+}
+
+export function createRavenClient(
+  input: { organizationId?: number } = {},
+  signal?: AbortSignal,
+): Promise<NotificationSettings> {
+  return apiRequest<NotificationSettings>("/notifications/settings/raven-client/", {
+    method: "POST",
     body: input,
     signal,
   });
