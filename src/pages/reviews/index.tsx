@@ -30,6 +30,7 @@ import ReviewsTab from "./tabs/ReviewsTab";
 import CasesTab from "./tabs/CasesTab";
 import StaffTab from "./tabs/StaffTab";
 import MapsTab from "./tabs/MapsTab";
+import ExternalReviewsTab from "./tabs/ExternalReviewsTab";
 
 const VIEW = ["reviews.view", "reviews.view_own"];
 
@@ -39,6 +40,7 @@ const TABS = [
   { key: "cases", label: "Разборы", perms: ["reviews.handle"] },
   { key: "staff", label: "Сотрудники", perms: VIEW },
   { key: "maps", label: "Карты", perms: ["reviews.handle"] },
+  { key: "external", label: "2ГИС", perms: ["reviews.handle"] },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -168,6 +170,7 @@ const ReviewsPage: React.FC = () => {
           {tab === "cases" && <CasesTab {...props} />}
           {tab === "staff" && <StaffTab {...props} />}
           {tab === "maps" && <MapsTab {...props} />}
+          {tab === "external" && <ExternalReviewsTab {...props} />}
         </Box>
       )}
     </Box>
