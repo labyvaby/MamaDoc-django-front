@@ -5,6 +5,9 @@ import { alpha } from "@mui/material/styles";
 import type { DjangoUnitOfMeasure } from "../../api/warehouse";
 import { draftProductName, isVariantDraft, type CategoryOption, type NewProductDraft } from "./newProductDraft";
 
+/** Значение пункта «новая категория» в выпадающем списке — не id справочника. */
+const NEW_CATEGORY = "__new__";
+
 export interface NewProductFieldsProps {
   draft: NewProductDraft;
   onChange: (patch: Partial<NewProductDraft>) => void;
@@ -62,15 +65,28 @@ export const NewProductFields: React.FC<NewProductFieldsProps> = ({
           select
           size="small"
           label="Категория"
-          value={draft.categoryId ?? ""}
+          // Категории ещё нет в справочнике — её имя из накладной; заведётся при проведении.
+          value={draft.categoryId ?? (draft.newCategory.trim() ? NEW_CATEGORY : "")}
           disabled={disabled}
-          onChange={(e) => onChange({ categoryId: e.target.value === "" ? null : Number(e.target.value) })}
+          onChange={(e) => {
+            const next = e.target.value;
+            if (next === NEW_CATEGORY) return;
+            onChange({ categoryId: next === "" ? null : Number(next), newCategory: "" });
+          }}
           sx={{ gridColumn: { xs: "1 / -1", md: "span 1" }, minWidth: 0 }}
           SelectProps={{ MenuProps: { PaperProps: { sx: { maxHeight: 360 } } } }}
         >
           <MenuItem value="">
             <em>Без категории</em>
           </MenuItem>
+          {draft.newCategory.trim() && (
+            <MenuItem value={NEW_CATEGORY}>
+              {draft.newCategory.trim()}
+              <Typography component="span" variant="caption" color="success.main" sx={{ ml: 1, fontWeight: 700 }}>
+                новая — создастся при проведении
+              </Typography>
+            </MenuItem>
+          )}
           {categories.map((option) => (
             <MenuItem key={option.id} value={option.id}>
               {option.label}
@@ -119,7 +135,7 @@ export const NewProductFields: React.FC<NewProductFieldsProps> = ({
         value={draft.price}
         disabled={disabled}
         onChange={(e) => onChange({ price: e.target.value })}
-        inputProps={{ inputMode: "decimal", style: { textAlign: "right" } }}
+        inputProps={{ inputMode: "decimal", style: { textAlign: "right" }, "aria-label": "Цена продажи" }}
         sx={{ minWidth: 0 }}
       />
 
@@ -192,6 +208,21 @@ export const NewProductFields: React.FC<NewProductFieldsProps> = ({
           ))}
         </TextField>
       )}
+
+      <TextField
+        size="small"
+        label="Описание"
+        placeholder="Что сказано о товаре в накладной"
+        value={draft.description}
+        disabled={disabled}
+        onChange={(e) => onChange({ description: e.target.value })}
+        multiline
+        minRows={2}
+        maxRows={6}
+        InputLabelProps={{ shrink: true }}
+        inputProps={{ maxLength: 4000 }}
+        sx={{ gridColumn: "1 / -1", minWidth: 0 }}
+      />
 
       <Typography
         variant="caption"
