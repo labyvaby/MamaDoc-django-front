@@ -80,14 +80,28 @@ const EditStayPanel: React.FC<ReservationEditPanelProps> = ({ reservation, item,
     queryFn: ({ signal }) => listRoomTypes(reservation.propertyId, {}, signal),
   });
   const roomType = roomTypesQuery.data?.find((rt) => rt.id === item.roomTypeId);
+  // То же правило, что проверяет бэк и форма новой брони: взрослых не больше
+  // adultsCapacity, всего гостей не больше capacity. Дети могут занять
+  // свободные взрослые места (в «2+0» допустимо 1 взрослый + 1 ребёнок).
   const maxAdults = roomType?.adultsCapacity ?? 20;
-  const maxChildren = roomType?.childrenCapacity ?? 20;
+  const capacity = roomType?.capacity ?? 40;
+  const maxChildren = Math.max(0, capacity - adults);
+  // Взрослых стало больше — детей не оставляем выше нового предела.
+  const changeAdults = (next: number) => {
+    setAdults(next);
+    setChildren((cur) => Math.min(cur, Math.max(0, capacity - next)));
+  };
 
   const datesError =
     !checkIn || !checkOut ? "Укажите даты" : !checkOut.isAfter(checkIn, "day") ? "Выезд должен быть позже заезда" : null;
   const nights = checkIn && checkOut && !datesError ? checkOut.startOf("day").diff(checkIn.startOf("day"), "day") : 0;
   const nightsDelta = nights - item.nightsCount;
-  const guestsError = adults > maxAdults || children > maxChildren ? `Категория вмещает до ${maxAdults} взр. и ${maxChildren} дет.` : null;
+  const guestsError =
+    adults > maxAdults
+      ? `В этой категории не больше ${maxAdults} ${plural(maxAdults, "взрослого", "взрослых", "взрослых")}`
+      : adults + children > capacity
+        ? `Всего не больше ${capacity} ${plural(capacity, "гостя", "гостей", "гостей")}`
+        : null;
 
   const changed =
     checkIn?.format("YYYY-MM-DD") !== item.checkIn ||
@@ -142,8 +156,8 @@ const EditStayPanel: React.FC<ReservationEditPanelProps> = ({ reservation, item,
         />
       </Stack>
       <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
-        <CountStepper label="Взрослых" hint={`до ${maxAdults}`} value={adults} min={1} max={maxAdults} onChange={setAdults} disabled={saving} />
-        <CountStepper label="Детей" hint={`до ${maxChildren}`} value={children} min={0} max={maxChildren} onChange={setChildren} disabled={saving} />
+        <CountStepper label="Взрослых" hint={`до ${maxAdults}`} value={adults} min={1} max={maxAdults} onChange={changeAdults} disabled={saving} />
+        <CountStepper label="Детей" hint={`всего до ${capacity}`} value={children} min={0} max={maxChildren} onChange={setChildren} disabled={saving} />
       </Stack>
       <FormField select icon={<RestaurantOutlined />} label="Питание" value={boardType} onValueChange={setBoardType} disabled={saving} fullWidth>
         {(catalogs?.boardTypes ?? [{ value: boardType, label: HOTEL_BOARD_TYPE_LABELS[boardType] ?? boardType }]).map((c) => (
