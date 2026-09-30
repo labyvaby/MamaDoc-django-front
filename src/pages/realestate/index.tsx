@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { REALESTATE_USE_MOCKS, getProjectUnits, getRealEstateProjects, realEstateKeys, type Project, type Unit } from "../../api/realestate";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useT } from "../../i18n/VerticalProvider";
 import { useCanChecker } from "../../hooks/useCan";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { autoBoardView, boundsOf, buildBoard, priceScale, projectFacts, withProjectSections, withUnitLayout } from "./model/board";
@@ -25,7 +26,8 @@ import { UnitPreview } from "./ui/UnitPreview";
  * см. REALESTATE_USE_MOCKS в api/realestate.ts.
  */
 export default function RealEstateChessboardPage() {
-  usePageTitle("Квартиры и шахматка");
+  const { t } = useT("realestate");
+  usePageTitle(t("page.title"));
   return (
     <RealEstateToastProvider>
       {/* Лейаут приложения фиксирует высоту и режет overflow — страница скроллится сама, как «Сводка». */}
@@ -37,6 +39,7 @@ export default function RealEstateChessboardPage() {
 }
 
 function ChessboardPage() {
+  const { t } = useT("realestate");
   const [params, updateParams] = useChessboardParams();
   const organizationId = useApiOrgId();
   const projectsQuery = useQuery({
@@ -53,7 +56,7 @@ function ChessboardPage() {
   if (!project) {
     return (
       <Box sx={{ p: 5, textAlign: "center", color: "text.secondary", border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
-        Нет жилых комплексов
+        {t("page.noProjects")}
       </Box>
     );
   }
@@ -64,14 +67,15 @@ function ChessboardPage() {
 }
 
 function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const { t } = useT("realestate");
   return (
     <Box role="alert" sx={{ p: 5, display: "flex", flexDirection: "column", alignItems: "center", gap: 1.5, textAlign: "center", border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
-      <Typography sx={{ fontWeight: 600 }}>Не удалось загрузить данные</Typography>
+      <Typography sx={{ fontWeight: 600 }}>{t("page.loadError")}</Typography>
       <Typography variant="body2" color="text.secondary">
-        {error instanceof Error ? error.message : "Неизвестная ошибка"}
+        {error instanceof Error ? error.message : t("page.unknownError")}
       </Typography>
       <Button variant="outlined" onClick={onRetry}>
-        Повторить
+        {t("common.retry")}
       </Button>
     </Box>
   );
@@ -79,11 +83,12 @@ function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void })
 
 /** ЖК заведён, квартир ещё нет — вместо вечного скелетона загрузки. */
 function EmptyProject({ name }: { name: string }) {
+  const { t } = useT("realestate");
   return (
     <Box sx={{ p: 5, display: "flex", flexDirection: "column", alignItems: "center", gap: 1, textAlign: "center", border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
-      <Typography sx={{ fontWeight: 600 }}>В ЖК «{name}» пока нет квартир</Typography>
+      <Typography sx={{ fontWeight: 600 }}>{t("page.emptyProject", { name })}</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 420 }}>
-        Шахматка появится, как только квартиры будут заведены в системе.
+        {t("page.emptyProjectHint")}
       </Typography>
     </Box>
   );
@@ -100,6 +105,7 @@ function PageSkeleton() {
 
 function ProjectChessboard({ project: baseProject, projects, onSelectProject }: { project: Project; projects: Project[]; onSelectProject: (projectId: string) => void }) {
   const toast = useRealEstateToast();
+  const { t } = useT("realestate");
   const [params, updateParams] = useChessboardParams();
   const organizationId = useApiOrgId();
   const unitsQuery = useQuery({
@@ -197,7 +203,7 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
         projects={projects}
         activeId={project.id}
         onSelect={onSelectProject}
-        onExport={() => toast("Отчёт подготовлен", downloadPriceList(project, units))}
+        onExport={() => toast(t("toast.priceListReady"), downloadPriceList(project, units))}
       />
 
       <Box component="section" sx={{ overflow: "hidden", border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper", p: { xs: 1.75, xl: 2.1 } }}>
@@ -258,7 +264,7 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
       <SelectionBar
         count={selected.length}
         onCompare={() => setCompareOpen(true)}
-        onExport={() => toast("Выбранные квартиры выгружены", downloadPriceList(project, selectedUnits, "selected"))}
+        onExport={() => toast(t("toast.selectedExported"), downloadPriceList(project, selectedUnits, "selected"))}
         onClear={() => {
           setSelected([]);
           setSelectMode(false);
@@ -286,10 +292,10 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
           const next = selected.includes(id) ? selected : [...selected, id];
           setSelected(next);
           toast(
-            "Квартира добавлена к сравнению",
-            next.length >= 2 ? `выбрано ${next.length} — нажмите «Сравнить» внизу` : "выберите ещё хотя бы одну на шахматке",
+            t("toast.addedToCompare"),
+            next.length >= 2 ? t("toast.addedToCompareHint", { count: next.length }) : t("toast.addedToComparePickMore"),
           );
-          if (next.length > COMPARE_LIMIT) toast("Сравниваются первые 4 квартиры");
+          if (next.length > COMPARE_LIMIT) toast(t("toast.compareFirst", { limit: COMPARE_LIMIT }));
         }}
       />
     </Box>

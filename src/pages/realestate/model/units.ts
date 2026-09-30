@@ -1,10 +1,25 @@
-import type { Unit, UnitStatus } from "../../../api/realestate";
+import type { OutdoorSpaceType, Unit, UnitStatus } from "../../../api/realestate";
+import { tt } from "../../../i18n/t";
 
-/** Подписи статусов квартиры: полная — в карточке, короткая — в легенде и ячейке. */
+const statusMeta = (status: UnitStatus) => ({
+  label: tt(`realestate:status.${status}`),
+  short: tt(`realestate:statusShort.${status}`),
+});
+
+/**
+ * Подписи статусов квартиры: полная — в карточке, короткая — в легенде и ячейке.
+ * Геттеры, а не значения: словарь читается при обращении, а не при импорте.
+ */
 export const unitStatusMeta: Record<UnitStatus, { label: string; short: string }> = {
-  free: { label: "Свободна", short: "Свободно" },
-  reserved: { label: "Забронирована", short: "Бронь" },
-  sold: { label: "Продана", short: "Продано" },
+  get free() {
+    return statusMeta("free");
+  },
+  get reserved() {
+    return statusMeta("reserved");
+  },
+  get sold() {
+    return statusMeta("sold");
+  },
 };
 
 export type StatusFilter = "all" | UnitStatus;
@@ -41,22 +56,11 @@ export const defaultUnitFilters: UnitFilters = {
 
 export const statusOptions = ["all", "free", "reserved", "sold"] as const satisfies readonly StatusFilter[];
 
-export const roomsOptions = [
-  ["all", "Все"],
-  ["0", "Студии"],
-  ["1", "1"],
-  ["2", "2"],
-  ["3", "3"],
-  ["4", "4+"],
-] as const satisfies readonly (readonly [RoomsFilter, string])[];
+/** Подписи — `realestate:filters.rooms.<значение>`. */
+export const roomsOptions = ["all", "0", "1", "2", "3", "4"] as const satisfies readonly RoomsFilter[];
 
-export const featureOptions = [
-  ["all", "Все"],
-  ["terrace", "Терраса"],
-  ["balcony", "Балкон / лоджия"],
-  ["south", "Вид на юг"],
-  ["panoramic", "Панорамные окна"],
-] as const satisfies readonly (readonly [FeatureFilter, string])[];
+/** Подписи — `realestate:filters.feature.<значение>`. */
+export const featureOptions = ["all", "terrace", "balcony", "south", "panoramic"] as const satisfies readonly FeatureFilter[];
 
 const matchesRooms = (unit: Unit, rooms: RoomsFilter) =>
   rooms === "all" || (rooms === "4" ? unit.rooms >= 4 : unit.rooms === Number(rooms));
@@ -140,16 +144,16 @@ const areaFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
  * Деньги модуля — целые сомы, как в прототипе: «13 155 000 сом».
  * formatKGS из utility/format не подходит: он пишет «с» и копейки.
  */
-export const formatMoney = (value: number) => `${numberFormat.format(value)} сом`;
+export const formatMoney = (value: number) => tt("realestate:fmt.money", { value: numberFormat.format(value) });
 
-export const formatArea = (value: number) => `${areaFormat.format(value)} м²`;
+export const formatArea = (value: number) => tt("realestate:fmt.area", { value: areaFormat.format(value) });
 
-export const formatRooms = (rooms: number) => (rooms === 0 ? "Студия" : `${rooms}-комн.`);
+export const formatRooms = (rooms: number) => (rooms === 0 ? tt("realestate:fmt.studio") : tt("realestate:fmt.rooms", { rooms }));
 
 /** Числа в ячейках и карточке — с точкой, как в прототипе: «16.3 млн», «115.9 м²». */
 export const num = (n: number) => String(n);
 
-export const millions = (price: number) => `${(price / 1_000_000).toFixed(1)} млн`;
+export const millions = (price: number) => tt("realestate:fmt.millions", { value: (price / 1_000_000).toFixed(1) });
 
 /** Меньше этого срока бронь «горит» — менеджеру пора звонить покупателю. */
 export const HOLD_URGENT_MS = 2 * 3_600_000;
@@ -166,13 +170,19 @@ export function holdLeft(endsAt: string | null | undefined, now: number): HoldLe
   const end = endsAt ? Date.parse(endsAt) : NaN;
   if (Number.isNaN(end)) return null;
   const ms = end - now;
-  if (ms <= 0) return { label: "истекла", urgent: true, expired: true };
+  if (ms <= 0) return { label: tt("realestate:hold.expired"), urgent: true, expired: true };
   const minutes = Math.ceil(ms / 60_000);
-  const label = minutes < 60 ? `${minutes} мин` : minutes < 48 * 60 ? `${Math.floor(minutes / 60)} ч` : `${Math.floor(minutes / 1440)} дн`;
+  const label =
+    minutes < 60
+      ? tt("realestate:hold.minutes", { count: minutes })
+      : minutes < 48 * 60
+        ? tt("realestate:hold.hours", { count: Math.floor(minutes / 60) })
+        : tt("realestate:hold.days", { count: Math.floor(minutes / 1440) });
   return { label, urgent: ms < HOLD_URGENT_MS, expired: false };
 }
 
 /** Цена за м² в ячейке: «184 тыс./м²». */
-export const perSqmShort = (pricePerSqm: number) => `${Math.round(pricePerSqm / 1000)} тыс./м²`;
+export const perSqmShort = (pricePerSqm: number) => tt("realestate:fmt.perSqmShort", { value: Math.round(pricePerSqm / 1000) });
 
-export const outdoorLabel ={ balcony: "Балкон", loggia: "Лоджия", terrace: "Терраса" } as const;
+/** «Балкон» / «Лоджия» / «Терраса». */
+export const outdoorLabel = (type: OutdoorSpaceType) => tt(`realestate:outdoor.${type}`);

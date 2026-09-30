@@ -2,6 +2,7 @@ import React from "react";
 import { Controller, type Control, type FieldValues, type Path } from "react-hook-form";
 
 import PhoneNumberField from "../../../../components/ui/PhoneNumberField";
+import { tt } from "../../../../i18n/t";
 import { composePhone, isPhoneLocalComplete, parsePhone, type PhoneCountryCode } from "../../../../utility/phone";
 
 /**
@@ -23,7 +24,7 @@ export function PhoneController<T extends FieldValues>({ control, name, label, r
         validate: (value: string) => {
           if (!value) return requiredMessage;
           const { countryCode, local } = parsePhone(value);
-          return isPhoneLocalComplete(countryCode, local) || "Проверьте номер телефона";
+          return isPhoneLocalComplete(countryCode, local) || tt("realestate:form.phoneInvalid");
         },
       }}
       render={({ field, fieldState }) => (

@@ -9,6 +9,8 @@ import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import DeckOutlined from "@mui/icons-material/DeckOutlined";
 
 import type { Project, Unit } from "../../../api/realestate";
+import { useT } from "../../../i18n/VerticalProvider";
+import { tt } from "../../../i18n/t";
 import { subtleBg } from "../../../theme/uiHelpers";
 import { floorType, sectionLabel, statsOf, type BoardModel, type BoardPaint, type BoardView, type FloorStats, type PriceScale } from "../model/board";
 import { canStartBoardNavigation, moveFocus } from "../model/keyboard";
@@ -46,6 +48,7 @@ export interface BoardProps extends CellHandlers {
  * Шахматка. Стрелки двигают фокус по квартирам, Enter открывает карточку, пробел — выбирает.
  */
 export function Board(props: BoardProps) {
+  const { t } = useT("realestate");
   const now = useMinuteClock();
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const firstVisible = props.board.floors.flatMap((f) => props.board.unitsOnFloor(f)).find(props.isVisible);
@@ -82,7 +85,7 @@ export function Board(props: BoardProps) {
         hoveredIdRef.current = null;
       }}
       role="region"
-      aria-label="Шахматка, этажи сверху вниз"
+      aria-label={t("board.regionLabel")}
       aria-describedby="realestate-board-hint"
       onKeyDown={(event: React.KeyboardEvent<HTMLDivElement>) => {
         if (moveFocus(event.currentTarget, event.key)) event.preventDefault();
@@ -97,7 +100,7 @@ export function Board(props: BoardProps) {
       sx={{ position: "relative", overflow: "auto", maxHeight: { md: "calc(100dvh - 140px)" }, pr: 1, pb: 1 }}
     >
       <Box component="p" id="realestate-board-hint" sx={visuallyHidden}>
-        Стрелки — переход между квартирами, Enter — открыть карточку, пробел — выбрать для сравнения.
+        {t("board.keyboardHelp")}
       </Box>
       {props.view === "compact" ? (
         <CompactBoard {...props} tabbableId={tabbableId} now={now} />
@@ -152,8 +155,7 @@ function StatsBar({ stats, width = "100%", height = 4 }: { stats: FloorStats; wi
   );
 }
 
-const statsTitle = (floor: number, s: FloorStats) =>
-  `${floor} этаж: ${s.free} из ${s.total} свободно · бронь ${s.reserved} · продано ${s.sold}`;
+const statsTitle = (floor: number, s: FloorStats) => tt("realestate:board.floorStats", { floor, ...s });
 
 /** Липкая шапка и колонка этажей — на фоне бумаги, чтобы ячейки не просвечивали. */
 const stickyTopSx = { position: "sticky", top: 0, zIndex: 3, bgcolor: "background.paper" } as const;
@@ -182,6 +184,7 @@ const sectionGroupSx = (columns: number, first: boolean, cells = columns) => (t:
 
 /** Подробная шахматка: строка на этаж, секции — колонками, разделены пунктиром. */
 function DetailedBoard(p: InnerProps) {
+  const { t } = useT("realestate");
   const { project, board } = p;
   return (
     <Box sx={{ minWidth: 860 }}>
@@ -189,14 +192,14 @@ function DetailedBoard(p: InnerProps) {
         component="p"
         sx={{ m: 0, mt: 1, textAlign: "right", fontSize: "0.7rem", color: "text.secondary", display: { xs: "none", lg: "block" } }}
       >
-        ← → ↑ ↓ — по квартирам · Enter — карточка · пробел или Ctrl+клик — к сравнению
+        {t("board.keyboardHint")}
       </Box>
       <Box sx={{ ...floorGridSx, ...stickyTopSx, mb: 1, pt: 1, alignItems: "end" }}>
         <Typography
           component="span"
           sx={{ ...stickyLeftSx, alignSelf: "stretch", display: "flex", alignItems: "flex-end", justifyContent: "center", fontSize: "0.7rem", fontWeight: 600, color: "text.secondary" }}
         >
-          Этаж
+          {t("board.floorColumn")}
         </Typography>
         <Box sx={{ display: "flex", gap: "7px" }}>
           {board.sections.map((s, i) => (
@@ -207,8 +210,8 @@ function DetailedBoard(p: InnerProps) {
               >
                 <Box component="span" sx={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", columnGap: 1 }}>
                   <b>{sectionLabel(s.name)}</b>
-                  <Box component="span" sx={(t) => ({ color: statusTone(t, "free").text })}>
-                    {s.freeCount} свободно
+                  <Box component="span" sx={(theme) => ({ color: statusTone(theme, "free").text })}>
+                    {t("board.freeCount", { count: s.freeCount })}
                   </Box>
                 </Box>
                 <StatsBar stats={statsOf(board.floors.flatMap((f) => s.unitsOnFloor(f)))} height={3} />
@@ -245,10 +248,10 @@ function DetailedBoard(p: InnerProps) {
                 {floorType(project, floor)}
               </Typography>
               <Typography component="small" sx={{ fontSize: "0.72rem" }}>
-                <Box component="b" sx={(t) => ({ color: statusTone(t, "free").text })}>
+                <Box component="b" sx={(theme) => ({ color: statusTone(theme, "free").text })}>
                   {stats.free}
                 </Box>{" "}
-                из {stats.total} своб.
+                {t("board.ofTotal", { total: stats.total })}
               </Typography>
               <Box sx={{ mt: 0.5, width: "100%", maxWidth: 56 }}>
                 <StatsBar stats={stats} />
@@ -278,6 +281,7 @@ function DetailedBoard(p: InnerProps) {
 
 /** Компактная шахматка: секции рядом, цифра — число комнат. */
 function CompactBoard(p: InnerProps) {
+  const { t } = useT("realestate");
   const { board } = p;
   return (
     <Box
@@ -301,7 +305,7 @@ function CompactBoard(p: InnerProps) {
                 {sectionLabel(section.name)}
               </Typography>
               <Typography component="b" sx={{ fontSize: "0.72rem", fontWeight: 600, color: "text.secondary" }}>
-                {section.freeCount} свободно
+                {t("board.freeCount", { count: section.freeCount })}
               </Typography>
             </Box>
             <StatsBar stats={stats} />
@@ -383,17 +387,18 @@ const UnitCell = React.memo(function UnitCell({
   onToggleSelect,
   onPreview,
 }: UnitCellProps) {
+  const { t } = useT("realestate");
   const status = unitStatusMeta[unit.status].label;
-  const holdText = hold ? (hold.expired ? "бронь истекла" : `бронь ещё ${hold.label}`) : "";
+  const holdText = hold ? (hold.expired ? t("cell.holdExpiredLower") : t("cell.holdLeftLower", { left: hold.label })) : "";
   const label = [
-    `Квартира №${unit.number}`,
+    t("cell.unitNumber", { number: unit.number }),
     formatRooms(unit.rooms),
     formatArea(unit.totalArea),
-    `${unit.floor} этаж`,
+    t("cell.floor", { floor: unit.floor }),
     status,
     holdText,
-    awaitingPayment ? "ждёт предоплату" : "",
-    selected ? "выбрана" : "",
+    awaitingPayment ? t("cell.awaitingPaymentLower") : "",
+    selected ? t("cell.selectedLower") : "",
   ]
     .filter(Boolean)
     .join(", ");
@@ -485,7 +490,7 @@ const UnitCell = React.memo(function UnitCell({
         }}
       >
         {mark}
-        {unit.rooms === 0 ? "С" : unit.rooms}
+        {unit.rooms === 0 ? t("cell.studioLetter") : unit.rooms}
         <Box
           component="i"
           aria-hidden
@@ -511,8 +516,8 @@ const UnitCell = React.memo(function UnitCell({
   // Из Tab-порядка убраны: с клавиатуры те же действия есть в карточке (Enter).
   const actions: [QuickAction, string, React.ReactNode][] = [];
   if (onQuickAction && !dimmed && unit.status !== "sold") {
-    if (free) actions.push(["reserve", "Забронировать", <EventAvailableOutlined />]);
-    actions.push(["proposal", "Отправить КП", <SendOutlined />]);
+    if (free) actions.push(["reserve", t("cell.quickReserve"), <EventAvailableOutlined />]);
+    actions.push(["proposal", t("cell.quickProposal"), <SendOutlined />]);
   }
   return (
     <Box sx={{ position: "relative", minWidth: 0, display: "flex", "&:hover .unit-actions": { opacity: 1 } }}>
@@ -574,14 +579,14 @@ const UnitCell = React.memo(function UnitCell({
                   ...(unit.status === "sold" ? { px: 0 } : null),
                 })}
               >
-                {unit.status === "reserved" ? (hold ? (hold.expired ? "Бронь истекла" : `Бронь · ${hold.label}`) : "Бронь") : status}
+                {unit.status === "reserved" ? (hold ? (hold.expired ? t("cell.holdExpired") : t("cell.holdLeft", { left: hold.label })) : t("statusShort.reserved")) : status}
               </Box>
             )}
             <Box component="span" sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
               №{unit.number}
             </Box>
             {awaitingPayment && (
-              <Box component="span" title="Ждёт предоплату" sx={{ display: "grid", color: "warning.onSurface", "& .MuiSvgIcon-root": { fontSize: 13 } }}>
+              <Box component="span" title={t("cell.awaitingPayment")} sx={{ display: "grid", color: "warning.onSurface", "& .MuiSvgIcon-root": { fontSize: 13 } }}>
                 <PaymentsOutlined />
               </Box>
             )}
@@ -589,8 +594,8 @@ const UnitCell = React.memo(function UnitCell({
           {/* Иконка, а не буква «Б/Т»: буква путалась с названием секции «Б». */}
           <Box
             component="i"
-            title={isTerrace ? "Терраса" : outdoor ? "Балкон / лоджия" : undefined}
-            aria-label={isTerrace ? "Терраса" : outdoor ? "Балкон или лоджия" : undefined}
+            title={isTerrace ? t("outdoor.terrace") : outdoor ? t("cell.balconyTitle") : undefined}
+            aria-label={isTerrace ? t("outdoor.terrace") : outdoor ? t("cell.balconyAria") : undefined}
             aria-hidden={!isTerrace && !outdoor}
             sx={(t) => ({
               "& .MuiSvgIcon-root": { fontSize: 13 },
@@ -616,7 +621,7 @@ const UnitCell = React.memo(function UnitCell({
           {formatRooms(unit.rooms)}
         </Box>
         <Box component="span" sx={{ fontSize: "0.72rem" }}>
-          {unit.totalArea} м² · {unit.orientation}
+          {t("cell.areaOrientation", { area: unit.totalArea, orientation: unit.orientation })}
         </Box>
         <Box component="span" sx={{ mt: "auto", display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 0.75, fontSize: "0.72rem" }}>
           <Box component="em" sx={{ fontWeight: 700, fontStyle: "normal" }}>
@@ -651,7 +656,7 @@ const UnitCell = React.memo(function UnitCell({
           {actions.map(([action, title, icon]) => (
             <Tooltip key={action} title={title} placement="top">
               <IconButton
-                aria-label={`${title}: квартира №${unit.number}`}
+                aria-label={t("cell.quickAria", { action: title, number: unit.number })}
                 tabIndex={-1}
                 onMouseEnter={() => onPreview(null)}
                 onClick={() => onQuickAction?.(unit.id, action)}
@@ -668,21 +673,18 @@ const UnitCell = React.memo(function UnitCell({
 
 /** Легенда над компактной шахматкой. */
 export function CompactNote() {
-  const swatches = [
-    ["Свободно", "free"],
-    ["Забронировано", "reserved"],
-    ["Продано", "sold"],
-  ] as const;
+  const { t } = useT("realestate");
+  const swatches = ["free", "reserved", "sold"] as const;
   return (
     <Box sx={{ mb: 2, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.75, fontSize: "0.75rem", color: "text.secondary" }}>
-      {swatches.map(([label, status]) => (
-        <Box component="span" key={label} sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-          <Box component="i" sx={(t) => ({ width: 12, height: 12, borderRadius: "3px", bgcolor: statusTone(t, status).solid })} />
-          {label}
+      {swatches.map((status) => (
+        <Box component="span" key={status} sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+          <Box component="i" sx={(theme) => ({ width: 12, height: 12, borderRadius: "3px", bgcolor: statusTone(theme, status).solid })} />
+          {t(`legend.compact.${status}`)}
         </Box>
       ))}
       <Box component="small" sx={{ ml: "auto", fontSize: "0.72rem", display: { xs: "none", md: "inline" } }}>
-        Цифра в ячейке — количество комнат, «С» — студия · строка = этаж
+        {t("legend.compactHint")}
       </Box>
     </Box>
   );
@@ -690,10 +692,11 @@ export function CompactNote() {
 
 /** Подсказка под компактной шахматкой. */
 export function FloorGuide({ board }: { board: BoardModel }) {
+  const { t } = useT("realestate");
   return (
     <Box sx={(t) => ({ mt: 1.25, display: "flex", width: "max-content", alignItems: "center", gap: 1.5, borderRadius: "10px", bgcolor: subtleBg(t, true), px: 1.5, py: 1.25 })}>
       <Typography component="span" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-        Этажи расположены сверху вниз
+        {t("legend.floorsTopDown")}
       </Typography>
       <Typography component="b" sx={{ fontSize: "0.8rem", fontWeight: 600 }}>
         {board.floors[0]} → {board.floors[board.floors.length - 1]}

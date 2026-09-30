@@ -6,7 +6,10 @@ import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 
 import type { Unit } from "../../../api/realestate";
 import { AppButton } from "../../../components/ui";
-import { formatMoney, formatRooms, outdoorLabel, unitStatusMeta } from "../model/units";
+import { useT } from "../../../i18n/VerticalProvider";
+import { tt } from "../../../i18n/t";
+import { sectionLabel } from "../model/board";
+import { formatArea, formatMoney, formatRooms, outdoorLabel, unitStatusMeta } from "../model/units";
 
 /** Сравнить можно до 4 квартир — больше не помещается в колонки. */
 export const COMPARE_LIMIT = 4;
@@ -23,11 +26,12 @@ export function SelectionBar({
   onExport: () => void;
   onClear: () => void;
 }) {
+  const { t } = useT("realestate");
   if (!count) return null;
   return (
     <Paper
       role="region"
-      aria-label="Выбранные квартиры"
+      aria-label={t("compare.selectedRegion")}
       variant="outlined"
       sx={{
         position: "fixed",
@@ -47,21 +51,21 @@ export function SelectionBar({
       }}
     >
       <Typography component="b" sx={{ mr: 0.5, fontWeight: 600, whiteSpace: "nowrap", fontSize: "0.85rem" }}>
-        Выбрано: {count}
+        {t("compare.selectedCount", { count })}
       </Typography>
       <AppButton
         variant="contained"
         size="small"
         onClick={onCompare}
         disabled={count < 2}
-        title={count < 2 ? "Выберите ещё хотя бы одну квартиру" : undefined}
+        title={count < 2 ? t("compare.pickOneMore") : undefined}
       >
-        Сравнить{count > COMPARE_LIMIT ? ` первые ${COMPARE_LIMIT}` : ""}
+        {count > COMPARE_LIMIT ? t("compare.compareFirst", { limit: COMPARE_LIMIT }) : t("compare.compare")}
       </AppButton>
       <Button size="small" color="inherit" startIcon={<FileDownloadOutlined />} onClick={onExport}>
-        Выгрузить
+        {t("compare.export")}
       </Button>
-      <IconButton size="small" aria-label="Снять выбор" onClick={onClear}>
+      <IconButton size="small" aria-label={t("compare.clear")} onClick={onClear}>
         <CloseOutlined fontSize="small" />
       </IconButton>
     </Paper>
@@ -69,30 +73,33 @@ export function SelectionBar({
 }
 
 interface Row {
-  label: string;
+  /** Подпись — `realestate:compare.rows.<key>`. */
+  key: string;
   value: (u: Unit) => React.ReactNode;
   /** Для числовых строк — какое значение лучшее. */
   best?: { of: (u: Unit) => number; prefer: "min" | "max" };
 }
 
+const yes = (value: boolean) => (value ? tt("realestate:compare.yes") : "—");
+
 const rows: Row[] = [
-  { label: "Цена", value: (u) => formatMoney(u.price), best: { of: (u) => u.price, prefer: "min" } },
-  { label: "Цена за м²", value: (u) => formatMoney(u.pricePerSqm), best: { of: (u) => u.pricePerSqm, prefer: "min" } },
-  { label: "Общая площадь", value: (u) => `${u.totalArea} м²`, best: { of: (u) => u.totalArea, prefer: "max" } },
-  { label: "Жилая площадь", value: (u) => `${u.livingArea} м²`, best: { of: (u) => u.livingArea, prefer: "max" } },
-  { label: "Комнат", value: (u) => formatRooms(u.rooms) },
-  { label: "Этаж / секция", value: (u) => `${u.floor} / ${u.section}` },
-  { label: "Сторона света", value: (u) => u.orientation },
-  { label: "Вид из окон", value: (u) => u.view },
+  { key: "price", value: (u) => formatMoney(u.price), best: { of: (u) => u.price, prefer: "min" } },
+  { key: "pricePerSqm", value: (u) => formatMoney(u.pricePerSqm), best: { of: (u) => u.pricePerSqm, prefer: "min" } },
+  { key: "totalArea", value: (u) => formatArea(u.totalArea), best: { of: (u) => u.totalArea, prefer: "max" } },
+  { key: "livingArea", value: (u) => formatArea(u.livingArea), best: { of: (u) => u.livingArea, prefer: "max" } },
+  { key: "rooms", value: (u) => formatRooms(u.rooms) },
+  { key: "floorSection", value: (u) => `${u.floor} / ${sectionLabel(u.section)}` },
+  { key: "orientation", value: (u) => u.orientation },
+  { key: "view", value: (u) => u.view },
   {
-    label: "Балкон / терраса",
-    value: (u) => (u.outdoor ? `${outdoorLabel[u.outdoor.type]} ${u.outdoor.area} м²` : "—"),
+    key: "outdoor",
+    value: (u) => (u.outdoor ? tt("realestate:fmt.outdoorArea", { kind: outdoorLabel(u.outdoor.type), area: u.outdoor.area }) : "—"),
   },
-  { label: "Потолки", value: (u) => `${u.ceilingHeight} м` },
-  { label: "Санузлов", value: (u) => u.bathrooms },
-  { label: "Угловая", value: (u) => (u.isCorner ? "Да" : "—") },
-  { label: "Панорамные окна", value: (u) => (u.hasPanoramicWindows ? "Да" : "—") },
-  { label: "Статус", value: (u) => unitStatusMeta[u.status].label },
+  { key: "ceiling", value: (u) => tt("realestate:compare.ceilingValue", { value: u.ceilingHeight }) },
+  { key: "bathrooms", value: (u) => u.bathrooms },
+  { key: "corner", value: (u) => yes(u.isCorner) },
+  { key: "panoramic", value: (u) => yes(u.hasPanoramicWindows) },
+  { key: "status", value: (u) => unitStatusMeta[u.status].label },
 ];
 
 /** Сравнение квартир бок о бок; лучшие значения по цене и площади подсвечены. */
@@ -107,6 +114,7 @@ export function CompareDialog({
   onOpenUnit: (unitId: string) => void;
   onRemove: (unitId: string) => void;
 }) {
+  const { t } = useT("realestate");
   const shown = units.slice(0, COMPARE_LIMIT);
   const bestOf = (row: Row) => {
     if (!row.best || shown.length < 2) return null;
@@ -116,16 +124,16 @@ export function CompareDialog({
 
   return (
     <Dialog open onClose={onClose} fullWidth PaperProps={{ sx: { maxWidth: 1040, borderRadius: "14px" } }} aria-labelledby="realestate-compare-title">
-      <IconButton aria-label="Закрыть" onClick={onClose} sx={{ position: "absolute", right: 12, top: 12 }}>
+      <IconButton aria-label={t("common.close")} onClick={onClose} sx={{ position: "absolute", right: 12, top: 12 }}>
         <CloseOutlined />
       </IconButton>
       <DialogContent sx={{ p: 3, pt: 3.5 }}>
         <Typography id="realestate-compare-title" variant="h6" sx={{ fontWeight: 700 }}>
-          Сравнение квартир
+          {t("compare.title")}
         </Typography>
         <Typography sx={{ mt: 0.5, mb: 2, fontSize: "0.8rem", color: "text.secondary" }}>
-          Лучшие значения по цене и площади подсвечены.
-          {units.length > COMPARE_LIMIT && ` Показаны первые ${COMPARE_LIMIT} из ${units.length} выбранных.`}
+          {t("compare.bestHint")}
+          {units.length > COMPARE_LIMIT && ` ${t("compare.shownFirst", { limit: COMPARE_LIMIT, total: units.length })}`}
         </Typography>
         <Box sx={{ overflowX: "auto" }}>
           <Box component="table" sx={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
@@ -138,14 +146,14 @@ export function CompareDialog({
                       №{u.number}
                     </Typography>
                     <Typography component="span" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-                      {formatRooms(u.rooms)} · {u.totalArea} м²
+                      {formatRooms(u.rooms)} · {formatArea(u.totalArea)}
                     </Typography>
                     <Box sx={{ mt: 1, display: "flex", gap: 0.75 }}>
                       <Button size="small" variant="outlined" onClick={() => onOpenUnit(u.id)}>
-                        Карточка
+                        {t("compare.card")}
                       </Button>
-                      <Button size="small" color="inherit" onClick={() => onRemove(u.id)} aria-label={`Убрать №${u.number} из сравнения`}>
-                        Убрать
+                      <Button size="small" color="inherit" onClick={() => onRemove(u.id)} aria-label={t("compare.removeAria", { number: u.number })}>
+                        {t("compare.remove")}
                       </Button>
                     </Box>
                   </Box>
@@ -156,9 +164,9 @@ export function CompareDialog({
               {rows.map((row) => {
                 const best = bestOf(row);
                 return (
-                  <Box component="tr" key={row.label} sx={{ borderTop: 1, borderColor: "divider" }}>
+                  <Box component="tr" key={row.key} sx={{ borderTop: 1, borderColor: "divider" }}>
                     <Box component="th" sx={{ py: 1, pr: 1.5, textAlign: "left", fontSize: "0.75rem", fontWeight: 500, color: "text.secondary" }}>
-                      {row.label}
+                      {t(`compare.rows.${row.key}`)}
                     </Box>
                     {shown.map((u) => {
                       const isBest = best !== null && row.best!.of(u) === best;

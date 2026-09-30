@@ -10,6 +10,7 @@ import { REALESTATE_USE_MOCKS, getMortgageRateFrom, getProjectUnits, getUnit, re
 import { AppButton } from "../../../../components/ui";
 import { useApiOrgId } from "../../../../hooks/useApiOrgId";
 import { useCanChecker } from "../../../../hooks/useCan";
+import { useT } from "../../../../i18n/VerticalProvider";
 import { DEFAULT_OFFER, pickFloorUnit, pickOffer, priceWithOffer } from "../../model/unitCard";
 import { formatMoney } from "../../model/units";
 import { useRealEstateToast } from "../toast";
@@ -59,6 +60,7 @@ export type QuickScreen = Extract<Screen, "reserve" | "proposal">;
  * а экран внутри карточки (бронь, КП, договор…) — локальное состояние.
  */
 export function UnitCardDialog({ project, unitId, onClose, onOpenUnit, onCompare, startScreen }: UnitCardDialogProps) {
+  const { t } = useT("realestate");
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("md"));
   return (
@@ -72,7 +74,7 @@ export function UnitCardDialog({ project, unitId, onClose, onOpenUnit, onCompare
       // Dialog maxWidth="lg" завязан на брейкпоинты темы — ширину задаём явно.
       PaperProps={{ sx: { maxWidth: fullScreen ? undefined : 1180, borderRadius: fullScreen ? 0 : "14px" } }}
     >
-      <IconButton aria-label="Закрыть" onClick={onClose} sx={{ position: "absolute", right: 14, top: 14, zIndex: 2, bgcolor: "background.paper" }}>
+      <IconButton aria-label={t("common.close")} onClick={onClose} sx={{ position: "absolute", right: 14, top: 14, zIndex: 2, bgcolor: "background.paper" }}>
         <CloseOutlined />
       </IconButton>
       {unitId && (
@@ -83,6 +85,7 @@ export function UnitCardDialog({ project, unitId, onClose, onOpenUnit, onCompare
 }
 
 function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare, startScreen }: Omit<UnitCardDialogProps, "unitId"> & { unitId: string }) {
+  const { t } = useT("realestate");
   const organizationId = useApiOrgId();
   const { can } = useCanChecker();
   // Команды над квартирой — realty.manage; без него карточка только для чтения.
@@ -111,10 +114,10 @@ function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare, startScreen
       <DialogContent sx={{ p: { xs: 2, md: 3.5 } }}>
         {query.isError ? (
           <Box role="alert">
-            <Typography variant="h6">Не удалось загрузить квартиру</Typography>
+            <Typography variant="h6">{t("card.loadError")}</Typography>
             <Typography sx={{ mt: 0.5, color: "text.secondary" }}>{(query.error as Error).message}</Typography>
             <Button sx={{ mt: 2 }} variant="outlined" onClick={() => void query.refetch()}>
-              Повторить
+              {t("common.retry")}
             </Button>
           </Box>
         ) : (
@@ -194,6 +197,7 @@ function ApartmentDetail({
   mortgageFrom: number | null;
 }) {
   const toast = useRealEstateToast();
+  const { t } = useT("realestate");
   const offer = pickOffer(unit.offers, offerId);
   const reservation = unit.reservation;
 
@@ -207,7 +211,7 @@ function ApartmentDetail({
         active={offer}
         onSelect={(next) => {
           onSelectOffer(next.id);
-          toast("Акция выбрана", `${next.title} · итог ${formatMoney(priceWithOffer(unit, next))}`);
+          toast(t("toast.offerPicked"), t("toast.offerPickedHint", { title: next.title, total: formatMoney(priceWithOffer(unit, next)) }));
         }}
         onDetails={() => go("offer")}
         onReserve={canManage ? () => go("reserve") : undefined}
@@ -249,28 +253,28 @@ function ApartmentDetail({
           {canManage && (
             <>
               <Button variant="outlined" startIcon={<SendOutlined />} onClick={() => go("proposal")}>
-                Отправить КП
+                {t("actions.proposal")}
               </Button>
               <Button variant="outlined" startIcon={<EventOutlined />} onClick={() => go("meeting")}>
-                Поставить встречу
+                {t("actions.meeting")}
               </Button>
             </>
           )}
           {unit.status === "free" ? (
             <AppButton variant="contained" onClick={() => go("reserve")}>
-              Забронировать квартиру
+              {t("actions.reserve")}
             </AppButton>
           ) : unit.status === "reserved" && reservation?.paymentStatus === "pending" ? (
             <AppButton variant="contained" onClick={() => go("payment")}>
-              Отметить оплату
+              {t("actions.markPaid")}
             </AppButton>
           ) : unit.status === "reserved" ? (
             <AppButton variant="contained" onClick={() => go("contract")}>
-              Оформить договор
+              {t("actions.contract")}
             </AppButton>
           ) : (
             <AppButton variant="contained" onClick={() => go("signed")}>
-              Открыть договор
+              {t("actions.openContract")}
             </AppButton>
           )}
         </Box>

@@ -1,5 +1,6 @@
 import dayjs from "dayjs";
 
+import { tt } from "../i18n/t";
 import { apiRequest } from "./client";
 import * as mock from "./realestate.mocks";
 import { mockDelay } from "./mockUtils";
@@ -279,10 +280,17 @@ export interface OperationInput {
 /** Способ оплаты по договору — код бэка. */
 export type ContractPayment = "installment" | "full" | "mortgage";
 
+/** Геттеры: подпись читается из словаря при обращении, а не при импорте модуля. */
 export const CONTRACT_PAYMENT_LABELS: Record<ContractPayment, string> = {
-  installment: "Рассрочка 24 месяца",
-  full: "100% оплата",
-  mortgage: "Ипотека",
+  get installment() {
+    return tt("realestate:contractPayment.installment");
+  },
+  get full() {
+    return tt("realestate:contractPayment.full");
+  },
+  get mortgage() {
+    return tt("realestate:contractPayment.mortgage");
+  },
 };
 
 export interface ContractInput {
@@ -674,7 +682,7 @@ export async function reserveUnit(unitId: string, input: ReserveUnitInput, organ
 /** Предоплата подтверждается по брони (`reservation.id`), а не по квартире. */
 export async function confirmUnitPrepayment(unit: UnitDetails, organizationId?: number): Promise<UnitDetails> {
   if (REALESTATE_USE_MOCKS) return mockDelay(mock.confirmPrepayment(unit.id));
-  if (!unit.reservation) throw new Error("У квартиры нет брони");
+  if (!unit.reservation) throw new Error(tt("realestate:errors.noReservation"));
   await apiRequest<unknown>(withOrg(`${REALTY_API}/reservations/${unit.reservation.id}/confirm-payment/`, organizationId), {
     method: "POST",
   });

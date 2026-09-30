@@ -1,28 +1,31 @@
 import type { Project, Unit, UnitOffer } from "../../../api/realestate";
-import { formatMoney, formatRooms, num } from "./units";
+import { tt } from "../../../i18n/t";
+import { formatMoney, formatRooms, num, outdoorLabel } from "./units";
 
 /** То же правило, что у бэка (`realty/selectors.floor_type`, поле `floorType` в `/projects/<id>/floors/`). */
 export function floorTypeLabel(project: Project, floor: number) {
-  if (floor === project.floorsCount) return "Пентхаус";
-  if (floor >= project.floorsCount - 2) return "Клубный этаж";
-  return "Типовой этаж";
+  if (floor === project.floorsCount) return tt("realestate:floorType.penthouse");
+  if (floor >= project.floorsCount - 2) return tt("realestate:floorType.club");
+  return tt("realestate:floorType.typical");
 }
 
 export const outdoorKind = (unit: Unit) =>
-  unit.outdoor?.type === "loggia" ? "Лоджия" : unit.outdoor?.type === "balcony" ? "Балкон" : null;
+  unit.outdoor && unit.outdoor.type !== "terrace" ? outdoorLabel(unit.outdoor.type) : null;
 
 /** «Балкон 4.6 м²» / «Лоджия 3.8 м²» или null. */
 export const balconyLabel = (unit: Unit) => {
   const kind = outdoorKind(unit);
-  return kind && unit.outdoor ? `${kind} ${num(unit.outdoor.area)} м²` : null;
+  return kind && unit.outdoor ? tt("realestate:fmt.outdoorArea", { kind, area: num(unit.outdoor.area) }) : null;
 };
 
 /** «Терраса 24.8 м²» или null. */
 export const terraceLabel = (unit: Unit) =>
-  unit.outdoor?.type === "terrace" ? `Терраса ${num(unit.outdoor.area)} м²` : null;
+  unit.outdoor?.type === "terrace"
+    ? tt("realestate:fmt.outdoorArea", { kind: outdoorLabel("terrace"), area: num(unit.outdoor.area) })
+    : null;
 
-export const bathroomsLabel = (unit: Unit) =>
-  `${unit.bathrooms} сануз${unit.bathrooms > 1 ? "ла" : "ел"}`;
+/** «1 санузел» / «2 санузла» — плюрализация i18next. */
+export const bathroomsLabel = (unit: Unit) => tt("realestate:fmt.bathrooms", { count: unit.bathrooms });
 
 export const unitType = (unit: Unit) => formatRooms(unit.rooms);
 
@@ -47,23 +50,16 @@ export const priceWithOffer = (unit: Unit, offer: UnitOffer) =>
   Math.max(0, unit.price - offer.discount);
 
 export const offerDiscountLabel = (offer: UnitOffer) =>
-  offer.discount ? `− ${formatMoney(offer.discount)}` : "0% переплаты";
+  offer.discount ? `− ${formatMoney(offer.discount)}` : tt("realestate:offer.noOverpay");
 
 const RENDERS = "/realestate/renders";
 
+/** Общие примеры интерьера; подписи — `realestate:renders.<key>.label/note`. */
 export const apartmentRenders = [
-  {
-    src: `${RENDERS}/living-room.jpg`,
-    label: "Кухня-гостиная",
-    note: "Светлая кухня-гостиная с панорамными окнами",
-  },
-  { src: `${RENDERS}/bedroom.jpg`, label: "Спальня", note: "Мастер-спальня со встроенными шкафами" },
-  {
-    src: `${RENDERS}/kids-room.jpg`,
-    label: "Детская",
-    note: "Комната с рабочей зоной и местами хранения",
-  },
-  { src: `${RENDERS}/bathroom.jpg`, label: "Ванная", note: "Ванная с душевой и тёплой подсветкой" },
+  { key: "living", src: `${RENDERS}/living-room.jpg` },
+  { key: "bedroom", src: `${RENDERS}/bedroom.jpg` },
+  { key: "kids", src: `${RENDERS}/kids-room.jpg` },
+  { key: "bathroom", src: `${RENDERS}/bathroom.jpg` },
 ] as const;
 
 /** Первый взнос 30% и рассрочка на 24 месяца — умолчания бэка для договора (`sell`: downPayment 30%, term 24). */

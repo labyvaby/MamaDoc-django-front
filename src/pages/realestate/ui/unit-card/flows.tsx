@@ -41,6 +41,8 @@ import {
   type UnitOperation,
 } from "../../../../api/realestate";
 import { AppButton, CustomDateTimePicker } from "../../../../components/ui";
+import { useT } from "../../../../i18n/VerticalProvider";
+import { tt } from "../../../../i18n/t";
 import { subtleBg } from "../../../../theme/uiHelpers";
 import {
   balconyLabel,
@@ -85,7 +87,7 @@ export interface FlowProps {
 /** Предоплата брони по умолчанию — из настроек ЖК; не задана — сумму ставит бэк при создании брони. */
 const prepaymentText = (project: Project) => (project.defaultPrepayment ? money(project.defaultPrepayment) : "");
 
-const errorMessage = (error: unknown) => (error instanceof Error ? error.message : "Не удалось выполнить операцию");
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : tt("realestate:flow.opFailed"));
 
 /** Время встречи по умолчанию: завтра в 11:00. */
 const tomorrowAt11 = () => dayjs().add(1, "day").hour(11).minute(0).second(0).millisecond(0);
@@ -191,6 +193,7 @@ interface ReserveForm {
 
 export function ReserveScreen({ project, unit, offer, organizationId, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
+  const { t } = useT("realestate");
   const reserve = useUnitCommand(organizationId, (input: Parameters<typeof reserveUnit>[1]) => reserveUnit(unit.id, input, organizationId));
   const finalPrice = priceWithOffer(unit, offer);
   const { register, control, handleSubmit, watch, formState } = useForm<ReserveForm>({
@@ -212,7 +215,7 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
       {
         onSuccess: (next) => {
           go(next.reservation?.paymentStatus === "pending" ? "payment" : "success");
-          toast("Бронь создана", form.withMeeting ? "встреча назначена" : `до ${next.reservation?.expiresAt ?? ""}`);
+          toast(t("flow.reserve.created"), form.withMeeting ? t("flow.reserve.meetingSet") : t("flow.reserve.until", { date: next.reservation?.expiresAt ?? "" }));
         },
       },
     );
@@ -220,7 +223,7 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
 
   return (
     <Box>
-      <FlowHead eyebrow="Бронирование квартиры" title={`Квартира №${unit.number}`} intro={`ЖК «${project.name}» · ${unitType(unit)} · ${num(unit.totalArea)} м²`} />
+      <FlowHead eyebrow={t("flow.reserve.eyebrow")} title={t("card.title", { number: unit.number })} intro={t("flow.unitIntro", { name: project.name, type: unitType(unit), area: t("fmt.area", { value: num(unit.totalArea) }) })} />
       <Box
         sx={(t) => ({
           display: "grid",
@@ -233,13 +236,13 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
           bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.12 : 0.06),
         })}
       >
-        <OfferCell label="Выбранная акция" value={offer.title} hint={offer.until} />
-        <OfferCell label="Скидка" value={offerDiscountLabel(offer)} />
-        <OfferCell label="Цена по акции" value={money(finalPrice)} strong />
+        <OfferCell label={t("flow.reserve.pickedOffer")} value={offer.title} hint={offer.until} />
+        <OfferCell label={t("offers.discount")} value={offerDiscountLabel(offer)} />
+        <OfferCell label={t("flow.reserve.offerPrice")} value={money(finalPrice)} strong />
       </Box>
       <form onSubmit={submit} noValidate>
         <Box sx={{ display: "flex", gap: 1, mb: 2, flexWrap: "wrap" }}>
-          {["Покупатель", "Тип брони", "Встреча"].map((step, i) => (
+          {[t("flow.reserve.stepBuyer"), t("flow.reserve.stepType"), t("flow.reserve.stepMeeting")].map((step, i) => (
             <Box key={step} component="span" sx={{ display: "flex", alignItems: "center", gap: 0.75, fontSize: "0.75rem", color: i === 0 ? "text.primary" : "text.secondary", fontWeight: i === 0 ? 600 : 500 }}>
               <Box
                 component="b"
@@ -261,22 +264,24 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
         </Box>
         <Box sx={formGridSx}>
           <TextField
-            label="ФИО покупателя"
-            placeholder="Например, Айжан Исакова"
+            label={t("flow.buyerName")}
+            placeholder={t("flow.buyerPlaceholder")}
             sx={wide}
-            {...register("buyer", { required: "Укажите ФИО покупателя", validate: (v) => v.trim() !== "" || "Укажите ФИО покупателя" })}
+            {...register("buyer", { required: t("flow.buyerRequired"), validate: (v) => v.trim() !== "" || t("flow.buyerRequired") })}
             error={Boolean(formState.errors.buyer)}
             helperText={formState.errors.buyer?.message}
           />
-          <PhoneController control={control} name="phone" label="Номер телефона" requiredMessage="Укажите телефон" />
+          <PhoneController control={control} name="phone" label={t("flow.phoneNumber")} requiredMessage={t("flow.phoneRequired")} />
           <Controller
             control={control}
             name="term"
             render={({ field }) => (
-              <TextField select label="Срок брони" {...field}>
-                <MenuItem value="24">24 часа</MenuItem>
-                <MenuItem value="48">48 часов</MenuItem>
-                <MenuItem value="72">72 часа</MenuItem>
+              <TextField select label={t("flow.reserve.term")} {...field}>
+                {[24, 48, 72].map((hours) => (
+                  <MenuItem key={hours} value={String(hours)}>
+                    {t("flow.hours", { count: hours })}
+                  </MenuItem>
+                ))}
               </TextField>
             )}
           />
@@ -285,11 +290,11 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
           control={control}
           name="type"
           render={({ field }) => (
-            <Box role="radiogroup" aria-label="Тип брони" sx={{ mt: 1.5, display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 1.25 }}>
+            <Box role="radiogroup" aria-label={t("flow.reserve.stepType")} sx={{ mt: 1.5, display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 1.25 }}>
               {(
                 [
-                  ["free", "○", "Бесплатная бронь", "Без оплаты · квартира закрепляется на 48 часов"],
-                  ["prepaid", "с", "Бронь с предоплатой", `${prepaymentText(project) || "Сумма по условиям ЖК"} · поступление подтверждает менеджер`],
+                  ["free", "○", t("flow.reserve.freeTitle"), t("flow.reserve.freeHint")],
+                  ["prepaid", "с", t("flow.reserve.prepaidTitle"), t("flow.reserve.prepaidHint", { amount: prepaymentText(project) || t("flow.reserve.amountByProject") })],
                 ] as const
               ).map(([value, icon, title, hint]) => {
                 const checked = field.value === value;
@@ -330,10 +335,10 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
         {type === "prepaid" && (
           <Box sx={(t) => ({ mt: 1.5, p: 1.5, borderRadius: "10px", bgcolor: alpha(t.palette.warning.main, t.palette.mode === "dark" ? 0.16 : 0.1), display: "flex", flexDirection: "column", gap: 0.25 })}>
             <Typography component="b" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-              Предоплата {prepaymentText(project)}
+              {t("flow.reserve.prepayment", { amount: prepaymentText(project) })}
             </Typography>
             <Typography component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
-              Сумма учитывается в стоимости квартиры. После сохранения отметьте получение оплаты.
+              {t("flow.reserve.prepaymentHint")}
             </Typography>
           </Box>
         )}
@@ -341,7 +346,7 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
           control={control}
           name="withMeeting"
           render={({ field }) => (
-            <OptionCheckbox checked={field.value} onChange={field.onChange} title="Назначить встречу" hint="Встреча сохранится в истории квартиры" />
+            <OptionCheckbox checked={field.value} onChange={field.onChange} title={t("flow.reserve.withMeeting")} hint={t("flow.reserve.withMeetingHint")} />
           )}
         />
         {withMeeting && (
@@ -350,17 +355,17 @@ export function ReserveScreen({ project, unit, offer, organizationId, onBack, go
               control={control}
               name="meetingAt"
               render={({ field }) => (
-                <CustomDateTimePicker label="Дата и время встречи" value={field.value} onChange={(v) => field.onChange(v as Dayjs | null)} slotProps={{ textField: { fullWidth: true } }} />
+                <CustomDateTimePicker label={t("flow.reserve.meetingAt")} value={field.value} onChange={(v) => field.onChange(v as Dayjs | null)} slotProps={{ textField: { fullWidth: true } }} />
               )}
             />
           </Box>
         )}
         <Actions>
           <Button variant="outlined" onClick={onBack}>
-            Отмена
+            {t("flow.cancel")}
           </Button>
           <AppButton variant="contained" type="submit" loading={reserve.isPending}>
-            Забронировать за {money(finalPrice)}
+            {t("flow.reserveFor", { price: money(finalPrice) })}
           </AppButton>
         </Actions>
       </form>
@@ -388,25 +393,26 @@ function OfferCell({ label, value, hint, strong }: { label: string; value: strin
 
 export function PaymentScreen({ project, unit, organizationId, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
+  const { t } = useT("realestate");
   const confirm = useUnitCommand(organizationId, () => confirmUnitPrepayment(unit, organizationId));
   const amount = unit.reservation?.amount || project.defaultPrepayment || 0;
   return (
     <Box>
       <FlowHead
-        eyebrow="Предоплата за бронирование"
-        title={`Предоплата ${money(amount)}`}
-        intro="Примите оплату от покупателя и отметьте её получение — бронь станет оплаченной."
+        eyebrow={t("flow.payment.eyebrow")}
+        title={t("flow.reserve.prepayment", { amount: money(amount) })}
+        intro={t("flow.payment.intro")}
       />
       <Summary
         items={[
-          ["Назначение платежа", `Бронь квартиры №${unit.number}, ЖК «${project.name}»`],
-          ["Покупатель", unit.reservation?.buyer || "—"],
-          ["Бронь действует до", unit.reservation?.expiresAt || "—"],
+          [t("flow.payment.purpose"), t("flow.payment.purposeValue", { number: unit.number, name: project.name })],
+          [t("flow.buyer"), unit.reservation?.buyer || "—"],
+          [t("flow.payment.validUntil"), unit.reservation?.expiresAt || "—"],
         ]}
       />
       <Actions>
         <Button variant="outlined" onClick={onBack}>
-          Отметить позже
+          {t("flow.payment.later")}
         </Button>
         <AppButton
           variant="contained"
@@ -416,12 +422,12 @@ export function PaymentScreen({ project, unit, organizationId, onBack, go }: Flo
             confirm.mutate(undefined, {
               onSuccess: () => {
                 go("success");
-                toast("Предоплата принята", money(amount));
+                toast(t("flow.payment.accepted"), money(amount));
               },
             })
           }
         >
-          Оплата получена
+          {t("flow.payment.received")}
         </AppButton>
       </Actions>
     </Box>
@@ -429,6 +435,7 @@ export function PaymentScreen({ project, unit, organizationId, onBack, go }: Flo
 }
 
 export function SuccessScreen({ unit, onBack, go }: FlowProps) {
+  const { t } = useT("realestate");
   const r = unit.reservation;
   const hasMeeting = unit.history.some((e) => e.type === "meeting");
   return (
@@ -436,21 +443,24 @@ export function SuccessScreen({ unit, onBack, go }: FlowProps) {
       <Box sx={successMarkSx}>
         <CheckOutlined />
       </Box>
-      <FlowHead eyebrow="Квартира забронирована" title={`№${unit.number} закреплена за покупателем`} intro={`${r?.buyer || "Покупатель"} · ${r?.phone ?? ""}`} />
+      <FlowHead eyebrow={t("flow.success.eyebrow")} title={t("flow.success.title", { number: unit.number })} intro={`${r?.buyer || t("flow.buyer")} · ${r?.phone ?? ""}`} />
       <Summary
         items={[
-          ["Тип брони", r?.type === "prepaid" ? "С предоплатой" : "Бесплатная"],
-          ["Срок", `${r?.termHours ?? 48} часов`],
-          ["Оплата", r?.type === "prepaid" ? (r.paymentStatus === "paid" ? "Оплачено" : "Ожидается") : "Не требуется"],
-          ["Задача", hasMeeting ? "Встреча создана" : "Не создавалась"],
+          [t("flow.reserve.stepType"), r?.type === "prepaid" ? t("flow.success.prepaid") : t("flow.success.free")],
+          [t("flow.success.term"), t("flow.hours", { count: r?.termHours ?? 48 })],
+          [
+            t("flow.success.payment"),
+            r?.type === "prepaid" ? (r.paymentStatus === "paid" ? t("flow.success.paid") : t("flow.success.pending")) : t("flow.success.notRequired"),
+          ],
+          [t("flow.success.task"), hasMeeting ? t("flow.success.meetingCreated") : t("flow.success.noTask")],
         ]}
       />
       <Actions>
         <Button variant="outlined" onClick={onBack}>
-          Карточка квартиры
+          {t("flow.unitCard")}
         </Button>
         <AppButton variant="contained" onClick={() => go("proposal")}>
-          Отправить КП в WhatsApp
+          {t("flow.success.sendProposal")}
         </AppButton>
       </Actions>
     </Box>
@@ -461,6 +471,7 @@ export function SuccessScreen({ unit, onBack, go }: FlowProps) {
 
 export function ProposalScreen({ project, unit, offer, organizationId, onBack, onClose }: FlowProps) {
   const toast = useRealEstateToast();
+  const { t } = useT("realestate");
   const queryClient = useQueryClient();
   const send = useMutation({
     mutationFn: (input: Parameters<typeof sendUnitProposal>[1]) => sendUnitProposal(unit.id, input, organizationId),
@@ -482,18 +493,18 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
     const includePlan = false;
     // Текст для моков; на живом API текст и ссылку собирает бэк — тот же, что он сохранил в истории.
     const message = [
-      "Коммерческое предложение",
+      t("flow.proposal.msg.title"),
       "",
-      `ЖК «${project.name}»`,
-      `Квартира №${unit.number}: ${unitType(unit)}, ${num(unit.totalArea)} м²`,
-      `${unit.floor} этаж, ${sectionLabel(unit.section)}`,
+      t("project.name", { name: project.name }),
+      t("flow.proposal.msg.unit", { number: unit.number, type: unitType(unit), area: t("fmt.area", { value: num(unit.totalArea) }) }),
+      `${t("cell.floor", { floor: unit.floor })}, ${sectionLabel(unit.section)}`,
       `${unit.orientation}, ${unit.view}`,
-      `Потолки ${num(unit.ceilingHeight)} м, отделка ${project.finish}`,
-      `Базовая цена: ${money(unit.price)}`,
-      `Акция: ${offer.title}`,
-      `Скидка: ${offer.discount ? money(offer.discount) : "0% переплаты"}`,
-      `Цена по акции: ${money(finalPrice)} (${perMeter} / м²)`,
-      ...(includePlan ? ["", "Планировка и схема этажа включены в предложение."] : []),
+      t("flow.proposal.msg.ceiling", { ceiling: num(unit.ceilingHeight), finish: project.finish }),
+      t("flow.proposal.msg.basePrice", { price: money(unit.price) }),
+      t("flow.proposal.msg.offer", { title: offer.title }),
+      t("flow.proposal.msg.discount", { value: offer.discount ? money(offer.discount) : t("offer.noOverpay") }),
+      t("flow.proposal.msg.offerPrice", { price: money(finalPrice), perMeter }),
+      ...(includePlan ? ["", t("flow.proposal.msg.planIncluded")] : []),
     ].join("\n");
 
     send.mutate(
@@ -503,7 +514,7 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
           const url = whatsappUrl ?? `https://wa.me/${phone.replace(/\D/g, "")}?text=${encodeURIComponent(message)}`;
           window.open(url, "_blank", "noopener");
           onClose();
-          toast("КП подготовлено в WhatsApp", `квартира №${unit.number} · ${phone}`);
+          toast(t("flow.proposal.ready"), t("flow.proposal.readyHint", { number: unit.number, phone }));
         },
       },
     );
@@ -511,31 +522,31 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
 
   return (
     <Box>
-      <FlowHead eyebrow="Персональное коммерческое предложение" title={`Квартира №${unit.number}`} intro="Текст КП откроется в WhatsApp — проверьте и отправьте покупателю" />
+      <FlowHead eyebrow={t("flow.proposal.eyebrow")} title={t("card.title", { number: unit.number })} intro={t("flow.proposal.intro")} />
       <Box sx={{ display: "grid", gap: 2, p: 1.5, mb: 2, borderRadius: "14px", border: 1, borderColor: "divider" }}>
         <Box>
           <Typography component="span" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-            ЖК «{project.name}»
+            {t("project.name", { name: project.name })}
           </Typography>
           <Typography component="h3" sx={{ m: 0, mt: 0.5, fontSize: "1.05rem", fontWeight: 700 }}>
-            {unitType(unit)} · {num(unit.totalArea)} м²
+            {unitType(unit)} · {t("fmt.area", { value: num(unit.totalArea) })}
           </Typography>
           <Typography component="strong" sx={{ display: "block", mt: 1, fontSize: "1.2rem", fontWeight: 700, color: "primary.onSurface" }}>
             {money(finalPrice)}
           </Typography>
           <Typography component="small" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-            {offer.discount ? `Скидка ${money(offer.discount)} · ` : ""}
-            {perMeter} / м²
+            {offer.discount ? `${t("flow.proposal.discount", { value: money(offer.discount) })} · ` : ""}
+            {t("preview.perSqm", { value: perMeter })}
           </Typography>
           <Box component="ul" sx={{ m: 0, mt: 1, pl: 2.25, fontSize: "0.78rem", display: "grid", gap: 0.25 }}>
             <li>
-              {unit.floor} этаж, {sectionLabel(unit.section)}
+              {t("cell.floor", { floor: unit.floor })}, {sectionLabel(unit.section)}
             </li>
             <li>
               {unit.orientation} · {unit.view}
             </li>
             <li>
-              Потолки {num(unit.ceilingHeight)} м · {project.finish}
+              {t("flow.proposal.ceilingFinish", { ceiling: num(unit.ceilingHeight), finish: project.finish })}
             </li>
             {(terraceLabel(unit) || balconyLabel(unit)) && <li>{terraceLabel(unit) || balconyLabel(unit)}</li>}
           </Box>
@@ -545,13 +556,13 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
         </Box>
       </Box>
       <form onSubmit={submit} noValidate>
-        <PhoneController control={control} name="phone" label="WhatsApp покупателя" requiredMessage="Укажите номер WhatsApp" />
+        <PhoneController control={control} name="phone" label={t("flow.proposal.whatsapp")} requiredMessage={t("flow.proposal.whatsappRequired")} />
         <Actions>
           <Button variant="outlined" onClick={onBack}>
-            Назад
+            {t("flow.back")}
           </Button>
           <AppButton variant="contained" type="submit" loading={send.isPending}>
-            Отправить в WhatsApp
+            {t("flow.proposal.send")}
           </AppButton>
         </Actions>
       </form>
@@ -568,6 +579,7 @@ interface MeetingForm {
 
 export function MeetingScreen({ project, unit, organizationId, onBack, onClose }: FlowProps) {
   const toast = useRealEstateToast();
+  const { t } = useT("realestate");
   const schedule = useUnitCommand(organizationId, (input: Parameters<typeof scheduleUnitMeeting>[1]) => scheduleUnitMeeting(unit.id, input, organizationId));
   const { register, control, handleSubmit, formState } = useForm<MeetingForm>({
     defaultValues: { buyer: unit.reservation?.buyer ?? "", phone: unit.reservation?.phone ?? "", meetingAt: tomorrowAt11(), note: "" },
@@ -580,7 +592,7 @@ export function MeetingScreen({ project, unit, organizationId, onBack, onClose }
       {
         onSuccess: () => {
           onClose();
-          toast("Задача «Встреча» создана", `${meetingAt.format("HH:mm")} · квартира №${unit.number}`);
+          toast(t("flow.meeting.created"), t("flow.meeting.createdHint", { time: meetingAt.format("HH:mm"), number: unit.number }));
         },
       },
     );
@@ -588,39 +600,39 @@ export function MeetingScreen({ project, unit, organizationId, onBack, onClose }
 
   return (
     <Box>
-      <FlowHead eyebrow="Новая задача" title={`Встреча по квартире №${unit.number}`} intro={`ЖК «${project.name}» · ${unitType(unit)} · ${num(unit.totalArea)} м²`} />
+      <FlowHead eyebrow={t("flow.meeting.eyebrow")} title={t("flow.meeting.title", { number: unit.number })} intro={t("flow.unitIntro", { name: project.name, type: unitType(unit), area: t("fmt.area", { value: num(unit.totalArea) }) })} />
       <form onSubmit={submit} noValidate>
         <Box sx={formGridSx}>
           <TextField
-            label="ФИО покупателя"
-            placeholder="Имя покупателя"
+            label={t("flow.buyerName")}
+            placeholder={t("flow.meeting.buyerPlaceholder")}
             sx={wide}
-            {...register("buyer", { required: "Укажите ФИО покупателя" })}
+            {...register("buyer", { required: t("flow.buyerRequired") })}
             error={Boolean(formState.errors.buyer)}
             helperText={formState.errors.buyer?.message}
           />
-          <PhoneController control={control} name="phone" label="Телефон" requiredMessage="Укажите телефон" />
+          <PhoneController control={control} name="phone" label={t("flow.phone")} requiredMessage={t("flow.phoneRequired")} />
           <Controller
             control={control}
             name="meetingAt"
-            rules={{ required: "Укажите дату и время" }}
+            rules={{ required: t("flow.meeting.dateRequired") }}
             render={({ field, fieldState }) => (
               <CustomDateTimePicker
-                label="Дата и время"
+                label={t("flow.meeting.date")}
                 value={field.value}
                 onChange={(v) => field.onChange(v as Dayjs | null)}
                 slotProps={{ textField: { fullWidth: true, error: Boolean(fieldState.error), helperText: fieldState.error?.message } }}
               />
             )}
           />
-          <TextField label="Комментарий" placeholder="Показ квартиры, обсуждение рассрочки" multiline rows={3} sx={wide} {...register("note")} />
+          <TextField label={t("flow.meeting.note")} placeholder={t("flow.meeting.notePlaceholder")} multiline rows={3} sx={wide} {...register("note")} />
         </Box>
         <Actions>
           <Button variant="outlined" onClick={onBack}>
-            Отмена
+            {t("flow.cancel")}
           </Button>
           <AppButton variant="contained" type="submit" loading={schedule.isPending}>
-            Поставить задачу
+            {t("flow.meeting.submit")}
           </AppButton>
         </Actions>
       </form>
@@ -631,10 +643,10 @@ export function MeetingScreen({ project, unit, organizationId, onBack, onClose }
 // ─── Операции ──────────────────────────────────────────────────────────────
 
 const operationToast: Record<UnitOperation, (from: string, to: string) => [string, string?]> = {
-  cancel: (from) => ["Бронь снята", `квартира №${from} снова доступна`],
-  refund: (from) => ["Возврат оформлен", `квартира №${from} возвращена в продажу`],
-  exchange: (from, to) => ["Обмен оформлен", `№${from} → №${to}`],
-  note: () => ["Запись добавлена в историю"],
+  cancel: (from) => [tt("realestate:flow.operation.toast.cancel"), tt("realestate:flow.operation.toast.cancelHint", { number: from })],
+  refund: (from) => [tt("realestate:flow.operation.toast.refund"), tt("realestate:flow.operation.toast.refundHint", { number: from })],
+  exchange: (from, to) => [tt("realestate:flow.operation.toast.exchange"), `№${from} → №${to}`],
+  note: () => [tt("realestate:flow.operation.toast.note")],
 };
 
 interface OperationForm {
@@ -647,6 +659,7 @@ interface OperationForm {
 
 export function OperationScreen({ unit, organizationId, go, onBack, onOpenUnit }: FlowProps) {
   const toast = useRealEstateToast();
+  const { t } = useT("realestate");
   const run = useUnitCommand(organizationId, (input: Parameters<typeof runUnitOperation>[1]) => runUnitOperation(unit.id, input, organizationId));
   const managersData = useQuery({
     queryKey: realEstateKeys.managers(organizationId),
@@ -659,10 +672,10 @@ export function OperationScreen({ unit, organizationId, go, onBack, onOpenUnit }
   const freeUnits = projectUnits.filter((u) => u.status === "free" && u.id !== unit.id).slice(0, 20);
 
   const options: [UnitOperation, string][] = [
-    ...(unit.status === "reserved" ? [["cancel", "Снять бронь"] as [UnitOperation, string]] : []),
-    ...(unit.status === "sold" ? [["refund", "Оформить возврат"] as [UnitOperation, string]] : []),
-    ...(unit.status !== "free" ? [["exchange", "Обменять квартиру"] as [UnitOperation, string]] : []),
-    ["note", "Добавить служебную запись"],
+    ...(unit.status === "reserved" ? [["cancel", t("flow.operation.cancel")] as [UnitOperation, string]] : []),
+    ...(unit.status === "sold" ? [["refund", t("flow.operation.refund")] as [UnitOperation, string]] : []),
+    ...(unit.status !== "free" ? [["exchange", t("flow.operation.exchange")] as [UnitOperation, string]] : []),
+    ["note", t("flow.operation.note")],
   ];
 
   const { register, control, handleSubmit, formState, setValue, watch } = useForm<OperationForm>({
@@ -703,14 +716,14 @@ export function OperationScreen({ unit, organizationId, go, onBack, onOpenUnit }
 
   return (
     <Box>
-      <FlowHead eyebrow="Операция по квартире" title={`Квартира №${unit.number}`} intro="Все изменения попадут в историю с именем ответственного." />
+      <FlowHead eyebrow={t("flow.operation.eyebrow")} title={t("card.title", { number: unit.number })} intro={t("flow.operation.intro")} />
       <form onSubmit={submit} noValidate>
         <Box sx={formGridSx}>
           <Controller
             control={control}
             name="operation"
             render={({ field }) => (
-              <TextField select label="Операция" {...field}>
+              <TextField select label={t("flow.operation.label")} {...field}>
                 {options.map(([value, label]) => (
                   <MenuItem key={value} value={value}>
                     {label}
@@ -725,7 +738,7 @@ export function OperationScreen({ unit, organizationId, go, onBack, onOpenUnit }
             render={({ field }) =>
               // Справочник сотрудников недоступен (нет права) — ответственный вводится текстом.
               managers.length ? (
-                <TextField select label="Ответственный" {...field}>
+                <TextField select label={t("flow.operation.actor")} {...field}>
                   {managers.map((manager) => (
                     <MenuItem key={manager.id || manager.name} value={manager.name}>
                       {manager.name}
@@ -733,42 +746,42 @@ export function OperationScreen({ unit, organizationId, go, onBack, onOpenUnit }
                   ))}
                 </TextField>
               ) : (
-                <TextField label="Ответственный" placeholder="ФИО менеджера" {...field} />
+                <TextField label={t("flow.operation.actor")} placeholder={t("flow.operation.actorPlaceholder")} {...field} />
               )
             }
           />
-          <TextField label="Покупатель" placeholder="ФИО покупателя" sx={wide} {...register("buyer")} />
+          <TextField label={t("flow.buyer")} placeholder={t("flow.buyerName")} sx={wide} {...register("buyer")} />
           <Controller
             control={control}
             name="target"
             render={({ field }) => (
-              <TextField select label="Квартира для обмена" sx={wide} {...field}>
-                <MenuItem value="">Не выбрана</MenuItem>
+              <TextField select label={t("flow.operation.target")} sx={wide} {...field}>
+                <MenuItem value="">{t("flow.operation.targetNone")}</MenuItem>
                 {freeUnits.map((u) => (
                   <MenuItem key={u.id} value={u.id}>
-                    №{u.number} · {unitType(u)} · {num(u.totalArea)} м² · {money(u.price)}
+                    №{u.number} · {unitType(u)} · {t("fmt.area", { value: num(u.totalArea) })} · {money(u.price)}
                   </MenuItem>
                 ))}
               </TextField>
             )}
           />
           <TextField
-            label="Причина / комментарий"
-            placeholder="Укажите причину операции"
+            label={t("flow.operation.comment")}
+            placeholder={t("flow.operation.commentRequired")}
             multiline
             rows={3}
             sx={wide}
-            {...register("comment", { required: "Укажите причину операции" })}
+            {...register("comment", { required: t("flow.operation.commentRequired") })}
             error={Boolean(formState.errors.comment)}
             helperText={formState.errors.comment?.message}
           />
         </Box>
         <Actions>
           <Button variant="outlined" onClick={onBack}>
-            Отмена
+            {t("flow.cancel")}
           </Button>
           <AppButton variant="contained" type="submit" loading={run.isPending}>
-            Провести операцию
+            {t("flow.operation.submit")}
           </AppButton>
         </Actions>
       </form>
@@ -779,6 +792,7 @@ export function OperationScreen({ unit, organizationId, go, onBack, onOpenUnit }
 // ─── Акция ─────────────────────────────────────────────────────────────────
 
 export function OfferScreen({ project, unit, offer, onBack, go }: FlowProps) {
+  const { t } = useT("realestate");
   const finalPrice = priceWithOffer(unit, offer);
   return (
     <Box>
@@ -797,32 +811,32 @@ export function OfferScreen({ project, unit, offer, onBack, go }: FlowProps) {
       >
         {offer.icon}
       </Box>
-      <FlowHead eyebrow={`Акция ЖК «${project.name}»`} title={offer.title} intro={offer.text} />
+      <FlowHead eyebrow={t("flow.offer.eyebrow", { name: project.name })} title={offer.title} intro={offer.text} />
       <Box sx={(t) => ({ p: 2, borderRadius: "12px", border: `1px solid ${alpha(t.palette.primary.main, 0.35)}`, bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.12 : 0.06), display: "flex", flexDirection: "column", gap: 0.5 })}>
         <Typography component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
-          Ваша выгода
+          {t("flow.offer.benefit")}
         </Typography>
         <Typography component="strong" sx={{ fontSize: "1.4rem", fontWeight: 700, color: "primary.onSurface" }}>
-          {offer.discount ? money(offer.discount) : "0% переплаты"}
+          {offer.discount ? money(offer.discount) : t("offer.noOverpay")}
         </Typography>
         <Typography component="small" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
-          Итоговая цена квартиры №{unit.number}: {money(finalPrice)}
+          {t("flow.offer.finalPrice", { number: unit.number, price: money(finalPrice) })}
         </Typography>
       </Box>
       <Summary
         items={[
-          ["Срок действия", offer.until],
-          ["Кому доступно", "Покупателям свободных квартир"],
-          ["Фиксация условий", "После бронирования"],
+          [t("flow.offer.validity"), offer.until],
+          [t("flow.offer.audience"), t("flow.offer.audienceValue")],
+          [t("flow.offer.lock"), t("flow.offer.lockValue")],
         ]}
       />
       <Actions>
         <Button variant="outlined" onClick={onBack}>
-          Назад к квартире
+          {t("flow.backToUnit")}
         </Button>
         {unit.status === "free" && (
           <AppButton variant="contained" onClick={() => go("reserve")}>
-            Забронировать за {money(finalPrice)}
+            {t("flow.reserveFor", { price: money(finalPrice) })}
           </AppButton>
         )}
       </Actions>
@@ -844,6 +858,7 @@ interface ContractForm {
 
 export function ContractScreen({ project, unit, organizationId, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
+  const { t } = useT("realestate");
   const sign = useMutation({
     mutationFn: (input: Parameters<typeof signUnitContract>[1]) => signUnitContract(unit.id, input, organizationId),
   });
@@ -870,11 +885,11 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
         queryClient.setQueryData(realEstateKeys.unit(organizationId, next.id), next);
         void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
         go("signed");
-        toast("Договор оформлен", next.contract?.number);
+        toast(t("flow.contract.signedToast"), next.contract?.number);
       },
       onError: (error) =>
         REALESTATE_USE_MOCKS && error instanceof Error && /код/i.test(error.message)
-          ? toast("Неверный код", "в моках код подписи — 4826")
+          ? toast(t("flow.contract.wrongCode"), t("flow.contract.wrongCodeHint"))
           : toast(errorMessage(error)),
     });
   });
@@ -883,39 +898,39 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
 
   return (
     <Box>
-      <FlowHead eyebrow="Оформление договора" title="Договор купли-продажи" intro={`ЖК «${project.name}», квартира №${unit.number}`} />
+      <FlowHead eyebrow={t("flow.contract.eyebrow")} title={t("flow.contract.title")} intro={t("flow.contract.intro", { name: project.name, number: unit.number })} />
       <Summary
         items={[
-          ["Объект", `${unitType(unit)}, ${num(unit.totalArea)} м²`],
-          ["Стоимость", money(price)],
-          ["Первый взнос", money(down)],
-          ["Срок сдачи", completionOf(project, unit)],
-          ["Продавец", project.sellerInfo || "не указан в настройках ЖК"],
+          [t("flow.contract.object"), `${unitType(unit)}, ${t("fmt.area", { value: num(unit.totalArea) })}`],
+          [t("flow.contract.price"), money(price)],
+          [t("flow.contract.downPayment"), money(down)],
+          [t("card.completion"), completionOf(project, unit)],
+          [t("flow.contract.seller"), project.sellerInfo || t("flow.contract.sellerMissing")],
         ]}
       />
       <form onSubmit={submit} noValidate>
         <Box sx={formGridSx}>
           <TextField
-            label="ФИО покупателя"
-            placeholder="Например, Айжан Исакова"
+            label={t("flow.buyerName")}
+            placeholder={t("flow.buyerPlaceholder")}
             sx={wide}
-            {...register("buyer", required("Укажите ФИО покупателя"))}
+            {...register("buyer", required(t("flow.buyerRequired")))}
             error={Boolean(formState.errors.buyer)}
             helperText={formState.errors.buyer?.message}
           />
           <TextField
-            label="ПИН / паспорт"
+            label={t("flow.contract.passport")}
             placeholder="ID 1234567"
-            {...register("passport", required("Укажите ПИН или паспорт"))}
+            {...register("passport", required(t("flow.contract.passportRequired")))}
             error={Boolean(formState.errors.passport)}
             helperText={formState.errors.passport?.message}
           />
-          <PhoneController control={control} name="phone" label="Телефон" requiredMessage="Укажите телефон" />
+          <PhoneController control={control} name="phone" label={t("flow.phone")} requiredMessage={t("flow.phoneRequired")} />
           <TextField
             label="Email"
             type="email"
             placeholder="client@example.com"
-            {...register("email", { required: "Укажите email", pattern: { value: /^\S+@\S+\.\S+$/, message: "Проверьте email" } })}
+            {...register("email", { required: t("flow.contract.emailRequired"), pattern: { value: /^\S+@\S+\.\S+$/, message: t("flow.contract.emailInvalid") } })}
             error={Boolean(formState.errors.email)}
             helperText={formState.errors.email?.message}
           />
@@ -923,7 +938,7 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
             control={control}
             name="payment"
             render={({ field }) => (
-              <TextField select label="Способ оплаты" {...field}>
+              <TextField select label={t("flow.contract.payment")} {...field}>
                 {(Object.entries(CONTRACT_PAYMENT_LABELS) as [ContractPayment, string][]).map(([value, label]) => (
                   <MenuItem key={value} value={value}>
                     {label}
@@ -935,11 +950,11 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
           {/* SMS-подписания на бэке пока нет, код он не проверяет — поле только в демо на моках. */}
           {REALESTATE_USE_MOCKS && (
             <TextField
-              label="Код электронной подписи"
-              placeholder="Демо-код: 4826"
+              label={t("flow.contract.signCode")}
+              placeholder={t("flow.contract.signCodePlaceholder")}
               sx={wide}
               inputProps={{ inputMode: "numeric", maxLength: 4 }}
-              {...register("signCode", { required: "Введите код подписи", pattern: { value: /^\d{4}$/, message: "Код — 4 цифры" } })}
+              {...register("signCode", { required: t("flow.contract.signCodeRequired"), pattern: { value: /^\d{4}$/, message: t("flow.contract.signCodeFormat") } })}
               error={Boolean(formState.errors.signCode)}
               helperText={formState.errors.signCode?.message}
             />
@@ -948,24 +963,24 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
         <Controller
           control={control}
           name="accept"
-          rules={{ validate: (v) => v || "Подтвердите проверку данных" }}
+          rules={{ validate: (v) => v || t("flow.contract.acceptRequired") }}
           render={({ field, fieldState }) => (
             <FormControlLabel
               sx={{ mt: 1.5, alignItems: "flex-start", color: fieldState.error ? "error.main" : "text.primary" }}
               control={<Checkbox checked={field.value} onChange={(e) => field.onChange(e.target.checked)} sx={{ p: 0.25, mr: 1 }} />}
-              label={<Typography sx={{ fontSize: "0.8125rem" }}>Данные покупателя сверены с документом, условия договора согласованы с покупателем.</Typography>}
+              label={<Typography sx={{ fontSize: "0.8125rem" }}>{t("flow.contract.accept")}</Typography>}
             />
           )}
         />
         <Typography sx={{ mt: 1.5, fontSize: "0.75rem", color: "text.secondary" }}>
-          Номер договору присвоится при оформлении, квартира перейдёт в статус «Продана».
+          {t("flow.contract.note")}
         </Typography>
         <Actions>
           <Button variant="outlined" onClick={onBack}>
-            Назад к квартире
+            {t("flow.backToUnit")}
           </Button>
           <AppButton variant="contained" type="submit" loading={sign.isPending}>
-            Оформить договор
+            {t("actions.contract")}
           </AppButton>
         </Actions>
       </form>
@@ -974,24 +989,25 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
 }
 
 export function SignedScreen({ project, unit, onBack }: FlowProps) {
+  const { t } = useT("realestate");
   const c = unit.contract;
   return (
     <Box>
       <Box sx={successMarkSx}>
         <CheckOutlined />
       </Box>
-      <FlowHead eyebrow="Договор оформлен" title={c?.number || "Договор купли-продажи"} intro={`ЖК «${project.name}» · квартира №${unit.number}`} />
+      <FlowHead eyebrow={t("flow.contract.signedToast")} title={c?.number || t("flow.contract.title")} intro={t("flow.contract.signedIntro", { name: project.name, number: unit.number })} />
       <Summary
         items={[
-          ["Покупатель", c?.buyer || "—"],
-          ["Стоимость", money(c?.price || unit.price)],
-          ["Способ оплаты", c?.payment || "—"],
-          ["Дата оформления", c?.signedAt || "—"],
+          [t("flow.buyer"), c?.buyer || "—"],
+          [t("flow.contract.price"), money(c?.price || unit.price)],
+          [t("flow.contract.payment"), c?.payment || "—"],
+          [t("flow.contract.signedAt"), c?.signedAt || "—"],
         ]}
       />
       <Actions>
         <Button variant="outlined" onClick={onBack}>
-          Карточка квартиры
+          {t("flow.unitCard")}
         </Button>
       </Actions>
     </Box>

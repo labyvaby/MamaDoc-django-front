@@ -1,4 +1,5 @@
 import type { Project, Unit } from "../../../api/realestate";
+import { tt } from "../../../i18n/t";
 
 export type BoardView = "detailed" | "compact";
 export const boardViews = ["detailed", "compact"] as const satisfies readonly BoardView[];
@@ -89,7 +90,7 @@ export function completionOf(project: Project, unit: Pick<Unit, "section" | "sec
 }
 
 /** «А» → «Секция А»; полное название от бэка («Корпус А») — как есть. */
-export const sectionLabel = (name: string) => (/\s/.test(name.trim()) ? name : `Секция ${name}`);
+export const sectionLabel = (name: string) => (/\s/.test(name.trim()) ? name : tt("realestate:section.short", { name }));
 
 /**
  * Досчитывает по квартирам то, чего бэк не отдаёт в ЖК: секции (в порядке
@@ -158,9 +159,9 @@ export const autoBoardView = (board: BoardModel): BoardView =>
 
 /** Правило бэка (`realty/selectors.floor_type`), во множественном числе для шахматки. */
 export function floorType(project: Project, floor: number) {
-  if (floor === project.floorsCount) return "Пентхаусы";
-  if (floor >= project.floorsCount - 2) return "Клубный этаж";
-  return "Типовой этаж";
+  if (floor === project.floorsCount) return tt("realestate:floorType.penthouses");
+  if (floor >= project.floorsCount - 2) return tt("realestate:floorType.club");
+  return tt("realestate:floorType.typical");
 }
 
 export interface ProjectFacts {
@@ -191,27 +192,22 @@ export function projectFacts(project: Project, board: BoardModel, units: Unit[])
   };
 }
 
-const plural = (n: number, one: string, few: string, many: string) => {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
-  return many;
-};
-
 const thousands = (v: number) => `${Math.round(v / 1000)}`;
 
 /** «2 корпуса · этажи 2–14 · сдача I квартал 2027 · 102–118 тыс. сом/м²». */
 export function factsLine(facts: ProjectFacts, sectionNames: string[]): string {
+  // «Корпус» — по названию секций от бэка (данные), а не по тексту интерфейса.
   const isBuilding = sectionNames.length > 0 && sectionNames.every((name) => /^корпус/i.test(name.trim()));
-  const n = facts.sections;
+  const count = facts.sections;
   const parts = [
-    isBuilding ? `${n} ${plural(n, "корпус", "корпуса", "корпусов")}` : `${n} ${plural(n, "секция", "секции", "секций")}`,
-    facts.floors[0] === facts.floors[1] ? `${facts.floors[0]} этаж` : `этажи ${facts.floors[0]}–${facts.floors[1]}`,
+    tt(isBuilding ? "realestate:facts.buildings" : "realestate:facts.sections", { count }),
+    facts.floors[0] === facts.floors[1]
+      ? tt("realestate:facts.floor", { floor: facts.floors[0] })
+      : tt("realestate:facts.floors", { from: facts.floors[0], to: facts.floors[1] }),
   ];
-  if (facts.completion.length) parts.push(`сдача ${facts.completion.join(" / ")}`);
+  if (facts.completion.length) parts.push(tt("realestate:facts.completion", { value: facts.completion.join(" / ") }));
   const [lo, hi] = facts.pricePerSqm;
-  if (hi > 0) parts.push(`${lo === hi ? thousands(lo) : `${thousands(lo)}–${thousands(hi)}`} тыс. сом/м²`);
+  if (hi > 0) parts.push(tt("realestate:facts.perSqm", { value: lo === hi ? thousands(lo) : `${thousands(lo)}–${thousands(hi)}` }));
   return parts.join(" · ");
 }
 

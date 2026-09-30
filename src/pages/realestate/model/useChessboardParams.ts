@@ -65,16 +65,8 @@ export function useChessboardParams() {
     () => ({
       projectId: searchParams.get("project"),
       status: oneOf(searchParams.get("status"), statusOptions, "all"),
-      rooms: oneOf(
-        searchParams.get("rooms"),
-        roomsOptions.map(([v]) => v),
-        "all",
-      ),
-      feature: oneOf(
-        searchParams.get("feature"),
-        featureOptions.map(([v]) => v),
-        "all",
-      ),
+      rooms: oneOf(searchParams.get("rooms"), roomsOptions, "all"),
+      feature: oneOf(searchParams.get("feature"), featureOptions, "all"),
       hold: oneOf(searchParams.get("hold"), holdOptions, "all"),
       price: parseRange(searchParams.get("price"), PRICE_SCALE),
       area: parseRange(searchParams.get("area")),

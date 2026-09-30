@@ -2,8 +2,9 @@ import { Box, ButtonBase, Typography } from "@mui/material";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 
 import type { Project, Unit } from "../../../api/realestate";
+import { useT } from "../../../i18n/VerticalProvider";
 import { floorType, sectionLabel, type BoardModel, type BoardPaint, type PriceScale } from "../model/board";
-import { formatRooms, holdLeft, millions, perSqmShort } from "../model/units";
+import { formatArea, formatRooms, holdLeft, millions, perSqmShort } from "../model/units";
 import { useMinuteClock } from "../model/useMinuteClock";
 import { heatTone, statusTone } from "./tones";
 
@@ -26,6 +27,7 @@ export function FloorList({
   scale: PriceScale;
   onOpen: (unitId: string) => void;
 }) {
+  const { t } = useT("realestate");
   const now = useMinuteClock();
   const floors = board.floors
     .map((floor) => ({ floor, units: board.unitsOnFloor(floor).filter(isVisible) }))
@@ -35,7 +37,7 @@ export function FloorList({
   if (!floors.length) {
     return (
       <Typography sx={{ py: 4, textAlign: "center", fontSize: "0.8125rem", color: "text.secondary" }}>
-        Нет квартир по выбранным фильтрам
+        {t("list.empty")}
       </Typography>
     );
   }
@@ -45,13 +47,13 @@ export function FloorList({
       {floors.map(({ floor, units }) => {
         const stats = board.floorStats(floor);
         return (
-          <Box component="section" key={floor} aria-label={`${floor} этаж`}>
+          <Box component="section" key={floor} aria-label={t("cell.floor", { floor })}>
             <Box sx={{ mb: 0.75, display: "flex", alignItems: "baseline", gap: 1 }}>
               <Typography component="h3" sx={{ fontSize: "0.9rem", fontWeight: 700 }}>
-                {floor} этаж
+                {t("cell.floor", { floor })}
               </Typography>
               <Typography component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
-                {floorType(project, floor)} · {stats.free} из {stats.total} своб.
+                {floorType(project, floor)} · {stats.free} {t("board.ofTotal", { total: stats.total })}
               </Typography>
             </Box>
             <Box sx={{ border: 1, borderColor: "divider", borderRadius: "12px", overflow: "hidden" }}>
@@ -83,15 +85,16 @@ export function FloorList({
                     />
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-                        №{unit.number} · {formatRooms(unit.rooms)} · {unit.totalArea} м²
+                        №{unit.number} · {formatRooms(unit.rooms)} · {formatArea(unit.totalArea)}
                       </Typography>
                       <Typography sx={{ fontSize: "0.72rem", color: hold?.urgent ? "error.main" : "text.secondary" }} noWrap>
                         {[
                           showSection && sectionLabel(unit.section),
                           unit.orientation,
-                          unit.status === "reserved" && (hold ? (hold.expired ? "бронь истекла" : `бронь ещё ${hold.label}`) : "бронь"),
-                          unit.status === "sold" && "продана",
-                          unit.hold?.awaitingPayment && "ждёт предоплату",
+                          unit.status === "reserved" &&
+                            (hold ? (hold.expired ? t("cell.holdExpiredLower") : t("cell.holdLeftLower", { left: hold.label })) : t("cell.holdLower")),
+                          unit.status === "sold" && t("cell.soldLower"),
+                          unit.hold?.awaitingPayment && t("cell.awaitingPaymentLower"),
                         ]
                           .filter(Boolean)
                           .join(" · ")}
