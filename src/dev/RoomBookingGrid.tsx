@@ -295,7 +295,7 @@ const NowLine: React.FC = () => {
 interface GridDialogsHandle {
   /** block — открыли по штриховке «Снят с продажи»: карточка покажет его, даже если он дальше её окна. */
   openRoom: (roomId: number, block?: HotelRoomBlock) => void;
-  openReservation: (reservationId: number) => void;
+  openReservation: (reservationId: number, itemId?: number) => void;
 }
 
 /**
@@ -307,6 +307,7 @@ const GridDialogs = React.forwardRef<GridDialogsHandle, { roomTypes: React.Compo
   const [roomId, setRoomId] = React.useState<number | null>(null);
   const [focusBlock, setFocusBlock] = React.useState<HotelRoomBlock | null>(null);
   const [reservationId, setReservationId] = React.useState<number | null>(null);
+  const [itemId, setItemId] = React.useState<number | null>(null);
   React.useImperativeHandle(
     ref,
     () => ({
@@ -314,7 +315,10 @@ const GridDialogs = React.forwardRef<GridDialogsHandle, { roomTypes: React.Compo
         setFocusBlock(block ?? null);
         setRoomId(id);
       },
-      openReservation: setReservationId,
+      openReservation: (id, item) => {
+        setItemId(item ?? null);
+        setReservationId(id);
+      },
     }),
     [],
   );
@@ -330,7 +334,7 @@ const GridDialogs = React.forwardRef<GridDialogsHandle, { roomTypes: React.Compo
           setReservationId(id);
         }}
       />
-      <ReservationDetailsDialog reservationId={reservationId} onClose={() => setReservationId(null)} />
+      <ReservationDetailsDialog reservationId={reservationId} initialItemId={itemId} onClose={() => setReservationId(null)} />
     </>
   );
 });
@@ -1387,7 +1391,7 @@ export const RoomBookingGrid: React.FC = () => {
                         key={it.itemId}
                         component="button"
                         type="button"
-                        onClick={() => dialogsRef.current?.openReservation(it.reservationId)}
+                        onClick={() => dialogsRef.current?.openReservation(it.reservationId, it.itemId)}
                         aria-label={barDescription}
                         title={`${barDescription} — показать бронь`}
                         sx={{

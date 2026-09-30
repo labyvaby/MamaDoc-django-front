@@ -40,6 +40,7 @@ import {
   Box,
   Button,
   Checkbox,
+  Chip,
   CircularProgress,
   Collapse,
   Dialog,
@@ -103,10 +104,12 @@ const CANCELLABLE_STATUSES = new Set(["draft", "hold", "confirmed"]);
 export interface ReservationDetailsDialogProps {
   /** Id брони или null — диалог закрыт. */
   reservationId: number | null;
+  /** Групповая бронь: какой номер показать первым (клик по его бару в шахматке). */
+  initialItemId?: number | null;
   onClose: () => void;
 }
 
-export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> = ({ reservationId, onClose }) => {
+export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> = ({ reservationId, initialItemId, onClose }) => {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const canManageReservation = useCan("hotel.reservations.manage");
@@ -127,7 +130,10 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   });
   // И на всякий случай — только данные именно открытой брони.
   const reservation = query.data && query.data.id === reservationId ? query.data : undefined;
-  const item = reservation?.items[0];
+  // Групповая бронь — несколько номеров в одной брони: действия (заселить,
+  // изменить, сменить номер) — над выбранным, по умолчанию первым.
+  const [activeItemId, setActiveItemId] = React.useState<number | null>(null);
+  const item = reservation?.items.find((i) => i.id === activeItemId) ?? reservation?.items[0];
 
   // Кто принял оплату и когда — по каждой записи, не только агрегат
   // totalAmount/paidAmount у брони (см. HotelPayment.acceptedByName/acceptedAt).
@@ -171,6 +177,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   // Сброс формочек при смене/закрытии брони — иначе при открытии другой
   // причина отмены/недосохранённая оплата от предыдущей брони осталась бы видна.
   React.useEffect(() => {
+    setActiveItemId(initialItemId ?? null);
     setActionError(null);
     setCheckInNeedsForce(false);
     setCheckOutNeedsForce(false);
@@ -184,6 +191,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setPaymentNote("");
     setCashlessMethodId("");
     setPaymentError(null);
+    // initialItemId приходит вместе с reservationId — отдельно не следим.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservationId]);
 
   React.useEffect(() => {
@@ -479,6 +488,36 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               </Box>
             </Stack>
 
+            {reservation.items.length > 1 && (
+              <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ mt: 2 }}>
+                <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ mr: 0.5 }}>
+                  Групповая бронь · {reservation.items.length} {reservation.items.length < 5 ? "номера" : "номеров"}:
+                </Typography>
+                {reservation.items.map((it) => {
+                  const st = mapStayDisplayStatus(it.stayStatus);
+                  const active = it.id === item.id;
+                  return (
+                    <Chip
+                      key={it.id}
+                      size="small"
+                      label={`№${it.roomNumber ?? "—"} · ${it.adults + it.children} гост.`}
+                      onClick={() => {
+                        setActiveItemId(it.id);
+                        setEditMode(null);
+                        setCheckInNeedsForce(false);
+                        setCheckOutNeedsForce(false);
+                        setActionError(null);
+                      }}
+                      variant={active ? "filled" : "outlined"}
+                      color={active ? "primary" : "default"}
+                      icon={<Box component="span" sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: hotelStayStatusColor(st, theme), ml: "8px !important" }} />}
+                      title={`${it.roomTypeName} · ${HOTEL_STAY_STATUS_LABELS[st]}`}
+                    />
+                  );
+                })}
+              </Stack>
+            )}
+
             <Stack
               direction={{ xs: "column", md: "row" }}
               alignItems={{ xs: "stretch", md: "center" }}
@@ -582,7 +621,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                 )}
                 {editMode != null && (
                   <ReservationEditPanel
-                    key={editMode}
+                    key={`${editMode}-${item.id}`}
                     mode={editMode}
                     reservation={reservation}
                     item={item}
