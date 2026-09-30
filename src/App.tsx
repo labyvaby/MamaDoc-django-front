@@ -137,6 +137,7 @@ const HotelPricingRulesPage = lazy(() => import("./dev/HotelPricingRulesPage"));
 const HotelEventsPage = lazy(() => import("./dev/HotelEventsPage"));
 const HotelPricingRuleFormPage = lazy(() => import("./dev/HotelPricingRuleFormPage"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
+const NotificationGatewaySettingsPage = lazy(() => import("./pages/settings/django/NotificationGatewaySettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
 const WhatsAppSettingsPage = lazy(() => import("./pages/settings/WhatsAppSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
@@ -1043,6 +1044,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.notifications}>
                               <Suspense fallback={<LinearProgress />}>
                                 <DjangoNotificationSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="settings/notification-gateway"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.notificationGateway}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <NotificationGatewaySettingsPage />
                               </Suspense>
                             </RequirePermission>
                           }

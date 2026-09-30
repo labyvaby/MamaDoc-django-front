@@ -130,6 +130,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // «Сбор отзывов»: настройки модуля отзывов (бэк — reviews.manage;
   // canAccess заодно гейтит модуль reviews по префиксу).
   reviews: "reviews.manage",
+  notificationGateway: PAGE_PERMISSIONS.notifications,
   // Автоматизации продолжают работать по notifications.manage; отдельное
   // notifications.page.view управляет только доступностью экрана уведомлений.
   automations: "notifications.manage",

@@ -16,6 +16,16 @@ export interface NotificationSettings {
   branchEnabled: boolean;
   variables: string[];
   rules: NotificationRule[];
+  credentials: MessagingCredentials;
+}
+
+export interface MessagingCredentials {
+  ravenKeyConfigured: boolean;
+  smsLogin: string;
+  smsSender: string;
+  smsConfigured: boolean;
+  whatsappLogin: string;
+  whatsappConfigured: boolean;
 }
 
 export interface NotificationRuleInput {
@@ -31,7 +41,20 @@ export interface NotificationSettingsInput {
   branchEnabled: boolean;
   rules: NotificationRuleInput[];
   organizationId?: number;
-  branchId: number;
+  branchId?: number | null;
+  credentials?: MessagingCredentialsInput;
+}
+
+export interface MessagingCredentialsInput {
+  ravenApiKey?: string;
+  ravenApiKeyClear?: boolean;
+  smsLogin?: string;
+  smsPassword?: string;
+  smsSender?: string;
+  smsPasswordClear?: boolean;
+  whatsappLogin?: string;
+  whatsappPassword?: string;
+  whatsappPasswordClear?: boolean;
 }
 
 /** Один филиал организации и его переключатель отправки. */
