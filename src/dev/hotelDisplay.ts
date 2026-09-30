@@ -123,6 +123,17 @@ export const HOTEL_BOOKING_SOURCE_LABELS: Record<string, string> = {
   corporate: "Корпоративный клиент",
 };
 
+/** Короткая подпись источника — для бара в шахматке, где места мало. */
+export const HOTEL_BOOKING_SOURCE_SHORT: Record<string, string> = {
+  direct: "Сайт",
+  website: "Сайт",
+  phone: "Звонок",
+  walk_in: "С улицы",
+  ota: "OTA",
+  agent: "Агент",
+  corporate: "Корп.",
+};
+
 export const HOTEL_GUARANTEE_METHOD_LABELS: Record<string, string> = {
   card: "Карта-гарантия",
   prepayment: "Предоплата",

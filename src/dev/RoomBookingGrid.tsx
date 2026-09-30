@@ -89,6 +89,8 @@ import {
   HOTEL_STAY_STATUS_LABELS,
   HOTEL_STAY_STATUSES,
   HOTEL_OFF_SALE_LABEL,
+  HOTEL_BOOKING_SOURCE_LABELS,
+  HOTEL_BOOKING_SOURCE_SHORT,
 } from "./hotelDisplay";
 import {
   getSelectedHotelDate,
@@ -1371,7 +1373,10 @@ export const RoomBookingGrid: React.FC = () => {
                     const labelMode = barLabelMode((endCol - startCol) * dayColWidth - 6);
                     // Полное описание — и для скринридера (в баре может быть только «АД»), и для
                     // подсказки: статус не должен зависеть от одного цвета.
-                    const barDescription = `${label} · №${row.room.number} · ${nights} ноч. · ${HOTEL_STAY_STATUS_LABELS[status]}${it.isOverbooking ? " · Овербукинг" : ""}${isDraft ? " · Черновик" : ""}`;
+                    const sourceLabel = it.source ? (HOTEL_BOOKING_SOURCE_LABELS[it.source] ?? it.source) : "";
+                    const barDescription = `${label} · №${row.room.number} · ${nights} ноч. · ${HOTEL_STAY_STATUS_LABELS[status]}${sourceLabel ? ` · ${sourceLabel}` : ""}${it.isOverbooking ? " · Овербукинг" : ""}${isDraft ? " · Черновик" : ""}`;
+                    // Источник брони — справа в баре, когда в нём хватает места и на имя.
+                    const sourceShort = it.source && (endCol - startCol) * dayColWidth >= 150 ? (HOTEL_BOOKING_SOURCE_SHORT[it.source] ?? it.source) : null;
                     // Черновик — весь контур пунктиром (виден отдельно от статуса); подтверждённая
                     // бронь — только левый цветной акцент 3 px, как в макете «Терра».
                     const barBorderSx = isDraft
@@ -1404,9 +1409,18 @@ export const RoomBookingGrid: React.FC = () => {
                           "&:hover": { borderLeftColor: isDraft ? undefined : color, borderColor: isDraft ? color : undefined },
                         }}
                       >
-                        <Typography variant="caption" noWrap sx={{ color: textColor, fontWeight: 600 }}>
+                        <Typography variant="caption" noWrap sx={{ color: textColor, fontWeight: 600, minWidth: 0 }}>
                           {barLabelText(labelMode, it.customerName, it.reservationNumber)}
                         </Typography>
+                        {sourceShort && labelMode === "name" && (
+                          <Typography
+                            variant="caption"
+                            noWrap
+                            sx={{ ml: "auto", pl: 1, flexShrink: 0, color: "text.secondary", fontSize: 11, fontWeight: 600 }}
+                          >
+                            {sourceShort}
+                          </Typography>
+                        )}
                       </Box>
                     );
                   });
