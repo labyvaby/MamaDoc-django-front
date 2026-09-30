@@ -193,6 +193,10 @@ function availabilityRoleLabel(emp: EmployeeAvailability): string | null {
   return null;
 }
 
+function isDoctorAvailability(emp: EmployeeAvailability): boolean {
+  return emp.clinicalRole === "doctor";
+}
+
 function summarize(emp: EmployeeAvailability, todayIso: string): DocSummary {
   const today = emp.days.find((d) => d.date === todayIso);
   const todayFree = today?.freeCount ?? 0;
@@ -1483,14 +1487,17 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     const q = chunkQueries[0];
     if (!q?.data) return false;
     return !q.data.employees.some(
-      (emp) => emp.days.some((d) => (d.appointments?.length ?? 0) > 0),
+      (emp) =>
+        isDoctorAvailability(emp) && emp.days.some((d) => (d.appointments?.length ?? 0) > 0),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- см. chunkDataStamp выше
   }, [chunkDataStamp]);
   const futureExhausted = React.useMemo(() => {
     const q = chunkQueries[chunkQueries.length - 1];
     if (!q?.data) return false;
-    return !q.data.employees.some((emp) => emp.days.some((d) => d.scheduled));
+    return !q.data.employees.some(
+      (emp) => isDoctorAvailability(emp) && emp.days.some((d) => d.scheduled),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- см. chunkDataStamp выше
   }, [chunkDataStamp]);
 
@@ -1500,6 +1507,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const extendFuture = React.useCallback(() => {
     if (!futureEdgeLoading && !futureExhausted) setFutureChunks((n) => n + 1);
   }, [futureEdgeLoading, futureExhausted]);
+
+  const slotEmployees = React.useMemo(
+    () => mergedEmployees.filter(isDoctorAvailability),
+    [mergedEmployees],
+  );
 
   // Врачи специальности + сводка, по алфавиту ФИО.
   //
@@ -1515,10 +1527,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
    */
   const employeesWithGrid = React.useMemo(
     () =>
-      mergedEmployees.map((emp) =>
+      slotEmployees.map((emp) =>
         resampleEmployeeDays(emp, slotMinutesByEmployee.get(emp.employeeId)),
       ),
-    [mergedEmployees, slotMinutesByEmployee],
+    [slotEmployees, slotMinutesByEmployee],
   );
 
   /**
@@ -1533,7 +1545,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     null,
   );
   // Готовность — по чанку, который начинается сегодня; сами смены берутся из
-  // всех загруженных чанков (mergedEmployees).
+  // всех загруженных чанков врачей (slotEmployees).
   const todayChunk = chunkQueries[pastChunks];
   const todayChunkData = todayChunk?.data;
   const todayChunkError = todayChunk?.isError ?? false;
@@ -1549,7 +1561,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
         todayFailed: todayChunkError && todayChunkData === undefined,
         compute: () =>
           specializationsOnShift(
-            mergedEmployees,
+            slotEmployees,
             new Map(allEmployees.map((emp) => [emp.id, emp.specializations.map((s) => s.id)] as const)),
             todayIso,
           ),
@@ -1563,7 +1575,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
       allEmployees,
       todayChunkData,
       todayChunkError,
-      mergedEmployees,
+      slotEmployees,
       todayIso,
     ],
   );
