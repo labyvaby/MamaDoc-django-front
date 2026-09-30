@@ -143,6 +143,14 @@ export interface Unit {
   layoutCode: string;
   /** Вариант раскладки комнат на схеме планировки, 0…5. */
   layoutVariant: number;
+  /** Бронь для шахматки: срок и ждёт ли предоплату; null — квартира не в брони. */
+  hold?: UnitHold | null;
+}
+
+export interface UnitHold {
+  /** ISO; null — бэк срок не отдал. */
+  endsAt: string | null;
+  awaitingPayment: boolean;
 }
 
 export type ReservationType = "free" | "prepaid";
@@ -491,6 +499,11 @@ export function fromRawUnit(raw: RawUnit, layoutCode = ""): Unit {
     })),
     layoutCode,
     layoutVariant: raw.layoutVariant,
+    // Бронь приходит и в списке квартир — срок нужен шахматке для таймера.
+    hold:
+      raw.status === "reserved" && raw.reservation
+        ? { endsAt: raw.reservation.expiresAt || null, awaitingPayment: raw.reservation.paymentStatus === "pending" }
+        : null,
   };
 }
 

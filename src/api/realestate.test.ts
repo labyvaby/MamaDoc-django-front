@@ -187,6 +187,9 @@ describe("переходники realty → модель шахматки", () =
     const details = fromRawUnitDetails(raw);
     expect(details.reservation).toMatchObject({ id: "7", termHours: 72, amount: 100_000, finalPrice: 6_681_000 });
     expect(details.building).toBe("А");
+    // Для таймера на шахматке срок остаётся ISO, а не человеческой строкой.
+    expect(details.hold).toEqual({ endsAt: "2026-10-01T20:53:36.426801+06:00", awaitingPayment: false });
+    expect(fromRawUnit(rawUnit(2, "А", 2, 2)).hold).toBeNull();
     expect(details.reservation?.expiresAt).toMatch(/^\d{2}\.\d{2}\.2026 \d{2}:\d{2}$/);
     expect(details.contract).toMatchObject({ number: "ДКП-2026-001", payment: "Рассрочка 24 месяца" });
     expect(details.contract?.signedAt).toMatch(/^\d{2}\.09\.2026 \d{2}:\d{2}$/);

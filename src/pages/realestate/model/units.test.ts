@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Unit } from "../../../api/realestate";
-import { countByStatus, defaultUnitFilters, matchesUnitFilters } from "./units";
+import { countByStatus, defaultUnitFilters, holdLeft, matchesUnitFilters } from "./units";
 
 const unit = (patch: Partial<Unit>): Unit => ({
   id: "u",
@@ -89,5 +89,26 @@ describe("диапазоны", () => {
     expect(f({ area: [40, 50] })).toBe(true);
     expect(f({ area: [51, 90] })).toBe(false);
     expect(f({ floor: [2, 4] })).toBe(false);
+  });
+});
+
+describe("holdLeft", () => {
+  const now = Date.parse("2026-09-30T10:00:00Z");
+  const at = (ms: number) => new Date(now + ms).toISOString();
+
+  it("часы, минуты, дни", () => {
+    expect(holdLeft(at(5 * 3_600_000 + 20 * 60_000), now)).toEqual({ label: "5 ч", urgent: false, expired: false });
+    expect(holdLeft(at(40 * 60_000), now)).toEqual({ label: "40 мин", urgent: true, expired: false });
+    expect(holdLeft(at(72 * 3_600_000), now)?.label).toBe("3 дн");
+  });
+
+  it("меньше двух часов — горит, после срока — истекла", () => {
+    expect(holdLeft(at(119 * 60_000), now)?.urgent).toBe(true);
+    expect(holdLeft(at(-1), now)).toEqual({ label: "истекла", urgent: true, expired: true });
+  });
+
+  it("нет срока или он битый — таймера нет", () => {
+    expect(holdLeft(null, now)).toBeNull();
+    expect(holdLeft("завтра", now)).toBeNull();
   });
 });

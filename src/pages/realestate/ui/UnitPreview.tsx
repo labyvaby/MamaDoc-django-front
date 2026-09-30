@@ -1,8 +1,10 @@
 import { Box, Popper, Typography } from "@mui/material";
+import dayjs from "dayjs";
 import { alpha, type Theme } from "@mui/material/styles";
 
 import type { Unit } from "../../../api/realestate";
 import { subtleBg } from "../../../theme/uiHelpers";
+import { sectionLabel } from "../model/board";
 import { roomKind } from "../model/unitCard";
 import { formatMoney, formatRooms, outdoorLabel, unitStatusMeta } from "../model/units";
 import { statusTone } from "./tones";
@@ -55,7 +57,7 @@ export function UnitPreview({ unit, anchor }: { unit: Unit; anchor: HTMLElement 
               №{unit.number} · {formatRooms(unit.rooms)}
             </Typography>
             <Typography component="span" sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-              {unit.floor} этаж · секция {unit.section} · {unit.orientation}
+              {unit.floor} этаж · {sectionLabel(unit.section)} · {unit.orientation}
             </Typography>
           </div>
           <Box
@@ -86,6 +88,12 @@ export function UnitPreview({ unit, anchor }: { unit: Unit; anchor: HTMLElement 
         <Typography sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
           Общая {unit.totalArea} м² · жилая {unit.livingArea} м²
         </Typography>
+        {unit.hold?.endsAt && (
+          <Typography sx={{ mt: 0.75, fontSize: "0.72rem", fontWeight: 600, color: "warning.onSurface" }}>
+            Бронь до {dayjs(unit.hold.endsAt).format("DD.MM, HH:mm")}
+            {unit.hold.awaitingPayment ? " · ждёт предоплату" : ""}
+          </Typography>
+        )}
 
         {/* Схема: плитки комнат пропорциональны площади. */}
         <Box sx={{ mt: 1.25, display: "flex", flexWrap: "wrap", gap: 0.5, p: 0.75, border: 1, borderColor: "divider", borderRadius: "10px" }}>

@@ -92,7 +92,7 @@ export function ApartmentHead({ project, unit }: { project: Project; unit: Unit 
     >
       <div>
         <Typography component="span" sx={eyebrowSx}>
-          ЖК «{project.name}» · секция {unit.section}
+          ЖК «{project.name}» · {sectionLabel(unit.section)}
         </Typography>
         <Typography id="realestate-unit-title" component="h2" sx={{ m: 0, fontSize: { xs: "1.5rem", md: "1.8rem" }, fontWeight: 700, letterSpacing: "-0.5px" }}>
           Квартира №{unit.number}

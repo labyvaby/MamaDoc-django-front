@@ -51,7 +51,7 @@ import {
   unitType,
 } from "../../model/unitCard";
 import { formatMoney as money, num } from "../../model/units";
-import { completionOf } from "../../model/board";
+import { completionOf, sectionLabel } from "../../model/board";
 import { eyebrowSx } from "../tones";
 import { PhoneController } from "./PhoneController";
 import { useRealEstateToast } from "../toast";
@@ -486,7 +486,7 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
       "",
       `ЖК «${project.name}»`,
       `Квартира №${unit.number}: ${unitType(unit)}, ${num(unit.totalArea)} м²`,
-      `${unit.floor} этаж, секция ${unit.section}`,
+      `${unit.floor} этаж, ${sectionLabel(unit.section)}`,
       `${unit.orientation}, ${unit.view}`,
       `Потолки ${num(unit.ceilingHeight)} м, отделка ${project.finish}`,
       `Базовая цена: ${money(unit.price)}`,
@@ -529,7 +529,7 @@ export function ProposalScreen({ project, unit, offer, organizationId, onBack, o
           </Typography>
           <Box component="ul" sx={{ m: 0, mt: 1, pl: 2.25, fontSize: "0.78rem", display: "grid", gap: 0.25 }}>
             <li>
-              {unit.floor} этаж, секция {unit.section}
+              {unit.floor} этаж, {sectionLabel(unit.section)}
             </li>
             <li>
               {unit.orientation} · {unit.view}

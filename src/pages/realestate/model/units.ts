@@ -117,4 +117,28 @@ export const num = (n: number) => String(n);
 
 export const millions = (price: number) => `${(price / 1_000_000).toFixed(1)} млн`;
 
-export const outdoorLabel = { balcony: "Балкон", loggia: "Лоджия", terrace: "Терраса" } as const;
+/** Меньше этого срока бронь «горит» — менеджеру пора звонить покупателю. */
+export const HOLD_URGENT_MS = 2 * 3_600_000;
+
+export interface HoldLeft {
+  /** «5 ч», «40 мин», «истекла». */
+  label: string;
+  urgent: boolean;
+  expired: boolean;
+}
+
+/** Сколько осталось до конца брони; null — срок неизвестен. */
+export function holdLeft(endsAt: string | null | undefined, now: number): HoldLeft | null {
+  const end = endsAt ? Date.parse(endsAt) : NaN;
+  if (Number.isNaN(end)) return null;
+  const ms = end - now;
+  if (ms <= 0) return { label: "истекла", urgent: true, expired: true };
+  const minutes = Math.ceil(ms / 60_000);
+  const label = minutes < 60 ? `${minutes} мин` : minutes < 48 * 60 ? `${Math.floor(minutes / 60)} ч` : `${Math.floor(minutes / 1440)} дн`;
+  return { label, urgent: ms < HOLD_URGENT_MS, expired: false };
+}
+
+/** Цена за м² в ячейке: «184 тыс./м²». */
+export const perSqmShort = (pricePerSqm: number) => `${Math.round(pricePerSqm / 1000)} тыс./м²`;
+
+export const outdoorLabel ={ balcony: "Балкон", loggia: "Лоджия", terrace: "Терраса" } as const;

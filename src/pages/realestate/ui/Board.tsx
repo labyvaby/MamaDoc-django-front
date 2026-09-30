@@ -3,13 +3,14 @@ import { Box, ButtonBase, Typography } from "@mui/material";
 import { alpha, type Theme } from "@mui/material/styles";
 import BalconyOutlined from "@mui/icons-material/BalconyOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import DeckOutlined from "@mui/icons-material/DeckOutlined";
 
 import type { Project, Unit } from "../../../api/realestate";
 import { subtleBg } from "../../../theme/uiHelpers";
 import { floorType, sectionLabel, statsOf, type BoardModel, type BoardView, type FloorStats } from "../model/board";
 import { canStartBoardNavigation, moveFocus } from "../model/keyboard";
-import { formatArea, formatRooms, millions, unitStatusMeta } from "../model/units";
+import { formatArea, formatRooms, holdLeft, millions, perSqmShort, unitStatusMeta, type HoldLeft } from "../model/units";
 import { statusTone } from "./tones";
 
 export interface CellHandlers {
@@ -34,7 +35,18 @@ export interface BoardProps extends CellHandlers {
 /**
  * Шахматка. Стрелки двигают фокус по квартирам, Enter открывает карточку, пробел — выбирает.
  */
+/** Текущее время с шагом в минуту — таймеры броней на шахматке. */
+function useMinuteClock() {
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+  return now;
+}
+
 export function Board(props: BoardProps) {
+  const now = useMinuteClock();
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const firstVisible = props.board.floors.flatMap((f) => props.board.unitsOnFloor(f)).find(props.isVisible);
   const tabbableId = activeId ?? firstVisible?.id ?? null;
@@ -87,9 +99,9 @@ export function Board(props: BoardProps) {
         Стрелки — переход между квартирами, Enter — открыть карточку, пробел — выбрать для сравнения.
       </Box>
       {props.view === "compact" ? (
-        <CompactBoard {...props} tabbableId={tabbableId} />
+        <CompactBoard {...props} tabbableId={tabbableId} now={now} />
       ) : (
-        <DetailedBoard {...props} tabbableId={tabbableId} />
+        <DetailedBoard {...props} tabbableId={tabbableId} now={now} />
       )}
     </Box>
   );
@@ -105,7 +117,7 @@ const visuallyHidden = {
   whiteSpace: "nowrap",
 } as const;
 
-type InnerProps = BoardProps & { tabbableId: string | null };
+type InnerProps = BoardProps & { tabbableId: string | null; now: number };
 
 function cellProps(p: InnerProps, unit: Unit): UnitCellProps {
   return {
@@ -116,6 +128,8 @@ function cellProps(p: InnerProps, unit: Unit): UnitCellProps {
     highlighted: p.highlightedIds.has(unit.id),
     selectMode: p.selectMode,
     tabbable: unit.id === p.tabbableId,
+    hold: unit.hold ? holdLeft(unit.hold.endsAt, p.now) : null,
+    awaitingPayment: Boolean(unit.hold?.awaitingPayment),
     onOpen: p.onOpen,
     onToggleSelect: p.onToggleSelect,
     onPreview: p.onPreview,
@@ -315,6 +329,9 @@ interface UnitCellProps extends CellHandlers {
   selectMode: boolean;
   /** Роуминг-фокус: в Tab-порядке только одна ячейка шахматки. */
   tabbable: boolean;
+  /** Сколько осталось до конца брони; null — не в брони или срок неизвестен. */
+  hold: HoldLeft | null;
+  awaitingPayment: boolean;
 }
 
 /**
@@ -336,12 +353,26 @@ const UnitCell = React.memo(function UnitCell({
   highlighted,
   selectMode,
   tabbable,
+  hold,
+  awaitingPayment,
   onOpen,
   onToggleSelect,
   onPreview,
 }: UnitCellProps) {
   const status = unitStatusMeta[unit.status].label;
-  const label = `Квартира №${unit.number}, ${formatRooms(unit.rooms)}, ${formatArea(unit.totalArea)}, ${unit.floor} этаж, ${status}${selected ? ", выбрана" : ""}`;
+  const holdText = hold ? (hold.expired ? "бронь истекла" : `бронь ещё ${hold.label}`) : "";
+  const label = [
+    `Квартира №${unit.number}`,
+    formatRooms(unit.rooms),
+    formatArea(unit.totalArea),
+    `${unit.floor} этаж`,
+    status,
+    holdText,
+    awaitingPayment ? "ждёт предоплату" : "",
+    selected ? "выбрана" : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
   const outdoor = unit.outdoor?.type;
   const isTerrace = outdoor === "terrace";
 
@@ -494,17 +525,28 @@ const UnitCell = React.memo(function UnitCell({
                 borderRadius: "6px",
                 fontSize: "0.68rem",
                 fontWeight: 700,
-                bgcolor: unit.status === "reserved" ? statusTone(t, "reserved").solid : "transparent",
-                color: unit.status === "reserved" ? statusTone(t, "reserved").solidText : "text.secondary",
+                whiteSpace: "nowrap",
+                bgcolor: unit.status === "reserved" ? (hold?.urgent ? t.palette.error.main : statusTone(t, "reserved").solid) : "transparent",
+                color:
+                  unit.status === "reserved"
+                    ? hold?.urgent
+                      ? t.palette.error.contrastText
+                      : statusTone(t, "reserved").solidText
+                    : "text.secondary",
                 ...(unit.status === "sold" ? { px: 0 } : null),
               })}
             >
-              {unit.status === "reserved" ? "Бронь" : status}
+              {unit.status === "reserved" ? (hold ? (hold.expired ? "Бронь истекла" : `Бронь · ${hold.label}`) : "Бронь") : status}
             </Box>
           )}
           <Box component="span" sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
             №{unit.number}
           </Box>
+          {awaitingPayment && (
+            <Box component="span" title="Ждёт предоплату" sx={{ display: "grid", color: "warning.onSurface", "& .MuiSvgIcon-root": { fontSize: 13 } }}>
+              <PaymentsOutlined />
+            </Box>
+          )}
         </Box>
         {/* Иконка, а не буква «Б/Т»: буква путалась с названием секции «Б». */}
         <Box
@@ -538,8 +580,13 @@ const UnitCell = React.memo(function UnitCell({
       <Box component="span" sx={{ fontSize: "0.72rem" }}>
         {unit.totalArea} м² · {unit.orientation}
       </Box>
-      <Box component="em" sx={{ mt: "auto", fontSize: "0.72rem", fontWeight: 700, fontStyle: "normal" }}>
-        {millions(unit.price)}
+      <Box component="span" sx={{ mt: "auto", display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 0.75, fontSize: "0.72rem" }}>
+        <Box component="em" sx={{ fontWeight: 700, fontStyle: "normal" }}>
+          {millions(unit.price)}
+        </Box>
+        <Box component="span" sx={{ fontSize: "0.66rem", color: "text.secondary", whiteSpace: "nowrap" }}>
+          {perSqmShort(unit.pricePerSqm)}
+        </Box>
       </Box>
     </ButtonBase>
   );
