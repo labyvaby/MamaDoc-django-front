@@ -6,7 +6,7 @@
     "tabsAriaLabel": "Разделы настроек",
     "noOrgSelected": "Организация не выбрана",
     "groups": {
-      "platform": "Платформа",
+      "platform": "Технические настройки",
       "clinic": "{{org.nom, capitalize}}",
       "access": "Доступы",
       "catalogs": "Справочники",
