@@ -18,6 +18,7 @@ import {
 } from "@mui/material";
 import KeyOutlined from "@mui/icons-material/KeyOutlined";
 import AddBusinessOutlined from "@mui/icons-material/AddBusinessOutlined";
+import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import SmsOutlined from "@mui/icons-material/SmsOutlined";
 import WhatsApp from "@mui/icons-material/WhatsApp";
@@ -50,6 +51,9 @@ type FormState = {
   whatsappLogin: string;
   whatsappPassword: string;
   whatsappPasswordClear: boolean;
+  chatwootSource: string;
+  chatwootToken: string;
+  chatwootTokenClear: boolean;
 };
 
 const toForm = (settings: NotificationSettings): FormState => ({
@@ -63,6 +67,9 @@ const toForm = (settings: NotificationSettings): FormState => ({
   whatsappLogin: settings.credentials.whatsappLogin,
   whatsappPassword: "",
   whatsappPasswordClear: false,
+  chatwootSource: settings.credentials.chatwootSource,
+  chatwootToken: "",
+  chatwootTokenClear: false,
 });
 
 const NotificationGatewaySettingsPage: React.FC = () => {
@@ -116,6 +123,9 @@ const NotificationGatewaySettingsPage: React.FC = () => {
           whatsappLogin: form.whatsappLogin,
           whatsappPassword: form.whatsappPassword,
           whatsappPasswordClear: form.whatsappPasswordClear,
+          chatwootSource: form.chatwootSource,
+          chatwootToken: form.chatwootToken,
+          chatwootTokenClear: form.chatwootTokenClear,
         },
       });
     },
@@ -394,6 +404,49 @@ const NotificationGatewaySettingsPage: React.FC = () => {
                 </CardContent>
               </Card>
             </Stack>
+
+            <Card variant="outlined">
+              <CardHeader
+                avatar={<ForumOutlined color="primary" />}
+                title={t("notificationGateway.chatwoot.title")}
+                subheader={t("notificationGateway.chatwoot.subtitle")}
+                action={
+                  <Chip
+                    size="small"
+                    color={configured?.chatwootConfigured ? "success" : "default"}
+                    label={configured?.chatwootConfigured ? t("notificationGateway.status.configured") : t("notificationGateway.status.notConfigured")}
+                  />
+                }
+              />
+              <Divider />
+              <CardContent>
+                <Stack spacing={2}>
+                  <TextField
+                    fullWidth
+                    label={t("notificationGateway.chatwoot.source")}
+                    value={form.chatwootSource}
+                    onChange={(event) => update({ chatwootSource: event.target.value })}
+                  />
+                  <TextField
+                    fullWidth
+                    type="password"
+                    label={t("notificationGateway.chatwoot.token")}
+                    value={form.chatwootToken}
+                    onChange={(event) => update({ chatwootToken: event.target.value, chatwootTokenClear: false })}
+                    helperText={configured?.chatwootConfigured ? t("notificationGateway.secret.keepHint") : undefined}
+                  />
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={form.chatwootTokenClear}
+                        onChange={(event) => update({ chatwootTokenClear: event.target.checked, chatwootToken: "" })}
+                      />
+                    }
+                    label={t("notificationGateway.chatwoot.clear")}
+                  />
+                </Stack>
+              </CardContent>
+            </Card>
 
             <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
               <Button
