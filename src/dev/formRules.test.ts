@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fieldError, hasFieldErrors, sanitizeFieldInput } from "./formRules";
+import { fieldError, GUEST_RULES, hasFieldErrors, sanitizeFieldInput } from "./formRules";
 
 describe("sanitizeFieldInput", () => {
   it("не пропускает буквы в целое число (этаж)", () => {
@@ -45,6 +45,17 @@ describe("fieldError", () => {
     expect(fieldError("+996 700 123 456", { kind: "phone" })).toBeNull();
     expect(fieldError("ivan@mail", { kind: "email" })).not.toBeNull();
     expect(fieldError("ivan@mail.kg", { kind: "email" })).toBeNull();
+  });
+
+  it("документы гостя: ID-карта, ИНН, загранпаспорт", () => {
+    expect(fieldError("ID2287410", GUEST_RULES.idNumber)).toBeNull();
+    expect(fieldError("AN1234567", GUEST_RULES.idNumber)).toBeNull();
+    expect(fieldError("ID12345", GUEST_RULES.idNumber)).not.toBeNull();
+    expect(fieldError("IDddddddd", GUEST_RULES.idNumber)).not.toBeNull();
+    expect(fieldError("12345678901234", GUEST_RULES.inn)).toBeNull();
+    expect(fieldError("1234", GUEST_RULES.inn)).not.toBeNull();
+    expect(fieldError("C01X00T47", GUEST_RULES.docNumber)).toBeNull();
+    expect(fieldError("C0 1X", GUEST_RULES.docNumber)).not.toBeNull();
   });
 
   it("hasFieldErrors — хоть одна ошибка блокирует сохранение", () => {

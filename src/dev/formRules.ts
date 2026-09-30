@@ -88,7 +88,7 @@ export const GUEST_RULES = {
   // ID-карта/паспорт КР: 2 буквы и 7 цифр (ID1234567, AN1234567).
   idNumber: {
     maxLength: 12,
-    validate: (v: string) => (/^[A-Za-zА-Яа-я]{2}d{7}$/.test(v) ? null : "Формат: 2 буквы и 7 цифр, например ID1234567"),
+    validate: (v: string) => (/^[A-Za-zА-Яа-я]{2}\d{7}$/.test(v) ? null : "Формат: 2 буквы и 7 цифр, например ID1234567"),
   },
   // ИНН физлица КР — 14 цифр.
   inn: { kind: "int", maxLength: 14, validate: (v: string) => (v.length === 14 ? null : "ИНН — 14 цифр") },

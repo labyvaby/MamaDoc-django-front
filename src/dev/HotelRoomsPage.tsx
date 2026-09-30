@@ -34,6 +34,8 @@ import {
   Button,
   CircularProgress,
   Stack,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
   useTheme,
@@ -51,6 +53,18 @@ import { getHotelCatalogs, listRoomTypes, listRooms, type HotelRoom } from "../a
 import { HOTEL_ROOM_STATE_LABELS, HOTEL_ROOM_STATES, hotelRoomStateColor, type HotelRoomState } from "./hotelDisplay";
 import { CountChip, DisabledReason, EmptyState, HotelPage, HotelPageHeader, plural, Surface } from "./hotelUi";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
+import { floorGroupLabel, groupRoomsByFloor, pluralRooms } from "./roomBookingFloors";
+
+/** Как показывать номера — запоминаем у сотрудника (localStorage может быть недоступен). */
+const GROUPING_KEY = "mamadoc:hotel-rooms:grouping";
+type Grouping = "floor" | "category";
+const readGrouping = (): Grouping => {
+  try {
+    return window.localStorage.getItem(GROUPING_KEY) === "category" ? "category" : "floor";
+  } catch {
+    return "floor";
+  }
+};
 
 export const HotelRoomsPage: React.FC = () => {
   usePageTitle("Номера");
@@ -70,7 +84,7 @@ export const HotelRoomsPage: React.FC = () => {
     queryFn: ({ signal }) => listRoomTypes(property!.id, {}, signal),
     enabled: property != null,
   });
-  const roomTypes = roomTypesQuery.data ?? [];
+  const roomTypes = React.useMemo(() => roomTypesQuery.data ?? [], [roomTypesQuery.data]);
 
   const roomsQuery = useQuery({
     queryKey: ["hotel", "rooms", property?.id],
@@ -105,6 +119,17 @@ export const HotelRoomsPage: React.FC = () => {
   // состояний считают только номера в продаже — ровно то число, что в отчёте и
   // над шахматкой («11 в продаже»); снятые — отдельной таблеткой.
   const [stateFilter, setStateFilter] = React.useState<HotelRoomState | "offSale" | null>(null);
+  // По этажам — как их обходит горничная и видит ресепшен; по категориям — как их продают.
+  const [grouping, setGroupingState] = React.useState<Grouping>(readGrouping);
+  const setGrouping = (next: Grouping) => {
+    setGroupingState(next);
+    try {
+      window.localStorage.setItem(GROUPING_KEY, next);
+    } catch {
+      // без памяти — просто не запомним
+    }
+  };
+  const typeName = React.useMemo(() => new Map(roomTypes.map((t) => [t.id, t.name])), [roomTypes]);
   const offSaleCount = allRooms.length - onSale.length;
   const matchesFilter = (r: HotelRoom) =>
     stateFilter === null ||
@@ -122,7 +147,7 @@ export const HotelRoomsPage: React.FC = () => {
         }
         info={
           <>
-            Номера сгруппированы по категориям. Новый номер сразу появляется в шахматке и в форме брони. Клик по
+            Номера можно смотреть по этажам или по категориям — переключатель над списком. Новый номер сразу появляется в шахматке и в форме брони. Клик по
             номеру — страница редактирования (категория, питание, площадь, состояние, продажа). Корзина на плитке
             удаляет номер; если он уже был в бронях — предложит снять его с продажи. Цены и характеристики
             категорий — в «Категориях и тарифах».
@@ -160,7 +185,17 @@ export const HotelRoomsPage: React.FC = () => {
       />
 
       {stateCounts.length > 0 && (
-        <Stack direction="row" gap={1} flexWrap="wrap">
+        <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={grouping}
+            onChange={(_, v: Grouping | null) => v && setGrouping(v)}
+            sx={{ mr: 1, "& .MuiToggleButton-root": { textTransform: "none", fontWeight: 600, px: 1.5, py: 0.4 } }}
+          >
+            <ToggleButton value="floor">По этажам</ToggleButton>
+            <ToggleButton value="category">По категориям</ToggleButton>
+          </ToggleButtonGroup>
           <CountChip label="Все" count={allRooms.length} active={stateFilter === null} onClick={() => setStateFilter(null)} />
           {stateCounts.map((s) => (
             <CountChip
@@ -216,6 +251,39 @@ export const HotelRoomsPage: React.FC = () => {
               }
             />
           </Surface>
+        ) : grouping === "floor" ? (
+          <Stack gap={2}>
+            {groupRoomsByFloor(allRooms.filter(matchesFilter)).map((g) => {
+              const onSaleCount = g.rooms.filter((r) => r.status !== "out_of_service").length;
+              return (
+                <Surface key={g.floor || "none"}>
+                  <Stack direction="row" alignItems="baseline" gap={1.5} sx={{ mb: 1.5 }}>
+                    <Typography sx={{ fontSize: 17, fontWeight: 700 }}>{floorGroupLabel(g.floor)}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {g.rooms.length} {pluralRooms(g.rooms.length)}
+                      {onSaleCount < g.rooms.length ? ` · ${g.rooms.length - onSaleCount} снят` : ""}
+                    </Typography>
+                  </Stack>
+                  <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(118px, 1fr))", gap: 1 }}>
+                    {g.rooms.map((room) => (
+                      <RoomTile
+                        key={room.id}
+                        room={room}
+                        categoryName={typeName.get(room.roomTypeId)}
+                        mealLabels={room.mealOptions.map((mo) => mealOptionChoices.find((c) => c.value === mo)?.label ?? mo)}
+                        onOpen={() => navigate(`/rooms/${room.id}`)}
+                      />
+                    ))}
+                  </Box>
+                </Surface>
+              );
+            })}
+            {allRooms.filter(matchesFilter).length === 0 && (
+              <Surface>
+                <EmptyState icon={<HotelOutlined />} title="Номеров пока нет" description="Добавьте номер — он появится на своём этаже." />
+              </Surface>
+            )}
+          </Stack>
         ) : (
           <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 2, alignItems: "start" }}>
             {roomTypes.map((cat) => {
@@ -278,16 +346,17 @@ export const HotelRoomsPage: React.FC = () => {
  * Delete легко удаляли номер случайно — удаляют теперь из карточки номера
  * (RoomDeleteDialog). Снятый с продажи — пунктирная рамка и «снят».
  */
-const RoomTile: React.FC<{ room: HotelRoom; mealLabels: string[]; onOpen: () => void }> = ({
+const RoomTile: React.FC<{ room: HotelRoom; mealLabels: string[]; onOpen: () => void; categoryName?: string }> = ({
   room,
   mealLabels,
   onOpen,
+  categoryName,
 }) => {
   const theme = useTheme();
   const offSale = room.status === "out_of_service";
   const stateLabel = HOTEL_ROOM_STATE_LABELS[room.state as HotelRoomState] ?? room.state;
   const color = hotelRoomStateColor(room.state, theme);
-  const tooltip = [stateLabel, offSale ? "Снят с продажи" : "", mealLabels.length ? `Питание: ${mealLabels.join(", ")}` : ""]
+  const tooltip = [categoryName ?? "", stateLabel, offSale ? "Снят с продажи" : "", mealLabels.length ? `Питание: ${mealLabels.join(", ")}` : ""]
     .filter(Boolean)
     .join(" · ");
   return (
@@ -327,6 +396,12 @@ const RoomTile: React.FC<{ room: HotelRoom; mealLabels: string[]; onOpen: () => 
         >
           {room.number}
         </Typography>
+        {/* По этажам категория не видна из заголовка — подписываем у номера. */}
+        {categoryName && (
+          <Typography variant="caption" color="text.secondary" noWrap component="div" sx={{ mt: 0.25 }}>
+            {categoryName}
+          </Typography>
+        )}
         <Stack direction="row" alignItems="center" gap={0.6} sx={{ mt: 0.5 }}>
           <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: offSale ? theme.palette.text.disabled : color, flexShrink: 0 }} />
           <Typography variant="caption" color="text.secondary" noWrap>

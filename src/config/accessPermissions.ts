@@ -78,6 +78,13 @@ export const PAGE_PERMISSIONS = {
   // «События» (HotelEventsPage) — календарь событий города; смотреть может
   // любой сотрудник отеля, «Поднять цены» проверяет hotel.rates.manage сама.
   hotelEvents: "hotel.view",
+  // «Календарь цен» (HotelPriceCalendarPage) — смотреть цены может любой
+  // сотрудник отеля; правка цен на даты и «История изменений» — hotel.rates.manage,
+  // страница проверяет сама.
+  hotelPriceCalendar: "hotel.view",
+  // «Тарифные планы» (HotelRatePlansPage) — смотреть может любой сотрудник
+  // отеля, создавать и менять — hotel.rates.manage (страница проверяет сама).
+  hotelRatePlans: "hotel.view",
   // «Ресепшен» (HotelReceptionPage) — заезды/выезды и список броней; читать
   // может любой сотрудник отеля, «Заселить/Выселить» требует hotel.stays.manage.
   hotelReception: "hotel.view",

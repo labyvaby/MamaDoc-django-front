@@ -50,6 +50,7 @@ import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Box, Button, CircularProgress, ClickAwayListener, IconButton, Paper, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
+import BuildOutlined from "@mui/icons-material/BuildOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
@@ -72,7 +73,7 @@ import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { Link as RouterLink } from "react-router";
 
-import { getCalendar, type HotelCalendarItem, type HotelCalendarRoom } from "../api/hotel";
+import { getCalendar, type HotelCalendarItem, type HotelCalendarRoom, type HotelRoomBlock } from "../api/hotel";
 import { PAGE_PERMISSIONS } from "../config/accessPermissions";
 import { useCan } from "../hooks/useCan";
 import { useNowMinute } from "../pages/schedule/django/useNowMinute";
@@ -87,6 +88,9 @@ import {
   HOTEL_ROOM_STATE_LABELS,
   HOTEL_STAY_STATUS_LABELS,
   HOTEL_STAY_STATUSES,
+  HOTEL_OFF_SALE_LABEL,
+  HOTEL_BOOKING_SOURCE_LABELS,
+  HOTEL_BOOKING_SOURCE_SHORT,
 } from "./hotelDisplay";
 import {
   getSelectedHotelDate,
@@ -289,8 +293,9 @@ const NowLine: React.FC = () => {
 };
 
 interface GridDialogsHandle {
-  openRoom: (roomId: number) => void;
-  openReservation: (reservationId: number) => void;
+  /** block — открыли по штриховке «Снят с продажи»: карточка покажет его, даже если он дальше её окна. */
+  openRoom: (roomId: number, block?: HotelRoomBlock) => void;
+  openReservation: (reservationId: number, itemId?: number) => void;
 }
 
 /**
@@ -300,20 +305,36 @@ interface GridDialogsHandle {
  */
 const GridDialogs = React.forwardRef<GridDialogsHandle, { roomTypes: React.ComponentProps<typeof RoomDetailsDialog>["roomTypes"] }>(({ roomTypes }, ref) => {
   const [roomId, setRoomId] = React.useState<number | null>(null);
+  const [focusBlock, setFocusBlock] = React.useState<HotelRoomBlock | null>(null);
   const [reservationId, setReservationId] = React.useState<number | null>(null);
-  React.useImperativeHandle(ref, () => ({ openRoom: setRoomId, openReservation: setReservationId }), []);
+  const [itemId, setItemId] = React.useState<number | null>(null);
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      openRoom: (id, block) => {
+        setFocusBlock(block ?? null);
+        setRoomId(id);
+      },
+      openReservation: (id, item) => {
+        setItemId(item ?? null);
+        setReservationId(id);
+      },
+    }),
+    [],
+  );
   return (
     <>
       <RoomDetailsDialog
         roomId={roomId}
         roomTypes={roomTypes}
+        focusBlock={focusBlock}
         onClose={() => setRoomId(null)}
         onReservationClick={(id) => {
           setRoomId(null);
           setReservationId(id);
         }}
       />
-      <ReservationDetailsDialog reservationId={reservationId} onClose={() => setReservationId(null)} />
+      <ReservationDetailsDialog reservationId={reservationId} initialItemId={itemId} onClose={() => setReservationId(null)} />
     </>
   );
 });
@@ -418,6 +439,22 @@ export const RoomBookingGrid: React.FC = () => {
       }
     }
     return out;
+  }, [pages]);
+
+  // Снятые с продажи ночи (ремонт и т.п.) — тоже по кускам, склеиваем по id.
+  const blocksByRoomId = React.useMemo(() => {
+    const seen = new Set<number>();
+    const map = new Map<number, HotelRoomBlock[]>();
+    for (const page of pages ?? []) {
+      for (const b of page.blocks ?? []) {
+        if (!b.isActive || seen.has(b.id)) continue;
+        seen.add(b.id);
+        const arr = map.get(b.roomId) ?? [];
+        arr.push(b);
+        map.set(b.roomId, arr);
+      }
+    }
+    return map;
   }, [pages]);
 
   const itemsByRoomId = React.useMemo(() => {
@@ -584,10 +621,16 @@ export const RoomBookingGrid: React.FC = () => {
         const to = Math.min(dates.length, dayjs(it.checkOut).diff(gridStart, "day"));
         for (let i = from; i < to; i++) mask[i] = false;
       }
+      // Снятые с продажи ночи — не для быстрой брони.
+      for (const b of blocksByRoomId.get(row.room.id) ?? []) {
+        const from = Math.max(0, dayjs(b.dateFrom).diff(gridStart, "day"));
+        const to = Math.min(dates.length, dayjs(b.dateTo).diff(gridStart, "day"));
+        for (let i = from; i < to; i++) mask[i] = false;
+      }
       map.set(row.room.id, mask);
     }
     return map;
-  }, [ROWS, dates.length, itemsByRoomId, gridStart]);
+  }, [ROWS, dates.length, itemsByRoomId, blocksByRoomId, gridStart]);
 
   // Клавиатура: свободные ячейки — кнопки, и Tab по каждой (номера × дни — тысячи остановок)
   // не пройти. Поэтому у всех tabIndex=-1, кроме одной входной — первой свободной ночи
@@ -1334,7 +1377,10 @@ export const RoomBookingGrid: React.FC = () => {
                     const labelMode = barLabelMode((endCol - startCol) * dayColWidth - 6);
                     // Полное описание — и для скринридера (в баре может быть только «АД»), и для
                     // подсказки: статус не должен зависеть от одного цвета.
-                    const barDescription = `${label} · №${row.room.number} · ${nights} ноч. · ${HOTEL_STAY_STATUS_LABELS[status]}${it.isOverbooking ? " · Овербукинг" : ""}${isDraft ? " · Черновик" : ""}`;
+                    const sourceLabel = it.source ? (HOTEL_BOOKING_SOURCE_LABELS[it.source] ?? it.source) : "";
+                    const barDescription = `${label} · №${row.room.number} · ${nights} ноч. · ${HOTEL_STAY_STATUS_LABELS[status]}${sourceLabel ? ` · ${sourceLabel}` : ""}${it.isOverbooking ? " · Овербукинг" : ""}${isDraft ? " · Черновик" : ""}`;
+                    // Источник брони — справа в баре, когда в нём хватает места и на имя.
+                    const sourceShort = it.source && (endCol - startCol) * dayColWidth >= 150 ? (HOTEL_BOOKING_SOURCE_SHORT[it.source] ?? it.source) : null;
                     // Черновик — весь контур пунктиром (виден отдельно от статуса); подтверждённая
                     // бронь — только левый цветной акцент 3 px, как в макете «Терра».
                     const barBorderSx = isDraft
@@ -1345,7 +1391,7 @@ export const RoomBookingGrid: React.FC = () => {
                         key={it.itemId}
                         component="button"
                         type="button"
-                        onClick={() => dialogsRef.current?.openReservation(it.reservationId)}
+                        onClick={() => dialogsRef.current?.openReservation(it.reservationId, it.itemId)}
                         aria-label={barDescription}
                         title={`${barDescription} — показать бронь`}
                         sx={{
@@ -1367,9 +1413,73 @@ export const RoomBookingGrid: React.FC = () => {
                           "&:hover": { borderLeftColor: isDraft ? undefined : color, borderColor: isDraft ? color : undefined },
                         }}
                       >
-                        <Typography variant="caption" noWrap sx={{ color: textColor, fontWeight: 600 }}>
+                        <Typography variant="caption" noWrap sx={{ color: textColor, fontWeight: 600, minWidth: 0 }}>
                           {barLabelText(labelMode, it.customerName, it.reservationNumber)}
                         </Typography>
+                        {sourceShort && labelMode === "name" && (
+                          <Typography
+                            variant="caption"
+                            noWrap
+                            sx={{ ml: "auto", pl: 1, flexShrink: 0, color: "text.secondary", fontSize: 11, fontWeight: 600 }}
+                          >
+                            {sourceShort}
+                          </Typography>
+                        )}
+                      </Box>
+                    );
+                  });
+                })}
+
+                {/* Снятые с продажи ночи — серая штриховка на всю ячейку; клик открывает
+                    карточку номера, где блок можно снять («Вернуть в продажу»). */}
+                {ROWS.map((row, rowIdx) => {
+                  if (row.kind !== "room") return null;
+                  const gridRow = rowIdx + 3;
+                  return (blocksByRoomId.get(row.room.id) ?? []).map((b) => {
+                    const startCol = Math.max(0, dayjs(b.dateFrom).diff(gridStart, "day"));
+                    const endCol = Math.min(dates.length, dayjs(b.dateTo).diff(gridStart, "day"));
+                    if (endCol <= startCol) return null;
+                    if (endCol <= visibleRange.start || startCol >= visibleRange.end) return null;
+                    const label = b.reason || HOTEL_OFF_SALE_LABEL;
+                    // Бессрочный блок — от статуса номера «выведен из продажи».
+                    const period = b.dateTo.startsWith("9999") ? "без даты окончания" : `${nightsBetween(b.dateFrom, b.dateTo)} ноч.`;
+                    const description = `${HOTEL_OFF_SALE_LABEL}: ${label} · №${row.room.number} · ${period}`;
+                    const stripe = alpha(theme.palette.text.primary, theme.palette.mode === "dark" ? 0.16 : 0.09);
+                    return (
+                      <Box
+                        key={`block-${b.id}`}
+                        component="button"
+                        type="button"
+                        onClick={() => dialogsRef.current?.openRoom(row.room.id, b)}
+                        aria-label={description}
+                        title={`${description} — открыть номер`}
+                        sx={{
+                          gridRow,
+                          gridColumn: `${startCol + 2} / ${endCol + 2}`,
+                          alignSelf: "center",
+                          height: 30,
+                          mx: "3px",
+                          px: 1,
+                          borderRadius: "8px",
+                          border: `1px dashed ${alpha(theme.palette.text.primary, 0.28)}`,
+                          backgroundColor: alpha(theme.palette.text.primary, 0.04),
+                          backgroundImage: `repeating-linear-gradient(135deg, ${stripe} 0 6px, transparent 6px 12px)`,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 0.5,
+                          overflow: "hidden",
+                          font: "inherit",
+                          color: "text.secondary",
+                          cursor: "pointer",
+                          "&:hover": { borderColor: alpha(theme.palette.text.primary, 0.5) },
+                        }}
+                      >
+                        <BuildOutlined sx={{ fontSize: 14, flexShrink: 0 }} />
+                        {(endCol - startCol) * dayColWidth > 70 && (
+                          <Typography variant="caption" noWrap sx={{ fontWeight: 600 }}>
+                            {label}
+                          </Typography>
+                        )}
                       </Box>
                     );
                   });
@@ -1466,6 +1576,20 @@ export const RoomBookingGrid: React.FC = () => {
                 />
                 <Typography variant="caption" color="text.secondary">
                   Овербукинг
+                </Typography>
+              </Stack>
+              <Stack direction="row" alignItems="center" gap={0.5}>
+                <Box
+                  sx={{
+                    width: 16,
+                    height: 10,
+                    borderRadius: "3px",
+                    border: `1px dashed ${alpha(theme.palette.text.primary, 0.28)}`,
+                    backgroundImage: `repeating-linear-gradient(135deg, ${alpha(theme.palette.text.primary, theme.palette.mode === "dark" ? 0.16 : 0.09)} 0 3px, transparent 3px 6px)`,
+                  }}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  {HOTEL_OFF_SALE_LABEL}
                 </Typography>
               </Stack>
               {/* Точка у номера — состояние уборки; четыре цвета, «Ремонт» серый (оранжевый — овербукинг). */}

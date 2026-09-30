@@ -41,6 +41,7 @@ import {
   DialogTitle,
   Drawer,
   FormControlLabel,
+  IconButton,
   MenuItem,
   Snackbar,
   Stack,
@@ -50,6 +51,8 @@ import {
   Typography,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import AlternateEmailOutlined from "@mui/icons-material/AlternateEmailOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
@@ -98,6 +101,7 @@ import {
   getReservationConflicts,
   isOverbookingConfirmable,
   getQuote,
+  listRatePlans,
   addPayment,
   type HotelRoom,
   type HotelGuestSearchResult,
@@ -129,6 +133,16 @@ export interface CreateBookingButtonProps {
    */
   hideTrigger?: boolean;
 }
+
+interface ExtraRoom {
+  key: number;
+  roomId: number | "";
+  adults: number;
+  children: number;
+}
+
+let extraKeySeq = 0;
+const nextExtraKey = () => ++extraKeySeq;
 
 export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTrigger = false }) => {
   const { property } = useHotelProperty();
@@ -166,6 +180,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [showErrors, setShowErrors] = React.useState(false);
   const [prepaymentMethod, setPrepaymentMethod] = React.useState("");
   const [boardType, setBoardType] = React.useState("");
+  // Тарифный план (RatePlan). "" — основной: бэк сам берёт его, если план не передан.
+  const [ratePlanId, setRatePlanId] = React.useState<number | "">("");
 
   // Документ
   const [guestType, setGuestType] = React.useState<GuestType>("resident");
@@ -216,6 +232,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [specialRequests, setSpecialRequests] = React.useState("");
   const [companyInfo, setCompanyInfo] = React.useState("");
   const [dataConsent, setDataConsent] = React.useState(false);
+  // Групповая бронь: дополнительные номера на те же даты и с тем же питанием,
+  // заказчик один. Бэк принимает несколько items в одной брони.
+  const [extraRooms, setExtraRooms] = React.useState<ExtraRoom[]>([]);
 
   const reset = React.useCallback(() => {
     setGuestName("");
@@ -232,6 +251,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setPrepaymentMethod("");
     setShowErrors(false);
     setBoardType("");
+    setRatePlanId("");
     setGuestType("resident");
     setDocumentFieldsVisible(false);
     setIdNumber("");
@@ -260,6 +280,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setSpecialRequests("");
     setCompanyInfo("");
     setDataConsent(false);
+    setExtraRooms([]);
     setSubmitError(null);
   }, [clearScanNotice]);
 
@@ -301,6 +322,15 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   });
   const roomTypes = React.useMemo(() => roomTypesQuery.data ?? [], [roomTypesQuery.data]);
 
+  // Тарифные планы объекта — выбор показываем, только если кроме основного есть ещё.
+  const ratePlansQuery = useQuery({
+    queryKey: ["hotel", "ratePlans", property?.id, "active"],
+    queryFn: ({ signal }) => listRatePlans(property!.id, signal),
+    enabled: formDataEnabled,
+    staleTime: 5 * 60_000,
+  });
+  const ratePlans = React.useMemo(() => ratePlansQuery.data ?? [], [ratePlansQuery.data]);
+
   // Живой предпросмотр суммы — необязательный, контракт эндпоинта не
   // подтверждён бэком (см. getQuote в src/api/hotel.ts). 404/ошибка формы
   // ответа гасится молча (retry: false, throwOnError: false) — предпросмотра
@@ -308,10 +338,17 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const checkInStr = checkIn?.format("YYYY-MM-DD");
   const checkOutStr = checkOut?.format("YYYY-MM-DD");
   const quoteQuery = useQuery({
-    queryKey: ["hotel", "quote", property?.id, roomId, checkInStr, checkOutStr, boardType],
+    queryKey: ["hotel", "quote", property?.id, roomId, checkInStr, checkOutStr, boardType, ratePlanId],
     queryFn: ({ signal }) =>
       getQuote(
-        { propertyId: property!.id, roomId: roomId === "" ? undefined : roomId, checkIn: checkInStr!, checkOut: checkOutStr!, boardType: boardType || undefined },
+        {
+          propertyId: property!.id,
+          roomId: roomId === "" ? undefined : roomId,
+          checkIn: checkInStr!,
+          checkOut: checkOutStr!,
+          boardType: boardType || undefined,
+          ratePlanId: ratePlanId === "" ? undefined : ratePlanId,
+        },
         signal,
       ),
     enabled: open && property != null && roomId !== "" && !!checkInStr && !!checkOutStr && checkOutStr > checkInStr,
@@ -445,7 +482,26 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   }, [selectedRoomType]);
 
   const nights = checkIn && checkOut && checkOut.isAfter(checkIn) ? checkOut.startOf("day").diff(checkIn.startOf("day"), "day") : 0;
-  const estimatedTotal = quote ? Number(quote.total) : selectedRoomType && nights > 0 ? Number(selectedRoomType.totalPrice) * nights : null;
+  const typeOfRoom = (id: number | "") => {
+    const room = rooms.find((r) => r.id === id);
+    return room ? roomTypes.find((rt) => rt.id === room.roomTypeId) : undefined;
+  };
+  // Проверка каждого доп. номера: выбран, не повторяется, гости помещаются.
+  const extraErrors = extraRooms.map((x, idx) => {
+    if (x.roomId === "") return "Выберите номер";
+    if (x.roomId === roomId || extraRooms.some((y, j) => j < idx && y.roomId === x.roomId)) return "Этот номер уже в брони";
+    const rt = typeOfRoom(x.roomId);
+    if (rt && x.adults > rt.adultsCapacity) return `В номере максимум ${rt.adultsCapacity} взр.`;
+    if (rt && x.adults + x.children > rt.capacity) return `Всего не больше ${rt.capacity} гостей`;
+    return null;
+  });
+  const extrasInvalid = extraErrors.some((e) => e != null);
+  const extrasByCategory = extraRooms.reduce((sum, x) => {
+    const rt = typeOfRoom(x.roomId);
+    return sum + (rt ? Number(rt.totalPrice) * nights : 0);
+  }, 0);
+  const mainTotal = quote ? Number(quote.total) : selectedRoomType && nights > 0 ? Number(selectedRoomType.totalPrice) * nights : null;
+  const estimatedTotal = mainTotal != null ? mainTotal + extrasByCategory : null;
   const isPrepayment = guaranteeMethod === "prepayment";
   const prepaymentMethods = catalogs?.paymentMethods ?? [];
   const effectivePrepaymentMethod = prepaymentMethod || prepaymentMethods[0]?.value || "";
@@ -484,7 +540,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         </Typography>
         <Typography variant="caption" color="text.secondary">
           {nights} {nights % 10 === 1 && nights % 100 !== 11 ? "ночь" : [2, 3, 4].includes(nights % 10) && ![12, 13, 14].includes(nights % 100) ? "ночи" : "ночей"}
-          {estimatedTotal != null && !quote ? " · по тарифу категории" : ""}
+          {extraRooms.length > 0 ? ` · ${extraRooms.length + 1} ${extraRooms.length + 1 < 5 ? "номера" : "номеров"}` : ""}
+          {estimatedTotal != null && (!quote || extraRooms.length > 0) ? " · по тарифу категории" : ""}
           {isPrepayment && prepaymentError == null && estimatedTotal != null
             ? ` · предоплата ${prepaymentValue.toLocaleString("ru-RU")}, остаток ${Math.max(0, estimatedTotal - prepaymentValue).toLocaleString("ru-RU")}`
             : ""}
@@ -500,6 +557,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     checkOut.isAfter(checkIn) &&
     property != null &&
     guestCountError == null &&
+    !extrasInvalid &&
     (!isPrepayment || effectivePrepaymentMethod !== "");
 
   /**
@@ -612,7 +670,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
    */
   const handleSubmit = async (allowOverbooking = false) => {
     if (!checkIn || !checkOut || roomId === "" || !property || guestCountError) return;
-    if (prepaymentError || bookingFieldsInvalid) {
+    if (prepaymentError || bookingFieldsInvalid || extrasInvalid) {
       setShowErrors(true);
       setSubmitError("Проверьте поля, отмеченные красным");
       focusFirstFieldError();
@@ -637,6 +695,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         items: [
           {
             roomId,
+            ratePlanId: ratePlanId === "" ? undefined : ratePlanId,
             checkIn: checkIn.format("YYYY-MM-DD"),
             checkOut: checkOut.format("YYYY-MM-DD"),
             adults: Number(adults) || 1,
@@ -669,6 +728,16 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
               },
             ],
           },
+          ...extraRooms.map((x) => ({
+            roomId: x.roomId as number,
+            ratePlanId: ratePlanId === "" ? undefined : ratePlanId,
+            checkIn: checkIn.format("YYYY-MM-DD"),
+            checkOut: checkOut.format("YYYY-MM-DD"),
+            adults: x.adults,
+            children: x.children,
+            boardType: boardType || "none",
+            guests: [],
+          })),
         ],
       });
 
@@ -745,6 +814,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     passportNumber.trim() !== "" ||
     specialRequests.trim() !== "" ||
     companyInfo.trim() !== "" ||
+    extraRooms.length > 0 ||
     passportPhotoFile !== null;
 
   // Перехватывает все способы закрытия: крестик, «Отмена», клик по фону / Esc —
@@ -852,6 +922,102 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 onChange={(n) => setChildren(String(n))}
               />
             </Stack>
+            {extraRooms.map((x, idx) => {
+              const rt = typeOfRoom(x.roomId);
+              const error = showErrors || x.roomId !== "" ? extraErrors[idx] : null;
+              return (
+                <Box key={x.key} sx={{ p: 1.5, borderRadius: "12px", border: 1, borderColor: error ? "error.main" : "divider" }}>
+                  <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.25 }}>
+                    <Typography variant="body2" fontWeight={700}>
+                      Номер {idx + 2}
+                    </Typography>
+                    <IconButton
+                      size="small"
+                      aria-label={`Убрать номер ${idx + 2} из брони`}
+                      onClick={() => setExtraRooms((cur) => cur.filter((y) => y.key !== x.key))}
+                    >
+                      <CloseOutlined fontSize="small" />
+                    </IconButton>
+                  </Stack>
+                  <Stack gap={1.5}>
+                    <TextField
+                      select
+                      label="Номер"
+                      value={x.roomId}
+                      onChange={(e) => {
+                        const next = e.target.value === "" ? "" : Number(e.target.value);
+                        const nextType = typeOfRoom(next);
+                        setExtraRooms((cur) =>
+                          cur.map((y) => {
+                            if (y.key !== x.key) return y;
+                            const a = nextType ? Math.min(y.adults, nextType.adultsCapacity) : y.adults;
+                            const c = nextType ? Math.min(y.children, Math.max(0, nextType.capacity - a)) : y.children;
+                            return { ...y, roomId: next, adults: a, children: c };
+                          }),
+                        );
+                      }}
+                      error={error != null}
+                      helperText={error ?? " "}
+                      slotProps={{ input: { startAdornment: <FieldIcon icon={<HotelOutlined />} /> } }}
+                      fullWidth
+                    >
+                      {rooms.map((r) => {
+                        const taken = r.id === roomId || extraRooms.some((y) => y.key !== x.key && y.roomId === r.id);
+                        return (
+                          <MenuItem key={r.id} value={r.id} disabled={taken}>
+                            <Box sx={{ flex: 1 }}>
+                              {r.number} — {r.roomTypeName}
+                            </Box>
+                            {taken && (
+                              <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                                уже в брони
+                              </Typography>
+                            )}
+                          </MenuItem>
+                        );
+                      })}
+                    </TextField>
+                    <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
+                      <CountStepper
+                        label="Взрослые"
+                        hint={rt ? `до ${rt.adultsCapacity} в номере` : "выберите номер"}
+                        value={x.adults}
+                        min={1}
+                        max={rt?.adultsCapacity}
+                        onChange={(n) =>
+                          setExtraRooms((cur) =>
+                            cur.map((y) => (y.key === x.key ? { ...y, adults: n, children: rt ? Math.min(y.children, Math.max(0, rt.capacity - n)) : y.children } : y)),
+                          )
+                        }
+                      />
+                      <CountStepper
+                        label="Дети"
+                        hint={rt ? `всего до ${rt.capacity}` : undefined}
+                        value={x.children}
+                        min={0}
+                        max={rt ? Math.max(0, rt.capacity - x.adults) : undefined}
+                        onChange={(n) => setExtraRooms((cur) => cur.map((y) => (y.key === x.key ? { ...y, children: n } : y)))}
+                      />
+                    </Stack>
+                  </Stack>
+                </Box>
+              );
+            })}
+            <Box>
+              <Button
+                size="small"
+                startIcon={<AddOutlined />}
+                onClick={() => setExtraRooms((cur) => [...cur, { key: nextExtraKey(), roomId: "", adults: 1, children: 0 }])}
+                disabled={roomId === ""}
+              >
+                Ещё номер в эту бронь
+              </Button>
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ ml: 0.5 }}>
+                {extraRooms.length > 0
+                  ? "Групповая бронь: те же даты и питание, заказчик один. Гостей по номерам можно вписать при заселении."
+                  : "Для группы или семьи в нескольких номерах — одна бронь и один счёт."}
+              </Typography>
+            </Box>
             <Stack direction="row" gap={2}>
               <TextField
                 select
@@ -870,7 +1036,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
               </TextField>
               <TextField
                 select
-                label="Тариф"
+                label="Питание"
                 value={boardType}
                 onChange={(e) => setBoardType(e.target.value)}
                 slotProps={{ input: { startAdornment: <FieldIcon icon={<RestaurantOutlined />} /> } }}
@@ -884,6 +1050,45 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 ))}
               </TextField>
             </Stack>
+            {(() => {
+              // Планы для выбранной категории (пустой roomTypeIds — для всех).
+              const typeId = selectedRoomType?.id;
+              const options = ratePlans.filter((p) => p.isActive && (p.roomTypeIds.length === 0 || typeId == null || p.roomTypeIds.includes(typeId)));
+              if (options.length < 2) return null;
+              const chosen = options.find((p) => p.id === ratePlanId);
+              return (
+                <TextField
+                  select
+                  label="Тарифный план"
+                  value={chosen ? ratePlanId : ""}
+                  onChange={(e) => {
+                    const next = e.target.value === "" ? "" : Number(e.target.value);
+                    setRatePlanId(next);
+                    const plan = options.find((p) => p.id === next);
+                    // Питание плана — подставляем, если своё не выбрано.
+                    if (plan && plan.mealPlan && plan.mealPlan !== "none" && !boardType) setBoardType(plan.mealPlan);
+                  }}
+                  slotProps={{ input: { startAdornment: <FieldIcon icon={<LocalOfferOutlined />} /> } }}
+                  helperText={
+                    chosen
+                      ? [chosen.minNights > 1 ? `от ${chosen.minNights} ночей` : "", Number(chosen.prepaymentPercent) > 0 ? `предоплата ${Number(chosen.prepaymentPercent)}%` : "", chosen.cancellationPolicy]
+                          .filter(Boolean)
+                          .join(" · ") || " "
+                      : "Основной — по ценам категорий"
+                  }
+                  fullWidth
+                >
+                  <MenuItem value="">{options.find((p) => p.isBase)?.name ?? "Основной тариф"}</MenuItem>
+                  {options
+                    .filter((p) => !p.isBase)
+                    .map((p) => (
+                      <MenuItem key={p.id} value={p.id}>
+                        {p.name}
+                      </MenuItem>
+                    ))}
+                </TextField>
+              );
+            })()}
             {isPrepayment && (
               <Stack direction="row" gap={2}>
                 <FormField

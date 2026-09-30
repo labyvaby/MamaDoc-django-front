@@ -620,6 +620,186 @@ export function getQuote(request: HotelQuoteRequest, signal?: AbortSignal): Prom
   return apiRequest<HotelQuoteResult>("/v2/hotel/pricing/quote/", { method: "POST", body: request, signal });
 }
 
+// ── Тарифные планы (RatePlan) ───────────────────────────────────────────────
+
+/**
+ * Тарифный план: «Основной» (isBase, один на объект, выключить нельзя) и
+ * производные — цена = цена родителя ± adjustment (percent со знаком, amount —
+ * сумма за ночь со знаком). roomTypeIds пустой — для всех категорий.
+ */
+export interface HotelRatePlan {
+  id: number;
+  propertyId: number;
+  roomTypeIds: number[];
+  name: string;
+  code: string;
+  currency: string;
+  mealPlan: string;
+  minNights: number;
+  prepaymentPercent: string;
+  cancellationPolicy: string;
+  includedServices: string;
+  isActive: boolean;
+  isBase: boolean;
+  parentId: number | null;
+  adjustmentType: "percent" | "amount";
+  adjustmentValue: Money;
+}
+
+export interface HotelRatePlanCreateData {
+  propertyId: number;
+  name: string;
+  roomTypeIds?: number[];
+  code?: string;
+  mealPlan?: string;
+  minNights?: number;
+  prepaymentPercent?: string;
+  cancellationPolicy?: string;
+  includedServices?: string;
+  parentId?: number | null;
+  adjustmentType?: "percent" | "amount";
+  adjustmentValue?: Money;
+}
+
+export interface HotelRatePlanUpdateData extends Omit<Partial<HotelRatePlanCreateData>, "propertyId"> {
+  isActive?: boolean;
+  /** Отвязать от родителя — цена снова от категорий. */
+  clearParent?: boolean;
+}
+
+export function listRatePlans(propertyId: number, signal?: AbortSignal, options: { includeInactive?: boolean } = {}): Promise<HotelRatePlan[]> {
+  const qs = buildQuery({ propertyId, includeInactive: options.includeInactive ? "true" : undefined });
+  return apiRequest<HotelRatePlan[]>(`/v2/hotel/rate-plans/${qs}`, { signal });
+}
+
+/** Право hotel.rates.manage. Удаления нет — план выключают (isActive=false). */
+export function createRatePlan(data: HotelRatePlanCreateData): Promise<HotelRatePlan> {
+  return apiRequest<HotelRatePlan>("/v2/hotel/rate-plans/", { method: "POST", body: data });
+}
+
+export function updateRatePlan(id: number, data: HotelRatePlanUpdateData): Promise<HotelRatePlan> {
+  return apiRequest<HotelRatePlan>(`/v2/hotel/rate-plans/${id}/`, { method: "PATCH", body: data });
+}
+
+// ── Календарь цен и история цен ─────────────────────────────────────────────
+
+/** Шаг расчёта цены ночи: kind — rule | manual | rate_plan | floor | ceiling | rounding. */
+export interface HotelPriceStep {
+  kind: string;
+  stage: string | null;
+  ruleId: number | null;
+  ruleVersion: number | null;
+  name: string;
+  adjustmentType: string | null;
+  adjustmentValue: string | null;
+  amountBefore: string;
+  amountAfter: string;
+}
+
+export interface HotelPriceNight {
+  date: string;
+  basePrice: Money;
+  barPrice: Money;
+  /** Цена одной ночи с заездом в эту дату по выбранному тарифу. */
+  price: Money;
+  isManualOverride: boolean;
+  manualPrice: Money | null;
+  overrideReason: string;
+  overrideById: number | null;
+  overrideByName: string;
+  overrideAt: string | null;
+  /** Процент проданных номеров категории. */
+  occupancy: string;
+  capacity: number;
+  occupied: number;
+  available: number;
+  stopSell: boolean;
+  closedToArrival: boolean;
+  closedToDeparture: boolean;
+  minNights: number | null;
+  maxNights: number | null;
+  appliedRules: HotelPriceStep[];
+}
+
+export interface HotelPriceCalendarRoomType {
+  roomTypeId: number;
+  roomTypeName: string;
+  basePrice: Money;
+  minPrice: Money | null;
+  maxPrice: Money | null;
+  nights: HotelPriceNight[];
+}
+
+export interface HotelPriceCalendar {
+  propertyId: number;
+  ratePlanId: number | null;
+  ratePlanName: string;
+  dateFrom: string;
+  dateTo: string;
+  /** Процент проданных номеров объекта по ночам (ключ — дата). */
+  propertyOccupancy: Record<string, string>;
+  roomTypes: HotelPriceCalendarRoomType[];
+}
+
+/** Сетка цен: категории × ночи. to не включается, диапазон ≤ 62 дня. Без ratePlanId — основной тариф. */
+export function getPriceCalendar(
+  params: { propertyId: number; from: string; to: string; ratePlanId?: number; roomTypeId?: number },
+  signal?: AbortSignal,
+): Promise<HotelPriceCalendar> {
+  return apiRequest<HotelPriceCalendar>(`/v2/hotel/pricing/calendar/${buildQuery(params)}`, { signal });
+}
+
+/**
+ * Одно изменение на диапазон дат (dateTo не включается): своя цена или
+ * clearPrice — «вернуть к авторасчёту», стоп-продажа, мин./макс. ночей.
+ * null/undefined — не трогать. Каждый вызов — строка «Истории цен».
+ */
+export interface HotelDailyRateChange {
+  roomTypeId: number;
+  dateFrom: string;
+  dateTo: string;
+  price?: Money;
+  clearPrice?: boolean;
+  reason?: string;
+  stopSell?: boolean;
+  closedToArrival?: boolean;
+  closedToDeparture?: boolean;
+  minNights?: number;
+  clearMinNights?: boolean;
+  maxNights?: number;
+  clearMaxNights?: boolean;
+}
+
+/** Право hotel.rates.manage. Ответ — сколько ночей изменено. */
+export function setDailyRates(ratePlanId: number, change: HotelDailyRateChange): Promise<{ nights: number }> {
+  return apiRequest<{ nights: number }>(`/v2/hotel/rate-plans/${ratePlanId}/daily-rates/`, { method: "PUT", body: change });
+}
+
+/** kind: daily_rate | rule_created | rule_updated | rule_deleted | rate_plan | room_type. */
+export interface HotelPricingChange {
+  id: number;
+  kind: string;
+  ruleId: number | null;
+  ratePlanId: number | null;
+  roomTypeId: number | null;
+  dateFrom: string | null;
+  dateTo: string | null;
+  /** Для правил — { поле: { old, new } } или снимок правила; для дат — новые значения. */
+  changes: Record<string, unknown>;
+  reason: string;
+  userId: number | null;
+  userName: string;
+  createdAt: string;
+}
+
+/** Кто, когда и почему менял цены. Право hotel.rates.manage. Новые сверху. */
+export function listPricingHistory(
+  params: { propertyId: number; roomTypeId?: number; ruleId?: number; kind?: string; limit?: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<{ count: number; results: HotelPricingChange[] }> {
+  return apiRequest<{ count: number; results: HotelPricingChange[] }>(`/v2/hotel/pricing/history/${buildQuery(params)}`, { signal });
+}
+
 // ── Номера (Room) ─────────────────────────────────────────────────────────
 //
 // Терраса/экспликация/фото — контракт подтверждён и выложен, «Ответ бэкенда:
@@ -820,6 +1000,24 @@ export interface HotelRoomBlock {
   createdById: number | null;
   createdAt: string;
   releasedAt: string | null;
+}
+
+/** dateTo не включается — как выезд у брони: блок 5→8 закрывает ночи 5, 6 и 7. */
+export interface HotelRoomBlockCreateData {
+  roomId: number;
+  dateFrom: string;
+  dateTo: string;
+  reason: string;
+}
+
+/** Снять номер с продажи (hotel.manage). 409 NO_AVAILABILITY — в номере бронь или категория продана полностью. */
+export function createRoomBlock(data: HotelRoomBlockCreateData): Promise<HotelRoomBlock> {
+  return apiRequest<HotelRoomBlock>("/v2/hotel/room-blocks/", { method: "POST", body: data });
+}
+
+/** Вернуть в продажу. Блок остаётся в истории с isActive=false. */
+export function releaseRoomBlock(id: number): Promise<void> {
+  return apiRequest<void>(`/v2/hotel/room-blocks/${id}/`, { method: "DELETE" });
 }
 
 export interface HotelCalendar {
@@ -1472,6 +1670,11 @@ export function updateGuest(clientId: number, data: HotelGuestUpdateData): Promi
   return apiRequest<HotelGuest>(`/v2/hotel/guests/${clientId}/`, { method: "PATCH", body: data });
 }
 
+/** Удалить гостя без броней (hotel.guests.manage). С бронями или записями других модулей — 409 HAS_DEPENDENTS. */
+export function deleteGuest(clientId: number): Promise<void> {
+  return apiRequest<void>(`/v2/hotel/guests/${clientId}/`, { method: "DELETE" });
+}
+
 /** reason обязателен. Бронь на гостя из ЧС не блокируется — только бейдж/алерт в карточке. */
 export function setGuestBlacklist(clientId: number, reason: string): Promise<HotelGuest> {
   return apiRequest<HotelGuest>(`/v2/hotel/guests/${clientId}/blacklist/`, { method: "POST", body: { reason } });
@@ -1861,8 +2064,13 @@ export interface HotelStockLine {
   stockQty: Qty;
 }
 
-export function listIngredients(propertyId: number, signal?: AbortSignal): Promise<HotelIngredient[]> {
-  const qs = buildQuery({ propertyId });
+/** includeInactive — вместе со скрытыми (справочник продуктов на «Кухне»). */
+export function listIngredients(
+  propertyId: number,
+  signal?: AbortSignal,
+  options: { includeInactive?: boolean } = {},
+): Promise<HotelIngredient[]> {
+  const qs = buildQuery({ propertyId, includeInactive: options.includeInactive ? "true" : undefined });
   return apiRequest<HotelIngredient[]>(`/v2/hotel/kitchen/ingredients/${qs}`, { signal });
 }
 
@@ -1891,10 +2099,10 @@ export function updateStock(propertyId: number, lines: HotelStockLine[]): Promis
 
 export function listDishes(
   propertyId: number,
-  options: { meal?: "breakfast" | "lunch" | "dinner" } = {},
+  options: { meal?: "breakfast" | "lunch" | "dinner"; includeInactive?: boolean } = {},
   signal?: AbortSignal,
 ): Promise<HotelDish[]> {
-  const qs = buildQuery({ propertyId, meal: options.meal });
+  const qs = buildQuery({ propertyId, meal: options.meal, includeInactive: options.includeInactive ? "true" : undefined });
   return apiRequest<HotelDish[]>(`/v2/hotel/kitchen/dishes/${qs}`, { signal });
 }
 

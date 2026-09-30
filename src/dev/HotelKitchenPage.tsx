@@ -19,7 +19,10 @@ import ShoppingBasketOutlined from "@mui/icons-material/ShoppingBasketOutlined";
 import SellOutlined from "@mui/icons-material/SellOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import { FormField } from "./formField";
-import { hasFieldErrors, type FieldRules } from "./formRules";
+import { hasFieldErrors } from "./formRules";
+import { KITCHEN_RULES, unitRu } from "./kitchenShared";
+import { KitchenMenuPanel } from "./KitchenMenuPanel";
+import { KitchenProductsPanel } from "./KitchenProductsPanel";
 import {
   Alert,
   Box,
@@ -31,6 +34,8 @@ import {
   DialogTitle,
   IconButton,
   Stack,
+  Tab,
+  Tabs,
   Table,
   TableBody,
   TableCell,
@@ -56,29 +61,6 @@ import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { getKitchenDayPlan, upsertPurchase, deletePurchase, updateStock, type HotelShoppingLine } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
-
-const UNIT_RU: Record<string, string> = {
-  kg: "кг",
-  g: "г",
-  gr: "г",
-  l: "л",
-  ml: "мл",
-  pcs: "шт",
-  pc: "шт",
-  piece: "шт",
-  pieces: "шт",
-  pack: "уп",
-  bunch: "пучок",
-};
-/** «kg» → «кг»: справочник ингредиентов хранит единицы латиницей. */
-const unitRu = (unit: string) => UNIT_RU[unit.trim().toLowerCase()] ?? unit;
-
-/** Количество — с десятыми (0,5 кг), цена — с копейками; остаток может быть нулём. */
-const KITCHEN_RULES = {
-  qty: { kind: "decimal", required: true, min: 0.01, max: 100_000, maxDecimals: 2 },
-  price: { kind: "decimal", required: true, min: 0, max: 10_000_000, maxDecimals: 2 },
-  stock: { kind: "decimal", required: true, min: 0, max: 100_000, maxDecimals: 2 },
-} satisfies Record<string, FieldRules>;
 
 const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner"];
 
@@ -106,6 +88,9 @@ export const HotelKitchenPage: React.FC = () => {
   // по hotel.kitchen.purchases — без него таблица только для чтения.
   const canPurchase = useCan("hotel.kitchen.purchases");
 
+  // «План на день» — то, что было; «Меню» и «Продукты» — справочники, из
+  // которых бэк считает план (раньше их мог менять только разработчик).
+  const [tab, setTab] = React.useState<"plan" | "menu" | "products">("plan");
   const [date, setDate] = React.useState<Dayjs>(dayjs());
   const dateStr = date.format("YYYY-MM-DD");
 
@@ -217,7 +202,15 @@ export const HotelKitchenPage: React.FC = () => {
     <HotelPage>
       <HotelPageHeader
         title="Кухня"
-        subtitle={plan ? `Меню и закупка на ${plan.occupiedGuests} ${plural(plan.occupiedGuests, "гостя", "гостей", "гостей")}` : undefined}
+        subtitle={
+          tab === "plan" && plan
+            ? `Меню и закупка на ${plan.occupiedGuests} ${plural(plan.occupiedGuests, "гостя", "гостей", "гостей")}`
+            : tab === "menu"
+              ? "Блюда и рецепты — по ним считаются порции и закупка"
+              : tab === "products"
+                ? "Из чего готовит кухня: цены и остатки"
+                : undefined
+        }
         info={
           <>
             Порции считаются от числа гостей на эту дату (взрослые и дети): гостей × порций на гостя у блюда. «Нужно» и «Докупить» не
@@ -225,11 +218,21 @@ export const HotelKitchenPage: React.FC = () => {
             сотрудника, их всегда можно поправить.
           </>
         }
-        actions={<DateStepper value={date} onChange={setDate} />}
+        actions={tab === "plan" ? <DateStepper value={date} onChange={setDate} /> : undefined}
       />
+
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ minHeight: 40, mt: -1, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600 } }}>
+        <Tab value="plan" label="План на день" />
+        <Tab value="menu" label="Меню" />
+        <Tab value="products" label="Продукты" />
+      </Tabs>
 
       {!property && !propertyLoading ? (
         <HotelPropertyMissing />
+      ) : tab === "menu" && property ? (
+        <KitchenMenuPanel propertyId={property.id} />
+      ) : tab === "products" && property ? (
+        <KitchenProductsPanel propertyId={property.id} />
       ) : !plan ? (
         <Stack alignItems="center" sx={{ py: 6 }}>
           <CircularProgress size={28} />

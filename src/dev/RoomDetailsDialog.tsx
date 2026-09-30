@@ -48,7 +48,7 @@ import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import dayjs from "dayjs";
 
-import { getRoomAvailability, type HotelRoom, type HotelRoomType } from "../api/hotel";
+import { getRoomAvailability, type HotelRoom, type HotelRoomBlock, type HotelRoomType } from "../api/hotel";
 import { PAGE_PERMISSIONS } from "../config/accessPermissions";
 import { useCan } from "../hooks/useCan";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
@@ -60,6 +60,7 @@ import {
 } from "./hotelDisplay";
 import { formatHotelDate, formatHotelDateRange, initialsOf, nightsBetween, requestQuickBooking } from "./mockDemoData";
 import { RoomStateControl } from "./RoomStateControl";
+import { RoomBlocksSection } from "./RoomBlocksSection";
 
 const AVAILABILITY_WINDOW_DAYS = 45;
 
@@ -318,9 +319,11 @@ export interface RoomDetailsDialogProps {
   onClose: () => void;
   /** Клик по брони в «Ближайших бронях» — не задан, если детали брони показывать некуда. */
   onReservationClick?: (reservationId: number) => void;
+  /** Карточку открыли кликом по снятым с продажи ночам в шахматке. */
+  focusBlock?: HotelRoomBlock | null;
 }
 
-export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, roomTypes, onClose, onReservationClick }) => {
+export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, roomTypes, onClose, onReservationClick, focusBlock }) => {
   const theme = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -658,6 +661,10 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, ro
                     })}
                   </Stack>
                 )}
+
+                <Box sx={{ mt: 3.5 }}>
+                  <RoomBlocksSection roomId={room.id} roomNumber={room.number} blocks={availability.blocks} focusBlock={focusBlock} />
+                </Box>
               </Box>
             </Box>
           </DialogContent>

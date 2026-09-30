@@ -121,7 +121,9 @@ const ReservationRow: React.FC<{
           {name}
         </Typography>
         <Typography variant="caption" color="text.secondary" noWrap component="div">
-          {item
+          {reservation.items.length > 1 && item
+            ? `группа · ${reservation.items.length} номеров: ${reservation.items.map((i) => i.roomNumber ?? "—").join(", ")} · ${formatHotelDateRange(item.checkIn, item.checkOut)}`
+            : item
             ? `номер ${item.roomNumber ?? "не назначен"} · ${item.roomTypeName} · ${formatHotelDateRange(item.checkIn, item.checkOut)} · ${nightsBetween(item.checkIn, item.checkOut)} ноч.`
             : `бронь №${reservation.number}`}
         </Typography>
@@ -217,7 +219,7 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
   const live = (list: HotelReservation[] | undefined) => (list ?? []).filter((r) => LIVE.has(r.status));
   const arriving = live(arrivingQuery.data?.results);
   const departing = live(departingQuery.data?.results);
-  const inHouse = live(inHouseQuery.data?.results).filter((r) => r.items[0]?.stayStatus === "checked_in");
+  const inHouse = live(inHouseQuery.data?.results).filter((r) => r.items.some((i) => i.stayStatus === "checked_in"));
   const overdue = isToday
     ? live(recentQuery.data?.results)
         .map((r) => {
@@ -259,12 +261,23 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
     }
   };
 
+  // Групповую бронь заселяют и выселяют по номерам в карточке — одной кнопкой
+  // в строке было бы непонятно, какой номер.
+  const groupAction = (r: HotelReservation) => ({ label: "Открыть", onClick: () => onOpen(r.id), busy: false });
   const checkInAction = (r: HotelReservation) =>
-    canManageStays && r.status === "confirmed" && r.items[0]?.stayStatus === "expected"
+    r.items.length > 1
+      ? canManageStays && r.status === "confirmed" && r.items.some((i) => i.stayStatus === "expected")
+        ? groupAction(r)
+        : undefined
+      : canManageStays && r.status === "confirmed" && r.items[0]?.stayStatus === "expected"
       ? { label: "Заселить", onClick: () => void act(r, "in"), busy: busyId === r.id, disabled: busyId != null && busyId !== r.id }
       : undefined;
   const checkOutAction = (r: HotelReservation) =>
-    canManageStays && r.items[0]?.stayStatus === "checked_in"
+    r.items.length > 1
+      ? canManageStays && r.items.some((i) => i.stayStatus === "checked_in")
+        ? groupAction(r)
+        : undefined
+      : canManageStays && r.items[0]?.stayStatus === "checked_in"
       ? { label: "Выселить", onClick: () => void act(r, "out"), busy: busyId === r.id, disabled: busyId != null && busyId !== r.id }
       : undefined;
 
