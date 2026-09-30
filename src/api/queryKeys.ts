@@ -248,6 +248,8 @@ export const djangoQueryKeys = {
       ["django", "reviews", "tags", params] as const,
     mapClicks: (params: Record<string, unknown>) =>
       ["django", "reviews", "map-clicks", params] as const,
+    external: (params: Record<string, unknown>) =>
+      ["django", "reviews", "external", params] as const,
   },
 
   tasks: {
