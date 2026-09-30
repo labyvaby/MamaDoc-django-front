@@ -2033,10 +2033,33 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
             minHeight: 0,
           }}
         >
+          <Box sx={{ px: 1.5, pt: 1.5, pb: 1 }}>
+            <TextField
+              size="small"
+              fullWidth
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("slots.searchSpecialist")}
+              InputProps={{
+                startAdornment: (
+                  <SearchOutlined sx={{ fontSize: 18, color: "text.disabled", mr: 0.75 }} />
+                ),
+                endAdornment: search ? (
+                  <IconButton
+                    size="small"
+                    aria-label={t("slots.searchClose")}
+                    onClick={() => setSearch("")}
+                  >
+                    <CloseOutlined sx={{ fontSize: 16 }} />
+                  </IconButton>
+                ) : undefined,
+              }}
+            />
+          </Box>
           <Typography
             variant="caption"
             color="text.secondary"
-            sx={{ fontWeight: 600, px: 2, pt: 1.5, pb: 1 }}
+            sx={{ fontWeight: 600, px: 2, pt: 0.5, pb: 1 }}
           >
             {t("slots.specialities")}
           </Typography>
@@ -2257,6 +2280,67 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
               )}
             </>
           )}
+          {isDesktop && (
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={0.75}
+              sx={{
+                mt: "auto",
+                px: 1.5,
+                py: 1.25,
+                borderTop: "1px solid",
+                borderColor: "divider",
+                flexShrink: 0,
+              }}
+            >
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", fontWeight: 600 }}
+              >
+                {t("slots.columnWidth")}
+              </Typography>
+              <IconButton
+                size="small"
+                aria-label={t("slots.columnNarrower")}
+                disabled={desktopDoctorColumnWidth <= DESKTOP_DOCTOR_COLUMN_MIN}
+                onClick={() => {
+                  setDesktopDoctorColumnWidth((value) =>
+                    Math.max(DESKTOP_DOCTOR_COLUMN_MIN, value - DESKTOP_DOCTOR_COLUMN_STEP),
+                  );
+                }}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: "8px",
+                }}
+              >
+                <RemoveOutlined sx={{ fontSize: 16 }} />
+              </IconButton>
+              <IconButton
+                size="small"
+                aria-label={t("slots.columnWider")}
+                disabled={desktopDoctorColumnWidth >= DESKTOP_DOCTOR_COLUMN_MAX}
+                onClick={() => {
+                  setDesktopDoctorColumnWidth((value) =>
+                    Math.min(DESKTOP_DOCTOR_COLUMN_MAX, value + DESKTOP_DOCTOR_COLUMN_STEP),
+                  );
+                }}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: "8px",
+                }}
+              >
+                <AddOutlined sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Stack>
+          )}
         </Box>
 
         {/* ── Правая колонка: сетка врачей ── */}
@@ -2274,108 +2358,6 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
             p: 0,
           }}
         >
-          <Stack
-            direction="row"
-            alignItems="center"
-            spacing={2}
-            sx={{
-              display: { xs: "none", md: "flex" },
-              px: 2,
-              py: 1.25,
-              borderBottom: "1px solid",
-              borderColor: "divider",
-              flexShrink: 0,
-              bgcolor: "background.paper",
-            }}
-          >
-            <TextField
-              size="small"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t("slots.searchSpecialist")}
-              sx={{ width: 260 }}
-              InputProps={{
-                startAdornment: (
-                  <SearchOutlined sx={{ fontSize: 18, color: "text.disabled", mr: 0.75 }} />
-                ),
-                endAdornment: search ? (
-                  <IconButton
-                    size="small"
-                    aria-label={t("slots.searchClose")}
-                    onClick={() => setSearch("")}
-                  >
-                    <CloseOutlined sx={{ fontSize: 16 }} />
-                  </IconButton>
-                ) : undefined,
-              }}
-            />
-            <Box>
-              <Typography variant="subtitle1" fontWeight={600}>
-                {t("slots.grid")}{" "}
-                {specId
-                  ? `(${specs.find((s) => s.id === specId)?.name})`
-                  : t("slots.allSpecialistsOption")}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {t("slots.foundSpecialists", { count: gridDocs.length })}
-              </Typography>
-            </Box>
-            {isDesktop && (
-              <Stack
-                direction="row"
-                alignItems="center"
-                spacing={0.75}
-                sx={{ ml: "auto", flexShrink: 0 }}
-              >
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ whiteSpace: "nowrap", fontWeight: 600 }}
-                >
-                  {t("slots.columnWidth")}
-                </Typography>
-                <IconButton
-                  size="small"
-                  aria-label={t("slots.columnNarrower")}
-                  disabled={desktopDoctorColumnWidth <= DESKTOP_DOCTOR_COLUMN_MIN}
-                  onClick={() => {
-                    setDesktopDoctorColumnWidth((value) =>
-                      Math.max(DESKTOP_DOCTOR_COLUMN_MIN, value - DESKTOP_DOCTOR_COLUMN_STEP),
-                    );
-                  }}
-                  sx={{
-                    width: 28,
-                    height: 28,
-                    border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: "8px",
-                  }}
-                >
-                  <RemoveOutlined sx={{ fontSize: 16 }} />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  aria-label={t("slots.columnWider")}
-                  disabled={desktopDoctorColumnWidth >= DESKTOP_DOCTOR_COLUMN_MAX}
-                  onClick={() => {
-                    setDesktopDoctorColumnWidth((value) =>
-                      Math.min(DESKTOP_DOCTOR_COLUMN_MAX, value + DESKTOP_DOCTOR_COLUMN_STEP),
-                    );
-                  }}
-                  sx={{
-                    width: 28,
-                    height: 28,
-                    border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: "8px",
-                  }}
-                >
-                  <AddOutlined sx={{ fontSize: 16 }} />
-                </IconButton>
-              </Stack>
-            )}
-          </Stack>
-
           {/* ── Мобильная шапка панели: поиск врача и пейджер по врачам дня.
               Заменяет собой и ряд чипов специальностей, и десктопную шапку. ── */}
           <Box
