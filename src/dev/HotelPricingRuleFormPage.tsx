@@ -64,7 +64,6 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
-import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 import TrendingDownOutlined from "@mui/icons-material/TrendingDownOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
@@ -72,7 +71,7 @@ import PieChartOutlineOutlined from "@mui/icons-material/PieChartOutlineOutlined
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 import NightsStayOutlined from "@mui/icons-material/NightsStayOutlined";
 import ViewWeekOutlined from "@mui/icons-material/ViewWeekOutlined";
-import { FilterChip, FormCard, HotelPage, HotelPageHeader, SectionLabel, StickyActions, Surface } from "./hotelUi";
+import { FilterChip, FormCard, HotelPage, HotelPageHeader, SectionLabel, StickyActions, Surface, OptionalCard } from "./hotelUi";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { formatHotelDate } from "./mockDemoData";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -295,7 +294,7 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
   const [form, setForm] = React.useState<RuleFormState>(() =>
     editing ? toForm(editing) : prefill ? prefilledForm(prefill) : emptyForm(),
   );
-  const [advancedOpen, setAdvancedOpen] = React.useState(() => Boolean(editing?.exclusiveGroup));
+  const [advancedOpen] = React.useState(() => Boolean(editing?.exclusiveGroup) || editing?.isActive === false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const patchForm = (patch: Partial<RuleFormState>) => setForm((prev) => ({ ...prev, ...patch }));
@@ -303,6 +302,13 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
   const invalidateRules = () => void queryClient.invalidateQueries({ queryKey: ["hotel", "pricingRules", propertyId] });
 
   const amountValue = Number(form.amount) || 0;
+  const enabledConditions = [
+    form.datesEnabled && "даты",
+    form.occupancyEnabled && "загрузка",
+    form.leadTimeEnabled && "срок до заезда",
+    form.nightsEnabled && "длительность",
+    form.daysOfWeekEnabled && "дни недели",
+  ].filter((v): v is string => Boolean(v));
   const canSubmit =
     form.name.trim() !== "" &&
     form.amount.trim() !== "" &&
@@ -796,44 +802,19 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
               ))}
             </Stack>
 
-            <Box>
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-                Тип — только подпись в списке, на расчёт не влияет
-              </Typography>
-              <Stack direction="row" gap={0.75} flexWrap="wrap">
-                {(Object.keys(CATEGORY_LABELS) as HotelPricingRuleCategory[]).map((key) => (
-                  <FilterChip key={key} label={CATEGORY_LABELS[key]} active={form.category === key} onClick={() => patchForm({ category: key })} />
-                ))}
-              </Stack>
-            </Box>
-
-            <Stack
-              direction="row"
-              alignItems="center"
-              justifyContent="space-between"
-              gap={2}
-              sx={{ px: 2, py: 1.25, borderRadius: "12px", bgcolor: subtleBg(theme, true) }}
-            >
-              <Box>
-                <Typography variant="body2" fontWeight={600}>
-                  Правило включено
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Выключенное хранится, но цену не меняет
-                </Typography>
-              </Box>
-              <Switch checked={form.isActive} onChange={(e) => patchForm({ isActive: e.target.checked })} disabled={saving} />
-            </Stack>
           </Stack>
         </FormCard>
 
         {/* ── Когда действует ── */}
-        <FormCard>
+        <OptionalCard
+          title="Когда действует"
+          filled={enabledConditions.length > 0}
+          summary={enabledConditions.length > 0 ? `Условия: ${enabledConditions.join(", ")}` : "Сейчас — всегда. Можно ограничить датами, загрузкой, днями недели"}
+          defaultOpen={enabledConditions.length > 0}
+          forceOpen={error != null}
+        >
           <Stack gap={1.5}>
-            <Typography variant="subtitle2" fontWeight={600}>
-              Когда действует
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: -0.5, mb: 0.5 }}>
+            <Typography variant="body2" color="text.secondary">
               Включённые условия должны выполняться одновременно. Ничего не включено — правило действует всегда.
             </Typography>
             {conditionTiles.map((c) => (
@@ -891,23 +872,49 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
               </Box>
             ))}
           </Stack>
-        </FormCard>
+        </OptionalCard>
 
         {/* ── Дополнительно ── */}
-        <FormCard>
-          <Stack direction="row" alignItems="center" gap={1} sx={{ cursor: "pointer" }} onClick={() => setAdvancedOpen((v) => !v)}>
-            <Box sx={{ flex: 1 }}>
+        <OptionalCard
+          title="Дополнительно"
+          filled
+          summary={[form.isActive ? "Правило включено" : "Правило выключено", `тип: ${CATEGORY_LABELS[form.category]}`, "приоритет и группа"].join(" · ")}
+          defaultOpen={advancedOpen}
+        >
+            <Stack gap={2}>
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
+              gap={2}
+              sx={{ px: 2, py: 1.25, borderRadius: "12px", bgcolor: subtleBg(theme, true) }}
+            >
+              <Box>
+                <Typography variant="body2" fontWeight={600}>
+                  Правило включено
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Выключенное хранится, но цену не меняет
+                </Typography>
+              </Box>
+              <Switch checked={form.isActive} onChange={(e) => patchForm({ isActive: e.target.checked })} disabled={saving} />
+            </Stack>
+
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                Тип — только подпись в списке, на расчёт не влияет
+              </Typography>
+              <Stack direction="row" gap={0.75} flexWrap="wrap">
+                {(Object.keys(CATEGORY_LABELS) as HotelPricingRuleCategory[]).map((key) => (
+                  <FilterChip key={key} label={CATEGORY_LABELS[key]} active={form.category === key} onClick={() => patchForm({ category: key })} />
+                ))}
+              </Stack>
+            </Box>
+
+
               <Typography variant="body2" fontWeight={700}>
                 Несколько правил на одну ночь
               </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Приоритет и группа — нужно редко
-              </Typography>
-            </Box>
-            <ExpandMoreOutlined sx={{ color: "text.secondary", transform: advancedOpen ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
-          </Stack>
-          <Collapse in={advancedOpen}>
-            <Stack gap={2} sx={{ pt: 2 }}>
               <Typography variant="body2" color="text.secondary">
                 Например, ступени загрузки 0–50% / 50–80% / 80–100%: дайте им одну группу, чтобы сработала только одна
                 ступень, а не все разом.
@@ -938,8 +945,7 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
                 />
               </Stack>
             </Stack>
-          </Collapse>
-        </FormCard>
+        </OptionalCard>
 
         {error && (
           <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>

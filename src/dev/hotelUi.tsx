@@ -6,9 +6,10 @@
  * не плашкой на пол-экрана, а иконкой «i» рядом с заголовком.
  */
 import React from "react";
-import { Box, Button, IconButton, Paper, Popover, Stack, Tooltip, Typography, type PaperProps } from "@mui/material";
+import { Box, Button, Collapse, IconButton, Paper, Popover, Stack, Tooltip, Typography, type PaperProps } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -118,6 +119,80 @@ export const FormCard: React.FC<{ children: React.ReactNode }> = ({ children }) 
       }}
     >
       {children}
+    </Surface>
+  );
+};
+
+/**
+ * Необязательная секция формы, свёрнутая в одну строку: заголовок, пометка
+ * «необязательно» и сводка того, что внутри («5 отмечено · +650 сом»).
+ * Формы номера/категории/правила раньше показывали всё сразу — десятки
+ * необязательных полей наравне с тремя обязательными, и форма выглядела
+ * сложной. Теперь открыто только главное; остальное раскрывается по клику.
+ *
+ * forceOpen — раскрыть принудительно (при попытке сохранить с ошибкой внутри:
+ * поле с ошибкой не должно прятаться). Содержимое остаётся смонтированным —
+ * введённое не теряется при сворачивании.
+ */
+export const OptionalCard: React.FC<{
+  title: string;
+  summary?: React.ReactNode;
+  defaultOpen?: boolean;
+  forceOpen?: boolean;
+  /** Внутри уже что-то есть — кнопка «Изменить» вместо «Заполнить». */
+  filled?: boolean;
+  children: React.ReactNode;
+}> = ({ title, summary, defaultOpen = false, forceOpen = false, filled = false, children }) => {
+  const theme = useTheme();
+  const [open, setOpen] = React.useState(defaultOpen);
+  React.useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
+  return (
+    <Surface padded={false} sx={{ overflow: "hidden" }}>
+      <Box
+        component="button"
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 1.5,
+          width: "100%",
+          px: { xs: 2, md: 2.5 },
+          py: 1.75,
+          border: 0,
+          bgcolor: "transparent",
+          color: "text.primary",
+          font: "inherit",
+          textAlign: "left",
+          cursor: "pointer",
+          "&:hover": { bgcolor: subtleBg(theme) },
+          "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },
+        }}
+      >
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Stack direction="row" alignItems="baseline" gap={1} flexWrap="wrap">
+            <Typography sx={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.005em" }}>{title}</Typography>
+            <Typography variant="caption" color="text.disabled">
+              необязательно
+            </Typography>
+          </Stack>
+          {summary && (
+            <Typography variant="caption" color="text.secondary" component="div" noWrap>
+              {summary}
+            </Typography>
+          )}
+        </Box>
+        <Typography variant="body2" color="primary" fontWeight={600} sx={{ flexShrink: 0, display: { xs: "none", sm: "block" } }}>
+          {open ? "Свернуть" : filled ? "Изменить" : "Заполнить"}
+        </Typography>
+        <ExpandMoreOutlined sx={{ color: "text.secondary", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+      </Box>
+      <Collapse in={open}>
+        <Box sx={{ px: { xs: 2, md: 2.5 }, pt: 2, pb: 2.5, borderTop: `1px solid ${subtleBorder(theme)}` }}>{children}</Box>
+      </Collapse>
     </Surface>
   );
 };
