@@ -481,7 +481,7 @@ const InvoicesPage: React.FC = () => {
         suppliers={suppliers}
         recognitionEnabled={recognitionEnabled}
         recognitionHint={recognitionHint}
-        onCreateSupplier={perms.suppliers ? () => setSupplierForm({ open: true, supplier: null }) : undefined}
+        canCreateSupplier={perms.suppliers}
         canCreateProducts={perms.createProducts}
         foreignCurrency={settings?.foreignCurrency ?? true}
       />

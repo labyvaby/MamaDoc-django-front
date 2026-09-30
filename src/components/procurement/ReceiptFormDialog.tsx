@@ -7,6 +7,9 @@ import {
   Chip,
   CircularProgress,
   Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   InputAdornment,
   LinearProgress,
@@ -45,6 +48,9 @@ import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
 import AttachFileOutlined from "@mui/icons-material/AttachFileOutlined";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
+import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
+import BookmarkAddOutlined from "@mui/icons-material/BookmarkAddOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 
 import { ApiError, getErrorMessage } from "../../api/client";
 import {
@@ -60,6 +66,7 @@ import {
 } from "../../api/procurement";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import {
+  createProductCategory,
   getProductAttributes,
   getProductCategories,
   getProductCategoryTree,
@@ -72,17 +79,26 @@ import {
 import { useInvoicePhotos } from "../../hooks/useInvoicePhotos";
 import { usePermissions } from "../../hooks/usePermissions";
 import { INVOICE_DOCUMENT_ACCEPT, PHOTO_ACCEPT, isPdfFile } from "../../utility/imageCompression";
-import { CustomDateTimePicker, CustomDatePicker, InvoicePhotosField } from "../ui";
-import { CloseGuardDialog } from "../common/CloseGuardDialog";
+import { CustomDateTimePicker, InvoicePhotosField } from "../ui";
 import { formatMoney } from "./meta";
 import { NewProductFields } from "./NewProductFields";
 import { RecognitionDetails } from "./RecognitionDetails";
+import { SupplierFormDrawer } from "./SupplierFormDrawer";
+import {
+  clearReceiptDraft,
+  loadReceiptDraft,
+  loadReceiptDraftFiles,
+  saveReceiptDraft,
+  saveReceiptDraftFiles,
+  type ReceiptDraftSummary,
+} from "./receiptDraftStore";
 import {
   brandOptions,
   buildCategoryOptions,
   draftFromRecognized,
   draftProblem,
   emptyDraft,
+  matchCategory,
   newProductInput,
   type NewProductDraft,
 } from "./newProductDraft";
@@ -94,6 +110,10 @@ type ProductOption = { id: number; label: string; unit: string; sku: string; cre
 
 const CREATE_OPTION_ID = -1;
 const filterProductOptions = createFilterOptions<ProductOption>();
+
+/** Поставщик в выпадающем списке; `create` — пункт «Создать поставщика «…»». */
+type SupplierOption = { id: number; name: string; create?: boolean };
+const filterSupplierOptions = createFilterOptions<SupplierOption>();
 
 interface FormLine {
   key: string;
@@ -121,9 +141,42 @@ interface FormLine {
     sku: string | null;
     unit: string | null;
     brand?: string | null;
+    /** Вид товара из документа («Пальто») — категория новой карточки. */
+    category?: string | null;
+    sourceName?: string | null;
+    description?: string | null;
+    details?: Array<{ label: string; value: string }>;
     candidates: RecognizedCandidate[];
     matchScore: number | null;
   };
+}
+
+/** Строка в отложенной накладной: дата — строкой, остальное как в форме. */
+type StoredLine = Omit<FormLine, "expiresAt"> & { expiresAt: string | null };
+
+/** Отложенная накладная — всё, что нужно, чтобы вернуть форму как была. */
+interface StoredForm {
+  supplierId: number | "";
+  warehouseId: number | "";
+  number: string;
+  supplierNumber: string;
+  receivedAt: string | null;
+  currency: string;
+  exchangeRate: string;
+  customsCost: string;
+  deliveryCost: string;
+  otherCosts: string;
+  comment: string;
+  lines: StoredLine[];
+  recognition: RecognitionResult | null;
+}
+
+/** Что мешает провести приход: что не так, как исправить и куда перевести взгляд. */
+interface SubmitIssue {
+  message: string;
+  fix: string;
+  /** `data-issue` элемента, к которому прокручиваем и на котором ставим фокус. */
+  target: string;
 }
 
 /**
@@ -179,31 +232,16 @@ const recognizedOf = (line: RecognizedLine): NonNullable<FormLine["recognized"]>
   sku: line.sku,
   unit: line.unit,
   brand: line.brand,
+  category: line.category,
+  sourceName: line.sourceName,
+  description: line.description,
+  details: line.details,
   candidates: line.candidates,
   matchScore: line.match?.score ?? null,
 });
 
 /** Пикер даты-времени шагает по 15 минут: «сейчас» округляем вниз, иначе поле красное. */
 const roundToStep = (value: Dayjs): Dayjs => value.minute(Math.floor(value.minute() / 15) * 15).second(0).millisecond(0);
-
-/** Срок из условий оплаты; банковские реквизиты не интерпретируем как срок. */
-const paymentDueDate = (terms: string | null, invoiceDate: string | null): Dayjs | null => {
-  if (!terms || !invoiceDate) return null;
-  const base = dayjs(invoiceDate);
-  if (!base.isValid()) return null;
-  // Не `\b` в конце: в JS он знает только латиницу, и «30 дней» не совпадало.
-  const relative = terms.match(/\b(\d{1,4})\s*(?:дн(?:ей|я)?|days?|gg|giorni)(?![\p{L}\d])/iu);
-  if (relative) {
-    const days = Number(relative[1]);
-    return days >= 0 && days <= 3650 ? base.add(days, "day").endOf("day") : null;
-  }
-  const explicitDate = terms.match(/\b(\d{4}-\d{2}-\d{2})\b/);
-  if (explicitDate) {
-    const due = dayjs(explicitDate[1]);
-    return due.isValid() ? due.endOf("day") : null;
-  }
-  return null;
-};
 
 const toNumber = (raw: string): number => {
   const n = Number(String(raw).replace(",", ".").replace(/\s/g, ""));
@@ -368,7 +406,11 @@ export interface ReceiptFormDialogProps {
   /** Право на распознавание + настройка модуля + ключ провайдера на сервере. */
   recognitionEnabled: boolean;
   recognitionHint?: string | null;
-  onCreateSupplier?: () => void;
+  /**
+   * Право `procurement.suppliers.manage`: поставщика нет в справочнике —
+   * его заводят прямо отсюда, с реквизитами из распознанной накладной.
+   */
+  canCreateSupplier?: boolean;
   /**
    * Право `procurement.receipts.create_products`: товара нет в каталоге — он
    * заводится прямо из строки. Без права кнопок создания в форме нет вовсе.
@@ -401,7 +443,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
   suppliers,
   recognitionEnabled,
   recognitionHint,
-  onCreateSupplier,
+  canCreateSupplier = false,
   canCreateProducts = false,
   foreignCurrency = true,
 }) => {
@@ -424,7 +466,6 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
   const [number, setNumber] = React.useState("");
   const [supplierNumber, setSupplierNumber] = React.useState("");
   const [receivedAt, setReceivedAt] = React.useState<Dayjs | null>(roundToStep(dayjs()));
-  const [dueAt, setDueAt] = React.useState<Dayjs | null>(null);
   const [currency, setCurrency] = React.useState("KGS");
   const [exchangeRate, setExchangeRate] = React.useState("1");
   const [customsCost, setCustomsCost] = React.useState("0");
@@ -440,8 +481,24 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
   const [recognition, setRecognition] = React.useState<RecognitionResult | null>(null);
   const [recognitionError, setRecognitionError] = React.useState<string | null>(null);
   const [closeConfirmOpen, setCloseConfirmOpen] = React.useState(false);
+  /** Форма поставщика поверх накладной; `initial` — реквизиты из документа. */
+  const [supplierForm, setSupplierForm] = React.useState<{ open: boolean; initial?: React.ComponentProps<typeof SupplierFormDrawer>["initial"] }>({ open: false });
+  /** Текст, набранный в поле поставщика, — для пункта «Создать «…»». */
+  const [supplierInput, setSupplierInput] = React.useState("");
+  /** После первой попытки провести поля с ошибками подсвечиваются. */
+  const [showIssues, setShowIssues] = React.useState(false);
   const cameraRef = React.useRef<HTMLInputElement>(null);
   const captureRef = React.useRef<HTMLInputElement>(null);
+  const bodyRef = React.useRef<HTMLDivElement>(null);
+
+  // Черновик — на организацию сессии, а не на явный скоуп: у обычного
+  // пользователя `scope.organizationId` пуст.
+  const draftOrgId = scope.organizationId ?? activeOrganization?.id ?? null;
+  /** Отложенная накладная этого браузера — для карточки «Продолжить» на старте. */
+  const [storedDraft, setStoredDraft] = React.useState<ReceiptDraftSummary | null>(null);
+  React.useEffect(() => {
+    if (open) setStoredDraft(loadReceiptDraft<StoredForm>(draftOrgId)?.summary ?? null);
+  }, [open, draftOrgId]);
 
   React.useEffect(() => {
     if (!recognizing) {
@@ -545,6 +602,33 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
 
   const warehouses = React.useMemo<DjangoWarehouse[]>(() => warehousesQuery.data ?? [], [warehousesQuery.data]);
 
+  /** Только что заведённый поставщик — в списке, пока справочник страницы не перечитался. */
+  const [createdSuppliers, setCreatedSuppliers] = React.useState<ProcurementSupplier[]>([]);
+  const supplierOptions = React.useMemo<SupplierOption[]>(() => {
+    const known = new Map<number, ProcurementSupplier>();
+    [...suppliers, ...createdSuppliers].forEach((s) => known.set(s.id, s));
+    return Array.from(known.values())
+      .filter((s) => s.isActive || s.id === supplierId)
+      .map((s) => ({ id: s.id, name: s.name }));
+  }, [suppliers, createdSuppliers, supplierId]);
+
+  /** Форма нового поставщика — с тем, что о нём сказано в накладной. */
+  const openSupplierCreate = (typedName?: string) => {
+    const doc = recognition?.document;
+    const address = doc?.supplier.address?.trim();
+    setSupplierForm({
+      open: true,
+      initial: {
+        name: (typedName ?? supplierInput).trim() || doc?.supplier.name || "",
+        taxId: doc?.supplier.taxId ?? "",
+        phone: doc?.supplier.phone ?? "",
+        paymentTerms: doc?.paymentTerms ?? "",
+        defaultCurrency: doc?.currency && CURRENCIES.includes(doc.currency) ? doc.currency : undefined,
+        comment: address ? `Адрес: ${address}` : "",
+      },
+    });
+  };
+
   React.useEffect(() => {
     if (open && nextNumberQuery.data?.number) setNumber((prev) => prev || nextNumberQuery.data.number);
   }, [open, nextNumberQuery.data]);
@@ -602,6 +686,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
       ? draftFromRecognized(line.recognized, {
           units,
           brands,
+          categories: categoryOptions,
           // Артикул поставщика общий у размеров одной модели — такой не берём.
           skuIsUnique:
             Boolean(line.recognized.sku) &&
@@ -609,7 +694,10 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
         })
       : emptyDraft();
     const name = typedName?.trim();
-    // Запомненная категория — только если она есть в справочнике этой организации.
+    // Вид товара из документа («Пальто») важнее: он и найден, и предложен
+    // новой категорией. Нет его — последняя выбранная категория, если она
+    // есть в справочнике этой организации.
+    if (base.categoryId != null || base.newCategory.trim()) return { ...base, name: name || base.name };
     const remembered = lastCategoryRef.current;
     const categoryId = remembered != null && categoryById.has(remembered) ? remembered : null;
     return { ...base, name: name || base.name, categoryId };
@@ -630,7 +718,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
 
   const applyCategoryToNew = (categoryId: number | null) => {
     lastCategoryRef.current = categoryId;
-    setLines((prev) => prev.map((l) => (l.newProduct ? { ...l, newProduct: { ...l.newProduct, categoryId } } : l)));
+    setLines((prev) => prev.map((l) => (l.newProduct ? { ...l, newProduct: { ...l.newProduct, categoryId, newCategory: "" } } : l)));
   };
 
   const problemOf = (line: FormLine): string | null =>
@@ -660,7 +748,6 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
     supplierId !== "" ||
     supplierNumber.trim() ||
     number.trim() !== (nextNumberQuery.data?.number ?? "") ||
-    dueAt ||
     currency !== "KGS" ||
     exchangeRate !== "1" ||
     landedExpenses > 0 ||
@@ -676,7 +763,6 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
     setNumber("");
     setSupplierNumber("");
     setReceivedAt(roundToStep(dayjs()));
-    setDueAt(null);
     setCurrency("KGS");
     setExchangeRate("1");
     setCustomsCost("0");
@@ -689,9 +775,89 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
     setRecognitionError(null);
     setRecognizing(false);
     setScanPreview(null);
+    setSupplierInput("");
+    setShowIssues(false);
     setMode("start");
     photos.reset();
   }, [photos]);
+
+  // ── Отложенная накладная ─────────────────────────────────────────────────
+
+  /** Снимок формы для хранилища: всё, что вернёт её как была. */
+  const snapshot = (): StoredForm => ({
+    supplierId,
+    warehouseId,
+    number,
+    supplierNumber,
+    receivedAt: receivedAt ? receivedAt.toISOString() : null,
+    currency,
+    exchangeRate,
+    customsCost,
+    deliveryCost,
+    otherCosts,
+    comment,
+    lines: lines.map((l) => ({ ...l, expiresAt: l.expiresAt ? l.expiresAt.toISOString() : null })),
+    recognition,
+  });
+
+  const draftSummary = (): ReceiptDraftSummary => ({
+    savedAt: new Date().toISOString(),
+    supplierName: suppliers.find((s) => s.id === supplierId)?.name ?? recognition?.document.supplier.name ?? null,
+    linesCount: lines.filter((l) => l.product || l.newProduct || l.recognized || l.quantity).length,
+    filesCount: photos.pending.length,
+  });
+
+  // Автосохранение: пока в форме что-то есть, её копия лежит в браузере —
+  // закрыли вкладку, обновили страницу, ушли на другой экран — ничего не
+  // пропало. Пишем с задержкой, чтобы не дёргать хранилище на каждую букву.
+  const draftWriteRef = React.useRef<() => void>(() => undefined);
+  draftWriteRef.current = () => saveReceiptDraft(draftOrgId, draftSummary(), snapshot());
+  React.useEffect(() => {
+    if (!open || mode !== "form" || saving || !isDirty) return undefined;
+    const timer = window.setTimeout(() => draftWriteRef.current(), 600);
+    return () => window.clearTimeout(timer);
+  }, [open, mode, saving, isDirty, supplierId, warehouseId, number, supplierNumber, receivedAt, currency, exchangeRate, customsCost, deliveryCost, otherCosts, comment, lines, recognition, photos.pending.length]);
+  // Файлы — отдельно и только когда меняется их набор.
+  React.useEffect(() => {
+    if (!open || mode !== "form" || saving) return;
+    void saveReceiptDraftFiles(draftOrgId, photos.pending.map((p) => p.file));
+  }, [open, mode, saving, draftOrgId, photos.pending]);
+
+  /** Вернуть отложенную накладную в форму. */
+  const restoreDraft = async () => {
+    const stored = loadReceiptDraft<StoredForm>(draftOrgId);
+    if (!stored) {
+      setStoredDraft(null);
+      return;
+    }
+    const form = stored.form;
+    setSupplierId(form.supplierId);
+    setWarehouseId(form.warehouseId);
+    setNumber(form.number);
+    setSupplierNumber(form.supplierNumber);
+    setReceivedAt(form.receivedAt ? dayjs(form.receivedAt) : roundToStep(dayjs()));
+    setCurrency(form.currency);
+    setExchangeRate(form.exchangeRate);
+    setCustomsCost(form.customsCost);
+    setDeliveryCost(form.deliveryCost);
+    setOtherCosts(form.otherCosts);
+    setComment(form.comment);
+    setLines(
+      form.lines.length > 0
+        ? form.lines.map((l) => ({ ...l, expiresAt: l.expiresAt ? dayjs(l.expiresAt) : null }))
+        : [newLine()],
+    );
+    setRecognition(form.recognition);
+    setSupplierInput(form.supplierId === "" ? form.recognition?.document.supplier.name ?? "" : "");
+    setMode("form");
+    const files = await loadReceiptDraftFiles(draftOrgId);
+    if (files.length > 0) await photos.pick(files);
+  };
+
+  const discardStoredDraft = () => {
+    clearReceiptDraft(draftOrgId);
+    setStoredDraft(null);
+  };
 
   const requestClose = React.useCallback(() => {
     if (saving || recognizing) return;
@@ -704,18 +870,87 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
     onClose();
   }, [isDirty, onClose, recognizing, saving]);
 
-  const discardAndClose = React.useCallback(() => {
+  /** «Отложить»: копия уже в браузере — сохраняем свежую и закрываем. */
+  const deferAndClose = () => {
+    draftWriteRef.current();
+    void saveReceiptDraftFiles(draftOrgId, photos.pending.map((p) => p.file));
     setCloseConfirmOpen(false);
     resetForm();
     onClose();
-  }, [onClose, resetForm]);
+  };
 
-  const isValid =
-    supplierId !== "" &&
-    warehouseId !== "" &&
-    filledLines.length > 0 &&
-    lines.every((l) => !hasProduct(l) || toNumber(l.quantity) > 0) &&
-    lines.every((l) => problemOf(l) == null);
+  /** «Удалить»: и форму, и отложенную копию. */
+  const discardAndClose = React.useCallback(() => {
+    setCloseConfirmOpen(false);
+    clearReceiptDraft(draftOrgId);
+    resetForm();
+    onClose();
+  }, [draftOrgId, onClose, resetForm]);
+
+  // ── Проверка перед проведением ───────────────────────────────────────────
+
+  /** Строка, которую человек не трогал: её просто не отправляем. */
+  const isBlankLine = (l: FormLine) => !l.product && !l.newProduct && !l.recognized && !l.quantity && !l.price && !l.amount;
+  /** Позиции накладной — все непустые строки, в том числе ещё без товара. */
+  const positionLines = lines.filter((l) => !isBlankLine(l));
+
+  /** Что не так со строкой — текстом для продавца и тем, как это исправить. */
+  const lineIssue = (line: FormLine, position: number): SubmitIssue | null => {
+    if (isBlankLine(line)) return null;
+    const title = line.recognized?.name ? ` («${line.recognized.name.slice(0, 60)}${line.recognized.name.length > 60 ? "…" : ""}»)` : "";
+    if (!hasProduct(line)) {
+      return {
+        message: `Позиция ${position}${title}: не выбран товар.`,
+        fix: canCreateProducts
+          ? "Выберите товар из списка или нажмите «Создать товар» (для всех сразу — «Создать все» над списком). Лишнюю строку удалите корзиной справа."
+          : "Выберите товар из списка. Лишнюю строку удалите корзиной справа.",
+        target: `line-${line.key}`,
+      };
+    }
+    const problem = problemOf(line);
+    if (problem) {
+      const fix =
+        problem === "Укажите название товара"
+          ? "Впишите название нового товара в строке."
+          : problem === "Выберите категорию"
+            ? "Выберите категорию в карточке нового товара — или сразу для всех новых в списке «Категория для всех новых»."
+            : "Укажите и цвет, и размер или очистите оба поля.";
+      return { message: `Позиция ${position}${title}: ${problem.toLowerCase()}.`, fix, target: `line-${line.key}` };
+    }
+    if (toNumber(line.quantity) <= 0) {
+      return { message: `Позиция ${position}${title}: не указано количество.`, fix: "Впишите, сколько единиц пришло.", target: `qty-${line.key}` };
+    }
+    return null;
+  };
+
+  /** Первая проблема формы сверху вниз — ровно в том порядке, в каком её видно. */
+  const collectIssue = (): SubmitIssue | null => {
+    if (supplierId === "") {
+      return {
+        message: "Не выбран поставщик.",
+        fix: canCreateSupplier
+          ? "Выберите поставщика из списка. Если его ещё нет — выберите в списке «Создать поставщика»."
+          : "Выберите поставщика из списка.",
+        target: "supplier",
+      };
+    }
+    if (warehouseId === "") return { message: "Не выбран склад.", fix: "Выберите склад, на который пришёл товар.", target: "warehouse" };
+    if (!receivedAt || !receivedAt.isValid()) return { message: "Не указана дата прихода.", fix: "Укажите дату и время, когда пришёл товар.", target: "receivedAt" };
+    for (let index = 0; index < lines.length; index += 1) {
+      const found = lineIssue(lines[index], index + 1);
+      if (found) return found;
+    }
+    if (filledLines.length === 0) {
+      return {
+        message: "В накладной нет ни одной позиции.",
+        fix: "Добавьте товар кнопкой «Добавить позицию» или загрузите фото накладной.",
+        target: "lines",
+      };
+    }
+    return null;
+  };
+  /** После первой попытки провести — живая подсказка: исправили, и она сменилась следующей. */
+  const liveIssue = showIssues ? collectIssue() : null;
 
   // ── Распознавание ────────────────────────────────────────────────────────
 
@@ -728,8 +963,11 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
         const parsed = dayjs(result.document.date);
         if (parsed.isValid()) setReceivedAt(roundToStep(parsed.hour(dayjs().hour()).minute(dayjs().minute())));
       }
-      const recognizedDueAt = paymentDueDate(result.document.paymentTerms, result.document.date);
-      if (recognizedDueAt) setDueAt(recognizedDueAt);
+      // Поставщика нет в справочнике — его имя уже в поле, чтобы завести
+      // одним нажатием («Создать «…»» в списке или кнопка в подсказке).
+      if (!result.supplierMatch && result.document.supplier.name && supplierId === "") {
+        setSupplierInput(result.document.supplier.name);
+      }
       if (foreignCurrency && result.document.currency && CURRENCIES.includes(result.document.currency)) {
         setCurrency(result.document.currency);
       }
@@ -822,11 +1060,52 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
 
   // ── Сохранение ───────────────────────────────────────────────────────────
 
+  /** Перевести взгляд на проблему: прокрутить к полю и поставить в него курсор. */
+  const focusIssue = (target: string) => {
+    const element = bodyRef.current?.querySelector<HTMLElement>(`[data-issue="${target}"]`);
+    if (!element) return;
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => {
+      const input = element.matches("input, textarea") ? element : element.querySelector<HTMLElement>("input:not([type=hidden]), textarea, [role=combobox], button");
+      input?.focus({ preventScroll: true });
+    }, 350);
+  };
+
+  /**
+   * Новые категории из накладной («Пальто») — заводим перед приходом, по
+   * одной на имя. Уже заведённая за это время (или только что в соседней
+   * вкладке) берётся по имени, а не создаётся второй раз.
+   */
+  const ensureNewCategories = async (): Promise<Map<string, number>> => {
+    const wanted = Array.from(
+      new Set(filledLines.map((l) => l.newProduct?.categoryId == null ? l.newProduct?.newCategory.trim() : "").filter(Boolean) as string[]),
+    );
+    const ids = new Map<string, number>();
+    for (const name of wanted) {
+      const existing = matchCategory(categoryOptions, name);
+      const node = existing ? { id: existing.id } : await createProductCategory({ name, organizationId: orgId });
+      ids.set(name.toLowerCase(), node.id);
+    }
+    if (wanted.length > 0) await queryClient.invalidateQueries({ queryKey: ["django", "procurement", "form-category-tree"] });
+    return ids;
+  };
+
   const handleSubmit = async () => {
-    if (!isValid || saving) return;
+    if (saving || recognizing) return;
+    const found = collectIssue();
+    if (found) {
+      setShowIssues(true);
+      focusIssue(found.target);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
+      const createdCategories = await ensureNewCategories();
+      const draftWithCategory = (draft: NewProductDraft): NewProductDraft => {
+        const id = draft.categoryId ?? createdCategories.get(draft.newCategory.trim().toLowerCase()) ?? null;
+        return { ...draft, categoryId: id, newCategory: "" };
+      };
       const created = await createReceipt(
         {
           supplierId: Number(supplierId),
@@ -834,7 +1113,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           number: number.trim(),
           supplierNumber: supplierNumber.trim(),
           receivedAt: receivedAt ? receivedAt.toISOString() : null,
-          dueAt: dueAt ? dueAt.endOf("day").toISOString() : null,
+          dueAt: null,
           comment: comment.trim(),
           customsCost: String(toNumber(customsCost)),
           deliveryCost: String(toNumber(deliveryCost)),
@@ -842,12 +1121,10 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           lines: filledLines.map((l) => ({
             ...(l.product
               ? { productId: l.product.id }
-              : {
-                  newProduct: newProductInput(
-                    l.newProduct!,
-                    l.newProduct!.categoryId != null ? categoryById.get(l.newProduct!.categoryId) : null,
-                  ),
-                }),
+              : (() => {
+                  const draft = draftWithCategory(l.newProduct!);
+                  return { newProduct: newProductInput(draft, draft.categoryId != null ? categoryById.get(draft.categoryId) : null) };
+                })()),
             quantity: String(toNumber(l.quantity)),
             costAmount: String(toNumber(l.price)),
             costCurrency: currency,
@@ -870,10 +1147,12 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           ? `Накладная ${created.number} проведена${withProducts}, но ${failed} фото не загрузилось`
           : `Накладная ${created.number} проведена${withProducts}`,
       });
+      clearReceiptDraft(draftOrgId);
       resetForm();
       onCreated(created);
     } catch (e) {
       setError(getErrorMessage(e, "Не удалось провести накладную"));
+      setShowIssues(true);
     } finally {
       setSaving(false);
     }
@@ -1028,6 +1307,64 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
         <Alert severity="warning" onClose={photos.clearError}>
           {photos.error}
         </Alert>
+      )}
+      {storedDraft && !recognizing && (
+        <Box
+          sx={(t) => ({
+            p: { xs: 1.5, md: 2 },
+            borderRadius: "16px",
+            border: "1px solid",
+            borderColor: alpha(t.palette.primary.main, 0.35),
+            bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.1 : 0.05),
+            display: "flex",
+            alignItems: { xs: "stretch", md: "center" },
+            flexDirection: { xs: "column", md: "row" },
+            gap: 1.5,
+          })}
+        >
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
+            <Box
+              sx={(t) => ({
+                width: 40,
+                height: 40,
+                borderRadius: "10px",
+                display: "grid",
+                placeItems: "center",
+                flexShrink: 0,
+                color: "primary.main",
+                bgcolor: alpha(t.palette.primary.main, 0.14),
+              })}
+            >
+              <RestoreOutlined />
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                Есть отложенная накладная
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                {[
+                  storedDraft.supplierName,
+                  `позиций: ${storedDraft.linesCount}`,
+                  storedDraft.filesCount > 0 ? `файлов: ${storedDraft.filesCount}` : null,
+                  `сохранена ${dayjs(storedDraft.savedAt).format("DD.MM в HH:mm")}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                Новая накладная заменит отложенную.
+              </Typography>
+            </Box>
+          </Stack>
+          <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
+            <Button color="error" size="small" onClick={discardStoredDraft}>
+              Удалить
+            </Button>
+            <Button variant="contained" size="small" startIcon={<RestoreOutlined />} onClick={() => void restoreDraft()}>
+              Продолжить
+            </Button>
+          </Stack>
+        </Box>
       )}
       {recognizing ? (
         scanningView
@@ -1273,13 +1610,32 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
       )}
       {recognition && recognition.warnings.length > 0 && (
         <Alert severity="info" icon={<ErrorOutlineOutlined fontSize="inherit" />} sx={{ mt: 1.5 }}>
-          {recognition.warnings.join(" ")}
+          <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>
+            Проверьте перед проведением
+          </Typography>
+          <Box component="ul" sx={{ m: 0, pl: 2.25, "& li + li": { mt: 0.5 } }}>
+            {recognition.warnings.map((warning) => (
+              <Typography component="li" variant="body2" key={warning}>
+                {warning}
+              </Typography>
+            ))}
+          </Box>
         </Alert>
       )}
-      {recognition && !recognition.supplierMatch && recognition.document.supplier.name && (
-        <Alert severity="warning" sx={{ mt: 1.5 }}>
-          Поставщик «{recognition.document.supplier.name}» не найден в справочнике — выберите вручную
-          {onCreateSupplier ? " или создайте нового." : "."}
+      {recognition && !recognition.supplierMatch && recognition.document.supplier.name && supplierId === "" && (
+        <Alert
+          severity="warning"
+          sx={{ mt: 1.5, alignItems: "center" }}
+          action={
+            canCreateSupplier ? (
+              <Button color="inherit" size="small" startIcon={<PersonAddAltOutlined />} onClick={() => openSupplierCreate()} sx={{ whiteSpace: "nowrap" }}>
+                Создать
+              </Button>
+            ) : undefined
+          }
+        >
+          Поставщика «{recognition.document.supplier.name}» ещё нет в справочнике —
+          {canCreateSupplier ? " создайте его с реквизитами из накладной или выберите другого." : " выберите его вручную."}
         </Alert>
       )}
       {recognition && (
@@ -1304,31 +1660,64 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
   const documentSection = (
     <Section icon={<ReceiptLongOutlined />} title="Документ">
       <Box sx={{ display: "grid", gridTemplateColumns: FIELD_GRID, gap: 1.5 }}>
-        <Box>
+        <Box data-issue="supplier">
           <Label>Поставщик *</Label>
           <Stack direction="row" spacing={0.5} alignItems="center">
-            <TextField
-              select
+            <Autocomplete<SupplierOption, false, false, false>
               fullWidth
               size="small"
-              value={supplierId}
-              onChange={(e) => setSupplierId(e.target.value === "" ? "" : Number(e.target.value))}
-              SelectProps={{ displayEmpty: true }}
-            >
-              <MenuItem value="">
-                <em>Выберите поставщика</em>
-              </MenuItem>
-              {suppliers
-                .filter((s) => s.isActive || s.id === supplierId)
-                .map((s) => (
-                  <MenuItem key={s.id} value={s.id}>
-                    {s.name}
-                  </MenuItem>
-                ))}
-            </TextField>
-            {onCreateSupplier && (
+              options={supplierOptions}
+              value={supplierOptions.find((o) => o.id === supplierId) ?? null}
+              inputValue={supplierInput}
+              onInputChange={(_, next, reason) => {
+                // Пока поставщик не выбран, Autocomplete «сбрасывает» текст в
+                // пустоту — а там имя из накладной, по которому его заводят.
+                if (reason === "reset" && supplierId === "") return;
+                setSupplierInput(next);
+              }}
+              onChange={(_, next) => {
+                if (next?.create) {
+                  openSupplierCreate(next.name);
+                  return;
+                }
+                setSupplierId(next ? next.id : "");
+              }}
+              filterOptions={(all, state) => {
+                const typed = state.inputValue.trim();
+                const filtered = filterSupplierOptions(all, state);
+                // Нет в справочнике — «Создать поставщика «…»» с реквизитами из накладной.
+                if (canCreateSupplier && typed && !all.some((o) => o.name.toLowerCase() === typed.toLowerCase())) {
+                  filtered.push({ id: CREATE_OPTION_ID, name: typed, create: true });
+                }
+                return filtered;
+              }}
+              getOptionLabel={(o) => o.name}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              renderOption={(props, option) =>
+                option.create ? (
+                  <li {...props} key="create-supplier">
+                    <PersonAddAltOutlined fontSize="small" sx={{ mr: 1, color: "success.main" }} />
+                    <Typography variant="body2" sx={{ color: "success.main", fontWeight: 600 }}>
+                      Создать поставщика «{option.name}»
+                    </Typography>
+                  </li>
+                ) : (
+                  <li {...props} key={option.id}>
+                    {option.name}
+                  </li>
+                )
+              }
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Выберите или впишите поставщика"
+                  error={showIssues && supplierId === ""}
+                />
+              )}
+            />
+            {canCreateSupplier && (
               <Tooltip title="Новый поставщик">
-                <IconButton size="small" onClick={onCreateSupplier} aria-label="Новый поставщик">
+                <IconButton size="small" onClick={() => openSupplierCreate()} aria-label="Новый поставщик">
                   <PersonAddAltOutlined fontSize="small" />
                 </IconButton>
               </Tooltip>
@@ -1337,13 +1726,14 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
         </Box>
         {/* Склад один — выбирать нечего: он подставлен сам, поле не нужно. */}
         {warehouses.length !== 1 && (
-          <Box>
+          <Box data-issue="warehouse">
             <Label>Склад *</Label>
             <TextField
               select
               fullWidth
               size="small"
               value={warehouseId}
+              error={showIssues && warehouseId === ""}
               onChange={(e) => setWarehouseId(e.target.value === "" ? "" : Number(e.target.value))}
               SelectProps={{ displayEmpty: true }}
             >
@@ -1366,21 +1756,12 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           <Label>Номер у поставщика</Label>
           <TextField fullWidth size="small" value={supplierNumber} onChange={(e) => setSupplierNumber(e.target.value)} placeholder="Как в документе поставщика" />
         </Box>
-        <Box>
+        <Box data-issue="receivedAt">
           <Label>Дата прихода *</Label>
           <CustomDateTimePicker
             value={receivedAt}
             onChange={(v) => setReceivedAt(v as Dayjs | null)}
             slotProps={{ textField: { size: "small", fullWidth: true } }}
-          />
-        </Box>
-        <Box>
-          <Label>Срок оплаты</Label>
-          <CustomDatePicker
-            value={dueAt}
-            onChange={(v) => setDueAt(v as Dayjs | null)}
-            shortYearMode="future"
-            slotProps={{ textField: { size: "small", fullWidth: true, placeholder: "Не оговорён", helperText: recognition?.document.paymentTerms ?? undefined } }}
           />
         </Box>
         {/* Закуп только в сомах (настройка модуля) — валюта и курс не нужны. */}
@@ -1415,6 +1796,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
   );
 
   const linesSection = (
+    <Box data-issue="lines">
     <Section
       flush
       icon={<Inventory2Outlined />}
@@ -1422,7 +1804,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
         <>
           Позиции{" "}
           <Typography component="span" variant="caption" color="text.secondary">
-            {filledLines.length > 0 ? `· ${filledLines.length}` : ""}
+            {positionLines.length > 0 ? `· ${positionLines.length}` : ""}
           </Typography>
         </>
       }
@@ -1506,25 +1888,34 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
         const scoreOf = (id: number) => line.recognized?.candidates.find((c) => c.id === id)?.score;
         const draft = line.newProduct;
         const unitLabel = line.product?.unit ?? (draft ? units.find((u) => u.id === draft.unitId)?.shortName ?? "шт" : undefined);
+        // После попытки провести строка с проблемой — красной полосой.
+        const rowIssue = showIssues ? lineIssue(line, index + 1) : null;
         return (
           <Box
             key={line.key}
+            data-issue={`line-${line.key}`}
             sx={(t) => ({
               px: { xs: 1.5, md: 2 },
               py: 1.25,
               borderBottom: 1,
               borderColor: "divider",
+              scrollMarginTop: 16,
               // Строка из документа, которой не нашлось товара, — акцент
               // полосой слева, а не отдельной карточкой; новая карточка —
               // зелёной полосой.
-              ...(draft
-                ? { boxShadow: `inset 3px 0 0 ${t.palette.success.main}` }
-                : line.recognized && !line.product
-                  ? {
-                      bgcolor: alpha(t.palette.warning.main, 0.06),
-                      boxShadow: `inset 3px 0 0 ${t.palette.warning.main}`,
-                    }
-                  : {}),
+              ...(rowIssue
+                ? {
+                    bgcolor: alpha(t.palette.error.main, 0.07),
+                    boxShadow: `inset 4px 0 0 ${t.palette.error.main}`,
+                  }
+                : draft
+                  ? { boxShadow: `inset 3px 0 0 ${t.palette.success.main}` }
+                  : line.recognized && !line.product
+                    ? {
+                        bgcolor: alpha(t.palette.warning.main, 0.06),
+                        boxShadow: `inset 3px 0 0 ${t.palette.warning.main}`,
+                      }
+                    : {}),
             })}
           >
             {line.recognized && (
@@ -1671,6 +2062,8 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
                 placeholder="Кол-во"
                 // На телефоне шапки колонок нет — подпись у самого поля.
                 label={isPhone ? "Кол-во" : undefined}
+                error={showIssues && hasProduct(line) && toNumber(line.quantity) <= 0}
+                data-issue={`qty-${line.key}`}
                 sx={{ gridArea: "qty", minWidth: 0 }}
                 inputProps={{ inputMode: "decimal", style: { textAlign: "right" }, "aria-label": "Количество" }}
                 InputProps={{
@@ -1759,6 +2152,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
         </Typography>
       </Stack>
     </Section>
+    </Box>
   );
 
   const costsSection = (
@@ -1821,7 +2215,6 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           с overflow:hidden сплющивается вместо прокрутки. */}
       <Stack spacing={2} sx={{ minWidth: 0, "& > *": { flexShrink: 0 } }}>
         {recognitionCard}
-        {error && <Alert severity="error">{error}</Alert>}
         {documentSection}
         {linesSection}
         {costsSection}
@@ -1887,9 +2280,29 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           </IconButton>
         </Stack>
 
-        <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: { xs: 1.5, md: 3 }, py: { xs: 2, md: 3 } }}>
+        <Box ref={bodyRef} sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: { xs: 1.5, md: 3 }, py: { xs: 2, md: 3 } }}>
           {mode === "start" ? startView : formView}
         </Box>
+
+        {mode === "form" && (liveIssue || error) && (
+          // Почему не проводится и что сделать — прямо над кнопкой, чтобы
+          // не искать причину по всей форме. Клик — снова к проблемному месту.
+          <Alert
+            severity="error"
+            icon={<WarningAmberOutlined fontSize="inherit" />}
+            onClick={liveIssue ? () => focusIssue(liveIssue.target) : undefined}
+            sx={{ mx: { xs: 1.5, md: 3 }, mb: 1, cursor: liveIssue ? "pointer" : "default", borderRadius: "12px" }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+              {liveIssue ? liveIssue.message : error}
+            </Typography>
+            {liveIssue && (
+              <Typography variant="body2">
+                {liveIssue.fix}
+              </Typography>
+            )}
+          </Alert>
+        )}
 
         {mode === "form" && (
           <Stack
@@ -1918,7 +2331,8 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
                 </Typography>
               )}
               <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
-                · позиций: {filledLines.length}
+                · позиций: {positionLines.length}
+                {positionLines.length - filledLines.length > 0 ? ` (без товара или количества: ${positionLines.length - filledLines.length})` : ""}
                 {landedExpenses > 0 ? ` · расходы ${formatMoney(landedExpenses)} сом` : ""}
               </Typography>
             </Stack>
@@ -1926,12 +2340,26 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
               <Button variant="outlined" color="inherit" onClick={requestClose} disabled={busy} sx={{ borderColor: "divider", flex: { xs: 1, md: "none" } }}>
                 Отмена
               </Button>
+              {isDirty && (
+                <Tooltip title="Закрыть и продолжить позже — всё заполненное сохранится">
+                  <Button
+                    variant="outlined"
+                    onClick={deferAndClose}
+                    disabled={busy}
+                    // На телефоне три кнопки в ряд — иконка съедает место у текста.
+                    startIcon={isPhone ? undefined : <BookmarkAddOutlined />}
+                    sx={{ flex: { xs: 1, md: "none" }, whiteSpace: "nowrap" }}
+                  >
+                    Отложить
+                  </Button>
+                </Tooltip>
+              )}
               <Button
                 variant="contained"
                 onClick={handleSubmit}
-                disabled={!isValid || busy}
+                disabled={busy}
                 startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <CheckCircleOutlined />}
-                sx={{ flex: { xs: 2, md: "none" }, px: { md: 3 } }}
+                sx={{ flex: { xs: 2, md: "none" }, px: { md: 3 }, whiteSpace: "nowrap" }}
               >
                 Провести приход
               </Button>
@@ -1939,11 +2367,45 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           </Stack>
         )}
       </Dialog>
-      <CloseGuardDialog
-        open={closeConfirmOpen}
-        title="накладную"
-        onCancel={() => setCloseConfirmOpen(false)}
-        onConfirm={discardAndClose}
+
+      {/* Закрыть заполненную накладную: отложить (всё сохранится) или удалить. */}
+      <Dialog open={closeConfirmOpen} onClose={() => setCloseConfirmOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <WarningAmberOutlined color="warning" />
+          Закрыть накладную?
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            Накладная ещё не проведена. Её можно отложить — всё заполненное и фото сохранятся, и при следующем
+            открытии «Новой накладной» её можно будет продолжить.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1, flexWrap: "wrap" }}>
+          <Button onClick={discardAndClose} color="error" sx={{ mr: "auto" }}>
+            Удалить
+          </Button>
+          <Button onClick={() => setCloseConfirmOpen(false)} variant="outlined" color="inherit">
+            Остаться
+          </Button>
+          <Button onClick={deferAndClose} variant="contained" startIcon={<BookmarkAddOutlined />}>
+            Отложить
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Поверх накладной: Drawer по умолчанию ниже Dialog и открывался позади. */}
+      <SupplierFormDrawer
+        open={supplierForm.open}
+        onClose={() => setSupplierForm({ open: false })}
+        onSaved={(saved) => {
+          setCreatedSuppliers((prev) => [...prev.filter((s) => s.id !== saved.id), saved]);
+          setSupplierId(saved.id);
+          setSupplierInput(saved.name);
+        }}
+        scope={scope}
+        supplier={null}
+        initial={supplierForm.initial}
+        aboveModal
       />
     </>
   );
