@@ -182,6 +182,11 @@ interface DocSummary {
   noSchedule: boolean;
 }
 
+function availabilitySpecLabel(emp: EmployeeAvailability): string | null {
+  const names = (emp.specializations ?? []).map((s) => s.name).filter(Boolean);
+  return names.length > 0 ? names.join(", ") : null;
+}
+
 function summarize(emp: EmployeeAvailability, todayIso: string): DocSummary {
   const today = emp.days.find((d) => d.date === todayIso);
   const todayFree = today?.freeCount ?? 0;
@@ -2507,7 +2512,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             const isDayOff =
                               (Boolean(day?.dayOff) || note?.fullDay === true) && !offSchedule;
                             const specLabel =
-                              specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
+                              availabilitySpecLabel(emp) ??
+                              specLabelByEmployee.get(emp.employeeId) ??
+                              t("slots.specialist");
                             return (
                               <Stack
                                 key={emp.employeeId}
@@ -2694,7 +2701,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             (Boolean(day?.dayOff) || itemNote?.fullDay === true) &&
                             !itemOffSchedule;
                           const selected = idx === safeIdx;
-                          const itemSpec = specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
+                          const itemSpec =
+                            availabilitySpecLabel(emp) ??
+                            specLabelByEmployee.get(emp.employeeId) ??
+                            t("slots.specialist");
                           return (
                             <MenuItem
                               key={emp.employeeId}
@@ -2850,7 +2860,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       employeeId={emp.employeeId}
                       fullName={emp.fullName}
                       status={sum.status}
-                      specName={gridSpecName}
+                      specName={
+                        availabilitySpecLabel(emp) ??
+                        specLabelByEmployee.get(emp.employeeId) ??
+                        gridSpecName
+                      }
                       day={docDay}
                       offSchedule={docOffSchedule}
                       dayOff={docDayOff}
