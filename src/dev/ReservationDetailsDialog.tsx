@@ -23,6 +23,11 @@
  * для заезда/выезда, hotel.payments.manage для оплаты.
  */
 import React from "react";
+import EditOutlined from "@mui/icons-material/EditOutlined";
+import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
+import { useSnackbar } from "notistack";
+import { ReservationEditPanel } from "./ReservationEditPanel";
+import { ReservationHistory } from "./ReservationHistory";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import ChatBubbleOutlineOutlined from "@mui/icons-material/ChatBubbleOutlineOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
@@ -138,6 +143,9 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const [checkInNeedsForce, setCheckInNeedsForce] = React.useState(false);
   const [checkOutNeedsForce, setCheckOutNeedsForce] = React.useState(false);
   const [cancelPromptOpen, setCancelPromptOpen] = React.useState(false);
+  // Панель правки: "edit" — даты/гости/питание, "room" — другой номер.
+  const [editMode, setEditMode] = React.useState<"edit" | "room" | null>(null);
+  const { enqueueSnackbar } = useSnackbar();
   const [cancelReason, setCancelReason] = React.useState("");
   const [cancelAsNoShow, setCancelAsNoShow] = React.useState(false);
 
@@ -158,6 +166,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setCheckInNeedsForce(false);
     setCheckOutNeedsForce(false);
     setCancelPromptOpen(false);
+    setEditMode(null);
     setCancelReason("");
     setCancelAsNoShow(false);
     setPaymentFormOpen(false);
@@ -187,6 +196,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
 
   const invalidateReservation = () => {
     void queryClient.invalidateQueries({ queryKey: ["hotel", "reservation", reservationId] });
+    // Списки броней («Ресепшен», история гостя) — статус и оплата там тоже меняются.
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "reservations"] });
     void queryClient.invalidateQueries({ queryKey: ["hotel", "calendar"] });
     // Карточки над шахматкой (HotelOccupancyBanner) считает бэкенд: выезд ставит
     // номеру «Грязно» и заводит задачу уборки, заселение/отмена двигают заезды и
@@ -310,7 +321,13 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     canManageReservation && reservation && CANCELLABLE_STATUSES.has(reservation.status) && item?.stayStatus !== "checked_out";
   const canCheckIn = canManageStays && reservation?.status === "confirmed" && item?.stayStatus === "expected";
   const canCheckOut = canManageStays && item?.stayStatus === "checked_in";
-  const hasStatusActions = canConfirm || canCancel || canCheckIn || canCheckOut;
+  // Править можно живую бронь, пока гость не выехал. Номер: до заезда —
+  // назначение (право на брони), у заселённого — переселение (право на заселение).
+  const isLiveReservation = reservation != null && CANCELLABLE_STATUSES.has(reservation.status) && item?.stayStatus !== "checked_out";
+  const canEditStay = canManageReservation && isLiveReservation;
+  const canChangeRoom =
+    isLiveReservation && (item?.stayStatus === "checked_in" ? canManageStays : item?.stayStatus === "expected" && canManageReservation);
+  const hasStatusActions = canConfirm || canCancel || canCheckIn || canCheckOut || canEditStay || canChangeRoom;
 
 
   const money = (v: string | number) => `${Number(v).toLocaleString("ru-RU")} ${reservation?.currency === "KGS" || !reservation ? "сом" : reservation.currency}`;
@@ -435,8 +452,39 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               {hasStatusActions && (
                 <Stack direction="row" gap={1} flexWrap="wrap" justifyContent={{ xs: "flex-start", md: "flex-end" }}>
                   {canCancel && (
-                    <Button color="error" disabled={actionBusy} onClick={() => setCancelPromptOpen((v) => !v)}>
+                    <Button
+                      color="error"
+                      disabled={actionBusy}
+                      onClick={() => {
+                        setEditMode(null);
+                        setCancelPromptOpen((v) => !v);
+                      }}
+                    >
                       Отменить бронь
+                    </Button>
+                  )}
+                  {canChangeRoom && (
+                    <Button
+                      disabled={actionBusy}
+                      startIcon={<SwapHorizOutlined fontSize="small" />}
+                      onClick={() => {
+                        setCancelPromptOpen(false);
+                        setEditMode((m) => (m === "room" ? null : "room"));
+                      }}
+                    >
+                      {item.stayStatus === "checked_in" ? "Переселить" : "Сменить номер"}
+                    </Button>
+                  )}
+                  {canEditStay && (
+                    <Button
+                      disabled={actionBusy}
+                      startIcon={<EditOutlined fontSize="small" />}
+                      onClick={() => {
+                        setCancelPromptOpen(false);
+                        setEditMode((m) => (m === "edit" ? null : "edit"));
+                      }}
+                    >
+                      Изменить
                     </Button>
                   )}
                   {canConfirm && primaryAction?.label !== "Подтвердить" && (
@@ -459,7 +507,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               )}
             </Stack>
 
-            {(actionError || checkInNeedsForce || checkOutNeedsForce || cancelPromptOpen) && (
+            {(actionError || checkInNeedsForce || checkOutNeedsForce || cancelPromptOpen || editMode != null) && (
               <Stack gap={1.5} sx={{ mt: 2 }}>
                 {actionError && (
                   <Alert severity="error" onClose={() => setActionError(null)}>
@@ -491,6 +539,23 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                   >
                     Остаток к оплате: {money(reservation.balanceDue)}.
                   </Alert>
+                )}
+                {editMode != null && (
+                  <ReservationEditPanel
+                    key={editMode}
+                    mode={editMode}
+                    reservation={reservation}
+                    item={item}
+                    catalogs={catalogsQuery.data}
+                    onCancel={() => setEditMode(null)}
+                    onSaved={(message) => {
+                      setEditMode(null);
+                      invalidateReservation();
+                      void queryClient.invalidateQueries({ queryKey: ["hotel", "reservations"] });
+                      void queryClient.invalidateQueries({ queryKey: ["hotel", "room-availability"] });
+                      enqueueSnackbar(message, { variant: "success" });
+                    }}
+                  />
                 )}
                 <Collapse in={cancelPromptOpen}>
                   <Stack gap={1.5} sx={{ p: 2, borderRadius: "12px", bgcolor: subtleBg(theme, true) }}>
@@ -734,7 +799,9 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               </Box>
             </Box>
 
-            <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 3.5 }}>
+            <ReservationHistory logs={reservation.logs ?? []} />
+
+            <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 2 }}>
               Создана {dayjs(reservation.createdAt).format("D MMMM YYYY, HH:mm")}
               {reservation.createdByName ? ` · ${reservation.createdByName}` : ""}
             </Typography>
