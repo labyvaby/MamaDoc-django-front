@@ -2108,14 +2108,6 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                         >
                           {t("slots.allSpecialists")}
                         </Typography>
-                        <KeyboardArrowRightOutlined
-                          sx={{
-                            fontSize: 17,
-                            flexShrink: 0,
-                            transform: collapsedGroup === "all" ? "none" : "rotate(90deg)",
-                            transition: "transform .13s ease",
-                          }}
-                        />
                         {overall && (
                           <Box
                             sx={(t) => ({
