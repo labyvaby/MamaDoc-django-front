@@ -682,7 +682,7 @@ export function CompactNote() {
         </Box>
       ))}
       <Box component="small" sx={{ ml: "auto", fontSize: "0.72rem", display: { xs: "none", md: "inline" } }}>
-        Цифра в ячейке — количество комнат · строка = этаж
+        Цифра в ячейке — количество комнат, «С» — студия · строка = этаж
       </Box>
     </Box>
   );
