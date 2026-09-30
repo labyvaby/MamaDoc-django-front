@@ -822,6 +822,24 @@ export interface HotelRoomBlock {
   releasedAt: string | null;
 }
 
+/** dateTo не включается — как выезд у брони: блок 5→8 закрывает ночи 5, 6 и 7. */
+export interface HotelRoomBlockCreateData {
+  roomId: number;
+  dateFrom: string;
+  dateTo: string;
+  reason: string;
+}
+
+/** Снять номер с продажи (hotel.manage). 409 NO_AVAILABILITY — в номере бронь или категория продана полностью. */
+export function createRoomBlock(data: HotelRoomBlockCreateData): Promise<HotelRoomBlock> {
+  return apiRequest<HotelRoomBlock>("/v2/hotel/room-blocks/", { method: "POST", body: data });
+}
+
+/** Вернуть в продажу. Блок остаётся в истории с isActive=false. */
+export function releaseRoomBlock(id: number): Promise<void> {
+  return apiRequest<void>(`/v2/hotel/room-blocks/${id}/`, { method: "DELETE" });
+}
+
 export interface HotelCalendar {
   propertyId: number;
   dateFrom: string;

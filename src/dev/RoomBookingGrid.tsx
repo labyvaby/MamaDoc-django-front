@@ -50,6 +50,7 @@ import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Box, Button, CircularProgress, ClickAwayListener, IconButton, Paper, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
+import BuildOutlined from "@mui/icons-material/BuildOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
@@ -72,7 +73,7 @@ import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { Link as RouterLink } from "react-router";
 
-import { getCalendar, type HotelCalendarItem, type HotelCalendarRoom } from "../api/hotel";
+import { getCalendar, type HotelCalendarItem, type HotelCalendarRoom, type HotelRoomBlock } from "../api/hotel";
 import { PAGE_PERMISSIONS } from "../config/accessPermissions";
 import { useCan } from "../hooks/useCan";
 import { useNowMinute } from "../pages/schedule/django/useNowMinute";
@@ -87,6 +88,7 @@ import {
   HOTEL_ROOM_STATE_LABELS,
   HOTEL_STAY_STATUS_LABELS,
   HOTEL_STAY_STATUSES,
+  HOTEL_OFF_SALE_LABEL,
 } from "./hotelDisplay";
 import {
   getSelectedHotelDate,
@@ -420,6 +422,22 @@ export const RoomBookingGrid: React.FC = () => {
     return out;
   }, [pages]);
 
+  // Снятые с продажи ночи (ремонт и т.п.) — тоже по кускам, склеиваем по id.
+  const blocksByRoomId = React.useMemo(() => {
+    const seen = new Set<number>();
+    const map = new Map<number, HotelRoomBlock[]>();
+    for (const page of pages ?? []) {
+      for (const b of page.blocks ?? []) {
+        if (!b.isActive || seen.has(b.id)) continue;
+        seen.add(b.id);
+        const arr = map.get(b.roomId) ?? [];
+        arr.push(b);
+        map.set(b.roomId, arr);
+      }
+    }
+    return map;
+  }, [pages]);
+
   const itemsByRoomId = React.useMemo(() => {
     const map = new Map<number, HotelCalendarItem[]>();
     for (const it of allItems) {
@@ -584,10 +602,16 @@ export const RoomBookingGrid: React.FC = () => {
         const to = Math.min(dates.length, dayjs(it.checkOut).diff(gridStart, "day"));
         for (let i = from; i < to; i++) mask[i] = false;
       }
+      // Снятые с продажи ночи — не для быстрой брони.
+      for (const b of blocksByRoomId.get(row.room.id) ?? []) {
+        const from = Math.max(0, dayjs(b.dateFrom).diff(gridStart, "day"));
+        const to = Math.min(dates.length, dayjs(b.dateTo).diff(gridStart, "day"));
+        for (let i = from; i < to; i++) mask[i] = false;
+      }
       map.set(row.room.id, mask);
     }
     return map;
-  }, [ROWS, dates.length, itemsByRoomId, gridStart]);
+  }, [ROWS, dates.length, itemsByRoomId, blocksByRoomId, gridStart]);
 
   // Клавиатура: свободные ячейки — кнопки, и Tab по каждой (номера × дни — тысячи остановок)
   // не пройти. Поэтому у всех tabIndex=-1, кроме одной входной — первой свободной ночи
@@ -1375,6 +1399,61 @@ export const RoomBookingGrid: React.FC = () => {
                   });
                 })}
 
+                {/* Снятые с продажи ночи — серая штриховка на всю ячейку; клик открывает
+                    карточку номера, где блок можно снять («Вернуть в продажу»). */}
+                {ROWS.map((row, rowIdx) => {
+                  if (row.kind !== "room") return null;
+                  const gridRow = rowIdx + 3;
+                  return (blocksByRoomId.get(row.room.id) ?? []).map((b) => {
+                    const startCol = Math.max(0, dayjs(b.dateFrom).diff(gridStart, "day"));
+                    const endCol = Math.min(dates.length, dayjs(b.dateTo).diff(gridStart, "day"));
+                    if (endCol <= startCol) return null;
+                    if (endCol <= visibleRange.start || startCol >= visibleRange.end) return null;
+                    const label = b.reason || HOTEL_OFF_SALE_LABEL;
+                    // Бессрочный блок — от статуса номера «выведен из продажи».
+                    const period = b.dateTo.startsWith("9999") ? "без даты окончания" : `${nightsBetween(b.dateFrom, b.dateTo)} ноч.`;
+                    const description = `${HOTEL_OFF_SALE_LABEL}: ${label} · №${row.room.number} · ${period}`;
+                    const stripe = alpha(theme.palette.text.primary, theme.palette.mode === "dark" ? 0.16 : 0.09);
+                    return (
+                      <Box
+                        key={`block-${b.id}`}
+                        component="button"
+                        type="button"
+                        onClick={() => dialogsRef.current?.openRoom(row.room.id)}
+                        aria-label={description}
+                        title={`${description} — открыть номер`}
+                        sx={{
+                          gridRow,
+                          gridColumn: `${startCol + 2} / ${endCol + 2}`,
+                          alignSelf: "center",
+                          height: 30,
+                          mx: "3px",
+                          px: 1,
+                          borderRadius: "8px",
+                          border: `1px dashed ${alpha(theme.palette.text.primary, 0.28)}`,
+                          backgroundColor: alpha(theme.palette.text.primary, 0.04),
+                          backgroundImage: `repeating-linear-gradient(135deg, ${stripe} 0 6px, transparent 6px 12px)`,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 0.5,
+                          overflow: "hidden",
+                          font: "inherit",
+                          color: "text.secondary",
+                          cursor: "pointer",
+                          "&:hover": { borderColor: alpha(theme.palette.text.primary, 0.5) },
+                        }}
+                      >
+                        <BuildOutlined sx={{ fontSize: 14, flexShrink: 0 }} />
+                        {(endCol - startCol) * dayColWidth > 70 && (
+                          <Typography variant="caption" noWrap sx={{ fontWeight: 600 }}>
+                            {label}
+                          </Typography>
+                        )}
+                      </Box>
+                    );
+                  });
+                })}
+
                 {/* Граница между месяцами — серая вертикальная линия по левому краю первого дня
                     месяца, во всю высоту строк (без шапки: там смену месяца и так видно по подписи).
                     Раньше её не было вовсе, и на глаз было не понять, где кончается один месяц и
@@ -1466,6 +1545,20 @@ export const RoomBookingGrid: React.FC = () => {
                 />
                 <Typography variant="caption" color="text.secondary">
                   Овербукинг
+                </Typography>
+              </Stack>
+              <Stack direction="row" alignItems="center" gap={0.5}>
+                <Box
+                  sx={{
+                    width: 16,
+                    height: 10,
+                    borderRadius: "3px",
+                    border: `1px dashed ${alpha(theme.palette.text.primary, 0.28)}`,
+                    backgroundImage: `repeating-linear-gradient(135deg, ${alpha(theme.palette.text.primary, theme.palette.mode === "dark" ? 0.16 : 0.09)} 0 3px, transparent 3px 6px)`,
+                  }}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  {HOTEL_OFF_SALE_LABEL}
                 </Typography>
               </Stack>
               {/* Точка у номера — состояние уборки; четыре цвета, «Ремонт» серый (оранжевый — овербукинг). */}

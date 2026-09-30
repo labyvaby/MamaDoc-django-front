@@ -60,6 +60,7 @@ import {
 } from "./hotelDisplay";
 import { formatHotelDate, formatHotelDateRange, initialsOf, nightsBetween, requestQuickBooking } from "./mockDemoData";
 import { RoomStateControl } from "./RoomStateControl";
+import { RoomBlocksSection } from "./RoomBlocksSection";
 
 const AVAILABILITY_WINDOW_DAYS = 45;
 
@@ -658,6 +659,10 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, ro
                     })}
                   </Stack>
                 )}
+
+                <Box sx={{ mt: 3.5 }}>
+                  <RoomBlocksSection roomId={room.id} roomNumber={room.number} blocks={availability.blocks} />
+                </Box>
               </Box>
             </Box>
           </DialogContent>
