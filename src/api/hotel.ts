@@ -620,6 +620,125 @@ export function getQuote(request: HotelQuoteRequest, signal?: AbortSignal): Prom
   return apiRequest<HotelQuoteResult>("/v2/hotel/pricing/quote/", { method: "POST", body: request, signal });
 }
 
+// ── Календарь цен и история цен ─────────────────────────────────────────────
+
+/** Шаг расчёта цены ночи: kind — rule | manual | rate_plan | floor | ceiling | rounding. */
+export interface HotelPriceStep {
+  kind: string;
+  stage: string | null;
+  ruleId: number | null;
+  ruleVersion: number | null;
+  name: string;
+  adjustmentType: string | null;
+  adjustmentValue: string | null;
+  amountBefore: string;
+  amountAfter: string;
+}
+
+export interface HotelPriceNight {
+  date: string;
+  basePrice: Money;
+  barPrice: Money;
+  /** Цена одной ночи с заездом в эту дату по выбранному тарифу. */
+  price: Money;
+  isManualOverride: boolean;
+  manualPrice: Money | null;
+  overrideReason: string;
+  overrideById: number | null;
+  overrideByName: string;
+  overrideAt: string | null;
+  /** Процент проданных номеров категории. */
+  occupancy: string;
+  capacity: number;
+  occupied: number;
+  available: number;
+  stopSell: boolean;
+  closedToArrival: boolean;
+  closedToDeparture: boolean;
+  minNights: number | null;
+  maxNights: number | null;
+  appliedRules: HotelPriceStep[];
+}
+
+export interface HotelPriceCalendarRoomType {
+  roomTypeId: number;
+  roomTypeName: string;
+  basePrice: Money;
+  minPrice: Money | null;
+  maxPrice: Money | null;
+  nights: HotelPriceNight[];
+}
+
+export interface HotelPriceCalendar {
+  propertyId: number;
+  ratePlanId: number | null;
+  ratePlanName: string;
+  dateFrom: string;
+  dateTo: string;
+  /** Процент проданных номеров объекта по ночам (ключ — дата). */
+  propertyOccupancy: Record<string, string>;
+  roomTypes: HotelPriceCalendarRoomType[];
+}
+
+/** Сетка цен: категории × ночи. to не включается, диапазон ≤ 62 дня. Без ratePlanId — основной тариф. */
+export function getPriceCalendar(
+  params: { propertyId: number; from: string; to: string; ratePlanId?: number; roomTypeId?: number },
+  signal?: AbortSignal,
+): Promise<HotelPriceCalendar> {
+  return apiRequest<HotelPriceCalendar>(`/v2/hotel/pricing/calendar/${buildQuery(params)}`, { signal });
+}
+
+/**
+ * Одно изменение на диапазон дат (dateTo не включается): своя цена или
+ * clearPrice — «вернуть к авторасчёту», стоп-продажа, мин./макс. ночей.
+ * null/undefined — не трогать. Каждый вызов — строка «Истории цен».
+ */
+export interface HotelDailyRateChange {
+  roomTypeId: number;
+  dateFrom: string;
+  dateTo: string;
+  price?: Money;
+  clearPrice?: boolean;
+  reason?: string;
+  stopSell?: boolean;
+  closedToArrival?: boolean;
+  closedToDeparture?: boolean;
+  minNights?: number;
+  clearMinNights?: boolean;
+  maxNights?: number;
+  clearMaxNights?: boolean;
+}
+
+/** Право hotel.rates.manage. Ответ — сколько ночей изменено. */
+export function setDailyRates(ratePlanId: number, change: HotelDailyRateChange): Promise<{ nights: number }> {
+  return apiRequest<{ nights: number }>(`/v2/hotel/rate-plans/${ratePlanId}/daily-rates/`, { method: "PUT", body: change });
+}
+
+/** kind: daily_rate | rule_created | rule_updated | rule_deleted | rate_plan | room_type. */
+export interface HotelPricingChange {
+  id: number;
+  kind: string;
+  ruleId: number | null;
+  ratePlanId: number | null;
+  roomTypeId: number | null;
+  dateFrom: string | null;
+  dateTo: string | null;
+  /** Для правил — { поле: { old, new } } или снимок правила; для дат — новые значения. */
+  changes: Record<string, unknown>;
+  reason: string;
+  userId: number | null;
+  userName: string;
+  createdAt: string;
+}
+
+/** Кто, когда и почему менял цены. Право hotel.rates.manage. Новые сверху. */
+export function listPricingHistory(
+  params: { propertyId: number; roomTypeId?: number; ruleId?: number; kind?: string; limit?: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<{ count: number; results: HotelPricingChange[] }> {
+  return apiRequest<{ count: number; results: HotelPricingChange[] }>(`/v2/hotel/pricing/history/${buildQuery(params)}`, { signal });
+}
+
 // ── Номера (Room) ─────────────────────────────────────────────────────────
 //
 // Терраса/экспликация/фото — контракт подтверждён и выложен, «Ответ бэкенда:

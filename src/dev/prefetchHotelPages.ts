@@ -17,6 +17,7 @@ const HOTEL_PAGES: Array<() => Promise<unknown>> = [
   () => import("./HotelPricingRulesPage"),
   () => import("./HotelPricingRuleFormPage"),
   () => import("./HotelEventsPage"),
+  () => import("./HotelPriceCalendarPage"),
   () => import("./HotelGuestsPage"),
   () => import("./HotelHousekeepingPage"),
   () => import("./HotelReportsPage"),

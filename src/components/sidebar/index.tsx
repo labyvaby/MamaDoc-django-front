@@ -31,6 +31,7 @@ import { useIsVivaActive } from "../../dev/mockDemoData";
 import { useHotelProperty } from "../../dev/useHotelProperty";
 import { prefetchHotelPages } from "../../dev/prefetchHotelPages";
 import CelebrationOutlined from "@mui/icons-material/CelebrationOutlined";
+import CalendarViewMonthOutlined from "@mui/icons-material/CalendarViewMonthOutlined";
 import RoomServiceOutlined from "@mui/icons-material/RoomServiceOutlined";
 
 
@@ -425,6 +426,7 @@ const HotelSidebarMenu: React.FC = () => {
   const canCategories = can(PAGE_PERMISSIONS.hotelRoomCategories);
   const canPricing = can(PAGE_PERMISSIONS.hotelPricingRules);
   const canEvents = can(PAGE_PERMISSIONS.hotelEvents);
+  const canPriceCalendar = can(PAGE_PERMISSIONS.hotelPriceCalendar);
   const canReception = can(PAGE_PERMISSIONS.hotelReception);
 
   const sectionLabel = (text: string) =>
@@ -447,10 +449,11 @@ const HotelSidebarMenu: React.FC = () => {
       {canKitchen && <SidebarMenuItem to="/kitchen" icon={<RestaurantOutlined />} label="Кухня" collapsed={siderCollapsed} />}
       {canReports && <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчёты" collapsed={siderCollapsed} />}
 
-      {(canRooms || canCategories || canPricing || canEvents) && sectionLabel("Отель")}
+      {(canRooms || canCategories || canPricing || canPriceCalendar || canEvents) && sectionLabel("Отель")}
       {canRooms && <SidebarMenuItem to="/rooms" icon={<HotelOutlined />} label="Номера" collapsed={siderCollapsed} />}
       {canCategories && <SidebarMenuItem to="/room-categories" icon={<CategoryOutlined />} label="Категории и тарифы" collapsed={siderCollapsed} />}
       {canPricing && <SidebarMenuItem to="/pricing-rules" icon={<PriceChangeOutlined />} label="Ценообразование" collapsed={siderCollapsed} />}
+      {canPriceCalendar && <SidebarMenuItem to="/price-calendar" icon={<CalendarViewMonthOutlined />} label="Календарь цен" collapsed={siderCollapsed} />}
       {canEvents && <SidebarMenuItem to="/events" icon={<CelebrationOutlined />} label="События" collapsed={siderCollapsed} />}
       {canSettings && (
         <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
@@ -1169,6 +1172,7 @@ const HOTEL_ONLY_NAV_PATHS = [
   "/rooms",
   "/room-categories",
   "/pricing-rules",
+  "/price-calendar",
   "/events",
   "/reception",
   "/settings",
