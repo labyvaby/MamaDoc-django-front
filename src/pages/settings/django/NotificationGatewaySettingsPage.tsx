@@ -35,6 +35,7 @@ import { useCan } from "../../../hooks/useCan";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useT } from "../../../i18n/VerticalProvider";
+import { SettingsLayout } from "../SettingsLayout";
 
 type FormState = {
   enabled: boolean;
@@ -133,12 +134,18 @@ const NotificationGatewaySettingsPage: React.FC = () => {
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
   };
 
-  if (!permLoading && !canView) return <AccessDenied />;
+  if (!permLoading && !canView) {
+    return (
+      <SettingsLayout>
+        <AccessDenied />
+      </SettingsLayout>
+    );
+  }
 
   const configured = settingsQuery.data?.credentials;
 
   return (
-    <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 980, mx: "auto", height: "100%", overflowY: "auto" }}>
+    <SettingsLayout>
       <Stack spacing={3}>
         <PageHeader title={t("notificationGateway.pageTitle")} showSearch={false} />
 
@@ -345,7 +352,7 @@ const NotificationGatewaySettingsPage: React.FC = () => {
           {message?.text}
         </Alert>
       </Snackbar>
-    </Box>
+    </SettingsLayout>
   );
 };
 
