@@ -889,6 +889,16 @@ export type WarehouseTransferDocument = {
     createdAt: string;
     sentAt: string | null;
     acceptedAt: string | null;
+    /** Точки складов — «откуда» и «куда». */
+    fromBranchId?: number | null;
+    fromBranchName?: string | null;
+    toBranchId?: number | null;
+    toBranchName?: string | null;
+    /**
+     * Этот пользователь сейчас может принять документ: он отправлен, есть право
+     * приёмки и активная точка — получатель. Решает сервер, фронт не угадывает.
+     */
+    canAccept?: boolean;
     lines: Array<{
         id: number;
         productId: number;
@@ -1023,6 +1033,11 @@ export function createWarehouseTransfer(data: {
 }) {
     const { organizationId, ...body } = data;
     return apiRequest<WarehouseTransferDocument>(withQuery("/v2/warehouse/transfer-documents/", { organizationId }), { method: "POST", body });
+}
+
+/** Что едет на мою точку и ждёт приёмки (право warehouse.manage или warehouse.transfers.accept). */
+export function getIncomingWarehouseTransfers(signal?: AbortSignal) {
+    return apiRequest<WarehouseTransferDocument[]>("/v2/warehouse/transfer-documents/incoming/", { signal });
 }
 
 export function getWarehouseTransferDetail(id: number, organizationId?: number, signal?: AbortSignal) {

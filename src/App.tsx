@@ -30,6 +30,7 @@ import { PatientSessionProvider } from "./pages/public-booking/PatientSession";
 import { AchievementToast } from "./components/achievements/AchievementToast";
 import { NewBookingToast } from "./components/bookings/NewBookingToast";
 import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
+import { IncomingTransfersBanner } from "./components/storage/IncomingTransfersBanner";
 import { FloatingTopBanners } from "./components/layout/FloatingTopBanners";
 import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
@@ -572,6 +573,8 @@ function App() {
                                 <DjangoContextRemount>
                                   <>
                                     <AnnouncementBanner />
+                                    {/* Коробка с другой точки ждёт приёмки — на любом экране получателя. */}
+                                    <IncomingTransfersBanner />
                                      <Outlet />
                                      <FloatingTopBanners />
                                   </>
