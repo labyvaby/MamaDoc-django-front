@@ -100,7 +100,7 @@ export default function ProcurementSettingsPage() {
           </Typography>
           {settings.data && !settings.data.recognitionAvailable && (
             <Alert severity="warning">
-              Распознавание не настроено на сервере (нет ключа провайдера) — кнопка «По фото» будет неактивна, фото к
+              Распознавание не настроено на сервере (нет ключа провайдера) — в форме накладной распознавание будет недоступно, фото к
               накладным сохраняются как обычно.
             </Alert>
           )}
