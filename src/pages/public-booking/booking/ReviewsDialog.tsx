@@ -54,9 +54,11 @@ export const ReviewsDialog: React.FC<{
       open={open}
       onClose={onClose}
       fullWidth
-      maxWidth="sm"
+      maxWidth="md"
       PaperProps={{
         sx: {
+          width: { xs: "calc(100% - 32px)", sm: 680 },
+          maxWidth: "calc(100% - 32px)",
           borderRadius: BOOKING_RADIUS,
           overflow: "hidden",
           boxShadow: "0 24px 80px rgba(15, 23, 42, 0.28)",
@@ -142,23 +144,38 @@ export const ReviewsDialog: React.FC<{
             <Typography sx={{ fontSize: 16, fontWeight: 500 }}>{t("noReviews")}</Typography>
           </Stack>
         ) : (
-          <Stack spacing={1.25} sx={{ maxHeight: 470, overflowY: "auto", p: { xs: 2, sm: 2.5 } }}>
+          <Stack spacing={1.4} sx={{ maxHeight: 470, overflowY: "auto", p: { xs: 2, sm: 2.5 } }}>
             {reviews.map((review, index) => (
               <Box
                 key={index}
                 sx={{
-                  p: { xs: 1.5, sm: 2 },
-                  border: `1px solid ${DIVIDER}`,
-                  borderRadius: 3,
-                  bgcolor: "background.paper",
-                  boxShadow: "0 10px 32px rgba(15, 23, 42, 0.06)",
+                  position: "relative",
+                  ml: { xs: 1.25, sm: 2 },
+                  p: { xs: 1.5, sm: 1.75 },
+                  border: "1px solid rgba(18, 176, 75, 0.16)",
+                  borderRadius: "26px 26px 26px 8px",
+                  bgcolor: review.source === "2gis" ? "#FBFFFC" : "background.paper",
+                  boxShadow: "0 12px 34px rgba(15, 23, 42, 0.07)",
+                  "&::before": {
+                    content: '""',
+                    position: "absolute",
+                    left: -9,
+                    bottom: 22,
+                    width: 18,
+                    height: 18,
+                    bgcolor: review.source === "2gis" ? "#FBFFFC" : "background.paper",
+                    borderLeft: "1px solid rgba(18, 176, 75, 0.16)",
+                    borderBottom: "1px solid rgba(18, 176, 75, 0.16)",
+                    borderBottomLeftRadius: 18,
+                    transform: "rotate(45deg)",
+                  },
                 }}
               >
                 <Stack direction="row" alignItems="center" spacing={1.5} sx={{ minWidth: 0 }}>
                   <Box
                     sx={{
-                      width: 44,
-                      height: 44,
+                      width: 42,
+                      height: 42,
                       flexShrink: 0,
                       borderRadius: "50%",
                       display: "flex",
@@ -175,7 +192,7 @@ export const ReviewsDialog: React.FC<{
                   </Box>
                   <Box sx={{ minWidth: 0, flex: 1 }}>
                     <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
-                      <Typography noWrap sx={{ fontSize: 15, fontWeight: 700 }}>
+                      <Typography noWrap sx={{ fontSize: 14.5, fontWeight: 700 }}>
                         {review.patientName}
                       </Typography>
                       {sourceLabel(review) && (
@@ -190,7 +207,7 @@ export const ReviewsDialog: React.FC<{
                             bgcolor: "rgba(18, 176, 75, 0.1)",
                             color: "#168A3D",
                             border: "1px solid rgba(18, 176, 75, 0.2)",
-                            fontSize: 11,
+                            fontSize: 10.5,
                             fontWeight: 800,
                             lineHeight: 1,
                             flexShrink: 0,
@@ -212,15 +229,15 @@ export const ReviewsDialog: React.FC<{
                   sx={{
                     mt: 1.25,
                     color: RATING_COLOR,
-                    fontSize: 18,
+                    fontSize: 17,
                     "& .MuiRating-icon": { mr: 0.15 },
                   }}
                 />
                 {review.comment && (
                   <Typography
                     sx={{
-                      mt: 1,
-                      fontSize: 15,
+                      mt: 0.8,
+                      fontSize: 13.5,
                       lineHeight: 1.55,
                       color: "text.secondary",
                     }}
