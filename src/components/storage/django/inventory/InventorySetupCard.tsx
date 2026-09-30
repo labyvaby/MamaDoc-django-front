@@ -17,10 +17,12 @@ import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import WarehouseOutlined from "@mui/icons-material/WarehouseOutlined";
+import QrCodeScannerOutlined from "@mui/icons-material/QrCodeScannerOutlined";
+import ChecklistOutlined from "@mui/icons-material/ChecklistOutlined";
 
 import { AppButton, AppCard, InfoTile } from "../../../ui";
 import { subtleBg } from "../../../../theme/uiHelpers";
-import type { DjangoWarehouse } from "../../../../api/warehouse";
+import type { DjangoWarehouse, InventoryCountMode } from "../../../../api/warehouse";
 import { money, positionsLabel } from "./inventoryModel";
 
 export type InventoryCategoryOption = {
@@ -52,8 +54,31 @@ export type InventorySetupCardProps = {
     responsibleName: string;
     /** Активный филиал: склад другого филиала бэк не даст открыть. */
     activeBranchId?: number | null;
+    /** Как считаем: сканером по полкам или по списку учёта (витринная). */
+    mode?: InventoryCountMode;
+    onModeChange?: (mode: InventoryCountMode) => void;
     disabled?: boolean;
 };
+
+const MODE_OPTIONS: Array<{
+    value: InventoryCountMode;
+    title: string;
+    hint: string;
+    icon: React.ReactNode;
+}> = [
+    {
+        value: "blind",
+        title: "По сканеру",
+        hint: "Пикаете всё, что лежит на полках. Подходит для полного пересчёта склада.",
+        icon: <QrCodeScannerOutlined />,
+    },
+    {
+        value: "showcase",
+        title: "Витринная — от списка",
+        hint: "Система показывает, что должно быть на витрине, — вы отмечаете «на месте» или правите количество.",
+        icon: <ChecklistOutlined />,
+    },
+];
 
 /**
  * Шаг 1 — настройка документа: склад, категории товаров и сводка по охвату.
@@ -77,6 +102,8 @@ export const InventorySetupCard: React.FC<InventorySetupCardProps> = ({
     scopeSum,
     responsibleName,
     activeBranchId = null,
+    mode = "blind",
+    onModeChange,
     disabled = false,
 }) => {
     const allSelected = categories.length > 0 && selected.length === categories.length;
@@ -92,6 +119,63 @@ export const InventorySetupCard: React.FC<InventorySetupCardProps> = ({
             subheader="Ожидаемые остатки снимаются на момент старта — продажи в это время не блокируются"
         >
             <Stack spacing={2.5}>
+                {onModeChange && (
+                    <Box
+                        role="radiogroup"
+                        aria-label="Режим инвентаризации"
+                        sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}
+                    >
+                        {MODE_OPTIONS.map((option) => {
+                            const active = option.value === mode;
+                            return (
+                                <ButtonBase
+                                    key={option.value}
+                                    role="radio"
+                                    aria-checked={active}
+                                    disabled={disabled}
+                                    onClick={() => onModeChange(option.value)}
+                                    sx={(t) => ({
+                                        p: 1.5,
+                                        gap: 1.5,
+                                        alignItems: "flex-start",
+                                        justifyContent: "flex-start",
+                                        textAlign: "left",
+                                        borderRadius: 2,
+                                        border: `1px solid ${active ? t.palette.primary.main : t.palette.divider}`,
+                                        bgcolor: active ? alpha(t.palette.primary.main, 0.08) : subtleBg(t),
+                                        transition: "border-color .15s, background-color .15s",
+                                        "&:hover": { borderColor: t.palette.primary.main },
+                                    })}
+                                >
+                                    <Box
+                                        sx={(t) => ({
+                                            width: 36,
+                                            height: 36,
+                                            flexShrink: 0,
+                                            borderRadius: 1.5,
+                                            display: "grid",
+                                            placeItems: "center",
+                                            color: active ? t.palette.primary.contrastText : t.palette.text.secondary,
+                                            bgcolor: active ? t.palette.primary.main : t.palette.action.hover,
+                                        })}
+                                    >
+                                        {option.icon}
+                                    </Box>
+                                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                                        <Stack direction="row" alignItems="center" spacing={0.75}>
+                                            <Typography variant="subtitle2" fontWeight={700}>{option.title}</Typography>
+                                            {active && <CheckOutlined color="primary" sx={{ fontSize: 18 }} />}
+                                        </Stack>
+                                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.45 }}>
+                                            {option.hint}
+                                        </Typography>
+                                    </Box>
+                                </ButtonBase>
+                            );
+                        })}
+                    </Box>
+                )}
+
                 <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
                     <TextField
                         select
