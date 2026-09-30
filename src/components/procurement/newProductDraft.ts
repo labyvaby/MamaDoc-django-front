@@ -25,6 +25,8 @@ export interface NewProductDraft {
   sku: string;
   color: string;
   size: string;
+  /** Свойство «Бренд»; пусто — бренд по умолчанию из карточки поставщика. */
+  brand: string;
 }
 
 export const emptyDraft = (name = ""): NewProductDraft => ({
@@ -37,7 +39,20 @@ export const emptyDraft = (name = ""): NewProductDraft => ({
   sku: "",
   color: "",
   size: "",
+  brand: "",
 });
+
+/**
+ * Значения свойства «Бренд» организации — подсказки к полю: выбирая из уже
+ * заведённых, не плодим «Zara» / «ZARA» / «Zara » и находим товары поиском.
+ */
+export function brandOptions(attributes: DjangoProductAttribute[]): string[] {
+  const brand = attributes.find((a) => a.isActive && a.role === "generic" && /^(бренд|brand)$/i.test(a.name.trim()));
+  return (brand?.values ?? [])
+    .filter((v) => v.isActive)
+    .map((v) => v.value)
+    .sort((a, b) => a.localeCompare(b, "ru"));
+}
 
 /** Категория, в которой товар живёт вариантами: её форма несёт и цвет, и размер. */
 export interface CategoryOption {
@@ -141,6 +156,7 @@ export function newProductInput(draft: NewProductDraft, category: CategoryOption
   else if (draft.category.trim()) input.category = draft.category.trim();
   if (draft.unitId != null) input.unitId = draft.unitId;
   if (draft.barcode.trim()) input.barcode = draft.barcode.trim();
+  if (draft.brand.trim()) input.brand = draft.brand.trim();
   if (variant) {
     input.color = draft.color.trim();
     input.size = draft.size.trim();
@@ -165,13 +181,17 @@ export function matchUnit(units: DjangoUnitOfMeasure[], raw: string | null | und
  * карточки уникален.
  */
 export function draftFromRecognized(
-  line: Pick<RecognizedLine, "name" | "color" | "size" | "barcode" | "sku" | "unit" | "productName">,
-  options: { units: DjangoUnitOfMeasure[]; skuIsUnique: boolean },
+  line: Pick<RecognizedLine, "name" | "color" | "size" | "barcode" | "sku" | "unit" | "productName" | "brand">,
+  options: { units: DjangoUnitOfMeasure[]; skuIsUnique: boolean; brands?: string[] },
 ): NewProductDraft {
+  const brand = line.brand?.trim() ?? "";
   return {
     ...emptyDraft((line.productName || line.name).trim()),
     color: line.color?.trim() ?? "",
     size: line.size?.trim() ?? "",
+    // Уже заведённое написание («Zara», а не «ZARA» из документа) — одно
+    // значение свойства на бренд, иначе фильтр найдёт только часть товаров.
+    brand: options.brands?.find((known) => known.toLowerCase() === brand.toLowerCase()) ?? brand,
     barcode: line.barcode?.trim() ?? "",
     sku: options.skuIsUnique ? line.sku?.trim() ?? "" : "",
     unitId: matchUnit(options.units, line.unit)?.id ?? null,
