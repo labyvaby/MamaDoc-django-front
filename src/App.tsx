@@ -30,6 +30,7 @@ import { PatientSessionProvider } from "./pages/public-booking/PatientSession";
 import { AchievementToast } from "./components/achievements/AchievementToast";
 import { NewBookingToast } from "./components/bookings/NewBookingToast";
 import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
+import { IncomingTransfersBanner } from "./components/storage/IncomingTransfersBanner";
 import { FloatingTopBanners } from "./components/layout/FloatingTopBanners";
 import { ClinicOnly } from "./components/layout/ClinicOnly";
 import { ClinicPagePrefetch } from "./components/layout/ClinicPagePrefetch";
@@ -558,6 +559,8 @@ function App() {
                                         монтируются — одно место, см. ClinicOnly. */}
                                     <ClinicOnly>
                                       <AnnouncementBanner />
+                                      {/* Коробка с другой точки ждёт приёмки — на любом экране получателя. */}
+                                      <IncomingTransfersBanner />
                                     </ClinicOnly>
                                      <Outlet />
                                      <FloatingTopBanners />
