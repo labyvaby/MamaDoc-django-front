@@ -28,6 +28,8 @@ export interface MessagingCredentials {
   smsConfigured: boolean;
   whatsappLogin: string;
   whatsappConfigured: boolean;
+  chatwootSource: string;
+  chatwootConfigured: boolean;
 }
 
 export interface NotificationRuleInput {
@@ -57,6 +59,9 @@ export interface MessagingCredentialsInput {
   whatsappLogin?: string;
   whatsappPassword?: string;
   whatsappPasswordClear?: boolean;
+  chatwootSource?: string;
+  chatwootToken?: string;
+  chatwootTokenClear?: boolean;
 }
 
 export interface NotificationHistoryItem {
