@@ -2,7 +2,6 @@ import React from "react";
 import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
 import CircularProgress from "@mui/material/CircularProgress";
-import Collapse from "@mui/material/Collapse";
 import IconButton from "@mui/material/IconButton";
 import InputBase from "@mui/material/InputBase";
 import Stack from "@mui/material/Stack";
@@ -30,11 +29,7 @@ type Props = {
   /** Идёт запрос поиска — показываем индикатор в поле. */
   searching?: boolean;
   onSelectClient: (client: PosClientSearchResult) => void;
-  /**
-   * Регистрация клиента. Промис с `false` — не получилось (ошибку показывает
-   * страница), форма остаётся открытой; иначе форма закрывается.
-   */
-  onRegister: (name: string, phone: string) => void | Promise<boolean | void>;
+  onCreateClient?: (query: string) => void;
   onChangeClient: () => void;
   onOpenHistory: () => void;
 };
@@ -46,9 +41,6 @@ const initials = (name: string): string =>
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
-
-/** Похоже на номер телефона — тогда подставляем запрос в поле телефона, а не имени. */
-const looksLikePhone = (value: string) => /^[+\d][\d\s()-]*$/.test(value.trim());
 
 const Avatar: React.FC<{ name: string; size?: number }> = ({ name, size = 36 }) => {
   const theme = useTheme();
@@ -154,104 +146,7 @@ const ClientOption: React.FC<{ client: PosClientSearchResult; onClick: () => voi
   );
 };
 
-/** Форма быстрого создания клиента: имя + телефон, после создания он сразу выбран. */
-const RegisterForm: React.FC<{
-  initialQuery: string;
-  onSubmit: (name: string, phone: string) => void | Promise<boolean | void>;
-  onCancel: () => void;
-}> = ({ initialQuery, onSubmit, onCancel }) => {
-  const theme = useTheme();
-  const c = posColors(theme);
-  const phoneFirst = looksLikePhone(initialQuery);
-  const [name, setName] = React.useState(phoneFirst ? "" : initialQuery.trim());
-  const [phone, setPhone] = React.useState(phoneFirst ? initialQuery.trim() : "");
-  const [sending, setSending] = React.useState(false);
-  const valid = name.trim().length > 0 && phone.replace(/\D/g, "").length >= 6;
-
-  const submit = async () => {
-    if (!valid || sending) return;
-    setSending(true);
-    try {
-      const result = await onSubmit(name.trim(), phone.trim());
-      if (result !== false) onCancel();
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const field = {
-    height: 38,
-    px: "12px",
-    bgcolor: c.card,
-    border: `1px solid ${c.hairline}`,
-    borderRadius: `${POS_RADIUS.tile}px`,
-    fontSize: 14,
-    color: c.text,
-    "&.Mui-focused": { borderColor: c.accent },
-    "& input::placeholder": { color: c.textDim, opacity: 1 },
-  } as const;
-
-  return (
-    <Box
-      component="form"
-      onSubmit={(event: React.FormEvent) => {
-        event.preventDefault();
-        void submit();
-      }}
-      sx={{ p: "10px", borderRadius: `${POS_RADIUS.card}px`, border: `1px dashed ${c.accent}`, bgcolor: c.page }}
-    >
-      <Typography sx={{ fontSize: 12, fontWeight: 700, color: c.accentText, mb: "8px" }}>Новый клиент</Typography>
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1.2fr) minmax(0, 1fr) auto" },
-          gap: "8px",
-        }}
-      >
-        <InputBase autoFocus={!phoneFirst} value={name} onChange={(event) => setName(event.target.value)} placeholder="Имя и фамилия" inputProps={{ "aria-label": "Имя клиента" }} sx={field} />
-        <InputBase
-          autoFocus={phoneFirst}
-          value={phone}
-          onChange={(event) => setPhone(event.target.value)}
-          placeholder="+996 700 000 000"
-          inputProps={{ inputMode: "tel", "aria-label": "Телефон клиента" }}
-          sx={field}
-        />
-        <Stack direction="row" gap="6px">
-          <ButtonBase
-            onClick={onCancel}
-            disabled={sending}
-            sx={{ flex: { xs: 1, md: "none" }, height: 38, px: "12px", borderRadius: `${POS_RADIUS.tile}px`, border: `1px solid ${c.hairline}`, color: c.textSoft, fontSize: 13, fontWeight: 600 }}
-          >
-            Отмена
-          </ButtonBase>
-          <ButtonBase
-            type="submit"
-            disabled={!valid || sending}
-            sx={{
-              flex: { xs: 2, md: "none" },
-              height: 38,
-              px: "14px",
-              gap: "6px",
-              borderRadius: `${POS_RADIUS.tile}px`,
-              bgcolor: c.accent,
-              color: c.onAccent,
-              fontSize: 13,
-              fontWeight: 800,
-              whiteSpace: "nowrap",
-              "&.Mui-disabled": { opacity: 0.45 },
-            }}
-          >
-            {sending ? <CircularProgress size={14} color="inherit" /> : null}
-            Создать и выбрать
-          </ButtonBase>
-        </Stack>
-      </Box>
-    </Box>
-  );
-};
-
-/** Футер чека: выбранный клиент либо его поиск и быстрое создание. */
+/** Футер чека: выбранный клиент либо поиск и открытие полной карточки. */
 export const PosClientFooter: React.FC<Props> = ({
   client,
   query,
@@ -260,7 +155,7 @@ export const PosClientFooter: React.FC<Props> = ({
   results,
   searching = false,
   onSelectClient,
-  onRegister,
+  onCreateClient,
   onChangeClient,
   onOpenHistory,
   canRegister = false,
@@ -268,12 +163,6 @@ export const PosClientFooter: React.FC<Props> = ({
 }) => {
   const theme = useTheme();
   const c = posColors(theme);
-  const [registerOpen, setRegisterOpen] = React.useState(false);
-  const [registerSeed, setRegisterSeed] = React.useState("");
-
-  React.useEffect(() => {
-    if (client) setRegisterOpen(false);
-  }, [client]);
 
   const shell = {
     flexShrink: 0,
@@ -319,11 +208,6 @@ export const PosClientFooter: React.FC<Props> = ({
 
   const trimmed = query.trim();
   const notFound = results !== null && results.length === 0;
-  const openRegister = (seed: string) => {
-    setRegisterSeed(seed);
-    setRegisterOpen(true);
-  };
-
   return (
     <Stack gap="10px" sx={shell}>
       <Stack direction="row" alignItems="center" gap="8px">
@@ -361,25 +245,24 @@ export const PosClientFooter: React.FC<Props> = ({
             </IconButton>
           ) : null}
         </Box>
-        {canRegister && (
+        {canRegister && onCreateClient && (
           <FooterButton
             label="Новый"
             icon={<PersonAddAlt1Outlined />}
-            accent={registerOpen}
-            onClick={() => (registerOpen ? setRegisterOpen(false) : openRegister(trimmed))}
+            onClick={() => onCreateClient(trimmed)}
           />
         )}
       </Stack>
 
-      {!registerOpen && results !== null && (
+      {results !== null && (
         notFound ? (
           <Stack direction="row" alignItems="center" flexWrap="wrap" gap="8px">
             <Typography sx={{ fontSize: 13, color: c.textDim }}>
               Клиент «{trimmed}» не найден.
             </Typography>
-            {canRegister && (
+            {canRegister && onCreateClient && (
               <ButtonBase
-                onClick={() => openRegister(trimmed)}
+                onClick={() => onCreateClient(trimmed)}
                 sx={{ fontSize: 13, fontWeight: 700, color: c.accentText, textDecoration: "underline", textUnderlineOffset: 3 }}
               >
                 Создать клиента
@@ -403,14 +286,6 @@ export const PosClientFooter: React.FC<Props> = ({
         )
       )}
 
-      <Collapse in={registerOpen} unmountOnExit>
-        <RegisterForm
-          key={registerSeed}
-          initialQuery={registerSeed}
-          onSubmit={onRegister}
-          onCancel={() => setRegisterOpen(false)}
-        />
-      </Collapse>
     </Stack>
   );
 };
