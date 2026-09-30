@@ -73,7 +73,7 @@ import DoorFrontOutlined from "@mui/icons-material/DoorFrontOutlined";
 import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
 import { FormField } from "./formField";
 import { focusFirstFieldError, hasFieldErrors, type FieldRules } from "./formRules";
-import { FormCard, HotelPage, HotelPageHeader, StickyActions } from "./hotelUi";
+import { FormCard, HotelPage, HotelPageHeader, OptionalCard, StickyActions } from "./hotelUi";
 import { RoomDeleteDialog } from "./RoomDeleteDialog";
 import { useTheme } from "@mui/material/styles";
 import { subtleBorder } from "../theme/uiHelpers";
@@ -528,66 +528,23 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
               sx={{ flex: "1 1 160px" }}
             />
           </Stack>
-          <TextField
-            select
-            label="Питание"
-            value={form.meals}
-            onChange={(e) => {
-              const v = e.target.value as unknown;
-              patchForm({ meals: typeof v === "string" ? v.split(",") : (v as string[]) });
-            }}
-            disabled={saving}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start" sx={{ color: "text.disabled", "& svg": { fontSize: 20 } }}>
-                    <RestaurantOutlined />
-                  </InputAdornment>
-                ),
-              },
-            }}
-            SelectProps={{
-              multiple: true,
-              renderValue: (selected) => (
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                  {(selected as string[]).map((key) => (
-                    <Chip key={key} label={mealChoices.find((c) => c.value === key)?.label ?? key} size="small" sx={{ height: 20, borderRadius: "6px" }} />
-                  ))}
-                </Box>
-              ),
-            }}
-            helperText="Необязательно — какое питание доступно в этом номере"
-            fullWidth
-          >
-            {mealChoices.map((c) => (
-              <MenuItem key={c.value} value={c.value}>
-                {c.label}
-              </MenuItem>
-            ))}
-          </TextField>
-          <FormField
-            icon={<NotesOutlined />}
-            label="Примечание"
-            value={form.note}
-            rules={ROOM_RULES.note}
-            showErrors={showErrors}
-            onValueChange={(note) => patchForm({ note })}
-            disabled={saving}
-            multiline
-            minRows={2}
-            fullWidth
-          />
         </Stack>
       </FormCard>
 
-      <FormCard>
+      <OptionalCard
+        title="Характеристики номера"
+        filled={Boolean(form.area || form.roomsCount || form.bathrooms || form.meals.length > 0)}
+        summary={
+          [form.area && `${form.area} м²`, form.roomsCount && `комнат: ${form.roomsCount}`, form.bathrooms && `санузлов: ${form.bathrooms}`, form.meals.length > 0 && "питание"]
+            .filter(Boolean)
+            .join(" · ") || "Площадь, санузлы, вид из окна, питание"
+        }
+        defaultOpen={editing != null}
+        forceOpen={showErrors}
+      >
         <Stack gap={2}>
-          <Typography variant="subtitle2" fontWeight={600}>
-            Доп. характеристики
-          </Typography>
           <Typography variant="body2" color="text.secondary">
-            Необязательно — только для этого конкретного номера, поверх общих характеристик категории.
-            {!editing && " Поля ниже подставлены по умолчанию для выбранной категории — поменяйте, что отличается у этого номера."}
+            {editing ? "Только для этого номера — поверх характеристик категории." : "Подставлено из категории — поменяйте только то, что у этого номера отличается."}
           </Typography>
           <Stack direction="row" flexWrap="wrap" gap={2}>
             <FormField
@@ -695,18 +652,66 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
             minRows={2}
             fullWidth
           />
+          <TextField
+            select
+            label="Питание"
+            value={form.meals}
+            onChange={(e) => {
+              const v = e.target.value as unknown;
+              patchForm({ meals: typeof v === "string" ? v.split(",") : (v as string[]) });
+            }}
+            disabled={saving}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start" sx={{ color: "text.disabled", "& svg": { fontSize: 20 } }}>
+                    <RestaurantOutlined />
+                  </InputAdornment>
+                ),
+              },
+            }}
+            SelectProps={{
+              multiple: true,
+              renderValue: (selected) => (
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                  {(selected as string[]).map((key) => (
+                    <Chip key={key} label={mealChoices.find((c) => c.value === key)?.label ?? key} size="small" sx={{ height: 20, borderRadius: "6px" }} />
+                  ))}
+                </Box>
+              ),
+            }}
+            helperText="Необязательно — какое питание доступно в этом номере"
+            fullWidth
+          >
+            {mealChoices.map((c) => (
+              <MenuItem key={c.value} value={c.value}>
+                {c.label}
+              </MenuItem>
+            ))}
+          </TextField>
+          <FormField
+            icon={<NotesOutlined />}
+            label="Примечание"
+            value={form.note}
+            rules={ROOM_RULES.note}
+            showErrors={showErrors}
+            onValueChange={(note) => patchForm({ note })}
+            disabled={saving}
+            multiline
+            minRows={2}
+            fullWidth
+          />
         </Stack>
-      </FormCard>
+      </OptionalCard>
 
-      <FormCard>
+      <OptionalCard
+        title="Экспликация помещений"
+        filled={form.zones.length > 0}
+        summary={form.zones.length > 0 ? `Помещений: ${form.zones.length}` : "Гостиная, спальня… — с площадью, как в плане БТИ"}
+        defaultOpen={form.zones.length > 0}
+        forceOpen={showErrors}
+      >
         <Stack gap={1.5}>
-          <Typography variant="subtitle2" fontWeight={600}>
-            Экспликация помещений
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Необязательно — если у номера несколько помещений (гостиная, спальня и т.п.), распишите их по
-            отдельности с площадью, как в плане БТИ.
-          </Typography>
           {form.zones.length > 0 && (
             <Stack gap={1.5}>
               {form.zones.map((zone, i) => (
@@ -804,8 +809,9 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
             Добавить помещение
           </Button>
         </Stack>
-      </FormCard>
+      </OptionalCard>
 
+      {editing && (
       <FormCard>
         <Stack gap={1.5}>
           <Typography variant="subtitle2" fontWeight={600}>
@@ -878,6 +884,7 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
           )}
         </Stack>
       </FormCard>
+      )}
 
       {editing && (
         <FormCard>

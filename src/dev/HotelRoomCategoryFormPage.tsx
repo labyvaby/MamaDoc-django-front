@@ -81,7 +81,7 @@ const CATEGORY_RULES = {
 } satisfies Record<string, FieldRules>;
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
-import { CountStepper, FormCard, HotelPage, HotelPageHeader, StickyActions } from "./hotelUi";
+import { CountStepper, FormCard, HotelPage, HotelPageHeader, OptionalCard, StickyActions } from "./hotelUi";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate, useParams } from "react-router";
@@ -219,6 +219,11 @@ const AmenityTile: React.FC<AmenityTileProps> = ({ amenity, checked, disabled, p
       }
       sx={{ flex: 1, m: 0, pl: 0.5, py: 0.5, minWidth: 0, alignSelf: "stretch" }}
     />
+    {!checked ? (
+      <Typography variant="body2" color="text.disabled" sx={{ pr: 1, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+        {Number(price) > 0 ? `+${Number(price).toLocaleString("ru-RU")} сом` : "без наценки"}
+      </Typography>
+    ) : (
     <TextField
       size="small"
       value={price}
@@ -243,6 +248,7 @@ const AmenityTile: React.FC<AmenityTileProps> = ({ amenity, checked, disabled, p
         "& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button": { WebkitAppearance: "none", margin: 0 },
       }}
     />
+    )}
   </Box>
 );
 
@@ -506,203 +512,16 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
           />
         </Stack>
       </FormCard>
-
-      <FormCard>
-        <Stack gap={2}>
-          <Typography variant="subtitle2" fontWeight={600}>
-            Описание номера
-          </Typography>
-          <Stack direction="row" flexWrap="wrap" gap={2}>
-            <FormField
-              icon={<LandscapeOutlined />}
-              rules={CATEGORY_RULES.short}
-              showErrors={showErrors}
-              label="Вид из окна"
-              placeholder="Двор, Улица, Горы…"
-              value={form.view}
-              onValueChange={(v) => patchForm({ view: v })}
-              disabled={saving}
-              sx={{ flex: "1 1 220px" }}
-            />
-            <FormField
-              icon={<BedOutlined />}
-              rules={CATEGORY_RULES.short}
-              showErrors={showErrors}
-              label="Тип кровати"
-              placeholder="Двуспальная кровать King-size"
-              value={form.bedType}
-              onValueChange={(v) => patchForm({ bedType: v })}
-              disabled={saving}
-              sx={{ flex: "1 1 220px" }}
-            />
-            <FormField
-              icon={<ArchitectureOutlined />}
-              rules={CATEGORY_RULES.short}
-              showErrors={showErrors}
-              label="Планировка"
-              placeholder="1 комната, Студия, Апартаменты…"
-              value={form.roomLayout}
-              onValueChange={(v) => patchForm({ roomLayout: v })}
-              disabled={saving}
-              sx={{ flex: "1 1 220px" }}
-            />
-          </Stack>
-          <FormField
-            icon={<NotesOutlined />}
-            rules={CATEGORY_RULES.long}
-            showErrors={showErrors}
-            label="Описание"
-            placeholder="Необязательно"
-            value={form.description}
-            onValueChange={(v) => patchForm({ description: v })}
-            multiline
-            minRows={2}
-            disabled={saving}
-            fullWidth
-          />
-        </Stack>
-      </FormCard>
-
-      <FormCard>
-        <Stack gap={2}>
-          <Typography variant="subtitle2" fontWeight={600}>
-            Значения по умолчанию для номеров
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Подставятся в форму нового номера этой категории (раздел «Доп. характеристики») — при
-            заведении сразу нескольких номеров останется поправить только то, что отличается.
-          </Typography>
-          <Stack direction="row" flexWrap="wrap" gap={2}>
-            <FormField
-              icon={<SquareFootOutlined />}
-              unit="м²"
-              rules={CATEGORY_RULES.area}
-              showErrors={showErrors}
-              label="Площадь"
-              value={form.defaultArea}
-              onValueChange={(v) => patchForm({ defaultArea: v })}
-              disabled={saving}
-              sx={{ flex: "1 1 160px" }}
-            />
-            <FormField
-              icon={<HeightOutlined />}
-              unit="м"
-              rules={CATEGORY_RULES.ceilingHeight}
-              showErrors={showErrors}
-              label="Высота потолков"
-              value={form.defaultCeilingHeight}
-              onValueChange={(v) => patchForm({ defaultCeilingHeight: v })}
-              disabled={saving}
-              sx={{ flex: "1 1 160px" }}
-            />
-            <FormField
-              icon={<BathtubOutlined />}
-              rules={CATEGORY_RULES.bathrooms}
-              showErrors={showErrors}
-              label="Санузлов"
-              value={form.defaultBathrooms}
-              onValueChange={(v) => patchForm({ defaultBathrooms: v })}
-              disabled={saving}
-              sx={{ flex: "1 1 130px" }}
-            />
-            <FormField
-              icon={<MeetingRoomOutlined />}
-              rules={CATEGORY_RULES.roomsCount}
-              showErrors={showErrors}
-              label="Жилых комнат"
-              value={form.defaultRoomsCount}
-              onValueChange={(v) => patchForm({ defaultRoomsCount: v })}
-              disabled={saving}
-              sx={{ flex: "1 1 130px" }}
-            />
-          </Stack>
-          <Stack direction="row" flexWrap="wrap" gap={2} alignItems="flex-start">
-            <FormField
-              icon={<ExploreOutlined />}
-              rules={CATEGORY_RULES.short}
-              showErrors={showErrors}
-              label="Сторона света"
-              placeholder="Юг, Северо-Восток…"
-              value={form.defaultWindowSide}
-              onValueChange={(v) => patchForm({ defaultWindowSide: v })}
-              disabled={saving}
-              sx={{ flex: "1 1 200px" }}
-            />
-            <TextField
-              select
-              label="Питание"
-              value={form.defaultMeals}
-              onChange={(e) => {
-                const v = e.target.value as unknown;
-                patchForm({ defaultMeals: typeof v === "string" ? v.split(",") : (v as string[]) });
-              }}
-              disabled={saving}
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start" sx={{ color: "text.disabled", "& svg": { fontSize: 20 } }}>
-                      <RestaurantOutlined />
-                    </InputAdornment>
-                  ),
-                },
-              }}
-              SelectProps={{
-                multiple: true,
-                renderValue: (selected) => (
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                    {(selected as string[]).map((key) => (
-                      <Chip key={key} label={mealChoices.find((c) => c.value === key)?.label ?? key} size="small" sx={{ height: 20, borderRadius: "6px" }} />
-                    ))}
-                  </Box>
-                ),
-              }}
-              sx={{ flex: "1 1 220px" }}
-            >
-              {mealChoices.map((c) => (
-                <MenuItem key={c.value} value={c.value}>
-                  {c.label}
-                </MenuItem>
-              ))}
-            </TextField>
-          </Stack>
-          <FormControlLabel
-            control={<Checkbox checked={form.defaultIsCorner} onChange={(e) => patchForm({ defaultIsCorner: e.target.checked })} disabled={saving} />}
-            label="Угловой номер"
-          />
-          <FormField
-            icon={<ArchitectureOutlined />}
-            rules={CATEGORY_RULES.long}
-            showErrors={showErrors}
-            label="Описание планировки"
-            placeholder="Необязательно"
-            value={form.defaultLayoutDescription}
-            onValueChange={(v) => patchForm({ defaultLayoutDescription: v })}
-            disabled={saving}
-            multiline
-            minRows={2}
-            fullWidth
-          />
-        </Stack>
-      </FormCard>
-
-      <FormCard>
-        <Stack direction="row" alignItems="flex-start" justifyContent="space-between" flexWrap="wrap" gap={1}>
-          <Typography variant="subtitle2" fontWeight={600}>
-            Характеристики
-          </Typography>
-          {/* Живая сводка: сразу видно, сколько отмечено и на сколько это удорожает ночь. */}
-          <Chip
-            role="status"
-            size="small"
-            color={selectedAmenities.length > 0 ? "primary" : "default"}
-            variant={selectedAmenities.length > 0 ? "filled" : "outlined"}
-            label={
-              selectedAmenities.length > 0
-                ? `Выбрано: ${selectedAmenities.length} · +${selectedExtra.toLocaleString("ru-RU")} сом / ночь`
-                : "Ничего не выбрано"
-            }
-          />
-        </Stack>
+      <OptionalCard
+        title="Характеристики"
+        filled={selectedAmenities.length > 0}
+        summary={
+          selectedAmenities.length > 0
+            ? `Отмечено: ${selectedAmenities.length} · +${selectedExtra.toLocaleString("ru-RU")} сом к цене ночи`
+            : "Холодильник, кондиционер, балкон… — каждая прибавляет к цене ночи"
+        }
+        defaultOpen={editing != null && selectedAmenities.length > 0}
+      >
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
           Отметьте, что есть в номерах этой категории. Наценка прибавляется к цене за ночь и{" "}
           <strong>общая для всех категорий объекта</strong>: если изменить её здесь, она изменится везде, где
@@ -878,7 +697,200 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
             </Box>
           )}
         </Box>
-      </FormCard>
+      </OptionalCard>
+
+
+      <OptionalCard
+        title="Описание номера"
+        filled={[form.view, form.bedType, form.roomLayout, form.description].some((v) => v.trim())}
+        summary={[form.view, form.bedType, form.roomLayout].filter((v) => v.trim()).join(" · ") || "Вид из окна, кровать, планировка"}
+        defaultOpen={editing != null && [form.view, form.bedType, form.roomLayout, form.description].some((v) => v.trim())}
+        forceOpen={showErrors}
+      >
+        <Stack gap={2}>
+          <Stack direction="row" flexWrap="wrap" gap={2}>
+            <FormField
+              icon={<LandscapeOutlined />}
+              rules={CATEGORY_RULES.short}
+              showErrors={showErrors}
+              label="Вид из окна"
+              placeholder="Двор, Улица, Горы…"
+              value={form.view}
+              onValueChange={(v) => patchForm({ view: v })}
+              disabled={saving}
+              sx={{ flex: "1 1 220px" }}
+            />
+            <FormField
+              icon={<BedOutlined />}
+              rules={CATEGORY_RULES.short}
+              showErrors={showErrors}
+              label="Тип кровати"
+              placeholder="Двуспальная кровать King-size"
+              value={form.bedType}
+              onValueChange={(v) => patchForm({ bedType: v })}
+              disabled={saving}
+              sx={{ flex: "1 1 220px" }}
+            />
+            <FormField
+              icon={<ArchitectureOutlined />}
+              rules={CATEGORY_RULES.short}
+              showErrors={showErrors}
+              label="Планировка"
+              placeholder="1 комната, Студия, Апартаменты…"
+              value={form.roomLayout}
+              onValueChange={(v) => patchForm({ roomLayout: v })}
+              disabled={saving}
+              sx={{ flex: "1 1 220px" }}
+            />
+          </Stack>
+          <FormField
+            icon={<NotesOutlined />}
+            rules={CATEGORY_RULES.long}
+            showErrors={showErrors}
+            label="Описание"
+            placeholder="Необязательно"
+            value={form.description}
+            onValueChange={(v) => patchForm({ description: v })}
+            multiline
+            minRows={2}
+            disabled={saving}
+            fullWidth
+          />
+        </Stack>
+      </OptionalCard>
+
+      <OptionalCard
+        title="Значения по умолчанию для номеров"
+        filled={[form.defaultArea, form.defaultRoomsCount, form.defaultBathrooms].some((v) => v.trim())}
+        summary={
+          [form.defaultArea && `${form.defaultArea} м²`, form.defaultRoomsCount && `комнат: ${form.defaultRoomsCount}`, form.defaultBathrooms && `санузлов: ${form.defaultBathrooms}`]
+            .filter(Boolean)
+            .join(" · ") || "Площадь, санузлы, питание — подставятся в новые номера"
+        }
+        defaultOpen={
+          editing != null &&
+          [form.defaultArea, form.defaultCeilingHeight, form.defaultBathrooms, form.defaultRoomsCount, form.defaultWindowSide, form.defaultLayoutDescription].some((v) => v.trim())
+        }
+        forceOpen={showErrors}
+      >
+        <Stack gap={2}>
+          <Typography variant="body2" color="text.secondary">
+            Подставятся в форму нового номера этой категории (раздел «Доп. характеристики») — при
+            заведении сразу нескольких номеров останется поправить только то, что отличается.
+          </Typography>
+          <Stack direction="row" flexWrap="wrap" gap={2}>
+            <FormField
+              icon={<SquareFootOutlined />}
+              unit="м²"
+              rules={CATEGORY_RULES.area}
+              showErrors={showErrors}
+              label="Площадь"
+              value={form.defaultArea}
+              onValueChange={(v) => patchForm({ defaultArea: v })}
+              disabled={saving}
+              sx={{ flex: "1 1 160px" }}
+            />
+            <FormField
+              icon={<HeightOutlined />}
+              unit="м"
+              rules={CATEGORY_RULES.ceilingHeight}
+              showErrors={showErrors}
+              label="Высота потолков"
+              value={form.defaultCeilingHeight}
+              onValueChange={(v) => patchForm({ defaultCeilingHeight: v })}
+              disabled={saving}
+              sx={{ flex: "1 1 160px" }}
+            />
+            <FormField
+              icon={<BathtubOutlined />}
+              rules={CATEGORY_RULES.bathrooms}
+              showErrors={showErrors}
+              label="Санузлов"
+              value={form.defaultBathrooms}
+              onValueChange={(v) => patchForm({ defaultBathrooms: v })}
+              disabled={saving}
+              sx={{ flex: "1 1 130px" }}
+            />
+            <FormField
+              icon={<MeetingRoomOutlined />}
+              rules={CATEGORY_RULES.roomsCount}
+              showErrors={showErrors}
+              label="Жилых комнат"
+              value={form.defaultRoomsCount}
+              onValueChange={(v) => patchForm({ defaultRoomsCount: v })}
+              disabled={saving}
+              sx={{ flex: "1 1 130px" }}
+            />
+          </Stack>
+          <Stack direction="row" flexWrap="wrap" gap={2} alignItems="flex-start">
+            <FormField
+              icon={<ExploreOutlined />}
+              rules={CATEGORY_RULES.short}
+              showErrors={showErrors}
+              label="Сторона света"
+              placeholder="Юг, Северо-Восток…"
+              value={form.defaultWindowSide}
+              onValueChange={(v) => patchForm({ defaultWindowSide: v })}
+              disabled={saving}
+              sx={{ flex: "1 1 200px" }}
+            />
+            <TextField
+              select
+              label="Питание"
+              value={form.defaultMeals}
+              onChange={(e) => {
+                const v = e.target.value as unknown;
+                patchForm({ defaultMeals: typeof v === "string" ? v.split(",") : (v as string[]) });
+              }}
+              disabled={saving}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start" sx={{ color: "text.disabled", "& svg": { fontSize: 20 } }}>
+                      <RestaurantOutlined />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              SelectProps={{
+                multiple: true,
+                renderValue: (selected) => (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {(selected as string[]).map((key) => (
+                      <Chip key={key} label={mealChoices.find((c) => c.value === key)?.label ?? key} size="small" sx={{ height: 20, borderRadius: "6px" }} />
+                    ))}
+                  </Box>
+                ),
+              }}
+              sx={{ flex: "1 1 220px" }}
+            >
+              {mealChoices.map((c) => (
+                <MenuItem key={c.value} value={c.value}>
+                  {c.label}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Stack>
+          <FormControlLabel
+            control={<Checkbox checked={form.defaultIsCorner} onChange={(e) => patchForm({ defaultIsCorner: e.target.checked })} disabled={saving} />}
+            label="Угловой номер"
+          />
+          <FormField
+            icon={<ArchitectureOutlined />}
+            rules={CATEGORY_RULES.long}
+            showErrors={showErrors}
+            label="Описание планировки"
+            placeholder="Необязательно"
+            value={form.defaultLayoutDescription}
+            onValueChange={(v) => patchForm({ defaultLayoutDescription: v })}
+            disabled={saving}
+            multiline
+            minRows={2}
+            fullWidth
+          />
+        </Stack>
+      </OptionalCard>
+
 
       {error && (
         <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
