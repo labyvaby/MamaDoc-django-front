@@ -46,13 +46,21 @@ import {
   DialogContent,
   FormControlLabel,
   IconButton,
+  ListItemIcon,
+  Menu,
   MenuItem,
   Stack,
+  Tooltip,
   TextField,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import PrintOutlined from "@mui/icons-material/PrintOutlined";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
+import { HOTEL_PRINT_DOC_LABELS, printHotelDocument, type HotelPrintDoc } from "./hotelPrintDocs";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import dayjs from "dayjs";
 
@@ -147,6 +155,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const [editMode, setEditMode] = React.useState<"edit" | "room" | null>(null);
   const { enqueueSnackbar } = useSnackbar();
   const [cancelReason, setCancelReason] = React.useState("");
+  const [printAnchor, setPrintAnchor] = React.useState<HTMLElement | null>(null);
   const [cancelAsNoShow, setCancelAsNoShow] = React.useState(false);
 
   const [paymentFormOpen, setPaymentFormOpen] = React.useState(false);
@@ -416,13 +425,44 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                 )}
                 {item.isOverbooking && <StatusPill color={theme.palette.warning.main} label="Овербукинг" />}
               </Stack>
-              <IconButton
-                onClick={onClose}
-                aria-label="Закрыть"
-                sx={{ width: 34, height: 34, border: line, color: "text.secondary", flexShrink: 0, "&:hover": { color: "text.primary" } }}
-              >
-                <CloseOutlined sx={{ fontSize: 18 }} />
-              </IconButton>
+              <Stack direction="row" gap={0.75} sx={{ flexShrink: 0 }}>
+                <Tooltip title="Печать: подтверждение, счёт, анкета гостя">
+                  <IconButton
+                    onClick={(e) => setPrintAnchor(e.currentTarget)}
+                    aria-label="Печать документов"
+                    sx={{ width: 34, height: 34, border: line, color: "text.secondary", "&:hover": { color: "text.primary" } }}
+                  >
+                    <PrintOutlined sx={{ fontSize: 17 }} />
+                  </IconButton>
+                </Tooltip>
+                <IconButton
+                  onClick={onClose}
+                  aria-label="Закрыть"
+                  sx={{ width: 34, height: 34, border: line, color: "text.secondary", "&:hover": { color: "text.primary" } }}
+                >
+                  <CloseOutlined sx={{ fontSize: 18 }} />
+                </IconButton>
+              </Stack>
+              <Menu anchorEl={printAnchor} open={printAnchor != null} onClose={() => setPrintAnchor(null)}>
+                {(
+                  [
+                    ["confirmation", <EventAvailableOutlined key="c" fontSize="small" />],
+                    ["invoice", <ReceiptLongOutlined key="i" fontSize="small" />],
+                    ["registration", <BadgeOutlined key="r" fontSize="small" />],
+                  ] as [HotelPrintDoc, React.ReactNode][]
+                ).map(([doc, icon]) => (
+                  <MenuItem
+                    key={doc}
+                    onClick={() => {
+                      setPrintAnchor(null);
+                      printHotelDocument(doc, { reservation, payments, property: property ?? null });
+                    }}
+                  >
+                    <ListItemIcon>{icon}</ListItemIcon>
+                    {HOTEL_PRINT_DOC_LABELS[doc]}
+                  </MenuItem>
+                ))}
+              </Menu>
             </Stack>
 
             <Stack direction="row" alignItems="flex-end" justifyContent="space-between" gap={2} flexWrap="wrap">
