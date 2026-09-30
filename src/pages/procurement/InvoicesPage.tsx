@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Box, Button, Stack, Tooltip, useMediaQuery } from "@mui/material";
+import { Alert, Box, Stack, useMediaQuery } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
@@ -9,7 +9,6 @@ import UndoOutlined from "@mui/icons-material/UndoOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
-import AddAPhotoOutlined from "@mui/icons-material/AddAPhotoOutlined";
 
 import { getErrorMessage } from "../../api/client";
 import {
@@ -354,15 +353,6 @@ const InvoicesPage: React.FC = () => {
         onAdd={canAdd ? handleAdd : undefined}
         addButtonText={ADD_LABEL[tab]}
         addButtonIcon={tab === "payments" ? <PaymentsOutlined /> : <AddOutlined />}
-        actions={
-          tab === "invoices" && perms.create && recognitionEnabled ? (
-            <Tooltip title="Сфотографировать накладную — форма заполнится сама">
-              <Button variant="outlined" startIcon={<AddAPhotoOutlined />} onClick={() => setReceiptFormOpen(true)} sx={{ whiteSpace: "nowrap" }}>
-                По фото
-              </Button>
-            </Tooltip>
-          ) : undefined
-        }
       />
 
       <Stack spacing={1.5} sx={{ px: 2, pb: 2, flex: 1, minHeight: 0 }}>
