@@ -840,12 +840,20 @@ export async function createTransfer(data: {
 
 // ── Warehouse documents (v2) ────────────────────────────────────────────────
 
+/**
+ * Режим инвентаризации. `blind` — по сканеру; `showcase` — витринная
+ * («обратная»): сотрудник идёт по списку учёта и отмечает «на месте».
+ * Старый бэкенд поля не присылает — такой документ считается слепым.
+ */
+export type InventoryCountMode = "blind" | "showcase";
+
 export type WarehouseInventoryCount = {
     id: number;
     organizationId: number;
     warehouseId: number;
     warehouseName: string;
     status: string;
+    mode?: InventoryCountMode;
     comment: string;
     lineTotal: number;
     countedTotal: number;
@@ -867,6 +875,8 @@ export type WarehouseInventoryLine = {
     difference: string | null;
     countedAt: string | null;
     scannedByName: string | null;
+    /** Текущий учётный остаток — только у открытой витринной инвентаризации. */
+    onHand?: string | null;
 };
 
 export type WarehouseInventoryDetail = {
@@ -971,6 +981,7 @@ export function startWarehouseInventoryCount(data: {
     warehouseId: number;
     productIds?: number[];
     comment?: string;
+    mode?: InventoryCountMode;
     organizationId?: number;
 }): Promise<WarehouseInventoryDetail> {
     const { organizationId, ...body } = data;
@@ -999,6 +1010,18 @@ export function submitInventoryCountLines(
     return apiRequest<WarehouseInventoryDetail>(withQuery(`/v2/warehouse/inventory-counts/${id}/lines/`, { organizationId }), {
         method: "POST",
         body: { lines },
+    });
+}
+
+/** «На месте» в витринной инвентаризации; без productIds — все непроверенные. */
+export function confirmInventoryCountOnHand(
+    id: number,
+    productIds: number[] = [],
+    organizationId?: number,
+): Promise<WarehouseInventoryDetail> {
+    return apiRequest<WarehouseInventoryDetail>(withQuery(`/v2/warehouse/inventory-counts/${id}/confirm/`, { organizationId }), {
+        method: "POST",
+        body: { productIds },
     });
 }
 
