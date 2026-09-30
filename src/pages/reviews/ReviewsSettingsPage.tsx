@@ -387,7 +387,15 @@ const ReviewsSettingsPage: React.FC = () => {
             <ReviewLinksEditor
               branches={original.branchMaps}
               draft={links}
-              onChange={(key, url) => setLinks((d) => ({ ...d, [key]: url }))}
+              onChange={(key, patch) =>
+                setLinks((d) => {
+                  const current = d[key] ?? { url: "", externalId: "", apiKey: "" };
+                  return {
+                    ...d,
+                    [key]: { ...current, ...patch },
+                  };
+                })
+              }
             />
 
             <Box>

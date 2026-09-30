@@ -38,7 +38,7 @@ const WHERE_TO_GET: Record<MapPlatform, string> = {
 const ReviewLinksEditor: React.FC<{
   branches: BranchMaps[];
   draft: LinksDraft;
-  onChange: (key: string, url: string) => void;
+  onChange: (key: string, patch: Partial<LinksDraft[string]>) => void;
 }> = ({ branches, draft, onChange }) => {
   const [help, setHelp] = React.useState(false);
   return (
@@ -78,7 +78,8 @@ const ReviewLinksEditor: React.FC<{
         {branches.map((b) => {
           const effective = PLATFORMS.filter(
             (p) =>
-              (draft[linkKey(b.branchId, p)] ?? "").trim() || branchLink(b, p)
+              (draft[linkKey(b.branchId, p)]?.url ?? "").trim() ||
+              branchLink(b, p)
           );
           return (
             <Box key={b.branchId}>
@@ -88,48 +89,79 @@ const ReviewLinksEditor: React.FC<{
               <Stack spacing={1.25}>
                 {PLATFORMS.map((p) => {
                   const key = linkKey(b.branchId, p);
-                  const value = draft[key] ?? "";
+                  const value = draft[key]?.url ?? "";
+                  const externalId = draft[key]?.externalId ?? "";
+                  const apiKey = draft[key]?.apiKey ?? "";
                   const fallback = branchLink(b, p);
                   const bad = value.trim() !== "" && !isReviewUrl(value);
                   const target = value.trim() || fallback;
                   return (
-                    <TextField
-                      key={p}
-                      size="small"
-                      fullWidth
-                      label={`${MAP_META[p]} — ссылка на отзыв`}
-                      value={value}
-                      onChange={(e) => onChange(key, e.target.value)}
-                      placeholder={fallback || "https://…"}
-                      error={bad}
-                      helperText={
-                        bad
-                          ? "Нужна ссылка, начинающаяся с https://"
-                          : value.trim()
-                          ? undefined
-                          : fallback
-                          ? "Пусто — откроется ссылка из карточки филиала"
-                          : "Не задано — кнопки этой площадки не будет"
-                      }
-                      inputProps={{ maxLength: 500 }}
-                      InputProps={{
-                        endAdornment: target && !bad && (
-                          <InputAdornment position="end">
-                            <Tooltip title="Открыть, как увидит пациент">
-                              <IconButton
-                                size="small"
-                                component={Link}
-                                href={target}
-                                target="_blank"
-                                rel="noopener"
-                              >
-                                <OpenInNewRounded fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          </InputAdornment>
-                        ),
-                      }}
-                    />
+                    <Stack key={p} spacing={1}>
+                      <TextField
+                        size="small"
+                        fullWidth
+                        label={`${MAP_META[p]} — ссылка на отзыв`}
+                        value={value}
+                        onChange={(e) => onChange(key, { url: e.target.value })}
+                        placeholder={fallback || "https://…"}
+                        error={bad}
+                        helperText={
+                          bad
+                            ? "Нужна ссылка, начинающаяся с https://"
+                            : value.trim()
+                            ? undefined
+                            : fallback
+                            ? "Пусто — откроется ссылка из карточки филиала"
+                            : "Не задано — кнопки этой площадки не будет"
+                        }
+                        inputProps={{ maxLength: 500 }}
+                        InputProps={{
+                          endAdornment: target && !bad && (
+                            <InputAdornment position="end">
+                              <Tooltip title="Открыть, как увидит пациент">
+                                <IconButton
+                                  size="small"
+                                  component={Link}
+                                  href={target}
+                                  target="_blank"
+                                  rel="noopener"
+                                >
+                                  <OpenInNewRounded fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                      {p === "2gis" && (
+                        <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
+                          <TextField
+                            size="small"
+                            fullWidth
+                            label="2GIS org id для отзывов"
+                            value={externalId}
+                            onChange={(e) =>
+                              onChange(key, { externalId: e.target.value })
+                            }
+                            placeholder="70000001051350763"
+                            inputProps={{ maxLength: 64 }}
+                            helperText="ID из public-api.reviews.2gis.com"
+                          />
+                          <TextField
+                            size="small"
+                            fullWidth
+                            label="2GIS reviews API key"
+                            value={apiKey}
+                            onChange={(e) =>
+                              onChange(key, { apiKey: e.target.value })
+                            }
+                            placeholder="86fa3d7f-..."
+                            inputProps={{ maxLength: 128 }}
+                            helperText="Ключ для загрузки публичных отзывов"
+                          />
+                        </Stack>
+                      )}
+                    </Stack>
                   );
                 })}
               </Stack>

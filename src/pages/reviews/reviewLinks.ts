@@ -7,7 +7,13 @@ import type {
 export const PLATFORMS: MapPlatform[] = ["2gis", "yandex", "google"];
 
 /** Черновик ссылок на отзыв: ключ `${branchId}:${platform}` → url. */
-export type LinksDraft = Record<string, string>;
+export type LinkDraft = {
+  url: string;
+  externalId: string;
+  apiKey: string;
+};
+
+export type LinksDraft = Record<string, LinkDraft>;
 
 export const linkKey = (branchId: number, platform: MapPlatform) =>
   `${branchId}:${platform}`;
@@ -16,8 +22,12 @@ export function linksDraft(branches: BranchMaps[]): LinksDraft {
   const draft: LinksDraft = {};
   branches.forEach((b) =>
     PLATFORMS.forEach((p) => {
-      draft[linkKey(b.branchId, p)] =
-        b.reviewLinks.find((l) => l.platform === p)?.url ?? "";
+      const saved = b.reviewLinks.find((l) => l.platform === p);
+      draft[linkKey(b.branchId, p)] = {
+        url: saved?.url ?? "",
+        externalId: saved?.externalId ?? "",
+        apiKey: saved?.apiKey ?? "",
+      };
     })
   );
   return draft;
@@ -33,9 +43,17 @@ export function changedLinks(
   branches.forEach((b) =>
     PLATFORMS.forEach((platform) => {
       const key = linkKey(b.branchId, platform);
-      const url = (draft[key] ?? "").trim();
-      if (url !== saved[key])
-        patch.push({ branchId: b.branchId, platform, url });
+      const row = draft[key] ?? { url: "", externalId: "", apiKey: "" };
+      const savedRow = saved[key] ?? { url: "", externalId: "", apiKey: "" };
+      const url = row.url.trim();
+      const externalId = row.externalId.trim();
+      const apiKey = row.apiKey.trim();
+      if (
+        url !== savedRow.url ||
+        externalId !== savedRow.externalId ||
+        apiKey !== savedRow.apiKey
+      )
+        patch.push({ branchId: b.branchId, platform, url, externalId, apiKey });
     })
   );
   return patch;

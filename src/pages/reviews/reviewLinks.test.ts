@@ -13,25 +13,57 @@ const branch: BranchMaps = {
 describe("reviewLinks", () => {
   it("черновик заполняется сохранёнными ссылками на отзыв", () => {
     const draft = linksDraft([branch]);
-    expect(draft[linkKey(7, "google")]).toBe("https://g.page/r/abc/review");
-    expect(draft[linkKey(7, "2gis")]).toBe("");
+    expect(draft[linkKey(7, "google")].url).toBe(
+      "https://g.page/r/abc/review"
+    );
+    expect(draft[linkKey(7, "2gis")].url).toBe("");
   });
 
   it("в PATCH уходят только изменения, очистка — пустой строкой", () => {
     const draft = {
       ...linksDraft([branch]),
-      [linkKey(7, "google")]: "  ",
-      [linkKey(7, "yandex")]: " https://yandex.ru/maps/org/1/reviews/ ",
+      [linkKey(7, "google")]: {
+        url: "  ",
+        externalId: "",
+        apiKey: "",
+      },
+      [linkKey(7, "yandex")]: {
+        url: " https://yandex.ru/maps/org/1/reviews/ ",
+        externalId: "",
+        apiKey: "",
+      },
     };
     expect(changedLinks([branch], draft)).toEqual([
       {
         branchId: 7,
         platform: "yandex",
         url: "https://yandex.ru/maps/org/1/reviews/",
+        externalId: "",
+        apiKey: "",
       },
-      { branchId: 7, platform: "google", url: "" },
+      { branchId: 7, platform: "google", url: "", externalId: "", apiKey: "" },
     ]);
     expect(changedLinks([branch], linksDraft([branch]))).toEqual([]);
+  });
+
+  it("в PATCH уходят параметры синхронизации 2GIS", () => {
+    const draft = {
+      ...linksDraft([branch]),
+      [linkKey(7, "2gis")]: {
+        url: "",
+        externalId: "70000001051350763",
+        apiKey: "reviews-public-key",
+      },
+    };
+    expect(changedLinks([branch], draft)).toEqual([
+      {
+        branchId: 7,
+        platform: "2gis",
+        url: "",
+        externalId: "70000001051350763",
+        apiKey: "reviews-public-key",
+      },
+    ]);
   });
 
   it("ссылка филиала — запасной вариант", () => {

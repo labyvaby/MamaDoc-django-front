@@ -116,7 +116,7 @@ export interface BranchMaps {
   /** Что увидит пациент: ссылка на отзыв, иначе ссылка карты филиала. */
   maps: MapLink[];
   /** Ссылки на отзыв, заданные в настройках отзывов. */
-  reviewLinks: MapLink[];
+  reviewLinks: ReviewLink[];
   /** Ссылки из карточки филиала (они же «как добраться» в онлайн-записи). */
   branchLinks: MapLink[];
 }
@@ -126,6 +126,13 @@ export interface BranchReviewLinkPatch {
   platform: MapPlatform;
   /** Пустая строка — удалить, вернуться к ссылке филиала. */
   url: string;
+  externalId?: string;
+  apiKey?: string;
+}
+
+export interface ReviewLink extends MapLink {
+  externalId?: string;
+  apiKey?: string;
 }
 
 /** Настройки модуля. */
