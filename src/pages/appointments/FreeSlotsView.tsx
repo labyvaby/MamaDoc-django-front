@@ -1565,13 +1565,23 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     specId !== null,
   );
   const railSpecs = React.useMemo(
-    () =>
-      railSpecializations(
+    () => {
+      const visibleSpecs = railSpecializations(
         specs,
         branchSpecs ?? null,
         specId,
         (id) => (badgeBySpec.get(id)?.total ?? 0) > 0,
-      ),
+      );
+      return visibleSpecs
+        .map((specialization, index) => ({ specialization, index }))
+        .sort((a, b) => {
+          const aHasFree = (badgeBySpec.get(a.specialization.id)?.free ?? 0) > 0;
+          const bHasFree = (badgeBySpec.get(b.specialization.id)?.free ?? 0) > 0;
+          if (aHasFree !== bHasFree) return aHasFree ? -1 : 1;
+          return a.index - b.index;
+        })
+        .map(({ specialization }) => specialization);
+    },
     [specs, branchSpecs, specId, badgeBySpec],
   );
 
