@@ -250,11 +250,6 @@ export default function PosPage() {
               setClientResults(null);
               setClientQuery("");
             }}
-            onRegister={(name, phone) => {
-              setClient({ ...POS_CLIENT, id: `client-${Date.now()}`, name: name || "Новый клиент", phone, tier: "Старт", discountPercent: 0, bonuses: 0, cashback: 0 });
-              setClientResults(null);
-              setClientQuery("");
-            }}
             onChangeClient={() => {
               setClient(null);
               setPayment(EMPTY_PAYMENT);
