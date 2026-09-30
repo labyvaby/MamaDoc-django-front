@@ -187,6 +187,12 @@ function availabilitySpecLabel(emp: EmployeeAvailability): string | null {
   return names.length > 0 ? names.join(", ") : null;
 }
 
+function availabilityRoleLabel(emp: EmployeeAvailability): string | null {
+  if (emp.clinicalRole === "doctor") return "Врач";
+  if (emp.clinicalRole === "nurse") return "Медсестра";
+  return null;
+}
+
 function summarize(emp: EmployeeAvailability, todayIso: string): DocSummary {
   const today = emp.days.find((d) => d.date === todayIso);
   const todayFree = today?.freeCount ?? 0;
@@ -2514,6 +2520,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             const specLabel =
                               availabilitySpecLabel(emp) ??
                               specLabelByEmployee.get(emp.employeeId) ??
+                              availabilityRoleLabel(emp) ??
                               t("slots.specialist");
                             return (
                               <Stack
@@ -2704,6 +2711,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           const itemSpec =
                             availabilitySpecLabel(emp) ??
                             specLabelByEmployee.get(emp.employeeId) ??
+                            availabilityRoleLabel(emp) ??
                             t("slots.specialist");
                           return (
                             <MenuItem
@@ -2863,6 +2871,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       specName={
                         availabilitySpecLabel(emp) ??
                         specLabelByEmployee.get(emp.employeeId) ??
+                        availabilityRoleLabel(emp) ??
                         gridSpecName
                       }
                       day={docDay}
