@@ -990,6 +990,8 @@ export interface HotelReservationCreateData {
 export interface HotelReservationLog {
   id: number;
   userId: number | null;
+  /** Имя сотрудника. Бэк пока отдаёт только userId — поле появится после доработки. */
+  userName?: string;
   action: string;
   field: string;
   oldValue: string;

@@ -31,6 +31,7 @@ import { useIsVivaActive } from "../../dev/mockDemoData";
 import { useHotelProperty } from "../../dev/useHotelProperty";
 import { prefetchHotelPages } from "../../dev/prefetchHotelPages";
 import CelebrationOutlined from "@mui/icons-material/CelebrationOutlined";
+import RoomServiceOutlined from "@mui/icons-material/RoomServiceOutlined";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
@@ -428,6 +429,7 @@ const HotelSidebarMenu: React.FC = () => {
   const canCategories = can(PAGE_PERMISSIONS.hotelRoomCategories);
   const canPricing = can(PAGE_PERMISSIONS.hotelPricingRules);
   const canEvents = can(PAGE_PERMISSIONS.hotelEvents);
+  const canReception = can(PAGE_PERMISSIONS.hotelReception);
 
   const sectionLabel = (text: string) =>
     siderCollapsed && !isMobile ? (
@@ -442,6 +444,7 @@ const HotelSidebarMenu: React.FC = () => {
 
   return (
     <List sx={{ py: 0, mt: 0.5 }}>
+      {canReception && <SidebarMenuItem to="/reception" icon={<RoomServiceOutlined />} label="Ресепшен" collapsed={siderCollapsed} />}
       {canSchedule && <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Бронирования" collapsed={siderCollapsed} />}
       {canGuests && <SidebarMenuItem to="/patients" icon={<PeopleOutlineOutlined />} label="Гости" collapsed={siderCollapsed} />}
       {canHousekeeping && <SidebarMenuItem to="/housekeeping" icon={<CleaningServicesOutlined />} label="Уборка" collapsed={siderCollapsed} />}
@@ -1200,6 +1203,7 @@ const HOTEL_ONLY_NAV_PATHS = [
   "/room-categories",
   "/pricing-rules",
   "/events",
+  "/reception",
   "/settings",
 ];
 

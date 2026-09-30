@@ -78,6 +78,9 @@ export const PAGE_PERMISSIONS = {
   // «События» (HotelEventsPage) — календарь событий города; смотреть может
   // любой сотрудник отеля, «Поднять цены» проверяет hotel.rates.manage сама.
   hotelEvents: "hotel.view",
+  // «Ресепшен» (HotelReceptionPage) — заезды/выезды и список броней; читать
+  // может любой сотрудник отеля, «Заселить/Выселить» требует hotel.stays.manage.
+  hotelReception: "hotel.view",
   // «Уборка» (HotelHousekeepingPage.tsx) — задачи горничным. hotel.housekeeping.view
   // уже реальный бэковый код (см. комментарий у setRoomHousekeeping в hotel.ts
   // и RoomStateControl.tsx §шапка) — используем его как право страницы,

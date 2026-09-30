@@ -8,6 +8,7 @@
 let started = false;
 
 const HOTEL_PAGES: Array<() => Promise<unknown>> = [
+  () => import("./HotelReceptionPage"),
   () => import("./HotelBookingsPage"),
   () => import("./HotelRoomsPage"),
   () => import("./HotelRoomFormPage"),

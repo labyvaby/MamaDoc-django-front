@@ -135,6 +135,7 @@ const HotelRoomCategoriesPage = lazy(() => import("./dev/HotelRoomCategoriesPage
 const HotelRoomCategoryFormPage = lazy(() => import("./dev/HotelRoomCategoryFormPage"));
 const HotelPricingRulesPage = lazy(() => import("./dev/HotelPricingRulesPage"));
 const HotelEventsPage = lazy(() => import("./dev/HotelEventsPage"));
+const HotelReceptionPage = lazy(() => import("./dev/HotelReceptionPage"));
 const HotelPricingRuleFormPage = lazy(() => import("./dev/HotelPricingRuleFormPage"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
@@ -780,6 +781,17 @@ function App() {
                         />
                         {/* «Ценообразование» — правила динамических цен, рядом с «Категории и
                             тарифы»; форма на отдельной странице, как у категорий. */}
+                        {/* «Ресепшен» — заезды/выезды сегодня и все брони с поиском. */}
+                        <Route
+                          path="reception"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelReception}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelReceptionPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
                         {/* «События» — концерты/праздники, поднимающие спрос; ведут
                             в правила цены, поэтому то же право чтения, что у них. */}
                         <Route
