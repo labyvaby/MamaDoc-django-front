@@ -418,9 +418,11 @@
         "created": "Создан",
         "missingSubtitle": "Для этой организации ещё нет клиента в Raven",
         "createdSubtitle": "Клиент Raven: {{id}}",
-        "description": "Создайте клиента в Raven прямо из настроек. CRM сохранит связь и ключ, если Raven вернёт его при создании.",
+        "description": "Создайте нового клиента прямо из настроек или укажите ID уже созданного клиента Raven. CRM сохранит связь и ключ, если Raven вернёт его при создании.",
+        "existingClientLabel": "ID существующего клиента Raven",
+        "existingClientHint": "Если клиент уже создан в Raven, вставьте его ID и сохраните шлюз.",
         "createButton": "Создать клиента в Raven",
-        "alreadyCreatedButton": "Клиент создан",
+        "alreadyCreatedButton": "Клиент привязан",
         "createSuccess": "Клиент Raven создан",
         "createError": "Не удалось создать клиента Raven"
       },

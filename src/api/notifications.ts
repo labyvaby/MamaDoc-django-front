@@ -50,6 +50,7 @@ export interface NotificationSettingsInput {
 }
 
 export interface MessagingCredentialsInput {
+  ravenClientId?: string;
   ravenApiKey?: string;
   ravenApiKeyClear?: boolean;
   smsLogin?: string;

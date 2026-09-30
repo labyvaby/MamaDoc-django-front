@@ -42,6 +42,7 @@ import { SettingsLayout } from "../SettingsLayout";
 
 type FormState = {
   enabled: boolean;
+  ravenClientId: string;
   ravenApiKey: string;
   ravenApiKeyClear: boolean;
   smsLogin: string;
@@ -58,6 +59,7 @@ type FormState = {
 
 const toForm = (settings: NotificationSettings): FormState => ({
   enabled: settings.enabled,
+  ravenClientId: settings.credentials.ravenClientId,
   ravenApiKey: "",
   ravenApiKeyClear: false,
   smsLogin: settings.credentials.smsLogin,
@@ -114,6 +116,7 @@ const NotificationGatewaySettingsPage: React.FC = () => {
           offsetMinutes: rule.offsetMinutes,
         })),
         credentials: {
+          ravenClientId: form.ravenClientId,
           ravenApiKey: form.ravenApiKey,
           ravenApiKeyClear: form.ravenApiKeyClear,
           smsLogin: form.smsLogin,
@@ -170,6 +173,8 @@ const NotificationGatewaySettingsPage: React.FC = () => {
   }
 
   const configured = settingsQuery.data?.credentials;
+  const ravenClientId = form?.ravenClientId.trim() ?? "";
+  const hasRavenClient = Boolean(ravenClientId);
 
   return (
     <SettingsLayout>
@@ -197,16 +202,16 @@ const NotificationGatewaySettingsPage: React.FC = () => {
                 avatar={<AddBusinessOutlined color="primary" />}
                 title={t("notificationGateway.ravenClient.title")}
                 subheader={
-                  configured?.ravenClientCreated && configured.ravenClientId
-                    ? t("notificationGateway.ravenClient.createdSubtitle", { id: configured.ravenClientId })
+                  hasRavenClient
+                    ? t("notificationGateway.ravenClient.createdSubtitle", { id: ravenClientId })
                     : t("notificationGateway.ravenClient.missingSubtitle")
                 }
                 action={
                   <Chip
                     size="small"
-                    color={configured?.ravenClientCreated ? "success" : "warning"}
+                    color={hasRavenClient ? "success" : "warning"}
                     label={
-                      configured?.ravenClientCreated
+                      hasRavenClient
                         ? t("notificationGateway.ravenClient.created")
                         : t("notificationGateway.ravenClient.missing")
                     }
@@ -215,30 +220,38 @@ const NotificationGatewaySettingsPage: React.FC = () => {
               />
               <Divider />
               <CardContent>
-                <Stack
-                  direction={{ xs: "column", sm: "row" }}
-                  spacing={1.5}
-                  justifyContent="space-between"
-                  alignItems={{ xs: "stretch", sm: "center" }}
-                >
+                <Stack spacing={2}>
                   <Typography variant="body2" color="text.secondary">
                     {t("notificationGateway.ravenClient.description")}
                   </Typography>
-                  <Button
-                    variant="outlined"
-                    startIcon={
-                      createRavenClientMutation.isPending
-                        ? <CircularProgress size={18} />
-                        : <AddBusinessOutlined />
-                    }
-                    disabled={createRavenClientMutation.isPending || configured?.ravenClientCreated}
-                    onClick={() => createRavenClientMutation.mutate()}
-                    sx={{ flexShrink: 0 }}
+                  <Stack
+                    direction={{ xs: "column", sm: "row" }}
+                    spacing={1.5}
+                    alignItems={{ xs: "stretch", sm: "flex-start" }}
                   >
-                    {configured?.ravenClientCreated
-                      ? t("notificationGateway.ravenClient.alreadyCreatedButton")
-                      : t("notificationGateway.ravenClient.createButton")}
-                  </Button>
+                    <TextField
+                      fullWidth
+                      label={t("notificationGateway.ravenClient.existingClientLabel")}
+                      value={form.ravenClientId}
+                      onChange={(event) => update({ ravenClientId: event.target.value })}
+                      helperText={t("notificationGateway.ravenClient.existingClientHint")}
+                    />
+                    <Button
+                      variant="outlined"
+                      startIcon={
+                        createRavenClientMutation.isPending
+                          ? <CircularProgress size={18} />
+                          : <AddBusinessOutlined />
+                      }
+                      disabled={createRavenClientMutation.isPending || hasRavenClient}
+                      onClick={() => createRavenClientMutation.mutate()}
+                      sx={{ flexShrink: 0, minHeight: 56 }}
+                    >
+                      {hasRavenClient
+                        ? t("notificationGateway.ravenClient.alreadyCreatedButton")
+                        : t("notificationGateway.ravenClient.createButton")}
+                    </Button>
+                  </Stack>
                 </Stack>
               </CardContent>
             </Card>
