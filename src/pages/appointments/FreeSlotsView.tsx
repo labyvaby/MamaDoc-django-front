@@ -2027,7 +2027,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
             borderColor: "divider",
             borderRadius: "14px",
             bgcolor: "background.paper",
-            overflowY: "auto",
+            overflow: "hidden",
             display: { xs: "none", md: "flex" },
             flexDirection: "column",
             minHeight: 0,
@@ -2056,147 +2056,38 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
               }}
             />
           </Box>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ fontWeight: 600, px: 2, pt: 0.5, pb: 1 }}
-          >
-            {t("slots.specialities")}
-          </Typography>
-          {specsQuery.isLoading ? (
-            <Stack alignItems="center" py={3}>
-              <CircularProgress size={20} />
-            </Stack>
-          ) : (
-            <>
-              {(() => {
-                const active = specId === null;
-                const overall = summaryQuery.data
-                  ? { free: summaryQuery.data.overallFreeEmployeeCount, total: summaryQuery.data.overallEmployeeCount }
-                  : undefined;
-                return (
-                  <React.Fragment>
-                    <Box
-                      onClick={() => {
-                        if (specId !== null) {
-                          setSpecId(null);
-                          setSelDocId(null);
-                          setSelDay(null);
-                          setCollapsedGroup("all");
-                        } else if (collapsedGroup === "all") {
-                          setCollapsedGroup(null);
-                        } else {
-                          setCollapsedGroup("all");
-                          setSelDocId(null);
-                        }
-                      }}
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 1.25,
-                        px: 1.75,
-                        py: 1.25,
-                        cursor: "pointer",
-                        borderLeft: "3px solid",
-                        borderColor: active ? "primary.main" : "transparent",
-                        bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
-                        transition: "background-color .13s ease",
-                        "@media (hover: hover)": {
-                          "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
-                        },
-                      }}
-                    >
-                      <Typography
-                        variant="body2"
-                        fontWeight={active ? 600 : 500}
-                        sx={{ flex: 1, minWidth: 0 }}
-                        noWrap
-                      >
-                        {t("slots.allSpecialists")}
-                      </Typography>
-                      <KeyboardArrowRightOutlined
-                        sx={{
-                          fontSize: 17,
-                          flexShrink: 0,
-                          transform: collapsedGroup === "all" ? "none" : "rotate(90deg)",
-                          transition: "transform .13s ease",
-                        }}
-                      />
-                      {overall && (
-                        <Box
-                          sx={(t) => ({
-                            fontSize: "0.6875rem",
-                            fontWeight: 600,
-                            lineHeight: 1,
-                            px: 0.75,
-                            py: 0.5,
-                            borderRadius: "7px",
-                            color: overall.free ? "success.dark" : "text.disabled",
-                            bgcolor: overall.free
-                              ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
-                              : subtleBg(t, true),
-                            ...(t.palette.mode === "dark" && overall.free ? { color: t.palette.success.light } : {}),
-                          })}
-                          title={t("slots.freeToday")}
-                        >
-                          {overall.free}/{overall.total}
-                        </Box>
-                      )}
-                    </Box>
-
-                    <Collapse
-                      in={active && collapsedGroup !== "all"}
-                      timeout={{ enter: 240, exit: 180 }}
-                      easing={{ enter: "cubic-bezier(0.22, 1, 0.36, 1)", exit: "cubic-bezier(0.4, 0, 1, 1)" }}
-                      unmountOnExit
-                      // flexShrink: 0 обязателен: рельс — это flex-колонка со скроллом,
-                      // а у Collapse overflow: hidden (min-height: auto → 0), поэтому
-                      // иначе флексбокс ужимает раскрытый список до нулевой высоты.
-                      sx={{ flexShrink: 0, overflow: "hidden" }}
-                    >
-                      <DocRailList
-                        docs={docs}
-                        selectedId={selDocId}
-                        loading={isAvailLoading}
-                        onSelect={setSelDocId}
-                        onSearch={searchByDoctor}
-                      />
-                    </Collapse>
-                  </React.Fragment>
-                );
-              })()}
-              {/* Пока не известно, у каких специальностей в филиале есть смены,
-                  список не показываем: иначе справочник на секунду вставал бы
-                  целиком и потом схлопывался. */}
-              {branchSpecs === undefined ? (
-                <Stack alignItems="center" py={2}>
-                  <CircularProgress size={16} />
-                </Stack>
-              ) : railSpecs.length === 0 ? (
-                <Typography variant="body2" color="text.disabled" sx={{ px: 2, py: 2 }}>
-                  {t("slots.noSpecialities")}
-                </Typography>
-              ) : (
-                railSpecs.map((s) => {
-                  const active = s.id === specId;
-                  // «0/0» — сегодня в филиале никого из специальности: бейдж про
-                  // сегодня, сказать ему нечего. Сама строка остаётся — врачи
-                  // работают в другие дни (пустые специальности уже скрыты).
-                  const badge = badgeBySpec.get(s.id);
-                  const showBadge = badge != null && badge.total > 0;
+          <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", fontWeight: 600, px: 2, pt: 0.5, pb: 1 }}
+            >
+              {t("slots.specialities")}
+            </Typography>
+            {specsQuery.isLoading ? (
+              <Stack alignItems="center" py={3}>
+                <CircularProgress size={20} />
+              </Stack>
+            ) : (
+              <>
+                {(() => {
+                  const active = specId === null;
+                  const overall = summaryQuery.data
+                    ? { free: summaryQuery.data.overallFreeEmployeeCount, total: summaryQuery.data.overallEmployeeCount }
+                    : undefined;
                   return (
-                    <React.Fragment key={s.id}>
+                    <React.Fragment>
                       <Box
                         onClick={() => {
-                          if (specId !== s.id) {
-                            setSpecId(s.id);
+                          if (specId !== null) {
+                            setSpecId(null);
                             setSelDocId(null);
                             setSelDay(null);
-                            setCollapsedGroup(null);
-                          } else if (collapsedGroup === s.id) {
+                            setCollapsedGroup("all");
+                          } else if (collapsedGroup === "all") {
                             setCollapsedGroup(null);
                           } else {
-                            setCollapsedGroup(s.id);
+                            setCollapsedGroup("all");
                             setSelDocId(null);
                           }
                         }}
@@ -2222,17 +2113,17 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           sx={{ flex: 1, minWidth: 0 }}
                           noWrap
                         >
-                          {s.name}
+                          {t("slots.allSpecialists")}
                         </Typography>
                         <KeyboardArrowRightOutlined
                           sx={{
                             fontSize: 17,
                             flexShrink: 0,
-                            transform: collapsedGroup === s.id ? "none" : "rotate(90deg)",
+                            transform: collapsedGroup === "all" ? "none" : "rotate(90deg)",
                             transition: "transform .13s ease",
                           }}
                         />
-                        {showBadge ? (
+                        {overall && (
                           <Box
                             sx={(t) => ({
                               fontSize: "0.6875rem",
@@ -2241,29 +2132,27 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                               px: 0.75,
                               py: 0.5,
                               borderRadius: "7px",
-                              color: badge.free ? "success.dark" : "text.disabled",
-                              bgcolor: badge.free
+                              color: overall.free ? "success.dark" : "text.disabled",
+                              bgcolor: overall.free
                                 ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
                                 : subtleBg(t, true),
-                              ...(t.palette.mode === "dark" && badge.free ? { color: t.palette.success.light } : {}),
+                              ...(t.palette.mode === "dark" && overall.free ? { color: t.palette.success.light } : {}),
                             })}
                             title={t("slots.freeToday")}
                           >
-                            {badge.free}/{badge.total}
+                            {overall.free}/{overall.total}
                           </Box>
-                        ) : (
-                          // Место бейджа «1/1»: без него стрелка уезжала вправо
-                          // и выбивалась из колонки стрелок соседних строк.
-                          <Box sx={{ width: 28, flexShrink: 0 }} />
                         )}
                       </Box>
 
-                      {/* Список сотрудников выбранной специальности */}
                       <Collapse
-                        in={active && collapsedGroup !== s.id}
+                        in={active && collapsedGroup !== "all"}
                         timeout={{ enter: 240, exit: 180 }}
                         easing={{ enter: "cubic-bezier(0.22, 1, 0.36, 1)", exit: "cubic-bezier(0.4, 0, 1, 1)" }}
                         unmountOnExit
+                        // flexShrink: 0 обязателен: рельс — это flex-колонка со скроллом,
+                        // а у Collapse overflow: hidden (min-height: auto → 0), поэтому
+                        // иначе флексбокс ужимает раскрытый список до нулевой высоты.
                         sx={{ flexShrink: 0, overflow: "hidden" }}
                       >
                         <DocRailList
@@ -2276,10 +2165,123 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       </Collapse>
                     </React.Fragment>
                   );
-                })
-              )}
-            </>
-          )}
+                })()}
+                {/* Пока не известно, у каких специальностей в филиале есть смены,
+                    список не показываем: иначе справочник на секунду вставал бы
+                    целиком и потом схлопывался. */}
+                {branchSpecs === undefined ? (
+                  <Stack alignItems="center" py={2}>
+                    <CircularProgress size={16} />
+                  </Stack>
+                ) : railSpecs.length === 0 ? (
+                  <Typography variant="body2" color="text.disabled" sx={{ px: 2, py: 2 }}>
+                    {t("slots.noSpecialities")}
+                  </Typography>
+                ) : (
+                  railSpecs.map((s) => {
+                    const active = s.id === specId;
+                    // «0/0» — сегодня в филиале никого из специальности: бейдж про
+                    // сегодня, сказать ему нечего. Сама строка остаётся — врачи
+                    // работают в другие дни (пустые специальности уже скрыты).
+                    const badge = badgeBySpec.get(s.id);
+                    const showBadge = badge != null && badge.total > 0;
+                    return (
+                      <React.Fragment key={s.id}>
+                        <Box
+                          onClick={() => {
+                            if (specId !== s.id) {
+                              setSpecId(s.id);
+                              setSelDocId(null);
+                              setSelDay(null);
+                              setCollapsedGroup(null);
+                            } else if (collapsedGroup === s.id) {
+                              setCollapsedGroup(null);
+                            } else {
+                              setCollapsedGroup(s.id);
+                              setSelDocId(null);
+                            }
+                          }}
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 1.25,
+                            px: 1.75,
+                            py: 1.25,
+                            cursor: "pointer",
+                            borderLeft: "3px solid",
+                            borderColor: active ? "primary.main" : "transparent",
+                            bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
+                            transition: "background-color .13s ease",
+                            "@media (hover: hover)": {
+                              "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
+                            },
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            fontWeight={active ? 600 : 500}
+                            sx={{ flex: 1, minWidth: 0 }}
+                            noWrap
+                          >
+                            {s.name}
+                          </Typography>
+                          <KeyboardArrowRightOutlined
+                            sx={{
+                              fontSize: 17,
+                              flexShrink: 0,
+                              transform: collapsedGroup === s.id ? "none" : "rotate(90deg)",
+                              transition: "transform .13s ease",
+                            }}
+                          />
+                          {showBadge ? (
+                            <Box
+                              sx={(t) => ({
+                                fontSize: "0.6875rem",
+                                fontWeight: 600,
+                                lineHeight: 1,
+                                px: 0.75,
+                                py: 0.5,
+                                borderRadius: "7px",
+                                color: badge.free ? "success.dark" : "text.disabled",
+                                bgcolor: badge.free
+                                  ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
+                                  : subtleBg(t, true),
+                                ...(t.palette.mode === "dark" && badge.free ? { color: t.palette.success.light } : {}),
+                              })}
+                              title={t("slots.freeToday")}
+                            >
+                              {badge.free}/{badge.total}
+                            </Box>
+                          ) : (
+                            // Место бейджа «1/1»: без него стрелка уезжала вправо
+                            // и выбивалась из колонки стрелок соседних строк.
+                            <Box sx={{ width: 28, flexShrink: 0 }} />
+                          )}
+                        </Box>
+
+                        {/* Список сотрудников выбранной специальности */}
+                        <Collapse
+                          in={active && collapsedGroup !== s.id}
+                          timeout={{ enter: 240, exit: 180 }}
+                          easing={{ enter: "cubic-bezier(0.22, 1, 0.36, 1)", exit: "cubic-bezier(0.4, 0, 1, 1)" }}
+                          unmountOnExit
+                          sx={{ flexShrink: 0, overflow: "hidden" }}
+                        >
+                          <DocRailList
+                            docs={docs}
+                            selectedId={selDocId}
+                            loading={isAvailLoading}
+                            onSelect={setSelDocId}
+                            onSearch={searchByDoctor}
+                          />
+                        </Collapse>
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </>
+            )}
+          </Box>
           {isDesktop && (
             <Stack
               direction="row"
