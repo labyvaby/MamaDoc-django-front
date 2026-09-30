@@ -63,7 +63,7 @@ export const HotelGuestsPage: React.FC = () => {
       loading={guestsQuery.isPending}
     />
   );
-  const cardNode = <GuestCardPanel clientId={selectedClientId} state={state} />;
+  const cardNode = <GuestCardPanel clientId={selectedClientId} state={state} onDeleted={() => setSelectedClientId(null)} />;
   const historyNode = <GuestHistoryPanel state={state} />;
 
   const blacklisted = guests.filter((g) => g.isBlacklisted).length;

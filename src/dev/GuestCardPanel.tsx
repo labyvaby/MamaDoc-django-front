@@ -16,6 +16,9 @@ import HotelOutlined from "@mui/icons-material/HotelOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import RemoveCircleOutlineOutlined from "@mui/icons-material/RemoveCircleOutlineOutlined";
 import PublicOutlined from "@mui/icons-material/PublicOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
+import StarOutlined from "@mui/icons-material/StarOutlined";
+import NotesOutlined from "@mui/icons-material/NotesOutlined";
 import dayjs from "dayjs";
 
 import { AppCard, ListEmptyState, UserAvatar } from "../components/ui";
@@ -30,6 +33,7 @@ import {
 import { formatHotelDateRange } from "./mockDemoData";
 import type { HotelGuest } from "../api/hotel";
 import type { GuestDetailsState } from "./useGuestDetails";
+import { EditGuestDrawer } from "./EditGuestDrawer";
 
 /** Дата документа с годом — «12 сентября» (formatHotelDate) для рождения и срока действия не годится. */
 const formatDocumentDate = (iso: string): string => dayjs(iso).format("DD.MM.YYYY");
@@ -87,13 +91,17 @@ const FactBlock: React.FC<{ icon: React.ReactNode; title: string; children: Reac
 export interface GuestCardPanelProps {
   clientId: number | null;
   state: GuestDetailsState;
+  /** Гость удалён из «Изменить» — снять выбор / закрыть окно. */
+  onDeleted?: (clientId: number) => void;
 }
 
-export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ clientId, state }) => {
+export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ clientId, state, onDeleted }) => {
+  const [editOpen, setEditOpen] = React.useState(false);
   const {
     guest,
     guestLoading,
     reservations,
+    reservationsLoading,
     blacklistReasonDraft,
     setBlacklistReasonDraft,
     addToBlacklist,
@@ -115,6 +123,12 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ clientId, state 
             <Typography variant="h6">Гость</Typography>
           </Stack>
           {guest && (
+            <Stack direction="row" alignItems="center" gap={0.5}>
+            <Tooltip title="Изменить карточку">
+              <IconButton size="small" onClick={() => setEditOpen(true)} aria-label="Изменить карточку гостя">
+                <EditOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
             <Tooltip title={guest.isBlacklisted ? "Убрать из чёрного списка" : "В чёрный список"}>
               <IconButton
                 size="small"
@@ -130,6 +144,7 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ clientId, state 
                 {guest.isBlacklisted ? <RemoveCircleOutlineOutlined fontSize="small" /> : <BlockOutlined fontSize="small" />}
               </IconButton>
             </Tooltip>
+            </Stack>
           )}
         </Stack>
       }
@@ -169,9 +184,16 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ clientId, state 
             <Stack direction="row" alignItems="center" spacing={2}>
               <UserAvatar src={guest.photoUrl} name={guest.fullName} size={64} sx={{ borderRadius: "18px", flexShrink: 0 }} />
               <Box sx={{ minWidth: 0 }}>
-                <Typography variant="h6" fontWeight={700} noWrap sx={{ letterSpacing: -0.2, lineHeight: 1.25 }}>
-                  {guest.fullName}
-                </Typography>
+                <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+                  <Typography variant="h6" fontWeight={700} noWrap sx={{ letterSpacing: -0.2, lineHeight: 1.25 }}>
+                    {guest.fullName}
+                  </Typography>
+                  {guest.isVip && (
+                    <Tooltip title="VIP-гость">
+                      <StarOutlined sx={{ fontSize: 18, color: "warning.main", flexShrink: 0 }} />
+                    </Tooltip>
+                  )}
+                </Stack>
                 <Link
                   href={`tel:${guest.phone}`}
                   sx={{
@@ -244,6 +266,14 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ clientId, state 
               </FactBlock>
             )}
 
+            {guest.preferences && (
+              <FactBlock icon={<NotesOutlined />} title="Предпочтения">
+                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                  {guest.preferences}
+                </Typography>
+              </FactBlock>
+            )}
+
             {/* Особые пожелания — последняя бронь. */}
             {lastReservation?.guestComment && (
               <FactBlock icon={<PublicOutlined />} title="Особые пожелания">
@@ -261,6 +291,14 @@ export const GuestCardPanel: React.FC<GuestCardPanelProps> = ({ clientId, state 
           />
         )}
       </Box>
+      <EditGuestDrawer
+        guest={guest ?? null}
+        open={editOpen && guest != null}
+        // Пока история не загрузилась, удалять не даём: брони могут быть.
+        hasReservations={reservationsLoading || reservations.length > 0}
+        onClose={() => setEditOpen(false)}
+        onDeleted={onDeleted}
+      />
     </AppCard>
   );
 };

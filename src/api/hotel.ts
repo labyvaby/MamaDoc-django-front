@@ -1472,6 +1472,11 @@ export function updateGuest(clientId: number, data: HotelGuestUpdateData): Promi
   return apiRequest<HotelGuest>(`/v2/hotel/guests/${clientId}/`, { method: "PATCH", body: data });
 }
 
+/** Удалить гостя без броней (hotel.guests.manage). С бронями или записями других модулей — 409 HAS_DEPENDENTS. */
+export function deleteGuest(clientId: number): Promise<void> {
+  return apiRequest<void>(`/v2/hotel/guests/${clientId}/`, { method: "DELETE" });
+}
+
 /** reason обязателен. Бронь на гостя из ЧС не блокируется — только бейдж/алерт в карточке. */
 export function setGuestBlacklist(clientId: number, reason: string): Promise<HotelGuest> {
   return apiRequest<HotelGuest>(`/v2/hotel/guests/${clientId}/blacklist/`, { method: "POST", body: { reason } });
