@@ -217,15 +217,23 @@ const MonthCalendar: React.FC<{
   events: HotelCityEvent[];
   /** Месяц ещё подгружается — тонкая полоска под шапкой календаря. */
   loading?: boolean;
+  /** Ближайшее событие — чтобы с пустого месяца был путь к нему в один клик. */
+  nextEvent?: HotelCityEvent | null;
   onMonthChange: (m: Dayjs) => void;
   onOpen: (e: HotelCityEvent) => void;
-}> = ({ month, events, loading, onMonthChange, onOpen }) => {
+}> = ({ month, events, loading, nextEvent, onMonthChange, onOpen }) => {
   const theme = useTheme();
   const today = dayjs().format("YYYY-MM-DD");
   // Сетка с понедельника: 6 недель, чтобы высота не прыгала между месяцами.
   const start = month.startOf("month").subtract((month.startOf("month").day() + 6) % 7, "day");
   const days = Array.from({ length: 42 }, (_, i) => start.add(i, "day"));
   const line = alpha(theme.palette.text.primary, theme.palette.mode === "dark" ? 0.1 : 0.07);
+  // Календарь всегда открывается на текущем месяце. Если в нём пусто, а
+  // ближайшее событие — в другом, подсказываем, куда листать.
+  const monthFrom = month.startOf("month").format("YYYY-MM-DD");
+  const monthTo = month.endOf("month").format("YYYY-MM-DD");
+  const monthEmpty = !loading && !events.some((e) => e.dateFrom <= monthTo && e.dateTo >= monthFrom);
+  const jumpTo = monthEmpty && nextEvent && (nextEvent.dateFrom > monthTo || nextEvent.dateTo < monthFrom) ? nextEvent : null;
 
   return (
     <Surface padded={false} sx={{ overflow: "hidden" }}>
@@ -247,6 +255,16 @@ const MonthCalendar: React.FC<{
       </Stack>
 
       <Box sx={{ height: 2 }}>{loading && <LinearProgress sx={{ height: 2 }} />}</Box>
+      {jumpTo && (
+        <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ px: 2.5, py: 0.75, borderBottom: `1px solid ${line}` }}>
+          <Typography variant="body2" color="text.secondary">
+            В этом месяце событий нет. Ближайшее — {formatEventDates(jumpTo)}: {jumpTo.title}
+          </Typography>
+          <Button size="small" onClick={() => onMonthChange(dayjs(jumpTo.dateFrom).startOf("month"))} sx={{ flexShrink: 0 }}>
+            Показать
+          </Button>
+        </Stack>
+      )}
       <Box sx={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}>
         {WEEKDAYS.map((w, i) => (
           <Typography
@@ -779,33 +797,20 @@ export const HotelEventsPage: React.FC = () => {
     enabled: property != null,
   });
 
-  // В конце месяца текущий месяц часто пуст — открываем месяц ближайшего
-  // события, чтобы календарь с первого взгляда показывал, что впереди.
-  // Один раз при загрузке: дальше месяц листает человек.
-  const initialMonthPicked = React.useRef(false);
-  React.useEffect(() => {
-    if (initialMonthPicked.current || !eventsQuery.data) return;
-    const loaded = eventsQuery.data.events;
-    initialMonthPicked.current = true;
-    const todayStr = dayjs().format("YYYY-MM-DD");
-    const monthEnd = dayjs().endOf("month").format("YYYY-MM-DD");
-    const next = loaded.find((e) => e.dateTo >= todayStr);
-    if (next && next.dateFrom > monthEnd) setMonth(dayjs(next.dateFrom).startOf("month"));
-  }, [eventsQuery.data]);
-
   if (!vivaActive) return <Navigate to="/" replace />;
 
   const all = eventsQuery.data?.events ?? [];
   const isDemo = eventsQuery.data?.isDemo ?? false;
   const filtered = filter === "all" ? all : all.filter((e) => e.category === filter);
   const today = dayjs().format("YYYY-MM-DD");
-  const horizon = dayjs().add(90, "day").format("YYYY-MM-DD");
   const upcoming = filtered.filter((e) => e.dateTo >= today);
-  const next90 = all.filter((e) => e.dateTo >= today && e.dateFrom <= horizon);
+  // Сводка считает те же полгода, что и список «Ближайшие»: цифра в шапке и
+  // карточки рядом не должны расходиться.
+  const ahead = all.filter((e) => e.dateTo >= today);
   const nextEvent = all.find((e) => e.dateTo >= today) ?? null;
-  const peakCount = next90.filter((e) => e.demand !== "moderate").length;
-  const withoutRule = next90.filter((e) => ruleForEvent(e, rules) == null);
-  const avgMarkup = next90.length > 0 ? Math.round(next90.reduce((s, e) => s + e.suggestedMarkupPercent, 0) / next90.length) : 0;
+  const peakCount = ahead.filter((e) => e.demand !== "moderate").length;
+  const withoutRule = ahead.filter((e) => ruleForEvent(e, rules) == null);
+  const avgMarkup = ahead.length > 0 ? Math.round(ahead.reduce((s, e) => s + e.suggestedMarkupPercent, 0) / ahead.length) : 0;
 
   const loading = propertyLoading || eventsQuery.isPending;
 
@@ -815,7 +820,7 @@ export const HotelEventsPage: React.FC = () => {
         title="События"
         subtitle={
           eventsQuery.isSuccess
-            ? `${next90.length} ${plural(next90.length, "событие", "события", "событий")} за 3 месяца` +
+            ? `${ahead.length} ${plural(ahead.length, "событие", "события", "событий")} за полгода` +
               (withoutRule.length > 0 ? ` · ${withoutRule.length} без повышения цен` : " · цены подняты на все")
             : undefined
         }
@@ -861,13 +866,13 @@ export const HotelEventsPage: React.FC = () => {
               hint={nextEvent ? nextEvent.title : "событий нет"}
               accent={nextEvent ? categoryColor(nextEvent.category, theme) : undefined}
             />
-            <MetricTile label="Высокий спрос" value={peakCount} hint={`${plural(peakCount, "событие", "события", "событий")} за 3 месяца`} accent={theme.palette.warning.main} />
+            <MetricTile label="Высокий спрос" value={peakCount} hint={`${plural(peakCount, "событие", "события", "событий")} за полгода`} accent={theme.palette.warning.main} />
             <MetricTile label="Средняя наценка" value={`+${avgMarkup}%`} hint="рекомендация на ночи событий" />
             <MetricTile
               label="Цены подняты"
-              value={`${next90.length - withoutRule.length} / ${next90.length}`}
+              value={`${ahead.length - withoutRule.length} / ${ahead.length}`}
               hint={withoutRule.length > 0 ? `${withoutRule.length} ждут решения` : "на все события"}
-              accent={withoutRule.length === 0 && next90.length > 0 ? theme.palette.success.main : undefined}
+              accent={withoutRule.length === 0 && ahead.length > 0 ? theme.palette.success.main : undefined}
             />
           </Box>
 
@@ -883,6 +888,7 @@ export const HotelEventsPage: React.FC = () => {
               month={month}
               events={(monthQuery.data?.events ?? []).filter((e) => filter === "all" || e.category === filter)}
               loading={monthQuery.isFetching}
+              nextEvent={nextEvent}
               onMonthChange={setMonth}
               onOpen={setOpenEvent}
             />
