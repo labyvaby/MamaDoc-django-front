@@ -25,6 +25,15 @@ export interface NewProductDraft {
   sku: string;
   color: string;
   size: string;
+  /** Свойство «Бренд»; пусто — бренд по умолчанию из карточки поставщика. */
+  brand: string;
+  /** Описание карточки: по умолчанию — всё, что о строке сказано в накладной. */
+  description: string;
+  /**
+   * Категории ещё нет в справочнике — её имя («Пальто»); форма заведёт её
+   * при проведении. Взаимоисключающе с `categoryId`.
+   */
+  newCategory: string;
 }
 
 export const emptyDraft = (name = ""): NewProductDraft => ({
@@ -37,7 +46,67 @@ export const emptyDraft = (name = ""): NewProductDraft => ({
   sku: "",
   color: "",
   size: "",
+  brand: "",
+  description: "",
+  newCategory: "",
 });
+
+/** Категория справочника по имени — полным путём или последним звеном («Пальто»). */
+export function matchCategory(options: CategoryOption[], name: string | null | undefined): CategoryOption | null {
+  const wanted = name?.trim().toLowerCase();
+  if (!wanted) return null;
+  return (
+    options.find((o) => o.label.toLowerCase() === wanted) ??
+    options.find((o) => o.label.split(" / ").pop()?.trim().toLowerCase() === wanted) ??
+    null
+  );
+}
+
+/**
+ * Описание новой карточки из распознанной строки: полное название из
+ * документа и все его колонки — чтобы ничего из накладной не потерялось,
+ * даже то, чему в карточке нет отдельного поля.
+ */
+export function describeRecognized(line: {
+  name: string;
+  sourceName?: string | null;
+  description?: string | null;
+  modelCode?: string | null;
+  sku?: string | null;
+  color?: string | null;
+  size?: string | null;
+  barcode?: string | null;
+  details?: Array<{ label: string; value: string }>;
+}): string {
+  const rows: string[] = [];
+  const title = (line.sourceName || line.name || "").trim();
+  if (title) rows.push(`Из накладной: ${title}`);
+  if (line.description?.trim()) rows.push(line.description.trim());
+  const pairs: Array<[string, string | null | undefined]> = [
+    ["Артикул", line.sku],
+    ["Код модели", line.modelCode],
+    ["Цвет", line.color],
+    ["Размер", line.size],
+    ["Штрихкод", line.barcode],
+    ...(line.details ?? []).map((d): [string, string] => [d.label, d.value]),
+  ];
+  pairs.forEach(([label, value]) => {
+    if (value?.trim()) rows.push(`${label}: ${value.trim()}`);
+  });
+  return rows.join("\n");
+}
+
+/**
+ * Значения свойства «Бренд» организации — подсказки к полю: выбирая из уже
+ * заведённых, не плодим «Zara» / «ZARA» / «Zara » и находим товары поиском.
+ */
+export function brandOptions(attributes: DjangoProductAttribute[]): string[] {
+  const brand = attributes.find((a) => a.isActive && a.role === "generic" && /^(бренд|brand)$/i.test(a.name.trim()));
+  return (brand?.values ?? [])
+    .filter((v) => v.isActive)
+    .map((v) => v.value)
+    .sort((a, b) => a.localeCompare(b, "ru"));
+}
 
 /** Категория, в которой товар живёт вариантами: её форма несёт и цвет, и размер. */
 export interface CategoryOption {
@@ -141,6 +210,8 @@ export function newProductInput(draft: NewProductDraft, category: CategoryOption
   else if (draft.category.trim()) input.category = draft.category.trim();
   if (draft.unitId != null) input.unitId = draft.unitId;
   if (draft.barcode.trim()) input.barcode = draft.barcode.trim();
+  if (draft.brand.trim()) input.brand = draft.brand.trim();
+  if (draft.description.trim()) input.description = draft.description.trim();
   if (variant) {
     input.color = draft.color.trim();
     input.size = draft.size.trim();
@@ -165,16 +236,36 @@ export function matchUnit(units: DjangoUnitOfMeasure[], raw: string | null | und
  * карточки уникален.
  */
 export function draftFromRecognized(
-  line: Pick<RecognizedLine, "name" | "color" | "size" | "barcode" | "sku" | "unit" | "productName">,
-  options: { units: DjangoUnitOfMeasure[]; skuIsUnique: boolean },
+  line: Pick<RecognizedLine, "name" | "color" | "size" | "barcode" | "sku" | "unit" | "productName" | "brand"> &
+    Partial<Pick<RecognizedLine, "category" | "sourceName" | "description" | "modelCode" | "details">>,
+  options: {
+    units: DjangoUnitOfMeasure[];
+    skuIsUnique: boolean;
+    brands?: string[];
+    /** Справочник категорий (розница); пусто — категория свободной строкой. */
+    categories?: CategoryOption[];
+  },
 ): NewProductDraft {
+  const brand = line.brand?.trim() ?? "";
+  const kind = line.category?.trim() ?? "";
+  const categories = options.categories ?? [];
+  // Вид товара из документа («Пальто»): есть в справочнике — берём его,
+  // нет — предлагаем завести такую категорию при проведении.
+  const known = matchCategory(categories, kind);
   return {
     ...emptyDraft((line.productName || line.name).trim()),
     color: line.color?.trim() ?? "",
     size: line.size?.trim() ?? "",
+    // Уже заведённое написание («Zara», а не «ZARA» из документа) — одно
+    // значение свойства на бренд, иначе фильтр найдёт только часть товаров.
+    brand: options.brands?.find((known) => known.toLowerCase() === brand.toLowerCase()) ?? brand,
     barcode: line.barcode?.trim() ?? "",
     sku: options.skuIsUnique ? line.sku?.trim() ?? "" : "",
     unitId: matchUnit(options.units, line.unit)?.id ?? null,
+    categoryId: known?.id ?? null,
+    newCategory: categories.length > 0 && !known ? kind : "",
+    category: categories.length === 0 ? kind : "",
+    description: describeRecognized(line),
   };
 }
 
@@ -184,7 +275,7 @@ export function draftProblem(
   options: { categoryRequired: boolean; category: CategoryOption | null | undefined },
 ): string | null {
   if (!draft.name.trim()) return "Укажите название товара";
-  if (options.categoryRequired && draft.categoryId == null) return "Выберите категорию";
+  if (options.categoryRequired && draft.categoryId == null && !draft.newCategory.trim()) return "Выберите категорию";
   if (options.category?.matrix && Boolean(draft.color.trim()) !== Boolean(draft.size.trim())) {
     return "Для варианта нужны и цвет, и размер";
   }

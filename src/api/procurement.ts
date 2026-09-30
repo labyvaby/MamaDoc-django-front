@@ -153,6 +153,10 @@ export interface GoodsReceiptNewProductInput {
   sku?: string;
   color?: string;
   size?: string;
+  /** Свойство «Бренд»; пусто — бэк возьмёт бренд по умолчанию из карточки поставщика. */
+  brand?: string;
+  /** Описание карточки (до 4000 символов). */
+  description?: string;
 }
 
 /** Строка накладной: товар каталога (`productId`) либо новый (`newProduct`) — одно из двух. */
@@ -301,6 +305,8 @@ export interface RecognizedLine {
   sourceName?: string | null;
   productName?: string | null;
   brand?: string | null;
+  /** Вид товара по-русски, как раздел каталога («Пальто», «Футболки»). */
+  category?: string | null;
   description?: string | null;
   rawText?: string | null;
   page?: number | null;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DjangoProductAttribute, DjangoProductCategoryNode, DjangoUnitOfMeasure } from "../../api/warehouse";
 import {
+  brandOptions,
   buildCategoryOptions,
   draftFromRecognized,
   draftProblem,
@@ -135,6 +136,20 @@ describe("newProductInput", () => {
   it("одна ось в вариантной категории — ещё не вариант", () => {
     expect(isVariantDraft({ ...draft, size: " " }, matrix)).toBe(false);
   });
+
+  it("бренд уходит свойством, пустой — не отправляется (бэк возьмёт бренд поставщика)", () => {
+    expect(newProductInput({ ...emptyDraft("Шарф"), brand: " Zara " }, null)).toMatchObject({ brand: "Zara" });
+    expect(newProductInput({ ...emptyDraft("Шарф"), brand: "  " }, null)).not.toHaveProperty("brand");
+  });
+});
+
+describe("brandOptions", () => {
+  it("значения свойства «Бренд» по алфавиту, без неактивных и без других свойств", () => {
+    const brand = { ...attribute(5, "generic", [["Zara", 0], ["Mango", 1], ["Old", 2, false]]), name: "Бренд" };
+    const material = { ...attribute(6, "generic", [["Хлопок", 0]]), name: "Материал" };
+    expect(brandOptions([material, brand])).toEqual(["Mango", "Zara"]);
+    expect(brandOptions([material])).toEqual([]);
+  });
 });
 
 describe("draftFromRecognized", () => {
@@ -149,11 +164,42 @@ describe("draftFromRecognized", () => {
       barcode: "4601234567893",
       sku: "A-1",
       unitId: 1,
+      description: "Из накладной: Платье миди\nАртикул: A-1\nЦвет: чёрный\nРазмер: M\nШтрихкод: 4601234567893",
     });
+  });
+
+  it("всё, что сказано о строке в накладной, — в описание, ничего не теряется", () => {
+    const draft = draftFromRecognized(
+      { ...line, sourceName: "COAT REGULAR FIT", modelCode: "MMC000966", details: [{ label: "Made in", value: "CINA" }] },
+      { units, skuIsUnique: false },
+    );
+    expect(draft.description).toContain("Из накладной: COAT REGULAR FIT");
+    expect(draft.description).toContain("Код модели: MMC000966");
+    expect(draft.description).toContain("Made in: CINA");
+    expect(newProductInput(draft, null).description).toBe(draft.description);
+  });
+
+  it("вид товара из документа: есть в справочнике — берёт его, нет — предлагает новую категорию", () => {
+    const categories = [matrix, flat];
+    const known = draftFromRecognized({ ...line, category: "платья" }, { units, skuIsUnique: false, categories });
+    expect(known).toMatchObject({ categoryId: 7, newCategory: "" });
+    const fresh = draftFromRecognized({ ...line, category: "Пальто" }, { units, skuIsUnique: false, categories });
+    expect(fresh).toMatchObject({ categoryId: null, newCategory: "Пальто" });
+    // Новая категория закрывает требование «выберите категорию» — она заведётся при проведении.
+    expect(draftProblem(fresh, { categoryRequired: true, category: null })).toBeNull();
+    // Без справочника (клиника) — категория строкой, как раньше.
+    expect(draftFromRecognized({ ...line, category: "Расходники" }, { units, skuIsUnique: false }).category).toBe("Расходники");
   });
 
   it("общий у нескольких строк артикул не берёт", () => {
     expect(draftFromRecognized(line, { units, skuIsUnique: false }).sku).toBe("");
+  });
+
+  it("бренд документа берёт уже заведённое написание, новый — как есть", () => {
+    const brands = ["Mango", "Zara"];
+    expect(draftFromRecognized({ ...line, brand: "ZARA" }, { units, skuIsUnique: false, brands }).brand).toBe("Zara");
+    expect(draftFromRecognized({ ...line, brand: " Bershka " }, { units, skuIsUnique: false, brands }).brand).toBe("Bershka");
+    expect(draftFromRecognized(line, { units, skuIsUnique: false, brands }).brand).toBe("");
   });
 
   it("название модели сохраняет бренд и код, а цвет с размером остаются осями", () => {
