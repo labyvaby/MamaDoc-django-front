@@ -1,9 +1,14 @@
-import React from "react";
-import DjangoReportsPage from "./DjangoReportsPage";
+import React, { Suspense } from "react";
+import { LinearProgress } from "@mui/material";
 import { useIsVivaActive } from "../../../dev/mockDemoData";
-import { HotelReportsPage } from "../../../dev/HotelReportsPage";
+import { lazyWithProgress as lazy } from "../../../utility/lazyWithProgress";
 import { RequirePermission } from "../../../components/rbac/RequirePermission";
 import { PAGE_PERMISSIONS } from "../../../config/accessPermissions";
+
+// Каждая вертикаль грузит только свои отчёты (клиничные — с графиками и своими
+// запросами — отелю не нужны, и наоборот).
+const DjangoReportsPage = lazy(() => import("./DjangoReportsPage"));
+const HotelReportsPage = lazy(() => import("../../../dev/HotelReportsPage"));
 
 /**
  * Viva — вертикаль "hotel": DjangoReportsPage сходил бы за настоящими
@@ -21,13 +26,17 @@ const ReportsRouter: React.FC = () => {
   if (vivaActive) {
     return (
       <RequirePermission permission={PAGE_PERMISSIONS.hotelReports}>
-        <HotelReportsPage />
+        <Suspense fallback={<LinearProgress />}>
+          <HotelReportsPage />
+        </Suspense>
       </RequirePermission>
     );
   }
   return (
     <RequirePermission permission={PAGE_PERMISSIONS.reports}>
-      <DjangoReportsPage />
+      <Suspense fallback={<LinearProgress />}>
+        <DjangoReportsPage />
+      </Suspense>
     </RequirePermission>
   );
 };

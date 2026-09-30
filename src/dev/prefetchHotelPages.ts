@@ -17,7 +17,9 @@ const HOTEL_PAGES: Array<() => Promise<unknown>> = [
   () => import("./HotelPricingRulesPage"),
   () => import("./HotelPricingRuleFormPage"),
   () => import("./HotelEventsPage"),
+  () => import("./HotelGuestsPage"),
   () => import("./HotelHousekeepingPage"),
+  () => import("./HotelReportsPage"),
   () => import("./HotelKitchenPage"),
   () => import("./HotelPropertySettingsPage"),
 ];
@@ -35,7 +37,10 @@ export function prefetchHotelPages(): void {
       }
     }
   };
-  const idle = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
-  if (idle) idle(() => void run(), { timeout: 4000 });
-  else window.setTimeout(() => void run(), 2000);
+  // Не сразу: первые секунды сеть и процессор нужны текущей странице.
+  window.setTimeout(() => {
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+    if (idle) idle(() => void run(), { timeout: 4000 });
+    else void run();
+  }, 3000);
 }

@@ -186,6 +186,8 @@ export const HotelHousekeepingPage: React.FC = () => {
   const employeesQuery = useQuery({
     queryKey: ["staff", "employees", "all", "active"],
     queryFn: ({ signal }) => getAllDjangoEmployees({ status: "active" }, signal),
+    // Список нужен только в форме задачи — не грузим его вместе со страницей.
+    enabled: formOpen,
     staleTime: 5 * 60_000,
     retry: false,
   });

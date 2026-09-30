@@ -95,6 +95,7 @@ import {
   requestQuickBooking,
   nightsBetween,
   formatHotelDateRange,
+  MONTH_GEN_RU,
   MONTH_NOM_RU,
   WEEKDAY_SHORT_RU,
 } from "./mockDemoData";
@@ -133,7 +134,7 @@ const LOAD_MORE_THRESHOLD_PX = 600;
  * о виртуализации вовсе: ячейка, до которой можно дотянуться мышью или
  * стрелками, по построению уже видна на экране — то есть уже отрисована.
  */
-const VISIBLE_DAYS_BUFFER = 45;
+const VISIBLE_DAYS_BUFFER = 21;
 /**
  * Шаги масштаба — сколько дней помещается в ширину окна: от «1 неделя»
  * (детальнее) до 60. Остальные загруженные дни — правее, за горизонтальной
@@ -218,14 +219,113 @@ const BoardShell: React.FC<{ actions?: React.ReactNode; children: React.ReactNod
   </Paper>
 );
 
+/**
+ * Красная метка и линия «сейчас». Свой минутный тик: раньше useNowMinute жил в
+ * самой шахматке, и каждую минуту перерисовывались все её ячейки.
+ */
+const NowBadge: React.FC = () => {
+  const theme = useTheme();
+  const now = useNowMinute();
+  const fraction = (now.hour() * 60 + now.minute()) / 1440;
+  return (
+    <Box
+      sx={{
+        position: "absolute",
+        left: `${fraction * 100}%`,
+        top: "100%",
+        transform: "translateX(-50%)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        pointerEvents: "none",
+        zIndex: 1,
+      }}
+    >
+      <Typography
+        sx={{
+          px: 0.5,
+          borderRadius: "4px",
+          bgcolor: "error.main",
+          color: "error.contrastText",
+          fontSize: "0.62rem",
+          fontWeight: 700,
+          lineHeight: 1.35,
+          fontVariantNumeric: "tabular-nums",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {now.format("HH:mm")}
+      </Typography>
+      <Box
+        sx={{
+          width: 0,
+          height: 0,
+          borderLeft: "5px solid transparent",
+          borderRight: "5px solid transparent",
+          borderTop: `6px solid ${theme.palette.error.main}`,
+        }}
+      />
+    </Box>
+  );
+};
+
+const NowLine: React.FC = () => {
+  const now = useNowMinute();
+  const fraction = (now.hour() * 60 + now.minute()) / 1440;
+  return (
+    <Box
+      sx={{
+        position: "absolute",
+        top: 0,
+        bottom: 0,
+        left: `${fraction * 100}%`,
+        ml: "-1px",
+        width: "2px",
+        bgcolor: "error.main",
+        opacity: 0.85,
+      }}
+    />
+  );
+};
+
+interface GridDialogsHandle {
+  openRoom: (roomId: number) => void;
+  openReservation: (reservationId: number) => void;
+}
+
+/**
+ * Модалки номера и брони. Состояние «что открыто» живёт здесь, а не в
+ * шахматке: клик по номеру раньше перерисовывал всю сетку (тысячи ячеек), и
+ * на слабом компьютере модалка появлялась через несколько секунд.
+ */
+const GridDialogs = React.forwardRef<GridDialogsHandle, { roomTypes: React.ComponentProps<typeof RoomDetailsDialog>["roomTypes"] }>(({ roomTypes }, ref) => {
+  const [roomId, setRoomId] = React.useState<number | null>(null);
+  const [reservationId, setReservationId] = React.useState<number | null>(null);
+  React.useImperativeHandle(ref, () => ({ openRoom: setRoomId, openReservation: setReservationId }), []);
+  return (
+    <>
+      <RoomDetailsDialog
+        roomId={roomId}
+        roomTypes={roomTypes}
+        onClose={() => setRoomId(null)}
+        onReservationClick={(id) => {
+          setRoomId(null);
+          setReservationId(id);
+        }}
+      />
+      <ReservationDetailsDialog reservationId={reservationId} onClose={() => setReservationId(null)} />
+    </>
+  );
+});
+GridDialogs.displayName = "GridDialogs";
+
 export const RoomBookingGrid: React.FC = () => {
   const theme = useTheme();
   const { property, isLoading: propertyLoading } = useHotelProperty();
   const [windowStart, setWindowStart] = React.useState<Dayjs>(() =>
     dayjs().subtract(2, "day").startOf("day"),
   );
-  const [selectedRoomId, setSelectedRoomId] = React.useState<number | null>(null);
-  const [selectedReservationId, setSelectedReservationId] = React.useState<number | null>(null);
+  const dialogsRef = React.useRef<GridDialogsHandle>(null);
   // Подсказка по управлению (клик/протяжка/клавиатура) — по умолчанию свёрнута
   // под иконку info: раньше текст всегда висел строкой в легенде, занимая место.
   const [helpOpen, setHelpOpen] = React.useState(false);
@@ -352,9 +452,9 @@ export const RoomBookingGrid: React.FC = () => {
 
   // ── Виртуализация колонок — см. комментарий у VISIBLE_DAYS_BUFFER выше.
   // Шаг квантования (не пересчитывать на каждый пиксель прокрутки; запас
-  // VISIBLE_DAYS_BUFFER = 45 с каждой стороны втрое больше шага, так что
+  // VISIBLE_DAYS_BUFFER = 21 с каждой стороны втрое больше шага, так что
   // область рендера никогда не «прыгает» мимо видимой части).
-  const RANGE_STEP_DAYS = 15;
+  const RANGE_STEP_DAYS = 7;
   const computeVisibleRange = React.useCallback((): { start: number; end: number } => {
     if (!scrollEl || dayColWidth <= 0 || dates.length === 0) return { start: 0, end: dates.length };
     const firstVisibleIdx = Math.floor(scrollEl.scrollLeft / dayColWidth);
@@ -385,6 +485,19 @@ export const RoomBookingGrid: React.FC = () => {
     startIdx: number;
     endIdx: number;
   } | null>(null);
+
+  // Индексы выделения — позиции в dates. Новые куски во время протяжки не
+  // запрашиваем, но запрос, уже ушедший до её начала, может вернуться посреди
+  // неё: слева добавится кусок, и все индексы сдвинутся на CHUNK_DAYS. Без
+  // поправки протяжка на 4 ночи превращалась в бронь на полтора месяца.
+  const prevFirstChunkRef = React.useRef(firstChunkIdx);
+  React.useEffect(() => {
+    const prev = prevFirstChunkRef.current;
+    prevFirstChunkRef.current = firstChunkIdx;
+    if (prev == null || firstChunkIdx == null || prev === firstChunkIdx) return;
+    const shift = (prev - firstChunkIdx) * CHUNK_DAYS;
+    setDragSel((cur) => (cur ? { ...cur, startIdx: cur.startIdx + shift, endIdx: cur.endIdx + shift } : cur));
+  }, [firstChunkIdx]);
 
   // День у левого края области дат — в днях от windowStart (0 = windowStart, «сегодня − 2»).
   // Запоминаем именно дату, а не пиксели: пиксельная позиция «уплывает», когда слева
@@ -448,11 +561,33 @@ export const RoomBookingGrid: React.FC = () => {
 
   // Красная линия «сейчас» — как в расписании клиники (ScheduleDayTimeline): на
   // колонке сегодняшнего дня, по времени суток; обновляется раз в минуту.
-  const now = useNowMinute();
-  const nowFraction = (now.hour() * 60 + now.minute()) / 1440;
 
   const today = dayjs().startOf("day");
   const todayIdx = dates.findIndex((d) => d.isSame(today, "day"));
+
+  // Строки дат и свободные ночи по номерам считаем один раз на изменение данных.
+  // Раньше это делалось при каждой перерисовке: dayjs.format на каждую ячейку и
+  // перебор броней на каждую дату каждого номера — тысячи операций на кадр.
+  const dateInfo = React.useMemo(
+    () => dates.map((d) => ({ str: d.format("YYYY-MM-DD"), label: `${d.date()} ${MONTH_GEN_RU[d.month()]}`, weekend: d.day() === 0 || d.day() === 6 })),
+    [dates],
+  );
+  const freeMaskByRoom = React.useMemo(() => {
+    const map = new Map<number, boolean[]>();
+    for (const row of ROWS) {
+      if (row.kind !== "room") continue;
+      const mask = new Array<boolean>(dates.length).fill(true);
+      // Черновики (reservationStatus: "draft") номер не занимают.
+      for (const it of itemsByRoomId.get(row.room.id) ?? []) {
+        if (it.reservationStatus === "draft") continue;
+        const from = Math.max(0, dayjs(it.checkIn).diff(gridStart, "day"));
+        const to = Math.min(dates.length, dayjs(it.checkOut).diff(gridStart, "day"));
+        for (let i = from; i < to; i++) mask[i] = false;
+      }
+      map.set(row.room.id, mask);
+    }
+    return map;
+  }, [ROWS, dates.length, itemsByRoomId, gridStart]);
 
   // Клавиатура: свободные ячейки — кнопки, и Tab по каждой (номера × дни — тысячи остановок)
   // не пройти. Поэтому у всех tabIndex=-1, кроме одной входной — первой свободной ночи
@@ -463,16 +598,12 @@ export const RoomBookingGrid: React.FC = () => {
     for (let r = 0; r < ROWS.length; r++) {
       const row = ROWS[r];
       if (row.kind !== "room") continue;
-      const items = itemsByRoomId.get(row.room.id) ?? [];
-      for (let i = start; i < dates.length; i++) {
-        const dateStr = dates[i].format("YYYY-MM-DD");
-        if (!items.some((it) => it.reservationStatus !== "draft" && dateStr >= it.checkIn && dateStr < it.checkOut)) {
-          return `${r}:${i}`;
-        }
-      }
+      const mask = freeMaskByRoom.get(row.room.id);
+      if (!mask) continue;
+      for (let i = start; i < mask.length; i++) if (mask[i]) return `${r}:${i}`;
     }
     return null;
-  }, [ROWS, dates, itemsByRoomId, todayIdx]);
+  }, [ROWS, freeMaskByRoom, todayIdx]);
 
   // Подписи месяцев над днями (row 1) — соседние даты одного месяца схлопываются в одну ячейку.
   const monthSpans: Array<{ label: string; startCol: number; span: number }> = [];
@@ -825,6 +956,41 @@ export const RoomBookingGrid: React.FC = () => {
                   width: ROOM_COL_WIDTH + dates.length * dayColWidth,
                   // Пока тянем период, браузер не должен выделять текст под курсором.
                   userSelect: dragSel ? "none" : undefined,
+                  // Фоновые ячейки сетки — классами, а не sx на каждой ячейке.
+                  "& .rbg-c": {
+                    height: 48,
+                    margin: 0,
+                    padding: 0,
+                    border: 0,
+                    borderRadius: 0,
+                    font: "inherit",
+                    textAlign: "left",
+                    backgroundColor: "transparent",
+                    cursor: "default",
+                  },
+                  "& .rbg-w": { backgroundColor: theme.palette.action.hover },
+                  "& .rbg-t": { backgroundColor: alpha(theme.palette.primary.main, 0.06) },
+                  "& .rbg-s": { backgroundColor: alpha(theme.palette.primary.main, 0.34) },
+                  "& .rbg-f": { cursor: "pointer" },
+                  "& .rbg-f:not(.rbg-s):hover": { backgroundColor: alpha(theme.palette.primary.main, 0.12) },
+                  // Фокус с клавиатуры: 2 px цвета темы внутрь ячейки.
+                  "& .rbg-f:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: "-2px" },
+                  // «+» на свободной ячейке — при наведении/фокусе, псевдоэлементом (без узла в DOM).
+                  ...(dayColWidth >= CELL_PLUS_MIN_WIDTH
+                    ? {
+                        "& .rbg-f::after": {
+                          content: '"+"',
+                          display: "block",
+                          textAlign: "center",
+                          color: theme.palette.primary.main,
+                          fontSize: 18,
+                          lineHeight: "48px",
+                          opacity: 0,
+                          pointerEvents: "none",
+                        },
+                        "& .rbg-f:hover::after, & .rbg-f:focus-visible::after": { opacity: 0.6 },
+                      }
+                    : {}),
                 }}
               >
                 {/* Угол над шапкой — sticky по обеим осям, перекрывает содержимое под собой при
@@ -896,10 +1062,10 @@ export const RoomBookingGrid: React.FC = () => {
                   // Виртуализация — см. VISIBLE_DAYS_BUFFER: даты вне текущего окна
                   // просто не рисуем (данные и позиция в сетке не зависят от этого).
                   if (i < visibleRange.start || i >= visibleRange.end) return null;
-                  const dateStr = d.format("YYYY-MM-DD");
+                  const dateStr = dateInfo[i].str;
                   const isToday = i === todayIdx;
                   const isSelected = dateStr === selectedDate;
-                  const isWeekend = d.day() === 0 || d.day() === 6;
+                  const isWeekend = dateInfo[i].weekend;
                   return (
                     <Box
                       key={dateStr}
@@ -909,7 +1075,7 @@ export const RoomBookingGrid: React.FC = () => {
                       onClick={() => setSelectedHotelDate(dateStr)}
                       title={
                         isToday
-                          ? `Сегодня, сейчас ${now.format("HH:mm")} — показать загрузку и гостей на эту дату`
+                          ? "Сегодня — показать загрузку и гостей на эту дату"
                           : "Показать загрузку и гостей на эту дату"
                       }
                       sx={{
@@ -958,46 +1124,7 @@ export const RoomBookingGrid: React.FC = () => {
                           что в расписании клиники (ScheduleDayTimeline.tsx), а не только в title по
                           наведению: текущий момент должен быть виден сразу, без поиска глазами.
                           Дальше вниз её продолжает красная линия поверх строк (ниже). */}
-                      {isToday && (
-                        <Box
-                          sx={{
-                            position: "absolute",
-                            left: `${nowFraction * 100}%`,
-                            top: "100%",
-                            transform: "translateX(-50%)",
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            pointerEvents: "none",
-                            zIndex: 1,
-                          }}
-                        >
-                          <Typography
-                            sx={{
-                              px: 0.5,
-                              borderRadius: "4px",
-                              bgcolor: "error.main",
-                              color: "error.contrastText",
-                              fontSize: "0.62rem",
-                              fontWeight: 700,
-                              lineHeight: 1.35,
-                              fontVariantNumeric: "tabular-nums",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {now.format("HH:mm")}
-                          </Typography>
-                          <Box
-                            sx={{
-                              width: 0,
-                              height: 0,
-                              borderLeft: "5px solid transparent",
-                              borderRight: "5px solid transparent",
-                              borderTop: `6px solid ${theme.palette.error.main}`,
-                            }}
-                          />
-                        </Box>
-                      )}
+                      {isToday && <NowBadge />}
                     </Box>
                   );
                 })}
@@ -1066,13 +1193,12 @@ export const RoomBookingGrid: React.FC = () => {
                   const categoryIconKey = categoryIconKeys.get(room.roomTypeId);
                   const CategoryIcon = categoryIconKey ? ROOM_CATEGORY_ICON_COMPONENTS[categoryIconKey] : null;
                   const stateColor = hotelRoomStateColor(room.state, theme);
-                  const roomItems = itemsByRoomId.get(room.id) ?? [];
                   return (
                     <React.Fragment key={room.id}>
                       <Box
                         component="button"
                         type="button"
-                        onClick={() => setSelectedRoomId(room.id)}
+                        onClick={() => dialogsRef.current?.openRoom(room.id)}
                         title="Показать детали номера"
                         sx={{
                           gridRow,
@@ -1134,85 +1260,46 @@ export const RoomBookingGrid: React.FC = () => {
                         </Tooltip>
                       </Box>
                       {(() => {
-                        // Черновики (reservationStatus: "draft") номер не занимают — только подтверждённые/hold считаются на занятость.
-                        const occupying = roomItems.filter((it) => it.reservationStatus !== "draft");
-                        // Свободна ли каждая видимая ночь — и для рисования ячеек, и чтобы выделение не тянулось через чужую бронь.
-                        const freeMask = dates.map((d) => {
-                          const dateStr = d.format("YYYY-MM-DD");
-                          return !occupying.some((it) => dateStr >= it.checkIn && dateStr < it.checkOut);
-                        });
+                        const freeMask = freeMaskByRoom.get(room.id) ?? [];
                         const selection =
                           dragSel && dragSel.roomId === room.id ? selectionBounds(dragSel.startIdx, dragSel.endIdx) : null;
-                        return dates.map((d, i) => {
-                          // Виртуализация — см. VISIBLE_DAYS_BUFFER. freeMask/выделение считаются
-                          // по ВСЕМ загруженным датам (индексы важны для соседних ночей и клавиатуры),
-                          // не рисуем в DOM только то, что сейчас вне окна ± запас.
-                          if (i < visibleRange.start || i >= visibleRange.end) return null;
-                          const dateStr = d.format("YYYY-MM-DD");
-                          const isFree = freeMask[i];
+                        const cells: React.ReactNode[] = [];
+                        // Виртуализация — см. VISIBLE_DAYS_BUFFER: в DOM только даты окна ± запас.
+                        // Ячейка — простой элемент со стилями из классов сетки (см. sx контейнера):
+                        // отдельный MUI-компонент и иконка «+» на каждую из тысячи ячеек и были
+                        // главной причиной медленной шахматки.
+                        for (let i = visibleRange.start; i < visibleRange.end && i < dateInfo.length; i++) {
+                          const info = dateInfo[i];
                           const inSelection = selection != null && i >= selection[0] && i <= selection[1];
-                          return (
-                            <Box
-                              key={`${room.id}-${dateStr}`}
-                              component={isFree ? "button" : "div"}
-                              type={isFree ? "button" : undefined}
-                              data-cell={isFree ? `${rowIdx}:${i}` : undefined}
-                              tabIndex={isFree ? (`${rowIdx}:${i}` === entryCell ? 0 : -1) : undefined}
-                              aria-label={isFree ? `Быстрая бронь: номер ${room.number}, ${d.format("D MMMM")}` : undefined}
+                          const tone = inSelection ? " rbg-s" : i === todayIdx ? " rbg-t" : info.weekend ? " rbg-w" : "";
+                          const style = { gridRow, gridColumn: i + 2 };
+                          if (!freeMask[i]) {
+                            cells.push(<div key={info.str} className={`rbg-c${tone}`} style={style} />);
+                            continue;
+                          }
+                          const cellKey = `${rowIdx}:${i}`;
+                          cells.push(
+                            <button
+                              key={info.str}
+                              type="button"
+                              className={`rbg-c rbg-f${tone}`}
+                              style={style}
+                              data-cell={cellKey}
+                              tabIndex={cellKey === entryCell ? 0 : -1}
+                              aria-label={`Быстрая бронь: номер ${room.number}, ${info.label}`}
+                              title={`Быстрая бронь — №${room.number}, ${info.label}. Клик — одна ночь, зажмите и протяните — период`}
                               // Мышь: нажатие — «от», отпускание (обработчик на window) — «до».
-                              onMouseDown={isFree ? (e: React.MouseEvent) => startSelection(e, room, i) : undefined}
+                              onMouseDown={(e) => startSelection(e, room, i)}
                               onMouseEnter={dragSel ? () => extendSelection(room.id, i, freeMask) : undefined}
                               // Клавиатура (Enter/Space на ячейке) даёт click с detail === 0 — одна ночь;
                               // click от мыши (detail ≥ 1) уже обработан нажатием/отпусканием выше.
-                              onClick={
-                                isFree
-                                  ? (e: React.MouseEvent) => {
-                                      if (e.detail === 0) requestQuickBooking(room.number, dateStr);
-                                    }
-                                  : undefined
-                              }
-                              title={
-                                isFree
-                                  ? `Быстрая бронь — №${room.number}, ${d.format("D MMMM")}. Клик — одна ночь, зажмите и протяните — период`
-                                  : undefined
-                              }
-                              sx={{
-                                gridRow,
-                                gridColumn: i + 2,
-                                height: 48,
-                                borderRight: 1,
-                                borderBottom: 1,
-                                borderColor: "divider",
-                                border: 0,
-                                font: "inherit",
-                                p: 0,
-                                textAlign: "left",
-                                cursor: isFree ? "pointer" : "default",
-                                bgcolor: inSelection
-                                  ? alpha(theme.palette.primary.main, 0.34)
-                                  : i === todayIdx
-                                  ? alpha(theme.palette.primary.main, 0.06)
-                                  : d.day() === 0 || d.day() === 6
-                                  ? theme.palette.action.hover
-                                  : "transparent",
-                                "&:hover": isFree && !inSelection ? { bgcolor: alpha(theme.palette.primary.main, 0.12) } : undefined,
-                                // Свободная ячейка узнаваема сразу, как в макете — «+» проступает на
-                                // наведении/фокусе, а не висит всегда (тысячи иконок захламили бы сетку).
-                                "&:hover .rbg-plus, &:focus-visible .rbg-plus": { opacity: 0.6 },
-                                // Фокус с клавиатуры: 2 px цвета темы внутрь ячейки (стандартная 1 px чёрная
-                                // рамка на колонке в 20 px почти теряется).
-                                "&:focus-visible": isFree ? { outline: "2px solid", outlineColor: "primary.main", outlineOffset: "-2px" } : undefined,
+                              onClick={(e) => {
+                                if (e.detail === 0) requestQuickBooking(room.number, info.str);
                               }}
-                            >
-                              {isFree && dayColWidth >= CELL_PLUS_MIN_WIDTH && (
-                                <AddOutlined
-                                  className="rbg-plus"
-                                  sx={{ fontSize: 14, color: "primary.main", opacity: 0, display: "block", mx: "auto", pointerEvents: "none" }}
-                                />
-                              )}
-                            </Box>
+                            />,
                           );
-                        });
+                        }
+                        return cells;
                       })()}
                     </React.Fragment>
                   );
@@ -1258,7 +1345,7 @@ export const RoomBookingGrid: React.FC = () => {
                         key={it.itemId}
                         component="button"
                         type="button"
-                        onClick={() => setSelectedReservationId(it.reservationId)}
+                        onClick={() => dialogsRef.current?.openReservation(it.reservationId)}
                         aria-label={barDescription}
                         title={`${barDescription} — показать бронь`}
                         sx={{
@@ -1331,18 +1418,7 @@ export const RoomBookingGrid: React.FC = () => {
                       pointerEvents: "none",
                     }}
                   >
-                    <Box
-                      sx={{
-                        position: "absolute",
-                        top: 0,
-                        bottom: 0,
-                        left: `${nowFraction * 100}%`,
-                        ml: "-1px",
-                        width: "2px",
-                        bgcolor: "error.main",
-                        opacity: 0.85,
-                      }}
-                    />
+                    <NowLine />
                   </Box>
                 )}
               </Box>
@@ -1443,16 +1519,7 @@ export const RoomBookingGrid: React.FC = () => {
         </Stack>
       </BoardShell>
 
-      <RoomDetailsDialog
-        roomId={selectedRoomId}
-        roomTypes={roomTypes}
-        onClose={() => setSelectedRoomId(null)}
-        onReservationClick={(id) => {
-          setSelectedRoomId(null);
-          setSelectedReservationId(id);
-        }}
-      />
-      <ReservationDetailsDialog reservationId={selectedReservationId} onClose={() => setSelectedReservationId(null)} />
+      <GridDialogs ref={dialogsRef} roomTypes={roomTypes} />
     </Box>
   );
 };

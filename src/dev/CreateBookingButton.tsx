@@ -263,12 +263,23 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setSubmitError(null);
   }, [clearScanNotice]);
 
+  // Данные формы нужны только когда она открыта. Раньше три запроса ниже
+  // уходили сразу при загрузке страницы (форма закрыта) и конкурировали с
+  // календарём шахматки. Теперь — при открытии формы либо через несколько
+  // секунд простоя, чтобы форма потом открылась сразу, с готовыми списками.
+  const [warm, setWarm] = React.useState(false);
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setWarm(true), 4000);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const formDataEnabled = property != null && (open || warm);
+
   // Справочники объекта (питание/гарантия/источник/тип гостя/цель визита) —
   // из бэкенда, не из констант мока (hotel-viva-frontend-api.md §3.2).
   const catalogsQuery = useQuery({
     queryKey: ["hotel", "catalogs", property?.id],
     queryFn: ({ signal }) => getHotelCatalogs(property!.id, signal),
-    enabled: property != null,
+    enabled: formDataEnabled,
     staleTime: 5 * 60_000,
   });
   const catalogs = catalogsQuery.data;
@@ -277,7 +288,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const roomsQuery = useQuery({
     queryKey: ["hotel", "rooms", property?.id],
     queryFn: ({ signal }) => listRooms({ propertyId: property!.id }, signal),
-    enabled: property != null,
+    enabled: formDataEnabled,
   });
   const rooms = React.useMemo(() => roomsQuery.data ?? [], [roomsQuery.data]);
 
@@ -286,7 +297,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const roomTypesQuery = useQuery({
     queryKey: ["hotel", "roomTypes", property?.id],
     queryFn: ({ signal }) => listRoomTypes(property!.id, {}, signal),
-    enabled: property != null,
+    enabled: formDataEnabled,
   });
   const roomTypes = React.useMemo(() => roomTypesQuery.data ?? [], [roomTypesQuery.data]);
 
@@ -368,13 +379,19 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // списке комнат объекта. Кнопка «Добавить» на «Гостях» зовёт без
   // аргументов — форма просто открывается пустой.
   const quickBookingRequest = React.useSyncExternalStore(subscribeQuickBookingRequest, getQuickBookingRequestSnapshot);
+  // Номер из шахматки приходит строкой («301»), а список номеров формы грузится
+  // при её открытии — запоминаем и подставляем, как только список пришёл.
+  const [pendingRoomNumber, setPendingRoomNumber] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (pendingRoomNumber == null || rooms.length === 0) return;
+    const found = rooms.find((r) => r.number === pendingRoomNumber);
+    if (found) setRoomId(found.id);
+    setPendingRoomNumber(null);
+  }, [pendingRoomNumber, rooms]);
   React.useEffect(() => {
     if (!quickBookingRequest) return;
     reset();
-    if (quickBookingRequest.room) {
-      const found = rooms.find((r) => r.number === quickBookingRequest.room);
-      if (found) setRoomId(found.id);
-    }
+    setPendingRoomNumber(quickBookingRequest.room ?? null);
     if (quickBookingRequest.checkIn) {
       setCheckIn(dayjs(quickBookingRequest.checkIn));
       // Период протянут в шахматке зажатием мыши — выезд оттуда; простой клик — одна ночь.
@@ -386,7 +403,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     }
     setOpen(true);
     clearQuickBookingRequest();
-  }, [quickBookingRequest, rooms, reset]);
+  }, [quickBookingRequest, reset]);
 
   // Вместимость — из категории номера (adultsCapacity/childrenCapacity/capacity).
   // Раньше поля «Взрослые/Дети» знали только min и форма спокойно отправляла

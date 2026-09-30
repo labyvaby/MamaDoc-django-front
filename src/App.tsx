@@ -32,6 +32,7 @@ import { NewBookingToast } from "./components/bookings/NewBookingToast";
 import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
 import { FloatingTopBanners } from "./components/layout/FloatingTopBanners";
 import { ClinicOnly } from "./components/layout/ClinicOnly";
+import { ClinicPagePrefetch } from "./components/layout/ClinicPagePrefetch";
 import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
@@ -250,42 +251,6 @@ function App() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
-  // ОПТИМИЗАЦИЯ: Более умный prefetch с приоритизацией
-  useEffect(() => {
-    const w = window as unknown as { requestIdleCallback?: (cb: () => void) => number };
-    const ric = w.requestIdleCallback;
-
-    // Приоритет 1: Самые часто используемые страницы
-    const prefetchPriority = () => {
-      import("./pages/appointments/AppointmentsPage");
-      import("./pages/employes");
-    };
-
-    // Приоритет 2: Менее важные страницы загружаем позже
-    const prefetchSecondary = () => {
-      import("./pages/services/DjangoServicesPage");
-      import("./pages/patients");
-    };
-
-    // Приоритет 3: Редко используемые страницы загружаем в последнюю очередь
-    const prefetchTertiary = () => {
-      import("./pages/settings/RolesSettingsPage");
-    };
-
-    if (typeof ric === "function") {
-      ric(prefetchPriority);
-      ric(() => {
-        setTimeout(prefetchSecondary, 1000);
-      });
-      ric(() => {
-        setTimeout(prefetchTertiary, 3000);
-      });
-    } else {
-      setTimeout(prefetchPriority, 1500);
-      setTimeout(prefetchSecondary, 3000);
-      setTimeout(prefetchTertiary, 5000);
-    }
-  }, []);
   return (
     <RefineKbarProvider>
       <VerticalProvider>
@@ -599,6 +564,8 @@ function App() {
                                   </>
                                 </DjangoContextRemount>
                                 <ClinicOnly>
+                                  {/* Код ходовых страниц клиники — заранее, в простое. */}
+                                  <ClinicPagePrefetch />
                                   {/* Новая заявка онлайн-записи: тост из любого экрана */}
                                   <NewBookingToast />
                                   {/* Поздравление с новыми достижениями (mark-seen при закрытии) */}
