@@ -274,12 +274,20 @@ export interface ProcurementSummary {
   awaitingCount: number;
   overdueCount: number;
   nearestDueAt: string | null;
+  /** За всё время — задолженность от месяца не зависит. */
   statusCounts: Record<ReceiptPaymentStatus, number>;
   canceledCount: number;
   suppliersActive: number;
   suppliersTotal: number;
   dateFrom: string | null;
   dateTo: string | null;
+  /**
+   * То же за выбранный период — как фильтруется список (по дате прихода).
+   * Старый бэкенд полей не присылает: тогда счётчики над списком берутся
+   * из statusCounts/canceledCount, как раньше.
+   */
+  periodStatusCounts?: Record<ReceiptPaymentStatus, number>;
+  periodCanceledCount?: number;
 }
 
 export interface ProcurementSettings {
