@@ -108,6 +108,7 @@ const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
+const HotelPublicBookingPage = lazy(() => import("./pages/public-hotel/HotelPublicBookingPage"));
 const PublicBookSpecialtiesPage = lazy(() => import("./pages/public-booking/SpecialtiesPage"));
 const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsPage"));
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
@@ -1490,6 +1491,15 @@ function App() {
                       <Route
                         path="update-password"
                         element={<Navigate to="/profile" replace />}
+                      />
+                      {/* Публичные прямые продажи отеля: без входа, без cookies CRM. */}
+                      <Route
+                        path="stay/:slug"
+                        element={
+                          <Suspense fallback={<LinearProgress />}>
+                            <HotelPublicBookingPage />
+                          </Suspense>
+                        }
                       />
                       <Route
                         path="review/:token"
