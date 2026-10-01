@@ -112,6 +112,7 @@ const RealEstateChessboardPage = lazy(() => import("./pages/realestate"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ReviewShortLinkPage = lazy(() => import("./pages/reviews/ShortLinkPage"));
+const HotelPublicBookingPage = lazy(() => import("./pages/public-hotel/HotelPublicBookingPage"));
 const PublicBookSpecialtiesPage = lazy(() => import("./pages/public-booking/SpecialtiesPage"));
 const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsPage"));
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
@@ -138,6 +139,8 @@ const HotelRoomCategoryFormPage = lazy(() => import("./dev/HotelRoomCategoryForm
 const HotelPricingRulesPage = lazy(() => import("./dev/HotelPricingRulesPage"));
 const HotelPriceCalendarPage = lazy(() => import("./dev/HotelPriceCalendarPage"));
 const HotelRatePlansPage = lazy(() => import("./dev/HotelRatePlansPage"));
+const HotelExtrasPage = lazy(() => import("./dev/HotelExtrasPage"));
+const HotelCashPage = lazy(() => import("./dev/HotelCashPage"));
 const HotelEventsPage = lazy(() => import("./dev/HotelEventsPage"));
 const HotelReceptionPage = lazy(() => import("./dev/HotelReceptionPage"));
 const HotelPricingRuleFormPage = lazy(() => import("./dev/HotelPricingRuleFormPage"));
@@ -782,6 +785,26 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.hotelPricingRules}>
                               <Suspense fallback={<LinearProgress />}>
                                 <HotelPricingRulesPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="hotel-extras"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelExtras}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelExtrasPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="hotel-cash"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelCash}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelCashPage />
                               </Suspense>
                             </RequirePermission>
                           }
@@ -1578,6 +1601,15 @@ function App() {
                       <Route
                         path="update-password"
                         element={<Navigate to="/profile" replace />}
+                      />
+                      {/* Публичные прямые продажи отеля: без входа, без cookies CRM. */}
+                      <Route
+                        path="stay/:slug"
+                        element={
+                          <Suspense fallback={<LinearProgress />}>
+                            <HotelPublicBookingPage />
+                          </Suspense>
+                        }
                       />
                       <Route
                         path="r/:code"

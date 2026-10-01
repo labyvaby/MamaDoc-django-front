@@ -52,6 +52,10 @@ function describe(log: HotelReservationLog): string {
       return `Пересчёт цены: ${change(log)}`;
     case "payment":
       return `Оплата: ${value(log.newValue)}`;
+    case "charge_added":
+      return `Услуга в счёт: ${value(log.newValue)}`;
+    case "charge_voided":
+      return `Услуга отменена: ${value(log.oldValue || log.newValue)}`;
     case "checked_in":
       return "Гость заселён";
     case "checked_out":

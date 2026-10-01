@@ -85,6 +85,11 @@ export const PAGE_PERMISSIONS = {
   // «Тарифные планы» (HotelRatePlansPage) — смотреть может любой сотрудник
   // отеля, создавать и менять — hotel.rates.manage (страница проверяет сама).
   hotelRatePlans: "hotel.view",
+  // «Услуги и юрлица» (HotelExtrasPage) — справочники: смотреть может любой
+  // сотрудник отеля, менять — hotel.manage (кнопки гейтит сама страница).
+  hotelExtras: "hotel.view",
+  // «Касса» (HotelCashPage) — реестр оплат: бэк отдаёт его только с hotel.payments.manage.
+  hotelCash: "hotel.payments.manage",
   // «Ресепшен» (HotelReceptionPage) — заезды/выезды и список броней; читать
   // может любой сотрудник отеля, «Заселить/Выселить» требует hotel.stays.manage.
   hotelReception: "hotel.view",

@@ -41,6 +41,7 @@ import { usePermissions } from "../hooks/usePermissions";
 import { SettingsLayout } from "../pages/settings/SettingsLayout";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
+import { PublicBookingSettingsCard } from "./PublicBookingSettingsCard";
 import { updateHotelProperty, type HotelPropertyUpdateData } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 
@@ -231,6 +232,10 @@ export const HotelPropertySettingsPage: React.FC = () => {
               {busy ? "Сохранение…" : "Сохранить"}
             </Button>
           </Box>
+
+          <Divider />
+
+          <PublicBookingSettingsCard propertyId={property.id} />
         </Stack>
       )}
 

@@ -46,6 +46,7 @@ import { Navigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useCan } from "../hooks/useCan";
 import { SettingsLayout } from "../pages/settings/SettingsLayout";
 import { formatHotelDateTime, initialsOf, useIsVivaActive } from "./mockDemoData";
 import { useHotelProperty } from "./useHotelProperty";
@@ -54,6 +55,7 @@ import {
   listChannels,
   connectChannel,
   disconnectChannel,
+  setChannelColor,
   getChannexStatus,
   connectChannex,
   pauseChannex,
@@ -126,6 +128,118 @@ export const HotelIntegrationsPage: React.FC = () => {
 
 // ── Первый этап: фиксированные 4 канала, тумблер без настоящей синхронизации ──
 
+/** Готовые цвета каналов; свой — выбором из палитры рядом. */
+const CHANNEL_COLORS = ["#64748b", "#2563eb", "#0891b2", "#16a34a", "#ca8a04", "#ea580c", "#dc2626", "#9333ea"];
+
+/** Цвет канала — для отметок броней и легенды. Меняет только тот, кто управляет каналами (hotel.channels.manage). */
+const ChannelColorPicker: React.FC<{ channel: HotelChannel; propertyId: number }> = ({ channel, propertyId }) => {
+  const theme = useTheme();
+  const queryClient = useQueryClient();
+  const canColor = useCan("hotel.channels.manage");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const save = async (color: string) => {
+    if (color.toLowerCase() === channel.color.toLowerCase()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await setChannelColor(channel.channel, propertyId, color);
+      void queryClient.invalidateQueries({ queryKey: ["hotel", "channels", propertyId] });
+    } catch (err) {
+      setError(getErrorMessage(err, "Не удалось сохранить цвет"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!canColor) return null;
+  return (
+    <Box sx={{ mt: 1 }}>
+      <Stack direction="row" alignItems="center" gap={0.75} role="group" aria-label={`Цвет канала ${channel.name}`}>
+        <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+          Цвет
+        </Typography>
+        {CHANNEL_COLORS.map((c) => {
+          const on = c.toLowerCase() === channel.color.toLowerCase();
+          return (
+            <Box
+              key={c}
+              component="button"
+              type="button"
+              aria-label={`Цвет ${c}`}
+              aria-pressed={on}
+              disabled={busy}
+              onClick={() => void save(c)}
+              sx={{
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                bgcolor: c,
+                border: on ? `2px solid ${theme.palette.text.primary}` : "2px solid transparent",
+                outline: on ? `2px solid ${theme.palette.background.paper}` : "none",
+                outlineOffset: "-4px",
+                p: 0,
+                cursor: "pointer",
+              }}
+            />
+          );
+        })}
+        <Box
+          component="input"
+          type="color"
+          aria-label="Свой цвет"
+          defaultValue={channel.color}
+          key={channel.color}
+          disabled={busy}
+          onBlur={(e: React.FocusEvent<HTMLInputElement>) => void save(e.target.value)}
+          sx={{ width: 24, height: 24, p: 0, border: 0, bgcolor: "transparent", cursor: "pointer" }}
+        />
+      </Stack>
+      {error && (
+        <Typography variant="caption" color="error">
+          {error}
+        </Typography>
+      )}
+    </Box>
+  );
+};
+
+/** Цвета каналов продаж — отдельной карточкой под Channex: список каналов бэк отдаёт и без старого переключателя. */
+const ChannelColorsCard: React.FC<{ propertyId: number }> = ({ propertyId }) => {
+  const canColor = useCan("hotel.channels.manage");
+  const query = useQuery({
+    queryKey: ["hotel", "channels", propertyId],
+    queryFn: ({ signal }) => listChannels(propertyId, signal),
+    enabled: canColor,
+  });
+  const channels = query.data ?? [];
+  if (!canColor || channels.length === 0) return null;
+  return (
+    <Box sx={{ mt: 3, maxWidth: 640 }}>
+      <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>
+        Цвета каналов продаж
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+        Цвет канала помогает отличать брони с разных площадок в календаре и в списках.
+      </Typography>
+      <Stack gap={1.25}>
+        {channels.map((c) => (
+          <Stack key={c.channel} direction="row" alignItems="center" gap={1.5} sx={{ px: 2, py: 1.25, border: "1px solid", borderColor: "divider", borderRadius: "12px" }}>
+            <Box sx={{ width: 14, height: 14, borderRadius: "50%", bgcolor: c.color, flexShrink: 0 }} />
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="body2" fontWeight={600} noWrap>
+                {c.name}
+              </Typography>
+              <ChannelColorPicker channel={c} propertyId={propertyId} />
+            </Box>
+          </Stack>
+        ))}
+      </Stack>
+    </Box>
+  );
+};
+
 const LegacyChannelsPanel: React.FC = () => {
   const theme = useTheme();
   const { property } = useHotelProperty();
@@ -141,7 +255,6 @@ const LegacyChannelsPanel: React.FC = () => {
   const [toast, setToast] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState<string | null>(null);
-
   const handleToggle = async (channel: HotelChannel) => {
     if (!property) return;
     setPending(channel.channel);
@@ -209,7 +322,7 @@ const LegacyChannelsPanel: React.FC = () => {
                   bgcolor: "background.paper",
                 }}
               >
-                <Avatar sx={{ bgcolor: "primary.main", fontWeight: 700, flexShrink: 0 }}>
+                <Avatar sx={{ bgcolor: channel.color || "primary.main", color: "#fff", fontWeight: 700, flexShrink: 0 }}>
                   {initialsOf(channel.name)}
                 </Avatar>
 
@@ -239,6 +352,7 @@ const LegacyChannelsPanel: React.FC = () => {
                       Последняя синхронизация: {formatHotelDateTime(channel.lastSyncAt)}
                     </Typography>
                   )}
+                  {property && <ChannelColorPicker channel={channel} propertyId={property.id} />}
                 </Box>
 
                 <Button
@@ -634,6 +748,8 @@ const ChannexPanel: React.FC<{ status: HotelChannexStatus; propertyId: number }>
           {toast}
         </Alert>
       </Snackbar>
+
+      <ChannelColorsCard propertyId={propertyId} />
     </SettingsLayout>
   );
 };

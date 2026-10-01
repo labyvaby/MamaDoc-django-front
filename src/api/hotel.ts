@@ -620,6 +620,188 @@ export function getQuote(request: HotelQuoteRequest, signal?: AbortSignal): Prom
   return apiRequest<HotelQuoteResult>("/v2/hotel/pricing/quote/", { method: "POST", body: request, signal });
 }
 
+// ── Допуслуги, начисления, юрлица, реестр оплат ─────────────────────────────
+
+export interface HotelExtraService {
+  id: number;
+  propertyId: number;
+  name: string;
+  price: Money;
+  isActive: boolean;
+}
+
+export interface HotelPage<T> {
+  count: number;
+  results: T[];
+}
+
+export function listExtraServices(
+  propertyId: number,
+  params: { q?: string; includeInactive?: boolean; limit?: number; offset?: number } = {},
+  signal?: AbortSignal,
+): Promise<HotelPage<HotelExtraService>> {
+  const qs = buildQuery({ propertyId, ...params, includeInactive: params.includeInactive ? "true" : undefined });
+  return apiRequest<HotelPage<HotelExtraService>>(`/v2/hotel/extra-services/${qs}`, { signal });
+}
+
+/** Право hotel.manage. */
+export function createExtraService(data: { propertyId: number; name: string; price: Money }): Promise<HotelExtraService> {
+  return apiRequest<HotelExtraService>("/v2/hotel/extra-services/", { method: "POST", body: data });
+}
+
+export function updateExtraService(id: number, data: { name?: string; price?: Money; isActive?: boolean }): Promise<HotelExtraService> {
+  return apiRequest<HotelExtraService>(`/v2/hotel/extra-services/${id}/`, { method: "PATCH", body: data });
+}
+
+/** Архивирует услугу; сохранённые начисления остаются. */
+export function archiveExtraService(id: number): Promise<void> {
+  return apiRequest<void>(`/v2/hotel/extra-services/${id}/`, { method: "DELETE" });
+}
+
+export interface HotelCharge {
+  id: number;
+  reservationId: number;
+  serviceId: number | null;
+  name: string;
+  quantity: string;
+  price: Money;
+  totalAmount: Money;
+  date: string;
+  comment: string;
+  createdById: number | null;
+  createdByName: string;
+  createdAt: string;
+  voidedAt: string | null;
+  voidedById: number | null;
+  voidedByName: string;
+}
+
+export interface HotelChargeList extends HotelPage<HotelCharge> {
+  reservationId: number;
+  totalAmount: Money;
+  paidAmount: Money;
+  balanceDue: Money;
+  currency: string;
+  version: number;
+}
+
+export function listCharges(reservationId: number, params: { includeVoided?: boolean } = {}, signal?: AbortSignal): Promise<HotelChargeList> {
+  const qs = buildQuery({ includeVoided: params.includeVoided ? "true" : undefined, limit: 200 });
+  return apiRequest<HotelChargeList>(`/v2/hotel/reservations/${reservationId}/charges/${qs}`, { signal });
+}
+
+export interface HotelChargeCreateData {
+  /** Из справочника — название и цена берутся оттуда. */
+  serviceId?: number;
+  /** Разовая услуга без справочника (или согласованная цена с serviceId). */
+  name?: string;
+  price?: Money;
+  /** > 0, до трёх знаков. */
+  quantity: string;
+  date?: string;
+  comment?: string;
+  /** Версия брони: расхождение — 409 VERSION_CONFLICT. */
+  version: number;
+}
+
+/** Право hotel.payments.manage. Нельзя для отменённой брони и no-show (409 INVALID_TRANSITION). */
+export function addCharge(reservationId: number, data: HotelChargeCreateData): Promise<HotelCharge> {
+  return apiRequest<HotelCharge>(`/v2/hotel/reservations/${reservationId}/charges/`, { method: "POST", body: data });
+}
+
+/** Отменяет строку, автор и история сохраняются. Повтор безопасен. */
+export function voidCharge(reservationId: number, chargeId: number): Promise<void> {
+  return apiRequest<void>(`/v2/hotel/reservations/${reservationId}/charges/${chargeId}/`, { method: "DELETE" });
+}
+
+export interface HotelCorporateAccount {
+  id: number;
+  propertyId: number;
+  name: string;
+  inn: string;
+  bankDetails: string;
+  contract: string;
+  /** 0–100. */
+  discountPercent: string;
+  isActive: boolean;
+}
+
+export interface HotelCorporateAccountData {
+  name: string;
+  inn?: string;
+  bankDetails?: string;
+  contract?: string;
+  discountPercent?: string;
+}
+
+export function listCorporateAccounts(
+  propertyId: number,
+  params: { q?: string; includeInactive?: boolean; limit?: number; offset?: number } = {},
+  signal?: AbortSignal,
+): Promise<HotelPage<HotelCorporateAccount>> {
+  const qs = buildQuery({ propertyId, ...params, includeInactive: params.includeInactive ? "true" : undefined });
+  return apiRequest<HotelPage<HotelCorporateAccount>>(`/v2/hotel/corporate-accounts/${qs}`, { signal });
+}
+
+/** Право hotel.manage. Непустой ИНН уникален в объекте. */
+export function createCorporateAccount(propertyId: number, data: HotelCorporateAccountData): Promise<HotelCorporateAccount> {
+  return apiRequest<HotelCorporateAccount>("/v2/hotel/corporate-accounts/", { method: "POST", body: { propertyId, ...data } });
+}
+
+export function updateCorporateAccount(id: number, data: Partial<HotelCorporateAccountData> & { isActive?: boolean }): Promise<HotelCorporateAccount> {
+  return apiRequest<HotelCorporateAccount>(`/v2/hotel/corporate-accounts/${id}/`, { method: "PATCH", body: data });
+}
+
+/** Архивирует юрлицо; привязанные брони не меняются. */
+export function archiveCorporateAccount(id: number): Promise<void> {
+  return apiRequest<void>(`/v2/hotel/corporate-accounts/${id}/`, { method: "DELETE" });
+}
+
+export interface HotelPaymentRegisterTotal {
+  method: string;
+  methodLabel: string;
+  currency: string;
+  cashlessMethodId: number | null;
+  cashlessMethodName: string | null;
+  payments: Money;
+  refunds: Money;
+  net: Money;
+}
+
+export interface HotelPaymentRegister extends HotelPage<HotelPayment> {
+  /** По всему фильтру, не только по странице; группы — способ × валюта × терминал. */
+  totals: HotelPaymentRegisterTotal[];
+  propertyId: number;
+  dateFrom: string;
+  dateTo: string;
+}
+
+/** Реестр оплат и возвратов для сверки кассы (hotel.payments.manage). from включительно, to исключительно, в часовом поясе объекта. */
+export function listPaymentRegister(
+  params: { propertyId: number; from?: string; to?: string; acceptedById?: number; limit?: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<HotelPaymentRegister> {
+  return apiRequest<HotelPaymentRegister>(`/v2/hotel/payments/${buildQuery(params)}`, { signal });
+}
+
+export interface HotelPublicBookingSettings {
+  propertyId: number;
+  publicSlug: string | null;
+  publicBookingEnabled: boolean;
+}
+
+export function getPublicBookingSettings(propertyId: number, signal?: AbortSignal): Promise<HotelPublicBookingSettings> {
+  return apiRequest<HotelPublicBookingSettings>(`/v2/hotel/properties/${propertyId}/public-booking/`, { signal });
+}
+
+/** Право hotel.manage. Slug: 3–80 символов, a–z, цифры, дефис; уникален. */
+export function updatePublicBookingSettings(
+  propertyId: number,
+  data: { publicSlug?: string; publicBookingEnabled?: boolean },
+): Promise<HotelPublicBookingSettings> {
+  return apiRequest<HotelPublicBookingSettings>(`/v2/hotel/properties/${propertyId}/public-booking/`, { method: "PATCH", body: data });
+}
+
 // ── Тарифные планы (RatePlan) ───────────────────────────────────────────────
 
 /**
@@ -1183,12 +1365,16 @@ export interface HotelReservationCreateData {
   dataConsent?: boolean;
   allowOverbooking?: boolean;
   holdMinutes?: number;
+  /** Юрлицо из справочника: скидка идёт на проживание, не на допуслуги. */
+  corporateAccountId?: number | null;
+  /** Сумма, которую видел гость; при расхождении 409 PRICE_CHANGED. Для корпоративной — после скидки. */
+  expectedTotal?: Money;
 }
 
 export interface HotelReservationLog {
   id: number;
   userId: number | null;
-  /** Имя сотрудника. Бэк пока отдаёт только userId — поле появится после доработки. */
+  /** Имя сотрудника (userId — технический id). */
   userName?: string;
   action: string;
   field: string;
@@ -1215,6 +1401,10 @@ export interface HotelReservation {
   internalNote: string;
   guaranteeMethod: string;
   companyInfo: string;
+  /** Юрлицо брони (название и процент зафиксированы в момент привязки). */
+  corporateAccountId?: number | null;
+  corporateName?: string;
+  corporateDiscountPercent?: string;
   dataConsent: boolean;
   paidAmount: Money;
   balanceDue: Money;
@@ -1267,6 +1457,9 @@ export interface HotelReservationUpdateData {
   guaranteeMethod?: string;
   companyInfo?: string;
   dataConsent?: boolean;
+  corporateAccountId?: number | null;
+  /** Отвязать юрлицо — сумма пересчитывается без скидки. */
+  clearCorporateAccount?: boolean;
 }
 
 export interface HotelItemUpdateData {
@@ -1731,6 +1924,14 @@ export interface HotelChannel {
   connectedAt: string | null;
   disconnectedAt: string | null;
   lastSyncAt: string | null;
+  /** #RRGGBB — цвет канала в отметках броней и легенде; по умолчанию #64748b. */
+  color: string;
+}
+
+/** Цвет канала (право hotel.channels.manage). Не меняет подключение. `channel` — ключ из API, не название. */
+export function setChannelColor(channel: string, propertyId: number, color: string): Promise<HotelChannel> {
+  const qs = buildQuery({ propertyId });
+  return apiRequest<HotelChannel>(`/v2/hotel/channels/${channel}/${qs}`, { method: "PATCH", body: { color } });
 }
 
 /** Все четыре канала из справочника с текущим состоянием. Только тумблер — настоящего синка нет. */
