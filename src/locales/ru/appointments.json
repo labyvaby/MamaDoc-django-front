@@ -754,6 +754,10 @@
     "historyDiagnoses": "Ранее у {{patient.gen}}:",
     "frequentDiagnoses": "Частые у вас:",
     "frequentDiagnosesHint": "Сколько раз вы ставили за полгода: {{count}}",
+    "frequentDiagnosesEmpty": "пока нет статистики по вашим {{conclusion.datPl}}",
+    "frequentToggleLabel": "Частые у вас",
+    "frequentToggleOn": "Показывать «Частые у вас» — коды, которые вы ставите чаще всего",
+    "frequentToggleOff": "Скрыть «Частые у вас»",
     "templateSavedTextOnly": "Шаблон сохранён только текстом: строки бланка сервер пока не хранит",
     "previous": {
       "title": "Как в прошлый раз",
