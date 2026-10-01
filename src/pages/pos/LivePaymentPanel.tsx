@@ -12,6 +12,7 @@ import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 
 import type { PosQuote } from "../../api/pos";
 import type { DiscountKind } from "../../api/promotions";
+import { QUICK_DISCOUNT_PERCENTS, normalizeManualDiscount, normalizeManualPercent } from "./discountInput";
 import { POS_LAYOUT, POS_RADIUS, posColors } from "./layout";
 import { PosAmount } from "./ui";
 
@@ -23,7 +24,10 @@ import { PosAmount } from "./ui";
  */
 
 export type Benefits = {
+  /** Ручная скидка на чек суммой, в сомах. Вместе с процентом не бывает — одно из двух. */
   discount: string;
+  /** Ручная скидка на чек процентом. */
+  discountPercent: string;
   discountKindId: number | null;
   clientDiscount: boolean;
   bonuses: boolean;
@@ -33,21 +37,13 @@ export type Benefits = {
 };
 export const emptyBenefits: Benefits = {
   discount: "0",
+  discountPercent: "0",
   discountKindId: null,
   clientDiscount: false,
   bonuses: false,
   promotions: false,
   promoCode: "",
   certificateCode: "",
-};
-
-/** Денежная скидка вводится в сомах; допустимую сумму проверяет сервер. */
-const normalizeManualDiscount = (value: string): string => {
-  const normalized = value.replace(",", ".").replace(/[^\d.]/g, "");
-  const [whole = "", fraction = ""] = normalized.split(".");
-  const numeric = Number(`${whole || "0"}.${fraction.slice(0, 2)}`);
-  if (!Number.isFinite(numeric)) return "0";
-  return String(Math.max(0, numeric));
 };
 
 /**
@@ -180,6 +176,45 @@ const FieldError: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
+/** Поле ручной скидки на чек — проценты или сомы; обводка акцентом, пока в нём есть значение. */
+const DiscountField: React.FC<{
+  value: string;
+  unit: "%" | "сом";
+  label: string;
+  placeholder?: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}> = ({ value, unit, label, placeholder = "0", disabled, onChange }) => {
+  const c = posColors(useTheme());
+  const active = Number(value) > 0;
+  return (
+    <InputBase
+      value={value === "0" ? "" : value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      disabled={disabled}
+      inputProps={{ inputMode: "decimal", "aria-label": label, style: { textAlign: "right" } }}
+      endAdornment={<Box component="span" sx={{ pl: "4px", color: c.textDim }}>{unit}</Box>}
+      sx={{
+        flex: 1,
+        minWidth: 0,
+        // Тема задаёт InputBase minHeight 40, поэтому одной height мало.
+        height: 32,
+        minHeight: 32,
+        px: "12px",
+        bgcolor: c.page,
+        border: `1px solid ${active ? c.accent : c.hairline}`,
+        borderRadius: `${POS_RADIUS.pill}px`,
+        fontSize: 12,
+        fontWeight: 600,
+        color: c.text,
+        "& input::placeholder": { color: c.textDim, opacity: 1 },
+        "&.Mui-disabled": { opacity: 0.45 },
+      }}
+    />
+  );
+};
+
 /** Поле-«таблетка» с кнопкой «Применить»: промокод, сертификат. */
 const CodeField: React.FC<{
   label: string;
@@ -285,6 +320,7 @@ export function LivePaymentPanel({
   locked,
   discountKinds,
   discountMode,
+  maxPercent = 100,
   lineDiscounts = [],
   lineDiscountIgnored = false,
 }: {
@@ -302,6 +338,8 @@ export function LivePaymentPanel({
   locked: boolean;
   discountKinds: DiscountKind[];
   discountMode: "manual" | "kinds" | "both";
+  /** Лимит ручной скидки процентом — `max_discount_percent` организации; сервер проверяет его же. */
+  maxPercent?: number;
   /** Скидки, заданные кассиром на отдельные позиции чека. */
   lineDiscounts?: Array<{ id: string; name: string; label: string; amount: number }>;
   /** Сервер вернул итог без скидок на позиции (старый бэкенд) — предупреждаем. */
@@ -317,7 +355,15 @@ export function LivePaymentPanel({
   const certificateError = errorField === "certificate" ? quoteError : null;
 
   const selectedKind = discountKinds.find((kind) => kind.id === benefits.discountKindId) ?? null;
-  const manualPercent = Number(benefits.discount) > 0;
+  const manualPercent = Number(benefits.discountPercent) || 0;
+  const manualActive = manualPercent > 0 || Number(benefits.discount) > 0;
+  // Ручная скидка — процентом или суммой, не обеими сразу; вид из справочника с ними тоже не сочетается.
+  // Соседнее поле сбрасываем, только когда в этом появилось значение: лишний символ в пустом поле
+  // не должен убирать уже введённую скидку.
+  const setManualPercent = (value: string) =>
+    patch({ discountPercent: value, discountKindId: null, ...(Number(value) > 0 ? { discount: "0" } : {}) });
+  const setManualSum = (value: string) =>
+    patch({ discount: value, discountKindId: null, ...(Number(value) > 0 ? { discountPercent: "0" } : {}) });
   const showKinds = discountMode !== "manual" && discountKinds.length > 0;
   const showManual = discountMode !== "kinds";
   const showDiscountCard = actions.client_discount || (actions.discount && (showKinds || showManual));
@@ -399,7 +445,7 @@ export function LivePaymentPanel({
                 <Stack gap="5px">
                   <ButtonBase
                     onClick={() => setKindsOpen((open) => !open)}
-                    disabled={frozen || manualPercent}
+                    disabled={frozen || manualActive}
                     sx={{
                       px: "12px",
                       py: "6px",
@@ -428,7 +474,7 @@ export function LivePaymentPanel({
                           <ButtonBase
                             key={kind.id}
                             onClick={() => {
-                              patch({ discount: "0", clientDiscount: false, discountKindId: selected ? null : kind.id });
+                              patch({ discount: "0", discountPercent: "0", clientDiscount: false, discountKindId: selected ? null : kind.id });
                               setKindsOpen(false);
                             }}
                             sx={{
@@ -467,36 +513,57 @@ export function LivePaymentPanel({
               )}
 
               {actions.discount && showManual && (
-                <Stack direction="row" alignItems="center" gap="8px">
-                  <Typography sx={{ flex: 1, fontSize: 12, lineHeight: 1.2, color: c.textDim }}>
-                    {showKinds ? "или скидка суммой" : "Скидка на чек"}
-                  </Typography>
-                  <InputBase
-                    value={benefits.discount === "0" ? "" : benefits.discount}
-                    onChange={(event) => patch({
-                      discount: event.target.value ? normalizeManualDiscount(event.target.value) : "0",
-                      discountKindId: null,
+                <Stack gap="6px">
+                  {/* Quote refetches after every edit. Keep the inputs and chips enabled
+                      during that request (`locked`, not `frozen`), or only the first digit is accepted. */}
+                  <Stack direction="row" alignItems="center" gap="8px">
+                    <Typography sx={{ flexShrink: 0, fontSize: 12, lineHeight: 1.2, whiteSpace: "nowrap", color: c.textDim }}>
+                      {showKinds ? "Своя скидка" : "Скидка на чек"}
+                    </Typography>
+                    <DiscountField
+                      value={benefits.discountPercent}
+                      unit="%"
+                      label="Скидка на чек, проценты"
+                      // Лимит организации — в подсказке поля: отдельная строка под него съела бы место у кнопки оплаты.
+                      placeholder={maxPercent < 100 ? `до ${maxPercent}` : "0"}
+                      disabled={locked || selectedKind !== null}
+                      onChange={(value) => setManualPercent(normalizeManualPercent(value, maxPercent))}
+                    />
+                    <DiscountField
+                      value={benefits.discount}
+                      unit="сом"
+                      label="Скидка на чек, сумма в сомах"
+                      disabled={locked || selectedKind !== null}
+                      onChange={(value) => setManualSum(normalizeManualDiscount(value))}
+                    />
+                  </Stack>
+
+                  <Stack direction="row" gap="6px">
+                    {QUICK_DISCOUNT_PERCENTS.map((percent) => {
+                      const selected = manualPercent === percent;
+                      return (
+                        <ButtonBase
+                          key={percent}
+                          onClick={() => setManualPercent(selected ? "0" : String(percent))}
+                          disabled={locked || selectedKind !== null || percent > maxPercent}
+                          aria-pressed={selected}
+                          sx={{
+                            flex: 1,
+                            height: 26,
+                            borderRadius: `${POS_RADIUS.pill}px`,
+                            bgcolor: selected ? c.accent : c.page,
+                            border: `1px solid ${selected ? c.accent : c.hairline}`,
+                            color: selected ? c.onAccent : c.textSoft,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            "&.Mui-disabled": { opacity: 0.45 },
+                          }}
+                        >
+                          {percent}%
+                        </ButtonBase>
+                      );
                     })}
-                    placeholder="0"
-                    // Quote refetches after every edit. Keep this input enabled
-                    // during that request, or only the first digit is accepted.
-                    disabled={locked || selectedKind !== null}
-                    inputProps={{ inputMode: "decimal", style: { textAlign: "right" } }}
-                    endAdornment={<Box component="span" sx={{ pl: "4px", color: c.textDim }}>сом</Box>}
-                    sx={{
-                      width: 96,
-                      height: 32,
-                      px: "12px",
-                      bgcolor: c.page,
-                      border: `1px solid ${manualPercent ? c.accent : c.hairline}`,
-                      borderRadius: `${POS_RADIUS.pill}px`,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: c.text,
-                      "& input::placeholder": { color: c.textDim, opacity: 1 },
-                      "&.Mui-disabled": { opacity: 0.45 },
-                    }}
-                  />
+                  </Stack>
                 </Stack>
               )}
             </Box>
