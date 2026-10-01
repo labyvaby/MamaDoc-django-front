@@ -43,6 +43,8 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import ExpandLessOutlined from "@mui/icons-material/ExpandLessOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
+import StarBorderOutlined from "@mui/icons-material/StarBorderOutlined";
+import StarOutlined from "@mui/icons-material/StarOutlined";
 import AddPhotoAlternateOutlined from "@mui/icons-material/AddPhotoAlternateOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import LockOutlined from "@mui/icons-material/LockOutlined";
@@ -132,6 +134,7 @@ import {
 } from "../../api/conclusionFormData";
 import {
   PRESET_COLUMNS,
+  frequentDiagnoses,
   historyDiagnoses,
   mergeManual,
   planPresetTexts,
@@ -155,6 +158,7 @@ import {
   findReplacementSlot,
   isServiceLineGoneError,
   getDiagnoses,
+  getFrequentDiagnoses,
   uploadConclusionPhoto,
   getConclusionTemplates,
   createConclusionTemplate,
@@ -252,6 +256,27 @@ function readSheetPref(): boolean {
 function writeSheetPref(visible: boolean) {
   try {
     window.localStorage.setItem(SHEET_PREF_KEY, visible ? "1" : "0");
+  } catch {
+    /* localStorage недоступен — выбор проживёт до закрытия вкладки */
+  }
+}
+
+// ── «Частые у вас»: личный выбор врача, помним в браузере ──────────────────────
+// По умолчанию выключено (01.10.2026): части врачей строка мешала. Кому нужна —
+// включает звёздочкой у поля диагноза. Хранить в профиле бэк пока не умеет.
+const FREQUENT_DX_PREF_KEY = "mamadoc:conclusion-frequent-dx";
+
+function readFrequentDxPref(): boolean {
+  try {
+    return window.localStorage.getItem(FREQUENT_DX_PREF_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeFrequentDxPref(enabled: boolean) {
+  try {
+    window.localStorage.setItem(FREQUENT_DX_PREF_KEY, enabled ? "1" : "0");
   } catch {
     /* localStorage недоступен — выбор проживёт до закрытия вкладки */
   }
@@ -877,7 +902,31 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     selectedDiagnoses.map((d) => d.code),
   );
 
-  /** Чип «добавить диагноз в один клик» из истории пациента. */
+  // «Частые у вас» — топ кодов врача по его заключениям. Считает бэк по
+  // текущему пользователю; без карточки сотрудника ответ пустой. Запрос идёт,
+  // только если врач включил строку.
+  const [frequentOn, setFrequentOn] = React.useState(readFrequentDxPref);
+  const toggleFrequent = () =>
+    setFrequentOn((prev) => {
+      writeFrequentDxPref(!prev);
+      return !prev;
+    });
+  const frequentQuery = useQuery({
+    queryKey: djangoQueryKeys.diagnoses.frequent(defaultsOrgId),
+    queryFn: ({ signal }) => getFrequentDiagnoses({}, signal),
+    enabled: open && !readOnly && frequentOn,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+    retry: false,
+  });
+  const frequentDx = frequentDiagnoses(frequentQuery.data ?? [], [
+    ...selectedDiagnoses.map((d) => d.code),
+    ...historyDx.map((d) => d.code),
+  ]);
+  /** Ответ пришёл, а показать нечего: подсказка, чтобы не казалось сломанным. */
+  const frequentEmpty =
+    frequentQuery.isSuccess && (frequentQuery.data ?? []).length === 0;
+
+  /** Чип «добавить диагноз в один клик» — общий для истории и частых. */
   const quickDiagnosisChip = (
     dx: { code: string; title: string },
     hint: string,
@@ -1046,7 +1095,29 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       data-conclusion-row={rowId}
       sx={{ minWidth: 0 }}
     >
-      {fieldLabel(label ?? t("conclusion.diagnosisIcd"))}
+      {fieldLabel(
+        label ?? t("conclusion.diagnosisIcd"),
+        !readOnly && (
+          <Tooltip
+            title={t(frequentOn ? "conclusion.frequentToggleOff" : "conclusion.frequentToggleOn")}
+          >
+            <IconButton
+              size="small"
+              onClick={toggleFrequent}
+              aria-pressed={frequentOn}
+              aria-label={t("conclusion.frequentToggleLabel")}
+              color={frequentOn ? "primary" : "default"}
+              sx={{ my: -0.5 }}
+            >
+              {frequentOn ? (
+                <StarOutlined fontSize="small" />
+              ) : (
+                <StarBorderOutlined fontSize="small" />
+              )}
+            </IconButton>
+          </Tooltip>
+        ),
+      )}
       <Autocomplete
         multiple
         freeSolo
@@ -1138,6 +1209,36 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           )}
         </Stack>
       )}
+      {/* Частые коды самого врача — рутину (осмотр, ОРВИ) не ищут в каталоге. */}
+      {!readOnly && frequentOn && (frequentDx.length > 0 || frequentEmpty) && (
+        <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ pt: 0.25 }}>
+          <Typography variant="caption" color="text.secondary">
+            {t("conclusion.frequentDiagnoses")}
+          </Typography>
+          {frequentEmpty ? (
+            <Typography variant="caption" color="text.disabled">
+              {t("conclusion.frequentDiagnosesEmpty")}
+            </Typography>
+          ) : (
+            frequentDx.map((dx) =>
+              quickDiagnosisChip(
+                dx,
+                `${dx.code} — ${dx.title}
+${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
+                // Ручка отдаёт запись активного каталога — берём её как есть.
+                catalog.find((c) => c.id === dx.id) ?? {
+                  id: dx.id,
+                  code: dx.code,
+                  title: dx.title,
+                  displayName: dx.displayName ?? "",
+                  isActive: true,
+                  sortOrder: 0,
+                },
+              ),
+            )
+          )}
+        </Stack>
+      )}
       {aiSuggestionNode("diagnosis", (text) => void applyDiagnosisSuggestion(text))}
     </Stack>
   );
@@ -1189,11 +1290,12 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
    * Подпись поля. Кнопки AI у полей больше нет — одна на всю форму, в шапке
    * (AiAssistHeaderButton); под полем остаётся только плашка предложения.
    */
-  const fieldLabel = (label: React.ReactNode) => (
+  const fieldLabel = (label: React.ReactNode, action?: React.ReactNode) => (
     <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
       <Typography variant="body2" color="text.secondary" fontWeight={600}>
         {label}
       </Typography>
+      {action}
     </Stack>
   );
 
