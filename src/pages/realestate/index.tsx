@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Button, Skeleton, Typography, useMediaQuery, type Theme } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
+import AddOutlined from "@mui/icons-material/AddOutlined";
 
 import { REALESTATE_USE_MOCKS, getProjectUnits, getRealEstateProjects, realEstateKeys, type Project, type Unit } from "../../api/realestate";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
@@ -19,6 +20,7 @@ import { FloorList } from "./ui/FloorList";
 import { RealEstateToastProvider, useRealEstateToast } from "./ui/toast";
 import { UnitCardDialog, type QuickScreen } from "./ui/unit-card/UnitCardDialog";
 import { UnitPreview } from "./ui/UnitPreview";
+import { NewProjectWizard } from "./ui/wizard/NewProjectWizard";
 
 /**
  * «Квартиры и шахматка» — модуль вертикали realestate (застройщик).
@@ -40,8 +42,14 @@ export default function RealEstateChessboardPage() {
 
 function ChessboardPage() {
   const { t } = useT("realestate");
+  const toast = useRealEstateToast();
   const [params, updateParams] = useChessboardParams();
   const organizationId = useApiOrgId();
+  const { can } = useCanChecker();
+  const [wizardOpen, setWizardOpen] = React.useState(false);
+  // Каталог (ЖК, корпуса, квартиры) бэк пускает по любому из двух прав — повторяем его гейт.
+  const canCreate = REALESTATE_USE_MOCKS || can("realty.catalog.manage") || can("realty.manage");
+  const onCreate = canCreate ? () => setWizardOpen(true) : undefined;
   const projectsQuery = useQuery({
     queryKey: realEstateKeys.projects(organizationId),
     queryFn: () => getRealEstateProjects(organizationId),
@@ -51,18 +59,50 @@ function ChessboardPage() {
   const projects = projectsQuery.data;
   const project = projects?.find((p) => p.id === params.projectId) ?? projects?.[0];
 
+  const wizard = (
+    <NewProjectWizard
+      open={wizardOpen}
+      onClose={() => setWizardOpen(false)}
+      onCreated={(projectId, info) => {
+        setWizardOpen(false);
+        updateParams({ project: projectId, unit: null });
+        toast(t("wizard.done", { name: info.name }), t("wizard.doneHint", { count: info.units }));
+      }}
+    />
+  );
+
   if (projectsQuery.isError) return <ErrorState error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />;
   if (!projects) return <PageSkeleton />;
   if (!project) {
     return (
-      <Box sx={{ p: 5, textAlign: "center", color: "text.secondary", border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
-        {t("page.noProjects")}
+      <Box sx={{ p: 5, display: "flex", flexDirection: "column", alignItems: "center", gap: 1.5, textAlign: "center", border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
+        <Typography sx={{ fontWeight: 600 }}>{t("page.noProjects")}</Typography>
+        {onCreate && (
+          <>
+            <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 420 }}>
+              {t("page.noProjectsHint")}
+            </Typography>
+            <Button variant="contained" startIcon={<AddOutlined />} onClick={onCreate}>
+              {t("wizard.openHint")}
+            </Button>
+          </>
+        )}
+        {wizard}
       </Box>
     );
   }
 
   return (
-    <ProjectChessboard key={project.id} project={project} projects={projects} onSelectProject={(id) => updateParams({ project: id, unit: null })} />
+    <>
+      <ProjectChessboard
+        key={project.id}
+        project={project}
+        projects={projects}
+        onSelectProject={(id) => updateParams({ project: id, unit: null })}
+        onCreateProject={onCreate}
+      />
+      {wizard}
+    </>
   );
 }
 
@@ -103,7 +143,17 @@ function PageSkeleton() {
   );
 }
 
-function ProjectChessboard({ project: baseProject, projects, onSelectProject }: { project: Project; projects: Project[]; onSelectProject: (projectId: string) => void }) {
+function ProjectChessboard({
+  project: baseProject,
+  projects,
+  onSelectProject,
+  onCreateProject,
+}: {
+  project: Project;
+  projects: Project[];
+  onSelectProject: (projectId: string) => void;
+  onCreateProject?: () => void;
+}) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
   const [params, updateParams] = useChessboardParams();
@@ -187,7 +237,7 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
   if (!units.length || !bounds) {
     return (
       <Box>
-        <ProjectTabs projects={projects} activeId={project.id} onSelect={onSelectProject} />
+        <ProjectTabs projects={projects} activeId={project.id} onSelect={onSelectProject} onCreate={onCreateProject} />
         <EmptyProject name={project.name} />
       </Box>
     );
@@ -203,6 +253,7 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
         projects={projects}
         activeId={project.id}
         onSelect={onSelectProject}
+        onCreate={onCreateProject}
         onExport={() => toast(t("toast.priceListReady"), downloadPriceList(project, units))}
       />
 

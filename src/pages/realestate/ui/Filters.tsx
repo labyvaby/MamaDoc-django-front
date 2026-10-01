@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, ButtonBase, InputBase, Slider, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
+import AddOutlined from "@mui/icons-material/AddOutlined";
 import CheckBoxOutlineBlankOutlined from "@mui/icons-material/CheckBoxOutlineBlankOutlined";
 import CheckBoxOutlined from "@mui/icons-material/CheckBoxOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -131,12 +132,15 @@ export function ProjectTabs({
   activeId,
   onSelect,
   onExport,
+  onCreate,
 }: {
   projects: Project[];
   activeId: string;
   onSelect: (projectId: string) => void;
   /** Нет квартир — нечего выгружать, кнопку не показываем. */
   onExport?: () => void;
+  /** Мастер «Новый ЖК»; undefined — нет права на каталог. */
+  onCreate?: () => void;
 }) {
   const { t } = useT("realestate");
   return (
@@ -148,6 +152,17 @@ export function ProjectTabs({
           </Pill>
         ))}
       </Box>
+      {onCreate && (
+        <ButtonBase
+          onClick={onCreate}
+          title={t("wizard.openHint")}
+          aria-label={t("wizard.openHint")}
+          sx={(t) => ({ ...pillSx(t, false), gap: 0.5, "& .MuiSvgIcon-root": { fontSize: 16 } })}
+        >
+          <AddOutlined />
+          {t("wizard.open")}
+        </ButtonBase>
+      )}
       {onExport && (
         <ButtonBase
           onClick={onExport}

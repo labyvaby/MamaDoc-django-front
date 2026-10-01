@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 
 import { tt } from "../i18n/t";
-import { apiRequest } from "./client";
+import { ApiError, apiRequest } from "./client";
 import * as mock from "./realestate.mocks";
 import { mockDelay } from "./mockUtils";
 import { getAllDjangoEmployees } from "./staff";
@@ -373,8 +373,14 @@ export interface RawUnit {
   slot: number;
   section: string;
   sectionId?: number | null;
-  /** Совпадает с `id` в `/layouts/`. */
-  layoutId?: string;
+  /**
+   * До 01.10.2026 — строка = `id` в `/layouts/`; с 01.10 (AIVIO `a4ed83d`) —
+   * число, FK нового справочника планировок ЖК (пока пуст → null), а прежняя
+   * строка переехала в `layoutCode`.
+   */
+  layoutId?: string | number | null;
+  /** Ключ группы `/layouts/` («1-2-40-s-v0»), не код планировки. */
+  layoutCode?: string;
   rooms: number;
   area: number;
   insideArea: number;
@@ -602,7 +608,10 @@ async function getLayoutCodes(organizationId?: number, projectId?: string): Prom
     byLayout.set(layout.id, layout.code);
     for (const unitId of layout.unitIds) byUnit.set(unitId, layout.code);
   }
-  return (unit) => (unit.layoutId && byLayout.get(unit.layoutId)) || byUnit.get(unit.id);
+  return (unit) => {
+    const key = typeof unit.layoutId === "string" ? unit.layoutId : unit.layoutCode;
+    return (key && byLayout.get(key)) || byUnit.get(unit.id);
+  };
 }
 
 /** Все квартиры корпуса целиком: шахматке нужны и отфильтрованные ячейки. */
@@ -739,6 +748,106 @@ export async function signUnitContract(unitId: string, input: ContractInput, org
   // Код подписи бэк пока не проверяет (SMS-подписания нет) — шлём пустую строку.
   return postUnitCommand(unitId, "sell", { ...input, signCode: "" }, organizationId);
 }
+
+// ─── Каталог: заведение ЖК ─────────────────────────────────────────────────
+
+/** Тело `POST /projects/` мастера «Новый ЖК». */
+export interface NewProjectInput {
+  name: string;
+  address: string;
+  deadline: string | null;
+  pricePerSqm: string;
+  startFloor: number;
+  floors: number;
+  sections: { name: string; startFloor: number; floors: number; deadline: string | null }[];
+}
+
+/** Квартира в `POST /units/bulk/`. */
+export interface NewUnitInput {
+  number: number;
+  floor: number;
+  slot: number;
+  section: string;
+  sectionId: number | null;
+  rooms: number;
+  area: string;
+  price: string;
+  pricePerSqm: string;
+}
+
+/** Ошибка строки bulk: `index` — номер квартиры в теле запроса. */
+export interface BulkRowError {
+  index: number;
+  field: string;
+  code: string;
+  message: string;
+}
+
+/** Квартиры не создались — ЖК удалён (или удалить не удалось: `projectLeft`). */
+export class ProjectCreateError extends Error {
+  constructor(
+    message: string,
+    readonly rows: BulkRowError[],
+    /** id ЖК, который остался пустым: откат не прошёл. */
+    readonly projectLeft: string | null,
+    readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = "ProjectCreateError";
+  }
+}
+
+/**
+ * Ошибки строк bulk. Бэк кладёт их в `{bulk: [{index, field, code, message}]}`,
+ * но где окажется этот ключ в конверте ошибки, живым ответом не проверено —
+ * ищем массив строк в любом месте ответа.
+ */
+export function findBulkRowErrors(payload: unknown, depth = 0): BulkRowError[] {
+  if (depth > 5 || payload == null || typeof payload !== "object") return [];
+  if (Array.isArray(payload)) {
+    const rows = payload.filter(
+      (item): item is BulkRowError => typeof item === "object" && item != null && typeof (item as BulkRowError).index === "number",
+    );
+    if (rows.length) return rows;
+    return payload.flatMap((item) => findBulkRowErrors(item, depth + 1));
+  }
+  return Object.values(payload).flatMap((value) => findBulkRowErrors(value, depth + 1));
+}
+
+/**
+ * Создаёт ЖК с секциями, затем все квартиры одним `POST /units/bulk/` (всё или
+ * ничего). Квартиры ссылаются на секции по id из ответа на создание ЖК, поэтому
+ * их тело строится после него (`unitsFor`). Если квартиры не создались —
+ * удаляем пустой ЖК, чтобы повторная попытка не плодила дубли.
+ */
+export async function createProjectWithUnits(
+  project: NewProjectInput,
+  unitsFor: (sectionIds: ReadonlyMap<string, number>) => NewUnitInput[],
+  organizationId?: number,
+): Promise<{ projectId: string; created: number }> {
+  if (REALESTATE_USE_MOCKS) return mockDelay(mock.createProject(project, unitsFor));
+  const created = await apiRequest<RawProject>(withOrg(`${REALTY_API}/projects/`, organizationId), { method: "POST", body: project });
+  const sectionIds = new Map(created.sections.map((s) => [sectionKey(s.name), s.id]));
+  try {
+    const result = await apiRequest<{ created: number; unitIds: number[] }>(withOrg(`${REALTY_API}/units/bulk/`, organizationId), {
+      method: "POST",
+      body: { projectId: created.id, units: unitsFor(sectionIds) },
+    });
+    return { projectId: String(created.id), created: result.created };
+  } catch (error) {
+    const rows = error instanceof ApiError ? findBulkRowErrors(error.payload) : [];
+    let projectLeft: string | null = null;
+    try {
+      await apiRequest<unknown>(withOrg(`${REALTY_API}/projects/${created.id}/`, organizationId), { method: "DELETE" });
+    } catch {
+      projectLeft = String(created.id);
+    }
+    throw new ProjectCreateError(error instanceof Error ? error.message : String(error), rows, projectLeft, error);
+  }
+}
+
+/** Ключ секции по названию: без регистра и лишних пробелов — как сверяет бэк. */
+export const sectionKey = (name: string) => name.trim().toLocaleLowerCase("ru").replace(/\s+/g, " ");
 
 /**
  * Ключи react-query модуля: команды инвалидируют всё дерево `realestate`.
