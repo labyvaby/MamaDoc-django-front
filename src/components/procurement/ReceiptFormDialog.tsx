@@ -497,6 +497,8 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
   const [number, setNumber] = React.useState("");
   const [supplierNumber, setSupplierNumber] = React.useState("");
   const [receivedAt, setReceivedAt] = React.useState<Dayjs | null>(roundToStep(dayjs()));
+  /** Дату прихода подставило распознавание — с документа поставщика, не «сегодня». */
+  const [receivedAtFromDocument, setReceivedAtFromDocument] = React.useState(false);
   const [currency, setCurrency] = React.useState("KGS");
   const [exchangeRate, setExchangeRate] = React.useState("1");
   const [customsCost, setCustomsCost] = React.useState("0");
@@ -800,6 +802,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
     setNumber("");
     setSupplierNumber("");
     setReceivedAt(roundToStep(dayjs()));
+    setReceivedAtFromDocument(false);
     setCurrency("KGS");
     setExchangeRate("1");
     setCustomsCost("0");
@@ -873,6 +876,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
     setNumber(form.number);
     setSupplierNumber(form.supplierNumber);
     setReceivedAt(form.receivedAt ? dayjs(form.receivedAt) : roundToStep(dayjs()));
+    setReceivedAtFromDocument(false);
     setCurrency(form.currency);
     setExchangeRate(form.exchangeRate);
     setCustomsCost(form.customsCost);
@@ -998,7 +1002,10 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
       if (result.document.number && !supplierNumber) setSupplierNumber(result.document.number);
       if (result.document.date) {
         const parsed = dayjs(result.document.date);
-        if (parsed.isValid()) setReceivedAt(roundToStep(parsed.hour(dayjs().hour()).minute(dayjs().minute())));
+        if (parsed.isValid()) {
+          setReceivedAt(roundToStep(parsed.hour(dayjs().hour()).minute(dayjs().minute())));
+          setReceivedAtFromDocument(true);
+        }
       }
       // Поставщика нет в справочнике — его имя уже в поле, чтобы завести
       // одним нажатием («Создать «…»» в списке или кнопка в подсказке).
@@ -1813,9 +1820,33 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           <Label>Дата прихода *</Label>
           <CustomDateTimePicker
             value={receivedAt}
-            onChange={(v) => setReceivedAt(v as Dayjs | null)}
+            onChange={(v) => {
+              setReceivedAt(v as Dayjs | null);
+              setReceivedAtFromDocument(false);
+            }}
             slotProps={{ textField: { size: "small", fullWidth: true } }}
           />
+          {/* Список накладных — по месяцу даты прихода: с прошлой датой
+              накладная уйдёт в тот месяц и в текущем её не будет. */}
+          {receivedAt && receivedAt.isValid() && !receivedAt.isSame(dayjs(), "month") && (
+            <Stack direction="row" alignItems="center" columnGap={1} flexWrap="wrap" sx={{ mt: 0.5 }}>
+              <Typography variant="caption" sx={{ color: "warning.onSurface" }}>
+                {receivedAtFromDocument ? "Дата взята с документа поставщика. " : ""}
+                Накладная попадёт в список за {receivedAt.format("MMMM YYYY")}.
+              </Typography>
+              <Button
+                size="small"
+                variant="text"
+                onClick={() => {
+                  setReceivedAt(roundToStep(dayjs()));
+                  setReceivedAtFromDocument(false);
+                }}
+                sx={{ minWidth: 0, px: 0.5, py: 0, fontSize: 12 }}
+              >
+                Поставить сегодня
+              </Button>
+            </Stack>
+          )}
         </Box>
         {/* Закуп только в сомах (настройка модуля) — валюта и курс не нужны. */}
         {foreignCurrency && (
