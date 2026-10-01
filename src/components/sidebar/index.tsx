@@ -33,6 +33,7 @@ import { prefetchHotelPages } from "../../dev/prefetchHotelPages";
 import CelebrationOutlined from "@mui/icons-material/CelebrationOutlined";
 import CalendarViewMonthOutlined from "@mui/icons-material/CalendarViewMonthOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
+import ConciergeOutlined from "@mui/icons-material/BusinessCenterOutlined";
 import RoomServiceOutlined from "@mui/icons-material/RoomServiceOutlined";
 
 
@@ -429,6 +430,8 @@ const HotelSidebarMenu: React.FC = () => {
   const canEvents = can(PAGE_PERMISSIONS.hotelEvents);
   const canPriceCalendar = can(PAGE_PERMISSIONS.hotelPriceCalendar);
   const canRatePlans = can(PAGE_PERMISSIONS.hotelRatePlans);
+  const canExtras = can(PAGE_PERMISSIONS.hotelExtras);
+  const canCash = can(PAGE_PERMISSIONS.hotelCash);
   const canReception = can(PAGE_PERMISSIONS.hotelReception);
 
   const sectionLabel = (text: string) =>
@@ -449,14 +452,16 @@ const HotelSidebarMenu: React.FC = () => {
       {canGuests && <SidebarMenuItem to="/patients" icon={<PeopleOutlineOutlined />} label="Гости" collapsed={siderCollapsed} />}
       {canHousekeeping && <SidebarMenuItem to="/housekeeping" icon={<CleaningServicesOutlined />} label="Уборка" collapsed={siderCollapsed} />}
       {canKitchen && <SidebarMenuItem to="/kitchen" icon={<RestaurantOutlined />} label="Кухня" collapsed={siderCollapsed} />}
+      {canCash && <SidebarMenuItem to="/hotel-cash" icon={<PointOfSaleOutlined />} label="Касса" collapsed={siderCollapsed} />}
       {canReports && <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчёты" collapsed={siderCollapsed} />}
 
-      {(canRooms || canCategories || canRatePlans || canPricing || canPriceCalendar || canEvents) && sectionLabel("Отель")}
+      {(canRooms || canCategories || canRatePlans || canExtras || canPricing || canPriceCalendar || canEvents) && sectionLabel("Отель")}
       {canRooms && <SidebarMenuItem to="/rooms" icon={<HotelOutlined />} label="Номера" collapsed={siderCollapsed} />}
       {canCategories && <SidebarMenuItem to="/room-categories" icon={<CategoryOutlined />} label="Категории и тарифы" collapsed={siderCollapsed} />}
       {canRatePlans && <SidebarMenuItem to="/rate-plans" icon={<LocalOfferOutlined />} label="Тарифные планы" collapsed={siderCollapsed} />}
       {canPricing && <SidebarMenuItem to="/pricing-rules" icon={<PriceChangeOutlined />} label="Ценообразование" collapsed={siderCollapsed} />}
       {canPriceCalendar && <SidebarMenuItem to="/price-calendar" icon={<CalendarViewMonthOutlined />} label="Календарь цен" collapsed={siderCollapsed} />}
+      {canExtras && <SidebarMenuItem to="/hotel-extras" icon={<ConciergeOutlined />} label="Услуги и юрлица" collapsed={siderCollapsed} />}
       {canEvents && <SidebarMenuItem to="/events" icon={<CelebrationOutlined />} label="События" collapsed={siderCollapsed} />}
       {canSettings && (
         <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
@@ -1177,6 +1182,8 @@ const HOTEL_ONLY_NAV_PATHS = [
   "/pricing-rules",
   "/price-calendar",
   "/rate-plans",
+  "/hotel-extras",
+  "/hotel-cash",
   "/events",
   "/reception",
   "/settings",

@@ -102,6 +102,7 @@ import {
   isOverbookingConfirmable,
   getQuote,
   listRatePlans,
+  listCorporateAccounts,
   addPayment,
   type HotelRoom,
   type HotelGuestSearchResult,
@@ -231,6 +232,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [bookingSource, setBookingSource] = React.useState("");
   const [specialRequests, setSpecialRequests] = React.useState("");
   const [companyInfo, setCompanyInfo] = React.useState("");
+  // Юрлицо из справочника: скидка идёт на проживание, бэк сам пересчитает сумму.
+  const [corporateId, setCorporateId] = React.useState<number | "">("");
   const [dataConsent, setDataConsent] = React.useState(false);
   // Групповая бронь: дополнительные номера на те же даты и с тем же питанием,
   // заказчик один. Бэк принимает несколько items в одной брони.
@@ -281,6 +284,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setCompanyInfo("");
     setDataConsent(false);
     setExtraRooms([]);
+    setCorporateId("");
     setSubmitError(null);
   }, [clearScanNotice]);
 
@@ -321,6 +325,15 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     enabled: formDataEnabled,
   });
   const roomTypes = React.useMemo(() => roomTypesQuery.data ?? [], [roomTypesQuery.data]);
+
+  const corporateQuery = useQuery({
+    queryKey: ["hotel", "corporateAccounts", property?.id, "active"],
+    queryFn: ({ signal }) => listCorporateAccounts(property!.id, { limit: 200 }, signal),
+    enabled: formDataEnabled,
+    staleTime: 5 * 60_000,
+  });
+  const corporateAccounts = React.useMemo(() => corporateQuery.data?.results ?? [], [corporateQuery.data]);
+  const corporate = corporateAccounts.find((a) => a.id === corporateId);
 
   // Тарифные планы объекта — выбор показываем, только если кроме основного есть ещё.
   const ratePlansQuery = useQuery({
@@ -501,7 +514,10 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     return sum + (rt ? Number(rt.totalPrice) * nights : 0);
   }, 0);
   const mainTotal = quote ? Number(quote.total) : selectedRoomType && nights > 0 ? Number(selectedRoomType.totalPrice) * nights : null;
-  const estimatedTotal = mainTotal != null ? mainTotal + extrasByCategory : null;
+  // Скидка юрлица — на проживание; точную сумму после неё посчитает бэк.
+  const corporateDiscount = corporate ? Number(corporate.discountPercent) : 0;
+  const stayTotal = mainTotal != null ? mainTotal + extrasByCategory : null;
+  const estimatedTotal = stayTotal != null ? Math.round(stayTotal * (1 - corporateDiscount / 100) * 100) / 100 : null;
   const isPrepayment = guaranteeMethod === "prepayment";
   const prepaymentMethods = catalogs?.paymentMethods ?? [];
   const effectivePrepaymentMethod = prepaymentMethod || prepaymentMethods[0]?.value || "";
@@ -540,6 +556,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         </Typography>
         <Typography variant="caption" color="text.secondary">
           {nights} {nights % 10 === 1 && nights % 100 !== 11 ? "ночь" : [2, 3, 4].includes(nights % 10) && ![12, 13, 14].includes(nights % 100) ? "ночи" : "ночей"}
+          {corporateDiscount > 0 ? ` · юрлицо −${corporateDiscount}%` : ""}
           {extraRooms.length > 0 ? ` · ${extraRooms.length + 1} ${extraRooms.length + 1 < 5 ? "номера" : "номеров"}` : ""}
           {estimatedTotal != null && (!quote || extraRooms.length > 0) ? " · по тарифу категории" : ""}
           {isPrepayment && prepaymentError == null && estimatedTotal != null
@@ -690,6 +707,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           : { customer: { fullName: guestName.trim(), phone: orUndefined(guestPhone) ?? "", email: orUndefined(guestEmail) ?? "", source: bookingSource || "" } }),
         guestComment: orUndefined(specialRequests) ?? "",
         companyInfo: orUndefined(companyInfo) ?? "",
+        corporateAccountId: corporateId === "" ? undefined : corporateId,
         dataConsent,
         allowOverbooking,
         items: [
@@ -814,6 +832,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     passportNumber.trim() !== "" ||
     specialRequests.trim() !== "" ||
     companyInfo.trim() !== "" ||
+    corporateId !== "" ||
     extraRooms.length > 0 ||
     passportPhotoFile !== null;
 
@@ -1532,6 +1551,25 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         sx={{ flex: 1 }}
                       />
                     </Stack>
+                    {corporateAccounts.length > 0 && (
+                      <TextField
+                        select
+                        label="Юрлицо из справочника"
+                        value={corporateId}
+                        onChange={(e) => setCorporateId(e.target.value === "" ? "" : Number(e.target.value))}
+                        slotProps={{ input: { startAdornment: <FieldIcon icon={<BusinessOutlined />} /> } }}
+                        helperText={corporate ? (corporateDiscount > 0 ? `Скидка ${corporateDiscount}% на проживание, на услуги не действует` : "Без скидки") : "Скидка и договор юрлица"}
+                        fullWidth
+                      >
+                        <MenuItem value="">Не выбрано</MenuItem>
+                        {corporateAccounts.map((a) => (
+                          <MenuItem key={a.id} value={a.id}>
+                            {a.name}
+                            {Number(a.discountPercent) > 0 ? ` · −${Number(a.discountPercent)}%` : ""}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                    )}
                     <FormField
                       icon={<ChatBubbleOutlineOutlined />}
                       rules={GUEST_RULES.comment}

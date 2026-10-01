@@ -133,6 +133,8 @@ const HotelRoomCategoryFormPage = lazy(() => import("./dev/HotelRoomCategoryForm
 const HotelPricingRulesPage = lazy(() => import("./dev/HotelPricingRulesPage"));
 const HotelPriceCalendarPage = lazy(() => import("./dev/HotelPriceCalendarPage"));
 const HotelRatePlansPage = lazy(() => import("./dev/HotelRatePlansPage"));
+const HotelExtrasPage = lazy(() => import("./dev/HotelExtrasPage"));
+const HotelCashPage = lazy(() => import("./dev/HotelCashPage"));
 const HotelEventsPage = lazy(() => import("./dev/HotelEventsPage"));
 const HotelReceptionPage = lazy(() => import("./dev/HotelReceptionPage"));
 const HotelPricingRuleFormPage = lazy(() => import("./dev/HotelPricingRuleFormPage"));
@@ -765,6 +767,26 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.hotelPricingRules}>
                               <Suspense fallback={<LinearProgress />}>
                                 <HotelPricingRulesPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="hotel-extras"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelExtras}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelExtrasPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="hotel-cash"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelCash}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelCashPage />
                               </Suspense>
                             </RequirePermission>
                           }

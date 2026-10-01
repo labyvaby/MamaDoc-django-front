@@ -28,6 +28,8 @@ import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
 import { useSnackbar } from "notistack";
 import { ReservationEditPanel } from "./ReservationEditPanel";
 import { ReservationHistory } from "./ReservationHistory";
+import { ReservationChargesSection } from "./ReservationChargesSection";
+import { ReservationCorporateSection } from "./ReservationCorporateSection";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import ChatBubbleOutlineOutlined from "@mui/icons-material/ChatBubbleOutlineOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
@@ -768,6 +770,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                     ))}
                   </Stack>
                 )}
+
+                <ReservationCorporateSection reservation={reservation} live={isLiveReservation} onChanged={invalidateReservation} />
               </Box>
 
               <Box sx={{ minWidth: 0 }}>
@@ -913,6 +917,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                     ))}
                   </Box>
                 )}
+
+                <ReservationChargesSection reservation={reservation} onChanged={invalidateReservation} />
               </Box>
             </Box>
 
