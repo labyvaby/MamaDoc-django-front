@@ -54,6 +54,7 @@ import {
   inlineQuoteErrorField,
   type Benefits,
 } from "./LivePaymentPanel";
+import { decimalForRequest, maxDiscountPercent } from "./discountInput";
 import { posColors } from "./layout";
 import type { PosCatalogItem, PosClient, PosReceiptLine } from "./types";
 import { PosAmount } from "./ui";
@@ -451,7 +452,8 @@ export default function LivePosPage() {
         quantity: String(row.quantity),
         discountAmount: lineDiscount(row).toFixed(2),
       })),
-    discountAmount: benefits.discount || "0",
+    discountPercent: decimalForRequest(benefits.discountPercent),
+    discountAmount: decimalForRequest(benefits.discount),
     discountKindId: benefits.discountKindId ?? undefined,
     clientDiscount: benefits.clientDiscount,
     promotions: benefits.promotions,
@@ -520,8 +522,10 @@ export default function LivePosPage() {
   const estimateQuote = (previous: PosQuote | undefined): PosQuote => {
     const afterLines = localSubtotal - localLineDiscount;
     const kind = discountKinds.find((item) => item.id === benefits.discountKindId);
-    const cartDiscount = kind
-      ? (afterLines * Number(kind.percent)) / 100
+    const percent = kind ? Number(kind.percent) : Number(benefits.discountPercent) || 0;
+    // Процент (вид скидки или свой) считается от суммы после скидок на позиции, иначе — сумма.
+    const cartDiscount = percent
+      ? (afterLines * percent) / 100
       : Math.min(Number(benefits.discount) || 0, afterLines);
     let discount = localLineDiscount + cartDiscount;
     // Без ручных скидок держим прошлую (акция) — иначе итог мигнёт на полную сумму.
@@ -1169,6 +1173,7 @@ export default function LivePosPage() {
           locked={!!held || pending}
           discountKinds={discountKinds}
           discountMode={discountMode}
+          maxPercent={maxDiscountPercent(data.rules)}
           lineDiscounts={panelLineDiscounts}
           lineDiscountIgnored={lineDiscountIgnored}
         />

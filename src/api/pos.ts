@@ -36,6 +36,8 @@ export type PosCart = {
   branchId: number;
   clientId?: number;
   lines: Array<{ productId: number; quantity: string; discountAmount?: string }>;
+  /** Ручная скидка на чек процентом — от суммы после скидок на позиции. */
+  discountPercent: string;
   discountAmount: string;
   discountKindId?: number;
   clientDiscount: boolean;
