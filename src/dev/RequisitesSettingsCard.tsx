@@ -54,9 +54,20 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
     // demoVersion — перечитать демо после сохранения
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [property, supported, demoVersion]);
+  // Сервер начал хранить реквизиты, у объекта они пустые, а на этом устройстве
+  // остались демо-реквизиты — подставляем их в форму, чтобы сохранить одним нажатием.
+  const leftover = React.useMemo(() => {
+    if (!supported) return null;
+    const demo = readDemo<Partial<Record<Key, string>> | null>(DEMO_KEYS.requisites(property.id), null);
+    if (!demo || !FIELDS.some((f) => demo[f.key]?.trim())) return null;
+    return FIELDS.every((f) => !String((property[f.key] as string | undefined) ?? "").trim()) ? demo : null;
+  }, [property, supported]);
   const [form, setForm] = React.useState<Record<Key, string>>(initial);
   const [saving, setSaving] = React.useState(false);
-  React.useEffect(() => setForm(initial), [initial]);
+  React.useEffect(
+    () => setForm(leftover ? (Object.fromEntries(FIELDS.map((f) => [f.key, leftover[f.key] ?? ""])) as Record<Key, string>) : initial),
+    [initial, leftover],
+  );
   const dirty = FIELDS.some((f) => form[f.key] !== initial[f.key]);
 
   const save = async () => {
@@ -65,6 +76,8 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
       const patch: HotelPropertyUpdateData = Object.fromEntries(FIELDS.map((f) => [f.key, form[f.key].trim()]));
       if (supported) {
         await updateHotelProperty(property.id, patch);
+        // Реквизиты стали общими — демо-копия этого устройства больше не нужна.
+        writeDemo(DEMO_KEYS.requisites(property.id), null);
         void queryClient.invalidateQueries({ queryKey: ["hotel", "properties"] });
       } else {
         writeDemo(DEMO_KEYS.requisites(property.id), patch);
@@ -90,6 +103,12 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
         <Alert severity="info" variant="outlined" sx={{ mb: 1.5 }}>
           Демо-режим: реквизиты хранятся на этом устройстве и уже печатаются в счёте и справке. С обновлением сервера они станут общими для всех
           сотрудников.
+        </Alert>
+      )}
+      {leftover && (
+        <Alert severity="warning" variant="outlined" sx={{ mb: 1.5 }}>
+          Сервер начал хранить реквизиты. В форму подставлены реквизиты, сохранённые на этом устройстве в демо-режиме, — проверьте и нажмите
+          «Сохранить реквизиты», чтобы они стали общими для всех сотрудников.
         </Alert>
       )}
       <Stack gap={2}>

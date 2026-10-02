@@ -17,7 +17,7 @@ import { saveExchangeRates } from "../api/hotel";
 import { useCan } from "../hooks/useCan";
 import { currencySign } from "./hotelReportFormat";
 import { COMMON_CURRENCIES, CURRENCY_NAMES, useExchangeRates } from "./useExchangeRates";
-import { DEMO_KEYS, writeDemo } from "./hotelDemoStore";
+import { DEMO_KEYS, readDemo, writeDemo } from "./hotelDemoStore";
 
 export const ExchangeRatesSettingsCard: React.FC<{ propertyId: number; baseCurrency: string }> = ({ propertyId, baseCurrency }) => {
   const queryClient = useQueryClient();
@@ -26,17 +26,23 @@ export const ExchangeRatesSettingsCard: React.FC<{ propertyId: number; baseCurre
   const query = useExchangeRates(propertyId, baseCurrency);
   const [draft, setDraft] = React.useState<Record<string, { on: boolean; rate: string }>>({});
   const [saving, setSaving] = React.useState(false);
+  /** Сервер уже хранит курсы, у него их нет, а на этом устройстве остались демо-курсы — они подставлены в форму. */
+  const [fromDemo, setFromDemo] = React.useState(false);
 
   React.useEffect(() => {
     if (!query.data) return;
+    const leftover =
+      !query.data.demo && query.data.rates.length === 0 ? readDemo<{ currency: string; rate: string }[] | null>(DEMO_KEYS.rates(propertyId), null) : null;
+    const rates = leftover?.length ? leftover : query.data.rates;
+    setFromDemo(Boolean(leftover?.length));
     const next: Record<string, { on: boolean; rate: string }> = {};
     for (const c of COMMON_CURRENCIES) {
-      const r = query.data.rates.find((x) => x.currency === c);
+      const r = rates.find((x) => x.currency === c);
       next[c] = { on: r != null, rate: r ? String(Number(r.rate)) : "" };
     }
-    for (const r of query.data.rates) if (!next[r.currency]) next[r.currency] = { on: true, rate: String(Number(r.rate)) };
+    for (const r of rates) if (!next[r.currency]) next[r.currency] = { on: true, rate: String(Number(r.rate)) };
     setDraft(next);
-  }, [query.data]);
+  }, [query.data, propertyId]);
 
   if (query.isPending) return null;
   const state = query.data;
@@ -56,6 +62,9 @@ export const ExchangeRatesSettingsCard: React.FC<{ propertyId: number; baseCurre
         );
       } else {
         await saveExchangeRates(propertyId, rates);
+        // Курсы стали общими — демо-копия этого устройства больше не нужна.
+        writeDemo(DEMO_KEYS.rates(propertyId), null);
+        setFromDemo(false);
       }
       void queryClient.invalidateQueries({ queryKey: ["hotel", "exchangeRates", propertyId] });
       enqueueSnackbar("Курсы сохранены", { variant: "success" });
@@ -81,6 +90,12 @@ export const ExchangeRatesSettingsCard: React.FC<{ propertyId: number; baseCurre
         <Alert severity="info" variant="outlined" sx={{ mb: 1.5 }}>
           Демо-режим: курсы хранятся на этом устройстве, оплата в валюте записывается в сомах по курсу с пометкой. С обновлением сервера курсы
           будут общими для всех сотрудников.
+        </Alert>
+      )}
+      {fromDemo && (
+        <Alert severity="warning" variant="outlined" sx={{ mb: 1.5 }}>
+          Сервер начал хранить курсы. В форму подставлены курсы, сохранённые на этом устройстве в демо-режиме, — проверьте и нажмите «Сохранить
+          курсы», чтобы они стали общими для всех сотрудников.
         </Alert>
       )}
       <Stack gap={1}>
