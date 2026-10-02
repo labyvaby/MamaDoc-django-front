@@ -30,6 +30,7 @@ import { PatientSessionProvider } from "./pages/public-booking/PatientSession";
 import { AchievementToast } from "./components/achievements/AchievementToast";
 import { NewBookingToast } from "./components/bookings/NewBookingToast";
 import { NewVersionNotice } from "./components/NewVersionNotice";
+import { HotelSiteRequestsNotifier } from "./dev/HotelSiteRequestsNotifier";
 import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
 import { FloatingTopBanners } from "./components/layout/FloatingTopBanners";
 import { ClinicOnly } from "./components/layout/ClinicOnly";
@@ -556,6 +557,8 @@ function App() {
                                      <FloatingTopBanners />
                                      {/* После деплоя — мягкое «обновите страницу» (ресепшен не закрывает вкладку сутками). */}
                                      <NewVersionNotice />
+                                     {/* Отель: заявка с сайта — уведомление со звуком на любом экране. */}
+                                     <HotelSiteRequestsNotifier />
                                   </>
                                 </DjangoContextRemount>
                                 <ClinicOnly>

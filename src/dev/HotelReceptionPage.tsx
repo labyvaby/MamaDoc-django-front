@@ -51,7 +51,8 @@ import ReportProblemOutlined from "@mui/icons-material/ReportProblemOutlined";
 import EventNoteOutlined from "@mui/icons-material/EventNoteOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Navigate } from "react-router";
+import { Navigate, useSearchParams } from "react-router";
+import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
 import { useSnackbar } from "notistack";
 
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -78,6 +79,8 @@ import { fetchAllReservations } from "./hotelReportData";
 import { inHouseCounts, isNoShowCandidate, isStayingOn } from "./hotelInHouse";
 import { missingDocumentGuest } from "./CheckInDocumentPanel";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
+import { useSiteRequests } from "./useSiteRequests";
+import { siteRequestLine } from "./HotelSiteRequestsNotifier";
 import { DateStepper, EmptyState, FilterChip, HotelPage, HotelPageHeader, plural, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 
 type Tab = "today" | "all";
@@ -854,6 +857,54 @@ const AllTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> = (
   );
 };
 
+// ── Заявки с сайта ──────────────────────────────────────────────────────────
+
+/** Заявки с сайта, которые ждут подтверждения, — над вкладками, чтобы не сгорели. */
+const SiteRequestsBlock: React.FC<{ onOpen: (id: number) => void }> = ({ onOpen }) => {
+  const { requests } = useSiteRequests();
+  // Обратный отсчёт «осталось N мин» — раз в 30 с.
+  const [, tick] = React.useReducer((x: number) => x + 1, 0);
+  React.useEffect(() => {
+    if (requests.length === 0) return undefined;
+    const t = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(t);
+  }, [requests.length]);
+  if (requests.length === 0) return null;
+  return (
+    <Alert
+      severity="warning"
+      variant="outlined"
+      icon={<LanguageOutlined fontSize="inherit" />}
+      sx={{ "& .MuiAlert-message": { width: "100%" } }}
+    >
+      <Typography variant="body2" fontWeight={700} sx={{ mb: 0.75 }}>
+        {requests.length === 1 ? "Заявка с сайта ждёт подтверждения" : `Заявки с сайта ждут подтверждения: ${requests.length}`}
+      </Typography>
+      <Stack gap={0.75}>
+        {requests.map((r) => {
+          const left = r.expiresAt ? Math.max(0, dayjs(r.expiresAt).diff(dayjs(), "minute")) : null;
+          return (
+            <Stack key={r.id} direction={{ xs: "column", md: "row" }} alignItems={{ md: "center" }} gap={{ xs: 0.5, md: 1.5 }}>
+              <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }}>
+                <b>№{r.number}</b> · {siteRequestLine(r)}
+                {left != null && (
+                  <Typography component="span" variant="body2" color={left <= 10 ? "error.main" : "text.secondary"} fontWeight={600}>
+                    {" "}
+                    · {left > 0 ? `сгорит через ${left} мин` : "сгорает"}
+                  </Typography>
+                )}
+              </Typography>
+              <Button size="small" variant="contained" color="warning" disableElevation onClick={() => onOpen(r.id)} sx={{ flexShrink: 0 }}>
+                Открыть и подтвердить
+              </Button>
+            </Stack>
+          );
+        })}
+      </Stack>
+    </Alert>
+  );
+};
+
 // ── Страница ────────────────────────────────────────────────────────────────
 
 export const HotelReceptionPage: React.FC = () => {
@@ -863,6 +914,22 @@ export const HotelReceptionPage: React.FC = () => {
   const canManageBookings = useCan(["schedule.manage", "hotel.reservations.manage"]);
   const [tab, setTab] = React.useState<Tab>("today");
   const [openId, setOpenId] = React.useState<number | null>(null);
+  // /reception?open=ID — из уведомления о заявке с сайта: сразу карточка брони.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openParam = searchParams.get("open");
+  React.useEffect(() => {
+    const id = Number(openParam);
+    if (!openParam || !Number.isInteger(id) || id <= 0) return;
+    setOpenId(id);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("open");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [openParam, setSearchParams]);
 
   if (!vivaActive) return <Navigate to="/" replace />;
 
@@ -874,6 +941,8 @@ export const HotelReceptionPage: React.FC = () => {
         info="«Сегодня» — кого заселять и выселять прямо сейчас. «Все брони» — поиск по имени, телефону или номеру брони. Клик по строке открывает карточку брони: оплата, правка дат, смена номера."
         actions={canManageBookings ? <CreateBookingButton /> : undefined}
       />
+
+      {property && <SiteRequestsBlock onOpen={setOpenId} />}
 
       <Stack direction="row" gap={1}>
         <FilterChip label="Сегодня" active={tab === "today"} onClick={() => setTab("today")} />

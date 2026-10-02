@@ -181,7 +181,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const [cancelPromptOpen, setCancelPromptOpen] = React.useState(false);
   // Панель правки: "edit" — даты/гости/питание, "room" — другой номер.
   const [editMode, setEditMode] = React.useState<"edit" | "room" | null>(null);
-  const { enqueueSnackbar } = useSnackbar();
+  const { enqueueSnackbar, closeSnackbar } = useSnackbar();
   const [cancelReason, setCancelReason] = React.useState("");
   const [messageAnchor, setMessageAnchor] = React.useState<HTMLElement | null>(null);
   const [cancelAsNoShow, setCancelAsNoShow] = React.useState(false);
@@ -264,8 +264,31 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setActionBusy(true);
     setActionError(null);
     try {
-      await confirmReservation(reservation.id, { version: reservation.version });
+      const confirmed = await confirmReservation(reservation.id, { version: reservation.version });
       invalidateReservation();
+      // Подтверждение гостю — сразу, одним нажатием: само по себе сообщение не
+      // уходит (рассылки с сервера пока нет), а гость с сайта ждёт ответа.
+      const phone = confirmed.items[0]?.guests.find((g) => g.isPrimary)?.phone || confirmed.items[0]?.guests[0]?.phone || "";
+      const link = whatsappLink(phone, buildGuestMessage("confirmation", confirmed, property ?? null));
+      enqueueSnackbar(link ? "Бронь подтверждена — отправьте гостю подтверждение" : "Бронь подтверждена", {
+        variant: "success",
+        autoHideDuration: link ? 12_000 : 4_000,
+        action: link
+          ? (k) => (
+              <Button
+                color="inherit"
+                size="small"
+                sx={{ fontWeight: 700 }}
+                onClick={() => {
+                  closeSnackbar(k);
+                  window.open(link, "_blank", "noopener");
+                }}
+              >
+                В WhatsApp
+              </Button>
+            )
+          : undefined,
+      });
     } catch (err) {
       setActionError(getErrorMessage(err, "Не удалось подтвердить бронь"));
     } finally {

@@ -30,6 +30,7 @@ import { useT } from "../../i18n/VerticalProvider";
 import { useIsVivaActive } from "../../dev/mockDemoData";
 import { useHotelProperty } from "../../dev/useHotelProperty";
 import { prefetchHotelPages } from "../../dev/prefetchHotelPages";
+import { useSiteRequests } from "../../dev/useSiteRequests";
 import CelebrationOutlined from "@mui/icons-material/CelebrationOutlined";
 import CalendarViewMonthOutlined from "@mui/icons-material/CalendarViewMonthOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
@@ -434,6 +435,8 @@ const HotelSidebarMenu: React.FC = () => {
   const canCash = can(PAGE_PERMISSIONS.hotelCash);
   const canStaff = can(PAGE_PERMISSIONS.hotelStaff);
   const canReception = can(PAGE_PERMISSIONS.hotelReception);
+  // Заявки с сайта, ждущие подтверждения, — счётчик на «Ресепшен».
+  const { requests: siteRequests } = useSiteRequests(canReception);
 
   const sectionLabel = (text: string) =>
     siderCollapsed && !isMobile ? (
@@ -448,7 +451,9 @@ const HotelSidebarMenu: React.FC = () => {
 
   return (
     <List sx={{ py: 0, mt: 0.5 }}>
-      {canReception && <SidebarMenuItem to="/reception" icon={<RoomServiceOutlined />} label="Ресепшен" collapsed={siderCollapsed} />}
+      {canReception && (
+        <SidebarMenuItem to="/reception" icon={<RoomServiceOutlined />} label="Ресепшен" collapsed={siderCollapsed} badgeCount={siteRequests.length} badgeColor="error" />
+      )}
       {canSchedule && <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Бронирования" collapsed={siderCollapsed} />}
       {canGuests && <SidebarMenuItem to="/patients" icon={<PeopleOutlineOutlined />} label="Гости" collapsed={siderCollapsed} />}
       {canHousekeeping && <SidebarMenuItem to="/housekeeping" icon={<CleaningServicesOutlined />} label="Уборка" collapsed={siderCollapsed} />}
