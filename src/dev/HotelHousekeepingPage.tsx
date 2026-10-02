@@ -78,6 +78,8 @@ import {
 } from "../api/hotel";
 import { getAllDjangoEmployees } from "../api/staff";
 import { getErrorMessage } from "../api/client";
+import { usePermissions } from "../hooks/usePermissions";
+import { appendInspectionResult, isCheckoutInspection, parseInspectionResult } from "./roomInspection";
 
 type TaskKind = "checkout" | "stayover" | "inspection" | "maintenance";
 type TaskStatus = "open" | "in_progress" | "done" | "cancelled";
@@ -158,6 +160,36 @@ export const HotelHousekeepingPage: React.FC = () => {
   const [formError, setFormError] = React.useState<string | null>(null);
 
   const [statusMenuAnchor, setStatusMenuAnchor] = React.useState<{ el: HTMLElement; task: HotelHousekeepingTask } | null>(null);
+  // Проверка перед выездом (#4130): горничная отвечает «всё в порядке» или пишет замечания.
+  const [inspectTask, setInspectTask] = React.useState<HotelHousekeepingTask | null>(null);
+  const [inspectOk, setInspectOk] = React.useState(true);
+  const [inspectRemarks, setInspectRemarks] = React.useState("");
+  const [inspectSaving, setInspectSaving] = React.useState(false);
+  const { activeEmployee, user } = usePermissions();
+  const me = activeEmployee?.fullName || [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || user?.username || "";
+  const openInspect = (task: HotelHousekeepingTask) => {
+    setInspectTask(task);
+    setInspectOk(true);
+    setInspectRemarks("");
+  };
+  const confirmInspect = async () => {
+    if (!inspectTask || (!inspectOk && !inspectRemarks.trim())) return;
+    setInspectSaving(true);
+    try {
+      // Задача остаётся «в работе» до выселения — ресепшен видит ответ в карточке брони и закрывает её сам.
+      await updateHousekeepingTask(inspectTask.id, {
+        status: "in_progress",
+        note: appendInspectionResult(inspectTask.note, inspectOk, inspectRemarks, me),
+      });
+      invalidateAfterChange(false);
+      enqueueSnackbar(inspectOk ? "Отмечено: всё в порядке" : "Замечания отправлены на ресепшен", { variant: "success" });
+      setInspectTask(null);
+    } catch (err) {
+      enqueueSnackbar(getErrorMessage(err, "Не удалось сохранить проверку"), { variant: "error" });
+    } finally {
+      setInspectSaving(false);
+    }
+  };
   const [doneTask, setDoneTask] = React.useState<HotelHousekeepingTask | null>(null);
   const [doneRoomState, setDoneRoomState] = React.useState<string>("clean");
   const [cancellingId, setCancellingId] = React.useState<number | null>(null);
@@ -265,6 +297,10 @@ export const HotelHousekeepingPage: React.FC = () => {
   const changeStatus = async (task: HotelHousekeepingTask, status: TaskStatus) => {
     setStatusMenuAnchor(null);
     if (status === task.status) return;
+    if (status === "done" && isCheckoutInspection(task) && !parseInspectionResult(task.note)) {
+      openInspect(task);
+      return;
+    }
     if (status === "done") {
       setDoneRoomState(task.kind === "inspection" ? "inspected" : "clean");
       setDoneTask(task);
@@ -421,8 +457,17 @@ export const HotelHousekeepingPage: React.FC = () => {
                           <Box sx={{ color: "text.secondary", display: "flex" }}>{KIND_ICONS[task.kind]}</Box>
                           <Box>
                             <Typography variant="body2" fontWeight={500}>
-                              {KIND_LABELS[task.kind]}
+                              {isCheckoutInspection(task) ? "Проверка перед выездом" : KIND_LABELS[task.kind]}
                             </Typography>
+                            {isCheckoutInspection(task) &&
+                              (() => {
+                                const result = parseInspectionResult(task.note);
+                                return result ? (
+                                  <Typography variant="caption" color={result.ok ? "success.main" : "warning.main"} fontWeight={600}>
+                                    {result.ok ? "✓ всё в порядке" : "⚠ есть замечания"}
+                                  </Typography>
+                                ) : null;
+                              })()}
                             {isStale(task) && (
                               <Typography variant="caption" color="success.main" fontWeight={600}>
                                 номер уже убран
@@ -477,6 +522,11 @@ export const HotelHousekeepingPage: React.FC = () => {
                         </Typography>
                       </TableCell>
                       <TableCell align="right" sx={{ pr: 2, whiteSpace: "nowrap" }}>
+                        {isCheckoutInspection(task) && !parseInspectionResult(task.note) && (
+                          <Button size="small" variant="contained" disableElevation onClick={() => openInspect(task)} sx={{ mr: 0.5 }}>
+                            Проверила
+                          </Button>
+                        )}
                         {isStale(task) && (
                           <Button size="small" disabled={cancellingId != null} onClick={() => void cancelStale(task)} sx={{ mr: 0.5 }}>
                             {cancellingId === task.id ? "Отменяем…" : "Отменить"}
@@ -515,6 +565,43 @@ export const HotelHousekeepingPage: React.FC = () => {
           </MenuItem>
         ))}
       </Menu>
+
+      <Dialog open={inspectTask !== null} onClose={() => !inspectSaving && setInspectTask(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Проверка номера {inspectTask?.roomNumber} перед выездом</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            {inspectTask?.note.split("\n")[0].replace("Проверка перед выездом · ", "")}. Ответ сразу увидит ресепшен в карточке брони.
+          </DialogContentText>
+          <Stack direction="row" gap={1} sx={{ mb: 2 }}>
+            <Button fullWidth variant={inspectOk ? "contained" : "outlined"} color="success" disableElevation onClick={() => setInspectOk(true)}>
+              Всё в порядке
+            </Button>
+            <Button fullWidth variant={!inspectOk ? "contained" : "outlined"} color="warning" disableElevation onClick={() => setInspectOk(false)}>
+              Есть замечания
+            </Button>
+          </Stack>
+          {!inspectOk && (
+            <TextField
+              autoFocus
+              fullWidth
+              multiline
+              minRows={2}
+              label="Что не так"
+              placeholder="Например: нет полотенца, выпита вода из мини-бара, пятно на ковре"
+              value={inspectRemarks}
+              onChange={(e) => setInspectRemarks(e.target.value.slice(0, 500))}
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setInspectTask(null)} disabled={inspectSaving}>
+            Отмена
+          </Button>
+          <Button variant="contained" disableElevation disabled={inspectSaving || (!inspectOk && !inspectRemarks.trim())} onClick={() => void confirmInspect()}>
+            Отправить на ресепшен
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Закрытие задачи — заодно предлагает поставить состояние номера. */}
       <Dialog open={doneTask !== null} onClose={() => setDoneTask(null)} maxWidth="xs" fullWidth>

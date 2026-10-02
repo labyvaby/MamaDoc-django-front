@@ -32,9 +32,14 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
+import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
+import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+import PeopleOutlineOutlined from "@mui/icons-material/PeopleOutlineOutlined";
+import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import FlightLandOutlined from "@mui/icons-material/FlightLandOutlined";
+import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
-import LoginOutlined from "@mui/icons-material/LoginOutlined";
 import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
 import KingBedOutlined from "@mui/icons-material/KingBedOutlined";
 import ReportProblemOutlined from "@mui/icons-material/ReportProblemOutlined";
@@ -58,9 +63,13 @@ import {
   HOTEL_RESERVATION_STATUS_LABELS,
   HOTEL_STAY_STATUS_LABELS,
   hotelStayStatusColor,
+  hotelSourceColor,
+  formatHotelTime,
   mapStayDisplayStatus,
 } from "./hotelDisplay";
 import { CreateBookingButton } from "./CreateBookingButton";
+import { exportReservationsXlsx } from "./hotelListsXlsx";
+import { fetchAllReservations } from "./hotelReportData";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 import { DateStepper, EmptyState, FilterChip, HotelPage, HotelPageHeader, plural, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 
@@ -78,6 +87,161 @@ const BalancePill: React.FC<{ reservation: HotelReservation }> = ({ reservation 
     <StatusPill color={theme.palette.error.main} label={`к оплате ${money(balance)}`} />
   ) : (
     <StatusPill color={theme.palette.success.main} label="оплачено" />
+  );
+};
+
+// ── «Кто сегодня заедет?» ───────────────────────────────────────────────────
+
+/**
+ * Карточка заезда: гость, номер (или «без номера»), даты, гости, источник,
+ * долг и паспорт — всё, что администратору нужно перед заселением, без
+ * открытия брони. Кнопка — заселить в один клик (или открыть бронь, если
+ * решение за человеком: номер не убран, группа, нет номера).
+ */
+const ArrivalCard: React.FC<{
+  reservation: HotelReservation;
+  checkInTime: string | null;
+  action?: { label: string; onClick: () => void; busy: boolean; disabled?: boolean };
+  onOpen: () => void;
+}> = ({ reservation: r, checkInTime, action, onOpen }) => {
+  const theme = useTheme();
+  const dark = theme.palette.mode === "dark";
+  const item = r.items[0];
+  const guest = item?.guests.find((g) => g.isPrimary) ?? item?.guests[0];
+  const name = r.customerName || guest?.fullName || "Без заказчика";
+  const balance = Number(r.balanceDue);
+  const arrived = r.items.every((i) => i.stayStatus !== "expected");
+  const nights = item ? nightsBetween(item.checkIn, item.checkOut) : 0;
+  const guests = r.items.reduce((s, i) => s + i.adults + i.children, 0);
+  // null — нет права видеть документы: тогда про паспорт не говорим ничего.
+  const docKnown = guest?.document != null;
+  const hasDoc = Boolean(guest?.document?.documentNumber);
+  const rooms = r.items.map((i) => i.roomNumber).filter(Boolean) as string[];
+  const accent = arrived ? theme.palette.success.main : balance > 0 ? theme.palette.error.main : theme.palette.primary.main;
+  return (
+    <Box
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      sx={{
+        position: "relative",
+        p: 2,
+        borderRadius: "16px",
+        bgcolor: "background.paper",
+        border: `1px solid ${subtleBorder(theme)}`,
+        boxShadow: dark ? "none" : "0 1px 2px rgba(15,23,42,.04)",
+        cursor: "pointer",
+        overflow: "hidden",
+        transition: "border-color .15s, box-shadow .15s, transform .15s",
+        opacity: arrived ? 0.75 : 1,
+        "&::before": { content: '""', position: "absolute", left: 0, top: 0, bottom: 0, width: 4, bgcolor: accent },
+        "&:hover, &:focus-visible": {
+          borderColor: alpha(accent, 0.5),
+          boxShadow: dark ? "none" : "0 8px 24px rgba(15,23,42,.08)",
+          outline: "none",
+        },
+      }}
+    >
+      <Stack direction="row" alignItems="flex-start" gap={1.5}>
+        <Avatar sx={{ width: 44, height: 44, fontSize: 15, fontWeight: 800, bgcolor: alpha(accent, dark ? 0.25 : 0.12), color: accent }}>
+          {initialsOf(name)}
+        </Avatar>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ fontWeight: 800, fontSize: 15.5, lineHeight: 1.25 }} noWrap title={name}>
+            {name}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" component="div" noWrap>
+            Бронь №{r.number}
+            {item ? ` · ${item.roomTypeName}` : ""}
+          </Typography>
+        </Box>
+        <Box
+          sx={{
+            flexShrink: 0,
+            px: 1.25,
+            py: 0.5,
+            borderRadius: "10px",
+            textAlign: "center",
+            bgcolor: rooms.length ? alpha(theme.palette.text.primary, dark ? 0.1 : 0.05) : alpha(theme.palette.warning.main, 0.14),
+            color: rooms.length ? "text.primary" : "warning.main",
+          }}
+        >
+          <Typography sx={{ fontWeight: 800, fontSize: rooms.length ? 18 : 12, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
+            {rooms.length ? rooms.slice(0, 3).join(", ") : "без номера"}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10.5 }}>
+            {r.items.length > 1 ? `${r.items.length} номера` : "номер"}
+          </Typography>
+        </Box>
+      </Stack>
+
+      <Stack direction="row" gap={1.5} rowGap={0.5} flexWrap="wrap" sx={{ mt: 1.5, color: "text.secondary" }}>
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          <AccessTimeOutlined sx={{ fontSize: 15 }} />
+          <Typography variant="caption">
+            {checkInTime ? `с ${checkInTime}` : "сегодня"} · {nights} {plural(nights, "ночь", "ночи", "ночей")}
+            {item ? ` · до ${formatHotelDate(item.checkOut)}` : ""}
+          </Typography>
+        </Stack>
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          <PeopleOutlineOutlined sx={{ fontSize: 15 }} />
+          <Typography variant="caption">{guests} {plural(guests, "гость", "гостя", "гостей")}</Typography>
+        </Stack>
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: hotelSourceColor(r.source) }} />
+          <Typography variant="caption">{HOTEL_BOOKING_SOURCE_LABELS[r.source] ?? r.source}</Typography>
+        </Stack>
+      </Stack>
+
+      <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" sx={{ mt: 1.5 }}>
+        {balance > 0 ? (
+          <StatusPill color={theme.palette.error.main} label={`к оплате ${money(balance)}`} />
+        ) : (
+          <StatusPill color={theme.palette.success.main} label="оплачено" />
+        )}
+        {docKnown && (
+          <StatusPill
+            color={hasDoc ? theme.palette.success.main : theme.palette.warning.main}
+            label={
+              <Stack component="span" direction="row" alignItems="center" gap={0.5}>
+                <BadgeOutlined sx={{ fontSize: 13 }} />
+                {hasDoc ? "паспорт внесён" : "нет паспорта"}
+              </Stack>
+            }
+          />
+        )}
+        <Box sx={{ ml: "auto" }}>
+          {arrived ? (
+            <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "success.main" }}>
+              <CheckCircleOutlined sx={{ fontSize: 18 }} />
+              <Typography variant="body2" fontWeight={700}>
+                Заселён
+              </Typography>
+            </Stack>
+          ) : action ? (
+            <Button
+              size="small"
+              variant="contained"
+              disableElevation
+              disabled={action.busy || action.disabled}
+              onClick={(e) => {
+                e.stopPropagation();
+                action.onClick();
+              }}
+              sx={{ borderRadius: "10px", fontWeight: 700, minWidth: 104 }}
+            >
+              {action.busy ? "…" : action.label}
+            </Button>
+          ) : null}
+        </Box>
+      </Stack>
+    </Box>
   );
 };
 
@@ -133,7 +297,8 @@ const ReservationRow: React.FC<{
           </Typography>
         )}
       </Box>
-      <Box sx={{ display: { xs: "none", sm: "block" }, flexShrink: 0 }}>
+      {/* sm в теме — 360px: на телефоне пилюля съедает имя, показываем её с md. */}
+      <Box sx={{ display: { xs: "none", md: "block" }, flexShrink: 0 }}>
         <BalancePill reservation={reservation} />
       </Box>
       {action && (
@@ -186,13 +351,18 @@ const ListCard: React.FC<{ icon: React.ReactNode; title: string; count: number; 
 
 // ── «Сегодня» ───────────────────────────────────────────────────────────────
 
+const OVERDUE_PREVIEW = 3;
+
 const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> = ({ propertyId, onOpen }) => {
   const theme = useTheme();
+  const { property } = useHotelProperty();
+  const checkInTime = property?.checkInTime ? formatHotelTime(property.checkInTime) : null;
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
   const canManageStays = useCan("hotel.stays.manage");
   const [date, setDate] = React.useState<Dayjs>(dayjs());
   const [busyId, setBusyId] = React.useState<number | null>(null);
+  const [showAllOverdue, setShowAllOverdue] = React.useState(false);
   const dateStr = date.format("YYYY-MM-DD");
   const todayStr = dayjs().format("YYYY-MM-DD");
   const isToday = dateStr === todayStr;
@@ -299,27 +469,74 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
         </Alert>
       )}
 
+      {/* «Кто сегодня заедет?» — карточками, крупно: это первое, что смотрит ресепшен утром. */}
+      <Box>
+        <Stack direction="row" alignItems="center" gap={1.25} sx={{ mb: 1.5 }}>
+          <Box
+            sx={{
+              width: 36,
+              height: 36,
+              borderRadius: "11px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              bgcolor: alpha(theme.palette.success.main, theme.palette.mode === "dark" ? 0.2 : 0.1),
+              color: "success.main",
+            }}
+          >
+            <FlightLandOutlined fontSize="small" />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontWeight: 800, fontSize: 18, letterSpacing: "-0.01em" }}>
+              {isToday ? "Кто сегодня заедет?" : `Кто заедет ${formatHotelDate(dateStr)}?`}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {arrivingQuery.isPending
+                ? "Загружаем…"
+                : arriving.length === 0
+                  ? "Заездов нет"
+                  : `${arriving.length} ${plural(arriving.length, "заезд", "заезда", "заездов")} · заселено ${arriving.filter((r) => r.items.every((i) => i.stayStatus !== "expected")).length} · с долгом ${arriving.filter((r) => Number(r.balanceDue) > 0).length}`}
+            </Typography>
+          </Box>
+        </Stack>
+        {arrivingQuery.isPending ? (
+          <Stack alignItems="center" sx={{ py: 3 }}>
+            <CircularProgress size={22} />
+          </Stack>
+        ) : arriving.length === 0 ? (
+          <Surface sx={{ py: 2.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              {isToday ? "Сегодня заездов нет — самое время проверить уборку и завтрашние брони." : "На эту дату заездов нет."}
+            </Typography>
+          </Surface>
+        ) : (
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr", xl: "1fr 1fr 1fr" }, gap: 1.5 }}>
+            {[...arriving]
+              .sort((a, b) => Number(a.items.every((i) => i.stayStatus !== "expected")) - Number(b.items.every((i) => i.stayStatus !== "expected")))
+              .map((r) => (
+                <ArrivalCard key={r.id} reservation={r} checkInTime={checkInTime} action={isToday ? checkInAction(r) : undefined} onOpen={() => onOpen(r.id)} />
+              ))}
+          </Box>
+        )}
+      </Box>
+
+      {/* Просроченные — важны, но не должны заслонять заезды дня: первые три, остальные по кнопке. */}
       {overdue.length > 0 && (
         <ListCard icon={<ReportProblemOutlined />} title="Требуют внимания" count={overdue.length} color={theme.palette.error.main} empty="" loading={false}>
-          {overdue.map(({ r, note }) => (
+          {(showAllOverdue ? overdue : overdue.slice(0, OVERDUE_PREVIEW)).map(({ r, note }) => (
             <ReservationRow key={r.id} reservation={r} note={note} action={checkOutAction(r) ?? checkInAction(r)} onOpen={() => onOpen(r.id)} />
           ))}
+          {overdue.length > OVERDUE_PREVIEW && (
+            <Box sx={{ borderTop: 1, borderColor: "divider", px: 1, py: 0.5 }}>
+              <Button size="small" onClick={() => setShowAllOverdue((v) => !v)} sx={{ fontWeight: 600 }}>
+                {showAllOverdue ? "Свернуть" : `Показать все ${overdue.length}`}
+              </Button>
+            </Box>
+          )}
         </ListCard>
       )}
 
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" }, gap: 2, alignItems: "start" }}>
-        <ListCard
-          icon={<LoginOutlined />}
-          title={isToday ? "Заезжают сегодня" : "Заезжают"}
-          count={arriving.length}
-          color={theme.palette.success.main}
-          empty="Заездов нет"
-          loading={arrivingQuery.isPending}
-        >
-          {arriving.map((r) => (
-            <ReservationRow key={r.id} reservation={r} action={isToday ? checkInAction(r) : undefined} onOpen={() => onOpen(r.id)} />
-          ))}
-        </ListCard>
         <ListCard
           icon={<LogoutOutlined />}
           title={isToday ? "Выезжают сегодня" : "Выезжают"}
@@ -332,13 +549,12 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
             <ReservationRow key={r.id} reservation={r} action={isToday ? checkOutAction(r) : undefined} onOpen={() => onOpen(r.id)} />
           ))}
         </ListCard>
+        <ListCard icon={<KingBedOutlined />} title="Проживают" count={inHouse.length} color={theme.palette.info.main} empty="Сейчас никто не проживает" loading={inHouseQuery.isPending}>
+          {inHouse.map((r) => (
+            <ReservationRow key={r.id} reservation={r} onOpen={() => onOpen(r.id)} />
+          ))}
+        </ListCard>
       </Box>
-
-      <ListCard icon={<KingBedOutlined />} title="Проживают" count={inHouse.length} color={theme.palette.info.main} empty="Сейчас никто не проживает" loading={inHouseQuery.isPending}>
-        {inHouse.map((r) => (
-          <ReservationRow key={r.id} reservation={r} onOpen={() => onOpen(r.id)} />
-        ))}
-      </ListCard>
     </>
   );
 };
@@ -374,6 +590,27 @@ const AllTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> = (
   });
   const rows = query.data?.results ?? [];
   const total = query.data?.count ?? 0;
+  const [exporting, setExporting] = React.useState(false);
+  const { enqueueSnackbar } = useSnackbar();
+  // В файл — все брони под фильтром (до 2000), а не только показанные строки.
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const all = await fetchAllReservations({ propertyId, q: q || undefined, status: status || undefined });
+      const label = [
+        `Статус: ${STATUS_FILTERS.find((f) => f.value === status)?.label ?? "все"}`,
+        q ? `поиск: «${q}»` : "",
+        all.truncated ? "выгружены первые 2000" : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      await exportReservationsXlsx(all.rows, label);
+    } catch (err) {
+      enqueueSnackbar(getErrorMessage(err, "Не удалось выгрузить брони"), { variant: "error" });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <>
@@ -395,10 +632,13 @@ const AllTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> = (
             },
           }}
         />
-        <Stack direction="row" gap={1} flexWrap="wrap">
+        <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
           {STATUS_FILTERS.map((f) => (
             <FilterChip key={f.value || "all"} label={f.label} active={status === f.value} onClick={() => setStatus(f.value)} />
           ))}
+          <Button size="small" variant="outlined" startIcon={<FileDownloadOutlined />} disabled={exporting || total === 0} onClick={() => void handleExport()} sx={{ ml: { md: 1 } }}>
+            {exporting ? "Готовим…" : "Excel"}
+          </Button>
         </Stack>
       </Stack>
 

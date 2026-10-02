@@ -33,6 +33,7 @@ import {
   Box,
   Button,
   Checkbox,
+  Chip,
   Collapse,
   Dialog,
   DialogActions,
@@ -42,15 +43,20 @@ import {
   Drawer,
   FormControlLabel,
   IconButton,
+  InputAdornment,
   MenuItem,
+  Popover,
   Snackbar,
   Stack,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
+import RoomServiceOutlined from "@mui/icons-material/RoomServiceOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
@@ -67,6 +73,8 @@ import ChatBubbleOutlineOutlined from "@mui/icons-material/ChatBubbleOutlineOutl
 import { FormField } from "./formField";
 import { FieldIcon } from "./FieldIcon";
 import { fieldError, focusFirstFieldError, GUEST_RULES, hasFieldErrors, type FieldRules } from "./formRules";
+import { useCan } from "../hooks/useCan";
+import { capitalizeFullName } from "../utility/name";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
 import ShieldOutlined from "@mui/icons-material/ShieldOutlined";
 import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
@@ -80,12 +88,14 @@ import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 
 import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
+import { CurrencyEquivalent } from "./CurrencyBits";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker } from "../components/ui";
 import { useHotelProperty } from "./useHotelProperty";
-import { formatGuestMatchedBy, HOTEL_BOARD_TYPE_LABELS } from "./hotelDisplay";
+import { formatGuestMatchedBy } from "./hotelDisplay";
 import { CountStepper, DisabledReason, DRAWER_WIDTH, DrawerBody, DrawerFooter, DrawerHeader, DrawerSection } from "./hotelUi";
 import { isDocumentFile, prepareDocumentFile, useDocumentScan } from "./useDocumentScan";
 import { DocumentDropzone } from "./DocumentDropzone";
@@ -104,13 +114,15 @@ import {
   listRatePlans,
   listCorporateAccounts,
   addPayment,
+  addCharge,
+  listExtraServices,
   type HotelRoom,
   type HotelGuestSearchResult,
   type HotelGuest,
   type HotelGuestDocumentScan,
   type HotelReservationConflict,
 } from "../api/hotel";
-import { getErrorCode, getErrorMessage } from "../api/client";
+import { ApiError, getErrorCode, getErrorMessage } from "../api/client";
 import {
   subscribeQuickBookingRequest,
   getQuickBookingRequestSnapshot,
@@ -134,6 +146,26 @@ export interface CreateBookingButtonProps {
    */
   hideTrigger?: boolean;
 }
+
+/** Телефон и номер документа обязательны: отель регистрирует гостя по паспорту и связывается по телефону. */
+const PHONE_REQUIRED: FieldRules = { ...GUEST_RULES.phone, required: true };
+const ID_REQUIRED: FieldRules = { ...GUEST_RULES.idNumber, required: true };
+const PASSPORT_REQUIRED: FieldRules = { ...GUEST_RULES.docNumber, required: true };
+
+/** Какие приёмы пищи нужны для вида питания — чтобы погасить недоступные в номере. */
+const BOARD_MEALS: Record<string, string[]> = {
+  breakfast: ["breakfast"],
+  half_board: ["breakfast", "dinner"],
+  full_board: ["breakfast", "lunch", "dinner"],
+  all_inclusive: ["all_inclusive"],
+};
+const BOARD_HINTS: Record<string, string> = {
+  none: "Только проживание",
+  breakfast: "Завтрак каждый день",
+  half_board: "Завтрак и ужин",
+  full_board: "Завтрак, обед и ужин",
+  all_inclusive: "Питание и напитки весь день",
+};
 
 interface ExtraRoom {
   key: number;
@@ -238,6 +270,12 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // Групповая бронь: дополнительные номера на те же даты и с тем же питанием,
   // заказчик один. Бэк принимает несколько items в одной брони.
   const [extraRooms, setExtraRooms] = React.useState<ExtraRoom[]>([]);
+  // Допуслуги к брони: id услуги → количество. Сразу после создания уходят в счёт.
+  const [serviceQty, setServiceQty] = React.useState<Record<number, number>>({});
+  const canCharge = useCan("hotel.payments.manage");
+  // Своя сумма за проживание ("" — расчётная по тарифу) и поповер её правки.
+  const [manualTotal, setManualTotal] = React.useState("");
+  const [totalAnchor, setTotalAnchor] = React.useState<HTMLElement | null>(null);
 
   const reset = React.useCallback(() => {
     setGuestName("");
@@ -284,6 +322,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setCompanyInfo("");
     setDataConsent(false);
     setExtraRooms([]);
+    setServiceQty({});
+    setManualTotal("");
     setCorporateId("");
     setSubmitError(null);
   }, [clearScanNotice]);
@@ -334,6 +374,14 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   });
   const corporateAccounts = React.useMemo(() => corporateQuery.data?.results ?? [], [corporateQuery.data]);
   const corporate = corporateAccounts.find((a) => a.id === corporateId);
+
+  const servicesQuery = useQuery({
+    queryKey: ["hotel", "extraServices", property?.id, "active"],
+    queryFn: ({ signal }) => listExtraServices(property!.id, { limit: 200 }, signal),
+    enabled: formDataEnabled && canCharge,
+    staleTime: 5 * 60_000,
+  });
+  const extraServices = React.useMemo(() => servicesQuery.data?.results ?? [], [servicesQuery.data]);
 
   // Тарифные планы объекта — выбор показываем, только если кроме основного есть ещё.
   const ratePlansQuery = useQuery({
@@ -494,6 +542,10 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRoomType]);
 
+  // Сменили номер или даты — своя сумма к ним уже не относится, возвращаемся к расчётной.
+  const stayKey = `${roomId}|${checkIn?.format("YYYY-MM-DD") ?? ""}|${checkOut?.format("YYYY-MM-DD") ?? ""}|${extraRooms.length}`;
+  React.useEffect(() => setManualTotal(""), [stayKey]);
+
   const nights = checkIn && checkOut && checkOut.isAfter(checkIn) ? checkOut.startOf("day").diff(checkIn.startOf("day"), "day") : 0;
   const typeOfRoom = (id: number | "") => {
     const room = rooms.find((r) => r.id === id);
@@ -517,7 +569,13 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // Скидка юрлица — на проживание; точную сумму после неё посчитает бэк.
   const corporateDiscount = corporate ? Number(corporate.discountPercent) : 0;
   const stayTotal = mainTotal != null ? mainTotal + extrasByCategory : null;
-  const estimatedTotal = stayTotal != null ? Math.round(stayTotal * (1 - corporateDiscount / 100) * 100) / 100 : null;
+  const computedTotal = stayTotal != null ? Math.round(stayTotal * (1 - corporateDiscount / 100) * 100) / 100 : null;
+  // «Своя сумма» за проживание: по умолчанию — расчётная, сотрудник может поставить свою.
+  const manualValue = manualTotal.trim() !== "" ? Number(manualTotal.replace(",", ".")) : null;
+  const manualActive = manualValue != null && Number.isFinite(manualValue) && manualValue >= 0 && extraRooms.length === 0;
+  const estimatedTotal = manualActive ? manualValue : computedTotal;
+  const servicesTotal = extraServices.reduce((s, x) => s + Number(x.price) * (serviceQty[x.id] ?? 0), 0);
+  const grandTotal = estimatedTotal != null ? estimatedTotal + servicesTotal : null;
   const isPrepayment = guaranteeMethod === "prepayment";
   const prepaymentMethods = catalogs?.paymentMethods ?? [];
   const effectivePrepaymentMethod = prepaymentMethod || prepaymentMethods[0]?.value || "";
@@ -527,14 +585,15 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     required: true,
     min: 1,
     validate: (v) =>
-      estimatedTotal != null && Number(v) > estimatedTotal
-        ? `Больше стоимости брони (${estimatedTotal.toLocaleString("ru-RU")} сом)`
+      grandTotal != null && Number(v) > grandTotal
+        ? `Больше стоимости брони (${grandTotal.toLocaleString("ru-RU")} сом)`
         : null,
   };
   const prepaymentError = isPrepayment ? fieldError(prepaymentAmount, prepaymentRules) : null;
   // Поля гостя и документа — та же проверка, что показывают сами поля.
   const bookingFieldsInvalid = hasFieldErrors([
-    [guestPhone, GUEST_RULES.phone],
+    [guestPhone, PHONE_REQUIRED],
+    [guestType === "resident" ? idNumber : passportNumber, guestType === "resident" ? ID_REQUIRED : PASSPORT_REQUIRED],
     [guestEmail, GUEST_RULES.email],
     [placeOfBirth, GUEST_RULES.short],
     [issuingAuthority, GUEST_RULES.short],
@@ -551,16 +610,66 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const footerSummary =
     nights > 0 ? (
       <Box>
-        <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
-          {estimatedTotal != null ? `${estimatedTotal.toLocaleString("ru-RU")} сом` : "—"}
-        </Typography>
+        <Stack direction="row" alignItems="center" gap={0.75}>
+          <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+            {grandTotal != null ? `${grandTotal.toLocaleString("ru-RU")} сом` : "—"}
+          </Typography>
+          {manualActive && computedTotal != null && computedTotal !== manualValue && (
+            <Typography variant="caption" color="text.disabled" sx={{ textDecoration: "line-through", fontVariantNumeric: "tabular-nums" }}>
+              {(computedTotal + servicesTotal).toLocaleString("ru-RU")}
+            </Typography>
+          )}
+          {grandTotal != null && extraRooms.length === 0 && (
+            <Tooltip title={manualActive ? "Своя сумма — изменить или вернуть расчётную" : "Поставить свою сумму за проживание"}>
+              <IconButton size="small" onClick={(e) => setTotalAnchor(e.currentTarget)} aria-label="Изменить сумму проживания">
+                <EditOutlined sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          )}
+          {grandTotal != null && <CurrencyEquivalent propertyId={property?.id} amount={grandTotal} baseCurrency={property?.currency || "KGS"} />}
+        </Stack>
+        <Popover
+          open={totalAnchor != null}
+          anchorEl={totalAnchor}
+          onClose={() => setTotalAnchor(null)}
+          anchorOrigin={{ vertical: "top", horizontal: "left" }}
+          transformOrigin={{ vertical: "bottom", horizontal: "left" }}
+          slotProps={{ paper: { sx: { p: 2, width: 300, borderRadius: "14px" } } }}
+        >
+          <Typography sx={{ fontWeight: 700, mb: 0.5 }}>Сумма за проживание</Typography>
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1.5 }}>
+            По тарифу — {computedTotal != null ? `${computedTotal.toLocaleString("ru-RU")} сом` : "—"}. Своя сумма разложится по ночам, в истории брони будет видно, кто её поставил.
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="Своя сумма"
+            value={manualTotal}
+            placeholder={computedTotal != null ? String(computedTotal) : ""}
+            onChange={(e) => setManualTotal(e.target.value.replace(/[^\d.,]/g, "").slice(0, 10))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") setTotalAnchor(null);
+            }}
+            slotProps={{ input: { endAdornment: <InputAdornment position="end">сом</InputAdornment> }, htmlInput: { inputMode: "decimal" } }}
+          />
+          <Stack direction="row" justifyContent="space-between" sx={{ mt: 1.5 }}>
+            <Button size="small" color="inherit" disabled={manualTotal === ""} onClick={() => setManualTotal("")}>
+              Вернуть расчётную
+            </Button>
+            <Button size="small" variant="contained" disableElevation onClick={() => setTotalAnchor(null)}>
+              Готово
+            </Button>
+          </Stack>
+        </Popover>
         <Typography variant="caption" color="text.secondary">
           {nights} {nights % 10 === 1 && nights % 100 !== 11 ? "ночь" : [2, 3, 4].includes(nights % 10) && ![12, 13, 14].includes(nights % 100) ? "ночи" : "ночей"}
-          {corporateDiscount > 0 ? ` · юрлицо −${corporateDiscount}%` : ""}
+          {manualActive ? " · своя сумма" : corporateDiscount > 0 ? ` · юрлицо −${corporateDiscount}%` : ""}
+          {servicesTotal > 0 ? ` · услуги ${servicesTotal.toLocaleString("ru-RU")}` : ""}
           {extraRooms.length > 0 ? ` · ${extraRooms.length + 1} ${extraRooms.length + 1 < 5 ? "номера" : "номеров"}` : ""}
-          {estimatedTotal != null && (!quote || extraRooms.length > 0) ? " · по тарифу категории" : ""}
-          {isPrepayment && prepaymentError == null && estimatedTotal != null
-            ? ` · предоплата ${prepaymentValue.toLocaleString("ru-RU")}, остаток ${Math.max(0, estimatedTotal - prepaymentValue).toLocaleString("ru-RU")}`
+          {!manualActive && estimatedTotal != null && (!quote || extraRooms.length > 0) ? " · по тарифу категории" : ""}
+          {isPrepayment && prepaymentError == null && grandTotal != null
+            ? ` · предоплата ${prepaymentValue.toLocaleString("ru-RU")}, остаток ${Math.max(0, grandTotal - prepaymentValue).toLocaleString("ru-RU")}`
             : ""}
         </Typography>
       </Box>
@@ -579,14 +688,18 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
 
   /**
    * Подставляет то, что прочитано с документа. Любое поле скана может быть
-   * null — такое не трогаем (контракт §4.4), форму не сбрасываем. Дата рождения
-   * и ФИО в форме брони не подставляются: у документа заезда нет dob, а имя
-   * гостя уже набрано (без него блок «Документ» не показывается).
+   * null — такое не трогаем (контракт §4.4), форму не сбрасываем. ФИО
+   * заполняется из паспорта, если ещё не набрано: так отель и работает —
+   * имя берут из документа, а не со слов гостя.
    */
   const applyScan = (scan: HotelGuestDocumentScan) => {
     const scannedType = scan.guestType === "resident" || scan.guestType === "foreign" ? scan.guestType : null;
     if (scannedType) setGuestType(scannedType);
     setScannedDocumentType(scan.documentType);
+    if (scan.fullName) {
+      const scannedName = capitalizeFullName(scan.fullName);
+      setGuestName((prev) => (prev.trim() ? prev : scannedName));
+    }
     if (scan.gender === "male" || scan.gender === "female") setGender(scan.gender);
     if (scan.placeOfBirth) setPlaceOfBirth(scan.placeOfBirth);
     if (scan.issueDate) setIssueDate(dayjs(scan.issueDate));
@@ -689,6 +802,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     if (!checkIn || !checkOut || roomId === "" || !property || guestCountError) return;
     if (prepaymentError || bookingFieldsInvalid || extrasInvalid) {
       setShowErrors(true);
+      setDocumentFieldsVisible(true);
       setSubmitError("Проверьте поля, отмеченные красным");
       focusFirstFieldError();
       return;
@@ -698,7 +812,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     try {
       const documentType = scannedDocumentType ?? (guestType === "resident" ? "id_card" : "passport");
       const documentNumber = guestType === "resident" ? orUndefined(idNumber) : orUndefined(passportNumber);
-      const reservation = await createReservation({
+      const payload: Parameters<typeof createReservation>[0] = {
         propertyId: property.id,
         source: bookingSource || "direct",
         guaranteeMethod: guaranteeMethod || undefined,
@@ -757,7 +871,20 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
             guests: [],
           })),
         ],
-      });
+      };
+      if (manualActive) payload.items[0] = { ...payload.items[0], manualTotal: manualValue.toFixed(2) };
+      let manualRejected = false;
+      let reservation;
+      try {
+        reservation = await createReservation(payload);
+      } catch (createErr) {
+        // Старый бэкенд не знает manualTotal (400 unknown field) — бронь всё равно создаём по расчётной цене.
+        const unknownField =
+          manualActive && createErr instanceof ApiError && createErr.status === 400 && /manualTotal|unknown field/i.test(`${createErr.message} ${JSON.stringify(createErr.payload ?? "")}`);
+        if (!unknownField) throw createErr;
+        manualRejected = true;
+        reservation = await createReservation({ ...payload, items: payload.items.map((it) => ({ ...it, manualTotal: undefined })) });
+      }
 
       const createdGuestId = reservation.items[0]?.guests[0]?.id;
       if (passportPhotoFile && createdGuestId != null) {
@@ -774,6 +901,19 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           await uploadStayDocumentPhotoBack(reservation.id, createdGuestId, backPhotoFile);
         } catch {
           // no-op
+        }
+      }
+
+      // Допуслуги — сразу в счёт брони; сбой одной не откатывает бронь, а честно
+      // говорит, сколько не записалось.
+      let chargesFailed = 0;
+      for (const service of extraServices) {
+        const qty = serviceQty[service.id] ?? 0;
+        if (qty <= 0) continue;
+        try {
+          await addCharge(reservation.id, { serviceId: service.id, quantity: String(qty), date: checkIn.format("YYYY-MM-DD") });
+        } catch {
+          chargesFailed += 1;
         }
       }
 
@@ -798,8 +938,12 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
       void queryClient.invalidateQueries({ queryKey: ["hotel", "dashboard"] });
       setOpen(false);
       setToast(
-        prepaymentFailed
+        manualRejected
+          ? { text: `Бронь №${reservation.number} создана по расчётной цене: свою сумму сервер начнёт принимать после обновления.`, severity: "warning" }
+          : prepaymentFailed
           ? { text: `Бронь №${reservation.number} создана, но предоплату записать не удалось (${prepaymentFailed}). Внесите её в карточке брони.`, severity: "warning" }
+          : chargesFailed > 0
+          ? { text: `Бронь №${reservation.number} создана, но ${chargesFailed} из допуслуг не записались. Добавьте их на вкладке «Проживание и услуги».`, severity: "warning" }
           : { text: `Бронь №${reservation.number} для «${guestName.trim()}» добавлена в шахматку`, severity: "success" },
       );
       reset();
@@ -833,6 +977,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     specialRequests.trim() !== "" ||
     companyInfo.trim() !== "" ||
     corporateId !== "" ||
+    Object.values(serviceQty).some((q) => q > 0) ||
     extraRooms.length > 0 ||
     passportPhotoFile !== null;
 
@@ -872,7 +1017,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           sx: { width: DRAWER_WIDTH, maxWidth: "100vw", display: "flex", flexDirection: "column", backgroundImage: "none" },
         }}
       >
-        <DrawerHeader title="Новая бронь" subtitle="Обязательны только номер, даты и гость" onClose={requestClose} />
+        <DrawerHeader title="Новая бронь" subtitle="Обязательны номер, даты, гость, телефон и паспорт" onClose={requestClose} />
 
         <DrawerBody>
             {submitError && <Alert severity="error">{submitError}</Alert>}
@@ -1053,22 +1198,98 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                   </MenuItem>
                 ))}
               </TextField>
-              <TextField
-                select
-                label="Питание"
-                value={boardType}
-                onChange={(e) => setBoardType(e.target.value)}
-                slotProps={{ input: { startAdornment: <FieldIcon icon={<RestaurantOutlined />} /> } }}
-                sx={{ flex: 1 }}
-              >
-                <MenuItem value="">Не указан</MenuItem>
-                {(catalogs?.boardTypes ?? []).map((c) => (
-                  <MenuItem key={c.value} value={c.value}>
-                    {c.label}
-                  </MenuItem>
-                ))}
-              </TextField>
             </Stack>
+            {/* Питание — чипами: несколько приёмов пищи (завтрак + ужин и т.д.) читаются сразу.
+                Недоступное в номере погашено. */}
+            <Box>
+              <Stack direction="row" alignItems="center" gap={0.75} sx={{ mb: 0.75 }}>
+                <RestaurantOutlined sx={{ fontSize: 16, color: "text.secondary" }} />
+                <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                  Питание
+                </Typography>
+              </Stack>
+              <Stack direction="row" gap={0.75} flexWrap="wrap">
+                {[{ value: "none", label: "Без питания" }, ...(catalogs?.boardTypes ?? []).filter((c) => c.value !== "none")].map((c) => {
+                  const roomMeals = selectedRoom?.mealOptions ?? [];
+                  const unavailable =
+                    c.value !== "none" &&
+                    roomMeals.length > 0 &&
+                    !roomMeals.includes("all_inclusive") &&
+                    (BOARD_MEALS[c.value] ?? []).some((m) => !roomMeals.includes(m));
+                  const active = (boardType || "none") === c.value;
+                  return (
+                    <Tooltip key={c.value} title={unavailable ? "В этом номере такого питания нет" : (BOARD_HINTS[c.value] ?? "")}>
+                      <span>
+                        <Chip
+                          label={c.label}
+                          color={active ? "primary" : "default"}
+                          variant={active ? "filled" : "outlined"}
+                          disabled={unavailable}
+                          onClick={() => setBoardType(c.value === "none" ? "" : c.value)}
+                        />
+                      </span>
+                    </Tooltip>
+                  );
+                })}
+              </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                {BOARD_HINTS[boardType || "none"] ?? ""}
+              </Typography>
+            </Box>
+
+            {/* Допуслуги к брони — из справочника, с количеством; уйдут в счёт сразу после создания. */}
+            {canCharge && extraServices.length > 0 && (
+              <Box>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ mb: 0.75 }}>
+                  <Stack direction="row" alignItems="center" gap={0.75}>
+                    <RoomServiceOutlined sx={{ fontSize: 16, color: "text.secondary" }} />
+                    <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                      Допуслуги
+                    </Typography>
+                  </Stack>
+                  {servicesTotal > 0 && (
+                    <Typography variant="caption" fontWeight={700} sx={{ fontVariantNumeric: "tabular-nums" }}>
+                      {servicesTotal.toLocaleString("ru-RU")} сом
+                    </Typography>
+                  )}
+                </Stack>
+                <Stack gap={0.75}>
+                  {extraServices.map((service) => {
+                    const qty = serviceQty[service.id] ?? 0;
+                    const setQty = (n: number) => setServiceQty((cur) => ({ ...cur, [service.id]: Math.max(0, Math.min(99, n)) }));
+                    return (
+                      <Stack
+                        key={service.id}
+                        direction="row"
+                        alignItems="center"
+                        gap={1}
+                        sx={{ px: 1.25, py: 0.5, borderRadius: "10px", border: 1, borderColor: qty > 0 ? "primary.main" : "divider" }}
+                      >
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap>
+                            {service.name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {Number(service.price).toLocaleString("ru-RU")} сом
+                            {qty > 1 ? ` × ${qty} = ${(Number(service.price) * qty).toLocaleString("ru-RU")} сом` : ""}
+                          </Typography>
+                        </Box>
+                        <IconButton size="small" onClick={() => setQty(qty - 1)} disabled={qty === 0} aria-label={`Меньше: ${service.name}`}>
+                          <RemoveOutlined fontSize="small" />
+                        </IconButton>
+                        <Typography sx={{ minWidth: 20, textAlign: "center", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{qty}</Typography>
+                        <IconButton size="small" onClick={() => setQty(qty + 1)} aria-label={`Больше: ${service.name}`}>
+                          <AddOutlined fontSize="small" />
+                        </IconButton>
+                      </Stack>
+                    );
+                  })}
+                </Stack>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                  Сразу попадут в счёт брони; добавить или отменить можно и потом, в карточке брони.
+                </Typography>
+              </Box>
+            )}
             {(() => {
               // Планы для выбранной категории (пустой roomTypeIds — для всех).
               const typeId = selectedRoomType?.id;
@@ -1142,11 +1363,6 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 </TextField>
               </Stack>
             )}
-            {selectedRoom && selectedRoom.mealOptions.length > 0 && (
-              <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
-                В номере доступно: {selectedRoom.mealOptions.map((m) => HOTEL_BOARD_TYPE_LABELS[m] ?? m).join(", ")}
-              </Typography>
-            )}
             </DrawerSection>
 
             <DrawerSection label="Гость">
@@ -1215,7 +1431,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
               <Stack direction="row" gap={2}>
                 <FormField
                   icon={<PhoneOutlined />}
-                  rules={GUEST_RULES.phone}
+                  rules={PHONE_REQUIRED}
                   showErrors={showErrors}
                   label="Телефон"
                   placeholder="+996 700 000 000"
@@ -1265,9 +1481,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
 
             {/* Как в реальной форме секция услуг открывается только с выбранным
                 пациентом — документ и допполя появляются только когда есть гость. */}
-            {guestName.trim() !== "" && (
+            {(
               <>
-                <DrawerSection label="Документ · необязательно">
+                <DrawerSection label="Документ гостя — паспорт обязателен">
 
                     {/* Тип документа — выбираем ДО фото: от него зависит, сколько сторон грузить
                         (ID-карта резидента — лицевая и оборотная, загранпаспорт иностранца — один
@@ -1425,7 +1641,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                             <Stack direction="row" gap={2}>
                               <FormField
                                 icon={<BadgeOutlined />}
-                                rules={GUEST_RULES.idNumber}
+                                rules={ID_REQUIRED}
                                 showErrors={showErrors}
                                 label="Паспорт (ID-карта)"
                                 value={idNumber}
@@ -1466,7 +1682,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                               />
                               <FormField
                                 icon={<BadgeOutlined />}
-                                rules={GUEST_RULES.docNumber}
+                                rules={PASSPORT_REQUIRED}
                                 showErrors={showErrors}
                                 label="Номер загранпаспорта"
                                 value={passportNumber}

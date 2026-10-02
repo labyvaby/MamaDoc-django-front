@@ -181,6 +181,17 @@ export interface HotelProperty {
   roomsCount: number;
   createdAt: string;
   updatedAt: string;
+  /** Реквизиты для счёта и справки — приходят, когда бэкенд их хранит (контракт §6). */
+  legalName?: string;
+  legalAddress?: string;
+  inn?: string;
+  okpo?: string;
+  taxAuthority?: string;
+  bankName?: string;
+  bankAccount?: string;
+  bik?: string;
+  directorName?: string;
+  accountantName?: string;
 }
 
 export interface HotelPropertyCreateData {
@@ -195,6 +206,16 @@ export interface HotelPropertyCreateData {
   checkOutTime?: string;
   houseRules?: string;
   allowCheckoutWithDebt?: boolean;
+  legalName?: string;
+  legalAddress?: string;
+  inn?: string;
+  okpo?: string;
+  taxAuthority?: string;
+  bankName?: string;
+  bankAccount?: string;
+  bik?: string;
+  directorName?: string;
+  accountantName?: string;
 }
 
 export interface HotelPropertyUpdateData extends Partial<HotelPropertyCreateData> {
@@ -698,10 +719,11 @@ export interface HotelChargeCreateData {
   price?: Money;
   /** > 0, до трёх знаков. */
   quantity: string;
-  date?: string;
+  /** Дата услуги (обязательна). */
+  date: string;
   comment?: string;
-  /** Версия брони: расхождение — 409 VERSION_CONFLICT. */
-  version: number;
+  /** Версия брони: расхождение — 409 VERSION_CONFLICT. Без неё проверка не делается. */
+  version?: number;
 }
 
 /** Право hotel.payments.manage. Нельзя для отменённой брони и no-show (409 INVALID_TRANSITION). */
@@ -1168,6 +1190,10 @@ export interface HotelCalendarItem {
   totalAmount: Money;
   isOverbooking: boolean;
   boardType: string;
+  /** Оплаты по брони — появятся в календаре после доработки бэка; пока долг берётся из списка броней (useStayBalances). */
+  paidAmount?: Money;
+  balanceDue?: Money;
+  currency?: string;
 }
 
 export interface HotelRoomBlock {
@@ -1303,6 +1329,12 @@ export interface HotelReservationNight {
   /** Цена этой ночи, замороженная на момент создания/правки брони. */
   price: Money;
   ratePlanName: string;
+  /** Расчётная цена по тарифу — приходит, когда бэкенд умеет ручную цену (контракт §4). */
+  basePrice?: Money;
+  /** Скидка ночи суммой (по discountPercent номера). */
+  discount?: Money;
+  /** Цену ночи поставил сотрудник. Наличие поля — признак, что правка цены доступна. */
+  isManual?: boolean;
 }
 
 export interface HotelReservationItemInput {
@@ -1315,6 +1347,8 @@ export interface HotelReservationItemInput {
   ratePlanId?: number | null;
   boardType?: string;
   guests?: HotelReservationGuestInput[];
+  /** Своя сумма за номер вместо расчётной (контракт §4). */
+  manualTotal?: Money;
 }
 
 export interface HotelReservationItem {
@@ -1475,6 +1509,8 @@ export interface HotelItemUpdateData {
   guests?: HotelReservationGuestInput[];
   reprice?: boolean;
   allowOverbooking?: boolean;
+  /** Своя сумма за номер — бэкенд разложит по ночам (контракт §4). */
+  manualTotal?: Money;
 }
 
 export interface HotelFreeRoom {
@@ -1664,6 +1700,10 @@ export interface HotelPayment {
   acceptedByName: string;
   acceptedAt: string;
   createdAt: string;
+  /** Сумма в валюте объекта — когда гость платил в другой валюте (контракт §5). */
+  amountBase?: Money;
+  exchangeRate?: string | null;
+  baseCurrency?: string;
 }
 
 export interface HotelPaymentList {
@@ -1685,6 +1725,10 @@ export interface HotelPaymentCreateData {
   acceptedAt?: string;
   /** Необязательно — тот же справочник, что у оплаты приёма. Для refund без явного значения наследуется способ последнего платежа. */
   cashlessMethodId?: number | null;
+  /** Валюта, которой платит гость (контракт §5); без поля — валюта объекта. */
+  currency?: string;
+  /** Курс к валюте объекта; без поля — текущий курс объекта. */
+  exchangeRate?: string;
 }
 
 export function listPayments(reservationId: number, signal?: AbortSignal): Promise<HotelPaymentList> {
@@ -2474,4 +2518,135 @@ export function listCityEvents(
 /** POST /v2/hotel/city-events/ — событие, добавленное вручную (isManual: true в ответе). */
 export function createCityEvent(data: HotelCityEventCreateData): Promise<HotelCityEvent> {
   return apiRequest<HotelCityEvent>("/v2/hotel/city-events/", { method: "POST", body: data });
+}
+
+// ── График персонала: посты и смены ───────────────────────────────────────
+//
+// Контракт — docs/hotel-backend-requests-2026-10-02.md §1–3. Пока бэкенд
+// отвечает 404, страница «График персонала» показывает пример по таблице
+// отеля (staffRosterDemo.ts) — как «События» до своего эндпоинта.
+
+export type HotelStaffRole = "housekeeping" | "reception" | "kitchen" | "maintenance" | "other";
+
+export interface HotelStaffPost {
+  id: number;
+  propertyId: number;
+  name: string;
+  role: HotelStaffRole;
+  /** Этажи поста (значения Room.floor) — у горничных; по ним уборка раздаётся по графику. */
+  floors: string[];
+  /** "09:00" — начало смены по умолчанию. */
+  startTime: string;
+  /** 1–24; 24 — сутки, конец на следующий день. */
+  hours: number;
+  /** Ставка за смену в валюте объекта. */
+  rate: Money;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface HotelStaffPostData {
+  propertyId?: number;
+  name?: string;
+  role?: HotelStaffRole;
+  floors?: string[];
+  startTime?: string;
+  hours?: number;
+  rate?: Money;
+  sortOrder?: number;
+}
+
+export interface HotelStaffShift {
+  id: number;
+  propertyId: number;
+  postId: number;
+  postName: string;
+  role: HotelStaffRole;
+  date: string;
+  employeeId: number;
+  employeeName: string;
+  startsAt: string;
+  endsAt: string;
+  /** Ставка, замороженная в смене при назначении. */
+  rate: Money;
+  status: "planned" | "worked" | "absent";
+  note: string;
+}
+
+export interface HotelStaffShiftInput {
+  postId: number;
+  date: string;
+  /** null — снять смену. */
+  employeeId: number | null;
+  rate?: Money;
+  note?: string;
+  status?: HotelStaffShift["status"];
+}
+
+export function listStaffPosts(propertyId: number, signal?: AbortSignal): Promise<HotelStaffPost[]> {
+  return apiRequest<HotelStaffPost[]>(`/v2/hotel/staff-posts/${buildQuery({ propertyId })}`, { signal });
+}
+
+export function createStaffPost(data: HotelStaffPostData & { propertyId: number; name: string; role: HotelStaffRole }): Promise<HotelStaffPost> {
+  return apiRequest<HotelStaffPost>("/v2/hotel/staff-posts/", { method: "POST", body: data });
+}
+
+export function updateStaffPost(id: number, data: HotelStaffPostData): Promise<HotelStaffPost> {
+  return apiRequest<HotelStaffPost>(`/v2/hotel/staff-posts/${id}/`, { method: "PATCH", body: data });
+}
+
+export function archiveStaffPost(id: number): Promise<void> {
+  return apiRequest<void>(`/v2/hotel/staff-posts/${id}/`, { method: "DELETE" });
+}
+
+/** Смены, которые начинаются в [from, to] (обе включительно), период ≤ 62 дней. */
+export function listStaffShifts(params: { propertyId: number; from: string; to: string }, signal?: AbortSignal): Promise<HotelStaffShift[]> {
+  return apiRequest<HotelStaffShift[]>(`/v2/hotel/staff-shifts/${buildQuery(params)}`, { signal });
+}
+
+/** Пакетная правка сетки: ключ — (postId, date); employeeId: null снимает смену. */
+export function saveStaffShifts(data: { propertyId: number; shifts: HotelStaffShiftInput[]; allowOverlap?: boolean }): Promise<HotelStaffShift[]> {
+  return apiRequest<HotelStaffShift[]>("/v2/hotel/staff-shifts/", { method: "PUT", body: data });
+}
+
+// ── Валюты объекта ─────────────────────────────────────────────────────────
+//
+// Контракт — docs/hotel-backend-requests-2026-10-02.md §5. Пока 404 — выбор
+// валюты в оплате и «режим валют» не показываются.
+
+export interface HotelExchangeRate {
+  currency: string;
+  /** Сколько базовой валюты за 1 единицу. */
+  rate: string;
+  updatedAt: string | null;
+  updatedByName: string;
+}
+
+export interface HotelExchangeRates {
+  baseCurrency: string;
+  rates: HotelExchangeRate[];
+}
+
+export function getExchangeRates(propertyId: number, signal?: AbortSignal): Promise<HotelExchangeRates> {
+  return apiRequest<HotelExchangeRates>(`/v2/hotel/properties/${propertyId}/exchange-rates/`, { signal });
+}
+
+export function saveExchangeRates(propertyId: number, rates: { currency: string; rate: string }[]): Promise<HotelExchangeRates> {
+  return apiRequest<HotelExchangeRates>(`/v2/hotel/properties/${propertyId}/exchange-rates/`, { method: "PUT", body: { rates } });
+}
+
+// ── Ручная цена ночей и скидка номера ─────────────────────────────────────
+//
+// Контракт — docs/hotel-backend-requests-2026-10-02.md §4. Признак, что бэкенд
+// уже умеет: в ночах брони приходит isManual.
+
+export interface HotelItemPricingData {
+  version: number;
+  nights?: { date: string; price: Money | null }[];
+  discountPercent?: string | null;
+  reason: string;
+}
+
+export function updateItemPricing(reservationId: number, itemId: number, data: HotelItemPricingData): Promise<HotelReservationDetail> {
+  return apiRequest<HotelReservationDetail>(`/v2/hotel/reservations/${reservationId}/items/${itemId}/pricing/`, { method: "PATCH", body: data });
 }

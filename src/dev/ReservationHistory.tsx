@@ -73,9 +73,9 @@ function describe(log: HotelReservationLog): string {
   }
 }
 
-export const ReservationHistory: React.FC<{ logs: HotelReservationLog[] }> = ({ logs }) => {
+export const ReservationHistory: React.FC<{ logs: HotelReservationLog[]; defaultOpen?: boolean }> = ({ logs, defaultOpen = false }) => {
   const theme = useTheme();
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = React.useState(defaultOpen);
   if (logs.length === 0) return null;
   // Новые сверху.
   const sorted = [...logs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
