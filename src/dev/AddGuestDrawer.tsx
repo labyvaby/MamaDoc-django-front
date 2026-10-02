@@ -107,6 +107,11 @@ const MotionBox = motion(Box);
 /** Ограничение на фото — как в CreateBookingButton (§4.3 контракта): ≤10 МБ. */
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
+/** Телефон и номер документа обязательны: гостя регистрируют по паспорту и связываются по телефону. */
+const PHONE_REQUIRED = { ...GUEST_RULES.phone, required: true } as const;
+const ID_REQUIRED = { ...GUEST_RULES.idNumber, required: true } as const;
+const PASSPORT_REQUIRED = { ...GUEST_RULES.docNumber, required: true } as const;
+
 /** "" → undefined — необязательные текстовые поля не должны улетать пустыми строками. */
 const orUndefined = (value: string): string | undefined => (value.trim() ? value.trim() : undefined);
 
@@ -593,7 +598,8 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     // Имя и причину чёрного списка ведёт useFormValidation (он и фокусирует
     // первое пустое), формат телефона и документа — правила FormField.
     const fieldsInvalid = hasFieldErrors([
-      [phone, GUEST_RULES.phone],
+      [phone, PHONE_REQUIRED],
+      [guestType === "resident" ? idNumber : passportNumber, guestType === "resident" ? ID_REQUIRED : PASSPORT_REQUIRED],
       [placeOfBirth, GUEST_RULES.short],
       [issuingAuthority, GUEST_RULES.short],
       [guestType === "resident" ? idNumber : "", GUEST_RULES.idNumber],
@@ -606,6 +612,8 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     const requiredOk = v.validate();
     if (!requiredOk || fieldsInvalid) {
       setShowErrors(true);
+      // Номер документа обязателен — раскрываем поля, чтобы было видно, что заполнить.
+      setDocumentFieldsVisible(true);
       if (requiredOk) focusFirstFieldError();
       return;
     }
@@ -811,7 +819,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                 />
                 <FormField
                   icon={<PhoneOutlined />}
-                  rules={GUEST_RULES.phone}
+                  rules={PHONE_REQUIRED}
                   showErrors={showErrors}
                   label="Телефон"
                   value={phone}
@@ -826,7 +834,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
 
             {/* ── Документ ── */}
             <MotionBox variants={cascadeItem}>
-              <DrawerSection label="Документ · необязательно">
+              <DrawerSection label="Документ — паспорт обязателен">
 
                 {/* Тип документа — выбираем ДО фото: от него зависит, сколько сторон грузить
                     (ID-карта резидента — лицевая и оборотная, загранпаспорт иностранца — один
@@ -1001,7 +1009,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                         <Stack direction="row" gap={2}>
                           <FormField
                             icon={<BadgeOutlined />}
-                            rules={GUEST_RULES.idNumber}
+                            rules={ID_REQUIRED}
                             showErrors={showErrors}
                             label="Паспорт (ID-карта)"
                             value={idNumber}
@@ -1046,7 +1054,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                           />
                           <FormField
                             icon={<BadgeOutlined />}
-                            rules={GUEST_RULES.docNumber}
+                            rules={PASSPORT_REQUIRED}
                             showErrors={showErrors}
                             label="Номер загранпаспорта"
                             value={passportNumber}

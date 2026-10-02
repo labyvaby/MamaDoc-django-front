@@ -698,10 +698,11 @@ export interface HotelChargeCreateData {
   price?: Money;
   /** > 0, до трёх знаков. */
   quantity: string;
-  date?: string;
+  /** Дата услуги (обязательна). */
+  date: string;
   comment?: string;
-  /** Версия брони: расхождение — 409 VERSION_CONFLICT. */
-  version: number;
+  /** Версия брони: расхождение — 409 VERSION_CONFLICT. Без неё проверка не делается. */
+  version?: number;
 }
 
 /** Право hotel.payments.manage. Нельзя для отменённой брони и no-show (409 INVALID_TRANSITION). */
