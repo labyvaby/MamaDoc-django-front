@@ -32,7 +32,6 @@ import {
   Avatar,
   Box,
   Button,
-  Checkbox,
   Chip,
   Collapse,
   Dialog,
@@ -41,7 +40,6 @@ import {
   DialogContentText,
   DialogTitle,
   Drawer,
-  FormControlLabel,
   IconButton,
   InputAdornment,
   MenuItem,
@@ -100,6 +98,9 @@ import { formatGuestMatchedBy } from "./hotelDisplay";
 import { CountStepper, DisabledReason, DRAWER_WIDTH, DrawerBody, DrawerFooter, DrawerHeader, DrawerSection } from "./hotelUi";
 import { isDocumentFile, prepareDocumentFile, useDocumentScan } from "./useDocumentScan";
 import { DocumentDropzone } from "./DocumentDropzone";
+import { DocumentScanPanel } from "./DocumentScanPanel";
+import { GuestConsentField, useConsentGate } from "./GuestConsent";
+import { useConsentTemplate } from "./hotelConsent";
 import {
   getHotelCatalogs,
   listRooms,
@@ -253,8 +254,10 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     available: scanAvailable,
     scanning,
     scanProgress,
+    scanOutcome,
     notice: scanNotice,
     clearNotice: clearScanNotice,
+    cancelScan,
     scan: runDocumentScan,
   } = useDocumentScan();
   // Растёт при каждом сбросе формы — по нему отбрасываем результат
@@ -268,6 +271,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // Юрлицо из справочника: скидка идёт на проживание, бэк сам пересчитает сумму.
   const [corporateId, setCorporateId] = React.useState<number | "">("");
   const [dataConsent, setDataConsent] = React.useState(false);
+  // Без согласия гостя фото паспорта не прикрепляется и не распознаётся — сначала окно с текстом согласия.
+  const consentGate = useConsentGate(dataConsent, setDataConsent, guestName.trim() || undefined);
+  const consentTemplate = useConsentTemplate(property?.id);
   // Групповая бронь: дополнительные номера на те же даты и с тем же питанием,
   // заказчик один. Бэк принимает несколько items в одной брони.
   const [extraRooms, setExtraRooms] = React.useState<ExtraRoom[]>([]);
@@ -317,6 +323,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setBackPhotoPreview(null);
     setPhotoError(null);
     scanGenerationRef.current += 1;
+    cancelScan();
     clearScanNotice();
     setBookingSource("");
     setSpecialRequests("");
@@ -327,7 +334,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setManualTotal("");
     setCorporateId("");
     setSubmitError(null);
-  }, [clearScanNotice]);
+  }, [clearScanNotice, cancelScan]);
 
   // Данные формы нужны только когда она открыта. Раньше три запроса ниже
   // уходили сразу при загрузке страницы (форма закрыта) и конкурировали с
@@ -758,6 +765,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     if (passportPhotoPreview) URL.revokeObjectURL(passportPhotoPreview);
     setPassportPhotoFile(null);
     setPassportPhotoPreview(null);
+    cancelScan();
     clearScanNotice();
     // Крестик мог убрать фото прямо во время распознавания — отбрасываем его результат,
     // когда он всё же придёт (та же защита, что и при сбросе формы).
@@ -824,6 +832,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         companyInfo: orUndefined(companyInfo) ?? "",
         corporateAccountId: corporateId === "" ? undefined : corporateId,
         dataConsent,
+        dataConsentVersion: dataConsent ? consentTemplate.version : undefined,
         allowOverbooking,
         items: [
           {
@@ -1530,15 +1539,18 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         ширины), у иностранца одна на всю ширину. Лицевая (или единственная у
                         иностранца) распознаётся и грузится как раньше — поля ниже появляются
                         только после неё (или ручного «Заполнить вручную»). */}
-                    {guestType === "resident" ? (
+                    {/* Согласие — до фото: без него паспорт не прикрепляется (useConsentGate). */}
+                    <GuestConsentField checked={dataConsent} onChange={setDataConsent} guestName={guestName.trim() || undefined} />
+
+                    {scanning ? (
+                      <DocumentScanPanel preview={passportPhotoPreview} progress={scanProgress} outcome={scanOutcome} onCancel={removePhoto} />
+                    ) : guestType === "resident" ? (
                       <Stack direction="row" gap={1.5}>
                         <DocumentDropzone
                           file={passportPhotoFile}
                           preview={passportPhotoPreview}
-                          scanning={scanning}
-                          scanProgress={scanProgress}
                           label="Перетащите лицевую сторону сюда либо нажмите и выберите файл"
-                          onFile={(file) => void handlePhotoChange(file)}
+                          onFile={(file) => consentGate.request(() => void handlePhotoChange(file))}
                           onRemove={removePhoto}
                           sx={{ flex: 1 }}
                         />
@@ -1546,7 +1558,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                           file={backPhotoFile}
                           preview={backPhotoPreview}
                           label="Перетащите оборотную сторону сюда либо нажмите и выберите файл"
-                          onFile={(file) => void handleBackPhotoChange(file)}
+                          onFile={(file) => consentGate.request(() => void handleBackPhotoChange(file))}
                           onRemove={removeBackPhoto}
                           sx={{ flex: 1 }}
                         />
@@ -1555,10 +1567,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                       <DocumentDropzone
                         file={passportPhotoFile}
                         preview={passportPhotoPreview}
-                        scanning={scanning}
-                        scanProgress={scanProgress}
                         label="Перетащите паспорт сюда либо нажмите и выберите нужный файл"
-                        onFile={(file) => void handlePhotoChange(file)}
+                        onFile={(file) => consentGate.request(() => void handlePhotoChange(file))}
                         onRemove={removePhoto}
                       />
                     )}
@@ -1811,14 +1821,6 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                       minRows={2}
                       fullWidth
                     />
-                    <FormControlLabel
-                      control={<Checkbox checked={dataConsent} onChange={(e) => setDataConsent(e.target.checked)} />}
-                      label={
-                        <Typography variant="body2" color="text.secondary">
-                          Согласие на обработку персональных данных получено
-                        </Typography>
-                      }
-                    />
                 </DrawerSection>
               </>
             )}
@@ -1837,6 +1839,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           </Button>
         </DrawerFooter>
       </Drawer>
+
+      {consentGate.dialog}
 
       {/* Подтверждение закрытия при незаполненной до конца форме — тот же
           приём, что confirmCloseOpen в реальной форме приёма. */}

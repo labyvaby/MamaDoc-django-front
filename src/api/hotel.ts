@@ -1432,6 +1432,8 @@ export interface HotelReservationCreateData {
   corporateAccountId?: number | null;
   /** Сумма, которую видел гость; при расхождении 409 PRICE_CHANGED. Для корпоративной — после скидки. */
   expectedTotal?: Money;
+  /** Редакция текста согласия, на которой гость согласился (контракт §15; сервер пока пропускает поле). */
+  dataConsentVersion?: string;
 }
 
 export interface HotelReservationLog {
@@ -1845,6 +1847,9 @@ export interface HotelGuestCreateData {
   preferences?: string;
   isVip?: boolean;
   marketingConsent?: boolean;
+  /** Согласие на хранение и обработку данных и его редакция (контракт §15; сервер пока пропускает поля). */
+  dataConsent?: boolean;
+  dataConsentVersion?: string;
 }
 
 export interface HotelGuestUpdateData extends Partial<HotelGuestCreateData> {
@@ -2701,6 +2706,30 @@ export interface HotelYieldReport {
 }
 
 /** Право — как у списка броней (hotel.view); период ≤ 366 дней. */
+// ── Текст согласия на обработку персональных данных ───────────────────────
+//
+// Контракт — docs/hotel-backend-tasks.md §15. Пока 404 — текст живёт на
+// устройстве (hotelConsent.ts, демо-режим).
+
+export interface HotelConsentTemplate {
+  /** null — своей редакции нет, фронт показывает стандартный шаблон. */
+  title: string | null;
+  body: string | null;
+  /** "1.1", "1.2"… — растёт на каждом сохранении; null — стандартный шаблон (редакция 1.0). */
+  version: string | null;
+  updatedAt: string | null;
+  updatedByName: string;
+}
+
+export function getConsentTemplate(propertyId: number, signal?: AbortSignal): Promise<HotelConsentTemplate> {
+  return apiRequest<HotelConsentTemplate>(`/v2/hotel/properties/${propertyId}/consent-template/`, { signal });
+}
+
+/** title/body: null — вернуть стандартный шаблон (редакция всё равно растёт). Право hotel.manage. */
+export function putConsentTemplate(propertyId: number, data: { title: string | null; body: string | null }): Promise<HotelConsentTemplate> {
+  return apiRequest<HotelConsentTemplate>(`/v2/hotel/properties/${propertyId}/consent-template/`, { method: "PUT", body: data });
+}
+
 export function getYieldReport(params: { propertyId: number; from: string; to: string }, signal?: AbortSignal): Promise<HotelYieldReport> {
   return apiRequest<HotelYieldReport>(`/v2/hotel/reports/yield/${buildQuery(params)}`, { signal });
 }

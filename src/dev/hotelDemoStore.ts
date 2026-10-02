@@ -1,9 +1,10 @@
 /**
  * Демо-хранилище для функций, которых ещё нет на бэкенде (курсы валют, своя
- * цена ночей, реквизиты): по просьбе заказчика всё должно работать на показе
- * уже сейчас, а данные — пока на этом устройстве (localStorage). Как только
- * бэкенд начнёт отвечать (контракт — docs/hotel-backend-tasks.md), фронт сам
- * переходит на сервер, а это хранилище перестаёт использоваться.
+ * цена ночей, реквизиты, текст согласия на обработку данных): по просьбе
+ * заказчика всё должно работать на показе уже сейчас, а данные — пока на
+ * этом устройстве (localStorage). Как только бэкенд начнёт отвечать
+ * (контракт — docs/hotel-backend-tasks.md), фронт сам переходит на сервер,
+ * а это хранилище перестаёт использоваться.
  *
  * Хранилище — только для демо: деньги и брони всегда идут через API.
  */
@@ -15,6 +16,7 @@ export const DEMO_KEYS = {
   rates: (propertyId: number) => `mamadoc:hotel-demo:rates:${propertyId}`,
   requisites: (propertyId: number) => `mamadoc:hotel-demo:requisites:${propertyId}`,
   prices: "mamadoc:hotel-demo:prices",
+  consent: (propertyId: number) => `mamadoc:hotel-demo:consent:${propertyId}`,
 } as const;
 
 export function readDemo<T>(key: string, fallback: T): T {

@@ -44,6 +44,7 @@ import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { PublicBookingSettingsCard } from "./PublicBookingSettingsCard";
 import { ExchangeRatesSettingsCard } from "./ExchangeRatesSettingsCard";
 import { RequisitesSettingsCard } from "./RequisitesSettingsCard";
+import { ConsentSettingsCard } from "./ConsentSettingsCard";
 import { updateHotelProperty, type HotelPropertyUpdateData } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 
@@ -242,6 +243,10 @@ export const HotelPropertySettingsPage: React.FC = () => {
           <Divider />
 
           <RequisitesSettingsCard property={property} />
+
+          <Divider />
+
+          <ConsentSettingsCard property={property} />
 
           <Divider />
 

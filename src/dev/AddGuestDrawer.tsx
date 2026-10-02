@@ -88,6 +88,10 @@ import { HOTEL_GUEST_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS, formatGuestMatche
 import { DRAWER_WIDTH, DrawerFooter, DrawerHeader, DrawerSection } from "./hotelUi";
 import { isDocumentFile, prepareDocumentFile, useDocumentScan } from "./useDocumentScan";
 import { DocumentDropzone } from "./DocumentDropzone";
+import { DocumentScanPanel } from "./DocumentScanPanel";
+import { GuestConsentField, useConsentGate } from "./GuestConsent";
+import { useConsentTemplate } from "./hotelConsent";
+import { useHotelProperty } from "./useHotelProperty";
 import {
   searchGuests,
   createGuest,
@@ -227,13 +231,21 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     available: scanAvailable,
     scanning,
     scanProgress,
+    scanOutcome,
     notice: scanNotice,
     clearNotice: clearScanNotice,
+    cancelScan,
     scan: runDocumentScan,
   } = useDocumentScan();
   // Растёт при каждом закрытии формы — по нему отбрасываем результат
   // распознавания, который вернулся уже в сброшенную форму.
   const scanGenerationRef = React.useRef(0);
+  // Согласие гостя на хранение и обработку данных: без него фото паспорта не
+  // прикрепляется. Уходит в карточку гостя с редакцией текста (сервер пока поля пропускает — контракт §15).
+  const [dataConsent, setDataConsent] = React.useState(false);
+  const consentGate = useConsentGate(dataConsent, setDataConsent, name.trim() || undefined);
+  const { property: consentProperty } = useHotelProperty();
+  const consentTemplate = useConsentTemplate(consentProperty?.id);
   const [isBlacklisted, setIsBlacklisted] = React.useState(false);
   const [blacklistReason, setBlacklistReason] = React.useState("");
   const [draftRestored, setDraftRestored] = React.useState(false);
@@ -355,6 +367,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     if (passportPhotoPreview) URL.revokeObjectURL(passportPhotoPreview);
     setPassportPhotoFile(null);
     setPassportPhotoPreview(null);
+    cancelScan();
     clearScanNotice();
     // Крестик мог убрать фото прямо во время распознавания — отбрасываем его результат,
     // когда он всё же придёт (та же защита, что и при закрытии формы).
@@ -387,8 +400,10 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
         return null;
       });
       scanGenerationRef.current += 1;
+      cancelScan();
       clearScanNotice();
       setScannedDocumentType(null);
+      setDataConsent(false);
       setName("");
       setPhone("");
       setGuestType("resident");
@@ -436,7 +451,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
       // Черновик уже мог нести данные документа — не прячем их обратно за кнопку.
       setDocumentFieldsVisible(true);
     }
-  }, [open, clearScanNotice]);
+  }, [open, clearScanNotice, cancelScan]);
 
   // ── сохранение черновика (защита от случайного закрытия) — фото не
   // сохраняем: File не сериализуется.
@@ -641,6 +656,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
         issuingAuthority: orUndefined(issuingAuthority),
         registrationAddress: guestType === "resident" ? orUndefined(registrationAddress) : undefined,
         source: source || undefined,
+        ...(dataConsent ? { dataConsent: true, dataConsentVersion: consentTemplate.version } : {}),
       };
       const guest = await createGuest(data);
 
@@ -867,16 +883,19 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                     ширины), у иностранца одна на всю ширину. Лицевая (или единственная у
                     иностранца) распознаётся и грузится как раньше — поля ниже появляются
                     только после неё (или ручного «Заполнить вручную»). */}
-                {guestType === "resident" ? (
+                {/* Согласие — до фото: без него паспорт не прикрепляется (useConsentGate). */}
+                <GuestConsentField checked={dataConsent} onChange={setDataConsent} guestName={name.trim() || undefined} disabled={submitting} />
+
+                {scanning ? (
+                  <DocumentScanPanel preview={passportPhotoPreview} progress={scanProgress} outcome={scanOutcome} onCancel={removePassportPhoto} />
+                ) : guestType === "resident" ? (
                   <Stack direction="row" gap={1.5}>
                     <DocumentDropzone
                       file={passportPhotoFile}
                       preview={passportPhotoPreview}
-                      scanning={scanning}
-                      scanProgress={scanProgress}
                       disabled={submitting}
                       label="Перетащите лицевую сторону сюда либо нажмите и выберите файл"
-                      onFile={(file) => void handlePickPassportPhoto(file)}
+                      onFile={(file) => consentGate.request(() => void handlePickPassportPhoto(file))}
                       onRemove={removePassportPhoto}
                       sx={{ flex: 1 }}
                     />
@@ -885,7 +904,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                       preview={backPhotoPreview}
                       disabled={submitting}
                       label="Перетащите оборотную сторону сюда либо нажмите и выберите файл"
-                      onFile={(file) => void handlePickBackPhoto(file)}
+                      onFile={(file) => consentGate.request(() => void handlePickBackPhoto(file))}
                       onRemove={removeBackPhoto}
                       sx={{ flex: 1 }}
                     />
@@ -894,11 +913,9 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                   <DocumentDropzone
                     file={passportPhotoFile}
                     preview={passportPhotoPreview}
-                    scanning={scanning}
-                    scanProgress={scanProgress}
                     disabled={submitting}
                     label="Перетащите паспорт сюда либо нажмите и выберите нужный файл"
-                    onFile={(file) => void handlePickPassportPhoto(file)}
+                    onFile={(file) => consentGate.request(() => void handlePickPassportPhoto(file))}
                     onRemove={removePassportPhoto}
                   />
                 )}
@@ -1177,6 +1194,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
             </Button>
         </DrawerFooter>
       </Box>
+      {consentGate.dialog}
     </Drawer>
   );
 };
