@@ -29,6 +29,7 @@ import { Sidebar } from "./components/sidebar";
 import { PatientSessionProvider } from "./pages/public-booking/PatientSession";
 import { AchievementToast } from "./components/achievements/AchievementToast";
 import { NewBookingToast } from "./components/bookings/NewBookingToast";
+import { NewVersionNotice } from "./components/NewVersionNotice";
 import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
 import { FloatingTopBanners } from "./components/layout/FloatingTopBanners";
 import { ClinicOnly } from "./components/layout/ClinicOnly";
@@ -553,6 +554,8 @@ function App() {
                                     </ClinicOnly>
                                      <Outlet />
                                      <FloatingTopBanners />
+                                     {/* После деплоя — мягкое «обновите страницу» (ресепшен не закрывает вкладку сутками). */}
+                                     <NewVersionNotice />
                                   </>
                                 </DjangoContextRemount>
                                 <ClinicOnly>
