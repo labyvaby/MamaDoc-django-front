@@ -30,6 +30,7 @@ import { PatientSessionProvider } from "./pages/public-booking/PatientSession";
 import { AchievementToast } from "./components/achievements/AchievementToast";
 import { NewBookingToast } from "./components/bookings/NewBookingToast";
 import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
+import { IncomingTransfersBanner } from "./components/storage/IncomingTransfersBanner";
 import { FloatingTopBanners } from "./components/layout/FloatingTopBanners";
 import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
@@ -68,6 +69,7 @@ const UnderConstruction = lazy(() =>
   import("./pages/placeholder").then((m) => ({ default: m.UnderConstruction })),
 );
 const DashboardPage = lazy(() => import("./pages/dashboard"));
+const ModulesCatalogPage = lazy(() => import("./pages/settings/ModulesCatalogPage"));
 const EmployeesPage = lazy(() => import("./pages/employes"));
 const ServicesPage = lazy(() => import("./pages/services/DjangoServicesPage"));
 const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
@@ -75,6 +77,7 @@ const DjangoProductsPage = lazy(() => import("./pages/products/django"));
 const DjangoInventoryPage = lazy(() => import("./pages/inventory/django"));
 const ProcurementInvoicesPage = lazy(() => import("./pages/procurement"));
 const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
+const DjangoLabPage = lazy(() => import("./pages/lab/django"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
 const DjangoSchedulePage = lazy(() => import("./pages/schedule/django"));
 const DjangoWorkShiftsPage = lazy(() => import("./pages/work-shifts/django"));
@@ -100,8 +103,10 @@ const CleaningSettingsPage = lazy(() => import("./pages/settings/CleaningSetting
 const AnnouncementsSettingsPage = lazy(() => import("./pages/settings/AnnouncementsSettingsPage"));
 const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
+const RealEstateChessboardPage = lazy(() => import("./pages/realestate"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
+const ReviewShortLinkPage = lazy(() => import("./pages/reviews/ShortLinkPage"));
 const PublicBookSpecialtiesPage = lazy(() => import("./pages/public-booking/SpecialtiesPage"));
 const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsPage"));
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
@@ -117,6 +122,7 @@ const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
 const PatientsPage = lazy(() => import("./pages/patients"));
 const ClientsPage = lazy(() => import("./pages/clients"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
+const NotificationGatewaySettingsPage = lazy(() => import("./pages/settings/django/NotificationGatewaySettingsPage"));
 const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
 const OrganizationSettingsPage = lazy(() => import("./pages/settings/OrganizationSettingsPage"));
@@ -133,6 +139,7 @@ const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
 const OdoctorSettingsPage = lazy(() => import("./pages/settings/OdoctorSettingsPage"));
+const LabSettingsPage = lazy(() => import("./pages/settings/LabSettingsPage"));
 const ChatwootLeadsSettingsPage = lazy(() => import("./pages/settings/ChatwootLeadsSettingsPage"));
 const AltegioSettingsPage = lazy(() => import("./pages/settings/AltegioSettingsPage"));
 const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
@@ -168,6 +175,7 @@ const RootRedirect = () => {
     canOpenModule: moduleGate,
     hasActiveEmployee: activeEmployee != null,
     defaultHomeRoute: activeOrganization?.themeConfig?.defaultHomeRoute,
+    vertical: activeOrganization?.vertical,
   });
   return <Navigate to={path} replace />;
 };
@@ -329,6 +337,11 @@ function App() {
                         name: "sales",
                         list: "/sales",
                         meta: { label: "Продажи" }
+                      },
+                      {
+                        name: "lab",
+                        list: "/lab",
+                        meta: { label: "Лаборатория" }
                       },
                       {
                         name: "storage",
@@ -560,6 +573,8 @@ function App() {
                                 <DjangoContextRemount>
                                   <>
                                     <AnnouncementBanner />
+                                    {/* Коробка с другой точки ждёт приёмки — на любом экране получателя. */}
+                                    <IncomingTransfersBanner />
                                      <Outlet />
                                      <FloatingTopBanners />
                                   </>
@@ -793,6 +808,16 @@ function App() {
                           }
                         />
                         <Route
+                          path="lab"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.lab}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoLabPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="cashbox"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.cashbox}>
@@ -843,6 +868,16 @@ function App() {
                           }
                         />
                         <Route
+                          path="settings/notification-gateway"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.notificationGateway}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <NotificationGatewaySettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="settings/automations"
                           element={
                             <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.automations}>
@@ -858,6 +893,16 @@ function App() {
                             <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.odoctor}>
                               <Suspense fallback={<LinearProgress />}>
                                 <OdoctorSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="settings/lab"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.lab}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <LabSettingsPage />
                               </Suspense>
                             </RequirePermission>
                           }
@@ -927,6 +972,7 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            <Route path="settings/modules" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.modules}><Suspense fallback={<LinearProgress />}><ModulesCatalogPage /></Suspense></RequirePermission>} />
                             <Route path="settings/store" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.store}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
                             <Route path="settings/pos-module" element={<Navigate to="/settings/store" replace />} />
                             <Route path="settings/procurement" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.procurement}><Suspense fallback={<LinearProgress />}><ProcurementSettingsPage /></Suspense></RequirePermission>} />
@@ -1210,6 +1256,17 @@ function App() {
                                 </RequireModule>
                               }
                             />
+                            {/* Квартиры и шахматка застройщика — вертикаль realestate, модуль бэка realty. */}
+                            <Route
+                              path="realestate/chessboard"
+                              element={
+                                <RequireModule module="realty">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <RealEstateChessboardPage />
+                                  </Suspense>
+                                </RequireModule>
+                              }
+                            />
                             <Route
                               path="knowledge/:articleId"
                               element={
@@ -1221,14 +1278,19 @@ function App() {
                               }
                             />
                             <Route
-                              path="reviews/settings"
+                              path="settings/reviews"
                               element={
-                                <RequirePermission permission="reviews.manage">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.reviews}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <ReviewsSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }
+                            />
+                            {/* Старый адрес — закладки и ссылки из сообщений. */}
+                            <Route
+                              path="reviews/settings"
+                              element={<Navigate to="/settings/reviews" replace />}
                             />
                             <Route
                               path="settings/diagnoses"
@@ -1302,6 +1364,14 @@ function App() {
                       <Route
                         path="update-password"
                         element={<Navigate to="/profile" replace />}
+                      />
+                      <Route
+                        path="r/:code"
+                        element={
+                          <Suspense fallback={<LinearProgress />}>
+                            <ReviewShortLinkPage />
+                          </Suspense>
+                        }
                       />
                       <Route
                         path="review/:token"

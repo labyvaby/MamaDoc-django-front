@@ -939,44 +939,53 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
         renderItems.push(current);
 
-        if (!isCancelled && i + 1 < sorted.length) {
-          const next = sorted[i + 1];
-          if (!isCancelledStatus(next.status)) {
-            const currentEnd = appointmentEnd(current);
-            const gapMs = dayjs(next.scheduledAt).valueOf() - currentEnd.valueOf();
-            if (gapMs >= GAP_THRESHOLD_MS && currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
-              const nextStart = dayjs(next.scheduledAt);
-              const shiftSegment = shiftSegments?.find((s) => {
-                const currentHm = currentEnd.format("HH:mm");
-                return currentHm >= s.start && currentHm < s.end;
-              });
-              const gapSlot = shiftSegment
-                ? firstFreeSlotAtOrAfter(
-                    date ?? currentEnd,
-                    shiftSegment,
-                    activeIntervals,
-                    currentEnd,
-                    nextStart,
-                  )
-                : firstFreeSlotAtOrAfter(
-                    date ?? currentEnd,
-                    { start: currentEnd.format("HH:mm"), end: nextStart.format("HH:mm") },
-                    activeIntervals,
-                    currentEnd,
-                    nextStart,
-                  );
-              if (!gapSlot) continue;
-              const key = `gap-${current.id}-${next.id}`;
-              renderItems.push({
-                isGap: true,
-                id: key,
-                timeStr: gapSlot.format("HH:mm"),
-                dateIso: gapSlot.format("YYYY-MM-DDTHH:mm"),
-                employeeId: groupEmployeeId,
-              });
-            }
+        // Следующий АКТИВНЫЙ приём, а не просто следующий в списке: отменённый
+        // на то же время, что и активный (21:00 отменён + 21:00 новая запись),
+        // мог встать сразу за текущим, и окно между 20:00 и 21:00 терялось.
+        let nextActiveIdx = -1;
+        for (let j = i + 1; j < sorted.length; j++) {
+          if (!isCancelledStatus(sorted[j].status)) {
+            nextActiveIdx = j;
+            break;
           }
-        } else if (!isCancelled && i === sorted.length - 1) {
+        }
+
+        if (!isCancelled && nextActiveIdx !== -1) {
+          const next = sorted[nextActiveIdx];
+          const currentEnd = appointmentEnd(current);
+          const gapMs = dayjs(next.scheduledAt).valueOf() - currentEnd.valueOf();
+          if (gapMs >= GAP_THRESHOLD_MS && currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
+            const nextStart = dayjs(next.scheduledAt);
+            const shiftSegment = shiftSegments?.find((s) => {
+              const currentHm = currentEnd.format("HH:mm");
+              return currentHm >= s.start && currentHm < s.end;
+            });
+            const gapSlot = shiftSegment
+              ? firstFreeSlotAtOrAfter(
+                  date ?? currentEnd,
+                  shiftSegment,
+                  activeIntervals,
+                  currentEnd,
+                  nextStart,
+                )
+              : firstFreeSlotAtOrAfter(
+                  date ?? currentEnd,
+                  { start: currentEnd.format("HH:mm"), end: nextStart.format("HH:mm") },
+                  activeIntervals,
+                  currentEnd,
+                  nextStart,
+                );
+            if (!gapSlot) continue;
+            const key = `gap-${current.id}-${next.id}`;
+            renderItems.push({
+              isGap: true,
+              id: key,
+              timeStr: gapSlot.format("HH:mm"),
+              dateIso: gapSlot.format("YYYY-MM-DDTHH:mm"),
+              employeeId: groupEmployeeId,
+            });
+          }
+        } else if (!isCancelled) {
           const currentEnd = appointmentEnd(current);
           if (currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
             const shiftSegment = shiftSegments?.find((s) => {

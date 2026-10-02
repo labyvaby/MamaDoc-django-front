@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Chip, LinearProgress, Stack, Typography } from "@mui/material";
+import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, LinearProgress, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
 import { useNotification } from "@refinedev/core";
 import QrCodeScannerOutlined from "@mui/icons-material/QrCodeScannerOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
@@ -17,6 +17,7 @@ import { ApiError, isAbortError } from "../../../api/client";
 import {
     cancelWarehouseInventoryCount,
     closeWarehouseInventoryCount,
+    confirmInventoryCountOnHand,
     getInventoryCountDetail,
     getInventoryCounts,
     getProducts,
@@ -26,6 +27,7 @@ import {
     submitInventoryCountLines,
     type DjangoProduct,
     type DjangoWarehouse,
+    type InventoryCountMode,
     type WarehouseInventoryCount,
     type WarehouseInventoryDetail,
 } from "../../../api/warehouse";
@@ -40,6 +42,7 @@ import {
 } from "../../../components/storage/django/inventory/InventoryScanPanel";
 import { InventoryResultGroups } from "../../../components/storage/django/inventory/InventoryResultGroups";
 import { InventoryHistoryCard } from "../../../components/storage/django/inventory/InventoryHistoryCard";
+import { InventoryShowcasePanel } from "../../../components/storage/django/inventory/InventoryShowcasePanel";
 import {
     positionsLabel,
     type CountRow,
@@ -91,7 +94,12 @@ const buildRows = (
                 // expected в документе NULL, пока строку не посчитали: бэк
                 // замораживает ожидание в момент подсчёта. До этого показываем
                 // текущий остаток склада — то, с чем кладовщик и сверяется.
-                expected: line.expected == null ? stockOf(line.productId) : toNumber(line.expected),
+                // Витринная инвентаризация присылает живой остаток сама (onHand).
+                expected: line.expected != null
+                    ? toNumber(line.expected)
+                    : line.onHand != null
+                        ? toNumber(line.onHand)
+                        : stockOf(line.productId),
                 counted: line.counted == null || line.counted === "" ? null : toNumber(line.counted),
             } satisfies CountRow;
         })
@@ -149,8 +157,13 @@ const DjangoInventoryPage: React.FC = () => {
     const [historyLoading, setHistoryLoading] = React.useState(false);
     const [selectedCategories, setSelectedCategories] = React.useState<string[]>([]);
     const [onlyWithStock, setOnlyWithStock] = React.useState(true);
+    const [mode, setMode] = React.useState<InventoryCountMode>("blind");
     const [loading, setLoading] = React.useState(true);
     const [busy, setBusy] = React.useState(false);
+    const [compareFirst, setCompareFirst] = React.useState<number | "">("");
+    const [compareSecond, setCompareSecond] = React.useState<number | "">("");
+    const [comparison, setComparison] = React.useState<[WarehouseInventoryDetail, WarehouseInventoryDetail] | null>(null);
+    const [compareBusy, setCompareBusy] = React.useState(false);
 
     const [countDocument, setCountDocument] = React.useState<WarehouseInventoryDetail | null>(null);
     const [rows, setRows] = React.useState<CountRow[]>([]);
@@ -167,6 +180,9 @@ const DjangoInventoryPage: React.FC = () => {
     const unknownRef = React.useRef<Map<string, number>>(new Map());
     const nonceRef = React.useRef(0);
     const categoriesReady = React.useRef(false);
+    // Витринная: правки количества копятся и уходят пачкой после паузы.
+    const pendingRef = React.useRef<Map<number, number>>(new Map());
+    const flushTimer = React.useRef<number | undefined>(undefined);
 
     const loadProducts = React.useCallback(
         async (signal?: AbortSignal): Promise<DjangoProduct[]> => {
@@ -199,7 +215,7 @@ const DjangoInventoryPage: React.FC = () => {
                     { warehouseId: id, organizationId: orgId ?? undefined },
                     signal,
                 );
-                setHistory(rows.slice(0, 6));
+                setHistory(rows.slice(0, 50));
             } catch (error) {
                 if (!isAbortError(error)) setHistory([]);
             } finally {
@@ -358,6 +374,8 @@ const DjangoInventoryPage: React.FC = () => {
     };
 
     const resetSession = () => {
+        window.clearTimeout(flushTimer.current);
+        pendingRef.current = new Map();
         countedRef.current = new Map();
         unknownRef.current = new Map();
         setUnknownScans([]);
@@ -406,6 +424,7 @@ const DjangoInventoryPage: React.FC = () => {
             const detail = await startWarehouseInventoryCount({
                 warehouseId,
                 productIds: scopeProducts.map((product) => product.id),
+                mode,
                 organizationId: orgId ?? undefined,
             });
             resetSession();
@@ -414,7 +433,12 @@ const DjangoInventoryPage: React.FC = () => {
             setStartedAt(Date.now());
             setStep("count");
             void loadHistory(warehouseId);
-            notify?.({ type: "success", message: `Документ №${detail.document.id} открыт — можно пикать` });
+            notify?.({
+                type: "success",
+                message: detail.document.mode === "showcase"
+                    ? `Документ №${detail.document.id} открыт — идите по списку витрины`
+                    : `Документ №${detail.document.id} открыт — можно пикать`,
+            });
         } catch (error) {
             notify?.({
                 type: "error",
@@ -461,6 +485,24 @@ const DjangoInventoryPage: React.FC = () => {
         } finally {
             setBusy(false);
         }
+    };
+
+    const compareInventoryCounts = async () => {
+        if (typeof compareFirst !== "number" || typeof compareSecond !== "number" || compareFirst === compareSecond) return;
+        setCompareBusy(true);
+        try {
+            const [first, second] = await Promise.all([
+                getInventoryCountDetail(compareFirst, orgId ?? undefined),
+                getInventoryCountDetail(compareSecond, orgId ?? undefined),
+            ]);
+            if (first.document.warehouseId !== second.document.warehouseId) {
+                notify?.({ type: "error", message: "Сравнивать можно документы одного склада" });
+                return;
+            }
+            setComparison([first, second]);
+        } catch (error) {
+            notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось сравнить документы" });
+        } finally { setCompareBusy(false); }
     };
 
     const handleScan = (barcode: string) => {
@@ -533,8 +575,119 @@ const DjangoInventoryPage: React.FC = () => {
         }
     };
 
+    const isShowcase = countDocument?.document.mode === "showcase";
+
+    /** Строки из ответа бэка, поверх — правки, которые ещё не ушли на сервер. */
+    const applyDetail = (detail: WarehouseInventoryDetail) => {
+        setCountDocument(detail);
+        const fresh = buildRows(detail, products, stockOf).map((row) => {
+            const pending = pendingRef.current.get(row.productId);
+            return pending == null ? row : { ...row, counted: pending };
+        });
+        setRows(fresh);
+        countedRef.current = new Map(
+            fresh.filter((row) => row.counted != null).map((row) => [row.productId, row.counted as number]),
+        );
+    };
+
+    /** Отправить накопленные правки витрины. `false` — не сохранилось. */
+    const flushPending = async (): Promise<boolean> => {
+        window.clearTimeout(flushTimer.current);
+        if (!countDocument || pendingRef.current.size === 0) return true;
+        const batch = new Map(pendingRef.current);
+        pendingRef.current = new Map();
+        try {
+            const detail = await submitInventoryCountLines(
+                countDocument.document.id,
+                [...batch].map(([productId, value]) => ({ productId, quantity: String(value) })),
+                orgId ?? undefined,
+            );
+            applyDetail(detail);
+            return true;
+        } catch (error) {
+            // Не сохранилось — вернуть в очередь всё, что не успели поправить заново.
+            batch.forEach((value, productId) => {
+                if (!pendingRef.current.has(productId)) pendingRef.current.set(productId, value);
+            });
+            notify?.({
+                type: "error",
+                message: error instanceof ApiError ? error.message : "Не удалось сохранить количество — проверьте связь",
+            });
+            return false;
+        }
+    };
+    // Таймер вызывает свежую версию: иначе он отправил бы правки в прошлый документ.
+    const flushRef = React.useRef(flushPending);
+    flushRef.current = flushPending;
+    React.useEffect(() => () => {
+        if (pendingRef.current.size) void flushRef.current();
+    }, []);
+
+    const handleShowcaseCounted = (productId: number, value: number) => {
+        countedRef.current.set(productId, value);
+        pendingRef.current.set(productId, value);
+        setRows((current) =>
+            current.map((row) => (row.productId === productId ? { ...row, counted: value } : row)),
+        );
+        window.clearTimeout(flushTimer.current);
+        flushTimer.current = window.setTimeout(() => void flushRef.current(), 700);
+    };
+
+    /** «На месте»: факт = учёт в эту секунду. Пустой список — все непроверенные. */
+    const handleShowcaseConfirm = async (productIds: number[]): Promise<boolean> => {
+        if (!countDocument) return false;
+        if (!(await flushPending())) return false;
+        setBusy(true);
+        try {
+            const detail = await confirmInventoryCountOnHand(countDocument.document.id, productIds, orgId ?? undefined);
+            applyDetail(detail);
+            return true;
+        } catch (error) {
+            notify?.({
+                type: "error",
+                message: error instanceof ApiError ? error.message : "Не удалось отметить «на месте»",
+            });
+            return false;
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const handleShowcaseConfirmRest = async () => {
+        const rest = rows.filter((row) => row.counted == null).length;
+        if (rest === 0) return;
+        const approved = await confirm({
+            title: "Отметить остальные «на месте»?",
+            message: `${positionsLabel(rest)} получат факт, равный учёту. Проверенные вами позиции не изменятся.`,
+            confirmText: "Отметить",
+        });
+        if (approved) await handleShowcaseConfirm([]);
+    };
+
+    /** Витрина: перед итогами хвост непроверенных либо отмечается «на месте», либо остаётся. */
+    const finishShowcase = async () => {
+        if (!(await flushPending())) return;
+        const rest = rows.filter((row) => row.counted == null).length;
+        if (rest > 0) {
+            const approved = await confirm({
+                title: "Не все позиции проверены",
+                message: `${positionsLabel(rest)} ещё не проверены. Отметить их «на месте» (факт = учёт) и перейти к итогам?`,
+                confirmText: "Отметить и завершить",
+                cancelText: "Вернуться к проверке",
+                variant: "warning",
+            });
+            if (!approved) return;
+            if (!(await handleShowcaseConfirm([]))) return;
+        }
+        setStep("result");
+    };
+
     const handleFinish = async () => {
         if (!countDocument) return;
+        if (isShowcase) {
+            await finishShowcase();
+            return;
+        }
         const counted = rows.filter((row) => row.counted != null);
         if (counted.length === 0) {
             notify?.({ type: "error", message: "Ни одна позиция не посчитана — пикните хотя бы один товар" });
@@ -691,7 +844,7 @@ const DjangoInventoryPage: React.FC = () => {
     const headerAction = step === "setup"
         ? { onAdd: handleStart, text: "Начать инвентаризацию", icon: <QrCodeScannerOutlined /> }
         : step === "count"
-            ? { onAdd: handleFinish, text: "Завершить пересчёт", icon: <FactCheckOutlined /> }
+            ? { onAdd: handleFinish, text: isShowcase ? "Завершить проверку" : "Завершить пересчёт", icon: <FactCheckOutlined /> }
             : { onAdd: handleApply, text: "Провести", icon: <FactCheckOutlined /> };
 
     return (
@@ -756,7 +909,7 @@ const DjangoInventoryPage: React.FC = () => {
                         <Chip size="small" icon={<StoreOutlined />} label={countDocument.document.warehouseName} />
                         <Chip
                             size="small"
-                            label={step === "count" ? "Пересчёт идёт" : "Черновик итогов"}
+                            label={step === "count" ? (isShowcase ? "Проверка витрины" : "Пересчёт идёт") : "Черновик итогов"}
                             color="primary"
                             variant="outlined"
                         />
@@ -786,11 +939,14 @@ const DjangoInventoryPage: React.FC = () => {
                         stockFilterAvailable={withStockCount > 0}
                         scopeSum={scopeSum}
                         responsibleName={activeEmployee?.fullName ?? "—"}
+                        mode={mode}
+                        onModeChange={setMode}
                         disabled={busy || !canManage}
                     />
                 )}
 
                 {step === "setup" && (
+                    <>
                     <InventoryHistoryCard
                         items={history}
                         loading={historyLoading}
@@ -800,9 +956,40 @@ const DjangoInventoryPage: React.FC = () => {
                         onRefresh={warehouseId == null ? undefined : () => void loadHistory(warehouseId)}
                         disabled={busy}
                     />
+                    {history.filter((item) => item.status === "completed").length > 1 && (
+                        <Paper variant="outlined" sx={{ p: 2, mt: 1 }}>
+                            <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
+                                <FormControl size="small" sx={{ minWidth: 190, flex: 1 }}>
+                                    <InputLabel id="compare-count-a-label">Первая дата</InputLabel>
+                                    <Select labelId="compare-count-a-label" value={compareFirst} label="Первая дата" onChange={(event) => setCompareFirst(event.target.value === "" ? "" : Number(event.target.value))}>
+                                        {history.filter((item) => item.status === "completed").map((item) => <MenuItem key={item.id} value={item.id}>{new Date(item.completedAt ?? item.createdAt).toLocaleString("ru-RU")}</MenuItem>)}
+                                    </Select>
+                                </FormControl>
+                                <FormControl size="small" sx={{ minWidth: 190, flex: 1 }}>
+                                    <InputLabel id="compare-count-b-label">Вторая дата</InputLabel>
+                                    <Select labelId="compare-count-b-label" value={compareSecond} label="Вторая дата" onChange={(event) => setCompareSecond(event.target.value === "" ? "" : Number(event.target.value))}>
+                                        {history.filter((item) => item.status === "completed").map((item) => <MenuItem key={item.id} value={item.id}>{new Date(item.completedAt ?? item.createdAt).toLocaleString("ru-RU")}</MenuItem>)}
+                                    </Select>
+                                </FormControl>
+                                <Button variant="outlined" onClick={() => void compareInventoryCounts()} disabled={compareBusy || compareFirst === "" || compareSecond === "" || compareFirst === compareSecond}>{compareBusy ? "Сравниваем…" : "Сравнить остатки"}</Button>
+                            </Stack>
+                        </Paper>
+                    )}
+                    </>
                 )}
 
-                {step === "count" && (
+                {step === "count" && isShowcase && (
+                    <InventoryShowcasePanel
+                        rows={rows}
+                        elapsed={elapsed}
+                        onConfirm={(productIds) => void handleShowcaseConfirm(productIds)}
+                        onConfirmRest={() => void handleShowcaseConfirmRest()}
+                        onSetCounted={handleShowcaseCounted}
+                        disabled={busy || !canManage}
+                    />
+                )}
+
+                {step === "count" && !isShowcase && (
                     <InventoryScanPanel
                         rows={rows}
                         order={order}
@@ -842,6 +1029,27 @@ const DjangoInventoryPage: React.FC = () => {
                 onClose={() => setNewProductBarcode(null)}
                 onSaved={handleProductSaved}
             />
+
+            <Dialog open={comparison != null} onClose={() => setComparison(null)} fullWidth maxWidth="md">
+                <DialogTitle>Сравнение инвентаризаций</DialogTitle>
+                <DialogContent>
+                    {comparison && (() => {
+                        const [first, second] = comparison;
+                        const firstDate = new Date(first.document.completedAt ?? first.document.createdAt).toLocaleDateString("ru-RU");
+                        const secondDate = new Date(second.document.completedAt ?? second.document.createdAt).toLocaleDateString("ru-RU");
+                        const byId = (detail: WarehouseInventoryDetail) => new Map(detail.lines.map((line) => [line.productId, line]));
+                        const left = byId(first); const right = byId(second);
+                        const ids = [...new Set([...left.keys(), ...right.keys()])];
+                        const names = new Map([...first.lines, ...second.lines].map((line) => [line.productId, line.productName]));
+                        return <Table size="small"><TableHead><TableRow><TableCell>Товар</TableCell><TableCell>{firstDate}</TableCell><TableCell>{secondDate}</TableCell><TableCell>Изменение</TableCell></TableRow></TableHead><TableBody>{ids.map((id) => {
+                            const a = left.get(id)?.counted; const b = right.get(id)?.counted;
+                            const delta = a != null && b != null ? toNumber(b) - toNumber(a) : null;
+                            return <TableRow key={id}><TableCell>{names.get(id) ?? `Товар #${id}`}</TableCell><TableCell>{a ?? "не посчитан"}</TableCell><TableCell>{b ?? "не посчитан"}</TableCell><TableCell>{delta == null ? "—" : `${delta > 0 ? "+" : ""}${delta}`}</TableCell></TableRow>;
+                        })}</TableBody></Table>;
+                    })()}
+                </DialogContent>
+                <DialogActions><Button onClick={() => setComparison(null)}>Закрыть</Button></DialogActions>
+            </Dialog>
 
             <ConfirmDialog />
         </Box>

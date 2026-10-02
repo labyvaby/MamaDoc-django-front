@@ -7,6 +7,7 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  Skeleton,
   Stack,
   Tooltip,
   Typography,
@@ -29,18 +30,19 @@ import { useT } from "../../i18n/VerticalProvider";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
+import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
+import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import PointOfSaleOutlined from "@mui/icons-material/PointOfSaleOutlined";
 // import BlockOutlined from "@mui/icons-material/BlockOutlined";
-// import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
@@ -82,6 +84,7 @@ import { ActiveContextSwitcher } from "./ActiveContextSwitcher";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { useCanChecker } from "../../hooks/useCan";
+import { superSeesAllPages } from "../../config/moduleView";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import {
@@ -155,7 +158,7 @@ export const Sidebar: React.FC = () => {
     </>
   );
 
-  const nav = <SidebarSecondary />;
+  const nav = <SidebarNav />;
 
   const footer = (
     <>
@@ -349,6 +352,111 @@ const DesktopSidebarHeader: React.FC = () => {
 };
 
 // Extra static sections: mimic the provided design with many items
+function useHasVisibleSettingsTab(): boolean {
+  const { can } = useCanChecker();
+  const { moduleGate } = useModuleGate();
+  return Object.entries(SETTINGS_TAB_PERMISSIONS).some(([key, permission]) =>
+    key === "cleaning" ? moduleGate("cleaning", [SETTINGS_TAB_PERMISSIONS.cleaning]) : can(permission),
+  );
+}
+
+/**
+ * Меню по вертикали — одно место вместо проверок «это застройщик?» в каждом
+ * бейдже. У застройщика клиничное меню SidebarSecondary не монтируется вовсе,
+ * а с ним и его запросы: лист ожидания, записи клиники, СКУД. Пока /auth/me/
+ * не ответил и вертикаль неизвестна — нейтральная заглушка, а не клиничные
+ * пункты («Процедурный кабинет» у застройщика на секунду при перезагрузке).
+ * Тот же приём, что у отеля (Viva) в ветке test.
+ */
+const SidebarNav: React.FC = () => {
+  const { activeOrganization, loading } = usePermissions();
+  if (loading) return <SidebarMenuSkeleton />;
+  if (activeOrganization?.vertical === "realestate") return <RealEstateSidebarMenu />;
+  return <SidebarSecondary />;
+};
+
+const SidebarMenuSkeleton: React.FC = () => {
+  const { siderCollapsed } = useThemedLayoutContext();
+  return (
+    <Stack gap={1} sx={{ px: 1.5, py: 1 }} aria-busy="true" aria-label="Меню загружается">
+      {[0, 1, 2, 3, 4].map((i) => (
+        <Skeleton key={i} variant="rounded" height={32} width={siderCollapsed ? 32 : "100%"} />
+      ))}
+    </Stack>
+  );
+};
+
+/**
+ * Застройщик: одно плоское меню без клиничных групп «Моя работа /
+ * Организация» — отдел продаж работает в шахматке, воронке и задачах, а
+ * справочное (сотрудники, настройки) — отдельной секцией «Компания».
+ * Каждый пункт — своим правом или модулем: выключенный у организации модуль
+ * прячет пункт сам.
+ */
+const RealEstateSidebarMenu: React.FC = () => {
+  const { t } = useT("sidebar");
+  const { siderCollapsed } = useThemedLayoutContext();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const { can } = useCanChecker();
+  const { moduleGate } = useModuleGate();
+  const canSettings = useHasVisibleSettingsTab();
+  const orgId = useApiOrgId();
+
+  const canChessboard = moduleGate("realty");
+  const canDeals = DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals);
+  const canTasks = can(PAGE_PERMISSIONS.tasks);
+  const canBuyers = can(PAGE_PERMISSIONS.patients);
+  const canChats = can(PAGE_PERMISSIONS.chats);
+  const canKnowledge = moduleGate("knowledge");
+  const canEmployees = can(PAGE_PERMISSIONS.employees);
+  const canExpenses = can(PAGE_PERMISSIONS.expenses);
+
+  // Бейдж «Задачи» — тот же запрос и ключ, что в клиничном меню (кэш общий):
+  // открытые задачи филиала, красный — если есть просроченные.
+  const tasksSummary = useQuery({
+    queryKey: djangoQueryKeys.tasks.summary(orgId),
+    queryFn: ({ signal }) => getTasksSummary(orgId, signal),
+    enabled: canTasks,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+  }).data;
+  const tasksBadgeCount = (tasksSummary?.new ?? 0) + (tasksSummary?.inProgress ?? 0) + (tasksSummary?.awaitingApproval ?? 0);
+  const tasksBadgeColor: "error" | "primary" = (tasksSummary?.overdue ?? 0) > 0 ? "error" : "primary";
+
+  const sectionLabel = (text: string) =>
+    siderCollapsed && !isMobile ? (
+      <Box sx={{ mx: 1.5, my: 1, borderTop: 1, borderColor: "divider" }} />
+    ) : (
+      <Typography
+        sx={{ px: 2, pt: 2, pb: 0.75, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary" }}
+      >
+        {text}
+      </Typography>
+    );
+
+  return (
+    <List sx={{ py: 0, mt: 0.5 }}>
+      {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
+      {canDeals && <SidebarMenuItem to="/deals" icon={<FilterAltOutlined />} label="Воронка продаж" collapsed={siderCollapsed} />}
+      {canTasks && (
+        <SidebarMenuItem to="/tasks" icon={<AssignmentOutlined />} label="Задачи" collapsed={siderCollapsed} badgeCount={tasksBadgeCount} badgeColor={tasksBadgeColor} />
+      )}
+      {canBuyers && <SidebarMenuItem to="/patients" icon={<SearchOutlined />} label={t("allPatients")} collapsed={siderCollapsed} />}
+      {canChats && <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />}
+      {canKnowledge && <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />}
+
+      {(canEmployees || canExpenses || canSettings) && sectionLabel("Компания")}
+      {canEmployees && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />}
+      {canExpenses && <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />}
+      {canSettings && (
+        <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
+      )}
+    </List>
+  );
+};
+
 const SidebarSecondary: React.FC = () => {
   const { t } = useT("sidebar");
   const { siderCollapsed } = useThemedLayoutContext();
@@ -360,19 +468,17 @@ const SidebarSecondary: React.FC = () => {
     activeBranch,
     activeOrganization,
     loading: permissionsLoading,
+    isPlatformAdmin,
+    viewAsOrganization,
   } = usePermissions();
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
-  const hasVisibleSettingsTab = Object.entries(
-    SETTINGS_TAB_PERMISSIONS,
-  ).some(([key, permission]) =>
-    key === "cleaning"
-      ? moduleGate("cleaning", [SETTINGS_TAB_PERMISSIONS.cleaning])
-      : can(permission),
-  );
+  const hasVisibleSettingsTab = useHasVisibleSettingsTab();
   const orgId = useApiOrgId();
   const activeBranchId = useActiveScope().branchId;
   const isSuper = isSuperAdmin();
+  // Обход «isSuper ||» у пунктов ниже; в «Меню как у клиники» выключен.
+  const superSeesAll = superSeesAllPages(isSuper, Boolean(isPlatformAdmin), Boolean(viewAsOrganization));
   const isRetail = activeOrganization?.vertical === "retail";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
@@ -399,13 +505,17 @@ const SidebarSecondary: React.FC = () => {
     // правами (appointments.*_room/registry.view): организация сама решает в
     // редакторе ролей, кому какой кабинет показывать. Данные внутри страниц
     // по-прежнему требуют appointments.view.
-    registratura: !isRetail && (isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry)),
-    bookings: !isRetail && (isSuper || can(PAGE_PERMISSIONS.bookings)),
-    chats: !isRetail && (isSuper || can(PAGE_PERMISSIONS.chats)),
-    doctorRoom: !isRetail && (isSuper || can(PAGE_PERMISSIONS.doctorRoom)),
-    nurseRoom: !isRetail && (isSuper || can(PAGE_PERMISSIONS.nurseRoom)),
-    schedule: !isRetail && (isSuper || can(PAGE_PERMISSIONS.schedule)),
-    skud: isSuper || can(PAGE_PERMISSIONS.attendance),
+    registratura: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.appointmentsRegistry)),
+    bookings: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.bookings)),
+    chats: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.chats)),
+    doctorRoom: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.doctorRoom)),
+    nurseRoom: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.nurseRoom)),
+    // Клинический раздел: ретейлу приём анализов не нужен, поэтому под тем
+    // же !isRetail, что и остальные медицинские пункты. Отдельной проверки
+    // модуля не нужно — `can` уже сверяется с картой префикс→модуль.
+    lab: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.lab)),
+    schedule: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.schedule)),
+    skud: superSeesAll || can(PAGE_PERMISSIONS.attendance),
     cleaning: moduleGate("cleaning"),
     tasks: can(PAGE_PERMISSIONS.tasks),
     // Лист ожидания и воронка ждут бэкенда на проде — гейт по правам их не
@@ -414,6 +524,7 @@ const SidebarSecondary: React.FC = () => {
     deals: DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals),
     expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
+    realestate: moduleGate("realty"),
     achievements: can(PAGE_PERMISSIONS.achievements),
     // ОРГАНИЗАЦИЯ
     employees: can(PAGE_PERMISSIONS.employees),
@@ -422,8 +533,8 @@ const SidebarSecondary: React.FC = () => {
     vaccinations: !isRetail && can(PAGE_PERMISSIONS.vaccinations),
     // Исторические реестры — по page-visibility праву, как Регистратура;
     // по умолчанию право ни у кого, поэтому без явной выдачи видит только суперадмин.
-    allAppointments: !isRetail && (isSuper || can(PAGE_PERMISSIONS.allAppointments)),
-    allProcedures: !isRetail && (isSuper || can(PAGE_PERMISSIONS.allProcedures)),
+    allAppointments: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.allAppointments)),
+    allProcedures: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.allProcedures)),
     services: !isRetail && can(PAGE_PERMISSIONS.services),
     documents: moduleGate("documents"),
     // СКЛАДЫ
@@ -609,7 +720,7 @@ const SidebarSecondary: React.FC = () => {
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
+    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.realestate || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
     "storage": can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
@@ -771,6 +882,11 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
+        {/* Квартиры и шахматка застройщика (модуль бэка realty) */}
+        {show("my-work") && can_.realestate && (
+          <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />
+        )}
+
         {/* Кабинет врача */}
         {show("my-work") && can_.doctorRoom && (
           <SidebarMenuItem to="/doctor" icon={<LocalHospitalOutlined />} label={t("doctorRoom")} collapsed={siderCollapsed} />
@@ -779,6 +895,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Процедурный кабинет */}
         {show("my-work") && can_.nurseRoom && (
           <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
+        )}
+
+        {/* Лаборатория */}
+        {show("my-work") && can_.lab && (
+          <SidebarMenuItem to="/lab" icon={<ScienceOutlined />} label="Лаборатория" collapsed={siderCollapsed} />
         )}
 
         {/* Расписание */}

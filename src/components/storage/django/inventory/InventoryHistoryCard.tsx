@@ -179,6 +179,24 @@ export const InventoryHistoryCard: React.FC<InventoryHistoryCardProps> = ({
                                     <Typography variant="body2" color="text.secondary" noWrap>
                                         {item.warehouseName}
                                     </Typography>
+                                    {item.mode === "showcase" && (
+                                        <Box
+                                            component="span"
+                                            sx={(t) => ({
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                height: 22,
+                                                px: 1,
+                                                borderRadius: "8px",
+                                                fontSize: ".72rem",
+                                                fontWeight: 600,
+                                                color: t.palette.primary.main,
+                                                border: `1px solid ${t.palette.divider}`,
+                                            })}
+                                        >
+                                            Витринная
+                                        </Box>
+                                    )}
                                     <Box
                                         component="span"
                                         sx={(t) => {

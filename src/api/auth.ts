@@ -39,10 +39,15 @@ export type RbacOrganization = {
   themeConfig?: Record<string, any> | null;
   /** Вертикаль бизнеса — определяет терминологию интерфейса
    *  («пациент» для клиники, «клиент» для салона красоты).
-   *  Отдаётся бэком с 28.07.2026 (choices "clinic" | "beauty");
-   *  опционально на типе для старых организаций без миграции —
-   *  отсутствующее или незнакомое значение фронт трактует как clinic. */
+   *  Отдаётся бэком с 28.07.2026. Актуальный список значений не дублируем
+   *  здесь, чтобы не расходился с бэком, — см. тип Vertical в
+   *  src/i18n/types.ts. Опционально на типе для старых организаций без
+   *  миграции — отсутствующее или незнакомое значение фронт трактует
+   *  как clinic. */
   vertical?: string | null;
+  /** Сколько действующих филиалов у всей организации (не у членства).
+   *  Необязательное: старый бэкенд поля не отдаёт — тогда поведение прежнее. */
+  activeBranchCount?: number;
 };
 
 export type RbacBranch = {
@@ -113,6 +118,10 @@ export type MeResponse = {
   permissions: string[];
   /** Module codes enabled for the active organization (e.g. "patients", "finance"). */
   enabledModules: string[];
+  /** Модули активной организации — как их видят её сотрудники. У
+   *  суперпользователя может быть уже enabledModules (он видит всё). Старый бэк
+   *  поле не шлёт. */
+  organizationModules?: string[];
 };
 
 /** Payload accepted by POST /api/auth/context/. */

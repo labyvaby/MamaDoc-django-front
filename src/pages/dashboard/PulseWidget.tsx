@@ -16,7 +16,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { DeltaChip } from "./MetricTile";
 import { WidgetError, type WidgetProps } from "./widgetKit";
 import { PlanDialog } from "./PlanDialog";
-import { planProgress, planScopeKey, readRevenuePlans, resolvePlan } from "./revenuePlan";
+import { planProgress, planScopeKeyFor, readRevenuePlans, resolvePlan } from "./revenuePlan";
 import { num } from "./widgetUtils";
 import { useDashboardData } from "./DashboardData";
 
@@ -188,7 +188,7 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, scope }) => {
   // Шкала — до большего из «оценка к концу месяца» и «прошлый месяц целиком»:
   // заливка = сколько уже набрали, отметка = где финишировал прошлый месяц.
   // ── План месяца (themeConfig.dashboard.plans, см. revenuePlan.ts) ──
-  const scopeKey = planScopeKey(scope.branchId);
+  const scopeKey = planScopeKeyFor(scope.branchId, activeOrganization);
   const plan = resolvePlan(
     readRevenuePlans(activeOrganization?.themeConfig),
     scopeKey,
@@ -647,9 +647,13 @@ export const PulseWidget: React.FC<WidgetProps> = ({ range, scope }) => {
           organizationId={activeOrganization.id}
           scopeKey={scopeKey}
           scopeLabel={
-            scope.branchId != null && activeBranch
-              ? `Филиал «${activeBranch.name}»`
-              : `Вся организация «${activeOrganization.name}»`
+            // Метка должна совпадать с тем, под каким ключом план реально
+            // сохраняется (scopeKey): в организации с одним филиалом
+            // scopeKey всегда "org", даже когда сессия в конкретном
+            // филиале (planScopeKeyFor, revenuePlan.ts).
+            scopeKey === "org"
+              ? `Вся организация «${activeOrganization.name}»`
+              : `Филиал «${activeBranch?.name ?? ""}»`
           }
           month={monthKey}
           themeConfig={activeOrganization.themeConfig as Record<string, unknown> | null}

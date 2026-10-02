@@ -49,11 +49,13 @@ import {
   getProductCategories,
   getProductPriceHistory,
   getProductGallery,
+  getProductCostPrice,
   deleteProduct,
   DjangoProduct,
   DjangoPriceHistoryEntry,
   DjangoProductImage,
 } from "../../../api/warehouse";
+import { formatKGS } from "../../../utility/format";
 import { DjangoProductFormDrawer } from "../../../components/products/django/DjangoProductFormDrawer";
 import { DjangoProductImageSlider } from "../../../components/products/django/DjangoProductImageSlider";
 import ProductFilterDrawer, { ProductFilters } from "../../../components/products/ProductFilterDrawer";
@@ -95,6 +97,7 @@ const DjangoProductsPage: React.FC = () => {
   const orgId = useApiOrgId();
   const canView = useCan(["warehouse.view", "warehouse.sales.view"]);
   const canManage = useCan("warehouse.manage");
+  const canViewCost = useCan("procurement.view");
 
   // Drawers
   const [formDrawerOpen, setFormDrawerOpen] = React.useState(false);
@@ -245,7 +248,11 @@ const DjangoProductsPage: React.FC = () => {
       const matchSearch =
         p.name.toLowerCase().includes(q) ||
         (p.barcode && p.barcode.includes(q)) ||
-        (p.category && p.category.toLowerCase().includes(q));
+        (p.category && p.category.toLowerCase().includes(q)) ||
+        // Бренд-свойство, а не часть названия — как в поиске кассы.
+        (p.attributes ?? []).some(
+          (a) => a.role === "generic" && /^(бренд|brand)$/i.test(a.attributeName.trim()) && a.value.toLowerCase().includes(q),
+        );
 
       if (!matchSearch) return false;
 
@@ -671,6 +678,7 @@ const DjangoProductsPage: React.FC = () => {
                 onEdit={() => selectedProduct && handleEditClick(selectedProduct)}
                 onDelete={() => selectedProduct && handleDelete(selectedProduct)}
                 readOnly={!canManage}
+                canViewCost={canViewCost}
               />
             </Grid2>
           )}
@@ -707,6 +715,7 @@ const DjangoProductsPage: React.FC = () => {
                 onEdit={() => handleEditClick(selectedProduct)}
                 onDelete={() => handleDelete(selectedProduct)}
                 readOnly={!canManage}
+                canViewCost={canViewCost}
               />
             </Box>
           )}
@@ -726,7 +735,8 @@ const ProductDetailCard: React.FC<{
   onEdit?: () => void;
   onDelete?: () => void;
   readOnly?: boolean;
-}> = ({ product, onEdit, onDelete, readOnly }) => {
+  canViewCost?: boolean;
+}> = ({ product, onEdit, onDelete, readOnly, canViewCost = false }) => {
   const [expanded, setExpanded] = React.useState(false);
 
   // История цен — ленивая подгрузка при выборе товара.
@@ -736,13 +746,29 @@ const ProductDetailCard: React.FC<{
 
   // Галерея товара — слайдер сам держит текущий слайд.
   const [gallery, setGallery] = React.useState<DjangoProductImage[]>([]);
+  const [costPrice, setCostPrice] = React.useState<string | null>(null);
 
   // Reset expanded state when product changes
   React.useEffect(() => {
     setExpanded(false);
     setHistoryOpen(false);
     setPriceHistory([]);
+    setCostPrice(null);
   }, [product?.id]);
+
+  React.useEffect(() => {
+    if (!product || !canViewCost) {
+      setCostPrice(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    void getProductCostPrice(product.id, controller.signal)
+      .then((result) => setCostPrice(result.costPrice))
+      .catch((error: unknown) => {
+        if (!isAbortError(error)) setCostPrice(null);
+      });
+    return () => controller.abort();
+  }, [canViewCost, product?.id]);
 
   // Галерея — подгружаем при выборе товара.
   React.useEffect(() => {
@@ -969,6 +995,14 @@ const ProductDetailCard: React.FC<{
                   }
                   active={product.price > 0}
                 />
+                {canViewCost && costPrice !== null && (
+                  <InfoTile
+                    icon={<PaymentsOutlined />}
+                    label="Себестоимость"
+                    value={formatKGS(Number(costPrice))}
+                    active={Number(costPrice) > 0}
+                  />
+                )}
                 <InfoTile
                   icon={<Inventory2OutlinedIcon />}
                   label="Остаток"

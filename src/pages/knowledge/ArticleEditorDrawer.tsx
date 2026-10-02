@@ -43,7 +43,7 @@ import LinkOutlined from "@mui/icons-material/LinkOutlined";
 import LinkOffOutlined from "@mui/icons-material/LinkOffOutlined";
 import SmartDisplayOutlined from "@mui/icons-material/SmartDisplayOutlined";
 import ImageOutlined from "@mui/icons-material/ImageOutlined";
-import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
+import AttachFileOutlined from "@mui/icons-material/AttachFileOutlined";
 import FullscreenOutlined from "@mui/icons-material/FullscreenOutlined";
 import FullscreenExitOutlined from "@mui/icons-material/FullscreenExitOutlined";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
@@ -54,12 +54,13 @@ import { useFormValidation } from "../../hooks/useFormValidation";
 import { compressImage, PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 import {
+  FILE_LINK_TITLE,
+  KNOWLEDGE_FILES_UPLOAD_ENABLED,
   KNOWLEDGE_IMAGE_UPLOAD_ENABLED,
-  KNOWLEDGE_PDF_MAX_MB,
   KNOWLEDGE_PDF_UPLOAD_ENABLED,
+  PDF_LINK_TITLE,
   createKnowledgeSeries,
   fileNameFromUrl,
-  isPdfUrl,
   isSafeImageUrl,
   parseYoutubeId,
   splitCover,
@@ -72,19 +73,23 @@ import {
   type KnowledgeCategory,
   type KnowledgeSeries,
 } from "../../api/knowledge";
-import { PdfAttachment } from "./PdfAttachment";
-import { pdfCardStyles } from "./pdfCard";
-
-/** PDF, принесённый мышью или буфером: не все браузеры проставляют тип. */
-const isPdfFile = (file: File): boolean =>
-  file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+import {
+  ATTACHMENT_ACCEPT,
+  ATTACHMENT_FORMATS_HINT,
+  attachmentKindOf,
+  attachmentMaxMb,
+} from "./attachmentTypes";
+import { FileAttachment } from "./FileAttachment";
+import { FILE_CARD_SELECTOR, fileCardStyles } from "./fileCard";
 
 /**
- * Отбирает из FileList то, что умеем вставлять в статью — картинки и PDF
- * (paste/drop приносят вместе с файлами ещё и текст).
+ * Отбирает из FileList то, что умеем вставлять в статью — картинки и файлы из
+ * реестра attachmentTypes (paste/drop приносят вместе с файлами ещё и текст).
  */
 const attachableFiles = (list: FileList | null | undefined): File[] =>
-  Array.from(list ?? []).filter((f) => f.type.startsWith("image/") || isPdfFile(f));
+  Array.from(list ?? []).filter(
+    (f) => f.type.startsWith("image/") || attachmentKindOf(f) !== null,
+  );
 
 /** Пустой документ TipTap сериализуется в этот HTML — не считаем его текстом. */
 const isEmptyContent = (html: string): boolean => {
@@ -180,17 +185,18 @@ interface ArticleEditorDrawerProps {
  * (TipTap StarterKit + YouTube-эмбеды: видео вставляются прямо в статью,
  * отдельной сущности «видеоурок» нет — UPD заказчика 15.07.2026).
  *
- * Картинки: вставка по ссылке работает (санитайзер бэка пропускает `<img src>`
- * с http(s), см. api/knowledge.ts). Загрузка файлом (кнопка «Загрузить», вставка
- * из буфера, drag&drop) закрыта флагом KNOWLEDGE_IMAGE_UPLOAD_ENABLED — на бэке
- * эндпоинта ещё нет; при выключенном флаге файл не вставляется (base64 бэк
- * молча вырежет), вместо этого показываем подсказку про ссылку.
+ * Картинки: вставка по ссылке (санитайзер бэка пропускает `<img src>` с
+ * http(s), см. api/knowledge.ts) и загрузка файлом (кнопка «Загрузить», вставка
+ * из буфера, drag&drop) за флагом KNOWLEDGE_IMAGE_UPLOAD_ENABLED; при
+ * выключенном флаге файл не вставляется (base64 бэк молча вырежет), вместо
+ * этого показываем подсказку про ссылку.
  *
- * PDF: кнопка «Файл PDF» вставляет карточку-ссылку (нод PdfAttachment). Вставка
- * по ссылке работает, загрузка файлом — за флагом KNOWLEDGE_PDF_UPLOAD_ENABLED
- * (бэк отклоняет .pdf на эндпоинте вложений, см. api/knowledge.ts). Перенос
- * файла мышью и вставка из буфера работают для обоих типов через один
- * filesHandlerRef.
+ * Файлы: кнопка «Файл» вставляет карточку-ссылку (нод FileAttachment) — PDF,
+ * Word, Excel, аудио, видео и др. (реестр — attachmentTypes.ts). Вставка по
+ * ссылке работает для всех форматов; загрузка файлом у PDF включена
+ * (KNOWLEDGE_PDF_UPLOAD_ENABLED), у остальных ждёт бэк
+ * (KNOWLEDGE_FILES_UPLOAD_ENABLED). Перенос файла мышью и вставка из буфера
+ * работают для картинок и файлов через один filesHandlerRef.
  *
  * Серия: поле «Название серии» — автокомплит по уже существующим сериям
  * (knownSeries); выбор существующего имени привязывает статью к её seriesId,
@@ -242,13 +248,13 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
       // allowBase64: false — data:-URI бэк вырезает из src при сохранении,
       // картинка исчезла бы после первого же сохранения статьи.
       Image.configure({ inline: false, allowBase64: false }),
-      // PDF-вложение — ссылка с меткой title="pdf" (см. PdfAttachment.ts).
-      PdfAttachment,
+      // Файл-вложение — ссылка с меткой title="pdf"/"file" (см. FileAttachment.ts).
+      FileAttachment,
     ],
     content: "",
     editorProps: {
       attributes: { class: "tiptap-editor" },
-      // Вставка/перетаскивание файлов (картинки, PDF) — через наш загрузчик,
+      // Вставка/перетаскивание файлов (картинки, документы, медиа) — через наш загрузчик,
       // иначе ProseMirror вставит имя файла текстом.
       handlePaste: (_view, event) => {
         const files = attachableFiles(event.clipboardData?.files);
@@ -278,7 +284,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
         return {
           bold: false, italic: false, underline: false, strike: false,
           h2: false, h3: false, bulletList: false, orderedList: false,
-          blockquote: false, codeBlock: false, link: false, image: false, pdf: false,
+          blockquote: false, codeBlock: false, link: false, image: false, file: false,
           canUndo: false, canRedo: false, isEmpty: true,
         };
       }
@@ -295,7 +301,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
         codeBlock: e.isActive("codeBlock"),
         link: e.isActive("link"),
         image: e.isActive("image"),
-        pdf: e.isActive(PdfAttachment.name),
+        file: e.isActive(FileAttachment.name),
         canUndo: e.can().undo(),
         canRedo: e.can().redo(),
         // Для валидации «Сохранить»: без isEmpty селектор не меняется при
@@ -510,9 +516,10 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   /**
    * Пользователь принёс файл, а загрузка такого типа ещё не включена на бэке:
    * "image" — картинки (эндпоинт есть, флаг включён — ветка на будущее),
-   * "pdf" — PDF (бэк отклоняет .pdf, см. KNOWLEDGE_PDF_UPLOAD_ENABLED).
+   * "file" — файл-вложение (Word/Excel/аудио/видео ждут бэк, см.
+   * KNOWLEDGE_FILES_UPLOAD_ENABLED).
    */
-  const [uploadHint, setUploadHint] = React.useState<"image" | "pdf" | null>(null);
+  const [uploadHint, setUploadHint] = React.useState<"image" | "file" | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const imageUrlValid = isSafeImageUrl(imageUrl);
 
@@ -591,65 +598,79 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
     }
   };
 
-  // ── PDF-вложения ──────────────────────────────────────────────────────────
-  // Файл вставляется в текст карточкой-ссылкой (см. PdfAttachment.ts): встроить
+  // ── Файлы-вложения (PDF, Word, Excel, аудио, видео…) ───────────────────────
+  // Файл вставляется в текст карточкой-ссылкой (см. FileAttachment.ts): встроить
   // просмотрщик нельзя — <iframe> с не-YouTube src санитайзер бэка вырезает.
-  const [pdfOpen, setPdfOpen] = React.useState(false);
-  const [pdfUrl, setPdfUrl] = React.useState("");
-  const [pdfName, setPdfName] = React.useState("");
-  const [pdfBusy, setPdfBusy] = React.useState(false);
-  const [pdfError, setPdfError] = React.useState<string | null>(null);
-  const pdfInputRef = React.useRef<HTMLInputElement | null>(null);
+  // Аудио и видео получают плеер на странице статьи (ArticleViewPage).
+  const [fileOpen, setFileOpen] = React.useState(false);
+  const [fileUrl, setFileUrl] = React.useState("");
+  const [fileName, setFileName] = React.useState("");
+  const [fileBusy, setFileBusy] = React.useState(false);
+  const [fileError, setFileError] = React.useState<string | null>(null);
+  const fileAttachInputRef = React.useRef<HTMLInputElement | null>(null);
   // Проверка та же, что для картинок: санитайзер бэка одинаково относится к
   // href и src — пропускает http(s) и относительные пути, остальное вырезает.
-  const pdfUrlValid = isSafeImageUrl(pdfUrl);
+  const fileUrlValid = isSafeImageUrl(fileUrl);
+  const fileUrlKind = attachmentKindOf(fileUrl);
 
-  const openPdfDialog = () => {
-    setPdfUrl("");
-    setPdfName("");
-    setPdfError(null);
-    setPdfOpen(true);
+  const openFileDialog = () => {
+    setFileUrl("");
+    setFileName("");
+    setFileError(null);
+    setFileOpen(true);
   };
 
-  const insertPdf = (href: string, name: string) => {
+  const insertFile = (href: string, name: string, isPdf: boolean) => {
     if (!editor) return;
     editor
       .chain()
       .focus()
       .insertContent({
-        type: PdfAttachment.name,
-        attrs: { href, name: name.trim() || fileNameFromUrl(href) || "Файл PDF" },
+        type: FileAttachment.name,
+        attrs: {
+          href,
+          name: name.trim() || fileNameFromUrl(href) || "Файл",
+          title: isPdf ? PDF_LINK_TITLE : FILE_LINK_TITLE,
+        },
       })
       .run();
   };
 
-  const applyPdfUrl = () => {
-    if (!pdfUrlValid) return;
-    insertPdf(pdfUrl.trim(), pdfName);
-    setPdfOpen(false);
+  const applyFileUrl = () => {
+    if (!fileUrlValid) return;
+    insertFile(fileUrl.trim(), fileName, fileUrlKind === "pdf");
+    setFileOpen(false);
   };
 
-  const uploadPdfFile = async (file: File) => {
-    if (!KNOWLEDGE_PDF_UPLOAD_ENABLED) {
-      setUploadHint("pdf");
+  const uploadAttachmentFile = async (file: File) => {
+    const kind = attachmentKindOf(file);
+    if (!kind) {
+      setFileError(`Такой формат не поддерживается. Можно: ${ATTACHMENT_FORMATS_HINT}`);
+      setFileOpen(true);
       return;
     }
-    if (file.size > KNOWLEDGE_PDF_MAX_MB * 1024 * 1024) {
-      setPdfError(`Файл больше ${KNOWLEDGE_PDF_MAX_MB} МБ — сервер его не примет`);
-      setPdfOpen(true);
+    const enabled = kind === "pdf" ? KNOWLEDGE_PDF_UPLOAD_ENABLED : KNOWLEDGE_FILES_UPLOAD_ENABLED;
+    if (!enabled) {
+      setUploadHint("file");
       return;
     }
-    setPdfBusy(true);
-    setPdfError(null);
+    const maxMb = attachmentMaxMb(kind);
+    if (file.size > maxMb * 1024 * 1024) {
+      setFileError(`Файл больше ${maxMb} МБ — сервер его не примет`);
+      setFileOpen(true);
+      return;
+    }
+    setFileBusy(true);
+    setFileError(null);
     try {
       const { url } = await uploadKnowledgeFile(file, orgId);
-      insertPdf(url, pdfName || file.name);
-      setPdfOpen(false);
+      insertFile(url, fileName || file.name, kind === "pdf");
+      setFileOpen(false);
     } catch (err) {
-      setPdfError(getErrorMessage(err));
-      setPdfOpen(true);
+      setFileError(getErrorMessage(err));
+      setFileOpen(true);
     } finally {
-      setPdfBusy(false);
+      setFileBusy(false);
     }
   };
 
@@ -659,8 +680,8 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
     filesHandlerRef.current = (files) => {
       const file = files[0];
       if (!file) return;
-      if (isPdfFile(file)) void uploadPdfFile(file);
-      else void uploadImageFile(file);
+      if (file.type.startsWith("image/")) void uploadImageFile(file);
+      else void uploadAttachmentFile(file);
     };
   });
 
@@ -1034,7 +1055,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
             <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
             {tb("Видео (YouTube)", <SmartDisplayOutlined fontSize="small" />, false, () => { setVideoUrl(""); setVideoOpen(true); })}
             {tb("Изображение", <ImageOutlined fontSize="small" />, editorState?.image ?? false, openImageDialog)}
-            {tb("Файл PDF", <PictureAsPdfOutlined fontSize="small" />, editorState?.pdf ?? false, openPdfDialog)}
+            {tb("Файл", <AttachFileOutlined fontSize="small" />, editorState?.file ?? false, openFileDialog)}
           </Stack>
 
           {/* Контент */}
@@ -1091,12 +1112,12 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
                 outline: `2px solid ${theme.palette.primary.main}`,
                 outlineOffset: 2,
               },
-              // PDF-вложение — та же карточка, что и на странице статьи.
-              "& .tiptap-editor a[title='pdf']": {
-                ...pdfCardStyles(theme),
+              // Файл-вложение — та же карточка, что и на странице статьи.
+              [`& .tiptap-editor :is(${FILE_CARD_SELECTOR})`]: {
+                ...fileCardStyles(theme),
                 cursor: "default", // в редакторе карточку выделяют, а не открывают
               },
-              "& .tiptap-editor a[title='pdf'].ProseMirror-selectednode": {
+              [`& .tiptap-editor :is(${FILE_CARD_SELECTOR}).ProseMirror-selectednode`]: {
                 outline: `2px solid ${theme.palette.primary.main}`,
                 outlineOffset: 2,
               },
@@ -1119,8 +1140,8 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
 
           {uploadHint && (
             <Alert severity="info" onClose={() => setUploadHint(null)}>
-              {uploadHint === "pdf"
-                ? "Загрузка PDF файлом пока недоступна на сервере — вставьте ссылку кнопкой «Файл PDF» в панели (например ссылку на файл из раздела «Документы»)."
+              {uploadHint === "file"
+                ? "Загрузка файлов этого формата пока недоступна на сервере — вставьте ссылку кнопкой «Файл» в панели (например ссылку на файл из раздела «Документы»)."
                 : "Загрузка картинок файлом пока недоступна — вставьте ссылку на изображение кнопкой «Изображение» в панели."}
             </Alert>
           )}
@@ -1290,32 +1311,32 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
         </DialogActions>
       </Dialog>
 
-      {/* Диалог вложения PDF */}
-      <Dialog open={pdfOpen} onClose={() => setPdfOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Файл PDF</DialogTitle>
+      {/* Диалог вложения файла */}
+      <Dialog open={fileOpen} onClose={() => setFileOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Файл</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ mt: 0.5 }}>
             <TextField
               size="small"
               fullWidth
               autoFocus
-              label="Ссылка на PDF"
+              label="Ссылка на файл"
               placeholder="https://…/pamyatka.pdf"
-              value={pdfUrl}
-              onChange={(e) => setPdfUrl(e.target.value)}
-              disabled={pdfBusy}
-              error={pdfUrl.trim() !== "" && !pdfUrlValid}
+              value={fileUrl}
+              onChange={(e) => setFileUrl(e.target.value)}
+              disabled={fileBusy}
+              error={fileUrl.trim() !== "" && !fileUrlValid}
               helperText={
-                pdfUrl.trim() !== "" && !pdfUrlValid
+                fileUrl.trim() !== "" && !fileUrlValid
                   ? "Нужна ссылка http(s) — файл с компьютера так не вставить"
-                  : pdfUrl.trim() !== "" && !isPdfUrl(pdfUrl)
-                    ? "Ссылка не заканчивается на .pdf — файл всё равно откроется, но проверьте её"
+                  : fileUrl.trim() !== "" && !fileUrlKind
+                    ? "Формат по ссылке не распознан — файл всё равно откроется, но проверьте её"
                     : "Файл должен быть доступен по ссылке (он не копируется на сервер)"
               }
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  applyPdfUrl();
+                  applyFileUrl();
                 }
               }}
             />
@@ -1323,33 +1344,42 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
               size="small"
               fullWidth
               label="Название (необязательно)"
-              value={pdfName}
-              onChange={(e) => setPdfName(e.target.value)}
-              disabled={pdfBusy}
-              placeholder={fileNameFromUrl(pdfUrl) || "Памятка для родителей.pdf"}
+              value={fileName}
+              onChange={(e) => setFileName(e.target.value)}
+              disabled={fileBusy}
+              placeholder={fileNameFromUrl(fileUrl) || "Памятка для родителей.pdf"}
               helperText="Подпись на карточке файла в статье"
             />
             {KNOWLEDGE_PDF_UPLOAD_ENABLED ? (
               <>
                 <Button
                   variant="outlined"
-                  onClick={() => pdfInputRef.current?.click()}
-                  disabled={pdfBusy}
+                  onClick={() => fileAttachInputRef.current?.click()}
+                  disabled={fileBusy}
                   startIcon={
-                    pdfBusy ? <CircularProgress size={16} /> : <PictureAsPdfOutlined />
+                    fileBusy ? <CircularProgress size={16} /> : <AttachFileOutlined />
                   }
                 >
-                  {pdfBusy ? "Загрузка…" : "Загрузить PDF"}
+                  {fileBusy
+                    ? "Загрузка…"
+                    : KNOWLEDGE_FILES_UPLOAD_ENABLED
+                      ? "Загрузить файл"
+                      : "Загрузить PDF"}
                 </Button>
+                <Typography variant="caption" color="text.secondary">
+                  {KNOWLEDGE_FILES_UPLOAD_ENABLED
+                    ? `${ATTACHMENT_FORMATS_HINT}. Аудио и видео можно будет послушать и посмотреть прямо в статье.`
+                    : "Word, Excel, аудио и видео пока вставляются только ссылкой."}
+                </Typography>
                 <input
-                  ref={pdfInputRef}
+                  ref={fileAttachInputRef}
                   type="file"
-                  accept="application/pdf,.pdf"
+                  accept={KNOWLEDGE_FILES_UPLOAD_ENABLED ? ATTACHMENT_ACCEPT : "application/pdf,.pdf"}
                   hidden
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     e.target.value = ""; // повторный выбор того же файла
-                    if (file) void uploadPdfFile(file);
+                    if (file) void uploadAttachmentFile(file);
                   }}
                 />
               </>
@@ -1359,14 +1389,14 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
                 выложить в разделе «Документы» и вставить сюда ссылку на него.
               </Alert>
             )}
-            {pdfError && <Alert severity="error">{pdfError}</Alert>}
+            {fileError && <Alert severity="error">{fileError}</Alert>}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPdfOpen(false)} disabled={pdfBusy}>
+          <Button onClick={() => setFileOpen(false)} disabled={fileBusy}>
             Отмена
           </Button>
-          <Button variant="contained" onClick={applyPdfUrl} disabled={!pdfUrlValid || pdfBusy}>
+          <Button variant="contained" onClick={applyFileUrl} disabled={!fileUrlValid || fileBusy}>
             Вставить
           </Button>
         </DialogActions>

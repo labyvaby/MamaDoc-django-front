@@ -26,6 +26,7 @@ export const PAGE_PERMISSIONS = {
   products: ["warehouse.view", "warehouse.sales.view"],
   warehouses: "warehouse.view",
   sales: ["warehouse.sales.view", "warehouse.view"],
+  lab: "lab.view",
   schedule: "schedule.view",
   attendance: "attendance.view",
   attendanceSettings: "attendance.manage",
@@ -33,7 +34,7 @@ export const PAGE_PERMISSIONS = {
   reports: "reports.view",
   payroll: ["payroll.view", "payroll.view_own"],
   notifications: "notifications.page.view",
-  reviews: ["reviews.view", "reviews.manage"],
+  reviews: ["reviews.view", "reviews.view_own", "reviews.handle", "reviews.manage"],
   bookings: ["bookings.view", "bookings.manage"],
   // Раздел «Чаты» — встроенный Chatwoot. Право выдаётся ролям в редакторе
   // ролей; сам аккаунт в Chatwoot заводит его администратор отдельно.
@@ -61,6 +62,9 @@ export const PAGE_PERMISSIONS = {
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {
+  // Витрина модулей: read-only каталог. Право узкое, выдаётся admin-tier ролям
+  // (см. rbac backfill 0015). Тумблинг модулей остаётся за платформой.
+  modules: "tenancy.catalog.view",
   // Модули подключает только администратор платформы в Django admin. В CRM
   // остаются рабочие настройки подключённого продукта: canAccess проверит
   // одновременно право роли и включённый модуль по префиксу кода.
@@ -94,6 +98,10 @@ export const SETTINGS_TAB_PERMISSIONS = {
   skud: PAGE_PERMISSIONS.attendanceSettings,
   announcements: PAGE_PERMISSIONS.announcements,
   notifications: PAGE_PERMISSIONS.notifications,
+  // «Сбор отзывов»: настройки модуля отзывов (бэк — reviews.manage;
+  // canAccess заодно гейтит модуль reviews по префиксу).
+  reviews: "reviews.manage",
+  notificationGateway: PAGE_PERMISSIONS.notifications,
   // Автоматизации продолжают работать по notifications.manage; отдельное
   // notifications.page.view управляет только доступностью экрана уведомлений.
   automations: "notifications.manage",
@@ -110,6 +118,8 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // менять эти настройки бэк разрешает по одному и тому же коду, поэтому
   // «смотреть, но не править» на странице нет.
   odoctor: "odoctor.manage",
+  // Подключение ЛИС: код организации, точки регистрации филиалов.
+  lab: "lab.settings.manage",
   // Chatwoot → сделки: приёмник вебхука и карта инбоксов. Право своё
   // (chatwoot.manage), отдельное от chatwoot.view — видеть чаты и
   // настраивать секрет приёмника не одно и то же.

@@ -10,6 +10,7 @@ import {
     Divider,
     Drawer,
     IconButton,
+    LinearProgress,
     ListItemText,
     MenuItem,
     Paper,
@@ -23,6 +24,7 @@ import {
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
+import DriveFileMoveOutlined from "@mui/icons-material/DriveFileMoveOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import { useNotification } from "@refinedev/core";
 
@@ -35,19 +37,27 @@ import {
     createRepriceDraft,
     getInventoryCountDetail,
     getInventoryCounts,
+    getStock,
     getRepriceDetail,
     getRepriceDocuments,
+    getWarehouseTransferDocuments,
+    createWarehouseTransfer,
+    getWarehouseTransferDetail,
+    sendWarehouseTransfer,
+    acceptWarehouseTransfer,
+    cancelWarehouseTransfer,
     type DjangoProduct,
     type DjangoWarehouse,
     type WarehouseInventoryCount,
     type WarehouseInventoryDetail,
     type WarehouseReprice,
     type WarehouseRepriceDetail,
+    type WarehouseTransferDocument,
     startWarehouseInventoryCount,
     submitInventoryCountLines,
 } from "../../../api/warehouse";
 
-type DrawerTab = 0 | 1;
+type DrawerTab = 0 | 1 | 2;
 
 interface DjangoWarehouseDocumentsDrawerProps {
     open: boolean;
@@ -71,6 +81,9 @@ const statusLabel: Record<string, string> = {
     canceled: "Отменена",
     draft: "Черновик",
     applied: "Применена",
+    sent: "В пути",
+    accepted: "Принято",
+    discrepancy: "Недостача",
 };
 
 export const DjangoWarehouseDocumentsDrawer: React.FC<DjangoWarehouseDocumentsDrawerProps> = ({
@@ -99,16 +112,29 @@ export const DjangoWarehouseDocumentsDrawer: React.FC<DjangoWarehouseDocumentsDr
     const [productSearch, setProductSearch] = React.useState("");
     const [selectedProductIds, setSelectedProductIds] = React.useState<number[]>([]);
     const [fixedPrices, setFixedPrices] = React.useState<Record<number, string>>({});
+    const [transfers, setTransfers] = React.useState<WarehouseTransferDocument[]>([]);
+    const [transferDetail, setTransferDetail] = React.useState<WarehouseTransferDocument | null>(null);
+    const [fromWarehouseId, setFromWarehouseId] = React.useState<number | "">(defaultWarehouseId ?? "");
+    const [toWarehouseId, setToWarehouseId] = React.useState<number | "">("");
+    const [transferComment, setTransferComment] = React.useState("");
+    const [transferSearch, setTransferSearch] = React.useState("");
+    const [transferProductIds, setTransferProductIds] = React.useState<number[]>([]);
+    const [transferQuantities, setTransferQuantities] = React.useState<Record<number, string>>({});
+    const [receivedQuantities, setReceivedQuantities] = React.useState<Record<number, string>>({});
+    const [transferStock, setTransferStock] = React.useState<Map<number, number>>(new Map());
+    const [transferStockLoading, setTransferStockLoading] = React.useState(false);
 
     const loadLists = React.useCallback(async (signal?: AbortSignal) => {
         try {
             setLoadingList(true);
-            const [counts, documents] = await Promise.all([
+            const [counts, documents, transferRows] = await Promise.all([
                 getInventoryCounts({ organizationId }, signal),
                 getRepriceDocuments({ branchId: activeBranchId ?? undefined, organizationId }, signal),
+                getWarehouseTransferDocuments(organizationId, signal),
             ]);
             setInventoryCounts(counts);
             setReprices(documents);
+            setTransfers(transferRows);
         } catch (error) {
             if (!isAbortError(error)) {
                 console.error(error);
@@ -128,6 +154,12 @@ export const DjangoWarehouseDocumentsDrawer: React.FC<DjangoWarehouseDocumentsDr
         setInventoryDetail(null);
         setRepriceDetail(null);
         setRepriceMode("fixed");
+        setTransferDetail(null);
+        setFromWarehouseId(defaultWarehouseId ?? "");
+        setToWarehouseId("");
+        setTransferProductIds([]);
+        setTransferQuantities({});
+        setReceivedQuantities({});
         setMarkupPercent("");
         setProductSearch("");
         setSelectedProductIds([]);
@@ -135,6 +167,22 @@ export const DjangoWarehouseDocumentsDrawer: React.FC<DjangoWarehouseDocumentsDr
         void loadLists(controller.signal);
         return () => controller.abort();
     }, [defaultWarehouseId, loadLists, open]);
+
+    React.useEffect(() => {
+        if (!open || typeof fromWarehouseId !== "number") {
+            setTransferStock(new Map());
+            return undefined;
+        }
+        const controller = new AbortController();
+        setTransferStockLoading(true);
+        void getStock(fromWarehouseId, controller.signal, organizationId)
+            .then((rows) => setTransferStock(new Map(rows.map((row) => [row.productId, row.quantity]))))
+            .catch((error: unknown) => {
+                if (!isAbortError(error)) notify?.({ type: "error", message: "Не удалось загрузить остатки склада отправителя" });
+            })
+            .finally(() => { if (!controller.signal.aborted) setTransferStockLoading(false); });
+        return () => controller.abort();
+    }, [fromWarehouseId, notify, open, organizationId]);
 
     const selectedWarehouse = warehouses.find((warehouse) => warehouse.id === warehouseId);
     const visibleProducts = React.useMemo(() => {
@@ -334,6 +382,87 @@ export const DjangoWarehouseDocumentsDrawer: React.FC<DjangoWarehouseDocumentsDr
         }
     };
 
+    const handleCreateTransfer = async () => {
+        if (typeof fromWarehouseId !== "number" || typeof toWarehouseId !== "number" || !transferProductIds.length) return;
+        if (transferProductIds.some((productId) => Number(transferQuantities[productId] || 1) > (transferStock.get(productId) ?? 0))) {
+            notify?.({ type: "error", message: "Количество товара превышает остаток на складе отправителя" });
+            return;
+        }
+        try {
+            setBusy(true);
+            const detail = await createWarehouseTransfer({
+                fromWarehouseId,
+                toWarehouseId,
+                lines: transferProductIds.map((productId) => ({ productId, quantity: transferQuantities[productId] || "1" })),
+                comment: transferComment.trim(),
+                organizationId,
+            });
+            setTransferDetail(detail);
+            setTransferProductIds([]);
+            setTransferQuantities({});
+            setTransferComment("");
+            await loadLists();
+            notify?.({ type: "success", message: "Черновик перемещения создан" });
+        } catch (error) {
+            notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось создать перемещение" });
+        } finally { setBusy(false); }
+    };
+
+    const handleOpenTransfer = async (id: number) => {
+        try {
+            setBusy(true);
+            const detail = await getWarehouseTransferDetail(id, organizationId);
+            setTransferDetail(detail);
+            setReceivedQuantities(Object.fromEntries(detail.lines.map((line) => [line.productId, line.sent])));
+        } catch (error) {
+            notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось открыть перемещение" });
+        } finally { setBusy(false); }
+    };
+
+    const handleSendTransfer = async () => {
+        if (!transferDetail) return;
+        try {
+            setBusy(true);
+            const detail = await sendWarehouseTransfer(transferDetail.id, organizationId);
+            setTransferDetail(detail);
+            setReceivedQuantities(Object.fromEntries(detail.lines.map((line) => [line.productId, line.sent])));
+            await loadLists();
+            onChanged();
+            notify?.({ type: "success", message: "Товары списаны со склада отправителя" });
+        } catch (error) {
+            notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось отправить перемещение" });
+        } finally { setBusy(false); }
+    };
+
+    const handleAcceptTransfer = async () => {
+        if (!transferDetail) return;
+        try {
+            setBusy(true);
+            const detail = await acceptWarehouseTransfer(
+                transferDetail.id,
+                transferDetail.lines.map((line) => ({ productId: line.productId, quantity: receivedQuantities[line.productId] ?? line.sent })),
+                organizationId,
+            );
+            setTransferDetail(detail);
+            await loadLists();
+            onChanged();
+            notify?.({ type: "success", message: "Перемещение принято" });
+        } catch (error) {
+            notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось принять перемещение" });
+        } finally { setBusy(false); }
+    };
+
+    const handleCancelTransfer = async () => {
+        if (!transferDetail) return;
+        try {
+            setBusy(true);
+            setTransferDetail(await cancelWarehouseTransfer(transferDetail.id, organizationId));
+            await loadLists();
+        } catch (error) {
+            notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось отменить перемещение" });
+        } finally { setBusy(false); }
+    };
+
     const renderInventory = () => (
         <Stack spacing={2} sx={{ p: 2, flex: 1, minHeight: 0, overflowY: "auto" }}>
             {!inventoryDetail ? (
@@ -507,6 +636,51 @@ export const DjangoWarehouseDocumentsDrawer: React.FC<DjangoWarehouseDocumentsDr
         </Stack>
     );
 
+    const renderTransfers = () => (
+        <Stack spacing={2} sx={{ p: 2, flex: 1, minHeight: 0, overflowY: "auto" }}>
+            {!transferDetail ? <>
+                <Paper variant="outlined" sx={{ p: 1.5 }}>
+                    <Stack spacing={1.25}>
+                        <Typography variant="subtitle2">Новое перемещение между складами</Typography>
+                        <TextField select size="small" label="Откуда" value={fromWarehouseId} onChange={(event) => setFromWarehouseId(event.target.value ? Number(event.target.value) : "")}>
+                            {warehouses.filter((warehouse) => activeBranchId == null || warehouse.branchId === activeBranchId).map((warehouse) => <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.name} · {warehouse.branchName}</MenuItem>)}
+                        </TextField>
+                        <TextField select size="small" label="Куда" value={toWarehouseId} onChange={(event) => setToWarehouseId(event.target.value ? Number(event.target.value) : "")}>
+                            {warehouses.filter((warehouse) => warehouse.id !== fromWarehouseId).map((warehouse) => <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.name} · {warehouse.branchName}</MenuItem>)}
+                        </TextField>
+                        <TextField size="small" label="Поиск товара" value={transferSearch} onChange={(event) => setTransferSearch(event.target.value)} />
+                        <Box sx={{ maxHeight: 210, overflowY: "auto", border: 1, borderColor: "divider", borderRadius: 1 }}>
+                            {transferStockLoading && <LinearProgress />}
+                            {products.filter((product) => !transferSearch || `${product.name} ${product.sku}`.toLowerCase().includes(transferSearch.toLowerCase())).slice(0, 80).map((product) => {
+                                const selected = transferProductIds.includes(product.id);
+                                return <Stack key={product.id} direction="row" alignItems="center" spacing={0.5} sx={{ px: 0.75, borderBottom: 1, borderColor: "divider" }}>
+                                    <Checkbox size="small" checked={selected} disabled={!selected && (transferStock.get(product.id) ?? 0) <= 0} onChange={() => setTransferProductIds((ids) => selected ? ids.filter((id) => id !== product.id) : [...ids, product.id])} />
+                                    <ListItemText primary={product.name} secondary={`${product.sku || "Без SKU"} · на складе: ${transferStock.get(product.id) ?? 0}`} />
+                                    {selected && <TextField size="small" type="number" label="Кол-во" value={transferQuantities[product.id] ?? "1"} onChange={(event) => setTransferQuantities((values) => ({ ...values, [product.id]: event.target.value }))} sx={{ width: 94 }} inputProps={{ min: 0.001, step: "any" }} />}
+                                </Stack>;
+                            })}
+                        </Box>
+                        <TextField size="small" label="Комментарий" value={transferComment} onChange={(event) => setTransferComment(event.target.value)} multiline minRows={2} />
+                        <Button variant="contained" onClick={handleCreateTransfer} disabled={busy || transferStockLoading || fromWarehouseId === "" || toWarehouseId === "" || fromWarehouseId === toWarehouseId || !transferProductIds.length} startIcon={<DriveFileMoveOutlined />}>Создать черновик ({transferProductIds.length})</Button>
+                    </Stack>
+                </Paper>
+                <Typography variant="caption" color="text.secondary">Последние перемещения</Typography>
+                {loadingList ? <CircularProgress size={24} sx={{ alignSelf: "center" }} /> : transfers.length === 0 ? <Alert severity="info">Перемещений пока нет.</Alert> : transfers.slice(0, 12).map((document) => <ButtonBase key={document.id} onClick={() => void handleOpenTransfer(document.id)} sx={{ display: "block", textAlign: "left", borderRadius: 1 }}>
+                    <Paper variant="outlined" sx={{ p: 1.25 }}><Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}><ListItemText primary={`${document.fromWarehouseName} → ${document.toWarehouseName}`} secondary={`${new Date(document.createdAt).toLocaleString("ru-RU")} · ${document.lines.length} поз.`} /><Chip size="small" label={statusLabel[document.status] ?? document.status} color={document.status === "accepted" ? "success" : document.status === "draft" ? "warning" : "default"} /></Stack></Paper>
+                </ButtonBase>)}
+            </> : <>
+                <Paper variant="outlined" sx={{ p: 1.5 }}><Stack direction="row" justifyContent="space-between" gap={1}><Box><Typography variant="subtitle2">Перемещение №{transferDetail.id}</Typography><Typography variant="caption" color="text.secondary">{transferDetail.fromWarehouseName} → {transferDetail.toWarehouseName}</Typography></Box><Chip size="small" label={statusLabel[transferDetail.status] ?? transferDetail.status} /></Stack></Paper>
+                {transferDetail.lines.map((line) => <Paper key={line.id} variant="outlined" sx={{ p: 1.25 }}><Stack direction="row" alignItems="center" spacing={1}><Box sx={{ flex: 1, minWidth: 0 }}><Typography variant="body2" fontWeight={600} noWrap>{line.productName}</Typography><Typography variant="caption" color="text.secondary">Отправлено: {line.sent}{line.received != null ? ` · Принято: ${line.received}` : ""}{line.shortfall != null ? ` · Недостача: ${line.shortfall}` : ""}</Typography></Box>{(transferDetail.status === "sent" && transferDetail.canAccept) && <TextField size="small" type="number" label="Факт" value={receivedQuantities[line.productId] ?? line.sent} onChange={(event) => setReceivedQuantities((values) => ({ ...values, [line.productId]: event.target.value }))} sx={{ width: 100 }} inputProps={{ min: 0, max: Number(line.sent), step: "any" }} />}</Stack></Paper>)}
+                {transferDetail.status === "draft" && <Button variant="contained" onClick={() => void handleSendTransfer()} disabled={busy}>Отправить товары</Button>}
+                {transferDetail.status === "draft" && <Button color="error" onClick={() => void handleCancelTransfer()} disabled={busy}>Отменить черновик</Button>}
+                {/* Принимает только точка-получатель: у отправителя вместо кнопки — кого ждём. */}
+                {transferDetail.status === "sent" && transferDetail.canAccept && <Button variant="contained" onClick={() => void handleAcceptTransfer()} disabled={busy}>Принять по факту</Button>}
+                {transferDetail.status === "sent" && !transferDetail.canAccept && <Alert severity="info">Ждёт приёмки на точке «{transferDetail.toBranchName ?? transferDetail.toWarehouseName}». Принять товар может только сотрудник этой точки.</Alert>}
+                <Button onClick={() => setTransferDetail(null)}>К списку</Button>
+            </>}
+        </Stack>
+    );
+
     return (
         <>
             <Drawer anchor="right" open={open} onClose={busy ? undefined : onClose} PaperProps={{ sx: { width: { xs: "100%", sm: 520 }, maxWidth: "100%", display: "flex", flexDirection: "column" } }}>
@@ -515,12 +689,13 @@ export const DjangoWarehouseDocumentsDrawer: React.FC<DjangoWarehouseDocumentsDr
                     <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть"><CloseOutlined /></IconButton>
                 </Box>
                 <Divider />
-                <Tabs value={tab} onChange={(_, value: DrawerTab) => { setTab(value); setInventoryDetail(null); setRepriceDetail(null); }} variant="fullWidth">
+                <Tabs value={tab} onChange={(_, value: DrawerTab) => { setTab(value); setInventoryDetail(null); setRepriceDetail(null); setTransferDetail(null); }} variant="fullWidth">
                     <Tab icon={<FactCheckOutlined fontSize="small" />} iconPosition="start" label="Инвентаризация" />
                     <Tab icon={<PriceChangeOutlined fontSize="small" />} iconPosition="start" label="Переоценка" />
+                    <Tab icon={<DriveFileMoveOutlined fontSize="small" />} iconPosition="start" label="Перемещение" />
                 </Tabs>
                 <Divider />
-                {tab === 0 ? renderInventory() : renderReprice()}
+                {tab === 0 ? renderInventory() : tab === 1 ? renderReprice() : renderTransfers()}
             </Drawer>
             <ConfirmDialog />
         </>

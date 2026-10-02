@@ -218,6 +218,7 @@ export default function PosPage() {
             onChangeColor={(lineId, colorId) => patchLine(lineId, { selectedColorId: colorId })}
             onChangeSize={(lineId, sizeId) => patchLine(lineId, { selectedSizeId: sizeId })}
             onChangeQuantity={(lineId, quantity) => patchLine(lineId, { quantity })}
+            onChangeLineDiscount={(lineId, discountAmount) => patchLine(lineId, { discountAmount })}
             onRemoveLine={(lineId) => patchLine(lineId, { removed: true })}
             onRestoreLine={(lineId) => patchLine(lineId, { removed: false })}
             onHold={() => setHoldOpen(true)}
@@ -246,11 +247,6 @@ export default function PosPage() {
             results={clientResults}
             onSelectClient={(selected) => {
               setClient(selected);
-              setClientResults(null);
-              setClientQuery("");
-            }}
-            onRegister={(name, phone) => {
-              setClient({ ...POS_CLIENT, id: `client-${Date.now()}`, name: name || "Новый клиент", phone, tier: "Старт", discountPercent: 0, bonuses: 0, cashback: 0 });
               setClientResults(null);
               setClientQuery("");
             }}

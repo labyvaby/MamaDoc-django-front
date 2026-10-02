@@ -15,6 +15,8 @@
  * конкретные месяцы — сезон, праздники. Точечный побеждает.
  */
 
+import { isSingleBranchOrg } from "../../utility/organization";
+
 export const DASHBOARD_CONFIG_KEY = "dashboard";
 
 export interface ScopePlan {
@@ -29,6 +31,15 @@ export type RevenuePlans = Record<string, ScopePlan>;
 /** Ключ скоупа: филиал или организация целиком. */
 export const planScopeKey = (branchId: number | null | undefined): string =>
   branchId != null ? `branch:${branchId}` : "org";
+
+/**
+ * Ключ плана для текущего контекста. В организации с одним филиалом план
+ * общий («org»): сессия там всегда в филиале, и иначе общий план пропал бы.
+ */
+export const planScopeKeyFor = (
+  branchId: number | null | undefined,
+  org: { activeBranchCount?: number } | null | undefined,
+): string => (isSingleBranchOrg(org) ? "org" : planScopeKey(branchId));
 
 const isPositive = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v) && v > 0;

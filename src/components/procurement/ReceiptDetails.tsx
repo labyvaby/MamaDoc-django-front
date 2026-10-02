@@ -301,6 +301,13 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
               </Box>
             )}
           </Stack>
+          {(Number(receipt.customsCost) + Number(receipt.deliveryCost) + Number(receipt.otherCosts)) > 0 && (
+            <Stack direction="row" spacing={2} flexWrap="wrap" sx={{ mt: 1 }}>
+              {Number(receipt.customsCost) > 0 && <Typography variant="caption" color="text.secondary">Растаможка: {formatMoney(receipt.customsCost)} сом</Typography>}
+              {Number(receipt.deliveryCost) > 0 && <Typography variant="caption" color="text.secondary">Доставка: {formatMoney(receipt.deliveryCost)} сом</Typography>}
+              {Number(receipt.otherCosts) > 0 && <Typography variant="caption" color="text.secondary">Прочие расходы: {formatMoney(receipt.otherCosts)} сом</Typography>}
+            </Stack>
+          )}
           {!canceled && (
             <>
               <Box sx={{ height: 6, borderRadius: 3, bgcolor: "primary.lighter", overflow: "hidden", my: 1.5 }}>
@@ -373,6 +380,7 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
                   <Typography variant="body2" sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
                     {formatMoney(line.lineTotal)} сом
                   </Typography>
+                  {Number(line.additionalCostPerUnit) > 0 && <Typography variant="caption" color="text.secondary">Включая доп. расходы: {formatMoney(line.additionalCostPerUnit)} сом/шт.</Typography>}
                 </Box>
               ))}
             </Stack>
@@ -405,6 +413,7 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
                               .join(" · ")}
                           </Typography>
                         )}
+                        {Number(line.additionalCostPerUnit) > 0 && <Typography variant="caption" color="text.secondary" display="block">Доп. расходы в себестоимости: {formatMoney(line.additionalCostPerUnit)} сом/шт.</Typography>}
                       </TableCell>
                       <TableCell align="right" sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
                         {formatQuantity(line.quantity)} {line.productUnit || "шт"}

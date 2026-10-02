@@ -21,6 +21,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import KeyboardArrowLeftOutlined from "@mui/icons-material/KeyboardArrowLeftOutlined";
 import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOutlined";
 import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
@@ -150,6 +151,10 @@ const PAGER_ARROW_ZONE = 34;
 const PAGER_COUNTER_ZONE = 72;
 /** Края трека гасим, чтобы уезжающее имя не сталкивалось со стрелками. */
 const PAGER_EDGE_MASK = `linear-gradient(90deg, transparent 0, #000 ${PAGER_ARROW_ZONE}px, #000 calc(100% - ${PAGER_COUNTER_ZONE}px), transparent 100%)`;
+const DESKTOP_DOCTOR_COLUMN_MIN = 180;
+const DESKTOP_DOCTOR_COLUMN_MAX = 380;
+const DESKTOP_DOCTOR_COLUMN_DEFAULT = 280;
+const DESKTOP_DOCTOR_COLUMN_STEP = 20;
 
 /**
  * Курсор «тащу» и запрет выделения на время перетаскивания — прямо в style,
@@ -177,6 +182,21 @@ interface DocSummary {
   label: string;
   /** true, если у врача нет ни одного рабочего дня в горизонте. */
   noSchedule: boolean;
+}
+
+function availabilitySpecLabel(emp: EmployeeAvailability): string | null {
+  const names = (emp.specializations ?? []).map((s) => s.name).filter(Boolean);
+  return names.length > 0 ? names.join(", ") : null;
+}
+
+function availabilityRoleLabel(emp: EmployeeAvailability): string | null {
+  if (emp.clinicalRole === "doctor") return "Врач";
+  if (emp.clinicalRole === "nurse") return "Медсестра";
+  return null;
+}
+
+function isDoctorAvailability(emp: EmployeeAvailability): boolean {
+  return emp.clinicalRole === "doctor";
 }
 
 /**
@@ -701,6 +721,8 @@ interface DoctorColumnProps {
   absence: DayAbsence | undefined;
   /** Врачей в дне больше одного: на телефоне шапку колонки заменяет пейджер. */
   multi: boolean;
+  /** Ширина колонки врача в десктопной сетке. */
+  columnWidth: number;
   /**
    * Колонка в окне отрисовки (видна или соседняя). Вне окна рисуем только
    * шапку: тело с окнами дня — самая дорогая часть сетки.
@@ -730,6 +752,7 @@ const DoctorColumn = React.memo(function DoctorColumn({
   noteFullDay,
   absence,
   multi,
+  columnWidth,
   rendered,
   scrollTops,
   onSearchDoctor,
@@ -770,11 +793,10 @@ const DoctorColumn = React.memo(function DoctorColumn({
     <Box
       sx={{
         // Сетка не растягивает карточки по числу врачей:
-        // на десктопе — по трети панели; на телефоне колонка
-        // занимает экран целиком и листается свайпом (ориентир —
-        // полоса аватаров над сеткой).
-        flex: { xs: "0 0 100%", md: "0 0 33.3333%" },
-        minWidth: 175,
+        // на десктопе ширина колонки регулируется, на телефоне
+        // колонка занимает экран целиком и листается свайпом.
+        flex: { xs: "0 0 100%", md: `0 0 ${columnWidth}px` },
+        minWidth: { xs: 175, md: DESKTOP_DOCTOR_COLUMN_MIN },
         scrollSnapAlign: { xs: "start", md: "none" },
         // Один свайп — ровно один врач: без этого инерция
         // пролетала мимо двух-трёх колонок и было непонятно,
@@ -921,6 +943,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
+  const isDesktop = useMediaQuery(theme.breakpoints.up("md"));
 
   // Страница передаёт обработчики стрелками — новая ссылка на каждый её рендер.
   // Колонкам сетки нужны постоянные, иначе мемо не срабатывает (см. DayTimeline).
@@ -947,6 +970,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // Drag-to-scroll мышью нужен только там, где есть мышь: на тач-экране он
   // конкурирует с нативным свайпом и даёт «залипания».
   const isFinePointer = useMediaQuery("(pointer: fine)");
+  const [desktopDoctorColumnWidth, setDesktopDoctorColumnWidth] = React.useState(
+    DESKTOP_DOCTOR_COLUMN_DEFAULT,
+  );
   const [selDocId, setSelDocId] = React.useState<number | null>(null);
   const [selDay, setSelDay] = React.useState<string | null>(null);
   const searchByDoctor = React.useCallback((fullName: string) => {
@@ -1046,6 +1072,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
       React.startTransition(() => setPrefetch(nextPrefetch));
     }
   }, []);
+  React.useEffect(() => {
+    updateRenderRange();
+  }, [desktopDoctorColumnWidth, updateRenderRange]);
   /**
    * Вертикальная прокрутка тел колонок по врачу: тело вне окна отрисовки
    * пустеет, и без запомненной позиции колонка возвращалась бы к 00:00.
@@ -1484,14 +1513,17 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     const q = chunkQueries[0];
     if (!q?.data) return false;
     return !q.data.employees.some(
-      (emp) => emp.days.some((d) => (d.appointments?.length ?? 0) > 0),
+      (emp) =>
+        isDoctorAvailability(emp) && emp.days.some((d) => (d.appointments?.length ?? 0) > 0),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- см. chunkDataStamp выше
   }, [chunkDataStamp]);
   const futureExhausted = React.useMemo(() => {
     const q = chunkQueries[chunkQueries.length - 1];
     if (!q?.data) return false;
-    return !q.data.employees.some((emp) => emp.days.some((d) => d.scheduled));
+    return !q.data.employees.some(
+      (emp) => isDoctorAvailability(emp) && emp.days.some((d) => d.scheduled),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- см. chunkDataStamp выше
   }, [chunkDataStamp]);
 
@@ -1501,6 +1533,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const extendFuture = React.useCallback(() => {
     if (!futureEdgeLoading && !futureExhausted) setFutureChunks((n) => n + 1);
   }, [futureEdgeLoading, futureExhausted]);
+
+  const slotEmployees = React.useMemo(
+    () => mergedEmployees.filter(isDoctorAvailability),
+    [mergedEmployees],
+  );
 
   // Врачи специальности + сводка, по алфавиту ФИО.
   //
@@ -1516,10 +1553,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
    */
   const employeesWithGrid = React.useMemo(
     () =>
-      mergedEmployees.map((emp) =>
+      slotEmployees.map((emp) =>
         resampleEmployeeDays(emp, slotMinutesByEmployee.get(emp.employeeId)),
       ),
-    [mergedEmployees, slotMinutesByEmployee],
+    [slotEmployees, slotMinutesByEmployee],
   );
 
   /**
@@ -1534,7 +1571,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     null,
   );
   // Готовность — по чанку, который начинается сегодня; сами смены берутся из
-  // всех загруженных чанков (mergedEmployees).
+  // всех загруженных чанков врачей (slotEmployees).
   const todayChunk = chunkQueries[pastChunks];
   const todayChunkData = todayChunk?.data;
   const todayChunkError = todayChunk?.isError ?? false;
@@ -1550,7 +1587,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
         todayFailed: todayChunkError && todayChunkData === undefined,
         compute: () =>
           specializationsOnShift(
-            mergedEmployees,
+            slotEmployees,
             new Map(allEmployees.map((emp) => [emp.id, emp.specializations.map((s) => s.id)] as const)),
             todayIso,
           ),
@@ -1564,7 +1601,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
       allEmployees,
       todayChunkData,
       todayChunkError,
-      mergedEmployees,
+      slotEmployees,
       todayIso,
     ],
   );
@@ -1577,13 +1614,23 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     specId !== null,
   );
   const railSpecs = React.useMemo(
-    () =>
-      railSpecializations(
+    () => {
+      const visibleSpecs = railSpecializations(
         specs,
         branchSpecs ?? null,
         specId,
         (id) => (badgeBySpec.get(id)?.total ?? 0) > 0,
-      ),
+      );
+      return visibleSpecs
+        .map((specialization, index) => ({ specialization, index }))
+        .sort((a, b) => {
+          const aHasFree = (badgeBySpec.get(a.specialization.id)?.free ?? 0) > 0;
+          const bHasFree = (badgeBySpec.get(b.specialization.id)?.free ?? 0) > 0;
+          if (aHasFree !== bHasFree) return aHasFree ? -1 : 1;
+          return a.index - b.index;
+        })
+        .map(({ specialization }) => specialization);
+    },
     [specs, branchSpecs, specId, badgeBySpec],
   );
 
@@ -2039,160 +2086,67 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
             borderColor: "divider",
             borderRadius: "14px",
             bgcolor: "background.paper",
-            overflowY: "auto",
+            overflow: "hidden",
             display: { xs: "none", md: "flex" },
             flexDirection: "column",
             minHeight: 0,
           }}
         >
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ fontWeight: 600, px: 2, pt: 1.5, pb: 1 }}
-          >
-            {t("slots.specialities")}
-          </Typography>
-          {specsQuery.isLoading ? (
-            <Stack alignItems="center" py={3}>
-              <CircularProgress size={20} />
-            </Stack>
-          ) : (
-            <>
-              {(() => {
-                const active = specId === null;
-                const overall = summaryQuery.data
-                  ? {
-                      free: freeOnSummaryDay(
-                        summaryQuery.data.overallFreeEmployeeCount,
-                        summaryQuery.data.date,
-                        todayIso,
-                      ),
-                      total: summaryQuery.data.overallEmployeeCount,
-                    }
-                  : undefined;
-                return (
-                  <React.Fragment>
-                    <Box
-                      onClick={() => {
-                        if (specId !== null) {
-                          setSpecId(null);
-                          setSelDocId(null);
-                          setSelDay(null);
-                          setCollapsedGroup("all");
-                        } else if (collapsedGroup === "all") {
-                          setCollapsedGroup(null);
-                        } else {
-                          setCollapsedGroup("all");
-                          setSelDocId(null);
-                        }
-                      }}
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 1.25,
-                        px: 1.75,
-                        py: 1.25,
-                        cursor: "pointer",
-                        borderLeft: "3px solid",
-                        borderColor: active ? "primary.main" : "transparent",
-                        bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
-                        transition: "background-color .13s ease",
-                        "@media (hover: hover)": {
-                          "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
-                        },
-                      }}
-                    >
-                      <Typography
-                        variant="body2"
-                        fontWeight={active ? 600 : 500}
-                        sx={{ flex: 1, minWidth: 0 }}
-                        noWrap
-                      >
-                        {t("slots.allSpecialists")}
-                      </Typography>
-                      <KeyboardArrowRightOutlined
-                        sx={{
-                          fontSize: 17,
-                          flexShrink: 0,
-                          transform: collapsedGroup === "all" ? "none" : "rotate(90deg)",
-                          transition: "transform .13s ease",
-                        }}
-                      />
-                      {overall && (
-                        <Box
-                          sx={(t) => ({
-                            fontSize: "0.6875rem",
-                            fontWeight: 600,
-                            lineHeight: 1,
-                            px: 0.75,
-                            py: 0.5,
-                            borderRadius: "7px",
-                            color: overall.free ? "success.dark" : "text.disabled",
-                            bgcolor: overall.free
-                              ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
-                              : subtleBg(t, true),
-                            ...(t.palette.mode === "dark" && overall.free ? { color: t.palette.success.light } : {}),
-                          })}
-                          title={badgeTitle}
-                        >
-                          {overall.free}/{overall.total}
-                        </Box>
-                      )}
-                    </Box>
-
-                    <Collapse
-                      in={active && collapsedGroup !== "all"}
-                      timeout={{ enter: 240, exit: 180 }}
-                      easing={{ enter: "cubic-bezier(0.22, 1, 0.36, 1)", exit: "cubic-bezier(0.4, 0, 1, 1)" }}
-                      unmountOnExit
-                      // flexShrink: 0 обязателен: рельс — это flex-колонка со скроллом,
-                      // а у Collapse overflow: hidden (min-height: auto → 0), поэтому
-                      // иначе флексбокс ужимает раскрытый список до нулевой высоты.
-                      sx={{ flexShrink: 0, overflow: "hidden" }}
-                    >
-                      <DocRailList
-                        docs={docs}
-                        selectedId={selDocId}
-                        loading={isAvailLoading}
-                        onSelect={setSelDocId}
-                        onSearch={searchByDoctor}
-                      />
-                    </Collapse>
-                  </React.Fragment>
-                );
-              })()}
-              {/* Пока не известно, у каких специальностей в филиале есть смены,
-                  список не показываем: иначе справочник на секунду вставал бы
-                  целиком и потом схлопывался. */}
-              {branchSpecs === undefined ? (
-                <Stack alignItems="center" py={2}>
-                  <CircularProgress size={16} />
-                </Stack>
-              ) : railSpecs.length === 0 ? (
-                <Typography variant="body2" color="text.disabled" sx={{ px: 2, py: 2 }}>
-                  {t("slots.noSpecialities")}
-                </Typography>
-              ) : (
-                railSpecs.map((s) => {
-                  const active = s.id === specId;
-                  // «0/0» — сегодня в филиале никого из специальности: бейдж про
-                  // сегодня, сказать ему нечего. Сама строка остаётся — врачи
-                  // работают в другие дни (пустые специальности уже скрыты).
-                  const badge = badgeBySpec.get(s.id);
-                  const showBadge = badge != null && badge.total > 0;
+          <Box sx={{ px: 1.5, pt: 1.5, pb: 1 }}>
+            <TextField
+              size="small"
+              fullWidth
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("slots.searchSpecialist")}
+              InputProps={{
+                startAdornment: (
+                  <SearchOutlined sx={{ fontSize: 18, color: "text.disabled", mr: 0.75 }} />
+                ),
+                endAdornment: search ? (
+                  <IconButton
+                    size="small"
+                    aria-label={t("slots.searchClose")}
+                    onClick={() => setSearch("")}
+                  >
+                    <CloseOutlined sx={{ fontSize: 16 }} />
+                  </IconButton>
+                ) : undefined,
+              }}
+            />
+          </Box>
+          <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+            {specsQuery.isLoading ? (
+              <Stack alignItems="center" py={3}>
+                <CircularProgress size={20} />
+              </Stack>
+            ) : (
+              <>
+                {(() => {
+                  const active = specId === null;
+                  const overall = summaryQuery.data
+                    ? {
+                        free: freeOnSummaryDay(
+                          summaryQuery.data.overallFreeEmployeeCount,
+                          summaryQuery.data.date,
+                          todayIso,
+                        ),
+                        total: summaryQuery.data.overallEmployeeCount,
+                      }
+                    : undefined;
                   return (
-                    <React.Fragment key={s.id}>
+                    <React.Fragment>
                       <Box
                         onClick={() => {
-                          if (specId !== s.id) {
-                            setSpecId(s.id);
+                          if (specId !== null) {
+                            setSpecId(null);
                             setSelDocId(null);
                             setSelDay(null);
-                            setCollapsedGroup(null);
-                          } else if (collapsedGroup === s.id) {
+                            setCollapsedGroup("all");
+                          } else if (collapsedGroup === "all") {
                             setCollapsedGroup(null);
                           } else {
-                            setCollapsedGroup(s.id);
+                            setCollapsedGroup("all");
                             setSelDocId(null);
                           }
                         }}
@@ -2218,17 +2172,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           sx={{ flex: 1, minWidth: 0 }}
                           noWrap
                         >
-                          {s.name}
+                          {t("slots.allSpecialists")}
                         </Typography>
-                        <KeyboardArrowRightOutlined
-                          sx={{
-                            fontSize: 17,
-                            flexShrink: 0,
-                            transform: collapsedGroup === s.id ? "none" : "rotate(90deg)",
-                            transition: "transform .13s ease",
-                          }}
-                        />
-                        {showBadge ? (
+                        {overall && (
                           <Box
                             sx={(t) => ({
                               fontSize: "0.6875rem",
@@ -2237,29 +2183,27 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                               px: 0.75,
                               py: 0.5,
                               borderRadius: "7px",
-                              color: badge.free ? "success.dark" : "text.disabled",
-                              bgcolor: badge.free
+                              color: overall.free ? "success.dark" : "text.disabled",
+                              bgcolor: overall.free
                                 ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
                                 : subtleBg(t, true),
-                              ...(t.palette.mode === "dark" && badge.free ? { color: t.palette.success.light } : {}),
+                              ...(t.palette.mode === "dark" && overall.free ? { color: t.palette.success.light } : {}),
                             })}
                             title={badgeTitle}
                           >
-                            {badge.free}/{badge.total}
+                            {overall.free}/{overall.total}
                           </Box>
-                        ) : (
-                          // Место бейджа «1/1»: без него стрелка уезжала вправо
-                          // и выбивалась из колонки стрелок соседних строк.
-                          <Box sx={{ width: 28, flexShrink: 0 }} />
                         )}
                       </Box>
 
-                      {/* Список сотрудников выбранной специальности */}
                       <Collapse
-                        in={active && collapsedGroup !== s.id}
+                        in={active && collapsedGroup !== "all"}
                         timeout={{ enter: 240, exit: 180 }}
                         easing={{ enter: "cubic-bezier(0.22, 1, 0.36, 1)", exit: "cubic-bezier(0.4, 0, 1, 1)" }}
                         unmountOnExit
+                        // flexShrink: 0 обязателен: рельс — это flex-колонка со скроллом,
+                        // а у Collapse overflow: hidden (min-height: auto → 0), поэтому
+                        // иначе флексбокс ужимает раскрытый список до нулевой высоты.
                         sx={{ flexShrink: 0, overflow: "hidden" }}
                       >
                         <DocRailList
@@ -2272,9 +2216,183 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       </Collapse>
                     </React.Fragment>
                   );
-                })
-              )}
-            </>
+                })()}
+                {/* Пока не известно, у каких специальностей в филиале есть смены,
+                    список не показываем: иначе справочник на секунду вставал бы
+                    целиком и потом схлопывался. */}
+                {branchSpecs === undefined ? (
+                  <Stack alignItems="center" py={2}>
+                    <CircularProgress size={16} />
+                  </Stack>
+                ) : railSpecs.length === 0 ? (
+                  <Typography variant="body2" color="text.disabled" sx={{ px: 2, py: 2 }}>
+                    {t("slots.noSpecialities")}
+                  </Typography>
+                ) : (
+                  railSpecs.map((s) => {
+                    const active = s.id === specId;
+                    // «0/0» — сегодня в филиале никого из специальности: бейдж про
+                    // сегодня, сказать ему нечего. Сама строка остаётся — врачи
+                    // работают в другие дни (пустые специальности уже скрыты).
+                    const badge = badgeBySpec.get(s.id);
+                    const showBadge = badge != null && badge.total > 0;
+                    return (
+                      <React.Fragment key={s.id}>
+                        <Box
+                          onClick={() => {
+                            if (specId !== s.id) {
+                              setSpecId(s.id);
+                              setSelDocId(null);
+                              setSelDay(null);
+                              setCollapsedGroup(null);
+                            } else if (collapsedGroup === s.id) {
+                              setCollapsedGroup(null);
+                            } else {
+                              setCollapsedGroup(s.id);
+                              setSelDocId(null);
+                            }
+                          }}
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 1.25,
+                            px: 1.75,
+                            py: 1.25,
+                            cursor: "pointer",
+                            borderLeft: "3px solid",
+                            borderColor: active ? "primary.main" : "transparent",
+                            bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
+                            transition: "background-color .13s ease",
+                            "@media (hover: hover)": {
+                              "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
+                            },
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            fontWeight={active ? 600 : 500}
+                            sx={{ flex: 1, minWidth: 0 }}
+                            noWrap
+                          >
+                            {s.name}
+                          </Typography>
+                          <KeyboardArrowRightOutlined
+                            sx={{
+                              fontSize: 17,
+                              flexShrink: 0,
+                              transform: collapsedGroup === s.id ? "none" : "rotate(90deg)",
+                              transition: "transform .13s ease",
+                            }}
+                          />
+                          {showBadge ? (
+                            <Box
+                              sx={(t) => ({
+                                fontSize: "0.6875rem",
+                                fontWeight: 600,
+                                lineHeight: 1,
+                                px: 0.75,
+                                py: 0.5,
+                                borderRadius: "7px",
+                                color: badge.free ? "success.dark" : "text.disabled",
+                                bgcolor: badge.free
+                                  ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
+                                  : subtleBg(t, true),
+                                ...(t.palette.mode === "dark" && badge.free ? { color: t.palette.success.light } : {}),
+                              })}
+                              title={badgeTitle}
+                            >
+                              {badge.free}/{badge.total}
+                            </Box>
+                          ) : (
+                            // Место бейджа «1/1»: без него стрелка уезжала вправо
+                            // и выбивалась из колонки стрелок соседних строк.
+                            <Box sx={{ width: 28, flexShrink: 0 }} />
+                          )}
+                        </Box>
+
+                        {/* Список сотрудников выбранной специальности */}
+                        <Collapse
+                          in={active && collapsedGroup !== s.id}
+                          timeout={{ enter: 240, exit: 180 }}
+                          easing={{ enter: "cubic-bezier(0.22, 1, 0.36, 1)", exit: "cubic-bezier(0.4, 0, 1, 1)" }}
+                          unmountOnExit
+                          sx={{ flexShrink: 0, overflow: "hidden" }}
+                        >
+                          <DocRailList
+                            docs={docs}
+                            selectedId={selDocId}
+                            loading={isAvailLoading}
+                            onSelect={setSelDocId}
+                            onSearch={searchByDoctor}
+                          />
+                        </Collapse>
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </>
+            )}
+          </Box>
+          {isDesktop && (
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={0.75}
+              sx={{
+                mt: "auto",
+                px: 1.5,
+                py: 1.25,
+                borderTop: "1px solid",
+                borderColor: "divider",
+                flexShrink: 0,
+              }}
+            >
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", fontWeight: 600 }}
+              >
+                {t("slots.columnWidth")}
+              </Typography>
+              <IconButton
+                size="small"
+                aria-label={t("slots.columnNarrower")}
+                disabled={desktopDoctorColumnWidth <= DESKTOP_DOCTOR_COLUMN_MIN}
+                onClick={() => {
+                  setDesktopDoctorColumnWidth((value) =>
+                    Math.max(DESKTOP_DOCTOR_COLUMN_MIN, value - DESKTOP_DOCTOR_COLUMN_STEP),
+                  );
+                }}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: "8px",
+                }}
+              >
+                <RemoveOutlined sx={{ fontSize: 16 }} />
+              </IconButton>
+              <IconButton
+                size="small"
+                aria-label={t("slots.columnWider")}
+                disabled={desktopDoctorColumnWidth >= DESKTOP_DOCTOR_COLUMN_MAX}
+                onClick={() => {
+                  setDesktopDoctorColumnWidth((value) =>
+                    Math.min(DESKTOP_DOCTOR_COLUMN_MAX, value + DESKTOP_DOCTOR_COLUMN_STEP),
+                  );
+                }}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: "8px",
+                }}
+              >
+                <AddOutlined sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Stack>
           )}
         </Box>
 
@@ -2293,54 +2411,6 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
             p: 0,
           }}
         >
-          <Stack
-            direction="row"
-            alignItems="center"
-            spacing={2}
-            sx={{
-              display: { xs: "none", md: "flex" },
-              px: 2,
-              py: 1.25,
-              borderBottom: "1px solid",
-              borderColor: "divider",
-              flexShrink: 0,
-              bgcolor: "background.paper",
-            }}
-          >
-            <TextField
-              size="small"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t("slots.searchSpecialist")}
-              sx={{ width: 260 }}
-              InputProps={{
-                startAdornment: (
-                  <SearchOutlined sx={{ fontSize: 18, color: "text.disabled", mr: 0.75 }} />
-                ),
-                endAdornment: search ? (
-                  <IconButton
-                    size="small"
-                    aria-label={t("slots.searchClose")}
-                    onClick={() => setSearch("")}
-                  >
-                    <CloseOutlined sx={{ fontSize: 16 }} />
-                  </IconButton>
-                ) : undefined,
-              }}
-            />
-            <Box>
-              <Typography variant="subtitle1" fontWeight={600}>
-                {t("slots.grid")}{" "}
-                {specId
-                  ? `(${specs.find((s) => s.id === specId)?.name})`
-                  : t("slots.allSpecialistsOption")}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {t("slots.foundSpecialists", { count: gridDocs.length })}
-              </Typography>
-            </Box>
-          </Stack>
-
           {/* ── Мобильная шапка панели: поиск врача и пейджер по врачам дня.
               Заменяет собой и ряд чипов специальностей, и десктопную шапку. ── */}
           <Box
@@ -2493,7 +2563,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             const isDayOff =
                               (Boolean(day?.dayOff) || note?.fullDay === true) && !offSchedule;
                             const specLabel =
-                              specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
+                              availabilitySpecLabel(emp) ??
+                              specLabelByEmployee.get(emp.employeeId) ??
+                              availabilityRoleLabel(emp) ??
+                              t("slots.specialist");
                             return (
                               <Stack
                                 key={emp.employeeId}
@@ -2680,7 +2753,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             (Boolean(day?.dayOff) || itemNote?.fullDay === true) &&
                             !itemOffSchedule;
                           const selected = idx === safeIdx;
-                          const itemSpec = specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
+                          const itemSpec =
+                            availabilitySpecLabel(emp) ??
+                            specLabelByEmployee.get(emp.employeeId) ??
+                            availabilityRoleLabel(emp) ??
+                            t("slots.specialist");
                           return (
                             <MenuItem
                               key={emp.employeeId}
@@ -2836,7 +2913,12 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       employeeId={emp.employeeId}
                       fullName={emp.fullName}
                       status={sum.status}
-                      specName={gridSpecName}
+                      specName={
+                        availabilitySpecLabel(emp) ??
+                        specLabelByEmployee.get(emp.employeeId) ??
+                        availabilityRoleLabel(emp) ??
+                        gridSpecName
+                      }
                       day={docDay}
                       offSchedule={docOffSchedule}
                       dayOff={docDayOff}
@@ -2844,6 +2926,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       noteFullDay={docNote?.fullDay ?? false}
                       absence={docNote?.absence}
                       multi={activeDocsOnDay.length > 1}
+                      columnWidth={desktopDoctorColumnWidth}
                       rendered={
                         renderedIds.has(emp.employeeId) || prefetchedIds.has(emp.employeeId)
                       }

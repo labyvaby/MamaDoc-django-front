@@ -33,6 +33,7 @@ import {
   deleteClientPhoto,
   updateClient,
   uploadClientPhoto,
+  type CreateClientPayload,
   type DjangoClientStatus,
   type ClientType,
   type DjangoClient,
@@ -45,7 +46,10 @@ type Props = {
   organizationId: number | null;
   client: DjangoClient | null;
   onClose: () => void;
-  onSaved: (client: DjangoClient) => void;
+  onSaved?: (client: DjangoClient) => void;
+  onCreate?: (payload: CreateClientPayload, photoFile: File | null) => Promise<void>;
+  initialQuery?: string;
+  showPhoto?: boolean;
   statuses: DjangoClientStatus[];
 };
 
@@ -91,8 +95,18 @@ const emptyDraft: Draft = {
   blacklistReason: "",
 };
 
-function toDraft(client: DjangoClient | null): Draft {
-  if (!client) return { ...emptyDraft };
+function toDraft(client: DjangoClient | null, initialQuery = ""): Draft {
+  if (!client) {
+    const query = initialQuery.trim();
+    const phoneFirst = /^[+\d][\d\s()-]*$/.test(query);
+    const parsedPhone = phoneFirst ? parsePhone(query) : null;
+    return {
+      ...emptyDraft,
+      fullName: phoneFirst ? "" : query,
+      phone: parsedPhone?.local ?? "",
+      phoneCountryCode: parsedPhone?.countryCode ?? DEFAULT_PHONE_COUNTRY_CODE,
+    };
+  }
   const parsedPhone = parsePhone(client.phone || "");
   return {
     fullName: client.fullName,
@@ -116,8 +130,8 @@ function toDraft(client: DjangoClient | null): Draft {
   };
 }
 
-export default function ClientEditorDrawer({ open, organizationId, client, onClose, onSaved, statuses }: Props) {
-  const [draft, setDraft] = React.useState<Draft>(() => toDraft(client));
+export default function ClientEditorDrawer({ open, organizationId, client, onClose, onSaved, onCreate, initialQuery = "", showPhoto = true, statuses }: Props) {
+  const [draft, setDraft] = React.useState<Draft>(() => toDraft(client, initialQuery));
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
@@ -130,13 +144,18 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
 
   React.useEffect(() => {
     if (!open) return;
-    setDraft(toDraft(client));
+    setDraft(toDraft(client, initialQuery));
     setError("");
     setPhotoFile(null);
     setPhotoPreview(client?.photoUrl ?? null);
     setPhotoRemoved(false);
-    if (!client && statuses.length > 0) {
-      setDraft((current) => ({ ...current, customerStatusId: statuses.find((item) => item.code === "regular")?.id ?? statuses[0].id }));
+  }, [open, client, initialQuery]);
+
+  React.useEffect(() => {
+    if (open && !client && statuses.length > 0) {
+      setDraft((current) => current.customerStatusId === null
+        ? { ...current, customerStatusId: statuses.find((item) => item.code === "regular")?.id ?? statuses[0].id }
+        : current);
     }
   }, [open, client, statuses]);
 
@@ -185,9 +204,15 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
         bankAccount: draft.bankAccount.trim(),
         bankBik: draft.bankBik.trim(),
       };
+      const createPayload = { organizationId, phone: fullPhone, ...payload };
+      if (!client && onCreate) {
+        await onCreate(createPayload, photoFile);
+        onClose();
+        return;
+      }
       const saved = client
         ? await updateClient(client.id, organizationId, payload)
-        : await createClient({ organizationId, phone: fullPhone, ...payload });
+        : await createClient(createPayload);
 
       let finalClient = saved;
       if (photoFile) {
@@ -197,7 +222,7 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
         finalClient = { ...saved, photoUrl: null };
       }
 
-      onSaved(finalClient);
+      onSaved?.(finalClient);
       onClose();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось сохранить клиента.");
@@ -233,8 +258,8 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
           <Stack spacing={3}>
             {error && <Alert severity="error" onClose={() => setError("")}>{error}</Alert>}
 
-            <PatientPhotoUploader photoFile={photoFile} photoPreview={photoPreview} onPickPhoto={handlePickPhoto} inputId="client-photo" disabled={busy} />
-            {photoPreview && !photoFile && !photoRemoved && (
+            {showPhoto && <PatientPhotoUploader photoFile={photoFile} photoPreview={photoPreview} onPickPhoto={handlePickPhoto} inputId="client-photo" disabled={busy} />}
+            {showPhoto && photoPreview && !photoFile && !photoRemoved && (
               <Button variant="text" color="error" size="small" startIcon={<DeleteOutline />} onClick={handleRemovePhoto}>
                 Удалить фото
               </Button>

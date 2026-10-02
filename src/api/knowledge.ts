@@ -181,6 +181,14 @@ export async function uploadKnowledgeImage(
 export const PDF_LINK_TITLE = "pdf";
 
 /**
+ * Остальные вложения (Word, Excel, аудио, видео…) — такая же ссылка, но с
+ * меткой `title="file"`; формат определяется по расширению в href (см.
+ * pages/knowledge/attachmentTypes.ts). PDF оставлен на своей метке — так
+ * хранятся уже опубликованные статьи.
+ */
+export const FILE_LINK_TITLE = "file";
+
+/**
  * Загрузка PDF файлом — тот же `POST /knowledge/attachments/`, что принимает
  * картинки. Бэк разрешил .pdf по тикету `MamaDoc/backend_ticket_knowledge_pdf.md`
  * (до 25 МБ, право `knowledge.manage`, ответ `{url}`), флаг включён 07.08.2026.
@@ -191,11 +199,17 @@ export const PDF_LINK_TITLE = "pdf";
  */
 export const KNOWLEDGE_PDF_UPLOAD_ENABLED = true;
 
-/** Предел размера файла — тот же, что у документов организации (см. api/documents.ts). */
-export const KNOWLEDGE_PDF_MAX_MB = 25;
+/**
+ * Загрузка остальных форматов (Word/Excel/PowerPoint/OpenDocument/RTF/TXT/CSV,
+ * MP3/M4A, MP4) — тот же `POST /knowledge/attachments/`. Ждёт бэк: тикет
+ * `MamaDoc/backend_ticket_knowledge_attachment_types.md` (30.09.2026). Пока
+ * выключен — такие файлы вставляются только ссылкой, а при попытке загрузить
+ * файл редактор показывает подсказку.
+ */
+export const KNOWLEDGE_FILES_UPLOAD_ENABLED = false;
 
 /**
- * Загрузка произвольного файла (PDF) на тот же эндпоинт вложений. В отличие от
+ * Загрузка произвольного файла (PDF и др.) на тот же эндпоинт вложений. В отличие от
  * uploadKnowledgeImage файл не ужимается и не переводится в jpg — отдаём как есть.
  */
 export async function uploadKnowledgeFile(
@@ -210,12 +224,6 @@ export async function uploadKnowledgeFile(
       { method: "POST", formData },
     ),
   );
-}
-
-/** Похоже ли на PDF по расширению (query-строку игнорируем). */
-export function isPdfUrl(url: string): boolean {
-  const path = url.trim().split(/[?#]/)[0];
-  return /\.pdf$/i.test(path);
 }
 
 /**

@@ -45,6 +45,7 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   ecommerce: 'ecommerce',
   notifications: 'announcements',
   telegram_bot: 'telegram_bot',
+  lab: 'lab',
   // Закупки — свой модуль, отдельный от склада (см. rbac/module_mapping.py).
   procurement: 'procurement',
 };
