@@ -61,8 +61,6 @@ import { InteractionHistory } from "./InteractionHistory";
 import { LinkedSection } from "./linkedSections";
 import { isLinkedModule, systemType } from "./linkedSectionTypes";
 import { ModuleRecords } from "./ModuleRecords";
-import { isGrowthModule } from "./growth/growthData";
-import { GrowthModule } from "./growth/GrowthModule";
 import { isVisionModule } from "./vision/visionData";
 import { VisionModule } from "./vision/VisionModule";
 import { UpcomingEvents } from "./UpcomingEvents";
@@ -570,16 +568,6 @@ const PatientProgramPage: React.FC = () => {
                   enrollmentId={selectedEnrollment.id}
                   scope={scope}
                   icon={moduleIcon(selectedModule)}
-                />
-              ) : isGrowthModule(selectedModule) ? (
-                <GrowthModule
-                  enrollmentId={selectedEnrollment.id}
-                  module={selectedModule}
-                  scope={scope}
-                  canManage={canManageEnrollments && selectedEnrollment.isEffectivelyActive}
-                  icon={moduleIcon(selectedModule)}
-                  birthDate={patient.birthDate ?? null}
-                  gender={patient.gender}
                 />
               ) : isVisionModule(selectedModule) ? (
                 <VisionModule

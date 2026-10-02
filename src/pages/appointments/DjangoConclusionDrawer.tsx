@@ -2128,7 +2128,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       </Stack>
       <Divider />
       {/* Аллергии пациента и чек-лист первичного осмотра (книжка ребёнка, этап 2) */}
-      <ConclusionHealthStrip appointmentId={receiptAppointmentId} />
+      <ConclusionHealthStrip appointmentId={receiptAppointmentId} weightKg={weightKg} heightCm={heightCm} />
 
       {/* ── документы строки услуги (если их несколько или можно добавить) ── */}
       {documentBar && (

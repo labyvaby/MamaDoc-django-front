@@ -2,6 +2,8 @@ import dayjs from "dayjs";
 
 import type {
   Allergy,
+  FeedingSwitchReason,
+  FeedingType,
   AllergyCategory,
   AllergySeverity,
   AllergyStatus,
@@ -173,11 +175,36 @@ export const FAMILY_CONDITION_PRESETS = [
   "Онкологическое заболевание",
 ];
 
+export const FEEDING_TYPES: Option<FeedingType>[] = [
+  { value: "breast", label: "Грудное" },
+  { value: "mixed", label: "Смешанное" },
+  { value: "formula", label: "Искусственное" },
+  { value: "general", label: "Общий стол" },
+];
+
+/** Причины перевода на смешанное и искусственное — коды формы 112/у. */
+export const FEEDING_SWITCH_REASONS: Option<Exclude<FeedingSwitchReason, "">>[] = [
+  { value: "mother_illness", label: "Болезнь матери" },
+  { value: "mother_absent", label: "Отсутствие матери" },
+  { value: "hypogalactia", label: "Гипогалактия" },
+  { value: "no_lactation", label: "Отсутствие лактации" },
+  { value: "mother_work", label: "Выход на работу (учёбу)" },
+  { value: "mother_wish", label: "По желанию матери" },
+  { value: "child_condition", label: "Состояние ребёнка" },
+  { value: "other", label: "Другие причины" },
+];
+
+/** Причина перевода нужна только смешанному и искусственному. */
+export function feedingNeedsReason(type: FeedingType): boolean {
+  return type === "mixed" || type === "formula";
+}
+
 export const ONBOARDING_ITEMS: Option<OnboardingItem>[] = [
   { value: "birth", label: "Данные о рождении: срок гестации и вес" },
   { value: "allergies", label: "Аллергии уточнены" },
   { value: "healthGroup", label: "Группа здоровья" },
   { value: "conditions", label: "Диагнозы внесены" },
+  { value: "measurements", label: "Рост и вес измерены" },
 ];
 
 /** Обязательные пункты чек-листа (как на сервере). */

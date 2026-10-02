@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Stack, Typography } from "@mui/material";
 
 import type { DjangoPatient } from "../../api/patients";
+import { GrowthSection } from "../../pages/patient-program/growth/GrowthSection";
 import { AllergiesSection } from "./AllergiesSection";
 import { BirthHistorySection } from "./BirthHistorySection";
 import { ConditionsSection } from "./ConditionsSection";
@@ -45,6 +46,7 @@ export const PatientHealthPanel: React.FC<{ patient: DjangoPatient | null }> = (
     <Stack gap={2} sx={{ height: "100%", minHeight: 0, overflowY: "auto", pb: 2, pr: 0.5, "& > *": { flexShrink: 0 } }}>
       <AllergiesSection patientId={patient.id} canManage={canManage} />
       <ConditionsSection patientId={patient.id} canManage={canManage} />
+      {child && <GrowthSection patientId={patient.id} canManage={canManage} />}
       <HealthProfileCard patientId={patient.id} birthDate={patient.birthDate} canManage={canManage} />
       {child && <BirthHistorySection patientId={patient.id} birthDate={patient.birthDate} canManage={canManage} />}
       {child && <FamilySection patientId={patient.id} canManage={canManage} />}

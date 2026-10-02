@@ -222,7 +222,7 @@ export interface HealthChangeList {
   count: number;
 }
 
-export type OnboardingItem = "birth" | "allergies" | "healthGroup" | "conditions";
+export type OnboardingItem = "birth" | "allergies" | "healthGroup" | "conditions" | "measurements";
 
 export interface Onboarding {
   enrollmentId: number;
@@ -382,4 +382,120 @@ export function getOnboarding(scope: Scope, enrollmentId: number, signal?: Abort
 
 export function completeOnboarding(scope: Scope, enrollmentId: number): Promise<Onboarding> {
   return apiRequest<Onboarding>(path(scope, `enrollments/${enrollmentId}/complete-onboarding/`), { method: "POST" });
+}
+
+// ── Рост и вскармливание (этап 2б) ───────────────────────────────────────────
+
+export type MeasurementPosition = "recumbent" | "standing" | "";
+export type MeasurementSource = "manual" | "conclusion" | "import";
+export type FeedingType = "breast" | "mixed" | "formula" | "general";
+export type FeedingSwitchReason =
+  | "mother_illness"
+  | "mother_absent"
+  | "hypogalactia"
+  | "no_lactation"
+  | "mother_work"
+  | "mother_wish"
+  | "child_condition"
+  | "other"
+  | "";
+
+export interface GrowthMeasurement {
+  id: number;
+  measuredOn: string;
+  weightKg: number | null;
+  lengthHeightCm: number | null;
+  position: MeasurementPosition;
+  headCircumferenceCm: number | null;
+  chestCircumferenceCm: number | null;
+  /** manual правится здесь; conclusion — в заключении приёма; import — архив. */
+  source: MeasurementSource;
+  conclusionId: number | null;
+  appointmentId: number | null;
+  notes: string;
+  createdBy: EmployeeRef | null;
+  createdAt: string;
+}
+
+export interface MeasurementInput {
+  measuredOn: string;
+  weightKg: number | null;
+  lengthHeightCm: number | null;
+  position: MeasurementPosition;
+  headCircumferenceCm: number | null;
+  chestCircumferenceCm: number | null;
+  notes: string;
+}
+
+export interface FeedingPeriod {
+  id: number;
+  feedingType: FeedingType;
+  startedOn: string;
+  switchReason: FeedingSwitchReason;
+  notes: string;
+  createdBy: EmployeeRef | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FeedingInput {
+  feedingType: FeedingType;
+  startedOn: string;
+  switchReason: FeedingSwitchReason;
+  notes: string;
+}
+
+export interface GrowthData {
+  sex: string;
+  birthDate: string | null;
+  gestationalAgeWeeks: number | null;
+  gestationalAgeDays: number | null;
+  birth: { weightKg: number | null; lengthCm: number | null; headCircumferenceCm: number | null } | null;
+  complementaryFeedingOn: string | null;
+  measurements: GrowthMeasurement[];
+  feeding: FeedingPeriod[];
+}
+
+export function getGrowth(scope: Scope, patientId: number, signal?: AbortSignal): Promise<GrowthData> {
+  return apiRequest<GrowthData>(patientPath(scope, patientId, "growth/"), { signal });
+}
+
+export function createMeasurement(scope: Scope, patientId: number, payload: MeasurementInput): Promise<GrowthMeasurement> {
+  return apiRequest<GrowthMeasurement>(patientPath(scope, patientId, "growth/measurements/"), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateMeasurement(
+  scope: Scope,
+  patientId: number,
+  measurementId: number,
+  payload: Partial<MeasurementInput>,
+): Promise<GrowthMeasurement> {
+  return apiRequest<GrowthMeasurement>(patientPath(scope, patientId, `growth/measurements/${measurementId}/`), {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export function deleteMeasurement(scope: Scope, patientId: number, measurementId: number): Promise<void> {
+  return apiRequest<void>(patientPath(scope, patientId, `growth/measurements/${measurementId}/`), { method: "DELETE" });
+}
+
+export function createFeedingPeriod(scope: Scope, patientId: number, payload: FeedingInput): Promise<FeedingPeriod> {
+  return apiRequest<FeedingPeriod>(patientPath(scope, patientId, "feeding/"), { method: "POST", body: payload });
+}
+
+export function updateFeedingPeriod(
+  scope: Scope,
+  patientId: number,
+  periodId: number,
+  payload: Partial<FeedingInput>,
+): Promise<FeedingPeriod> {
+  return apiRequest<FeedingPeriod>(patientPath(scope, patientId, `feeding/${periodId}/`), { method: "PATCH", body: payload });
+}
+
+export function deleteFeedingPeriod(scope: Scope, patientId: number, periodId: number): Promise<void> {
+  return apiRequest<void>(patientPath(scope, patientId, `feeding/${periodId}/`), { method: "DELETE" });
 }
