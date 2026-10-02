@@ -788,7 +788,9 @@ PUT /api/v2/hotel/properties/{id}/consent-template/      # hotel.manage
   (`selectors.py`, `OccupancySnapshot`) — без `stay_status`;
 - кухня, `occupied_guests` — подтверждённые позиции с
   `check_in <= on_date < check_out` — тоже без `stay_status`: повар готовит
-  порции на гостей, которые не приехали.
+  порции на гостей, которые не приехали. И на тех, кто выехал раньше срока
+  (`checked_out` до `check_out`): на тесте 03.10 кухня считала 3 гостя при
+  0 проживающих — 2 незаезда и 1 ранний выезд.
 
 Правило, по которому теперь считает фронт (`hotelInHouse.ts`), — одно на все
 экраны: проживает, если позиция `checked_in`; или `expected` и заезд
