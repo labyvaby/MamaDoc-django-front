@@ -36,6 +36,8 @@ import {
   patientDraftFromRecord,
 } from "./administerPayload";
 import type { PatientDraft } from "./patientGaps";
+import { DoseReactionFields } from "./DoseReactionFields";
+import { doseInput, parseDoseMl } from "./reactionMeta";
 
 type Props = {
   open: boolean;
@@ -106,6 +108,7 @@ const AdministerVaccinationDrawer: React.FC<Props> = ({
   const [batchId, setBatchId] = React.useState<number | "">("");
   const [batchNumberManual, setBatchNumberManual] = React.useState("");
   const [doseNumber, setDoseNumber] = React.useState("");
+  const [doseMl, setDoseMl] = React.useState("");
   const [injectionSite, setInjectionSite] = React.useState("thigh");
   const [administeredById, setAdministeredById] = React.useState<number | "">("");
   const [administeredAt, setAdministeredAt] = React.useState<Dayjs | null>(dayjs());
@@ -125,6 +128,7 @@ const AdministerVaccinationDrawer: React.FC<Props> = ({
     setBatchId(record.batchId ?? "");
     setBatchNumberManual(record.batchNumberManual ?? "");
     setDoseNumber(record.doseNumber != null ? String(record.doseNumber) : "");
+    setDoseMl(doseInput(record.doseMl));
     setInjectionSite(record.injectionSite || "thigh");
     setAdministeredById(record.administeredBy?.id ?? meEmployeeId ?? "");
     setAdministeredAt(record.administeredAt ? dayjs(record.administeredAt) : dayjs());
@@ -164,6 +168,7 @@ const AdministerVaccinationDrawer: React.FC<Props> = ({
             administeredById,
             administeredAt: (administeredAt ?? dayjs()).toISOString(),
             notes: "",
+            doseMl,
           },
           patient,
           originalPatient,
@@ -287,6 +292,7 @@ const AdministerVaccinationDrawer: React.FC<Props> = ({
                 ))}
               </TextField>
             </Stack>
+            <DoseReactionFields doseOnly doseMl={doseMl} onDoseMl={setDoseMl} />
             <TextField
               select
               label="Кто ввёл"
@@ -322,7 +328,7 @@ const AdministerVaccinationDrawer: React.FC<Props> = ({
         <AppButton
           variant="contained"
           onClick={() => mutation.mutate()}
-          disabled={!record || mutation.isPending}
+          disabled={!record || mutation.isPending || parseDoseMl(doseMl).error != null}
         >
           {record?.status === "pending" ? "Сохранить" : "Провести"}
         </AppButton>

@@ -27,7 +27,6 @@ import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { useCanChecker } from "../../../hooks/useCan";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
 import {
-  addReactionNote,
   cancelExemption,
   cancelRecord,
   cancelRefusal,
@@ -51,6 +50,14 @@ import {
   ScheduleStatusChip,
 } from "../../../components/vaccinations/VaccinationChips";
 import { printVaccinationCertificate } from "../../../components/vaccinations/vaccinationCertificate";
+import { ReactionDialog } from "../../../components/vaccinations/ReactionDialog";
+import { ReactionChecksDialog } from "../../../components/vaccinations/ReactionChecksDialog";
+import { TuberculinSection } from "../../../components/vaccinations/TuberculinSection";
+import {
+  doseLabel,
+  isStrongReaction,
+  reactionSummary,
+} from "../../../components/vaccinations/reactionMeta";
 import {
   EXEMPTION_KIND_OPTIONS,
   INN_ABSENT_REASON_OPTIONS,
@@ -154,12 +161,14 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({
   const patientId = patient?.id ?? null;
 
   const [exemptionOpen, setExemptionOpen] = React.useState(false);
+  /** Медотвод из окна реакции — сразу на эту вакцину. */
+  const [exemptionVaccineId, setExemptionVaccineId] = React.useState<number | null>(null);
   const [refusalOpen, setRefusalOpen] = React.useState(false);
   const [administerId, setAdministerId] = React.useState<number | null>(null);
   const [cancelTarget, setCancelTarget] = React.useState<VaccinationRecord | null>(null);
   const [cancelReason, setCancelReason] = React.useState("");
   const [reactionTarget, setReactionTarget] = React.useState<VaccinationRecord | null>(null);
-  const [reactionText, setReactionText] = React.useState("");
+  const [checksTarget, setChecksTarget] = React.useState<VaccinationRecord | null>(null);
   const [auditId, setAuditId] = React.useState<number | null>(null);
 
   const exemptionsQuery = useQuery({
@@ -186,13 +195,6 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({
     mutationFn: () => cancelRecord(cancelTarget!.id, orgId, cancelReason.trim()),
     onSuccess: () => {
       setCancelTarget(null);
-      invalidate();
-    },
-  });
-  const reactionMutation = useMutation({
-    mutationFn: () => addReactionNote(reactionTarget!.id, reactionText.trim(), orgId),
-    onSuccess: () => {
-      setReactionTarget(null);
       invalidate();
     },
   });
@@ -294,7 +296,14 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({
       <Stack direction="row" gap={1} justifyContent="flex-end" flexWrap="wrap" sx={{ mb: 1.5, flexShrink: 0 }}>
         {canRecord && (
           <>
-            <AppButton variant="outlined" size="small" onClick={() => setExemptionOpen(true)}>
+            <AppButton
+              variant="outlined"
+              size="small"
+              onClick={() => {
+                setExemptionVaccineId(null);
+                setExemptionOpen(true);
+              }}
+            >
               Медотвод
             </AppButton>
             <AppButton variant="outlined" size="small" onClick={() => setRefusalOpen(true)}>
@@ -463,7 +472,9 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({
                       key={rec.id}
                       direction="row"
                       alignItems="center"
-                      gap={1.5}
+                      flexWrap="wrap"
+                      columnGap={1.5}
+                      rowGap={0.5}
                       sx={{
                         px: 1.5,
                         py: 1,
@@ -473,60 +484,84 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({
                         bgcolor: "background.paper",
                       }}
                     >
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                      {/* В узкой колонке кнопки уходят строкой ниже, текст не сжимается в ноль. */}
+                      <Box sx={{ flex: "1 1 220px", minWidth: 0 }}>
                         <Typography variant="body2" fontWeight={500} noWrap>
                           {rec.vaccineName}
                           {rec.doseNumber != null ? ` · доза ${rec.doseNumber}` : ""}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary" noWrap>
+                        <Typography variant="caption" color="text.secondary" noWrap display="block">
                           {dayjs(rec.administeredAt).format("DD.MM.YYYY")} ·{" "}
                           {rec.isExternal ? "внешняя" : "со склада"}
                           {rec.injectionSite ? ` · ${injectionSiteLabel(rec.injectionSite)}` : ""}
                           {rec.administeredBy ? ` · ${rec.administeredBy.fullName}` : ""}
-                          {rec.reactionNotes ? ` · реакция: ${rec.reactionNotes}` : ""}
+                          {rec.doseMl ? ` · ${doseLabel(rec.doseMl)}` : ""}
                         </Typography>
+                        {(reactionSummary(rec.localReaction, rec.generalReaction) || rec.reactionNotes) && (
+                          <Typography
+                            variant="caption"
+                            noWrap
+                            display="block"
+                            color={isStrongReaction(rec.localReaction, rec.generalReaction) ? "error.main" : "text.secondary"}
+                            fontWeight={isStrongReaction(rec.localReaction, rec.generalReaction) ? 600 : 400}
+                          >
+                            Реакция:{" "}
+                            {[reactionSummary(rec.localReaction, rec.generalReaction), rec.reactionNotes]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </Typography>
+                        )}
                       </Box>
-                      <RecordStatusChip status={rec.status} />
-                      {canRecord && rec.status === "draft" && (
-                        <AppButton size="small" variant="contained" onClick={() => setAdministerId(rec.id)}>
-                          Оформить
-                        </AppButton>
-                      )}
-                      {canRecord && rec.status === "pending" && (
-                        <>
-                          <AppButton
-                            size="small"
-                            variant="text"
-                            onClick={() => {
-                              setReactionText(rec.reactionNotes ?? "");
-                              setReactionTarget(rec);
-                            }}
-                          >
-                            Реакция
+                      <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.5}>
+                        <RecordStatusChip status={rec.status} />
+                        {canRecord && rec.status === "draft" && (
+                          <AppButton size="small" variant="contained" onClick={() => setAdministerId(rec.id)}>
+                            Оформить
                           </AppButton>
-                          <AppButton
-                            size="small"
-                            variant="text"
-                            color="error"
-                            onClick={() => {
-                              setCancelReason("");
-                              setCancelTarget(rec);
-                            }}
-                          >
-                            Отменить
+                        )}
+                        {rec.status === "pending" && rec.hasFollowupChecks && (
+                          <AppButton size="small" variant="text" onClick={() => setChecksTarget(rec)}>
+                            Сетка
                           </AppButton>
-                        </>
-                      )}
-                      <Tooltip title="История правок">
-                        <IconButton size="small" onClick={() => setAuditId(rec.id)}>
-                          <HistoryOutlined fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                        )}
+                        {canRecord && rec.status === "pending" && (
+                          <>
+                            <AppButton size="small" variant="text" onClick={() => setReactionTarget(rec)}>
+                              Реакция
+                            </AppButton>
+                            <AppButton
+                              size="small"
+                              variant="text"
+                              color="error"
+                              onClick={() => {
+                                setCancelReason("");
+                                setCancelTarget(rec);
+                              }}
+                            >
+                              Отменить
+                            </AppButton>
+                          </>
+                        )}
+                        <Tooltip title="История правок">
+                          <IconButton size="small" onClick={() => setAuditId(rec.id)}>
+                            <HistoryOutlined fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
                     </Stack>
                   ))}
                 </Stack>
               )}
             </Box>
+
+            <Divider />
+
+            <TuberculinSection
+              patientId={patient.id}
+              birthDate={patient.birthDate ?? null}
+              canRecord={canRecord}
+              renderTitle={(title) => <SectionTitle>{title}</SectionTitle>}
+            />
           </Stack>
         )}
       </Box>
@@ -538,7 +573,12 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({
         </Stack>
       )}
 
-      <ExemptionDialog open={exemptionOpen} onClose={() => setExemptionOpen(false)} patientId={patientId} />
+      <ExemptionDialog
+        open={exemptionOpen}
+        onClose={() => setExemptionOpen(false)}
+        patientId={patientId}
+        vaccineId={exemptionVaccineId}
+      />
       <RefusalDialog open={refusalOpen} onClose={() => setRefusalOpen(false)} patientId={patientId} />
       <AdministerVaccinationDrawer
         open={administerId != null}
@@ -579,33 +619,19 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({
         </Stack>
       </Dialog>
 
-      <Dialog open={reactionTarget != null} onClose={() => setReactionTarget(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Реакция на прививку</DialogTitle>
-        <DialogContent>
-          <TextField
-            size="small"
-            fullWidth
-            multiline
-            minRows={3}
-            sx={{ mt: 1 }}
-            value={reactionText}
-            onChange={(e) => setReactionText(e.target.value)}
-            placeholder="Например: покраснение 1 см, t 37,5 на следующий день"
-          />
-        </DialogContent>
-        <Stack direction="row" spacing={1.5} sx={{ px: 3, pb: 2, justifyContent: "flex-end" }}>
-          <AppButton variant="outlined" onClick={() => setReactionTarget(null)}>
-            Отмена
-          </AppButton>
-          <AppButton
-            variant="contained"
-            disabled={reactionMutation.isPending}
-            onClick={() => reactionMutation.mutate()}
-          >
-            Сохранить
-          </AppButton>
-        </Stack>
-      </Dialog>
+      <ReactionDialog
+        record={reactionTarget}
+        onClose={() => setReactionTarget(null)}
+        onExemption={(rec) => {
+          setExemptionVaccineId(rec.vaccineId);
+          setExemptionOpen(true);
+        }}
+      />
+      <ReactionChecksDialog
+        record={checksTarget}
+        canRecord={canRecord}
+        onClose={() => setChecksTarget(null)}
+      />
 
       <Dialog open={auditId != null} onClose={() => setAuditId(null)} maxWidth="sm" fullWidth>
         <DialogTitle>История правок</DialogTitle>
