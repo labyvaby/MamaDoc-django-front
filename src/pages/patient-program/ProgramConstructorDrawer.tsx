@@ -8,6 +8,7 @@ import {
   FormControlLabel,
   IconButton,
   Link,
+  Menu,
   MenuItem,
   Stack,
   Switch,
@@ -17,6 +18,8 @@ import {
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
+import LockOutlined from "@mui/icons-material/LockOutlined";
 import PublishOutlined from "@mui/icons-material/PublishOutlined";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -38,6 +41,7 @@ import { djangoQueryKeys } from "../../api/queryKeys";
 import { AppButton } from "../../components/ui";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import { subtleBg } from "../../theme/uiHelpers";
+import { SYSTEM_SECTIONS, isLinkedModule, systemType } from "./linkedSectionTypes";
 
 const FIELD_TYPES: Array<{ value: NonNullable<ProgramFieldDefinition["type"]>; label: string }> = [
   { value: "text", label: "Строка" },
@@ -87,6 +91,8 @@ export const ProgramConstructorDrawer: React.FC<Props> = ({
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
   const [schema, setSchema] = React.useState<ProgramConfigurationSchema | null>(null);
+  // Меню «Из медкарты»: системные разделы, которых ещё нет в программе.
+  const [systemMenu, setSystemMenu] = React.useState<HTMLElement | null>(null);
   const [draftId, setDraftId] = React.useState<number | null>(null);
   const [savedSchema, setSavedSchema] = React.useState("");
   const [templateCode, setTemplateCode] = React.useState("");
@@ -285,14 +291,60 @@ export const ProgramConstructorDrawer: React.FC<Props> = ({
                 Раздел
               </AppButton>
             </Stack>
+            {program?.businessDomain === "medical" && (() => {
+              const present = new Set(schema.modules.map((module) => systemType(module)).filter(Boolean));
+              const missing = SYSTEM_SECTIONS.filter((section) => !present.has(section.type));
+              if (missing.length === 0) return null;
+              return (
+                <>
+                  <AppButton
+                    size="small"
+                    variant="outlined"
+                    startIcon={<HealthAndSafetyOutlined />}
+                    onClick={(event) => setSystemMenu(event.currentTarget)}
+                    sx={{ alignSelf: "flex-start" }}
+                  >
+                    Раздел из медкарты
+                  </AppButton>
+                  <Menu anchorEl={systemMenu} open={Boolean(systemMenu)} onClose={() => setSystemMenu(null)}>
+                    {missing.map((section) => (
+                      <MenuItem
+                        key={section.type}
+                        onClick={() => {
+                          setSystemMenu(null);
+                          setSchema({
+                            ...schema,
+                            modules: [...schema.modules, {
+                              code: section.type,
+                              name: section.name,
+                              moduleType: section.type,
+                              isEnabled: true,
+                              sortOrder: (schema.modules.length + 1) * 100,
+                              settings: { description: section.description },
+                            }],
+                          });
+                        }}
+                      >
+                        <Box>
+                          <Typography variant="body2" fontWeight={600}>{section.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">{section.description}</Typography>
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Menu>
+                </>
+              );
+            })()}
 
             {schema.modules.map((module, moduleIndex) => {
               const fields = Array.isArray(module.settings.fields) ? module.settings.fields : [];
+              // Связанный раздел показывает данные медкарты: полей нет, код менять нельзя.
+              const linked = isLinkedModule(module);
               return (
                 <Box key={`${module.code}-${moduleIndex}`} sx={(theme) => ({ border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: subtleBg(theme), p: 1.75 })}>
                   <Stack direction={{ xs: "column", sm: "row" }} gap={1} alignItems={{ sm: "center" }}>
                     <TextField size="small" label="Название раздела" value={module.name} onChange={(event) => updateModule(moduleIndex, { name: event.target.value })} fullWidth />
-                    <TextField size="small" label="Код" value={module.code} onChange={(event) => updateModule(moduleIndex, { code: event.target.value })} sx={{ minWidth: { sm: 160 } }} />
+                    <TextField size="small" label="Код" value={module.code} disabled={linked} onChange={(event) => updateModule(moduleIndex, { code: event.target.value })} sx={{ minWidth: { sm: 160 } }} />
                     <IconButton aria-label={`Удалить ${module.name}`} onClick={() => setSchema({ ...schema, modules: schema.modules.filter((_, index) => index !== moduleIndex) })}>
                       <DeleteOutlineOutlined />
                     </IconButton>
@@ -302,6 +354,15 @@ export const ProgramConstructorDrawer: React.FC<Props> = ({
                     label="Раздел включён"
                     sx={{ mt: 0.75 }}
                   />
+                  {linked ? (
+                    <Stack direction="row" gap={1} alignItems="center" sx={{ mt: 0.5 }}>
+                      <Chip size="small" variant="outlined" icon={<LockOutlined sx={{ fontSize: 14 }} />} label="Из медкарты" />
+                      <Typography variant="caption" color="text.secondary">
+                        Данные берутся из медпрофиля пациента — поля не настраиваются.
+                      </Typography>
+                    </Stack>
+                  ) : (
+                  <>
                   <Divider sx={{ my: 1.25 }} />
                   <Stack gap={1}>
                     {fields.map((field, fieldIndex) => (
@@ -335,6 +396,8 @@ export const ProgramConstructorDrawer: React.FC<Props> = ({
                       Добавить поле
                     </AppButton>
                   </Stack>
+                  </>
+                  )}
                 </Box>
               );
             })}

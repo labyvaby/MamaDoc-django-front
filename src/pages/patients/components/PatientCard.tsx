@@ -43,6 +43,7 @@ import { subtleBg } from "../../../theme/uiHelpers";
 import type { DjangoPatient } from "../../../api/patients";
 import type { PatientBalance } from "../../../api/patientBalance";
 import { useT } from "../../../i18n/VerticalProvider";
+import { HealthAlertChip } from "../../../components/health/HealthAlertChip";
 
 /** Тип функции перевода — карточка прокидывает её в хелперы вне компонента. */
 type TFunc = (key: string, options?: Record<string, unknown>) => string;
@@ -336,6 +337,7 @@ const PatientCard: React.FC<Props> = ({
                         sx={{ height: 24, fontWeight: 700 }}
                       />
                     )}
+                    <HealthAlertChip patientId={patient.id} />
                   </Stack>
 
                   {patient.phone ? (

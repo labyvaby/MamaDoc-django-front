@@ -8,9 +8,14 @@ import { ageMonths, assess, bmi, type GrowthAssessment, type GrowthIndicator, ty
  * (`heightCm`, `weightKg`, `headCircumferenceCm`; новое — `chestCircumferenceCm`).
  */
 
+/**
+ * Детский «Рост»: системный тип `growth`, старый раздел стенда с кодом `growth`
+ * или антропометрия. Фитнес-«Замеры» (`measurements` без кода `growth`) — нет:
+ * там не ребёнок у ростомера, а талия и процент жира.
+ */
 export function isGrowthModule(module: Pick<EffectiveProgramModule, "code" | "moduleType">): boolean {
-  const key = `${module.code} ${module.moduleType}`.toLowerCase();
-  return ["growth", "measure", "anthrop"].some((part) => key.includes(part));
+  if (module.moduleType === "growth" || module.code === "growth") return true;
+  return `${module.code} ${module.moduleType}`.toLowerCase().includes("anthrop");
 }
 
 export function growthSex(gender: string | null | undefined): GrowthSex | null {

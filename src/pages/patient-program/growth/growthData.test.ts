@@ -40,6 +40,9 @@ describe("growth data", () => {
   it("recognises the growth section and the sex", () => {
     expect(isGrowthModule({ code: "growth", moduleType: "measurements" })).toBe(true);
     expect(isGrowthModule({ code: "vision", moduleType: "ophthalmology" })).toBe(false);
+    // Фитнес-«Замеры»: талия и жир, не детский рост.
+    expect(isGrowthModule({ code: "measurements", moduleType: "measurements" })).toBe(false);
+    expect(isGrowthModule({ code: "growth", moduleType: "growth" })).toBe(true);
     expect(growthSex("female")).toBe("female");
     expect(growthSex("unknown")).toBeNull();
   });

@@ -56,6 +56,7 @@ import { useNotification } from "@refinedev/core";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
+import { ConclusionHealthStrip } from "../../components/health/ConclusionHealthStrip";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { useKeyboardViewportHeight } from "../../hooks/useKeyboardViewportHeight";
 import {
@@ -2126,6 +2127,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         </Stack>
       </Stack>
       <Divider />
+      {/* Аллергии пациента и чек-лист первичного осмотра (книжка ребёнка, этап 2) */}
+      <ConclusionHealthStrip appointmentId={receiptAppointmentId} />
 
       {/* ── документы строки услуги (если их несколько или можно добавить) ── */}
       {documentBar && (
