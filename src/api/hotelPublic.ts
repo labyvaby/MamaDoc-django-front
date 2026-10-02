@@ -19,6 +19,17 @@ export interface PublicHotelCategory {
   available: number;
   /** За весь период, не за ночь. */
   totalAmount: string;
+  // Витрина (docs/hotel-backend-tasks.md, «Сайт как витрина») — пока сервер
+  // их не отдаёт, страница просто не показывает фото и удобства.
+  description?: string;
+  /** Абсолютные URL фото номеров категории, первое — обложка. */
+  photos?: string[];
+  /** Удобства человеческими словами: «Кондиционер», «Wi-Fi». */
+  amenities?: string[];
+  /** Питание в цене: none | breakfast | half_board | full_board | all_inclusive. */
+  boardType?: string;
+  /** Условия отмены тарифа, по которому посчитана цена. */
+  cancellationPolicy?: string;
 }
 
 export interface PublicHotelAvailability {
@@ -28,6 +39,23 @@ export interface PublicHotelAvailability {
   checkOut: string;
   count: number;
   results: PublicHotelCategory[];
+}
+
+/** GET /v2/hotel/public/{slug}/ — шапка витрины до выбора дат (ждёт бэка). */
+export interface PublicHotelInfo {
+  name: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  /** "14:00" */
+  checkInTime?: string | null;
+  checkOutTime?: string | null;
+  logoUrl?: string | null;
+  /** Фото отеля (фасад, холл) — абсолютные URL. */
+  photos?: string[];
+  /** Общие условия отмены и предоплаты отеля. */
+  cancellationPolicy?: string;
+  houseRules?: string;
 }
 
 export interface PublicHotelRequestData {
@@ -97,6 +125,10 @@ export function getPublicAvailability(
     children: String(params.children),
   });
   return publicRequest<PublicHotelAvailability>(`/v2/hotel/public/${encodeURIComponent(slug)}/availability/?${qs}`, { signal });
+}
+
+export function getPublicHotelInfo(slug: string, signal?: AbortSignal): Promise<PublicHotelInfo> {
+  return publicRequest<PublicHotelInfo>(`/v2/hotel/public/${encodeURIComponent(slug)}/`, { signal });
 }
 
 export function createPublicReservation(slug: string, data: PublicHotelRequestData): Promise<PublicHotelReservation> {
