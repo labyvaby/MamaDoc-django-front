@@ -90,6 +90,7 @@ import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import { CurrencyEquivalent } from "./CurrencyBits";
+import { distributeTotal, saveDemoPricing } from "./priceOverrideDemo";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
@@ -884,6 +885,16 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         if (!unknownField) throw createErr;
         manualRejected = true;
         reservation = await createReservation({ ...payload, items: payload.items.map((it) => ({ ...it, manualTotal: undefined })) });
+        // Демо-режим: своя сумма раскладывается по ночам и видна в «Проживании» на этом устройстве.
+        const first = reservation.items[0];
+        if (first && manualValue != null) {
+          saveDemoPricing(reservation.id, first.id, {
+            nights: distributeTotal(manualValue, first.nights.map((n) => n.date)),
+            discountPercent: null,
+            reason: "Своя сумма при создании брони",
+            at: new Date().toISOString(),
+          });
+        }
       }
 
       const createdGuestId = reservation.items[0]?.guests[0]?.id;
@@ -939,7 +950,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
       setOpen(false);
       setToast(
         manualRejected
-          ? { text: `Бронь №${reservation.number} создана по расчётной цене: свою сумму сервер начнёт принимать после обновления.`, severity: "warning" }
+          ? { text: `Бронь №${reservation.number} создана. Своя сумма сохранена в демо-режиме и видна в «Проживании»; на сервере пока расчётная цена.`, severity: "success" }
           : prepaymentFailed
           ? { text: `Бронь №${reservation.number} создана, но предоплату записать не удалось (${prepaymentFailed}). Внесите её в карточке брони.`, severity: "warning" }
           : chargesFailed > 0
