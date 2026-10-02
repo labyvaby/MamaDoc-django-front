@@ -84,6 +84,10 @@ import HouseOutlined from "@mui/icons-material/HouseOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
+import DensitySmallOutlined from "@mui/icons-material/DensitySmallOutlined";
+import DensityMediumOutlined from "@mui/icons-material/DensityMediumOutlined";
+import OpenInFullOutlined from "@mui/icons-material/OpenInFullOutlined";
+import CloseFullscreenOutlined from "@mui/icons-material/CloseFullscreenOutlined";
 import EditNoteOutlined from "@mui/icons-material/EditNoteOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { Link as RouterLink } from "react-router";
@@ -100,6 +104,7 @@ import {
   hotelRoomStateColor,
   formatHotelTime,
   HOTEL_ROOM_STATES,
+  HOTEL_ROOM_STATE_ICONS,
   HOTEL_ROOM_STATE_LABELS,
   HOTEL_STAY_STATUS_LABELS,
   HOTEL_STAY_STATUSES,
@@ -221,6 +226,16 @@ type SortMode = "floor" | "number" | "category";
 /** Окраска полос: по статусу проживания или по источнику брони. */
 type ColorMode = "status" | "source";
 
+/**
+ * Плотность строк: «компактно» (по умолчанию) — как у Exely, чтобы до
+ * прокрутки помещался весь фонд; «обычно» — прежние крупные строки.
+ */
+type Density = "compact" | "normal";
+const DENSITY = {
+  compact: { row: 30, bar: 22, group: 24, month: 22, dayHeader: 34, dayBox: 19, dayFont: "0.76rem", weekdayFont: "0.62rem", radius: "6px", chip: 16, chipFont: 10.5, barFont: 11.5, roomFont: 12.5 },
+  normal: { row: 48, bar: 30, group: 34, month: 26, dayHeader: 52, dayBox: 26, dayFont: "0.875rem", weekdayFont: "0.75rem", radius: "8px", chip: 18, chipFont: 11, barFont: 12, roomFont: 14 },
+} as const;
+const DENSITY_KEY = "mamadoc:hotel-grid:density";
 const SORT_KEY = "mamadoc:hotel-grid:sort";
 const COLOR_KEY = "mamadoc:hotel-grid:color";
 /** Выбор порядка и окраски запоминается у сотрудника (localStorage может быть недоступен). */
@@ -548,6 +563,23 @@ export const RoomBookingGrid: React.FC = () => {
 
   const [sortMode, setSortModeState] = React.useState<SortMode>(() => readPref(SORT_KEY, ["floor", "number", "category"] as const, "floor"));
   const [colorMode, setColorModeState] = React.useState<ColorMode>(() => readPref(COLOR_KEY, ["status", "source"] as const, "status"));
+  const [density, setDensityState] = React.useState<Density>(() => readPref(DENSITY_KEY, ["compact", "normal"] as const, "compact"));
+  const setDensity = (d: Density) => {
+    setDensityState(d);
+    writePref(DENSITY_KEY, d);
+  };
+  const M = DENSITY[density];
+  const compact = density === "compact";
+  // «На весь экран» — шахматка поверх страницы, без сводки и шапки приложения; Esc — выйти.
+  const [fullscreen, setFullscreen] = React.useState(false);
+  React.useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
   const setSortMode = (m: SortMode) => {
     setSortModeState(m);
     writePref(SORT_KEY, m);
@@ -752,10 +784,10 @@ export const RoomBookingGrid: React.FC = () => {
     return map;
   }, [ROWS, dates.length, itemsByRoomId, blocksByRoomId, gridStart]);
 
-  // Долг по броням — красная сумма на полосе и карточка при наведении. Только
-  // для видимых дат (без запаса виртуализации) с шагом в неделю: список броней
-  // тяжелее календаря. Если бэк отдаёт balanceDue прямо в календаре — не
-  // запрашиваем вовсе.
+  // Долг по броням — красная сумма на полосе — и подробности для карточки при
+  // наведении (телефон, номер брони канала, тариф, заметки). Только для видимых
+  // дат (без запаса виртуализации) с шагом в неделю: список броней тяжелее
+  // календаря. Если бэк отдаёт balanceDue прямо в календаре — долг берём оттуда.
   const calendarHasBalances = allItems.length > 0 && allItems[0].balanceDue !== undefined;
   const [balanceFrom, balanceTo] = React.useMemo((): [string | null, string | null] => {
     if (dates.length === 0 || visibleRange.end <= visibleRange.start) return [null, null];
@@ -765,11 +797,17 @@ export const RoomBookingGrid: React.FC = () => {
     const hi = Math.min(dates.length, Math.max(lo + 1, Math.ceil(core1 / 7) * 7));
     return [dates[lo].format("YYYY-MM-DD"), dates[hi - 1].add(1, "day").format("YYYY-MM-DD")];
   }, [dates, visibleRange.start, visibleRange.end]);
-  const balancesQuery = useStayBalances(property?.id, balanceFrom, balanceTo, !calendarHasBalances);
+  const balancesQuery = useStayBalances(property?.id, balanceFrom, balanceTo);
   const balances = balancesQuery.data;
   const balanceOf = (it: HotelCalendarItem): StayBalance | undefined =>
-    it.balanceDue !== undefined
-      ? { total: Number(it.totalAmount), paid: Number(it.paidAmount ?? 0), balance: Number(it.balanceDue), currency: it.currency ?? "KGS" }
+    calendarHasBalances && it.balanceDue !== undefined
+      ? {
+          total: Number(it.totalAmount),
+          paid: Number(it.paidAmount ?? 0),
+          balance: Number(it.balanceDue),
+          currency: it.currency ?? "KGS",
+          details: balances?.get(it.reservationId)?.details,
+        }
       : balances?.get(it.reservationId);
 
   // Клавиатура: свободные ячейки — кнопки, и Tab по каждой (номера × дни — тысячи остановок)
@@ -1093,6 +1131,28 @@ export const RoomBookingGrid: React.FC = () => {
         </Tooltip>
       </Stack>
 
+      <Tooltip title="Высота строк: компактно — больше номеров на экране">
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={density}
+          onChange={(_, v: Density | null) => v && setDensity(v)}
+          aria-label="Высота строк"
+          sx={{ "& .MuiToggleButton-root": { py: 0.25, px: 0.75 } }}
+        >
+          <ToggleButton value="compact" aria-label="Компактно">
+            <DensitySmallOutlined sx={{ fontSize: 18 }} />
+          </ToggleButton>
+          <ToggleButton value="normal" aria-label="Обычно">
+            <DensityMediumOutlined sx={{ fontSize: 18 }} />
+          </ToggleButton>
+        </ToggleButtonGroup>
+      </Tooltip>
+      <Tooltip title={fullscreen ? "Свернуть (Esc)" : "Шахматка на весь экран"}>
+        <IconButton size="small" onClick={() => setFullscreen((v) => !v)} aria-label={fullscreen ? "Свернуть шахматку" : "Шахматка на весь экран"} sx={{ border: 1, borderColor: "divider", borderRadius: "8px" }}>
+          {fullscreen ? <CloseFullscreenOutlined sx={{ fontSize: 18 }} /> : <OpenInFullOutlined sx={{ fontSize: 18 }} />}
+        </IconButton>
+      </Tooltip>
       <Tooltip title="Порядок номеров">
         <ToggleButtonGroup
           size="small"
@@ -1210,11 +1270,11 @@ export const RoomBookingGrid: React.FC = () => {
           gridRow,
           gridColumn: `${startCol + 2} / ${endCol + 2}`,
           alignSelf: "center",
-          height: 30,
+          height: M.bar,
           mx: "3px",
           px: labelMode === "name" ? 0.75 : 0,
           gap: 0.5,
-          borderRadius: "8px",
+          borderRadius: M.radius,
           bgcolor: alpha(color, fill),
           ...barBorderSx,
           display: "flex",
@@ -1232,7 +1292,7 @@ export const RoomBookingGrid: React.FC = () => {
         }}
       >
         {showIcon && <StatusIcon sx={{ fontSize: 14, color: iconColor, flexShrink: 0 }} />}
-        <Typography variant="caption" noWrap sx={{ color: textColor, fontWeight: 600, minWidth: 0 }}>
+        <Typography variant="caption" noWrap sx={{ color: textColor, fontWeight: 600, minWidth: 0, fontSize: M.barFont, lineHeight: 1.2 }}>
           {barLabelText(labelMode, it.customerName, it.reservationNumber)}
         </Typography>
         {(sourceShort && labelMode === "name") || showDebtChip ? (
@@ -1247,12 +1307,12 @@ export const RoomBookingGrid: React.FC = () => {
                 component="span"
                 sx={{
                   px: 0.6,
-                  height: 18,
-                  lineHeight: "18px",
+                  height: M.chip,
                   borderRadius: "5px",
                   bgcolor: "error.main",
                   color: "error.contrastText",
-                  fontSize: 11,
+                  fontSize: M.chipFont,
+                  lineHeight: `${M.chip}px`,
                   fontWeight: 800,
                   fontVariantNumeric: "tabular-nums",
                   whiteSpace: "nowrap",
@@ -1271,7 +1331,13 @@ export const RoomBookingGrid: React.FC = () => {
   };
 
   return (
-    <Box sx={{ flexShrink: 0 }}>
+    <Box
+      sx={
+        fullscreen
+          ? { position: "fixed", inset: 0, zIndex: theme.zIndex.modal - 1, bgcolor: "background.default", p: { xs: 1, md: 2 }, overflow: "auto" }
+          : { flexShrink: 0 }
+      }
+    >
       <BoardShell actions={toolbar}>
         <Stack gap={1.5}>
           <Box sx={{ position: "relative" }}>
@@ -1282,10 +1348,12 @@ export const RoomBookingGrid: React.FC = () => {
               sx={{
                 overflow: "auto",
                 // Высота по экрану: фиксированные 440px показывали половину номеров.
-                maxHeight: { xs: 520, md: "max(440px, calc(100vh - 330px))" },
+                maxHeight: fullscreen
+                  ? { xs: "calc(100dvh - 150px)", md: "calc(100dvh - 140px)" }
+                  : { xs: 520, md: "max(440px, calc(100vh - 300px))" },
                 // Фокус с клавиатуры не должен уезжать под липкую колонку номеров и шапку.
                 scrollPaddingLeft: `${ROOM_COL_WIDTH}px`,
-                scrollPaddingTop: "80px",
+                scrollPaddingTop: `${M.month + M.dayHeader + 4}px`,
                 // Позицию при добавлении кусков слева выставляем сами (leftDayRef); встроенная
                 // «якорная» прокрутка браузера сдвигала бы её второй раз.
                 overflowAnchor: "none",
@@ -1300,7 +1368,7 @@ export const RoomBookingGrid: React.FC = () => {
                   userSelect: dragSel ? "none" : undefined,
                   // Фоновые ячейки сетки — классами, а не sx на каждой ячейке.
                   "& .rbg-c": {
-                    height: 48,
+                    height: M.row,
                     margin: 0,
                     padding: 0,
                     border: 0,
@@ -1326,7 +1394,7 @@ export const RoomBookingGrid: React.FC = () => {
                           textAlign: "center",
                           color: theme.palette.primary.main,
                           fontSize: 18,
-                          lineHeight: "48px",
+                          lineHeight: `${M.row}px`,
                           opacity: 0,
                           pointerEvents: "none",
                         },
@@ -1377,7 +1445,7 @@ export const RoomBookingGrid: React.FC = () => {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "flex-start",
-                      height: 26,
+                      height: M.month,
                       cursor: "grab",
                       // Граница между месяцами — чтобы начало нового месяца читалось и в шапке.
                       borderLeft: m.startCol > 0 ? 1 : 0,
@@ -1424,7 +1492,7 @@ export const RoomBookingGrid: React.FC = () => {
                         gridRow: 2,
                         gridColumn: i + 2,
                         position: "sticky",
-                        top: 26,
+                        top: M.month,
                         zIndex: 2,
                         bgcolor: isSelected ? alpha(theme.palette.primary.main, 0.14) : "background.paper",
                         borderRight: 1,
@@ -1434,7 +1502,8 @@ export const RoomBookingGrid: React.FC = () => {
                         flexDirection: "column",
                         alignItems: "center",
                         justifyContent: "center",
-                        py: 0.5,
+                        py: compact ? 0.25 : 0.5,
+                        height: M.dayHeader,
                         font: "inherit",
                         border: 0,
                         cursor: "grab",
@@ -1445,21 +1514,21 @@ export const RoomBookingGrid: React.FC = () => {
                           выше) дата — просто цветной жирный номер, если это не сегодня. */}
                       <Box
                         sx={{
-                          width: 26,
-                          height: 26,
-                          borderRadius: "8px",
+                          width: M.dayBox,
+                          height: M.dayBox,
+                          borderRadius: M.radius,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           bgcolor: isToday ? "primary.main" : "transparent",
                           color: isToday ? "primary.contrastText" : isSelected ? "primary.main" : isWeekend ? "text.secondary" : "text.primary",
                           fontWeight: isToday || isSelected ? 700 : 500,
-                          fontSize: "0.875rem",
+                          fontSize: M.dayFont,
                         }}
                       >
                         {d.date()}
                       </Box>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: M.weekdayFont, lineHeight: 1.2 }}>
                         {WEEKDAY_SHORT_RU[(d.day() + 6) % 7]}
                       </Typography>
                       {/* Метка «сейчас»: красное время + стрелка на нижней кромке шапки — та же подпись,
@@ -1492,7 +1561,7 @@ export const RoomBookingGrid: React.FC = () => {
                             bgcolor: floorTint,
                             borderBottom: 1,
                             borderColor: "divider",
-                            height: 34,
+                            height: M.group,
                           }}
                         />
                         <Box
@@ -1510,7 +1579,7 @@ export const RoomBookingGrid: React.FC = () => {
                             display: "flex",
                             flexDirection: "column",
                             justifyContent: "center",
-                            height: 34,
+                            height: M.group,
                           }}
                         >
                           <Typography
@@ -1518,13 +1587,20 @@ export const RoomBookingGrid: React.FC = () => {
                             fontWeight={700}
                             color="text.secondary"
                             noWrap
-                            sx={{ textTransform: "uppercase", letterSpacing: "0.04em", lineHeight: 1.25 }}
+                            sx={{ textTransform: "uppercase", letterSpacing: "0.04em", lineHeight: 1.25, fontSize: compact ? "0.66rem" : undefined }}
                           >
                             {row.label}
+                            {compact && (
+                              <Box component="span" sx={{ color: "text.disabled", textTransform: "none", letterSpacing: 0, fontWeight: 500, ml: 0.75 }}>
+                                {row.countLabel}
+                              </Box>
+                            )}
                           </Typography>
-                          <Typography variant="caption" color="text.disabled" noWrap sx={{ lineHeight: 1.25, fontSize: "0.68rem" }}>
-                            {row.countLabel}
-                          </Typography>
+                          {!compact && (
+                            <Typography variant="caption" color="text.disabled" noWrap sx={{ lineHeight: 1.25, fontSize: "0.68rem" }}>
+                              {row.countLabel}
+                            </Typography>
+                          )}
                         </Box>
                       </React.Fragment>
                     );
@@ -1553,7 +1629,7 @@ export const RoomBookingGrid: React.FC = () => {
                             display: "flex",
                             alignItems: "center",
                             px: 1,
-                            height: 48,
+                            height: M.row,
                           }}
                         >
                           <Typography variant="caption" color="warning.main" fontWeight={700} noWrap>
@@ -1595,7 +1671,7 @@ export const RoomBookingGrid: React.FC = () => {
                           alignItems: "center",
                           gap: 0.5,
                           px: 1,
-                          height: 48,
+                          height: M.row,
                           font: "inherit",
                           color: "inherit",
                           border: 0,
@@ -1620,20 +1696,18 @@ export const RoomBookingGrid: React.FC = () => {
                             />
                           </Tooltip>
                         )}
-                        <Typography variant="body2" fontWeight={600} noWrap sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={600} noWrap sx={{ minWidth: 0, fontSize: M.roomFont }}>
                           {room.number}
                         </Typography>
-                        <Tooltip title={`Статус номера: ${HOTEL_ROOM_STATE_LABELS[room.state as keyof typeof HOTEL_ROOM_STATE_LABELS] ?? room.state}`}>
-                          <Box
-                            sx={{
-                              width: 8,
-                              height: 8,
-                              borderRadius: "50%",
-                              bgcolor: stateColor,
-                              ml: "auto",
-                              flexShrink: 0,
-                            }}
-                          />
+                        <Tooltip title={`Состояние номера: ${HOTEL_ROOM_STATE_LABELS[room.state as keyof typeof HOTEL_ROOM_STATE_LABELS] ?? room.state}`}>
+                          {(() => {
+                            const StateIcon = HOTEL_ROOM_STATE_ICONS[room.state as keyof typeof HOTEL_ROOM_STATE_ICONS];
+                            return StateIcon ? (
+                              <StateIcon sx={{ fontSize: compact ? 15 : 17, color: stateColor, ml: "auto", flexShrink: 0 }} />
+                            ) : (
+                              <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: stateColor, ml: "auto", flexShrink: 0 }} />
+                            );
+                          })()}
                         </Tooltip>
                       </Box>
                       {(() => {
@@ -1718,10 +1792,10 @@ export const RoomBookingGrid: React.FC = () => {
                           gridRow,
                           gridColumn: `${startCol + 2} / ${endCol + 2}`,
                           alignSelf: "center",
-                          height: 30,
+                          height: M.bar,
                           mx: "3px",
                           px: 1,
-                          borderRadius: "8px",
+                          borderRadius: M.radius,
                           border: `1px dashed ${alpha(theme.palette.text.primary, 0.28)}`,
                           backgroundColor: alpha(theme.palette.text.primary, 0.04),
                           backgroundImage: `repeating-linear-gradient(135deg, ${stripe} 0 6px, transparent 6px 12px)`,
@@ -1900,19 +1974,22 @@ export const RoomBookingGrid: React.FC = () => {
                   {HOTEL_OFF_SALE_LABEL}
                 </Typography>
               </Stack>
-              {/* Точка у номера — состояние уборки; четыре цвета, «Ремонт» серый (оранжевый — овербукинг). */}
+              {/* Иконка у номера — состояние уборки, как в Exely; «Ремонт» серый (оранжевый — овербукинг). */}
               <Stack direction="row" alignItems="center" gap={1.25} flexWrap="wrap">
                 <Typography variant="caption" color="text.secondary">
-                  Точка у номера:
+                  У номера:
                 </Typography>
-                {HOTEL_ROOM_STATES.map((state) => (
-                  <Stack key={state} direction="row" alignItems="center" gap={0.5}>
-                    <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: hotelRoomStateColor(state, theme) }} />
-                    <Typography variant="caption" color="text.secondary">
-                      {HOTEL_ROOM_STATE_LABELS[state]}
-                    </Typography>
-                  </Stack>
-                ))}
+                {HOTEL_ROOM_STATES.map((state) => {
+                  const StateIcon = HOTEL_ROOM_STATE_ICONS[state];
+                  return (
+                    <Stack key={state} direction="row" alignItems="center" gap={0.5}>
+                      <StateIcon sx={{ fontSize: 15, color: hotelRoomStateColor(state, theme) }} />
+                      <Typography variant="caption" color="text.secondary">
+                        {HOTEL_ROOM_STATE_LABELS[state]}
+                      </Typography>
+                    </Stack>
+                  );
+                })}
               </Stack>
               {/* Подсказка по управлению — свёрнута под иконку, раскрывается по клику (не по наведению). */}
               <ClickAwayListener onClickAway={() => setHelpOpen(false)}>
