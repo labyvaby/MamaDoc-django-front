@@ -66,7 +66,7 @@ import { getErrorMessage } from "../api/client";
 import { FormField } from "./formField";
 import { fieldError, type FieldRules } from "./formRules";
 import { DRAWER_WIDTH, DrawerFooter, DrawerHeader, DrawerSection, EmptyState, HotelPage, HotelPageHeader, Surface } from "./hotelUi";
-import { formatHotelDate, formatHotelDateRange, formatHotelDateTime, useIsVivaActive } from "./mockDemoData";
+import { formatHotelDate, formatHotelDateTime, formatHotelNightsRange, useIsVivaActive } from "./mockDemoData";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { PriceYearView } from "./PriceYearView";
@@ -132,7 +132,7 @@ export const HotelPriceCalendarPage: React.FC = () => {
   if (!vivaActive) return <Navigate to="/" replace />;
 
   const isCurrent = start.isSame(dayjs(), "day");
-  const rangeLabel = formatHotelDateRange(from, to);
+  const rangeLabel = formatHotelNightsRange(from, to);
 
   return (
     <HotelPage maxWidth={1600}>
@@ -671,7 +671,7 @@ function describeChange(c: HotelPricingChange, ruleNames: Map<number, string>, r
   const ch = c.changes ?? {};
   if (c.kind === "daily_rate") {
     const who = c.roomTypeId != null ? (roomTypeNames.get(c.roomTypeId) ?? `Категория №${c.roomTypeId}`) : "Все категории";
-    const dates = c.dateFrom && c.dateTo ? formatHotelDateRange(c.dateFrom, c.dateTo) : "";
+    const dates = c.dateFrom && c.dateTo ? formatHotelNightsRange(c.dateFrom, c.dateTo) : "";
     const details: string[] = [];
     if (ch.price != null) details.push(`своя цена ${money(String(ch.price))} сом`);
     if (ch.clearPrice) details.push("цена снова по правилам");
@@ -693,7 +693,7 @@ function describeChange(c: HotelPricingChange, ruleNames: Map<number, string>, r
         : types.length > 1
           ? types.map((id) => roomTypeNames.get(id) ?? `№${id}`).join(", ")
           : "Массовое изменение";
-    const dates = c.dateFrom && c.dateTo ? formatHotelDateRange(c.dateFrom, c.dateTo) : "";
+    const dates = c.dateFrom && c.dateTo ? formatHotelNightsRange(c.dateFrom, c.dateTo) : "";
     const details: string[] = [];
     if (typeof ch.nights === "number") details.push(`${ch.nights} ноч.`);
     if (items.length) details.push(`${items.length} диапазон(ов)`);
