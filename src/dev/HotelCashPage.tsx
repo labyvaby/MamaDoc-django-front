@@ -28,6 +28,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
+import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import { Navigate } from "react-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
@@ -40,6 +41,8 @@ import { useIsVivaActive } from "./mockDemoData";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
+import { exportPaymentsXlsx } from "./hotelListsXlsx";
+import { fetchPaymentRegister } from "./hotelReportData";
 
 const PAGE = 50;
 const unit = (currency: string) => (currency === "KGS" || !currency ? "сом" : currency);
@@ -57,6 +60,7 @@ export const HotelCashPage: React.FC = () => {
   // Принявшие за день — собираем из ответа без фильтра, чтобы выбор не «схлопывался»
   // до одного человека после его выбора.
   const [accepters, setAccepters] = React.useState<Map<number, string>>(new Map());
+  const [exporting, setExporting] = React.useState(false);
 
   const from = date.format("YYYY-MM-DD");
   const to = date.add(1, "day").format("YYYY-MM-DD");
@@ -98,6 +102,24 @@ export const HotelCashPage: React.FC = () => {
   const net = (cur: string, key: "payments" | "refunds" | "net") => totals.filter((t) => t.currency === cur).reduce((s, t) => s + Number(t[key]), 0);
   const isToday = date.isSame(dayjs(), "day");
 
+  // В файл — все операции дня (все страницы), а не только показанные.
+  const handleExport = async () => {
+    if (!property) return;
+    setExporting(true);
+    try {
+      const all = await fetchPaymentRegister(property.id, from, to, undefined, 20, accepter === "" ? undefined : accepter);
+      await exportPaymentsXlsx({
+        date: from,
+        propertyName: property.name,
+        accepterLabel: accepter === "" ? "все" : accepters.get(accepter) ?? `№${accepter}`,
+        payments: all.rows,
+        totals: all.totals,
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <HotelPage>
       <HotelPageHeader
@@ -110,7 +132,14 @@ export const HotelCashPage: React.FC = () => {
             принимаются как обычно.
           </>
         }
-        actions={<DateStepper value={date} onChange={setDate} disableFuture />}
+        actions={
+          <>
+            <DateStepper value={date} onChange={setDate} disableFuture />
+            <Button variant="outlined" startIcon={<FileDownloadOutlined />} disabled={exporting || !first || first.count === 0} onClick={() => void handleExport()}>
+              {exporting ? "Готовим…" : "Excel"}
+            </Button>
+          </>
+        }
       />
 
       {!property && !propertyLoading ? (

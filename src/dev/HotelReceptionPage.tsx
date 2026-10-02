@@ -38,6 +38,7 @@ import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import PeopleOutlineOutlined from "@mui/icons-material/PeopleOutlineOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import FlightLandOutlined from "@mui/icons-material/FlightLandOutlined";
+import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
 import KingBedOutlined from "@mui/icons-material/KingBedOutlined";
@@ -67,6 +68,8 @@ import {
   mapStayDisplayStatus,
 } from "./hotelDisplay";
 import { CreateBookingButton } from "./CreateBookingButton";
+import { exportReservationsXlsx } from "./hotelListsXlsx";
+import { fetchAllReservations } from "./hotelReportData";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 import { DateStepper, EmptyState, FilterChip, HotelPage, HotelPageHeader, plural, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 
@@ -587,6 +590,27 @@ const AllTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> = (
   });
   const rows = query.data?.results ?? [];
   const total = query.data?.count ?? 0;
+  const [exporting, setExporting] = React.useState(false);
+  const { enqueueSnackbar } = useSnackbar();
+  // В файл — все брони под фильтром (до 2000), а не только показанные строки.
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const all = await fetchAllReservations({ propertyId, q: q || undefined, status: status || undefined });
+      const label = [
+        `Статус: ${STATUS_FILTERS.find((f) => f.value === status)?.label ?? "все"}`,
+        q ? `поиск: «${q}»` : "",
+        all.truncated ? "выгружены первые 2000" : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      await exportReservationsXlsx(all.rows, label);
+    } catch (err) {
+      enqueueSnackbar(getErrorMessage(err, "Не удалось выгрузить брони"), { variant: "error" });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <>
@@ -608,10 +632,13 @@ const AllTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> = (
             },
           }}
         />
-        <Stack direction="row" gap={1} flexWrap="wrap">
+        <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
           {STATUS_FILTERS.map((f) => (
             <FilterChip key={f.value || "all"} label={f.label} active={status === f.value} onClick={() => setStatus(f.value)} />
           ))}
+          <Button size="small" variant="outlined" startIcon={<FileDownloadOutlined />} disabled={exporting || total === 0} onClick={() => void handleExport()} sx={{ ml: { md: 1 } }}>
+            {exporting ? "Готовим…" : "Excel"}
+          </Button>
         </Stack>
       </Stack>
 

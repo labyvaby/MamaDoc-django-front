@@ -51,11 +51,12 @@ export async function fetchPaymentRegister(
   to: string,
   signal?: AbortSignal,
   maxPages = MAX_PAGES,
+  acceptedById?: number,
 ): Promise<FetchedRegister> {
   const rows: HotelPayment[] = [];
   let totals: HotelPaymentRegisterTotal[] = [];
   for (let page = 0; page < maxPages; page++) {
-    const res = await listPaymentRegister({ propertyId, from, to, limit: PAGE, offset: page * PAGE }, signal);
+    const res = await listPaymentRegister({ propertyId, from, to, acceptedById, limit: PAGE, offset: page * PAGE }, signal);
     if (page === 0) totals = res.totals;
     rows.push(...res.results);
     if (res.results.length < PAGE || rows.length >= res.count) return { rows, totals, truncated: false };

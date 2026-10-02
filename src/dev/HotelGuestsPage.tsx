@@ -15,14 +15,19 @@
  * номера остаётся на «Расписании» (CreateBookingButton).
  */
 import React from "react";
-import { Box, Button, InputAdornment, TextField, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Button, InputAdornment, ListItemIcon, ListItemText, Menu, MenuItem, TextField, useMediaQuery, useTheme } from "@mui/material";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import PersonAddAltOutlined from "@mui/icons-material/PersonAddAltOutlined";
 import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
+import TableViewOutlined from "@mui/icons-material/TableViewOutlined";
+import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
+import UploadFileOutlined from "@mui/icons-material/UploadFileOutlined";
 import IconButton from "@mui/material/IconButton";
 import { useQuery } from "@tanstack/react-query";
+import { useSnackbar } from "notistack";
 
+import { useCan } from "../hooks/useCan";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { EmptyState, HotelPageHeader, plural, Surface } from "./hotelUi";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
@@ -33,6 +38,8 @@ import { GuestHistoryPanel } from "./GuestHistoryPanel";
 import { GuestPaymentDialog } from "./GuestPaymentDialog";
 import { useGuestDetails } from "./useGuestDetails";
 import { AddGuestDrawer } from "./AddGuestDrawer";
+import { GuestImportDialog } from "./GuestImportDialog";
+import { exportGuestsXlsx } from "./hotelGuestsXlsx";
 
 export const HotelGuestsPage: React.FC = () => {
   usePageTitle("Гости");
@@ -43,6 +50,10 @@ export const HotelGuestsPage: React.FC = () => {
   const debouncedSearch = useDebouncedValue(search.trim());
   const [selectedClientId, setSelectedClientId] = React.useState<number | null>(null);
   const [addOpen, setAddOpen] = React.useState(false);
+  const [importOpen, setImportOpen] = React.useState(false);
+  const [excelAnchor, setExcelAnchor] = React.useState<HTMLElement | null>(null);
+  const canManageGuests = useCan("hotel.guests.manage");
+  const { enqueueSnackbar } = useSnackbar();
 
   const guestsQuery = useQuery({
     queryKey: ["hotel", "guests", debouncedSearch],
@@ -67,6 +78,15 @@ export const HotelGuestsPage: React.FC = () => {
   const historyNode = <GuestHistoryPanel state={state} />;
 
   const blacklisted = guests.filter((g) => g.isBlacklisted).length;
+
+  const handleExport = async () => {
+    setExcelAnchor(null);
+    try {
+      await exportGuestsXlsx(guests, debouncedSearch);
+    } catch {
+      enqueueSnackbar("Не удалось выгрузить гостей", { variant: "error" });
+    }
+  };
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -99,6 +119,30 @@ export const HotelGuestsPage: React.FC = () => {
                   },
                 }}
               />
+              <Button variant="outlined" startIcon={<TableViewOutlined />} onClick={(e) => setExcelAnchor(e.currentTarget)}>
+                Excel
+              </Button>
+              <Menu anchorEl={excelAnchor} open={excelAnchor != null} onClose={() => setExcelAnchor(null)}>
+                <MenuItem onClick={() => void handleExport()} disabled={guests.length === 0}>
+                  <ListItemIcon>
+                    <FileDownloadOutlined fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText primary="Выгрузить в Excel" secondary={debouncedSearch ? "найденных гостей" : "весь список"} />
+                </MenuItem>
+                {canManageGuests && (
+                  <MenuItem
+                    onClick={() => {
+                      setExcelAnchor(null);
+                      setImportOpen(true);
+                    }}
+                  >
+                    <ListItemIcon>
+                      <UploadFileOutlined fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Загрузить из Excel" secondary="перенос базы гостей" />
+                  </MenuItem>
+                )}
+              </Menu>
               <Button variant="contained" disableElevation startIcon={<PersonAddAltOutlined />} onClick={() => setAddOpen(true)}>
                 Добавить гостя
               </Button>
@@ -106,6 +150,7 @@ export const HotelGuestsPage: React.FC = () => {
           }
         />
       </Box>
+      <GuestImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={() => void guestsQuery.refetch()} />
       <AddGuestDrawer
         open={addOpen}
         onClose={() => setAddOpen(false)}
