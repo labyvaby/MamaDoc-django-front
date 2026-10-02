@@ -1168,6 +1168,10 @@ export interface HotelCalendarItem {
   totalAmount: Money;
   isOverbooking: boolean;
   boardType: string;
+  /** Оплаты по брони — появятся в календаре после доработки бэка; пока долг берётся из списка броней (useStayBalances). */
+  paidAmount?: Money;
+  balanceDue?: Money;
+  currency?: string;
 }
 
 export interface HotelRoomBlock {

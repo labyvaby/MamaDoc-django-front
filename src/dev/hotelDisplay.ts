@@ -123,6 +123,25 @@ export const HOTEL_BOOKING_SOURCE_LABELS: Record<string, string> = {
   corporate: "Корпоративный клиент",
 };
 
+/**
+ * Цвет источника брони — для режима «Цвет: по источнику» в шахматке и легенды.
+ * Разные оттенки, различимые и в светлой, и в тёмной теме; OTA — фиолетовый,
+ * как у большинства каналов-агрегаторов.
+ */
+export const HOTEL_BOOKING_SOURCE_COLORS: Record<string, string> = {
+  direct: "#2563eb",
+  website: "#2563eb",
+  phone: "#16a34a",
+  walk_in: "#ca8a04",
+  ota: "#9333ea",
+  agent: "#0891b2",
+  corporate: "#475569",
+};
+
+/** Цвет источника; незнакомый — нейтральный серо-синий, как цвет канала по умолчанию. */
+export const hotelSourceColor = (source: string | null | undefined): string =>
+  (source && HOTEL_BOOKING_SOURCE_COLORS[source]) || "#64748b";
+
 /** Короткая подпись источника — для бара в шахматке, где места мало. */
 export const HOTEL_BOOKING_SOURCE_SHORT: Record<string, string> = {
   direct: "Сайт",
