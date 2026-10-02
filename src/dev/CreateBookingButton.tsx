@@ -43,7 +43,9 @@ import {
   Drawer,
   FormControlLabel,
   IconButton,
+  InputAdornment,
   MenuItem,
+  Popover,
   Snackbar,
   Stack,
   TextField,
@@ -86,6 +88,8 @@ import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 
 import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
+import { CurrencyEquivalent } from "./CurrencyBits";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
@@ -118,7 +122,7 @@ import {
   type HotelGuestDocumentScan,
   type HotelReservationConflict,
 } from "../api/hotel";
-import { getErrorCode, getErrorMessage } from "../api/client";
+import { ApiError, getErrorCode, getErrorMessage } from "../api/client";
 import {
   subscribeQuickBookingRequest,
   getQuickBookingRequestSnapshot,
@@ -269,6 +273,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // Допуслуги к брони: id услуги → количество. Сразу после создания уходят в счёт.
   const [serviceQty, setServiceQty] = React.useState<Record<number, number>>({});
   const canCharge = useCan("hotel.payments.manage");
+  // Своя сумма за проживание ("" — расчётная по тарифу) и поповер её правки.
+  const [manualTotal, setManualTotal] = React.useState("");
+  const [totalAnchor, setTotalAnchor] = React.useState<HTMLElement | null>(null);
 
   const reset = React.useCallback(() => {
     setGuestName("");
@@ -316,6 +323,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setDataConsent(false);
     setExtraRooms([]);
     setServiceQty({});
+    setManualTotal("");
     setCorporateId("");
     setSubmitError(null);
   }, [clearScanNotice]);
@@ -534,6 +542,10 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRoomType]);
 
+  // Сменили номер или даты — своя сумма к ним уже не относится, возвращаемся к расчётной.
+  const stayKey = `${roomId}|${checkIn?.format("YYYY-MM-DD") ?? ""}|${checkOut?.format("YYYY-MM-DD") ?? ""}|${extraRooms.length}`;
+  React.useEffect(() => setManualTotal(""), [stayKey]);
+
   const nights = checkIn && checkOut && checkOut.isAfter(checkIn) ? checkOut.startOf("day").diff(checkIn.startOf("day"), "day") : 0;
   const typeOfRoom = (id: number | "") => {
     const room = rooms.find((r) => r.id === id);
@@ -557,7 +569,11 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // Скидка юрлица — на проживание; точную сумму после неё посчитает бэк.
   const corporateDiscount = corporate ? Number(corporate.discountPercent) : 0;
   const stayTotal = mainTotal != null ? mainTotal + extrasByCategory : null;
-  const estimatedTotal = stayTotal != null ? Math.round(stayTotal * (1 - corporateDiscount / 100) * 100) / 100 : null;
+  const computedTotal = stayTotal != null ? Math.round(stayTotal * (1 - corporateDiscount / 100) * 100) / 100 : null;
+  // «Своя сумма» за проживание: по умолчанию — расчётная, сотрудник может поставить свою.
+  const manualValue = manualTotal.trim() !== "" ? Number(manualTotal.replace(",", ".")) : null;
+  const manualActive = manualValue != null && Number.isFinite(manualValue) && manualValue >= 0 && extraRooms.length === 0;
+  const estimatedTotal = manualActive ? manualValue : computedTotal;
   const servicesTotal = extraServices.reduce((s, x) => s + Number(x.price) * (serviceQty[x.id] ?? 0), 0);
   const grandTotal = estimatedTotal != null ? estimatedTotal + servicesTotal : null;
   const isPrepayment = guaranteeMethod === "prepayment";
@@ -594,15 +610,64 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const footerSummary =
     nights > 0 ? (
       <Box>
-        <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
-          {grandTotal != null ? `${grandTotal.toLocaleString("ru-RU")} сом` : "—"}
-        </Typography>
+        <Stack direction="row" alignItems="center" gap={0.75}>
+          <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+            {grandTotal != null ? `${grandTotal.toLocaleString("ru-RU")} сом` : "—"}
+          </Typography>
+          {manualActive && computedTotal != null && computedTotal !== manualValue && (
+            <Typography variant="caption" color="text.disabled" sx={{ textDecoration: "line-through", fontVariantNumeric: "tabular-nums" }}>
+              {(computedTotal + servicesTotal).toLocaleString("ru-RU")}
+            </Typography>
+          )}
+          {grandTotal != null && extraRooms.length === 0 && (
+            <Tooltip title={manualActive ? "Своя сумма — изменить или вернуть расчётную" : "Поставить свою сумму за проживание"}>
+              <IconButton size="small" onClick={(e) => setTotalAnchor(e.currentTarget)} aria-label="Изменить сумму проживания">
+                <EditOutlined sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          )}
+          {grandTotal != null && <CurrencyEquivalent propertyId={property?.id} amount={grandTotal} baseCurrency={property?.currency || "KGS"} />}
+        </Stack>
+        <Popover
+          open={totalAnchor != null}
+          anchorEl={totalAnchor}
+          onClose={() => setTotalAnchor(null)}
+          anchorOrigin={{ vertical: "top", horizontal: "left" }}
+          transformOrigin={{ vertical: "bottom", horizontal: "left" }}
+          slotProps={{ paper: { sx: { p: 2, width: 300, borderRadius: "14px" } } }}
+        >
+          <Typography sx={{ fontWeight: 700, mb: 0.5 }}>Сумма за проживание</Typography>
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1.5 }}>
+            По тарифу — {computedTotal != null ? `${computedTotal.toLocaleString("ru-RU")} сом` : "—"}. Своя сумма разложится по ночам, в истории брони будет видно, кто её поставил.
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="Своя сумма"
+            value={manualTotal}
+            placeholder={computedTotal != null ? String(computedTotal) : ""}
+            onChange={(e) => setManualTotal(e.target.value.replace(/[^\d.,]/g, "").slice(0, 10))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") setTotalAnchor(null);
+            }}
+            slotProps={{ input: { endAdornment: <InputAdornment position="end">сом</InputAdornment> }, htmlInput: { inputMode: "decimal" } }}
+          />
+          <Stack direction="row" justifyContent="space-between" sx={{ mt: 1.5 }}>
+            <Button size="small" color="inherit" disabled={manualTotal === ""} onClick={() => setManualTotal("")}>
+              Вернуть расчётную
+            </Button>
+            <Button size="small" variant="contained" disableElevation onClick={() => setTotalAnchor(null)}>
+              Готово
+            </Button>
+          </Stack>
+        </Popover>
         <Typography variant="caption" color="text.secondary">
           {nights} {nights % 10 === 1 && nights % 100 !== 11 ? "ночь" : [2, 3, 4].includes(nights % 10) && ![12, 13, 14].includes(nights % 100) ? "ночи" : "ночей"}
-          {corporateDiscount > 0 ? ` · юрлицо −${corporateDiscount}%` : ""}
+          {manualActive ? " · своя сумма" : corporateDiscount > 0 ? ` · юрлицо −${corporateDiscount}%` : ""}
           {servicesTotal > 0 ? ` · услуги ${servicesTotal.toLocaleString("ru-RU")}` : ""}
           {extraRooms.length > 0 ? ` · ${extraRooms.length + 1} ${extraRooms.length + 1 < 5 ? "номера" : "номеров"}` : ""}
-          {estimatedTotal != null && (!quote || extraRooms.length > 0) ? " · по тарифу категории" : ""}
+          {!manualActive && estimatedTotal != null && (!quote || extraRooms.length > 0) ? " · по тарифу категории" : ""}
           {isPrepayment && prepaymentError == null && grandTotal != null
             ? ` · предоплата ${prepaymentValue.toLocaleString("ru-RU")}, остаток ${Math.max(0, grandTotal - prepaymentValue).toLocaleString("ru-RU")}`
             : ""}
@@ -747,7 +812,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     try {
       const documentType = scannedDocumentType ?? (guestType === "resident" ? "id_card" : "passport");
       const documentNumber = guestType === "resident" ? orUndefined(idNumber) : orUndefined(passportNumber);
-      const reservation = await createReservation({
+      const payload: Parameters<typeof createReservation>[0] = {
         propertyId: property.id,
         source: bookingSource || "direct",
         guaranteeMethod: guaranteeMethod || undefined,
@@ -806,7 +871,20 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
             guests: [],
           })),
         ],
-      });
+      };
+      if (manualActive) payload.items[0] = { ...payload.items[0], manualTotal: manualValue.toFixed(2) };
+      let manualRejected = false;
+      let reservation;
+      try {
+        reservation = await createReservation(payload);
+      } catch (createErr) {
+        // Старый бэкенд не знает manualTotal (400 unknown field) — бронь всё равно создаём по расчётной цене.
+        const unknownField =
+          manualActive && createErr instanceof ApiError && createErr.status === 400 && /manualTotal|unknown field/i.test(`${createErr.message} ${JSON.stringify(createErr.payload ?? "")}`);
+        if (!unknownField) throw createErr;
+        manualRejected = true;
+        reservation = await createReservation({ ...payload, items: payload.items.map((it) => ({ ...it, manualTotal: undefined })) });
+      }
 
       const createdGuestId = reservation.items[0]?.guests[0]?.id;
       if (passportPhotoFile && createdGuestId != null) {
@@ -860,7 +938,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
       void queryClient.invalidateQueries({ queryKey: ["hotel", "dashboard"] });
       setOpen(false);
       setToast(
-        prepaymentFailed
+        manualRejected
+          ? { text: `Бронь №${reservation.number} создана по расчётной цене: свою сумму сервер начнёт принимать после обновления.`, severity: "warning" }
+          : prepaymentFailed
           ? { text: `Бронь №${reservation.number} создана, но предоплату записать не удалось (${prepaymentFailed}). Внесите её в карточке брони.`, severity: "warning" }
           : chargesFailed > 0
           ? { text: `Бронь №${reservation.number} создана, но ${chargesFailed} из допуслуг не записались. Добавьте их на вкладке «Проживание и услуги».`, severity: "warning" }

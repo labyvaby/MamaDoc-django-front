@@ -29,6 +29,9 @@ import { useSnackbar } from "notistack";
 import { ReservationEditPanel } from "./ReservationEditPanel";
 import { ReservationHistory } from "./ReservationHistory";
 import { RoomInspectionStrip } from "./RoomInspectionStrip";
+import { CurrencyEquivalent, DisplayCurrencySwitch } from "./CurrencyBits";
+import { currencySign } from "./hotelReportFormat";
+import { rateOf, useExchangeRates } from "./useExchangeRates";
 import { useRoomInspection } from "./useRoomInspection";
 import { ReservationChargesSection } from "./ReservationChargesSection";
 import { ReservationCorporateSection } from "./ReservationCorporateSection";
@@ -183,6 +186,11 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   // Вкладки карточки — как в Exely: обзор, проживание и услуги, счета, документы, история.
   const [tab, setTab] = React.useState<CardTab>("overview");
   const [paymentMethod, setPaymentMethod] = React.useState("");
+  // Валюта, которой платит гость ("" — валюта объекта); список — из курсов объекта (контракт §5).
+  const [paymentCurrency, setPaymentCurrency] = React.useState("");
+  const ratesQuery = useExchangeRates(reservation?.propertyId, reservation?.currency || "KGS");
+  const foreignRates = ratesQuery.data?.available ? ratesQuery.data.rates : [];
+  const paymentRate = paymentCurrency ? rateOf(ratesQuery.data, paymentCurrency) : 1;
   const [paymentAmount, setPaymentAmount] = React.useState("");
   const [paymentNote, setPaymentNote] = React.useState("");
   const [cashlessMethodId, setCashlessMethodId] = React.useState<number | "">("");
@@ -207,6 +215,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setPaymentKind("payment");
     setTab("overview");
     setPaymentMethod("");
+    setPaymentCurrency("");
     setPaymentAmount("");
     setPaymentNote("");
     setCashlessMethodId("");
@@ -348,7 +357,9 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
         note: paymentNote.trim() || undefined,
         cashlessMethodId:
           CASHLESS_METHODS_ENABLED && paymentIsCashless && cashlessMethodId !== "" ? cashlessMethodId : undefined,
+        ...(paymentCurrency && paymentRate ? { currency: paymentCurrency, exchangeRate: String(paymentRate) } : {}),
       });
+      setPaymentCurrency("");
       setPaymentFormOpen(false);
       setPaymentMethod("");
       setPaymentAmount("");
@@ -427,7 +438,9 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const sectionLabelSx = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary", mb: 1.25 } as const;
   const line = `1px solid ${subtleBorder(theme)}`;
 
-  const refundExceeds = paymentKind === "refund" && Number(paymentAmount) > paid;
+  // Сумма формы в валюте объекта — для проверки возврата и подсказки пересчёта.
+  const paymentAmountBase = Number(paymentAmount) * (paymentRate ?? 1);
+  const refundExceeds = paymentKind === "refund" && paymentAmountBase > paid;
   const paymentSummary = (
     <Box sx={{ p: 2, borderRadius: "12px", bgcolor: subtleBg(theme, true) }}>
       <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 1 }}>
@@ -496,10 +509,10 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
           <FormField
             icon={paymentKind === "refund" ? <UndoOutlined /> : <PaymentsOutlined />}
             label={paymentKind === "refund" ? "Сумма возврата" : "Сумма"}
-            unit="сом"
+            unit={paymentCurrency ? currencySign(paymentCurrency) : "сом"}
             value={paymentAmount}
             onValueChange={setPaymentAmount}
-            rules={{ kind: "decimal", min: 1, max: paymentKind === "refund" ? Math.max(1, paid) : 100_000_000 }}
+            rules={{ kind: "decimal", min: paymentCurrency ? 0.01 : 1, max: paymentKind === "refund" && !paymentCurrency ? Math.max(1, paid) : 100_000_000 }}
             size="small"
             sx={{ flex: 1 }}
             disabled={paymentSaving}
@@ -507,13 +520,35 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
             helperText={
               refundExceeds
                 ? `Не больше принятого: ${money(paid)}`
-                : paymentKind === "refund"
-                  ? `Принято ${money(paid)}`
-                  : balance > 0 && !paymentAmount
-                    ? `Остаток ${money(balance)}`
-                    : undefined
+                : paymentCurrency && paymentRate && paymentAmount
+                  ? `= ${money(Math.round(paymentAmountBase * 100) / 100)} по курсу ${paymentRate.toLocaleString("ru-RU")}`
+                  : paymentKind === "refund"
+                    ? `Принято ${money(paid)}`
+                    : balance > 0 && !paymentAmount
+                      ? paymentCurrency && paymentRate
+                        ? `Остаток ${money(balance)} ≈ ${(balance / paymentRate).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ${currencySign(paymentCurrency)}`
+                        : `Остаток ${money(balance)}`
+                      : undefined
             }
           />
+          {foreignRates.length > 0 && (
+            <TextField
+              select
+              size="small"
+              label="Валюта"
+              value={paymentCurrency}
+              onChange={(e) => setPaymentCurrency(e.target.value)}
+              disabled={paymentSaving}
+              sx={{ width: 110, flexShrink: 0 }}
+            >
+              <MenuItem value="">сом</MenuItem>
+              {foreignRates.map((r) => (
+                <MenuItem key={r.currency} value={r.currency}>
+                  {r.currency} {currencySign(r.currency)}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
         </Stack>
         {CASHLESS_METHODS_ENABLED && paymentIsCashless && (
           <CashlessMethodSelect
@@ -582,10 +617,19 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
             {[p.acceptedByName, dayjs(p.acceptedAt).format("D MMM, HH:mm"), p.note].filter(Boolean).join(" · ")}
           </Typography>
         </Box>
-        <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", flexShrink: 0, color: p.kind === "refund" ? "warning.main" : "text.primary" }}>
-          {p.kind === "refund" ? "−" : "+"}
-          {Number(p.amount).toLocaleString("ru-RU")}
-        </Typography>
+        <Box sx={{ textAlign: "right", flexShrink: 0 }}>
+          <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: p.kind === "refund" ? "warning.main" : "text.primary" }}>
+            {p.kind === "refund" ? "−" : "+"}
+            {Number(p.amount).toLocaleString("ru-RU")}
+            {reservation && p.currency && p.currency !== reservation.currency ? ` ${currencySign(p.currency)}` : ""}
+          </Typography>
+          {reservation && p.currency && p.currency !== reservation.currency && p.amountBase && (
+            <Typography variant="caption" color="text.secondary" component="div">
+              = {money(p.amountBase)}
+              {p.exchangeRate ? ` по ${Number(p.exchangeRate).toLocaleString("ru-RU")}` : ""}
+            </Typography>
+          )}
+        </Box>
       </Stack>
     ));
   const primaryPhone = item ? item.guests.find((g) => g.isPrimary)?.phone || item.guests[0]?.phone || "" : "";
@@ -695,12 +739,18 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                 {reservation.customerName || item.guests[0]?.fullName || "Без заказчика"}
               </Typography>
               <Box sx={{ textAlign: { xs: "left", md: "right" } }}>
-                <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 700, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                  {money(reservation.totalAmount)}
-                </Typography>
-                <Typography variant="caption" color={balance > 0 ? "error.main" : "success.main"} fontWeight={600}>
-                  {balance > 0 ? `к оплате ${money(balance)}` : "оплачено полностью"}
-                </Typography>
+                <Stack direction="row" alignItems="center" gap={1} justifyContent={{ xs: "flex-start", md: "flex-end" }}>
+                  <DisplayCurrencySwitch propertyId={reservation.propertyId} baseCurrency={reservation.currency} />
+                  <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 700, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                    {money(reservation.totalAmount)}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" gap={0.75} justifyContent={{ xs: "flex-start", md: "flex-end" }} alignItems="baseline">
+                  <CurrencyEquivalent propertyId={reservation.propertyId} baseCurrency={reservation.currency} amount={Number(reservation.totalAmount)} />
+                  <Typography variant="caption" color={balance > 0 ? "error.main" : "success.main"} fontWeight={600}>
+                    {balance > 0 ? `к оплате ${money(balance)}` : "оплачено полностью"}
+                  </Typography>
+                </Stack>
               </Box>
             </Stack>
 
