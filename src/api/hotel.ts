@@ -2654,8 +2654,35 @@ export function listStaffShifts(params: { propertyId: number; from: string; to: 
 }
 
 /** Пакетная правка сетки: ключ — (postId, date); employeeId: null снимает смену. */
-export function saveStaffShifts(data: { propertyId: number; shifts: HotelStaffShiftInput[]; allowOverlap?: boolean }): Promise<HotelStaffShift[]> {
-  return apiRequest<HotelStaffShift[]>("/v2/hotel/staff-shifts/", { method: "PUT", body: data });
+/**
+ * Ответ { saved, removed }. Один человек в двух пересекающихся сменах — 409
+ * SHIFT_OVERLAP с details.conflicts; повтор с allowOverlap сохраняет.
+ */
+export function saveStaffShifts(data: {
+  propertyId: number;
+  shifts: HotelStaffShiftInput[];
+  allowOverlap?: boolean;
+}): Promise<{ saved: HotelStaffShift[]; removed: { postId: number; date: string }[] }> {
+  return apiRequest<{ saved: HotelStaffShift[]; removed: { postId: number; date: string }[] }>("/v2/hotel/staff-shifts/", { method: "PUT", body: data });
+}
+
+/** Конфликт из 409 SHIFT_OVERLAP. */
+export interface HotelShiftOverlap {
+  employeeId: number;
+  employeeName: string;
+  shifts: { id: number | null; postId: number; postName: string; date: string; startsAt: string; endsAt: string }[];
+}
+
+/** POST housekeeping-tasks/assign-by-roster/ — открытые задачи дня горничной этажа по графику. */
+export function assignHousekeepingByRoster(data: {
+  propertyId: number;
+  date: string;
+  onlyUnassigned?: boolean;
+}): Promise<{ assigned: number; skipped: number; unmatchedFloors: string[] }> {
+  return apiRequest<{ assigned: number; skipped: number; unmatchedFloors: string[] }>("/v2/hotel/housekeeping-tasks/assign-by-roster/", {
+    method: "POST",
+    body: data,
+  });
 }
 
 // ── Валюты объекта ─────────────────────────────────────────────────────────

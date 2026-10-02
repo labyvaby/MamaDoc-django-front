@@ -72,9 +72,10 @@ export function useStaffShifts(propertyId: number | undefined, from: string, to:
 export function useSaveShifts(propertyId: number | undefined, isDemo: boolean) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (shifts: HotelStaffShiftInput[]) => {
+    // allowOverlap — только после подтверждения: без него сервер отвечает 409 SHIFT_OVERLAP.
+    mutationFn: async ({ shifts, allowOverlap = false }: { shifts: HotelStaffShiftInput[]; allowOverlap?: boolean }) => {
       if (isDemo) return saveDemoShifts(shifts);
-      await saveStaffShifts({ propertyId: propertyId!, shifts, allowOverlap: true });
+      await saveStaffShifts({ propertyId: propertyId!, shifts, allowOverlap });
     },
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["hotel", "staffShifts"] }),
   });

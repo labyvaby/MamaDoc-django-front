@@ -286,6 +286,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // Допуслуги к брони: id услуги → количество. Сразу после создания уходят в счёт.
   const [serviceQty, setServiceQty] = React.useState<Record<number, number>>({});
   const canCharge = useCan("hotel.payments.manage");
+  // Своя сумма — право hotel.prices.override, как на сервере (без него он ответит 403).
+  const canOverridePrice = useCan("hotel.prices.override");
   // Своя сумма за проживание ("" — расчётная по тарифу) и поповер её правки.
   const [manualTotal, setManualTotal] = React.useState("");
   const [totalAnchor, setTotalAnchor] = React.useState<HTMLElement | null>(null);
@@ -633,7 +635,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
               {(computedTotal + servicesTotal).toLocaleString("ru-RU")}
             </Typography>
           )}
-          {grandTotal != null && extraRooms.length === 0 && (
+          {grandTotal != null && extraRooms.length === 0 && canOverridePrice && (
             <Tooltip title={manualActive ? "Своя сумма — изменить или вернуть расчётную" : "Поставить свою сумму за проживание"}>
               <IconButton size="small" onClick={(e) => setTotalAnchor(e.currentTarget)} aria-label="Изменить сумму проживания">
                 <EditOutlined sx={{ fontSize: 16 }} />
@@ -910,6 +912,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
       };
       if (manualActive) payload.items[0] = { ...payload.items[0], manualTotal: manualValue.toFixed(2) };
       let manualRejected = false;
+      // Своя сумма требует права hotel.prices.override: без него сервер отвечает 403 —
+      // бронь всё равно создаём, по расчётной цене, и говорим почему.
+      let manualForbidden = false;
       let reservation;
       try {
         reservation = await createReservation(payload);
@@ -917,13 +922,15 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         // Бэкенд, который отвергает незнакомое поле (400), — бронь всё равно создаём по расчётной цене.
         const unknownField =
           manualActive && createErr instanceof ApiError && createErr.status === 400 && /manualTotal|unknown field/i.test(`${createErr.message} ${JSON.stringify(createErr.payload ?? "")}`);
-        if (!unknownField) throw createErr;
-        manualRejected = true;
+        const forbidden = manualActive && createErr instanceof ApiError && createErr.status === 403;
+        if (!unknownField && !forbidden) throw createErr;
+        if (forbidden) manualForbidden = true;
+        else manualRejected = true;
         reservation = await createReservation({ ...payload, items: payload.items.map((it) => ({ ...it, manualTotal: undefined })) });
       }
       // Нынешний бэкенд незнакомые поля молча пропускает (проверено 02.10.2026) — тоже демо-режим.
       const firstItem = reservation.items[0];
-      if (manualActive && !manualRejected && firstItem && manualTotalIgnored(firstItem, manualValue)) manualRejected = true;
+      if (manualActive && !manualRejected && !manualForbidden && firstItem && manualTotalIgnored(firstItem, manualValue)) manualRejected = true;
       // Демо-режим: своя сумма раскладывается по ночам и видна в «Проживании» на этом устройстве.
       if (manualRejected && firstItem && manualValue != null) {
         saveDemoPricing(reservation.id, firstItem.id, {
@@ -986,7 +993,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
       void queryClient.invalidateQueries({ queryKey: ["hotel", "dashboard"] });
       setOpen(false);
       setToast(
-        manualRejected
+        manualForbidden
+          ? { text: `Бронь №${reservation.number} создана по расчётной цене: ставить свою сумму может сотрудник с правом «Своя цена».`, severity: "warning" }
+          : manualRejected
           ? { text: `Бронь №${reservation.number} создана. Своя сумма сохранена в демо-режиме и видна в «Проживании»; на сервере пока расчётная цена.`, severity: "success" }
           : prepaymentFailed
           ? { text: `Бронь №${reservation.number} создана, но предоплату записать не удалось (${prepaymentFailed}). Внесите её в карточке брони.`, severity: "warning" }

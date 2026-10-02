@@ -51,7 +51,8 @@ type Item = HotelReservation["items"][number];
 
 export const ReservationStaySection: React.FC<{ reservation: HotelReservation; activeItemId: number }> = ({ reservation, activeItemId }) => {
   const theme = useTheme();
-  const canOverride = useCan(["hotel.prices.override", "hotel.manage"]);
+  // Как на сервере: правка цен брони — только с hotel.prices.override (суперадмину — всегда).
+  const canOverride = useCan("hotel.prices.override");
   const unit = reservation.currency === "KGS" || !reservation.currency ? "сом" : reservation.currency;
   const money = (v: number) => `${v.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ${unit}`;
   const corporateDiscount = Number(reservation.corporateDiscountPercent ?? 0);
