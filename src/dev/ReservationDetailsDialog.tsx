@@ -29,6 +29,7 @@ import { useSnackbar } from "notistack";
 import { ReservationEditPanel } from "./ReservationEditPanel";
 import { ReservationHistory } from "./ReservationHistory";
 import { RoomInspectionStrip } from "./RoomInspectionStrip";
+import { ReservationNotesPanel } from "./ReservationNotesPanel";
 import { CurrencyEquivalent, DisplayCurrencySwitch } from "./CurrencyBits";
 import { currencySign } from "./hotelReportFormat";
 import { rateOf, useExchangeRates } from "./useExchangeRates";
@@ -112,7 +113,7 @@ function isCashlessPaymentMethod(method: string): boolean {
 
 const CANCELLABLE_STATUSES = new Set(["draft", "hold", "confirmed"]);
 
-type CardTab = "overview" | "stay" | "billing" | "docs" | "history";
+type CardTab = "overview" | "stay" | "billing" | "docs" | "notes" | "history";
 
 export interface ReservationDetailsDialogProps {
   /** Id брони или null — диалог закрыт. */
@@ -990,6 +991,15 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                 }
               />
               <Tab value="docs" label="Документы" />
+              <Tab
+                value="notes"
+                label={
+                  <Stack direction="row" alignItems="center" gap={0.75}>
+                    Заметки
+                    {reservation.internalNote?.trim() && <Box component="span" sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: "warning.main" }} />}
+                  </Stack>
+                }
+              />
               <Tab value="history" label={`История${reservation.logs?.length ? ` · ${reservation.logs.length}` : ""}`} />
             </Tabs>
           </Box>
@@ -1012,6 +1022,20 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                       </Typography>
                     </Stack>
                   ))}
+
+                  {reservation.internalNote?.trim() && (
+                    <Box
+                      onClick={() => setTab("notes")}
+                      sx={{ mt: 2, pl: 1.5, borderLeft: `3px solid ${theme.palette.warning.main}`, cursor: "pointer" }}
+                    >
+                      <Typography variant="caption" color="text.secondary">
+                        Заметка для сотрудников
+                      </Typography>
+                      <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                        {reservation.internalNote}
+                      </Typography>
+                    </Box>
+                  )}
 
                   {reservation.guestComment && (
                     <Box sx={{ mt: 2, pl: 1.5, borderLeft: `3px solid ${subtleBorder(theme)}` }}>
@@ -1132,6 +1156,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
             {tab === "docs" && (
               <ReservationDocumentsPanel reservation={reservation} payments={payments} property={property ?? null} phone={primaryPhone} />
             )}
+
+            {tab === "notes" && <ReservationNotesPanel reservation={reservation} />}
 
             {tab === "history" &&
               ((reservation.logs ?? []).length > 0 ? (
