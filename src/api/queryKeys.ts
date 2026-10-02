@@ -135,6 +135,8 @@ export const djangoQueryKeys = {
       ["django", "health", "patient", patientId, "family-suggestions", orgId] as const,
     growth: (patientId: number, orgId: number | undefined) =>
       ["django", "health", "patient", patientId, "growth", orgId] as const,
+    medications: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "medications", orgId] as const,
     changes: (patientId: number, orgId: number | undefined) =>
       ["django", "health", "patient", patientId, "changes", orgId] as const,
     onboarding: (enrollmentId: number, orgId: number | undefined) =>

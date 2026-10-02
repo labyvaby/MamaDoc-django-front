@@ -9,6 +9,7 @@ import { ConditionsSection } from "./ConditionsSection";
 import { FamilySection } from "./FamilySection";
 import { HealthChangesLog } from "./HealthChangesLog";
 import { HealthProfileCard } from "./HealthProfileCard";
+import { MedicationsSection } from "./MedicationsSection";
 import { isChild } from "./healthMeta";
 import { useHealthAccess } from "./useHealth";
 
@@ -46,6 +47,7 @@ export const PatientHealthPanel: React.FC<{ patient: DjangoPatient | null }> = (
     <Stack gap={2} sx={{ height: "100%", minHeight: 0, overflowY: "auto", pb: 2, pr: 0.5, "& > *": { flexShrink: 0 } }}>
       <AllergiesSection patientId={patient.id} canManage={canManage} />
       <ConditionsSection patientId={patient.id} canManage={canManage} />
+      <MedicationsSection patientId={patient.id} canManage={canManage} />
       {child && <GrowthSection patientId={patient.id} canManage={canManage} />}
       <HealthProfileCard patientId={patient.id} birthDate={patient.birthDate} canManage={canManage} />
       {child && <BirthHistorySection patientId={patient.id} birthDate={patient.birthDate} canManage={canManage} />}

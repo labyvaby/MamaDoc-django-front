@@ -50,19 +50,21 @@ interface AllergyDrawerProps {
   patientId: number;
   /** Аллергия для правки; null — новая. */
   allergy: Allergy | null;
+  /** Подсказка для новой (реакция на курс препарата). */
+  initial?: Partial<AllergyInput>;
   onClose: () => void;
 }
 
 /** Аллергия: вид, аллерген и реакция кнопками, тяжесть цветом, статус при правке. */
-export const AllergyDrawer: React.FC<AllergyDrawerProps> = ({ open, patientId, allergy, onClose }) => {
+export const AllergyDrawer: React.FC<AllergyDrawerProps> = ({ open, patientId, allergy, initial, onClose }) => {
   const { enqueueSnackbar } = useSnackbar();
   const { scope } = useHealthScope();
   const invalidate = useInvalidateHealth(patientId);
   const [form, setForm] = React.useState<AllergyInput>(EMPTY);
 
   React.useEffect(() => {
-    if (open) setForm(allergy ? toInput(allergy) : EMPTY);
-  }, [open, allergy]);
+    if (open) setForm(allergy ? toInput(allergy) : { ...EMPTY, ...initial });
+  }, [open, allergy, initial]);
 
   const patch = (next: Partial<AllergyInput>) => setForm((current) => ({ ...current, ...next }));
   const presets = ALLERGEN_PRESETS[form.category];

@@ -4,6 +4,8 @@ import type {
   Allergy,
   FeedingSwitchReason,
   FeedingType,
+  MedicationKind,
+  MedicationPurpose,
   AllergyCategory,
   AllergySeverity,
   AllergyStatus,
@@ -198,6 +200,39 @@ export const FEEDING_SWITCH_REASONS: Option<Exclude<FeedingSwitchReason, "">>[] 
 export function feedingNeedsReason(type: FeedingType): boolean {
   return type === "mixed" || type === "formula";
 }
+
+export const MEDICATION_KINDS: Option<MedicationKind>[] = [
+  { value: "antibiotic", label: "Антибиотик" },
+  { value: "vitamin_d", label: "Витамин D" },
+  { value: "other", label: "Другое" },
+];
+
+export const MEDICATION_PURPOSES: Option<Exclude<MedicationPurpose, "">>[] = [
+  { value: "prophylaxis", label: "Профилактика" },
+  { value: "treatment", label: "Лечение" },
+];
+
+/** Частые препараты по видам — заполнение одной кнопкой. */
+export const DRUG_PRESETS: Record<MedicationKind, string[]> = {
+  antibiotic: [
+    "Амоксициллин",
+    "Амоксициллин + клавулановая кислота",
+    "Азитромицин",
+    "Кларитромицин",
+    "Цефиксим",
+    "Цефуроксим",
+    "Цефтриаксон",
+  ],
+  vitamin_d: ["Холекальциферол (D3)", "Эргокальциферол (D2)"],
+  other: [],
+};
+
+/** Частые дозы: витамин D — по МЕ, антибиотики — разовая доза и кратность. */
+export const DOSE_PRESETS: Record<MedicationKind, string[]> = {
+  antibiotic: ["2 раза в день", "3 раза в день", "1 раз в день"],
+  vitamin_d: ["500 МЕ 1 раз в день", "1000 МЕ 1 раз в день", "2000 МЕ 1 раз в день"],
+  other: [],
+};
 
 export const ONBOARDING_ITEMS: Option<OnboardingItem>[] = [
   { value: "birth", label: "Данные о рождении: срок гестации и вес" },

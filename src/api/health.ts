@@ -499,3 +499,58 @@ export function updateFeedingPeriod(
 export function deleteFeedingPeriod(scope: Scope, patientId: number, periodId: number): Promise<void> {
   return apiRequest<void>(patientPath(scope, patientId, `feeding/${periodId}/`), { method: "DELETE" });
 }
+
+// ── Курсы препаратов (этап 2в) ───────────────────────────────────────────────
+
+export type MedicationKind = "antibiotic" | "vitamin_d" | "other";
+export type MedicationPurpose = "prophylaxis" | "treatment" | "";
+
+export interface MedicationCourse {
+  id: number;
+  kind: MedicationKind;
+  purpose: MedicationPurpose;
+  drug: string;
+  dose: string;
+  startedOn: string;
+  endedOn: string | null;
+  courseTotal: string;
+  reaction: string;
+  prescribedBy: EmployeeRef | null;
+  sourceConclusionId: number | null;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MedicationInput {
+  kind: MedicationKind;
+  purpose: MedicationPurpose;
+  drug: string;
+  dose: string;
+  startedOn: string;
+  endedOn: string | null;
+  courseTotal: string;
+  reaction: string;
+  prescribedById: number | null;
+  notes: string;
+}
+
+export function getMedications(scope: Scope, patientId: number, signal?: AbortSignal): Promise<MedicationCourse[]> {
+  return apiRequest<MedicationCourse[]>(patientPath(scope, patientId, "medications/"), { signal });
+}
+
+export function createMedication(scope: Scope, patientId: number, payload: MedicationInput): Promise<MedicationCourse> {
+  return apiRequest<MedicationCourse>(patientPath(scope, patientId, "medications/"), { method: "POST", body: payload });
+}
+
+export function updateMedication(
+  scope: Scope,
+  patientId: number,
+  courseId: number,
+  payload: Partial<MedicationInput>,
+): Promise<MedicationCourse> {
+  return apiRequest<MedicationCourse>(patientPath(scope, patientId, `medications/${courseId}/`), {
+    method: "PATCH",
+    body: payload,
+  });
+}

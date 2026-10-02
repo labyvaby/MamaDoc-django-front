@@ -10,6 +10,7 @@ import { AllergiesSection } from "../../components/health/AllergiesSection";
 import { BirthHistorySection } from "../../components/health/BirthHistorySection";
 import { ConditionsSection } from "../../components/health/ConditionsSection";
 import { FamilySection } from "../../components/health/FamilySection";
+import { MedicationsSection } from "../../components/health/MedicationsSection";
 import { useHealthAccess } from "../../components/health/useHealth";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import PatientVaccinationsPanel from "../patients/components/PatientVaccinationsPanel";
@@ -54,8 +55,6 @@ interface LinkedSectionProps {
   enrollmentId: number;
   scope: ActiveScope;
   icon: React.ReactNode;
-  /** Препараты (этап 2в) рисует вызывающий. */
-  renderMedications?: () => React.ReactNode;
 }
 
 /** Содержимое связанного раздела: компонент медкарты, прививок или приёмов. */
@@ -65,7 +64,6 @@ export const LinkedSection: React.FC<LinkedSectionProps> = ({
   enrollmentId,
   scope,
   icon,
-  renderMedications,
 }) => {
   const { canManage } = useHealthAccess();
   const type = systemType(module);
@@ -87,7 +85,7 @@ export const LinkedSection: React.FC<LinkedSectionProps> = ({
       content = <GrowthSection patientId={patient.id} title={module.name} canManage={canManage} />;
       break;
     case "medications":
-      content = renderMedications?.() ?? null;
+      content = <MedicationsSection patientId={patient.id} canManage={canManage} title={module.name} />;
       break;
     case "vaccination":
       content = <PatientVaccinationsPanel patient={patient} />;
