@@ -326,7 +326,12 @@ export const HotelBalancesReport: React.FC<{
   // Пересечение [from, to+1) с проживанием — все, кто заезжает в период; дату заезда режем уже здесь.
   const query = useQuery({
     queryKey: ["hotel", "reports", "balances", propertyId, from, to, status === "active" ? "confirmed" : "any"],
-    queryFn: ({ signal }) => fetchAllReservations({ propertyId, from, to: D(dayjs(to).add(1, "day")), ...(status === "active" ? { status: "confirmed" } : {}) }, signal),
+    // checkInFrom/checkInTo сервер с §10 применяет сам (меньше страниц), старый — пропускает; режем и здесь.
+    queryFn: ({ signal }) =>
+      fetchAllReservations(
+        { propertyId, from, to: D(dayjs(to).add(1, "day")), checkInFrom: from, checkInTo: to, ...(status === "active" ? { status: "confirmed" } : {}) },
+        signal,
+      ),
   });
 
   const rows = React.useMemo(() => {

@@ -51,9 +51,9 @@ import dayjs from "dayjs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
-import { getErrorMessage } from "../api/client";
+import { ApiError, getErrorMessage } from "../api/client";
 import { createExpense, createExpenseCategory, getExpenseCategories, voidExpense, type ExpenseCategory } from "../api/expenses";
-import { getReservation, type HotelReservation } from "../api/hotel";
+import { getReservation, getShiftNote, saveShiftNote, type HotelReservation } from "../api/hotel";
 import { getAllDjangoEmployees } from "../api/staff";
 import { useCan } from "../hooks/useCan";
 import { usePermissions } from "../hooks/usePermissions";
@@ -133,11 +133,55 @@ export const HotelShiftReport: React.FC<{
   };
   const [admin, setAdmin] = React.useState("");
   const [counters, setCounters] = React.useState<ShiftCounters>(() => readLocal(countersKey(propertyId, date), EMPTY_COUNTERS));
-  React.useEffect(() => setCounters(readLocal(countersKey(propertyId, date), EMPTY_COUNTERS)), [propertyId, date]);
+  // Сначала сервер (shift-notes/, §12): счётчики видят все админы. Пока 404 — на этом устройстве, как раньше.
+  const noteQuery = useQuery({
+    queryKey: ["hotel", "shiftNote", propertyId, date],
+    staleTime: 60_000,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      try {
+        return await getShiftNote({ propertyId, date }, signal);
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 404 || err.status === 405)) return null;
+        throw err;
+      }
+    },
+  });
+  const serverNotes = noteQuery.data != null;
+  React.useEffect(() => {
+    const note = noteQuery.data;
+    if (note) {
+      const str = (n: number) => (n ? String(n) : "");
+      setCounters({ megacom: str(note.callsMegacom), o: str(note.callsO), whatsapp: str(note.whatsappMessages) });
+    } else {
+      setCounters(readLocal(countersKey(propertyId, date), EMPTY_COUNTERS));
+    }
+  }, [propertyId, date, noteQuery.data]);
+  const saveTimer = React.useRef<number | null>(null);
+  React.useEffect(() => () => {
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+  }, []);
   const updateCounter = (key: keyof ShiftCounters, value: string) => {
     const next = { ...counters, [key]: value.replace(/\D/g, "").slice(0, 5) };
     setCounters(next);
-    writeLocal(countersKey(propertyId, date), next);
+    if (!serverNotes) {
+      writeLocal(countersKey(propertyId, date), next);
+      return;
+    }
+    // Не на каждую цифру: сохраняем, когда админ перестал печатать.
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      void saveShiftNote({
+        propertyId,
+        date,
+        callsMegacom: Number(next.megacom) || 0,
+        callsO: Number(next.o) || 0,
+        whatsappMessages: Number(next.whatsapp) || 0,
+        comment: noteQuery.data?.comment ?? "",
+      })
+        .then((saved) => queryClient.setQueryData(["hotel", "shiftNote", propertyId, date], saved))
+        .catch(() => writeLocal(countersKey(propertyId, date), next));
+    }, 600);
   };
 
   const shift = React.useMemo(() => shiftWindow(date, startHour), [date, startHour]);

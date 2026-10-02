@@ -31,7 +31,8 @@ import { useCan } from "../hooks/useCan";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { EmptyState, HotelPageHeader, plural, Surface } from "./hotelUi";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
-import { listGuests } from "../api/hotel";
+import { ApiError } from "../api/client";
+import { listGuests, listGuestsPage, type HotelGuest } from "../api/hotel";
 import { GuestListPanel } from "./GuestListPanel";
 import { GuestCardPanel } from "./GuestCardPanel";
 import { GuestHistoryPanel } from "./GuestHistoryPanel";
@@ -40,6 +41,23 @@ import { useGuestDetails } from "./useGuestDetails";
 import { AddGuestDrawer } from "./AddGuestDrawer";
 import { GuestImportDialog } from "./GuestImportDialog";
 import { exportGuestsXlsx } from "./hotelGuestsXlsx";
+
+/** Все гости для Excel: страницами по 500 (guests/page/); старый сервер — уже загруженные до 200. */
+async function fetchAllGuests(search: string, loaded: HotelGuest[]): Promise<HotelGuest[]> {
+  const q = search || undefined;
+  const all: HotelGuest[] = [];
+  try {
+    for (let offset = 0; offset < 20_000; offset += 500) {
+      const page = await listGuestsPage({ q, limit: 500, offset });
+      all.push(...page.results);
+      if (page.results.length < 500 || all.length >= page.count) return all;
+    }
+    return all;
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 404 || err.status === 405)) return loaded;
+    throw err;
+  }
+}
 
 export const HotelGuestsPage: React.FC = () => {
   usePageTitle("Гости");
@@ -82,7 +100,7 @@ export const HotelGuestsPage: React.FC = () => {
   const handleExport = async () => {
     setExcelAnchor(null);
     try {
-      await exportGuestsXlsx(guests, debouncedSearch);
+      await exportGuestsXlsx(await fetchAllGuests(debouncedSearch, guests), debouncedSearch);
     } catch {
       enqueueSnackbar("Не удалось выгрузить гостей", { variant: "error" });
     }
