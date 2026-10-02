@@ -164,6 +164,22 @@ const InvoicesPage: React.FC = () => {
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 
+  // Месяц пуст, а накладные у организации есть — значит, у них другая дата
+  // прихода (распознавание берёт её с фото документа поставщика). Показываем
+  // последние из других месяцев, иначе накладная выглядит пропавшей.
+  const allTime = summaryQuery.data;
+  const hasReceiptsAnyTime = allTime
+    ? allTime.statusCounts.unpaid + allTime.statusCounts.partial + allTime.statusCounts.paid + allTime.canceledCount > 0
+    : false;
+  const monthIsEmpty = receiptsQuery.isSuccess && !receiptsQuery.isPlaceholderData && (receiptsQuery.data?.length ?? 0) === 0;
+  const plainView = status === "all" && supplierFilter == null && warehouseFilter == null && !debouncedSearch;
+  const elsewhereQuery = useQuery({
+    queryKey: djangoQueryKeys.procurement.receipts({ ...keyScope, elsewhere: true }),
+    queryFn: ({ signal }) => getReceipts({ withLines: false, limit: 3 }, scope, signal),
+    enabled: scopeReady && tab === "invoices" && monthIsEmpty && plainView && hasReceiptsAnyTime,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+
   const receiptQuery = useQuery({
     queryKey: djangoQueryKeys.procurement.receipt(selectedId ?? 0, keyScope),
     queryFn: ({ signal }) => getReceipt(selectedId!, scope, signal),
@@ -392,6 +408,11 @@ const InvoicesPage: React.FC = () => {
                 periodLabel={periodLabel}
                 scopeLabel={scopeLabel}
                 onAdd={perms.create ? () => setReceiptFormOpen(true) : undefined}
+                elsewhere={monthIsEmpty && plainView ? elsewhereQuery.data ?? [] : []}
+                onOpenElsewhere={(receipt) => {
+                  setMonth(dayjs(receipt.receivedAt).startOf("month"));
+                  openReceipt(receipt.id);
+                }}
               />
             </Box>
             {!isMobile && (
