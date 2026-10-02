@@ -133,7 +133,7 @@ import { buildRoomCategoryIconKeys, type RoomCategoryIconKey } from "./roomCateg
 import { RoomDetailsDialog } from "./RoomDetailsDialog";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 import { RoomBookingHoverCard, type BarHoverHandle } from "./RoomBookingHoverCard";
-import { useStayBalances, type StayBalance } from "./useStayBalances";
+import { useStayBalances, type StayBalance, type StayDetails } from "./useStayBalances";
 
 /**
  * Даты подгружаются кусками по CHUNK_DAYS дней (лимит бэка на один запрос
@@ -787,8 +787,10 @@ export const RoomBookingGrid: React.FC = () => {
   // Долг по броням — красная сумма на полосе — и подробности для карточки при
   // наведении (телефон, номер брони канала, тариф, заметки). Только для видимых
   // дат (без запаса виртуализации) с шагом в неделю: список броней тяжелее
-  // календаря. Если бэк отдаёт balanceDue прямо в календаре — долг берём оттуда.
+  // календаря. Если бэк отдаёт balanceDue прямо в календаре — долг берём оттуда,
+  // а если там же и подробности (customerPhone и др.) — список броней не нужен вовсе.
   const calendarHasBalances = allItems.length > 0 && allItems[0].balanceDue !== undefined;
+  const calendarHasDetails = calendarHasBalances && allItems[0].customerPhone !== undefined;
   const [balanceFrom, balanceTo] = React.useMemo((): [string | null, string | null] => {
     if (dates.length === 0 || visibleRange.end <= visibleRange.start) return [null, null];
     const core0 = Math.min(visibleRange.end - 1, visibleRange.start + (visibleRange.start > 0 ? VISIBLE_DAYS_BUFFER : 0));
@@ -797,8 +799,27 @@ export const RoomBookingGrid: React.FC = () => {
     const hi = Math.min(dates.length, Math.max(lo + 1, Math.ceil(core1 / 7) * 7));
     return [dates[lo].format("YYYY-MM-DD"), dates[hi - 1].add(1, "day").format("YYYY-MM-DD")];
   }, [dates, visibleRange.start, visibleRange.end]);
-  const balancesQuery = useStayBalances(property?.id, balanceFrom, balanceTo);
+  const balancesQuery = useStayBalances(property?.id, balanceFrom, balanceTo, !calendarHasDetails);
   const balances = balancesQuery.data;
+  const detailsFromCalendar = (it: HotelCalendarItem): StayDetails => ({
+    externalId: it.externalId ?? "",
+    phone: it.customerPhone ?? "",
+    createdAt: it.createdAt ?? "",
+    createdByName: it.createdByName ?? "",
+    guaranteeMethod: it.guaranteeMethod ?? "",
+    corporateName: it.corporateName ?? "",
+    internalNote: it.internalNote ?? "",
+    guestComment: it.guestComment ?? "",
+    items: {
+      [it.itemId]: {
+        adults: it.adults ?? 0,
+        children: it.children ?? 0,
+        ratePlanName: it.ratePlanName ?? null,
+        checkedInAt: it.checkedInAt ?? null,
+        checkedOutAt: it.checkedOutAt ?? null,
+      },
+    },
+  });
   const balanceOf = (it: HotelCalendarItem): StayBalance | undefined =>
     calendarHasBalances && it.balanceDue !== undefined
       ? {
@@ -806,7 +827,7 @@ export const RoomBookingGrid: React.FC = () => {
           paid: Number(it.paidAmount ?? 0),
           balance: Number(it.balanceDue),
           currency: it.currency ?? "KGS",
-          details: balances?.get(it.reservationId)?.details,
+          details: calendarHasDetails ? detailsFromCalendar(it) : balances?.get(it.reservationId)?.details,
         }
       : balances?.get(it.reservationId);
 

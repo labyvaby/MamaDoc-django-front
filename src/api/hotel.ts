@@ -1202,10 +1202,27 @@ export interface HotelCalendarItem {
   totalAmount: Money;
   isOverbooking: boolean;
   boardType: string;
-  /** Оплаты по брони — появятся в календаре после доработки бэка; пока долг берётся из списка броней (useStayBalances). */
+  /** Оплаты по брони — появятся в календаре после доработки бэка (контракт §7); пока долг берётся из списка броней (useStayBalances). */
   paidAmount?: Money;
   balanceDue?: Money;
   currency?: string;
+  /**
+   * Подробности для карточки при наведении (контракт §7). Когда они приходят
+   * вместе с balanceDue, шахматка не запрашивает список броней вовсе.
+   */
+  externalId?: string;
+  customerPhone?: string;
+  adults?: number;
+  children?: number;
+  ratePlanName?: string | null;
+  guaranteeMethod?: string;
+  corporateName?: string | null;
+  createdAt?: string;
+  createdByName?: string;
+  checkedInAt?: string | null;
+  checkedOutAt?: string | null;
+  internalNote?: string;
+  guestComment?: string;
 }
 
 export interface HotelRoomBlock {
