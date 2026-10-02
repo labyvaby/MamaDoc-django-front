@@ -28,6 +28,8 @@ import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
 import { useSnackbar } from "notistack";
 import { ReservationEditPanel } from "./ReservationEditPanel";
 import { ReservationHistory } from "./ReservationHistory";
+import { RoomInspectionStrip } from "./RoomInspectionStrip";
+import { useRoomInspection } from "./useRoomInspection";
 import { ReservationChargesSection } from "./ReservationChargesSection";
 import { ReservationCorporateSection } from "./ReservationCorporateSection";
 import { ReservationStaySection } from "./ReservationStaySection";
@@ -142,6 +144,9 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   // изменить, сменить номер) — над выбранным, по умолчанию первым.
   const [activeItemId, setActiveItemId] = React.useState<number | null>(null);
   const item = reservation?.items.find((i) => i.id === activeItemId) ?? reservation?.items[0];
+  // Проверка номера перед выездом (#4130) — только у проживающего гостя.
+  const inspection = useRoomInspection(reservation, item?.roomId, item?.stayStatus === "checked_in");
+  const [checkOutNeedsInspection, setCheckOutNeedsInspection] = React.useState(false);
 
   // Кто принял оплату и когда — по каждой записи, не только агрегат
   // totalAmount/paidAmount у брони (см. HotelPayment.acceptedByName/acceptedAt).
@@ -193,6 +198,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setActionError(null);
     setCheckInNeedsForce(false);
     setCheckOutNeedsForce(false);
+    setCheckOutNeedsInspection(false);
     setCancelPromptOpen(false);
     setEditMode(null);
     setCancelReason("");
@@ -295,8 +301,14 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     }
   };
 
-  const handleCheckOut = async (force = false) => {
+  const handleCheckOut = async (force = false, skipInspection = false) => {
     if (!reservation || !item) return;
+    // Номер не проверен (или проверка ещё идёт) — спросим один раз, не блокируя.
+    if (!skipInspection && inspection.visible && inspection.state !== "ok" && inspection.state !== "issues") {
+      setCheckOutNeedsInspection(true);
+      return;
+    }
+    setCheckOutNeedsInspection(false);
     setActionBusy(true);
     setActionError(null);
     try {
@@ -305,6 +317,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
         ...(force ? { allowDebt: true } : {}),
       });
       setCheckOutNeedsForce(false);
+      void inspection.closeAfterCheckOut();
       invalidateReservation();
     } catch (err) {
       if (!force && err instanceof ApiError && err.code === "HAS_DEBT") {
@@ -789,8 +802,33 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               )}
             </Stack>
 
-            {(actionError || checkInNeedsForce || checkOutNeedsForce || cancelPromptOpen || editMode != null) && (
+            {item.stayStatus === "checked_in" && (
+              <RoomInspectionStrip
+                inspection={inspection}
+                roomNumber={item.roomNumber}
+                onAddCharge={canManagePayments ? () => setTab("stay") : undefined}
+              />
+            )}
+
+            {(actionError || checkInNeedsForce || checkOutNeedsForce || checkOutNeedsInspection || cancelPromptOpen || editMode != null) && (
               <Stack gap={1.5} sx={{ mt: 2 }}>
+                {checkOutNeedsInspection && (
+                  <Alert
+                    severity="info"
+                    onClose={() => setCheckOutNeedsInspection(false)}
+                    action={
+                      <Stack direction="row" gap={0.5}>
+                        <Button size="small" color="inherit" onClick={() => void handleCheckOut(false, true)}>
+                          Выселить без проверки
+                        </Button>
+                      </Stack>
+                    }
+                  >
+                    {inspection.state === "none"
+                      ? "Номер не проверяли перед выездом. Отправьте его горничной выше или выселите без проверки."
+                      : "Горничная ещё не ответила по проверке номера."}
+                  </Alert>
+                )}
                 {actionError && (
                   <Alert severity="error" onClose={() => setActionError(null)}>
                     {actionError}
@@ -814,7 +852,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                   <Alert
                     severity="warning"
                     action={
-                      <Button size="small" color="inherit" onClick={() => void handleCheckOut(true)}>
+                      <Button size="small" color="inherit" onClick={() => void handleCheckOut(true, true)}>
                         Выселить с долгом
                       </Button>
                     }
