@@ -96,7 +96,7 @@ export function guessMapping(headers: string[]): GuestImportField[] {
 
 /** CSV из Excel/Google: разделитель «;», «,» или табуляция, кавычки по RFC 4180. */
 export function parseCsv(text: string): string[][] {
-  const src = text.replace(/^﻿/, "");
+  const src = text.replace(/^\uFEFF/, "");
   const firstLine = src.split(/\r?\n/, 1)[0] ?? "";
   const delimiter = [";", "\t", ","].map((d) => [d, firstLine.split(d).length] as const).sort((a, b) => b[1] - a[1])[0][0];
   const rows: string[][] = [];

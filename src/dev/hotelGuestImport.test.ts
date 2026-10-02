@@ -30,7 +30,7 @@ describe("guessField / guessMapping", () => {
 
 describe("parseCsv", () => {
   it("разделитель «;» из русского Excel и кавычки", () => {
-    expect(parseCsv('﻿ФИО;Телефон\r\n"Иванов; Иван";0700123456\r\n\r\n')).toEqual([
+    expect(parseCsv('\uFEFFФИО;Телефон\r\n"Иванов; Иван";0700123456\r\n\r\n')).toEqual([
       ["ФИО", "Телефон"],
       ["Иванов; Иван", "0700123456"],
     ]);
