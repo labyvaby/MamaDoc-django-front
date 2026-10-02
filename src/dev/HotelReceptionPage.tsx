@@ -121,13 +121,15 @@ const ArrivalCard: React.FC<{
   const name = r.customerName || guest?.fullName || "Без заказчика";
   const balance = Number(r.balanceDue);
   const arrived = r.items.every((i) => i.stayStatus !== "expected");
+  // Заехал и уже выехал (ранний выезд в тот же день) — не «Заселён».
+  const left = arrived && r.items.every((i) => i.stayStatus !== "checked_in");
   const nights = item ? nightsBetween(item.checkIn, item.checkOut) : 0;
   const guests = r.items.reduce((s, i) => s + i.adults + i.children, 0);
   // null — нет права видеть документы: тогда про паспорт не говорим ничего.
   const docKnown = guest?.document != null;
   const hasDoc = Boolean(guest?.document?.documentNumber);
   const rooms = r.items.map((i) => i.roomNumber).filter(Boolean) as string[];
-  const accent = arrived ? theme.palette.success.main : balance > 0 ? theme.palette.error.main : theme.palette.primary.main;
+  const accent = left ? theme.palette.text.secondary : arrived ? theme.palette.success.main : balance > 0 ? theme.palette.error.main : theme.palette.primary.main;
   return (
     <Box
       role="button"
@@ -228,10 +230,10 @@ const ArrivalCard: React.FC<{
         )}
         <Box sx={{ ml: "auto" }}>
           {arrived ? (
-            <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "success.main" }}>
-              <CheckCircleOutlined sx={{ fontSize: 18 }} />
+            <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: left ? "text.secondary" : "success.main" }}>
+              {left ? <LogoutOutlined sx={{ fontSize: 18 }} /> : <CheckCircleOutlined sx={{ fontSize: 18 }} />}
               <Typography variant="body2" fontWeight={700}>
-                Заселён
+                {left ? "Выехал" : "Заселён"}
               </Typography>
             </Stack>
           ) : action ? (
