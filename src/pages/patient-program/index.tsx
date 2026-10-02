@@ -18,6 +18,10 @@ import {
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import BiotechOutlined from "@mui/icons-material/BiotechOutlined";
+import ChildFriendlyOutlined from "@mui/icons-material/ChildFriendlyOutlined";
+import FamilyRestroomOutlined from "@mui/icons-material/FamilyRestroomOutlined";
+import MedicationOutlined from "@mui/icons-material/MedicationOutlined";
+import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import EventNoteOutlined from "@mui/icons-material/EventNoteOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
@@ -49,13 +53,14 @@ import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { subtleBg } from "../../theme/uiHelpers";
+import { HealthOverviewCard } from "../../components/health/HealthOverviewCard";
 import { BookAppointments } from "./BookAppointments";
 import { ConnectProgramDialog } from "./ConnectProgramDialog";
 import { EnrollmentActionsDrawer } from "./EnrollmentActionsDrawer";
 import { InteractionHistory } from "./InteractionHistory";
+import { LinkedSection } from "./linkedSections";
+import { isLinkedModule, systemType } from "./linkedSectionTypes";
 import { ModuleRecords } from "./ModuleRecords";
-import { isGrowthModule } from "./growth/growthData";
-import { GrowthModule } from "./growth/GrowthModule";
 import { isVisionModule } from "./vision/visionData";
 import { VisionModule } from "./vision/VisionModule";
 import { UpcomingEvents } from "./UpcomingEvents";
@@ -81,6 +86,22 @@ function formatDate(value: string | null): string {
 }
 
 function moduleIcon(module: Pick<EffectiveProgramModule, "code" | "moduleType">) {
+  switch (systemType(module)) {
+    case "family":
+      return <FamilyRestroomOutlined />;
+    case "birth_history":
+      return <ChildFriendlyOutlined />;
+    case "allergies":
+      return <WarningAmberOutlined />;
+    case "conditions":
+      return <MonitorHeartOutlined />;
+    case "medications":
+      return <MedicationOutlined />;
+    case "visits":
+      return <EventNoteOutlined />;
+    default:
+      break;
+  }
   const key = `${module.code} ${module.moduleType}`.toLowerCase();
   if (key.includes("vacc")) return <VaccinesOutlined />;
   if (key.includes("eye") || key.includes("ophthalm")) return <RemoveRedEyeOutlined />;
@@ -229,7 +250,13 @@ const PatientProgramPage: React.FC = () => {
 
   const loading = patientQuery.isLoading || enrollmentQuery.isLoading || !scope.isReady;
   const error = patientQuery.error || enrollmentQuery.error;
-  const modules = selectedEnrollment?.enabledModules ?? [];
+  // Связанный раздел без права просмотра (или с выключенным модулем — canAccess
+  // сверяет оба) не показывается вовсе.
+  const modules = (selectedEnrollment?.enabledModules ?? []).filter(
+    (module) => !isLinkedModule(module) || !module.viewPermission || canAccess(module.viewPermission),
+  );
+  // «Приёмы» — свой пункт книжки, пока в программе нет раздела `visits`.
+  const showAppointmentsItem = canViewAppointments && !modules.some((module) => systemType(module) === "visits");
   const selectedModule = view.startsWith("module:")
     ? modules.find((module) => module.id === Number(view.slice(7))) ?? null
     : null;
@@ -370,7 +397,7 @@ const PatientProgramPage: React.FC = () => {
                 label="Обзор"
                 onClick={() => setView("overview")}
               />
-              {canViewAppointments && (
+              {showAppointmentsItem && (
                 <Chip
                   clickable
                   color={view === "appointments" ? "primary" : "default"}
@@ -415,7 +442,7 @@ const PatientProgramPage: React.FC = () => {
                     label="Обзор"
                     onClick={() => setView("overview")}
                   />
-                  {canViewAppointments && (
+                  {showAppointmentsItem && (
                     <NavigationItem
                       active={view === "appointments"}
                       icon={<EventNoteOutlined />}
@@ -506,6 +533,12 @@ const PatientProgramPage: React.FC = () => {
                     </Box>
                   </Stack>
                   </AppCard>
+                  <HealthOverviewCard
+                    patientId={patient.id}
+                    enrollmentId={selectedEnrollment.id}
+                    // Чек-лист — у ребёнка на учёте (есть оплачиваемые периоды), пока осмотр не закрыт.
+                    onboardingOpen={!selectedEnrollment.onboardingCompletedAt && selectedEnrollment.terms.length > 0}
+                  />
                   <UpcomingEvents
                     enrollmentId={selectedEnrollment.id}
                     patientName={patient.fullName}
@@ -524,19 +557,17 @@ const PatientProgramPage: React.FC = () => {
                 </Stack>
               )}
 
-              {view === "appointments" && canViewAppointments && (
+              {view === "appointments" && showAppointmentsItem && (
                 <BookAppointments patientId={patient.id} scope={scope} />
               )}
 
-              {selectedModule && (isGrowthModule(selectedModule) ? (
-                <GrowthModule
-                  enrollmentId={selectedEnrollment.id}
+              {selectedModule && (isLinkedModule(selectedModule) ? (
+                <LinkedSection
                   module={selectedModule}
+                  patient={patient}
+                  enrollmentId={selectedEnrollment.id}
                   scope={scope}
-                  canManage={canManageEnrollments && selectedEnrollment.isEffectivelyActive}
                   icon={moduleIcon(selectedModule)}
-                  birthDate={patient.birthDate ?? null}
-                  gender={patient.gender}
                 />
               ) : isVisionModule(selectedModule) ? (
                 <VisionModule

@@ -1,0 +1,51 @@
+import type { EffectiveProgramModule, ProgramModuleKind } from "../../api/programs";
+
+/**
+ * Системные разделы книжки (ТЗ §5.4). Зеркало `programs/module_types.py`:
+ * связанный раздел показывает данные пациента из медкарты, прививок и приёмов,
+ * своих полей и записей у него нет.
+ */
+export type SystemSectionType =
+  | "family"
+  | "birth_history"
+  | "allergies"
+  | "conditions"
+  | "growth"
+  | "vaccination"
+  | "medications"
+  | "visits"
+  | "checkup_plan";
+
+export const SYSTEM_SECTIONS: ReadonlyArray<{
+  type: SystemSectionType;
+  name: string;
+  description: string;
+  kind: ProgramModuleKind;
+}> = [
+  { type: "family", name: "Паспорт семьи", description: "Члены семьи, их заболевания и диспансеризация семьи", kind: "linked" },
+  { type: "conditions", name: "Диагнозы и наблюдение", description: "Диагнозы («впервые»), Д-учёт и госпитализации", kind: "linked" },
+  { type: "vaccination", name: "Прививки и пробы", description: "Карта прививок и календарь", kind: "linked" },
+  { type: "medications", name: "Препараты", description: "Антибиотики, витамин D и другие курсы", kind: "linked" },
+  { type: "birth_history", name: "Сведения о новорождённом", description: "Роддом, выписка, данные о рождении, прикорм", kind: "linked" },
+  { type: "growth", name: "Рост и питание", description: "Замеры с центилями ВОЗ, вскармливание", kind: "linked" },
+  { type: "visits", name: "Приёмы", description: "Лист текущего наблюдения: приёмы и заключения", kind: "linked" },
+  { type: "allergies", name: "Аллергии", description: "Подробный список к алерту", kind: "linked" },
+];
+
+const LINKED_TYPES = new Set<string>(SYSTEM_SECTIONS.map((section) => section.type));
+
+/** Тип системного раздела; старый «Рост» стенда — код `growth` с типом `measurements`. */
+export function systemType(module: Pick<EffectiveProgramModule, "code" | "moduleType">): SystemSectionType | null {
+  if (LINKED_TYPES.has(module.moduleType) || module.moduleType === "checkup_plan") {
+    return module.moduleType as SystemSectionType;
+  }
+  if (module.moduleType === "measurements" && module.code === "growth") return "growth";
+  return null;
+}
+
+/** Связанный раздел: по ответу сервера, а для старых ответов — по типу. */
+export function isLinkedModule(module: Pick<EffectiveProgramModule, "code" | "moduleType" | "kind">): boolean {
+  if (module.kind) return module.kind === "linked";
+  const type = systemType(module);
+  return type != null && type !== "checkup_plan";
+}

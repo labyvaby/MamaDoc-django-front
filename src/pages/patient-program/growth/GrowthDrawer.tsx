@@ -1,32 +1,33 @@
 import React from "react";
-import { Alert, Box, Chip, Divider, Drawer, IconButton, InputAdornment, Stack, TextField, Typography, alpha, useTheme } from "@mui/material";
+import { Box, Chip, IconButton, InputAdornment, TextField, Typography, alpha, useTheme } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
-import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 import { useMutation } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 import { useSnackbar } from "notistack";
 
-import {
-  createProgramModuleRecord,
-  updateProgramModuleRecord,
-  type EffectiveProgramModule,
-  type ProgramModuleRecord,
-} from "../../../api/programs";
-import { AppButton, CustomDateTimePicker } from "../../../components/ui";
-import type { ActiveScope } from "../../../hooks/useActiveScope";
+import { createMeasurement, deleteMeasurement, updateMeasurement, type MeasurementPosition } from "../../../api/health";
+import { HealthDrawerShell } from "../../../components/health/HealthDrawerShell";
+import { useHealthScope, useInvalidateHealth } from "../../../components/health/useHealth";
+import { AppButton, CustomDatePicker } from "../../../components/ui";
 import { ageLabel } from "../vision/visionNorms";
+import { ChipGroup, Section } from "../vision/VisionControls";
 import {
-  buildGrowthData,
+  buildMeasurementInput,
+  defaultPosition,
   emptyGrowthForm,
   growthFormValid,
   growthToForm,
+  heightForNorms,
+  normsAge,
   parseMeasure,
-  readMeasurement,
   stepValue,
+  type Gestation,
   type GrowthForm,
+  type Measurement,
 } from "./growthData";
-import { ageMonths, assess, bmi, bmiVerdict, centileLabel, type GrowthIndicator, type GrowthSex } from "./growthNorms";
+import { assess, bmi, bmiVerdict, centileLabel, type GrowthIndicator, type GrowthSex } from "./growthNorms";
 import { formatNumber, growthColor } from "./growthUi";
 
 interface MeasureFieldProps {
@@ -38,20 +39,21 @@ interface MeasureFieldProps {
   indicator: GrowthIndicator | null;
   sex: GrowthSex | null;
   months: number | null;
-  required?: boolean;
+  /** Значение для норм (рост с поправкой лёжа/стоя). */
+  normsValue?: number | null;
 }
 
 /** Поле замера: ± шагом и сразу центиль ВОЗ для возраста ребёнка. */
-const MeasureField: React.FC<MeasureFieldProps> = ({ label, unit, value, step, onChange, indicator, sex, months, required }) => {
+const MeasureField: React.FC<MeasureFieldProps> = ({ label, unit, value, step, onChange, indicator, sex, months, normsValue }) => {
   const theme = useTheme();
-  const assessment = indicator ? assess(indicator, sex, months, parseMeasure(value)) : null;
+  const assessment = indicator ? assess(indicator, sex, months, normsValue ?? parseMeasure(value)) : null;
   const color = growthColor(theme, assessment?.status ?? "unknown");
+  const digits = step < 0.1 ? 3 : 1;
   return (
     <Box>
       <TextField
         size="small"
         fullWidth
-        required={required}
         label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -59,7 +61,7 @@ const MeasureField: React.FC<MeasureFieldProps> = ({ label, unit, value, step, o
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">
-              <IconButton size="small" edge="start" aria-label={`${label}: минус`} onClick={() => onChange(stepValue(value, -step, 1))}>
+              <IconButton size="small" edge="start" aria-label={`${label}: минус`} onClick={() => onChange(stepValue(value, -step, digits))}>
                 <RemoveOutlined fontSize="inherit" />
               </IconButton>
             </InputAdornment>
@@ -69,7 +71,7 @@ const MeasureField: React.FC<MeasureFieldProps> = ({ label, unit, value, step, o
               <Typography variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
                 {unit}
               </Typography>
-              <IconButton size="small" edge="end" aria-label={`${label}: плюс`} onClick={() => onChange(stepValue(value, step, 1))}>
+              <IconButton size="small" edge="end" aria-label={`${label}: плюс`} onClick={() => onChange(stepValue(value, step, digits))}>
                 <AddOutlined fontSize="inherit" />
               </IconButton>
             </InputAdornment>
@@ -89,113 +91,132 @@ const MeasureField: React.FC<MeasureFieldProps> = ({ label, unit, value, step, o
   );
 };
 
+const POSITIONS: ReadonlyArray<{ value: Exclude<MeasurementPosition, "">; label: string }> = [
+  { value: "recumbent", label: "Лёжа (длина)" },
+  { value: "standing", label: "Стоя (рост)" },
+];
+
 interface GrowthDrawerProps {
   open: boolean;
-  enrollmentId: number;
-  module: EffectiveProgramModule;
-  scope: ActiveScope;
+  patientId: number;
   birthDate: string | null;
   sex: GrowthSex | null;
-  /** Замер для правки; null — новый. */
-  record: ProgramModuleRecord | null;
+  gestation: Gestation | null;
+  /** Замер для правки (только ручной); null — новый. */
+  measurement: Measurement | null;
   onClose: () => void;
-  onSaved: () => void;
 }
 
-/** Замер: рост и вес (обязательны), голова, грудь — с центилями по ходу ввода. */
-export const GrowthDrawer: React.FC<GrowthDrawerProps> = ({ open, enrollmentId, module, scope, birthDate, sex, record, onClose, onSaved }) => {
+/** Замер: дата, рост лёжа или стоя, вес, голова, грудь — с центилями по ходу ввода. */
+export const GrowthDrawer: React.FC<GrowthDrawerProps> = ({ open, patientId, birthDate, sex, gestation, measurement, onClose }) => {
   const { enqueueSnackbar } = useSnackbar();
-  const [occurredAt, setOccurredAt] = React.useState<Dayjs | null>(dayjs());
-  const [form, setForm] = React.useState<GrowthForm>(() => emptyGrowthForm());
+  const { scope } = useHealthScope();
+  const invalidate = useInvalidateHealth(patientId);
+  const today = dayjs().format("YYYY-MM-DD");
+  const [form, setForm] = React.useState<GrowthForm>(() => emptyGrowthForm(today, "recumbent"));
 
   React.useEffect(() => {
     if (!open) return;
-    setForm(record ? growthToForm(readMeasurement(record, birthDate)) : emptyGrowthForm());
-    setOccurredAt(record ? dayjs(record.occurredAt) : dayjs().second(0).millisecond(0));
-  }, [open, record, birthDate]);
+    const date = dayjs().format("YYYY-MM-DD");
+    setForm(
+      measurement
+        ? growthToForm(measurement)
+        : emptyGrowthForm(date, defaultPosition(normsAge(birthDate, date, gestation).months)),
+    );
+  }, [open, measurement, birthDate, gestation]);
 
   const patch = (next: Partial<GrowthForm>) => setForm((current) => ({ ...current, ...next }));
-  const months = ageMonths(birthDate, occurredAt ?? dayjs());
-  const bodyMass = bmi(parseMeasure(form.weightKg), parseMeasure(form.heightCm));
+  const { months, corrected } = normsAge(birthDate, form.measuredOn || today, gestation);
+  const height = parseMeasure(form.heightCm);
+  const bodyMass = bmi(parseMeasure(form.weightKg), height);
   const bmiAssessment = assess("bmi", sex, months, bodyMass);
-  const canSave = Boolean(occurredAt?.isValid()) && growthFormValid(form);
 
-  const mutation = useMutation({
+  const save = useMutation({
     mutationFn: () => {
-      const payload = {
-        occurredAt: (occurredAt as Dayjs).toISOString(),
-        title: record?.title || "Антропометрия",
-        status: "completed",
-        notes: form.notes.trim(),
-        data: buildGrowthData(form, record?.data),
-      };
-      return record
-        ? updateProgramModuleRecord(scope, enrollmentId, record.id, payload)
-        : createProgramModuleRecord(scope, enrollmentId, { ...payload, programModuleId: module.id });
+      const payload = buildMeasurementInput(form);
+      return measurement?.id != null
+        ? updateMeasurement(scope, patientId, measurement.id, payload)
+        : createMeasurement(scope, patientId, payload);
     },
-    onSuccess: () => {
-      enqueueSnackbar(record ? "Замер обновлён" : "Замер сохранён", { variant: "success" });
-      onSaved();
+    onSuccess: async () => {
+      enqueueSnackbar(measurement ? "Замер обновлён" : "Замер сохранён", { variant: "success" });
+      await invalidate();
+      onClose();
+    },
+  });
+  const remove = useMutation({
+    mutationFn: () => deleteMeasurement(scope, patientId, measurement?.id as number),
+    onSuccess: async () => {
+      enqueueSnackbar("Замер удалён", { variant: "success" });
+      await invalidate();
       onClose();
     },
   });
 
   const field = (props: Omit<MeasureFieldProps, "sex" | "months">) => <MeasureField {...props} sex={sex} months={months} />;
+  const ageText =
+    months == null
+      ? birthDate
+        ? "До срока доношенности центили не считаются"
+        : "Нет даты рождения — центили не посчитать"
+      : `${corrected ? "Скорректированный возраст " : "Ребёнку "}${ageLabel(Math.floor(months))}`;
 
   return (
-    <Drawer
-      anchor="right"
+    <HealthDrawerShell
       open={open}
-      onClose={mutation.isPending ? undefined : onClose}
-      PaperProps={{ sx: { width: { xs: "100vw", md: 520 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
+      title={measurement ? "Замер" : "Новый замер"}
+      subtitle={`${ageText}${!sex && months != null ? " · не указан пол — центилей нет" : ""}`}
+      pending={save.isPending || remove.isPending}
+      error={save.error ?? remove.error}
+      canSave={growthFormValid(form)}
+      saveLabel={measurement ? "Сохранить" : "Сохранить замер"}
+      onSave={() => save.mutate()}
+      onClose={onClose}
+      footerStart={
+        measurement?.id != null ? (
+          <AppButton color="error" startIcon={<DeleteOutlineOutlined />} loading={remove.isPending} onClick={() => remove.mutate()}>
+            Удалить
+          </AppButton>
+        ) : undefined
+      }
     >
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5 }}>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h6" fontWeight={600}>
-            {record ? "Замер" : "Новый замер"}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" display="block">
-            {months == null ? "Нет даты рождения — центили не посчитать" : `Ребёнку ${ageLabel(Math.floor(months))}`}
-            {!sex && months != null ? " · не указан пол — центилей нет" : ""}
-          </Typography>
-        </Box>
-        <IconButton onClick={mutation.isPending ? undefined : onClose} aria-label="Закрыть" edge="end">
-          <CloseOutlined />
-        </IconButton>
-      </Stack>
-      <Divider />
-      <Stack gap={1.5} sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 2.5, py: 2 }}>
-        {mutation.error && <Alert severity="error">{mutation.error.message}</Alert>}
-        <CustomDateTimePicker
-          label="Дата и время"
-          value={occurredAt}
-          onChange={setOccurredAt}
-          minutesStep={1}
-          slotProps={{ textField: { fullWidth: true, size: "small" } }}
+      <CustomDatePicker
+        label="Дата замера"
+        value={form.measuredOn ? dayjs(form.measuredOn) : null}
+        onChange={(value) => {
+          const date = value as Dayjs | null;
+          patch({ measuredOn: date && date.isValid() ? date.format("YYYY-MM-DD") : "" });
+        }}
+        slotProps={{ textField: { size: "small", fullWidth: true } }}
+      />
+      <Section title="Как мерили рост">
+        <ChipGroup
+          options={POSITIONS}
+          selected={form.position ? [form.position] : []}
+          onToggle={(value) => patch({ position: value })}
         />
-        <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" } }}>
-          {field({ label: "Рост", unit: "см", value: form.heightCm, step: 0.5, onChange: (value) => patch({ heightCm: value }), indicator: "height", required: true })}
-          {field({ label: "Вес", unit: "кг", value: form.weightKg, step: 0.1, onChange: (value) => patch({ weightKg: value }), indicator: "weight", required: true })}
-          {field({ label: "Окружность головы", unit: "см", value: form.headCm, step: 0.5, onChange: (value) => patch({ headCm: value }), indicator: "head" })}
-          {field({ label: "Окружность груди", unit: "см", value: form.chestCm, step: 0.5, onChange: (value) => patch({ chestCm: value }), indicator: null })}
-        </Box>
-        {bodyMass != null && (
-          <Typography variant="body2">
-            Индекс массы тела <b>{formatNumber(bodyMass, 1)}</b>
-            {bmiAssessment ? ` · ${centileLabel(bmiAssessment.centile)} · ${bmiVerdict(bmiAssessment.z, months)}` : ""}
-          </Typography>
-        )}
-        <TextField size="small" label="Заметка" value={form.notes} onChange={(event) => patch({ notes: event.target.value })} multiline minRows={2} fullWidth />
-      </Stack>
-      <Divider />
-      <Stack direction="row" justifyContent="flex-end" gap={1} sx={{ px: 2.5, py: 1.5 }}>
-        <AppButton onClick={onClose} disabled={mutation.isPending}>
-          Отмена
-        </AppButton>
-        <AppButton variant="contained" loading={mutation.isPending} disabled={!canSave} onClick={() => mutation.mutate()}>
-          {record ? "Сохранить" : "Сохранить замер"}
-        </AppButton>
-      </Stack>
-    </Drawer>
+      </Section>
+      <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" } }}>
+        {field({
+          label: form.position === "standing" ? "Рост" : "Длина",
+          unit: "см",
+          value: form.heightCm,
+          step: 0.5,
+          onChange: (value) => patch({ heightCm: value }),
+          indicator: "height",
+          normsValue: heightForNorms(height, form.position, months),
+        })}
+        {field({ label: "Вес", unit: "кг", value: form.weightKg, step: 0.1, onChange: (value) => patch({ weightKg: value }), indicator: "weight" })}
+        {field({ label: "Окружность головы", unit: "см", value: form.headCm, step: 0.5, onChange: (value) => patch({ headCm: value }), indicator: "head" })}
+        {field({ label: "Окружность груди", unit: "см", value: form.chestCm, step: 0.5, onChange: (value) => patch({ chestCm: value }), indicator: null })}
+      </Box>
+      {bodyMass != null && (
+        <Typography variant="body2">
+          Индекс массы тела <b>{formatNumber(bodyMass, 1)}</b>
+          {bmiAssessment ? ` · ${centileLabel(bmiAssessment.centile)} · ${bmiVerdict(bmiAssessment.z, months)}` : ""}
+        </Typography>
+      )}
+      <TextField size="small" label="Заметка" value={form.notes} onChange={(event) => patch({ notes: event.target.value })} multiline minRows={2} fullWidth />
+    </HealthDrawerShell>
   );
 };

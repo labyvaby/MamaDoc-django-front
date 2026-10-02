@@ -3,7 +3,6 @@ import { Box, Divider, IconButton, Stack, Typography, alpha, useTheme } from "@m
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import dayjs from "dayjs";
 
-import type { ProgramModuleRecord } from "../../../api/programs";
 import { ageLabel } from "../vision/visionNorms";
 import { assessMeasurement, type MeasureKey, type Measurement } from "./growthData";
 import type { GrowthSex, GrowthStatus } from "./growthNorms";
@@ -41,10 +40,10 @@ interface GrowthHistoryProps {
   list: Measurement[];
   sex: GrowthSex | null;
   canManage: boolean;
-  onEdit: (record: ProgramModuleRecord) => void;
+  onEdit: (item: Measurement) => void;
 }
 
-/** Все замеры от новых к старым с цветом центиля. */
+/** Все замеры от новых к старым с цветом центиля; править — только ручные. */
 export const GrowthHistory: React.FC<GrowthHistoryProps> = ({ list, sex, canManage, onEdit }) => (
   <Box>
     <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -56,7 +55,7 @@ export const GrowthHistory: React.FC<GrowthHistoryProps> = ({ list, sex, canMana
         const age = item.months == null ? "" : ageLabel(Math.floor(item.months));
         return (
           <Stack
-            key={item.record.id}
+            key={item.key}
             direction={{ xs: "column", md: "row" }}
             gap={1}
             alignItems={{ md: "center" }}
@@ -67,7 +66,7 @@ export const GrowthHistory: React.FC<GrowthHistoryProps> = ({ list, sex, canMana
                 {[date, age].filter(Boolean).join(" · ")}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                {item.record.createdByName ?? ""}
+                {[item.sourceLabel, item.author].filter(Boolean).join(" · ")}
               </Typography>
             </Box>
             <Stack direction="row" gap={0.75} alignItems="center" flexWrap="wrap">
@@ -78,8 +77,8 @@ export const GrowthHistory: React.FC<GrowthHistoryProps> = ({ list, sex, canMana
                   status={assessMeasurement(item, pill.key, sex)?.status ?? "unknown"}
                 />
               ))}
-              {canManage && (
-                <IconButton size="small" aria-label={`Изменить замер ${date}`} onClick={() => onEdit(item.record)}>
+              {canManage && item.editable && (
+                <IconButton size="small" aria-label={`Изменить замер ${date}`} onClick={() => onEdit(item)}>
                   <EditOutlined fontSize="small" />
                 </IconButton>
               )}

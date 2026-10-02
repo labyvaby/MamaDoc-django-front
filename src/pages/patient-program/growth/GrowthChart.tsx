@@ -51,7 +51,11 @@ export const GrowthChart: React.FC<{ list: Measurement[]; sex: GrowthSex | null 
   if (!tab) return null;
   const points = list
     .filter((item) => item[tab.value] != null && item.months != null)
-    .map((item) => ({ m: Math.round((item.months as number) * 100) / 100, v: item[tab.value] as number }))
+    // Рост — с поправкой лёжа/стоя, как его сравнивают с ВОЗ.
+    .map((item) => ({
+      m: Math.round((item.months as number) * 100) / 100,
+      v: (tab.value === "heightCm" ? item.heightNormsCm ?? item.heightCm : item[tab.value]) as number,
+    }))
     .reverse();
   const tableEnd = sex ? WHO_LMS[INDICATOR_OF[tab.value]][sex].length - 1 : null;
   const { from, to, curveTo } = chartRange(
@@ -100,6 +104,11 @@ export const GrowthChart: React.FC<{ list: Measurement[]; sex: GrowthSex | null 
       {!sex && (
         <Typography variant="caption" color="text.secondary">
           Коридоров ВОЗ нет: в карточке ребёнка не указан пол
+        </Typography>
+      )}
+      {list.some((item) => item.corrected) && (
+        <Typography variant="caption" color="text.secondary" display="block">
+          Недоношенный: до двух лет возраст на графике скорректированный
         </Typography>
       )}
       {tableEnd != null && to > tableEnd && (
