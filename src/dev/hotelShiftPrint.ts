@@ -165,7 +165,7 @@ export function buildShiftReportHtml(p: ShiftPrintInput): string {
       <div>Безнал<b>${money(p.payments.cashless)}</b></div>
       <div class="accent">Выручка всего<b>${money(p.payments.total)}</b></div>
       <div>Расходы (нал.)<b>${money(p.expenseSummary.cash)}</b></div>
-      <div class="accent">Касса (нал.)<b>${money(kassa)}</b></div>
+      <div class="accent">Касса (нал.)<b>${money(kassa)}</b>${p.payments.foreignCash.length ? `<span class="muted">в т.ч. ${p.payments.foreignCash.map((f) => `${f.amount.toLocaleString("ru-RU")} ${esc(f.currency)}`).join(", ")}</span>` : ""}</div>
       <div>Завтраков<b>${p.breakfasts}</b></div>
     </div>
     ${channelRows ? `<table style="margin-top:8px"><thead><tr><th>Безнал по способам</th><th class="num">Сумма</th></tr></thead><tbody>${channelRows}</tbody></table>` : ""}

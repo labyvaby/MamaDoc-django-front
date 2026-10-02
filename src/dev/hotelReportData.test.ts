@@ -180,6 +180,21 @@ describe("summarizePayments", () => {
   });
 });
 
+describe("summarizePayments — валюта в кассе", () => {
+  it("наличные в валюте по метке демо-режима, возврат вычитается", () => {
+    const s = summarizePayments([
+      payment({ amount: "4372.50", note: "[USD 50 × 87.45] за проживание" }),
+      payment({ id: 2, amount: "1012.00", note: "[EUR 10 × 101.2]" }),
+      payment({ id: 3, kind: "refund", amount: "874.50", note: "[USD 10 × 87.45] ранний выезд" }),
+      payment({ id: 4, method: "card", cashlessMethodName: "ККБ", amount: "874.50", note: "[USD 10 × 87.45]" }),
+    ]);
+    expect(s.foreignCash).toEqual([
+      { currency: "USD", amount: 40 },
+      { currency: "EUR", amount: 10 },
+    ]);
+  });
+});
+
 describe("summarizeExpenses", () => {
   const expense = (over: Partial<Expense>): Expense =>
     ({ id: 1, name: "", cashAmount: "0", cardAmount: "0", amount: "0", categoryName: "Закуп", isVoided: false, ...over }) as Expense;

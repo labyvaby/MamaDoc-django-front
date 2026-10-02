@@ -307,7 +307,11 @@ export interface PaymentSummary {
   refunds: number;
   byChannel: { label: string; amount: number; count: number }[];
   byCurrency: { currency: string; cash: number; cashless: number }[];
+  /** Наличные, принятые в валюте (метка «[USD 50 × 87.45]» демо-режима): сколько долларов/евро лежит в кассе. */
+  foreignCash: { currency: string; amount: number }[];
 }
+
+const FOREIGN_TAG = /^\[([A-Z]{3}) ([\d.]+) × ([\d.]+)\]/;
 
 export function summarizePayments(payments: HotelPayment[]): PaymentSummary {
   let cash = 0;
@@ -315,8 +319,11 @@ export function summarizePayments(payments: HotelPayment[]): PaymentSummary {
   let refunds = 0;
   const channels = new Map<string, { label: string; amount: number; count: number }>();
   const currencies = new Map<string, { currency: string; cash: number; cashless: number }>();
+  const foreign = new Map<string, number>();
   for (const p of payments) {
     const amount = signedAmount(p);
+    const tag = p.method === "cash" ? FOREIGN_TAG.exec(p.note ?? "") : null;
+    if (tag) foreign.set(tag[1], (foreign.get(tag[1]) ?? 0) + (p.kind === "refund" ? -1 : 1) * Number(tag[2]));
     if (p.kind === "refund") refunds += num(p.amount);
     const cur = currencies.get(p.currency) ?? { currency: p.currency, cash: 0, cashless: 0 };
     if (p.method === "cash") {
@@ -340,6 +347,7 @@ export function summarizePayments(payments: HotelPayment[]): PaymentSummary {
     refunds,
     byChannel: [...channels.values()].sort((a, b) => b.amount - a.amount),
     byCurrency: [...currencies.values()],
+    foreignCash: [...foreign].map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 })).filter((f) => f.amount !== 0),
   };
 }
 

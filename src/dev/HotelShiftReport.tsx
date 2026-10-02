@@ -695,6 +695,7 @@ export const HotelShiftReport: React.FC<{
                     { label: "Выручка — всего", value: payments.total, strong: true },
                     { label: "Расходы наличными", value: expenseSummary.cash ? -expenseSummary.cash : 0 },
                     { label: "Касса (наличные)", value: kassa, strong: true, accent: true },
+                    ...payments.foreignCash.map((f) => ({ label: `в т.ч. валютой, ${f.currency}`, value: f.amount, sub: true, foreign: f.currency })),
                   ].map((row) => (
                     <Stack
                       key={row.label}
@@ -717,7 +718,7 @@ export const HotelShiftReport: React.FC<{
                           color: "accent" in row && row.accent ? "primary.main" : row.value < 0 ? "error.main" : "text.primary",
                         }}
                       >
-                        {fmtMoney(row.value, currency)}
+                        {"foreign" in row && row.foreign ? `${row.value.toLocaleString("ru-RU")} ${row.foreign}` : fmtMoney(row.value, currency)}
                       </Typography>
                     </Stack>
                   ))}

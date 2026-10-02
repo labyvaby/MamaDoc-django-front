@@ -33,6 +33,7 @@ import { ReservationNotesPanel } from "./ReservationNotesPanel";
 import { CurrencyEquivalent, DisplayCurrencySwitch } from "./CurrencyBits";
 import { currencySign } from "./hotelReportFormat";
 import { rateOf, useExchangeRates } from "./useExchangeRates";
+import { foreignPaymentNote, parseForeignPayment } from "./hotelDemoStore";
 import { useRoomInspection } from "./useRoomInspection";
 import { ReservationChargesSection } from "./ReservationChargesSection";
 import { ReservationCorporateSection } from "./ReservationCorporateSection";
@@ -351,14 +352,17 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setPaymentSaving(true);
     setPaymentError(null);
     try {
+      // Демо-режим валют (бэкенд ещё не принимает currency): сумма уходит в сомах по курсу,
+      // исходная — меткой в комментарии, по ней карточка и отчёт смены покажут «$50».
+      const demoForeign = Boolean(paymentCurrency && paymentRate && ratesQuery.data?.demo);
       await addPayment(reservation.id, {
         method: paymentMethod,
-        amount: String(amountNum),
+        amount: demoForeign ? (amountNum * (paymentRate ?? 1)).toFixed(2) : String(amountNum),
         kind: paymentKind,
-        note: paymentNote.trim() || undefined,
+        note: demoForeign ? foreignPaymentNote(paymentCurrency, amountNum, paymentRate ?? 1, paymentNote.trim()) : paymentNote.trim() || undefined,
         cashlessMethodId:
           CASHLESS_METHODS_ENABLED && paymentIsCashless && cashlessMethodId !== "" ? cashlessMethodId : undefined,
-        ...(paymentCurrency && paymentRate ? { currency: paymentCurrency, exchangeRate: String(paymentRate) } : {}),
+        ...(!demoForeign && paymentCurrency && paymentRate ? { currency: paymentCurrency, exchangeRate: String(paymentRate) } : {}),
       });
       setPaymentCurrency("");
       setPaymentFormOpen(false);
@@ -615,7 +619,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
             {p.cashlessMethodName ? ` · ${p.cashlessMethodName}` : ""}
           </Typography>
           <Typography variant="caption" color="text.secondary" noWrap component="div">
-            {[p.acceptedByName, dayjs(p.acceptedAt).format("D MMM, HH:mm"), p.note].filter(Boolean).join(" · ")}
+            {[p.acceptedByName, dayjs(p.acceptedAt).format("D MMM, HH:mm"), parseForeignPayment(p.note)?.rest ?? p.note].filter(Boolean).join(" · ")}
           </Typography>
         </Box>
         <Box sx={{ textAlign: "right", flexShrink: 0 }}>
@@ -630,6 +634,14 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               {p.exchangeRate ? ` по ${Number(p.exchangeRate).toLocaleString("ru-RU")}` : ""}
             </Typography>
           )}
+          {(() => {
+            const foreign = parseForeignPayment(p.note);
+            return foreign ? (
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                {foreign.amount.toLocaleString("ru-RU")} {currencySign(foreign.currency)} по {foreign.rate.toLocaleString("ru-RU")}
+              </Typography>
+            ) : null;
+          })()}
         </Box>
       </Stack>
     ));
