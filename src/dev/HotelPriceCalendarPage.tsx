@@ -27,6 +27,8 @@ import {
   Tab,
   Tabs,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -67,6 +69,7 @@ import { DRAWER_WIDTH, DrawerFooter, DrawerHeader, DrawerSection, EmptyState, Ho
 import { formatHotelDate, formatHotelDateRange, formatHotelDateTime, useIsVivaActive } from "./mockDemoData";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
+import { PriceYearView } from "./PriceYearView";
 
 const DAYS = 14;
 const WEEKDAYS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
@@ -99,6 +102,9 @@ export const HotelPriceCalendarPage: React.FC = () => {
   const { property, isLoading: propertyLoading } = useHotelProperty();
   const canManage = useCan("hotel.rates.manage");
   const [tab, setTab] = React.useState<"calendar" | "history">("calendar");
+  // «Год» — месяцы слева и все категории одной сеткой, с массовой правкой (PriceYearView);
+  // «2 недели» — прежняя подробная сетка ночей.
+  const [view, setView] = React.useState<"year" | "days">("year");
   const [start, setStart] = React.useState<Dayjs>(() => dayjs().startOf("day"));
   const [selected, setSelected] = React.useState<{ roomType: HotelPriceCalendarRoomType; night: HotelPriceNight } | null>(null);
   // Тарифный план: "" — основной. Выбор виден, когда планов больше одного.
@@ -116,9 +122,11 @@ export const HotelPriceCalendarPage: React.FC = () => {
   const calendarQuery = useQuery({
     queryKey: ["hotel", "priceCalendar", property?.id, from, ratePlanId],
     queryFn: ({ signal }) => getPriceCalendar({ propertyId: property!.id, from, to, ratePlanId: ratePlanId === "" ? undefined : ratePlanId }, signal),
-    enabled: property != null,
+    enabled: property != null && view === "days",
   });
   const calendar = calendarQuery.data;
+  // Двойной клик по ночи в годовом виде открывает ту же панель ночи — тарифный план берём из выбранного.
+  const yearPlanId = ratePlanId !== "" ? ratePlanId : (plans.find((p) => p.isBase)?.id ?? null);
 
   if (!vivaActive) return <Navigate to="/" replace />;
 
@@ -131,9 +139,11 @@ export const HotelPriceCalendarPage: React.FC = () => {
         title="Календарь цен"
         subtitle={
           tab === "calendar"
-            ? calendar
-              ? `${calendar.ratePlanName} · ${rangeLabel}`
-              : rangeLabel
+            ? view === "year"
+              ? "Год вперёд: месяцы, все категории и массовое изменение цен"
+              : calendar
+                ? `${calendar.ratePlanName} · ${rangeLabel}`
+                : rangeLabel
             : "Кто, когда и почему менял цены"
         }
         info={
@@ -146,6 +156,16 @@ export const HotelPriceCalendarPage: React.FC = () => {
         actions={
           tab === "calendar" ? (
             <Stack direction="row" alignItems="center" gap={0.5}>
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={view}
+                onChange={(_, v: "year" | "days" | null) => v && setView(v)}
+                sx={{ mr: 1, "& .MuiToggleButton-root": { textTransform: "none", fontWeight: 600, py: 0.4 } }}
+              >
+                <ToggleButton value="year">Год</ToggleButton>
+                <ToggleButton value="days">2 недели</ToggleButton>
+              </ToggleButtonGroup>
               {plans.length > 1 && (
                 <TextField
                   select
@@ -165,15 +185,19 @@ export const HotelPriceCalendarPage: React.FC = () => {
                     ))}
                 </TextField>
               )}
-              <Button size="small" onClick={() => setStart(dayjs().startOf("day"))} disabled={isCurrent}>
-                Сегодня
-              </Button>
-              <IconButton size="small" aria-label="Раньше" onClick={() => setStart(start.subtract(DAYS, "day"))}>
-                <ChevronLeftOutlined fontSize="small" />
-              </IconButton>
-              <IconButton size="small" aria-label="Позже" onClick={() => setStart(start.add(DAYS, "day"))}>
-                <ChevronRightOutlined fontSize="small" />
-              </IconButton>
+              {view === "days" && (
+                <>
+                  <Button size="small" onClick={() => setStart(dayjs().startOf("day"))} disabled={isCurrent}>
+                    Сегодня
+                  </Button>
+                  <IconButton size="small" aria-label="Раньше" onClick={() => setStart(start.subtract(DAYS, "day"))}>
+                    <ChevronLeftOutlined fontSize="small" />
+                  </IconButton>
+                  <IconButton size="small" aria-label="Позже" onClick={() => setStart(start.add(DAYS, "day"))}>
+                    <ChevronRightOutlined fontSize="small" />
+                  </IconButton>
+                </>
+              )}
             </Stack>
           ) : undefined
         }
@@ -190,6 +214,8 @@ export const HotelPriceCalendarPage: React.FC = () => {
         <HotelPropertyMissing />
       ) : tab === "history" && property ? (
         <PricingHistoryPanel propertyId={property.id} roomTypeNames={new Map((calendar?.roomTypes ?? []).map((r) => [r.roomTypeId, r.roomTypeName]))} />
+      ) : view === "year" && property ? (
+        <PriceYearView propertyId={property.id} ratePlanId={ratePlanId} canManage={canManage} onOpenNight={(roomType, night) => setSelected({ roomType, night })} />
       ) : calendarQuery.isError ? (
         <Alert severity="error" variant="outlined">
           {getErrorMessage(calendarQuery.error, "Не удалось загрузить цены")}
@@ -208,7 +234,7 @@ export const HotelPriceCalendarPage: React.FC = () => {
 
       <NightDrawer
         target={selected}
-        ratePlanId={calendar?.ratePlanId ?? null}
+        ratePlanId={calendar?.ratePlanId ?? yearPlanId}
         canManage={canManage}
         onClose={() => setSelected(null)}
       />
