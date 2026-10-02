@@ -4,23 +4,22 @@ import {
   Autocomplete,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Divider,
   FormControlLabel,
+  MenuItem,
   Paper,
   Stack,
   Switch,
   TextField,
   Typography,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
-import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
-import { Link as RouterLink } from "react-router";
 
-import { PageHeader } from "../../components/ui";
+import { SettingsLayout } from "../settings/SettingsLayout";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -31,6 +30,7 @@ import {
   type ReviewSettings,
   type ReviewSettingsPatch,
 } from "../../api/reviews";
+import type { ClinicalRole } from "../../api/staff";
 import {
   djangoQueryKeys,
   DJANGO_DETAIL_STALE_TIME_MS,
@@ -52,9 +52,12 @@ type FormState = Pick<
   | "quietFrom"
   | "quietTo"
   | "minDaysBetween"
+  | "appointmentClinicalRoles"
   | "positiveTags"
   | "negativeTags"
   | "ravenScenario"
+  | "instagram"
+  | "pageTheme"
 >;
 
 const FORM_KEYS: (keyof FormState)[] = [
@@ -64,9 +67,12 @@ const FORM_KEYS: (keyof FormState)[] = [
   "quietFrom",
   "quietTo",
   "minDaysBetween",
+  "appointmentClinicalRoles",
   "positiveTags",
   "negativeTags",
   "ravenScenario",
+  "instagram",
+  "pageTheme",
 ];
 
 const same = (a: unknown, b: unknown) =>
@@ -74,6 +80,12 @@ const same = (a: unknown, b: unknown) =>
 
 const pick = (s: ReviewSettings): FormState =>
   Object.fromEntries(FORM_KEYS.map((k) => [k, s[k]])) as FormState;
+
+const CLINICAL_ROLE_OPTIONS: { value: ClinicalRole; label: string }[] = [
+  { value: "doctor", label: "Врачи" },
+  { value: "nurse", label: "Медсёстры" },
+  { value: "other", label: "Другие сотрудники" },
+];
 
 const TagEditor: React.FC<{
   label: string;
@@ -121,8 +133,7 @@ const TagEditor: React.FC<{
 
 const ReviewsSettingsPage: React.FC = () => {
   const { t } = useT("reviews");
-  usePageTitle("Настройки отзывов");
-  const theme = useTheme();
+  usePageTitle("Сбор отзывов");
   const canManage = useCan("reviews.manage");
   const {
     isSuperAdmin,
@@ -157,6 +168,16 @@ const ReviewsSettingsPage: React.FC = () => {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => (f ? { ...f, [key]: value } : f));
 
+  const toggleClinicalRole = (role: ClinicalRole, checked: boolean) => {
+    setForm((f) => {
+      if (!f) return f;
+      const roles = checked
+        ? [...new Set([...f.appointmentClinicalRoles, role])]
+        : f.appointmentClinicalRoles.filter((item) => item !== role);
+      return { ...f, appointmentClinicalRoles: roles };
+    });
+  };
+
   const mutation = useMutation({
     mutationFn: (patch: ReviewSettingsPatch) => updateReviewSettings(patch),
     onSuccess: (data) => {
@@ -177,6 +198,7 @@ const ReviewsSettingsPage: React.FC = () => {
   const linksInvalid = linkChanges.some(
     (c) => c.url !== "" && !isReviewUrl(c.url)
   );
+  const rolesInvalid = !!form && form.appointmentClinicalRoles.length === 0;
   const dirty =
     !!form &&
     !!original &&
@@ -196,32 +218,15 @@ const ReviewsSettingsPage: React.FC = () => {
   };
 
   return (
-    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <PageHeader
-        title="Настройки отзывов"
-        showTitle={false}
-        showSearch={false}
-        leftActions={
-          <Button
-            size="small"
-            startIcon={<ArrowBackOutlined />}
-            component={RouterLink}
-            to="/reviews"
-          >
-            К отзывам
-          </Button>
-        }
-      />
-
-      <Box
-        sx={{
-          flex: 1,
-          overflow: "auto",
-          px: theme.appLayout.page.paddingX,
-          pb: 4,
-          maxWidth: 760,
-        }}
-      >
+    <SettingsLayout>
+      <Box sx={{ maxWidth: 760 }}>
+        <Typography variant="h6" fontWeight={600}>
+          Сбор отзывов
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Когда и как просить пациентов оценить приём, страница отзыва и
+          ссылки на карты.
+        </Typography>
         {query.error ? (
           <Alert severity="error" sx={{ mt: 2 }}>
             {query.error instanceof Error
@@ -253,6 +258,36 @@ const ReviewsSettingsPage: React.FC = () => {
                 }
                 label="Спрашивать отзыв после каждого завершённого приёма"
               />
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 1.5, mb: 0.5 }}
+              >
+                Отправлять запросы по приёмам этих типов сотрудников
+              </Typography>
+              <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+                {CLINICAL_ROLE_OPTIONS.map((option) => (
+                  <FormControlLabel
+                    key={option.value}
+                    control={
+                      <Checkbox
+                        checked={form.appointmentClinicalRoles.includes(
+                          option.value
+                        )}
+                        onChange={(e) =>
+                          toggleClinicalRole(option.value, e.target.checked)
+                        }
+                      />
+                    }
+                    label={option.label}
+                  />
+                ))}
+              </Stack>
+              {form.appointmentClinicalRoles.length === 0 && (
+                <Alert severity="warning" sx={{ mt: 1 }}>
+                  Выберите хотя бы один тип сотрудника.
+                </Alert>
+              )}
               <Typography
                 variant="caption"
                 color="text.secondary"
@@ -368,6 +403,38 @@ const ReviewsSettingsPage: React.FC = () => {
               </Stack>
             </Paper>
 
+            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: "14px" }}>
+              <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+                Страница отзыва
+              </Typography>
+              <TextField
+                select
+                size="small"
+                label="Оформление"
+                value={form.pageTheme}
+                onChange={(e) =>
+                  set("pageTheme", e.target.value as ReviewSettings["pageTheme"])
+                }
+                helperText="Детское — фон с мишкой, для детских клиник."
+                sx={{ maxWidth: 420, mb: 2 }}
+                fullWidth
+              >
+                <MenuItem value="default">Обычное</MenuItem>
+                <MenuItem value="kids">Детское (мишка)</MenuItem>
+              </TextField>
+              <TextField
+                size="small"
+                label="Профиль Instagram"
+                placeholder="mama.doctor.kg"
+                value={form.instagram}
+                onChange={(e) => set("instagram", e.target.value.trim())}
+                inputProps={{ maxLength: 80 }}
+                helperText="После 5★ пациент увидит «Отметьте нас в Instagram» со ссылкой на профиль. Можно вставить ссылку или @имя."
+                sx={{ maxWidth: 420 }}
+                fullWidth
+              />
+            </Paper>
+
             <ReviewLinksEditor
               branches={original.branchMaps}
               draft={links}
@@ -378,7 +445,9 @@ const ReviewsSettingsPage: React.FC = () => {
               <Button
                 variant="contained"
                 onClick={handleSave}
-                disabled={!dirty || linksInvalid || mutation.isPending}
+                disabled={
+                  !dirty || linksInvalid || rolesInvalid || mutation.isPending
+                }
                 startIcon={
                   mutation.isPending ? (
                     <CircularProgress size={16} />
@@ -391,7 +460,7 @@ const ReviewsSettingsPage: React.FC = () => {
           </Stack>
         )}
       </Box>
-    </Box>
+    </SettingsLayout>
   );
 };
 

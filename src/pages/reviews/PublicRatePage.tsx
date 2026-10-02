@@ -4,19 +4,19 @@ import {
   Button,
   CircularProgress,
   Divider,
+  Link,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
 import { ThemeProvider } from "@mui/material/styles";
-import StarRounded from "@mui/icons-material/StarRounded";
 import FavoriteRounded from "@mui/icons-material/FavoriteRounded";
-import HandshakeRounded from "@mui/icons-material/HandshakeRounded";
 import LinkOffRounded from "@mui/icons-material/LinkOffRounded";
 import ScheduleRounded from "@mui/icons-material/ScheduleRounded";
 import LockOutlined from "@mui/icons-material/LockOutlined";
 import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+import Instagram from "@mui/icons-material/Instagram";
 import { useParams } from "react-router";
 
 import {
@@ -42,6 +42,7 @@ import {
 import {
   CARD,
   CLAY,
+  INK,
   LINE,
   MUTED,
   PAPER,
@@ -52,9 +53,9 @@ import {
 import {
   Card,
   ChoiceCards,
+  ClinicHeader,
   type ChoiceOption,
   Display,
-  Eyebrow,
   MapCard,
   Medallion,
   RatingRow,
@@ -64,6 +65,44 @@ import {
   StarPicker,
   TagPill,
 } from "./public/ui";
+
+/** Просьба отметить в Instagram: заметная, но скромнее кнопок карт. */
+const InstagramNudge: React.FC<{ handle: string }> = ({ handle }) => (
+  <Stack alignItems="center" spacing={1}>
+    <Typography sx={{ fontSize: 14, color: MUTED }}>
+      {!handle && (
+        <Instagram
+          sx={{ fontSize: 17, color: "#D62976", verticalAlign: "-3px", mr: 0.5 }}
+        />
+      )}
+      Отметьте нас в Instagram — нам будет очень приятно 💛
+    </Typography>
+    {handle && (
+      <Link
+        href={`https://instagram.com/${handle}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        underline="none"
+        sx={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 0.75,
+          px: 1.75,
+          py: 0.75,
+          borderRadius: 999,
+          border: `1px solid ${LINE}`,
+          bgcolor: "rgba(255,255,255,0.6)",
+          color: INK,
+          fontSize: 14,
+          fontWeight: 700,
+          "&:hover": { borderColor: "#D62976" },
+        }}
+      >
+        <Instagram sx={{ fontSize: 19, color: "#D62976" }} />@{handle}
+      </Link>
+    )}
+  </Stack>
+);
 
 const CONSENT_OPTIONS: ChoiceOption<PublishConsent>[] = [
   {
@@ -251,25 +290,30 @@ const RateFlow: React.FC = () => {
   const editLink = ctx.canEdit && (
     <Button
       variant="text"
+      size="small"
       onClick={() => setEditing(true)}
-      sx={{ color: TEAL, fontSize: 15 }}
+      sx={{ color: TEAL, fontSize: 13, fontWeight: 600, alignSelf: "center" }}
     >
       Изменить ответ
     </Button>
   );
 
+  const header = <ClinicHeader name={ctx.clinicName} logo={ctx.clinicLogo} />;
+  const kids = ctx.pageTheme === "kids";
+  const kidsThanks = kids ? ("thanks" as const) : undefined;
+
   if (screen === "done" && !editing) {
     const happy = ctx.rating === 5;
     if (happy) {
       return (
-        <Shell>
+        <Shell kids={kidsThanks}>
           <Stack spacing={2.5} textAlign="center" sx={{ my: "auto", py: 4 }}>
-            <Medallion tone="happy" icon={<StarRounded />} />
             <Reveal order={2}>
               <Display size={30} center>
                 Спасибо, это очень приятно!
               </Display>
             </Reveal>
+            <Reveal order={2}>{header}</Reveal>
             <Reveal order={3}>
               <Typography sx={{ color: MUTED, fontSize: 16 }}>
                 {ctx.maps.length > 0
@@ -295,25 +339,30 @@ const RateFlow: React.FC = () => {
                 <PublishNote ctx={ctx} />
               </Reveal>
             )}
-            <Reveal order={8}>{editLink}</Reveal>
+            <Reveal order={7}>
+              <Box sx={{ mt: -1 }}>{editLink}</Box>
+            </Reveal>
+            <Reveal order={8}>
+              <InstagramNudge handle={ctx.instagram} />
+            </Reveal>
           </Stack>
         </Shell>
       );
     }
     return (
-      <Shell>
+      <Shell kids={kidsThanks}>
         <Stack
           spacing={2.5}
           alignItems="center"
           textAlign="center"
           sx={{ my: "auto", py: 4 }}
         >
-          <Medallion tone="calm" icon={<HandshakeRounded />} />
           <Reveal order={2}>
             <Display size={30} center>
               Спасибо, что рассказали
             </Display>
           </Reveal>
+          <Reveal order={2}>{header}</Reveal>
           <Reveal order={3}>
             <Typography sx={{ color: MUTED, fontSize: 16, maxWidth: 360 }}>
               Нам жаль, что не всё прошло хорошо. Ответ уже у нас — мы
@@ -406,12 +455,9 @@ const RateFlow: React.FC = () => {
   );
 
   return (
-    <Shell footer={stickyBar}>
-      <Reveal>
-        <Eyebrow>{ctx.clinicName}</Eyebrow>
-      </Reveal>
+    <Shell footer={stickyBar} header={header} kids={kids ? "form" : undefined}>
       <Reveal order={1}>
-        <Box sx={{ mt: 1.5 }}>
+        <Box sx={{ mt: 2.5 }}>
           <Display>{t("public.howWasVisit")}</Display>
         </Box>
       </Reveal>

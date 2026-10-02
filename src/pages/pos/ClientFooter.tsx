@@ -1,12 +1,16 @@
 import React from "react";
 import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
+import CircularProgress from "@mui/material/CircularProgress";
 import IconButton from "@mui/material/IconButton";
 import InputBase from "@mui/material/InputBase";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
+
 import ClearOutlined from "@mui/icons-material/ClearOutlined";
+import PersonAddAlt1Outlined from "@mui/icons-material/PersonAddAlt1Outlined";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 
 import { POS_RADIUS, posColors } from "./layout";
 import type { PosClient, PosClientSearchResult } from "./types";
@@ -22,8 +26,10 @@ type Props = {
   onSearch?: () => void;
   /** null — поиск ещё не запускали; пустой массив — клиент не найден. */
   results: PosClientSearchResult[] | null;
+  /** Идёт запрос поиска — показываем индикатор в поле. */
+  searching?: boolean;
   onSelectClient: (client: PosClientSearchResult) => void;
-  onRegister: (name: string, phone: string) => void;
+  onCreateClient?: (query: string) => void;
   onChangeClient: () => void;
   onOpenHistory: () => void;
 };
@@ -31,177 +37,125 @@ type Props = {
 const initials = (name: string): string =>
   name
     .split(" ")
+    .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
 
-/** Кнопка футера: «История покупок», «Сменить клиента». */
-const FooterButton: React.FC<{ label: string; onClick: () => void; muted?: boolean; height?: number }> = ({
-  label,
-  onClick,
-  muted,
-  height,
-}) => {
+const Avatar: React.FC<{ name: string; size?: number }> = ({ name, size = 36 }) => {
+  const theme = useTheme();
+  const c = posColors(theme);
+  return (
+    <Box
+      sx={{
+        width: size,
+        height: size,
+        flexShrink: 0,
+        borderRadius: "50%",
+        bgcolor: c.accent,
+        color: c.onAccent,
+        display: "grid",
+        placeItems: "center",
+        fontSize: Math.round(size * 0.38),
+        fontWeight: 800,
+      }}
+    >
+      {initials(name) || "?"}
+    </Box>
+  );
+};
+
+/** Кнопка футера: «История», «Сменить», «Новый клиент». */
+const FooterButton: React.FC<{
+  label: string;
+  onClick: () => void;
+  icon?: React.ReactNode;
+  accent?: boolean;
+  disabled?: boolean;
+}> = ({ label, onClick, icon, accent, disabled }) => {
   const theme = useTheme();
   const c = posColors(theme);
   return (
     <ButtonBase
       onClick={onClick}
+      disabled={disabled}
       sx={{
-        height,
+        height: 38,
         px: "12px",
-        py: height ? 0 : "8px",
-        borderRadius: `${height ? POS_RADIUS.control : POS_RADIUS.tile}px`,
-        bgcolor: muted ? c.page : c.card,
-        border: `1px solid ${c.hairline}`,
-        color: c.textSoft,
-        fontSize: 12,
-        fontWeight: 600,
-        lineHeight: 1.2,
+        gap: "6px",
+        flexShrink: 0,
+        borderRadius: `${POS_RADIUS.tile}px`,
+        bgcolor: accent ? c.accentBg : c.card,
+        border: `1px solid ${accent ? c.accent : c.hairline}`,
+        color: accent ? c.accentText : c.textSoft,
+        fontSize: 13,
+        fontWeight: 700,
         whiteSpace: "nowrap",
+        "&:hover": { borderColor: c.accent },
+        "&.Mui-disabled": { opacity: 0.45 },
+        "& svg": { fontSize: 18 },
       }}
     >
+      {icon}
       {label}
     </ButtonBase>
   );
 };
 
-/** Карточка найденного клиента. */
-const ClientCard: React.FC<{ client: PosClientSearchResult; onClick: () => void }> = ({ client, onClick }) => {
+/** Метрика выбранного клиента: «Скидка 5%», «Бонусы 350 сом». */
+const ClientMetric: React.FC<{ label: string; value: string }> = ({ label, value }) => {
+  const theme = useTheme();
+  const c = posColors(theme);
+  return (
+    <Stack sx={{ px: "10px", py: "5px", borderRadius: `${POS_RADIUS.tile}px`, bgcolor: c.card, border: `1px solid ${c.hairline}` }}>
+      <Typography sx={{ fontSize: 10, lineHeight: 1.2, letterSpacing: ".04em", textTransform: "uppercase", color: c.textDim }}>{label}</Typography>
+      <Typography sx={{ fontSize: 14, fontWeight: 800, lineHeight: 1.3, color: c.text, whiteSpace: "nowrap" }}>{value}</Typography>
+    </Stack>
+  );
+};
+
+/** Найденный клиент — компактная строка-кнопка. */
+const ClientOption: React.FC<{ client: PosClientSearchResult; onClick: () => void }> = ({ client, onClick }) => {
   const theme = useTheme();
   const c = posColors(theme);
   return (
     <ButtonBase
       onClick={onClick}
       sx={{
-        px: "11px",
+        px: "10px",
         py: "7px",
         gap: "10px",
         justifyContent: "flex-start",
-        borderRadius: `${POS_RADIUS.card}px`,
+        textAlign: "left",
+        borderRadius: `${POS_RADIUS.tile}px`,
         bgcolor: c.card,
         border: `1px solid ${c.hairline}`,
+        minWidth: 0,
         "&:hover": { borderColor: c.accent },
       }}
     >
-      <Box
-        sx={{
-          width: 34,
-          height: 34,
-          flexShrink: 0,
-          borderRadius: `${POS_RADIUS.pill}px`,
-          bgcolor: c.accent,
-          color: c.onAccent,
-          display: "grid",
-          placeItems: "center",
-          fontSize: 14,
-          fontWeight: 700,
-        }}
-      >
-        {initials(client.name)}
-      </Box>
-      <Stack gap="4px" alignItems="flex-start" sx={{ minWidth: 0 }}>
-        <Typography noWrap sx={{ fontSize: 14, lineHeight: 1, color: c.text }}>
-          {client.name}
-        </Typography>
-        <Typography noWrap sx={{ fontSize: 14, lineHeight: 1, color: c.textDim }}>
+      <Avatar name={client.name} size={30} />
+      <Stack gap="2px" sx={{ minWidth: 0, flex: 1 }}>
+        <Typography noWrap sx={{ fontSize: 13, fontWeight: 700, lineHeight: 1.2, color: c.text }}>{client.name}</Typography>
+        <Typography noWrap sx={{ fontSize: 12, lineHeight: 1.2, color: c.textDim }}>
           {client.phone}
-        </Typography>
-      </Stack>
-      <Stack gap="4px" alignItems="flex-end" sx={{ ml: "16px" }}>
-        <Typography sx={{ fontSize: 12, lineHeight: 1, color: c.accentText }}>{client.tier}</Typography>
-        <Typography sx={{ fontSize: 12, lineHeight: 1, color: c.textDim, whiteSpace: "nowrap" }}>
-          {client.discountPercent}% · {client.bonuses} Б
+          {client.bonuses ? ` · ${formatPosAmount(client.bonuses)} Б` : ""}
         </Typography>
       </Stack>
     </ButtonBase>
   );
 };
 
-/** Метрика клиента в футере: «СКИДКА 5%», «БОНУСЫ 350 сом». */
-const ClientMetric: React.FC<{ label: string; value: string }> = ({ label, value }) => {
-  const theme = useTheme();
-  const c = posColors(theme);
-  return (
-    <Stack gap="2px">
-      <Typography sx={{ fontSize: 12, lineHeight: 1.2, textTransform: "uppercase", color: c.textDim }}>{label}</Typography>
-      <Typography sx={{ fontSize: 20, fontWeight: 600, lineHeight: 1.2, color: c.text }}>{value}</Typography>
-    </Stack>
-  );
-};
-
-/** Форма регистрации — показывается, когда поиск ничего не нашёл. */
-const RegisterClient: React.FC<{ phone: string; onRegister: (name: string, phone: string) => void }> = ({ phone, onRegister }) => {
-  const theme = useTheme();
-  const c = posColors(theme);
-  const [name, setName] = React.useState("");
-  const [phoneValue, setPhoneValue] = React.useState(phone);
-
-  React.useEffect(() => setPhoneValue(phone), [phone]);
-
-  const field = {
-    height: 42,
-    px: "14px",
-    display: "flex",
-    alignItems: "center",
-    bgcolor: c.card,
-    border: `1px solid ${c.hairline}`,
-    borderRadius: `${POS_RADIUS.tile}px`,
-    fontSize: 14,
-    color: c.text,
-  } as const;
-
-  return (
-    <Box
-      sx={{
-        p: "12px",
-        borderRadius: `${POS_RADIUS.card}px`,
-        border: `1px dashed ${c.accent}`,
-      }}
-    >
-      <Stack direction="row" alignItems="center" gap="8px" sx={{ mb: "10px" }}>
-        <Typography sx={{ fontSize: 14, fontWeight: 700, color: c.accentText }}>Клиент не найден</Typography>
-        <Typography sx={{ fontSize: 14, color: c.textSoft }}>Зарегистрируйте клиента</Typography>
-      </Stack>
-      <Stack direction="row" alignItems="center" gap="10px">
-        <ButtonBase sx={{ ...field, width: 52, justifyContent: "center", fontSize: 12, color: c.textDim }}>Фото</ButtonBase>
-        <InputBase
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="ФИО"
-          sx={{ ...field, flex: 1, "& input::placeholder": { color: c.textDim, opacity: 1 } }}
-        />
-        <InputBase value={phoneValue} onChange={(event) => setPhoneValue(event.target.value)} sx={{ ...field, width: 360 }} />
-        <ButtonBase
-          onClick={() => onRegister(name, phoneValue)}
-          sx={{
-            height: 42,
-            px: "20px",
-            borderRadius: `${POS_RADIUS.tile}px`,
-            bgcolor: c.tile,
-            border: `1px solid ${c.hairline}`,
-            color: c.textSoft,
-            fontSize: 14,
-            fontWeight: 600,
-            whiteSpace: "nowrap",
-          }}
-        >
-          Зарегистрировать
-        </ButtonBase>
-      </Stack>
-    </Box>
-  );
-};
-
-/** Футер чека: карточка клиента либо его поиск и регистрация. */
+/** Футер чека: выбранный клиент либо поиск и открытие полной карточки. */
 export const PosClientFooter: React.FC<Props> = ({
   client,
   query,
   onQueryChange,
   onSearch,
   results,
+  searching = false,
   onSelectClient,
-  onRegister,
+  onCreateClient,
   onChangeClient,
   onOpenHistory,
   canRegister = false,
@@ -212,155 +166,126 @@ export const PosClientFooter: React.FC<Props> = ({
 
   const shell = {
     flexShrink: 0,
-    p: "16px",
+    p: { xs: "10px", md: "12px" },
     bgcolor: c.tile,
+    border: `1px solid ${c.outline}`,
     borderRadius: `${POS_RADIUS.card}px`,
   } as const;
 
   if (client) {
     return (
-      <Box sx={{ ...shell, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "24px" }}>
-        <Stack direction="row" alignItems="center" gap="24px" sx={{ minWidth: 0 }}>
-          <Stack gap="8px" sx={{ width: 268, flexShrink: 0 }}>
-            <Stack direction="row" alignItems="center" gap="12px">
-              <Box
-                sx={{
-                  width: 40,
-                  height: 40,
-                  flexShrink: 0,
-                  borderRadius: `${POS_RADIUS.pill}px`,
-                  bgcolor: c.accent,
-                  color: c.onAccent,
-                  display: "grid",
-                  placeItems: "center",
-                  fontSize: 16,
-                  fontWeight: 700,
-                }}
-              >
-                {initials(client.name)}
-              </Box>
-              <Stack gap="6px" sx={{ minWidth: 0 }}>
-                <Stack direction="row" alignItems="center" gap="6px">
-                  <Typography noWrap sx={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2, color: c.text }}>
-                    {client.name}
-                  </Typography>
-                  <Box
-                    sx={{
-                      px: "8px",
-                      py: "2px",
-                      borderRadius: `${POS_RADIUS.pill}px`,
-                      bgcolor: c.accentBg,
-                      color: c.accentText,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    {client.tier}
-                  </Box>
-                </Stack>
-                <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>{client.phone}</Typography>
-              </Stack>
+      <Box sx={{ ...shell, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px 16px" }}>
+        <Stack direction="row" alignItems="center" gap="10px" sx={{ minWidth: 0, flex: "1 1 220px" }}>
+          <Avatar name={client.name} />
+          <Stack gap="3px" sx={{ minWidth: 0 }}>
+            <Stack direction="row" alignItems="center" gap="6px" sx={{ minWidth: 0 }}>
+              <Typography noWrap sx={{ fontSize: 15, fontWeight: 800, lineHeight: 1.2, color: c.text }}>{client.name}</Typography>
+              {client.tier && (
+                <Box sx={{ px: "7px", py: "2px", borderRadius: `${POS_RADIUS.pill}px`, bgcolor: c.accentBg, color: c.accentText, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                  {client.tier}
+                </Box>
+              )}
             </Stack>
-
-            <Box sx={{ height: "1px", bgcolor: c.outline }} />
-
-            {client.nextTier && <Stack direction="row" alignItems="center" gap="11px">
-              <Box sx={{ flex: 1, height: 4, borderRadius: `${POS_RADIUS.pill}px`, bgcolor: c.card, overflow: "hidden" }}>
-                <Box sx={{ width: `${Math.round(client.tierProgress * 100)}%`, height: "100%", bgcolor: c.accent }} />
-              </Box>
-              <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim, whiteSpace: "nowrap" }}>
-                до «{client.nextTier}» {formatPosAmount(client.nextTierAmount)} с
-              </Typography>
-            </Stack>}
-          </Stack>
-
-          <Box sx={{ width: "1px", alignSelf: "stretch", bgcolor: c.outline }} />
-
-          <Stack direction="row" alignItems="center" gap="24px">
-            <ClientMetric label="Скидка" value={`${client.discountPercent}%`} />
-            <ClientMetric label="Бонусы" value={`${formatPosAmount(client.bonuses)} сом`} />
+            <Typography noWrap sx={{ fontSize: 12, lineHeight: 1.2, color: c.textDim }}>
+              {client.phone}
+              {client.nextTier ? ` · до «${client.nextTier}» ${formatPosAmount(client.nextTierAmount)} с` : ""}
+            </Typography>
           </Stack>
         </Stack>
 
-        <Stack direction="row" alignItems="center" gap="6px" sx={{ flexShrink: 0 }}>
-          {canHistory && <FooterButton label="История покупок" onClick={onOpenHistory} />}
-          <FooterButton label="Сменить клиента" onClick={onChangeClient} muted />
+        <Stack direction="row" alignItems="center" gap="6px">
+          {client.discountPercent > 0 && <ClientMetric label="Скидка" value={`${client.discountPercent}%`} />}
+          <ClientMetric label="Бонусы" value={`${formatPosAmount(client.bonuses)} с`} />
+        </Stack>
+
+        <Stack direction="row" alignItems="center" gap="6px" sx={{ ml: { md: "auto" } }}>
+          {canHistory && <FooterButton label="История" onClick={onOpenHistory} />}
+          <FooterButton label="Сменить" onClick={onChangeClient} />
         </Stack>
       </Box>
     );
   }
 
+  const trimmed = query.trim();
   const notFound = results !== null && results.length === 0;
-  const cards = results ?? [];
-
   return (
-    <Box sx={{ ...shell, display: "flex", flexDirection: "column", gap: "16px" }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" gap="24px">
-        <Stack gap="2px" sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2, color: c.text }}>Клиент не указан</Typography>
-          <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>Найдите клиента, чтобы применить бонусы</Typography>
-        </Stack>
-        <Stack direction="row" alignItems="center" gap="8px" sx={{ flexShrink: 0 }}>
-          <Box
-            sx={{
-              width: 348,
-              height: 42,
-              px: "17px",
-              display: "flex",
-              alignItems: "center",
-              bgcolor: c.card,
-              border: `1px solid ${c.hairline}`,
-              borderRadius: `${POS_RADIUS.control}px`,
+    <Stack gap="10px" sx={shell}>
+      <Stack direction="row" alignItems="center" gap="8px">
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            height: 38,
+            pl: "10px",
+            pr: "4px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            bgcolor: c.card,
+            border: `1px solid ${c.hairline}`,
+            borderRadius: `${POS_RADIUS.tile}px`,
+            "&:focus-within": { borderColor: c.accent },
+          }}
+        >
+          <PersonOutlineOutlined sx={{ fontSize: 19, color: c.textDim, flexShrink: 0 }} />
+          <InputBase
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") onSearch?.();
             }}
-          >
-            <InputBase
-              value={query}
-              onChange={(event) => onQueryChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") onSearch?.();
-              }}
-              placeholder="Телефон или имя"
-              endAdornment={query ? (
-                <IconButton
-                  aria-label="Очистить поиск клиента"
-                  size="small"
-                  onClick={() => onQueryChange("")}
-                  sx={{ color: c.textDim, mr: "-8px" }}
-                >
-                  <ClearOutlined sx={{ fontSize: 18 }} />
-                </IconButton>
-              ) : null}
-              sx={{ flex: 1, fontSize: 14, color: c.text, "& input::placeholder": { color: c.textDim, opacity: 1 } }}
-            />
-          </Box>
-        </Stack>
+            placeholder="Клиент: телефон или имя"
+            inputProps={{ "aria-label": "Поиск клиента", autoComplete: "off" }}
+            sx={{ flex: 1, minWidth: 0, fontSize: 14, color: c.text, "& input::placeholder": { color: c.textDim, opacity: 1 } }}
+          />
+          {searching ? <CircularProgress size={16} sx={{ color: c.textDim, mr: "6px" }} /> : null}
+          {query ? (
+            <IconButton aria-label="Очистить поиск клиента" size="small" onClick={() => onQueryChange("")} sx={{ color: c.textDim }}>
+              <ClearOutlined sx={{ fontSize: 18 }} />
+            </IconButton>
+          ) : null}
+        </Box>
+        {canRegister && onCreateClient && (
+          <FooterButton
+            label="Новый"
+            icon={<PersonAddAlt1Outlined />}
+            onClick={() => onCreateClient(trimmed)}
+          />
+        )}
       </Stack>
 
-      <Box sx={{ height: "1px", bgcolor: c.outline }} />
-
-      {notFound && canRegister ? (
-        <RegisterClient phone={query} onRegister={onRegister} />
-      ) : (
-        <Stack gap="8px">
-          {results === null ? (
-            <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>
-              Введите имя или телефон клиента — поиск начнётся автоматически.
+      {results !== null && (
+        notFound ? (
+          <Stack direction="row" alignItems="center" flexWrap="wrap" gap="8px">
+            <Typography sx={{ fontSize: 13, color: c.textDim }}>
+              Клиент «{trimmed}» не найден.
             </Typography>
-          ) : (
-            <>
-              <Typography sx={{ fontSize: 12, lineHeight: 1.2, textTransform: "uppercase", color: c.textDim }}>
-                Найдено: {results.length}
-              </Typography>
-              <Stack direction="row" gap="10px" sx={{ overflowX: "auto" }}>
-                {cards.map((item) => (
-                  <ClientCard key={item.id} client={item} onClick={() => onSelectClient(item)} />
-                ))}
-              </Stack>
-            </>
-          )}
-        </Stack>
+            {canRegister && onCreateClient && (
+              <ButtonBase
+                onClick={() => onCreateClient(trimmed)}
+                sx={{ fontSize: 13, fontWeight: 700, color: c.accentText, textDecoration: "underline", textUnderlineOffset: 3 }}
+              >
+                Создать клиента
+              </ButtonBase>
+            )}
+          </Stack>
+        ) : (
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", md: "repeat(auto-fill, minmax(220px, 1fr))" },
+              gap: "6px",
+              maxHeight: 176,
+              overflowY: "auto",
+            }}
+          >
+            {results.map((item) => (
+              <ClientOption key={item.id} client={item} onClick={() => onSelectClient(item)} />
+            ))}
+          </Box>
+        )
       )}
-    </Box>
+
+    </Stack>
   );
 };

@@ -23,7 +23,8 @@ import print from "../locales/ru/print.json";
 import services from "../locales/ru/services.json";
 import waitlist from "../locales/ru/waitlist.json";
 import deals from "../locales/ru/deals.json";
-import { capitalize, lower } from "./formatters";
+import realestate from "../locales/ru/realestate.json";
+import { capitalize, genderForm, lower, prepForm } from "./formatters";
 
 /**
  * Неймспейсы = модули приложения. Один JSON на модуль, чтобы файлы
@@ -31,7 +32,7 @@ import { capitalize, lower } from "./formatters";
  * Новый модуль: добавить JSON в src/locales/ru/ и ключ сюда.
  */
 export const resources = {
-  ru: { common, patients, appointments, settings, employees, salaryReports, sales, vaccinations, reviews, cashbox, load, doctor, reports, sidebar, bookings, client, publicBooking, landing, print, services, waitlist, deals },
+  ru: { common, patients, appointments, settings, employees, salaryReports, sales, vaccinations, reviews, cashbox, load, doctor, reports, sidebar, bookings, client, publicBooking, landing, print, services, waitlist, deals, realestate },
 } as const;
 
 export type Namespace = keyof (typeof resources)["ru"];
@@ -62,6 +63,12 @@ i18n.services.formatter?.add("capitalize", (value) =>
 );
 i18n.services.formatter?.add("lower", (value) =>
   typeof value === "string" ? lower(value) : String(value)
+);
+i18n.services.formatter?.add("gender", (value, _lng, options) =>
+  genderForm(value, (options ?? {}) as Record<string, unknown>)
+);
+i18n.services.formatter?.add("prep", (value, _lng, options) =>
+  prepForm(value, (options ?? {}) as Record<string, unknown>)
 );
 
 export default i18n;

@@ -5,6 +5,7 @@ import {
   Card,
   CardContent,
   CircularProgress,
+  TextField,
   Grid,
   Stack,
   Table,
@@ -17,14 +18,18 @@ import {
 
 import { getPnlReport, getRetailReceipts, type PnlReport, type RetailReceipt } from "../../api/retail";
 
+const localDateValue = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
 export default function RetailDashboardPage() {
   const [pnl, setPnl] = useState<PnlReport | null>(null);
   const [receipts, setReceipts] = useState<RetailReceipt[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [dateFrom, setDateFrom] = useState(() => localDateValue(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
+  const [dateTo, setDateTo] = useState(() => localDateValue(new Date()));
 
   useEffect(() => {
     let active = true;
-    Promise.all([getPnlReport(), getRetailReceipts({ limit: 20 })])
+    Promise.all([getPnlReport(dateFrom, dateTo), getRetailReceipts({ limit: 20 })])
       .then(([nextPnl, nextReceipts]) => {
         if (!active) return;
         setPnl(nextPnl);
@@ -34,7 +39,7 @@ export default function RetailDashboardPage() {
         if (active) setError(reason instanceof Error ? reason.message : "Не удалось загрузить retail-данные.");
       });
     return () => { active = false; };
-  }, []);
+  }, [dateFrom, dateTo]);
 
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!pnl) return <CircularProgress />;
@@ -50,6 +55,10 @@ export default function RetailDashboardPage() {
       <Box>
         <Typography variant="h4">Retail / операционный обзор</Typography>
         <Typography color="text.secondary">{pnl.dateFrom} — {pnl.dateTo}</Typography>
+        <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+          <TextField type="date" size="small" label="С даты" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} InputLabelProps={{ shrink: true }} />
+          <TextField type="date" size="small" label="По дату" value={dateTo} onChange={(event) => setDateTo(event.target.value)} InputLabelProps={{ shrink: true }} />
+        </Stack>
       </Box>
       <Grid container spacing={2}>
         {cards.map(([label, value]) => (

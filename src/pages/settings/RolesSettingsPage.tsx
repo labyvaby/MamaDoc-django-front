@@ -50,6 +50,7 @@ import { ApiError } from "../../api/client";
 import { usePermissions, retryAuth } from "../../hooks/usePermissions";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { getModuleCodeForPermission } from "../../utils/moduleMapping";
+import { isPermissionEditable } from "../../config/platformGrantedPermissions";
 import { useT } from "../../i18n/VerticalProvider";
 import PermissionPicker, { type PermissionGroup } from "./roles/PermissionPicker";
 import { previewSectionsFor } from "./roles/rolePreview";
@@ -206,7 +207,7 @@ function RoleFormDrawer({
   }, [open, mode, initial]);
 
   const isSystemRole = mode === "edit" && !!initial?.isSystem;
-  const { enabledModules } = usePermissions();
+  const { enabledModules, isPlatformAdmin } = usePermissions();
   const isModuleOff = React.useCallback(
     (permissionCode: string) => {
       const moduleCode = getModuleCodeForPermission(permissionCode);
@@ -221,19 +222,21 @@ function RoleFormDrawer({
     () => permissions.filter(
       (permission) =>
         !isModuleOff(permission.code) &&
-        !PLATFORM_ONLY_PERMISSION_CODES.has(permission.code),
+        !PLATFORM_ONLY_PERMISSION_CODES.has(permission.code) &&
+        isPermissionEditable(permission.code, Boolean(isPlatformAdmin)),
     ),
-    [permissions, isModuleOff],
+    [permissions, isModuleOff, isPlatformAdmin],
   );
   const hiddenPermissionCodes = React.useMemo(
     () => permissions
       .filter(
         (permission) =>
           isModuleOff(permission.code) ||
-          PLATFORM_ONLY_PERMISSION_CODES.has(permission.code),
+          PLATFORM_ONLY_PERMISSION_CODES.has(permission.code) ||
+          !isPermissionEditable(permission.code, Boolean(isPlatformAdmin)),
       )
       .map((permission) => permission.code),
-    [permissions, isModuleOff],
+    [permissions, isModuleOff, isPlatformAdmin],
   );
   const grouped = React.useMemo(
     () => groupPermissions(visiblePermissions, t),

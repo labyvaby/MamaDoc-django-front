@@ -24,6 +24,8 @@ import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 import WarehouseOutlined from "@mui/icons-material/WarehouseOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 
+import dayjs from "dayjs";
+
 import type { GoodsReceipt, ProcurementSummary, ReceiptListStatus } from "../../api/procurement";
 import { subtleBg } from "../../theme/uiHelpers";
 import { ListEmptyState, ListLoadingSkeleton } from "../ui";
@@ -54,6 +56,13 @@ export interface ReceiptListProps {
   onAdd?: () => void;
   /** Ошибка загрузки списка — показываем текст, а не пустоту. */
   errorMessage?: string | null;
+  /**
+   * Последние накладные из других месяцев — показываются, когда выбранный
+   * месяц пуст. Накладная попадает в месяц по дате прихода, и с прошлой
+   * датой (например, взятой с фото документа) она «пропадает» из текущего.
+   */
+  elsewhere?: GoodsReceipt[];
+  onOpenElsewhere?: (receipt: GoodsReceipt) => void;
 }
 
 type FilterChipProps = {
@@ -110,10 +119,19 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
   scopeLabel,
   onAdd,
   errorMessage,
+  elsewhere = [],
+  onOpenElsewhere,
 }) => {
   const [menu, setMenu] = React.useState<null | { anchor: HTMLElement; kind: "supplier" | "warehouse" }>(null);
-  const counts = summary?.statusCounts;
-  const total = counts ? counts.unpaid + counts.partial + counts.paid : receipts.length;
+  // Счётчики над списком — за тот же месяц, что и строки. Старый бэкенд
+  // присылает только «за всё время» — тогда как раньше.
+  const periodCounts = summary?.periodStatusCounts;
+  const counts = periodCounts ?? summary?.statusCounts;
+  const canceledCount = periodCounts ? summary?.periodCanceledCount : summary?.canceledCount;
+  // «Все» показывает и отменённые строки — значит, и считать их надо.
+  const total = counts
+    ? counts.unpaid + counts.partial + counts.paid + (periodCounts ? canceledCount ?? 0 : 0)
+    : receipts.length;
   const filterActive = status !== "all" || supplierId !== null || warehouseId !== null;
 
   const statusOptions: { value: ReceiptListStatus | "all"; label: string; count?: number }[] = [
@@ -121,7 +139,7 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
     { value: "unpaid", label: "Не оплачены", count: counts?.unpaid },
     { value: "partial", label: "Частично", count: counts?.partial },
     { value: "paid", label: "Оплачены", count: counts?.paid },
-    { value: "canceled", label: "Отменённые", count: summary?.canceledCount },
+    { value: "canceled", label: "Отменённые", count: canceledCount },
   ];
 
   const supplierLabel = suppliers.find((s) => s.id === supplierId)?.label ?? "Все поставщики";
@@ -240,14 +258,78 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
         </MenuItem>
       </Menu>
 
-      {!loading && errorMessage && (
-        <Box sx={{ position: "absolute", inset: 0, top: 120, display: "flex", pointerEvents: "none" }}>
+      {/* Пустые состояния — в потоке списка, а не слоем поверх: на узком
+          экране чипы фильтров переносятся в две строки, и слой с жёстким
+          отступом сверху наезжал на них. */}
+      <Box sx={{ overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
+        {loading ? (
+          <ListLoadingSkeleton rows={6} />
+        ) : errorMessage ? (
           <ListEmptyState icon={<ReceiptLongOutlined />} title="Не удалось загрузить накладные" description={errorMessage} />
-        </Box>
-      )}
-
-      {!loading && !errorMessage && receipts.length === 0 && !filterActive && (
-        <Box sx={{ position: "absolute", inset: 0, top: 120, display: "flex", pointerEvents: "none" }}>
+        ) : receipts.length === 0 && filterActive ? (
+          <ListEmptyState
+            icon={<FilterListOutlined />}
+            title="Ничего не найдено"
+            description="Под выбранные фильтры накладных нет."
+            action={
+              <Button variant="outlined" size="small" onClick={resetFilters}>
+                Сбросить фильтры
+              </Button>
+            }
+          />
+        ) : receipts.length === 0 && elsewhere.length > 0 ? (
+          <ListEmptyState
+            icon={<ReceiptLongOutlined />}
+            title={`За ${periodLabel} накладных нет`}
+            description="Накладная попадает в месяц по дате прихода. Последние — в других месяцах:"
+            action={
+              <Stack spacing={1} alignItems="center" sx={{ width: "min(360px, 100%)" }}>
+                <Stack spacing={0.75} sx={{ width: "100%" }}>
+                  {elsewhere.map((receipt) => (
+                    <ButtonBase
+                      key={receipt.id}
+                      onClick={() => onOpenElsewhere?.(receipt)}
+                      focusRipple
+                      sx={(t) => ({
+                        width: "100%",
+                        px: 1.5,
+                        py: 1,
+                        gap: 1.5,
+                        justifyContent: "space-between",
+                        textAlign: "left",
+                        borderRadius: 2,
+                        border: 1,
+                        borderColor: "divider",
+                        bgcolor: "background.paper",
+                        "&:hover": { borderColor: alpha(t.palette.primary.main, 0.5), bgcolor: subtleBg(t, true) },
+                      })}
+                    >
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
+                          {receipt.number}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap component="div">
+                          приход {dayjs(receipt.receivedAt).format("D MMMM YYYY")}
+                        </Typography>
+                      </Box>
+                      <Stack alignItems="flex-end" spacing={0.5} sx={{ flexShrink: 0 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                          {formatMoney(receipt.totalCost)} сом
+                        </Typography>
+                        <ReceiptStatusChip receipt={receipt} compact />
+                      </Stack>
+                    </ButtonBase>
+                  ))}
+                </Stack>
+                {onAdd && (
+                  <Button variant="text" size="small" startIcon={<AddOutlined />} onClick={onAdd}>
+                    Новая накладная
+                  </Button>
+                )}
+              </Stack>
+            }
+          />
+        ) : receipts.length === 0 ? (
           <ListEmptyState
             icon={<ReceiptLongOutlined />}
             title="Накладных пока нет"
@@ -260,28 +342,7 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
               ) : undefined
             }
           />
-        </Box>
-      )}
-
-      {!loading && !errorMessage && receipts.length === 0 && filterActive && (
-        <Box sx={{ position: "absolute", inset: 0, top: 120, display: "flex", pointerEvents: "none" }}>
-          <ListEmptyState
-            icon={<FilterListOutlined />}
-            title="Ничего не найдено"
-            description="Под выбранные фильтры накладных нет."
-            action={
-              <Button variant="outlined" size="small" onClick={resetFilters}>
-                Сбросить фильтры
-              </Button>
-            }
-          />
-        </Box>
-      )}
-
-      <Box sx={{ overflowY: "auto", flex: 1 }}>
-        {loading ? (
-          <ListLoadingSkeleton rows={6} />
-        ) : receipts.length === 0 ? null : (
+        ) : (
           <Stack spacing={1} sx={{ p: 1.5 }}>
             {receipts.map((receipt) => {
               const isSelected = receipt.id === selectedId;

@@ -11,8 +11,8 @@
   },
   "public": {
     "visitLabel": "{{visit.nom, capitalize}}: {{name}}",
-    "rateYourVisit": "Оцените ваш {{visit.acc}}",
-    "howWasVisit": "Как прошёл ваш {{visit.nom}}?",
+    "rateYourVisit": "Оцените {{visit.gender, gender(m: ваш; f: вашу; n: ваше)}} {{visit.acc}}",
+    "howWasVisit": "{{visit.gender, gender(m: Как прошёл ваш; f: Как прошла ваша; n: Как прошло ваше)}} {{visit.nom}}?",
     "specialistCaption": "Ваш {{specialist.nom}}",
     "doctorShort": "{{specialist.nom, capitalize}}",
     "doctorLabel": "Как вам {{specialist.nom}}?",

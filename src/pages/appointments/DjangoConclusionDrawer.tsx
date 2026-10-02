@@ -29,13 +29,12 @@ import {
   Drawer,
   Grid,
   IconButton,
-  ListItemText,
-  Menu,
-  MenuItem,
+  LinearProgress,
   Modal,
   Paper,
   Stack,
   TextField,
+  Tooltip,
   Typography,
   useMediaQuery,
   useTheme,
@@ -44,10 +43,13 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import ExpandLessOutlined from "@mui/icons-material/ExpandLessOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
-import AddPhotoAlternateOutlined from "@mui/icons-material/AddPhotoAlternateOutlined";
-import DeleteOutline from "@mui/icons-material/DeleteOutline";
-import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import StarBorderOutlined from "@mui/icons-material/StarBorderOutlined";
+import StarOutlined from "@mui/icons-material/StarOutlined";
+import AddPhotoAlternateOutlined from "@mui/icons-material/AddPhotoAlternateOutlined";
+import AddOutlined from "@mui/icons-material/AddOutlined";
+import LockOutlined from "@mui/icons-material/LockOutlined";
+import VerticalSplitOutlined from "@mui/icons-material/VerticalSplitOutlined";
+import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import ArticleOutlined from "@mui/icons-material/ArticleOutlined";
@@ -67,9 +69,14 @@ import type { InvoicePageSize } from "../../components/appointments/appointmentI
 import { formatQuantity, trimDecimalInput } from "../../utility/format";
 import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
-import { tt } from "../../i18n/t";
 import { agree } from "../../i18n/formatters";
 import { ConclusionFormInline } from "../../components/conclusion-forms/ConclusionFormInline";
+import { ConclusionDocumentMenu } from "../../components/conclusion-forms/ConclusionDocumentMenu";
+import { ConclusionSheetPane } from "../../components/conclusion-forms/ConclusionSheetPane";
+import type { SheetContext } from "../../components/conclusion-forms/FormSheet";
+import type { ConclusionPDFData } from "../../utility/pdfGenerator";
+import { formatPatientAge } from "../../utility/age";
+import { subtleBg } from "../../theme";
 import { ConclusionHistory } from "../../components/conclusion-forms/ConclusionHistory";
 import { ConclusionFormReadView } from "../../components/conclusion-forms/ConclusionFormReadView";
 import { buildConclusionPrintParts, formatDiagnoses } from "../../utility/conclusionPrintParts";
@@ -78,9 +85,33 @@ import {
   AiAssistPendingStrip,
   AiAssistSuggestion,
 } from "../../components/conclusion-forms/AiAssistControls";
-import { useAiAssist } from "../../components/conclusion-forms/useAiAssist";
+import {
+  AiReviewDialog,
+  type AiReviewEntry,
+  type AiReviewTarget,
+} from "../../components/conclusion-forms/AiReviewDialog";
+import {
+  aiRowKey,
+  useAiAssist,
+  type AiAssistKey,
+} from "../../components/conclusion-forms/useAiAssist";
 import { CollapsibleTextField } from "../../components/conclusion-forms/CollapsibleTextField";
 import { useCan } from "../../hooks/useCan";
+import {
+  clearConclusionDraft,
+  conclusionDraftId,
+  readConclusionDraft,
+  targetField,
+  writeConclusionDraft,
+  type ConclusionDraftBody,
+} from "../../components/conclusion-forms/conclusionDraftStorage";
+import { VitalStepper } from "../../components/conclusion-forms/VitalStepper";
+import {
+  HEIGHT_DECIMALS,
+  TEMPERATURE_DECIMALS,
+  WEIGHT_DECIMALS,
+  validateVitals,
+} from "../../components/conclusion-forms/conclusionVitals";
 import {
   diagnosesAsText,
   resolveDiagnosesFromText,
@@ -99,7 +130,19 @@ import {
   buildConclusionFormData,
   fitConclusionFormData,
   parseConclusionFormData,
+  type ParsedConclusionForm,
 } from "../../api/conclusionFormData";
+import {
+  PRESET_COLUMNS,
+  frequentDiagnoses,
+  historyDiagnoses,
+  mergeManual,
+  planPresetTexts,
+  presetFormValues,
+  summarizeProgress,
+  type PresetTexts,
+  type ProgressRow,
+} from "../../components/conclusion-forms/conclusionPresets";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { usePermissions } from "../../hooks/usePermissions";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
@@ -109,9 +152,13 @@ import {
   createAdditionalConclusion,
   updateConclusion,
   getConclusionSlots,
+  getConclusionContext,
+  getMedicalConclusion,
+  getPatientConclusions,
   findReplacementSlot,
   isServiceLineGoneError,
   getDiagnoses,
+  getFrequentDiagnoses,
   uploadConclusionPhoto,
   getConclusionTemplates,
   createConclusionTemplate,
@@ -122,6 +169,7 @@ import {
   type ConclusionStatus,
   type CatalogDiagnosis,
   type ConclusionTemplate,
+  type PatientConclusionSummary,
   type AiAssistField,
 } from "../../api/medical";
 
@@ -178,258 +226,61 @@ export type DjangoConclusionDrawerProps = {
   onSaved?: (saved: MedicalConclusion) => void;
 };
 
-// ── localStorage draft persistence ─────────────────────────────────────────────
-// Черновик заключения хранится локально: 1 документ = 1 запись в
-// localStorage. Ключ — строка услуги, для второго и следующих документов
-// строки ещё и различитель (см. draftScope). Восстанавливается при повторном
-// открытии и удаляется после успешного сохранения на сервере.
-
-const conclusionDraftKey = (draftId: string) => `conclusion_draft_${draftId}`;
-
-const conclusionDraftId = (serviceLineId: number, draftScope?: string) =>
-  draftScope ? `${serviceLineId}_${draftScope}` : String(serviceLineId);
-
-type ConclusionDraftBody = {
-  complaints: string;
-  anamnesis: string;
-  objective: string;
-  conclusionText: string;
-  selectedDiagnoses: CatalogDiagnosis[];
-  photoUrls: string[];
-  weightKg: string;
-  heightCm: string;
-  temperature: string;
-  internalComment: string;
-  status: ConclusionStatus;
-  /**
-   * Прикреплённый бланк и значения его полей.
-   *
-   * С 03.09.2026 то же самое едет и на сервер — в `formData` заключения
-   * (api/conclusionFormData), поэтому после сохранения бланк открывается
-   * заполненным, а не «простынёй» собранного текста. Локальная копия осталась
-   * черновиком: она переживает закрытие дровера до сохранения.
-   *
-   * ⚠ Шаблон для уже сохранённого заключения берётся из снапшота внутри
-   * `formData`, а не из настроек: администратор мог позже переставить поля или
-   * переназначить привязку к колонке (`slot`), и старое заключение записало бы
-   * значение в чужую колонку.
-   */
-  formId?: number | null;
-  formValues?: Record<string, string>;
-  /** Свободный хвост бланка (см. manualText в компоненте). */
-  formManual?: string;
-  /** Снапшот бланка сохранённого заключения (см. formSnapshot в компоненте). */
-  formSnapshot?: ConclusionFormTemplate | null;
-};
-
-/** Поле формы, в которое бланк собирает свой текст. */
-const targetField = (target: FormTarget): keyof ConclusionDraftBody =>
-  target === "anamnesis" ? "anamnesis" : target === "objective" ? "objective" : "conclusionText";
-
-type ConclusionDraft = ConclusionDraftBody & { savedAt: string };
-
-function readConclusionDraft(draftId: string): ConclusionDraft | null {
-  try {
-    const raw = window.localStorage.getItem(conclusionDraftKey(draftId));
-    return raw ? (JSON.parse(raw) as ConclusionDraft) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeConclusionDraft(draftId: string, body: ConclusionDraftBody) {
-  try {
-    window.localStorage.setItem(
-      conclusionDraftKey(draftId),
-      JSON.stringify({ ...body, savedAt: new Date().toISOString() }),
-    );
-  } catch {
-    /* localStorage переполнен или недоступен — работаем без черновика */
-  }
-}
-
-function clearConclusionDraft(draftId: string) {
-  try {
-    window.localStorage.removeItem(conclusionDraftKey(draftId));
-  } catch {
-    /* ignore */
-  }
-}
-
-// ── vitals validation helpers ──────────────────────────────────────────────────
-
-// Контракт точности — как у бэка: вес numeric(6,3), рост numeric(5,2),
-// температура numeric(4,1). Лишние знаки ловим на клиенте, чтобы врач получил
-// понятную ошибку на родном языке, а не HTTP 400 от Django.
-const WEIGHT_DECIMALS = 3;
-const HEIGHT_DECIMALS = 2;
-const TEMPERATURE_DECIMALS = 1;
-
-function decimalPlacesOf(raw: string): number {
-  // Поле type="number" отдаёт value с точкой независимо от локали.
-  return raw.trim().split(".")[1]?.length ?? 0;
-}
-
-function validateVitals(
-  weight: string,
-  height: string,
-  temp: string,
-): string | null {
-  if (weight.trim()) {
-    const w = Number(weight);
-    if (isNaN(w) || w < 1 || w > 999)
-      return tt("appointments:conclusion.errors.weightRange");
-    if (decimalPlacesOf(weight) > WEIGHT_DECIMALS)
-      return tt("appointments:conclusion.errors.weightPrecision");
-  }
-  if (height.trim()) {
-    const h = Number(height);
-    if (isNaN(h) || h < 1 || h > 999)
-      return tt("appointments:conclusion.errors.heightRange");
-    if (decimalPlacesOf(height) > HEIGHT_DECIMALS)
-      return tt("appointments:conclusion.errors.heightPrecision");
-  }
-  if (temp.trim()) {
-    const t = Number(temp);
-    if (isNaN(t) || t < 34 || t > 42)
-      return tt("appointments:conclusion.errors.temperatureRange");
-    if (decimalPlacesOf(temp) > TEMPERATURE_DECIMALS)
-      return tt("appointments:conclusion.errors.temperaturePrecision");
-  }
-  return null;
-}
-
-// ── vital stepper (как renderQuantityInput в оригинале) ─────────────────────────
-
-const noSpinnersSx = {
-  "& input[type=number]": { MozAppearance: "textfield" },
-  "& input[type=number]::-webkit-outer-spin-button": {
-    WebkitAppearance: "none",
-    margin: 0,
-  },
-  "& input[type=number]::-webkit-inner-spin-button": {
-    WebkitAppearance: "none",
-    margin: 0,
-  },
+/** Подпись зоны формы: «Показатели», «Протокол», «Служебное». */
+const SECTION_TITLE_SX = {
+  fontWeight: 600,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  color: "text.secondary",
 } as const;
 
-type VitalStepperProps = {
-  label: string;
-  suffix: string;
-  value: string;
-  onChange: (v: string) => void;
-  step?: number;
-  min?: number;
-  max?: number;
-  // Сколько знаков после запятой хранит бэк для этого показателя.
-  decimalPlaces?: number;
-  disabled?: boolean;
-};
+/** Стабильная пустышка: `?? {}` на каждом рендере дёргал бы превью листа. */
+const EMPTY_VALUES: Record<string, string> = {};
 
-/** Кнопки ± дотягивают до 44px по обеим осям — минимум для пальца. */
-const TAP_TARGET_SX = {
-  minWidth: { xs: 44, md: 32 },
-  minHeight: { xs: 44, md: 34 },
-  px: 0.5,
-} as const;
+/** Колонка формы, когда справа от неё стоит лист, — прежняя ширина дровера. */
+const FORM_COLUMN_WIDTH = 560;
 
-const VitalStepper: React.FC<VitalStepperProps> = ({
-  label,
-  suffix,
-  value,
-  onChange,
-  step = 1,
-  min = 0,
-  max,
-  decimalPlaces = WEIGHT_DECIMALS,
-  disabled,
-}) => {
-  // Кнопки ± не должны ни плодить хвост вида 5.6000000000000005, ни выходить
-  // за точность бэка — округляем до неё же.
-  const k = 10 ** decimalPlaces;
-  const fmt = (n: number) => String(Math.round(n * k) / k);
-  const dec = () => {
-    // Пустое поле — «не измеряли»: минус не должен подставлять туда минимум.
-    if (value === "") return;
-    const cur = parseFloat(value) || 0;
-    onChange(fmt(Math.max(min, cur - step)));
-  };
-  const inc = () => {
-    // Первый плюс на пустом поле ставит нижнюю границу (1 кг, 34 °C), а не шаг.
-    if (value === "") {
-      onChange(fmt(min));
-      return;
-    }
-    const next = (parseFloat(value) || 0) + step;
-    if (max !== undefined && next > max) return;
-    onChange(fmt(next));
-  };
+// ── лист рядом с формой: выбор врача помним в браузере ─────────────────────────
+// По умолчанию лист скрыт (30.09.2026): форма важнее. Кто его открыл —
+// тому он нужен и при следующем открытии.
+const SHEET_PREF_KEY = "mamadoc:conclusion-sheet";
 
-  return (
-    <Stack spacing={0.5} sx={{ minWidth: 100, flex: 1 }}>
-      <Typography variant="caption" color="text.secondary">
-        {label}, {suffix}
-      </Typography>
-      <Box
-        sx={{
-          border: 1,
-          borderColor: "divider",
-          borderRadius: 1,
-          bgcolor: "background.paper",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          // 48px — чтобы кнопки ± дотягивали до 44px, минимума для пальца.
-          height: { xs: 48, md: 40 },
-          opacity: disabled ? 0.6 : 1,
-        }}
-      >
-        <Button
-          size="small"
-          onClick={dec}
-          disabled={disabled}
-          sx={TAP_TARGET_SX}
-        >
-          −
-        </Button>
-        <TextField
-          size="small"
-          type="number"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-          placeholder="0"
-          inputProps={{
-            style: { textAlign: "center", padding: "8px 4px" },
-            // Телефон открывает цифровую клавиатуру с разделителем: без этого
-            // iOS даёт обычную буквенную раскладку под type="number".
-            inputMode: "decimal",
-            min,
-            // HTML-step = минимальная единица хранения бэка (0.001 кг и т.п.):
-            // любое допустимое для бэка значение — её кратное, поэтому ручной
-            // ввод 5,5 кг / 57,5 см не даёт stepMismatch, как давал бы шаг
-            // кнопок ±1; а 4-й знак после запятой браузер уже подсветит.
-            step: String(10 ** -decimalPlaces),
-            max,
-          }}
-          sx={{
-            flex: 1,
-            ...noSpinnersSx,
-            "& .MuiOutlinedInput-root": { "& fieldset": { border: "none" } },
-          }}
-        />
-        <Button
-          size="small"
-          onClick={inc}
-          disabled={disabled}
-          sx={TAP_TARGET_SX}
-        >
-          +
-        </Button>
-      </Box>
-    </Stack>
-  );
-};
+function readSheetPref(): boolean {
+  try {
+    return window.localStorage.getItem(SHEET_PREF_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeSheetPref(visible: boolean) {
+  try {
+    window.localStorage.setItem(SHEET_PREF_KEY, visible ? "1" : "0");
+  } catch {
+    /* localStorage недоступен — выбор проживёт до закрытия вкладки */
+  }
+}
+
+// ── «Частые у вас»: личный выбор врача, помним в браузере ──────────────────────
+// По умолчанию выключено (01.10.2026): части врачей строка мешала. Кому нужна —
+// включает звёздочкой у поля диагноза. Хранить в профиле бэк пока не умеет.
+const FREQUENT_DX_PREF_KEY = "mamadoc:conclusion-frequent-dx";
+
+function readFrequentDxPref(): boolean {
+  try {
+    return window.localStorage.getItem(FREQUENT_DX_PREF_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeFrequentDxPref(enabled: boolean) {
+  try {
+    window.localStorage.setItem(FREQUENT_DX_PREF_KEY, enabled ? "1" : "0");
+  } catch {
+    /* localStorage недоступен — выбор проживёт до закрытия вкладки */
+  }
+}
 
 // ── component ──────────────────────────────────────────────────────────────────
 
@@ -516,7 +367,6 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [previewPhoto, setPreviewPhoto] = React.useState<string | null>(null);
   // Templates
   const [templates, setTemplates] = React.useState<ConclusionTemplate[]>([]);
-  const [tplAnchor, setTplAnchor] = React.useState<null | HTMLElement>(null);
   const [saveTplOpen, setSaveTplOpen] = React.useState(false);
   const [tplName, setTplName] = React.useState("");
   const [tplBusy, setTplBusy] = React.useState(false);
@@ -556,6 +406,40 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
 
   const readOnly = !canEdit;
 
+  // ── лист рядом с формой (редизайн 28.09.2026) ─────────────────────────────
+  // Справа от формы лист встаёт только в дровере на широком экране. В колонке
+  // приёма (inline) и на телефоне места под две колонки нет: там лист
+  // открывается вместо формы кнопкой «Лист» и закрывается ею же.
+  const isWide = useMediaQuery(theme.breakpoints.up("lg"));
+  const sheetSide = !inline && isWide;
+  const [sheetPinned, setSheetPinned] = React.useState(readSheetPref);
+  const [sheetTab, setSheetTab] = React.useState(false);
+  // Лист есть и в просмотре: там это и есть документ, каким его напечатают.
+  const showSheetSide = sheetSide && sheetPinned;
+  const showSheetTab = !sheetSide && sheetTab;
+  const toggleSheet = () => {
+    if (sheetSide) {
+      setSheetPinned((prev) => {
+        writeSheetPref(!prev);
+        return !prev;
+      });
+    } else {
+      setSheetTab((prev) => !prev);
+    }
+  };
+  // «Изменить» из просмотра открывает форму, а не лист, оставшийся от
+  // просмотра: врач пришёл править, а не смотреть.
+  React.useEffect(() => {
+    if (!readOnly) setSheetTab(false);
+  }, [readOnly]);
+  /** Строка формы в фокусе — её строка подсвечивается на листе. */
+  const [focusedRow, setFocusedRow] = React.useState<string | null>(null);
+  /** «Служебное» раскрыто кнопкой, пока в нём ещё ничего нет. */
+  const [serviceOpen, setServiceOpen] = React.useState(false);
+  /** Когда черновик последний раз лёг в localStorage — для строки в футере. */
+  const [draftSavedAt, setDraftSavedAt] = React.useState<string | null>(null);
+  const formColumnRef = React.useRef<HTMLDivElement | null>(null);
+
   // ── AI-помощник ───────────────────────────────────────────────────────────
   // Кнопку видит только тот, кто может создавать заключения: без права бэк
   // ответит 403 (гайд §4), и показывать кнопку, которая всегда падает, нельзя.
@@ -566,12 +450,15 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     // Один тост на нажатие, и только когда подсказок нет совсем: в поле, где
     // модели нечего сказать, плашки просто нет. Пакет — всё или ничего,
     // «часть полей упала» не бывает (частичный ответ бэк отдаёт как 200).
-    onSettled: ({ suggested, unavailable, failed }) => {
+    onSettled: ({ suggested, empty, unchanged, unavailable, failed }) => {
       if (suggested > 0) return;
       if (unavailable > 0) {
         notify?.({ type: "error", message: t("conclusion.aiAssist.unavailable") });
       } else if (failed > 0) {
         notify?.({ type: "error", message: t("conclusion.aiAssist.failed") });
+      } else if (unchanged > 0 && empty === 0) {
+        // Текст уже хорош — это не «мало данных», а хороший итог.
+        notify?.({ type: "progress", message: t("conclusion.aiAssist.unchanged") });
       } else {
         notify?.({ type: "progress", message: t("conclusion.aiAssist.empty") });
       }
@@ -579,8 +466,11 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   });
   // Предложения принадлежат открытой строке: при смене строки или закрытии
   // дровера старый ответ модели не должен всплыть над другим заключением.
+  /** Очередь режима проверки, замороженная при открытии; null — окно закрыто. */
+  const [aiReview, setAiReview] = React.useState<AiReviewEntry[] | null>(null);
   React.useEffect(() => {
     ai.reset();
+    setAiReview(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, draftId]);
 
@@ -661,6 +551,10 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       completion.reset();
       setSaving(false);
       setSaveError(null);
+      setSheetTab(false);
+      setServiceOpen(false);
+      setFocusedRow(null);
+      setDraftSavedAt(null);
       hydratedRef.current = false;
       draftNotifiedRef.current = false;
       return;
@@ -682,6 +576,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       applyDraftBody(body);
       baselineRef.current = JSON.stringify(body);
       hydratedRef.current = true;
+      setDraftSavedAt(draft.savedAt ?? null);
       // Черновик несёт свой выбор бланка (в том числе сознательное «без
       // бланка») — дефолт по правилам его не перебивает.
       restoredWithFormRef.current = true;
@@ -784,11 +679,13 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   // специализацию сотруднику PATCH-ем не назначить. Филиал берём у приёма,
   // если он известен, иначе — из сессии: врач работает там, куда переключён.
   const defaultsOrgId = useApiOrgId();
-  const { activeBranch } = usePermissions();
+  const { activeBranch, activeOrganization } = usePermissions();
   const scopeBranchId = branchId ?? activeBranch?.id ?? null;
   // Бланки нужны и для подстановки, и для селекта в секции полей, поэтому
   // грузим их всегда, пока дровер открыт на правку.
-  const formsEnabled = open && !readOnly;
+  // В просмотре список нужен листу: у старых заключений в formData нет
+  // снапшота, и бланк листа берётся из выдачи по formId.
+  const formsEnabled = open && (!readOnly || showSheetSide || showSheetTab);
 
   const formsQuery = useQuery({
     queryKey: djangoQueryKeys.conclusionForms.list(defaultsOrgId ?? null, scopeBranchId),
@@ -925,8 +822,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
    * листа плюс колонки, которых на листе нет (см. ConclusionFormReadView).
    * Одно правило на экран и бумагу — иначе они снова разъедутся.
    */
-  const readOnlyFormParts = React.useMemo(() => {
-    if (!readOnly || !attachedForm) return null;
+  const formParts = React.useMemo(() => {
+    if (!attachedForm) return null;
     const quantity = (value: string) => (value.trim() ? formatQuantity(value) : "");
     return buildConclusionPrintParts({
       template: attachedForm,
@@ -950,7 +847,6 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       },
     });
   }, [
-    readOnly,
     attachedForm,
     formValues,
     manualText,
@@ -963,6 +859,143 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     objective,
     conclusionText,
   ]);
+  const readOnlyFormParts = readOnly ? formParts : null;
+
+  // ── шапка и лист: пациент и время приёма ──────────────────────────────────
+  // Та же ручка, что у печати (conclusion-context): карточка приёма врачу без
+  // «видеть все приёмы» на приём коллеги отвечает 404.
+  const contextQuery = useQuery({
+    queryKey: djangoQueryKeys.appointments.conclusionContext(appointmentId ?? 0),
+    queryFn: ({ signal }) => getConclusionContext(appointmentId as number, signal),
+    enabled: open && appointmentId != null,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+    retry: false,
+  });
+  const visitContext = contextQuery.data ?? null;
+  const patientName = visitContext?.patient?.fullName ?? "";
+  const patientAge = formatPatientAge(visitContext?.patient?.birthDate);
+  const visitDateTime = visitContext?.startsAt
+    ? dayjs(visitContext.startsAt).format("DD.MM.YYYY HH:mm")
+    : "";
+
+  // ── история пациента: «как в прошлый раз» и диагнозы прошлых визитов ──────
+  const historyPatientId = visitContext?.patient?.id ?? null;
+  const historyQuery = useQuery({
+    queryKey: djangoQueryKeys.patients.conclusions(historyPatientId ?? 0),
+    queryFn: ({ signal }) => getPatientConclusions(historyPatientId as number, signal),
+    enabled: open && !readOnly && historyPatientId != null,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+    retry: false,
+  });
+  /** Прошлые заключения без открытого сейчас — от новых к старым. */
+  const patientHistory = React.useMemo(
+    () => (historyQuery.data ?? []).filter((item) => item.id !== conclusion?.id),
+    [historyQuery.data, conclusion?.id],
+  );
+  /** В меню «как в прошлый раз» — только завершённые: черновик мог быть брошен. */
+  const previousConclusions = React.useMemo(
+    () => patientHistory.filter((item) => item.status === "completed").slice(0, 5),
+    [patientHistory],
+  );
+  const historyDx = historyDiagnoses(
+    patientHistory,
+    selectedDiagnoses.map((d) => d.code),
+  );
+
+  // «Частые у вас» — топ кодов врача по его заключениям. Считает бэк по
+  // текущему пользователю; без карточки сотрудника ответ пустой. Запрос идёт,
+  // только если врач включил строку.
+  const [frequentOn, setFrequentOn] = React.useState(readFrequentDxPref);
+  const toggleFrequent = () =>
+    setFrequentOn((prev) => {
+      writeFrequentDxPref(!prev);
+      return !prev;
+    });
+  const frequentQuery = useQuery({
+    queryKey: djangoQueryKeys.diagnoses.frequent(defaultsOrgId),
+    queryFn: ({ signal }) => getFrequentDiagnoses({}, signal),
+    enabled: open && !readOnly && frequentOn,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+    retry: false,
+  });
+  const frequentDx = frequentDiagnoses(frequentQuery.data ?? [], [
+    ...selectedDiagnoses.map((d) => d.code),
+    ...historyDx.map((d) => d.code),
+  ]);
+  /** Ответ пришёл, а показать нечего: подсказка, чтобы не казалось сломанным. */
+  const frequentEmpty =
+    frequentQuery.isSuccess && (frequentQuery.data ?? []).length === 0;
+
+  /** Чип «добавить диагноз в один клик» — общий для истории и частых. */
+  const quickDiagnosisChip = (
+    dx: { code: string; title: string },
+    hint: string,
+    diagnosis: CatalogDiagnosis,
+  ) => (
+    <Chip
+      key={dx.code}
+      size="small"
+      variant="outlined"
+      icon={<AddOutlined />}
+      label={dx.title ? `${dx.code} ${dx.title}` : dx.code}
+      title={hint}
+      onClick={() => setSelectedDiagnoses((prev) => [...prev, diagnosis])}
+      sx={{ maxWidth: "100%" }}
+    />
+  );
+
+  const sheetContext: SheetContext = {
+    patientFio: patientName || "—",
+    patientDob: visitContext?.patient?.birthDate
+      ? dayjs(visitContext.patient.birthDate).format("DD.MM.YYYY")
+      : "—",
+    appointmentDateTime: visitDateTime || "—",
+    doctorFio: doctorName,
+    clinicName: activeOrganization?.name ?? "",
+    clinicLogoUrl: activeOrganization?.logoUrl,
+  };
+
+  /**
+   * Бланк листа. Строки — из того, по чему заполняют (снапшот или шаблон), а
+   * фирменная бумага — актуальная: так же решает печать (resolveTemplate в
+   * ConclusionPrintPage), иначе экран показал бы старую подложку и отступы.
+   */
+  const sheetTemplate = React.useMemo(() => {
+    if (!attachedForm) return null;
+    const current = availableForms.find((form) => form.id === attachedForm.id);
+    if (!current || current === attachedForm) return attachedForm;
+    return {
+      ...attachedForm,
+      background: current.background,
+      margins: current.margins,
+      showClinicHeader: current.showClinicHeader,
+      headerContacts: current.headerContacts,
+    };
+  }, [attachedForm, availableForms]);
+
+  /** Документ без бланка — те же поля, что у штатной печати. */
+  const freeSheetDocument: ConclusionPDFData = {
+    patientFio: sheetContext.patientFio,
+    patientDob: sheetContext.patientDob,
+    appointmentDate: sheetContext.appointmentDateTime,
+    height: heightCm.trim() ? formatQuantity(heightCm) : "",
+    weight: weightKg.trim() ? formatQuantity(weightKg) : "",
+    temperature: temperature.trim() ? formatQuantity(temperature) : "",
+    complaints: patientComplaintsText || "—",
+    doctorComplaints: complaints.trim() || "—",
+    diagnosis:
+      formatDiagnoses(
+        selectedDiagnoses.map((d) => ({
+          diagnosisCode: d.code,
+          title: d.title,
+          displayName: d.displayName,
+        })),
+      ) || "—",
+    anamnesis,
+    objective,
+    conclusion: conclusionText.trim() || "—",
+    doctorFio: doctorName,
+  };
 
   // ── штатные поля как узлы ─────────────────────────────────────────────────
   // Одно и то же поле рисуется либо на своём обычном месте, либо в потоке
@@ -1053,11 +1086,38 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
    * Занявшему слот полю бланка нужен не текстовый ввод, а живой автокомплит:
    * диагноз выбирают кодом, а не печатают руками (см. FormFieldSlot выше).
    */
-  const diagnosisNode = (label?: string) => (
+  const diagnosisNode = (label?: string, rowId?: string) => (
     // minWidth: 0 — чипы выбранных диагнозов длинные («Z00.1 — Рутинное общее
     // медицинское обследование»), и без этого блок распирает контейнер вширь.
-    <Stack spacing={0.5} ref={diagnosisAnchorRef} sx={{ minWidth: 0 }}>
-      {fieldLabel(label ?? t("conclusion.diagnosisIcd"))}
+    <Stack
+      spacing={0.5}
+      ref={diagnosisAnchorRef}
+      data-conclusion-row={rowId}
+      sx={{ minWidth: 0 }}
+    >
+      {fieldLabel(
+        label ?? t("conclusion.diagnosisIcd"),
+        !readOnly && (
+          <Tooltip
+            title={t(frequentOn ? "conclusion.frequentToggleOff" : "conclusion.frequentToggleOn")}
+          >
+            <IconButton
+              size="small"
+              onClick={toggleFrequent}
+              aria-pressed={frequentOn}
+              aria-label={t("conclusion.frequentToggleLabel")}
+              color={frequentOn ? "primary" : "default"}
+              sx={{ my: -0.5 }}
+            >
+              {frequentOn ? (
+                <StarOutlined fontSize="small" />
+              ) : (
+                <StarBorderOutlined fontSize="small" />
+              )}
+            </IconButton>
+          </Tooltip>
+        ),
+      )}
       <Autocomplete
         multiple
         freeSolo
@@ -1124,6 +1184,61 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               })}
         </Typography>
       </Paper>
+      {/* Диагнозы прошлых визитов пациента — в один клик: на повторном приёме
+          врач обычно ставит тот же код, а искать его в каталоге заново долго. */}
+      {!readOnly && historyDx.length > 0 && (
+        <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ pt: 0.25 }}>
+          <Typography variant="caption" color="text.secondary">
+            {t("conclusion.historyDiagnoses")}
+          </Typography>
+          {historyDx.map((dx) =>
+            quickDiagnosisChip(
+              dx,
+              dx.title ? `${dx.code} — ${dx.title}` : dx.code,
+              // Запись каталога подставит эффект дозаполнения по коду,
+              // как у диагнозов, восстановленных из сохранённого заключения.
+              catalog.find((c) => c.code === dx.code) ?? {
+                id: -1,
+                code: dx.code,
+                title: dx.title,
+                displayName: "",
+                isActive: true,
+                sortOrder: 0,
+              },
+            ),
+          )}
+        </Stack>
+      )}
+      {/* Частые коды самого врача — рутину (осмотр, ОРВИ) не ищут в каталоге. */}
+      {!readOnly && frequentOn && (frequentDx.length > 0 || frequentEmpty) && (
+        <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ pt: 0.25 }}>
+          <Typography variant="caption" color="text.secondary">
+            {t("conclusion.frequentDiagnoses")}
+          </Typography>
+          {frequentEmpty ? (
+            <Typography variant="caption" color="text.disabled">
+              {t("conclusion.frequentDiagnosesEmpty")}
+            </Typography>
+          ) : (
+            frequentDx.map((dx) =>
+              quickDiagnosisChip(
+                dx,
+                `${dx.code} — ${dx.title}
+${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
+                // Ручка отдаёт запись активного каталога — берём её как есть.
+                catalog.find((c) => c.id === dx.id) ?? {
+                  id: dx.id,
+                  code: dx.code,
+                  title: dx.title,
+                  displayName: dx.displayName ?? "",
+                  isActive: true,
+                  sortOrder: 0,
+                },
+              ),
+            )
+          )}
+        </Stack>
+      )}
       {aiSuggestionNode("diagnosis", (text) => void applyDiagnosisSuggestion(text))}
     </Stack>
   );
@@ -1175,11 +1290,12 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
    * Подпись поля. Кнопки AI у полей больше нет — одна на всю форму, в шапке
    * (AiAssistHeaderButton); под полем остаётся только плашка предложения.
    */
-  const fieldLabel = (label: React.ReactNode) => (
+  const fieldLabel = (label: React.ReactNode, action?: React.ReactNode) => (
     <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
       <Typography variant="body2" color="text.secondary" fontWeight={600}>
         {label}
       </Typography>
+      {action}
     </Stack>
   );
 
@@ -1187,7 +1303,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
    * Плашка с предложением AI под полем. Текст поля не трогает: в него
    * попадает только то, что врач применил сам (`apply`).
    */
-  const aiSuggestionNode = (aiField: AiAssistField, apply: (text: string) => void) =>
+  const aiSuggestionNode = (aiField: AiAssistKey, apply: (text: string) => void) =>
     canAiAssist ? (
       <AiAssistSuggestion
         state={ai.of(aiField)}
@@ -1211,11 +1327,16 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       locked?: boolean;
       /** Поле AI-помощника; без него плашки предложения AI нет. */
       aiField?: AiAssistField;
+      /**
+       * Метка строки для перехода к полю (счётчик заполненности). Только у
+       * штатного поля: в потоке бланка метку ставит сама строка бланка.
+       */
+      rowId?: string;
     } = {},
   ) => {
     const aiField = options.locked ? undefined : options.aiField;
     return (
-      <Stack spacing={0.5}>
+      <Stack spacing={0.5} data-conclusion-row={options.rowId}>
         {fieldLabel(
           <>
             {label} {options.required && !readOnly && "*"}
@@ -1497,18 +1618,131 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     return targets;
   };
 
+  /**
+   * Свободные строки прикреплённого бланка — для AI (бэк 27.09.2026).
+   * Привязанные к колонке (`slot`) сюда не идут: они уже в `aiTargets` как
+   * колонки. Значение — без подписи, подпись модель получает отдельно.
+   */
+  const aiFormRows = () =>
+    (attachedForm?.fields ?? [])
+      .filter((field) => !field.slot)
+      .map((field) => ({
+        id: field.id,
+        label: field.label || field.placeholder || "Строка бланка",
+        text: formValues[field.id] ?? "",
+        multiline: field.type === "multiline",
+      }));
+
+  const setFormRowValue = (fieldId: string, value: string) =>
+    setFormValues((prev) => ({ ...prev, [fieldId]: value }));
+
   const handleAiRequest = () =>
-    void ai.requestAll(aiTargets().map(({ field, text }) => ({ field, text })));
+    void ai.requestAll(
+      aiTargets().map(({ field, text }) => ({ field, text })),
+      // Колонку `target` из пачки уберёт сам запрос: бэк просит её не слать.
+      attachedForm
+        ? {
+            title: attachedForm.title || attachedForm.name,
+            target: attachedForm.target,
+            rows: aiFormRows(),
+          }
+        : null,
+    );
+
+  /** Подпись колонки для проверки: из бланка, если он её занял (как в форме). */
+  const aiColumnLabel = (field: AiAssistField): string => {
+    const fromForm = attachedForm?.fields.find((f) => f.slot === field)?.label ?? "";
+    const caption = fieldCaption(fromForm).replace(/:$/, "");
+    if (caption) return caption;
+    switch (field) {
+      case "complaints":
+        return t("conclusion.doctorComplaints");
+      case "anamnesis":
+        return t("conclusion.anamnesis");
+      case "objective":
+        return t("conclusion.objectively");
+      case "diagnosis":
+        return t("conclusion.diagnosisIcd");
+      default:
+        return t("conclusion.conclusionRequired");
+    }
+  };
+
+  /**
+   * Поля для режима проверки — в том порядке, в каком врач видит их в
+   * форме: строки бланка и занятые им колонки по бланку, остальные колонки
+   * следом. Снимок для отмены у текста — строка, у диагноза — набор
+   * выбранных диагнозов: из текста он точно не восстанавливается.
+   */
+  const aiReviewTargets = (): AiReviewTarget[] => {
+    const columns = new Map(
+      aiTargets().map(({ field, text, apply }): [AiAssistField, AiReviewTarget] => [
+        field,
+        {
+          key: field,
+          label: aiColumnLabel(field),
+          current: text,
+          apply,
+          capture:
+            field === "diagnosis"
+              ? () => {
+                  const prev = selectedDiagnoses;
+                  return () => setSelectedDiagnoses(prev);
+                }
+              : () => () => apply(text),
+        },
+      ]),
+    );
+    const rows = new Map(aiFormRows().map((row) => [row.id, row]));
+    const ordered: AiReviewTarget[] = [];
+    for (const field of attachedForm?.fields ?? []) {
+      if (field.slot) {
+        const column = columns.get(field.slot as AiAssistField);
+        if (column) {
+          ordered.push(column);
+          columns.delete(field.slot as AiAssistField);
+        }
+        continue;
+      }
+      const row = rows.get(field.id);
+      if (!row) continue;
+      ordered.push({
+        key: aiRowKey(row.id),
+        label: fieldCaption(row.label).replace(/:$/, "") || row.label,
+        current: row.text,
+        apply: (text) => setFormRowValue(row.id, text),
+        capture: () => () => setFormRowValue(row.id, row.text),
+      });
+    }
+    return [...ordered, ...columns.values()];
+  };
+
+  const handleAiReview = () => {
+    // Очередь — по порядку формы, а не по порядку ответа модели.
+    const order = aiReviewTargets().map((target) => target.key);
+    const entries = order
+      .filter((key) => ai.of(key).suggestion != null)
+      .map((key) => ({
+        key,
+        suggestion: ai.of(key).suggestion as string,
+        source: ai.of(key).source,
+      }));
+    if (entries.length > 0) setAiReview(entries);
+  };
 
   const handleAiApplyAll = () => {
     for (const target of aiTargets()) {
       const text = ai.take(target.field);
       if (text != null) target.apply(text);
     }
+    for (const row of aiFormRows()) {
+      const text = ai.take(aiRowKey(row.id));
+      if (text != null) setFormRowValue(row.id, text);
+    }
   };
 
   const handleAiDismissAll = () => {
-    for (const field of ai.suggestedFields) ai.dismiss(field);
+    for (const key of ai.suggestedKeys) ai.dismiss(key);
   };
 
   const handleDetachForm = () => {
@@ -1619,6 +1853,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     // состоянием подсказок (useCallback на state).
     canAiAssist,
     ai.of,
+    // Подсказки диагнозов из истории пациента живут в узле диагноза.
+    historyQuery.data,
   ]);
 
   /**
@@ -1744,6 +1980,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       if (hydratedRef.current) {
         writeConclusionDraft(draftId, body);
         pendingDraftRef.current = null;
+        setDraftSavedAt(new Date().toISOString());
       }
     }, 400);
     return () => window.clearTimeout(timer);
@@ -1825,30 +2062,153 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     return () => ctrl.abort();
   }, [open, readOnly]);
 
-  // ── template handlers ─────────────────────────────────────────────────────
-  const applyTemplate = (tpl: ConclusionTemplate) => {
-    if (tpl.conclusion) setConclusionText(tpl.conclusion);
-    if (tpl.anamnesis) setAnamnesis(tpl.anamnesis);
-    if (tpl.objective) setObjective(tpl.objective);
-    setTplAnchor(null);
-    notify?.({ type: "success", message: t("conclusion.templateApplied") });
+  // ── заготовки: шаблоны и «как в прошлый раз» ──────────────────────────────
+  /**
+   * Заготовка документа — сохранённый шаблон или прошлое заключение пациента.
+   * Обе несут тексты колонок и, если есть, заполненный бланк; применяются
+   * одним правилом (conclusionPresets), чтобы текст не терялся под бланком.
+   */
+  type ConclusionPreset = {
+    texts: PresetTexts;
+    form: ParsedConclusionForm | null;
+    /** Тост после применения. */
+    message: string;
+  };
+
+  /** Заготовка, ждущая подтверждения: в документе уже есть что терять. */
+  const [pendingPreset, setPendingPreset] = React.useState<ConclusionPreset | null>(null);
+
+  /**
+   * Есть ли в документе текст врача. Колонка, которую собирает бланк, — не его
+   * текст (её покрывают строки бланка), нетронутый перенос жалоб — тоже.
+   */
+  const documentHasContent = () =>
+    formValuesEdited() ||
+    manualText.trim() !== "" ||
+    (!managedByForm("anamnesis") && anamnesis.trim() !== "") ||
+    (!managedByForm("objective") && objective.trim() !== "") ||
+    (!managedByForm("conclusion") && conclusionText.trim() !== "");
+
+  const applyPresetNow = (preset: ConclusionPreset) => {
+    const parsed = preset.form;
+    let targetForm: ConclusionFormTemplate | null = attachedForm;
+    let formApplied = false;
+    if (parsed) {
+      // Бланк заготовки: актуальный из выдачи, иначе её снимок (бланк могли
+      // выключить или закрепить за другим филиалом).
+      const listed = selectableForms.find((form) => form.id === parsed.formId) ?? null;
+      const next = listed ?? parsed.snapshot;
+      if (next) {
+        if (next.id !== attachedForm?.id) {
+          applySelectForm(next);
+          if (!listed) setFormSnapshot(parsed.snapshot);
+          targetForm = next;
+        }
+        const form = targetForm ?? next;
+        setFormValues(presetFormValues(form.fields, formDefaults(form), parsed.values));
+        formApplied = true;
+      }
+    }
+
+    // Колонку-адресат бланка заготовки не переносим текстом: это собранные
+    // строки, они уже легли в поля; ручной хвост заготовки идёт отдельно.
+    const texts: PresetTexts =
+      formApplied && targetForm ? { ...preset.texts, [targetForm.target]: undefined } : preset.texts;
+    const plan = planPresetTexts({
+      texts,
+      formTarget: targetForm?.target ?? null,
+      // Под бланком колонка видна своим полем, если бланк привязал к ней
+      // строку; «Заключение» стоит штатным полем всегда (обязательное).
+      visible: (column) =>
+        column === "conclusion" || Boolean(targetForm?.fields.some((field) => field.slot === column)),
+    });
+    if (plan.set.complaints != null) setComplaints(plan.set.complaints);
+    if (plan.set.anamnesis != null) setAnamnesis(plan.set.anamnesis);
+    if (plan.set.objective != null) setObjective(plan.set.objective);
+    if (plan.set.conclusion != null) setConclusionText(plan.set.conclusion);
+    if (targetForm) {
+      setManualText((prev) =>
+        mergeManual(formApplied ? "" : prev, formApplied ? parsed?.manual : "", ...plan.manual),
+      );
+    }
+    notify?.({ type: "success", message: preset.message });
+  };
+
+  /**
+   * Заменяет ли заготовка написанное: бланк заготовки переписывает строки, а
+   * без бланка тексты ложатся в поля вместо текущих. Под бланком текстовая
+   * заготовка только дописывает «Дополнительно» — спрашивать не о чем.
+   */
+  const requestPreset = (preset: ConclusionPreset) => {
+    const overwrites =
+      preset.form != null ||
+      (!attachedForm && PRESET_COLUMNS.some((column) => (preset.texts[column] ?? "").trim() !== ""));
+    if (overwrites && documentHasContent()) setPendingPreset(preset);
+    else applyPresetNow(preset);
+  };
+
+  const applyTemplate = (tpl: ConclusionTemplate) =>
+    requestPreset({
+      texts: { anamnesis: tpl.anamnesis, objective: tpl.objective, conclusion: tpl.conclusion },
+      form: parseConclusionFormData(tpl.formData),
+      message: t("conclusion.templateApplied"),
+    });
+
+  /**
+   * «Как в прошлый раз»: протокол прошлого заключения пациента. Жалобы,
+   * показатели, диагноз, фото и комментарий не переносим — они про тот визит;
+   * диагнозы прошлых визитов предлагаются отдельно, в один клик у поля МКБ.
+   */
+  const [previousLoading, setPreviousLoading] = React.useState(false);
+  const applyPrevious = async (item: PatientConclusionSummary) => {
+    setPreviousLoading(true);
+    try {
+      const full = await getMedicalConclusion(item.id);
+      requestPreset({
+        texts: { anamnesis: full.anamnesis, objective: full.objective, conclusion: full.conclusion },
+        form: parseConclusionFormData(full.formData),
+        message: t("conclusion.previous.applied", {
+          date: dayjs(item.occurredAt).format("DD.MM.YYYY"),
+        }),
+      });
+    } catch (err: unknown) {
+      notify?.({ type: "error", message: parseBackendError(err) });
+    } finally {
+      setPreviousLoading(false);
+    }
   };
 
   const handleSaveTemplate = async () => {
     const name = tplName.trim();
     if (!name) return;
     setTplBusy(true);
+    // Колонка, которую собирает бланк, — это строки бланка: в текст шаблона
+    // кладём только ручной хвост врача, строки едут в formData. Иначе шаблон,
+    // применённый текстом (пока бэк formData не хранит), задвоил бы строки.
+    const columnText = (column: FormTarget, value: string) =>
+      managedByForm(column) ? manualText.trim() : value.trim();
+    const formData = fitConclusionFormData(
+      buildConclusionFormData(attachedForm, formValues, manualText),
+    ).data;
     try {
       const created = await createConclusionTemplate({
         name,
-        conclusion: conclusionText.trim(),
-        anamnesis: anamnesis.trim(),
-        objective: objective.trim(),
+        conclusion: columnText("conclusion", conclusionText),
+        anamnesis: columnText("anamnesis", anamnesis),
+        objective: columnText("objective", objective),
+        formData,
       });
       setTemplates((prev) => [...prev, created]);
       setSaveTplOpen(false);
       setTplName("");
-      notify?.({ type: "success", message: t("conclusion.templateSaved") });
+      notify?.(
+        formData && created.formData == null
+          ? // Бэк без поля (прод до выкладки тикета 28.09.2026) молча
+            // отбрасывает formData — врач должен знать, что строки бланка
+            // в шаблон не попали.
+            { type: "progress", message: t("conclusion.templateSavedTextOnly") }
+          : { type: "success", message: t("conclusion.templateSaved") },
+      );
     } catch (err: unknown) {
       notify?.({ type: "error", message: parseBackendError(err) });
     } finally {
@@ -1856,11 +2216,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     }
   };
 
-  /**
-   * Вставка заполненного бланка. Дописываем к тому, что уже в поле, а не
-   * заменяем: у приёма может быть несколько бланков (осмотр + протокол УЗИ),
-   * и второй не должен затирать первый.
-   */
+  /** Удаление шаблона из меню «Документ». */
   const handleDeleteTemplate = async (id: number) => {
     try {
       await deleteConclusionTemplate(id);
@@ -1983,6 +2339,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       clearConclusionDraft(draftId);
       hydratedRef.current = false;
       pendingDraftRef.current = null;
+      setDraftSavedAt(null);
       notify?.({
         type: "success",
         message:
@@ -2035,48 +2392,262 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const removePhoto = (url: string) =>
     setPhotoUrls((prev) => prev.filter((u) => u !== url));
 
+  // ── заполненность и переход к полю ────────────────────────────────────────
+  /**
+   * Что считает счётчик «Заполнено N из M». С бланком — его строки (значение
+   * привязанной строки берётся из колонки, как на листе), без бланка — штатные
+   * поля документа. Это подсказка, а не проверка: завершить заключение можно
+   * и с пустыми строками (пустые на печать не выходят), правило «Завершить»
+   * остаётся прежним — непустой текст заключения.
+   */
+  const progressRows: ProgressRow[] = attachedForm
+    ? attachedForm.fields
+        .filter((field) => !field.slot || slotNodes[field.slot] != null)
+        .map((field) => ({
+          id: field.id,
+          value: formParts?.sheetValues[field.id] ?? "",
+          // У привязанной строки норма не своя: значение живёт в колонке.
+          defaultValue: field.slot ? undefined : stripLeadingBlankLines(field.defaultValue ?? ""),
+        }))
+    : (["complaints", "anamnesis", "objective", "diagnosis", "conclusion"] as const)
+        .filter((slot) => standardShown(slot))
+        .map((slot) => ({ id: slot, value: columnValue[slot] }));
+  const progress = summarizeProgress(progressRows);
+  const firstEmptyRow = progress.firstEmpty;
+
+  /** Поставить курсор в строку формы — из счётчика или по клику на лист. */
+  const focusRow = (rowId: string) => {
+    // Лист мог стоять вместо формы (телефон, колонка приёма) — сначала форма.
+    setSheetTab(false);
+    window.requestAnimationFrame(() => {
+      const row = formColumnRef.current?.querySelector<HTMLElement>(
+        `[data-conclusion-row="${CSS.escape(rowId)}"]`,
+      );
+      if (!row) return;
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+      row
+        .querySelector<HTMLElement>(
+          "textarea:not([aria-hidden='true']):not([readonly]), input:not([type='hidden']):not([aria-hidden='true'])",
+        )
+        ?.focus({ preventScroll: true });
+    });
+  };
+
+  /** Строка в фокусе → подсветка её строки на листе. */
+  const handleFormFocus = (e: React.FocusEvent<HTMLElement>) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>("[data-conclusion-row]");
+    setFocusedRow(row?.dataset.conclusionRow ?? null);
+  };
+
+  /**
+   * Ctrl+Enter — «Завершить», Ctrl+S — дописать черновик в браузер сразу, а
+   * не через 400 мс (и не открыть «Сохранить страницу» браузера). На сервер
+   * Ctrl+S не отправляет: сохранение на сервер закрывает форму, а Ctrl+S жмут
+   * по привычке посреди текста.
+   */
+  const handleHotkeys = (e: React.KeyboardEvent) => {
+    if (readOnly || saving || !(e.ctrlKey || e.metaKey)) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      requestSave("completed", false);
+    } else if (e.code === "KeyS") {
+      e.preventDefault();
+      if (hydratedRef.current && pendingDraftRef.current) {
+        writeConclusionDraft(draftId, pendingDraftRef.current);
+        pendingDraftRef.current = null;
+        setDraftSavedAt(new Date().toISOString());
+      }
+    }
+  };
+
   // ── derived display ───────────────────────────────────────────────────────
   const lastUpdated = conclusion?.updatedAt
     ? dayjs(conclusion.updatedAt).format("DD.MM.YYYY HH:mm")
     : null;
+  /** Строка в футере: где сейчас лежит последняя правка. */
+  const savedNote = draftSavedAt
+    ? t("conclusion.savedLocal", { time: dayjs(draftSavedAt).format("HH:mm") })
+    : lastUpdated
+      ? t("conclusion.savedServer", { time: lastUpdated })
+      : null;
+  const statusChip = !conclusion
+    ? { label: t("conclusion.statusNew"), color: "default" as const }
+    : conclusion.status === "completed"
+      ? { label: t("conclusion.statusCompleted"), color: "success" as const }
+      : { label: t("conclusion.statusDraft"), color: "warning" as const };
+
+  /**
+   * Узкий футер: телефон и колонка приёма (~420px). Там четыре кнопки с
+   * полными подписями не влезали, и «Завершить» уезжал на вторую строку —
+   * «Сохранить и печать» становится иконкой, «Сохранить черновик» — «Черновик».
+   */
+  const compactFooter = isMobile || inline;
+
+  /** Нормы строк прикреплённого бланка — для пометки «норма» и «Вернуть норму». */
+  const attachedFormDefaults = React.useMemo(
+    () => (attachedForm ? formDefaults(attachedForm) : EMPTY_VALUES),
+    [attachedForm, formDefaults],
+  );
+
+  /** Зона формы: подпись капсом и содержимое под ней. */
+  const sectionNode = (title: string, hint: string | null, body: React.ReactNode) => (
+    <Stack component="section" spacing={1.25} sx={{ minWidth: 0 }}>
+      <Stack direction="row" alignItems="baseline" spacing={1} sx={{ minWidth: 0 }}>
+        <Typography variant="caption" sx={{ ...SECTION_TITLE_SX, flexShrink: 0 }}>
+          {title}
+        </Typography>
+        {hint && (
+          <Typography variant="caption" color="text.disabled" noWrap sx={{ minWidth: 0 }}>
+            {hint}
+          </Typography>
+        )}
+      </Stack>
+      {body}
+    </Stack>
+  );
+
+  /**
+   * «Дополнительно» — то, что врач дописывает сверх строк бланка. Хвост
+   * уходит в конец собранного бланком текста (см. эффект проекции). Когда
+   * бланк собирает «Заключение», это и есть вывод врача, и поле стоит в
+   * секции «Заключение и рекомендации» без подписи; иначе — в протоколе.
+   */
+  const manualNode = (withLabel: boolean) =>
+    attachedForm ? (
+      <Stack spacing={0.5} data-conclusion-row="manual">
+        <CollapsibleTextField
+          label={withLabel ? t("conclusion.manual.label") : undefined}
+          size="small"
+          fullWidth
+          minRows={withLabel ? 2 : 4}
+          value={manualText}
+          onChange={(e) => setManualText(e.target.value)}
+          placeholder={t("conclusion.manual.placeholder")}
+        />
+        <Typography variant="caption" color="text.disabled">
+          {t("conclusion.manual.hint", { target: TARGET_LABELS[attachedForm.target] })}
+        </Typography>
+      </Stack>
+    ) : null;
+
+  /** «Служебное» раскрыто: врач сам открыл или там уже что-то есть. */
+  const serviceExpanded =
+    serviceOpen || internalComment.trim() !== "" || photoUrls.length > 0 || uploadingPhoto;
+
+  /** Кнопка «Лист»: справа от формы на широком экране, вместо формы — в узком. */
+  const sheetToggleNode = (
+    <Tooltip
+      title={
+        sheetSide
+          ? sheetPinned
+            ? t("conclusion.sheet.hide")
+            : t("conclusion.sheet.show")
+          : sheetTab
+            ? t("conclusion.sheet.backToForm")
+            : t("conclusion.sheet.showTab")
+      }
+    >
+      {isMobile ? (
+        <IconButton
+          size="small"
+          color={showSheetTab ? "primary" : "default"}
+          aria-pressed={showSheetTab}
+          aria-label={t("conclusion.sheet.toggle")}
+          onClick={toggleSheet}
+        >
+          <ArticleOutlined fontSize="small" />
+        </IconButton>
+      ) : (
+        <Button
+          size="small"
+          variant={showSheetSide || showSheetTab ? "contained" : "outlined"}
+          disableElevation
+          aria-pressed={showSheetSide || showSheetTab}
+          startIcon={sheetSide ? <VerticalSplitOutlined /> : <ArticleOutlined />}
+          onClick={toggleSheet}
+          sx={{ whiteSpace: "nowrap" }}
+        >
+          {showSheetTab ? t("conclusion.sheet.backToForm") : t("conclusion.sheet.toggle")}
+        </Button>
+      )}
+    </Tooltip>
+  );
+
+  const sheetPane = (
+    <ConclusionSheetPane
+      template={sheetTemplate}
+      context={sheetContext}
+      values={formParts?.sheetValues ?? EMPTY_VALUES}
+      trailer={formParts?.trailer ?? EMPTY_VALUES}
+      document={freeSheetDocument}
+      highlightFieldId={readOnly ? null : focusedRow}
+      onFieldClick={readOnly ? undefined : focusRow}
+      saved={readOnly}
+    />
+  );
 
   const content = (
     <>
       {/* ── header ── */}
-      <Stack
-        direction="row"
-        alignItems="flex-start"
-        justifyContent="space-between"
-        px={2}
-        py={isMobile ? 1 : 1.5}
-        sx={{ flexShrink: 0 }}
-      >
-        <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-          <Typography variant={isMobile ? "subtitle1" : "h6"} lineHeight={1.3} fontWeight={600}>
-            {readOnly
-              ? t("conclusion.title")
-              : conclusion
-                ? t("conclusion.editTitle")
-                : t("conclusion.newTitle")}
-          </Typography>
-          {/* Услуга/врач и время правки — только в дровере-редакторе, не в
-              inline-просмотре (там шапка чистая, как в оригинале). */}
-          {!inline && (
-            <>
-              <Typography variant="body2" color="text.secondary">
-                {serviceName} — {doctorName}
-              </Typography>
-              {lastUpdated && (
-                <Typography variant="caption" color="text.disabled">
-                  Последнее изменение: {lastUpdated}
+      {readOnly ? (
+        <Stack
+          direction="row"
+          alignItems="flex-start"
+          justifyContent="space-between"
+          px={2}
+          py={isMobile ? 1 : 1.5}
+          sx={{ flexShrink: 0 }}
+        >
+          <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+            <Typography variant={isMobile ? "subtitle1" : "h6"} lineHeight={1.3} fontWeight={600}>
+              {t("conclusion.title")}
+            </Typography>
+            {/* Услуга/врач и время правки — только в дровере, не в
+                inline-просмотре (там шапка чистая, как в оригинале). */}
+            {!inline && (
+              <>
+                <Typography variant="body2" color="text.secondary">
+                  {serviceName} — {doctorName}
                 </Typography>
-              )}
-            </>
-          )}
+                {lastUpdated && (
+                  <Typography variant="caption" color="text.disabled">
+                    Последнее изменение: {lastUpdated}
+                  </Typography>
+                )}
+              </>
+            )}
+          </Stack>
+          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+            {/* Лист в просмотре — документ, каким его напечатают. Без
+                заключения показывать нечего. */}
+            {conclusion && sheetToggleNode}
+            <IconButton onClick={onClose} size="small">
+              <CloseOutlined />
+            </IconButton>
+          </Stack>
         </Stack>
-        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
-          {!readOnly && (
-            <>
+      ) : (
+        /* Правка: кто на приёме, что за документ и насколько он заполнен. */
+        <Stack spacing={1} px={2} py={isMobile ? 1 : 1.5} sx={{ flexShrink: 0 }}>
+          <Stack direction="row" alignItems="flex-start" spacing={1}>
+            <Stack spacing={0.25} sx={{ minWidth: 0, flex: 1 }}>
+              <Typography
+                variant={isMobile ? "subtitle1" : "h6"}
+                lineHeight={1.3}
+                fontWeight={600}
+                noWrap
+              >
+                {patientName
+                  ? [patientName, patientAge].filter(Boolean).join(", ")
+                  : conclusion
+                    ? t("conclusion.editTitle")
+                    : t("conclusion.newTitle")}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" noWrap>
+                {[serviceName, doctorName, visitDateTime].filter(Boolean).join(" · ")}
+              </Typography>
+            </Stack>
+            <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
               {/* AI — одна кнопка на все поля; в шапке, потому что она не
                   прокручивается, а просят AI обычно дописав форму до низа. */}
               {canAiAssist && (
@@ -2087,45 +2658,99 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   onClick={handleAiRequest}
                 />
               )}
-              {/* На телефоне текст кнопки ломал заголовок на две строки. */}
-              {isMobile ? (
-                <IconButton
-                  size="small"
-                  color="primary"
-                  title={t("conclusion.templates")}
-                  onClick={(e) => setTplAnchor(e.currentTarget)}
-                >
-                  <ContentCopyOutlined fontSize="small" />
-                </IconButton>
-              ) : (
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<ContentCopyOutlined />}
-                onClick={(e) => setTplAnchor(e.currentTarget)}
-              >
-                {t("conclusion.templates")}
-              </Button>
-              )}
-              <IconButton
-                size="small"
-                color="primary"
-                title={t("conclusion.saveAsTemplate")}
-                onClick={() => {
-                  setTplName("");
-                  setSaveTplOpen(true);
-                }}
-              >
-                <StarBorderOutlined fontSize="small" />
+              {sheetToggleNode}
+              <IconButton onClick={saving ? undefined : onClose} size="small">
+                <CloseOutlined />
               </IconButton>
-            </>
-          )}
-          <IconButton onClick={saving ? undefined : onClose} size="small">
-            <CloseOutlined />
-          </IconButton>
+            </Stack>
+          </Stack>
+
+          <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+            <ConclusionDocumentMenu
+              forms={selectableForms}
+              form={attachedForm}
+              onSelectForm={handleSelectForm}
+              onFreeText={() => {
+                if (attachedForm) handleDetachForm();
+              }}
+              templates={templates}
+              onApplyTemplate={applyTemplate}
+              onDeleteTemplate={(id) => void handleDeleteTemplate(id)}
+              onSaveTemplate={() => {
+                setTplName("");
+                setSaveTplOpen(true);
+              }}
+              previous={previousConclusions}
+              onApplyPrevious={(item) => void applyPrevious(item)}
+              previousLoading={previousLoading}
+              compact={isMobile}
+            />
+            <Chip
+              size="small"
+              variant="outlined"
+              color={statusChip.color}
+              label={statusChip.label}
+            />
+            {progressRows.length > 0 && (
+              <Tooltip title={firstEmptyRow ? t("conclusion.progressHint") : ""}>
+                <Box
+                  component="button"
+                  type="button"
+                  onClick={() => firstEmptyRow && focusRow(firstEmptyRow)}
+                  sx={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 1,
+                    border: 0,
+                    bgcolor: "transparent",
+                    color: "text.secondary",
+                    font: "inherit",
+                    fontSize: 12,
+                    px: 0.5,
+                    py: 0.25,
+                    borderRadius: 1,
+                    cursor: firstEmptyRow ? "pointer" : "default",
+                    "&:hover": firstEmptyRow ? { bgcolor: "action.hover" } : undefined,
+                    "&:focus-visible": { outline: 2, outlineColor: "primary.main" },
+                  }}
+                >
+                  <LinearProgress
+                    variant="determinate"
+                    value={((progress.filled + progress.norm) / progress.total) * 100}
+                    sx={{ width: 56, height: 4, borderRadius: 2 }}
+                  />
+                  <span>
+                    {t("conclusion.progress", { filled: progress.filled + progress.norm, total: progress.total })}
+                  </span>
+                  {firstEmptyRow && (
+                    <Box component="span" sx={{ color: "primary.main", fontWeight: 500 }}>
+                      → {t("conclusion.progressGo")}
+                    </Box>
+                  )}
+                </Box>
+              </Tooltip>
+            )}
+            {/* Нетронутые нормы бланка: строка заполнена, но врач её не читал.
+                Отдельно от счётчика — иначе карта с нормами при открытии
+                выглядит почти готовой. */}
+            {progress.firstNorm && (
+              <Tooltip title={t("conclusion.progressNormHint")}>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={t("conclusion.progressNorm", { count: progress.norm })}
+                  onClick={() => progress.firstNorm && focusRow(progress.firstNorm)}
+                  sx={{ borderStyle: "dashed" }}
+                />
+              </Tooltip>
+            )}
+          </Stack>
         </Stack>
-      </Stack>
+      )}
       <Divider />
+      {/* Прошлое заключение догружается (карточка с formData): меню уже
+          закрыто, и без полоски врач не видит, что нажатие сработало. */}
+      {previousLoading && <LinearProgress sx={{ height: 2, flexShrink: 0 }} />}
 
       {/* ── документы строки услуги (если их несколько или можно добавить) ── */}
       {documentBar && (
@@ -2136,15 +2761,25 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       )}
 
       {/* ── подсказки AI: массовые действия, пока есть неразобранные ── */}
-      {canAiAssist && ai.suggestedFields.length > 0 && (
+      {canAiAssist && ai.suggestedKeys.length > 0 && (
         <>
           <AiAssistPendingStrip
-            pendingCount={ai.suggestedFields.length}
+            pendingCount={ai.suggestedKeys.length}
+            onReview={handleAiReview}
             onApplyAll={handleAiApplyAll}
             onDismissAll={handleAiDismissAll}
           />
           <Divider />
         </>
+      )}
+      {canAiAssist && aiReview && (
+        <AiReviewDialog
+          open
+          entries={aiReview}
+          targets={aiReviewTargets()}
+          onResolve={ai.dismiss}
+          onClose={() => setAiReview(null)}
+        />
       )}
 
       {/* ── inline-просмотр: тулбар действий под шапкой (единая высота) ── */}
@@ -2214,52 +2849,29 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         </>
       )}
 
-      {/* ── templates menu ── */}
-      <Menu
-        anchorEl={tplAnchor}
-        open={!!tplAnchor}
-        onClose={() => setTplAnchor(null)}
-        slotProps={{ paper: { sx: { maxWidth: 360 } } }}
-      >
-        {templates.length === 0 && (
-          <MenuItem disabled>{t("conclusion.noTemplates")}</MenuItem>
-        )}
-        {templates.map((tpl) => (
-          <MenuItem
-            key={tpl.id}
-            onClick={() => applyTemplate(tpl)}
-            sx={{ pr: 1 }}
-          >
-            <ListItemText
-              primary={tpl.name}
-              primaryTypographyProps={{ noWrap: true }}
-            />
-            <IconButton
-              size="small"
-              edge="end"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteTemplate(tpl.id);
-              }}
-            >
-              <DeleteOutline fontSize="small" color="error" />
-            </IconButton>
-          </MenuItem>
-        ))}
-      </Menu>
-
       {/* ── body ── */}
+      {/* Форма и лист. Лист стоит справа (дровер на широком экране) или
+          вместо формы (телефон, колонка приёма); форма при этом не
+          размонтируется — только прячется, чтобы не терять фокус и
+          раскрытые поля. */}
+      <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
       <Box
+        ref={formColumnRef}
+        onFocus={handleFormFocus}
         sx={{
-          flex: 1,
+          flex: showSheetSide ? `0 0 ${FORM_COLUMN_WIDTH}px` : 1,
+          minWidth: 0,
+          display: showSheetTab ? "none" : "block",
           overflowY: "auto",
           p: 2,
           minHeight: 0,
+          borderRight: showSheetSide ? 1 : 0,
+          borderColor: "divider",
           scrollbarWidth: "none",
           "&::-webkit-scrollbar": { display: "none" },
         }}
       >
-        <Stack spacing={2.5}>
+        <Stack spacing={3}>
           {/* error */}
           {(saveError) && (
             <Alert severity="error" onClose={() => setSaveError(null)}>
@@ -2431,336 +3043,368 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           )}
 
           {/* ════════ ФОРМА РЕДАКТИРОВАНИЯ (только при !readOnly) ════════ */}
+          {/* Зоны документа — «Показатели», «Протокол», «Заключение и
+              рекомендации» — и «Служебное» под ними (редизайн 28.09.2026).
+              Раньше всё шло одной лентой с одинаковым весом, и внутренний
+              комментарий читался как часть документа. */}
           {!readOnly && (
           <>
-          {/* ── vitals (степперы как в оригинале) ── */}
+          {/* ── Показатели ── */}
           {/* Степпер, который забрал бланк, здесь не рисуем: он стоит в потоке
-              его полей (см. slotNodes). Карточку показываем, пока в ней есть
-              хоть один степпер или пока есть что сказать об ошибке. */}
-          {/* При бланке оставшиеся степперы уходят в блок «Заполнено ранее»
-              под ним; здесь карточка нужна разве что для ошибки привязанного. */}
+              его полей (см. slotNodes). При бланке оставшиеся степперы уходят в
+              блок «Заполнено ранее» под протоколом; здесь секция нужна разве
+              что для ошибки привязанного. */}
           {(topVitals.length > 0 ||
-            (Boolean(vitals.errorOf("vitals")) && leftoverVitals.length === 0)) && (
-            <Paper ref={vitals.anchor("vitals")} variant="outlined" sx={{ p: 1.5 }}>
-              {/* Три степпера в ряд на узком экране упираются в свою minWidth:
-                  разрешаем перенос, иначе карточка выезжает вбок. */}
-              <Stack direction="row" gap={1.5} flexWrap="wrap">
-                {topVitals.map((kind) => (
-                  <React.Fragment key={kind}>{vitalNode(kind)}</React.Fragment>
-                ))}
-              </Stack>
-              {vitals.errorOf("vitals") && (
-                <Alert severity="error" sx={{ py: 0, mt: 1 }}>
-                  {vitals.errorOf("vitals")}
-                </Alert>
-              )}
-            </Paper>
-          )}
-
-          {/* ── patient complaints (read-only context) ── */}
-          {showPatientComplaints && (
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                {t("conclusion.patientComplaints")}
-              </Typography>
-              <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "background.default" }}>
-                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-                  {patientComplaints}
-                </Typography>
-              </Paper>
-            </Stack>
-          )}
-
-          {/* ── поля бланка ── */}
-          {/* Пустой протокол — это незаполненное заключение, поэтому при
-              «Завершить» скролл и фокус ведут сюда, к строкам бланка. */}
-          {!readOnly && (
-          <Box
-            ref={
-              managedByForm("conclusion") || !slotFree("conclusion")
-                ? completion.anchor("conclusionText")
-                : undefined
-            }
-          >
-            <ConclusionFormInline
-              forms={selectableForms}
-              loading={formsQuery.isLoading}
-              form={attachedForm}
-              values={formValues}
-              onSelectForm={handleSelectForm}
-              onChangeValue={(fieldId, value) =>
-                setFormValues((prev) => ({ ...prev, [fieldId]: value }))
-              }
-              onDetach={handleDetachForm}
-              slotNodes={slotNodes}
-              manual={manualText}
-              onManualChange={setManualText}
-              targetLabel={
-                attachedForm ? TARGET_LABELS[attachedForm.target] : TARGET_LABELS.conclusion
-              }
-              disabled={readOnly}
-            />
-            {/* Строка бланка, привязанная к «Заключению», сама ошибку не
-                показывает (её узел собирается до проверки — см. slotNodes):
-                без этой плашки «Завершить» молча ничего не делал. */}
-            {!slotFree("conclusion") && completion.errorOf("conclusionText") && (
-              <Alert severity="error" sx={{ mt: 1 }}>
-                {completion.errorOf("conclusionText")}
-              </Alert>
-            )}
-          </Box>
-          )}
-
-
-          {/* ── doctor complaints ── */}
-          {/* Поле, забранное бланком, здесь не рисуем: оно стоит в потоке его
-              полей (slotNodes) — иначе врач вводил бы жалобы дважды. Под
-              бланком без такой строки штатного поля тоже нет (standardShown):
-              документ — это поля бланка. */}
-          {standardShown("complaints") &&
-            !isLeftover("complaints") &&
-            textFieldNode(t("conclusion.doctorComplaints"), complaints, setComplaints, {
-              aiField: "complaints",
-            })}
-
-          {/* ── anamnesis ── */}
-          {standardShown("anamnesis") &&
-            !isLeftover("anamnesis") &&
-            (managedByForm("anamnesis")
-              ? projectionNode(t("conclusion.anamnesis"), anamnesis, null)
-              : textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
-                  minRows: 3,
-                  aiField: "anamnesis",
-                }))}
-
-          {/* ── objective ── */}
-          {standardShown("objective") &&
-            !isLeftover("objective") &&
-            (managedByForm("objective")
-              ? projectionNode(t("conclusion.objectively"), objective, null)
-              : textFieldNode(t("conclusion.objectively"), objective, setObjective, {
-                  minRows: 3,
-                  aiField: "objective",
-                }))}
-
-          {/* ── diagnosis (catalog multi-select + free text) ── */}
-          {/* Поле, забранное бланком, здесь не рисуем: оно стоит в потоке его
-              полей (slotNodes) — иначе врач выбирал бы диагноз дважды. */}
-          {standardShown("diagnosis") && !isLeftover("diagnosis") && diagnosisNode()}
-
-          {/* ── заполнено ранее: колонки с текстом, которых в бланке нет ── */}
-          {leftoverSlots.length > 0 && (
-            <Paper variant="outlined" sx={{ p: 1.5 }}>
-              <Stack spacing={1.5}>
-                <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="body2" fontWeight={600}>
-                      Заполнено ранее — в бланке таких строк нет
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Выйдет на печать отдельно, под строками бланка. Не нужно — очистите.
-                    </Typography>
-                  </Box>
-                  <Button
-                    size="small"
-                    color="inherit"
-                    startIcon={<DeleteOutline />}
-                    onClick={clearLeftovers}
-                    sx={{ flexShrink: 0 }}
-                  >
-                    Очистить
-                  </Button>
+            (Boolean(vitals.errorOf("vitals")) && leftoverVitals.length === 0)) &&
+            sectionNode(
+              t("conclusion.sections.vitals"),
+              null,
+              <Paper ref={vitals.anchor("vitals")} variant="outlined" sx={{ p: 1.5 }}>
+                {/* Три степпера в ряд на узком экране упираются в свою minWidth:
+                    разрешаем перенос, иначе карточка выезжает вбок. */}
+                <Stack direction="row" gap={1.5} flexWrap="wrap">
+                  {topVitals.map((kind) => (
+                    <React.Fragment key={kind}>{vitalNode(kind)}</React.Fragment>
+                  ))}
                 </Stack>
-
-                {leftoverVitals.length > 0 && (
-                  <Box ref={vitals.anchor("vitals")}>
-                    <Stack direction="row" gap={1.5} flexWrap="wrap">
-                      {leftoverVitals.map((kind) => (
-                        <React.Fragment key={kind}>{vitalNode(kind)}</React.Fragment>
-                      ))}
-                    </Stack>
-                    {vitals.errorOf("vitals") && (
-                      <Alert severity="error" sx={{ py: 0, mt: 1 }}>
-                        {vitals.errorOf("vitals")}
-                      </Alert>
-                    )}
-                  </Box>
+                {vitals.errorOf("vitals") && (
+                  <Alert severity="error" sx={{ py: 0, mt: 1 }}>
+                    {vitals.errorOf("vitals")}
+                  </Alert>
                 )}
-                {isLeftover("complaints") &&
-                  textFieldNode(t("conclusion.doctorComplaints"), complaints, setComplaints, {
-                    aiField: "complaints",
-                  })}
-                {isLeftover("anamnesis") &&
-                  textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
-                    minRows: 3,
-                    aiField: "anamnesis",
-                  })}
-                {isLeftover("objective") &&
-                  textFieldNode(t("conclusion.objectively"), objective, setObjective, {
-                    minRows: 3,
-                    aiField: "objective",
-                  })}
-                {isLeftover("diagnosis") && diagnosisNode()}
-              </Stack>
-            </Paper>
+              </Paper>,
+            )}
+
+          {/* ── Протокол ── */}
+          {sectionNode(
+            t("conclusion.sections.protocol"),
+            attachedForm ? t("conclusion.sections.byForm", { name: attachedForm.name }) : null,
+            <Stack spacing={2}>
+              {/* ── patient complaints (read-only context) ── */}
+              {showPatientComplaints && (
+                <Stack spacing={0.5}>
+                  <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                    {t("conclusion.patientComplaints")}
+                  </Typography>
+                  <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "background.default" }}>
+                    <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                      {patientComplaints}
+                    </Typography>
+                  </Paper>
+                </Stack>
+              )}
+
+              {/* ── поля бланка ── */}
+              {/* Пустой протокол — это незаполненное заключение, поэтому при
+                  «Завершить» скролл и фокус ведут сюда, к строкам бланка. */}
+              {(attachedForm || formsQuery.isLoading) && (
+                <Box
+                  ref={
+                    managedByForm("conclusion") || !slotFree("conclusion")
+                      ? completion.anchor("conclusionText")
+                      : undefined
+                  }
+                >
+                  <ConclusionFormInline
+                    loading={formsQuery.isLoading}
+                    form={attachedForm}
+                    values={formValues}
+                    onChangeValue={setFormRowValue}
+                    rowAddon={
+                      canAiAssist
+                        ? (field) =>
+                            aiSuggestionNode(aiRowKey(field.id), (text) =>
+                              setFormRowValue(field.id, text),
+                            )
+                        : undefined
+                    }
+                    slotNodes={slotNodes}
+                    disabled={readOnly}
+                    defaults={attachedFormDefaults}
+                    onResetRow={(fieldId) =>
+                      setFormRowValue(fieldId, attachedFormDefaults[fieldId] ?? "")
+                    }
+                  />
+                  {/* Строка бланка, привязанная к «Заключению», сама ошибку не
+                      показывает (её узел собирается до проверки — см. slotNodes):
+                      без этой плашки «Завершить» молча ничего не делал. */}
+                  {!slotFree("conclusion") && completion.errorOf("conclusionText") && (
+                    <Alert severity="error" sx={{ mt: 1 }}>
+                      {completion.errorOf("conclusionText")}
+                    </Alert>
+                  )}
+                </Box>
+              )}
+
+              {/* ── doctor complaints ── */}
+              {/* Поле, забранное бланком, здесь не рисуем: оно стоит в потоке его
+                  полей (slotNodes) — иначе врач вводил бы жалобы дважды. Под
+                  бланком без такой строки штатного поля тоже нет (standardShown):
+                  документ — это поля бланка. */}
+              {standardShown("complaints") &&
+                !isLeftover("complaints") &&
+                textFieldNode(t("conclusion.doctorComplaints"), complaints, setComplaints, {
+                  aiField: "complaints",
+                  rowId: "complaints",
+                })}
+
+              {/* ── anamnesis ── */}
+              {standardShown("anamnesis") &&
+                !isLeftover("anamnesis") &&
+                (managedByForm("anamnesis")
+                  ? projectionNode(t("conclusion.anamnesis"), anamnesis, null)
+                  : textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
+                      minRows: 3,
+                      aiField: "anamnesis",
+                      rowId: "anamnesis",
+                    }))}
+
+              {/* ── objective ── */}
+              {standardShown("objective") &&
+                !isLeftover("objective") &&
+                (managedByForm("objective")
+                  ? projectionNode(t("conclusion.objectively"), objective, null)
+                  : textFieldNode(t("conclusion.objectively"), objective, setObjective, {
+                      minRows: 3,
+                      aiField: "objective",
+                      rowId: "objective",
+                    }))}
+
+              {/* ── diagnosis (catalog multi-select + free text) ── */}
+              {/* Поле, забранное бланком, здесь не рисуем: оно стоит в потоке его
+                  полей (slotNodes) — иначе врач выбирал бы диагноз дважды. */}
+              {standardShown("diagnosis") &&
+                !isLeftover("diagnosis") &&
+                diagnosisNode(undefined, "diagnosis")}
+
+              {/* Бланк собирает текст не в «Заключение» (карта гинеколога пишет
+                  в «Анамнез»): дописанное врачом — часть протокола, а не вывода. */}
+              {attachedForm && attachedForm.target !== "conclusion" && manualNode(true)}
+
+              {/* ── заполнено ранее: колонки с текстом, которых в бланке нет ── */}
+              {leftoverSlots.length > 0 && (
+                <Paper variant="outlined" sx={{ p: 1.5 }}>
+                  <Stack spacing={1.5}>
+                    <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={600}>
+                          Заполнено ранее — в бланке таких строк нет
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Выйдет на печать отдельно, под строками бланка. Не нужно — очистите.
+                        </Typography>
+                      </Box>
+                      <Button
+                        size="small"
+                        color="inherit"
+                        startIcon={<DeleteOutline />}
+                        onClick={clearLeftovers}
+                        sx={{ flexShrink: 0 }}
+                      >
+                        Очистить
+                      </Button>
+                    </Stack>
+
+                    {leftoverVitals.length > 0 && (
+                      <Box ref={vitals.anchor("vitals")}>
+                        <Stack direction="row" gap={1.5} flexWrap="wrap">
+                          {leftoverVitals.map((kind) => (
+                            <React.Fragment key={kind}>{vitalNode(kind)}</React.Fragment>
+                          ))}
+                        </Stack>
+                        {vitals.errorOf("vitals") && (
+                          <Alert severity="error" sx={{ py: 0, mt: 1 }}>
+                            {vitals.errorOf("vitals")}
+                          </Alert>
+                        )}
+                      </Box>
+                    )}
+                    {isLeftover("complaints") &&
+                      textFieldNode(t("conclusion.doctorComplaints"), complaints, setComplaints, {
+                        aiField: "complaints",
+                      })}
+                    {isLeftover("anamnesis") &&
+                      textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
+                        minRows: 3,
+                        aiField: "anamnesis",
+                      })}
+                    {isLeftover("objective") &&
+                      textFieldNode(t("conclusion.objectively"), objective, setObjective, {
+                        minRows: 3,
+                        aiField: "objective",
+                      })}
+                    {isLeftover("diagnosis") && diagnosisNode()}
+                  </Stack>
+                </Paper>
+              )}
+            </Stack>,
           )}
 
-          {/* ── conclusion (main) ── */}
+          {/* ── Заключение и рекомендации ── */}
           {/* Забрать заключение в поток бланка можно (slot "conclusion"), но
-              обязательным оно остаётся: скрываем только когда бланк его правда
-              рисует, иначе врачу негде выполнить требование «*». */}
+              обязательным оно остаётся: секцию скрываем только когда бланк его
+              правда рисует, иначе врачу негде выполнить требование «*». */}
           {slotFree("conclusion") &&
-            // Бланк собирает это поле сам — вместо заблокированной копии текста
-            // показываем сворачиваемый итог. Якорь валидации при этом уезжает
-            // на секцию бланка (см. ниже, ref у ConclusionFormInline): иначе
-            // «Завершить» с пустым протоколом ругался бы в никуда.
-            (managedByForm("conclusion") ? (
-              projectionNode(
-                t("conclusion.conclusionRequired"),
-                conclusionText,
-                completion.errorOf("conclusionText"),
-              )
-            ) : (
-              <Stack spacing={0.5}>
-                {fieldLabel(
-                  <>
-                    {t("conclusion.conclusionRequired")} {!readOnly && "*"}
-                  </>,
-                )}
-                <CollapsibleTextField
-                  value={conclusionText}
-                  onChange={(e) => setConclusionText(e.target.value)}
-                  disabled={readOnly}
-                  minRows={4}
-                  fullWidth
-                  size="small"
-                  placeholder={readOnly ? "—" : t("conclusion.text")}
-                  {...completion.field("conclusionText", "")}
-                />
-                {aiSuggestionNode("conclusion", setConclusionText)}
+            sectionNode(
+              // Без бланка поле обязательно для «Завершить» — звёздочка, как
+              // была в подписи поля до разбиения на зоны.
+              managedByForm("conclusion")
+                ? t("conclusion.sections.result")
+                : `${t("conclusion.sections.result")} *`,
+              null,
+              // Бланк собирает это поле сам — врач пишет вывод в «Дополнительно»,
+              // а собранный итог виден сворачиваемым блоком. Якорь валидации при
+              // этом уезжает на строки бланка (см. ref над ConclusionFormInline):
+              // иначе «Завершить» с пустым протоколом ругался бы в никуда.
+              managedByForm("conclusion") ? (
+                <Stack spacing={1}>
+                  {manualNode(false)}
+                  {projectionNode(
+                    t("conclusion.conclusionRequired"),
+                    conclusionText,
+                    completion.errorOf("conclusionText"),
+                  )}
+                </Stack>
+              ) : (
+                <Stack spacing={0.5} data-conclusion-row="conclusion">
+                  <CollapsibleTextField
+                    value={conclusionText}
+                    onChange={(e) => setConclusionText(e.target.value)}
+                    disabled={readOnly}
+                    minRows={4}
+                    fullWidth
+                    size="small"
+                    placeholder={t("conclusion.text")}
+                    {...completion.field("conclusionText", "")}
+                  />
+                  {aiSuggestionNode("conclusion", setConclusionText)}
+                </Stack>
+              ),
+            )}
+
+          {/* ── Служебное: для коллег, не для пациента ── */}
+          {/* Отдельной подложкой, чтобы не путать с документом: ни комментарий,
+              ни фото на печать не выходят. Пустое — свёрнуто в одну кнопку. */}
+          <Box component="section" sx={{ bgcolor: (th) => subtleBg(th), borderRadius: 2, p: 1.5 }}>
+            <Stack spacing={1.25}>
+              <Stack direction="row" alignItems="center" columnGap={1} rowGap={0.25} flexWrap="wrap">
+                <Typography variant="caption" sx={SECTION_TITLE_SX}>
+                  {t("conclusion.sections.service")}
+                </Typography>
+                <Stack direction="row" alignItems="center" spacing={0.5} sx={{ color: "text.secondary" }}>
+                  <LockOutlined sx={{ fontSize: 14 }} />
+                  <Typography variant="caption">{t("conclusion.sections.serviceHint")}</Typography>
+                </Stack>
               </Stack>
-            ))}
 
-          {/* ── internal comment ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              {t("conclusion.internalComment")}
-            </Typography>
-            <CollapsibleTextField
-              value={internalComment}
-              onChange={(e) => setInternalComment(e.target.value)}
-              disabled={readOnly}
-              minRows={2}
-              fullWidth
-              size="small"
-              placeholder={readOnly ? "—" : t("conclusion.notVisibleToPatient")}
-            />
-          </Stack>
-
-          {/* ── photos ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              {t("conclusion.photos2")}
-            </Typography>
-            <Grid container spacing={1}>
-              {photoUrls.map((url) => (
-                <Grid item key={url}>
-                  <Box
-                    sx={{
-                      position: "relative",
-                      width: 72,
-                      height: 72,
-                      borderRadius: 1,
-                      overflow: "hidden",
-                      border: "1px solid",
-                      borderColor: "divider",
-                    }}
-                  >
-                    <Box
-                      component="img"
-                      src={url}
-                      alt={t("conclusion.photos")}
-                      onClick={() => setPreviewPhoto(url)}
-                      sx={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        cursor: "pointer",
-                      }}
+              {serviceExpanded ? (
+                <>
+                  <Stack spacing={0.5}>
+                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                      {t("conclusion.internalComment")}
+                    </Typography>
+                    <CollapsibleTextField
+                      value={internalComment}
+                      onChange={(e) => setInternalComment(e.target.value)}
+                      disabled={readOnly}
+                      minRows={2}
+                      fullWidth
+                      size="small"
+                      placeholder={t("conclusion.optional")}
                     />
-                    {!readOnly && (
-                      <IconButton
-                        size="small"
-                        onClick={() => removePhoto(url)}
+                  </Stack>
+
+                  <Stack spacing={0.5}>
+                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                      {t("conclusion.photos2")}
+                    </Typography>
+                    <Stack direction="row" gap={1} flexWrap="wrap">
+                      {photoUrls.map((url) => (
+                        <Box
+                          key={url}
+                          sx={{
+                            position: "relative",
+                            width: 72,
+                            height: 72,
+                            borderRadius: 1,
+                            overflow: "hidden",
+                            border: 1,
+                            borderColor: "divider",
+                          }}
+                        >
+                          <Box
+                            component="img"
+                            src={url}
+                            alt={t("conclusion.photos")}
+                            onClick={() => setPreviewPhoto(url)}
+                            sx={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                              cursor: "pointer",
+                            }}
+                          />
+                          <IconButton
+                            size="small"
+                            aria-label={t("conclusion.deletePhoto")}
+                            onClick={() => removePhoto(url)}
+                            sx={{
+                              position: "absolute",
+                              top: 2,
+                              right: 2,
+                              p: 0.25,
+                              bgcolor: "background.paper",
+                              border: 1,
+                              borderColor: "divider",
+                              "&:hover": { bgcolor: "background.paper" },
+                            }}
+                          >
+                            <DeleteOutline sx={{ fontSize: 14 }} color="error" />
+                          </IconButton>
+                        </Box>
+                      ))}
+                      <Button
+                        component="label"
+                        variant="outlined"
+                        disabled={uploadingPhoto}
                         sx={{
-                          position: "absolute",
-                          top: 0,
-                          right: 0,
-                          bgcolor: "rgba(255,255,255,0.8)",
-                          p: 0.25,
-                          "&:hover": { bgcolor: "rgba(255,255,255,0.95)" },
+                          width: 72,
+                          height: 72,
+                          minWidth: 0,
+                          p: 0,
+                          borderStyle: "dashed",
                         }}
                       >
-                        <DeleteOutline sx={{ fontSize: 14 }} color="error" />
-                      </IconButton>
-                    )}
-                  </Box>
-                </Grid>
-              ))}
-              {!readOnly && (
-                <Grid item>
-                  <Button
-                    component="label"
-                    variant="outlined"
-                    disabled={uploadingPhoto}
-                    sx={{
-                      width: 72,
-                      height: 72,
-                      minWidth: 0,
-                      p: 0,
-                      borderStyle: "dashed",
-                    }}
-                  >
-                    {uploadingPhoto ? (
-                      <CircularProgress size={20} />
-                    ) : (
-                      <AddPhotoAlternateOutlined fontSize="small" />
-                    )}
-                    <input
-                      type="file"
-                      hidden
-                      multiple
-                      accept={PHOTO_ACCEPT}
-                      onChange={handlePhotoUpload}
-                    />
-                  </Button>
-                </Grid>
+                        {uploadingPhoto ? (
+                          <CircularProgress size={20} />
+                        ) : (
+                          <AddPhotoAlternateOutlined fontSize="small" />
+                        )}
+                        <input
+                          type="file"
+                          hidden
+                          multiple
+                          accept={PHOTO_ACCEPT}
+                          onChange={handlePhotoUpload}
+                        />
+                      </Button>
+                    </Stack>
+                  </Stack>
+                </>
+              ) : (
+                <Button
+                  size="small"
+                  color="inherit"
+                  startIcon={<AddOutlined />}
+                  onClick={() => setServiceOpen(true)}
+                  sx={{ alignSelf: "flex-start", color: "text.secondary" }}
+                >
+                  {t("conclusion.sections.serviceAdd")}
+                </Button>
               )}
-            </Grid>
-          </Stack>
-          </>
-          )}
-
-          {/* ── status select (only when editing) ── */}
-          {/* При бланке не показываем: статус и так задают кнопки «Сохранить
-              черновик» / «Завершить» внизу, а под протоколом селект читался
-              как ещё одно поле документа (решение 21.09.2026). */}
-          {!readOnly && !attachedForm && (
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                {t("conclusion.status")}
-              </Typography>
-              <TextField
-                select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as ConclusionStatus)}
-                size="small"
-                fullWidth
-              >
-                <MenuItem value="draft">{t("conclusion.statusDraft")}</MenuItem>
-                <MenuItem value="completed">{t("conclusion.statusCompleted")}</MenuItem>
-              </TextField>
             </Stack>
+          </Box>
+          </>
           )}
 
           {/* ── print (в inline-режиме кнопки уже в шапке) ── */}
@@ -2798,6 +3442,21 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           )}
         </Stack>
       </Box>
+      {(showSheetSide || showSheetTab) && (
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            overflowY: "auto",
+            p: { xs: 1.5, md: 2.5 },
+            bgcolor: (th) => subtleBg(th),
+          }}
+        >
+          {sheetPane}
+        </Box>
+      )}
+      </Box>
 
       {/* ── footer ── (в inline-просмотре скрыт: закрытие — крестиком в шапке) */}
       {!(inline && readOnly) && (
@@ -2815,11 +3474,26 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       >
         {/* flexWrap — страховка для крупного масштаба интерфейса: ряд с
             nowrap-метками иначе выехал бы за край узкого экрана. */}
-        <Stack direction="row" gap={1} flexWrap="wrap" justifyContent="flex-end">
+        {/* Где лежит последняя правка: в браузере (черновик) или в карте.
+            Отдельной строкой над кнопками: в ряду с ними в колонке приёма
+            (~420px) подпись сжималась до «С…» и всё равно выталкивала
+            «Завершить» на вторую строку. */}
+        {!readOnly && savedNote && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            component="div"
+            noWrap
+            sx={{ mb: 1, textAlign: "right" }}
+          >
+            {savedNote}
+          </Typography>
+        )}
+        <Stack direction="row" gap={1} flexWrap="wrap" justifyContent="flex-end" alignItems="center">
           <Button
             onClick={saving ? undefined : onClose}
             disabled={saving}
-            size={isMobile ? "small" : "medium"}
+            size={compactFooter ? "small" : "medium"}
             sx={{ whiteSpace: "nowrap" }}
           >
             {readOnly ? t("conclusion.close") : t("conclusion.cancel")}
@@ -2829,7 +3503,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               {/* В правке печать идёт через сохранение: на бумагу должно уйти
                   ровно то, что легло в карту (см. handleSaveAndPrint). */}
               {canPrint && conclusion && (
-                isMobile ? (
+                compactFooter ? (
                   <IconButton
                     color="primary"
                     disabled={saving}
@@ -2853,7 +3527,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               <Button
                 variant="outlined"
                 disabled={saving}
-                size={isMobile ? "small" : "medium"}
+                size={compactFooter ? "small" : "medium"}
                 onClick={() => handleSave("draft")}
                 startIcon={
                   saving ? (
@@ -2862,25 +3536,29 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 }
                 sx={{ whiteSpace: "nowrap" }}
               >
-                {isMobile ? t("conclusion.saveDraftShort") : t("conclusion.saveDraft")}
+                {compactFooter ? t("conclusion.saveDraftShort") : t("conclusion.saveDraft")}
               </Button>
-              <Button
-                variant="contained"
-                color="success"
-                disabled={saving}
-                size={isMobile ? "small" : "medium"}
-                onClick={() => requestSave("completed", false)}
-                startIcon={
-                  saving ? (
-                    <CircularProgress size={16} color="inherit" />
-                  ) : (
-                    <SaveOutlined />
-                  )
-                }
-                sx={{ whiteSpace: "nowrap" }}
-              >
-                {t("conclusion.complete")}
-              </Button>
+              <Tooltip title={isMobile ? "" : t("conclusion.completeHotkey")}>
+                <span>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    disabled={saving}
+                    size={compactFooter ? "small" : "medium"}
+                    onClick={() => requestSave("completed", false)}
+                    startIcon={
+                      saving ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : (
+                        <SaveOutlined />
+                      )
+                    }
+                    sx={{ whiteSpace: "nowrap" }}
+                  >
+                    {t("conclusion.complete")}
+                  </Button>
+                </span>
+              </Tooltip>
             </>
           )}
         </Stack>
@@ -2932,6 +3610,36 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             }}
           >
             {pendingFormSwitch?.columnText != null ? "Сохранить в «Дополнительно»" : "Сменить"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── заготовка поверх написанного ── */}
+      <Dialog
+        open={pendingPreset != null}
+        onClose={() => setPendingPreset(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>{t("conclusion.presetConfirm.title")}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            {t("conclusion.presetConfirm.text")}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button color="inherit" onClick={() => setPendingPreset(null)}>
+            {t("conclusion.cancel")}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              const preset = pendingPreset;
+              setPendingPreset(null);
+              if (preset) applyPresetNow(preset);
+            }}
+          >
+            {t("conclusion.presetConfirm.apply")}
           </Button>
         </DialogActions>
       </Dialog>
@@ -3074,6 +3782,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           flexDirection: "column",
           overflow: "hidden",
         }}
+        onKeyDown={handleHotkeys}
       >
         {content}
       </Box>
@@ -3086,8 +3795,15 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       open={open}
       onClose={saving ? undefined : onClose}
       PaperProps={{
+        onKeyDown: handleHotkeys,
         sx: {
-          width: { xs: "100vw", sm: 520, md: 560 },
+          // С листом справа дровер шире ровно на лист: колонка формы остаётся
+          // прежней ширины (FORM_COLUMN_WIDTH), лист занимает остальное.
+          width: showSheetSide
+            ? "min(1200px, calc(100vw - 48px))"
+            : { xs: "100vw", sm: 520, md: 560 },
+          transition: (th) =>
+            th.transitions.create("width", { duration: th.transitions.duration.shorter }),
           maxWidth: "100vw",
           display: "flex",
           flexDirection: "column",

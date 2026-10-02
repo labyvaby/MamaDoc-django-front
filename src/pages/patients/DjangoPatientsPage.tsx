@@ -9,7 +9,7 @@ import {
   useTheme,
 } from "@mui/material";
 import { motion } from "framer-motion";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
@@ -21,6 +21,7 @@ import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useQueryClient } from "@tanstack/react-query";
 import { djangoQueryKeys } from "../../api/queryKeys";
+import { useCan } from "../../hooks/useCan";
 import { useSheetBackClose } from "../../hooks/useSheetBackClose";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { useT } from "../../i18n/VerticalProvider";
@@ -36,12 +37,14 @@ import {
   type PatientBalance,
 } from "../../api/patientBalance";
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
+import { getPatientLabOrders, type LabOrder } from "../../api/lab";
 
 import PatientListPanel from "./components/PatientListPanel";
 import PatientCard from "./components/PatientCard";
 import PatientHistoryPanel from "./components/PatientHistoryPanel";
 import PatientVaccinationsPanel from "./components/PatientVaccinationsPanel";
 import PatientCalendarPanel from "./components/PatientCalendarPanel";
+import PatientLabOrdersPanel from "./components/PatientLabOrdersPanel";
 import BalanceTopUpDrawer from "./components/BalanceTopUpDrawer";
 import AppointmentDetailsPanel from "../appointments/components/AppointmentDetailsPanel";
 import DjangoConclusionSlotsPanel from "../appointments/DjangoConclusionSlotsPanel";
@@ -58,7 +61,7 @@ import type { OldConclusion } from "./useOldConclusions";
 
 const MotionBox = motion(Box);
 
-type RightTabKey = "card" | "history" | "old" | "vaccinations" | "vaccineCalendar";
+type RightTabKey = "card" | "history" | "old" | "vaccinations" | "vaccineCalendar" | "lab";
 
 const DjangoPatientsPage: React.FC = () => {
   const { t } = useT("patients");
@@ -71,11 +74,11 @@ const DjangoPatientsPage: React.FC = () => {
 
   const {
     hasPermission,
+    canAccess,
     isSuperAdmin,
     loading: permLoading,
     activeBranch,
     activeMembership,
-    canAccess,
   } = usePermissions();
   const queryClient = useQueryClient();
 
@@ -83,11 +86,17 @@ const DjangoPatientsPage: React.FC = () => {
   const canCreate = isSuperAdmin() || hasPermission("patients.create");
   const canUpdate = isSuperAdmin() || hasPermission("patients.update");
   const canManagePatients = isSuperAdmin() || hasPermission("patients.manage");
-  const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
-  const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
-  // Право + включённый модуль: при выключенном модуле вкладка ловила бы 403.
-  const canViewVaccinations = isSuperAdmin() || canAccess("vaccinations.view");
+  // Разделы других модулей — через canAccess (модуль + право): без модуля у
+  // организации (и в «Меню как у клиники») их нет, как и данных на бэке.
+  const canViewFinance = canAccess("finance.view");
+  const canManageFinance = canAccess("finance.manage");
+  const canViewVaccinations = canAccess("vaccinations.view");
+  // canAccess (не hasPermission) — так панель истории анализов исчезает и без
+  // права, и при выключенном у организации модуле lab, одной проверкой
+  // (usePermissions().canAccess уже сверяет оба условия по moduleMapping.ts).
+  const canViewLab = useCan("lab.view");
   const defaultBranchId = activeBranch?.id ?? null;
+  const navigate = useNavigate();
 
   // ── List data ──────────────────────────────────────────────────────────────
   const [patients, setPatients] = React.useState<DjangoPatient[]>([]);
@@ -278,6 +287,41 @@ const DjangoPatientsPage: React.FC = () => {
     return () => ctrl.abort();
   }, [selected?.id, canViewFinance]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Заказы лаборатории выбранного пациента (Task 12) — отдельный эффект, а
+  // не часть эффекта balance/history выше: тот уже полагается на подавление
+  // exhaustive-deps ради `scope`, и совмещение с ещё одним условным флагом
+  // (canViewLab) только затруднило бы разбор зависимостей. Гейт по
+  // canViewLab, а не только по selected: без права/модуля запрос 403-нет
+  // смысла слать вовсе — так же, как canViewFinance гейтит getPatientBalance
+  // выше.
+  const [labOrders, setLabOrders] = React.useState<LabOrder[]>([]);
+  const [labOrdersLoading, setLabOrdersLoading] = React.useState(false);
+  const [labOrdersError, setLabOrdersError] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const pid = selected?.id ?? null;
+    if (pid == null || !canViewLab) {
+      setLabOrders([]);
+      setLabOrdersError(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    setLabOrders([]);
+    setLabOrdersError(null);
+    setLabOrdersLoading(true);
+    getPatientLabOrders(pid, ctrl.signal)
+      .then((rows) => {
+        // Новыми сверху — тот же приём, что и для истории приёмов выше.
+        const sorted = [...rows].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        setLabOrders(sorted);
+      })
+      .catch((e) => {
+        if ((e as { name?: string })?.name === "AbortError") return;
+        setLabOrdersError(e instanceof Error ? e.message : "Не удалось загрузить анализы");
+      })
+      .finally(() => setLabOrdersLoading(false));
+    return () => ctrl.abort();
+  }, [selected?.id, canViewLab]);
+
   // ── List ──────────────────────────────────────────────────────────────────
   // Search + capping now happen server-side in `load`, so the list is used
   // as-is (no client-side filtering over the whole table).
@@ -390,6 +434,22 @@ const DjangoPatientsPage: React.FC = () => {
     <PatientCalendarPanel patient={selected} onEditPatient={canUpdate ? handleEdit : undefined} />
   );
 
+  const labOrdersNode = (
+    <PatientLabOrdersPanel
+      selected={!!selected}
+      loading={labOrdersLoading}
+      error={labOrdersError}
+      orders={labOrders}
+      canViewFinance={canViewFinance}
+      onIntake={() => {
+        // Раздел «Лаборатория» сам откроет дровер приёма на этом пациенте
+        // (см. DjangoLabPage.parsePatientId) — единая точка входа в приём,
+        // как решено в lab-frontend-design.md.
+        if (selected) navigate(`/lab?patientId=${selected.id}`);
+      }}
+    />
+  );
+
   const oldConclusionsNode = (
     <PatientOldConclusionsPanel
       selected={!!selected}
@@ -419,12 +479,20 @@ const DjangoPatientsPage: React.FC = () => {
   );
 
   // Полный набор вкладок правой панели (планшет / мобильный: одна колонка на всё).
+  // Ярлык «Анализы» — прямой текст, а не t(...): раздел лаборатории во всём
+  // проекте говорит по-русски без i18n (DjangoLabPage, LabOrdersSummaryBar,
+  // PatientOldConclusionsPanel — тот же приём для соседней панели), а
+  // vertical-словарь (useT) заточен под термины вакцинации/приёмов/заключений
+  // и лишней сущности для лаборатории не заводил.
+  const LAB_TAB_LABEL = "Анализы";
+
   const fullTabDefs: { key: RightTabKey; label: string }[] = [
     { key: "card", label: t("tabs.card") },
     { key: "history", label: t("tabs.history") },
     { key: "old", label: t("tabs.old") },
     ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
     ...(canViewVaccinations ? [{ key: "vaccineCalendar" as const, label: t("tabs.vaccineCalendar") }] : []),
+    ...(canViewLab ? [{ key: "lab" as const, label: LAB_TAB_LABEL }] : []),
   ];
 
   // Десктоп: карточка уже отдельной колонкой, правая колонка — история/архив.
@@ -433,6 +501,7 @@ const DjangoPatientsPage: React.FC = () => {
     { key: "old", label: t("tabs.oldFull") },
     ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
     ...(canViewVaccinations ? [{ key: "vaccineCalendar" as const, label: t("tabs.vaccineCalendar") }] : []),
+    ...(canViewLab ? [{ key: "lab" as const, label: LAB_TAB_LABEL }] : []),
   ];
 
   return (
@@ -483,6 +552,7 @@ const DjangoPatientsPage: React.FC = () => {
                   {tabletTab === "old" && oldConclusionsNode}
                   {tabletTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
                   {tabletTab === "vaccineCalendar" && canViewVaccinations && vaccineCalendarNode}
+                  {tabletTab === "lab" && canViewLab && labOrdersNode}
                 </Box>
               </>
             ) : (
@@ -510,6 +580,7 @@ const DjangoPatientsPage: React.FC = () => {
                 {desktopRightTab === "old" && oldConclusionsNode}
                 {desktopRightTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
                 {desktopRightTab === "vaccineCalendar" && canViewVaccinations && vaccineCalendarNode}
+                {desktopRightTab === "lab" && canViewLab && labOrdersNode}
               </Box>
             </MotionBox>
           </>
@@ -533,6 +604,7 @@ const DjangoPatientsPage: React.FC = () => {
             {mobileTab === "old" && oldConclusionsNode}
             {mobileTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
             {mobileTab === "vaccineCalendar" && canViewVaccinations && vaccineCalendarNode}
+            {mobileTab === "lab" && canViewLab && labOrdersNode}
           </Box>
         </AppBottomSheet>
       )}

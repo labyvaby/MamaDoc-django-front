@@ -1119,6 +1119,13 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 onChange={(_, val) => setRoleId(val ? val.id : "")}
                 isOptionEqualToValue={(a, b) => a.id === b.id}
                 disabled={loadingDeps || busy}
+                // Открытый список перекрывает helperText, а «Ничего не найдено»
+                // читается как пустой поиск — причину пишем прямо в выпадашке.
+                noOptionsText={
+                  noRoles
+                    ? "Список ролей недоступен — нужно право «Роли: просмотр»"
+                    : "Ничего не найдено"
+                }
                 renderInput={(params) => (
                   <TextField
                     {...params}
