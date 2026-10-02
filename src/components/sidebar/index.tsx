@@ -30,6 +30,8 @@ import { useT } from "../../i18n/VerticalProvider";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
+import SupportAgentOutlined from "@mui/icons-material/SupportAgentOutlined";
+import { useSupportBadge } from "../../support/useSupport";
 import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
@@ -453,6 +455,7 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canSettings && (
         <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
       )}
+      <SupportMenuEntry collapsed={siderCollapsed} />
     </List>
   );
 };
@@ -1085,8 +1088,26 @@ const SidebarSecondary: React.FC = () => {
             }
           />
         )}
+
+        {/* Поддержка — у всех ролей, всегда внизу меню (права не нужны). */}
+        <SupportMenuEntry collapsed={siderCollapsed} />
       </List>
     </>
+  );
+};
+
+/** Пункт «Поддержка» с бейджем: число новых ответов (разработчику — ещё и очередь). */
+const SupportMenuEntry: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
+  const badge = useSupportBadge();
+  return (
+    <SidebarMenuItem
+      to="/support"
+      icon={<SupportAgentOutlined />}
+      label="Поддержка"
+      collapsed={collapsed}
+      badgeCount={badge.count}
+      badgeColor={badge.color}
+    />
   );
 };
 

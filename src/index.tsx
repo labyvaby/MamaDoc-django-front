@@ -12,10 +12,15 @@ import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { initInstallPrompt, registerServiceWorker } from "./pwa";
 import { installStaleBuildRecovery } from "./pwa/staleBuildRecovery";
+import { installRecorder } from "./support/diagnosticsRecorder";
 
 // A tab that survived a frontend deploy can briefly request an obsolete Vite
 // chunk. Reload once to obtain the current index.html and its asset manifest.
 installStaleBuildRecovery();
+
+// «Чёрный ящик» для обращений в поддержку: запускаем до рендера, чтобы
+// поймать и сбои самой загрузки приложения (см. src/support).
+installRecorder();
 
 import { BrowserRouter } from "react-router";
 

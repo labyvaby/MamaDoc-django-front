@@ -210,6 +210,17 @@ export const djangoQueryKeys = {
       ["django", "reviews", "external", params] as const,
   },
 
+  support: {
+    all: ["django", "support"] as const,
+    list: (params: Record<string, unknown>) =>
+      ["django", "support", "list", params] as const,
+    detail: (id: number) => ["django", "support", "detail", id] as const,
+    attachment: (id: number) => ["django", "support", "attachment", id] as const,
+    diagnostics: (id: number) => ["django", "support", "diagnostics", id] as const,
+    summary: ["django", "support", "summary"] as const,
+    filters: ["django", "support", "filters"] as const,
+  },
+
   tasks: {
     all: ["django", "tasks"] as const,
     list: (params: Record<string, unknown>) =>
