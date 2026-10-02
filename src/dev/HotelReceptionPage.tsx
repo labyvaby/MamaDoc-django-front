@@ -76,6 +76,7 @@ import { CreateBookingButton } from "./CreateBookingButton";
 import { exportReservationsXlsx } from "./hotelListsXlsx";
 import { fetchAllReservations } from "./hotelReportData";
 import { inHouseCounts, isNoShowCandidate, isStayingOn } from "./hotelInHouse";
+import { missingDocumentGuest } from "./CheckInDocumentPanel";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 import { DateStepper, EmptyState, FilterChip, HotelPage, HotelPageHeader, plural, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 
@@ -419,6 +420,12 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
   const act = async (reservation: HotelReservation, kind: "in" | "out") => {
     const item = reservation.items[0];
     if (!item) return;
+    // Паспорт при брони необязателен — без него заселяют из карточки, там же его и вносят.
+    if (kind === "in" && missingDocumentGuest(item)) {
+      enqueueSnackbar("Нет паспорта гостя — внесите его в карточке брони", { variant: "info" });
+      onOpen(reservation.id);
+      return;
+    }
     setBusyId(reservation.id);
     try {
       if (kind === "in") await checkInReservationItem(reservation.id, item.id, { version: reservation.version });

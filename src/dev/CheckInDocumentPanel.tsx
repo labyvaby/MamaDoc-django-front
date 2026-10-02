@@ -1,0 +1,137 @@
+/**
+ * Паспорт при заселении. При брони он необязателен (гость бронирует по
+ * телефону), а заселить без документа нельзя: карточка брони показывает эту
+ * панель — тип и номер документа плюс согласие гостя на обработку данных.
+ *
+ * Сохраняется правкой позиции (PATCH …/items/{id}/ с guests): бэкенд при этом
+ * пересоздаёт гостей позиции, и фото документов, если они уже были, пропали
+ * бы. Поэтому панель сохраняет только когда фото у гостей позиции нет, а
+ * иначе честно просит отдельный адрес на бэкенде (docs/hotel-backend-tasks.md).
+ */
+import React from "react";
+import { Alert, Box, Button, Stack, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
+import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+
+import { getErrorMessage } from "../api/client";
+import { updateReservation, updateReservationItem, type HotelReservationDetail, type HotelReservationItem } from "../api/hotel";
+import { FormField } from "./formField";
+import { fieldError, GUEST_RULES } from "./formRules";
+import { GuestConsentField } from "./GuestConsent";
+import { useConsentTemplate } from "./hotelConsent";
+import { useHotelProperty } from "./useHotelProperty";
+
+/** Нет номера документа у основного гостя позиции — заселять нельзя. null — документ не виден (нет права), решает сервер. */
+export function missingDocumentGuest(item: HotelReservationItem) {
+  const guest = item.guests.find((g) => g.isPrimary) ?? item.guests[0];
+  if (!guest || guest.document === null) return null;
+  return guest.document?.documentNumber?.trim() ? null : guest;
+}
+
+export const CheckInDocumentPanel: React.FC<{
+  reservation: HotelReservationDetail;
+  item: HotelReservationItem;
+  onSaved: () => void;
+  onCancel: () => void;
+}> = ({ reservation, item, onSaved, onCancel }) => {
+  const theme = useTheme();
+  const { property } = useHotelProperty();
+  const consentTemplate = useConsentTemplate(property?.id);
+  const guest = missingDocumentGuest(item);
+  const [guestType, setGuestType] = React.useState<"resident" | "foreign">(guest?.document?.guestType === "foreign" ? "foreign" : "resident");
+  const [number, setNumber] = React.useState("");
+  const [consent, setConsent] = React.useState(reservation.dataConsent);
+  const [showErrors, setShowErrors] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const rules = { ...(guestType === "resident" ? GUEST_RULES.idNumber : GUEST_RULES.docNumber), required: true };
+  const numberError = fieldError(number, rules);
+  const hasPhotos = item.guests.some((g) => g.documentPhotoUrl || g.documentPhotoBackUrl);
+
+  const save = async () => {
+    setShowErrors(true);
+    if (!guest || numberError || !consent) return;
+    setSaving(true);
+    setError(null);
+    try {
+      let version = reservation.version;
+      const updated = await updateReservationItem(reservation.id, item.id, {
+        version,
+        guests: item.guests.map((g) => ({
+          fullName: g.fullName,
+          phone: g.phone || undefined,
+          email: g.email || undefined,
+          clientId: g.clientId,
+          isPrimary: g.isPrimary,
+          isChild: g.isChild,
+          document:
+            g.id === guest.id
+              ? { ...(g.document ?? {}), guestType, documentType: guestType === "resident" ? "id_card" : "passport", documentNumber: number.trim() }
+              : g.document,
+        })),
+      });
+      version = updated.version;
+      if (!reservation.dataConsent) {
+        await updateReservation(reservation.id, { version, dataConsent: true, dataConsentVersion: consentTemplate.version });
+      }
+      onSaved();
+    } catch (err) {
+      setError(getErrorMessage(err, "Не удалось сохранить документ"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!guest) return null;
+  return (
+    <Box sx={{ p: 2, borderRadius: "12px", border: `1px solid ${alpha(theme.palette.warning.main, 0.45)}`, bgcolor: alpha(theme.palette.warning.main, 0.06) }}>
+      <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 1 }}>
+        <BadgeOutlined sx={{ color: "warning.main" }} />
+        <Typography fontWeight={700}>Паспорт для заселения</Typography>
+      </Stack>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+        У гостя «{guest.fullName}» нет документа: при брони он необязателен, но без него не заселить.
+      </Typography>
+      {hasPhotos ? (
+        <Alert severity="info" variant="outlined">
+          У гостей этой брони уже загружены фото документов — внести номер отсюда нельзя, фото пропали бы. Впишите его в карточке гостя или
+          дождитесь отдельной правки документа на сервере.
+        </Alert>
+      ) : (
+        <Stack gap={1.5}>
+          <ToggleButtonGroup size="small" exclusive value={guestType} onChange={(_, v) => v && setGuestType(v)}>
+            <ToggleButton value="resident">ID карта</ToggleButton>
+            <ToggleButton value="foreign">Иностранец</ToggleButton>
+          </ToggleButtonGroup>
+          <FormField
+            icon={<BadgeOutlined />}
+            rules={rules}
+            showErrors={showErrors}
+            label={guestType === "resident" ? "Паспорт (ID-карта)" : "Номер загранпаспорта"}
+            value={number}
+            onValueChange={setNumber}
+            fullWidth
+          />
+          <GuestConsentField checked={consent} onChange={setConsent} guestName={guest.fullName} disabled={reservation.dataConsent} />
+          {showErrors && !consent && (
+            <Typography variant="caption" color="error.main">
+              Без согласия гостя паспортные данные не сохраняются.
+            </Typography>
+          )}
+          {error && <Alert severity="error">{error}</Alert>}
+          <Stack direction="row" gap={1} justifyContent="flex-end">
+            <Button color="inherit" onClick={onCancel} disabled={saving}>
+              Отмена
+            </Button>
+            <Button variant="contained" disableElevation onClick={() => void save()} disabled={saving}>
+              {saving ? "Сохранение…" : "Сохранить паспорт"}
+            </Button>
+          </Stack>
+        </Stack>
+      )}
+    </Box>
+  );
+};
+
+export default CheckInDocumentPanel;

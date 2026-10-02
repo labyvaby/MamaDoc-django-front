@@ -149,10 +149,12 @@ export interface CreateBookingButtonProps {
   hideTrigger?: boolean;
 }
 
-/** Телефон и номер документа обязательны: отель регистрирует гостя по паспорту и связывается по телефону. */
+/**
+ * Телефон обязателен — по нему связываются с гостем. Паспорт при брони — нет:
+ * гость бронирует по телефону, документ показывают при заселении (там его и
+ * требует карточка брони).
+ */
 const PHONE_REQUIRED: FieldRules = { ...GUEST_RULES.phone, required: true };
-const ID_REQUIRED: FieldRules = { ...GUEST_RULES.idNumber, required: true };
-const PASSPORT_REQUIRED: FieldRules = { ...GUEST_RULES.docNumber, required: true };
 
 /** Какие приёмы пищи нужны для вида питания — чтобы погасить недоступные в номере. */
 const BOARD_MEALS: Record<string, string[]> = {
@@ -272,6 +274,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [companyInfo, setCompanyInfo] = React.useState("");
   // Юрлицо из справочника: скидка идёт на проживание, бэк сам пересчитает сумму.
   const [corporateId, setCorporateId] = React.useState<number | "">("");
+  /** Компании нет в справочнике — реквизиты свободным текстом (companyInfo). */
+  const [corporateOther, setCorporateOther] = React.useState(false);
   const [dataConsent, setDataConsent] = React.useState(false);
   // Без согласия гостя фото паспорта не прикрепляется и не распознаётся — сначала окно с текстом согласия.
   const consentGate = useConsentGate(dataConsent, setDataConsent, guestName.trim() || undefined);
@@ -330,6 +334,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setBookingSource("");
     setSpecialRequests("");
     setCompanyInfo("");
+    setCorporateOther(false);
     setDataConsent(false);
     setExtraRooms([]);
     setServiceQty({});
@@ -603,7 +608,6 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // Поля гостя и документа — та же проверка, что показывают сами поля.
   const bookingFieldsInvalid = hasFieldErrors([
     [guestPhone, PHONE_REQUIRED],
-    [guestType === "resident" ? idNumber : passportNumber, guestType === "resident" ? ID_REQUIRED : PASSPORT_REQUIRED],
     [guestEmail, GUEST_RULES.email],
     [placeOfBirth, GUEST_RULES.short],
     [issuingAuthority, GUEST_RULES.short],
@@ -685,7 +689,14 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
       </Box>
     ) : null;
 
+  // Номер документа и прочие паспортные данные — персональные данные, как и фото:
+  // без согласия гостя их не сохраняем.
+  const documentDataEntered = [idNumber, passportNumber, inn, placeOfBirth, issuingAuthority, registrationAddress, migrationCardNumber].some(
+    (v) => v.trim() !== "",
+  );
+  const consentMissing = documentDataEntered && !dataConsent;
   const canSubmit =
+    !consentMissing &&
     guestName.trim() !== "" &&
     roomId !== "" &&
     !!checkIn &&
@@ -1054,7 +1065,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           sx: { width: DRAWER_WIDTH, maxWidth: "100vw", display: "flex", flexDirection: "column", backgroundImage: "none" },
         }}
       >
-        <DrawerHeader title="Новая бронь" subtitle="Обязательны номер, даты, гость, телефон и паспорт" onClose={requestClose} />
+        <DrawerHeader title="Новая бронь" subtitle="Обязательны номер, даты, гость и телефон. Паспорт — при заселении" onClose={requestClose} />
 
         <DrawerBody>
             {submitError && <Alert severity="error">{submitError}</Alert>}
@@ -1520,7 +1531,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 пациентом — документ и допполя появляются только когда есть гость. */}
             {(
               <>
-                <DrawerSection label="Документ гостя — паспорт обязателен">
+                <DrawerSection label="Документ гостя — можно внести при заселении">
 
                     {/* Тип документа — выбираем ДО фото: от него зависит, сколько сторон грузить
                         (ID-карта резидента — лицевая и оборотная, загранпаспорт иностранца — один
@@ -1556,6 +1567,12 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         только после неё (или ручного «Заполнить вручную»). */}
                     {/* Согласие — до фото: без него паспорт не прикрепляется (useConsentGate). */}
                     <GuestConsentField checked={dataConsent} onChange={setDataConsent} guestName={guestName.trim() || undefined} />
+                    {consentMissing && (
+                      <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }}>
+                        Паспортные данные — персональные: без согласия гостя бронь с ними не сохранить. Отметьте согласие или очистите поля
+                        документа — паспорт можно внести при заселении.
+                      </Alert>
+                    )}
 
                     {scanning ? (
                       <DocumentScanPanel preview={passportPhotoPreview} progress={scanProgress} outcome={scanOutcome} onCancel={removePhoto} />
@@ -1684,7 +1701,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                             <Stack direction="row" gap={2}>
                               <FormField
                                 icon={<BadgeOutlined />}
-                                rules={ID_REQUIRED}
+                                rules={GUEST_RULES.idNumber}
                                 showErrors={showErrors}
                                 label="Паспорт (ID-карта)"
                                 value={idNumber}
@@ -1725,7 +1742,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                               />
                               <FormField
                                 icon={<BadgeOutlined />}
-                                rules={PASSPORT_REQUIRED}
+                                rules={GUEST_RULES.docNumber}
                                 showErrors={showErrors}
                                 label="Номер загранпаспорта"
                                 value={passportNumber}
@@ -1800,34 +1817,58 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                           </MenuItem>
                         ))}
                       </TextField>
-                      <FormField
-                        icon={<BusinessOutlined />}
-                        rules={GUEST_RULES.long}
-                        showErrors={showErrors}
-                        label="Юрлицо / командировка"
-                        value={companyInfo}
-                        onValueChange={(v) => setCompanyInfo(v)}
-                        sx={{ flex: 1 }}
-                      />
                     </Stack>
+                    {/* Одно поле «Юрлицо»: справочник (скидка, договор, реквизиты), а
+                        свободный текст — только если компании в справочнике нет. */}
                     {corporateAccounts.length > 0 && (
                       <TextField
                         select
-                        label="Юрлицо из справочника"
-                        value={corporateId}
-                        onChange={(e) => setCorporateId(e.target.value === "" ? "" : Number(e.target.value))}
+                        label="Юрлицо"
+                        value={corporateOther ? "other" : corporateId}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === "other") {
+                            setCorporateId("");
+                            setCorporateOther(true);
+                          } else {
+                            setCorporateOther(false);
+                            setCompanyInfo("");
+                            setCorporateId(v === "" ? "" : Number(v));
+                          }
+                        }}
                         slotProps={{ input: { startAdornment: <FieldIcon icon={<BusinessOutlined />} /> } }}
-                        helperText={corporate ? (corporateDiscount > 0 ? `Скидка ${corporateDiscount}% на проживание, на услуги не действует` : "Без скидки") : "Скидка и договор юрлица"}
+                        helperText={
+                          corporate
+                            ? corporateDiscount > 0
+                              ? `Скидка ${corporateDiscount}% на проживание, на услуги не действует`
+                              : "Без скидки"
+                            : corporateOther
+                              ? "Реквизиты попадут в счёт; добавьте компанию в «Услуги и юрлица», чтобы выбирать её списком"
+                              : "Если гость от компании — скидка и реквизиты из справочника"
+                        }
                         fullWidth
                       >
-                        <MenuItem value="">Не выбрано</MenuItem>
+                        <MenuItem value="">Не от компании</MenuItem>
                         {corporateAccounts.map((a) => (
                           <MenuItem key={a.id} value={a.id}>
                             {a.name}
                             {Number(a.discountPercent) > 0 ? ` · −${Number(a.discountPercent)}%` : ""}
                           </MenuItem>
                         ))}
+                        <MenuItem value="other">Другая компания — ввести реквизиты</MenuItem>
                       </TextField>
+                    )}
+                    {(corporateAccounts.length === 0 || corporateOther) && (
+                      <FormField
+                        icon={<BusinessOutlined />}
+                        rules={GUEST_RULES.long}
+                        showErrors={showErrors}
+                        label={corporateAccounts.length === 0 ? "Юрлицо (если гость от компании)" : "Реквизиты компании для счёта"}
+                        placeholder="ОсОО «…», ИНН, адрес"
+                        value={companyInfo}
+                        onValueChange={(v) => setCompanyInfo(v)}
+                        fullWidth
+                      />
                     )}
                     <FormField
                       icon={<ChatBubbleOutlineOutlined />}

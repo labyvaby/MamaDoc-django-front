@@ -105,6 +105,7 @@ import {
 } from "./hotelDisplay";
 import { formatHotelDateRange, initialsOf, nightsBetween } from "./mockDemoData";
 import { StatusPill } from "./hotelUi";
+import { CheckInDocumentPanel, missingDocumentGuest } from "./CheckInDocumentPanel";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 
 /** "cash" — единственный способ, для которого не уточняем конкретный безналичный канал. */
@@ -173,6 +174,9 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const [actionBusy, setActionBusy] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [checkInNeedsForce, setCheckInNeedsForce] = React.useState(false);
+  // Паспорт при брони необязателен, а заселить без него нельзя — сначала панель документа.
+  const [checkInNeedsDocument, setCheckInNeedsDocument] = React.useState(false);
+  const [documentSaved, setDocumentSaved] = React.useState(false);
   const [checkOutNeedsForce, setCheckOutNeedsForce] = React.useState(false);
   const [cancelPromptOpen, setCancelPromptOpen] = React.useState(false);
   // Панель правки: "edit" — даты/гости/питание, "room" — другой номер.
@@ -292,6 +296,11 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
 
   const handleCheckIn = async (force = false) => {
     if (!reservation || !item) return;
+    if (missingDocumentGuest(item)) {
+      setCheckInNeedsDocument(true);
+      return;
+    }
+    setDocumentSaved(false);
     setActionBusy(true);
     setActionError(null);
     try {
@@ -873,8 +882,32 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               />
             )}
 
-            {(actionError || checkInNeedsForce || checkOutNeedsForce || checkOutNeedsInspection || cancelPromptOpen || editMode != null) && (
+            {(actionError ||
+              checkInNeedsForce ||
+              checkInNeedsDocument ||
+              documentSaved ||
+              checkOutNeedsForce ||
+              checkOutNeedsInspection ||
+              cancelPromptOpen ||
+              editMode != null) && (
               <Stack gap={1.5} sx={{ mt: 2 }}>
+                {checkInNeedsDocument && missingDocumentGuest(item) && (
+                  <CheckInDocumentPanel
+                    reservation={reservation}
+                    item={item}
+                    onCancel={() => setCheckInNeedsDocument(false)}
+                    onSaved={() => {
+                      setCheckInNeedsDocument(false);
+                      setDocumentSaved(true);
+                      invalidateReservation();
+                    }}
+                  />
+                )}
+                {documentSaved && !missingDocumentGuest(item) && (
+                  <Alert severity="success" onClose={() => setDocumentSaved(false)}>
+                    Паспорт внесён — теперь можно заселить.
+                  </Alert>
+                )}
                 {checkOutNeedsInspection && (
                   <Alert
                     severity="info"

@@ -1527,6 +1527,8 @@ export interface HotelReservationUpdateData {
   guaranteeMethod?: string;
   companyInfo?: string;
   dataConsent?: boolean;
+  /** Редакция текста согласия (контракт §15). */
+  dataConsentVersion?: string;
   corporateAccountId?: number | null;
   /** Отвязать юрлицо — сумма пересчитывается без скидки. */
   clearCorporateAccount?: boolean;
