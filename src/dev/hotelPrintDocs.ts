@@ -77,7 +77,7 @@ export interface PrintInput {
   guestProfiles?: Map<number, HotelGuest>;
 }
 
-const esc = (v: unknown): string =>
+export const esc = (v: unknown): string =>
   String(v ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -515,6 +515,11 @@ export function buildHotelPrintHtml(doc: HotelPrintDoc, input: PrintInput): stri
 
 /** Печать без всплывающего окна: скрытый iframe → print() → убрать. */
 export function printHotelDocument(doc: HotelPrintDoc, input: PrintInput): void {
+  printHtmlDocument(buildHotelPrintHtml(doc, input));
+}
+
+/** Любой готовый HTML-документ (отчёт смены и т.п.) — тем же скрытым iframe. */
+export function printHtmlDocument(html: string): void {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   Object.assign(iframe.style, { position: "fixed", right: "0", bottom: "0", width: "0", height: "0", border: "0" });
@@ -526,7 +531,7 @@ export function printHotelDocument(doc: HotelPrintDoc, input: PrintInput): void 
     return;
   }
   idoc.open();
-  idoc.write(buildHotelPrintHtml(doc, input));
+  idoc.write(html);
   idoc.close();
   const cleanup = () => setTimeout(() => iframe.remove(), 1000);
   win.addEventListener("afterprint", cleanup, { once: true });
