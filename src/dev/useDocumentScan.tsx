@@ -28,6 +28,9 @@ import { isPdfFile, prepareImageForUpload } from "../utility/imageCompression";
 /** Ниже этого confidence поля стоит перепроверить (контракт §4.4). */
 export const SCAN_LOW_CONFIDENCE = 0.6;
 
+/** Чем кончилось распознавание — для итогового кадра анимации (DocumentScanPanel). */
+export type DocumentScanOutcome = "success" | "error";
+
 export interface DocumentScanNotice {
   severity: "info" | "warning";
   text: string;
@@ -108,6 +111,8 @@ function describeScanError(err: unknown): DocumentScanNotice {
 const EXPECTED_SCAN_MS = 6000;
 /** Полоска никогда не доходит до имитируемого предела сама — только по ответу бэкенда. */
 const SCAN_PROGRESS_CEILING = 92;
+/** Сколько держать итоговый кадр («Готово» / «Не получилось») перед тем, как панель уступит место фото. */
+const OUTCOME_HOLD_MS = 1100;
 
 export function useDocumentScan() {
   const canReadDocuments = useCan("hotel.guests.documents");
@@ -117,7 +122,11 @@ export function useDocumentScan() {
   // «дошло» до 100% только когда реально пришёл ответ (см. finishScan ниже).
   const [scanProgress, setScanProgress] = React.useState(0);
   const [notice, setNotice] = React.useState<DocumentScanNotice | null>(null);
+  const [scanOutcome, setScanOutcome] = React.useState<DocumentScanOutcome | null>(null);
   const progressTimerRef = React.useRef<number | null>(null);
+  const holdTimerRef = React.useRef<number | null>(null);
+  // Растёт при каждом новом скане и при отмене — ответ «старого» скана молча отбрасываем.
+  const generationRef = React.useRef(0);
 
   const stopProgressTimer = React.useCallback(() => {
     if (progressTimerRef.current != null) {
@@ -126,12 +135,21 @@ export function useDocumentScan() {
     }
   }, []);
 
-  // Таймер не должен пережить размонтированную форму (закрыли дровер посреди скана).
-  React.useEffect(() => stopProgressTimer, [stopProgressTimer]);
+  // Таймеры не должны пережить размонтированную форму (закрыли дровер посреди скана).
+  React.useEffect(
+    () => () => {
+      stopProgressTimer();
+      if (holdTimerRef.current != null) window.clearTimeout(holdTimerRef.current);
+    },
+    [stopProgressTimer],
+  );
 
   const scan = React.useCallback(async (file: File): Promise<HotelGuestDocumentScan | null> => {
+    if (holdTimerRef.current != null) window.clearTimeout(holdTimerRef.current);
+    const generation = ++generationRef.current;
     setScanning(true);
     setNotice(null);
+    setScanOutcome(null);
     setScanProgress(6); // стартовый рывок — ощущается отзывчивее, чем ровный ноль
     const startedAt = Date.now();
     stopProgressTimer();
@@ -141,32 +159,49 @@ export function useDocumentScan() {
       setScanProgress(Math.max(6, eased));
     }, 120);
 
-    // Полоска добегает до 100% на реальном ответе, задержка перед скрытием —
-    // чтобы «100%» было видно, а не мигало сразу тем же кадром.
-    const finishScan = (notice: DocumentScanNotice) => {
+    // Полоска добегает до 100% на реальном ответе, итоговый кадр держится
+    // OUTCOME_HOLD_MS — чтобы «Готово» было видно, а не мигало тем же кадром.
+    const finishScan = (notice: DocumentScanNotice, outcome: DocumentScanOutcome) => {
+      if (generation !== generationRef.current) return;
       stopProgressTimer();
       setScanProgress(100);
+      setScanOutcome(outcome);
       setNotice(notice);
-      window.setTimeout(() => setScanning(false), 350);
+      holdTimerRef.current = window.setTimeout(() => {
+        holdTimerRef.current = null;
+        setScanning(false);
+      }, OUTCOME_HOLD_MS);
     };
 
     try {
       const result = await scanGuestDocument(file);
-      finishScan(describeScan(result));
+      finishScan(describeScan(result), "success");
       return result;
     } catch (err) {
       if (isAbortError(err)) {
-        stopProgressTimer();
-        setScanning(false);
+        if (generation === generationRef.current) {
+          stopProgressTimer();
+          setScanning(false);
+        }
         return null;
       }
       if (err instanceof ApiError && err.code === "RECOGNITION_UNAVAILABLE") markProviderUnavailable();
-      finishScan(describeScanError(err));
+      finishScan(describeScanError(err), "error");
       return null;
     }
   }, [stopProgressTimer]);
 
   const clearNotice = React.useCallback(() => setNotice(null), []);
+
+  /** Убрали фото посреди распознавания или закрыли форму — панель гасим сразу, запоздавший ответ отбрасываем. */
+  const cancelScan = React.useCallback(() => {
+    generationRef.current += 1;
+    stopProgressTimer();
+    if (holdTimerRef.current != null) window.clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = null;
+    setScanning(false);
+    setScanOutcome(null);
+  }, [stopProgressTimer]);
 
   return {
     /** Есть смысл пробовать распознавание: право есть и провайдер ещё не отвечал 503. */
@@ -174,8 +209,11 @@ export function useDocumentScan() {
     scanning,
     /** 0–100, имитация — см. комментарий у EXPECTED_SCAN_MS. Смысл есть, только пока scanning. */
     scanProgress,
+    /** Ответ пришёл, а scanning ещё держит итоговый кадр. */
+    scanOutcome,
     notice,
     clearNotice,
+    cancelScan,
     scan,
   };
 }
