@@ -34,6 +34,7 @@ import { IncomingTransfersBanner } from "./components/storage/IncomingTransfersB
 import { FloatingTopBanners } from "./components/layout/FloatingTopBanners";
 import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
+import { SupportReportProvider } from "./support/SupportReportProvider";
 import { ColorModeContextProvider } from "./contexts/color-mode";
 import { RefreshProvider } from "./contexts/refresh-context";
 import { TitleProvider } from "./contexts/title-context";
@@ -94,6 +95,7 @@ const ReviewsPage = lazy(() => import("./pages/reviews"));
 const BookingsPage = lazy(() => import("./pages/bookings"));
 const ChatsPage = lazy(() => import("./pages/chats"));
 const TasksPage = lazy(() => import("./pages/tasks"));
+const SupportPage = lazy(() => import("./pages/support"));
 const WaitlistPage = lazy(() => import("./pages/waitlist"));
 const DealsPage = lazy(() => import("./pages/deals"));
 const DealsSettingsPage = lazy(() => import("./pages/settings/DealsSettingsPage"));
@@ -515,6 +517,11 @@ function App() {
                         list: "/tasks",
                         meta: { label: "Задачи" }
                       },
+                      {
+                        name: "support",
+                        list: "/support",
+                        meta: { label: "Поддержка" }
+                      },
                       ...(WAITLIST_MODULE_ENABLED
                         ? [{
                             name: "waitlist",
@@ -562,6 +569,7 @@ function App() {
                         element={
                           <RequireAuth>
                             <MobileSidebarProvider>
+                              <SupportReportProvider>
                               <ThemedLayout
                                 Header={renderHeader}
                                 Sider={renderSider}
@@ -578,6 +586,7 @@ function App() {
                                   <Outlet />
                                 </DjangoContextRemount>
                               </ThemedLayout>
+                              </SupportReportProvider>
                             </MobileSidebarProvider>
                           </RequireAuth>
                         }
@@ -607,6 +616,7 @@ function App() {
                         element={
                           <RequireAuth>
                             <MobileSidebarProvider>
+                              <SupportReportProvider>
                               <ThemedLayout
                                 Header={renderHeader}
                                 Sider={renderSider}
@@ -641,6 +651,7 @@ function App() {
                                 {/* Выбор филиала после логина (флаг ставит login.tsx) */}
                                 <BranchPickerDialog />
                               </ThemedLayout>
+                              </SupportReportProvider>
                             </MobileSidebarProvider>
                           </RequireAuth>
                         }
@@ -1262,6 +1273,17 @@ function App() {
                                     <TasksPage />
                                   </Suspense>
                                 </RequirePermission>
+                              }
+                            />
+                            {/* Поддержка — канал связи с разработчиками платформы.
+                                Права не нужны: любой вошедший сотрудник видит свои
+                                обращения; что видно сверх этого, решает бэкенд. */}
+                            <Route
+                              path="support"
+                              element={
+                                <Suspense fallback={<LinearProgress />}>
+                                  <SupportPage />
+                                </Suspense>
                               }
                             />
                             {/* Лист ожидания — вместе с флагом

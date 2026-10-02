@@ -1,5 +1,6 @@
 import { tt } from "../i18n/t";
 import { accessEndedMessage, rememberAccessEnded } from "./accessEnded";
+import { recordRequest } from "../support/diagnosticsRecorder";
 
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
@@ -408,11 +409,38 @@ export function extractErrorMessage(payload: unknown, status: number): string {
   return fallbackByStatus(status);
 }
 
+/**
+ * Запись ответа в «чёрный ящик» обращений в поддержку (support/diagnosticsRecorder):
+ * метод, путь без значений параметров, статус, время и trace_id. Тела запросов
+ * и ответов не читаются и не сохраняются.
+ */
+function noteResponse(
+  method: string,
+  path: string,
+  status: number,
+  payload: unknown,
+  startedAt: number,
+  response?: Response,
+): void {
+  const envelope = parseErrorEnvelope(payload);
+  recordRequest({
+    method,
+    path: `/api${path.startsWith("/") ? "" : "/"}${path}`,
+    status,
+    ms: performance.now() - startedAt,
+    traceId: envelope?.traceId ?? response?.headers.get("X-Request-Id") ?? null,
+    code: envelope?.code ?? null,
+    message: envelope?.message || undefined,
+  });
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
   const isFormData = options.formData !== undefined;
+  const method = options.method ?? "GET";
+  const startedAt = performance.now();
 
   let response: Response;
   try {
@@ -434,6 +462,7 @@ export async function apiRequest<T>(
   } catch (err) {
     // AbortError — пробрасываем как есть, не маскируем под ApiError
     if (err instanceof DOMException && err.name === "AbortError") throw err;
+    noteResponse(method, path, 0, null, startedAt);
     // Сетевые ошибки (DNS, offline, CORS preflight fail) — status=0.
     // Сырое «Failed to fetch» пользователю непонятно: показываем инструкцию,
     // оригинал оставляем в консоли для отладки.
@@ -443,12 +472,14 @@ export async function apiRequest<T>(
 
   // 204 No Content — return undefined (void endpoints)
   if (response.status === 204) {
+    noteResponse(method, path, 204, null, startedAt, response);
     return undefined as T;
   }
 
   // Тело читаем до статусных событий: по нему 403 «прав нет» отличается от
   // 403 «модуль выключен» (код MODULE_DISABLED), а это разные реакции.
   const payload = await readJsonBody(response);
+  noteResponse(method, path, response.status, payload, startedAt, response);
 
   // Сессия протухла посреди работы: уведомляем приложение глобально,
   // usePermissions переведёт authStatus в unauthenticated и RequireAuth
@@ -486,6 +517,8 @@ export async function apiRequestWithHeaders<T>(
   options: RequestOptions = {},
 ): Promise<ApiEnvelope<T>> {
   const isFormData = options.formData !== undefined;
+  const method = options.method ?? "GET";
+  const startedAt = performance.now();
 
   let response: Response;
   try {
@@ -506,15 +539,18 @@ export async function apiRequestWithHeaders<T>(
     });
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") throw err;
+    noteResponse(method, path, 0, null, startedAt);
     const message = err instanceof Error ? err.message : "Network error";
     throw new ApiError(message, 0, null);
   }
 
   if (response.status === 204) {
+    noteResponse(method, path, 204, null, startedAt, response);
     return { data: undefined as T, headers: response.headers };
   }
 
   const payload = await readJsonBody(response);
+  noteResponse(method, path, response.status, payload, startedAt, response);
 
   if (response.status === 401) {
     // Сессию закрыли из-за увольнения — объяснение ждёт на странице входа.

@@ -34,6 +34,7 @@ import { subtleBg } from "../../theme";
 import { InstallAppButton } from "../../pwa";
 import SetPasswordButton from "./SetPasswordButton";
 import RolePreviewSwitcher from "./RolePreviewSwitcher";
+import { SupportHeaderButton } from "../../support/SupportHeaderButton";
 
 /** Строка-инфо в стандартном стиле: плиточная иконка + подпись/значение. */
 const ProfileInfoRow: React.FC<{
@@ -280,6 +281,9 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
           >
             <RefreshOutlined sx={{ fontSize: { xs: 18, sm: 20 } }} />
           </IconButton>
+
+          {/* Сообщить о проблеме: снимок экрана и логи соберутся сами. */}
+          <SupportHeaderButton />
 
           {/* Пока пароля нет — «Установить пароль»; после установки исчезает. */}
           <SetPasswordButton />

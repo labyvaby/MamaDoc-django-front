@@ -31,6 +31,7 @@
     "@types/react-window": "^1.8.8",
     "exceljs": "^4.4.0",
     "framer-motion": "^12.34.0",
+    "html-to-image": "^1.11.13",
     "html2pdf.js": "^0.14.0",
     "i18next": "^26.3.6",
     "pdfmake": "^0.3.0",

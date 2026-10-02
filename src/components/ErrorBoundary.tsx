@@ -1,14 +1,26 @@
 import React, { Component, type ErrorInfo, type ReactNode } from "react";
-import { Box, Typography, Button, Paper, Container } from "@mui/material";
+import { Box, Typography, Button, Paper, Container, CircularProgress } from "@mui/material";
 import {
   SentimentDissatisfiedOutlined as SadIcon,
   RefreshOutlined as RefreshIcon,
   HomeOutlined as HomeIcon,
+  BugReportOutlined as BugIcon,
+  CheckCircleOutline as DoneIcon,
 } from "@mui/icons-material";
 import {
   isStaleBuildError,
   reloadForStaleBuild,
 } from "../pwa/staleBuildRecovery";
+import { createSupportTicket } from "../api/support";
+import { buildAutoDescription } from "../support/autoDescription";
+import {
+  collectDiagnostics,
+  getActionsForDescription,
+  getFrontendBuild,
+  getRecentProblem,
+  recordReactError,
+  screenLabel,
+} from "../support/diagnosticsRecorder";
 
 interface Props {
   children: ReactNode;
@@ -16,24 +28,59 @@ interface Props {
 
 interface State {
   hasError: boolean;
+  /** Отправка обращения прямо с экрана сбоя: приложение уже не живёт, формы нет. */
+  report: "idle" | "sending" | "sent" | "failed";
+  ticketNumber: string | null;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, report: "idle", ticketNumber: null };
   }
 
-  static getDerivedStateFromError(): State {
+  static getDerivedStateFromError(): Partial<State> {
     return { hasError: true };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("[ErrorBoundary]", error, errorInfo);
+    // Сбой интерфейса — повод предложить «сообщить разработчикам» (src/support).
+    recordReactError(error, errorInfo.componentStack ?? undefined);
     if (isStaleBuildError(error)) {
       reloadForStaleBuild();
     }
   }
+
+  /**
+   * Одно нажатие: обращение уходит с автоописанием и техническим снимком.
+   * Снимок экрана здесь не делаем — упавший интерфейс снимать нечего, а форма
+   * недоступна, поэтому текст собирается шаблоном.
+   */
+  handleReport = async () => {
+    this.setState({ report: "sending" });
+    try {
+      const route = window.location.pathname;
+      const auto = buildAutoDescription(getRecentProblem(), route, getActionsForDescription());
+      const detail = await createSupportTicket({
+        category: "bug",
+        title: auto.title || "Страница перестала открываться",
+        description:
+          auto.description ||
+          "Интерфейс остановился с ошибкой и показал экран «Что-то пошло не так».",
+        steps: auto.steps,
+        impact: "blocked",
+        pagePath: route,
+        diagnostics: collectDiagnostics(),
+        appVersion: getFrontendBuild(),
+        userAgent: navigator.userAgent,
+        screen: screenLabel(),
+      });
+      this.setState({ report: "sent", ticketNumber: detail.ticket.number });
+    } catch {
+      this.setState({ report: "failed" });
+    }
+  };
 
   handleReload = () => {
     window.location.reload();
@@ -121,6 +168,49 @@ export class ErrorBoundary extends Component<Props, State> {
               >
                 На главную
               </Button>
+            </Box>
+
+            <Box sx={{ mt: 3 }}>
+              {this.state.report === "sent" ? (
+                <Box
+                  sx={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 1,
+                    color: "success.main",
+                  }}
+                >
+                  <DoneIcon />
+                  <Typography variant="body2" color="text.primary">
+                    Спасибо! Обращение {this.state.ticketNumber} отправлено разработчикам.
+                  </Typography>
+                </Box>
+              ) : (
+                <>
+                  <Button
+                    variant="text"
+                    color="error"
+                    startIcon={
+                      this.state.report === "sending" ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : (
+                        <BugIcon />
+                      )
+                    }
+                    onClick={this.handleReport}
+                    disabled={this.state.report === "sending"}
+                  >
+                    {this.state.report === "sending"
+                      ? "Отправляем…"
+                      : "Сообщить разработчикам"}
+                  </Button>
+                  {this.state.report === "failed" && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                      Не получилось отправить. Обновите страницу и напишите из раздела «Поддержка».
+                    </Typography>
+                  )}
+                </>
+              )}
             </Box>
           </Paper>
         </Box>
