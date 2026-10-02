@@ -26,18 +26,28 @@ export interface Fetched<T> {
   truncated: boolean;
 }
 
+/** Сколько страниц броней грузим одновременно. */
+const PARALLEL_PAGES = 4;
+
+/** Первая страница даёт count, остальные идут по PARALLEL_PAGES сразу; бронь на стыке страниц не дублируется. */
 export async function fetchAllReservations(
   params: Omit<HotelReservationListParams, "limit" | "offset">,
   signal?: AbortSignal,
   maxPages = MAX_PAGES,
 ): Promise<Fetched<HotelReservation>> {
   const byId = new Map<number, HotelReservation>();
-  for (let page = 0; page < maxPages; page++) {
-    const res = await listReservations({ ...params, limit: PAGE, offset: page * PAGE }, signal);
-    for (const r of res.results) byId.set(r.id, r);
-    if (res.results.length < PAGE || (page + 1) * PAGE >= res.count) return { rows: [...byId.values()], truncated: false };
+  const first = await listReservations({ ...params, limit: PAGE, offset: 0 }, signal);
+  for (const r of first.results) byId.set(r.id, r);
+  const pages = first.results.length < PAGE ? 1 : Math.min(maxPages, Math.ceil(first.count / PAGE));
+  for (let start = 1; start < pages; start += PARALLEL_PAGES) {
+    const batch = await Promise.all(
+      Array.from({ length: Math.min(PARALLEL_PAGES, pages - start) }, (_, i) =>
+        listReservations({ ...params, limit: PAGE, offset: (start + i) * PAGE }, signal),
+      ),
+    );
+    for (const res of batch) for (const r of res.results) byId.set(r.id, r);
   }
-  return { rows: [...byId.values()], truncated: true };
+  return { rows: [...byId.values()], truncated: first.results.length >= PAGE && first.count > maxPages * PAGE };
 }
 
 export interface FetchedRegister extends Fetched<HotelPayment> {

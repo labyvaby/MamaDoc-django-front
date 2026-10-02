@@ -2,8 +2,10 @@
  * «Доходность и загрузка» — как одноимённый отчёт Exely: доход за
  * проживание, продано номероночей, заезды гостей и номеров, ADR, RevPAR,
  * доступно номероночей и % загрузки — по дням, неделям или месяцам, итого,
- * по категориям и средние по дням недели. Считается по броням периода (цены
- * ночей) и номерам фонда; без React — проверяется тестами (hotelYield.test.ts).
+ * по категориям и средние по дням недели. Два шага: факты «дата × категория ×
+ * канал» (их отдаёт сервер — GET /hotel/reports/yield/, контракт
+ * docs/hotel-backend-tasks.md §9, — а пока его нет, собираем из броней
+ * периода) и сводка по ним. Без React — проверяется тестами (hotelYield.test.ts).
  */
 import dayjs from "dayjs";
 
@@ -82,9 +84,77 @@ const groupKey = (date: string, group: YieldGroup) => {
   return d.subtract((d.day() + 6) % 7, "day").format("YYYY-MM-DD");
 };
 
-export function computeYield(opts: {
-  reservations: HotelReservation[];
-  rooms: YieldRoom[];
+/** Продажи одной категории за одну ночь из одного канала. */
+export interface YieldFact {
+  date: string;
+  roomTypeId: number;
+  /** Канал брони; пустой — "other". */
+  source: string;
+  sold: number;
+  revenue: number;
+  roomsArrived: number;
+  guestsArrived: number;
+}
+
+/** Номеров в продаже: категория × дата. */
+export interface YieldInventory {
+  date: string;
+  roomTypeId: number;
+  available: number;
+}
+
+const eachDate = (from: string, to: string): string[] => {
+  const dates: string[] = [];
+  for (let d = dayjs(from); !d.isAfter(dayjs(to), "day"); d = d.add(1, "day")) dates.push(d.format("YYYY-MM-DD"));
+  return dates;
+};
+
+/** Брони → факты: только подтверждённые брони и действующие позиции; доход — цена ночи минус скидка. */
+export function factsFromReservations(reservations: HotelReservation[], from: string, to: string): YieldFact[] {
+  const map = new Map<string, YieldFact>();
+  const fact = (date: string, roomTypeId: number, source: string) => {
+    const key = `${date}|${roomTypeId}|${source}`;
+    let f = map.get(key);
+    if (!f) {
+      f = { date, roomTypeId, source, sold: 0, revenue: 0, roomsArrived: 0, guestsArrived: 0 };
+      map.set(key, f);
+    }
+    return f;
+  };
+  const inRange = (d: string) => d >= from && d <= to;
+  for (const r of reservations) {
+    if (r.status !== "confirmed") continue;
+    const source = r.source || "other";
+    for (const item of r.items) {
+      if (item.isActive === false) continue;
+      if (inRange(item.checkIn)) {
+        const f = fact(item.checkIn, item.roomTypeId, source);
+        f.roomsArrived += 1;
+        f.guestsArrived += item.adults + item.children;
+      }
+      for (const night of item.nights ?? []) {
+        if (!inRange(night.date)) continue;
+        const f = fact(night.date, item.roomTypeId, source);
+        f.sold += 1;
+        f.revenue += (Number(night.price) || 0) - (Number(night.discount) || 0);
+      }
+    }
+  }
+  return [...map.values()];
+}
+
+/** Фонд → доступно: действующие номера категории в каждый день периода. */
+export function inventoryFromRooms(rooms: YieldRoom[], from: string, to: string): YieldInventory[] {
+  const byType = new Map<number, number>();
+  for (const r of rooms) if (r.active) byType.set(r.roomTypeId, (byType.get(r.roomTypeId) ?? 0) + 1);
+  return eachDate(from, to).flatMap((date) => [...byType].map(([roomTypeId, available]) => ({ date, roomTypeId, available })));
+}
+
+export function summarizeYield(opts: {
+  facts: YieldFact[];
+  inventory: YieldInventory[];
+  /** Названия категорий; нет в списке — «Категория N». */
+  names: Map<number, string>;
   from: string;
   to: string;
   group: YieldGroup;
@@ -93,49 +163,33 @@ export function computeYield(opts: {
 }): YieldResult {
   const inCats = (id: number) => !opts.roomTypeIds || opts.roomTypeIds.size === 0 || opts.roomTypeIds.has(id);
   const inSources = (s: string) => !opts.sources || opts.sources.size === 0 || opts.sources.has(s || "other");
-  const rooms = opts.rooms.filter((r) => r.active && inCats(r.roomTypeId));
-  const roomsByType = new Map<number, { name: string; count: number }>();
-  for (const r of rooms) {
-    const t = roomsByType.get(r.roomTypeId) ?? { name: r.roomTypeName, count: 0 };
-    t.count += 1;
-    roomsByType.set(r.roomTypeId, t);
-  }
 
-  const dayMap = new Map<string, ReturnType<typeof empty>>();
+  const dates = eachDate(opts.from, opts.to);
+  const dayMap = new Map<string, ReturnType<typeof empty>>(dates.map((d) => [d, empty()]));
   const catMap = new Map<number, ReturnType<typeof empty>>();
-  const dates: string[] = [];
-  for (let d = dayjs(opts.from); !d.isAfter(dayjs(opts.to), "day"); d = d.add(1, "day")) {
-    const key = d.format("YYYY-MM-DD");
-    dates.push(key);
-    dayMap.set(key, { ...empty(), available: rooms.length });
+  const cat = (id: number) => {
+    let c = catMap.get(id);
+    if (!c) {
+      c = empty();
+      catMap.set(id, c);
+    }
+    return c;
+  };
+  for (const inv of opts.inventory) {
+    const day = dayMap.get(inv.date);
+    if (!day || !inCats(inv.roomTypeId)) continue;
+    day.available += inv.available;
+    cat(inv.roomTypeId).available += inv.available;
   }
-  for (const [id, t] of roomsByType) catMap.set(id, { ...empty(), available: t.count * dates.length });
-
-  for (const r of opts.reservations) {
-    if (r.status !== "confirmed" || !inSources(r.source)) continue;
-    for (const item of r.items) {
-      if (item.isActive === false || !inCats(item.roomTypeId)) continue;
-      const cat = catMap.get(item.roomTypeId) ?? (() => {
-        const c = { ...empty() };
-        catMap.set(item.roomTypeId, c);
-        return c;
-      })();
-      const arrival = dayMap.get(item.checkIn);
-      if (arrival) {
-        arrival.roomsArrived += 1;
-        arrival.guestsArrived += item.adults + item.children;
-        cat.roomsArrived += 1;
-        cat.guestsArrived += item.adults + item.children;
-      }
-      for (const night of item.nights ?? []) {
-        const day = dayMap.get(night.date);
-        if (!day) continue;
-        const price = (Number(night.price) || 0) - (Number(night.discount) || 0);
-        day.sold += 1;
-        day.revenue += price;
-        cat.sold += 1;
-        cat.revenue += price;
-      }
+  for (const f of opts.facts) {
+    const day = dayMap.get(f.date);
+    if (!day || !inCats(f.roomTypeId) || !inSources(f.source)) continue;
+    const c = cat(f.roomTypeId);
+    for (const m of [day, c]) {
+      m.sold += f.sold;
+      m.revenue += f.revenue;
+      m.roomsArrived += f.roomsArrived;
+      m.guestsArrived += f.guestsArrived;
     }
   }
 
@@ -154,7 +208,7 @@ export function computeYield(opts: {
   const total: YieldRow = { key: "total", from: opts.from, to: opts.to, ...finish(totalM) };
 
   const byCategory: YieldCategoryRow[] = [...catMap.entries()]
-    .map(([roomTypeId, m]) => ({ roomTypeId, name: roomsByType.get(roomTypeId)?.name ?? `Категория ${roomTypeId}`, ...finish(m) }))
+    .map(([roomTypeId, m]) => ({ roomTypeId, name: opts.names.get(roomTypeId) ?? `Категория ${roomTypeId}`, ...finish(m) }))
     .sort((a, b) => b.revenue - a.revenue);
 
   const weekdayM = Array.from({ length: 7 }, () => ({ m: empty(), days: 0 }));
@@ -166,6 +220,28 @@ export function computeYield(opts: {
   const byWeekday: YieldWeekdayRow[] = weekdayM.map((x, weekday) => ({ weekday, days: x.days, ...finish(x.m) }));
 
   return { days, rows, total, byCategory, byWeekday };
+}
+
+/** Всё сразу по броням и фонду — то же, что сервер + summarizeYield. */
+export function computeYield(opts: {
+  reservations: HotelReservation[];
+  rooms: YieldRoom[];
+  from: string;
+  to: string;
+  group: YieldGroup;
+  roomTypeIds?: Set<number> | null;
+  sources?: Set<string> | null;
+}): YieldResult {
+  return summarizeYield({
+    facts: factsFromReservations(opts.reservations, opts.from, opts.to),
+    inventory: inventoryFromRooms(opts.rooms, opts.from, opts.to),
+    names: new Map(opts.rooms.map((r) => [r.roomTypeId, r.roomTypeName])),
+    from: opts.from,
+    to: opts.to,
+    group: opts.group,
+    roomTypeIds: opts.roomTypeIds,
+    sources: opts.sources,
+  });
 }
 
 /** Тот же по длине период непосредственно перед выбранным. */

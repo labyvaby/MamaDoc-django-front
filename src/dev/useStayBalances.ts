@@ -11,7 +11,8 @@
  */
 import { useQuery } from "@tanstack/react-query";
 
-import { listReservations, type HotelReservation } from "../api/hotel";
+import type { HotelReservation } from "../api/hotel";
+import { fetchAllReservations } from "./hotelReportData";
 
 /** То, что карточка при наведении показывает сверх календаря. */
 export interface StayDetails {
@@ -35,7 +36,7 @@ export interface StayBalance {
   details?: StayDetails;
 }
 
-const PAGE = 200;
+/** 5 × 200 броней на видимые даты шахматки — с запасом. */
 const MAX_PAGES = 5;
 
 const detailsOf = (r: HotelReservation): StayDetails => {
@@ -62,18 +63,15 @@ export function useStayBalances(propertyId: number | undefined, from: string | n
     staleTime: 60_000,
     queryFn: async ({ signal }) => {
       const map = new Map<number, StayBalance>();
-      for (let page = 0; page < MAX_PAGES; page++) {
-        const res = await listReservations({ propertyId: propertyId!, from: from!, to: to!, limit: PAGE, offset: page * PAGE }, signal);
-        for (const r of res.results) {
-          map.set(r.id, {
-            total: Number(r.totalAmount),
-            paid: Number(r.paidAmount),
-            balance: Number(r.balanceDue),
-            currency: r.currency,
-            details: detailsOf(r),
-          });
-        }
-        if ((page + 1) * PAGE >= res.count) break;
+      const { rows } = await fetchAllReservations({ propertyId: propertyId!, from: from!, to: to! }, signal, MAX_PAGES);
+      for (const r of rows) {
+        map.set(r.id, {
+          total: Number(r.totalAmount),
+          paid: Number(r.paidAmount),
+          balance: Number(r.balanceDue),
+          currency: r.currency,
+          details: detailsOf(r),
+        });
       }
       return map;
     },

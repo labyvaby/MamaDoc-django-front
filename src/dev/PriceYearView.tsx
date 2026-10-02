@@ -40,14 +40,16 @@ import dayjs, { type Dayjs } from "dayjs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
-import { getErrorMessage } from "../api/client";
-import { getPriceCalendar, setDailyRates, type HotelPriceCalendarRoomType, type HotelPriceNight } from "../api/hotel";
+import { ApiError, getErrorMessage } from "../api/client";
+import { getPriceCalendar, setDailyRates, setDailyRatesBatch, type HotelPriceCalendarRoomType, type HotelPriceNight } from "../api/hotel";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { cellKey, planBulkChanges, weekdayIndex, type BulkSettings, type PriceMode, type TriState } from "./priceBulkPlan";
 import { DRAWER_WIDTH, DrawerBody, DrawerFooter, DrawerHeader, DrawerSection, FilterChip, plural, Surface } from "./hotelUi";
 import { downloadXlsx } from "./hotelXlsx";
 
 const MONTHS = 12;
+/** Сервер ответил 404 на …/daily-rates/batch/ — до перезагрузки шлём диапазоны по одному. */
+let batchEndpointMissing = false;
 const CHUNK = 62;
 const WEEKDAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const D = (d: Dayjs) => d.format("YYYY-MM-DD");
@@ -608,6 +610,24 @@ const PriceBulkDrawer: React.FC<{
     if (data.ratePlanId == null || plan.changes.length === 0) return;
     const total = plan.changes.length;
     setProgress({ done: 0, total, failed: 0 });
+    if (!batchEndpointMissing) {
+      try {
+        await setDailyRatesBatch(data.ratePlanId, { reason: settings.reason.trim() || undefined, changes: plan.changes });
+        setProgress({ done: total, total, failed: 0 });
+        void queryClient.invalidateQueries({ queryKey: ["hotel", "priceCalendar"] });
+        void queryClient.invalidateQueries({ queryKey: ["hotel", "pricingHistory"] });
+        enqueueSnackbar(`Цены обновлены: ${fmt(plan.nights)} ${plural(plan.nights, "ночь", "ночи", "ночей")}`, { variant: "success" });
+        onDone();
+        return;
+      } catch (err) {
+        if (!(err instanceof ApiError && (err.status === 404 || err.status === 405))) {
+          setProgress(null);
+          enqueueSnackbar(getErrorMessage(err, "Сервер не принял изменения — ничего не сохранено"), { variant: "error" });
+          return;
+        }
+        batchEndpointMissing = true;
+      }
+    }
     let next = 0;
     let failed = 0;
     let lastError = "";

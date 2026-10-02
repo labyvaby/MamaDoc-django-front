@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import type { HotelReservation } from "../api/hotel";
-import { computeYield, lastYearPeriod, previousPeriod, type YieldRoom } from "./hotelYield";
+import {
+  computeYield,
+  factsFromReservations,
+  inventoryFromRooms,
+  lastYearPeriod,
+  previousPeriod,
+  summarizeYield,
+  type YieldFact,
+  type YieldInventory,
+  type YieldRoom,
+} from "./hotelYield";
 
 const rooms: YieldRoom[] = [
   { id: 1, roomTypeId: 10, roomTypeName: "Standard", active: true },
@@ -62,6 +72,40 @@ describe("computeYield", () => {
     expect(y.rows.map((r) => r.key)).toEqual(["2026-09-28"]);
     // 1 октября 2026 — четверг (индекс 3).
     expect(y.byWeekday[3]).toMatchObject({ weekday: 3, days: 1, sold: 2, revenue: 10000 });
+  });
+});
+
+describe("summarizeYield — факты с сервера", () => {
+  it("брони → факты + фонд дают то же, что computeYield", () => {
+    const opts = { from: "2026-09-28", to: "2026-10-04", group: "week" as const };
+    const viaFacts = summarizeYield({
+      ...opts,
+      facts: factsFromReservations(reservations, opts.from, opts.to),
+      inventory: inventoryFromRooms(rooms, opts.from, opts.to),
+      names: new Map(rooms.map((r) => [r.roomTypeId, r.roomTypeName])),
+    });
+    expect(viaFacts).toEqual(computeYield({ reservations, rooms, ...opts }));
+  });
+
+  it("номер на ремонте в один день уменьшает «доступно» только в этот день; каналы и названия — от сервера", () => {
+    const facts: YieldFact[] = [
+      { date: "2026-10-01", roomTypeId: 10, source: "booking", sold: 1, revenue: 3600, roomsArrived: 1, guestsArrived: 2 },
+      { date: "2026-10-01", roomTypeId: 10, source: "direct", sold: 1, revenue: 3000, roomsArrived: 0, guestsArrived: 0 },
+      { date: "2026-10-02", roomTypeId: 10, source: "booking", sold: 1, revenue: 3600, roomsArrived: 0, guestsArrived: 0 },
+    ];
+    const inventory: YieldInventory[] = [
+      { date: "2026-10-01", roomTypeId: 10, available: 2 },
+      { date: "2026-10-02", roomTypeId: 10, available: 1 },
+    ];
+    const y = summarizeYield({ facts, inventory, names: new Map([[10, "Стандарт"]]), from: "2026-10-01", to: "2026-10-02", group: "day" });
+    expect(y.days.map((d) => [d.key, d.sold, d.available, d.occupancy])).toEqual([
+      ["2026-10-01", 2, 2, 100],
+      ["2026-10-02", 1, 1, 100],
+    ]);
+    expect(y.byCategory).toMatchObject([{ name: "Стандарт", sold: 3, available: 3, revenue: 10200 }]);
+    const booking = summarizeYield({ facts, inventory, names: new Map(), from: "2026-10-01", to: "2026-10-02", group: "month", sources: new Set(["booking"]) });
+    expect(booking.total).toMatchObject({ sold: 2, revenue: 7200, adr: 3600, available: 3 });
+    expect(booking.byCategory[0].name).toBe("Категория 10");
   });
 });
 

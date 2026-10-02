@@ -22,7 +22,8 @@ import dayjs from "dayjs";
 import { useQuery } from "@tanstack/react-query";
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 
-import { listRooms } from "../api/hotel";
+import { ApiError } from "../api/client";
+import { getYieldReport, listRooms } from "../api/hotel";
 import { CustomDatePicker } from "../components/ui";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { HOTEL_BOOKING_SOURCE_LABELS } from "./hotelDisplay";
@@ -31,10 +32,57 @@ import { deltaPercent, fetchAllReservations } from "./hotelReportData";
 import { ReportKpi, ReportSection, type ReportNav } from "./hotelReportUi";
 import { FilterChip, Surface, useHotelTableSx } from "./hotelUi";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
-import { computeYield, lastYearPeriod, previousPeriod, type YieldGroup, type YieldMetrics, type YieldResult, type YieldRoom, type YieldRow } from "./hotelYield";
+import {
+  factsFromReservations,
+  inventoryFromRooms,
+  lastYearPeriod,
+  previousPeriod,
+  summarizeYield,
+  type YieldFact,
+  type YieldGroup,
+  type YieldInventory,
+  type YieldMetrics,
+  type YieldResult,
+  type YieldRoom,
+  type YieldRow,
+} from "./hotelYield";
 
 type View = "table" | "chart" | "calendar" | "weekdays";
 type Compare = "none" | "prev" | "year";
+
+
+/** Факты периода — с сервера (GET /reports/yield/) или собранные из броней, пока его нет. */
+interface YieldFacts {
+  facts: YieldFact[];
+  /** null — посчитать из фонда номеров. */
+  inventory: YieldInventory[] | null;
+  names: Map<number, string> | null;
+  truncated: boolean;
+  fromServer: boolean;
+}
+
+/** Сервер ответил 404 — до перезагрузки страницы сразу считаем сами, без лишнего запроса. */
+let yieldEndpointMissing = false;
+
+async function loadYieldFacts(propertyId: number, from: string, to: string, signal: AbortSignal): Promise<YieldFacts> {
+  if (!yieldEndpointMissing) {
+    try {
+      const r = await getYieldReport({ propertyId, from, to }, signal);
+      return {
+        facts: r.sales.map((x) => ({ ...x, source: x.source || "other", revenue: Number(x.revenue) || 0 })),
+        inventory: r.inventory,
+        names: new Map(r.roomTypes.map((t) => [t.roomTypeId, t.roomTypeName])),
+        truncated: false,
+        fromServer: true,
+      };
+    } catch (err) {
+      if (!(err instanceof ApiError && (err.status === 404 || err.status === 405))) throw err;
+      yieldEndpointMissing = true;
+    }
+  }
+  const res = await fetchAllReservations({ propertyId, from, to: dayjs(to).add(1, "day").format("YYYY-MM-DD") }, signal, 25);
+  return { facts: factsFromReservations(res.rows, from, to), inventory: null, names: null, truncated: res.truncated, fromServer: false };
+}
 
 const D = (d: dayjs.Dayjs) => d.format("YYYY-MM-DD");
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -75,7 +123,7 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
 
   const fetchPeriod = (f: string, t: string) => ({
     queryKey: ["hotel", "reports", "yield", propertyId, f, t],
-    queryFn: ({ signal }: { signal: AbortSignal }) => fetchAllReservations({ propertyId, from: f, to: D(dayjs(t).add(1, "day")) }, signal, 25),
+    queryFn: ({ signal }: { signal: AbortSignal }) => loadYieldFacts(propertyId, f, t, signal),
     staleTime: 60_000,
   });
   const mainQuery = useQuery(fetchPeriod(from, to));
@@ -83,15 +131,18 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
   const cmpQuery = useQuery({ ...fetchPeriod(cmp?.from ?? from, cmp?.to ?? to), enabled: cmp != null });
 
   const filters = { roomTypeIds: cats.size ? cats : null, sources: sources.size ? sources : null };
+  const names = React.useMemo(() => new Map(rooms.map((r) => [r.roomTypeId, r.roomTypeName])), [rooms]);
+  const summarize = (data: YieldFacts, f: string, t: string) =>
+    summarizeYield({ facts: data.facts, inventory: data.inventory ?? inventoryFromRooms(rooms, f, t), names: data.names ?? names, from: f, to: t, group, ...filters });
   const result: YieldResult | null = React.useMemo(
-    () => (mainQuery.data && roomsQuery.data ? computeYield({ reservations: mainQuery.data.rows, rooms, from, to, group, ...filters }) : null),
+    () => (mainQuery.data && roomsQuery.data ? summarize(mainQuery.data, from, to) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mainQuery.data, roomsQuery.data, rooms, from, to, group, cats, sources],
+    [mainQuery.data, roomsQuery.data, rooms, names, from, to, group, cats, sources],
   );
   const cmpResult: YieldResult | null = React.useMemo(
-    () => (cmp && cmpQuery.data && roomsQuery.data ? computeYield({ reservations: cmpQuery.data.rows, rooms, from: cmp.from, to: cmp.to, group, ...filters }) : null),
+    () => (cmp && cmpQuery.data && roomsQuery.data ? summarize(cmpQuery.data, cmp.from, cmp.to) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cmpQuery.data, roomsQuery.data, rooms, cmp?.from, cmp?.to, group, cats, sources],
+    [cmpQuery.data, roomsQuery.data, rooms, names, cmp?.from, cmp?.to, group, cats, sources],
   );
 
   const setParam = (patch: Record<string, string | null>) => nav.setParams(patch);
@@ -230,7 +281,7 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
         </Stack>
       </Surface>
 
-      {days > 120 && (
+      {days > 120 && mainQuery.data?.fromServer !== true && (
         <Alert severity="info" variant="outlined">
           Длинный период — считаем по всем броням за {fmtInt(days)} дней, это может занять несколько секунд.
         </Alert>

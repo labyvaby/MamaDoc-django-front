@@ -89,6 +89,7 @@ const STEP_LABELS: Record<string, string> = {
 
 const KIND_LABELS: Record<string, string> = {
   daily_rate: "Цены на даты",
+  daily_rate_batch: "Массовое изменение цен",
   rule_created: "Правило создано",
   rule_updated: "Правило изменено",
   rule_deleted: "Правило удалено",
@@ -681,6 +682,27 @@ function describeChange(c: HotelPricingChange, ruleNames: Map<number, string>, r
     if (ch.maxNights != null) details.push(`максимум ${ch.maxNights} ноч.`);
     if (ch.closedToArrival === true) details.push("закрыто на заезд");
     if (ch.closedToDeparture === true) details.push("закрыто на выезд");
+    return { title: [who, dates].filter(Boolean).join(" · "), details };
+  }
+  if (c.kind === "daily_rate_batch") {
+    const items = Array.isArray(ch.items) ? (ch.items as Record<string, unknown>[]) : [];
+    const types = [...new Set(items.map((i) => Number(i.roomTypeId)).filter((id) => Number.isFinite(id)))];
+    const who =
+      types.length === 1
+        ? (roomTypeNames.get(types[0]) ?? `Категория №${types[0]}`)
+        : types.length > 1
+          ? types.map((id) => roomTypeNames.get(id) ?? `№${id}`).join(", ")
+          : "Массовое изменение";
+    const dates = c.dateFrom && c.dateTo ? formatHotelDateRange(c.dateFrom, c.dateTo) : "";
+    const details: string[] = [];
+    if (typeof ch.nights === "number") details.push(`${ch.nights} ноч.`);
+    if (items.length) details.push(`${items.length} диапазон(ов)`);
+    if (items.some((i) => i.price != null)) details.push("своя цена");
+    if (items.some((i) => i.clearPrice)) details.push("цена снова по правилам");
+    if (items.some((i) => i.stopSell === true)) details.push("стоп-продажа");
+    if (items.some((i) => i.stopSell === false)) details.push("продажа открыта");
+    if (items.some((i) => i.minNights != null)) details.push("минимум ночей");
+    if (items.some((i) => i.clearMinNights)) details.push("без минимума ночей");
     return { title: [who, dates].filter(Boolean).join(" · "), details };
   }
   if (c.kind.startsWith("rule_")) {
