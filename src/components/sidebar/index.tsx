@@ -432,6 +432,7 @@ const HotelSidebarMenu: React.FC = () => {
   const canRatePlans = can(PAGE_PERMISSIONS.hotelRatePlans);
   const canExtras = can(PAGE_PERMISSIONS.hotelExtras);
   const canCash = can(PAGE_PERMISSIONS.hotelCash);
+  const canStaff = can(PAGE_PERMISSIONS.hotelStaff);
   const canReception = can(PAGE_PERMISSIONS.hotelReception);
 
   const sectionLabel = (text: string) =>
@@ -453,6 +454,7 @@ const HotelSidebarMenu: React.FC = () => {
       {canHousekeeping && <SidebarMenuItem to="/housekeeping" icon={<CleaningServicesOutlined />} label="Уборка" collapsed={siderCollapsed} />}
       {canKitchen && <SidebarMenuItem to="/kitchen" icon={<RestaurantOutlined />} label="Кухня" collapsed={siderCollapsed} />}
       {canCash && <SidebarMenuItem to="/hotel-cash" icon={<PointOfSaleOutlined />} label="Касса" collapsed={siderCollapsed} />}
+      {canStaff && <SidebarMenuItem to="/hotel-staff" icon={<BadgeOutlined />} label="Персонал" collapsed={siderCollapsed} />}
       {canReports && <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчёты" collapsed={siderCollapsed} />}
 
       {(canRooms || canCategories || canRatePlans || canExtras || canPricing || canPriceCalendar || canEvents) && sectionLabel("Отель")}
@@ -1184,6 +1186,7 @@ const HOTEL_ONLY_NAV_PATHS = [
   "/rate-plans",
   "/hotel-extras",
   "/hotel-cash",
+  "/hotel-staff",
   "/events",
   "/reception",
   "/settings",

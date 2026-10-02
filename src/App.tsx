@@ -136,6 +136,7 @@ const HotelPriceCalendarPage = lazy(() => import("./dev/HotelPriceCalendarPage")
 const HotelRatePlansPage = lazy(() => import("./dev/HotelRatePlansPage"));
 const HotelExtrasPage = lazy(() => import("./dev/HotelExtrasPage"));
 const HotelCashPage = lazy(() => import("./dev/HotelCashPage"));
+const HotelStaffPage = lazy(() => import("./dev/HotelStaffPage"));
 const HotelEventsPage = lazy(() => import("./dev/HotelEventsPage"));
 const HotelReceptionPage = lazy(() => import("./dev/HotelReceptionPage"));
 const HotelPricingRuleFormPage = lazy(() => import("./dev/HotelPricingRuleFormPage"));
@@ -788,6 +789,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.hotelCash}>
                               <Suspense fallback={<LinearProgress />}>
                                 <HotelCashPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="hotel-staff"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelStaff}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelStaffPage />
                               </Suspense>
                             </RequirePermission>
                           }
