@@ -6,26 +6,28 @@
  * загрузка продолжается сама. Текст и его редакция — hotelConsent.ts.
  */
 import React from "react";
-import { Box, Button, Checkbox, Dialog, DialogActions, DialogContent, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import PrivacyTipOutlined from "@mui/icons-material/PrivacyTipOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import dayjs from "dayjs";
 
 import type { HotelProperty } from "../api/hotel";
-import { DEMO_KEYS, useDemoValue } from "./hotelDemoStore";
-import { consentParagraphs, renderConsent, useConsentTemplate, type ConsentTemplate, type ConsentVars } from "./hotelConsent";
+import { consentOperatorGaps, consentParagraphs, renderConsent, useConsentTemplate, type ConsentTemplate, type ConsentVars } from "./hotelConsent";
 import { esc, printHtmlDocument } from "./hotelPrintDocs";
 import { useHotelProperty } from "./useHotelProperty";
 
-/** Подстановки из объекта: юрлицо и адрес — из реквизитов (сервер или демо), иначе адрес объекта. */
+/**
+ * Подстановки из объекта: юрлицо и адрес — только из реквизитов на сервере
+ * (адрес — юридический, иначе адрес объекта). Реквизиты одного компьютера в
+ * юридический документ не идут.
+ */
 export function useConsentVars(property: HotelProperty | null | undefined): ConsentVars {
-  const demo = useDemoValue<{ legalName?: string; legalAddress?: string }>(property ? DEMO_KEYS.requisites(property.id) : null, {});
   const own = property && "legalName" in property ? property : null;
   return {
     hotel: property?.name ?? "",
-    legalName: own ? own.legalName : demo.legalName,
-    address: (own ? own.legalAddress : demo.legalAddress) || property?.address,
+    legalName: own?.legalName,
+    address: own?.legalAddress || property?.address,
   };
 }
 
@@ -34,6 +36,7 @@ export const consentEditionLabel = (t: ConsentTemplate) =>
 
 /** Бланк согласия на подпись: текст с подстановками, ФИО гостя (если уже известно), подпись и дата. */
 export function printConsent(template: ConsentTemplate, vars: ConsentVars, guestName?: string) {
+  if (consentOperatorGaps(vars).length) return;
   const paragraphs = consentParagraphs(renderConsent(template.body, vars));
   const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>${esc(template.title)}</title><style>
     @page { size: A4; margin: 18mm 16mm; }
@@ -78,6 +81,7 @@ export const ConsentDialog: React.FC<ConsentDialogProps> = ({ open, onClose, onA
   const template = draft ?? saved;
   const vars = useConsentVars(property);
   const paragraphs = consentParagraphs(renderConsent(template.body, vars));
+  const operatorGaps = consentOperatorGaps(vars);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth={false} fullWidth PaperProps={{ sx: { maxWidth: 600, borderRadius: "16px", backgroundImage: "none" } }}>
@@ -111,6 +115,12 @@ export const ConsentDialog: React.FC<ConsentDialogProps> = ({ open, onClose, onA
             {lead}
           </Typography>
         )}
+        {operatorGaps.length > 0 && (
+          <Alert severity="warning" variant="outlined" sx={{ mb: 1.5 }}>
+            В согласии не назван оператор персональных данных — не заполнены {operatorGaps.join(" и ")} в реквизитах (Настройки → Отель →
+            Реквизиты). Пока их нет, бланк на подпись не печатается.
+          </Alert>
+        )}
         <Box
           sx={{
             maxHeight: "48vh",
@@ -134,15 +144,18 @@ export const ConsentDialog: React.FC<ConsentDialogProps> = ({ open, onClose, onA
         </Typography>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5, pt: 0, gap: 1, flexWrap: "wrap" }}>
-        <Button
-          color="inherit"
-          startIcon={<PrintOutlined fontSize="small" />}
-          onClick={() => printConsent(template, vars, guestName)}
-          title="Распечатать бланк, чтобы гость подписал"
-          sx={{ mr: "auto" }}
-        >
-          Печать
-        </Button>
+        <Tooltip title={operatorGaps.length ? "Сначала заполните реквизиты отеля" : "Распечатать бланк, чтобы гость подписал"}>
+          <Box component="span" sx={{ mr: "auto" }}>
+            <Button
+              color="inherit"
+              startIcon={<PrintOutlined fontSize="small" />}
+              onClick={() => printConsent(template, vars, guestName)}
+              disabled={operatorGaps.length > 0}
+            >
+              Печать
+            </Button>
+          </Box>
+        </Tooltip>
         <Button color="inherit" onClick={onClose}>
           {onAgree ? "Отмена" : "Закрыть"}
         </Button>

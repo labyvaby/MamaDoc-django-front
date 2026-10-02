@@ -17,13 +17,14 @@ import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import WhatsApp from "@mui/icons-material/WhatsApp";
 import { useQuery } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
+import { useNavigate } from "react-router";
 
 import { getGuest, listCharges, type HotelGuest, type HotelPayment, type HotelProperty, type HotelReservation } from "../api/hotel";
 import { usePermissions } from "../hooks/usePermissions";
+import { useCan } from "../hooks/useCan";
 import { subtleBorder } from "../theme/uiHelpers";
-import { HOTEL_PRINT_DOC_HINTS, HOTEL_PRINT_DOC_LABELS, printHotelDocument, type HotelPrintDoc } from "./hotelPrintDocs";
+import { HOTEL_PRINT_DOC_HINTS, HOTEL_PRINT_DOC_LABELS, printHotelDocument, requisitesGap, type HotelPrintDoc, type RequisitesGap } from "./hotelPrintDocs";
 import { buildGuestMessage, GUEST_MESSAGE_LABELS, whatsappLink, type GuestMessageKind } from "./hotelGuestMessages";
-import { DEMO_KEYS, useDemoValue } from "./hotelDemoStore";
 
 const DOCS: { doc: HotelPrintDoc; icon: React.ReactNode }[] = [
   { doc: "confirmation", icon: <EventAvailableOutlined /> },
@@ -53,11 +54,17 @@ export const ReservationDocumentsPanel: React.FC<{
     activeEmployee?.fullName || [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || user?.username || "";
   const line = `1px solid ${subtleBorder(theme)}`;
   const waAvailable = whatsappLink(phone) != null;
-  // Реквизиты: пока бэкенд их не хранит — из демо-режима настроек (hotelDemoStore).
-  const demoRequisites = useDemoValue<Record<string, string>>(property && !("legalName" in property) ? DEMO_KEYS.requisites(property.id) : null, {});
-  const printProperty = property && !("legalName" in property) ? { ...property, ...demoRequisites } : property;
+  // Счёт и справка — только с реквизитами с сервера: без них не печатаем,
+  // а говорим, что заполнить (и где), — см. requisitesGap.
+  const navigate = useNavigate();
+  const canEditRequisites = useCan("hotel.manage");
+  const gapText = (gap: Exclude<RequisitesGap, null>) =>
+    gap.kind === "server"
+      ? "Не печатается: сервер ещё не хранит реквизиты отеля. Появится после его обновления."
+      : `Не печатается: в реквизитах не заполнены ${gap.labels.join(", ")}.${canEditRequisites ? "" : " Попросите управляющего заполнить их в настройках."}`;
 
   const print = async (doc: HotelPrintDoc) => {
+    if (requisitesGap(doc, property)) return;
     setBusy(doc);
     try {
       let guestProfiles: Map<number, HotelGuest> | undefined;
@@ -69,7 +76,7 @@ export const ReservationDocumentsPanel: React.FC<{
       printHotelDocument(doc, {
         reservation,
         payments,
-        property: printProperty,
+        property,
         charges: chargesQuery.data?.results ?? [],
         logoUrl: activeOrganization?.logoUrl ?? null,
         adminName,
@@ -85,49 +92,64 @@ export const ReservationDocumentsPanel: React.FC<{
   return (
     <Stack gap={3}>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 1.5 }}>
-        {DOCS.map(({ doc, icon }) => (
-          <Stack
-            key={doc}
-            direction="row"
-            alignItems="center"
-            gap={1.5}
-            sx={{ p: 1.75, borderRadius: "14px", border: line, bgcolor: "background.paper" }}
-          >
-            <Box
-              sx={{
-                width: 42,
-                height: 42,
-                borderRadius: "12px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-                color: "primary.main",
-                bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.18 : 0.08),
-              }}
+        {DOCS.map(({ doc, icon }) => {
+          const gap = requisitesGap(doc, property);
+          return (
+            <Stack
+              key={doc}
+              direction="row"
+              alignItems="center"
+              gap={1.5}
+              sx={{ p: 1.75, borderRadius: "14px", border: line, bgcolor: "background.paper" }}
             >
-              {icon}
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="body2" fontWeight={700}>
-                {HOTEL_PRINT_DOC_LABELS[doc]}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" component="div">
-                {HOTEL_PRINT_DOC_HINTS[doc]}
-              </Typography>
-            </Box>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<PrintOutlined fontSize="small" />}
-              onClick={() => void print(doc)}
-              disabled={busy != null}
-              sx={{ flexShrink: 0, borderRadius: "10px" }}
-            >
-              {busy === doc ? "…" : "Печать"}
-            </Button>
-          </Stack>
-        ))}
+              <Box
+                sx={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  color: "primary.main",
+                  bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.18 : 0.08),
+                }}
+              >
+                {icon}
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={700}>
+                  {HOTEL_PRINT_DOC_LABELS[doc]}
+                </Typography>
+                <Typography variant="caption" color={gap ? "warning.main" : "text.secondary"} fontWeight={gap ? 600 : undefined} component="div">
+                  {gap ? gapText(gap) : HOTEL_PRINT_DOC_HINTS[doc]}
+                </Typography>
+              </Box>
+              {gap?.kind === "fields" && canEditRequisites ? (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="warning"
+                  onClick={() => navigate("/settings/hotel-property#requisites")}
+                  sx={{ flexShrink: 0, borderRadius: "10px" }}
+                >
+                  Заполнить
+                </Button>
+              ) : (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<PrintOutlined fontSize="small" />}
+                  onClick={() => void print(doc)}
+                  disabled={busy != null || gap != null}
+                  sx={{ flexShrink: 0, borderRadius: "10px" }}
+                >
+                  {busy === doc ? "…" : "Печать"}
+                </Button>
+              )}
+            </Stack>
+          );
+        })}
       </Box>
 
       <Box>
