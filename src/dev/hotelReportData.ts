@@ -202,18 +202,29 @@ export interface BalanceRow {
   paid: number;
   balance: number;
   currency: string;
+  /** Для отчёта «Заезды»: юрлицо, телефон, гости, тариф, питание, гарантия, кто оформил, факт заезда/выезда. */
+  corporateName: string;
+  phone: string;
+  guests: number;
+  ratePlan: string;
+  board: string;
+  guarantee: string;
+  createdByName: string;
+  checkedInAt: string | null;
+  checkedOutAt: string | null;
   reservation: HotelReservation;
 }
 
 export function balanceRows(
   reservations: HotelReservation[],
-  opts: { from: string; to: string; balance: BalanceFilter; status: BalanceStatusFilter; source?: string },
+  opts: { from: string; to: string; balance: BalanceFilter; status: BalanceStatusFilter; source?: string; corporate?: string },
 ): BalanceRow[] {
   return reservations
     .filter((r) => {
       if (opts.status === "active" && r.status !== "confirmed") return false;
       if (opts.status === "cancelled" && r.status !== "cancelled" && r.status !== "no_show") return false;
       if (opts.source && r.source !== opts.source) return false;
+      if (opts.corporate && (r.corporateName ?? "") !== opts.corporate) return false;
       const checkIn = reservationCheckIn(r);
       return checkIn != null && checkIn >= opts.from && checkIn <= opts.to;
     })
@@ -238,6 +249,15 @@ export function balanceRows(
         paid: num(r.paidAmount),
         balance: num(r.balanceDue),
         currency: r.currency,
+        corporateName: r.corporateName ?? "",
+        phone: (active.flatMap((i) => i.guests).find((g) => g.isPrimary) ?? active[0]?.guests[0])?.phone ?? "",
+        guests: active.reduce((s, i) => s + i.adults + i.children, 0),
+        ratePlan: [...new Set(active.map((i) => i.ratePlanName).filter(Boolean))].join(", "),
+        board: [...new Set(active.map((i) => i.boardType).filter((b) => b && b !== "none"))].join(", "),
+        guarantee: r.guaranteeMethod,
+        createdByName: r.createdByName,
+        checkedInAt: active.map((i) => i.checkedInAt).filter((v): v is string => v != null).sort()[0] ?? null,
+        checkedOutAt: active.map((i) => i.checkedOutAt).filter((v): v is string => v != null).sort().pop() ?? null,
         reservation: r,
       };
     })
