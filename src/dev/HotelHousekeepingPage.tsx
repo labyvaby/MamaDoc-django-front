@@ -45,6 +45,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { useTheme, type Theme } from "@mui/material/styles";
 import AddOutlined from "@mui/icons-material/AddOutlined";
@@ -73,11 +74,14 @@ import {
   listHousekeepingTasks,
   createHousekeepingTask,
   updateHousekeepingTask,
+  assignHousekeepingByRoster,
   type HotelHousekeepingTask,
   type HotelHousekeepingTaskCreateData,
 } from "../api/hotel";
 import { getAllDjangoEmployees } from "../api/staff";
-import { getErrorMessage } from "../api/client";
+import { ApiError, getErrorMessage } from "../api/client";
+import { useCan } from "../hooks/useCan";
+import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import { usePermissions } from "../hooks/usePermissions";
 import { appendInspectionResult, isCheckoutInspection, parseInspectionResult } from "./roomInspection";
 
@@ -327,6 +331,41 @@ export const HotelHousekeepingPage: React.FC = () => {
     }
   };
 
+  // Телефон горничной: вместо таблицы — карточки номеров с одной большой кнопкой.
+  const isPhone = useMediaQuery(theme.breakpoints.down("md"));
+  const canAssign = useCan(["hotel.housekeeping.manage", "hotel.manage"]);
+  const [assigning, setAssigning] = React.useState(false);
+  // «Раздать по графику»: открытые задачи дня — горничной этажа по графику персонала.
+  const assignByRoster = async () => {
+    if (!property) return;
+    setAssigning(true);
+    try {
+      const r = await assignHousekeepingByRoster({ propertyId: property.id, date: dayjs().format("YYYY-MM-DD"), onlyUnassigned: true });
+      invalidateAfterChange(false);
+      const floors = r.unmatchedFloors.length ? ` · без горничной в графике: ${r.unmatchedFloors.map((f) => `${f} этаж`).join(", ")}` : "";
+      enqueueSnackbar(
+        r.assigned ? `Раздали ${r.assigned} ${plural(r.assigned, "задачу", "задачи", "задач")} по графику${floors}` : `Новых назначений нет${floors}`,
+        { variant: r.unmatchedFloors.length ? "warning" : "success" },
+      );
+    } catch (err) {
+      enqueueSnackbar(
+        err instanceof ApiError && (err.status === 404 || err.status === 405)
+          ? "Раздача по графику появится после обновления сервера"
+          : getErrorMessage(err, "Не удалось раздать задачи по графику"),
+        { variant: "error" },
+      );
+    } finally {
+      setAssigning(false);
+    }
+  };
+  // Главное действие задачи — одной кнопкой, как просят горничные: «Начала» → «Убрала».
+  const primaryAction = (task: HotelHousekeepingTask): { label: string; run: () => void } | null => {
+    if (isCheckoutInspection(task) && !parseInspectionResult(task.note)) return { label: "Проверила", run: () => openInspect(task) };
+    if (task.status === "open") return { label: "Начала", run: () => void changeStatus(task, "in_progress") };
+    if (task.status === "in_progress") return { label: task.kind === "inspection" ? "Проверила" : "Убрала", run: () => void changeStatus(task, "done") };
+    return null;
+  };
+
   if (!vivaActive) return <Navigate to="/" replace />;
 
   const now = dayjs();
@@ -370,9 +409,16 @@ export const HotelHousekeepingPage: React.FC = () => {
         }
         info="Задачи горничным: после выезда, текущая уборка, проверка, обслуживание. Статус меняется кликом по нему; при закрытии задачи можно сразу поставить состояние номера."
         actions={
-          <Button variant="contained" disableElevation startIcon={<AddOutlined />} onClick={openCreate}>
-            Новая задача
-          </Button>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            {canAssign && (
+              <Button variant="outlined" startIcon={<GroupsOutlined />} onClick={() => void assignByRoster()} disabled={assigning || !property}>
+                {assigning ? "Раздаём…" : "Раздать по графику"}
+              </Button>
+            )}
+            <Button variant="contained" disableElevation startIcon={<AddOutlined />} onClick={openCreate}>
+              Новая задача
+            </Button>
+          </Stack>
         }
       />
 
@@ -424,6 +470,69 @@ export const HotelHousekeepingPage: React.FC = () => {
             }
           />
         </Surface>
+      ) : isPhone ? (
+        <Stack gap={1.25}>
+          {tasks.map((task) => {
+            const overdue = isOverdue(task);
+            const action = primaryAction(task);
+            return (
+              <Surface key={task.id} sx={{ p: 1.75 }}>
+                <Stack direction="row" alignItems="center" gap={1.25}>
+                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0, bgcolor: hotelRoomStateColor(task.roomHousekeepingState, theme) }} />
+                  <Typography sx={{ fontSize: 22, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{task.roomNumber}</Typography>
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography variant="body2" fontWeight={600} noWrap>
+                      {isCheckoutInspection(task) ? "Проверка перед выездом" : KIND_LABELS[task.kind]}
+                    </Typography>
+                    <Typography variant="caption" color={overdue ? "error.main" : "text.secondary"} component="div">
+                      {task.dueAt ? `${formatDue(task.dueAt)}${overdue ? " · просрочено" : ""}` : "без срока"}
+                    </Typography>
+                    <Typography variant="caption" color={task.assignedToName ? "text.secondary" : "warning.main"} component="div" noWrap>
+                      {task.assignedToName || "не назначен"}
+                    </Typography>
+                  </Box>
+                  <StatusPill
+                    color={statusColor(task.status, theme)}
+                    label={STATUS_LABELS[task.status]}
+                    onClick={(e) => setStatusMenuAnchor({ el: e.currentTarget, task })}
+                  />
+                </Stack>
+                {task.note && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    {task.note}
+                  </Typography>
+                )}
+                {isStale(task) && (
+                  <Typography variant="caption" color="success.main" fontWeight={600} component="div" sx={{ mt: 0.75 }}>
+                    номер уже убран — задачу можно отменить
+                  </Typography>
+                )}
+                <Stack direction="row" gap={1} sx={{ mt: 1.5 }}>
+                  {action && (
+                    <Button
+                      fullWidth
+                      size="large"
+                      variant="contained"
+                      disableElevation
+                      onClick={action.run}
+                      sx={{ py: 1.4, borderRadius: "12px", fontWeight: 800, fontSize: 16 }}
+                    >
+                      {action.label}
+                    </Button>
+                  )}
+                  {isStale(task) && (
+                    <Button size="large" color="inherit" disabled={cancellingId != null} onClick={() => void cancelStale(task)} sx={{ borderRadius: "12px" }}>
+                      Отменить
+                    </Button>
+                  )}
+                  <IconButton onClick={() => openEdit(task)} aria-label={`Изменить задачу по номеру ${task.roomNumber}`} sx={{ border: 1, borderColor: "divider", borderRadius: "12px", px: 1.5 }}>
+                    <EditOutlined />
+                  </IconButton>
+                </Stack>
+              </Surface>
+            );
+          })}
+        </Stack>
       ) : (
         <Surface padded={false} sx={{ overflow: "hidden" }}>
           <Box sx={{ overflowX: "auto" }}>
