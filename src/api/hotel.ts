@@ -1507,6 +1507,11 @@ export interface HotelReservationListParams {
   inHouseOn?: string;
   roomId?: number;
   customerId?: number;
+  /** Дата первого заезда в [checkInFrom, checkInTo] (обе включительно). Старый сервер параметры пропускает. */
+  checkInFrom?: string;
+  checkInTo?: string;
+  corporateAccountId?: number;
+  balance?: "debt" | "overpaid" | "settled";
   limit?: number;
   offset?: number;
 }
@@ -1898,6 +1903,14 @@ export interface HotelGuestListParams {
 }
 
 /** До 200 гостей, поиск по имени, телефону, номеру документа и ИНН — список «Гости». */
+/** GET guests/page/ — тот же список постранично, с общим числом (для выгрузки всех гостей). */
+export function listGuestsPage(
+  params: HotelGuestListParams & { limit?: number; offset?: number } = {},
+  signal?: AbortSignal,
+): Promise<{ count: number; results: HotelGuest[] }> {
+  return apiRequest<{ count: number; results: HotelGuest[] }>(`/v2/hotel/guests/page/${buildQuery(params)}`, { signal });
+}
+
 export function listGuests(params: HotelGuestListParams = {}, signal?: AbortSignal): Promise<HotelGuest[]> {
   const qs = buildQuery(params);
   return apiRequest<HotelGuest[]>(`/v2/hotel/guests/${qs}`, { signal });
@@ -2728,6 +2741,30 @@ export function getConsentTemplate(propertyId: number, signal?: AbortSignal): Pr
 /** title/body: null — вернуть стандартный шаблон (редакция всё равно растёт). Право hotel.manage. */
 export function putConsentTemplate(propertyId: number, data: { title: string | null; body: string | null }): Promise<HotelConsentTemplate> {
   return apiRequest<HotelConsentTemplate>(`/v2/hotel/properties/${propertyId}/consent-template/`, { method: "PUT", body: data });
+}
+
+// ── Заметки смены: звонки и сообщения ─────────────────────────────────────
+//
+// Контракт — docs/hotel-backend-tasks.md §12. Пока 404 — счётчики хранятся
+// на устройстве администратора (HotelShiftReport).
+
+export interface HotelShiftNote {
+  propertyId: number;
+  date: string;
+  callsMegacom: number;
+  callsO: number;
+  whatsappMessages: number;
+  comment: string;
+  updatedAt: string | null;
+  updatedByName: string;
+}
+
+export function getShiftNote(params: { propertyId: number; date: string }, signal?: AbortSignal): Promise<HotelShiftNote> {
+  return apiRequest<HotelShiftNote>(`/v2/hotel/shift-notes/${buildQuery(params)}`, { signal });
+}
+
+export function saveShiftNote(data: Omit<HotelShiftNote, "updatedAt" | "updatedByName">): Promise<HotelShiftNote> {
+  return apiRequest<HotelShiftNote>("/v2/hotel/shift-notes/", { method: "PUT", body: data });
 }
 
 export function getYieldReport(params: { propertyId: number; from: string; to: string }, signal?: AbortSignal): Promise<HotelYieldReport> {

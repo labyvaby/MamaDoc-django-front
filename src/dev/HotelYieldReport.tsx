@@ -76,7 +76,8 @@ async function loadYieldFacts(propertyId: number, from: string, to: string, sign
         fromServer: true,
       };
     } catch (err) {
-      if (!(err instanceof ApiError && (err.status === 404 || err.status === 405))) throw err;
+      // 403 — у сотрудника нет права на серверный отчёт: считаем по броням, как до него.
+      if (!(err instanceof ApiError && (err.status === 404 || err.status === 405 || err.status === 403))) throw err;
       yieldEndpointMissing = true;
     }
   }
