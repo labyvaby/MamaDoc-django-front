@@ -3,7 +3,8 @@
  * подписанты: попадают в шапку счёта на оплату и справки о проживании
  * (hotelPrintDocs.ts уже печатает блок, когда поля заполнены). Бэкенд их
  * хранит в объекте (контракт §6) — пока в ответе объекта этих полей нет,
- * карточка говорит, что включится после обновления сервера.
+ * работает демо-режим: реквизиты хранятся на этом устройстве (hotelDemoStore)
+ * и сразу печатаются в документах.
  */
 import React from "react";
 import { Alert, Box, Button, Stack, Typography } from "@mui/material";
@@ -17,6 +18,7 @@ import { getErrorMessage } from "../api/client";
 import { updateHotelProperty, type HotelProperty, type HotelPropertyUpdateData } from "../api/hotel";
 import { useCan } from "../hooks/useCan";
 import { FormField } from "./formField";
+import { DEMO_KEYS, readDemo, writeDemo } from "./hotelDemoStore";
 
 type Key = "legalName" | "legalAddress" | "inn" | "okpo" | "taxAuthority" | "bankName" | "bankAccount" | "bik" | "directorName" | "accountantName";
 
@@ -45,7 +47,13 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
   const canManage = useCan("hotel.manage");
   // Бэкенд уже хранит реквизиты, если в ответе объекта есть хотя бы поле legalName.
   const supported = "legalName" in property;
-  const initial = React.useMemo(() => Object.fromEntries(FIELDS.map((f) => [f.key, (property[f.key] as string | undefined) ?? ""])) as Record<Key, string>, [property]);
+  const [demoVersion, setDemoVersion] = React.useState(0);
+  const initial = React.useMemo(() => {
+    const demo = supported ? {} : readDemo<Partial<Record<Key, string>>>(DEMO_KEYS.requisites(property.id), {});
+    return Object.fromEntries(FIELDS.map((f) => [f.key, (supported ? (property[f.key] as string | undefined) : demo[f.key]) ?? ""])) as Record<Key, string>;
+    // demoVersion — перечитать демо после сохранения
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [property, supported, demoVersion]);
   const [form, setForm] = React.useState<Record<Key, string>>(initial);
   const [saving, setSaving] = React.useState(false);
   React.useEffect(() => setForm(initial), [initial]);
@@ -55,8 +63,13 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
     setSaving(true);
     try {
       const patch: HotelPropertyUpdateData = Object.fromEntries(FIELDS.map((f) => [f.key, form[f.key].trim()]));
-      await updateHotelProperty(property.id, patch);
-      void queryClient.invalidateQueries({ queryKey: ["hotel", "properties"] });
+      if (supported) {
+        await updateHotelProperty(property.id, patch);
+        void queryClient.invalidateQueries({ queryKey: ["hotel", "properties"] });
+      } else {
+        writeDemo(DEMO_KEYS.requisites(property.id), patch);
+        setDemoVersion((v) => v + 1);
+      }
       enqueueSnackbar("Реквизиты сохранены — они появятся в счетах и справках", { variant: "success" });
     } catch (err) {
       enqueueSnackbar(getErrorMessage(err, "Не удалось сохранить реквизиты"), { variant: "error" });
@@ -75,7 +88,8 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
       </Typography>
       {!supported && (
         <Alert severity="info" variant="outlined" sx={{ mb: 1.5 }}>
-          Сохранение реквизитов включится после обновления сервера. Счёт и справка уже готовы их печатать.
+          Демо-режим: реквизиты хранятся на этом устройстве и уже печатаются в счёте и справке. С обновлением сервера они станут общими для всех
+          сотрудников.
         </Alert>
       )}
       <Stack gap={2}>
@@ -97,7 +111,7 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
                   value={form[f.key]}
                   onValueChange={(v) => setForm((s) => ({ ...s, [f.key]: f.digits ? v.replace(/\D/g, "").slice(0, f.digits) : v }))}
                   rules={{ maxLength: f.digits ?? 200 }}
-                  disabled={!supported || !canManage || saving}
+                  disabled={!canManage || saving}
                   sx={f.key === "legalName" || f.key === "legalAddress" || f.key === "taxAuthority" ? { gridColumn: { sm: "1 / -1" } } : undefined}
                 />
               ))}
@@ -105,11 +119,9 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
           </Box>
         ))}
       </Stack>
-      {supported && (
-        <Button variant="contained" sx={{ mt: 2 }} disabled={!dirty || saving || !canManage} onClick={() => void save()}>
-          {saving ? "Сохранение…" : "Сохранить реквизиты"}
-        </Button>
-      )}
+      <Button variant="contained" sx={{ mt: 2 }} disabled={!dirty || saving || !canManage} onClick={() => void save()}>
+        {saving ? "Сохранение…" : "Сохранить реквизиты"}
+      </Button>
     </Box>
   );
 };
