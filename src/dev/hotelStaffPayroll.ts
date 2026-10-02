@@ -34,6 +34,9 @@ export interface PayrollRow {
   earned: number;
   advance: number;
   toPay: number;
+  /** Смены внахлёст с другой сменой того же сотрудника и их ставки — за одни часы платим дважды. */
+  overlapShifts: number;
+  overlapAmount: number;
 }
 
 export interface PayrollResult {
@@ -42,28 +45,78 @@ export interface PayrollResult {
   roles: HotelStaffRole[];
 }
 
-/** Отработанные смены: отметка «не вышел» не считается, остальные — да. */
+/** Смена стоит в графике (для пересечений): всё, кроме «не вышел». */
 export const countsAsWorked = (s: HotelStaffShift) => s.status !== "absent";
 
-export function computePayroll(shifts: HotelStaffShift[], advances: Map<number, number>, names: Map<number, string>): PayrollResult {
+/**
+ * Начисляется — как в staff-payroll/ на сервере: «отработал» и
+ * запланированные, которые уже закончились. Будущие смены месяца — ещё нет.
+ */
+export const countsAsPaid = (s: HotelStaffShift, now: number = Date.now()) =>
+  s.status === "worked" || (s.status === "planned" && Date.parse(s.endsAt) <= now);
+
+/**
+ * Пересечения смен одного сотрудника: смена → с какими его сменами она идёт
+ * одновременно. «Не вышел» не считается. Пересечение — общее время, а не
+ * просто тот же день: ночная смена до 09:00 и дневная с 09:00 не пересекаются.
+ */
+export function findShiftOverlaps(shifts: HotelStaffShift[]): Map<number, HotelStaffShift[]> {
+  const byEmployee = new Map<number, HotelStaffShift[]>();
+  for (const s of shifts) {
+    if (!countsAsWorked(s)) continue;
+    const list = byEmployee.get(s.employeeId) ?? [];
+    list.push(s);
+    byEmployee.set(s.employeeId, list);
+  }
+  const result = new Map<number, HotelStaffShift[]>();
+  const add = (a: HotelStaffShift, b: HotelStaffShift) => result.set(a.id, [...(result.get(a.id) ?? []), b]);
+  for (const list of byEmployee.values()) {
+    const sorted = [...list].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+    for (let i = 0; i < sorted.length; i++) {
+      const endI = Date.parse(sorted[i].endsAt);
+      for (let j = i + 1; j < sorted.length && Date.parse(sorted[j].startsAt) < endI; j++) {
+        add(sorted[i], sorted[j]);
+        add(sorted[j], sorted[i]);
+      }
+    }
+  }
+  return result;
+}
+
+export function computePayroll(
+  shifts: HotelStaffShift[],
+  advances: Map<number, number>,
+  names: Map<number, string>,
+  now: number = Date.now(),
+): PayrollResult {
   const rows = new Map<number, PayrollRow>();
   const roles = new Set<HotelStaffRole>();
   const row = (id: number): PayrollRow => {
     let r = rows.get(id);
     if (!r) {
-      r = { employeeId: id, name: names.get(id) ?? "", byRole: {}, shifts: 0, earned: 0, advance: 0, toPay: 0 };
+      r = { employeeId: id, name: names.get(id) ?? "", byRole: {}, shifts: 0, earned: 0, advance: 0, toPay: 0, overlapShifts: 0, overlapAmount: 0 };
       rows.set(id, r);
     }
     return r;
   };
   for (const s of shifts) {
-    if (!countsAsWorked(s)) continue;
+    if (!countsAsPaid(s, now)) continue;
     const r = row(s.employeeId);
     if (!r.name) r.name = s.employeeName;
     r.byRole[s.role] = (r.byRole[s.role] ?? 0) + 1;
     roles.add(s.role);
     r.shifts += 1;
     r.earned += Number(s.rate) || 0;
+  }
+  // Внахлёст: из каждой пары пересекающихся смен «лишней» считаем ту, что начинается позже.
+  const overlaps = findShiftOverlaps(shifts);
+  for (const s of shifts) {
+    if (!countsAsPaid(s, now)) continue;
+    const others = overlaps.get(s.id);
+    if (!others?.some((o) => Date.parse(o.startsAt) < Date.parse(s.startsAt) || (o.startsAt === s.startsAt && o.id < s.id))) continue;
+    const r = row(s.employeeId);
+    r.overlapShifts += 1;
+    r.overlapAmount += Number(s.rate) || 0;
   }
   for (const [id, amount] of advances) {
     if (!amount) continue;

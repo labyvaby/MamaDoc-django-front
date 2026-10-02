@@ -13,9 +13,10 @@
  *   рождения, документ, даты, категория, цена за ночь и итог;
  * - анкета гостя — паспортные данные каждого гостя брони.
  *
- * Реквизиты (ИНН, ОКПО, р/с, БИК, банк, юр. название) берутся из объекта,
- * когда бэк начнёт их отдавать; пока строки с пустыми реквизитами просто не
- * печатаются, а не выходят пустыми.
+ * Реквизиты (ИНН, ОКПО, р/с, БИК, банк, юр. название) берутся только из
+ * объекта на сервере. Счёт и справка без них не печатаются вовсе
+ * (requisitesGap): документ с пустым получателем или с реквизитами одного
+ * компьютера хуже, чем никакого.
  *
  * Печать — через скрытый iframe: всплывающее окно браузер может
  * заблокировать, а печать всей страницы захватила бы меню и шахматку.
@@ -64,6 +65,35 @@ export interface HotelRequisites {
   /** Подписи в счёте и справке. */
   directorName?: string;
   accountantName?: string;
+}
+
+/** Без чего документ не печатается: счёт — получатель и банк, справка — юрлицо. */
+const REQUIRED_REQUISITES: Partial<Record<HotelPrintDoc, { key: keyof HotelRequisites; label: string }[]>> = {
+  invoice: [
+    { key: "legalName", label: "юр. название" },
+    { key: "inn", label: "ИНН" },
+    { key: "bankName", label: "банк" },
+    { key: "bankAccount", label: "расчётный счёт" },
+    { key: "bik", label: "БИК" },
+  ],
+  certificate: [
+    { key: "legalName", label: "юр. название" },
+    { key: "inn", label: "ИНН" },
+  ],
+};
+
+/**
+ * Почему документ нельзя печатать: «server» — сервер ещё не хранит реквизиты
+ * (в ответе объекта нет полей), «fields» — не заполнены перечисленные. null — можно.
+ */
+export type RequisitesGap = { kind: "server" } | { kind: "fields"; labels: string[] } | null;
+
+export function requisitesGap(doc: HotelPrintDoc, property: (HotelProperty & HotelRequisites) | null): RequisitesGap {
+  const required = REQUIRED_REQUISITES[doc];
+  if (!required) return null;
+  if (!property || !("legalName" in property)) return { kind: "server" };
+  const labels = required.filter((f) => !String(property[f.key] ?? "").trim()).map((f) => f.label);
+  return labels.length ? { kind: "fields", labels } : null;
 }
 
 /** Строка подписи «Должность ____ Фамилия И. О.». */

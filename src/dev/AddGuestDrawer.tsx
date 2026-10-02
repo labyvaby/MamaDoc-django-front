@@ -647,6 +647,11 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
       if (requiredOk) focusFirstFieldError();
       return;
     }
+    // Паспортные данные — персональные: без согласия гостя карточку с ними не сохраняем.
+    if (!dataConsent) {
+      setSubmitError("Отметьте согласие гостя на хранение и обработку персональных данных — без него паспортные данные не сохраняются.");
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     try {

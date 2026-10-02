@@ -22,7 +22,12 @@ import {
   Box,
   Button,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   InputAdornment,
+  LinearProgress,
   Stack,
   Table,
   TableBody,
@@ -46,13 +51,14 @@ import ReportProblemOutlined from "@mui/icons-material/ReportProblemOutlined";
 import EventNoteOutlined from "@mui/icons-material/EventNoteOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Navigate } from "react-router";
+import { Navigate, useSearchParams } from "react-router";
+import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
 import { useSnackbar } from "notistack";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useCan } from "../hooks/useCan";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
-import { checkInReservationItem, checkOutReservationItem, listReservations, type HotelReservation } from "../api/hotel";
+import { cancelReservation, checkInReservationItem, checkOutReservationItem, listReservations, type HotelReservation } from "../api/hotel";
 import { ApiError, getErrorMessage } from "../api/client";
 import { subtleBorder } from "../theme/uiHelpers";
 import { useHotelProperty } from "./useHotelProperty";
@@ -70,7 +76,11 @@ import {
 import { CreateBookingButton } from "./CreateBookingButton";
 import { exportReservationsXlsx } from "./hotelListsXlsx";
 import { fetchAllReservations } from "./hotelReportData";
+import { inHouseCounts, isNoShowCandidate, isStayingOn } from "./hotelInHouse";
+import { missingDocumentGuest } from "./CheckInDocumentPanel";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
+import { useSiteRequests } from "./useSiteRequests";
+import { siteRequestLine } from "./HotelSiteRequestsNotifier";
 import { DateStepper, EmptyState, FilterChip, HotelPage, HotelPageHeader, plural, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 
 type Tab = "today" | "all";
@@ -111,13 +121,15 @@ const ArrivalCard: React.FC<{
   const name = r.customerName || guest?.fullName || "Без заказчика";
   const balance = Number(r.balanceDue);
   const arrived = r.items.every((i) => i.stayStatus !== "expected");
+  // Заехал и уже выехал (ранний выезд в тот же день) — не «Заселён».
+  const left = arrived && r.items.every((i) => i.stayStatus !== "checked_in");
   const nights = item ? nightsBetween(item.checkIn, item.checkOut) : 0;
   const guests = r.items.reduce((s, i) => s + i.adults + i.children, 0);
   // null — нет права видеть документы: тогда про паспорт не говорим ничего.
   const docKnown = guest?.document != null;
   const hasDoc = Boolean(guest?.document?.documentNumber);
   const rooms = r.items.map((i) => i.roomNumber).filter(Boolean) as string[];
-  const accent = arrived ? theme.palette.success.main : balance > 0 ? theme.palette.error.main : theme.palette.primary.main;
+  const accent = left ? theme.palette.text.secondary : arrived ? theme.palette.success.main : balance > 0 ? theme.palette.error.main : theme.palette.primary.main;
   return (
     <Box
       role="button"
@@ -218,10 +230,10 @@ const ArrivalCard: React.FC<{
         )}
         <Box sx={{ ml: "auto" }}>
           {arrived ? (
-            <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "success.main" }}>
-              <CheckCircleOutlined sx={{ fontSize: 18 }} />
+            <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: left ? "text.secondary" : "success.main" }}>
+              {left ? <LogoutOutlined sx={{ fontSize: 18 }} /> : <CheckCircleOutlined sx={{ fontSize: 18 }} />}
               <Typography variant="body2" fontWeight={700}>
-                Заселён
+                {left ? "Выехал" : "Заселён"}
               </Typography>
             </Stack>
           ) : action ? (
@@ -320,20 +332,24 @@ const ReservationRow: React.FC<{
   );
 };
 
-const ListCard: React.FC<{ icon: React.ReactNode; title: string; count: number; color: string; empty: string; loading: boolean; children: React.ReactNode }> = ({
-  icon,
-  title,
-  count,
-  color,
-  empty,
-  loading,
-  children,
-}) => (
+const ListCard: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  count: number;
+  /** Что показать вместо числа строк (например, «3 гостя · 2 ном.»). */
+  countLabel?: string;
+  color: string;
+  empty: string;
+  loading: boolean;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ icon, title, count, countLabel, color, empty, loading, action, children }) => (
   <Surface padded={false} sx={{ overflow: "hidden" }}>
     <Stack direction="row" alignItems="center" gap={1.25} sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: "divider" }}>
       <Box sx={{ color, display: "flex", "& svg": { fontSize: 20 } }}>{icon}</Box>
       <Typography sx={{ fontWeight: 700, flex: 1 }}>{title}</Typography>
-      <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: count > 0 ? "text.primary" : "text.disabled" }}>{count}</Typography>
+      {action}
+      <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: count > 0 ? "text.primary" : "text.disabled" }}>{countLabel ?? count}</Typography>
     </Stack>
     {loading ? (
       <Stack alignItems="center" sx={{ py: 3 }}>
@@ -363,6 +379,7 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
   const [date, setDate] = React.useState<Dayjs>(dayjs());
   const [busyId, setBusyId] = React.useState<number | null>(null);
   const [showAllOverdue, setShowAllOverdue] = React.useState(false);
+  const [closeDayOpen, setCloseDayOpen] = React.useState(false);
   const dateStr = date.format("YYYY-MM-DD");
   const todayStr = dayjs().format("YYYY-MM-DD");
   const isToday = dateStr === todayStr;
@@ -389,7 +406,10 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
   const live = (list: HotelReservation[] | undefined) => (list ?? []).filter((r) => LIVE.has(r.status));
   const arriving = live(arrivingQuery.data?.results);
   const departing = live(departingQuery.data?.results);
-  const inHouse = live(inHouseQuery.data?.results).filter((r) => r.items.some((i) => i.stayStatus === "checked_in"));
+  // Одно правило «проживает» с шапкой шахматки и кухней (hotelInHouse): заселён и не выехал.
+  const inHouse = live(inHouseQuery.data?.results).filter((r) => r.items.some((i) => isStayingOn(i, dateStr, todayStr)));
+  const inHouseNow = inHouseCounts(inHouseQuery.data?.results ?? [], dateStr, todayStr);
+  const noShows = isToday ? live(recentQuery.data?.results).filter((r) => isNoShowCandidate(r, todayStr)) : [];
   const overdue = isToday
     ? live(recentQuery.data?.results)
         .map((r) => {
@@ -405,6 +425,12 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
   const act = async (reservation: HotelReservation, kind: "in" | "out") => {
     const item = reservation.items[0];
     if (!item) return;
+    // Паспорт при брони необязателен — без него заселяют из карточки, там же его и вносят.
+    if (kind === "in" && missingDocumentGuest(item)) {
+      enqueueSnackbar("Нет паспорта гостя — внесите его в карточке брони", { variant: "info" });
+      onOpen(reservation.id);
+      return;
+    }
     setBusyId(reservation.id);
     try {
       if (kind === "in") await checkInReservationItem(reservation.id, item.id, { version: reservation.version });
@@ -458,7 +484,8 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
       <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
         <Typography variant="body2" color="text.secondary">
           {arriving.length} {plural(arriving.length, "заезд", "заезда", "заездов")} · {departing.length}{" "}
-          {plural(departing.length, "выезд", "выезда", "выездов")} · {inHouse.length} {plural(inHouse.length, "проживает", "проживают", "проживают")}
+          {plural(departing.length, "выезд", "выезда", "выездов")} · проживают {inHouseNow.guests} {plural(inHouseNow.guests, "гость", "гостя", "гостей")} в{" "}
+          {inHouseNow.rooms} {plural(inHouseNow.rooms, "номере", "номерах", "номерах")}
         </Typography>
         <DateStepper value={date} onChange={setDate} />
       </Stack>
@@ -522,7 +549,21 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
 
       {/* Просроченные — важны, но не должны заслонять заезды дня: первые три, остальные по кнопке. */}
       {overdue.length > 0 && (
-        <ListCard icon={<ReportProblemOutlined />} title="Требуют внимания" count={overdue.length} color={theme.palette.error.main} empty="" loading={false}>
+        <ListCard
+          icon={<ReportProblemOutlined />}
+          title="Требуют внимания"
+          count={overdue.length}
+          color={theme.palette.error.main}
+          empty=""
+          loading={false}
+          action={
+            canManageStays && noShows.length > 0 ? (
+              <Button size="small" variant="outlined" color="warning" onClick={() => setCloseDayOpen(true)} sx={{ mr: 1, borderRadius: "8px", fontWeight: 700 }}>
+                Закрыть день: незаезды ({noShows.length})
+              </Button>
+            ) : undefined
+          }
+        >
           {(showAllOverdue ? overdue : overdue.slice(0, OVERDUE_PREVIEW)).map(({ r, note }) => (
             <ReservationRow key={r.id} reservation={r} note={note} action={checkOutAction(r) ?? checkInAction(r)} onOpen={() => onOpen(r.id)} />
           ))}
@@ -549,13 +590,98 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
             <ReservationRow key={r.id} reservation={r} action={isToday ? checkOutAction(r) : undefined} onOpen={() => onOpen(r.id)} />
           ))}
         </ListCard>
-        <ListCard icon={<KingBedOutlined />} title="Проживают" count={inHouse.length} color={theme.palette.info.main} empty="Сейчас никто не проживает" loading={inHouseQuery.isPending}>
+        <ListCard
+          icon={<KingBedOutlined />}
+          title="Проживают"
+          count={inHouse.length}
+          countLabel={`${inHouseNow.guests} · ${inHouseNow.rooms} ном.`}
+          color={theme.palette.info.main}
+          empty="Сейчас никто не проживает"
+          loading={inHouseQuery.isPending}
+        >
           {inHouse.map((r) => (
             <ReservationRow key={r.id} reservation={r} onOpen={() => onOpen(r.id)} />
           ))}
         </ListCard>
       </Box>
+      <CloseDayDialog open={closeDayOpen} reservations={noShows} onClose={() => setCloseDayOpen(false)} />
     </>
+  );
+};
+
+/**
+ * «Закрыть день»: брони, где гость так и не заехал, — разом в «Незаезд».
+ * Сервер освобождает их номера (снова в продаже — на сайте и в шахматке),
+ * бронь больше не долг и не порции на кухне. Штраф за незаезд не начисляется
+ * сам — его, если нужно, добавляют в карточке брони.
+ */
+const CloseDayDialog: React.FC<{ open: boolean; reservations: HotelReservation[]; onClose: () => void }> = ({ open, reservations, onClose }) => {
+  const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
+  const [done, setDone] = React.useState<number | null>(null);
+  const busy = done != null;
+
+  const run = async () => {
+    setDone(0);
+    let failed = 0;
+    for (const r of reservations) {
+      try {
+        await cancelReservation(r.id, { reason: "Незаезд — закрытие дня", noShow: true, version: r.version });
+      } catch {
+        failed += 1;
+      }
+      setDone((d) => (d ?? 0) + 1);
+    }
+    for (const key of [["hotel", "reservations"], ["hotel", "calendar"], ["hotel", "dashboard"], ["hotel", "kitchen"]]) {
+      void queryClient.invalidateQueries({ queryKey: key });
+    }
+    setDone(null);
+    if (failed) enqueueSnackbar(`Отмечено ${reservations.length - failed} из ${reservations.length}; остальные откройте и отметьте в карточке брони`, { variant: "warning" });
+    else enqueueSnackbar(`Незаезды отмечены: ${reservations.length}. Номера снова в продаже.`, { variant: "success" });
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth={false} fullWidth PaperProps={{ sx: { maxWidth: 560, borderRadius: "16px" } }}>
+      <DialogTitle sx={{ fontWeight: 800 }}>Закрыть день: отметить незаезды</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" sx={{ mb: 1.5 }}>
+          Эти гости не заехали в свой день. Брони станут «Незаезд», номера вернутся в продажу — на сайте и в шахматке. Долгом и порциями на кухне
+          они больше не считаются. Штраф за незаезд, если он нужен, добавьте в карточке брони.
+        </Typography>
+        <Stack sx={{ border: 1, borderColor: "divider", borderRadius: "12px", overflow: "hidden", maxHeight: 320, overflowY: "auto" }}>
+          {reservations.map((r, i) => {
+            const item = r.items.find((x) => x.isActive !== false) ?? r.items[0];
+            return (
+              <Stack key={r.id} direction="row" justifyContent="space-between" gap={1.5} sx={{ px: 1.5, py: 1, borderTop: i ? 1 : 0, borderColor: "divider" }}>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" fontWeight={600} noWrap>
+                    {r.customerName || `Бронь №${r.number}`}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    №{r.number} · номер {item?.roomNumber ?? "—"} · {item ? formatHotelDateRange(item.checkIn, item.checkOut) : ""}
+                  </Typography>
+                </Box>
+                {Number(r.paidAmount) > 0 && (
+                  <Typography variant="caption" color="warning.main" sx={{ flexShrink: 0, alignSelf: "center" }}>
+                    внесено {Number(r.paidAmount).toLocaleString("ru-RU")} — решите возврат
+                  </Typography>
+                )}
+              </Stack>
+            );
+          })}
+        </Stack>
+        {busy && <LinearProgress variant="determinate" value={((done ?? 0) / Math.max(1, reservations.length)) * 100} sx={{ mt: 1.5, borderRadius: 2 }} />}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button color="inherit" onClick={onClose} disabled={busy}>
+          Отмена
+        </Button>
+        <Button variant="contained" color="warning" disableElevation onClick={() => void run()} disabled={busy || reservations.length === 0}>
+          {busy ? `Отмечаем… ${done} из ${reservations.length}` : `Отметить незаезд (${reservations.length})`}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 };
 
@@ -733,6 +859,54 @@ const AllTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> = (
   );
 };
 
+// ── Заявки с сайта ──────────────────────────────────────────────────────────
+
+/** Заявки с сайта, которые ждут подтверждения, — над вкладками, чтобы не сгорели. */
+const SiteRequestsBlock: React.FC<{ onOpen: (id: number) => void }> = ({ onOpen }) => {
+  const { requests } = useSiteRequests();
+  // Обратный отсчёт «осталось N мин» — раз в 30 с.
+  const [, tick] = React.useReducer((x: number) => x + 1, 0);
+  React.useEffect(() => {
+    if (requests.length === 0) return undefined;
+    const t = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(t);
+  }, [requests.length]);
+  if (requests.length === 0) return null;
+  return (
+    <Alert
+      severity="warning"
+      variant="outlined"
+      icon={<LanguageOutlined fontSize="inherit" />}
+      sx={{ "& .MuiAlert-message": { width: "100%" } }}
+    >
+      <Typography variant="body2" fontWeight={700} sx={{ mb: 0.75 }}>
+        {requests.length === 1 ? "Заявка с сайта ждёт подтверждения" : `Заявки с сайта ждут подтверждения: ${requests.length}`}
+      </Typography>
+      <Stack gap={0.75}>
+        {requests.map((r) => {
+          const left = r.expiresAt ? Math.max(0, dayjs(r.expiresAt).diff(dayjs(), "minute")) : null;
+          return (
+            <Stack key={r.id} direction={{ xs: "column", md: "row" }} alignItems={{ md: "center" }} gap={{ xs: 0.5, md: 1.5 }}>
+              <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }}>
+                <b>№{r.number}</b> · {siteRequestLine(r)}
+                {left != null && (
+                  <Typography component="span" variant="body2" color={left <= 10 ? "error.main" : "text.secondary"} fontWeight={600}>
+                    {" "}
+                    · {left > 0 ? `сгорит через ${left} мин` : "сгорает"}
+                  </Typography>
+                )}
+              </Typography>
+              <Button size="small" variant="contained" color="warning" disableElevation onClick={() => onOpen(r.id)} sx={{ flexShrink: 0 }}>
+                Открыть и подтвердить
+              </Button>
+            </Stack>
+          );
+        })}
+      </Stack>
+    </Alert>
+  );
+};
+
 // ── Страница ────────────────────────────────────────────────────────────────
 
 export const HotelReceptionPage: React.FC = () => {
@@ -742,6 +916,22 @@ export const HotelReceptionPage: React.FC = () => {
   const canManageBookings = useCan(["schedule.manage", "hotel.reservations.manage"]);
   const [tab, setTab] = React.useState<Tab>("today");
   const [openId, setOpenId] = React.useState<number | null>(null);
+  // /reception?open=ID — из уведомления о заявке с сайта: сразу карточка брони.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openParam = searchParams.get("open");
+  React.useEffect(() => {
+    const id = Number(openParam);
+    if (!openParam || !Number.isInteger(id) || id <= 0) return;
+    setOpenId(id);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("open");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [openParam, setSearchParams]);
 
   if (!vivaActive) return <Navigate to="/" replace />;
 
@@ -753,6 +943,8 @@ export const HotelReceptionPage: React.FC = () => {
         info="«Сегодня» — кого заселять и выселять прямо сейчас. «Все брони» — поиск по имени, телефону или номеру брони. Клик по строке открывает карточку брони: оплата, правка дат, смена номера."
         actions={canManageBookings ? <CreateBookingButton /> : undefined}
       />
+
+      {property && <SiteRequestsBlock onOpen={setOpenId} />}
 
       <Stack direction="row" gap={1}>
         <FilterChip label="Сегодня" active={tab === "today"} onClick={() => setTab("today")} />

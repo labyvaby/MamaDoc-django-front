@@ -1764,20 +1764,30 @@ export function formatHotelDateTime(iso: string): string {
   return `${formatHotelDate(iso)}, ${d.format("HH:mm")}`;
 }
 
+const joinRange = (fromIso: string, toIso: string): string => {
+  const from = dayjs(fromIso);
+  const to = dayjs(toIso);
+  if (from.isSame(to, "day")) return formatHotelDate(fromIso);
+  if (from.month() === to.month() && from.year() === to.year()) return `${from.date()} — ${formatHotelDate(toIso)}`;
+  return `${formatHotelDate(fromIso)} — ${formatHotelDate(toIso)}`;
+};
+
 /**
- * «9 – 11 июля» / «28 июня – 2 июля» — диапазон дат брони. `checkOut` не
- * включительно (гость выезжает этим утром), поэтому для показа берётся
- * предыдущий день; в пределах одного месяца хвостовая дата не повторяет
- * месяц, при переходе через месяц/год повторяет его целиком.
+ * «2 — 5 октября» — проживание: день заезда — день выезда, как в печатных
+ * документах. Один формат на всех экранах: администратор читает гостю по
+ * телефону ровно то, что напечатано в подтверждении.
  */
 export function formatHotelDateRange(checkIn: string, checkOut: string): string {
-  const from = dayjs(checkIn);
-  const toIncl = dayjs(checkOut).subtract(1, "day");
-  if (from.isSame(toIncl, "day")) return formatHotelDate(checkIn);
-  if (from.month() === toIncl.month() && from.year() === toIncl.year()) {
-    return `${from.date()} – ${formatHotelDate(toIncl.format("YYYY-MM-DD"))}`;
-  }
-  return `${formatHotelDate(checkIn)} – ${formatHotelDate(toIncl.format("YYYY-MM-DD"))}`;
+  return joinRange(checkIn, checkOut);
+}
+
+/**
+ * «2 — 4 октября» — ночи, к которым что-то применяется (цена на даты, снятие
+ * с продажи): `dateTo` не включается, показывается последняя ночь. Только для
+ * цен и блокировок — не для броней.
+ */
+export function formatHotelNightsRange(dateFrom: string, dateToExclusive: string): string {
+  return joinRange(dateFrom, dayjs(dateToExclusive).subtract(1, "day").format("YYYY-MM-DD"));
 }
 
 // ── Выбранная дата шахматки — общая между HotelOccupancyBanner и RoomBookingGrid ──

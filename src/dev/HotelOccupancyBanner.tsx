@@ -29,6 +29,8 @@ import ExpandLessOutlined from "@mui/icons-material/ExpandLessOutlined";
 import { getSelectedHotelDate, subscribeSelectedHotelDate, useIsVivaActive, formatHotelDate } from "./mockDemoData";
 import { formatSellableSummary, hotelRoomStateColor } from "./hotelDisplay";
 import { useHotelProperty } from "./useHotelProperty";
+import { useInHouse } from "./useInHouse";
+import { plural } from "./hotelUi";
 import { getDashboard, listHousekeepingTasks } from "../api/hotel";
 
 /**
@@ -153,6 +155,9 @@ export const HotelOccupancyBanner: React.FC = () => {
     enabled: vivaActive && property != null,
   });
   const dashboard = dashboardQuery.data;
+  // «Проживают» и «Не заехали» — по общему правилу (hotelInHouse), не по сводке сервера:
+  // та считала проживающим гостя, который не приехал.
+  const inHouse = useInHouse(property?.id, selectedDate, vivaActive).data;
 
   const tasksQuery = useQuery({
     queryKey: ["hotel", "housekeepingTasks", property?.id, "open"],
@@ -233,9 +238,16 @@ export const HotelOccupancyBanner: React.FC = () => {
         <StripStat color={occupancyColor} label="Загрузка" value={`${Math.round(occupancyPercent)}%`} />
         <StripStat color={p.success.main} label="Заезды" value={`${dashboard.arrivals} / ${dashboard.arrived}`} />
         <StripStat color={p.error.main} label="Выезды" value={`${dashboard.departures} / ${dashboard.departed}`} />
-        <StripStat color={stayingColor} label="Проживают" value={dashboard.staying} />
+        <StripStat
+          color={stayingColor}
+          label="Проживают"
+          value={inHouse ? `${inHouse.guests} · ${inHouse.rooms} ном.` : "…"}
+          title={inHouse ? `${inHouse.guests} ${plural(inHouse.guests, "гость", "гостя", "гостей")} в ${inHouse.rooms} ${plural(inHouse.rooms, "номере", "номерах", "номерах")}` : undefined}
+        />
         <StripStat color={p.text.disabled} label="Свободно" value={dashboard.freeRooms} />
-        {dashboard.overdueArrivals > 0 && <StripStat color={p.warning.main} label="Не заехали" value={dashboard.overdueArrivals} />}
+        {(inHouse?.missedRooms ?? 0) > 0 && (
+          <StripStat color={p.warning.main} label="Не заехали" value={inHouse!.missedRooms} onClick={() => navigate("/reception")} title="Отметить незаезды на ресепшене" />
+        )}
         <StripStat
           color={hotelRoomStateColor("dirty", theme)}
           label="Грязно"
@@ -302,8 +314,12 @@ export const HotelOccupancyBanner: React.FC = () => {
         <Box>
           <StatRow color={p.success.main} label="Заезды / уже заехало" value={`${dashboard.arrivals} / ${dashboard.arrived}`} />
           <StatRow color={p.error.main} label="Выезды / уже выехало" value={`${dashboard.departures} / ${dashboard.departed}`} />
-          <StatRow color={stayingColor} label="Проживают" value={dashboard.staying} />
-          <StatRow color={p.warning.main} label="Просрочено (не заехали)" value={dashboard.overdueArrivals} />
+          <StatRow
+            color={stayingColor}
+            label="Проживают"
+            value={inHouse ? `${inHouse.guests} ${plural(inHouse.guests, "гость", "гостя", "гостей")} · ${inHouse.rooms} ном.` : "…"}
+          />
+          <StatRow color={p.warning.main} label="Не заехали (держат номер)" value={inHouse?.missedRooms ?? "…"} />
           <StatRow color={p.text.disabled} label="Свободные номера" value={dashboard.freeRooms} />
         </Box>
       </CardShell>

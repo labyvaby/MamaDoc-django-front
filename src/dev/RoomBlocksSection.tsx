@@ -31,7 +31,7 @@ import { useCan } from "../hooks/useCan";
 import { subtleBg } from "../theme/uiHelpers";
 import { createRoomBlock, releaseRoomBlock, type HotelRoomBlock } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
-import { formatHotelDate, formatHotelDateRange, nightsBetween } from "./mockDemoData";
+import { formatHotelDate, formatHotelNightsRange, nightsBetween } from "./mockDemoData";
 import { plural } from "./hotelUi";
 
 /** Блок без даты окончания — от статуса номера «выведен из продажи». */
@@ -199,7 +199,7 @@ export const RoomBlocksSection: React.FC<RoomBlocksSectionProps> = ({ roomId, ro
                     <>С {formatHotelDate(b.dateFrom)}, без даты окончания · вернётся в продажу, когда номер выйдет из состояния «Ремонт»</>
                   ) : (
                     <>
-                      {formatHotelDateRange(b.dateFrom, b.dateTo)} · {nightsBetween(b.dateFrom, b.dateTo)}{" "}
+                      {formatHotelNightsRange(b.dateFrom, b.dateTo)} · {nightsBetween(b.dateFrom, b.dateTo)}{" "}
                       {plural(nightsBetween(b.dateFrom, b.dateTo), "ночь", "ночи", "ночей")}
                     </>
                   )}

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { consentParagraphs, DEFAULT_CONSENT, fromServer, nextConsentVersion, renderConsent } from "./hotelConsent";
+import { consentOperatorGaps, consentParagraphs, DEFAULT_CONSENT, fromServer, nextConsentVersion, renderConsent } from "./hotelConsent";
+
+describe("consentOperatorGaps", () => {
+  it("называет, чего не хватает для оператора данных", () => {
+    expect(consentOperatorGaps({ hotel: "Viva" })).toEqual(["юридическое название", "адрес"]);
+    expect(consentOperatorGaps({ hotel: "Viva", legalName: "ОсОО «Вива»", address: " " })).toEqual(["адрес"]);
+    expect(consentOperatorGaps({ hotel: "Viva", legalName: "ОсОО «Вива»", address: "Бишкек" })).toEqual([]);
+  });
+});
 
 describe("renderConsent", () => {
   it("подставляет отель, юрлицо и адрес", () => {

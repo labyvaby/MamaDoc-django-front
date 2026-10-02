@@ -58,6 +58,14 @@ export function renderConsent(text: string, vars: ConsentVars): string {
     .replaceAll("{адрес}", vars.address?.trim() || "указан на ресепшене");
 }
 
+/**
+ * Чего не хватает, чтобы назвать в согласии оператора персональных данных.
+ * Пока список не пуст, бланк не печатается: подставлять «владелец отеля» и
+ * «указан на ресепшене» в юридический документ нельзя.
+ */
+export const consentOperatorGaps = (vars: ConsentVars): string[] =>
+  [!vars.legalName?.trim() && "юридическое название", !vars.address?.trim() && "адрес"].filter((x): x is string => Boolean(x));
+
 /** Абзацы для показа и печати: пустые строки — разделители, лишние пробелы по краям убраны. */
 export const consentParagraphs = (text: string): string[] =>
   text

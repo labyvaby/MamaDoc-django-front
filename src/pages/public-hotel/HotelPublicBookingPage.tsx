@@ -9,6 +9,12 @@
  * UUID новый (иначе бэк ответит 409 REQUEST_CONFLICT). 409 PRICE_CHANGED —
  * цена сдвинулась: показываем новую и просим подтвердить ещё раз.
  * Страница не использует cookies CRM и права сотрудников.
+ *
+ * Витрина: название отеля — сразу (поиск на завтра уходит при открытии, а
+ * GET /public/{slug}/ отдаёт шапку, когда бэк его заведёт), оно же во вкладке
+ * браузера. Фото, удобства, питание и условия отмены показываются, когда
+ * сервер их присылает (PublicHotelInfo / PublicHotelCategory) — до тех пор
+ * честно пишем, что условия подтвердит администратор.
  */
 import React from "react";
 import {
@@ -18,8 +24,11 @@ import {
   Checkbox,
   CircularProgress,
   Container,
+  Chip,
   FormControlLabel,
+  GlobalStyles,
   MenuItem,
+  Skeleton,
   Stack,
   TextField,
   Typography,
@@ -29,6 +38,11 @@ import HotelOutlined from "@mui/icons-material/HotelOutlined";
 import PeopleOutlineOutlined from "@mui/icons-material/PeopleOutlineOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
+import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
+import CallOutlined from "@mui/icons-material/CallOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
+import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import { useParams } from "react-router";
 import dayjs from "dayjs";
 
@@ -36,12 +50,15 @@ import { ApiError, getErrorCode } from "../../api/client";
 import {
   createPublicReservation,
   getPublicAvailability,
+  getPublicHotelInfo,
   type PublicHotelAvailability,
   type PublicHotelCategory,
+  type PublicHotelInfo,
   type PublicHotelRequestData,
   type PublicHotelReservation,
 } from "../../api/hotelPublic";
 import { fieldError, sanitizeFieldInput, type FieldRules } from "../../dev/formRules";
+import { HOTEL_BOARD_TYPE_LABELS } from "../../dev/hotelDisplay";
 
 const PHONE_RULES: FieldRules = { kind: "phone", required: true };
 const EMAIL_RULES: FieldRules = { kind: "email" };
@@ -51,6 +68,54 @@ const MAX_NIGHTS = 90;
 const nightsWord = (n: number) => (n % 10 === 1 && n % 100 !== 11 ? "ночь" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "ночи" : "ночей");
 const money = (v: string | number, currency: string) =>
   `${Number(v).toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ${currency === "KGS" || !currency ? "сом" : currency}`;
+
+/**
+ * Прокрутка документа. CRM держит html/body/#root в overflow: hidden (внутри
+ * layout скроллится свой контейнер), а витрина рендерится вне layout — без
+ * этого всё ниже первого экрана было недостижимо: на телефоне не долистать до
+ * «Отправить заявку». Как у витрины клиники (public-booking/shell.tsx).
+ */
+const scrollableDocument = (
+  <GlobalStyles
+    styles={{
+      html: { height: "auto", overflow: "visible" },
+      body: { height: "auto", minHeight: "100%", overflow: "visible" },
+      "#root": { height: "auto", minHeight: "100%", overflow: "visible" },
+    }}
+  />
+);
+
+/** Фото категории: обложка, по нажатию — следующее. */
+const CategoryPhoto: React.FC<{ photos: string[]; name: string }> = ({ photos, name }) => {
+  const [i, setI] = React.useState(0);
+  return (
+    <Box
+      component="button"
+      type="button"
+      onClick={() => setI((x) => (x + 1) % photos.length)}
+      aria-label={photos.length > 1 ? `Следующее фото «${name}»` : `Фото «${name}»`}
+      sx={{
+        position: "relative",
+        flexShrink: 0,
+        width: { xs: "100%", md: 200 },
+        height: { xs: 190, md: 136 },
+        p: 0,
+        border: 0,
+        borderRadius: "12px",
+        overflow: "hidden",
+        cursor: photos.length > 1 ? "pointer" : "default",
+        bgcolor: "action.hover",
+      }}
+    >
+      <Box component="img" src={photos[i]} alt={name} loading="lazy" sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+      {photos.length > 1 && (
+        <Box sx={{ position: "absolute", right: 8, bottom: 8, px: 0.75, borderRadius: "8px", bgcolor: "rgba(0,0,0,.55)", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+          {i + 1}/{photos.length}
+        </Box>
+      )}
+    </Box>
+  );
+};
 
 /** Человеческий текст для ошибок, по которым гостю есть что сделать. */
 function friendlyError(err: unknown, fallback: string): string {
@@ -86,6 +151,20 @@ export const HotelPublicBookingPage: React.FC = () => {
   const [sendError, setSendError] = React.useState<string | null>(null);
   const [priceChanged, setPriceChanged] = React.useState<string | null>(null);
   const [done, setDone] = React.useState<PublicHotelReservation | null>(null);
+
+  // Шапка витрины: адрес, телефон, фото, условия. Старый сервер — 404, тогда без неё.
+  const [info, setInfo] = React.useState<PublicHotelInfo | null>(null);
+  const [infoLoaded, setInfoLoaded] = React.useState(false);
+  React.useEffect(() => {
+    const ctrl = new AbortController();
+    getPublicHotelInfo(slug, ctrl.signal)
+      .then((data) => setInfo(data && typeof data.name === "string" ? data : null))
+      .catch(() => setInfo(null))
+      .finally(() => {
+        if (!ctrl.signal.aborted) setInfoLoaded(true);
+      });
+    return () => ctrl.abort();
+  }, [slug]);
 
   // UUID заявки: один на неизменное тело, новый — когда гость поправил данные.
   const requestRef = React.useRef<{ id: string; fingerprint: string } | null>(null);
@@ -191,17 +270,91 @@ export const HotelPublicBookingPage: React.FC = () => {
     }
   };
 
-  const hotelName = availability?.propertyName;
+  // Сразу ищем на завтра: гость видит отель и цены, не нажимая ничего, — и
+  // название отеля появляется в шапке, даже пока сервер не отдаёт /public/{slug}/.
+  const searchRef = React.useRef(search);
+  searchRef.current = search;
+  const [firstSearchDone, setFirstSearchDone] = React.useState(false);
+  React.useEffect(() => {
+    void searchRef.current().finally(() => setFirstSearchDone(true));
+  }, [slug]);
+
+  const hotelName = info?.name || availability?.propertyName;
   const currency = availability?.currency ?? "KGS";
+  const headerLoading = !hotelName && !unavailable && (!infoLoaded || !firstSearchDone);
+  const contacts = [info?.address, info?.phone].filter(Boolean) as string[];
+  const times = info?.checkInTime || info?.checkOutTime ? `Заезд с ${info?.checkInTime || "—"} · выезд до ${info?.checkOutTime || "—"}` : null;
+  // Условия отмены: у тарифа категории, иначе общие отеля.
+  const cancellation = chosen?.cancellationPolicy || info?.cancellationPolicy || "";
+
+  // «Выбрать» — сразу к форме: на телефоне она под всеми категориями, её не видно.
+  const formRef = React.useRef<HTMLDivElement>(null);
+  const chosenId = chosen?.id;
+  React.useEffect(() => {
+    if (chosenId != null) formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [chosenId]);
+
+  // Вкладка браузера — с названием отеля, а не CRM.
+  React.useEffect(() => {
+    if (!hotelName) return undefined;
+    const prev = document.title;
+    document.title = `${hotelName} — бронирование номера`;
+    return () => {
+      document.title = prev;
+    };
+  }, [hotelName]);
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: alpha(theme.palette.primary.main, 0.04), py: { xs: 3, md: 6 } }}>
-      <Container maxWidth="md" sx={{ px: { xs: 2, sm: 3 } }}>
-        <Stack direction="row" alignItems="center" gap={1.25} sx={{ mb: 3 }}>
-          <HotelOutlined color="primary" />
-          <Typography component="h1" sx={{ fontSize: { xs: 22, md: 28 }, fontWeight: 700, letterSpacing: "-0.015em" }}>
-            {hotelName ? `Забронировать номер — ${hotelName}` : "Бронирование номера"}
-          </Typography>
+      {scrollableDocument}
+      {/* md в теме — 768px: на десктопе поиск в одну строку не помещался и обрезал год в датах. */}
+      <Container maxWidth={false} sx={{ maxWidth: 1000, px: { xs: 2, sm: 3 } }}>
+        {info?.photos?.[0] && (
+          <Box
+            component="img"
+            src={info.photos[0]}
+            alt={hotelName ?? ""}
+            sx={{ width: "100%", height: { xs: 180, md: 260 }, objectFit: "cover", borderRadius: "20px", display: "block", mb: 2.5 }}
+          />
+        )}
+        <Stack direction="row" alignItems="center" gap={1.5} sx={{ mb: 3 }}>
+          {info?.logoUrl ? (
+            <Box component="img" src={info.logoUrl} alt="" sx={{ width: 48, height: 48, objectFit: "contain", borderRadius: "12px", flexShrink: 0 }} />
+          ) : (
+            <HotelOutlined color="primary" sx={{ fontSize: 32, flexShrink: 0 }} />
+          )}
+          <Box sx={{ minWidth: 0 }}>
+            <Typography component="h1" sx={{ fontSize: { xs: 24, md: 32 }, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15 }}>
+              {headerLoading ? <Skeleton width={240} /> : hotelName || "Бронирование номера"}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+              {hotelName ? "Бронирование напрямую в отеле" : headerLoading ? <Skeleton width={180} /> : "Выберите даты и номер"}
+            </Typography>
+            {(contacts.length > 0 || times) && (
+              <Stack direction="row" gap={1.5} rowGap={0.25} flexWrap="wrap" sx={{ mt: 0.75, color: "text.secondary" }}>
+                {info?.address && (
+                  <Stack direction="row" alignItems="center" gap={0.5}>
+                    <PlaceOutlined sx={{ fontSize: 16 }} />
+                    <Typography variant="body2">{info.address}</Typography>
+                  </Stack>
+                )}
+                {info?.phone && (
+                  <Stack direction="row" alignItems="center" gap={0.5}>
+                    <CallOutlined sx={{ fontSize: 16 }} />
+                    <Typography variant="body2" component="a" href={`tel:${info.phone.replace(/[^\d+]/g, "")}`} sx={{ color: "inherit" }}>
+                      {info.phone}
+                    </Typography>
+                  </Stack>
+                )}
+                {times && (
+                  <Stack direction="row" alignItems="center" gap={0.5}>
+                    <AccessTimeOutlined sx={{ fontSize: 16 }} />
+                    <Typography variant="body2">{times}</Typography>
+                  </Stack>
+                )}
+              </Stack>
+            )}
+          </Box>
         </Stack>
 
         {unavailable ? (
@@ -229,7 +382,15 @@ export const HotelPublicBookingPage: React.FC = () => {
           <Stack gap={3}>
             {/* Поиск */}
             <Box sx={{ p: { xs: 2, md: 3 }, borderRadius: "20px", bgcolor: "background.paper", border: 1, borderColor: "divider" }}>
-              <Stack direction={{ xs: "column", md: "row" }} gap={2} alignItems={{ md: "flex-start" }}>
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 2,
+                  alignItems: "start",
+                  gridTemplateColumns: { xs: "1fr 1fr", md: "minmax(170px, 1fr) minmax(170px, 1fr) 130px 110px auto" },
+                  "& > .search-btn": { gridColumn: { xs: "1 / -1", md: "auto" } },
+                }}
+              >
                 <TextField
                   type="date"
                   label="Заезд"
@@ -239,7 +400,6 @@ export const HotelPublicBookingPage: React.FC = () => {
                     if (e.target.value >= checkOut) setCheckOut(dayjs(e.target.value).add(1, "day").format("YYYY-MM-DD"));
                   }}
                   slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: today } }}
-                  sx={{ flex: 1 }}
                 />
                 <TextField
                   type="date"
@@ -249,26 +409,33 @@ export const HotelPublicBookingPage: React.FC = () => {
                   slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: checkIn || today } }}
                   error={datesError != null && nights < 1}
                   helperText={datesError ?? (nights > 0 ? `${nights} ${nightsWord(nights)}` : " ")}
-                  sx={{ flex: 1 }}
                 />
-                <TextField select label="Взрослых" value={adults} onChange={(e) => setAdults(Number(e.target.value))} sx={{ width: { md: 130 } }} slotProps={{ input: { startAdornment: <PeopleOutlineOutlined fontSize="small" sx={{ mr: 1, color: "text.disabled" }} /> } }}>
+                <TextField select label="Взрослых" value={adults} onChange={(e) => setAdults(Number(e.target.value))} slotProps={{ input: { startAdornment: <PeopleOutlineOutlined fontSize="small" sx={{ mr: 1, color: "text.disabled" }} /> } }}>
                   {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
                     <MenuItem key={n} value={n}>
                       {n}
                     </MenuItem>
                   ))}
                 </TextField>
-                <TextField select label="Детей" value={children} onChange={(e) => setChildren(Number(e.target.value))} sx={{ width: { md: 110 } }}>
+                <TextField select label="Детей" value={children} onChange={(e) => setChildren(Number(e.target.value))}>
                   {Array.from({ length: 9 }, (_, i) => i).map((n) => (
                     <MenuItem key={n} value={n}>
                       {n}
                     </MenuItem>
                   ))}
                 </TextField>
-                <Button variant="contained" disableElevation size="large" onClick={() => void search()} disabled={searching || datesError != null} sx={{ height: 56, px: 4, borderRadius: "12px", fontWeight: 700 }}>
+                <Button
+                  className="search-btn"
+                  variant="contained"
+                  disableElevation
+                  size="large"
+                  onClick={() => void search()}
+                  disabled={searching || datesError != null}
+                  sx={{ height: 56, px: 4, borderRadius: "12px", fontWeight: 700, whiteSpace: "nowrap" }}
+                >
                   {searching ? "Ищем…" : "Найти номера"}
                 </Button>
-              </Stack>
+              </Box>
             </Box>
 
             {searchError && <Alert severity="error">{searchError}</Alert>}
@@ -288,7 +455,8 @@ export const HotelPublicBookingPage: React.FC = () => {
                 ) : (
                   <Stack gap={1.5}>
                     <Typography variant="body2" color="text.secondary">
-                      {dayjs(availability.checkIn).format("D MMMM")} — {dayjs(availability.checkOut).format("D MMMM")} · {nights} {nightsWord(nights)} · цена за весь период
+                      Заезд {dayjs(availability.checkIn).format("D MMMM")} — выезд {dayjs(availability.checkOut).format("D MMMM")} · {nights} {nightsWord(nights)} · цена за весь
+                      период
                     </Typography>
                     {availability.results.map((c) => {
                       const on = chosen?.id === c.id;
@@ -306,11 +474,34 @@ export const HotelPublicBookingPage: React.FC = () => {
                             borderColor: on ? "primary.main" : "divider",
                           }}
                         >
+                          {c.photos && c.photos.length > 0 && <CategoryPhoto photos={c.photos} name={c.name} />}
                           <Box sx={{ flex: 1, minWidth: 0 }}>
                             <Typography sx={{ fontSize: 18, fontWeight: 700 }}>{c.name}</Typography>
                             <Typography variant="body2" color="text.secondary">
                               до {c.adultsCapacity + c.childrenCapacity} гостей · осталось {c.available}
                             </Typography>
+                            {c.description && (
+                              <Typography variant="body2" sx={{ mt: 0.75 }}>
+                                {c.description}
+                              </Typography>
+                            )}
+                            {(c.boardType || (c.amenities && c.amenities.length > 0)) && (
+                              <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mt: 1 }}>
+                                {c.boardType && (
+                                  <Chip
+                                    size="small"
+                                    icon={<RestaurantOutlined />}
+                                    label={HOTEL_BOARD_TYPE_LABELS[c.boardType] ?? c.boardType}
+                                    color={c.boardType === "none" ? "default" : "success"}
+                                    variant="outlined"
+                                  />
+                                )}
+                                {(c.amenities ?? []).slice(0, 6).map((a) => (
+                                  <Chip key={a} size="small" label={a} variant="outlined" />
+                                ))}
+                                {(c.amenities?.length ?? 0) > 6 && <Chip size="small" label={`ещё ${(c.amenities?.length ?? 0) - 6}`} />}
+                              </Stack>
+                            )}
                           </Box>
                           <Box sx={{ textAlign: { md: "right" } }}>
                             <Typography sx={{ fontSize: 22, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{money(c.totalAmount, currency)}</Typography>
@@ -331,11 +522,35 @@ export const HotelPublicBookingPage: React.FC = () => {
 
             {/* Заявка */}
             {chosen && availability && (
-              <Box sx={{ p: { xs: 2.5, md: 3.5 }, borderRadius: "20px", bgcolor: "background.paper", border: 1, borderColor: "divider" }}>
+              <Box
+                ref={formRef}
+                sx={{ p: { xs: 2.5, md: 3.5 }, borderRadius: "20px", bgcolor: "background.paper", border: 1, borderColor: "divider", scrollMarginTop: 16 }}
+              >
                 <Typography sx={{ fontSize: 18, fontWeight: 700, mb: 0.5 }}>Ваши данные</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                   {chosen.name} · {nights} {nightsWord(nights)} · {money(chosen.totalAmount, currency)}. Номер зарезервируется на 30 минут, пока администратор подтвердит бронь.
                 </Typography>
+                {/* Условия — до того, как гость оставит данные. */}
+                <Stack gap={1} sx={{ mb: 2.5, p: 1.75, borderRadius: "12px", bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
+                  <Stack direction="row" gap={1} alignItems="flex-start">
+                    <EventBusyOutlined fontSize="small" color="primary" sx={{ mt: 0.25 }} />
+                    <Typography variant="body2" sx={{ whiteSpace: "pre-line" }}>
+                      <b>Отмена:</b> {cancellation || "условия отмены администратор назовёт при подтверждении брони."}
+                    </Typography>
+                  </Stack>
+                  <Stack direction="row" gap={1} alignItems="flex-start">
+                    <PaymentsOutlined fontSize="small" color="primary" sx={{ mt: 0.25 }} />
+                    <Typography variant="body2">
+                      <b>Оплата:</b> на сайте ничего платить не нужно — способ и срок оплаты подтвердит администратор.
+                    </Typography>
+                  </Stack>
+                  {times && (
+                    <Stack direction="row" gap={1} alignItems="flex-start">
+                      <AccessTimeOutlined fontSize="small" color="primary" sx={{ mt: 0.25 }} />
+                      <Typography variant="body2">{times}</Typography>
+                    </Stack>
+                  )}
+                </Stack>
                 <Stack gap={2}>
                   {priceChanged && <Alert severity="warning">{priceChanged}</Alert>}
                   {sendError && <Alert severity="error">{sendError}</Alert>}

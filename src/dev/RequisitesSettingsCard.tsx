@@ -1,10 +1,11 @@
 /**
  * «Реквизиты» в настройках отеля — юрлицо, ИНН, ОКПО, налоговая, банк и
- * подписанты: попадают в шапку счёта на оплату и справки о проживании
- * (hotelPrintDocs.ts уже печатает блок, когда поля заполнены). Бэкенд их
- * хранит в объекте (контракт §6) — пока в ответе объекта этих полей нет,
- * работает демо-режим: реквизиты хранятся на этом устройстве (hotelDemoStore)
- * и сразу печатаются в документах.
+ * подписанты: попадают в шапку счёта на оплату, справки о проживании и
+ * согласия на обработку данных. Хранятся только на сервере (контракт §6):
+ * пока в ответе объекта этих полей нет, форма закрыта, а счёт, справка и
+ * бланк согласия не печатаются — реквизиты одного компьютера давали разные
+ * документы с разных мест. Демо-копия прошлых версий подставляется один раз,
+ * чтобы сохранить её на сервер.
  */
 import React from "react";
 import { Alert, Box, Button, Stack, Typography } from "@mui/material";
@@ -47,13 +48,10 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
   const canManage = useCan("hotel.manage");
   // Бэкенд уже хранит реквизиты, если в ответе объекта есть хотя бы поле legalName.
   const supported = "legalName" in property;
-  const [demoVersion, setDemoVersion] = React.useState(0);
-  const initial = React.useMemo(() => {
-    const demo = supported ? {} : readDemo<Partial<Record<Key, string>>>(DEMO_KEYS.requisites(property.id), {});
-    return Object.fromEntries(FIELDS.map((f) => [f.key, (supported ? (property[f.key] as string | undefined) : demo[f.key]) ?? ""])) as Record<Key, string>;
-    // demoVersion — перечитать демо после сохранения
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [property, supported, demoVersion]);
+  const initial = React.useMemo(
+    () => Object.fromEntries(FIELDS.map((f) => [f.key, (supported ? (property[f.key] as string | undefined) : undefined) ?? ""])) as Record<Key, string>,
+    [property, supported],
+  );
   // Сервер начал хранить реквизиты, у объекта они пустые, а на этом устройстве
   // остались демо-реквизиты — подставляем их в форму, чтобы сохранить одним нажатием.
   const leftover = React.useMemo(() => {
@@ -71,19 +69,15 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
   const dirty = FIELDS.some((f) => form[f.key] !== initial[f.key]);
 
   const save = async () => {
+    if (!supported) return;
     setSaving(true);
     try {
       const patch: HotelPropertyUpdateData = Object.fromEntries(FIELDS.map((f) => [f.key, form[f.key].trim()]));
-      if (supported) {
-        await updateHotelProperty(property.id, patch);
-        // Реквизиты стали общими — демо-копия этого устройства больше не нужна.
-        writeDemo(DEMO_KEYS.requisites(property.id), null);
-        void queryClient.invalidateQueries({ queryKey: ["hotel", "properties"] });
-      } else {
-        writeDemo(DEMO_KEYS.requisites(property.id), patch);
-        setDemoVersion((v) => v + 1);
-      }
-      enqueueSnackbar("Реквизиты сохранены — они появятся в счетах и справках", { variant: "success" });
+      await updateHotelProperty(property.id, patch);
+      // Реквизиты стали общими — демо-копия этого устройства больше не нужна.
+      writeDemo(DEMO_KEYS.requisites(property.id), null);
+      void queryClient.invalidateQueries({ queryKey: ["hotel", "properties"] });
+      enqueueSnackbar("Реквизиты сохранены — они появятся в счетах, справках и согласии", { variant: "success" });
     } catch (err) {
       enqueueSnackbar(getErrorMessage(err, "Не удалось сохранить реквизиты"), { variant: "error" });
     } finally {
@@ -91,18 +85,25 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
     }
   };
 
+  // Ссылка «Заполнить» из карточки брони ведёт сюда — /settings/hotel-property#requisites.
+  const anchorRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (window.location.hash === "#requisites") anchorRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, []);
+
   return (
-    <Box>
+    <Box ref={anchorRef} id="requisites" sx={{ scrollMarginTop: 16 }}>
       <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>
         Реквизиты для счетов и справок
       </Typography>
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-        Печатаются в шапке счёта на оплату и справки о проживании — как в документах, которые отель выдаёт сейчас.
+        Печатаются в шапке счёта на оплату и справки о проживании, а юрлицо и адрес — в согласии на обработку данных. Без них счёт, справка и
+        бланк согласия не печатаются.
       </Typography>
       {!supported && (
-        <Alert severity="info" variant="outlined" sx={{ mb: 1.5 }}>
-          Демо-режим: реквизиты хранятся на этом устройстве и уже печатаются в счёте и справке. С обновлением сервера они станут общими для всех
-          сотрудников.
+        <Alert severity="warning" variant="outlined" sx={{ mb: 1.5 }}>
+          Сервер пока не хранит реквизиты — заполнить их можно будет после его обновления. До тех пор счёт, справка и бланк согласия не печатаются,
+          чтобы с разных компьютеров не выходили разные документы.
         </Alert>
       )}
       {leftover && (
@@ -130,7 +131,7 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
                   value={form[f.key]}
                   onValueChange={(v) => setForm((s) => ({ ...s, [f.key]: f.digits ? v.replace(/\D/g, "").slice(0, f.digits) : v }))}
                   rules={{ maxLength: f.digits ?? 200 }}
-                  disabled={!canManage || saving}
+                  disabled={!canManage || saving || !supported}
                   sx={f.key === "legalName" || f.key === "legalAddress" || f.key === "taxAuthority" ? { gridColumn: { sm: "1 / -1" } } : undefined}
                 />
               ))}
@@ -138,7 +139,7 @@ export const RequisitesSettingsCard: React.FC<{ property: HotelProperty }> = ({ 
           </Box>
         ))}
       </Stack>
-      <Button variant="contained" sx={{ mt: 2 }} disabled={!dirty || saving || !canManage} onClick={() => void save()}>
+      <Button variant="contained" sx={{ mt: 2 }} disabled={!dirty || saving || !canManage || !supported} onClick={() => void save()}>
         {saving ? "Сохранение…" : "Сохранить реквизиты"}
       </Button>
     </Box>

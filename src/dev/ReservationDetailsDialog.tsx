@@ -105,6 +105,7 @@ import {
 } from "./hotelDisplay";
 import { formatHotelDateRange, initialsOf, nightsBetween } from "./mockDemoData";
 import { StatusPill } from "./hotelUi";
+import { CheckInDocumentPanel, missingDocumentGuest } from "./CheckInDocumentPanel";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 
 /** "cash" — единственный способ, для которого не уточняем конкретный безналичный канал. */
@@ -173,11 +174,14 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const [actionBusy, setActionBusy] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [checkInNeedsForce, setCheckInNeedsForce] = React.useState(false);
+  // Паспорт при брони необязателен, а заселить без него нельзя — сначала панель документа.
+  const [checkInNeedsDocument, setCheckInNeedsDocument] = React.useState(false);
+  const [documentSaved, setDocumentSaved] = React.useState(false);
   const [checkOutNeedsForce, setCheckOutNeedsForce] = React.useState(false);
   const [cancelPromptOpen, setCancelPromptOpen] = React.useState(false);
   // Панель правки: "edit" — даты/гости/питание, "room" — другой номер.
   const [editMode, setEditMode] = React.useState<"edit" | "room" | null>(null);
-  const { enqueueSnackbar } = useSnackbar();
+  const { enqueueSnackbar, closeSnackbar } = useSnackbar();
   const [cancelReason, setCancelReason] = React.useState("");
   const [messageAnchor, setMessageAnchor] = React.useState<HTMLElement | null>(null);
   const [cancelAsNoShow, setCancelAsNoShow] = React.useState(false);
@@ -260,8 +264,31 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setActionBusy(true);
     setActionError(null);
     try {
-      await confirmReservation(reservation.id, { version: reservation.version });
+      const confirmed = await confirmReservation(reservation.id, { version: reservation.version });
       invalidateReservation();
+      // Подтверждение гостю — сразу, одним нажатием: само по себе сообщение не
+      // уходит (рассылки с сервера пока нет), а гость с сайта ждёт ответа.
+      const phone = confirmed.items[0]?.guests.find((g) => g.isPrimary)?.phone || confirmed.items[0]?.guests[0]?.phone || "";
+      const link = whatsappLink(phone, buildGuestMessage("confirmation", confirmed, property ?? null));
+      enqueueSnackbar(link ? "Бронь подтверждена — отправьте гостю подтверждение" : "Бронь подтверждена", {
+        variant: "success",
+        autoHideDuration: link ? 12_000 : 4_000,
+        action: link
+          ? (k) => (
+              <Button
+                color="inherit"
+                size="small"
+                sx={{ fontWeight: 700 }}
+                onClick={() => {
+                  closeSnackbar(k);
+                  window.open(link, "_blank", "noopener");
+                }}
+              >
+                В WhatsApp
+              </Button>
+            )
+          : undefined,
+      });
     } catch (err) {
       setActionError(getErrorMessage(err, "Не удалось подтвердить бронь"));
     } finally {
@@ -292,6 +319,11 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
 
   const handleCheckIn = async (force = false) => {
     if (!reservation || !item) return;
+    if (missingDocumentGuest(item)) {
+      setCheckInNeedsDocument(true);
+      return;
+    }
+    setDocumentSaved(false);
     setActionBusy(true);
     setActionError(null);
     try {
@@ -873,8 +905,32 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               />
             )}
 
-            {(actionError || checkInNeedsForce || checkOutNeedsForce || checkOutNeedsInspection || cancelPromptOpen || editMode != null) && (
+            {(actionError ||
+              checkInNeedsForce ||
+              checkInNeedsDocument ||
+              documentSaved ||
+              checkOutNeedsForce ||
+              checkOutNeedsInspection ||
+              cancelPromptOpen ||
+              editMode != null) && (
               <Stack gap={1.5} sx={{ mt: 2 }}>
+                {checkInNeedsDocument && missingDocumentGuest(item) && (
+                  <CheckInDocumentPanel
+                    reservation={reservation}
+                    item={item}
+                    onCancel={() => setCheckInNeedsDocument(false)}
+                    onSaved={() => {
+                      setCheckInNeedsDocument(false);
+                      setDocumentSaved(true);
+                      invalidateReservation();
+                    }}
+                  />
+                )}
+                {documentSaved && !missingDocumentGuest(item) && (
+                  <Alert severity="success" onClose={() => setDocumentSaved(false)}>
+                    Паспорт внесён — теперь можно заселить.
+                  </Alert>
+                )}
                 {checkOutNeedsInspection && (
                   <Alert
                     severity="info"

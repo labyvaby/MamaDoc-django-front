@@ -56,16 +56,17 @@ import dayjs, { type Dayjs } from "dayjs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
-import { getErrorMessage } from "../api/client";
+import { ApiError, getErrorMessage } from "../api/client";
 import { createExpense, createExpenseCategory, getExpenseCategories } from "../api/expenses";
-import { listRooms, type HotelStaffPost, type HotelStaffRole, type HotelStaffShift, type HotelStaffShiftInput } from "../api/hotel";
+import { listRooms, type HotelShiftOverlap, type HotelStaffPost, type HotelStaffRole, type HotelStaffShift, type HotelStaffShiftInput } from "../api/hotel";
 import { useCan } from "../hooks/useCan";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { usePermissions } from "../hooks/usePermissions";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { fmtMoney } from "./hotelReportFormat";
 import { ReportKpi } from "./hotelReportUi";
-import { computePayroll, employeeColor, STAFF_ROLE_EMOJI, STAFF_ROLE_LABELS, STAFF_ROLE_ORDER } from "./hotelStaffPayroll";
+import { computePayroll, employeeColor, findShiftOverlaps, STAFF_ROLE_EMOJI, STAFF_ROLE_LABELS, STAFF_ROLE_ORDER } from "./hotelStaffPayroll";
+import WarningAmberRounded from "@mui/icons-material/WarningAmberRounded";
 import { FilterChip, HotelPage, HotelPageHeader, plural, Surface, useHotelTableSx } from "./hotelUi";
 import { downloadXlsx } from "./hotelXlsx";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
@@ -89,6 +90,8 @@ export const HotelStaffPage: React.FC = () => {
   const { property, isLoading: propertyLoading } = useHotelProperty();
   const canManage = useCan(["hotel.staff.manage", "hotel.manage"]);
   const canFinance = useCan(["finance.view", "finance.expense.view"]);
+  // Зарплаты и ставки — не для всех: горничная видит график, но не чужие деньги.
+  const canSeePay = canManage || canFinance;
   const [month, setMonth] = React.useState<Dayjs>(() => dayjs().startOf("month"));
   const [tab, setTab] = React.useState<Tab>("grid");
 
@@ -133,8 +136,8 @@ export const HotelStaffPage: React.FC = () => {
 
       <Stack direction="row" gap={1} flexWrap="wrap">
         <FilterChip label="График" active={tab === "grid"} onClick={() => setTab("grid")} />
-        <FilterChip label="Зарплата" active={tab === "payroll"} onClick={() => setTab("payroll")} />
-        <FilterChip label="Посты и ставки" active={tab === "posts"} onClick={() => setTab("posts")} />
+        {canSeePay && <FilterChip label="Зарплата" active={tab === "payroll"} onClick={() => setTab("payroll")} />}
+        {canSeePay && <FilterChip label="Посты и ставки" active={tab === "posts"} onClick={() => setTab("posts")} />}
       </Stack>
 
       {!property ? (
@@ -155,10 +158,12 @@ export const HotelStaffPage: React.FC = () => {
         </Stack>
       ) : tab === "grid" ? (
         <GridTab propertyId={property.id} isDemo={Boolean(isDemo)} month={month} posts={posts} shifts={shifts} employees={employees} canManage={canManage} />
-      ) : tab === "payroll" ? (
+      ) : tab === "payroll" && canSeePay ? (
         <PayrollTab isDemo={Boolean(isDemo)} month={month} posts={posts} shifts={shifts} employees={employees} branchId={property.branchId} currency={property.currency} canFinance={canFinance || Boolean(isDemo)} />
-      ) : (
+      ) : tab === "posts" && canSeePay ? (
         <PostsTab propertyId={property.id} isDemo={Boolean(isDemo)} posts={posts} currency={property.currency} canManage={canManage} />
+      ) : (
+        <GridTab propertyId={property.id} isDemo={Boolean(isDemo)} month={month} posts={posts} shifts={shifts} employees={employees} canManage={canManage} />
       )}
     </HotelPage>
   );
@@ -197,13 +202,23 @@ const GridTab: React.FC<{
     return m;
   }, [shifts]);
   const byPost = (postId: number) => shifts.filter((s) => s.postId === postId).length;
+  const overlaps = React.useMemo(() => findShiftOverlaps(shifts), [shifts]);
+  const overlapPeople = React.useMemo(() => new Set(shifts.filter((s) => overlaps.has(s.id)).map((s) => s.employeeId)).size, [shifts, overlaps]);
+  const timeOf = (s: HotelStaffShift) => `${dayjs(s.startsAt).format("D MMM HH:mm")}–${dayjs(s.endsAt).format("HH:mm")}`;
 
-  const apply = async (inputs: HotelStaffShiftInput[], message?: string) => {
+  const [overlapAsk, setOverlapAsk] = React.useState<{ inputs: HotelStaffShiftInput[]; message?: string; conflicts: HotelShiftOverlap[] } | null>(null);
+  const apply = async (inputs: HotelStaffShiftInput[], message?: string, allowOverlap = false) => {
     if (inputs.length === 0) return;
     try {
-      await save.mutateAsync(inputs);
+      await save.mutateAsync({ shifts: inputs, allowOverlap });
+      setOverlapAsk(null);
       if (message) enqueueSnackbar(message, { variant: "success" });
     } catch (err) {
+      // Один человек в двух сменах одновременно — сервер спрашивает, правда ли так задумано.
+      if (err instanceof ApiError && err.code === "SHIFT_OVERLAP") {
+        setOverlapAsk({ inputs, message, conflicts: (err.details?.conflicts as HotelShiftOverlap[] | undefined) ?? [] });
+        return;
+      }
       enqueueSnackbar(getErrorMessage(err, "Не удалось сохранить график"), { variant: "error" });
     }
   };
@@ -274,6 +289,48 @@ const GridTab: React.FC<{
 
   return (
     <Stack gap={2}>
+      <Dialog open={overlapAsk != null} onClose={() => setOverlapAsk(null)} maxWidth={false} fullWidth PaperProps={{ sx: { maxWidth: 520, borderRadius: "16px" } }}>
+        <DialogTitle sx={{ fontWeight: 800 }}>Две смены одновременно</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            Ставка за эти часы начислится дважды. Сохранить, если так и задумано (один человек на двух этажах), иначе выберите другого сотрудника.
+          </Typography>
+          <Stack gap={1}>
+            {(overlapAsk?.conflicts ?? []).map((c) => (
+              <Box key={c.employeeId} sx={{ p: 1.25, borderRadius: "10px", border: 1, borderColor: "divider" }}>
+                <Typography variant="body2" fontWeight={700}>
+                  {c.employeeName}
+                </Typography>
+                {c.shifts.map((x, i) => (
+                  <Typography key={i} variant="caption" color="text.secondary" component="div">
+                    {x.postName} · {dayjs(x.startsAt).format("D MMM HH:mm")}–{dayjs(x.endsAt).format("HH:mm")}
+                  </Typography>
+                ))}
+              </Box>
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button color="inherit" onClick={() => setOverlapAsk(null)}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            disableElevation
+            disabled={save.isPending}
+            onClick={() => overlapAsk && void apply(overlapAsk.inputs, overlapAsk.message, true)}
+          >
+            Сохранить внахлёст
+          </Button>
+        </DialogActions>
+      </Dialog>
+      {overlaps.size > 0 && (
+        <Alert severity="warning" variant="outlined" icon={<WarningAmberRounded fontSize="inherit" />}>
+          {overlapPeople} {plural(overlapPeople, "сотрудник стоит", "сотрудника стоят", "сотрудников стоят")} в двух сменах одновременно — такие ячейки
+          обведены. Ставка за них начислится дважды: проверьте, что это правда (один человек на двух этажах), а не ошибка графика.
+        </Alert>
+      )}
       <Stack direction={{ xs: "column", md: "row" }} gap={1.5} alignItems={{ md: "center" }}>
         <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ flex: 1 }}>
           {[...counts.entries()]
@@ -374,8 +431,17 @@ const GridTab: React.FC<{
                       const s = cell.get(`${p.id}|${date}`);
                       const c = s ? employeeColor(s.employeeId) : undefined;
                       const dim = highlight != null && s?.employeeId !== highlight;
+                      const clash = s ? overlaps.get(s.id) : undefined;
                       return (
                         <TableCell key={p.id} sx={{ bgcolor: rowBg, p: 0.5 }}>
+                          <Tooltip
+                            disableInteractive
+                            title={
+                              clash && s
+                                ? `Внахлёст: ${name(s.employeeId)} в это же время на «${clash.map((o) => o.postName).join("», «")}» (${clash.map(timeOf).join(", ")}). Ставка начислится дважды.`
+                                : ""
+                            }
+                          >
                           <ButtonBase
                             disabled={!canManage}
                             onClick={(e) => {
@@ -394,6 +460,7 @@ const GridTab: React.FC<{
                               ...(s && c
                                 ? { bgcolor: alpha(c, dark ? 0.2 : 0.09), "&:hover": { bgcolor: alpha(c, dark ? 0.3 : 0.16) } }
                                 : { color: "text.disabled", "&:hover": { bgcolor: "action.hover", color: "text.secondary" } }),
+                              ...(clash ? { outline: `2px solid ${theme.palette.warning.main}`, outlineOffset: -2 } : {}),
                             }}
                           >
                             {s && c ? (
@@ -407,11 +474,13 @@ const GridTab: React.FC<{
                                     не вышел
                                   </Typography>
                                 )}
+                                {clash && <WarningAmberRounded sx={{ fontSize: 15, color: "warning.main", ml: "auto", flexShrink: 0 }} />}
                               </>
                             ) : (
                               <Typography variant="body2">{canManage ? "+" : "—"}</Typography>
                             )}
                           </ButtonBase>
+                          </Tooltip>
                         </TableCell>
                       );
                     })}
@@ -582,6 +651,16 @@ const PayrollTab: React.FC<{
         <ReportKpi tone="warning" label="Авансы" value={canFinance ? fmtMoney(payroll.totals.advance, currency) : "нет доступа"} hint="из расходов «Аванс»" />
         <ReportKpi tone="success" emphasis label="К выплате" value={fmtMoney(payroll.totals.toPay, currency)} hint="начислено − авансы" />
       </Box>
+      {payroll.rows.some((r) => r.overlapShifts > 0) && (
+        <Alert severity="warning" variant="outlined">
+          В начислении есть смены внахлёст — за одни и те же часы на двух постах:{" "}
+          {payroll.rows
+            .filter((r) => r.overlapShifts > 0)
+            .map((r) => `${r.name} — ${r.overlapShifts} (${fmtMoney(r.overlapAmount, currency)})`)
+            .join(", ")}
+          . Если это ошибка графика — исправьте его, сумма пересчитается.
+        </Alert>
+      )}
 
       <Surface padded={false} sx={{ overflow: "hidden" }}>
         <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} gap={1} sx={{ px: 2.5, pt: 2, pb: 1 }}>
@@ -632,6 +711,13 @@ const PayrollTab: React.FC<{
                   ))}
                   <TableCell align="right" sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
                     {r.shifts}
+                    {r.overlapShifts > 0 && (
+                      <Tooltip title={`${r.overlapShifts} ${plural(r.overlapShifts, "смена", "смены", "смен")} внахлёст с другой — ${fmtMoney(r.overlapAmount)} за те же часы`}>
+                        <Typography component="span" variant="caption" sx={{ display: "block", color: "warning.main", fontWeight: 700 }}>
+                          внахлёст {r.overlapShifts}
+                        </Typography>
+                      </Tooltip>
+                    )}
                   </TableCell>
                   <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
                     {fmtMoney(r.earned)}

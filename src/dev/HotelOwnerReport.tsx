@@ -39,12 +39,12 @@ import {
   fetchAllExpenses,
   fetchAllReservations,
   fetchPaymentRegister,
-  isRevenueReservation,
   reservationCheckIn,
   revenueByCategory,
   revenueBySource,
   summarizeExpenses,
 } from "./hotelReportData";
+import { isGuestDebt } from "./hotelInHouse";
 import { fmtInt, fmtMoney, fmtPercent, REPORT_PALETTE } from "./hotelReportFormat";
 import { ReportEmpty, ReportKpi, ReportLink, ReportSection, ShareRow, type ReportNav } from "./hotelReportUi";
 import { plural, SectionLabel, Surface } from "./hotelUi";
@@ -120,7 +120,8 @@ export const HotelOwnerReport: React.FC<{
   const debtors = React.useMemo(
     () =>
       reservations
-        .filter((r) => isRevenueReservation(r) && Number(r.balanceDue) > 0 && (reservationCheckIn(r) ?? "9999") <= (to < todayStr ? to : todayStr))
+        // Долг — только у заехавших (hotelInHouse.isGuestDebt): гость, который не приехал, не должник.
+        .filter((r) => isGuestDebt(r) && (reservationCheckIn(r) ?? "9999") <= (to < todayStr ? to : todayStr))
         .sort((a, b) => Number(b.balanceDue) - Number(a.balanceDue)),
     [reservations, to, todayStr],
   );
