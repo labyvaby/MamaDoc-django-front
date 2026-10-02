@@ -42,6 +42,8 @@ import { SettingsLayout } from "../pages/settings/SettingsLayout";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { PublicBookingSettingsCard } from "./PublicBookingSettingsCard";
+import { ExchangeRatesSettingsCard } from "./ExchangeRatesSettingsCard";
+import { RequisitesSettingsCard } from "./RequisitesSettingsCard";
 import { updateHotelProperty, type HotelPropertyUpdateData } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 
@@ -236,6 +238,14 @@ export const HotelPropertySettingsPage: React.FC = () => {
           <Divider />
 
           <PublicBookingSettingsCard propertyId={property.id} />
+
+          <Divider />
+
+          <RequisitesSettingsCard property={property} />
+
+          <Divider />
+
+          <ExchangeRatesSettingsCard propertyId={property.id} baseCurrency={property.currency || "KGS"} />
         </Stack>
       )}
 
