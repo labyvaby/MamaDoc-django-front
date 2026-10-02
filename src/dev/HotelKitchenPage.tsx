@@ -49,7 +49,8 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 import dayjs, { type Dayjs } from "dayjs";
-import { Navigate } from "react-router";
+import { Navigate, useNavigate } from "react-router";
+import { useInHouse } from "./useInHouse";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -110,6 +111,10 @@ export const HotelKitchenPage: React.FC = () => {
   const [stockEdit, setStockEdit] = React.useState<StockEditTarget | null>(null);
   const [stockSaving, setStockSaving] = React.useState(false);
   const [stockError, setStockError] = React.useState<string | null>(null);
+
+  // Порции сервер считает и по броням, где гость не заехал; пока их не отметили «Незаезд» — предупреждаем.
+  const inHouse = useInHouse(property?.id, dateStr, property != null).data;
+  const navigate = useNavigate();
 
   // После хуков (Rules of Hooks) — страница доступна только Viva, у
   // остальных организаций такой кухни нет.
@@ -226,6 +231,21 @@ export const HotelKitchenPage: React.FC = () => {
         <Tab value="menu" label="Меню" />
         <Tab value="products" label="Продукты" />
       </Tabs>
+
+      {tab === "plan" && plan && (inHouse?.missedGuests ?? 0) > 0 && (
+        <Alert
+          severity="warning"
+          variant="outlined"
+          action={
+            <Button color="inherit" size="small" onClick={() => navigate("/reception")}>
+              На ресепшен
+            </Button>
+          }
+        >
+          В порции посчитаны {inHouse!.missedGuests} {plural(inHouse!.missedGuests, "гость", "гостя", "гостей")}, которые не заехали. Отметьте
+          незаезд на ресепшене («Закрыть день») — и план пересчитается.
+        </Alert>
+      )}
 
       {!property && !propertyLoading ? (
         <HotelPropertyMissing />
