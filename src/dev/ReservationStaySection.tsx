@@ -7,8 +7,9 @@
  * «Изменить цены» — своя цена любой ночи и скидка номера с причиной
  * (заказчик: «менять цену чего угодно в любой момент»). Бэк:
  * PATCH /reservations/{id}/items/{itemId}/pricing/ (контракт —
- * docs/hotel-backend-requests-2026-10-02.md §4); пока его нет, сохранение
- * честно говорит, что включится после обновления сервера.
+ * docs/hotel-backend-tasks.md §4); пока его нет — демо-режим: своя цена
+ * сохраняется на этом устройстве (priceOverrideDemo) и видна здесь с пометкой,
+ * а сумма брони на сервере остаётся прежней — это написано рядом.
  */
 import React from "react";
 import {
@@ -40,6 +41,8 @@ import { useCan } from "../hooks/useCan";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { HOTEL_BOARD_TYPE_LABELS } from "./hotelDisplay";
 import { formatHotelDate, formatHotelDateRange, nightsBetween } from "./mockDemoData";
+import { DEMO_KEYS, useDemoValue } from "./hotelDemoStore";
+import { applyDemoPricing, demoPricingFor, saveDemoPricing, type DemoItemPricing, type DemoPrices } from "./priceOverrideDemo";
 
 const WEEKDAYS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 const LIVE = new Set(["draft", "hold", "confirmed"]);
@@ -56,11 +59,16 @@ export const ReservationStaySection: React.FC<{ reservation: HotelReservation; a
   const items = [...reservation.items].sort((a, b) => Number(b.id === activeItemId) - Number(a.id === activeItemId));
   const line = `1px solid ${subtleBorder(theme)}`;
   const [editingId, setEditingId] = React.useState<number | null>(null);
+  const demoPrices = useDemoValue<DemoPrices>(DEMO_KEYS.prices, {});
 
   return (
     <Stack gap={2.5}>
       {items.map((it) => {
-        const nights = it.nights.length ? it.nights : [{ date: it.checkIn, price: it.totalAmount, ratePlanName: it.ratePlanName ?? "" }];
+        const pricing = demoPricingFor(demoPrices, reservation.id, it.id);
+        const serverTotal = it.nights.reduce((s, n) => s + Number(n.price) - Number(n.discount ?? 0), 0);
+        const nights = it.nights.length
+          ? applyDemoPricing(it.nights, pricing)
+          : [{ date: it.checkIn, price: it.totalAmount, ratePlanName: it.ratePlanName ?? "" }];
         const count = Math.max(1, nightsBetween(it.checkIn, it.checkOut));
         const net = (n: (typeof nights)[number]) => Number(n.price) - Number(("discount" in n && n.discount) || 0);
         const stayTotal = nights.reduce((s, n) => s + net(n), 0);
@@ -87,7 +95,7 @@ export const ReservationStaySection: React.FC<{ reservation: HotelReservation; a
               )}
             </Stack>
             {editingId === it.id ? (
-              <NightPricesEditor reservation={reservation} item={it} unit={unit} onDone={() => setEditingId(null)} />
+              <NightPricesEditor reservation={reservation} item={it} unit={unit} pricing={pricing} onDone={() => setEditingId(null)} />
             ) : (
               <Box sx={{ overflowX: "auto" }}>
                 <Table size="small" sx={{ "& td, & th": { borderColor: subtleBorder(theme) } }}>
@@ -114,6 +122,7 @@ export const ReservationStaySection: React.FC<{ reservation: HotelReservation; a
                     {nights.map((n) => {
                       const weekend = [0, 6].includes(dayjs(n.date).day());
                       const manual = "isManual" in n && n.isManual;
+                      const demoNight = "demo" in n && Boolean((n as { demo?: boolean }).demo);
                       const base = "basePrice" in n && n.basePrice != null ? Number(n.basePrice) : null;
                       return (
                         <TableRow key={n.date}>
@@ -136,7 +145,11 @@ export const ReservationStaySection: React.FC<{ reservation: HotelReservation; a
                           >
                             {manual && (
                               <Tooltip title={base != null ? `Цену поставил сотрудник. По тарифу — ${money(base)}` : "Цену поставил сотрудник"}>
-                                <Chip size="small" label="вручную" sx={{ mr: 1, height: 20, fontSize: 11, bgcolor: alpha(theme.palette.info.main, 0.12), color: "info.main" }} />
+                                <Chip
+                                  size="small"
+                                  label={demoNight ? "вручную · демо" : "вручную"}
+                                  sx={{ mr: 1, height: 20, fontSize: 11, bgcolor: alpha(theme.palette.info.main, 0.12), color: "info.main" }}
+                                />
                               </Tooltip>
                             )}
                             {money(Number(n.price))}
@@ -180,6 +193,24 @@ export const ReservationStaySection: React.FC<{ reservation: HotelReservation; a
                 </Typography>
               )}
             </Stack>
+            {pricing && (
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                alignItems={{ sm: "center" }}
+                gap={1}
+                sx={{ px: 2, py: 1, borderTop: line, bgcolor: alpha(theme.palette.info.main, theme.palette.mode === "dark" ? 0.12 : 0.06) }}
+              >
+                <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+                  Демо-режим: своя цена сохранена на этом устройстве{pricing.reason ? ` («${pricing.reason}»)` : ""}. В счёте и балансе сервера пока {money(serverTotal)} — пересчитает
+                  после обновления сервера.
+                </Typography>
+                {editable && (
+                  <Button size="small" color="inherit" onClick={() => saveDemoPricing(reservation.id, it.id, null)}>
+                    Вернуть расчётную
+                  </Button>
+                )}
+              </Stack>
+            )}
           </Box>
         );
       })}
@@ -188,20 +219,29 @@ export const ReservationStaySection: React.FC<{ reservation: HotelReservation; a
 };
 
 /** Правка цен ночей номера: своя цена любой ночи, «всем ночам», скидка %, причина. */
-const NightPricesEditor: React.FC<{ reservation: HotelReservation; item: Item; unit: string; onDone: () => void }> = ({ reservation, item, unit, onDone }) => {
+const NightPricesEditor: React.FC<{ reservation: HotelReservation; item: Item; unit: string; pricing?: DemoItemPricing; onDone: () => void }> = ({
+  reservation,
+  item,
+  unit,
+  pricing,
+  onDone,
+}) => {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
-  const initial = React.useMemo(() => Object.fromEntries(item.nights.map((n) => [n.date, String(Number(n.price))])), [item.nights]);
+  const initial = React.useMemo(
+    () => Object.fromEntries(item.nights.map((n) => [n.date, String(pricing?.nights[n.date] ?? Number(n.price))])),
+    [item.nights, pricing],
+  );
   const [prices, setPrices] = React.useState<Record<string, string>>(initial);
   const [resetDates, setResetDates] = React.useState<Set<string>>(new Set());
   const [all, setAll] = React.useState("");
-  const [discount, setDiscount] = React.useState("");
+  const [discount, setDiscount] = React.useState(pricing?.discountPercent ? String(pricing.discountPercent) : "");
   const [reason, setReason] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [unsupported, setUnsupported] = React.useState(false);
 
-  const changed = item.nights.filter((n) => resetDates.has(n.date) || Number(prices[n.date]) !== Number(n.price));
+  const changed = item.nights.filter((n) => resetDates.has(n.date) || Number(prices[n.date]) !== Number(pricing?.nights[n.date] ?? n.price));
   const total = item.nights.reduce((s, n) => s + (Number(prices[n.date]) || 0), 0);
   const oldTotal = item.nights.reduce((s, n) => s + Number(n.price), 0);
   const discountNum = discount.trim() === "" ? null : Number(discount.replace(",", "."));
@@ -227,7 +267,16 @@ const NightPricesEditor: React.FC<{ reservation: HotelReservation; item: Item; u
       onDone();
     } catch (err) {
       if (err instanceof ApiError && (err.status === 404 || err.status === 405)) {
+        // Бэкенд ещё не умеет — сохраняем в демо-режиме на устройстве.
+        const own: Record<string, number> = { ...(pricing?.nights ?? {}) };
+        for (const n of item.nights) {
+          if (resetDates.has(n.date) || Number(prices[n.date]) === Number(n.price)) delete own[n.date];
+          else own[n.date] = Number(prices[n.date]);
+        }
+        saveDemoPricing(reservation.id, item.id, { nights: own, discountPercent: discountNum, reason: reason.trim(), at: new Date().toISOString() });
         setUnsupported(true);
+        enqueueSnackbar("Сохранено в демо-режиме — видно в «Проживании» на этом устройстве", { variant: "info" });
+        onDone();
       } else {
         enqueueSnackbar(getErrorMessage(err, "Не удалось сохранить цены"), { variant: "error" });
       }

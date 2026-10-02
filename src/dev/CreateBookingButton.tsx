@@ -90,6 +90,7 @@ import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import { CurrencyEquivalent } from "./CurrencyBits";
+import { distributeTotal, manualTotalIgnored, saveDemoPricing } from "./priceOverrideDemo";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
@@ -878,12 +879,24 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
       try {
         reservation = await createReservation(payload);
       } catch (createErr) {
-        // Старый бэкенд не знает manualTotal (400 unknown field) — бронь всё равно создаём по расчётной цене.
+        // Бэкенд, который отвергает незнакомое поле (400), — бронь всё равно создаём по расчётной цене.
         const unknownField =
           manualActive && createErr instanceof ApiError && createErr.status === 400 && /manualTotal|unknown field/i.test(`${createErr.message} ${JSON.stringify(createErr.payload ?? "")}`);
         if (!unknownField) throw createErr;
         manualRejected = true;
         reservation = await createReservation({ ...payload, items: payload.items.map((it) => ({ ...it, manualTotal: undefined })) });
+      }
+      // Нынешний бэкенд незнакомые поля молча пропускает (проверено 02.10.2026) — тоже демо-режим.
+      const firstItem = reservation.items[0];
+      if (manualActive && !manualRejected && firstItem && manualTotalIgnored(firstItem, manualValue)) manualRejected = true;
+      // Демо-режим: своя сумма раскладывается по ночам и видна в «Проживании» на этом устройстве.
+      if (manualRejected && firstItem && manualValue != null) {
+        saveDemoPricing(reservation.id, firstItem.id, {
+          nights: distributeTotal(manualValue, firstItem.nights.map((n) => n.date)),
+          discountPercent: null,
+          reason: "Своя сумма при создании брони",
+          at: new Date().toISOString(),
+        });
       }
 
       const createdGuestId = reservation.items[0]?.guests[0]?.id;
@@ -939,7 +952,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
       setOpen(false);
       setToast(
         manualRejected
-          ? { text: `Бронь №${reservation.number} создана по расчётной цене: свою сумму сервер начнёт принимать после обновления.`, severity: "warning" }
+          ? { text: `Бронь №${reservation.number} создана. Своя сумма сохранена в демо-режиме и видна в «Проживании»; на сервере пока расчётная цена.`, severity: "success" }
           : prepaymentFailed
           ? { text: `Бронь №${reservation.number} создана, но предоплату записать не удалось (${prepaymentFailed}). Внесите её в карточке брони.`, severity: "warning" }
           : chargesFailed > 0

@@ -23,6 +23,7 @@ import { usePermissions } from "../hooks/usePermissions";
 import { subtleBorder } from "../theme/uiHelpers";
 import { HOTEL_PRINT_DOC_HINTS, HOTEL_PRINT_DOC_LABELS, printHotelDocument, type HotelPrintDoc } from "./hotelPrintDocs";
 import { buildGuestMessage, GUEST_MESSAGE_LABELS, whatsappLink, type GuestMessageKind } from "./hotelGuestMessages";
+import { DEMO_KEYS, useDemoValue } from "./hotelDemoStore";
 
 const DOCS: { doc: HotelPrintDoc; icon: React.ReactNode }[] = [
   { doc: "confirmation", icon: <EventAvailableOutlined /> },
@@ -52,6 +53,9 @@ export const ReservationDocumentsPanel: React.FC<{
     activeEmployee?.fullName || [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || user?.username || "";
   const line = `1px solid ${subtleBorder(theme)}`;
   const waAvailable = whatsappLink(phone) != null;
+  // Реквизиты: пока бэкенд их не хранит — из демо-режима настроек (hotelDemoStore).
+  const demoRequisites = useDemoValue<Record<string, string>>(property && !("legalName" in property) ? DEMO_KEYS.requisites(property.id) : null, {});
+  const printProperty = property && !("legalName" in property) ? { ...property, ...demoRequisites } : property;
 
   const print = async (doc: HotelPrintDoc) => {
     setBusy(doc);
@@ -65,7 +69,7 @@ export const ReservationDocumentsPanel: React.FC<{
       printHotelDocument(doc, {
         reservation,
         payments,
-        property,
+        property: printProperty,
         charges: chargesQuery.data?.results ?? [],
         logoUrl: activeOrganization?.logoUrl ?? null,
         adminName,

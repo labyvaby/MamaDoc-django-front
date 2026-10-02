@@ -12,6 +12,10 @@ import type { Theme } from "@mui/material/styles";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import TaskAltOutlined from "@mui/icons-material/TaskAltOutlined";
+import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
+import CheckOutlined from "@mui/icons-material/CheckOutlined";
+import DoneAllOutlined from "@mui/icons-material/DoneAllOutlined";
+import BuildOutlined from "@mui/icons-material/BuildOutlined";
 
 export type HotelStayDisplayStatus = "confirmed" | "arrived" | "completed";
 
@@ -64,6 +68,17 @@ export const HOTEL_ROOM_STATE_LABELS: Record<HotelRoomState, string> = {
   clean: "Убрано",
   inspected: "Проверено",
   repair: "Ремонт",
+};
+
+/**
+ * Иконка состояния уборки — как в Exely у номера в шахматке: убрано — галочка,
+ * проверено — двойная галочка, грязно — швабра, ремонт — ключ. Цвет — hotelRoomStateColor.
+ */
+export const HOTEL_ROOM_STATE_ICONS: Record<HotelRoomState, ElementType> = {
+  clean: CheckOutlined,
+  inspected: DoneAllOutlined,
+  dirty: CleaningServicesOutlined,
+  repair: BuildOutlined,
 };
 
 /** Порядок пунктов в меню смены состояния номера (RoomStateControl). */

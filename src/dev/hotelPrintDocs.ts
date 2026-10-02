@@ -61,7 +61,14 @@ export interface HotelRequisites {
   bankName?: string;
   bankAccount?: string;
   bik?: string;
+  /** Подписи в счёте и справке. */
+  directorName?: string;
+  accountantName?: string;
 }
+
+/** Строка подписи «Должность ____ Фамилия И. О.». */
+const signLine = (role: string, name: string | undefined) =>
+  `<div style="display:flex;gap:16px;align-items:flex-end;margin-top:18px"><div style="min-width:110px">${esc(role)}</div><div style="flex:0 0 200px;border-bottom:1px solid #111;height:18px"></div><div>${esc(name ?? "")}</div></div>`;
 
 export interface PrintInput {
   reservation: HotelReservation;
@@ -252,6 +259,7 @@ function requisitesBlock(p: PrintInput): string {
     ${q.taxAuthority ? `<tr><td colspan="2">ГНИ (УГНС) ${esc(q.taxAuthority)}</td><td></td><td></td></tr>` : ""}
     <tr><td colspan="2"><span class="small muted">Получатель</span><br>${esc(q.legalName ?? hotelName(p))}</td><td>БИК</td><td>${esc(q.bik ?? "")}</td></tr>
     ${q.bankName ? `<tr><td colspan="2"><span class="small muted">Банк получателя</span><br>${esc(q.bankName)}</td><td></td><td></td></tr>` : ""}
+    ${q.legalAddress ? `<tr><td colspan="4"><span class="small muted">Юридический адрес</span><br>${esc(q.legalAddress)}</td></tr>` : ""}
   </table>`;
 }
 
@@ -315,7 +323,9 @@ function invoice(p: PrintInput): string {
     <div style="display:flex;gap:40px;margin-top:40px;align-items:flex-end">
       <div>Администратор${p.adminName ? ` <span class="muted">${esc(p.adminName)}</span>` : ""}</div>
       <div style="flex:0 0 260px;border-bottom:1px solid #111;height:18px"></div>
-    </div>`;
+    </div>
+    ${p.property?.directorName ? signLine("Руководитель", p.property.directorName) : ""}
+    ${p.property?.accountantName ? signLine("Бухгалтер", p.property.accountantName) : ""}`;
 }
 
 const RULES_EN = `Attention: on the territory of the hotel the Guest is fully responsible for their money, jewelry and valuables. The hotel accepts no responsibility for the loss of the Guest's personal belongings. The Guest reimburses losses for material damage caused by their fault.
@@ -411,6 +421,7 @@ function certificateFor(p: PrintInput, it: HotelReservation["items"][number], g:
       ${p.logoUrl ? `<img src="${esc(p.logoUrl)}" alt="" style="max-height:60px;max-width:140px;object-fit:contain"><br>` : ""}
       <div class="hotel">Отель «${esc(hotelName(p))}»</div>
       ${q.legalName ? `<div>${esc(q.legalName)}</div>` : ""}
+      ${q.legalAddress ? `<div class="small">${esc(q.legalAddress)}</div>` : ""}
       ${reqLine ? `<div class="small">${esc(reqLine)}</div>` : ""}
       <div class="small muted">${[pr?.email ? `e-mail: ${pr.email}` : "", pr?.address, pr?.phone ? `тел.: ${pr.phone}` : ""].filter(Boolean).map(esc).join(" · ")}</div>
     </div>
@@ -425,7 +436,8 @@ function certificateFor(p: PrintInput, it: HotelReservation["items"][number], g:
       <div>Администратор ${esc(hotelName(p))}<br><b>${esc(p.adminName ?? "")}</b></div>
       <div style="flex:0 0 200px;border-bottom:1px solid #111;height:18px"></div>
       <div class="muted">/ м.п.</div>
-    </div>`;
+    </div>
+    ${q.directorName ? signLine("Руководитель", q.directorName) : ""}`;
 }
 
 function certificate(p: PrintInput): string {

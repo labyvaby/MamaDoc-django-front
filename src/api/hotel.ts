@@ -979,7 +979,19 @@ export function setDailyRates(ratePlanId: number, change: HotelDailyRateChange):
   return apiRequest<{ nights: number }>(`/v2/hotel/rate-plans/${ratePlanId}/daily-rates/`, { method: "PUT", body: change });
 }
 
-/** kind: daily_rate | rule_created | rule_updated | rule_deleted | rate_plan | room_type. */
+/**
+ * Массовое изменение одним запросом: все диапазоны атомарно, одна строка
+ * «Истории цен» (kind daily_rate_batch). Контракт — docs/hotel-backend-tasks.md
+ * §8; пока 404 — календарь цен шлёт диапазоны по одному (setDailyRates).
+ */
+export function setDailyRatesBatch(
+  ratePlanId: number,
+  data: { reason?: string; changes: HotelDailyRateChange[] },
+): Promise<{ nights: number; changes: number }> {
+  return apiRequest<{ nights: number; changes: number }>(`/v2/hotel/rate-plans/${ratePlanId}/daily-rates/batch/`, { method: "PUT", body: data });
+}
+
+/** kind: daily_rate | daily_rate_batch | rule_created | rule_updated | rule_deleted | rate_plan | room_type. */
 export interface HotelPricingChange {
   id: number;
   kind: string;
@@ -1190,10 +1202,27 @@ export interface HotelCalendarItem {
   totalAmount: Money;
   isOverbooking: boolean;
   boardType: string;
-  /** Оплаты по брони — появятся в календаре после доработки бэка; пока долг берётся из списка броней (useStayBalances). */
+  /** Оплаты по брони — появятся в календаре после доработки бэка (контракт §7); пока долг берётся из списка броней (useStayBalances). */
   paidAmount?: Money;
   balanceDue?: Money;
   currency?: string;
+  /**
+   * Подробности для карточки при наведении (контракт §7). Когда они приходят
+   * вместе с balanceDue, шахматка не запрашивает список броней вовсе.
+   */
+  externalId?: string;
+  customerPhone?: string;
+  adults?: number;
+  children?: number;
+  ratePlanName?: string | null;
+  guaranteeMethod?: string;
+  corporateName?: string | null;
+  createdAt?: string;
+  createdByName?: string;
+  checkedInAt?: string | null;
+  checkedOutAt?: string | null;
+  internalNote?: string;
+  guestComment?: string;
 }
 
 export interface HotelRoomBlock {
@@ -1329,7 +1358,7 @@ export interface HotelReservationNight {
   /** Цена этой ночи, замороженная на момент создания/правки брони. */
   price: Money;
   ratePlanName: string;
-  /** Расчётная цена по тарифу — приходит, когда бэкенд умеет ручную цену (контракт §4). */
+  /** Расчётная цена по тарифу (уже приходит; контракт §4). */
   basePrice?: Money;
   /** Скидка ночи суммой (по discountPercent номера). */
   discount?: Money;
@@ -2522,7 +2551,7 @@ export function createCityEvent(data: HotelCityEventCreateData): Promise<HotelCi
 
 // ── График персонала: посты и смены ───────────────────────────────────────
 //
-// Контракт — docs/hotel-backend-requests-2026-10-02.md §1–3. Пока бэкенд
+// Контракт — docs/hotel-backend-tasks.md §1–3. Пока бэкенд
 // отвечает 404, страница «График персонала» показывает пример по таблице
 // отеля (staffRosterDemo.ts) — как «События» до своего эндпоинта.
 
@@ -2611,8 +2640,8 @@ export function saveStaffShifts(data: { propertyId: number; shifts: HotelStaffSh
 
 // ── Валюты объекта ─────────────────────────────────────────────────────────
 //
-// Контракт — docs/hotel-backend-requests-2026-10-02.md §5. Пока 404 — выбор
-// валюты в оплате и «режим валют» не показываются.
+// Контракт — docs/hotel-backend-tasks.md §5. Пока 404 — демо-режим
+// (useExchangeRates): курсы на устройстве, оплата валютой — в сомах с пометкой.
 
 export interface HotelExchangeRate {
   currency: string;
@@ -2637,7 +2666,7 @@ export function saveExchangeRates(propertyId: number, rates: { currency: string;
 
 // ── Ручная цена ночей и скидка номера ─────────────────────────────────────
 //
-// Контракт — docs/hotel-backend-requests-2026-10-02.md §4. Признак, что бэкенд
+// Контракт — docs/hotel-backend-tasks.md §4. Признак, что бэкенд
 // уже умеет: в ночах брони приходит isManual.
 
 export interface HotelItemPricingData {
@@ -2649,4 +2678,29 @@ export interface HotelItemPricingData {
 
 export function updateItemPricing(reservationId: number, itemId: number, data: HotelItemPricingData): Promise<HotelReservationDetail> {
   return apiRequest<HotelReservationDetail>(`/v2/hotel/reservations/${reservationId}/items/${itemId}/pricing/`, { method: "PATCH", body: data });
+}
+
+// ── Отчёт «Доходность и загрузка» ─────────────────────────────────────────
+//
+// Контракт — docs/hotel-backend-tasks.md §9. Сервер отдаёт факты «дата ×
+// категория × канал» и номера в продаже, сводку (недели, месяцы, ADR, RevPAR,
+// загрузка) фронт считает сам (hotelYield.ts). Пока 404 — факты собираются из
+// броней периода.
+
+export interface HotelYieldReport {
+  propertyId: number;
+  currency: string;
+  /** Обе даты включительно. */
+  from: string;
+  to: string;
+  roomTypes: { roomTypeId: number; roomTypeName: string }[];
+  /** Номеров в продаже по дням: без выведенных из продажи и блоков на эту дату. */
+  inventory: { date: string; roomTypeId: number; available: number }[];
+  /** Только ненулевые строки. */
+  sales: { date: string; roomTypeId: number; source: string; sold: number; revenue: Money; roomsArrived: number; guestsArrived: number }[];
+}
+
+/** Право — как у списка броней (hotel.view); период ≤ 366 дней. */
+export function getYieldReport(params: { propertyId: number; from: string; to: string }, signal?: AbortSignal): Promise<HotelYieldReport> {
+  return apiRequest<HotelYieldReport>(`/v2/hotel/reports/yield/${buildQuery(params)}`, { signal });
 }

@@ -4,7 +4,8 @@
  *    динамикой, деньги, долги, каналы и категории;
  *  • «Смена администратора» (HotelShiftReport) — касса смены, как их отчёт
  *    админов в Google Sheets;
- *  • «Балансы броней» (HotelBalancesReport) — как одноимённый отчёт Exely;
+ *  • «Заезды» (HotelBalancesReport) — «Балансы бронирований» Exely по дате заезда;
+ *  • «Доходность и загрузка» (HotelYieldReport) — по месяцам, неделям и дням;
  *  • «Горничные» (HotelHousekeepersReport) — нагрузка уборки по графику;
  *  • «Номера за день» (HotelDayReport) — кто где живёт и по какой цене.
  *
@@ -21,6 +22,7 @@ import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 import AssignmentTurnedInOutlined from "@mui/icons-material/AssignmentTurnedInOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import KingBedOutlined from "@mui/icons-material/KingBedOutlined";
+import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import { useSearchParams } from "react-router";
 
@@ -33,6 +35,7 @@ import { HotelHousekeepersReport } from "./HotelHousekeepersReport";
 import { HotelOwnerReport } from "./HotelOwnerReport";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { HotelShiftReport } from "./HotelShiftReport";
+import { HotelYieldReport } from "./HotelYieldReport";
 import type { HotelReportKind, ReportNav } from "./hotelReportUi";
 import { HotelPage, HotelPageHeader } from "./hotelUi";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
@@ -58,7 +61,7 @@ const REPORTS: ReportMeta[] = [
   },
   {
     kind: "shift",
-    label: "Смена администратора",
+    label: "Отчёт смены",
     hint: "Наличка, безнал, расходы, касса",
     audience: "ресепшен",
     icon: <AssignmentTurnedInOutlined />,
@@ -66,11 +69,19 @@ const REPORTS: ReportMeta[] = [
   },
   {
     kind: "balances",
-    label: "Балансы броней",
-    hint: "Стоимость, оплачено, долг по заездам",
-    audience: "бухгалтер, ресепшен",
+    label: "Заезды",
+    hint: "Кто заезжает, оплачено и долг",
+    audience: "ресепшен, бухгалтер",
     icon: <AccountBalanceWalletOutlined />,
-    info: "Брони по дате заезда: стоимость, оплачено и баланс с итогами — как «Балансы бронирований» в Exely. Фильтр «С долгом» — список, кого нужно дожать по оплате.",
+    info: "Брони по дате заезда — как «Балансы бронирований» в Exely: дата брони, канал и юрлицо, заезд и выезд со временем, номер, ADR, стоимость, оплачено и баланс. «Вид» — какие колонки показывать; «С долгом» — кого нужно дожать по оплате.",
+  },
+  {
+    kind: "yield",
+    label: "Доходность и загрузка",
+    hint: "Доход, ADR, RevPAR, загрузка",
+    audience: "собственник, управляющий",
+    icon: <TrendingUpOutlined />,
+    info: "Как отчёт Exely «Доходность и загрузка»: доход за проживание, продано номероночей, заезды гостей и номеров, ADR, RevPAR, доступно и % загрузки — по месяцам, неделям или дням, по категориям, с графиком, тепловым календарём, днями недели и сравнением с прошлым периодом.",
   },
   {
     kind: "housekeeping",
@@ -186,10 +197,11 @@ export const HotelReportsPage: React.FC = () => {
                 {r.icon}
               </Box>
               <Box sx={{ minWidth: 0 }}>
-                <Typography sx={{ fontWeight: 700, fontSize: 14.5, lineHeight: 1.25 }} noWrap>
+                <Typography sx={{ fontWeight: 700, fontSize: 14.5, lineHeight: 1.2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                   {r.label}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" component="div" noWrap>
+                {/* Отчётов шесть: на средних экранах подпись прячем, полное описание — в «i» у заголовка. */}
+                <Typography variant="caption" color="text.secondary" component="div" noWrap sx={{ display: { xs: "block", md: visible.length > 4 ? "none" : "block", xl: "block" } }}>
                   {r.hint}
                 </Typography>
               </Box>
@@ -218,7 +230,16 @@ export const HotelReportsPage: React.FC = () => {
       ) : current.kind === "shift" ? (
         <HotelShiftReport key={property.id} propertyId={property.id} propertyName={property.name} branchId={property.branchId} currency={property.currency} nav={nav} />
       ) : current.kind === "balances" ? (
-        <HotelBalancesReport key={property.id} propertyId={property.id} currency={property.currency} nav={nav} />
+        <HotelBalancesReport
+          key={property.id}
+          propertyId={property.id}
+          currency={property.currency}
+          checkInTime={property.checkInTime}
+          checkOutTime={property.checkOutTime}
+          nav={nav}
+        />
+      ) : current.kind === "yield" ? (
+        <HotelYieldReport key={property.id} propertyId={property.id} currency={property.currency} nav={nav} />
       ) : current.kind === "housekeeping" ? (
         <HotelHousekeepersReport key={property.id} propertyId={property.id} nav={nav} />
       ) : (

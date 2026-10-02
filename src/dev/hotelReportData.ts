@@ -26,18 +26,28 @@ export interface Fetched<T> {
   truncated: boolean;
 }
 
+/** Сколько страниц броней грузим одновременно. */
+const PARALLEL_PAGES = 4;
+
+/** Первая страница даёт count, остальные идут по PARALLEL_PAGES сразу; бронь на стыке страниц не дублируется. */
 export async function fetchAllReservations(
   params: Omit<HotelReservationListParams, "limit" | "offset">,
   signal?: AbortSignal,
   maxPages = MAX_PAGES,
 ): Promise<Fetched<HotelReservation>> {
   const byId = new Map<number, HotelReservation>();
-  for (let page = 0; page < maxPages; page++) {
-    const res = await listReservations({ ...params, limit: PAGE, offset: page * PAGE }, signal);
-    for (const r of res.results) byId.set(r.id, r);
-    if (res.results.length < PAGE || (page + 1) * PAGE >= res.count) return { rows: [...byId.values()], truncated: false };
+  const first = await listReservations({ ...params, limit: PAGE, offset: 0 }, signal);
+  for (const r of first.results) byId.set(r.id, r);
+  const pages = first.results.length < PAGE ? 1 : Math.min(maxPages, Math.ceil(first.count / PAGE));
+  for (let start = 1; start < pages; start += PARALLEL_PAGES) {
+    const batch = await Promise.all(
+      Array.from({ length: Math.min(PARALLEL_PAGES, pages - start) }, (_, i) =>
+        listReservations({ ...params, limit: PAGE, offset: (start + i) * PAGE }, signal),
+      ),
+    );
+    for (const res of batch) for (const r of res.results) byId.set(r.id, r);
   }
-  return { rows: [...byId.values()], truncated: true };
+  return { rows: [...byId.values()], truncated: first.results.length >= PAGE && first.count > maxPages * PAGE };
 }
 
 export interface FetchedRegister extends Fetched<HotelPayment> {
@@ -202,18 +212,29 @@ export interface BalanceRow {
   paid: number;
   balance: number;
   currency: string;
+  /** Для отчёта «Заезды»: юрлицо, телефон, гости, тариф, питание, гарантия, кто оформил, факт заезда/выезда. */
+  corporateName: string;
+  phone: string;
+  guests: number;
+  ratePlan: string;
+  board: string;
+  guarantee: string;
+  createdByName: string;
+  checkedInAt: string | null;
+  checkedOutAt: string | null;
   reservation: HotelReservation;
 }
 
 export function balanceRows(
   reservations: HotelReservation[],
-  opts: { from: string; to: string; balance: BalanceFilter; status: BalanceStatusFilter; source?: string },
+  opts: { from: string; to: string; balance: BalanceFilter; status: BalanceStatusFilter; source?: string; corporate?: string },
 ): BalanceRow[] {
   return reservations
     .filter((r) => {
       if (opts.status === "active" && r.status !== "confirmed") return false;
       if (opts.status === "cancelled" && r.status !== "cancelled" && r.status !== "no_show") return false;
       if (opts.source && r.source !== opts.source) return false;
+      if (opts.corporate && (r.corporateName ?? "") !== opts.corporate) return false;
       const checkIn = reservationCheckIn(r);
       return checkIn != null && checkIn >= opts.from && checkIn <= opts.to;
     })
@@ -238,6 +259,15 @@ export function balanceRows(
         paid: num(r.paidAmount),
         balance: num(r.balanceDue),
         currency: r.currency,
+        corporateName: r.corporateName ?? "",
+        phone: (active.flatMap((i) => i.guests).find((g) => g.isPrimary) ?? active[0]?.guests[0])?.phone ?? "",
+        guests: active.reduce((s, i) => s + i.adults + i.children, 0),
+        ratePlan: [...new Set(active.map((i) => i.ratePlanName).filter(Boolean))].join(", "),
+        board: [...new Set(active.map((i) => i.boardType).filter((b) => b && b !== "none"))].join(", "),
+        guarantee: r.guaranteeMethod,
+        createdByName: r.createdByName,
+        checkedInAt: active.map((i) => i.checkedInAt).filter((v): v is string => v != null).sort()[0] ?? null,
+        checkedOutAt: active.map((i) => i.checkedOutAt).filter((v): v is string => v != null).sort().pop() ?? null,
         reservation: r,
       };
     })
@@ -287,7 +317,11 @@ export interface PaymentSummary {
   refunds: number;
   byChannel: { label: string; amount: number; count: number }[];
   byCurrency: { currency: string; cash: number; cashless: number }[];
+  /** Наличные, принятые в валюте (метка «[USD 50 × 87.45]» демо-режима): сколько долларов/евро лежит в кассе. */
+  foreignCash: { currency: string; amount: number }[];
 }
+
+const FOREIGN_TAG = /^\[([A-Z]{3}) ([\d.]+) × ([\d.]+)\]/;
 
 export function summarizePayments(payments: HotelPayment[]): PaymentSummary {
   let cash = 0;
@@ -295,8 +329,11 @@ export function summarizePayments(payments: HotelPayment[]): PaymentSummary {
   let refunds = 0;
   const channels = new Map<string, { label: string; amount: number; count: number }>();
   const currencies = new Map<string, { currency: string; cash: number; cashless: number }>();
+  const foreign = new Map<string, number>();
   for (const p of payments) {
     const amount = signedAmount(p);
+    const tag = p.method === "cash" ? FOREIGN_TAG.exec(p.note ?? "") : null;
+    if (tag) foreign.set(tag[1], (foreign.get(tag[1]) ?? 0) + (p.kind === "refund" ? -1 : 1) * Number(tag[2]));
     if (p.kind === "refund") refunds += num(p.amount);
     const cur = currencies.get(p.currency) ?? { currency: p.currency, cash: 0, cashless: 0 };
     if (p.method === "cash") {
@@ -320,6 +357,7 @@ export function summarizePayments(payments: HotelPayment[]): PaymentSummary {
     refunds,
     byChannel: [...channels.values()].sort((a, b) => b.amount - a.amount),
     byCurrency: [...currencies.values()],
+    foreignCash: [...foreign].map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 })).filter((f) => f.amount !== 0),
   };
 }
 

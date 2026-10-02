@@ -3,8 +3,8 @@
  * курсу к базовой. По этим курсам ресепшен принимает оплату в долларах,
  * евро, рублях, а суммы можно показывать в выбранной валюте («режим
  * валют»). Бэк: GET/PUT /hotel/properties/{id}/exchange-rates/
- * (контракт §5) — пока его нет, карточка честно говорит, что включится
- * после обновления сервера.
+ * (контракт §5) — пока его нет, работает демо-режим: курсы хранятся на
+ * этом устройстве (hotelDemoStore), и с ними уже принимается оплата в валюте.
  */
 import React from "react";
 import { Alert, Box, Button, Checkbox, InputAdornment, Stack, TextField, Typography } from "@mui/material";
@@ -17,6 +17,7 @@ import { saveExchangeRates } from "../api/hotel";
 import { useCan } from "../hooks/useCan";
 import { currencySign } from "./hotelReportFormat";
 import { COMMON_CURRENCIES, CURRENCY_NAMES, useExchangeRates } from "./useExchangeRates";
+import { DEMO_KEYS, readDemo, writeDemo } from "./hotelDemoStore";
 
 export const ExchangeRatesSettingsCard: React.FC<{ propertyId: number; baseCurrency: string }> = ({ propertyId, baseCurrency }) => {
   const queryClient = useQueryClient();
@@ -25,31 +26,46 @@ export const ExchangeRatesSettingsCard: React.FC<{ propertyId: number; baseCurre
   const query = useExchangeRates(propertyId, baseCurrency);
   const [draft, setDraft] = React.useState<Record<string, { on: boolean; rate: string }>>({});
   const [saving, setSaving] = React.useState(false);
+  /** Сервер уже хранит курсы, у него их нет, а на этом устройстве остались демо-курсы — они подставлены в форму. */
+  const [fromDemo, setFromDemo] = React.useState(false);
 
   React.useEffect(() => {
     if (!query.data) return;
+    const leftover =
+      !query.data.demo && query.data.rates.length === 0 ? readDemo<{ currency: string; rate: string }[] | null>(DEMO_KEYS.rates(propertyId), null) : null;
+    const rates = leftover?.length ? leftover : query.data.rates;
+    setFromDemo(Boolean(leftover?.length));
     const next: Record<string, { on: boolean; rate: string }> = {};
     for (const c of COMMON_CURRENCIES) {
-      const r = query.data.rates.find((x) => x.currency === c);
+      const r = rates.find((x) => x.currency === c);
       next[c] = { on: r != null, rate: r ? String(Number(r.rate)) : "" };
     }
-    for (const r of query.data.rates) if (!next[r.currency]) next[r.currency] = { on: true, rate: String(Number(r.rate)) };
+    for (const r of rates) if (!next[r.currency]) next[r.currency] = { on: true, rate: String(Number(r.rate)) };
     setDraft(next);
-  }, [query.data]);
+  }, [query.data, propertyId]);
 
   if (query.isPending) return null;
   const state = query.data;
   const unavailable = !state?.available;
+  const demo = state?.demo ?? false;
   const enabled = Object.entries(draft).filter(([, v]) => v.on);
   const invalid = enabled.some(([, v]) => !(Number(v.rate.replace(",", ".")) > 0));
 
   const save = async () => {
     setSaving(true);
     try {
-      await saveExchangeRates(
-        propertyId,
-        enabled.map(([currency, v]) => ({ currency, rate: Number(v.rate.replace(",", ".")).toFixed(4) })),
-      );
+      const rates = enabled.map(([currency, v]) => ({ currency, rate: Number(v.rate.replace(",", ".")).toFixed(4) }));
+      if (demo) {
+        writeDemo(
+          DEMO_KEYS.rates(propertyId),
+          rates.map((r) => ({ ...r, updatedAt: new Date().toISOString(), updatedByName: "" })),
+        );
+      } else {
+        await saveExchangeRates(propertyId, rates);
+        // Курсы стали общими — демо-копия этого устройства больше не нужна.
+        writeDemo(DEMO_KEYS.rates(propertyId), null);
+        setFromDemo(false);
+      }
       void queryClient.invalidateQueries({ queryKey: ["hotel", "exchangeRates", propertyId] });
       enqueueSnackbar("Курсы сохранены", { variant: "success" });
     } catch (err) {
@@ -70,9 +86,16 @@ export const ExchangeRatesSettingsCard: React.FC<{ propertyId: number; baseCurre
         Гость может платить в другой валюте: ресепшен выберет её в оплате, сумма в {currencySign(baseCurrency)} посчитается по курсу ниже, а касса
         покажет доллары и евро отдельно. Курс — сколько {currencySign(baseCurrency)} за 1 единицу валюты.
       </Typography>
-      {unavailable && (
+      {demo && (
         <Alert severity="info" variant="outlined" sx={{ mb: 1.5 }}>
-          Приём оплаты в валютах включится после обновления сервера — тогда здесь можно будет задать курсы.
+          Демо-режим: курсы хранятся на этом устройстве, оплата в валюте записывается в сомах по курсу с пометкой. С обновлением сервера курсы
+          будут общими для всех сотрудников.
+        </Alert>
+      )}
+      {fromDemo && (
+        <Alert severity="warning" variant="outlined" sx={{ mb: 1.5 }}>
+          Сервер начал хранить курсы. В форму подставлены курсы, сохранённые на этом устройстве в демо-режиме, — проверьте и нажмите «Сохранить
+          курсы», чтобы они стали общими для всех сотрудников.
         </Alert>
       )}
       <Stack gap={1}>

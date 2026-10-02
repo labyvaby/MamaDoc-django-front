@@ -16,7 +16,7 @@
  * независимо от переданной date (см. HotelDashboard в hotel.ts).
  */
 import React from "react";
-import { Box, CircularProgress, Paper, Stack, Typography } from "@mui/material";
+import { Box, ButtonBase, CircularProgress, IconButton, Paper, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import dayjs from "dayjs";
 import { useQuery } from "@tanstack/react-query";
@@ -24,6 +24,8 @@ import { useNavigate } from "react-router";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 
 import ArrowForwardOutlined from "@mui/icons-material/ArrowForwardOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
+import ExpandLessOutlined from "@mui/icons-material/ExpandLessOutlined";
 import { getSelectedHotelDate, subscribeSelectedHotelDate, useIsVivaActive, formatHotelDate } from "./mockDemoData";
 import { formatSellableSummary, hotelRoomStateColor } from "./hotelDisplay";
 import { useHotelProperty } from "./useHotelProperty";
@@ -89,6 +91,44 @@ const StatRow: React.FC<{ color: string; label: string; value: React.ReactNode }
   </Stack>
 );
 
+/**
+ * Сводку можно свернуть в одну строку — тогда шахматке достаётся вся высота
+ * экрана (заказчик: «как можно больше информации до скролла»). По умолчанию
+ * свёрнута; выбор запоминается на устройстве.
+ */
+const COLLAPSED_KEY = "mamadoc:hotel-banner:collapsed";
+function readCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(COLLAPSED_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+/** Пункт свёрнутой сводки: точка цвета, подпись, число. */
+const StripStat: React.FC<{ color: string; label: string; value: React.ReactNode; onClick?: () => void; title?: string }> = ({ color, label, value, onClick, title }) => {
+  const content = (
+    <Stack direction="row" alignItems="center" gap={0.75} sx={{ px: 1, py: 0.5, borderRadius: "8px", whiteSpace: "nowrap" }}>
+      <Dot color={color} />
+      <Typography variant="caption" color="text.secondary">
+        {label}
+      </Typography>
+      <Typography variant="body2" fontWeight={700} sx={{ fontVariantNumeric: "tabular-nums" }}>
+        {value}
+      </Typography>
+    </Stack>
+  );
+  return onClick ? (
+    <Tooltip title={title ?? ""}>
+      <ButtonBase onClick={onClick} sx={{ borderRadius: "8px", "&:hover": { bgcolor: "action.hover" } }}>
+        {content}
+      </ButtonBase>
+    </Tooltip>
+  ) : (
+    content
+  );
+};
+
 export const HotelOccupancyBanner: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
@@ -97,6 +137,15 @@ export const HotelOccupancyBanner: React.FC = () => {
   const selectedDate = React.useSyncExternalStore(subscribeSelectedHotelDate, getSelectedHotelDate);
   const vivaActive = useIsVivaActive();
   const { property, isLoading: propertyLoading } = useHotelProperty();
+  const [collapsed, setCollapsedState] = React.useState<boolean>(readCollapsed);
+  const setCollapsed = (v: boolean) => {
+    setCollapsedState(v);
+    try {
+      window.localStorage.setItem(COLLAPSED_KEY, v ? "1" : "0");
+    } catch {
+      // не запомнится — не страшно
+    }
+  };
 
   const dashboardQuery = useQuery({
     queryKey: ["hotel", "dashboard", property?.id, selectedDate],
@@ -171,7 +220,58 @@ export const HotelOccupancyBanner: React.FC = () => {
   // невидимую дугу нулевой длины, но легенду справа показываем по всем строкам.
   const roomStatusPie = roomStatusRows.filter(([, , v]) => v > 0).map(([label, color, value]) => ({ label, color, value }));
 
+  if (collapsed) {
+    return (
+      <Paper
+        elevation={0}
+        variant="outlined"
+        sx={{ borderRadius: "12px", px: 1, py: 0.5, display: "flex", alignItems: "center", gap: 0.25, flexWrap: "wrap", flexShrink: 0 }}
+      >
+        <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary", px: 1 }}>
+          {isToday ? "Сегодня" : dateSuffix}
+        </Typography>
+        <StripStat color={occupancyColor} label="Загрузка" value={`${Math.round(occupancyPercent)}%`} />
+        <StripStat color={p.success.main} label="Заезды" value={`${dashboard.arrivals} / ${dashboard.arrived}`} />
+        <StripStat color={p.error.main} label="Выезды" value={`${dashboard.departures} / ${dashboard.departed}`} />
+        <StripStat color={stayingColor} label="Проживают" value={dashboard.staying} />
+        <StripStat color={p.text.disabled} label="Свободно" value={dashboard.freeRooms} />
+        {dashboard.overdueArrivals > 0 && <StripStat color={p.warning.main} label="Не заехали" value={dashboard.overdueArrivals} />}
+        <StripStat
+          color={hotelRoomStateColor("dirty", theme)}
+          label="Грязно"
+          value={dashboard.roomState.dirty}
+          onClick={() => navigate("/housekeeping")}
+          title="Задачи уборки"
+        />
+        <StripStat
+          color={p.warning.main}
+          label="Уборка сегодня"
+          value={taskBuckets.overdue > 0 ? `${taskBuckets.scheduledToday} · ${taskBuckets.overdue} просроч.` : taskBuckets.scheduledToday}
+          onClick={() => navigate("/housekeeping")}
+          title="Задачи уборки"
+        />
+        <Box sx={{ flex: 1 }} />
+        <Tooltip title="Развернуть сводку">
+          <IconButton size="small" onClick={() => setCollapsed(false)} aria-label="Развернуть сводку">
+            <ExpandMoreOutlined fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Paper>
+    );
+  }
+
   return (
+    <Box sx={{ position: "relative", flexShrink: 0 }}>
+      <Tooltip title="Свернуть сводку в строку — больше места шахматке">
+        <IconButton
+          size="small"
+          onClick={() => setCollapsed(true)}
+          aria-label="Свернуть сводку"
+          sx={{ position: "absolute", top: -14, right: -6, zIndex: 1, bgcolor: "background.paper", border: 1, borderColor: "divider", "&:hover": { bgcolor: "background.paper" } }}
+        >
+          <ExpandLessOutlined sx={{ fontSize: 18 }} />
+        </IconButton>
+      </Tooltip>
     <Box
       sx={{
         display: "grid",
@@ -273,6 +373,7 @@ export const HotelOccupancyBanner: React.FC = () => {
           </Stack>
         </Stack>
       </CardShell>
+    </Box>
     </Box>
   );
 };
