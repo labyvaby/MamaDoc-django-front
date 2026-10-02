@@ -240,6 +240,8 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
   // Растёт при каждом закрытии формы — по нему отбрасываем результат
   // распознавания, который вернулся уже в сброшенную форму.
   const scanGenerationRef = React.useRef(0);
+  // Лицевая сторона, которую уже отправили на распознавание, — чтобы замена оборотной не запускала скан заново.
+  const scannedFrontRef = React.useRef<File | null>(null);
   // Согласие гостя на хранение и обработку данных: без него фото паспорта не
   // прикрепляется. Уходит в карточку гостя с редакцией текста (сервер пока поля пропускает — контракт §15).
   const [dataConsent, setDataConsent] = React.useState(false);
@@ -332,7 +334,16 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
       setDocumentFieldsVisible(true);
       return;
     }
-    const scan = await runDocumentScan(prepared);
+    // ID-карту распознаём, когда загружены обе стороны: без оборотной ждём её
+    // (скан запустит загрузка оборотной). Загранпаспорт — сразу, сторона одна.
+    if (guestType === "resident" && !backPhotoFile) return;
+    await scanFront(prepared, generation);
+  };
+
+  /** Распознать лицевую сторону и подставить поля. Один и тот же файл повторно не распознаём. */
+  const scanFront = async (front: File, generation: number) => {
+    scannedFrontRef.current = front;
+    const scan = await runDocumentScan(front);
     // Форму закрыли (и сбросили) пока шло распознавание — чужие поля в новую не подставляем.
     if (generation !== scanGenerationRef.current) return;
     if (scan) applyScan(scan);
@@ -361,6 +372,10 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     if (backPhotoPreview) URL.revokeObjectURL(backPhotoPreview);
     setBackPhotoFile(prepared);
     setBackPhotoPreview(prepared.type.startsWith("image/") ? URL.createObjectURL(prepared) : null);
+    // Обе стороны на месте — распознаём лицевую (если её ещё не распознавали).
+    if (scanAvailable && guestType === "resident" && passportPhotoFile && passportPhotoFile !== scannedFrontRef.current && !scanning) {
+      void scanFront(passportPhotoFile, generation);
+    }
   };
 
   const removePassportPhoto = () => {
@@ -923,7 +938,12 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
                 <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
                   {scanAvailable && !passportPhotoFile && !scanning && (
                     <Typography variant="caption" color="text.secondary">
-                      Реквизиты подставятся по фото автоматически
+                      {guestType === "resident" ? "Загрузите обе стороны — реквизиты подставятся автоматически" : "Реквизиты подставятся по фото автоматически"}
+                    </Typography>
+                  )}
+                  {scanAvailable && guestType === "resident" && passportPhotoFile && !backPhotoFile && !scanning && (
+                    <Typography variant="caption" color="primary.main" fontWeight={600}>
+                      Добавьте оборотную сторону — распознаем, когда будут обе
                     </Typography>
                   )}
                   {!documentFieldsVisible && (
