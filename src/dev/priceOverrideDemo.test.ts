@@ -1,11 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { applyDemoPricing, distributeTotal } from "./priceOverrideDemo";
+import { applyDemoPricing, distributeTotal, manualTotalIgnored } from "./priceOverrideDemo";
 
 describe("distributeTotal", () => {
   it("поровну по ночам, остаток — на последнюю", () => {
     expect(distributeTotal(7000, ["2026-10-02", "2026-10-03", "2026-10-04"])).toEqual({ "2026-10-02": 2333.33, "2026-10-03": 2333.33, "2026-10-04": 2333.34 });
     expect(distributeTotal(5000, [])).toEqual({});
+  });
+});
+
+describe("manualTotalIgnored", () => {
+  const nights = (isManual?: boolean) => [{ isManual }, { isManual }];
+  it("сервер пропустил поле — сумма расчётная, ночи без isManual", () => {
+    expect(manualTotalIgnored({ totalAmount: "5400.00", nights: nights() }, 5000)).toBe(true);
+  });
+  it("сервер применил — ночи с isManual или сумма совпала", () => {
+    expect(manualTotalIgnored({ totalAmount: "5000.00", nights: nights(true) }, 5000)).toBe(false);
+    expect(manualTotalIgnored({ totalAmount: "5000.00", nights: nights() }, 5000)).toBe(false);
   });
 });
 

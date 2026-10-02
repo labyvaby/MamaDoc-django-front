@@ -32,6 +32,13 @@ export function saveDemoPricing(reservationId: number, itemId: number, pricing: 
   writeDemo(DEMO_KEYS.prices, next);
 }
 
+/**
+ * Сервер не применил «свою сумму» при создании брони: нынешний бэкенд незнакомое
+ * поле manualTotal молча пропускает. Применил — ночи с isManual или сумма номера та же.
+ */
+export const manualTotalIgnored = (item: { totalAmount: string; nights: { isManual?: boolean }[] }, manual: number): boolean =>
+  !item.nights.some((n) => n.isManual) && Math.abs(Number(item.totalAmount) - manual) > 0.009;
+
 /** Своя сумма за номер — поровну по ночам, остаток (до копеек) — на последнюю ночь. */
 export function distributeTotal(total: number, dates: string[]): Record<string, number> {
   if (dates.length === 0) return {};
