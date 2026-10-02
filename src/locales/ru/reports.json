@@ -44,8 +44,8 @@
     "summaryChip": "{{days}} дн. · {{sum}}",
     "totalRow": "Итого"
   },
-  "productsInVisits": "Товары в {{visit.prePl}}",
-  "soldInVisits": "Продано в {{visit.prePl}}",
+  "productsInVisits": "Товары {{visit.prePl, prep(p: в)}}",
+  "soldInVisits": "Продано {{visit.prePl, prep(p: в)}}",
   "dayVisitsCount": "{{visit.nomPl, capitalize}}: {{count}}",
   "tableHeaders": {
     "date": "Дата",

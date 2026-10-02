@@ -119,7 +119,10 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
   const { t } = useT("waitlist");
   const orgId = useApiOrgId();
   const scope = useActiveScope();
-  const { hasPermission, isSuperAdmin, activeEmployee } = usePermissions();
+  const { hasPermission, isSuperAdmin, activeEmployee, hasModule } = usePermissions();
+  // Вакцины — только у организаций с модулем вакцинации: салону или отелю
+  // поле «Вакцина» в листе ожидания ни к чему.
+  const vaccinesOn = WAITLIST_VACCINE_LIVE && hasModule("vaccinations");
   const isEdit = entry != null;
   // Заводить карту прямо отсюда может только тот, кому это разрешено вообще:
   // регистратор без patients.create упёрся бы в 403 уже после заполнения формы.
@@ -226,7 +229,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
         isVaccine: true,
         branchId: scope.branchId ?? undefined,
       }),
-    enabled: open && WAITLIST_VACCINE_LIVE,
+    enabled: open && vaccinesOn,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
   const vaccines = vaccinesQuery.data ?? EMPTY_VACCINES;
@@ -338,7 +341,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
         contactName: contactName.trim(),
         phone: composePhone(countryCode, phoneLocal) ?? "",
         employeeId: employeeId === "" ? null : employeeId,
-        ...(WAITLIST_VACCINE_LIVE ? { vaccineId: vaccineId === "" ? null : vaccineId } : null),
+        ...(vaccinesOn ? { vaccineId: vaccineId === "" ? null : vaccineId } : null),
         specializationId: specializationId === "" ? null : specializationId,
         branchId: entry?.branchId ?? scope.branchId ?? null,
         desiredDateFrom: dateFrom ? dateFrom.format("YYYY-MM-DD") : null,
@@ -360,7 +363,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
             clearSpecialization:
               payload.specializationId == null && entry.specializationId != null,
             clearVaccine:
-              WAITLIST_VACCINE_LIVE && vaccineId === "" && entry.vaccine != null,
+              vaccinesOn && vaccineId === "" && entry.vaccine != null,
             clearDesiredDates:
               payload.desiredDateFrom == null &&
               payload.desiredDateTo == null &&
@@ -394,7 +397,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
     // освободилось» такую запись никогда не найдёт. Специальность приходит
     // только с витрины — в CRM ориентиром служит выбранный врач.
     if (employeeId === "" && specializationId === "" && vaccineId === "") {
-      return setError(t(WAITLIST_VACCINE_LIVE ? "form.errorNoTargetVaccine" : "form.errorNoTarget"));
+      return setError(t(vaccinesOn ? "form.errorNoTargetVaccine" : "form.errorNoTarget"));
     }
     if (dateFrom && dateTo && dateFrom.isAfter(dateTo)) return setError(t("form.errorDates"));
     if (timeFrom && timeTo && timeFrom > timeTo) return setError(t("form.errorTimes"));
@@ -563,7 +566,7 @@ const WaitlistDrawer: React.FC<WaitlistDrawerProps> = ({
               )}
             />
 
-            {WAITLIST_VACCINE_LIVE && (
+            {vaccinesOn && (
               <Autocomplete<DjangoProduct>
                 options={vaccines}
                 value={selectedVaccine}

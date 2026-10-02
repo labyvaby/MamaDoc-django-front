@@ -40,6 +40,8 @@ export interface FormSheetPreviewProps {
   highlightFieldId?: string | null;
   /** Пунктиром показать рабочую область на каждой странице. */
   showContentBounds?: boolean;
+  /** Хвост под строками листа — колонки, которых бланк не печатает (см. FormSheet). */
+  trailer?: React.ReactNode;
 }
 
 /** Промежуток между листами на экране. */
@@ -52,6 +54,7 @@ export const FormSheetPreview: React.FC<FormSheetPreviewProps> = ({
   scale = 1,
   highlightFieldId = null,
   showContentBounds = false,
+  trailer,
 }) => {
   const sourceRef = React.useRef<HTMLDivElement | null>(null);
   const measureRef = React.useRef<HTMLDivElement | null>(null);
@@ -144,6 +147,7 @@ export const FormSheetPreview: React.FC<FormSheetPreviewProps> = ({
             values={values}
             scale={1}
             highlightFieldId={highlightFieldId}
+            trailer={trailer}
           />
         </Box>
         <Box ref={measureRef} />

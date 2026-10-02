@@ -32,6 +32,10 @@ export type PosReceiptLine = {
   selectedSizeId: string;
   quantity: number;
   price: number;
+  /** Скидка на позицию, которую задал кассир, в сомах. */
+  discountAmount?: number;
+  /** Если кассир задал скидку процентом — сумма пересчитывается от количества. */
+  discountPercent?: number;
   /** Удалённая строка остаётся в чеке зачёркнутой — её можно вернуть. */
   removed?: boolean;
 };

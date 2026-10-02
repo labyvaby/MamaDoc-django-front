@@ -39,7 +39,7 @@ import {
 import { ApiError } from "../../api/client";
 import { PHOTO_ACCEPT, PHOTO_SOURCE_MAX_BYTES } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
-import { SUPPORTED_VERTICALS, getGlossary } from "../../i18n/glossary";
+import { SELECTABLE_VERTICALS, getGlossary } from "../../i18n/glossary";
 import {
   buildGlossaryThemeConfig,
   changedTermKeys,
@@ -104,7 +104,7 @@ const OrganizationSettingsPage: React.FC = () => {
   ];
 
   const VERTICAL_OPTIONS: { value: Vertical; label: string; hint: string }[] =
-    SUPPORTED_VERTICALS.map((value) => ({
+    SELECTABLE_VERTICALS.map((value) => ({
       value,
       label: t(`organization.vertical.${value}.label`),
       hint: t(`organization.vertical.${value}.hint`),

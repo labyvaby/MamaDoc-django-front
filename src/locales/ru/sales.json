@@ -49,7 +49,7 @@
   "details": {
     "emptyTitle": "Выберите продажу",
     "emptyDescription": "Нажмите на продажу в списке, чтобы увидеть состав, оплату и покупателя.",
-    "fromVisitChip": "С {{visit.gen}}",
+    "fromVisitChip": "{{visit.gen, prep(p: С)}}",
     "fromVisitHint": "Товары проданы в составе {{visit.gen}} — редактируются в карточке {{visit.gen}}.",
     "editAction": "Изменить",
     "deleteTooltip": "Удалить",
@@ -83,7 +83,7 @@
     "emptyDescription": "Здесь появятся оформленные продажи за выбранный период.",
     "productDeleted": "Товар удалён",
     "anonymous": "Анонимный",
-    "fromVisitChip": "С {{visit.gen}}",
+    "fromVisitChip": "{{visit.gen, prep(p: С)}}",
     "paymentMixed": "Смеш.",
     "paymentCash": "Нал",
     "paymentCard": "Безнал"

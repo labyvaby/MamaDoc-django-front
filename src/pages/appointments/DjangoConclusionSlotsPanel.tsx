@@ -128,11 +128,9 @@ const DocumentBar: React.FC<{
   onSelect: (key: DocKey) => void;
   /** Можно ли сейчас начать новый документ. */
   canAdd: boolean;
-  /** Переключение запрещено (идёт правка в колонке). */
-  locked?: boolean;
   /** Удалить черновик; нет — крестика на чипах нет. */
   onDelete?: (doc: MedicalConclusion, label: string) => void;
-}> = ({ slot, active, onSelect, canAdd, locked = false, onDelete }) => {
+}> = ({ slot, active, onSelect, canAdd, onDelete }) => {
   const { t } = useT("appointments");
   const docs = slotConclusions(slot);
   const activeId = active === "new" ? null : active ?? docs[0]?.id ?? null;
@@ -150,7 +148,7 @@ const DocumentBar: React.FC<{
         // Удаляется только черновик (завершённый бэк не отдаст: 409), и только
         // тем, кто может править этот документ.
         const deletable =
-          onDelete && !locked && doc.status === "draft" && conclusionCanEdit(slot, doc);
+          onDelete && doc.status === "draft" && conclusionCanEdit(slot, doc);
         return (
           <Chip
             key={doc.id}
@@ -159,7 +157,7 @@ const DocumentBar: React.FC<{
             title={stateLabel(doc.status)}
             color={selected ? "primary" : "default"}
             variant={selected ? "filled" : "outlined"}
-            onClick={selected || locked ? undefined : () => onSelect(doc.id)}
+            onClick={selected ? undefined : () => onSelect(doc.id)}
             onDelete={deletable ? () => onDelete(doc, label) : undefined}
             deleteIcon={
               <Tooltip title={t("conclusionSlots.deleteDraft")}>
@@ -190,7 +188,7 @@ const DocumentBar: React.FC<{
           sx={{ flexShrink: 0 }}
         />
       )}
-      {canAdd && !locked && active !== "new" && (
+      {canAdd && active !== "new" && (
         <Tooltip title={t("conclusionSlots.addDocumentHint")}>
           <Button
             size="small"
@@ -250,8 +248,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
   // Drawer state
   const [drawerSlot, setDrawerSlot] = React.useState<ConclusionSlot | null>(null);
   const [drawerDoc, setDrawerDoc] = React.useState<DocKey>(null);
-  // Inline single-slot edit toggle (просмотр ↔ редактирование в колонке).
-  const [editingInline, setEditingInline] = React.useState(false);
+  // Документ, показанный в колонке при единственной строке (только просмотр).
   const [inlineDoc, setInlineDoc] = React.useState<DocKey>(null);
   const canDelete = useCan("medical.conclusions.delete");
   const { open: notify } = useNotification();
@@ -284,10 +281,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
         }),
       );
       // Удалённый документ был открыт — возвращаемся к первому.
-      if (inlineDoc === doc.id) {
-        setInlineDoc(null);
-        setEditingInline(false);
-      }
+      if (inlineDoc === doc.id) setInlineDoc(null);
       if (drawerDoc === doc.id) setDrawerDoc(null);
       notify?.({ type: "success", message: t("conclusionSlots.deleted") });
       setDeleteTarget(null);
@@ -382,40 +376,31 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
 
   if (showInlineSingle && onlySlot) {
     const doc = resolveDoc(onlySlot, inlineDoc);
-    const editing = editingInline || inlineDoc === "new";
-    // Новый документ правит тот, кому можно создавать в строке.
-    const docCanEdit = doc.createAsNew ? onlySlot.canEdit : conclusionCanEdit(onlySlot, doc.conclusion);
+    const docCanEdit = conclusionCanEdit(onlySlot, doc.conclusion);
+    // Колонка кабинета — только просмотр: правка и новый документ открывают
+    // тот же дровер, что и создание (лист рядом, полная ширина). Править в
+    // колонке шириной ~430 px было тесно (жалоба 28.09.2026).
+    const openEditor = (key: DocKey) => {
+      setDrawerDoc(key);
+      setDrawerSlot(onlySlot);
+    };
     return (
       <>
       <DjangoConclusionDrawer
         open
         inline
-        // В режиме редактирования «Закрыть/Отмена» возвращает к просмотру;
-        // в просмотре — закрывает всю колонку. Брошенный новый документ —
-        // назад к первому (черновик остаётся в браузере).
-        onClose={() => {
-          if (inlineDoc === "new") setInlineDoc(null);
-          if (editing) setEditingInline(false);
-          else onClose?.();
-        }}
+        onClose={() => onClose?.()}
         conclusion={doc.conclusion}
-        createAsNew={doc.createAsNew}
+        createAsNew={false}
         draftScope={doc.draftScope}
         documentBar={
           showDocumentBar(onlySlot, inlineDoc) ? (
             <DocumentBar
               slot={onlySlot}
               active={inlineDoc}
-              // Посреди правки в колонке документ не переключаем: сначала
-              // сохранить или отменить — иначе кнопки формы относились бы уже
-              // к другому документу.
-              locked={editing}
               canAdd={onlySlot.canEdit && canAddConclusion(onlySlot)}
               onDelete={requestDelete}
-              onSelect={(key) => {
-                setInlineDoc(key);
-                setEditingInline(key === "new");
-              }}
+              onSelect={(key) => (key === "new" ? openEditor("new") : setInlineDoc(key))}
             />
           ) : undefined
         }
@@ -426,17 +411,27 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
         appointmentId={appointmentId}
         branchId={branchId}
         doctorId={onlySlot.doctor?.id ?? null}
-        // По умолчанию просмотр; «Изменить заключение» включает редактирование.
-        canEdit={docCanEdit && editing}
+        canEdit={false}
         canPrint={conclusionCanPrint(onlySlot, doc.conclusion)}
-        onStartEdit={docCanEdit ? () => setEditingInline(true) : undefined}
-        onSaved={(saved) => {
-          handleSaved(saved);
-          setEditingInline(false);
-          // Новый документ сохранён — дальше это обычный документ строки.
-          if (inlineDoc === "new") setInlineDoc(saved.id);
-        }}
+        onStartEdit={docCanEdit ? () => openEditor(inlineDoc) : undefined}
+        onSaved={handleSaved}
       />
+      {drawerSlot && (
+        <SlotDrawer
+          slot={slots.find((s) => s.serviceLineId === drawerSlot.serviceLineId) ?? drawerSlot}
+          doc={drawerDoc}
+          onSelectDoc={setDrawerDoc}
+          appointmentId={appointmentId}
+          branchId={branchId}
+          onClose={() => setDrawerSlot(null)}
+          onSaved={(saved) => {
+            handleSaved(saved);
+            // В колонке показываем то, что только что правили или создали.
+            setInlineDoc(saved.id);
+          }}
+          onDeleteDoc={requestDelete}
+        />
+      )}
       {deleteDialog}
       </>
     );

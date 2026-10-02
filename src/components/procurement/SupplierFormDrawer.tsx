@@ -31,10 +31,17 @@ export interface SupplierFormDrawerProps {
   scope: ProcurementScope;
   /** null — создание. */
   supplier: ProcurementSupplier | null;
+  /**
+   * Черновик нового поставщика — например, реквизиты, распознанные в
+   * накладной. Для редактирования (`supplier` задан) не используется.
+   */
+  initial?: Partial<Pick<ProcurementSupplier, "name" | "taxId" | "phone" | "email" | "paymentTerms" | "defaultCurrency" | "defaultBrand" | "comment">>;
+  /** Открыт поверх модального окна (накладной): Drawer по умолчанию ниже Dialog. */
+  aboveModal?: boolean;
 }
 
 /** Карточка поставщика: реквизиты, контакт, условия оплаты, валюта закупа. */
-export const SupplierFormDrawer: React.FC<SupplierFormDrawerProps> = ({ open, onClose, onSaved, scope, supplier }) => {
+export const SupplierFormDrawer: React.FC<SupplierFormDrawerProps> = ({ open, onClose, onSaved, scope, supplier, initial, aboveModal }) => {
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const [form, setForm] = React.useState({
@@ -45,6 +52,7 @@ export const SupplierFormDrawer: React.FC<SupplierFormDrawerProps> = ({ open, on
     contactPerson: "",
     paymentTerms: "",
     defaultCurrency: "KGS",
+    defaultBrand: "",
     comment: "",
     isActive: true,
   });
@@ -54,17 +62,22 @@ export const SupplierFormDrawer: React.FC<SupplierFormDrawerProps> = ({ open, on
   React.useEffect(() => {
     if (!open) return;
     setError(null);
+    const source = supplier ?? initial;
     setForm({
-      name: supplier?.name ?? "",
-      taxId: supplier?.taxId ?? "",
-      phone: supplier?.phone ?? "",
-      email: supplier?.email ?? "",
+      name: source?.name ?? "",
+      taxId: source?.taxId ?? "",
+      phone: source?.phone ?? "",
+      email: source?.email ?? "",
       contactPerson: supplier?.contactPerson ?? "",
-      paymentTerms: supplier?.paymentTerms ?? "",
-      defaultCurrency: supplier?.defaultCurrency || "KGS",
-      comment: supplier?.comment ?? "",
+      paymentTerms: source?.paymentTerms ?? "",
+      defaultCurrency: source?.defaultCurrency || "KGS",
+      defaultBrand: source?.defaultBrand ?? "",
+      comment: source?.comment ?? "",
       isActive: supplier?.isActive ?? true,
     });
+    // `initial` — снимок на момент открытия; его смена при открытой форме
+    // не должна затирать то, что уже поправили руками.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, supplier]);
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => setForm((prev) => ({ ...prev, [key]: value }));
@@ -83,6 +96,7 @@ export const SupplierFormDrawer: React.FC<SupplierFormDrawerProps> = ({ open, on
         contactPerson: form.contactPerson.trim(),
         paymentTerms: form.paymentTerms.trim(),
         defaultCurrency: form.defaultCurrency,
+        defaultBrand: form.defaultBrand.trim(),
         comment: form.comment.trim(),
       };
       const saved = supplier
@@ -106,7 +120,13 @@ export const SupplierFormDrawer: React.FC<SupplierFormDrawerProps> = ({ open, on
   );
 
   return (
-    <Drawer anchor="right" open={open} onClose={saving ? undefined : onClose} PaperProps={{ sx: { width: { xs: "100%", sm: 440 }, maxWidth: "100%", display: "flex", flexDirection: "column" } }}>
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={saving ? undefined : onClose}
+      sx={aboveModal ? { zIndex: (t) => t.zIndex.modal + 1 } : undefined}
+      PaperProps={{ sx: { width: { xs: "100%", sm: 440 }, maxWidth: "100%", display: "flex", flexDirection: "column" } }}
+    >
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5, borderBottom: 1, borderColor: "divider" }}>
         <Typography variant="h6">{supplier ? "Поставщик" : "Новый поставщик"}</Typography>
         <IconButton onClick={saving ? undefined : onClose} aria-label="Закрыть">
@@ -134,6 +154,10 @@ export const SupplierFormDrawer: React.FC<SupplierFormDrawerProps> = ({ open, on
               ))}
             </TextField>
           </Box>
+        </Box>
+        <Box>
+          <Label>Бренд по умолчанию для новых товаров</Label>
+          <TextField fullWidth size="small" value={form.defaultBrand} onChange={(e) => set("defaultBrand", e.target.value)} placeholder="Например, Monogram" />
         </Box>
         <Box>
           <Label>Контактное лицо</Label>

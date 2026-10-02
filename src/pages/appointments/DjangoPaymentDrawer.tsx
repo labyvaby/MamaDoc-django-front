@@ -662,7 +662,11 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     setCashlessMethodId(cashlessDefaultMethodId);
   }, [cardNum, cashlessMethodId, cashlessDefaultMethodId]);
 
-  const isCancelled = CANCELLED_STATUSES.has(appointment?.status ?? "");
+  // Оплату на отменённом приёме не принимаем. Статус из сводки свежее строки
+  // списка: приём могли отменить в другой вкладке, пока список не обновился.
+  const isCancelled =
+    CANCELLED_STATUSES.has(appointment?.status ?? "") ||
+    CANCELLED_STATUSES.has(summary?.appointmentStatus ?? "");
   const patientName = appointment?.patient?.fullName ?? t("payment.booking");
   const hasPatient = !!patientId;
 

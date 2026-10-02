@@ -30,6 +30,7 @@ import ReviewsTab from "./tabs/ReviewsTab";
 import CasesTab from "./tabs/CasesTab";
 import StaffTab from "./tabs/StaffTab";
 import MapsTab from "./tabs/MapsTab";
+import ExternalReviewsTab from "./tabs/ExternalReviewsTab";
 
 const VIEW = ["reviews.view", "reviews.view_own"];
 
@@ -39,6 +40,7 @@ const TABS = [
   { key: "cases", label: "Разборы", perms: ["reviews.handle"] },
   { key: "staff", label: "Сотрудники", perms: VIEW },
   { key: "maps", label: "Карты", perms: ["reviews.handle"] },
+  { key: "external", label: "2ГИС", perms: ["reviews.handle"] },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -77,13 +79,15 @@ const ReviewsPage: React.FC = () => {
   });
   const branches = branchesQuery.data ?? [];
   const multiBranch = !activeBranch && branches.length > 1;
+  const effectiveBranchId =
+    activeBranch?.id ?? (branchId === "" ? undefined : branchId);
 
   if (!permLoading && visibleTabs.length === 0) return <AccessDenied />;
 
   const period: ReviewPeriod = {
     from: from.format("YYYY-MM-DD"),
     to: to.format("YYYY-MM-DD"),
-    branchId: branchId === "" ? undefined : branchId,
+    branchId: effectiveBranchId,
     organizationId,
   };
   const props = { period, multiBranch };
@@ -106,7 +110,7 @@ const ReviewsPage: React.FC = () => {
             </Tooltip>
             {canManage && (
               <Tooltip title="Настройки модуля">
-                <IconButton size="small" component={RouterLink} to="/reviews/settings">
+                <IconButton size="small" component={RouterLink} to="/settings/reviews">
                   <SettingsOutlined fontSize="small" />
                 </IconButton>
               </Tooltip>
@@ -166,6 +170,7 @@ const ReviewsPage: React.FC = () => {
           {tab === "cases" && <CasesTab {...props} />}
           {tab === "staff" && <StaffTab {...props} />}
           {tab === "maps" && <MapsTab {...props} />}
+          {tab === "external" && <ExternalReviewsTab {...props} />}
         </Box>
       )}
     </Box>

@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type { ClinicalRole } from "./staff";
 
 // ── Domain types ─────────────────────────────────────────────────────────────
 // Backend contract: docs `reviews-contract.md`. Все имена полей — camelCase.
@@ -10,6 +11,7 @@ export type ReviewChannel = "whatsapp" | "sms" | "whatsapp_then_sms";
 
 export type ReviewRequestStatus =
   | "created"
+  | "scheduled"
   | "sent"
   | "rated"
   | "awaiting_comment"
@@ -26,6 +28,7 @@ export type PublicationStatus = "pending" | "published" | "hidden";
 /** Фильтр списка: queue — пациент разрешил, ещё не проверено. */
 export type PublicationFilter = "queue" | "published" | "hidden";
 export type StaffGroup = "doctor" | "registrar" | "cashier";
+export type ExternalReviewStatus = "new" | "assigned" | "published" | "hidden";
 
 export interface MapLink {
   platform: MapPlatform;
@@ -69,6 +72,33 @@ export interface ReviewsResponse {
   results: Review[];
 }
 
+export interface ExternalReview {
+  id: number;
+  platform: MapPlatform;
+  externalId: string;
+  branchId: number | null;
+  branchName: string | null;
+  employeeId: number | null;
+  employeeName: string | null;
+  suggestedEmployeeId: number | null;
+  suggestedEmployeeName: string | null;
+  authorName: string;
+  rating: number;
+  text: string;
+  url: string;
+  status: ExternalReviewStatus;
+  note: string;
+  reviewCreatedAt: string;
+  importedAt: string;
+}
+
+export interface ExternalReviewsResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: ExternalReview[];
+}
+
 /** Статистика дашборда. Доли и средние — строки. */
 export interface ReviewStats {
   sent: number;
@@ -105,6 +135,8 @@ export interface ReviewRequest {
   branchId: number | null;
   deliveredChannel: "whatsapp" | "sms" | null;
   error: string | null;
+  /** «Запланирован»: запросили в тихие часы — уйдёт в это время. */
+  sendAfter?: string | null;
 }
 
 export interface BranchMaps {
@@ -143,6 +175,8 @@ export interface ReviewSettings {
   quietFrom: string;
   quietTo: string;
   minDaysBetween: number;
+  /** Клинические типы сотрудников, по приёмам которых можно отправлять запрос. */
+  appointmentClinicalRoles: ClinicalRole[];
   positiveTags: string[];
   negativeTags: string[];
   /** Глобальный флаг авторассылки на платформе. */
@@ -150,6 +184,8 @@ export interface ReviewSettings {
   branchMaps: BranchMaps[];
   /** Сценарий Raven этой организации; пусто — приглашения не отправляются. */
   ravenScenario: string;
+  instagram: string;
+  pageTheme: PageTheme;
   /** Кто отправляет: свой ключ Raven организации или платформенный. */
   ravenKey: "own" | "platform";
 }
@@ -162,15 +198,20 @@ export interface ReviewSettingsPatch {
   quietFrom?: string;
   quietTo?: string;
   minDaysBetween?: number;
+  appointmentClinicalRoles?: ClinicalRole[];
   positiveTags?: string[];
   negativeTags?: string[];
   branchReviewLinks?: BranchReviewLinkPatch[];
   ravenScenario?: string;
+  instagram?: string;
+  pageTheme?: PageTheme;
   /** Суперадмин может адресовать чужую организацию. */
   organizationId?: number;
 }
 
 /** Контекст публичной страницы отзыва. */
+export type PageTheme = "default" | "kids";
+
 export interface RateContext {
   token: string;
   status: ReviewRequestStatus;
@@ -178,6 +219,10 @@ export interface RateContext {
   doctorName: string | null;
   hasDoctor: boolean;
   clinicName: string;
+  /** Логотип организации (/media/...), пусто — нет логотипа. */
+  clinicLogo: string;
+  /** Оформление страницы: обычное или детское (фон с мишкой). */
+  pageTheme: PageTheme;
   answered: boolean;
   rating: number | null;
   doctorRating: number | null;
@@ -191,6 +236,8 @@ export interface RateContext {
   negativeTags: string[];
   canEdit: boolean;
   maps: MapLink[];
+  /** Instagram клиники без @; пусто — строка без ссылки. */
+  instagram: string;
 }
 
 export interface RateSubmit {
@@ -263,6 +310,13 @@ export interface ReviewsFilters extends ReviewStatsFilters {
   pageSize?: number;
 }
 
+export interface ExternalReviewsFilters extends ReviewStatsFilters {
+  status?: ExternalReviewStatus;
+  employeeId?: number;
+  page?: number;
+  pageSize?: number;
+}
+
 function periodQuery(f: ReviewStatsFilters): URLSearchParams {
   const q = new URLSearchParams({ from: f.from, to: f.to });
   if (f.branchId != null) q.set("branchId", String(f.branchId));
@@ -328,6 +382,45 @@ export function getMapClicks(
   const q = periodQuery(filters);
   if (filters.page != null) q.set("page", String(filters.page));
   return apiRequest(`/reviews/map-clicks/?${q.toString()}`, { signal });
+}
+
+export function getExternalReviews(
+  filters: ExternalReviewsFilters,
+  signal?: AbortSignal,
+): Promise<ExternalReviewsResponse> {
+  const q = periodQuery(filters);
+  if (filters.status) q.set("status", filters.status);
+  if (filters.employeeId != null) q.set("employeeId", String(filters.employeeId));
+  if (filters.page != null) q.set("page", String(filters.page));
+  if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
+  return apiRequest<ExternalReviewsResponse>(`/reviews/external/?${q.toString()}`, { signal });
+}
+
+export function syncExternalReviews(body: {
+  branchId?: number;
+  organizationId?: number;
+}): Promise<{ imported: number; updated: number; skipped: number }> {
+  const q = new URLSearchParams();
+  if (body.organizationId != null) q.set("organizationId", String(body.organizationId));
+  return apiRequest(`/reviews/external/sync/${q.toString() ? `?${q.toString()}` : ""}`, {
+    method: "POST",
+    body: { branchId: body.branchId },
+  });
+}
+
+export function updateExternalReview(
+  reviewId: number,
+  body: {
+    employeeId?: number | null;
+    clearEmployee?: boolean;
+    status?: ExternalReviewStatus;
+    note?: string;
+  },
+): Promise<ExternalReview> {
+  return apiRequest<ExternalReview>(`/reviews/external/${reviewId}/`, {
+    method: "PATCH",
+    body,
+  });
 }
 
 export function updateCase(

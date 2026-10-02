@@ -67,12 +67,18 @@ export const djangoQueryKeys = {
       ["django", "appointments", appointmentId, "payments"] as const,
     conclusionSlots: (appointmentId: number) =>
       ["django", "appointments", appointmentId, "conclusion-slots"] as const,
+    /** Шапка заключения: пациент и время приёма (см. getConclusionContext). */
+    conclusionContext: (appointmentId: number) =>
+      ["django", "appointments", appointmentId, "conclusion-context"] as const,
   },
 
   patients: {
     detail: (patientId: number) => ["django", "patients", patientId] as const,
     balance: (patientId: number) =>
       ["django", "patients", patientId, "balance"] as const,
+    /** Живые заключения пациента (patient-conclusions) — «как в прошлый раз». */
+    conclusions: (patientId: number) =>
+      ["django", "patients", patientId, "conclusions"] as const,
     // Root key — use for invalidateQueries to bust all pages.
     transactions: (patientId: number) =>
       ["django", "patients", patientId, "balance-transactions"] as const,
@@ -200,6 +206,8 @@ export const djangoQueryKeys = {
       ["django", "reviews", "tags", params] as const,
     mapClicks: (params: Record<string, unknown>) =>
       ["django", "reviews", "map-clicks", params] as const,
+    external: (params: Record<string, unknown>) =>
+      ["django", "reviews", "external", params] as const,
   },
 
   tasks: {
@@ -407,6 +415,15 @@ export const djangoQueryKeys = {
       ] as const,
   },
 
+  diagnoses: {
+    /**
+     * «Частые у меня» — топ кодов текущего врача. Организация в ключе: счётчик
+     * считается по её каталогу, у другой орг он свой.
+     */
+    frequent: (organizationId: number | null | undefined) =>
+      ["django", "diagnoses", "frequent", organizationId ?? null] as const,
+  },
+
   conclusionForms: {
     // Филиал — часть ключа: бэк режет выдачу по нему (бланки филиала + общие),
     // и список филиала A не должен подставляться в филиале B.
@@ -501,5 +518,73 @@ export const djangoQueryKeys = {
     employees: ["django", "reference", "employees"] as const,
     services: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
       ["django", "reference", "services", context] as const,
+  },
+
+  tenancy: {
+    all: ["django", "tenancy"] as const,
+    // Витрина «Модули» — у каждой организации своя: после смены организации
+    // кнопки бьют в новую, значит и карточки должны быть её.
+    catalog: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "catalog", organizationId ?? null] as const,
+    // Открытые заявки на подключение с витрины — тоже у каждой организации свои.
+    requests: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "requests", organizationId ?? null] as const,
+    // Чем из товаров без модуля (запись, сайт, страховые…) организация уже пользуется.
+    features: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "features", organizationId ?? null] as const,
+    // Товары витрины, скрытые от клиник («Неактивен»).
+    inactive: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "inactive", organizationId ?? null] as const,
+  },
+
+  lab: {
+    all: ["django", "lab"] as const,
+    /**
+     * Врачи для поля «направивший врач». Ключ параметризован запросом:
+     * пустой — уже известные, непустой — живой поиск по справочнику ЛИС,
+     * и кэшировать их под одним ключом нельзя.
+     */
+    doctors: (query: string) =>
+      ["django", "lab", "doctors", query] as const,
+    /** Типы клиента ЛИС — готовый список скидок, зеркало синка. */
+    clientTypes: ["django", "lab", "clientTypes"] as const,
+    /**
+     * Лента заказов лаборатории. Сегодня страница всегда шлёт пустые params —
+     * плитки-фильтры над лентой (LabOrdersSummaryBar) режут уже загруженный
+     * список на клиенте (см. filterLabOrders) и в сеть не ходят. Ключ всё
+     * равно параметризован по образцу соседних list(): дровер приёма должен
+     * уметь инвалидировать ленту после создания заказа, не зная её текущих
+     * фильтров.
+     */
+    orders: (params: Record<string, unknown>) =>
+      ["django", "lab", "orders", params] as const,
+    /**
+     * Карточка одного заказа (Task 11). Ключ вложен под тот же префикс
+     * `["django", "lab"]`, что и `all` — инвалидация ленты после приёма или
+     * повтора отправки (`djangoQueryKeys.lab.all`) рефетчит и открытую
+     * карточку тоже, без отдельного вызова.
+     */
+    order: (orderId: number) => ["django", "lab", "orders", orderId] as const,
+    /** Каталог анализов — грузится один раз при открытии дровера приёма. */
+    tests: ["django", "lab", "tests"] as const,
+    /**
+     * Настройки раздела — плата за пробирки и «настроен ли раздел вообще»
+     * (`GET /lab/settings/`). Грузятся один раз при открытии дровера приёма,
+     * тем же моментом, что и каталог; параметров нет — организация, как и у
+     * каталога, берётся из контекста пользователя, а не передаётся явно.
+     */
+    settings: ["django", "lab", "settings"] as const,
+    /** Настройка ЛИС управляющим (`GET /lab/settings/config/`). */
+    config: ["django", "lab", "settings", "config"] as const,
+    /**
+     * Пробирки/вопросы/подготовка зависят от состава корзины (`?tests=`) и
+     * перезагружаются при её изменении, с debounce — ключ по строке
+     * идентификаторов (`testIdsQuery`), а не по самому массиву: одинаковая
+     * корзина обязана давать одинаковый ключ независимо от порядка добавления
+     * строк.
+     */
+    instruments: (testIds: string) => ["django", "lab", "instruments", testIds] as const,
+    questions: (testIds: string) => ["django", "lab", "questions", testIds] as const,
+    preparation: (testIds: string) => ["django", "lab", "preparation", testIds] as const,
   },
 };
