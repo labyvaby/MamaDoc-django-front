@@ -5,12 +5,14 @@
  *  • «Смена администратора» (HotelShiftReport) — касса смены, как их отчёт
  *    админов в Google Sheets;
  *  • «Балансы броней» (HotelBalancesReport) — как одноимённый отчёт Exely;
+ *  • «Горничные» (HotelHousekeepersReport) — нагрузка уборки по графику;
  *  • «Номера за день» (HotelDayReport) — кто где живёт и по какой цене.
  *
  * Отчёт и его фильтры живут в адресе (?r=balances&balance=debt&from=…), так
  * что блоки одного отчёта открывают другой с нужным фильтром, а «Назад» в
  * браузере возвращает обратно. Отчёт по умолчанию — первый доступный по
- * правам: собственнику — сводка, ресепшену — смена, остальным — номера.
+ * правам: собственнику — сводка, ресепшену — смена, горничным — их нагрузка,
+ * остальным — номера.
  */
 import React from "react";
 import { Box, ButtonBase, CircularProgress, Stack, Typography } from "@mui/material";
@@ -19,6 +21,7 @@ import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 import AssignmentTurnedInOutlined from "@mui/icons-material/AssignmentTurnedInOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import KingBedOutlined from "@mui/icons-material/KingBedOutlined";
+import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import { useSearchParams } from "react-router";
 
 import { useCan } from "../hooks/useCan";
@@ -26,6 +29,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { subtleBorder } from "../theme/uiHelpers";
 import { HotelBalancesReport } from "./HotelBalancesReport";
 import { HotelDayReport } from "./HotelDayReport";
+import { HotelHousekeepersReport } from "./HotelHousekeepersReport";
 import { HotelOwnerReport } from "./HotelOwnerReport";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { HotelShiftReport } from "./HotelShiftReport";
@@ -69,6 +73,14 @@ const REPORTS: ReportMeta[] = [
     info: "Брони по дате заезда: стоимость, оплачено и баланс с итогами — как «Балансы бронирований» в Exely. Фильтр «С долгом» — список, кого нужно дожать по оплате.",
   },
   {
+    kind: "housekeeping",
+    label: "Горничные",
+    hint: "Уборки по этажам и графику",
+    audience: "старшая горничная, управляющий",
+    icon: <CleaningServicesOutlined />,
+    info: "Сколько уборок после выезда и текущих уборок приходится на каждую горничную по «Графику персонала»: брони показывают, где выезды и кто живёт, график — чей это этаж в этот день. «Без горничной» — этаж в этот день никем не закрыт.",
+  },
+  {
     kind: "day",
     label: "Номера за день",
     hint: "Кто где живёт и по какой цене",
@@ -84,10 +96,13 @@ export const HotelReportsPage: React.FC = () => {
   const { property, isLoading: propertyLoading } = useHotelProperty();
   const canOwner = useCan(["hotel.manage", "finance.view"]);
   const canShift = useCan("hotel.payments.manage");
+  const canHousekeeping = useCan(["hotel.housekeeping.view", "hotel.manage"]);
   const [params, setParams] = useSearchParams();
   const [openId, setOpenId] = React.useState<number | null>(null);
 
-  const visible = REPORTS.filter((r) => (r.kind === "owner" ? canOwner : r.kind === "shift" ? canShift : true));
+  const visible = REPORTS.filter((r) =>
+    r.kind === "owner" ? canOwner : r.kind === "shift" ? canShift : r.kind === "housekeeping" ? canHousekeeping : true,
+  );
   const requested = params.get("r") as HotelReportKind | null;
   const current = visible.find((r) => r.kind === requested) ?? visible[0];
 
@@ -204,6 +219,8 @@ export const HotelReportsPage: React.FC = () => {
         <HotelShiftReport key={property.id} propertyId={property.id} propertyName={property.name} branchId={property.branchId} currency={property.currency} nav={nav} />
       ) : current.kind === "balances" ? (
         <HotelBalancesReport key={property.id} propertyId={property.id} currency={property.currency} nav={nav} />
+      ) : current.kind === "housekeeping" ? (
+        <HotelHousekeepersReport key={property.id} propertyId={property.id} nav={nav} />
       ) : (
         <HotelDayReport key={property.id} propertyId={property.id} nav={nav} />
       )}

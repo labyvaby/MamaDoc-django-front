@@ -244,7 +244,7 @@ export const ReportEmpty: React.FC<{ children: React.ReactNode }> = ({ children 
 );
 
 
-export type HotelReportKind = "owner" | "shift" | "balances" | "day";
+export type HotelReportKind = "owner" | "shift" | "balances" | "housekeeping" | "day";
 
 /**
  * Навигация между отчётами: параметры живут в адресе (?r=balances&balance=debt),
