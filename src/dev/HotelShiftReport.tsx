@@ -9,7 +9,7 @@
  * Оплаты — реестр кассы (hotel.payments.manage), расходы — финансы филиала
  * (finance.view / finance.expense.view, добавление — finance.expense.manage).
  * Звонки и сообщения на бэкенде пока не хранятся — держим на устройстве
- * администратора до печати (см. docs/hotel-backend-requests-2026-10-02.md).
+ * администратора до печати (запрос — docs/hotel-backend-tasks.md §12).
  */
 import React from "react";
 import {

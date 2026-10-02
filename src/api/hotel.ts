@@ -2700,7 +2700,7 @@ export interface HotelYieldReport {
   sales: { date: string; roomTypeId: number; source: string; sold: number; revenue: Money; roomsArrived: number; guestsArrived: number }[];
 }
 
-/** Право hotel.reports.view; период ≤ 366 дней. */
+/** Право — как у списка броней (hotel.view); период ≤ 366 дней. */
 export function getYieldReport(params: { propertyId: number; from: string; to: string }, signal?: AbortSignal): Promise<HotelYieldReport> {
   return apiRequest<HotelYieldReport>(`/v2/hotel/reports/yield/${buildQuery(params)}`, { signal });
 }
