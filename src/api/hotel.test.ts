@@ -98,6 +98,19 @@ describe("scanGuestDocument", () => {
     expect(init.headers).not.toHaveProperty("Content-Type");
   });
 
+  it("оборот ID-карты — backFile, согласие — consent=true в том же запросе", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, scan));
+    vi.stubGlobal("fetch", fetchMock);
+    const front = new File(["front"], "front.jpg", { type: "image/jpeg" });
+    const back = new File(["back"], "back.jpg", { type: "image/jpeg" });
+
+    await scanGuestDocument(front, { backFile: back, consent: true });
+
+    const body = (fetchMock.mock.calls[0] as [string, RequestInit])[1].body as FormData;
+    expect((body.get("backFile") as File).name).toBe("back.jpg");
+    expect(body.get("consent")).toBe("true");
+  });
+
   it("503 — ApiError с кодом RECOGNITION_UNAVAILABLE (провайдер не настроен)", async () => {
     vi.stubGlobal(
       "fetch",

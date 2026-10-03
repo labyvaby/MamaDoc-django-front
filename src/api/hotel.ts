@@ -1948,9 +1948,20 @@ export function searchGuests(q: string, signal?: AbortSignal): Promise<HotelGues
  * RECOGNITION_RATE_LIMITED, 503 RECOGNITION_UNAVAILABLE (провайдер не
  * настроен или лежит), 400 — не файл / больше 10 МБ.
  */
-export function scanGuestDocument(file: File, signal?: AbortSignal): Promise<HotelGuestDocumentScan> {
+/**
+ * file — лицевая сторона; backFile — оборот ID-карты (MRZ, ПИН, адрес прописки):
+ * обе уходят модели одним запросом. consent — гость дал согласие на обработку
+ * данных (фронт без него фото не шлёт; поле — чтобы сервер мог проверять сам).
+ */
+export function scanGuestDocument(
+  file: File,
+  opts: { backFile?: File | null; consent?: boolean } = {},
+  signal?: AbortSignal,
+): Promise<HotelGuestDocumentScan> {
   const formData = new FormData();
   formData.append("file", file);
+  if (opts.backFile) formData.append("backFile", opts.backFile);
+  if (opts.consent) formData.append("consent", "true");
   return apiRequest<HotelGuestDocumentScan>("/v2/hotel/guests/scan-document/", { method: "POST", formData, signal });
 }
 
@@ -1998,8 +2009,8 @@ export function uploadGuestDocumentPhoto(clientId: number, file: File): Promise<
 }
 
 /**
- * Оборотная сторона ID-карты резидента (contract v2.3) — только хранится, scan-document/
- * её не распознаёт, поэтому для загранпаспорта иностранца эти вызовы не шлём. Право
+ * Хранение оборотной стороны ID-карты резидента (contract v2.3); распознаётся она
+ * отдельно — полем backFile в scan-document/. У загранпаспорта оборота нет. Право
  * hotel.guests.documents, лицевая сторона (document-photo/) при этом не трогается.
  */
 export function uploadGuestDocumentPhotoBack(clientId: number, file: File): Promise<HotelGuest> {

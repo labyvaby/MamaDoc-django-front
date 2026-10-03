@@ -224,7 +224,8 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
   const [passportPhotoPreview, setPassportPhotoPreview] = React.useState<string | null>(null);
   // Оборотная сторона ID-карты (только guestType === "resident") — грузится отдельным
   // PUT-ом после создания гостя (uploadGuestDocumentPhotoBack, contract v2.3), тем же
-  // best-effort принципом, что и остальные фото в handleSubmit. Не распознаётся.
+  // best-effort принципом, что и остальные фото в handleSubmit. Распознаётся вместе с
+  // лицевой — одним запросом (backFile).
   const [backPhotoFile, setBackPhotoFile] = React.useState<File | null>(null);
   const [backPhotoPreview, setBackPhotoPreview] = React.useState<string | null>(null);
   const {
@@ -337,13 +338,13 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     // ID-карту распознаём, когда загружены обе стороны: без оборотной ждём её
     // (скан запустит загрузка оборотной). Загранпаспорт — сразу, сторона одна.
     if (guestType === "resident" && !backPhotoFile) return;
-    await scanFront(prepared, generation);
+    await scanFront(prepared, generation, guestType === "resident" ? backPhotoFile : null);
   };
 
-  /** Распознать лицевую сторону и подставить поля. Один и тот же файл повторно не распознаём. */
-  const scanFront = async (front: File, generation: number) => {
+  /** Распознать документ (у ID-карты — обе стороны одним запросом) и подставить поля. Один и тот же файл повторно не распознаём. */
+  const scanFront = async (front: File, generation: number, back: File | null = null) => {
     scannedFrontRef.current = front;
-    const scan = await runDocumentScan(front);
+    const scan = await runDocumentScan(front, back);
     // Форму закрыли (и сбросили) пока шло распознавание — чужие поля в новую не подставляем.
     if (generation !== scanGenerationRef.current) return;
     if (scan) applyScan(scan);
@@ -351,7 +352,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     else setDocumentFieldsVisible(true);
   };
 
-  /** Оборотная сторона ID-карты — просто прикрепляется, без распознавания (см. комментарий у backPhotoFile). */
+  /** Оборотная сторона ID-карты: прикрепляется и, если лицевая уже есть, запускает распознавание обеих сторон. */
   const handlePickBackPhoto = async (file: File) => {
     if (!isDocumentFile(file)) {
       setPhotoError("Нужен файл изображения или PDF");
@@ -374,7 +375,7 @@ export const AddGuestDrawer: React.FC<AddGuestDrawerProps> = ({ open, onClose, o
     setBackPhotoPreview(prepared.type.startsWith("image/") ? URL.createObjectURL(prepared) : null);
     // Обе стороны на месте — распознаём лицевую (если её ещё не распознавали).
     if (scanAvailable && guestType === "resident" && passportPhotoFile && passportPhotoFile !== scannedFrontRef.current && !scanning) {
-      void scanFront(passportPhotoFile, generation);
+      void scanFront(passportPhotoFile, generation, prepared);
     }
   };
 
