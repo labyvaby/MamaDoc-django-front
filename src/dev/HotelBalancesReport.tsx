@@ -50,6 +50,7 @@ import { esc, printHtmlDocument } from "./hotelPrintDocs";
 import { fmtInt, fmtMoney } from "./hotelReportFormat";
 import { balanceRows, balanceTotals, fetchAllReservations, type BalanceFilter, type BalanceRow, type BalanceStatusFilter } from "./hotelReportData";
 import { ReportControls, ReportFilters, ReportKpi, ReportSkeleton, type ReportNav } from "./hotelReportUi";
+import { matchesByParts } from "./searchParts";
 import { FilterChip, plural, Surface, useHotelTableSx } from "./hotelUi";
 import { formatHotelDate, formatHotelDateRange } from "./mockDemoData";
 import { downloadXlsx, xlsxFileName, type XlsxKind, type XlsxValue } from "./hotelXlsx";
@@ -347,9 +348,16 @@ export const HotelBalancesReport: React.FC<{
 
   const rows = React.useMemo(() => {
     const base = balanceRows(query.data?.rows ?? [], { from, to, balance, status, source: source || undefined, corporate: corporate || undefined });
-    const needle = q.trim().toLowerCase();
-    const filtered = needle
-      ? base.filter((r) => [r.customer, String(r.number), r.externalId, r.rooms, r.phone, r.corporateName].some((v) => v.toLowerCase().includes(needle)))
+    // По частям, как поиск на сервере (searchParts): «Бекова 201», «0555 11 10», «Альфа».
+    const guestsOf = (r: BalanceRow) => r.reservation.items.flatMap((i) => i.guests);
+    const filtered = q.trim()
+      ? base.filter((r) =>
+          matchesByParts(q, {
+            texts: [r.customer, r.externalId, r.corporateName, ...guestsOf(r).map((g) => g.fullName)],
+            phones: [r.phone, ...guestsOf(r).map((g) => g.phone)],
+            exact: [r.number, ...r.rooms.split(/[\s,]+/)],
+          }),
+        )
       : base;
     const val = (r: BalanceRow): string | number => (sort.key === "customer" || sort.key === "rooms" ? r[sort.key].toLowerCase() : (r[sort.key] ?? ""));
     return [...filtered].sort((a, b) => {
@@ -477,7 +485,7 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
   const searchField = (
     <TextField
       size="small"
-      placeholder="Гость, №, номер, телефон"
+      placeholder="ФИО, телефон, № брони, комната"
       value={q}
       onChange={(e) => setQ(e.target.value)}
       sx={{ minWidth: { xs: 0, md: 220 } }}

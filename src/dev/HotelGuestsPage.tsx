@@ -125,7 +125,7 @@ export const HotelGuestsPage: React.FC = () => {
                 size="small"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Имя, телефон, документ, ИНН"
+                placeholder="ФИО, телефон, ИНН, документ"
                 sx={{ width: { xs: "100%", sm: 300 } }}
                 slotProps={{
                   input: {

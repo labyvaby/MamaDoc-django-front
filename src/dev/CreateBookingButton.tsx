@@ -1523,7 +1523,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                   <TextField
                     {...params}
                     label="Имя и фамилия"
-                    placeholder="Начните вводить — найдём гостя в базе"
+                    placeholder="ФИО, телефон или ИНН — найдём в базе"
                     fullWidth
                     InputProps={{
                       ...params.InputProps,
