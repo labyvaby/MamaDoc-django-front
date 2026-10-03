@@ -27,6 +27,7 @@ import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWall
 import KingBedOutlined from "@mui/icons-material/KingBedOutlined";
 import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 
 import { useCan } from "../hooks/useCan";
@@ -117,6 +118,21 @@ export const HotelReportsPage: React.FC = () => {
   const canHousekeeping = useCan(["hotel.housekeeping.view", "hotel.manage"]);
   const [params, setParams] = useSearchParams();
   const [openId, setOpenId] = React.useState<number | null>(null);
+  const queryClient = useQueryClient();
+  // Брони, оплаты, заселения и отмены правятся в ресепшене, шахматке и карточке
+  // брони — кэш отчётов они не сбрасывают, а данные в приложении считаются
+  // свежими 5 минут: отчёт показывал старые цифры до перезагрузки страницы.
+  // Поэтому при входе в «Отчёты» перезапрашиваем то, что уже было в кэше, после
+  // карточки брони — тоже, а свежими отчёты считаем 30 секунд и обновляем при
+  // возврате на вкладку (с другого компьютера тоже могли принять оплату).
+  const refreshReports = React.useCallback(
+    () => void queryClient.invalidateQueries({ queryKey: ["hotel", "reports"], predicate: (q) => q.state.data !== undefined }),
+    [queryClient],
+  );
+  React.useEffect(() => {
+    queryClient.setQueryDefaults(["hotel", "reports"], { staleTime: 30_000, refetchOnWindowFocus: true });
+    refreshReports();
+  }, [queryClient, refreshReports]);
   // Свернуть панель фильтров — как сводку над шахматкой. Отдельно для телефона и
   // компьютера: на телефоне по умолчанию свёрнута, чтобы первым экраном были цифры.
   const theme = useTheme();
@@ -244,7 +260,13 @@ export const HotelReportsPage: React.FC = () => {
         <HotelDayReport key={property.id} propertyId={property.id} propertyName={property.name} nav={nav} />
       )}
 
-      <ReservationDetailsDialog reservationId={openId} onClose={() => setOpenId(null)} />
+      <ReservationDetailsDialog
+        reservationId={openId}
+        onClose={() => {
+          setOpenId(null);
+          refreshReports();
+        }}
+      />
     </HotelPage>
   );
 };

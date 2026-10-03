@@ -607,34 +607,52 @@ export function simulatePricingRule(
   });
 }
 
-// ── Предпросчёт суммы брони (quote) ──────────────────────────────────────────
+// ── Предпросчёт суммы брони (POST pricing/quote/) ────────────────────────────
 //
-// ПРЕДЛОЖЕНИЕ фронта, бэком НЕ ПОДТВЕРЖДЕНО. Точного контракта нет — есть
-// только упоминание в комментарии выше («та же цена, что в pricing/quote/»):
-// эндпоинт существует, форма запроса/ответа неизвестна. Путь и поля ниже —
-// предположение по аналогии с HotelReservationItemInput/simulatePricingRule,
-// на подтверждение бэком.
-//
-// Используется ТОЛЬКО как необязательный живой предпросмотр суммы в форме
-// брони (CreateBookingButton) — 404/неожиданная форма ответа тихо гасится,
-// предпросмотр просто не показывается, бронь всё равно создаётся как раньше.
-// В payload createReservation ничего отсюда не добавляем: бэк уже проявлял
-// forbid_unknown_fields на других ручках (см. комментарий у default* полей
-// HotelRoomType), а создание брони — самая чувствительная запись модуля,
-// ломать её угадыванием поля нельзя.
-export interface HotelQuoteRequest {
-  propertyId: number;
-  roomId?: number | null;
-  roomTypeId?: number | null;
+// Контракт сервера (QuoteRequestPayload, лишние поля — 400): propertyId и
+// items — те же позиции, что пойдут в бронь: категория, даты, тариф, гости.
+// Номер (roomId) сервер не принимает — цена у категории. Раньше форма слала
+// roomId и boardType, получала 400 и молча считала «тариф категории × ночи»
+// без цен на даты и правил. Ответ — сумма всех позиций (её же сервер возьмёт
+// при создании брони), bookable и problems: минимум ночей, стоп-продажа, нет мест.
+export interface HotelQuoteItemInput {
+  roomTypeId: number;
   checkIn: string;
   checkOut: string;
   ratePlanId?: number | null;
-  boardType?: string;
+  adults?: number;
+  children?: number;
+}
+
+export interface HotelQuoteRequest {
+  propertyId: number;
+  items: HotelQuoteItemInput[];
+  /** Правка существующей позиции: она не считается занятой. */
+  excludeItemId?: number | null;
+}
+
+export interface HotelQuoteProblem {
+  /** no_availability | stop_sell | closed_to_arrival | closed_to_departure | min_nights | max_nights | capacity | invalid_dates */
+  code: string;
+  message: string;
+}
+
+export interface HotelQuoteItem {
+  roomTypeId: number;
+  roomTypeName: string;
+  nightsCount: number;
+  total: Money;
+  available: number;
+  bookable: boolean;
+  problems: HotelQuoteProblem[];
 }
 
 export interface HotelQuoteResult {
+  propertyId: number;
   currency: string;
   total: Money;
+  bookable: boolean;
+  items: HotelQuoteItem[];
 }
 
 export function getQuote(request: HotelQuoteRequest, signal?: AbortSignal): Promise<HotelQuoteResult> {

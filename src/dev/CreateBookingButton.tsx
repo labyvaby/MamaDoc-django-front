@@ -114,6 +114,7 @@ import {
   getReservationConflicts,
   isOverbookingConfirmable,
   getQuote,
+  type HotelQuoteItemInput,
   listRatePlans,
   listCorporateAccounts,
   addPayment,
@@ -428,32 +429,6 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   });
   const ratePlans = React.useMemo(() => ratePlansQuery.data ?? [], [ratePlansQuery.data]);
 
-  // Живой предпросмотр суммы — необязательный, контракт эндпоинта не
-  // подтверждён бэком (см. getQuote в src/api/hotel.ts). 404/ошибка формы
-  // ответа гасится молча (retry: false, throwOnError: false) — предпросмотра
-  // просто нет, бронь создаётся как обычно.
-  const checkInStr = checkIn?.format("YYYY-MM-DD");
-  const checkOutStr = checkOut?.format("YYYY-MM-DD");
-  const quoteQuery = useQuery({
-    queryKey: ["hotel", "quote", property?.id, roomId, checkInStr, checkOutStr, boardType, ratePlanId],
-    queryFn: ({ signal }) =>
-      getQuote(
-        {
-          propertyId: property!.id,
-          roomId: roomId === "" ? undefined : roomId,
-          checkIn: checkInStr!,
-          checkOut: checkOutStr!,
-          boardType: boardType || undefined,
-          ratePlanId: ratePlanId === "" ? undefined : ratePlanId,
-        },
-        signal,
-      ),
-    enabled: open && property != null && roomId !== "" && !!checkInStr && !!checkOutStr && checkOutStr > checkInStr,
-    retry: false,
-    throwOnError: false,
-    staleTime: 30_000,
-  });
-  const quote = quoteQuery.isError ? null : quoteQuery.data;
 
   // Поиск гостя по имени/телефону — ≥2 символа, бэкенд ищет по всем клиентам
   // организации (не только бывшим гостям).
@@ -597,14 +572,41 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     return null;
   });
   const extrasInvalid = extraErrors.some((e) => e != null);
+
+  // Сумма — с сервера (pricing/quote/): цены на даты, правила и тариф, все номера
+  // брони. Пока ответа нет или запрос не удался — «тариф категории × ночи».
+  const checkInStr = checkIn?.format("YYYY-MM-DD");
+  const checkOutStr = checkOut?.format("YYYY-MM-DD");
+  const quoteItems = (() => {
+    if (!selectedRoomType || !checkInStr || !checkOutStr || checkOutStr <= checkInStr) return null;
+    const plan = ratePlanId === "" ? undefined : ratePlanId;
+    const items: HotelQuoteItemInput[] = [{ roomTypeId: selectedRoomType.id, checkIn: checkInStr, checkOut: checkOutStr, ratePlanId: plan, adults: adultsNum || 1, children: childrenNum || 0 }];
+    for (const x of extraRooms) {
+      const rt = typeOfRoom(x.roomId);
+      if (!rt) return null;
+      items.push({ roomTypeId: rt.id, checkIn: checkInStr, checkOut: checkOutStr, ratePlanId: plan, adults: x.adults || 1, children: x.children || 0 });
+    }
+    return items;
+  })();
+  const quoteQuery = useQuery({
+    queryKey: ["hotel", "quote", property?.id, JSON.stringify(quoteItems)],
+    queryFn: ({ signal }) => getQuote({ propertyId: property!.id, items: quoteItems! }, signal),
+    enabled: open && property != null && quoteItems != null,
+    retry: false,
+    throwOnError: false,
+    staleTime: 30_000,
+  });
+  const quote = quoteQuery.isError ? null : quoteQuery.data;
+  // Так оформить нельзя (минимум ночей, стоп-продажа…) — говорим сразу, а не после «Создать».
+  const quoteProblem = quote && !quote.bookable ? (quote.items.flatMap((i) => i.problems)[0]?.message ?? "Так забронировать нельзя") : null;
   const extrasByCategory = extraRooms.reduce((sum, x) => {
     const rt = typeOfRoom(x.roomId);
     return sum + (rt ? Number(rt.totalPrice) * nights : 0);
   }, 0);
-  const mainTotal = quote ? Number(quote.total) : selectedRoomType && nights > 0 ? Number(selectedRoomType.totalPrice) * nights : null;
+  const mainTotal = selectedRoomType && nights > 0 ? Number(selectedRoomType.totalPrice) * nights : null;
   // Скидка юрлица — на проживание; точную сумму после неё посчитает бэк.
   const corporateDiscount = corporate ? Number(corporate.discountPercent) : 0;
-  const stayTotal = mainTotal != null ? mainTotal + extrasByCategory : null;
+  const stayTotal = quote ? Number(quote.total) : mainTotal != null ? mainTotal + extrasByCategory : null;
   const computedTotal = stayTotal != null ? Math.round(stayTotal * (1 - corporateDiscount / 100) * 100) / 100 : null;
   // «Своя сумма» за проживание: по умолчанию — расчётная, сотрудник может поставить свою.
   const manualValue = manualTotal.trim() !== "" ? Number(manualTotal.replace(",", ".")) : null;
@@ -702,7 +704,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           {manualActive ? " · своя сумма" : corporateDiscount > 0 ? ` · юрлицо −${corporateDiscount}%` : ""}
           {servicesTotal > 0 ? ` · услуги ${servicesTotal.toLocaleString("ru-RU")}` : ""}
           {extraRooms.length > 0 ? ` · ${extraRooms.length + 1} ${extraRooms.length + 1 < 5 ? "номера" : "номеров"}` : ""}
-          {!manualActive && estimatedTotal != null && (!quote || extraRooms.length > 0) ? " · по тарифу категории" : ""}
+          {!manualActive && estimatedTotal != null && !quote ? " · по тарифу категории" : ""}
           {isPrepayment && prepaymentError == null && grandTotal != null
             ? ` · предоплата ${prepaymentValue.toLocaleString("ru-RU")}, остаток ${Math.max(0, grandTotal - prepaymentValue).toLocaleString("ru-RU")}`
             : ""}
@@ -1169,6 +1171,11 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 sx={{ flex: 1 }}
               />
             </Stack>
+            {quoteProblem && (
+              <Alert severity="warning" variant="outlined" sx={{ py: 0.25 }}>
+                {quoteProblem}
+              </Alert>
+            )}
             {/* Число гостей — счётчиками с границами из категории номера: больше, чем
                 вмещает номер, ввести нельзя ни кнопками, ни с клавиатуры. */}
             <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
