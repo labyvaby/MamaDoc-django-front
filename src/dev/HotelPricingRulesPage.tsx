@@ -284,11 +284,25 @@ export const HotelPricingRulesPage: React.FC = () => {
                   ...(conditions.length === 0 ? ["Действует всегда"] : conditions),
                   ...(allCategories ? ["Все категории"] : rule.roomTypeIds.map(roomTypeName)),
                 ];
+                const tagsNode = (
+                  <Stack direction="row" flexWrap="wrap" gap={0.75}>
+                    {tags.map((t) => (
+                      <Box
+                        key={t}
+                        component="span"
+                        sx={{ px: 1, py: 0.25, borderRadius: "6px", bgcolor: subtleBg(theme, true), fontSize: 12.5, color: "text.secondary", whiteSpace: "nowrap" }}
+                      >
+                        {t}
+                      </Box>
+                    ))}
+                  </Stack>
+                );
                 return (
                   <Stack
                     key={rule.id}
                     direction="row"
                     alignItems="center"
+                    flexWrap="wrap"
                     gap={2}
                     sx={{
                       px: { xs: 2, md: 2.5 },
@@ -331,17 +345,8 @@ export const HotelPricingRulesPage: React.FC = () => {
                           </Typography>
                         )}
                       </Stack>
-                      <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mt: 0.75 }}>
-                        {tags.map((t) => (
-                          <Box
-                            key={t}
-                            component="span"
-                            sx={{ px: 1, py: 0.25, borderRadius: "6px", bgcolor: subtleBg(theme, true), fontSize: 12.5, color: "text.secondary", whiteSpace: "nowrap" }}
-                          >
-                            {t}
-                          </Box>
-                        ))}
-                      </Stack>
+                      {/* Условия рядом с названием — где есть место; на телефоне они ложились под переключатель. */}
+                      <Box sx={{ mt: 0.75, display: { xs: "none", md: "block" } }}>{tagsNode}</Box>
                     </Box>
 
                     <Stack direction="row" alignItems="center" gap={0.5} sx={{ flexShrink: 0 }}>
@@ -359,6 +364,7 @@ export const HotelPricingRulesPage: React.FC = () => {
                         </Tooltip>
                       )}
                     </Stack>
+                    <Box sx={{ flexBasis: "100%", display: { xs: "block", md: "none" }, opacity: rule.isActive ? 1 : 0.6 }}>{tagsNode}</Box>
                   </Stack>
                 );
               })}

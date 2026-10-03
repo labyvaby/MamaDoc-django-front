@@ -14,6 +14,7 @@ import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   CircularProgress,
   MenuItem,
   Stack,
@@ -24,6 +25,7 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
@@ -84,6 +86,7 @@ export const HotelCashPage: React.FC = () => {
   });
   const first = query.data?.pages[0];
   const rows: HotelPayment[] = React.useMemo(() => query.data?.pages.flatMap((p) => p.results) ?? [], [query.data]);
+  const phone = useMediaQuery((t) => t.breakpoints.down("md"));
 
   React.useEffect(() => {
     if (accepter !== "" || rows.length === 0) return;
@@ -187,10 +190,12 @@ export const HotelCashPage: React.FC = () => {
                     )}
                   </Box>
                   <Surface padded={false} sx={{ overflow: "hidden", mt: 2 }}>
-                    <Table sx={tableSx} size="small">
+                    {/* На телефоне четыре колонки входят только с узкими отступами; длинный способ — прокрутка, а не обрезание. */}
+                    <Box sx={{ overflowX: "auto" }}>
+                    <Table sx={[tableSx, phone && { "& .MuiTableCell-root": { px: 1.25 }, "& .MuiTableCell-root:first-of-type": { pl: 1.5 }, "& .MuiTableCell-root:last-of-type": { pr: 1.5 } }]} size="small">
                       <TableHead>
                         <TableRow>
-                          <TableCell sx={{ pl: 2.5 }}>Способ оплаты</TableCell>
+                          <TableCell sx={{ pl: 2.5 }}>{phone ? "Способ" : "Способ оплаты"}</TableCell>
                           <TableCell align="right">Принято</TableCell>
                           <TableCell align="right">Возвраты</TableCell>
                           <TableCell align="right" sx={{ pr: 2.5 }}>
@@ -203,19 +208,20 @@ export const HotelCashPage: React.FC = () => {
                           .filter((t) => t.currency === cur)
                           .map((t) => (
                             <TableRow key={`${t.method}-${t.cashlessMethodId ?? 0}`}>
-                              <TableCell sx={{ pl: 2.5, fontWeight: 600 }}>
+                              <TableCell sx={{ pl: 2.5, fontWeight: 600, whiteSpace: "nowrap" }}>
                                 {t.methodLabel || t.method}
                                 {t.cashlessMethodName ? <Typography component="span" variant="body2" color="text.secondary"> · {t.cashlessMethodName}</Typography> : null}
                               </TableCell>
-                              <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{money(t.payments, cur)}</TableCell>
-                              <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", color: Number(t.refunds) > 0 ? "error.main" : "text.disabled" }}>
+                              <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{money(t.payments, cur)}</TableCell>
+                              <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: Number(t.refunds) > 0 ? "error.main" : "text.disabled" }}>
                                 {Number(t.refunds) > 0 ? `−${money(t.refunds, cur)}` : "—"}
                               </TableCell>
-                              <TableCell align="right" sx={{ pr: 2.5, fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{money(t.net, cur)}</TableCell>
+                              <TableCell align="right" sx={{ pr: 2.5, fontVariantNumeric: "tabular-nums", fontWeight: 700, whiteSpace: "nowrap" }}>{money(t.net, cur)}</TableCell>
                             </TableRow>
                           ))}
                       </TableBody>
                     </Table>
+                    </Box>
                   </Surface>
                 </Box>
               ))}
@@ -246,6 +252,49 @@ export const HotelCashPage: React.FC = () => {
                 ) : null}
               </Stack>
               <Surface padded={false} sx={{ overflow: "hidden" }}>
+                {phone ? (
+                  // Шесть колонок на телефоне обрезались по «Принял» — карточка на операцию.
+                  rows.map((p, i) => {
+                    const refund = p.kind === "refund";
+                    return (
+                      <ButtonBase
+                        key={p.id}
+                        component="div"
+                        onClick={() => setOpenId(p.reservationId)}
+                        sx={{ display: "block", width: "100%", textAlign: "left", px: 2, py: 1.5, borderTop: i > 0 ? `1px solid ${theme.palette.divider}` : "none" }}
+                      >
+                        <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={1.5}>
+                          <Typography variant="body2" fontWeight={700} sx={{ fontVariantNumeric: "tabular-nums" }}>
+                            {dayjs(p.acceptedAt || p.createdAt).format("HH:mm")} · №{p.reservationId}
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: refund ? "error.main" : "text.primary" }}>
+                            {refund ? "−" : "+"}
+                            {money(p.amount, p.currency)}
+                          </Typography>
+                        </Stack>
+                        <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ mt: 0.25 }}>
+                          <Typography variant="caption" color="text.secondary">
+                            {p.methodLabel || p.method}
+                            {p.cashlessMethodName ? ` · ${p.cashlessMethodName}` : ""}
+                            {p.acceptedByName ? ` · ${p.acceptedByName}` : ""}
+                          </Typography>
+                          {refund && <StatusPill color={theme.palette.error.main} label="Возврат" />}
+                        </Stack>
+                        {p.note && (
+                          <Typography variant="caption" component="div" sx={{ mt: 0.25, overflowWrap: "anywhere" }}>
+                            {p.note}
+                          </Typography>
+                        )}
+                        {p.amountBase != null && p.currency !== (p.baseCurrency || p.currency) && (
+                          <Typography variant="caption" color="text.secondary" component="div">
+                            = {money(p.amountBase, p.baseCurrency)}
+                            {p.exchangeRate ? ` по ${Number(p.exchangeRate).toLocaleString("ru-RU")}` : ""}
+                          </Typography>
+                        )}
+                      </ButtonBase>
+                    );
+                  })
+                ) : (
                 <Box sx={{ overflowX: "auto" }}>
                   <Table sx={tableSx}>
                     <TableHead>
@@ -298,6 +347,7 @@ export const HotelCashPage: React.FC = () => {
                     </TableBody>
                   </Table>
                 </Box>
+                )}
                 {query.hasNextPage && (
                   <Box sx={{ px: 2.5, py: 1.5, borderTop: 1, borderColor: "divider" }}>
                     <Button size="small" onClick={() => void query.fetchNextPage()} disabled={query.isFetchingNextPage}>

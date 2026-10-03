@@ -54,8 +54,11 @@ import {
   CircularProgress,
   ClickAwayListener,
   IconButton,
+  InputAdornment,
+  MenuItem,
   Paper,
   Stack,
+  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
@@ -89,6 +92,10 @@ import DensityMediumOutlined from "@mui/icons-material/DensityMediumOutlined";
 import OpenInFullOutlined from "@mui/icons-material/OpenInFullOutlined";
 import CloseFullscreenOutlined from "@mui/icons-material/CloseFullscreenOutlined";
 import EditNoteOutlined from "@mui/icons-material/EditNoteOutlined";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import FilterAltOffOutlined from "@mui/icons-material/FilterAltOffOutlined";
+import CenterFocusStrongOutlined from "@mui/icons-material/CenterFocusStrongOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { Link as RouterLink } from "react-router";
 
@@ -96,6 +103,7 @@ import { getCalendar, type HotelCalendarItem, type HotelCalendarRoom, type Hotel
 import { PAGE_PERMISSIONS } from "../config/accessPermissions";
 import { useCan } from "../hooks/useCan";
 import { useNowMinute } from "../pages/schedule/django/useNowMinute";
+import { subtleBg } from "../theme/uiHelpers";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import {
@@ -127,6 +135,9 @@ import {
   WEEKDAY_SHORT_RU,
 } from "./mockDemoData";
 import { barFillAlpha, barLabelMode, barLabelText } from "./roomBookingBars";
+import { ReportFilters } from "./hotelReportUi";
+import { FilterChip } from "./hotelUi";
+import { matchesByParts } from "./searchParts";
 import { clampSelectionEnd, selectionBounds } from "./roomBookingSelection";
 import { floorGroupLabel, groupRoomsByFloor, pluralRooms } from "./roomBookingFloors";
 import { buildRoomCategoryIconKeys, type RoomCategoryIconKey } from "./roomCategoryIcons";
@@ -284,7 +295,7 @@ const SOURCE_LEGEND: [string, string][] = [
  * Освободившееся место справа теперь занимает тулбар (период/масштаб) — он
  * раньше был отдельной строкой над сеткой и просто добавлял высоту.
  */
-const BoardShell: React.FC<{ actions?: React.ReactNode; children: React.ReactNode }> = ({ actions, children }) => (
+const BoardShell: React.FC<{ actions?: React.ReactNode; filters?: React.ReactNode; children: React.ReactNode }> = ({ actions, filters, children }) => (
   <Paper elevation={0} variant="outlined" sx={{ borderRadius: "14px", overflow: "hidden" }}>
     <Stack
       direction="row"
@@ -299,9 +310,28 @@ const BoardShell: React.FC<{ actions?: React.ReactNode; children: React.ReactNod
       </Typography>
       {actions}
     </Stack>
+    {/* Поиск и фильтры — своей строкой: в шапке им тесно, а сетке нужна полная ширина. */}
+    {filters && <Box sx={{ px: 2, py: 1.25, borderBottom: 1, borderColor: "divider", bgcolor: (t) => subtleBg(t) }}>{filters}</Box>}
     <Box sx={{ p: 2 }}>{children}</Box>
   </Paper>
 );
+
+type GridStayFilter = "" | "expected" | "missed" | "checked_in" | "checked_out" | "hold";
+interface GridFilter {
+  q: string;
+  roomTypeIds: Set<number>;
+  sources: Set<string>;
+  stay: GridStayFilter;
+  debt: boolean;
+}
+const EMPTY_FILTER: GridFilter = { q: "", roomTypeIds: new Set(), sources: new Set(), stay: "", debt: false };
+const STAY_FILTER_LABELS: Record<Exclude<GridStayFilter, "">, string> = {
+  expected: "Ждут заезда",
+  missed: "Не заехали",
+  checked_in: "Проживают",
+  checked_out: "Выехали",
+  hold: "Временные брони",
+};
 
 /**
  * Красная метка и линия «сейчас». Свой минутный тик: раньше useNowMinute жил в
@@ -572,6 +602,9 @@ export const RoomBookingGrid: React.FC = () => {
   const compact = density === "compact";
   // «На весь экран» — шахматка поверх страницы, без сводки и шапки приложения; Esc — выйти.
   const [fullscreen, setFullscreen] = React.useState(false);
+  // Поиск и фильтры над сеткой: найденное подсвечено, остальное приглушено — строки не прячем,
+  // чтобы номер оставался в контексте соседей. Только на эту вкладку, не запоминаем.
+  const [filter, setFilter] = React.useState<GridFilter>(EMPTY_FILTER);
   React.useEffect(() => {
     if (!fullscreen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -832,6 +865,63 @@ export const RoomBookingGrid: React.FC = () => {
           details: calendarHasDetails ? detailsFromCalendar(it) : balances?.get(it.reservationId)?.details,
         }
       : balances?.get(it.reservationId);
+
+  const roomNumberOf = React.useMemo(() => new Map((calendar?.rooms ?? []).map((r) => [r.id, r.number])), [calendar]);
+  const todayKey = today.format("YYYY-MM-DD");
+  const filterCount = filter.roomTypeIds.size + filter.sources.size + (filter.stay ? 1 : 0) + (filter.debt ? 1 : 0);
+  const filterActive = filter.q.trim() !== "" || filterCount > 0;
+  // Те же правила, что у поиска на сервере и в «Заездах» (searchParts): слова в любом
+  // порядке, телефон по цифрам, короткое число — номер брони или комнаты целиком.
+  const matchedIds = React.useMemo(() => {
+    const out = new Set<number>();
+    if (!filterActive) return out;
+    for (const it of allItems) {
+      if (filter.roomTypeIds.size > 0 && !filter.roomTypeIds.has(it.roomTypeId)) continue;
+      if (filter.sources.size > 0 && !filter.sources.has(it.source || "other")) continue;
+      if (filter.stay) {
+        const ok =
+          filter.stay === "hold"
+            ? it.reservationStatus === "hold"
+            : filter.stay === "missed"
+              ? it.reservationStatus === "confirmed" && it.stayStatus === "expected" && it.checkIn < todayKey
+              : filter.stay === "expected"
+                ? it.stayStatus === "expected" && it.checkIn >= todayKey
+                : it.stayStatus === filter.stay;
+        if (!ok) continue;
+      }
+      const bal = balanceOf(it);
+      if (filter.debt && !(bal && bal.balance > 0)) continue;
+      if (
+        filter.q.trim() &&
+        !matchesByParts(filter.q, {
+          texts: [it.customerName, ...it.guests.map((g) => g.fullName), it.externalId ?? bal?.details?.externalId, it.corporateName ?? bal?.details?.corporateName],
+          phones: [it.customerPhone ?? bal?.details?.phone],
+          exact: [it.reservationNumber, it.roomId != null ? roomNumberOf.get(it.roomId) : null],
+        })
+      )
+        continue;
+      out.add(it.itemId);
+    }
+    return out;
+    // balanceOf — обычная функция поверх balances/calendarHasBalances, они в зависимостях.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allItems, filter, filterActive, todayKey, roomNumberOf, balances, calendarHasBalances, calendarHasDetails]);
+  const jumpToFirstMatch = () => {
+    const first = allItems.filter((it) => matchedIds.has(it.itemId)).sort((a, b) => a.checkIn.localeCompare(b.checkIn))[0];
+    if (!first || !scrollEl) return;
+    const el = scrollEl.querySelector<HTMLElement>(`[data-item="${first.itemId}"]`);
+    if (el) {
+      el.scrollIntoView({ block: "center", inline: "center", behavior: scrollBehavior() });
+      return;
+    }
+    // Полоса за пределами отрисованного окна — подъезжаем по дате, она дорисуется.
+    const idx = Math.max(0, dayjs(first.checkIn).diff(gridStart, "day") - 1);
+    scrollEl.scrollTo({ left: idx * dayColWidth, behavior: scrollBehavior() });
+  };
+  const sourceOptions = React.useMemo(
+    () => [...new Set(allItems.map((it) => it.source || "other"))].sort((a, b) => (HOTEL_BOOKING_SOURCE_LABELS[a] ?? a).localeCompare(HOTEL_BOOKING_SOURCE_LABELS[b] ?? b, "ru")),
+    [allItems],
+  );
 
   // Клавиатура: свободные ячейки — кнопки, и Tab по каждой (номера × дни — тысячи остановок)
   // не пройти. Поэтому у всех tabIndex=-1, кроме одной входной — первой свободной ночи
@@ -1223,6 +1313,106 @@ export const RoomBookingGrid: React.FC = () => {
   );
 
   const roomTypeName = (id: number) => roomTypes.find((t) => t.id === id)?.name;
+  const filterBar = (
+    <Stack direction={{ xs: "column", md: "row" }} gap={1} alignItems={{ md: "center" }} flexWrap="wrap" useFlexGap>
+      <TextField
+        size="small"
+        value={filter.q}
+        onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
+        placeholder="ФИО, телефон, № брони, комната"
+        slotProps={{
+          input: {
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchOutlined fontSize="small" />
+              </InputAdornment>
+            ),
+            endAdornment: filter.q ? (
+              <InputAdornment position="end">
+                <IconButton size="small" aria-label="Очистить поиск" onClick={() => setFilter((f) => ({ ...f, q: "" }))}>
+                  <CloseOutlined fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ) : undefined,
+          },
+          htmlInput: { "aria-label": "Поиск броней в шахматке" },
+        }}
+        sx={{ width: { xs: "100%", md: 280 }, bgcolor: "background.paper" }}
+      />
+      <ReportFilters active={filterCount}>
+        <Stack direction={{ xs: "column", md: "row" }} gap={1} alignItems={{ md: "center" }} flexWrap="wrap" useFlexGap>
+          <TextField
+            select
+            size="small"
+            label="Категория"
+            value={[...filter.roomTypeIds]}
+            onChange={(e) => setFilter((f) => ({ ...f, roomTypeIds: new Set((typeof e.target.value === "string" ? e.target.value.split(",") : (e.target.value as (number | string)[])).map(Number)) }))}
+            slotProps={{
+              select: { multiple: true, displayEmpty: true, renderValue: (v) => ((v as number[]).length === 0 ? "Все" : (v as number[]).map((id) => roomTypeName(id) ?? `№${id}`).join(", ")) },
+              inputLabel: { shrink: true },
+            }}
+            sx={{ minWidth: { md: 170 }, bgcolor: "background.paper" }}
+          >
+            {roomTypes.map((t) => (
+              <MenuItem key={t.id} value={t.id}>
+                {t.name}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            select
+            size="small"
+            label="Источник"
+            value={[...filter.sources]}
+            onChange={(e) => setFilter((f) => ({ ...f, sources: new Set(typeof e.target.value === "string" ? e.target.value.split(",") : (e.target.value as string[])) }))}
+            slotProps={{
+              select: { multiple: true, displayEmpty: true, renderValue: (v) => ((v as string[]).length === 0 ? "Все" : (v as string[]).map((s) => HOTEL_BOOKING_SOURCE_LABELS[s] ?? s).join(", ")) },
+              inputLabel: { shrink: true },
+            }}
+            sx={{ minWidth: { md: 160 }, bgcolor: "background.paper" }}
+          >
+            {sourceOptions.map((s) => (
+              <MenuItem key={s} value={s}>
+                {HOTEL_BOOKING_SOURCE_LABELS[s] ?? s}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            select
+            size="small"
+            label="Статус"
+            value={filter.stay}
+            onChange={(e) => setFilter((f) => ({ ...f, stay: e.target.value as GridStayFilter }))}
+            slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+            sx={{ minWidth: { md: 170 }, bgcolor: "background.paper" }}
+          >
+            <MenuItem value="">Все</MenuItem>
+            {(Object.keys(STAY_FILTER_LABELS) as Exclude<GridStayFilter, "">[]).map((k) => (
+              <MenuItem key={k} value={k}>
+                {STAY_FILTER_LABELS[k]}
+              </MenuItem>
+            ))}
+          </TextField>
+          <FilterChip label="С долгом" active={filter.debt} onClick={() => setFilter((f) => ({ ...f, debt: !f.debt }))} />
+        </Stack>
+      </ReportFilters>
+      {filterActive && (
+        <Stack direction="row" alignItems="center" gap={0.5} flexWrap="wrap" sx={{ ml: { md: "auto" } }}>
+          <Typography variant="body2" fontWeight={700} color={matchedIds.size > 0 ? "text.primary" : "error.main"} sx={{ fontVariantNumeric: "tabular-nums" }}>
+            Найдено {matchedIds.size} из {allItems.length}
+          </Typography>
+          {matchedIds.size > 0 && (
+            <Button size="small" startIcon={<CenterFocusStrongOutlined />} onClick={jumpToFirstMatch}>
+              К первой
+            </Button>
+          )}
+          <Button size="small" color="inherit" startIcon={<FilterAltOffOutlined />} onClick={() => setFilter(EMPTY_FILTER)}>
+            Сбросить
+          </Button>
+        </Stack>
+      )}
+    </Stack>
+  );
   const checkInTime = property.checkInTime ? formatHotelTime(property.checkInTime) : null;
   const checkOutTime = property.checkOutTime ? formatHotelTime(property.checkOutTime) : null;
 
@@ -1277,6 +1467,7 @@ export const RoomBookingGrid: React.FC = () => {
     return (
       <Box
         key={it.itemId}
+        data-item={it.itemId}
         component="button"
         type="button"
         onClick={() => {
@@ -1306,12 +1497,14 @@ export const RoomBookingGrid: React.FC = () => {
           overflow: "hidden",
           font: "inherit",
           cursor: "pointer",
-          transition: "box-shadow .12s",
+          transition: "box-shadow .12s, opacity .15s",
           "&:hover": {
             borderLeftColor: isDraft ? undefined : color,
             borderColor: isDraft ? color : undefined,
             boxShadow: `0 0 0 1px ${alpha(color, 0.55)}`,
           },
+          // Поиск: найденное — в кольце, остальное приглушено, но кликается.
+          ...(filterActive ? (matchedIds.has(it.itemId) ? { boxShadow: `0 0 0 2px ${theme.palette.primary.main}` } : { opacity: 0.22 }) : {}),
         }}
       >
         {showIcon && <StatusIcon sx={{ fontSize: 14, color: iconColor, flexShrink: 0 }} />}
@@ -1361,7 +1554,7 @@ export const RoomBookingGrid: React.FC = () => {
           : { flexShrink: 0 }
       }
     >
-      <BoardShell actions={toolbar}>
+      <BoardShell actions={toolbar} filters={filterBar}>
         <Stack gap={1.5}>
           <Box sx={{ position: "relative" }}>
             <Box

@@ -253,6 +253,8 @@ export const HotelKitchenPage: React.FC = () => {
         <Alert
           severity="warning"
           variant="outlined"
+          // На телефоне кнопка в правой колонке сжималась до переноса по слову — уходит под текст.
+          sx={{ flexWrap: { xs: "wrap", md: "nowrap" }, "& .MuiAlert-action": { width: { xs: "100%", md: "auto" }, ml: { xs: 0, md: "auto" }, pl: { xs: "36px", md: 2 }, pt: { xs: 0, md: "4px" } } }}
           action={
             <Button color="inherit" size="small" onClick={() => navigate("/reception")}>
               На ресепшен
