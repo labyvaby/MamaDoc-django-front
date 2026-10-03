@@ -39,6 +39,7 @@ import DeleteSweepOutlined from "@mui/icons-material/DeleteSweepOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
+import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 
 import {
   AppButton,
@@ -87,6 +88,7 @@ import CalendarTemplateDialog from "../../components/vaccinations/CalendarTempla
 import DraftsTab from "./DraftsTab";
 import Form5Tab from "./Form5Tab";
 import RecordsTab from "./RecordsTab";
+import DashboardTab from "./DashboardTab";
 import CalendarTab from "./CalendarTab";
 import PeriodStepper from "../../components/vaccinations/PeriodStepper";
 import KrCalendarDialog from "../../components/vaccinations/KrCalendarDialog";
@@ -96,9 +98,14 @@ import {
 } from "../../components/vaccinations/ExemptionRefusalDialogs";
 import { scheduleDateInfo } from "./meta";
 
-type VaccTab = "drafts" | "due" | "records" | "vaccines" | "batches" | "calendar" | "report" | "form5";
+type VaccTab = "drafts" | "due" | "records" | "vaccines" | "batches" | "calendar" | "report" | "form5" | "dashboard";
 
 /** «Не оформлено» — только тем, кто оформляет прививки (vaccinations.record). */
+/** Дашборд — первым: итоги месяца/года, вакцины, возраст и пол детей. */
+const DASHBOARD_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
+  { id: "dashboard", label: "Дашборд", icon: InsightsOutlined },
+];
+
 const RECORD_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
   { id: "drafts", label: "Не оформлено", icon: AssignmentLateOutlined },
 ];
@@ -128,7 +135,7 @@ const READ_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
  * Смысловые группы вкладок для визуальной кластеризации ленты разделителями:
  * «Работа» (ежедневное) · «Справочники» (настройка) · «Аналитика».
  */
-const TAB_GROUP: Record<VaccTab, "work" | "ref" | "analytics"> = {
+const TAB_GROUP: Record<VaccTab, "overview" | "work" | "ref" | "analytics"> = {
   drafts: "work",
   due: "work",
   records: "work",
@@ -136,6 +143,7 @@ const TAB_GROUP: Record<VaccTab, "work" | "ref" | "analytics"> = {
   batches: "ref",
   calendar: "ref",
   report: "analytics",
+  dashboard: "overview",
   form5: "analytics",
 };
 
@@ -215,6 +223,7 @@ const VaccinationsPage: React.FC = () => {
 
   const tabs = React.useMemo(
     () => [
+      ...DASHBOARD_TABS,
       ...(canRecord ? RECORD_TABS : []),
       ...BASE_TABS,
       ...(canManage ? MANAGE_TABS : []),
@@ -1032,7 +1041,7 @@ const VaccinationsPage: React.FC = () => {
           )}
         </Stack>
 
-        {branchId == null && tab !== "calendar" && tab !== "report" && tab !== "form5" && tab !== "due" && (
+        {branchId == null && tab !== "calendar" && tab !== "report" && tab !== "form5" && tab !== "dashboard" && tab !== "records" && tab !== "due" && (
           <Alert severity="info" sx={{ mb: 1.5 }}>
             Выберите активный филиал, чтобы увидеть вакцины по нему.
           </Alert>
@@ -1096,6 +1105,7 @@ const VaccinationsPage: React.FC = () => {
             </Box>
           ))}
 
+        {tab === "dashboard" && <DashboardTab branchId={branchId} orgId={orgId} />}
         {tab === "records" && <RecordsTab branchId={branchId} orgId={orgId} />}
 
         {tab === "vaccines" && canManage &&
