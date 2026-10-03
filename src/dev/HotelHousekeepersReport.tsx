@@ -2,7 +2,9 @@
  * «Горничные» — нагрузка уборки по «Графику персонала»: на каждый день
  * выезды (уборка после выезда) и проживающие (текущая уборка) на этажах
  * поста и кому это досталось; итог по горничным за месяц и открытые задачи
- * сейчас. Расчёт — hotelHousekeepingLoad.ts.
+ * сейчас. Расчёт — hotelHousekeepingLoad.ts. Рядом с планом — факт с сервера
+ * (GET /reports/housekeeping/): сколько уборок горничная закрыла и сколько в
+ * среднем шла уборка. Нет права на отчёт — колонки факта просто не видны.
  */
 import React from "react";
 import { Alert, Avatar, Box, Button, CircularProgress, IconButton, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
@@ -19,7 +21,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 
-import { listHousekeepingTasks, listRooms } from "../api/hotel";
+import { getHousekeepingReport, listHousekeepingTasks, listRooms, type HotelHousekeepingReportRow } from "../api/hotel";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { computeHousekeepingLoad } from "./hotelHousekeepingLoad";
 import { fmtInt } from "./hotelReportFormat";
@@ -57,6 +59,17 @@ export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: Report
     queryFn: ({ signal }) => listHousekeepingTasks({ propertyId }, signal),
   });
 
+  const factsQuery = useQuery({
+    queryKey: ["hotel", "reports", "housekeeping", propertyId, from, to],
+    queryFn: ({ signal }) => getHousekeepingReport({ propertyId, from, to }, signal),
+    retry: false,
+  });
+  const facts = factsQuery.data;
+  // «Без горничной в графике» (план) и «без исполнителя» (факт) — разные строки, null не сопоставляем.
+  const factOf = (employeeId: number | null): HotelHousekeepingReportRow | undefined =>
+    employeeId == null ? undefined : facts?.rows.find((r) => r.employeeId === employeeId);
+  const fmtMinutes = (m: number | null | undefined) => (m == null ? "—" : `${m.toLocaleString("ru-RU", { maximumFractionDigits: 1 })} мин`);
+
   const names = React.useMemo(() => new Map((employeesQuery.data ?? []).map((e) => [e.id, e.fullName])), [employeesQuery.data]);
   const load = React.useMemo(
     () =>
@@ -81,6 +94,8 @@ export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: Report
   const monthTitle = month.format("MMMM YYYY").replace(/^./, (c) => c.toUpperCase());
   const total = load.totals.checkouts + load.totals.stayovers;
   const chart = load.days.map((d) => ({ ...d, label: dayjs(d.date).format("D") }));
+  // Закрывали уборки, но в графике месяца их нет (или задачи без исполнителя) — тоже показываем.
+  const factOnly = (facts?.rows ?? []).filter((r) => r.done > 0 && (r.employeeId == null || !load.people.some((p) => p.employeeId === r.employeeId)));
 
   const exportXlsx = async () => {
     await downloadXlsx(`Горничные ${month.format("MM.YYYY")}.xlsx`, [
@@ -92,13 +107,35 @@ export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: Report
           { label: "Уборок после выезда", value: load.totals.checkouts, kind: "int" },
           { label: "Текущих уборок", value: load.totals.stayovers, kind: "int" },
           { label: "Без горничной в графике", value: load.totals.uncovered, kind: "int" },
+          ...(facts ? [{ label: "Убрано по факту", value: facts.totals.done, kind: "int" as const }] : []),
         ],
         tables: [
           {
             title: "По горничным",
-            columns: [{ header: "Горничная", width: 24 }, { header: "Этажи" }, { header: "Смен", kind: "int" }, { header: "После выезда", kind: "int" }, { header: "Текущих", kind: "int" }, { header: "Всего", kind: "int" }],
-            rows: load.people.map((p) => [p.name, p.floors.join(", "), p.shifts, p.checkouts, p.stayovers, p.checkouts + p.stayovers]),
-            totals: ["Итого", null, null, load.totals.checkouts, load.totals.stayovers, total],
+            columns: [
+              { header: "Горничная", width: 24 },
+              { header: "Этажи" },
+              { header: "Смен", kind: "int" },
+              { header: "После выезда", kind: "int" },
+              { header: "Текущих", kind: "int" },
+              { header: "Всего", kind: "int" },
+              { header: "Убрано (факт)", kind: "int" },
+              { header: "Среднее время, мин" },
+            ],
+            rows: [
+              ...load.people.map((p) => [
+                p.name,
+                p.floors.join(", "),
+                p.shifts,
+                p.checkouts,
+                p.stayovers,
+                p.checkouts + p.stayovers,
+                factOf(p.employeeId)?.done ?? 0,
+                factOf(p.employeeId)?.avgMinutes ?? "",
+              ]),
+              ...factOnly.map((r) => [r.employeeName || "Без исполнителя", "", null, null, null, null, r.done, r.avgMinutes ?? ""]),
+            ],
+            totals: ["Итого", null, null, load.totals.checkouts, load.totals.stayovers, total, facts?.totals.done ?? null, facts?.totals.avgMinutes ?? ""],
           },
           {
             title: "По дням",
@@ -142,7 +179,7 @@ export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: Report
         </Stack>
       ) : (
         <>
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 1.5 }}>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(3, 1fr)", lg: facts ? "repeat(5, 1fr)" : "repeat(4, 1fr)" }, gap: 1.5 }}>
             <ReportKpi icon={<LogoutOutlined />} tone="warning" label="После выезда" value={fmtInt(load.totals.checkouts)} hint="уборок за месяц" />
             <ReportKpi icon={<AutorenewOutlined />} tone="info" label="Текущие" value={fmtInt(load.totals.stayovers)} hint="у проживающих" />
             <ReportKpi icon={<CleaningServicesOutlined />} tone="success" emphasis label="Всего уборок" value={fmtInt(total)} hint={`${load.people.filter((p) => p.employeeId != null).length} горничных`} />
@@ -155,6 +192,15 @@ export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: Report
               hint={load.totals.uncovered ? "этаж не закрыт в графике" : "все этажи закрыты"}
               onClick={load.totals.uncovered ? () => navigate("/hotel-staff") : undefined}
             />
+            {facts && (
+              <ReportKpi
+                icon={<CleaningServicesOutlined />}
+                tone="success"
+                label="Убрано по факту"
+                value={fmtInt(facts.totals.done)}
+                hint={facts.totals.avgMinutes != null ? `в среднем ${fmtMinutes(facts.totals.avgMinutes)}` : "закрытые задачи уборки"}
+              />
+            )}
           </Box>
 
           <ReportSection title="Уборки по дням" subtitle="Выезды и проживающие на этажах — сколько работы у горничных каждый день">
@@ -182,7 +228,7 @@ export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: Report
           </ReportSection>
 
           <Surface padded={false} sx={{ overflow: "hidden" }}>
-            {load.people.length === 0 ? (
+            {load.people.length === 0 && factOnly.length === 0 ? (
               <ReportEmpty>В этом месяце нет горничных в графике и уборок по броням</ReportEmpty>
             ) : (
               <Box sx={{ overflowX: "auto" }}>
@@ -196,6 +242,12 @@ export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: Report
                       <TableCell align="right">Текущих</TableCell>
                       <TableCell align="right">Всего</TableCell>
                       <TableCell align="right">За смену</TableCell>
+                      {facts && (
+                        <>
+                          <TableCell align="right">Убрано</TableCell>
+                          <TableCell align="right">Ср. время</TableCell>
+                        </>
+                      )}
                       <TableCell align="right" sx={{ pr: 2.5 }}>
                         Открыто сейчас
                       </TableCell>
@@ -232,6 +284,16 @@ export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: Report
                           <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", color: "text.secondary" }}>
                             {p.shifts ? (all / p.shifts).toLocaleString("ru-RU", { maximumFractionDigits: 1 }) : "—"}
                           </TableCell>
+                          {facts && (
+                            <>
+                              <TableCell align="right" sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "success.main" }}>
+                                {factOf(p.employeeId)?.done || "—"}
+                              </TableCell>
+                              <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", color: "text.secondary" }}>
+                                {fmtMinutes(factOf(p.employeeId)?.avgMinutes)}
+                              </TableCell>
+                            </>
+                          )}
                           <TableCell align="right" sx={{ pr: 2.5, fontVariantNumeric: "tabular-nums" }}>
                             {p.employeeId != null && openByAssignee.get(p.employeeId)
                               ? `${openByAssignee.get(p.employeeId)} ${plural(openByAssignee.get(p.employeeId) ?? 0, "задача", "задачи", "задач")}`
@@ -240,6 +302,30 @@ export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: Report
                         </TableRow>
                       );
                     })}
+                    {factOnly.map((r) => (
+                      <TableRow key={`fact-${r.employeeId ?? "none"}`}>
+                        <TableCell sx={{ pl: 2.5 }}>
+                          <Typography variant="body2" fontWeight={700} color={r.employeeId == null ? "text.secondary" : "text.primary"}>
+                            {r.employeeName || "Без исполнителя"}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            нет в графике месяца
+                          </Typography>
+                        </TableCell>
+                        <TableCell colSpan={6} sx={{ color: "text.disabled" }}>
+                          —
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "success.main" }}>
+                          {r.done}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", color: "text.secondary" }}>
+                          {fmtMinutes(r.avgMinutes)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ pr: 2.5 }}>
+                          —
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </Box>

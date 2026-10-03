@@ -2526,6 +2526,30 @@ export async function listHousekeepingTasksPage(
   return Array.isArray(res) ? { count: params.offset ? 0 : res.length, results: params.offset ? [] : res } : res;
 }
 
+/** GET /reports/housekeeping/ — выполненные уборки по горничным за период (по дню закрытия). Право hotel.reports.view. */
+export interface HotelHousekeepingReportRow {
+  /** null — задачи без исполнителя и без того, кто закрыл (строка всегда последняя). */
+  employeeId: number | null;
+  employeeName: string;
+  done: number;
+  doneByKind: Partial<Record<HotelHousekeepingTask["kind"], number>>;
+  /** От «начала» до «готово»; null — нет задач с обоими временами. */
+  avgMinutes: number | null;
+  byDay: { date: string; done: number }[];
+}
+
+export interface HotelHousekeepingReport {
+  propertyId: number;
+  dateFrom: string;
+  dateTo: string;
+  rows: HotelHousekeepingReportRow[];
+  totals: { done: number; doneByKind: Partial<Record<HotelHousekeepingTask["kind"], number>>; avgMinutes: number | null };
+}
+
+export function getHousekeepingReport(params: { propertyId: number; from: string; to: string }, signal?: AbortSignal): Promise<HotelHousekeepingReport> {
+  return apiRequest<HotelHousekeepingReport>(`/v2/hotel/reports/housekeeping/${buildQuery(params)}`, { signal });
+}
+
 export function createHousekeepingTask(data: HotelHousekeepingTaskCreateData): Promise<HotelHousekeepingTask> {
   return apiRequest<HotelHousekeepingTask>("/v2/hotel/housekeeping-tasks/", { method: "POST", body: data });
 }
