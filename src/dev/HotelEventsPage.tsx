@@ -474,7 +474,7 @@ const EventDrawer: React.FC<{
   };
 
   return (
-    <Drawer anchor="right" open={event != null} onClose={onClose} PaperProps={{ sx: { width: DRAWER_WIDTH } }}>
+    <Drawer anchor="right" open={event != null} onClose={onClose} PaperProps={{ sx: { width: DRAWER_WIDTH, maxWidth: "100vw", display: "flex", flexDirection: "column", backgroundImage: "none" } }}>
       {event && (
         <>
           <DrawerHeader title={event.title} subtitle={`${CATEGORY_META[event.category].label} · ${formatEventDates(event)} · ${untilLabel(event)}`} onClose={onClose} />
@@ -643,7 +643,7 @@ const AddEventDrawer: React.FC<{ open: boolean; propertyId: number; onClose: () 
   const busy = createMutation.isPending;
 
   return (
-    <Drawer anchor="right" open={open} onClose={() => (busy ? null : onClose())} PaperProps={{ sx: { width: DRAWER_WIDTH } }}>
+    <Drawer anchor="right" open={open} onClose={() => (busy ? null : onClose())} PaperProps={{ sx: { width: DRAWER_WIDTH, maxWidth: "100vw", display: "flex", flexDirection: "column", backgroundImage: "none" } }}>
       <DrawerHeader title="Новое событие" subtitle="Концерт, фестиваль или форум, из-за которого вырастет спрос" onClose={onClose} />
       <DrawerBody>
         <DrawerSection label="Событие" first>
