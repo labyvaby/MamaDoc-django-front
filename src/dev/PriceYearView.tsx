@@ -305,8 +305,9 @@ export const PriceYearView: React.FC<{
             bgcolor: selectedCount ? alpha(theme.palette.primary.main, dark ? 0.12 : 0.04) : undefined,
           }}
         >
-          <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} gap={1}>
-            <SelectAllOutlined sx={{ color: selectedCount ? "primary.main" : "text.disabled", display: { xs: "none", sm: "block" } }} />
+          {/* sm в теме — 360 px (телефон): в ряд с подсказкой и кнопкой — только с md. */}
+          <Stack direction={{ xs: "column", md: "row" }} alignItems={{ md: "center" }} gap={1}>
+            <SelectAllOutlined sx={{ color: selectedCount ? "primary.main" : "text.disabled", display: { xs: "none", md: "block" } }} />
             <Typography variant="body2" sx={{ flex: 1 }} color={selectedCount ? "text.primary" : "text.secondary"}>
               {selectedCount
                 ? `Выбрано ${fmt(selectedCount)} ${plural(selectedCount, "ночь", "ночи", "ночей")} · ${selectedCats.size} ${plural(selectedCats.size, "категория", "категории", "категорий")}`
@@ -321,7 +322,7 @@ export const PriceYearView: React.FC<{
                 Снять
               </Button>
             )}
-            <Button variant="contained" disableElevation startIcon={<EditOutlined />} disabled={!selectedCount} onClick={() => setBulkOpen(true)}>
+            <Button variant="contained" disableElevation startIcon={<EditOutlined />} disabled={!selectedCount} onClick={() => setBulkOpen(true)} sx={{ width: { xs: "100%", md: "auto" } }}>
               Изменить цены
             </Button>
           </Stack>
