@@ -215,6 +215,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setActiveItemId(initialItemId ?? null);
     setActionError(null);
     setCheckInNeedsForce(false);
+    setCheckInNeedsDocument(false);
+    setDocumentSaved(false);
     setCheckOutNeedsForce(false);
     setCheckOutNeedsInspection(false);
     setCancelPromptOpen(false);
