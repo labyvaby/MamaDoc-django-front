@@ -9,8 +9,10 @@
 
 ## Сделано в ветке `seitek/hotel-backend-r2` — посмотреть и влить в `test`
 
-Коммит `2d167227` от `origin/test` (`76a99b32`). Миграций нет, новых прав нет,
-существующие поля не менялись — только добавлены.
+Коммиты `2d167227` и `83789394` от `origin/test` (`76a99b32`). Новых прав нет,
+существующие поля не менялись — только добавлены. Одна миграция —
+`0021_reservation_expected_departure_time`: добавляет одно поле, допускающее
+`null`, и уточняет подпись времени заезда. Данные не переносит.
 
 | Что | Где |
 | --- | --- |
@@ -20,6 +22,7 @@
 | У категорий в `availability`: `description`, `photos`, `amenities`, `boardType` | `public_views.PublicAvailability` |
 | `PATCH /reservations/{id}/guests/{guestId}/` — документ одного гостя | `services.update_stay_guest_document`, `views.ReservationGuestDetail` |
 | `expectedArrivalTime` в позициях `GET /calendar/` | `serializers._calendar_details` |
+| Своё время выезда у брони — `expectedDepartureTime` | `Reservation.expected_departure_time`, миграция `0021` |
 
 Подробности:
 
@@ -44,10 +47,25 @@
     именем гостя, без номера документа.
   - Право — `hotel.guests.documents`, как у загрузки фото документа.
 - С `_StayDocumentPhotoBase` снят `@final`: от него наследуются, mypy ругался.
+- **Время заезда и выезда брони.** Заказчик попросил, чтобы у каждой брони были
+  своё время заезда и выезда (ранний заезд, поздний выезд) и их можно было
+  править. Время заезда уже было — `expected_arrival_time`. Время выезда
+  сделано так же:
+  - `expected_departure_time`, `"HH:MM"` по часам объекта, `null` — как в
+    правилах объекта (`Property.check_out_time`);
+  - принимается в `POST /reservations/` и `PATCH /reservations/{id}/`: `null`
+    возвращает правило, не переданное поле не меняется;
+  - отдаётся в карточке и списке броней и в позициях `GET /calendar/`;
+  - правка пишется в журнал (`field: expected_departure_time`).
 
-**Проверка:** 8 новых тестов
-(`tests/test_apps/test_hotel/test_in_house_storefront_guest_doc.py`), все тесты
-`test_hotel` и `tests/test_server` проходят. Исключение —
+  Деньги и наличие номеров поле не затрагивает: платный поздний выезд — это
+  допуслуга, как и раньше. Тест —
+  `tests/test_apps/test_hotel/test_reservation_departure_time.py`.
+
+**Проверка:** 9 новых тестов
+(`tests/test_apps/test_hotel/test_in_house_storefront_guest_doc.py`,
+`test_reservation_departure_time.py`), все тесты `test_hotel` (265) и
+`tests/test_server` проходят, `makemigrations --check` — изменений нет. Исключение —
 `test_openapi_docs.py::test_every_operation_is_tagged`: он падает и на чистом
 `origin/test`, потому что у `GET /api/lab/settings/` нет тега. Это не отель, но
 посмотреть стоит. Ruff — чисто. Новых ошибок mypy в `server/apps/hotel` нет,
