@@ -89,6 +89,7 @@ import DraftsTab from "./DraftsTab";
 import Form5Tab from "./Form5Tab";
 import RecordsTab from "./RecordsTab";
 import DashboardTab from "./DashboardTab";
+import DuePlaceholder from "./DuePlaceholder";
 import { PROGRAM_LABEL, batchUsed, countText, expiryInfo, stockByVaccine, type Tone as StockTone } from "./stockInfo";
 import { formatMoney } from "./totalsFormat";
 import { doseAgeText } from "../../components/vaccinations/calendarTable";
@@ -100,6 +101,13 @@ import {
   RefusalDialog,
 } from "../../components/vaccinations/ExemptionRefusalDialogs";
 import { scheduleDateInfo } from "./meta";
+
+/**
+ * «Кому пора» — только дети, состоящие на учёте (решение 2026-10-03). Модуля
+ * учёта в этой ветке нет, поэтому список выключен и показана заглушка; когда
+ * учёт вольётся — фильтр по нему и false здесь.
+ */
+const DUE_WAITS_FOR_REGISTRY = true;
 
 type VaccTab = "drafts" | "due" | "records" | "vaccines" | "batches" | "calendar" | "report" | "form5" | "dashboard";
 
@@ -246,12 +254,12 @@ const VaccinationsPage: React.FC = () => {
 
   const [tab, setTab] = React.useState<VaccTab>(() => {
     const saved = sessionStorage.getItem("vaccinations-tab");
-    return (saved as VaccTab) ?? "due";
+    return (saved as VaccTab) ?? "dashboard";
   });
 
   // Скрыть manage-вкладку, если право пропало (или его и не было).
   React.useEffect(() => {
-    if (!tabs.some((t) => t.id === tab)) setTab("due");
+    if (!tabs.some((t) => t.id === tab)) setTab("dashboard");
   }, [tabs, tab]);
   const [drawerPatient, setDrawerPatient] = React.useState<DjangoPatient | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
@@ -326,7 +334,7 @@ const VaccinationsPage: React.FC = () => {
         { ...dueFilters, page: duePagination.page + 1, pageSize: duePagination.pageSize },
         signal,
       ),
-    enabled: enabled && tab === "due",
+    enabled: enabled && tab === "due" && !DUE_WAITS_FOR_REGISTRY,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
@@ -352,7 +360,7 @@ const VaccinationsPage: React.FC = () => {
       ]);
       return { overdue: overdue.count, week: week.count };
     },
-    enabled: enabled && tab === "due" && serverPaged,
+    enabled: enabled && tab === "due" && serverPaged && !DUE_WAITS_FOR_REGISTRY,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
@@ -1079,7 +1087,7 @@ const VaccinationsPage: React.FC = () => {
 
           <Box sx={{ flex: 1 }} />
 
-          {tab === "due" && (
+          {tab === "due" && !DUE_WAITS_FOR_REGISTRY && (
             <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
               <ToggleButtonGroup
                 exclusive
@@ -1175,7 +1183,7 @@ const VaccinationsPage: React.FC = () => {
             Выберите активный филиал, чтобы увидеть вакцины по нему.
           </Alert>
         )}
-        {tab === "due" && !VACCINATION_SCHEDULE_BRANCH_SCOPING && (
+        {tab === "due" && !DUE_WAITS_FOR_REGISTRY && !VACCINATION_SCHEDULE_BRANCH_SCOPING && (
           <Alert severity="info" sx={{ mb: 1.5 }}>
             Плановые дозы показаны по всей организации: филиал у них пока не проставляется.
           </Alert>
@@ -1206,7 +1214,8 @@ const VaccinationsPage: React.FC = () => {
           />
         )}
 
-        {tab === "due" &&
+        {tab === "due" && DUE_WAITS_FOR_REGISTRY && <DuePlaceholder />}
+        {tab === "due" && !DUE_WAITS_FOR_REGISTRY &&
           (dueQuery.error ? (
             <Alert severity="error">
               {dueQuery.error instanceof Error ? dueQuery.error.message : "Ошибка загрузки"}
