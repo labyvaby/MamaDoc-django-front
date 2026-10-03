@@ -131,7 +131,7 @@ export const HotelDayReport: React.FC<{ propertyId: number; nav: ReportNav }> = 
                   <BarChart data={revenueByCategory} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
                     <XAxis dataKey="name" tick={axisTick} axisLine={false} tickLine={false} />
-                    <YAxis tick={axisTick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, moneyTicks[moneyTicks.length - 1]]} tickFormatter={axisMoney} />
+                    <YAxis tick={axisTick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, Math.max(1, moneyTicks[moneyTicks.length - 1])]} tickFormatter={axisMoney} />
                     <RechartsTooltip
                       cursor={{ fill: subtleBg(theme, true) }}
                       contentStyle={tooltipStyle}

@@ -612,7 +612,7 @@ const YieldChart: React.FC<{ result: YieldResult; cmp: YieldResult | null; group
           <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
             <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={10} />
-            <YAxis yAxisId="money" tick={tick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, moneyTicks[moneyTicks.length - 1]]} tickFormatter={axisMoney} />
+            <YAxis yAxisId="money" tick={tick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, Math.max(1, moneyTicks[moneyTicks.length - 1])]} tickFormatter={axisMoney} />
             <YAxis yAxisId="occ" orientation="right" tick={tick} width={44} axisLine={false} tickLine={false} domain={[0, (max: number) => Math.max(100, Math.ceil(max / 10) * 10)]} tickFormatter={(v: number) => `${v}%`} />
             <RechartsTooltip
               contentStyle={tooltipStyle}
@@ -738,7 +738,7 @@ const YieldWeekdays: React.FC<{ result: YieldResult; currency: string }> = ({ re
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
             <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} />
             <YAxis yAxisId="occ" tick={tick} width={44} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
-            <YAxis yAxisId="money" orientation="right" tick={tick} width={64} axisLine={false} tickLine={false} ticks={adrTicks} domain={[0, adrTicks[adrTicks.length - 1]]} tickFormatter={axisMoney} />
+            <YAxis yAxisId="money" orientation="right" tick={tick} width={64} axisLine={false} tickLine={false} ticks={adrTicks} domain={[0, Math.max(1, adrTicks[adrTicks.length - 1])]} tickFormatter={axisMoney} />
             <RechartsTooltip
               contentStyle={{ borderRadius: 10, border: `1px solid ${subtleBorder(theme)}`, backgroundColor: theme.palette.background.paper, color: theme.palette.text.primary, fontSize: 13 }}
               formatter={(value?: number | string, name?: string | number) =>

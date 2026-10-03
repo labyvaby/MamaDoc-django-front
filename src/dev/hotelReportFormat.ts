@@ -25,7 +25,8 @@ export const REPORT_PALETTE = ["#2563eb", "#16a34a", "#9333ea", "#ea580c", "#089
  * интервалов. Recharts сам делил 2 500 на «0, 650, 1300, 1950, 2600».
  */
 export function niceTicks(max: number, count = 4): number[] {
-  if (!(max > 0) || !Number.isFinite(max)) return [0, 1];
+  // Пусто — только ноль: «1» на оси выглядело как «выручка 1 сом».
+  if (!(max > 0) || !Number.isFinite(max)) return [0];
   const raw = max / count;
   const pow = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s >= raw - 1e-9) ?? 10 * pow;
