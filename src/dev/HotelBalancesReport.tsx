@@ -11,6 +11,7 @@ import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   Checkbox,
   CircularProgress,
   InputAdornment,
@@ -27,6 +28,7 @@ import {
   TableSortLabel,
   TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
@@ -42,6 +44,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getErrorMessage } from "../api/client";
 import { CustomDatePicker } from "../components/ui";
+import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { formatPhoneDisplay } from "../utility/phone";
 import { HOTEL_BOARD_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS, HOTEL_GUARANTEE_METHOD_LABELS, HOTEL_RESERVATION_STATUS_LABELS, hotelSourceColor } from "./hotelDisplay";
 import { esc, printHtmlDocument } from "./hotelPrintDocs";
@@ -49,6 +52,7 @@ import { fmtInt, fmtMoney } from "./hotelReportFormat";
 import { balanceRows, balanceTotals, fetchAllReservations, type BalanceFilter, type BalanceRow, type BalanceStatusFilter } from "./hotelReportData";
 import { ReportKpi, type ReportNav } from "./hotelReportUi";
 import { FilterChip, plural, Surface, useHotelTableSx } from "./hotelUi";
+import { formatHotelDateRange } from "./mockDemoData";
 import { downloadXlsx, xlsxFileName, type XlsxKind, type XlsxValue } from "./hotelXlsx";
 
 type SortKey = "number" | "createdAt" | "customer" | "checkIn" | "checkOut" | "nights" | "rooms" | "adr" | "total" | "paid" | "balance";
@@ -101,6 +105,8 @@ export const HotelBalancesReport: React.FC<{
 }> = ({ propertyId, currency, checkInTime, checkOutTime, nav }) => {
   const theme = useTheme();
   const tableSx = useHotelTableSx();
+  // На телефоне широкая таблица Exely видна на треть — там карточка брони.
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
   const today = D(dayjs());
   const from = nav.param("from") ?? today;
   const toRaw = nav.param("to") ?? from;
@@ -448,6 +454,66 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
     </TableCell>
   );
 
+  const phoneCard = (r: BalanceRow, i: number) => {
+    const arrival = r.checkedInAt
+      ? { text: `заселён в ${dayjs(r.checkedInAt).format("HH:mm")}`, color: "success.main" }
+      : r.expectedArrivalTime
+        ? { text: `приедет около ${r.expectedArrivalTime}`, color: "info.main" }
+        : null;
+    return (
+      <ButtonBase
+        key={r.id}
+        component="div"
+        onClick={() => nav.openReservation(r.id)}
+        sx={{
+          display: "block",
+          width: "100%",
+          textAlign: "left",
+          px: 2,
+          py: 1.5,
+          borderTop: i > 0 ? `1px solid ${subtleBorder(theme)}` : "none",
+          "&.Mui-focusVisible": { bgcolor: subtleBg(theme, true) },
+        }}
+      >
+        <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={1.5}>
+          <Typography variant="body2" fontWeight={700} sx={{ minWidth: 0, overflowWrap: "anywhere" }}>
+            {r.customer || "—"}
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: r.balance > 0 ? "error.main" : r.balance < 0 ? "warning.main" : "success.main" }}
+          >
+            {r.balance > 0 ? `долг ${fmtMoney(r.balance, r.currency)}` : r.balance < 0 ? `переплата ${fmtMoney(-r.balance, r.currency)}` : "оплачено"}
+          </Typography>
+        </Stack>
+        <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.25, fontVariantNumeric: "tabular-nums" }}>
+          №{r.number}
+          {r.checkIn && r.checkOut ? ` · ${formatHotelDateRange(r.checkIn, r.checkOut)}` : ""} · {r.nights} {plural(r.nights, "ночь", "ночи", "ночей")}
+          {r.rooms ? ` · номер ${r.rooms}` : ""}
+        </Typography>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ mt: 0.75 }}>
+          <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ minWidth: 0 }}>
+            <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: hotelSourceColor(r.source), flexShrink: 0 }} />
+            <Typography variant="caption">{HOTEL_BOOKING_SOURCE_LABELS[r.source] ?? r.source}</Typography>
+            {r.status !== "confirmed" && (
+              <Typography variant="caption" color="error.main" fontWeight={600}>
+                · {statusWord(r.status)}
+              </Typography>
+            )}
+            {arrival && (
+              <Typography variant="caption" color={arrival.color} fontWeight={600}>
+                · {arrival.text}
+              </Typography>
+            )}
+          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+            {fmtMoney(r.paid)} из {fmtMoney(r.total, r.currency)}
+          </Typography>
+        </Stack>
+      </ButtonBase>
+    );
+  };
+
   return (
     <Stack gap={2.5}>
       <Surface sx={{ p: { xs: 1.75, md: 2 } }}>
@@ -587,6 +653,8 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
               <Typography color="text.secondary" sx={{ p: 4, textAlign: "center" }}>
                 {balance === "debt" ? "Должников среди заездов нет" : "Заездов за период нет"}
               </Typography>
+            ) : phone ? (
+              rows.map(phoneCard)
             ) : (
               <Box sx={{ overflowX: "auto" }}>
                 <Table
