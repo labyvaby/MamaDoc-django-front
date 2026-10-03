@@ -298,6 +298,7 @@ export const RoomBookingHoverCard = React.forwardRef<BarHoverHandle>((_, ref) =>
                 "Проживание",
                 `${shortDate(it.checkIn)}${checkInTime ? ` (${checkInTime})` : ""} → ${shortDate(it.checkOut)}${checkOutTime ? ` (${checkOutTime})` : ""} · ${nights} ${nightsWord(nights)}`,
               )}
+              {!itemInfo?.checkedInAt && it.stayStatus === "expected" && details?.expectedArrivalTime && row("Приедет", `около ${details.expectedArrivalTime}, со слов гостя`, theme.palette.info.main)}
               {itemInfo?.checkedInAt && row("Заселился", dayjs(itemInfo.checkedInAt).format("D MMM, HH:mm"), theme.palette.success.main)}
               {itemInfo?.checkedOutAt && row("Выехал", dayjs(itemInfo.checkedOutAt).format("D MMM, HH:mm"))}
               {row("Номер", `${roomNumber ?? "не назначен"}${roomTypeName ? ` · ${roomTypeName}` : ""}`)}

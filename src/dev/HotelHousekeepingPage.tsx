@@ -118,7 +118,8 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "in_progress", label: "В работе" },
   { value: "done", label: "Готово" },
   { value: "cancelled", label: "Отменено" },
-  { value: "all", label: "Все" },
+  // Без статуса сервер отдаёт только открытые и в работе — «Все» обещало бы и закрытые.
+  { value: "all", label: "Все активные" },
 ];
 
 function statusColor(status: TaskStatus, theme: Theme): string {

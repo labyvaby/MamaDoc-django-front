@@ -61,6 +61,9 @@ function describe(log: HotelReservationLog): string {
       return `Овербукинг: ${value(log.newValue)}`;
     case "price_changed":
       return describePriceChange(log);
+    case "guest_document":
+      // Номер документа в журнал не пишется — только чей.
+      return `Документ гостя: ${value(log.newValue)}`;
     case "repriced":
       return `Пересчёт цены: ${change(log)}`;
     case "payment":

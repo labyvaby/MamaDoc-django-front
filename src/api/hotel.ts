@@ -1225,6 +1225,8 @@ export interface HotelCalendarItem {
   checkedOutAt?: string | null;
   internalNote?: string;
   guestComment?: string;
+  /** "14:30" — во сколько приедет, со слов гостя. */
+  expectedArrivalTime?: string | null;
 }
 
 export interface HotelRoomBlock {
@@ -1953,6 +1955,20 @@ export function searchGuests(q: string, signal?: AbortSignal): Promise<HotelGues
  * обе уходят модели одним запросом. consent — гость дал согласие на обработку
  * данных (фронт без него фото не шлёт; поле — чтобы сервер мог проверять сам).
  */
+/**
+ * PATCH /reservations/{id}/guests/{guestId}/ — документ одного гостя брони:
+ * остальные гости, фото документов и связи с карточками не трогаются (в
+ * отличие от PATCH позиции с guests, который пересоздаёт всех). Право
+ * hotel.guests.documents; version брони → 409 VERSION_CONFLICT. Старый сервер — 404/405.
+ */
+export function updateStayGuestDocument(
+  reservationId: number,
+  guestId: number,
+  data: { version?: number; document: NonNullable<HotelReservationGuest["document"]> },
+): Promise<HotelReservationDetail> {
+  return apiRequest<HotelReservationDetail>(`/v2/hotel/reservations/${reservationId}/guests/${guestId}/`, { method: "PATCH", body: data });
+}
+
 export function scanGuestDocument(
   file: File,
   opts: { backFile?: File | null; consent?: boolean } = {},
@@ -2369,6 +2385,12 @@ export interface HotelKitchenDayPlan {
   occupiedRooms: number;
   /** Взрослые + дети в подтверждённых проживаниях на дату — база порций. */
   occupiedGuests: number;
+  /**
+   * Не вошли в порции: не заехали после дня заезда / выехали раньше этого дня.
+   * Нет полей — старый сервер, он незаезды считает в occupiedGuests.
+   */
+  noShowGuests?: number;
+  departedGuests?: number;
   dishes: HotelPlannedDish[];
   shoppingList: HotelShoppingLine[];
   plannedTotal: Money;
