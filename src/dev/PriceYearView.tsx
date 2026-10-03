@@ -101,7 +101,10 @@ export const PriceYearView: React.FC<{
   const theme = useTheme();
   const dark = theme.palette.mode === "dark";
   const [start, setStart] = React.useState<Dayjs>(() => dayjs().startOf("month"));
-  const [mode, setMode] = React.useState<"price" | "occupancy">("price");
+  // «Отличия» по умолчанию: год — это 1460 почти одинаковых чисел (ревьюер),
+  // глазу не за что зацепиться. Цена, равная базовой, не печатается — видны
+  // только праздники, правила и своя цена. «Цены» — все числа, как раньше.
+  const [mode, setMode] = React.useState<"diff" | "price" | "occupancy">("diff");
   const [hidden, setHidden] = React.useState<Set<number>>(new Set());
   const [selection, setSelection] = React.useState<Set<string>>(new Set());
   const [drag, setDrag] = React.useState<Drag | null>(null);
@@ -116,6 +119,16 @@ export const PriceYearView: React.FC<{
   const data = query.data;
   const cats = React.useMemo(() => (data?.roomTypes ?? []).filter((rt) => !hidden.has(rt.roomTypeId)), [data, hidden]);
   const months = React.useMemo(() => Array.from({ length: MONTHS }, (_, i) => start.add(i, "month")), [start]);
+  // Сколько будущих ночей видимых категорий отличается от базовой цены — для подсказки «Отличий».
+  const diffNights = React.useMemo(() => {
+    if (!data) return 0;
+    let count = 0;
+    for (const rt of cats) {
+      const base = Number(rt.basePrice);
+      for (const n of rt.nights) if (n.date >= today && (Number(n.price) !== base || n.isManualOverride || n.stopSell)) count += 1;
+    }
+    return count;
+  }, [data, cats, today]);
 
   // Выделение протяжкой: прямоугольник в пределах одного месяца.
   const dragKeys = React.useMemo(() => {
@@ -247,9 +260,12 @@ export const PriceYearView: React.FC<{
             size="small"
             exclusive
             value={mode}
-            onChange={(_, v: "price" | "occupancy" | null) => v && setMode(v)}
+            onChange={(_, v: "diff" | "price" | "occupancy" | null) => v && setMode(v)}
             sx={{ "& .MuiToggleButton-root": { textTransform: "none", fontWeight: 600, py: 0.4 } }}
           >
+            <ToggleButton value="diff" title="Только цены, которые отличаются от базовой">
+              Отличия
+            </ToggleButton>
             <ToggleButton value="price">Цены</ToggleButton>
             <ToggleButton value="occupancy">Загрузка</ToggleButton>
           </ToggleButtonGroup>
@@ -294,7 +310,11 @@ export const PriceYearView: React.FC<{
             <Typography variant="body2" sx={{ flex: 1 }} color={selectedCount ? "text.primary" : "text.secondary"}>
               {selectedCount
                 ? `Выбрано ${fmt(selectedCount)} ${plural(selectedCount, "ночь", "ночи", "ночей")} · ${selectedCats.size} ${plural(selectedCats.size, "категория", "категории", "категорий")}`
-                : "Нажмите на месяц, категорию или протяните по дням, чтобы выделить. Ctrl — добавить к выделенному, двойной клик по ночи — подробности."}
+                : `${
+                    mode === "diff"
+                      ? `Пустая клетка — базовая цена (она рядом с категорией); отличается ${fmt(diffNights)} ${plural(diffNights, "ночь", "ночи", "ночей")}. `
+                      : ""
+                  }Нажмите на месяц, категорию или протяните по дням, чтобы выделить. Ctrl — добавить к выделенному, двойной клик по ночи — подробности.`}
             </Typography>
             {selectedCount > 0 && (
               <Button size="small" color="inherit" startIcon={<CloseOutlined fontSize="small" />} onClick={() => setSelection(new Set())}>
@@ -351,6 +371,7 @@ export const PriceYearView: React.FC<{
                 "& .py-c:hover:not(.py-past)": { outline: `2px solid ${alpha(theme.palette.primary.main, 0.45)}`, outlineOffset: "-2px" },
                 "& .py-dot": { position: "absolute", top: 3, right: 3, width: 5, height: 5, borderRadius: "50%", backgroundColor: theme.palette.primary.main },
                 "& .py-up": { color: theme.palette.warning.dark },
+                "& .py-c.py-diff": { fontWeight: 800 },
                 "& .py-down": { color: theme.palette.success.dark },
                 "& .py-none": { backgroundImage: `repeating-linear-gradient(135deg, ${alpha(theme.palette.text.primary, 0.05)} 0 4px, transparent 4px 8px)`, borderLeft: `1px solid ${line}`, borderBottom: `1px solid ${line}` },
               }}
@@ -446,6 +467,11 @@ export const PriceYearView: React.FC<{
                           <Typography variant="caption" fontWeight={600} noWrap title={rt.roomTypeName}>
                             {rt.roomTypeName}
                           </Typography>
+                          {mode === "diff" && (
+                            <Typography variant="caption" color="text.secondary" noWrap sx={{ ml: "auto", pl: 0.75, fontVariantNumeric: "tabular-nums" }}>
+                              {fmt(Number(rt.basePrice))}
+                            </Typography>
+                          )}
                         </Box>
                         {Array.from({ length: 31 }, (_, di) => {
                           const day = di + 1;
@@ -460,6 +486,8 @@ export const PriceYearView: React.FC<{
                           const price = n ? Number(n.price) : null;
                           const base = Number(rt.basePrice);
                           const occ = n ? Math.min(100, Number(n.occupancy)) : 0;
+                          // В «Отличиях» базовая цена без своей цены и стоп-продажи — пустая клетка.
+                          const same = mode === "diff" && n != null && price === base && !n.isManualOverride && !n.stopSell;
                           const cls = [
                             "py-c",
                             past ? "py-past" : "",
@@ -469,6 +497,7 @@ export const PriceYearView: React.FC<{
                             date === today ? "py-today" : "",
                             n && !n.isManualOverride && price != null && price > base ? "py-up" : "",
                             n && !n.isManualOverride && price != null && price < base ? "py-down" : "",
+                            mode === "diff" && !same && n ? "py-diff" : "",
                           ]
                             .filter(Boolean)
                             .join(" ");
@@ -481,7 +510,7 @@ export const PriceYearView: React.FC<{
                             : undefined;
                           return (
                             <div key={di} className={cls} data-cell={`${mi}:${ri}:${day}`} title={title} style={{ ...topBorder, ...(heat ? { backgroundColor: heat } : null) }}>
-                              {n ? (mode === "occupancy" ? `${Math.round(occ)}%` : fmt(price ?? 0)) : "—"}
+                              {n ? (mode === "occupancy" ? `${Math.round(occ)}%` : same ? "" : fmt(price ?? 0)) : "—"}
                               {n?.isManualOverride && <span className="py-dot" />}
                             </div>
                           );
