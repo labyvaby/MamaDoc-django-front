@@ -347,7 +347,7 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
           {byCategory && (
             <ReportSection title="По категориям номеров" subtitle="Те же показатели для каждой категории за период" padded={false}>
               <Box sx={{ overflowX: "auto" }}>
-                <Table size="small" sx={{ ...tableSx, minWidth: 880, "& td": { whiteSpace: "nowrap" }, "& th": { whiteSpace: "normal", lineHeight: 1.25, verticalAlign: "bottom" } }}>
+                <Table size="small" sx={{ ...tableSx, minWidth: 880, "& td": { whiteSpace: "nowrap" }, "& th.MuiTableCell-head": { whiteSpace: "normal", lineHeight: 1.25, verticalAlign: "bottom" } }}>
                   <MetricsHead first="Категория" />
                   <TableBody>
                     {result.byCategory.map((c) => (
@@ -472,7 +472,14 @@ const YieldTable: React.FC<{
         <Table
           size="small"
           stickyHeader
-          sx={{ ...tableSx, minWidth: withDelta ? 1100 : 920, "& td": { whiteSpace: "nowrap" }, "& th": { whiteSpace: "normal", lineHeight: 1.25, verticalAlign: "bottom" } }}
+          sx={{
+            ...tableSx,
+            minWidth: withDelta ? 1040 : 920,
+            "& td": { whiteSpace: "nowrap" },
+            // Со сравнением 11 колонок — поуже отступы, чтобы «Δ загрузки» не уезжала за край.
+            ...(withDelta ? { "& .MuiTableCell-root:not(:first-of-type):not(:last-of-type)": { px: 1.25 } } : {}),
+            "& th.MuiTableCell-head": { whiteSpace: "normal", lineHeight: 1.25, verticalAlign: "bottom" },
+          }}
         >
           <MetricsHead first={group === "day" ? "Дата" : "Период"} withDelta={withDelta} />
           <TableBody>
