@@ -16,8 +16,8 @@
  * остальным — номера.
  */
 import React from "react";
-import { Box, ButtonBase, Typography } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { Box, IconButton, Tooltip } from "@mui/material";
+import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 import AssignmentTurnedInOutlined from "@mui/icons-material/AssignmentTurnedInOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
@@ -28,7 +28,6 @@ import { useSearchParams } from "react-router";
 
 import { useCan } from "../hooks/useCan";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { subtleBorder } from "../theme/uiHelpers";
 import { HotelBalancesReport } from "./HotelBalancesReport";
 import { HotelDayReport } from "./HotelDayReport";
 import { HotelHousekeepersReport } from "./HotelHousekeepersReport";
@@ -37,18 +36,10 @@ import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { HotelShiftReport } from "./HotelShiftReport";
 import { HotelYieldReport } from "./HotelYieldReport";
 import { ReportSkeleton, type HotelReportKind, type ReportNav } from "./hotelReportUi";
-import { HotelPage, HotelPageHeader } from "./hotelUi";
+import { HotelReportSwitcher, type ReportMeta } from "./HotelReportSwitcher";
+import { HotelPage } from "./hotelUi";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 import { useHotelProperty } from "./useHotelProperty";
-
-interface ReportMeta {
-  kind: HotelReportKind;
-  label: string;
-  hint: string;
-  audience: string;
-  icon: React.ReactNode;
-  info: string;
-}
 
 const REPORTS: ReportMeta[] = [
   {
@@ -78,6 +69,7 @@ const REPORTS: ReportMeta[] = [
   {
     kind: "yield",
     label: "Доходность и загрузка",
+    short: "Доходность",
     hint: "Доход, ADR, RevPAR, загрузка",
     audience: "собственник, управляющий",
     icon: <TrendingUpOutlined />,
@@ -101,11 +93,8 @@ const REPORTS: ReportMeta[] = [
   },
 ];
 
-const TIGHT_ROW = "@media (min-width: 1200px) and (max-width: 1399.95px)";
-
 export const HotelReportsPage: React.FC = () => {
   usePageTitle("Отчёты");
-  const theme = useTheme();
   const { property, isLoading: propertyLoading } = useHotelProperty();
   const canOwner = useCan(["hotel.manage", "finance.view"]);
   const canShift = useCan("hotel.payments.manage");
@@ -116,8 +105,6 @@ export const HotelReportsPage: React.FC = () => {
   const visible = REPORTS.filter((r) =>
     r.kind === "owner" ? canOwner : r.kind === "shift" ? canShift : r.kind === "housekeeping" ? canHousekeeping : true,
   );
-  // Больше четырёх отчётов в ряд на 1200–1400 px — плитка с иконкой сверху.
-  const tight = visible.length > 4;
   const requested = params.get("r") as HotelReportKind | null;
   const current = visible.find((r) => r.kind === requested) ?? visible[0];
 
@@ -148,111 +135,29 @@ export const HotelReportsPage: React.FC = () => {
 
   return (
     <HotelPage>
-      <HotelPageHeader title="Отчёты" subtitle={`${current.label} · для: ${current.audience}`} info={current.info} />
 
-      {/*
-        Переключатель отчётов. Все отчёты видны сразу: на телефоне — сетка в два
-        столбца (лента уезжала за край, было видно полтора отчёта), на планшете —
-        в три, на компьютере — в ряд. Шесть в ряд на 1200–1400 px — плитка с
-        иконкой сверху, иначе «Собственнику» и «Доходность» обрезались.
-      */}
-      <Box
-        role="group"
-        aria-label="Отчёты"
-        sx={{
-          display: "grid",
-          gridTemplateColumns: {
-            xs: `repeat(${Math.min(2, visible.length)}, minmax(0, 1fr))`,
-            md: `repeat(${visible.length === 4 ? 2 : Math.min(3, visible.length)}, minmax(0, 1fr))`,
-            lg: `repeat(${visible.length}, minmax(0, 1fr))`,
-          },
-          gap: { xs: 1, md: 1.25 },
-        }}
-      >
-        {visible.map((r) => {
-          const active = r.kind === current.kind;
-          const primary = theme.palette.primary.main;
-          const dark = theme.palette.mode === "dark";
-          const restShadow = `0 1px 2px ${alpha("#101828", dark ? 0.4 : 0.05)}`;
-          return (
-            <ButtonBase
-              key={r.kind}
-              onClick={() => nav.go(r.kind)}
-              aria-pressed={active}
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "flex-start",
-                textAlign: "left",
-                minWidth: 0,
-                gap: { xs: 1, md: 1.25 },
-                p: { xs: 1.25, md: 1.5 },
-                borderRadius: "14px",
-                border: `1px solid ${active ? alpha(primary, 0.55) : subtleBorder(theme)}`,
-                bgcolor: active ? alpha(primary, dark ? 0.16 : 0.07) : "background.paper",
-                boxShadow: active ? `${restShadow}, 0 6px 16px -8px ${alpha(primary, 0.45)}` : restShadow,
-                transition: "border-color .15s, background-color .15s, box-shadow .15s, transform .15s",
-                "@media (hover: hover)": {
-                  "&:hover": {
-                    borderColor: alpha(primary, active ? 0.65 : 0.4),
-                    boxShadow: `${restShadow}, 0 6px 16px -8px ${alpha(primary, 0.35)}`,
-                    transform: "translateY(-1px)",
-                  },
-                },
-                "&.Mui-focusVisible": { outline: `2px solid ${primary}`, outlineOffset: 2 },
-                "@media (prefers-reduced-motion: reduce)": { transition: "none", "&:hover": { transform: "none" } },
-                ...(tight ? { [TIGHT_ROW]: { flexDirection: "column", alignItems: "flex-start", gap: 1 } } : {}),
-              }}
-            >
-              <Box
-                sx={{
-                  width: { xs: 32, md: 38 },
-                  height: { xs: 32, md: 38 },
-                  borderRadius: { xs: "9px", md: "11px" },
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                  color: active ? "primary.contrastText" : "primary.main",
-                  bgcolor: active ? "primary.main" : alpha(primary, dark ? 0.18 : 0.08),
-                  boxShadow: active ? `0 2px 6px -1px ${alpha(primary, 0.5)}` : "none",
-                  transition: "background-color .15s, color .15s",
-                  "& svg": { fontSize: { xs: 18, md: 20 } },
-                  ...(tight ? { [TIGHT_ROW]: { width: 34, height: 34, borderRadius: "10px" } } : {}),
-                }}
-              >
-                {r.icon}
+      <HotelReportSwitcher
+        reports={visible}
+        current={current}
+        onSelect={(kind) => nav.go(kind)}
+        trailing={
+          <Tooltip
+            title={
+              <Box sx={{ fontSize: 13, lineHeight: 1.5, p: 0.5 }}>
+                <b>{current.label}</b> — для: {current.audience}. {current.info}
               </Box>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography
-                  sx={{
-                    fontWeight: 700,
-                    fontSize: { xs: 13, md: 14.5 },
-                    lineHeight: 1.25,
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden",
-                    ...(tight ? { [TIGHT_ROW]: { fontSize: 14 } } : {}),
-                  }}
-                >
-                  {r.label}
-                </Typography>
-                {/* Подпись — где есть место; полное описание — в «i» у заголовка. */}
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  component="div"
-                  noWrap
-                  sx={{ display: { xs: "none", md: "block", lg: tight ? "none" : "block", xl: "block" }, mt: 0.25 }}
-                >
-                  {r.hint}
-                </Typography>
-              </Box>
-            </ButtonBase>
-          );
-        })}
-      </Box>
+            }
+            placement="bottom-end"
+            enterTouchDelay={0}
+            leaveTouchDelay={8000}
+            slotProps={{ tooltip: { sx: { maxWidth: 380 } } }}
+          >
+            <IconButton aria-label={`Как устроен отчёт «${current.label}»`} sx={{ color: "text.secondary" }}>
+              <InfoOutlined sx={{ fontSize: 20 }} />
+            </IconButton>
+          </Tooltip>
+        }
+      />
 
       {!property ? (
         propertyLoading ? (
