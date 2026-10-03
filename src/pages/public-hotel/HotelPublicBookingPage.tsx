@@ -26,6 +26,8 @@ import {
   Container,
   Chip,
   FormControlLabel,
+  ToggleButton,
+  ToggleButtonGroup,
   GlobalStyles,
   MenuItem,
   Skeleton,
@@ -43,7 +45,7 @@ import CallOutlined from "@mui/icons-material/CallOutlined";
 import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
-import { useParams } from "react-router";
+import { useLocation, useParams } from "react-router";
 import dayjs from "dayjs";
 
 import { ApiError, getErrorCode } from "../../api/client";
@@ -59,15 +61,15 @@ import {
 } from "../../api/hotelPublic";
 import { fieldError, sanitizeFieldInput, type FieldRules } from "../../dev/formRules";
 import { HOTEL_BOARD_TYPE_LABELS } from "../../dev/hotelDisplay";
+import { initialPublicHotelLang, PUBLIC_HOTEL_TEXT, type PublicHotelLang, type PublicHotelText } from "./publicHotelText";
 
 const PHONE_RULES: FieldRules = { kind: "phone", required: true };
 const EMAIL_RULES: FieldRules = { kind: "email" };
 const NAME_RULES: FieldRules = { required: true, maxLength: 120 };
 const MAX_NIGHTS = 90;
 
-const nightsWord = (n: number) => (n % 10 === 1 && n % 100 !== 11 ? "ночь" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "ночи" : "ночей");
-const money = (v: string | number, currency: string) =>
-  `${Number(v).toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ${currency === "KGS" || !currency ? "сом" : currency}`;
+const moneyIn = (t: PublicHotelText) => (v: string | number, currency: string) =>
+  `${Number(v).toLocaleString(t.locale, { maximumFractionDigits: 0 })} ${currency === "KGS" || !currency ? t.currencyKgs : currency}`;
 
 /**
  * Прокрутка документа. CRM держит html/body/#root в overflow: hidden (внутри
@@ -86,14 +88,14 @@ const scrollableDocument = (
 );
 
 /** Фото категории: обложка, по нажатию — следующее. */
-const CategoryPhoto: React.FC<{ photos: string[]; name: string }> = ({ photos, name }) => {
+const CategoryPhoto: React.FC<{ photos: string[]; name: string; t: PublicHotelText }> = ({ photos, name, t }) => {
   const [i, setI] = React.useState(0);
   return (
     <Box
       component="button"
       type="button"
       onClick={() => setI((x) => (x + 1) % photos.length)}
-      aria-label={photos.length > 1 ? `Следующее фото «${name}»` : `Фото «${name}»`}
+      aria-label={photos.length > 1 ? t.nextPhoto(name) : t.photo(name)}
       sx={{
         position: "relative",
         flexShrink: 0,
@@ -118,17 +120,27 @@ const CategoryPhoto: React.FC<{ photos: string[]; name: string }> = ({ photos, n
 };
 
 /** Человеческий текст для ошибок, по которым гостю есть что сделать. */
-function friendlyError(err: unknown, fallback: string): string {
+function friendlyError(err: unknown, fallback: string, t: PublicHotelText, lang: PublicHotelLang): string {
   const code = getErrorCode(err);
-  if (code === "RATE_LIMITED" || (err instanceof ApiError && err.status === 429)) return "Слишком много запросов. Подождите минуту и повторите.";
-  if (err instanceof ApiError && err.status === 404) return "Бронирование через сайт для этого отеля недоступно.";
-  return err instanceof Error && err.message ? err.message : fallback;
+  if (code === "RATE_LIMITED" || (err instanceof ApiError && err.status === 429)) return t.rateLimited;
+  if (err instanceof ApiError && err.status === 404) return t.siteOff;
+  // Тексты сервера — на русском; гостю на английском показываем свой.
+  return lang === "ru" && err instanceof Error && err.message ? err.message : fallback;
 }
 
 export const HotelPublicBookingPage: React.FC = () => {
   const { slug = "" } = useParams();
   const theme = useTheme();
   const today = dayjs().format("YYYY-MM-DD");
+  // Язык: ?lang=en в ссылке или язык браузера; переключатель — в шапке.
+  const { search: locationSearch } = useLocation();
+  const [lang, setLang] = React.useState<PublicHotelLang>(() => initialPublicHotelLang(locationSearch, navigator.language));
+  const t: PublicHotelText = PUBLIC_HOTEL_TEXT[lang];
+  const money = moneyIn(t);
+  const dayFmt = (d: string) => dayjs(d).locale(lang === "en" ? "en" : "ru").format("D MMMM");
+  React.useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   const [checkIn, setCheckIn] = React.useState(dayjs().add(1, "day").format("YYYY-MM-DD"));
   const [checkOut, setCheckOut] = React.useState(dayjs().add(2, "day").format("YYYY-MM-DD"));
@@ -172,15 +184,15 @@ export const HotelPublicBookingPage: React.FC = () => {
   const nights = dayjs(checkOut).diff(dayjs(checkIn), "day");
   const datesError =
     !checkIn || !checkOut
-      ? "Выберите даты"
+      ? t.pickDates
       : checkIn < today
-        ? "Заезд не может быть в прошлом"
+        ? t.pastCheckIn
         : nights < 1
-          ? "Выезд должен быть позже заезда"
+          ? t.checkOutAfter
           : nights > MAX_NIGHTS
-            ? `Не больше ${MAX_NIGHTS} ночей`
+            ? t.maxNights(MAX_NIGHTS)
             : dayjs(checkIn).isAfter(dayjs().add(2, "year"))
-              ? "Бронирование открыто не дальше чем на два года"
+              ? t.tooFar
               : null;
 
   const search = async () => {
@@ -195,7 +207,7 @@ export const HotelPublicBookingPage: React.FC = () => {
     } catch (err) {
       setAvailability(null);
       if (err instanceof ApiError && err.status === 404) setUnavailable(true);
-      else setSearchError(friendlyError(err, "Не удалось получить свободные номера"));
+      else setSearchError(friendlyError(err, t.searchFailed, t, lang));
     } finally {
       setSearching(false);
     }
@@ -245,25 +257,25 @@ export const HotelPublicBookingPage: React.FC = () => {
           const next = fresh.results.find((c) => c.id === chosen.id);
           if (next) {
             setChosen(next);
-            setPriceChanged(`Цена изменилась: теперь ${money(next.totalAmount, fresh.currency)}. Проверьте и нажмите «Отправить заявку» ещё раз.`);
+            setPriceChanged(t.priceChanged(money(next.totalAmount, fresh.currency)));
           } else {
             setChosen(null);
-            setSendError("Эта категория больше недоступна на выбранные даты. Выберите другую.");
+            setSendError(t.categoryGone);
           }
         } catch {
-          setSendError("Цена изменилась. Обновите страницу и повторите.");
+          setSendError(t.priceChangedReload);
         }
       } else if (code === "NO_AVAILABILITY") {
-        setSendError("Свободных номеров этой категории на выбранные даты больше нет. Выберите другую категорию или даты.");
+        setSendError(t.noAvailability);
         setChosen(null);
         void search();
       } else if (code === "REQUEST_CONFLICT") {
         // Тот же UUID с другим телом — начинаем заявку заново.
         requestRef.current = null;
-        setSendError("Заявку не удалось отправить. Нажмите «Отправить заявку» ещё раз.");
+        setSendError(t.retry);
       } else {
         // Сетевая ошибка и всё остальное: UUID остаётся, повтор безопасен.
-        setSendError(friendlyError(err, "Не удалось отправить заявку. Попробуйте ещё раз."));
+        setSendError(friendlyError(err, t.sendFailed, t, lang));
       }
     } finally {
       setSending(false);
@@ -283,7 +295,7 @@ export const HotelPublicBookingPage: React.FC = () => {
   const currency = availability?.currency ?? "KGS";
   const headerLoading = !hotelName && !unavailable && (!infoLoaded || !firstSearchDone);
   const contacts = [info?.address, info?.phone].filter(Boolean) as string[];
-  const times = info?.checkInTime || info?.checkOutTime ? `Заезд с ${info?.checkInTime || "—"} · выезд до ${info?.checkOutTime || "—"}` : null;
+  const times = info?.checkInTime || info?.checkOutTime ? t.times(info?.checkInTime || "—", info?.checkOutTime || "—") : null;
   // Условия отмены: у тарифа категории, иначе общие отеля.
   const cancellation = chosen?.cancellationPolicy || info?.cancellationPolicy || "";
 
@@ -298,11 +310,11 @@ export const HotelPublicBookingPage: React.FC = () => {
   React.useEffect(() => {
     if (!hotelName) return undefined;
     const prev = document.title;
-    document.title = `${hotelName} — бронирование номера`;
+    document.title = `${hotelName} — ${t.titleSuffix}`;
     return () => {
       document.title = prev;
     };
-  }, [hotelName]);
+  }, [hotelName, t.titleSuffix]);
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: alpha(theme.palette.primary.main, 0.04), py: { xs: 3, md: 6 } }}>
@@ -317,6 +329,19 @@ export const HotelPublicBookingPage: React.FC = () => {
             sx={{ width: "100%", height: { xs: 180, md: 260 }, objectFit: "cover", borderRadius: "20px", display: "block", mb: 2.5 }}
           />
         )}
+        <Stack direction="row" justifyContent="flex-end" sx={{ mb: 1 }}>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={lang}
+            onChange={(_, v: PublicHotelLang | null) => v && setLang(v)}
+            aria-label="Language"
+            sx={{ "& .MuiToggleButton-root": { px: 1.25, py: 0.25, fontWeight: 700, textTransform: "none" } }}
+          >
+            <ToggleButton value="ru">RU</ToggleButton>
+            <ToggleButton value="en">EN</ToggleButton>
+          </ToggleButtonGroup>
+        </Stack>
         <Stack direction="row" alignItems="center" gap={1.5} sx={{ mb: 3 }}>
           {info?.logoUrl ? (
             <Box component="img" src={info.logoUrl} alt="" sx={{ width: 48, height: 48, objectFit: "contain", borderRadius: "12px", flexShrink: 0 }} />
@@ -325,10 +350,10 @@ export const HotelPublicBookingPage: React.FC = () => {
           )}
           <Box sx={{ minWidth: 0 }}>
             <Typography component="h1" sx={{ fontSize: { xs: 24, md: 32 }, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15 }}>
-              {headerLoading ? <Skeleton width={240} /> : hotelName || "Бронирование номера"}
+              {headerLoading ? <Skeleton width={240} /> : hotelName || t.fallbackTitle}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              {hotelName ? "Бронирование напрямую в отеле" : headerLoading ? <Skeleton width={180} /> : "Выберите даты и номер"}
+              {hotelName ? t.direct : headerLoading ? <Skeleton width={180} /> : t.chooseDates}
             </Typography>
             {(contacts.length > 0 || times) && (
               <Stack direction="row" gap={1.5} rowGap={0.25} flexWrap="wrap" sx={{ mt: 0.75, color: "text.secondary" }}>
@@ -359,22 +384,21 @@ export const HotelPublicBookingPage: React.FC = () => {
 
         {unavailable ? (
           <Alert severity="info" variant="outlined">
-            Бронирование через сайт для этого отеля сейчас недоступно. Свяжитесь с отелем по телефону.
+            {t.unavailable}
           </Alert>
         ) : done ? (
           <Box sx={{ p: { xs: 3, md: 4 }, borderRadius: "20px", bgcolor: "background.paper", border: 1, borderColor: "divider" }}>
             <Stack alignItems="center" textAlign="center" gap={1.5}>
               <CheckCircleOutlined sx={{ fontSize: 56, color: "success.main" }} />
-              <Typography sx={{ fontSize: 22, fontWeight: 700 }}>Заявка принята</Typography>
-              <Typography color="text.secondary">Номер брони</Typography>
+              <Typography sx={{ fontSize: 22, fontWeight: 700 }}>{t.accepted}</Typography>
+              <Typography color="text.secondary">{t.reference}</Typography>
               <Typography sx={{ fontSize: 30, fontWeight: 800, letterSpacing: "0.04em", fontVariantNumeric: "tabular-nums" }}>{done.reference}</Typography>
               <Stack direction="row" alignItems="center" gap={0.75} color="text.secondary">
                 <AccessTimeOutlined fontSize="small" />
-                <Typography variant="body2">Номер зарезервирован до {dayjs(done.expiresAt).format("HH:mm")}</Typography>
+                <Typography variant="body2">{t.heldUntil(dayjs(done.expiresAt).format("HH:mm"))}</Typography>
               </Stack>
               <Typography variant="body2" sx={{ maxWidth: 460 }}>
-                Сумма — {money(done.totalAmount, done.currency)}. Администратор отеля подтвердит бронь и свяжется с вами по телефону {phone}.
-                Если подтверждения не будет до конца резерва, номер вернётся в продажу.
+                {t.acceptedText(money(done.totalAmount, done.currency), phone)}
               </Typography>
             </Stack>
           </Box>
@@ -393,7 +417,7 @@ export const HotelPublicBookingPage: React.FC = () => {
               >
                 <TextField
                   type="date"
-                  label="Заезд"
+                  label={t.checkIn}
                   value={checkIn}
                   onChange={(e) => {
                     setCheckIn(e.target.value);
@@ -403,21 +427,21 @@ export const HotelPublicBookingPage: React.FC = () => {
                 />
                 <TextField
                   type="date"
-                  label="Выезд"
+                  label={t.checkOut}
                   value={checkOut}
                   onChange={(e) => setCheckOut(e.target.value)}
                   slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: checkIn || today } }}
                   error={datesError != null && nights < 1}
-                  helperText={datesError ?? (nights > 0 ? `${nights} ${nightsWord(nights)}` : " ")}
+                  helperText={datesError ?? (nights > 0 ? t.nights(nights) : " ")}
                 />
-                <TextField select label="Взрослых" value={adults} onChange={(e) => setAdults(Number(e.target.value))} slotProps={{ input: { startAdornment: <PeopleOutlineOutlined fontSize="small" sx={{ mr: 1, color: "text.disabled" }} /> } }}>
+                <TextField select label={t.adults} value={adults} onChange={(e) => setAdults(Number(e.target.value))} slotProps={{ input: { startAdornment: <PeopleOutlineOutlined fontSize="small" sx={{ mr: 1, color: "text.disabled" }} /> } }}>
                   {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
                     <MenuItem key={n} value={n}>
                       {n}
                     </MenuItem>
                   ))}
                 </TextField>
-                <TextField select label="Детей" value={children} onChange={(e) => setChildren(Number(e.target.value))}>
+                <TextField select label={t.children} value={children} onChange={(e) => setChildren(Number(e.target.value))}>
                   {Array.from({ length: 9 }, (_, i) => i).map((n) => (
                     <MenuItem key={n} value={n}>
                       {n}
@@ -433,7 +457,7 @@ export const HotelPublicBookingPage: React.FC = () => {
                   disabled={searching || datesError != null}
                   sx={{ height: 56, px: 4, borderRadius: "12px", fontWeight: 700, whiteSpace: "nowrap" }}
                 >
-                  {searching ? "Ищем…" : "Найти номера"}
+                  {searching ? t.searching : t.search}
                 </Button>
               </Box>
             </Box>
@@ -450,13 +474,12 @@ export const HotelPublicBookingPage: React.FC = () => {
               <Box>
                 {availability.results.length === 0 ? (
                   <Alert severity="info" variant="outlined">
-                    На эти даты свободных номеров для {adults + children} {adults + children === 1 ? "гостя" : "гостей"} нет. Попробуйте другие даты.
+                    {t.noRooms(adults + children)}
                   </Alert>
                 ) : (
                   <Stack gap={1.5}>
                     <Typography variant="body2" color="text.secondary">
-                      Заезд {dayjs(availability.checkIn).format("D MMMM")} — выезд {dayjs(availability.checkOut).format("D MMMM")} · {nights} {nightsWord(nights)} · цена за весь
-                      период
+                      {t.periodLine(dayFmt(availability.checkIn), dayFmt(availability.checkOut), t.nights(nights))}
                     </Typography>
                     {availability.results.map((c) => {
                       const on = chosen?.id === c.id;
@@ -474,11 +497,11 @@ export const HotelPublicBookingPage: React.FC = () => {
                             borderColor: on ? "primary.main" : "divider",
                           }}
                         >
-                          {c.photos && c.photos.length > 0 && <CategoryPhoto photos={c.photos} name={c.name} />}
+                          {c.photos && c.photos.length > 0 && <CategoryPhoto photos={c.photos} name={c.name} t={t} />}
                           <Box sx={{ flex: 1, minWidth: 0 }}>
                             <Typography sx={{ fontSize: 18, fontWeight: 700 }}>{c.name}</Typography>
                             <Typography variant="body2" color="text.secondary">
-                              до {c.adultsCapacity + c.childrenCapacity} гостей · осталось {c.available}
+                              {t.capacity(c.adultsCapacity + c.childrenCapacity, c.available)}
                             </Typography>
                             {c.description && (
                               <Typography variant="body2" sx={{ mt: 0.75 }}>
@@ -491,7 +514,7 @@ export const HotelPublicBookingPage: React.FC = () => {
                                   <Chip
                                     size="small"
                                     icon={<RestaurantOutlined />}
-                                    label={HOTEL_BOARD_TYPE_LABELS[c.boardType] ?? c.boardType}
+                                    label={t.board[c.boardType] ?? HOTEL_BOARD_TYPE_LABELS[c.boardType] ?? c.boardType}
                                     color={c.boardType === "none" ? "default" : "success"}
                                     variant="outlined"
                                   />
@@ -499,18 +522,18 @@ export const HotelPublicBookingPage: React.FC = () => {
                                 {(c.amenities ?? []).slice(0, 6).map((a) => (
                                   <Chip key={a} size="small" label={a} variant="outlined" />
                                 ))}
-                                {(c.amenities?.length ?? 0) > 6 && <Chip size="small" label={`ещё ${(c.amenities?.length ?? 0) - 6}`} />}
+                                {(c.amenities?.length ?? 0) > 6 && <Chip size="small" label={t.more((c.amenities?.length ?? 0) - 6)} />}
                               </Stack>
                             )}
                           </Box>
                           <Box sx={{ textAlign: { md: "right" } }}>
                             <Typography sx={{ fontSize: 22, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{money(c.totalAmount, currency)}</Typography>
                             <Typography variant="caption" color="text.secondary">
-                              ≈ {money(Number(c.totalAmount) / Math.max(1, nights), currency)} за ночь
+                              {t.perNight(money(Number(c.totalAmount) / Math.max(1, nights), currency))}
                             </Typography>
                           </Box>
                           <Button variant={on ? "outlined" : "contained"} disableElevation onClick={() => { setChosen(c); setPriceChanged(null); setSendError(null); }} sx={{ borderRadius: "10px", fontWeight: 700, minWidth: 120 }}>
-                            {on ? "Выбрано" : "Выбрать"}
+                            {on ? t.chosen : t.choose}
                           </Button>
                         </Stack>
                       );
@@ -526,22 +549,22 @@ export const HotelPublicBookingPage: React.FC = () => {
                 ref={formRef}
                 sx={{ p: { xs: 2.5, md: 3.5 }, borderRadius: "20px", bgcolor: "background.paper", border: 1, borderColor: "divider", scrollMarginTop: 16 }}
               >
-                <Typography sx={{ fontSize: 18, fontWeight: 700, mb: 0.5 }}>Ваши данные</Typography>
+                <Typography sx={{ fontSize: 18, fontWeight: 700, mb: 0.5 }}>{t.yourDetails}</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  {chosen.name} · {nights} {nightsWord(nights)} · {money(chosen.totalAmount, currency)}. Номер зарезервируется на 30 минут, пока администратор подтвердит бронь.
+                  {chosen.name} · {t.nights(nights)} · {money(chosen.totalAmount, currency)}. {t.holdNote}
                 </Typography>
                 {/* Условия — до того, как гость оставит данные. */}
                 <Stack gap={1} sx={{ mb: 2.5, p: 1.75, borderRadius: "12px", bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
                   <Stack direction="row" gap={1} alignItems="flex-start">
                     <EventBusyOutlined fontSize="small" color="primary" sx={{ mt: 0.25 }} />
                     <Typography variant="body2" sx={{ whiteSpace: "pre-line" }}>
-                      <b>Отмена:</b> {cancellation || "условия отмены администратор назовёт при подтверждении брони."}
+                      <b>{t.cancellation}</b> {cancellation || t.cancellationUnknown}
                     </Typography>
                   </Stack>
                   <Stack direction="row" gap={1} alignItems="flex-start">
                     <PaymentsOutlined fontSize="small" color="primary" sx={{ mt: 0.25 }} />
                     <Typography variant="body2">
-                      <b>Оплата:</b> на сайте ничего платить не нужно — способ и срок оплаты подтвердит администратор.
+                      <b>{t.payment}</b> {t.paymentText}
                     </Typography>
                   </Stack>
                   {times && (
@@ -555,50 +578,50 @@ export const HotelPublicBookingPage: React.FC = () => {
                   {priceChanged && <Alert severity="warning">{priceChanged}</Alert>}
                   {sendError && <Alert severity="error">{sendError}</Alert>}
                   <TextField
-                    label="Имя и фамилия"
+                    label={t.fullName}
                     value={fullName}
                     onChange={(e) => setFullName(sanitizeFieldInput(e.target.value, NAME_RULES))}
                     error={showErrors && nameError != null}
-                    helperText={showErrors ? nameError : undefined}
+                    helperText={showErrors && nameError ? (t.nameError ?? nameError) : undefined}
                     required
                     autoComplete="name"
                   />
                   <Stack direction={{ xs: "column", md: "row" }} gap={2}>
                     <TextField
-                      label="Телефон"
+                      label={t.phone}
                       value={phone}
                       onChange={(e) => setPhone(sanitizeFieldInput(e.target.value, PHONE_RULES))}
                       placeholder="+996 555 000 000"
                       error={showErrors && phoneError != null}
-                      helperText={showErrors ? phoneError : undefined}
+                      helperText={showErrors && phoneError ? (t.phoneError ?? phoneError) : undefined}
                       required
                       autoComplete="tel"
                       slotProps={{ htmlInput: { inputMode: "tel" } }}
                       sx={{ flex: 1 }}
                     />
                     <TextField
-                      label="Эл. почта"
+                      label={t.email}
                       value={email}
                       onChange={(e) => setEmail(sanitizeFieldInput(e.target.value, EMAIL_RULES))}
                       error={email !== "" && emailError != null}
-                      helperText={email !== "" ? emailError : "Необязательно"}
+                      helperText={email !== "" && emailError ? (t.emailError ?? emailError) : t.optional}
                       autoComplete="email"
                       sx={{ flex: 1 }}
                     />
                   </Stack>
-                  <TextField label="Пожелания" value={comment} onChange={(e) => setComment(e.target.value.slice(0, 500))} placeholder="Поздний заезд, детская кроватка…" multiline minRows={2} />
+                  <TextField label={t.wishes} value={comment} onChange={(e) => setComment(e.target.value.slice(0, 500))} placeholder={t.wishesPlaceholder} multiline minRows={2} />
                   <FormControlLabel
                     control={<Checkbox checked={consent} onChange={(e) => setConsent(e.target.checked)} />}
-                    label={<Typography variant="body2">Согласен(на) на обработку персональных данных для бронирования</Typography>}
+                    label={<Typography variant="body2">{t.consent}</Typography>}
                     sx={{ alignItems: "flex-start", "& .MuiCheckbox-root": { pt: 0.5 } }}
                   />
                   {showErrors && !consent && (
                     <Typography variant="caption" color="error" sx={{ mt: -1.5 }}>
-                      Без согласия заявку отправить нельзя
+                      {t.consentRequired}
                     </Typography>
                   )}
                   <Button variant="contained" disableElevation size="large" onClick={() => void submit()} disabled={sending} sx={{ alignSelf: { md: "flex-start" }, px: 4, borderRadius: "12px", fontWeight: 700 }}>
-                    {sending ? "Отправляем…" : "Отправить заявку"}
+                    {sending ? t.sending : t.send}
                   </Button>
                 </Stack>
               </Box>
