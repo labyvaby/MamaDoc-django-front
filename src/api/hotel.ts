@@ -1432,6 +1432,8 @@ export interface HotelReservationCreateData {
   dataConsent?: boolean;
   allowOverbooking?: boolean;
   holdMinutes?: number;
+  /** "HH:MM" — во сколько приедет гость, со слов гостя. */
+  expectedArrivalTime?: string;
   /** Юрлицо из справочника: скидка идёт на проживание, не на допуслуги. */
   corporateAccountId?: number | null;
   /** Сумма, которую видел гость; при расхождении 409 PRICE_CHANGED. Для корпоративной — после скидки. */
@@ -1483,6 +1485,8 @@ export interface HotelReservation {
   version: number;
   checkIn: string | null;
   checkOut: string | null;
+  /** Во сколько приедет гость, со слов гостя: "14:30" по часам объекта или null (hotel-roster §10.4). */
+  expectedArrivalTime?: string | null;
   items: HotelReservationItem[];
   createdById: number | null;
   createdByName: string;
@@ -1522,6 +1526,8 @@ export interface HotelReservationListParams {
 
 export interface HotelReservationUpdateData {
   version?: number;
+  /** "HH:MM" ставит, null очищает, поле не передано — не трогает. */
+  expectedArrivalTime?: string | null;
   customerId?: number | null;
   clearCustomer?: boolean;
   source?: string;

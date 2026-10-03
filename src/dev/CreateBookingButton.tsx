@@ -271,6 +271,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // Дополнительно
   const [bookingSource, setBookingSource] = React.useState("");
   const [specialRequests, setSpecialRequests] = React.useState("");
+  // Во сколько приедет, со слов гостя ("HH:MM") — ресепшен видит в «Кто сегодня заедет».
+  const [arrivalTime, setArrivalTime] = React.useState("");
   const [companyInfo, setCompanyInfo] = React.useState("");
   // Юрлицо из справочника: скидка идёт на проживание, бэк сам пересчитает сумму.
   const [corporateId, setCorporateId] = React.useState<number | "">("");
@@ -335,6 +337,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     clearScanNotice();
     setBookingSource("");
     setSpecialRequests("");
+    setArrivalTime("");
     setCompanyInfo("");
     setCorporateOther(false);
     setDataConsent(false);
@@ -857,6 +860,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           ? { customerId: selectedClientId }
           : { customer: { fullName: guestName.trim(), phone: orUndefined(guestPhone) ?? "", email: orUndefined(guestEmail) ?? "", source: bookingSource || "" } }),
         guestComment: orUndefined(specialRequests) ?? "",
+        ...(arrivalTime ? { expectedArrivalTime: arrivalTime } : {}),
         companyInfo: orUndefined(companyInfo) ?? "",
         corporateAccountId: corporateId === "" ? undefined : corporateId,
         dataConsent,
@@ -1879,6 +1883,15 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         fullWidth
                       />
                     )}
+                    <TextField
+                      type="time"
+                      label="Приедет около"
+                      value={arrivalTime}
+                      onChange={(e) => setArrivalTime(e.target.value)}
+                      helperText="Со слов гостя — необязательно"
+                      slotProps={{ inputLabel: { shrink: true } }}
+                      sx={{ width: { xs: "100%", sm: 220 } }}
+                    />
                     <FormField
                       icon={<ChatBubbleOutlineOutlined />}
                       rules={GUEST_RULES.comment}
