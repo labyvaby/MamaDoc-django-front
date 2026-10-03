@@ -94,7 +94,7 @@ import { CASHLESS_METHODS_ENABLED } from "../api/cashlessMethods";
 import { CashlessMethodSelect } from "../components/ui";
 import { useCashlessMethods } from "../hooks/useCashlessMethods";
 import { useHotelProperty } from "./useHotelProperty";
-import { ExpectedArrivalTime } from "./ExpectedArrivalTime";
+import { ReservationStayTime } from "./ReservationStayTime";
 import {
   mapStayDisplayStatus,
   HOTEL_STAY_STATUS_LABELS,
@@ -458,20 +458,31 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
           { label: "Гости", value: `${item.adults} взр.${item.children > 0 ? ` + ${item.children} дет.` : ""}` },
           { label: "Питание", value: HOTEL_BOARD_TYPE_LABELS[item.boardType] ?? item.boardType },
           { label: "Источник", value: HOTEL_BOOKING_SOURCE_LABELS[reservation.source] ?? reservation.source },
-          // Время со слов гостя — пока не заселился (и после, если его назвали).
-          ...("expectedArrivalTime" in reservation && (item.stayStatus === "expected" || reservation.expectedArrivalTime)
-            ? [
-                {
-                  label: "Приедет",
-                  value: (
-                    <ExpectedArrivalTime
-                      reservation={reservation}
-                      canEdit={Boolean(canManageReservation) && item.stayStatus === "expected" && CANCELLABLE_STATUSES.has(reservation.status)}
-                    />
-                  ),
-                },
-              ]
-            : []),
+          // Время брони (ранний заезд, поздний выезд) или правило объекта; после заселения / выезда — факт.
+          {
+            label: `Заезд ${dayjs(item.checkIn).format("D MMM")}`,
+            value: (
+              <ReservationStayTime
+                kind="arrival"
+                reservation={reservation}
+                ruleTime={property?.checkInTime}
+                actualAt={item.checkedInAt}
+                canEdit={Boolean(canManageReservation) && item.stayStatus === "expected" && CANCELLABLE_STATUSES.has(reservation.status)}
+              />
+            ),
+          },
+          {
+            label: `Выезд ${dayjs(item.checkOut).format("D MMM")}`,
+            value: (
+              <ReservationStayTime
+                kind="departure"
+                reservation={reservation}
+                ruleTime={property?.checkOutTime}
+                actualAt={item.checkedOutAt}
+                canEdit={Boolean(canManageReservation) && item.stayStatus !== "checked_out" && CANCELLABLE_STATUSES.has(reservation.status)}
+              />
+            ),
+          },
           ...(reservation.guaranteeMethod
             ? [{ label: "Гарантия", value: HOTEL_GUARANTEE_METHOD_LABELS[reservation.guaranteeMethod] ?? reservation.guaranteeMethod }]
             : []),

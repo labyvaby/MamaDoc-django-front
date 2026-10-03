@@ -24,7 +24,8 @@ const change = (log: HotelReservationLog, map?: Record<string, string>) =>
 
 /** Поля брони в записях "updated". */
 const RESERVATION_FIELDS: Record<string, string> = {
-  expected_arrival_time: "Время заезда со слов гостя",
+  expected_arrival_time: "Время заезда",
+  expected_departure_time: "Время выезда",
   guest_comment: "Пожелания гостя",
   internal_note: "Заметка",
   source: "Источник",
