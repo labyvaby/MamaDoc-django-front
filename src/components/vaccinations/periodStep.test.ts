@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import dayjs from "dayjs";
-import { canGoForward, periodLabel, shiftPeriod } from "./periodStep";
+import { canGoForward, periodBounds, periodLabel, shiftPeriod } from "./periodStep";
 
 describe("PeriodStepper", () => {
   it("подпись словами", () => {
@@ -20,5 +20,13 @@ describe("PeriodStepper", () => {
     expect(canGoForward("2026-09", "month", today)).toBe(false);
     expect(canGoForward("2025-03", "year", today)).toBe(true);
     expect(canGoForward("2026-03", "year", today)).toBe(false);
+  });
+});
+
+describe("periodBounds", () => {
+  it("месяц и год целиком", () => {
+
+    expect(periodBounds("2026-02", "month")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+    expect(periodBounds("2026-09", "year")).toEqual({ from: "2026-01-01", to: "2026-12-31" });
   });
 });

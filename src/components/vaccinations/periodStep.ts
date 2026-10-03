@@ -23,3 +23,12 @@ export function canGoForward(month: string, mode: PeriodMode, today = dayjs()): 
   const next = dayjs(`${shiftPeriod(month, mode, 1)}-01`).startOf(mode);
   return !next.isAfter(today.startOf(mode));
 }
+
+/** Границы периода «YYYY-MM» как дат: весь месяц или весь год. */
+export function periodBounds(month: string, mode: PeriodMode): { from: string; to: string } {
+  const d = dayjs(`${month}-01`);
+  return {
+    from: d.startOf(mode).format("YYYY-MM-DD"),
+    to: d.endOf(mode).format("YYYY-MM-DD"),
+  };
+}

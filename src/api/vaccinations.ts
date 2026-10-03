@@ -289,6 +289,8 @@ export interface VaccinationRecord {
   doseNumber: number;
   injectionSite: InjectionSite;
   administeredBy: VaccinationAdministeredBy | null;
+  /** Врач приёма, к которому привязана доза (назначил); нет — внешняя или без приёма. */
+  prescribedBy?: VaccinationAdministeredBy | null;
   isExternal: boolean;
   batchNumberManual: string;
   expiresAtManual: string | null;
@@ -332,6 +334,7 @@ export interface RecordsFilters {
   /** "draft" — только «Не оформлено»; "pending" — только проведённые; по умолчанию — все, кроме отменённых. */
   status?: "draft" | "pending";
   administeredById?: number;
+  vaccineId?: number;
   /** Проведённые прививки пациентов без ИНН («Дополнить ИНН»). */
   missingInn?: boolean;
   organizationId?: number;
@@ -931,6 +934,14 @@ export function getRecords(
       list = list.filter((r) => r.appointmentId === filters.appointmentId);
     return mockDelay(list);
   }
+  const qs = recordsQuery(filters);
+  return apiRequest<{ results: VaccinationRecord[] } | VaccinationRecord[]>(
+    `/vaccinations/records/${qs ? `?${qs}` : ""}`,
+    { signal },
+  ).then(toList);
+}
+
+function recordsQuery(filters: RecordsFilters): string {
   const q = new URLSearchParams();
   if (filters.patientId != null) q.set("patientId", String(filters.patientId));
   if (filters.branchId != null) q.set("branchId", String(filters.branchId));
@@ -939,15 +950,44 @@ export function getRecords(
   if (filters.appointmentId != null) q.set("appointmentId", String(filters.appointmentId));
   if (filters.status) q.set("status", filters.status);
   if (filters.administeredById != null) q.set("administeredById", String(filters.administeredById));
+  if (filters.vaccineId != null) q.set("vaccineId", String(filters.vaccineId));
   if (filters.missingInn) q.set("missingInn", "1");
   if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
   if (filters.offset != null) q.set("offset", String(filters.offset));
   if (filters.limit != null) q.set("limit", String(filters.limit));
-  const qs = q.toString();
-  return apiRequest<{ results: VaccinationRecord[] } | VaccinationRecord[]>(
-    `/vaccinations/records/${qs ? `?${qs}` : ""}`,
-    { signal },
-  ).then(toList);
+  return q.toString();
+}
+
+export interface RecordsSummaryBucket {
+  key: string;
+  label: string;
+  count: number;
+}
+
+/** Итоги записей за период под теми же фильтрами, что и лента. */
+export interface RecordsSummary {
+  count: number;
+  /** Сделано у нас (со склада). */
+  ours: number;
+  external: number;
+  /** Разных детей. */
+  patients: number;
+  /** Сумма по нашим прививкам: цена − скидка, строка-decimal. */
+  amount: string;
+  byVaccine: { vaccineId: number; vaccineName: string; count: number; amount: string }[];
+  /** Дети по полу: female / male / unknown. */
+  bySex: RecordsSummaryBucket[];
+  /** Прививки по возрасту ребёнка на день прививки: lt1, 1to2, 2to7, 7to14, gte14, unknown. */
+  byAge: RecordsSummaryBucket[];
+  byMonth: { month: string; count: number; amount: string }[];
+}
+
+export function getRecordsSummary(
+  filters: Omit<RecordsFilters, "offset" | "limit"> = {},
+  signal?: AbortSignal,
+): Promise<RecordsSummary> {
+  const qs = recordsQuery(filters);
+  return apiRequest<RecordsSummary>(`/vaccinations/records/summary/${qs ? `?${qs}` : ""}`, { signal });
 }
 
 /**

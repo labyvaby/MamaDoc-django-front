@@ -81,9 +81,27 @@ export function formatDays(days: number, short = true): string {
   return short ? `${days} дн.` : `${days} ${plural(days, "день", "дня", "дней")}`;
 }
 
-/** Возраст строки календаря для таблицы: «При рождении», «105 дн.», «11 лет 6 мес.». */
+const DAYS_PER_MONTH = 30.4375;
+
+/**
+ * Дни → месяцы, как говорят врачи: 105 дн. → «3,5 мес.», 61 дн. → «2 мес.».
+ * Округляем до полумесяца, если ошибка не больше 4 дней; иначе и в первый
+ * месяц жизни — днями («7 дн.»).
+ */
+export function formatAgeDays(days: number): string {
+  if (days >= 28) {
+    const half = Math.round((days / DAYS_PER_MONTH) * 2) / 2;
+    if (Math.abs(half * DAYS_PER_MONTH - days) <= 4) {
+      if (Number.isInteger(half)) return formatMonths(half);
+      if (half < 12) return `${Math.floor(half)},5 мес.`;
+    }
+  }
+  return formatDays(days);
+}
+
+/** Возраст строки календаря для таблицы: «При рождении», «3,5 мес.», «11 лет 6 мес.». */
 export function formatRowAge(row: Pick<CalendarTemplateRow, "ageMonths" | "ageDays">): string {
-  if (row.ageDays != null) return row.ageDays === 0 ? "При рождении" : formatDays(row.ageDays);
+  if (row.ageDays != null) return row.ageDays === 0 ? "При рождении" : formatAgeDays(row.ageDays);
   return row.ageMonths === 0 ? "При рождении" : formatMonths(row.ageMonths);
 }
 
