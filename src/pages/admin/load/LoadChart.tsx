@@ -32,6 +32,9 @@ export const LoadChart: React.FC<Props> = ({ metric, buckets }) => {
   );
 
   const peakValue = useMemo(() => data.reduce((m, d) => Math.max(m, d.value ?? 0), 0), [data]);
+  // Подписи недель («28.09–04.10») шире точки: без отступа крайние
+  // срезаются краем графика.
+  const wideLabels = data.some((d) => d.label.length > 6);
 
   const primaryColor = theme.palette.primary.main;
   const peakColor = theme.palette.error.main;
@@ -81,6 +84,7 @@ export const LoadChart: React.FC<Props> = ({ metric, buckets }) => {
           minTickGap={isMobile ? 24 : 16}
           tick={{ fontSize: isMobile ? 10 : 12, fill: theme.palette.text.secondary }}
           interval={isMobile ? "preserveStartEnd" : 0}
+          padding={wideLabels ? { left: 28, right: 36 } : undefined}
         />
         <YAxis
           tick={{ fontSize: isMobile ? 10 : 12, fill: theme.palette.text.secondary }}
