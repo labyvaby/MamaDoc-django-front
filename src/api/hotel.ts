@@ -1402,6 +1402,8 @@ export interface HotelReservationItem {
   checkedOutAt: string | null;
   guests: HotelReservationGuest[];
   nights: HotelReservationNight[];
+  /** Процентная скидка номера ("10.00") или null — PATCH …/pricing/ (hotel-roster-and-price-overrides §4). */
+  discountPercent?: string | null;
 }
 
 export interface HotelCustomerInput {
