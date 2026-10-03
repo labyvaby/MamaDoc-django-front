@@ -51,6 +51,7 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import AutoFixHighOutlined from "@mui/icons-material/AutoFixHighOutlined";
+import EventRepeatOutlined from "@mui/icons-material/EventRepeatOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -58,7 +59,7 @@ import { useSnackbar } from "notistack";
 
 import { ApiError, getErrorMessage } from "../api/client";
 import { createExpense, createExpenseCategory, getExpenseCategories } from "../api/expenses";
-import { listRooms, type HotelShiftOverlap, type HotelStaffPost, type HotelStaffRole, type HotelStaffShift, type HotelStaffShiftInput } from "../api/hotel";
+import { listRooms, listStaffShifts, type HotelShiftOverlap, type HotelStaffPost, type HotelStaffRole, type HotelStaffShift, type HotelStaffShiftInput } from "../api/hotel";
 import { useCan } from "../hooks/useCan";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { usePermissions } from "../hooks/usePermissions";
@@ -70,6 +71,8 @@ import WarningAmberRounded from "@mui/icons-material/WarningAmberRounded";
 import { FilterChip, HotelPage, HotelPageHeader, plural, Surface, useHotelTableSx } from "./hotelUi";
 import { downloadXlsx } from "./hotelXlsx";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
+import { rotationAppliedMessage, rotationFill, rotationLabel } from "./staffRotation";
+import { StaffRotationDialog, type RotationApply } from "./StaffRotationDialog";
 import { initialsOf } from "./mockDemoData";
 import type { RosterEmployee } from "./staffRosterDemo";
 import { useHotelProperty } from "./useHotelProperty";
@@ -184,6 +187,10 @@ const GridTab: React.FC<{
   const dark = theme.palette.mode === "dark";
   const { enqueueSnackbar } = useSnackbar();
   const save = useSaveShifts(propertyId, isDemo);
+  const savePost = useSaveStaffPost(propertyId, isDemo);
+  const [rotationPost, setRotationPost] = React.useState<HotelStaffPost | null>(null);
+  // Повторяющийся график уже заполнял этот месяц — второй раз (после отказа или 409) не лезем.
+  const autoFilled = React.useRef("");
   const [highlight, setHighlight] = React.useState<number | null>(null);
   const [picker, setPicker] = React.useState<{ el: HTMLElement; post: HotelStaffPost; date: string } | null>(null);
   const [q, setQ] = React.useState("");
@@ -247,6 +254,60 @@ const GridTab: React.FC<{
     }
     void apply(inputs, `Заполнено ${inputs.length} ${plural(inputs.length, "смена", "смены", "смен")} по прошлой неделе`);
   };
+
+  // «График работы» поста: сохранить очередь у поста и поставить смены в пустые дни — ручные не трогаем.
+  const applyRotation = async ({ rotation, to }: RotationApply) => {
+    const post = rotationPost;
+    if (!post) return;
+    const monthStart = D(month.startOf("month"));
+    const monthEnd = D(month.endOf("month"));
+    const from = rotation.startDate > monthStart ? rotation.startDate : monthStart;
+    try {
+      // Следующий месяц в сетке не загружен — его смены нужны, чтобы не затереть расставленные вручную.
+      const ahead = to > monthEnd && !isDemo ? await listStaffShifts({ propertyId, from: D(month.add(1, "month").startOf("month")), to }) : [];
+      const taken = new Set([...shifts, ...ahead].filter((s) => s.postId === post.id).map((s) => s.date));
+      const inputs: HotelStaffShiftInput[] = rotationFill(rotation, from, to, taken).map((x) => ({ postId: post.id, date: x.date, employeeId: x.employeeId }));
+      let stored = isDemo;
+      if (!isDemo) {
+        const saved = await savePost.mutateAsync({ id: post.id, data: { rotation } });
+        stored = typeof saved === "object" && saved != null && "rotation" in saved;
+      }
+      setRotationPost(null);
+      if (inputs.length === 0) enqueueSnackbar("Пустых дней под график нет — всё уже расставлено", { variant: "info" });
+      else await apply(inputs, rotationAppliedMessage(inputs.length, rotationLabel(rotation, name)));
+      if (!stored) enqueueSnackbar("Сервер пока не хранит график работы: смены расставлены, а повтор включится после обновления сервера", { variant: "warning" });
+    } catch (err) {
+      enqueueSnackbar(getErrorMessage(err, "Не удалось сохранить график работы"), { variant: "error" });
+    }
+  };
+  const clearRotation = async (post: HotelStaffPost) => {
+    try {
+      if (!isDemo) await savePost.mutateAsync({ id: post.id, data: { rotation: null } });
+      setRotationPost(null);
+      enqueueSnackbar("График работы убран — расставленные смены остались", { variant: "success" });
+    } catch (err) {
+      enqueueSnackbar(getErrorMessage(err, "Не удалось убрать график"), { variant: "error" });
+    }
+  };
+  // «Повторять этот график»: при входе в месяц пустые будущие дни постов с повтором заполняются
+  // сами — прошлое не переписываем (по нему уже считается зарплата), и один раз на месяц.
+  React.useEffect(() => {
+    if (!canManage || isDemo || save.isPending) return;
+    const key = D(month);
+    if (autoFilled.current === key) return;
+    const monthEnd = D(month.endOf("month"));
+    const inputs: HotelStaffShiftInput[] = [];
+    for (const p of posts) {
+      if (!p.rotation?.repeat) continue;
+      const from = [D(month.startOf("month")), todayStr, p.rotation.startDate].sort().pop()!;
+      if (from > monthEnd) continue;
+      const taken = new Set(shifts.filter((s) => s.postId === p.id).map((s) => s.date));
+      for (const x of rotationFill(p.rotation, from, monthEnd, taken)) inputs.push({ postId: p.id, date: x.date, employeeId: x.employeeId });
+    }
+    autoFilled.current = key;
+    if (inputs.length > 0) void apply(inputs, `График повторён: ${inputs.length} ${plural(inputs.length, "смена", "смены", "смен")}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posts, shifts, month, canManage, isDemo]);
 
   const exportXlsx = async () => {
     await downloadXlsx(`График персонала ${month.format("MM.YYYY")}.xlsx`, [
@@ -325,6 +386,15 @@ const GridTab: React.FC<{
           </Button>
         </DialogActions>
       </Dialog>
+      <StaffRotationDialog
+        post={rotationPost}
+        month={month}
+        employees={employees}
+        busy={save.isPending || savePost.isPending}
+        onClose={() => setRotationPost(null)}
+        onApply={(a) => void applyRotation(a)}
+        onClear={(p) => void clearRotation(p)}
+      />
       {overlaps.size > 0 && (
         <Alert severity="warning" variant="outlined" icon={<WarningAmberRounded fontSize="inherit" />}>
           {overlapPeople} {plural(overlapPeople, "сотрудник стоит", "сотрудника стоят", "сотрудников стоят")} в двух сменах одновременно — такие ячейки
@@ -393,6 +463,18 @@ const GridTab: React.FC<{
                         {STAFF_ROLE_EMOJI[p.role]}
                       </Box>
                       <Typography sx={{ fontWeight: 800, fontSize: 14 }}>{p.name}</Typography>
+                      {canManage && (
+                        <Tooltip title={p.rotation ? `График работы: ${rotationLabel(p.rotation, name)}${p.rotation.repeat ? " · повторяется" : ""}` : "График работы: очередь сотрудников и повтор"}>
+                          <IconButton
+                            size="small"
+                            aria-label={`График работы: ${p.name}`}
+                            onClick={() => setRotationPost(p)}
+                            sx={{ ml: "auto", color: p.rotation ? "primary.main" : "text.disabled" }}
+                          >
+                            <EventRepeatOutlined sx={{ fontSize: 17 }} />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                     </Stack>
                     <Typography variant="caption" color="text.secondary" component="div" noWrap>
                       {shiftTimeLabel(p)} · {fmtMoney(p.rate)}
