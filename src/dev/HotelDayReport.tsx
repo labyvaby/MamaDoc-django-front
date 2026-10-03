@@ -52,6 +52,9 @@ export const HotelDayReport: React.FC<{ propertyId: number; propertyName?: strin
   const moneyTicks = React.useMemo(() => niceTicks(Math.max(0, ...revenueByCategory.map((c) => c.value))), [revenueByCategory]);
 
   const rowStatus = (row: HotelDailyReportRow) => {
+    // Бронь есть, гостя нет: не занят и не выручка (сервер считает так же).
+    if (row.occupancy === "not_arrived") return { label: "Не заехал", color: theme.palette.error.main };
+    if (row.occupancy === "left") return { label: "Выехал", color: theme.palette.text.disabled };
     if (row.occupancy === "occupied" && row.stayStatus) {
       const status = mapStayDisplayStatus(row.stayStatus);
       return { label: HOTEL_STAY_STATUS_LABELS[status], color: hotelStayStatusColor(status, theme) };
@@ -199,7 +202,16 @@ export const HotelDayReport: React.FC<{ propertyId: number; propertyName?: strin
                               {row.guestName}
                             </Typography>
                             {row.nightPrice && (
-                              <Typography variant="body2" sx={{ fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontWeight: 600,
+                                  fontVariantNumeric: "tabular-nums",
+                                  whiteSpace: "nowrap",
+                                  color: row.occupancy === "occupied" ? "text.primary" : "text.disabled",
+                                  textDecoration: row.occupancy === "occupied" ? "none" : "line-through",
+                                }}
+                              >
                                 {fmtMoney(row.nightPrice, report.currency)}
                               </Typography>
                             )}
@@ -269,7 +281,14 @@ export const HotelDayReport: React.FC<{ propertyId: number; propertyName?: strin
                             </TableCell>
                             <TableCell
                               align="right"
-                              sx={{ pr: 2.5, fontVariantNumeric: "tabular-nums", fontWeight: row.nightPrice ? 600 : 400, color: row.nightPrice ? "text.primary" : "text.disabled" }}
+                              sx={{
+                              pr: 2.5,
+                              fontVariantNumeric: "tabular-nums",
+                              fontWeight: row.nightPrice ? 600 : 400,
+                              color: row.nightPrice && row.occupancy === "occupied" ? "text.primary" : "text.disabled",
+                              textDecoration: row.nightPrice && row.occupancy !== "occupied" ? "line-through" : "none",
+                            }}
+                            title={row.nightPrice && row.occupancy !== "occupied" ? "Не считается: гостя в номере нет" : undefined}
                             >
                               {row.nightPrice ? Number(row.nightPrice).toLocaleString("ru-RU") : "—"}
                             </TableCell>

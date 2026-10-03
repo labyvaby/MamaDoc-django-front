@@ -7,6 +7,7 @@ import {
   balanceTotals,
   breakfastCount,
   dailySeries,
+  notArrivedSummary,
   deltaPercent,
   inWindow,
   revenueByCategory,
@@ -102,6 +103,7 @@ describe("dailySeries", () => {
       [reservation(), reservation({ id: 2, status: "cancelled" })],
       "2026-09-30",
       "2026-10-02",
+      "2026-09-30",
     );
     expect(series.map((p) => [p.date, p.soldRooms, p.revenue])).toEqual([
       ["2026-09-30", 0, 0],
@@ -111,14 +113,34 @@ describe("dailySeries", () => {
   });
 
   it("пропускает снятые с брони номера", () => {
-    const series = dailySeries([reservation({ items: [item({ isActive: false })] })], "2026-10-01", "2026-10-01");
+    const series = dailySeries([reservation({ items: [item({ isActive: false })] })], "2026-10-01", "2026-10-01", "2026-09-30");
     expect(series[0].soldRooms).toBe(0);
+  });
+
+  it("не заехавший гость — не выручка, пока ждём заезда — считается; уехавший раньше — только прожитые ночи; цена после скидки", () => {
+    const list = [reservation()];
+    // Сегодня 2 октября, заезд был 1-го, гость так и не заселился.
+    expect(dailySeries(list, "2026-10-01", "2026-10-02", "2026-10-02").map((p) => p.revenue)).toEqual([0, 0]);
+    // Сегодня 1 октября — ждём заезда, ночи на месте.
+    expect(dailySeries(list, "2026-10-01", "2026-10-02", "2026-10-01").map((p) => p.revenue)).toEqual([3000, 3000]);
+    const left = [reservation({ items: [item({ stayStatus: "checked_out", checkedOutAt: "2026-10-02T10:00:00+06:00" })] })];
+    expect(dailySeries(left, "2026-10-01", "2026-10-02", "2026-10-05").map((p) => p.soldRooms)).toEqual([1, 0]);
+    const discounted = [reservation({ items: [item({ nights: [{ date: "2026-10-01", price: "3000", discount: "500", ratePlanName: "" }] })] })];
+    expect(dailySeries(discounted, "2026-10-01", "2026-10-01", "2026-09-30")[0].revenue).toBe(2500);
+  });
+});
+
+describe("notArrivedSummary", () => {
+  it("брони, ночи и сумма тех, кто не заехал — только после дня заезда", () => {
+    const list = [reservation(), reservation({ id: 2, items: [item({ stayStatus: "checked_in" })] })];
+    expect(notArrivedSummary(list, "2026-10-01", "2026-10-31", "2026-10-03")).toEqual({ reservations: 1, nights: 2, revenue: 6000 });
+    expect(notArrivedSummary(list, "2026-10-01", "2026-10-31", "2026-10-01")).toEqual({ reservations: 0, nights: 0, revenue: 0 });
   });
 });
 
 describe("revenueByCategory", () => {
   it("режет ночи по периоду и считает ADR", () => {
-    const rows = revenueByCategory([reservation()], "2026-10-02", "2026-10-31");
+    const rows = revenueByCategory([reservation()], "2026-10-02", "2026-10-31", "2026-09-30");
     expect(rows).toEqual([{ key: "10", label: "Standard", nights: 1, revenue: 3000, adr: 3000, reservations: 1 }]);
   });
 });
@@ -235,9 +257,11 @@ describe("breakfastCount", () => {
       reservation({ id: 2, items: [item({ boardType: "none" })] }),
       reservation({ id: 3, items: [item({ checkIn: "2026-10-02", checkOut: "2026-10-04", adults: 1, children: 1 })] }),
     ];
-    expect(breakfastCount(list, "2026-10-01")).toBe(0);
-    expect(breakfastCount(list, "2026-10-02")).toBe(2);
-    expect(breakfastCount(list, "2026-10-03")).toBe(4);
+    expect(breakfastCount(list, "2026-10-01", "2026-09-30")).toBe(0);
+    expect(breakfastCount(list, "2026-10-02", "2026-09-30")).toBe(2);
+    expect(breakfastCount(list, "2026-10-03", "2026-09-30")).toBe(4);
+    // Сегодня 2-е: первый гость так и не заехал 1-го — его двоих не кормим, второй заезжает сегодня — считается.
+    expect(breakfastCount(list, "2026-10-03", "2026-10-02")).toBe(2);
   });
 });
 

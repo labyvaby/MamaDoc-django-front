@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { HotelReservation } from "../api/hotel";
-import { inHouseCounts, isGuestDebt, isNoShowCandidate, isStayingOn } from "./hotelInHouse";
+import { inHouseCounts, isGuestDebt, isNoShowCandidate, isStayingOn, leftOnDate, nightCounts } from "./hotelInHouse";
 
 const TODAY = "2026-10-03";
 
@@ -64,5 +64,25 @@ describe("незаезд — не долг", () => {
     expect(isGuestDebt(booking([item("2026-10-02", "2026-10-05", "checked_in")], { balanceDue: "5400" }))).toBe(true);
     expect(isGuestDebt(booking([item("2026-10-02", "2026-10-03", "checked_out")], { balanceDue: "100" }))).toBe(true);
     expect(isGuestDebt(booking([item("2026-10-02", "2026-10-05", "checked_in")], { balanceDue: "0" }))).toBe(false);
+  });
+});
+
+describe("nightCounts — ночь продана, как stayed_nights на сервере", () => {
+  const stay = (over: Partial<Parameters<typeof nightCounts>[0]> = {}) => ({ checkIn: "2026-10-01", checkOut: "2026-10-04", stayStatus: "expected", isActive: true, checkedOutAt: null, ...over });
+
+  it("ждём заезда — считается, день заезда прошёл — нет", () => {
+    expect(nightCounts(stay(), "2026-10-02", "2026-10-01")).toBe(true);
+    expect(nightCounts(stay(), "2026-10-02", "2026-10-02")).toBe(false);
+    expect(nightCounts(stay(), "2026-10-03", "2026-10-02")).toBe(false);
+  });
+
+  it("выехал — ночи с местного дня выезда не считаются", () => {
+    const left = stay({ stayStatus: "checked_out", checkedOutAt: "2026-10-02T10:00:00+06:00" });
+    expect(leftOnDate(left.checkedOutAt)).toBe("2026-10-02");
+    expect(nightCounts(left, "2026-10-01", "2026-10-05")).toBe(true);
+    expect(nightCounts(left, "2026-10-02", "2026-10-05")).toBe(false);
+    expect(nightCounts(stay({ stayStatus: "checked_in" }), "2026-10-03", "2026-10-05")).toBe(true);
+    expect(nightCounts(stay({ isActive: false }), "2026-10-01", "2026-09-01")).toBe(false);
+    expect(nightCounts(stay(), "2026-10-04", "2026-09-01")).toBe(false);
   });
 });

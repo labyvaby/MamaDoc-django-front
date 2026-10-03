@@ -40,6 +40,7 @@ import {
   fetchAllReservations,
   fetchPaymentRegister,
   reservationCheckIn,
+  notArrivedSummary,
   revenueByCategory,
   revenueBySource,
   summarizeExpenses,
@@ -109,19 +110,25 @@ export const HotelOwnerReport: React.FC<{
   const occ = occupancyQuery.data;
   const prev = prevQuery.data;
   const reservations = React.useMemo(() => reservationsQuery.data?.rows ?? [], [reservationsQuery.data]);
+  const todayStr = D(today);
+  // Старый сервер считает не заехавших в выручке — тогда и график с разбивками считаем по-старому,
+  // чтобы цифры на одной странице сходились между собой; новый (есть notArrived) — по прожитым ночам.
+  const serverExcludesMissed = occ == null || "notArrived" in occ;
+  const asOf = serverExcludesMissed ? todayStr : null;
   const series = React.useMemo(
     () =>
-      dailySeries(reservations, from, to).map((p) => ({
+      dailySeries(reservations, from, to, asOf).map((p) => ({
         ...p,
         label: dayjs(p.date).format(days > 45 ? "DD.MM" : "D MMM"),
         occupancy: roomsCount > 0 ? Math.round((p.soldRooms / roomsCount) * 1000) / 10 : 0,
       })),
-    [reservations, from, to, roomsCount, days],
+    [reservations, from, to, asOf, roomsCount, days],
   );
   const moneyTicks = React.useMemo(() => niceTicks(Math.max(0, ...series.map((p) => p.revenue))), [series]);
-  const categories = React.useMemo(() => revenueByCategory(reservations, from, to), [reservations, from, to]);
-  const sources = React.useMemo(() => revenueBySource(reservations, from, to, sourceLabel), [reservations, from, to]);
-  const todayStr = D(today);
+  const categories = React.useMemo(() => revenueByCategory(reservations, from, to, asOf), [reservations, from, to, asOf]);
+  const sources = React.useMemo(() => revenueBySource(reservations, from, to, sourceLabel, asOf), [reservations, from, to, asOf]);
+  // Не заехали и незаезд не закрыт — считаем по тем же броням, что и график (сервер отдаёт то же в occ.notArrived).
+  const missed = React.useMemo(() => notArrivedSummary(reservations, from, to, todayStr), [reservations, from, to, todayStr]);
   const debtors = React.useMemo(
     () =>
       reservations
@@ -345,6 +352,33 @@ export const HotelOwnerReport: React.FC<{
                 hint="выручка на номер"
               />
             </Box>
+            {(missed.reservations > 0 || Number(occ.leftEarlyNights ?? 0) > 0) && (
+              <Alert
+                severity="warning"
+                variant="outlined"
+                sx={{ mt: 1.5 }}
+                action={
+                  <Button color="inherit" size="small" onClick={() => navigate("/reception")}>
+                    На ресепшен
+                  </Button>
+                }
+              >
+                {missed.reservations > 0 && (
+                  <>
+                    Не заехали, незаезд не закрыт: {bookingsLabel(missed.reservations)} · {missed.nights} {plural(missed.nights, "ночь", "ночи", "ночей")} ·{" "}
+                    {fmtMoney(missed.revenue, cur)}
+                    {serverExcludesMissed ? " — не в выручке, не в загрузке и не в долгах." : " — пока в выручке и загрузке (сервер до обновления), но не в долгах."} Заселите гостя или закройте день.
+                  </>
+                )}
+                {Number(occ.leftEarlyNights ?? 0) > 0 && (
+                  <>
+                    {" "}
+                    Выехали раньше срока: {occ.leftEarlyNights} {plural(Number(occ.leftEarlyNights), "ночь", "ночи", "ночей")} · {fmtMoney(occ.leftEarlyRevenue ?? 0, cur)} —
+                    остались в бронях, но не в выручке.
+                  </>
+                )}
+              </Alert>
+            )}
           </Box>
 
           <Box>
