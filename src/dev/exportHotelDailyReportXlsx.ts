@@ -9,9 +9,12 @@
 import { downloadBlob } from "../utility/download";
 import { formatHotelDate } from "./mockDemoData";
 import { formatSellableSummary, mapStayDisplayStatus, HOTEL_OFF_SALE_LABEL, HOTEL_STAY_STATUS_LABELS } from "./hotelDisplay";
+import { currencySign, fmtMoney, fmtPercent } from "./hotelReportFormat";
+import { xlsxFileName } from "./hotelXlsx";
 import type { HotelDailyReport } from "../api/hotel";
 
-export async function exportHotelDailyReportXlsx(report: HotelDailyReport): Promise<void> {
+/** propertyName — в заголовок листа: раньше там стояло «Viva» для любого объекта. */
+export async function exportHotelDailyReportXlsx(report: HotelDailyReport, propertyName?: string | null): Promise<void> {
   const ExcelJS = await import("exceljs");
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Отчёт за день");
@@ -23,15 +26,15 @@ export async function exportHotelDailyReportXlsx(report: HotelDailyReport): Prom
     { header: "Статус", key: "status", width: 18 },
     { header: "Заезд", key: "checkIn", width: 14 },
     { header: "Выезд", key: "checkOut", width: 14 },
-    { header: "Цена/ночь, сом", key: "price", width: 16 },
+    { header: `Цена/ночь, ${currencySign(report.currency) || "сом"}`, key: "price", width: 16 },
   ];
 
-  const title = ws.insertRow(1, [`Отчёт по отелю Viva — ${formatHotelDate(report.date)}`]);
+  const title = ws.insertRow(1, [`Номера за день${propertyName ? ` · ${propertyName}` : ""} — ${formatHotelDate(report.date)}`]);
   title.font = { bold: true, size: 14 };
   ws.insertRow(2, [
-    `Занято: ${formatSellableSummary(report.occupiedRooms, report.totalRooms, report.blockedRooms)} (${report.occupancyPercent}%) · ` +
+    `Занято: ${formatSellableSummary(report.occupiedRooms, report.totalRooms, report.blockedRooms)} (${fmtPercent(report.occupancyPercent)}) · ` +
       `Свободно: ${report.freeRooms} · Заездов: ${report.arrivals} · Выездов: ${report.departures} · ` +
-      `Выручка за ночь: ${Number(report.revenue).toLocaleString("ru-RU")} ${report.currency}`,
+      `Выручка за ночь: ${fmtMoney(report.revenue, report.currency)}`,
   ]);
   ws.insertRow(3, []);
   // insertRow(1..3) сдвинул заголовки колонок на 4-ю строку — делаем её жирной отдельно.
@@ -60,5 +63,6 @@ export async function exportHotelDailyReportXlsx(report: HotelDailyReport): Prom
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
-  downloadBlob(blob, `Отчёт Viva ${report.date}.xlsx`);
+  // Как у остальных отчётов: «Номера за день 03.10.2026.xlsx».
+  downloadBlob(blob, xlsxFileName("Номера за день", report.date));
 }

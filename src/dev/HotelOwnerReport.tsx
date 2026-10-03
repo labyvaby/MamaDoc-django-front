@@ -47,10 +47,10 @@ import {
 import { previousPeriod } from "./hotelYield";
 import { isGuestDebt } from "./hotelInHouse";
 import { axisMoney, fmtInt, fmtMoney, fmtPercent, niceTicks, REPORT_PALETTE } from "./hotelReportFormat";
-import { ReportEmpty, ReportKpi, ReportLink, ReportSection, ReportSkeleton, ShareRow, type ReportNav } from "./hotelReportUi";
-import { plural, SectionLabel, Surface } from "./hotelUi";
+import { ReportControls, ReportEmpty, ReportKpi, ReportLink, ReportSection, ReportSkeleton, ShareRow, type ReportNav } from "./hotelReportUi";
+import { plural, SectionLabel } from "./hotelUi";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
-import { formatHotelDate } from "./mockDemoData";
+import { formatHotelDate, formatHotelDateRange } from "./mockDemoData";
 
 const D = (d: dayjs.Dayjs) => d.format("YYYY-MM-DD");
 
@@ -260,10 +260,24 @@ export const HotelOwnerReport: React.FC<{
   };
   const axisTick = { fontSize: 11.5, fill: theme.palette.text.secondary };
   const loadingMoney = (q: { isPending: boolean; isError: boolean }) => (q.isError ? "—" : q.isPending ? "…" : null);
+  const activePreset = presets.find((p) => p.from === from && p.to === to);
 
   return (
     <Stack gap={2.5}>
-      <Surface sx={{ p: { xs: 1.75, md: 2 } }}>
+      <ReportControls
+        nav={nav}
+        summary={
+          <>
+            {formatHotelDateRange(from, to)}
+            {activePreset ? ` · ${activePreset.label.toLowerCase()}` : ""}
+            <Box component="span" sx={{ color: "text.secondary", fontWeight: 400 }}>
+              {" "}
+              · сравнение с {formatHotelDateRange(prevFrom, prevTo)}
+            </Box>
+          </>
+        }
+        actions={[{ label: exporting ? "Готовим…" : "Excel", icon: <FileDownloadOutlined />, onClick: () => void handleExport(), disabled: exporting || !occ }]}
+      >
         <Stack direction={{ xs: "column", md: "row" }} gap={1.5} alignItems={{ md: "center" }} flexWrap="wrap">
           <Stack direction="row" alignItems="center" gap={1}>
             <CustomDatePicker label="С" value={dayjs(from)} onChange={(v) => v && setRange(D(v), D(v) > to ? D(v) : to)} slotProps={{ textField: { size: "small" } }} sx={{ width: 150 }} />
@@ -277,14 +291,15 @@ export const HotelOwnerReport: React.FC<{
             ))}
           </Stack>
           <Box sx={{ flex: 1 }} />
-          <Typography variant="caption" color="text.secondary" sx={{ display: { xs: "none", lg: "block" } }}>
+          {/* На 1200–1536 px подпись вытесняла Excel на вторую строку — там она есть в свёрнутой панели. */}
+          <Typography variant="caption" color="text.secondary" sx={{ display: { xs: "none", xl: "block" } }}>
             сравнение с {formatHotelDate(prevFrom)} – {formatHotelDate(prevTo)}
           </Typography>
           <Button variant="outlined" startIcon={<FileDownloadOutlined />} disabled={exporting || !occ} onClick={() => void handleExport()}>
             {exporting ? "Готовим…" : "Excel"}
           </Button>
         </Stack>
-      </Surface>
+      </ReportControls>
 
       {occupancyQuery.error ? (
         <Alert severity="error" variant="outlined">
@@ -395,7 +410,7 @@ export const HotelOwnerReport: React.FC<{
                   >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
                     <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={12} />
-                    <YAxis yAxisId="money" tick={axisTick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, moneyTicks[moneyTicks.length - 1]]} tickFormatter={axisMoney} />
+                    <YAxis yAxisId="money" tick={axisTick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, Math.max(1, moneyTicks[moneyTicks.length - 1])]} tickFormatter={axisMoney} />
                     <YAxis yAxisId="occ" orientation="right" tick={axisTick} width={40} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
                     <RechartsTooltip
                       cursor={{ fill: subtleBg(theme, true) }}

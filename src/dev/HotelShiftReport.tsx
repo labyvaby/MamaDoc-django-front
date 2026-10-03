@@ -34,6 +34,7 @@ import {
   ToggleButtonGroup,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
@@ -75,7 +76,7 @@ import {
   summarizePayments,
 } from "./hotelReportData";
 import { fmtMoney } from "./hotelReportFormat";
-import { ReportEmpty, ReportKpi, ReportLink, ReportSection, ReportSkeleton, type ReportNav } from "./hotelReportUi";
+import { ReportEmpty, ReportFilters, ReportKpi, ReportLink, ReportSection, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { buildShiftReportHtml, type ShiftArrivalLine, type ShiftCounters, type ShiftExpenseLine, type ShiftPaymentLine } from "./hotelShiftPrint";
 import { DateStepper, useHotelTableSx } from "./hotelUi";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
@@ -473,42 +474,66 @@ export const HotelShiftReport: React.FC<{
   const error = paymentsQuery.error ?? dayQuery.error;
   const num = { fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" } as const;
 
+  // На телефоне смена и администратор — под «Фильтрами»: дата, два списка и
+  // выгрузки занимали ~170 px до цифр.
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
+  const printButton = (
+    <Button variant="outlined" startIcon={<PrintOutlined />} disabled={loading} onClick={() => printHtmlDocument(buildShiftReportHtml(printInput()))} sx={{ minHeight: { xs: 40, md: 0 } }}>
+      Печать
+    </Button>
+  );
+  const excelButton = (
+    <Button variant="outlined" startIcon={<FileDownloadOutlined />} disabled={loading || exporting} onClick={() => void handleExport()} sx={{ minHeight: { xs: 40, md: 0 } }}>
+      {exporting ? "Готовим…" : "Excel"}
+    </Button>
+  );
+
   return (
     <Stack gap={2.5}>
       <Stack direction={{ xs: "column", md: "row" }} gap={1.5} alignItems={{ md: "center" }} flexWrap="wrap">
         <DateStepper value={dayjs(date)} onChange={(d) => nav.setParams({ date: D(d) })} disableFuture />
-        <TextField select size="small" label="Смена" value={startHour} onChange={(e) => setStartHour(Number(e.target.value))} sx={{ minWidth: 170 }}>
-          {SHIFT_STARTS.map((h) => (
-            <MenuItem key={h} value={h}>
-              {h === 0 ? "Календарные сутки" : `Сутки с ${String(h).padStart(2, "0")}:00`}
-            </MenuItem>
-          ))}
-        </TextField>
-        <TextField
-          select
-          size="small"
-          label="Администратор"
-          value={admin}
-          onChange={(e) => setAdmin(e.target.value)}
-          sx={{ minWidth: 200 }}
-          slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+        <ReportFilters
+          active={(startHour !== 0 ? 1 : 0) + (admin ? 1 : 0)}
+          extra={
+            <>
+              {printButton}
+              {excelButton}
+            </>
+          }
         >
-          <MenuItem value="">Все</MenuItem>
-          {admins.map((a) => (
-            <MenuItem key={a} value={a}>
-              {a}
-            </MenuItem>
-          ))}
-        </TextField>
-        <Box sx={{ flex: 1 }} />
-        <Stack direction="row" gap={1}>
-          <Button variant="outlined" startIcon={<PrintOutlined />} disabled={loading} onClick={() => printHtmlDocument(buildShiftReportHtml(printInput()))}>
-            Печать
-          </Button>
-          <Button variant="outlined" startIcon={<FileDownloadOutlined />} disabled={loading || exporting} onClick={() => void handleExport()}>
-            {exporting ? "Готовим…" : "Excel"}
-          </Button>
-        </Stack>
+          <TextField select size="small" label="Смена" value={startHour} onChange={(e) => setStartHour(Number(e.target.value))} sx={{ minWidth: 170 }}>
+            {SHIFT_STARTS.map((h) => (
+              <MenuItem key={h} value={h}>
+                {h === 0 ? "Календарные сутки" : `Сутки с ${String(h).padStart(2, "0")}:00`}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            select
+            size="small"
+            label="Администратор"
+            value={admin}
+            onChange={(e) => setAdmin(e.target.value)}
+            sx={{ minWidth: 200 }}
+            slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+          >
+            <MenuItem value="">Все</MenuItem>
+            {admins.map((a) => (
+              <MenuItem key={a} value={a}>
+                {a}
+              </MenuItem>
+            ))}
+          </TextField>
+        </ReportFilters>
+        {!phone && (
+          <>
+            <Box sx={{ flex: 1 }} />
+            <Stack direction="row" gap={1}>
+              {printButton}
+              {excelButton}
+            </Stack>
+          </>
+        )}
       </Stack>
 
       {error ? (

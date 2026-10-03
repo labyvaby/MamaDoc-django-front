@@ -6,7 +6,7 @@
  * ведёт клик по дню на графике «Собственнику».
  */
 import React from "react";
-import { Box, Button, ButtonBase, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography, useMediaQuery } from "@mui/material";
+import { Box, Button, ButtonBase, IconButton, Stack, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
@@ -26,7 +26,7 @@ import { ReportKpi, ReportLink, ReportSkeleton, type ReportNav } from "./hotelRe
 import { DateStepper, SectionLabel, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 import { formatHotelDateRange } from "./mockDemoData";
 
-export const HotelDayReport: React.FC<{ propertyId: number; nav: ReportNav }> = ({ propertyId, nav }) => {
+export const HotelDayReport: React.FC<{ propertyId: number; propertyName?: string; nav: ReportNav }> = ({ propertyId, propertyName, nav }) => {
   const theme = useTheme();
   const tableSx = useHotelTableSx();
   // На телефоне шесть колонок не помещаются: статус, даты и цена уезжали за край.
@@ -80,7 +80,7 @@ export const HotelDayReport: React.FC<{ propertyId: number; nav: ReportNav }> = 
     if (!report) return;
     setExporting(true);
     try {
-      await exportHotelDailyReportXlsx(report);
+      await exportHotelDailyReportXlsx(report, propertyName);
     } finally {
       setExporting(false);
     }
@@ -97,13 +97,26 @@ export const HotelDayReport: React.FC<{ propertyId: number; nav: ReportNav }> = 
 
   return (
     <Stack gap={2.5}>
+      {/* На телефоне дата с «Сегодня» занимают строку целиком — ссылка и Excel значком строкой ниже. */}
       <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
         <DateStepper value={dayjs(date)} onChange={(d) => nav.setParams({ date: d.format("YYYY-MM-DD") })} />
         <Box sx={{ flex: 1 }} />
-        <ReportLink label="Балансы заездов дня" onClick={() => nav.go("balances", { from: date, to: date })} />
-        <Button variant="outlined" startIcon={<FileDownloadOutlined />} onClick={() => void handleExport()} disabled={exporting || !report}>
-          {exporting ? "Готовим…" : "Excel"}
-        </Button>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1.5} sx={{ width: { xs: "100%", md: "auto" } }}>
+          <ReportLink label="Балансы заездов дня" onClick={() => nav.go("balances", { from: date, to: date })} />
+          {phone ? (
+            <Tooltip title="Скачать Excel">
+              <span>
+                <IconButton aria-label="Скачать Excel" disabled={exporting || !report} onClick={() => void handleExport()} sx={{ border: `1px solid ${subtleBorder(theme)}`, borderRadius: "10px", width: 44, height: 44 }}>
+                  <FileDownloadOutlined fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          ) : (
+            <Button variant="outlined" startIcon={<FileDownloadOutlined />} onClick={() => void handleExport()} disabled={exporting || !report}>
+              {exporting ? "Готовим…" : "Excel"}
+            </Button>
+          )}
+        </Stack>
       </Stack>
 
       {!report ? (
@@ -131,7 +144,7 @@ export const HotelDayReport: React.FC<{ propertyId: number; nav: ReportNav }> = 
                   <BarChart data={revenueByCategory} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
                     <XAxis dataKey="name" tick={axisTick} axisLine={false} tickLine={false} />
-                    <YAxis tick={axisTick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, moneyTicks[moneyTicks.length - 1]]} tickFormatter={axisMoney} />
+                    <YAxis tick={axisTick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, Math.max(1, moneyTicks[moneyTicks.length - 1])]} tickFormatter={axisMoney} />
                     <RechartsTooltip
                       cursor={{ fill: subtleBg(theme, true) }}
                       contentStyle={tooltipStyle}

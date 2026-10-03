@@ -49,9 +49,9 @@ import { HOTEL_BOARD_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS, HOTEL_GUARANTEE_M
 import { esc, printHtmlDocument } from "./hotelPrintDocs";
 import { fmtInt, fmtMoney } from "./hotelReportFormat";
 import { balanceRows, balanceTotals, fetchAllReservations, type BalanceFilter, type BalanceRow, type BalanceStatusFilter } from "./hotelReportData";
-import { ReportFilters, ReportKpi, ReportSkeleton, type ReportNav } from "./hotelReportUi";
+import { ReportControls, ReportFilters, ReportKpi, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { FilterChip, plural, Surface, useHotelTableSx } from "./hotelUi";
-import { formatHotelDateRange } from "./mockDemoData";
+import { formatHotelDate, formatHotelDateRange } from "./mockDemoData";
 import { downloadXlsx, xlsxFileName, type XlsxKind, type XlsxValue } from "./hotelXlsx";
 
 type SortKey = "number" | "createdAt" | "customer" | "checkIn" | "checkOut" | "nights" | "rooms" | "adr" | "total" | "paid" | "balance";
@@ -485,6 +485,16 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
     />
   );
 
+  // Свёрнутая панель — одной строкой: период и включённые фильтры.
+  const activePreset = presets.find((p) => p.from === from && p.to === to);
+  const summaryParts = [
+    status !== "active" ? STATUS_LABELS[status].toLowerCase() : null,
+    balance !== "all" ? BALANCE_LABELS[balance].toLowerCase() : null,
+    source ? (HOTEL_BOOKING_SOURCE_LABELS[source] ?? source) : null,
+    corporate || null,
+    q.trim() ? `«${q.trim()}»` : null,
+  ].filter(Boolean);
+
   const phoneCard = (r: BalanceRow, i: number) => {
     const arrival = r.checkedInAt
       ? { text: `заселён в ${dayjs(r.checkedInAt).format("HH:mm")}`, color: "success.main" }
@@ -549,7 +559,25 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
 
   return (
     <Stack gap={2.5}>
-      <Surface sx={{ p: { xs: 1.75, md: 2 } }}>
+      <ReportControls
+        nav={nav}
+        summary={
+          <>
+            Заезд {from === to ? formatHotelDate(from) : formatHotelDateRange(from, to)}
+            {activePreset ? ` · ${activePreset.label.toLowerCase()}` : ""}
+            {summaryParts.length > 0 && (
+              <Box component="span" sx={{ color: "text.secondary", fontWeight: 400 }}>
+                {" "}
+                · {summaryParts.join(" · ")}
+              </Box>
+            )}
+          </>
+        }
+        actions={[
+          { label: "Печать", icon: <PrintOutlined />, onClick: handlePrint, disabled: rows.length === 0 },
+          { label: exporting ? "Готовим…" : "Excel", icon: <FileDownloadOutlined />, onClick: () => void handleExport(), disabled: exporting || rows.length === 0 },
+        ]}
+      >
         <Stack gap={1.75}>
           <Stack direction={{ xs: "column", md: "row" }} gap={1.5} alignItems={{ md: "center" }} flexWrap="wrap">
             <Stack direction="row" alignItems="center" gap={1}>
@@ -632,7 +660,7 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
             </Stack>
           </ReportFilters>
         </Stack>
-      </Surface>
+      </ReportControls>
 
       <Menu anchorEl={viewAnchor} open={viewAnchor != null} onClose={() => setViewAnchor(null)}>
         {columnsAll

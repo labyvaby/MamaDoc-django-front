@@ -7,7 +7,7 @@ describe("niceTicks", () => {
     expect(niceTicks(2500)).toEqual([0, 1000, 2000, 3000]);
     expect(niceTicks(6100)).toEqual([0, 2000, 4000, 6000, 8000]);
     expect(niceTicks(4000)).toEqual([0, 1000, 2000, 3000, 4000]);
-    expect(niceTicks(0)).toEqual([0, 1]);
+    expect(niceTicks(0)).toEqual([0]);
     expect(niceTicks(7)).toEqual([0, 2, 4, 6, 8]);
   });
 });

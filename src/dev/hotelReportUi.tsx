@@ -5,13 +5,15 @@
  * открывают соседний отчёт с нужным фильтром.
  */
 import React from "react";
-import { Box, Button, ButtonBase, Collapse, LinearProgress, Skeleton, Stack, Typography, useMediaQuery } from "@mui/material";
+import { Box, Button, ButtonBase, Collapse, IconButton, LinearProgress, Skeleton, Stack, Tooltip, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme, type Breakpoint } from "@mui/material/styles";
 import ArrowOutwardOutlined from "@mui/icons-material/ArrowOutwardOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import NorthEastOutlined from "@mui/icons-material/NorthEastOutlined";
 import SouthEastOutlined from "@mui/icons-material/SouthEastOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
+import EventOutlined from "@mui/icons-material/EventOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 
 import { subtleBorder } from "../theme/uiHelpers";
 import { fmtPercent } from "./hotelReportFormat";
@@ -290,6 +292,92 @@ export const ReportFilters: React.FC<{ active: number; extra?: React.ReactNode; 
   );
 };
 
+export interface ReportAction {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+}
+
+/**
+ * Панель дат и фильтров отчёта, которую можно свернуть в строку — как сводку
+ * над шахматкой: остаётся «1 – 3 октября · сравнение с …», выгрузки и то, без
+ * чего отчёт не читается (persistent — например, вид «Таблица / График»).
+ * Нажатие на строку разворачивает. Свёрнута или нет — nav.controlsCollapsed:
+ * решает страница и запоминает, на телефоне по умолчанию свёрнута — первым
+ * экраном цифры, а не панель.
+ */
+export const ReportControls: React.FC<{
+  nav: ReportNav;
+  summary: React.ReactNode;
+  actions?: ReportAction[];
+  persistent?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ nav, summary, actions = [], persistent, children }) => {
+  const theme = useTheme();
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
+  if (!nav.controlsCollapsed) return <Surface sx={{ p: { xs: 1.75, md: 2 } }}>{children}</Surface>;
+  const actionNodes = actions.map((a) =>
+    phone ? (
+      <Tooltip key={a.label} title={a.label}>
+        <span>
+          <IconButton aria-label={a.label} disabled={a.disabled} onClick={a.onClick} sx={{ border: `1px solid ${subtleBorder(theme)}`, borderRadius: "10px", width: 44, height: 44 }}>
+            {a.icon}
+          </IconButton>
+        </span>
+      </Tooltip>
+    ) : (
+      <Button key={a.label} variant="outlined" startIcon={a.icon} disabled={a.disabled} onClick={a.onClick}>
+        {a.label}
+      </Button>
+    ),
+  );
+  return (
+    <Surface sx={{ p: 0.75 }}>
+      <Stack direction={{ xs: "column", md: "row" }} alignItems={{ md: "center" }} gap={0.75}>
+        <Stack direction="row" alignItems="center" gap={0.75} sx={{ flex: 1, minWidth: 0 }}>
+          <ButtonBase
+            onClick={() => nav.setControlsCollapsed(false)}
+            aria-label="Развернуть панель: даты и фильтры"
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              minHeight: 44,
+              justifyContent: "flex-start",
+              textAlign: "left",
+              gap: 1,
+              px: 1.25,
+              borderRadius: "10px",
+              "@media (hover: hover)": { "&:hover": { bgcolor: theme.palette.action.hover } },
+              "&.Mui-focusVisible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 },
+            }}
+          >
+            <EventOutlined sx={{ fontSize: 19, color: "primary.main", flexShrink: 0 }} />
+            <Typography variant="body2" fontWeight={600} sx={{ flex: 1, minWidth: 0, lineHeight: 1.35, overflowWrap: "anywhere" }}>
+              {summary}
+            </Typography>
+            {/* На телефоне место дороже — стрелка вместо слова. */}
+            {phone ? (
+              <ExpandMoreOutlined sx={{ color: "primary.main", flexShrink: 0 }} />
+            ) : (
+              <Typography variant="body2" color="primary.main" fontWeight={700} sx={{ flexShrink: 0 }}>
+                Изменить
+              </Typography>
+            )}
+          </ButtonBase>
+          {phone && actionNodes}
+        </Stack>
+        {persistent}
+        {!phone && actionNodes.length > 0 && (
+          <Stack direction="row" gap={1} sx={{ pr: 0.5 }}>
+            {actionNodes}
+          </Stack>
+        )}
+      </Stack>
+    </Surface>
+  );
+};
+
 /**
  * Заготовка отчёта на время загрузки: карточки цифр и блок под график или
  * таблицу на своих местах — вместо пустого экрана с крутилкой и прыжка
@@ -343,4 +431,7 @@ export interface ReportNav {
   setParams: (patch: Record<string, string | null>) => void;
   go: (report: HotelReportKind, params?: Record<string, string>) => void;
   openReservation: (id: number) => void;
+  /** Панель дат и фильтров свёрнута в строку (ReportControls); запоминает страница. */
+  controlsCollapsed: boolean;
+  setControlsCollapsed: (collapsed: boolean) => void;
 }
