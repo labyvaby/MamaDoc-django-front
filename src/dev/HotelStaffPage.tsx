@@ -666,8 +666,12 @@ const PayrollTab: React.FC<{
         <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} gap={1} sx={{ px: 2.5, pt: 2, pb: 1 }}>
           <Box sx={{ flex: 1 }}>
             <Typography sx={{ fontWeight: 700 }}>Расчёт по сотрудникам</Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="text.secondary" component="div">
               Ставки за смену: {roleRates.join(" · ") || "—"}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" component="div">
+              Начислено = смены графика × ставка поста (на момент постановки в смену). Отработанные и прошедшие плановые смены считаются,
+              «не вышел» и будущие — нет. Других ставок нет.
             </Typography>
           </Box>
           <Button variant="outlined" startIcon={<FileDownloadOutlined />} onClick={() => void exportXlsx()} disabled={payroll.rows.length === 0}>
