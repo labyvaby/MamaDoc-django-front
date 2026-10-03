@@ -1,6 +1,8 @@
 {
   "hourlyTitle": "{{visit.nomPl, capitalize}} по часам",
   "dailyTitle": "{{visit.nomPl, capitalize}} по дням",
+  "weeklyTitle": "{{visit.nomPl, capitalize}} по неделям",
+  "monthlyTitle": "{{visit.nomPl, capitalize}} по месяцам",
   "specialistsLoad": "Нагрузка по {{specialist.datPl}}",
   "count_one": "{{count}} {{visit.nom}}",
   "count_few": "{{count}} {{visit.gen}}",
