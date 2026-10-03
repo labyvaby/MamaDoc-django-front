@@ -89,6 +89,9 @@ import DraftsTab from "./DraftsTab";
 import Form5Tab from "./Form5Tab";
 import RecordsTab from "./RecordsTab";
 import DashboardTab from "./DashboardTab";
+import { PROGRAM_LABEL, batchUsed, countText, expiryInfo, stockByVaccine, type Tone as StockTone } from "./stockInfo";
+import { formatMoney } from "./totalsFormat";
+import { doseAgeText } from "../../components/vaccinations/calendarTable";
 import CalendarTab from "./CalendarTab";
 import PeriodStepper from "../../components/vaccinations/PeriodStepper";
 import KrCalendarDialog from "../../components/vaccinations/KrCalendarDialog";
@@ -366,7 +369,7 @@ const VaccinationsPage: React.FC = () => {
     queryKey: djangoQueryKeys.vaccinations.batches({ branchId, orgId, tab: "manage" }),
     queryFn: ({ signal }) =>
       getBatches({ branchId: branchId ?? undefined, organizationId: orgId }, signal),
-    enabled: enabled && canManage && tab === "batches",
+    enabled: enabled && canManage && (tab === "batches" || tab === "vaccines"),
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
@@ -374,7 +377,7 @@ const VaccinationsPage: React.FC = () => {
   const calendarQuery = useQuery({
     queryKey: djangoQueryKeys.vaccinations.calendarTemplate({ orgId }),
     queryFn: ({ signal }) => getCalendarTemplate(orgId, signal),
-    enabled: enabled && tab === "calendar",
+    enabled: enabled && (tab === "calendar" || tab === "vaccines"),
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
@@ -587,73 +590,147 @@ const VaccinationsPage: React.FC = () => {
     [canRecord, canUpdatePatient, editPatientLoadingId, openEditPatient, scheduleMutation.isPending, t],
   );
 
+  // Для «Вакцин»: схема доз из календаря и остаток по партиям — одной строкой.
+  const dosesByVaccine = React.useMemo(() => {
+    const map = new Map<number, CalendarTemplateRow[]>();
+    for (const r of calendarQuery.data ?? []) {
+      if (!r.isActive) continue;
+      const list = map.get(r.vaccineId) ?? [];
+      list.push(r);
+      map.set(r.vaccineId, list);
+    }
+    for (const list of map.values()) list.sort((x, y) => x.doseNumber - y.doseNumber);
+    return map;
+  }, [calendarQuery.data]);
+  const stockMap = React.useMemo(() => stockByVaccine(batchesQuery.data ?? []), [batchesQuery.data]);
+
+  const toneColor = (tone: StockTone) => (tone === "error" ? "error.main" : tone === "warning" ? "warning.main" : "text.secondary");
+
   const vaccinesColumns = React.useMemo<GridColDef<Vaccine>[]>(
     () => [
       {
         field: "name",
         headerName: "Вакцина",
-        flex: 1,
-        minWidth: 200,
+        flex: 1.2,
+        minWidth: 220,
         sortable: false,
         renderCell: ({ row }) => (
           <Box sx={twoLineCellSx}>
-            <Typography variant="body2" fontWeight={500} noWrap>
-              {row.name}
-            </Typography>
+            <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+              <Typography variant="body2" fontWeight={600} noWrap>
+                {row.name}
+              </Typography>
+              {row.funding === "state" && (
+                <Chip size="small" label="гос." color="primary" variant="outlined" sx={{ height: 18, fontSize: 11, borderRadius: "6px" }} />
+              )}
+            </Stack>
             <Typography variant="caption" color="text.secondary" noWrap>
-              {[row.manufacturer, row.targetDisease].filter(Boolean).join(" · ") || "—"}
+              {[row.targetDisease, row.manufacturer].filter(Boolean).join(" · ") || "—"}
             </Typography>
           </Box>
         ),
       },
       {
-        field: "dosesRequired",
-        headerName: "Доз / интервал",
-        width: 160,
+        field: "schedule",
+        headerName: "Схема по календарю",
+        flex: 1,
+        minWidth: 220,
         sortable: false,
-        renderCell: ({ row }) => (
-          <Typography variant="body2">
-            {row.dosesRequired} доз
-            {row.intervalDays != null ? ` · ${row.intervalDays} дн` : ""}
-          </Typography>
-        ),
+        renderCell: ({ row }) => {
+          const doses = dosesByVaccine.get(row.id) ?? [];
+          if (doses.length === 0) {
+            return (
+              <Box sx={twoLineCellSx}>
+                <Typography variant="body2">{countText(row.dosesRequired, "доза", "дозы", "доз")}</Typography>
+                <Typography variant="caption" color="text.disabled" noWrap>
+                  нет в календаре
+                </Typography>
+              </Box>
+            );
+          }
+          return (
+            <Box sx={twoLineCellSx}>
+              <Stack direction="row" gap={0.5} alignItems="center">
+                {doses.map((d) => (
+                  <Box
+                    key={d.id}
+                    sx={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: "50%",
+                      display: "grid",
+                      placeItems: "center",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: "primary.contrastText",
+                      bgcolor: "primary.main",
+                    }}
+                  >
+                    {d.doseNumber}
+                  </Box>
+                ))}
+              </Stack>
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {doses.map((d) => doseAgeText(d)).join(" · ")}
+              </Typography>
+            </Box>
+          );
+        },
       },
       {
-        field: "recommendedAgeMonths",
-        headerName: "Возраст",
-        width: 110,
+        field: "stock",
+        headerName: "На складе",
+        width: 190,
         sortable: false,
-        renderCell: ({ row }) => (
-          <Typography variant="body2" color={row.recommendedAgeMonths == null ? "text.disabled" : undefined}>
-            {row.recommendedAgeMonths != null ? `${row.recommendedAgeMonths} мес` : "—"}
-          </Typography>
-        ),
+        renderCell: ({ row }) => {
+          const st = stockMap.get(row.id);
+          if (!st) {
+            return (
+              <Typography variant="body2" color="text.disabled">
+                нет партий
+              </Typography>
+            );
+          }
+          const exp = st.nearestExpiry ? expiryInfo(st.nearestExpiry) : null;
+          return (
+            <Box sx={twoLineCellSx}>
+              <Typography variant="body2" fontWeight={600} color={st.remaining === 0 ? "error.main" : undefined}>
+                {countText(st.remaining, "доза", "дозы", "доз")}
+                <Typography component="span" variant="caption" color="text.secondary">
+                  {` · ${countText(st.batches, "партия", "партии", "партий")}`}
+                </Typography>
+              </Typography>
+              <Typography variant="caption" noWrap sx={{ color: exp ? toneColor(exp.tone) : "text.disabled" }}>
+                {st.nearestExpiry ? `годен до ${dayjs(st.nearestExpiry).format("DD.MM.YY")}` : "годных нет"}
+              </Typography>
+            </Box>
+          );
+        },
       },
       {
         field: "price",
-        headerName: "Цена / остаток",
-        width: 150,
+        headerName: "Цена",
+        width: 130,
         sortable: false,
-        renderCell: ({ row }) =>
-          row.productId != null ? (
-            <Box sx={twoLineCellSx}>
-              <Typography variant="body2" noWrap>
-                {row.price != null ? `${row.price} сом` : "—"}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" noWrap>
-                остаток {row.stock}
-              </Typography>
-            </Box>
+        renderCell: ({ row }) => {
+          if (row.funding === "state" && (row.price == null || Number(row.price) === 0)) {
+            return <Typography variant="body2" color="text.secondary">бесплатно</Typography>;
+          }
+          return row.productId != null && row.price != null ? (
+            <Typography variant="body2" fontWeight={600}>
+              {formatMoney(row.price)}
+            </Typography>
           ) : (
             <Typography variant="body2" color="text.disabled">
               без товара
             </Typography>
-          ),
+          );
+        },
       },
       {
         field: "isActive",
         headerName: "Статус",
-        width: 130,
+        width: 110,
         sortable: false,
         renderCell: ({ row }) =>
           row.isActive ? (
@@ -678,25 +755,36 @@ const VaccinationsPage: React.FC = () => {
         ),
       },
     ],
-    [],
+    [dosesByVaccine, stockMap],
   );
 
   const batchesColumns = React.useMemo<GridColDef<VaccineBatch>[]>(
     () => [
       {
         field: "vaccineName",
-        headerName: "Вакцина",
+        headerName: "Вакцина / партия",
         flex: 1,
-        minWidth: 180,
+        minWidth: 220,
         sortable: false,
         renderCell: ({ row }) => (
           <Box sx={twoLineCellSx}>
-            <Typography variant="body2" fontWeight={500} noWrap>
-              {row.vaccineName}
-            </Typography>
+            <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+              <Typography variant="body2" fontWeight={600} noWrap>
+                {row.vaccineName}
+              </Typography>
+              {row.program && (
+                <Chip
+                  size="small"
+                  label={PROGRAM_LABEL[row.program]}
+                  color={row.program === "commercial" ? "default" : "primary"}
+                  variant="outlined"
+                  sx={{ height: 18, fontSize: 11, borderRadius: "6px" }}
+                />
+              )}
+            </Stack>
             <Typography variant="caption" color="text.secondary" noWrap>
               №{row.batchNumber}
-              {row.productId == null ? " · без склада" : ""}
+              {row.productId == null ? " · без товара склада" : ""}
             </Typography>
           </Box>
         ),
@@ -704,45 +792,86 @@ const VaccinationsPage: React.FC = () => {
       {
         field: "remaining",
         headerName: "Остаток",
-        width: 130,
-        sortable: false,
-        renderCell: ({ row }) => (
-          <Box sx={twoLineCellSx}>
-            <Typography variant="body2">
-              {row.remaining} / {row.quantityInitial}
-            </Typography>
-            {VACCINATION_BATCH_WRITEOFF_ENABLED && Boolean(row.writtenOff) && (
-              <Typography variant="caption" color="error.main" noWrap>
-                списано {row.writtenOff}
-              </Typography>
-            )}
-          </Box>
-        ),
-      },
-      {
-        field: "expiresAt",
-        headerName: "Годен до",
-        width: 140,
+        width: 210,
         sortable: false,
         renderCell: ({ row }) => {
-          const expired = dayjs(row.expiresAt).isBefore(dayjs(), "day");
+          const share = row.quantityInitial > 0 ? row.remaining / row.quantityInitial : 0;
           return (
-            <Typography variant="body2" sx={{ color: expired ? "error.main" : undefined, fontWeight: expired ? 600 : 400 }}>
-              {dayjs(row.expiresAt).format("DD.MM.YYYY")}
-            </Typography>
+            <Box sx={{ ...twoLineCellSx, width: "100%" }}>
+              <Stack direction="row" alignItems="center" gap={1}>
+                <Box sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: "action.hover", overflow: "hidden" }}>
+                  <Box
+                    sx={{
+                      width: `${share * 100}%`,
+                      height: "100%",
+                      bgcolor: share === 0 ? "error.main" : share < 0.2 ? "warning.main" : "primary.main",
+                    }}
+                  />
+                </Box>
+                <Typography variant="body2" fontWeight={600} sx={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                  {row.remaining} из {row.quantityInitial}
+                </Typography>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" noWrap>
+                использовано {batchUsed(row)}
+                {row.writtenOff ? ` · списано ${row.writtenOff}` : ""}
+              </Typography>
+            </Box>
           );
         },
       },
       {
-        field: "supplier",
-        headerName: "Поставщик",
-        width: 160,
+        field: "expiresAt",
+        headerName: "Годен до",
+        width: 150,
+        sortable: false,
+        renderCell: ({ row }) => {
+          const exp = expiryInfo(row.expiresAt);
+          return (
+            <Box sx={twoLineCellSx}>
+              <Typography variant="body2" fontWeight={exp.tone === "default" ? 400 : 600} sx={{ color: exp.tone === "default" ? undefined : toneColor(exp.tone) }}>
+                {dayjs(row.expiresAt).format("DD.MM.YYYY")}
+              </Typography>
+              <Typography variant="caption" noWrap sx={{ color: toneColor(exp.tone) }}>
+                {exp.text}
+              </Typography>
+            </Box>
+          );
+        },
+      },
+      {
+        field: "receivedAt",
+        headerName: "Поступила",
+        width: 170,
         sortable: false,
         renderCell: ({ row }) => (
-          <Typography variant="body2" color={row.supplier ? undefined : "text.disabled"} noWrap>
-            {row.supplier || "—"}
-          </Typography>
+          <Box sx={twoLineCellSx}>
+            <Typography variant="body2">{row.receivedAt ? dayjs(row.receivedAt).format("DD.MM.YYYY") : "—"}</Typography>
+            <Typography variant="caption" color={row.supplier ? "text.secondary" : "text.disabled"} noWrap>
+              {row.supplier || "поставщик не указан"}
+            </Typography>
+          </Box>
         ),
+      },
+      {
+        field: "costPrice",
+        headerName: "Закупка",
+        width: 140,
+        sortable: false,
+        renderCell: ({ row }) => {
+          const cost = Number(row.costPrice);
+          if (!cost) {
+            return <Typography variant="body2" color="text.disabled">—</Typography>;
+          }
+          return (
+            <Box sx={twoLineCellSx}>
+              <Typography variant="body2">{formatMoney(row.costPrice)} / доза</Typography>
+              <Typography variant="caption" color="text.secondary" noWrap>
+                остаток на {formatMoney(String(cost * row.remaining))}
+              </Typography>
+            </Box>
+          );
+        },
       },
       {
         field: "actions",
