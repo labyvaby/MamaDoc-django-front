@@ -537,7 +537,7 @@ export const HotelOwnerReport: React.FC<{
 
             <ReportSection
               title="Должники"
-              subtitle="Заехали или должны были заехать, но не рассчитались"
+              subtitle="Заехали или уже выехали и не рассчитались. Кто не приехал — на ресепшене, в «Требуют внимания»"
               action={<ReportLink label="Все долги" onClick={() => nav.go("balances", { from, to: to < todayStr ? to : todayStr, balance: "debt" })} />}
             >
               {reservationsQuery.isPending ? (
