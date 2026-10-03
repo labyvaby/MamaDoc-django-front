@@ -19,7 +19,7 @@ import PeriodStepper from "../../components/vaccinations/PeriodStepper";
 import { periodBounds, periodLabel } from "../../components/vaccinations/periodStep";
 import { TotalTile } from "./TotalTile";
 import { formatCount, formatMoney } from "./totalsFormat";
-import { percent, toBars, yearMonths, type BarDatum } from "./dashboardData";
+import { toBars, yearMonths, type BarDatum } from "./dashboardData";
 
 type Props = {
   branchId: number | null;
@@ -80,7 +80,7 @@ const Bars: React.FC<{ data: BarDatum[]; empty?: string; labelWidth?: number }> 
                 sx={{
                   height: 14,
                   width: `${Math.max(d.share * 100, d.value ? 2 : 0)}%`,
-                  maxWidth: "calc(100% - 48px)",
+                  maxWidth: "calc(100% - 84px)",
                   bgcolor: main,
                   borderRadius: "0 4px 4px 0",
                   transition: "width .3s ease",
@@ -88,6 +88,11 @@ const Bars: React.FC<{ data: BarDatum[]; empty?: string; labelWidth?: number }> 
               />
               <Typography variant="body2" fontWeight={600} sx={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                 {formatCount(d.value)}
+                {d.pct && (
+                  <Box component="span" sx={{ color: "text.secondary", fontWeight: 400, ml: 0.75 }}>
+                    {d.pct}
+                  </Box>
+                )}
               </Typography>
             </Stack>
           </Box>
@@ -163,13 +168,22 @@ const DashboardTab: React.FC<Props> = ({ branchId, orgId }) => {
   const s = query.data;
 
   const vaccineBars = s
-    ? toBars(s.byVaccine.map((v) => ({ key: String(v.vaccineId), label: v.vaccineName, value: v.count, hint: formatMoney(v.amount) })))
+    ? toBars(
+        s.byVaccine.map((v) => ({
+          key: String(v.vaccineId),
+          label: v.vaccineName,
+          value: v.count,
+          hint: Number(v.amount) > 0 ? formatMoney(v.amount) : "бесплатно / в другом месте",
+        })),
+        s.count,
+      )
     : [];
   const ageBars = s
     ? toBars(
         s.byAge
           .filter((b) => b.key !== "unknown" || b.count > 0)
-          .map((b) => ({ key: b.key, label: b.label, value: b.count, hint: `${percent(b.count, s.count)} прививок` })),
+          .map((b) => ({ key: b.key, label: b.label, value: b.count })),
+        s.count,
       )
     : [];
   const sexKids = s ? s.bySex.reduce((n, b) => n + b.count, 0) : 0;
@@ -177,7 +191,8 @@ const DashboardTab: React.FC<Props> = ({ branchId, orgId }) => {
     ? toBars(
         s.bySex
           .filter((b) => b.key !== "unknown" || b.count > 0)
-          .map((b) => ({ key: b.key, label: b.label, value: b.count, hint: `${percent(b.count, sexKids)} детей` })),
+          .map((b) => ({ key: b.key, label: b.label, value: b.count })),
+        sexKids,
       )
     : [];
 
@@ -233,7 +248,7 @@ const DashboardTab: React.FC<Props> = ({ branchId, orgId }) => {
             )}
 
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1.4fr 1fr" }, gap: 1.5 }}>
-              <Panel title="Вакцины" note="прививок; наведите — сумма">
+              <Panel title="Вакцины" note="прививок и доля от всех; наведите — сумма">
                 <Bars data={vaccineBars} labelWidth={190} />
               </Panel>
               <Stack spacing={1.5}>

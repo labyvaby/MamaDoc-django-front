@@ -236,7 +236,8 @@ const VaccinationsPage: React.FC = () => {
     () => [
       ...DASHBOARD_TABS,
       ...(canRecord ? RECORD_TABS : []),
-      ...BASE_TABS,
+      // «Кому пора» скрыта до модуля учёта детей (DUE_WAITS_FOR_REGISTRY).
+      ...BASE_TABS.filter((t) => !(DUE_WAITS_FOR_REGISTRY && t.id === "due")),
       ...(canManage ? MANAGE_TABS : []),
       ...READ_TABS,
     ],

@@ -291,6 +291,8 @@ export interface VaccinationRecord {
   administeredBy: VaccinationAdministeredBy | null;
   /** Врач приёма, к которому привязана доза (назначил); нет — внешняя или без приёма. */
   prescribedBy?: VaccinationAdministeredBy | null;
+  /** Кто внёс запись в CRM (у внешней прививки — не тот, кто прививал). */
+  recordedBy?: VaccinationAdministeredBy | null;
   isExternal: boolean;
   batchNumberManual: string;
   expiresAtManual: string | null;
