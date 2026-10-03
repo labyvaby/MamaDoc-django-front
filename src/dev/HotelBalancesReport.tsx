@@ -13,7 +13,6 @@ import {
   Button,
   ButtonBase,
   Checkbox,
-  CircularProgress,
   InputAdornment,
   LinearProgress,
   ListItemText,
@@ -50,7 +49,7 @@ import { HOTEL_BOARD_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS, HOTEL_GUARANTEE_M
 import { esc, printHtmlDocument } from "./hotelPrintDocs";
 import { fmtInt, fmtMoney } from "./hotelReportFormat";
 import { balanceRows, balanceTotals, fetchAllReservations, type BalanceFilter, type BalanceRow, type BalanceStatusFilter } from "./hotelReportData";
-import { ReportFilters, ReportKpi, type ReportNav } from "./hotelReportUi";
+import { ReportFilters, ReportKpi, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { FilterChip, plural, Surface, useHotelTableSx } from "./hotelUi";
 import { formatHotelDateRange } from "./mockDemoData";
 import { downloadXlsx, xlsxFileName, type XlsxKind, type XlsxValue } from "./hotelXlsx";
@@ -649,9 +648,7 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
           {getErrorMessage(query.error, "Не удалось загрузить брони")}
         </Alert>
       ) : !query.data ? (
-        <Stack alignItems="center" sx={{ py: 6 }}>
-          <CircularProgress size={28} />
-        </Stack>
+        <ReportSkeleton block={320} />
       ) : (
         <>
           {query.data.truncated && (

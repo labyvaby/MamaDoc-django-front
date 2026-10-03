@@ -16,7 +16,6 @@ import {
   Alert,
   Box,
   Button,
-  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -76,7 +75,7 @@ import {
   summarizePayments,
 } from "./hotelReportData";
 import { fmtMoney } from "./hotelReportFormat";
-import { ReportEmpty, ReportKpi, ReportLink, ReportSection, type ReportNav } from "./hotelReportUi";
+import { ReportEmpty, ReportKpi, ReportLink, ReportSection, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { buildShiftReportHtml, type ShiftArrivalLine, type ShiftCounters, type ShiftExpenseLine, type ShiftPaymentLine } from "./hotelShiftPrint";
 import { DateStepper, useHotelTableSx } from "./hotelUi";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
@@ -517,9 +516,7 @@ export const HotelShiftReport: React.FC<{
           {getErrorMessage(error, "Не удалось загрузить данные смены")}
         </Alert>
       ) : loading ? (
-        <Stack alignItems="center" sx={{ py: 6 }}>
-          <CircularProgress size={28} />
-        </Stack>
+        <ReportSkeleton kpis={6} columns={{ xs: "1fr 1fr", md: "repeat(3, 1fr)", lg: "repeat(6, 1fr)" }} block={320} />
       ) : (
         <>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(3, 1fr)", lg: "repeat(6, 1fr)" }, gap: 1.5 }}>

@@ -6,7 +6,7 @@
  * ведёт клик по дню на графике «Собственнику».
  */
 import React from "react";
-import { Box, Button, ButtonBase, CircularProgress, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography, useMediaQuery } from "@mui/material";
+import { Box, Button, ButtonBase, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
@@ -22,7 +22,7 @@ import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { exportHotelDailyReportXlsx } from "./exportHotelDailyReportXlsx";
 import { formatSellableSummary, HOTEL_OFF_SALE_LABEL, HOTEL_STAY_STATUS_LABELS, hotelStayStatusColor, mapStayDisplayStatus } from "./hotelDisplay";
 import { axisMoney, fmtMoney, fmtPercent, niceTicks } from "./hotelReportFormat";
-import { ReportKpi, ReportLink, type ReportNav } from "./hotelReportUi";
+import { ReportKpi, ReportLink, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { DateStepper, SectionLabel, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 import { formatHotelDateRange } from "./mockDemoData";
 
@@ -107,9 +107,7 @@ export const HotelDayReport: React.FC<{ propertyId: number; nav: ReportNav }> = 
       </Stack>
 
       {!report ? (
-        <Stack alignItems="center" sx={{ py: 6 }}>
-          <CircularProgress size={28} />
-        </Stack>
+        <ReportSkeleton block={200} />
       ) : (
         <>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 1.5 }}>

@@ -7,7 +7,7 @@
  * среднем шла уборка. Нет права на отчёт — колонки факта просто не видны.
  */
 import React from "react";
-import { Alert, Avatar, Box, Button, CircularProgress, IconButton, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
+import { Alert, Avatar, Box, Button, IconButton, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
@@ -26,7 +26,7 @@ import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { computeHousekeepingLoad } from "./hotelHousekeepingLoad";
 import { fmtInt } from "./hotelReportFormat";
 import { fetchAllReservations } from "./hotelReportData";
-import { ReportEmpty, ReportKpi, ReportLink, ReportSection, type ReportNav } from "./hotelReportUi";
+import { ReportEmpty, ReportKpi, ReportLink, ReportSection, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { employeeColor } from "./hotelStaffPayroll";
 import { plural, Surface, useHotelTableSx } from "./hotelUi";
 import { downloadXlsx } from "./hotelXlsx";
@@ -180,9 +180,7 @@ export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: Report
       )}
 
       {loading ? (
-        <Stack alignItems="center" sx={{ py: 6 }}>
-          <CircularProgress size={28} />
-        </Stack>
+        <ReportSkeleton kpis={facts ? 5 : 4} columns={{ xs: "1fr 1fr", md: "repeat(3, 1fr)", lg: facts ? "repeat(5, 1fr)" : "repeat(4, 1fr)" }} block={320} />
       ) : (
         <>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(3, 1fr)", lg: facts ? "repeat(5, 1fr)" : "repeat(4, 1fr)" }, gap: 1.5 }}>

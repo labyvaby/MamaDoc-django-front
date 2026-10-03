@@ -16,7 +16,7 @@
  * остальным — номера.
  */
 import React from "react";
-import { Box, ButtonBase, CircularProgress, Stack, Typography } from "@mui/material";
+import { Box, ButtonBase, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 import AssignmentTurnedInOutlined from "@mui/icons-material/AssignmentTurnedInOutlined";
@@ -36,7 +36,7 @@ import { HotelOwnerReport } from "./HotelOwnerReport";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { HotelShiftReport } from "./HotelShiftReport";
 import { HotelYieldReport } from "./HotelYieldReport";
-import type { HotelReportKind, ReportNav } from "./hotelReportUi";
+import { ReportSkeleton, type HotelReportKind, type ReportNav } from "./hotelReportUi";
 import { HotelPage, HotelPageHeader } from "./hotelUi";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 import { useHotelProperty } from "./useHotelProperty";
@@ -256,9 +256,7 @@ export const HotelReportsPage: React.FC = () => {
 
       {!property ? (
         propertyLoading ? (
-          <Stack alignItems="center" sx={{ py: 6 }}>
-            <CircularProgress size={28} />
-          </Stack>
+          <ReportSkeleton />
         ) : (
           <HotelPropertyMissing />
         )

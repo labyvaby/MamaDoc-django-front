@@ -47,7 +47,7 @@ import {
 import { previousPeriod } from "./hotelYield";
 import { isGuestDebt } from "./hotelInHouse";
 import { axisMoney, fmtInt, fmtMoney, fmtPercent, niceTicks, REPORT_PALETTE } from "./hotelReportFormat";
-import { ReportEmpty, ReportKpi, ReportLink, ReportSection, ShareRow, type ReportNav } from "./hotelReportUi";
+import { ReportEmpty, ReportKpi, ReportLink, ReportSection, ReportSkeleton, ShareRow, type ReportNav } from "./hotelReportUi";
 import { plural, SectionLabel, Surface } from "./hotelUi";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
 import { formatHotelDate } from "./mockDemoData";
@@ -291,9 +291,7 @@ export const HotelOwnerReport: React.FC<{
           Не удалось загрузить показатели за период
         </Alert>
       ) : !occ ? (
-        <Stack alignItems="center" sx={{ py: 6 }}>
-          <CircularProgress size={28} />
-        </Stack>
+        <ReportSkeleton kpis={8} block={300} />
       ) : (
         <>
           <Box>

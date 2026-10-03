@@ -6,7 +6,7 @@
  * брони; Excel. Расчёт — hotelYield.ts по броням периода и номерам фонда.
  */
 import React from "react";
-import { Alert, Box, Button, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useMediaQuery } from "@mui/material";
+import { Alert, Box, Button, FormControlLabel, MenuItem, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import SellOutlined from "@mui/icons-material/SellOutlined";
@@ -29,7 +29,7 @@ import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { HOTEL_BOOKING_SOURCE_LABELS } from "./hotelDisplay";
 import { axisMoney, fmtInt, fmtMoney, fmtPercent, niceTicks } from "./hotelReportFormat";
 import { deltaPercent, fetchAllReservations } from "./hotelReportData";
-import { ReportFilters, ReportKpi, ReportSection, type ReportNav } from "./hotelReportUi";
+import { ReportFilters, ReportKpi, ReportSection, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { FilterChip, Surface, useHotelTableSx } from "./hotelUi";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
 import {
@@ -319,9 +319,7 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
           Не удалось загрузить брони за период
         </Alert>
       ) : loading || !result ? (
-        <Stack alignItems="center" sx={{ py: 6 }}>
-          <CircularProgress size={28} />
-        </Stack>
+        <ReportSkeleton kpis={6} columns={{ xs: "1fr 1fr", md: "repeat(3, 1fr)", xl: "repeat(6, 1fr)" }} block={240} />
       ) : (
         <>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(3, 1fr)", xl: "repeat(6, 1fr)" }, gap: 1.5 }}>
