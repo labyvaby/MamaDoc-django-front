@@ -282,7 +282,7 @@ export const HotelShiftReport: React.FC<{
     employee: e.employeeName ?? "",
   }));
   const kassa = payments.cash - expenseSummary.cash;
-  const breakfasts = dayQuery.data ? breakfastCount(dayQuery.data.prevNight, date) : 0;
+  const breakfasts = dayQuery.data ? breakfastCount(dayQuery.data.prevNight, date, D(dayjs())) : 0;
   const arrivals: ShiftArrivalLine[] = (dayQuery.data?.arrivals ?? [])
     .filter((r) => LIVE.has(r.status))
     .map((r) => {

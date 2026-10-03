@@ -211,9 +211,15 @@ export const HotelBalancesReport: React.FC<{
         cell: (r) =>
           twoLine(
             r.checkIn,
-            r.checkedInAt ? `${dayjs(r.checkedInAt).format("HH:mm")} · заселён` : (r.expectedArrivalTime ?? inTime),
-            r.checkedInAt ? "success.main" : r.expectedArrivalTime ? "info.main" : undefined,
-            r.checkedInAt ? "Время фактического заселения" : r.expectedArrivalTime ? "Время заезда брони: ранний заезд или со слов гостя" : "Время заезда по правилам объекта",
+            r.missed ? "не заехал" : r.checkedInAt ? `${dayjs(r.checkedInAt).format("HH:mm")} · заселён` : (r.expectedArrivalTime ?? inTime),
+            r.missed ? "error.main" : r.checkedInAt ? "success.main" : r.expectedArrivalTime ? "info.main" : undefined,
+            r.missed
+              ? "Ждали, гость не приехал, незаезд не закрыт: ресепшен → «Закрыть день»"
+              : r.checkedInAt
+                ? "Время фактического заселения"
+                : r.expectedArrivalTime
+                  ? "Время заезда брони: ранний заезд или со слов гостя"
+                  : "Время заезда по правилам объекта",
           ),
         text: (r) => dateTime(r.checkIn, r.expectedArrivalTime ?? inTime, r.checkedInAt),
         xlsx: { value: (r) => dateTime(r.checkIn, r.expectedArrivalTime ?? inTime, r.checkedInAt) },
@@ -347,7 +353,7 @@ export const HotelBalancesReport: React.FC<{
   });
 
   const rows = React.useMemo(() => {
-    const base = balanceRows(query.data?.rows ?? [], { from, to, balance, status, source: source || undefined, corporate: corporate || undefined });
+    const base = balanceRows(query.data?.rows ?? [], { from, to, balance, status, source: source || undefined, corporate: corporate || undefined, today });
     // По частям, как поиск на сервере (searchParts): «Бекова 201», «0555 11 10», «Альфа».
     const guestsOf = (r: BalanceRow) => r.reservation.items.flatMap((i) => i.guests);
     const filtered = q.trim()
@@ -365,9 +371,12 @@ export const HotelBalancesReport: React.FC<{
       const y = val(b);
       return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
     });
-  }, [query.data, from, to, balance, status, source, corporate, q, sort]);
+  }, [query.data, from, to, balance, status, source, corporate, q, sort, today]);
   const totals = balanceTotals(rows);
-  const debt = rows.reduce((s, r) => s + Math.max(0, r.balance), 0);
+  // Долг — у тех, кто заехал или ещё приедет; не заехавшие (незаезд не закрыт) — отдельно, как в «Собственнику».
+  const debt = rows.reduce((s, r) => s + (r.missed ? 0 : Math.max(0, r.balance)), 0);
+  const missedDebt = rows.reduce((s, r) => s + (r.missed ? Math.max(0, r.balance) : 0), 0);
+  const missedCount = rows.filter((r) => r.missed && r.balance > 0).length;
   const overpaid = rows.reduce((s, r) => s + Math.max(0, -r.balance), 0);
   const cur = rows[0]?.currency ?? currency;
 
@@ -504,7 +513,9 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
   ].filter(Boolean);
 
   const phoneCard = (r: BalanceRow, i: number) => {
-    const arrival = r.checkedInAt
+    const arrival = r.missed
+      ? { text: "не заехал", color: "error.main" }
+      : r.checkedInAt
       ? { text: `заселён в ${dayjs(r.checkedInAt).format("HH:mm")}`, color: "success.main" }
       : r.expectedArrivalTime
         ? { text: `заезд в ${r.expectedArrivalTime}`, color: "info.main" }
@@ -709,7 +720,13 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
               label="К оплате"
               value={fmtMoney(debt, cur)}
               emphasis={debt > 0}
-              hint={overpaid > 0 ? `переплата ${fmtMoney(overpaid, cur)}` : `${rows.filter((r) => r.balance > 0).length} с долгом`}
+              hint={
+                missedDebt > 0
+                  ? `не заехали: ещё ${fmtMoney(missedDebt, cur)} (${missedCount}) — не считаем`
+                  : overpaid > 0
+                    ? `переплата ${fmtMoney(overpaid, cur)}`
+                    : `${rows.filter((r) => r.balance > 0 && !r.missed).length} с долгом`
+              }
               onClick={balance === "debt" ? undefined : () => nav.setParams({ balance: "debt" })}
             />
             <ReportKpi icon={<NightsStayOutlined />} tone="info" label="ADR" value={fmtMoney(totals.adr, cur)} hint={`${fmtInt(totals.nights)} ${plural(totals.nights, "ночь", "ночи", "ночей")}`} />

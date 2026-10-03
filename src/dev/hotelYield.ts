@@ -10,6 +10,7 @@
 import dayjs from "dayjs";
 
 import type { HotelReservation } from "../api/hotel";
+import { isMissedArrival, nightCounts } from "./hotelInHouse";
 
 export type YieldGroup = "day" | "week" | "month";
 
@@ -109,8 +110,12 @@ const eachDate = (from: string, to: string): string[] => {
   return dates;
 };
 
-/** Брони → факты: только подтверждённые брони и действующие позиции; доход — цена ночи минус скидка. */
-export function factsFromReservations(reservations: HotelReservation[], from: string, to: string): YieldFact[] {
+/**
+ * Брони → факты: только подтверждённые брони, действующие позиции и ночи,
+ * которые кто-то прожил (nightCounts — не заехавший гость не продажа и не
+ * заезд, как на сервере); доход — цена ночи минус скидка.
+ */
+export function factsFromReservations(reservations: HotelReservation[], from: string, to: string, today = dayjs().format("YYYY-MM-DD")): YieldFact[] {
   const map = new Map<string, YieldFact>();
   const fact = (date: string, roomTypeId: number, source: string) => {
     const key = `${date}|${roomTypeId}|${source}`;
@@ -127,13 +132,13 @@ export function factsFromReservations(reservations: HotelReservation[], from: st
     const source = r.source || "other";
     for (const item of r.items) {
       if (item.isActive === false) continue;
-      if (inRange(item.checkIn)) {
+      if (inRange(item.checkIn) && !isMissedArrival(item, today)) {
         const f = fact(item.checkIn, item.roomTypeId, source);
         f.roomsArrived += 1;
         f.guestsArrived += item.adults + item.children;
       }
       for (const night of item.nights ?? []) {
-        if (!inRange(night.date)) continue;
+        if (!inRange(night.date) || !nightCounts(item, night.date, today)) continue;
         const f = fact(night.date, item.roomTypeId, source);
         f.sold += 1;
         f.revenue += (Number(night.price) || 0) - (Number(night.discount) || 0);
@@ -231,9 +236,10 @@ export function computeYield(opts: {
   group: YieldGroup;
   roomTypeIds?: Set<number> | null;
   sources?: Set<string> | null;
+  today?: string;
 }): YieldResult {
   return summarizeYield({
-    facts: factsFromReservations(opts.reservations, opts.from, opts.to),
+    facts: factsFromReservations(opts.reservations, opts.from, opts.to, opts.today),
     inventory: inventoryFromRooms(opts.rooms, opts.from, opts.to),
     names: new Map(opts.rooms.map((r) => [r.roomTypeId, r.roomTypeName])),
     from: opts.from,

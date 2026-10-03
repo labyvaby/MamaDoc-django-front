@@ -7,9 +7,12 @@
  * только «ожидает заезда», а после даты заезда — «не заехал» (см. ресепшен,
  * «Закрыть день»). Без React — проверяется тестами (hotelInHouse.test.ts).
  */
+import dayjs from "dayjs";
+
 import type { HotelReservation, HotelReservationItem } from "../api/hotel";
 
 type Item = Pick<HotelReservationItem, "checkIn" | "checkOut" | "stayStatus" | "isActive" | "adults" | "children">;
+type NightItem = Pick<HotelReservationItem, "checkIn" | "checkOut" | "isActive"> & { stayStatus?: string | null; checkedOutAt?: string | null };
 
 const active = (i: Item) => i.isActive !== false;
 const covers = (i: Item, date: string) => i.checkIn <= date && date < i.checkOut;
@@ -24,6 +27,26 @@ export function isStayingOn(item: Item, date: string, today: string): boolean {
   if (date < today) return item.stayStatus === "checked_in" || item.stayStatus === "checked_out";
   if (date === today) return item.stayStatus === "checked_in";
   return item.stayStatus === "checked_in" || (item.stayStatus === "expected" && item.checkIn >= today);
+}
+
+/** Местный день выезда по отметке «выехал»: "2026-10-03T13:30:00+06:00" → "2026-10-03". */
+export const leftOnDate = (checkedOutAt: string | null | undefined): string | null => (checkedOutAt ? dayjs(checkedOutAt).format("YYYY-MM-DD") : null);
+
+/**
+ * Ночь `date` продана — гость в ней ночевал или ещё приедет: то же правило, что
+ * stayed_nights на сервере, поэтому выручка, загрузка и завтраки сходятся с
+ * ресепшеном. Не считается: ждёт заезда, а день заезда прошёл (незаезд не
+ * закрыт), и ночи с местного дня выезда у выехавшего (уехал раньше срока).
+ * Без статуса (старые данные) — по датам брони.
+ */
+export function nightCounts(item: NightItem, date: string, today: string): boolean {
+  if (item.isActive === false || !(item.checkIn <= date && date < item.checkOut)) return false;
+  if (item.stayStatus === "expected") return item.checkIn >= today;
+  if (item.stayStatus === "checked_out") {
+    const left = leftOnDate(item.checkedOutAt);
+    return left == null || date < left;
+  }
+  return true;
 }
 
 /** Не заехал: ждёт заезда, а дата заезда уже прошла. */

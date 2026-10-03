@@ -1,3 +1,4 @@
+import dayjs from "dayjs";
 import { describe, expect, it } from "vitest";
 
 import type { HotelReservation } from "../api/hotel";
@@ -30,7 +31,7 @@ const stay = (id: number, roomTypeId: number, checkIn: string, nights: [string, 
         id,
         roomTypeId,
         checkIn,
-        checkOut: nights.length ? nights[nights.length - 1][0] : checkIn,
+        checkOut: nights.length ? dayjs(nights[nights.length - 1][0]).add(1, "day").format("YYYY-MM-DD") : checkIn,
         adults: 2,
         children: 1,
         isActive: true,
@@ -80,7 +81,7 @@ describe("summarizeYield — факты с сервера", () => {
     const opts = { from: "2026-09-28", to: "2026-10-04", group: "week" as const };
     const viaFacts = summarizeYield({
       ...opts,
-      facts: factsFromReservations(reservations, opts.from, opts.to),
+      facts: factsFromReservations(reservations, opts.from, opts.to, "2026-09-01"),
       inventory: inventoryFromRooms(rooms, opts.from, opts.to),
       names: new Map(rooms.map((r) => [r.roomTypeId, r.roomTypeName])),
     });

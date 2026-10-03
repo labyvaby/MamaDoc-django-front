@@ -28,9 +28,9 @@ import { CustomDatePicker } from "../components/ui";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { HOTEL_BOOKING_SOURCE_LABELS } from "./hotelDisplay";
 import { axisMoney, fmtInt, fmtMoney, fmtPercent, niceTicks } from "./hotelReportFormat";
-import { deltaPercent, fetchAllReservations } from "./hotelReportData";
+import { deltaPercent, fetchAllReservations, notArrivedSummary, type NotArrivedSummary } from "./hotelReportData";
 import { ReportControls, ReportFilters, ReportKpi, ReportSection, ReportSkeleton, type ReportNav } from "./hotelReportUi";
-import { FilterChip, Surface, useHotelTableSx } from "./hotelUi";
+import { FilterChip, Surface, useHotelTableSx, plural } from "./hotelUi";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
 import {
   factsFromReservations,
@@ -60,6 +60,8 @@ interface YieldFacts {
   names: Map<number, string> | null;
   truncated: boolean;
   fromServer: boolean;
+  /** Не заехали, незаезд не закрыт — не в фактах; null — сервер старый. */
+  notArrived: NotArrivedSummary | null;
 }
 
 /** Сервер ответил 404 — до перезагрузки страницы сразу считаем сами, без лишнего запроса. */
@@ -75,6 +77,7 @@ async function loadYieldFacts(propertyId: number, from: string, to: string, sign
         names: new Map(r.roomTypes.map((t) => [t.roomTypeId, t.roomTypeName])),
         truncated: false,
         fromServer: true,
+        notArrived: r.notArrived ? { reservations: r.notArrived.reservations, nights: r.notArrived.nights, revenue: Number(r.notArrived.revenue) || 0 } : null,
       };
     } catch (err) {
       // 403 — у сотрудника нет права на серверный отчёт: считаем по броням, как до него.
@@ -83,7 +86,15 @@ async function loadYieldFacts(propertyId: number, from: string, to: string, sign
     }
   }
   const res = await fetchAllReservations({ propertyId, from, to: dayjs(to).add(1, "day").format("YYYY-MM-DD") }, signal, 25);
-  return { facts: factsFromReservations(res.rows, from, to), inventory: null, names: null, truncated: res.truncated, fromServer: false };
+  const today = dayjs().format("YYYY-MM-DD");
+  return {
+    facts: factsFromReservations(res.rows, from, to, today),
+    inventory: null,
+    names: null,
+    truncated: res.truncated,
+    fromServer: false,
+    notArrived: notArrivedSummary(res.rows, from, to, today),
+  };
 }
 
 const D = (d: dayjs.Dayjs) => d.format("YYYY-MM-DD");
@@ -372,6 +383,13 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
             <ReportKpi tone="warning" icon={<NightsStayOutlined />} label="Номероночей" value={fmtInt(result.total.sold)} delta={delta("sold")} hint="продано" />
             <ReportKpi tone="primary" icon={<LoginOutlined />} label="Заезды" value={`${fmtInt(result.total.guestsArrived)} / ${fmtInt(result.total.roomsArrived)}`} delta={delta("guestsArrived")} hint="гостей / номеров" />
           </Box>
+          {(mainQuery.data?.notArrived?.reservations ?? 0) > 0 && (
+            <Alert severity="warning" variant="outlined">
+              Не заехали, незаезд не закрыт: {mainQuery.data!.notArrived!.reservations} {plural(mainQuery.data!.notArrived!.reservations, "бронь", "брони", "броней")} ·{" "}
+              {mainQuery.data!.notArrived!.nights} {plural(mainQuery.data!.notArrived!.nights, "ночь", "ночи", "ночей")} · {fmtMoney(mainQuery.data!.notArrived!.revenue, currency)} — не в доходе
+              и не в загрузке, пока ресепшен не заселит гостя или не закроет день.
+            </Alert>
+          )}
           {cmp && (
             <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
               Сравнение с периодом {cmpLabel}

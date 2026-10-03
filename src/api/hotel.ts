@@ -2195,7 +2195,8 @@ export interface HotelDailyReportRow {
   roomTypeName: string;
   isLuxury: boolean;
   state: string;
-  occupancy: "free" | "occupied" | "blocked";
+  /** not_arrived / left — бронь есть, гостя нет: показывается, но не занят и не выручка. */
+  occupancy: "free" | "occupied" | "blocked" | "not_arrived" | "left";
   nightPrice: Money | null;
   reservationId: number | null;
   reservationNumber: number | null;
@@ -2271,6 +2272,17 @@ export interface HotelOccupancyReport {
   departures: number;
   cancellations: number;
   bySource: Record<string, number>;
+  /** Не заехали (ждут, день заезда прошёл, незаезд не закрыт): не в проданных ночах и не в выручке. Нет поля — сервер старый. */
+  notArrived?: HotelNotArrived;
+  /** Ночи после выезда гостя, оставшиеся в бронях: тоже не выручка. */
+  leftEarlyNights?: number;
+  leftEarlyRevenue?: Money;
+}
+
+export interface HotelNotArrived {
+  reservations: number;
+  nights: number;
+  revenue: Money;
 }
 
 export function getDailyReport(propertyId: number, date: string, signal?: AbortSignal): Promise<HotelDailyReport> {
@@ -2712,6 +2724,27 @@ export interface HotelStaffPost {
   rate: Money;
   sortOrder: number;
   isActive: boolean;
+  /** График работы: очередь и повтор (null — нет). Нет поля — сервер старый, повтор не сохранится. */
+  rotation?: HotelStaffRotation | null;
+}
+
+/**
+ * График работы поста. cycle — сотрудники по очереди, по daysPerTurn дней каждый
+ * (двое по 2 — «2 через 2», трое по 1 — «сутки через двое»); weekdays — у каждого
+ * свои дни недели (1 — пн … 7 — вс). Заполняет пустые клетки с startDate; repeat —
+ * и следующие месяцы.
+ */
+export interface HotelStaffRotation {
+  mode: "cycle" | "weekdays";
+  startDate: string;
+  members: HotelStaffRotationMember[];
+  daysPerTurn: number;
+  repeat: boolean;
+}
+
+export interface HotelStaffRotationMember {
+  employeeId: number;
+  weekdays: number[];
 }
 
 export interface HotelStaffPostData {
@@ -2723,6 +2756,8 @@ export interface HotelStaffPostData {
   hours?: number;
   rate?: Money;
   sortOrder?: number;
+  /** Объект ставит график, null убирает, нет поля — не трогает. */
+  rotation?: HotelStaffRotation | null;
 }
 
 export interface HotelStaffShift {
@@ -2865,6 +2900,8 @@ export interface HotelYieldReport {
   inventory: { date: string; roomTypeId: number; available: number }[];
   /** Только ненулевые строки. */
   sales: { date: string; roomTypeId: number; source: string; sold: number; revenue: Money; roomsArrived: number; guestsArrived: number }[];
+  /** Не вошли в sales (см. HotelOccupancyReport.notArrived). */
+  notArrived?: HotelNotArrived;
 }
 
 /** Право — как у списка броней (hotel.view); период ≤ 366 дней. */

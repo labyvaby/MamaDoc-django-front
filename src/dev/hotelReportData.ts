@@ -15,6 +15,7 @@ import {
   type HotelReservation,
   type HotelReservationListParams,
 } from "../api/hotel";
+import { isMissedArrival, isNoShowCandidate, nightCounts } from "./hotelInHouse";
 
 const PAGE = 200;
 /** Потолок страниц на один отчёт: 10 × 200 = 2000 строк — дальше честно говорим «показаны не все». */
@@ -108,6 +109,11 @@ const num = (v: string | number | null | undefined): number => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
+const todayStr = () => dayjs().format("YYYY-MM-DD");
+/** Ночь считается: по факту (nightCounts), а при today = null — по датам брони, как считал старый сервер. */
+const slept = (item: HotelReservation["items"][number], date: string, today: string | null) => today == null || nightCounts(item, date, today);
+/** Цена ночи после скидки сотрудника — как в карточках с сервера (price − discount). */
+const net = (night: { price: string | number; discount?: string | number | null }): number => num(night.price) - num(night.discount);
 
 export interface DailyPoint {
   date: string;
@@ -115,8 +121,12 @@ export interface DailyPoint {
   revenue: number;
 }
 
-/** По каждой дате периода (обе границы включительно): проданные номера и сумма цен ночей. */
-export function dailySeries(reservations: HotelReservation[], from: string, to: string): DailyPoint[] {
+/**
+ * По каждой дате периода (обе границы включительно): проданные номера и сумма
+ * цен ночей. Только ночи, которые кто-то прожил или ещё проживёт (nightCounts):
+ * не заехавший гость — не выручка, как на сервере и на ресепшене.
+ */
+export function dailySeries(reservations: HotelReservation[], from: string, to: string, today: string | null = todayStr()): DailyPoint[] {
   const points = new Map<string, DailyPoint>();
   for (let d = dayjs(from); !d.isAfter(dayjs(to), "day"); d = d.add(1, "day")) {
     const key = d.format("YYYY-MM-DD");
@@ -128,9 +138,9 @@ export function dailySeries(reservations: HotelReservation[], from: string, to: 
       if (item.isActive === false) continue;
       for (const night of item.nights ?? []) {
         const p = points.get(night.date);
-        if (!p) continue;
+        if (!p || !slept(item, night.date, today)) continue;
         p.soldRooms += 1;
-        p.revenue += num(night.price);
+        p.revenue += net(night);
       }
     }
   }
@@ -151,6 +161,7 @@ function slices(
   from: string,
   to: string,
   keyOf: (r: HotelReservation, item: HotelReservation["items"][number]) => { key: string; label: string },
+  today: string | null,
 ): RevenueSlice[] {
   const map = new Map<string, RevenueSlice & { ids: Set<number> }>();
   for (const r of reservations) {
@@ -159,10 +170,10 @@ function slices(
       if (item.isActive === false) continue;
       const { key, label } = keyOf(r, item);
       for (const night of item.nights ?? []) {
-        if (night.date < from || night.date > to) continue;
+        if (night.date < from || night.date > to || !slept(item, night.date, today)) continue;
         const s = map.get(key) ?? { key, label, nights: 0, revenue: 0, adr: 0, reservations: 0, ids: new Set<number>() };
         s.nights += 1;
-        s.revenue += num(night.price);
+        s.revenue += net(night);
         s.ids.add(r.id);
         map.set(key, s);
       }
@@ -173,11 +184,41 @@ function slices(
     .sort((a, b) => b.revenue - a.revenue);
 }
 
-export const revenueByCategory = (reservations: HotelReservation[], from: string, to: string) =>
-  slices(reservations, from, to, (_r, item) => ({ key: String(item.roomTypeId), label: item.roomTypeName }));
+export const revenueByCategory = (reservations: HotelReservation[], from: string, to: string, today: string | null = todayStr()) =>
+  slices(reservations, from, to, (_r, item) => ({ key: String(item.roomTypeId), label: item.roomTypeName }), today);
 
-export const revenueBySource = (reservations: HotelReservation[], from: string, to: string, labelOf: (source: string) => string) =>
-  slices(reservations, from, to, (r) => ({ key: r.source || "other", label: labelOf(r.source || "other") }));
+export const revenueBySource = (reservations: HotelReservation[], from: string, to: string, labelOf: (source: string) => string, today: string | null = todayStr()) =>
+  slices(reservations, from, to, (r) => ({ key: r.source || "other", label: labelOf(r.source || "other") }), today);
+
+export interface NotArrivedSummary {
+  reservations: number;
+  nights: number;
+  revenue: number;
+}
+
+/**
+ * Не заехали, и незаезд не закрыт: брони, их ночи в периоде и что эти ночи
+ * стоили. Не выручка, не загрузка и не долг — пока ресепшен не заселит гостя
+ * или не закроет день; в отчётах показывается отдельной строкой.
+ */
+export function notArrivedSummary(reservations: HotelReservation[], from: string, to: string, today = todayStr()): NotArrivedSummary {
+  const ids = new Set<number>();
+  let nights = 0;
+  let revenue = 0;
+  for (const r of reservations) {
+    if (!isRevenueReservation(r)) continue;
+    for (const item of r.items) {
+      if (!isMissedArrival(item, today)) continue;
+      for (const night of item.nights ?? []) {
+        if (night.date < from || night.date > to) continue;
+        ids.add(r.id);
+        nights += 1;
+        revenue += net(night);
+      }
+    }
+  }
+  return { reservations: ids.size, nights, revenue };
+}
 
 /** Дата заезда брони — у групповой самая ранняя по активным номерам. */
 export function reservationCheckIn(r: HotelReservation): string | null {
@@ -226,13 +267,16 @@ export interface BalanceRow {
   expectedArrivalTime: string | null;
   /** Время выезда брони ("15:30", поздний выезд); null — как в правилах. */
   expectedDepartureTime: string | null;
+  /** Не заехал: ждали, день заезда прошёл, незаезд не закрыт — в «К оплате» не идёт. */
+  missed: boolean;
   reservation: HotelReservation;
 }
 
 export function balanceRows(
   reservations: HotelReservation[],
-  opts: { from: string; to: string; balance: BalanceFilter; status: BalanceStatusFilter; source?: string; corporate?: string },
+  opts: { from: string; to: string; balance: BalanceFilter; status: BalanceStatusFilter; source?: string; corporate?: string; today?: string },
 ): BalanceRow[] {
+  const today = opts.today ?? todayStr();
   return reservations
     .filter((r) => {
       if (opts.status === "active" && r.status !== "confirmed") return false;
@@ -274,6 +318,7 @@ export function balanceRows(
         checkedOutAt: active.map((i) => i.checkedOutAt).filter((v): v is string => v != null).sort().pop() ?? null,
         expectedArrivalTime: r.expectedArrivalTime ? r.expectedArrivalTime.slice(0, 5) : null,
         expectedDepartureTime: r.expectedDepartureTime ? r.expectedDepartureTime.slice(0, 5) : null,
+        missed: isNoShowCandidate(r, today),
         reservation: r,
       };
     })
@@ -416,16 +461,17 @@ export function summarizeExpenses(expenses: Expense[]): ExpenseSummary {
 const BREAKFAST_BOARDS = new Set(["breakfast", "half_board", "full_board", "all_inclusive"]);
 
 /**
- * Завтраков утром даты: гости, ночевавшие в ночь на эту дату (заезд раньше,
- * выезд не раньше), с питанием, где есть завтрак.
+ * Завтраков утром даты: гости, ночевавшие в ночь на эту дату (nightCounts —
+ * не заехавшие и уже выехавшие не едят), с питанием, где есть завтрак.
  */
-export function breakfastCount(reservations: HotelReservation[], date: string): number {
+export function breakfastCount(reservations: HotelReservation[], date: string, today = todayStr()): number {
+  const night = dayjs(date).subtract(1, "day").format("YYYY-MM-DD");
   let count = 0;
   for (const r of reservations) {
     if (!isRevenueReservation(r)) continue;
     for (const item of r.items) {
-      if (item.isActive === false || !BREAKFAST_BOARDS.has(item.boardType)) continue;
-      if (item.checkIn < date && item.checkOut >= date) count += item.adults + item.children;
+      if (!BREAKFAST_BOARDS.has(item.boardType)) continue;
+      if (nightCounts(item, night, today)) count += item.adults + item.children;
     }
   }
   return count;
