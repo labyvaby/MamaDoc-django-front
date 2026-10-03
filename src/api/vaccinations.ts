@@ -85,9 +85,20 @@ export interface Vaccine {
   funding?: VaccineFunding;
   /** Какая строка раздела 1 формы 5 закрывается каждой дозой (только у гос.). */
   form5Rows?: Form5RowRef[];
+  /** Сроки осмотра места прививки (сетка БЦЖ), дни от даты прививки. */
+  followupChecks?: FollowupCheck[];
 }
 
 export type VaccineFunding = "commercial" | "state";
+
+/** Срок осмотра места прививки: «2 мес.» — с 56 по 70 день после неё. */
+export interface FollowupCheck {
+  /** Латиница, цифры и «_»; по нему привязаны внесённые осмотры. */
+  key: string;
+  label: string;
+  fromDays: number;
+  toDays: number;
+}
 
 export interface Form5RowRef {
   dose: number;
@@ -114,6 +125,8 @@ export interface CreateVaccinePayload {
   notes?: string;
   funding?: VaccineFunding;
   form5Rows?: Form5RowRef[];
+  /** Весь список сроков осмотра (замена целиком). */
+  followupChecks?: FollowupCheck[];
 }
 
 export interface UpdateVaccinePayload extends Partial<CreateVaccinePayload> {
@@ -300,7 +313,18 @@ export interface VaccinationRecord {
   warnings?: RecordWarning[];
   /** Передача в госсистему (этап 4; пока всегда "not_sent"). */
   govSyncStatus?: "not_sent" | "sent" | "error";
+  /** Объём дозы, мл, строка-decimal ("0.50"); null — не указан. */
+  doseMl?: string | null;
+  localReaction?: LocalReaction | "";
+  generalReaction?: GeneralReaction | "";
+  /** У вакцины есть сроки осмотра места прививки (сетка БЦЖ). */
+  hasFollowupChecks?: boolean;
 }
+
+/** Местная реакция на прививку (карта прививок 112/у). */
+export type LocalReaction = "none" | "normal" | "strong";
+/** Общая реакция на прививку. */
+export type GeneralReaction = "none" | "mild" | "moderate" | "strong";
 
 export interface RecordsFilters {
   patientId?: number;
@@ -347,6 +371,10 @@ export interface CreateRecordPayload {
   batchNumberManual?: string;
   expiresAtManual?: string | null;
   notes?: string;
+  /** Объём дозы, мл ("0.5"). */
+  doseMl?: string | null;
+  localReaction?: LocalReaction | "";
+  generalReaction?: GeneralReaction | "";
 }
 
 /**
@@ -360,6 +388,11 @@ export interface UpdateRecordPayload {
   reactionNotes?: string;
   injectionSite?: InjectionSite;
   notes?: string;
+  /** null — стереть объём дозы. */
+  doseMl?: string | null;
+  /** "" — стереть реакцию. */
+  localReaction?: LocalReaction | "";
+  generalReaction?: GeneralReaction | "";
 }
 
 /** Тело «Оформить»: поля записи + недостающие данные пациента, одной транзакцией. */
@@ -372,6 +405,8 @@ export interface AdministerRecordPayload {
   administeredById?: number;
   administeredAt?: string;
   notes?: string;
+  /** Объём дозы, мл. */
+  doseMl?: string;
   patient?: {
     gender?: "male" | "female";
     birthDate?: string;
@@ -1169,6 +1204,182 @@ export function cancelRefusal(id: number, organizationId?: number): Promise<Vacc
   return apiRequest<VaccinationRefusal>(
     withOrg(`/vaccinations/refusals/${id}/`, organizationId),
     { method: "PATCH", body: { isCanceled: true } },
+  );
+}
+
+// ── API: Манту и Диаскинтест, сетка БЦЖ (книжка ребёнка, этап 2в) ────────────
+
+export type TuberculinKind = "mantoux" | "diaskintest";
+export type TuberculinResult = "negative" | "doubtful" | "positive" | "hyperergic";
+
+/** Проба: постановка, оценка и результат, который выбрала медсестра. */
+export interface TuberculinTest {
+  id: number;
+  patientId: number;
+  branchId: number | null;
+  appointmentId: number | null;
+  kind: TuberculinKind;
+  performedOn: string; // YYYY-MM-DD
+  batchNumber: string;
+  readOn: string | null;
+  indurationMm: number | null;
+  result: TuberculinResult | "";
+  /** Что подсказывает система по размеру и порогам клиники; без размера — "". */
+  suggestedResult: TuberculinResult | "";
+  performedBy: VaccinationAdministeredBy | null;
+  readBy: VaccinationAdministeredBy | null;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateTuberculinTestPayload {
+  patientId: number;
+  kind: TuberculinKind;
+  performedOn: string;
+  branchId?: number | null;
+  appointmentId?: number | null;
+  batchNumber?: string;
+  readOn?: string | null;
+  indurationMm?: number | null;
+  result?: TuberculinResult | "";
+  notes?: string;
+}
+
+export interface UpdateTuberculinTestPayload {
+  performedOn?: string;
+  batchNumber?: string;
+  readOn?: string | null;
+  indurationMm?: number | null;
+  result?: TuberculinResult | "";
+  notes?: string;
+}
+
+/** С какого размера, мм, подсказывается результат (null — такой ступени нет). */
+export interface TuberculinThreshold {
+  doubtfulFrom: number | null;
+  positiveFrom: number | null;
+  hyperergicFrom: number | null;
+}
+
+export interface TuberculinThresholds {
+  mantoux: TuberculinThreshold;
+  diaskintest: TuberculinThreshold;
+}
+
+export function getTuberculinTests(
+  patientId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<TuberculinTest[]> {
+  return apiRequest<TuberculinTest[]>(
+    withOrg(`/vaccinations/tuberculin-tests/?patientId=${patientId}`, organizationId),
+    { signal },
+  );
+}
+
+/** Пороги клиники — подсказка результата прямо при вводе размера. */
+export function getTuberculinThresholds(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<TuberculinThresholds> {
+  return apiRequest<TuberculinThresholds>(
+    withOrg("/vaccinations/tuberculin-tests/thresholds/", organizationId),
+    { signal },
+  );
+}
+
+export function createTuberculinTest(
+  payload: CreateTuberculinTestPayload,
+  organizationId?: number,
+): Promise<TuberculinTest> {
+  return apiRequest<TuberculinTest>(withOrg("/vaccinations/tuberculin-tests/", organizationId), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateTuberculinTest(
+  id: number,
+  payload: UpdateTuberculinTestPayload,
+  organizationId?: number,
+): Promise<TuberculinTest> {
+  return apiRequest<TuberculinTest>(
+    withOrg(`/vaccinations/tuberculin-tests/${id}/`, organizationId),
+    { method: "PATCH", body: payload },
+  );
+}
+
+export type FollowupState = "waiting" | "due" | "overdue" | "done";
+
+/** Осмотр места прививки в один из сроков. */
+export interface ReactionCheck {
+  id: number;
+  recordId: number;
+  checkKey: string;
+  checkedOn: string;
+  sizeMm: number | null;
+  description: string;
+  checkedBy: VaccinationAdministeredBy | null;
+  createdAt: string;
+}
+
+/** Срок сетки у конкретной прививки: даты и состояние на сегодня. */
+export interface FollowupWindow {
+  key: string;
+  label: string;
+  dueFrom: string;
+  dueTo: string;
+  state: FollowupState;
+  check: ReactionCheck | null;
+}
+
+export interface ReactionChecks {
+  recordId: number;
+  vaccineName: string;
+  windows: FollowupWindow[];
+  checks: ReactionCheck[];
+}
+
+export interface ReactionCheckPayload {
+  checkedOn: string;
+  sizeMm: number | null;
+  description: string;
+}
+
+export function getReactionChecks(
+  recordId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<ReactionChecks> {
+  return apiRequest<ReactionChecks>(
+    withOrg(`/vaccinations/records/${recordId}/reaction-checks/`, organizationId),
+    { signal },
+  );
+}
+
+/** Внести осмотр в срок `checkKey`; в ответе — сетка целиком. */
+export function createReactionCheck(
+  recordId: number,
+  checkKey: string,
+  payload: ReactionCheckPayload,
+  organizationId?: number,
+): Promise<ReactionChecks> {
+  return apiRequest<ReactionChecks>(
+    withOrg(`/vaccinations/records/${recordId}/reaction-checks/`, organizationId),
+    { method: "POST", body: { checkKey, ...payload } },
+  );
+}
+
+export function updateReactionCheck(
+  recordId: number,
+  checkId: number,
+  payload: ReactionCheckPayload,
+  organizationId?: number,
+): Promise<ReactionChecks> {
+  return apiRequest<ReactionChecks>(
+    withOrg(`/vaccinations/records/${recordId}/reaction-checks/${checkId}/`, organizationId),
+    { method: "PATCH", body: payload },
   );
 }
 

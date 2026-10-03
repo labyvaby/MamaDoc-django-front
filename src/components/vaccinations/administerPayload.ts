@@ -1,6 +1,7 @@
 import type { AdministerRecordPayload, VaccinationRecord } from "../../api/vaccinations";
 import { ApiError } from "../../api/client";
 import { changedPatientFields, type PatientDraft } from "./patientGaps";
+import { parseDoseMl } from "./reactionMeta";
 
 export interface AdministerForm {
   isExternal: boolean;
@@ -12,6 +13,8 @@ export interface AdministerForm {
   /** ISO. */
   administeredAt: string;
   notes: string;
+  /** Объём дозы, мл, как ввели: «0,5». */
+  doseMl?: string;
 }
 
 /** Тело POST administer/: заполненные поля записи + изменённые поля пациента. */
@@ -32,6 +35,8 @@ export function buildAdministerPayload(
   if (form.administeredById !== "") body.administeredById = form.administeredById;
   if (form.administeredAt) body.administeredAt = form.administeredAt;
   if (form.notes.trim()) body.notes = form.notes.trim();
+  const doseMl = parseDoseMl(form.doseMl ?? "").value;
+  if (doseMl) body.doseMl = doseMl;
   const changed = changedPatientFields(originalPatient, patient);
   if (Object.keys(changed).length > 0) body.patient = changed;
   return body;

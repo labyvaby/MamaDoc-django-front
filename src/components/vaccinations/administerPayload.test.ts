@@ -43,6 +43,11 @@ describe("buildAdministerPayload", () => {
     expect(body.batchNumberManual).toBe("AB12");
     expect(body.patient).toBeUndefined();
   });
+  it("объём дозы — с точкой; пустой или неверный не шлём", () => {
+    expect(buildAdministerPayload({ ...form, doseMl: "0,5" }, empty, empty).doseMl).toBe("0.5");
+    expect(buildAdministerPayload({ ...form, doseMl: "" }, empty, empty).doseMl).toBeUndefined();
+    expect(buildAdministerPayload({ ...form, doseMl: "50" }, empty, empty).doseMl).toBeUndefined();
+  });
 });
 
 describe("missingFromError", () => {
