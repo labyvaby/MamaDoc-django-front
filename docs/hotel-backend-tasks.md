@@ -9,7 +9,7 @@
 
 ## Сделано в ветке `seitek/hotel-backend-r2` — посмотреть и влить в `test`
 
-Коммиты `2d167227` и `83789394` от `origin/test` (`76a99b32`). Новых прав нет,
+Коммиты `2d167227`, `83789394` и `d8c4ee32` от `origin/test` (`76a99b32`). Новых прав нет,
 существующие поля не менялись — только добавлены. Одна миграция —
 `0021_reservation_expected_departure_time`: добавляет одно поле, допускающее
 `null`, и уточняет подпись времени заезда. Данные не переносит.
@@ -23,6 +23,7 @@
 | `PATCH /reservations/{id}/guests/{guestId}/` — документ одного гостя | `services.update_stay_guest_document`, `views.ReservationGuestDetail` |
 | `expectedArrivalTime` в позициях `GET /calendar/` | `serializers._calendar_details` |
 | Своё время выезда у брони — `expectedDepartureTime` | `Reservation.expected_departure_time`, миграция `0021` |
+| Поиск по частям: гости, подсказка гостя, брони, шахматка | новый модуль `hotel.search`; `views` (`?q=`), `serializers.guest_search_to_payload` |
 
 Подробности:
 
@@ -61,14 +62,41 @@
   Деньги и наличие номеров поле не затрагивает: платный поздний выезд — это
   допуслуга, как и раньше. Тест —
   `tests/test_apps/test_hotel/test_reservation_departure_time.py`.
+- **Поиск по частям** (задача отеля «помнишь только часть»). Раньше `?q=`
+  искался целиком: «Иван Иванов» не находил «Иванов Иван», «0555 58 88 74» —
+  номер `+996555588874`, «Королев» — «Королёва». Теперь в `hotel.search`:
+  - запрос режется на слова; каждое слово ищется в любом поле, совпасть
+    должны все слова;
+  - имена — без учёта регистра и е/ё (`iregex`);
+  - телефоны — по цифрам (`regexp_replace`), местный номер с 0 впереди
+    ищется и без нуля;
+  - короткие числа (меньше трёх цифр) — только номер брони и комнаты
+    целиком, чтобы «2» не находило каждый документ с двойкой;
+  - телефон, набранный с пробелами и скобками, — одно слово.
 
-**Проверка:** 9 новых тестов
+  Где включено:
+  - гости и `guests/search/` — ФИО, оба телефона, e-mail, а с правом на
+    документы ещё документ и ИНН; `matchedBy` считается по тем же словам;
+  - брони — плюс номер комнаты, юрлицо, номер брони канала, а с правом на
+    документы ещё документ и ИНН гостя;
+  - шахматка — плюс телефон, номер комнаты, номер брони канала.
+
+  Прежние проверки (`test_guest_search_matches_document_number_and_inn`)
+  проходят без изменений. Тест — `test_search_by_parts.py`.
+
+**Проверка:** 12 новых тестов
 (`tests/test_apps/test_hotel/test_in_house_storefront_guest_doc.py`,
-`test_reservation_departure_time.py`), все тесты `test_hotel` (265) и
-`tests/test_server` проходят, `makemigrations --check` — изменений нет. Исключение —
-`test_openapi_docs.py::test_every_operation_is_tagged`: он падает и на чистом
-`origin/test`, потому что у `GET /api/lab/settings/` нет тега. Это не отель, но
-посмотреть стоит. Ruff — чисто. Новых ошибок mypy в `server/apps/hotel` нет,
+`test_reservation_departure_time.py`, `test_search_by_parts.py`). Все тесты
+`test_hotel` и `tests/test_server` проходят (863), `makemigrations --check` —
+изменений нет. Три исключения, все падают и на чистой ветке:
+
+- `test_openapi_docs.py::test_every_operation_is_tagged` — у
+  `GET /api/lab/settings/` нет тега. Это не отель, но посмотреть стоит.
+- `test_cashless_and_room_specs.py::test_hotel_money_reaches_the_cashbox_and_its_cashless_breakdown`
+  и `::test_another_organization_never_sees_this_hotel_money` — падают, если
+  запускать с 00:00 до 06:00 по Бишкеку. Тест берёт дату оплаты в UTC
+  (`accepted_at.date()`), а сводка кассы считает по часовому поясу объекта.
+  Днём проходят. Дату в тесте стоит брать по часовому поясу объекта. Ruff — чисто. Новых ошибок mypy в `server/apps/hotel` нет,
 стало на 2 меньше.
 
 Фронт уже читает всё это и со старым сервером работает как раньше: где поля
