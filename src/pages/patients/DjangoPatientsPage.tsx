@@ -19,6 +19,8 @@ import { PageHeader, AppBottomSheet, SegmentedTabs, cascadeContainer, cascadeIte
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useQueryClient } from "@tanstack/react-query";
+import { djangoQueryKeys } from "../../api/queryKeys";
 import { useCan } from "../../hooks/useCan";
 import { useSheetBackClose } from "../../hooks/useSheetBackClose";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
@@ -77,6 +79,7 @@ const DjangoPatientsPage: React.FC = () => {
     activeBranch,
     activeMembership,
   } = usePermissions();
+  const queryClient = useQueryClient();
 
   const canView = isSuperAdmin() || hasPermission("patients.view");
   const canCreate = isSuperAdmin() || hasPermission("patients.create");
@@ -374,6 +377,8 @@ const DjangoPatientsPage: React.FC = () => {
 
   const handleUpdated = (saved: DjangoPatient) => {
     setEditOpen(false);
+    // Пол / дата рождения / ИНН меняют календарь и «Не оформлено».
+    void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.vaccinations.all });
     setPatients((prev) => {
       const idx = prev.findIndex((p) => p.id === saved.id);
       if (idx >= 0) { const next = [...prev]; next[idx] = saved; return next; }
@@ -422,7 +427,7 @@ const DjangoPatientsPage: React.FC = () => {
   );
 
   const vaccinationsNode = (
-    <PatientVaccinationsPanel patient={selected} />
+    <PatientVaccinationsPanel patient={selected} onEditPatient={canUpdate ? handleEdit : undefined} />
   );
 
   const labOrdersNode = (

@@ -29,6 +29,7 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import UpcomingOutlined from "@mui/icons-material/UpcomingOutlined";
+import AssignmentLateOutlined from "@mui/icons-material/AssignmentLateOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import MedicationOutlined from "@mui/icons-material/MedicationOutlined";
@@ -62,6 +63,7 @@ import {
 import {
   deleteCalendarTemplate,
   getBatches,
+  getDraftCount,
   SCHEDULE_DASHBOARD_PAGE_SIZE,
   VACCINATION_BATCH_WRITEOFF_ENABLED,
   VACCINATION_SCHEDULE_BRANCH_SCOPING,
@@ -87,9 +89,19 @@ import VaccineDialog from "../../components/vaccinations/VaccineDialog";
 import BatchDialog from "../../components/vaccinations/BatchDialog";
 import BatchWriteOffDialog from "../../components/vaccinations/BatchWriteOffDialog";
 import CalendarTemplateDialog from "../../components/vaccinations/CalendarTemplateDialog";
+import DraftsTab from "./DraftsTab";
+import {
+  ExemptionDialog,
+  RefusalDialog,
+} from "../../components/vaccinations/ExemptionRefusalDialogs";
 import { injectionSiteLabel, scheduleDateInfo } from "./meta";
 
-type VaccTab = "due" | "records" | "vaccines" | "batches" | "calendar" | "report";
+type VaccTab = "drafts" | "due" | "records" | "vaccines" | "batches" | "calendar" | "report";
+
+/** «Не оформлено» — только тем, кто оформляет прививки (vaccinations.record). */
+const RECORD_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
+  { id: "drafts", label: "Не оформлено", icon: AssignmentLateOutlined },
+];
 
 const BASE_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
   { id: "due", label: "Кому пора", icon: UpcomingOutlined },
@@ -116,6 +128,7 @@ const READ_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
  * «Работа» (ежедневное) · «Справочники» (настройка) · «Аналитика».
  */
 const TAB_GROUP: Record<VaccTab, "work" | "ref" | "analytics"> = {
+  drafts: "work",
   due: "work",
   records: "work",
   vaccines: "ref",
@@ -199,9 +212,23 @@ const VaccinationsPage: React.FC = () => {
   const canManage = can("vaccinations.manage");
 
   const tabs = React.useMemo(
-    () => (canManage ? [...BASE_TABS, ...MANAGE_TABS, ...READ_TABS] : [...BASE_TABS, ...READ_TABS]),
-    [canManage],
+    () => [
+      ...(canRecord ? RECORD_TABS : []),
+      ...BASE_TABS,
+      ...(canManage ? MANAGE_TABS : []),
+      ...READ_TABS,
+    ],
+    [canManage, canRecord],
   );
+
+  // Бейдж на вкладке «Не оформлено».
+  const draftCountQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.draftCount({ branchId, orgId }),
+    queryFn: ({ signal }) => getDraftCount(branchId, orgId, signal),
+    enabled: !permLoading && canRecord,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+  const draftCount = draftCountQuery.data ?? 0;
 
   const [tab, setTab] = React.useState<VaccTab>(() => {
     const saved = sessionStorage.getItem("vaccinations-tab");
@@ -242,6 +269,9 @@ const VaccinationsPage: React.FC = () => {
   // и точность отчёта (отказ родителя / медотвод / отложено).
   const [skipTarget, setSkipTarget] = React.useState<VaccinationScheduleSlot | null>(null);
   const [skipReason, setSkipReason] = React.useState("");
+  // Медотвод и отказ из строки «Кому пора» (форма 5, разделы 2 и 3).
+  const [exemptionTarget, setExemptionTarget] = React.useState<VaccinationScheduleSlot | null>(null);
+  const [refusalTarget, setRefusalTarget] = React.useState<VaccinationScheduleSlot | null>(null);
 
   const handleTabChange = (t: VaccTab) => {
     setTab(t);
@@ -259,7 +289,7 @@ const VaccinationsPage: React.FC = () => {
     page: 0,
     pageSize: SCHEDULE_DASHBOARD_PAGE_SIZE,
   });
-  const [dueStatus, setDueStatus] = React.useState<"all" | "overdue" | "planned">("all");
+  const [dueStatus, setDueStatus] = React.useState<"all" | "overdue" | "planned" | "exempt">("all");
 
   const dueFilters = {
     branchId: dueBranchId ?? undefined,
@@ -507,7 +537,7 @@ const VaccinationsPage: React.FC = () => {
       {
         field: "actions",
         headerName: "",
-        width: 180,
+        width: 320,
         sortable: false,
         // Ввод «со склада» отсюда убран: администрирование вакцины — из
         // регистратуры (по приёму). Здесь оставляем только «Пропустить»
@@ -542,6 +572,32 @@ const VaccinationsPage: React.FC = () => {
                 sx={{ textTransform: "none", borderRadius: "8px", color: "text.secondary" }}
               >
                 Пропустить
+              </Button>
+            )}
+            {canRecord && row.status !== "exempt" && (
+              <Button
+                size="small"
+                color="inherit"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExemptionTarget(row);
+                }}
+                sx={{ textTransform: "none", borderRadius: "8px", color: "text.secondary" }}
+              >
+                Медотвод
+              </Button>
+            )}
+            {canRecord && (
+              <Button
+                size="small"
+                color="inherit"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRefusalTarget(row);
+                }}
+                sx={{ textTransform: "none", borderRadius: "8px", color: "text.secondary" }}
+              >
+                Отказ
               </Button>
             )}
           </Stack>
@@ -1078,6 +1134,23 @@ const VaccinationsPage: React.FC = () => {
                     <Stack direction="row" alignItems="center" gap={0.75} sx={{ position: "relative" }}>
                       <Icon sx={{ fontSize: 17 }} />
                       <span>{label}</span>
+                      {id === "drafts" && draftCount > 0 && (
+                        <Box
+                          component="span"
+                          sx={{
+                            minWidth: 18,
+                            px: 0.5,
+                            borderRadius: "9px",
+                            fontSize: "0.7rem",
+                            lineHeight: "18px",
+                            textAlign: "center",
+                            bgcolor: active ? "primary.contrastText" : "warning.main",
+                            color: active ? "primary.main" : "warning.contrastText",
+                          }}
+                        >
+                          {draftCount}
+                        </Box>
+                      )}
                     </Stack>
                   </ButtonBase>
                 </React.Fragment>
@@ -1107,6 +1180,9 @@ const VaccinationsPage: React.FC = () => {
                 </ToggleButton>
                 <ToggleButton value="planned" sx={{ textTransform: "none", px: 1.5 }}>
                   Запланированные
+                </ToggleButton>
+                <ToggleButton value="exempt" sx={{ textTransform: "none", px: 1.5 }}>
+                  Медотвод
                 </ToggleButton>
               </ToggleButtonGroup>
               {overdueCount > 0 && (
@@ -1209,6 +1285,16 @@ const VaccinationsPage: React.FC = () => {
         )}
 
         {/* ── Таблица ── */}
+        {tab === "drafts" && canRecord && (
+          <DraftsTab
+            branchId={branchId}
+            orgId={orgId}
+            canRecord={canRecord}
+            canUpdatePatient={canUpdatePatient}
+            onEditPatient={(id) => void openEditPatient(id)}
+          />
+        )}
+
         {tab === "due" &&
           (dueQuery.error ? (
             <Alert severity="error">
@@ -1379,6 +1465,19 @@ const VaccinationsPage: React.FC = () => {
         lockedScenario="external"
       />
 
+      <ExemptionDialog
+        open={exemptionTarget != null}
+        onClose={() => setExemptionTarget(null)}
+        patientId={exemptionTarget?.patientId ?? null}
+        vaccineId={exemptionTarget?.vaccineId ?? null}
+      />
+      <RefusalDialog
+        open={refusalTarget != null}
+        onClose={() => setRefusalTarget(null)}
+        patientId={refusalTarget?.patientId ?? null}
+        vaccineId={refusalTarget?.vaccineId ?? null}
+      />
+
       <DjangoEditPatientDrawer
         open={editPatientOpen}
         patient={editPatient}
@@ -1419,6 +1518,12 @@ const VaccinationsPage: React.FC = () => {
       <Dialog open={deleteConfirm != null} onClose={() => setDeleteConfirm(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Удалить строку календаря?</DialogTitle>
         <DialogContent>
+          {/* Ошибка действия видна в самом диалоге, а не под ним. */}
+          {actionError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {actionError}
+            </Alert>
+          )}
           <DialogContentText>
             {deleteConfirm
               ? t("page.deleteRowMessage", {
@@ -1451,6 +1556,12 @@ const VaccinationsPage: React.FC = () => {
       <Dialog open={skipTarget != null} onClose={() => setSkipTarget(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Пропустить дозу</DialogTitle>
         <DialogContent>
+          {/* Ошибка действия видна в самом диалоге, а не под ним. */}
+          {actionError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {actionError}
+            </Alert>
+          )}
           <DialogContentText sx={{ mb: 2 }}>
             {skipTarget ? `${skipTarget.vaccineName} · доза ${skipTarget.doseNumber}. Укажите причину — она сохранится в календаре.` : ""}
           </DialogContentText>

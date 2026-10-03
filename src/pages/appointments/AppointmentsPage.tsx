@@ -80,6 +80,7 @@ import AppointmentListPanel from "./components/AppointmentListPanel";
 import AppointmentDetailsPanel from "./components/AppointmentDetailsPanel";
 import DjangoConclusionSlotsPanel from "./DjangoConclusionSlotsPanel";
 import RecordVaccinationDrawer from "../../components/vaccinations/RecordVaccinationDrawer";
+import AdministerVaccinationDrawer from "../../components/vaccinations/AdministerVaccinationDrawer";
 import BatchRecordVaccinationDrawer, {
   type BatchDoseInput,
 } from "../../components/vaccinations/BatchRecordVaccinationDrawer";
@@ -404,7 +405,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const [vaccineAppt, setVaccineAppt] = React.useState<DjangoAppointment | null>(null);
   // Предзаполнение из прогноза календаря (клик «Ввести» на положенной дозе):
   // вакцина + № дозы. null — общий ввод без прогноза.
-  const [vaccinePrefill, setVaccinePrefill] = React.useState<{ vaccineId: number; doseNumber: number } | null>(null);
+  const [vaccinePrefill, setVaccinePrefill] = React.useState<{
+    vaccineId: number;
+    doseNumber: number;
+    draftRecordId?: number;
+  } | null>(null);
   // Стабильный stub пациента для дровера вакцины: без мемо новый объект на каждый
   // рендер (heartbeat autosync) сбрасывал бы форму (resetForm зависит от initialPatient).
   const vaccinePatientStub = React.useMemo(
@@ -1647,8 +1652,19 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
 
       {/* Ввод вакцины из карточки приёма (регистратура): пациент и appointmentId
           подставляются из выбранного приёма, строка вакцины уйдёт в его счёт. */}
+      {/* Вакцина уже продана черновиком — оформляем именно его (без новой строки счёта). */}
+      <AdministerVaccinationDrawer
+        open={vaccineAppt != null && vaccinePrefill?.draftRecordId != null}
+        onClose={() => {
+          setVaccineAppt(null);
+          setVaccinePrefill(null);
+        }}
+        recordId={vaccinePrefill?.draftRecordId ?? null}
+        suggestedDoseNumber={vaccinePrefill?.doseNumber ?? null}
+      />
+
       <RecordVaccinationDrawer
-        open={vaccineAppt != null}
+        open={vaccineAppt != null && vaccinePrefill?.draftRecordId == null}
         onClose={() => {
           setVaccineAppt(null);
           setVaccinePrefill(null);
