@@ -7,7 +7,7 @@
  * среднем шла уборка. Нет права на отчёт — колонки факта просто не видны.
  */
 import React from "react";
-import { Alert, Avatar, Box, Button, IconButton, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
+import { Alert, Avatar, Box, Button, IconButton, Stack, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
@@ -37,6 +37,8 @@ const D = (d: dayjs.Dayjs) => d.format("YYYY-MM-DD");
 
 export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: ReportNav }> = ({ propertyId, nav }) => {
   const theme = useTheme();
+  // На телефоне Excel — значком в строке с месяцем, ссылки — ниже.
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
   const tableSx = useHotelTableSx();
   const navigate = useNavigate();
   const monthParam = nav.param("month");
@@ -160,11 +162,24 @@ export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: Report
           </IconButton>
         </Stack>
         <Box sx={{ flex: 1 }} />
-        <ReportLink label="График персонала" onClick={() => navigate("/hotel-staff")} />
-        <ReportLink label="Задачи уборки" onClick={() => navigate("/housekeeping")} />
-        <Button variant="outlined" startIcon={<FileDownloadOutlined />} disabled={loading} onClick={() => void exportXlsx()}>
-          Excel
-        </Button>
+        {phone && (
+          <Tooltip title="Скачать Excel">
+            <span>
+              <IconButton aria-label="Скачать Excel" disabled={loading} onClick={() => void exportXlsx()} sx={{ border: `1px solid ${subtleBorder(theme)}`, borderRadius: "10px", width: 44, height: 44 }}>
+                <FileDownloadOutlined fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        )}
+        <Stack direction="row" gap={1.5} flexWrap="wrap" sx={{ width: { xs: "100%", md: "auto" } }}>
+          <ReportLink label="График персонала" onClick={() => navigate("/hotel-staff")} />
+          <ReportLink label="Задачи уборки" onClick={() => navigate("/housekeeping")} />
+        </Stack>
+        {!phone && (
+          <Button variant="outlined" startIcon={<FileDownloadOutlined />} disabled={loading} onClick={() => void exportXlsx()}>
+            Excel
+          </Button>
+        )}
       </Stack>
 
       {shiftsQuery.isError && (
