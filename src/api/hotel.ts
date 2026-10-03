@@ -2464,6 +2464,11 @@ export interface HotelHousekeepingTask {
   note: string;
   completedAt: string | null;
   createdAt: string;
+  /** Первый переход в «в работе»; null — закрыли сразу из «открыта» (hotel-roster §11). */
+  startedAt?: string | null;
+  /** Кто нажал «выполнено» (или назначенный, если у пользователя нет карточки сотрудника). */
+  completedById?: number | null;
+  completedByName?: string;
 }
 
 export interface HotelHousekeepingTaskListParams {
@@ -2471,6 +2476,11 @@ export interface HotelHousekeepingTaskListParams {
   status?: "open" | "in_progress" | "done" | "cancelled";
   assignedToId?: number;
   mine?: boolean;
+  /** Закрытые по дню закрытия, включительно (без status — done и cancelled). */
+  completedFrom?: string;
+  completedTo?: string;
+  /** Задачи одной позиции брони, в любом статусе. */
+  reservationItemId?: number;
 }
 
 export interface HotelHousekeepingTaskCreateData {
@@ -2498,6 +2508,20 @@ export function listHousekeepingTasks(
 ): Promise<HotelHousekeepingTask[]> {
   const qs = buildQuery(params);
   return apiRequest<HotelHousekeepingTask[]>(`/v2/hotel/housekeeping-tasks/${qs}`, { signal });
+}
+
+/**
+ * Постранично (limit ≤ 500): ответ { count, results }, закрытые — свежие сверху.
+ * Старый сервер limit не знает и отдаёт массив — оборачиваем, чтобы экран не ломался.
+ */
+export async function listHousekeepingTasksPage(
+  params: HotelHousekeepingTaskListParams & { limit: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<{ count: number; results: HotelHousekeepingTask[] }> {
+  const res = await apiRequest<{ count: number; results: HotelHousekeepingTask[] } | HotelHousekeepingTask[]>(`/v2/hotel/housekeeping-tasks/${buildQuery(params)}`, {
+    signal,
+  });
+  return Array.isArray(res) ? { count: params.offset ? 0 : res.length, results: params.offset ? [] : res } : res;
 }
 
 export function createHousekeepingTask(data: HotelHousekeepingTaskCreateData): Promise<HotelHousekeepingTask> {
