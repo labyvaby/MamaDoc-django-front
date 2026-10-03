@@ -60,7 +60,7 @@ import Menu from "@mui/material/Menu";
 import { EmptyState, FilterChip, HotelPage, HotelPageHeader, plural, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 import dayjs from "dayjs";
 import { Navigate } from "react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
 import { CustomDateTimePicker } from "../components/ui";
@@ -72,6 +72,7 @@ import { HOTEL_ROOM_STATE_LABELS, HOTEL_ROOM_STATES, hotelRoomStateColor } from 
 import {
   listRooms,
   listHousekeepingTasks,
+  listHousekeepingTasksPage,
   createHousekeepingTask,
   updateHousekeepingTask,
   assignHousekeepingByRoster,
@@ -134,6 +135,18 @@ function statusColor(status: TaskStatus, theme: Theme): string {
 }
 
 const formatDue = (iso: string | null) => (iso ? dayjs(iso).format("DD.MM HH:mm") : "—");
+
+/** Закрытые задачи — страницами: за всё время их тысячи. */
+const CLOSED_PAGE_SIZE = 50;
+
+/** «Мунара · 14:20 02.10 · за 24 мин» — кто и когда закрыл, сколько шла уборка. */
+function doneLine(task: HotelHousekeepingTask): string | null {
+  if (task.status !== "done" || !task.completedAt) return null;
+  const minutes = task.startedAt ? dayjs(task.completedAt).diff(dayjs(task.startedAt), "minute") : null;
+  return [task.completedByName || task.assignedToName, formatDue(task.completedAt), minutes != null && minutes >= 0 ? `за ${minutes} мин` : ""]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 interface TaskFormState {
   roomId: number | "";
@@ -198,16 +211,37 @@ export const HotelHousekeepingPage: React.FC = () => {
   const [doneRoomState, setDoneRoomState] = React.useState<string>("clean");
   const [cancellingId, setCancellingId] = React.useState<number | null>(null);
 
-  const tasksQuery = useQuery({
+  // Готовые и отменённые — постранично (limit/offset), свежие сверху; активные — одним списком, как раньше.
+  const closedFilter = statusFilter === "done" || statusFilter === "cancelled";
+  const activeQuery = useQuery({
     queryKey: ["hotel", "housekeepingTasks", property?.id, statusFilter, mineOnly],
     queryFn: ({ signal }) =>
       listHousekeepingTasks(
-        { propertyId: property!.id, status: statusFilter === "all" ? undefined : statusFilter, mine: mineOnly || undefined },
+        { propertyId: property!.id, status: statusFilter === "all" ? undefined : (statusFilter as "open" | "in_progress"), mine: mineOnly || undefined },
         signal,
       ),
-    enabled: property != null,
+    enabled: property != null && !closedFilter,
   });
-  const tasks = tasksQuery.data ?? [];
+  const closedQuery = useInfiniteQuery({
+    queryKey: ["hotel", "housekeepingTasks", property?.id, statusFilter, mineOnly, "page"],
+    queryFn: ({ pageParam, signal }) =>
+      listHousekeepingTasksPage(
+        { propertyId: property!.id, status: statusFilter as "done" | "cancelled", mine: mineOnly || undefined, limit: CLOSED_PAGE_SIZE, offset: pageParam },
+        signal,
+      ),
+    initialPageParam: 0,
+    getNextPageParam: (last, pages) => {
+      const loaded = pages.reduce((s, p) => s + p.results.length, 0);
+      return last.results.length > 0 && loaded < last.count ? loaded : undefined;
+    },
+    enabled: property != null && closedFilter,
+  });
+  const tasksQuery = closedFilter ? closedQuery : activeQuery;
+  const tasks = React.useMemo(
+    () => (closedFilter ? (closedQuery.data?.pages.flatMap((p) => p.results) ?? []) : (activeQuery.data ?? [])),
+    [closedFilter, closedQuery.data, activeQuery.data],
+  );
+  const tasksTotal = closedFilter ? (closedQuery.data?.pages[0]?.count ?? tasks.length) : tasks.length;
 
   const roomsQuery = useQuery({
     queryKey: ["hotel", "rooms", property?.id],
@@ -404,7 +438,7 @@ export const HotelHousekeepingPage: React.FC = () => {
           tasksQuery.isSuccess
             ? tasks.length === 0
               ? undefined
-              : `${tasks.length} ${plural(tasks.length, "задача", "задачи", "задач")}` + (overdueCount > 0 ? ` · ${overdueCount} просрочено` : "")
+              : `${tasksTotal} ${plural(tasksTotal, "задача", "задачи", "задач")}` + (overdueCount > 0 ? ` · ${overdueCount} просрочено` : "")
             : undefined
         }
         info="Задачи горничным: после выезда, текущая уборка, проверка, обслуживание. Статус меняется кликом по нему; при закрытии задачи можно сразу поставить состояние номера."
@@ -484,12 +518,14 @@ export const HotelHousekeepingPage: React.FC = () => {
                     <Typography variant="body2" fontWeight={600} noWrap>
                       {isCheckoutInspection(task) ? "Проверка перед выездом" : KIND_LABELS[task.kind]}
                     </Typography>
-                    <Typography variant="caption" color={overdue ? "error.main" : "text.secondary"} component="div">
-                      {task.dueAt ? `${formatDue(task.dueAt)}${overdue ? " · просрочено" : ""}` : "без срока"}
+                    <Typography variant="caption" color={overdue ? "error.main" : doneLine(task) ? "success.main" : "text.secondary"} component="div">
+                      {doneLine(task) ?? (task.dueAt ? `${formatDue(task.dueAt)}${overdue ? " · просрочено" : ""}` : "без срока")}
                     </Typography>
-                    <Typography variant="caption" color={task.assignedToName ? "text.secondary" : "warning.main"} component="div" noWrap>
-                      {task.assignedToName || "не назначен"}
-                    </Typography>
+                    {!doneLine(task) && (
+                      <Typography variant="caption" color={task.assignedToName ? "text.secondary" : "warning.main"} component="div" noWrap>
+                        {task.assignedToName || "не назначен"}
+                      </Typography>
+                    )}
                   </Box>
                   <StatusPill
                     color={statusColor(task.status, theme)}
@@ -543,7 +579,7 @@ export const HotelHousekeepingPage: React.FC = () => {
                   <TableCell>Задача</TableCell>
                   <TableCell>Статус</TableCell>
                   <TableCell>Исполнитель</TableCell>
-                  <TableCell>Срок</TableCell>
+                  <TableCell>{statusFilter === "done" ? "Убрано" : "Срок"}</TableCell>
                   <TableCell>Заметка</TableCell>
                   <TableCell align="right" sx={{ pr: 2 }} />
                 </TableRow>
@@ -608,7 +644,18 @@ export const HotelHousekeepingPage: React.FC = () => {
                         )}
                       </TableCell>
                       <TableCell>
-                        {task.dueAt ? (
+                        {doneLine(task) ? (
+                          <Box>
+                            <Typography variant="body2" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                              {formatDue(task.completedAt)}
+                            </Typography>
+                            <Typography variant="caption" color="success.main" component="div">
+                              {[task.completedByName, task.startedAt ? `за ${Math.max(0, dayjs(task.completedAt).diff(dayjs(task.startedAt), "minute"))} мин` : ""]
+                                .filter(Boolean)
+                                .join(" · ") || "готово"}
+                            </Typography>
+                          </Box>
+                        ) : task.dueAt ? (
                           <Box>
                             <Typography variant="body2" sx={{ fontVariantNumeric: "tabular-nums", color: overdue ? "error.main" : "text.primary", fontWeight: overdue ? 600 : 400 }}>
                               {formatDue(task.dueAt)}
@@ -654,6 +701,14 @@ export const HotelHousekeepingPage: React.FC = () => {
             </Table>
           </Box>
         </Surface>
+      )}
+
+      {closedFilter && closedQuery.hasNextPage && (
+        <Stack alignItems="center">
+          <Button onClick={() => void closedQuery.fetchNextPage()} disabled={closedQuery.isFetchingNextPage}>
+            {closedQuery.isFetchingNextPage ? "Загружаем…" : `Показать ещё (${tasksTotal - tasks.length})`}
+          </Button>
+        </Stack>
       )}
 
       {/* Смена статуса — тот же приём, что чип в RoomStateControl. */}

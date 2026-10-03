@@ -90,9 +90,10 @@ export const PAGE_PERMISSIONS = {
   hotelExtras: "hotel.view",
   // «Касса» (HotelCashPage) — реестр оплат: бэк отдаёт его только с hotel.payments.manage.
   hotelCash: "hotel.payments.manage",
-  // «График персонала» (HotelStaffPage) — смотреть могут все сотрудники отеля,
-  // составлять — hotel.staff.manage / hotel.manage (кнопки гейтит страница).
-  hotelStaff: "hotel.view",
+  // «График персонала» (HotelStaffPage): в смене ставка — это чужая зарплата, поэтому
+  // смены сервер отдаёт только с hotel.staff.view; составлять — hotel.staff.manage /
+  // hotel.manage (кнопки гейтит страница). Ресепшену и горничным пункт не виден.
+  hotelStaff: ["hotel.staff.view", "hotel.staff.manage", "hotel.manage"],
   // «Ресепшен» (HotelReceptionPage) — заезды/выезды и список броней; читать
   // может любой сотрудник отеля, «Заселить/Выселить» требует hotel.stays.manage.
   hotelReception: "hotel.view",

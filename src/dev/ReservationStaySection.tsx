@@ -6,10 +6,12 @@
  *
  * «Изменить цены» — своя цена любой ночи и скидка номера с причиной
  * (заказчик: «менять цену чего угодно в любой момент»). Бэк:
- * PATCH /reservations/{id}/items/{itemId}/pricing/ (контракт —
- * docs/hotel-backend-tasks.md §4); пока его нет — демо-режим: своя цена
- * сохраняется на этом устройстве (priceOverrideDemo) и видна здесь с пометкой,
- * а сумма брони на сервере остаётся прежней — это написано рядом.
+ * PATCH /reservations/{id}/items/{itemId}/pricing/ — скидка номера приходит в
+ * items[].discountPercent, своя цена — nights[].isManual. Сервер без этого
+ * (404) — демо-режим: своя цена на этом устройстве (priceOverrideDemo) с
+ * пометкой. Если сервер уже хранит цены, а на устройстве осталась демо-цена,
+ * она поверх не накладывается — её предлагают перенести на сервер или забыть
+ * (на сервер сами демо-цены не переезжают).
  */
 import React from "react";
 import {
@@ -61,11 +63,16 @@ export const ReservationStaySection: React.FC<{ reservation: HotelReservation; a
   const line = `1px solid ${subtleBorder(theme)}`;
   const [editingId, setEditingId] = React.useState<number | null>(null);
   const demoPrices = useDemoValue<DemoPrices>(DEMO_KEYS.prices, {});
+  const unitMoney = (v: number) => `${v.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ${unit}`;
 
   return (
     <Stack gap={2.5}>
       {items.map((it) => {
-        const pricing = demoPricingFor(demoPrices, reservation.id, it.id);
+        const demo = demoPricingFor(demoPrices, reservation.id, it.id);
+        // Сервер сам хранит свою цену (в ночах есть isManual) — демо с устройства не накладываем.
+        const onServer = it.nights.some((n) => n.isManual !== undefined);
+        const pricing = onServer ? undefined : demo;
+        const leftover = onServer ? demo : undefined;
         const serverTotal = it.nights.reduce((s, n) => s + Number(n.price) - Number(n.discount ?? 0), 0);
         const nights = it.nights.length
           ? applyDemoPricing(it.nights, pricing)
@@ -95,8 +102,38 @@ export const ReservationStaySection: React.FC<{ reservation: HotelReservation; a
                 </Button>
               )}
             </Stack>
+            {leftover && editingId !== it.id && (
+              <Alert
+                severity="warning"
+                variant="outlined"
+                sx={{ m: 1.5, mb: 0 }}
+                action={
+                  <Stack direction="row" gap={0.5}>
+                    {editable && (
+                      <Button color="inherit" size="small" onClick={() => setEditingId(it.id)} sx={{ fontWeight: 700 }}>
+                        Перенести
+                      </Button>
+                    )}
+                    <Button color="inherit" size="small" onClick={() => saveDemoPricing(reservation.id, it.id, null)}>
+                      Забыть
+                    </Button>
+                  </Stack>
+                }
+              >
+                На этом устройстве осталась своя цена из демо-режима
+                {leftover.discountPercent ? ` (скидка ${leftover.discountPercent}%)` : ""}
+                {leftover.reason ? `, «${leftover.reason}»` : ""}. На сервере её нет — в счёте {unitMoney(serverTotal)}. Перенесите её на сервер или забудьте.
+              </Alert>
+            )}
             {editingId === it.id ? (
-              <NightPricesEditor reservation={reservation} item={it} unit={unit} pricing={pricing} onDone={() => setEditingId(null)} />
+              <NightPricesEditor
+                reservation={reservation}
+                item={it}
+                unit={unit}
+                pricing={pricing ?? leftover}
+                onDone={() => setEditingId(null)}
+                onSaved={leftover ? () => saveDemoPricing(reservation.id, it.id, null) : undefined}
+              />
             ) : (
               <Box sx={{ overflowX: "auto" }}>
                 <Table size="small" sx={{ "& td, & th": { borderColor: subtleBorder(theme) } }}>
@@ -219,14 +256,23 @@ export const ReservationStaySection: React.FC<{ reservation: HotelReservation; a
   );
 };
 
-/** Правка цен ночей номера: своя цена любой ночи, «всем ночам», скидка %, причина. */
-const NightPricesEditor: React.FC<{ reservation: HotelReservation; item: Item; unit: string; pricing?: DemoItemPricing; onDone: () => void }> = ({
-  reservation,
-  item,
-  unit,
-  pricing,
-  onDone,
-}) => {
+/** Текущая скидка номера на сервере: "10.00" → 10, нет — null. */
+const serverDiscountOf = (item: Item): number | null =>
+  item.discountPercent != null && item.discountPercent !== "" && Number(item.discountPercent) > 0 ? Number(item.discountPercent) : null;
+
+/**
+ * Правка цен ночей номера: своя цена любой ночи, «всем ночам», скидка %, причина.
+ * pricing — демо-цена с устройства: в демо-режиме это текущее состояние, при
+ * переносе на сервер — начальные значения формы (onSaved её стирает).
+ */
+const NightPricesEditor: React.FC<{
+  reservation: HotelReservation;
+  item: Item;
+  unit: string;
+  pricing?: DemoItemPricing;
+  onDone: () => void;
+  onSaved?: () => void;
+}> = ({ reservation, item, unit, pricing, onDone, onSaved }) => {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
@@ -237,18 +283,25 @@ const NightPricesEditor: React.FC<{ reservation: HotelReservation; item: Item; u
   const [prices, setPrices] = React.useState<Record<string, string>>(initial);
   const [resetDates, setResetDates] = React.useState<Set<string>>(new Set());
   const [all, setAll] = React.useState("");
-  const [discount, setDiscount] = React.useState(pricing?.discountPercent ? String(pricing.discountPercent) : "");
-  const [reason, setReason] = React.useState("");
+  const serverDiscount = serverDiscountOf(item);
+  const [discount, setDiscount] = React.useState(() => {
+    const d = pricing?.discountPercent ?? serverDiscount;
+    return d ? String(d) : "";
+  });
+  const [reason, setReason] = React.useState(pricing?.reason ?? "");
   const [saving, setSaving] = React.useState(false);
   const [unsupported, setUnsupported] = React.useState(false);
 
-  const changed = item.nights.filter((n) => resetDates.has(n.date) || Number(prices[n.date]) !== Number(pricing?.nights[n.date] ?? n.price));
+  // Сравниваем с тем, что на сервере: при переносе демо-цены отличаются как раз от него.
+  const changed = item.nights.filter((n) => resetDates.has(n.date) || Number(prices[n.date]) !== Number(n.price));
   const total = item.nights.reduce((s, n) => s + (Number(prices[n.date]) || 0), 0);
-  const oldTotal = item.nights.reduce((s, n) => s + Number(n.price), 0);
+  const oldTotal = item.nights.reduce((s, n) => s + Number(n.price) - Number(n.discount ?? 0), 0);
   const discountNum = discount.trim() === "" ? null : Number(discount.replace(",", "."));
+  // Скидку шлём, только если её поменяли: пустое поле при скидке на сервере — убрать её (null).
+  const discountChanged = (discountNum || null) !== serverDiscount;
   const invalid =
     item.nights.some((n) => !(Number(prices[n.date]) >= 0) || prices[n.date] === "") || (discountNum != null && !(discountNum >= 0 && discountNum <= 100));
-  const nothing = changed.length === 0 && discountNum == null;
+  const nothing = changed.length === 0 && !discountChanged;
   const money = (v: number) => `${v.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ${unit}`;
 
   const save = async () => {
@@ -257,10 +310,11 @@ const NightPricesEditor: React.FC<{ reservation: HotelReservation; item: Item; u
     try {
       await updateItemPricing(reservation.id, item.id, {
         version: reservation.version,
-        nights: changed.map((n) => ({ date: n.date, price: resetDates.has(n.date) ? null : Number(prices[n.date]).toFixed(2) })),
-        ...(discountNum != null ? { discountPercent: String(discountNum) } : {}),
+        ...(changed.length ? { nights: changed.map((n) => ({ date: n.date, price: resetDates.has(n.date) ? null : Number(prices[n.date]).toFixed(2) })) } : {}),
+        ...(discountChanged ? { discountPercent: discountNum ? String(discountNum) : null } : {}),
         reason: reason.trim(),
       });
+      onSaved?.();
       void queryClient.invalidateQueries({ queryKey: ["hotel", "reservation", reservation.id] });
       void queryClient.invalidateQueries({ queryKey: ["hotel", "reservations"] });
       void queryClient.invalidateQueries({ queryKey: ["hotel", "calendar"] });
@@ -388,14 +442,14 @@ const NightPricesEditor: React.FC<{ reservation: HotelReservation; item: Item; u
         label="Причина изменения"
         placeholder="Например: постоянный гость, договорились по телефону"
         value={reason}
-        onChange={(e) => setReason(e.target.value.slice(0, 300))}
+        onChange={(e) => setReason(e.target.value.slice(0, 255))}
         sx={{ mt: 1.5 }}
         helperText="Обязательно — попадёт в историю брони вместе с вашим именем"
       />
       <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} gap={1.5} sx={{ mt: 1.5 }}>
         <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
           Было {money(oldTotal)} → станет <b>{money(discountNum ? Math.round(total * (1 - discountNum / 100) * 100) / 100 : total)}</b>
-          {discountNum ? ` (скидка ${discountNum}%)` : ""}
+          {discountNum ? ` (скидка ${discountNum}%)` : serverDiscount && discountChanged ? " (скидка снята)" : ""}
         </Typography>
         <Button onClick={onDone} disabled={saving}>
           Отмена

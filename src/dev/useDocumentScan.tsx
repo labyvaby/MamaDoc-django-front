@@ -144,7 +144,8 @@ export function useDocumentScan() {
     [stopProgressTimer],
   );
 
-  const scan = React.useCallback(async (file: File): Promise<HotelGuestDocumentScan | null> => {
+  // back — оборот ID-карты: уходит вместе с лицевой, на нём ПИН и адрес прописки.
+  const scan = React.useCallback(async (file: File, back?: File | null): Promise<HotelGuestDocumentScan | null> => {
     if (holdTimerRef.current != null) window.clearTimeout(holdTimerRef.current);
     const generation = ++generationRef.current;
     setScanning(true);
@@ -174,7 +175,8 @@ export function useDocumentScan() {
     };
 
     try {
-      const result = await scanGuestDocument(file);
+      // Фото сюда попадает только после галочки согласия (useConsentGate) — говорим об этом серверу.
+      const result = await scanGuestDocument(file, { backFile: back, consent: true });
       finishScan(describeScan(result), "success");
       return result;
     } catch (err) {

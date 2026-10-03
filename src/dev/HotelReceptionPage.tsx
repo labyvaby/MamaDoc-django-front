@@ -197,7 +197,8 @@ const ArrivalCard: React.FC<{
         <Stack direction="row" alignItems="center" gap={0.5}>
           <AccessTimeOutlined sx={{ fontSize: 15 }} />
           <Typography variant="caption">
-            {checkInTime ? `с ${checkInTime}` : "сегодня"} · {nights} {plural(nights, "ночь", "ночи", "ночей")}
+            {r.expectedArrivalTime ? `около ${r.expectedArrivalTime.slice(0, 5)}` : checkInTime ? `с ${checkInTime}` : "сегодня"} · {nights}{" "}
+            {plural(nights, "ночь", "ночи", "ночей")}
             {item ? ` · до ${formatHotelDate(item.checkOut)}` : ""}
           </Typography>
         </Stack>

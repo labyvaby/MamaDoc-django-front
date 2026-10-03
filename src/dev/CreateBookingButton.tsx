@@ -248,7 +248,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   const [passportPhotoPreview, setPassportPhotoPreview] = React.useState<string | null>(null);
   // Оборотная сторона ID-карты (только guestType === "resident") — грузится отдельным
   // PUT-ом после создания брони/гостя (uploadStayDocumentPhotoBack, contract v2.3), тем
-  // же best-effort принципом, что и лицевая. Не распознаётся.
+  // же best-effort принципом, что и лицевая. Распознаётся вместе с лицевой — одним
+  // запросом (backFile).
   const [backPhotoFile, setBackPhotoFile] = React.useState<File | null>(null);
   const [backPhotoPreview, setBackPhotoPreview] = React.useState<string | null>(null);
   const [photoError, setPhotoError] = React.useState<string | null>(null);
@@ -271,6 +272,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // Дополнительно
   const [bookingSource, setBookingSource] = React.useState("");
   const [specialRequests, setSpecialRequests] = React.useState("");
+  // Во сколько приедет, со слов гостя ("HH:MM") — ресепшен видит в «Кто сегодня заедет».
+  const [arrivalTime, setArrivalTime] = React.useState("");
   const [companyInfo, setCompanyInfo] = React.useState("");
   // Юрлицо из справочника: скидка идёт на проживание, бэк сам пересчитает сумму.
   const [corporateId, setCorporateId] = React.useState<number | "">("");
@@ -335,6 +338,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     clearScanNotice();
     setBookingSource("");
     setSpecialRequests("");
+    setArrivalTime("");
     setCompanyInfo("");
     setCorporateOther(false);
     setDataConsent(false);
@@ -771,13 +775,13 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     // ID-карту распознаём, когда загружены обе стороны: без оборотной ждём её
     // (скан запустит загрузка оборотной). Загранпаспорт — сразу, сторона одна.
     if (guestType === "resident" && !backPhotoFile) return;
-    await scanFront(prepared, generation);
+    await scanFront(prepared, generation, guestType === "resident" ? backPhotoFile : null);
   };
 
-  /** Распознать лицевую сторону и подставить поля. Один и тот же файл повторно не распознаём. */
-  const scanFront = async (front: File, generation: number) => {
+  /** Распознать документ (у ID-карты — обе стороны одним запросом) и подставить поля. Один и тот же файл повторно не распознаём. */
+  const scanFront = async (front: File, generation: number, back: File | null = null) => {
     scannedFrontRef.current = front;
-    const scan = await runDocumentScan(front);
+    const scan = await runDocumentScan(front, back);
     // Форму закрыли (и сбросили) пока шло распознавание — чужие поля в новую не подставляем.
     if (generation !== scanGenerationRef.current) return;
     if (scan) applyScan(scan);
@@ -796,7 +800,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     scanGenerationRef.current += 1;
   };
 
-  /** Оборотная сторона ID-карты — просто прикрепляется, без распознавания (см. комментарий у backPhotoFile). */
+  /** Оборотная сторона ID-карты: прикрепляется и, если лицевая уже есть, запускает распознавание обеих сторон. */
   const handleBackPhotoChange = async (file: File) => {
     if (!isDocumentFile(file)) {
       setPhotoError("Нужен файл изображения или PDF");
@@ -819,7 +823,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setBackPhotoPreview(prepared.type.startsWith("image/") ? URL.createObjectURL(prepared) : null);
     // Обе стороны на месте — распознаём лицевую (если её ещё не распознавали).
     if (scanAvailable && guestType === "resident" && passportPhotoFile && passportPhotoFile !== scannedFrontRef.current && !scanning) {
-      void scanFront(passportPhotoFile, generation);
+      void scanFront(passportPhotoFile, generation, prepared);
     }
   };
 
@@ -857,6 +861,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           ? { customerId: selectedClientId }
           : { customer: { fullName: guestName.trim(), phone: orUndefined(guestPhone) ?? "", email: orUndefined(guestEmail) ?? "", source: bookingSource || "" } }),
         guestComment: orUndefined(specialRequests) ?? "",
+        ...(arrivalTime ? { expectedArrivalTime: arrivalTime } : {}),
         companyInfo: orUndefined(companyInfo) ?? "",
         corporateAccountId: corporateId === "" ? undefined : corporateId,
         dataConsent,
@@ -1879,6 +1884,15 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         fullWidth
                       />
                     )}
+                    <TextField
+                      type="time"
+                      label="Приедет около"
+                      value={arrivalTime}
+                      onChange={(e) => setArrivalTime(e.target.value)}
+                      helperText="Со слов гостя — необязательно"
+                      slotProps={{ inputLabel: { shrink: true } }}
+                      sx={{ width: { xs: "100%", sm: 220 } }}
+                    />
                     <FormField
                       icon={<ChatBubbleOutlineOutlined />}
                       rules={GUEST_RULES.comment}

@@ -222,6 +222,8 @@ export interface BalanceRow {
   createdByName: string;
   checkedInAt: string | null;
   checkedOutAt: string | null;
+  /** Во сколько приедет, со слов гостя ("14:30"). */
+  expectedArrivalTime: string | null;
   reservation: HotelReservation;
 }
 
@@ -268,6 +270,7 @@ export function balanceRows(
         createdByName: r.createdByName,
         checkedInAt: active.map((i) => i.checkedInAt).filter((v): v is string => v != null).sort()[0] ?? null,
         checkedOutAt: active.map((i) => i.checkedOutAt).filter((v): v is string => v != null).sort().pop() ?? null,
+        expectedArrivalTime: r.expectedArrivalTime ? r.expectedArrivalTime.slice(0, 5) : null,
         reservation: r,
       };
     })
@@ -308,7 +311,21 @@ export function inWindow(iso: string, window: { start: dayjs.Dayjs; end: dayjs.D
 /** Подпись способа для сводки: терминал безнала («ККБ», «МКасса») важнее общего «Карта». */
 export const paymentChannelLabel = (p: HotelPayment): string => p.cashlessMethodName || p.methodLabel || p.method;
 
-export const signedAmount = (p: HotelPayment): number => (p.kind === "refund" ? -num(p.amount) : num(p.amount));
+/**
+ * Сумма оплаты в валюте брони. У оплаты в валюте (50 USD) amount — то, что
+ * дал гость, а в сомах — amountBase; складывать amount значило бы считать
+ * 50 долларов как 50 сом.
+ */
+export const baseAmount = (p: HotelPayment): number => num(p.amountBase ?? p.amount);
+
+export const signedAmount = (p: HotelPayment): number => (p.kind === "refund" ? -baseAmount(p) : baseAmount(p));
+
+/** Оплата сделана в другой валюте, чем валюта брони (настоящая, с сервера). */
+const isForeignPayment = (p: HotelPayment) => Boolean(p.baseCurrency && p.currency && p.currency !== p.baseCurrency);
+
+/** «50 USD по 87,5» — что дал гость, если платил в валюте; иначе null. */
+export const foreignPaymentLabel = (p: HotelPayment): string | null =>
+  isForeignPayment(p) ? `${num(p.amount).toLocaleString("ru-RU")} ${p.currency}${p.exchangeRate ? ` по ${num(p.exchangeRate).toLocaleString("ru-RU")}` : ""}` : null;
 
 export interface PaymentSummary {
   cash: number;
@@ -317,7 +334,7 @@ export interface PaymentSummary {
   refunds: number;
   byChannel: { label: string; amount: number; count: number }[];
   byCurrency: { currency: string; cash: number; cashless: number }[];
-  /** Наличные, принятые в валюте (метка «[USD 50 × 87.45]» демо-режима): сколько долларов/евро лежит в кассе. */
+  /** Наличные, принятые в валюте: сколько долларов/евро лежит в кассе (с сервера — currency, из демо — метка «[USD 50 × 87.45]»). */
   foreignCash: { currency: string; amount: number }[];
 }
 
@@ -332,10 +349,16 @@ export function summarizePayments(payments: HotelPayment[]): PaymentSummary {
   const foreign = new Map<string, number>();
   for (const p of payments) {
     const amount = signedAmount(p);
-    const tag = p.method === "cash" ? FOREIGN_TAG.exec(p.note ?? "") : null;
-    if (tag) foreign.set(tag[1], (foreign.get(tag[1]) ?? 0) + (p.kind === "refund" ? -1 : 1) * Number(tag[2]));
-    if (p.kind === "refund") refunds += num(p.amount);
-    const cur = currencies.get(p.currency) ?? { currency: p.currency, cash: 0, cashless: 0 };
+    const sign = p.kind === "refund" ? -1 : 1;
+    if (p.method === "cash" && isForeignPayment(p)) foreign.set(p.currency, (foreign.get(p.currency) ?? 0) + sign * num(p.amount));
+    else {
+      const tag = p.method === "cash" ? FOREIGN_TAG.exec(p.note ?? "") : null;
+      if (tag) foreign.set(tag[1], (foreign.get(tag[1]) ?? 0) + sign * Number(tag[2]));
+    }
+    if (p.kind === "refund") refunds += baseAmount(p);
+    // Суммы уже в валюте брони — и группируем по ней, а не по валюте, которой платил гость.
+    const curCode = p.baseCurrency || p.currency;
+    const cur = currencies.get(curCode) ?? { currency: curCode, cash: 0, cashless: 0 };
     if (p.method === "cash") {
       cash += amount;
       cur.cash += amount;
@@ -348,7 +371,7 @@ export function summarizePayments(payments: HotelPayment[]): PaymentSummary {
       c.count += 1;
       channels.set(label, c);
     }
-    currencies.set(p.currency, cur);
+    currencies.set(curCode, cur);
   }
   return {
     cash,

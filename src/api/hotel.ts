@@ -788,6 +788,8 @@ export interface HotelPaymentRegisterTotal {
   payments: Money;
   refunds: Money;
   net: Money;
+  /** Итог группы в валюте объекта: у группы «наличные USD» — net по курсам оплат (контракт §5). */
+  netBase?: Money;
 }
 
 export interface HotelPaymentRegister extends HotelPage<HotelPayment> {
@@ -1402,6 +1404,8 @@ export interface HotelReservationItem {
   checkedOutAt: string | null;
   guests: HotelReservationGuest[];
   nights: HotelReservationNight[];
+  /** Процентная скидка номера ("10.00") или null — PATCH …/pricing/ (hotel-roster-and-price-overrides §4). */
+  discountPercent?: string | null;
 }
 
 export interface HotelCustomerInput {
@@ -1428,6 +1432,8 @@ export interface HotelReservationCreateData {
   dataConsent?: boolean;
   allowOverbooking?: boolean;
   holdMinutes?: number;
+  /** "HH:MM" — во сколько приедет гость, со слов гостя. */
+  expectedArrivalTime?: string;
   /** Юрлицо из справочника: скидка идёт на проживание, не на допуслуги. */
   corporateAccountId?: number | null;
   /** Сумма, которую видел гость; при расхождении 409 PRICE_CHANGED. Для корпоративной — после скидки. */
@@ -1479,6 +1485,8 @@ export interface HotelReservation {
   version: number;
   checkIn: string | null;
   checkOut: string | null;
+  /** Во сколько приедет гость, со слов гостя: "14:30" по часам объекта или null (hotel-roster §10.4). */
+  expectedArrivalTime?: string | null;
   items: HotelReservationItem[];
   createdById: number | null;
   createdByName: string;
@@ -1518,6 +1526,8 @@ export interface HotelReservationListParams {
 
 export interface HotelReservationUpdateData {
   version?: number;
+  /** "HH:MM" ставит, null очищает, поле не передано — не трогает. */
+  expectedArrivalTime?: string | null;
   customerId?: number | null;
   clearCustomer?: boolean;
   source?: string;
@@ -1938,9 +1948,20 @@ export function searchGuests(q: string, signal?: AbortSignal): Promise<HotelGues
  * RECOGNITION_RATE_LIMITED, 503 RECOGNITION_UNAVAILABLE (провайдер не
  * настроен или лежит), 400 — не файл / больше 10 МБ.
  */
-export function scanGuestDocument(file: File, signal?: AbortSignal): Promise<HotelGuestDocumentScan> {
+/**
+ * file — лицевая сторона; backFile — оборот ID-карты (MRZ, ПИН, адрес прописки):
+ * обе уходят модели одним запросом. consent — гость дал согласие на обработку
+ * данных (фронт без него фото не шлёт; поле — чтобы сервер мог проверять сам).
+ */
+export function scanGuestDocument(
+  file: File,
+  opts: { backFile?: File | null; consent?: boolean } = {},
+  signal?: AbortSignal,
+): Promise<HotelGuestDocumentScan> {
   const formData = new FormData();
   formData.append("file", file);
+  if (opts.backFile) formData.append("backFile", opts.backFile);
+  if (opts.consent) formData.append("consent", "true");
   return apiRequest<HotelGuestDocumentScan>("/v2/hotel/guests/scan-document/", { method: "POST", formData, signal });
 }
 
@@ -1988,8 +2009,8 @@ export function uploadGuestDocumentPhoto(clientId: number, file: File): Promise<
 }
 
 /**
- * Оборотная сторона ID-карты резидента (contract v2.3) — только хранится, scan-document/
- * её не распознаёт, поэтому для загранпаспорта иностранца эти вызовы не шлём. Право
+ * Хранение оборотной стороны ID-карты резидента (contract v2.3); распознаётся она
+ * отдельно — полем backFile в scan-document/. У загранпаспорта оборота нет. Право
  * hotel.guests.documents, лицевая сторона (document-photo/) при этом не трогается.
  */
 export function uploadGuestDocumentPhotoBack(clientId: number, file: File): Promise<HotelGuest> {
@@ -2460,6 +2481,11 @@ export interface HotelHousekeepingTask {
   note: string;
   completedAt: string | null;
   createdAt: string;
+  /** Первый переход в «в работе»; null — закрыли сразу из «открыта» (hotel-roster §11). */
+  startedAt?: string | null;
+  /** Кто нажал «выполнено» (или назначенный, если у пользователя нет карточки сотрудника). */
+  completedById?: number | null;
+  completedByName?: string;
 }
 
 export interface HotelHousekeepingTaskListParams {
@@ -2467,6 +2493,11 @@ export interface HotelHousekeepingTaskListParams {
   status?: "open" | "in_progress" | "done" | "cancelled";
   assignedToId?: number;
   mine?: boolean;
+  /** Закрытые по дню закрытия, включительно (без status — done и cancelled). */
+  completedFrom?: string;
+  completedTo?: string;
+  /** Задачи одной позиции брони, в любом статусе. */
+  reservationItemId?: number;
 }
 
 export interface HotelHousekeepingTaskCreateData {
@@ -2476,6 +2507,8 @@ export interface HotelHousekeepingTaskCreateData {
   assignedToId?: number | null;
   dueAt?: string | null;
   note?: string;
+  /** Позиция брони того же объекта — задачу потом находят по ней (?reservationItemId=). */
+  reservationItemId?: number | null;
 }
 
 export interface HotelHousekeepingTaskUpdateData {
@@ -2494,6 +2527,44 @@ export function listHousekeepingTasks(
 ): Promise<HotelHousekeepingTask[]> {
   const qs = buildQuery(params);
   return apiRequest<HotelHousekeepingTask[]>(`/v2/hotel/housekeeping-tasks/${qs}`, { signal });
+}
+
+/**
+ * Постранично (limit ≤ 500): ответ { count, results }, закрытые — свежие сверху.
+ * Старый сервер limit не знает и отдаёт массив — оборачиваем, чтобы экран не ломался.
+ */
+export async function listHousekeepingTasksPage(
+  params: HotelHousekeepingTaskListParams & { limit: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<{ count: number; results: HotelHousekeepingTask[] }> {
+  const res = await apiRequest<{ count: number; results: HotelHousekeepingTask[] } | HotelHousekeepingTask[]>(`/v2/hotel/housekeeping-tasks/${buildQuery(params)}`, {
+    signal,
+  });
+  return Array.isArray(res) ? { count: params.offset ? 0 : res.length, results: params.offset ? [] : res } : res;
+}
+
+/** GET /reports/housekeeping/ — выполненные уборки по горничным за период (по дню закрытия). Право hotel.reports.view. */
+export interface HotelHousekeepingReportRow {
+  /** null — задачи без исполнителя и без того, кто закрыл (строка всегда последняя). */
+  employeeId: number | null;
+  employeeName: string;
+  done: number;
+  doneByKind: Partial<Record<HotelHousekeepingTask["kind"], number>>;
+  /** От «начала» до «готово»; null — нет задач с обоими временами. */
+  avgMinutes: number | null;
+  byDay: { date: string; done: number }[];
+}
+
+export interface HotelHousekeepingReport {
+  propertyId: number;
+  dateFrom: string;
+  dateTo: string;
+  rows: HotelHousekeepingReportRow[];
+  totals: { done: number; doneByKind: Partial<Record<HotelHousekeepingTask["kind"], number>>; avgMinutes: number | null };
+}
+
+export function getHousekeepingReport(params: { propertyId: number; from: string; to: string }, signal?: AbortSignal): Promise<HotelHousekeepingReport> {
+  return apiRequest<HotelHousekeepingReport>(`/v2/hotel/reports/housekeeping/${buildQuery(params)}`, { signal });
 }
 
 export function createHousekeepingTask(data: HotelHousekeepingTaskCreateData): Promise<HotelHousekeepingTask> {
