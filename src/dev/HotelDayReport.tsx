@@ -17,7 +17,7 @@ import { getDailyReport, type HotelDailyReportRow } from "../api/hotel";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { exportHotelDailyReportXlsx } from "./exportHotelDailyReportXlsx";
 import { formatSellableSummary, HOTEL_OFF_SALE_LABEL, HOTEL_STAY_STATUS_LABELS, hotelStayStatusColor, mapStayDisplayStatus } from "./hotelDisplay";
-import { fmtMoney } from "./hotelReportFormat";
+import { axisMoney, fmtMoney, niceTicks } from "./hotelReportFormat";
 import { ReportKpi, ReportLink, type ReportNav } from "./hotelReportUi";
 import { DateStepper, SectionLabel, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 import { formatHotelDateRange } from "./mockDemoData";
@@ -43,6 +43,7 @@ export const HotelDayReport: React.FC<{ propertyId: number; nav: ReportNav }> = 
     }
     return Array.from(map, ([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [report]);
+  const moneyTicks = React.useMemo(() => niceTicks(Math.max(0, ...revenueByCategory.map((c) => c.value))), [revenueByCategory]);
 
   const rowStatus = (row: HotelDailyReportRow) => {
     if (row.occupancy === "occupied" && row.stayStatus) {
@@ -109,7 +110,7 @@ export const HotelDayReport: React.FC<{ propertyId: number; nav: ReportNav }> = 
                   <BarChart data={revenueByCategory} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
                     <XAxis dataKey="name" tick={axisTick} axisLine={false} tickLine={false} />
-                    <YAxis tick={axisTick} width={56} allowDecimals={false} axisLine={false} tickLine={false} />
+                    <YAxis tick={axisTick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, moneyTicks[moneyTicks.length - 1]]} tickFormatter={axisMoney} />
                     <RechartsTooltip
                       cursor={{ fill: subtleBg(theme, true) }}
                       contentStyle={tooltipStyle}

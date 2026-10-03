@@ -45,7 +45,7 @@ import {
   summarizeExpenses,
 } from "./hotelReportData";
 import { isGuestDebt } from "./hotelInHouse";
-import { fmtInt, fmtMoney, fmtPercent, REPORT_PALETTE } from "./hotelReportFormat";
+import { axisMoney, fmtInt, fmtMoney, fmtPercent, niceTicks, REPORT_PALETTE } from "./hotelReportFormat";
 import { ReportEmpty, ReportKpi, ReportLink, ReportSection, ShareRow, type ReportNav } from "./hotelReportUi";
 import { plural, SectionLabel, Surface } from "./hotelUi";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
@@ -118,6 +118,7 @@ export const HotelOwnerReport: React.FC<{
       })),
     [reservations, from, to, roomsCount, days],
   );
+  const moneyTicks = React.useMemo(() => niceTicks(Math.max(0, ...series.map((p) => p.revenue))), [series]);
   const categories = React.useMemo(() => revenueByCategory(reservations, from, to), [reservations, from, to]);
   const sources = React.useMemo(() => revenueBySource(reservations, from, to, sourceLabel), [reservations, from, to]);
   const todayStr = D(today);
@@ -396,7 +397,7 @@ export const HotelOwnerReport: React.FC<{
                   >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
                     <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={12} />
-                    <YAxis yAxisId="money" tick={axisTick} width={64} axisLine={false} tickLine={false} tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
+                    <YAxis yAxisId="money" tick={axisTick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, moneyTicks[moneyTicks.length - 1]]} tickFormatter={axisMoney} />
                     <YAxis yAxisId="occ" orientation="right" tick={axisTick} width={40} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
                     <RechartsTooltip
                       cursor={{ fill: subtleBg(theme, true) }}

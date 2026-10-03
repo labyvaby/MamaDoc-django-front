@@ -27,7 +27,7 @@ import { getYieldReport, listRooms } from "../api/hotel";
 import { CustomDatePicker } from "../components/ui";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { HOTEL_BOOKING_SOURCE_LABELS } from "./hotelDisplay";
-import { fmtInt, fmtMoney, fmtPercent } from "./hotelReportFormat";
+import { axisMoney, fmtInt, fmtMoney, fmtPercent, niceTicks } from "./hotelReportFormat";
 import { deltaPercent, fetchAllReservations } from "./hotelReportData";
 import { ReportKpi, ReportSection, type ReportNav } from "./hotelReportUi";
 import { FilterChip, Surface, useHotelTableSx } from "./hotelUi";
@@ -533,6 +533,7 @@ const YieldChart: React.FC<{ result: YieldResult; cmp: YieldResult | null; group
     prevOccupancy: cmpRows?.[i]?.occupancy ?? null,
     from: r.from,
   }));
+  const moneyTicks = niceTicks(Math.max(0, ...data.map((p) => Math.max(p.revenue, p.prevRevenue ?? 0))));
   const tick = { fontSize: 11.5, fill: theme.palette.text.secondary };
   const tooltipStyle = { borderRadius: 10, border: `1px solid ${subtleBorder(theme)}`, backgroundColor: theme.palette.background.paper, color: theme.palette.text.primary, fontSize: 13 };
   const names: Record<string, string> = { revenue: "Доход", occupancy: "Загрузка", adr: "ADR", prevRevenue: "Доход (сравнение)", prevOccupancy: "Загрузка (сравнение)" };
@@ -543,7 +544,7 @@ const YieldChart: React.FC<{ result: YieldResult; cmp: YieldResult | null; group
           <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
             <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={10} />
-            <YAxis yAxisId="money" tick={tick} width={64} axisLine={false} tickLine={false} tickFormatter={(v: number) => (v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}м` : v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
+            <YAxis yAxisId="money" tick={tick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, moneyTicks[moneyTicks.length - 1]]} tickFormatter={axisMoney} />
             <YAxis yAxisId="occ" orientation="right" tick={tick} width={44} axisLine={false} tickLine={false} domain={[0, (max: number) => Math.max(100, Math.ceil(max / 10) * 10)]} tickFormatter={(v: number) => `${v}%`} />
             <RechartsTooltip
               contentStyle={tooltipStyle}
@@ -656,6 +657,7 @@ const YieldWeekdays: React.FC<{ result: YieldResult; currency: string }> = ({ re
   const data = result.byWeekday.map((w) => ({ label: WEEKDAYS[w.weekday], occupancy: w.occupancy, adr: w.adr, revenue: w.days ? w.revenue / w.days : 0 }));
   const best = [...result.byWeekday].sort((a, b) => b.occupancy - a.occupancy)[0];
   const worst = [...result.byWeekday].filter((w) => w.days > 0).sort((a, b) => a.occupancy - b.occupancy)[0];
+  const adrTicks = niceTicks(Math.max(0, ...data.map((w) => w.adr)));
   const tick = { fontSize: 12, fill: theme.palette.text.secondary };
   return (
     <ReportSection
@@ -668,7 +670,7 @@ const YieldWeekdays: React.FC<{ result: YieldResult; currency: string }> = ({ re
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
             <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} />
             <YAxis yAxisId="occ" tick={tick} width={44} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
-            <YAxis yAxisId="money" orientation="right" tick={tick} width={60} axisLine={false} tickLine={false} tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
+            <YAxis yAxisId="money" orientation="right" tick={tick} width={64} axisLine={false} tickLine={false} ticks={adrTicks} domain={[0, adrTicks[adrTicks.length - 1]]} tickFormatter={axisMoney} />
             <RechartsTooltip
               contentStyle={{ borderRadius: 10, border: `1px solid ${subtleBorder(theme)}`, backgroundColor: theme.palette.background.paper, color: theme.palette.text.primary, fontSize: 13 }}
               formatter={(value?: number | string, name?: string | number) =>
