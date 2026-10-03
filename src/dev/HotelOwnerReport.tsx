@@ -77,14 +77,18 @@ export const HotelOwnerReport: React.FC<{
   const prevTo = D(dayjs(from).subtract(1, "day"));
   const prevFrom = D(dayjs(prevTo).subtract(days - 1, "day"));
   const toExcl = D(dayjs(to).add(1, "day"));
+  // reports/occupancy/ считает [from, to) — «по» в отчёте включительно, поэтому
+  // передаём следующий день: иначе выручка и загрузка теряли последний день
+  // (а «за один день» был 400 — to должен быть позже from).
+  const prevToExcl = D(dayjs(prevTo).add(1, "day"));
 
   const occupancyQuery = useQuery({
-    queryKey: ["hotel", "reports", "occupancy", propertyId, from, to],
-    queryFn: ({ signal }) => getOccupancyReport(propertyId, from, to, signal),
+    queryKey: ["hotel", "reports", "occupancy", propertyId, from, toExcl],
+    queryFn: ({ signal }) => getOccupancyReport(propertyId, from, toExcl, signal),
   });
   const prevQuery = useQuery({
-    queryKey: ["hotel", "reports", "occupancy", propertyId, prevFrom, prevTo],
-    queryFn: ({ signal }) => getOccupancyReport(propertyId, prevFrom, prevTo, signal),
+    queryKey: ["hotel", "reports", "occupancy", propertyId, prevFrom, prevToExcl],
+    queryFn: ({ signal }) => getOccupancyReport(propertyId, prevFrom, prevToExcl, signal),
   });
   const reservationsQuery = useQuery({
     queryKey: ["hotel", "reports", "ownerReservations", propertyId, from, to],

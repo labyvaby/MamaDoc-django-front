@@ -2257,6 +2257,7 @@ export function getDashboard(propertyId: number, date?: string, signal?: AbortSi
   return apiRequest<HotelDashboard>(`/v2/hotel/dashboard/${qs}`, { signal });
 }
 
+/** Загрузка, ADR, RevPAR за ночи [from, to) — to НЕ включительно (и должен быть позже from). */
 export function getOccupancyReport(
   propertyId: number,
   from: string,
