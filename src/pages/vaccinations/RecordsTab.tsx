@@ -1,22 +1,27 @@
 import React from "react";
 import {
   Alert,
+  Autocomplete,
   Box,
+  ButtonBase,
   CircularProgress,
   Skeleton,
   Stack,
+  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
 import { DateRangeField, DEFAULT_RANGE_PRESETS, UserAvatar, type DateRange, type DateRangePreset } from "../../components/ui";
 import { RecordStatusChip } from "../../components/vaccinations/VaccinationChips";
-import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
-import { getRecords, type VaccinationRecord } from "../../api/vaccinations";
+import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
+import { getRecords, getRecordsSummary, getVaccines, type VaccinationRecord } from "../../api/vaccinations";
+import { TotalTile } from "./TotalTile";
+import { formatCount, formatMoney } from "./totalsFormat";
 import PeriodStepper from "../../components/vaccinations/PeriodStepper";
 import { periodBounds } from "../../components/vaccinations/periodStep";
 import { injectionSiteLabel } from "./meta";
@@ -34,10 +39,13 @@ const RANGE_PRESETS: DateRangePreset[] = [
   { key: "all", label: "За всё время", range: () => [dayjs("2000-01-01"), dayjs().endOf("day")] },
 ];
 
-/** Колонки строки ленты: время · пациент · вакцина · кто вводил · статус. */
+/** Колонки строки ленты: время · пациент · вакцина · назначил · ввёл · статус. */
 const ROW_GRID = {
   display: "grid",
-  gridTemplateColumns: { xs: "44px 1fr auto", md: "48px minmax(200px, 1fr) minmax(240px, 1.5fr) 180px 112px" },
+  gridTemplateColumns: {
+    xs: "44px 1fr auto",
+    md: "48px minmax(180px, 1fr) minmax(220px, 1.4fr) minmax(130px, 170px) minmax(150px, 190px) 112px",
+  },
   columnGap: 1.5,
   alignItems: "center",
 } as const;
@@ -70,6 +78,15 @@ const RecordRow: React.FC<{ r: VaccinationRecord }> = ({ r }) => {
         <Box component="span" sx={{ color: "text.secondary" }}>
           {` · ${where}`}
         </Box>
+      </Typography>
+      <Typography
+        variant="body2"
+        noWrap
+        color={r.prescribedBy ? "text.primary" : "text.disabled"}
+        sx={{ minWidth: 0, display: { xs: "none", md: "block" } }}
+        title={r.prescribedBy ? `Врач приёма: ${r.prescribedBy.fullName}` : "Без приёма врача"}
+      >
+        {r.prescribedBy?.fullName ?? "—"}
       </Typography>
       <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0, display: { xs: "none", md: "flex" } }}>
         {r.administeredBy ? (
@@ -110,21 +127,37 @@ const RecordsTab: React.FC<Props> = ({ branchId, orgId }) => {
       : periodBounds(month, mode);
   const dateFrom = bounds.from;
   const dateTo = bounds.to;
+  const [vaccineId, setVaccineId] = React.useState<number | null>(null);
+
+  const filters = {
+    branchId: branchId ?? undefined,
+    dateFrom,
+    dateTo,
+    vaccineId: vaccineId ?? undefined,
+    organizationId: orgId,
+  };
+
+  const vaccinesQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.vaccines({ orgId, picker: "records-filter" }),
+    queryFn: ({ signal }) => getVaccines({ includeInactive: true, organizationId: orgId }, signal),
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+  const vaccines = vaccinesQuery.data ?? [];
+  const selectedVaccine = vaccines.find((v) => v.id === vaccineId) ?? null;
+
+  // Итоги считает сервер: лента грузится порциями, по ней сумму не сложить.
+  const summaryQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.recordsSummary(filters),
+    queryFn: ({ signal }) => getRecordsSummary(filters, signal),
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+  });
+  const summary = summaryQuery.data;
 
   const query = useInfiniteQuery({
-    queryKey: djangoQueryKeys.vaccinations.records({ feed: true, branchId, orgId, dateFrom, dateTo }),
+    queryKey: djangoQueryKeys.vaccinations.records({ feed: true, ...filters }),
     queryFn: ({ pageParam, signal }) =>
-      getRecords(
-        {
-          branchId: branchId ?? undefined,
-          dateFrom,
-          dateTo,
-          organizationId: orgId,
-          offset: pageParam,
-          limit: RECORDS_PAGE_SIZE,
-        },
-        signal,
-      ),
+      getRecords({ ...filters, offset: pageParam, limit: RECORDS_PAGE_SIZE }, signal),
     initialPageParam: 0,
     getNextPageParam: (last, all) =>
       last.length < RECORDS_PAGE_SIZE ? undefined : all.reduce((n, p) => n + p.length, 0),
@@ -170,13 +203,44 @@ const RecordsTab: React.FC<Props> = ({ branchId, orgId }) => {
         ) : (
           <PeriodStepper value={month} onChange={setMonth} mode={mode} />
         )}
-        <Typography variant="body2" color="text.secondary">
-          {query.isLoading
-            ? "Загрузка…"
-            : records.length === 0
-              ? "Нет прививок за период"
-              : `Показано ${records.length}${hasNextPage ? " — листайте вниз, догрузятся ещё" : ""}`}
-        </Typography>
+        <Autocomplete
+          size="small"
+          options={vaccines}
+          value={selectedVaccine}
+          onChange={(_, v) => setVaccineId(v?.id ?? null)}
+          getOptionLabel={(v) => v.name}
+          isOptionEqualToValue={(a, b) => a.id === b.id}
+          noOptionsText="Ничего не найдено"
+          sx={{ width: 260 }}
+          renderInput={(params) => <TextField {...params} placeholder="Все вакцины" />}
+        />
+      </Stack>
+
+      {/* Итоги за период с учётом фильтра. */}
+      <Stack direction="row" gap={1} flexWrap="wrap" alignItems="stretch" sx={{ mb: 1.5, flexShrink: 0 }}>
+        <TotalTile
+          label="Прививок"
+          value={summary ? formatCount(summary.count) : "…"}
+          hint={summary ? `у нас ${summary.ours} · в другом месте ${summary.external}` : undefined}
+        />
+        <TotalTile label="Детей" value={summary ? formatCount(summary.patients) : "…"} />
+        <TotalTile
+          label="Сумма"
+          value={summary ? formatMoney(summary.amount) : "…"}
+          hint="по прививкам у нас, со скидкой"
+          accent
+        />
+        {!vaccineId &&
+          summary?.byVaccine.slice(0, 4).map((v) => (
+            <ButtonBase
+              key={v.vaccineId}
+              onClick={() => setVaccineId(v.vaccineId)}
+              sx={{ borderRadius: "10px" }}
+              title="Показать только эту вакцину"
+            >
+              <TotalTile label={v.vaccineName} value={formatCount(v.count)} hint={formatMoney(v.amount)} />
+            </ButtonBase>
+          ))}
       </Stack>
 
       {query.error ? (
@@ -203,13 +267,13 @@ const RecordsTab: React.FC<Props> = ({ branchId, orgId }) => {
               borderColor: "divider",
             })}
           >
-            {["Время", "Пациент", "Вакцина", "Кто вводил", "Статус"].map((h, i) => (
+            {["Время", "Пациент", "Вакцина", "Назначил", "Кто вводил", "Статус"].map((h, i) => (
               <Typography
                 key={h}
                 variant="caption"
                 color="text.secondary"
                 fontWeight={600}
-                sx={i === 4 ? { justifySelf: "end" } : undefined}
+                sx={i === 5 ? { justifySelf: "end" } : undefined}
               >
                 {h}
               </Typography>
