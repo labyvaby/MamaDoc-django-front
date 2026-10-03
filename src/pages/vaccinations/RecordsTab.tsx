@@ -89,7 +89,22 @@ const RecordRow: React.FC<{ r: VaccinationRecord }> = ({ r }) => {
         {r.prescribedBy?.fullName ?? "—"}
       </Typography>
       <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0, display: { xs: "none", md: "flex" } }}>
-        {r.administeredBy ? (
+        {r.isExternal ? (
+          // Сделана не у нас: наш сотрудник её не вводил, а только внёс запись.
+          <Typography
+            variant="body2"
+            noWrap
+            color="text.secondary"
+            title={r.recordedBy ? `Запись внёс: ${r.recordedBy.fullName}` : undefined}
+          >
+            в другом месте
+            {r.recordedBy && (
+              <Box component="span" sx={{ color: "text.disabled", fontSize: 12 }}>
+                {` · внёс ${r.recordedBy.fullName}`}
+              </Box>
+            )}
+          </Typography>
+        ) : r.administeredBy ? (
           <>
             <UserAvatar name={r.administeredBy.fullName} size={22} sx={{ borderRadius: "6px", flexShrink: 0, fontSize: 10 }} />
             <Typography variant="body2" noWrap>
@@ -217,31 +232,64 @@ const RecordsTab: React.FC<Props> = ({ branchId, orgId }) => {
       </Stack>
 
       {/* Итоги за период с учётом фильтра. */}
-      <Stack direction="row" gap={1} flexWrap="wrap" alignItems="stretch" sx={{ mb: 1.5, flexShrink: 0 }}>
+      <Stack direction="row" gap={1} flexWrap="wrap" alignItems="stretch" sx={{ mb: 1, flexShrink: 0 }}>
         <TotalTile
           label="Прививок"
           value={summary ? formatCount(summary.count) : "…"}
           hint={summary ? `у нас ${summary.ours} · в другом месте ${summary.external}` : undefined}
         />
-        <TotalTile label="Детей" value={summary ? formatCount(summary.patients) : "…"} />
+        <TotalTile
+          label="Детей"
+          value={summary ? formatCount(summary.patients) : "…"}
+          hint={summary && summary.patients ? `разных детей за период` : undefined}
+        />
         <TotalTile
           label="Сумма"
-          value={summary ? formatMoney(summary.amount) : "…"}
-          hint="по прививкам у нас, со скидкой"
-          accent
+          value={summary ? (Number(summary.amount) > 0 ? formatMoney(summary.amount) : "—") : "…"}
+          hint={
+            summary && Number(summary.amount) === 0
+              ? "платных прививок нет — госвакцины бесплатны"
+              : "платные прививки у нас, со скидкой"
+          }
+          accent={summary != null && Number(summary.amount) > 0}
         />
-        {!vaccineId &&
-          summary?.byVaccine.slice(0, 4).map((v) => (
+      </Stack>
+
+      {/* Разбивка по вакцинам — отдельно от итогов; метка = быстрый фильтр. */}
+      {summary && summary.byVaccine.length > 0 && !vaccineId && (
+        <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center" sx={{ mb: 1.5, flexShrink: 0 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ mr: 0.25 }}>
+            По вакцинам:
+          </Typography>
+          {summary.byVaccine.map((v) => (
             <ButtonBase
               key={v.vaccineId}
               onClick={() => setVaccineId(v.vaccineId)}
-              sx={{ borderRadius: "10px" }}
-              title="Показать только эту вакцину"
+              title={
+                Number(v.amount) > 0
+                  ? `${v.vaccineName}: ${formatMoney(v.amount)} — показать только её`
+                  : `Показать только ${v.vaccineName}`
+              }
+              sx={(th) => ({
+                px: 1,
+                height: 26,
+                borderRadius: "13px",
+                border: 1,
+                borderColor: "divider",
+                gap: 0.5,
+                fontSize: 13,
+                "&:hover": { borderColor: "primary.main", bgcolor: alpha(th.palette.primary.main, 0.06) },
+              })}
             >
-              <TotalTile label={v.vaccineName} value={formatCount(v.count)} hint={formatMoney(v.amount)} />
+              <Box component="span">{v.vaccineName}</Box>
+              <Box component="span" sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                {formatCount(v.count)}
+              </Box>
             </ButtonBase>
           ))}
-      </Stack>
+        </Stack>
+      )}
+      {vaccineId && <Box sx={{ mb: 0.5 }} />}
 
       {query.error ? (
         <Alert severity="error">

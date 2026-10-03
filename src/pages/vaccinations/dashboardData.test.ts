@@ -7,6 +7,8 @@ describe("dashboardData", () => {
     expect(toBars([{ key: "a", label: "A", value: 4 }, { key: "b", label: "B", value: 1 }]).map((b) => b.share)).toEqual([1, 0.25]);
     expect(toBars([{ key: "a", label: "A", value: 0 }])[0].share).toBe(0);
     expect(toBars([])).toEqual([]);
+    const shares = toBars([{ key: "f", label: "Девочки", value: 1 }, { key: "m", label: "Мальчики", value: 3 }], 4);
+    expect(shares.map((b) => [b.share, b.pct])).toEqual([[0.25, "25 %"], [0.75, "75 %"]]);
   });
 
   it("12 месяцев года с пустыми", () => {

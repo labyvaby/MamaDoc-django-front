@@ -10,12 +10,20 @@ export interface BarDatum {
   value: number;
   /** Подсказка при наведении (сумма и т.п.). */
   hint?: string;
-  /** Доля от максимума — длина полосы, 0…1. */
+  /** Длина полосы, 0…1: доля от целого (если задано) или от максимума. */
   share: number;
+  /** Доля от целого «38 %» — когда целое задано. */
+  pct?: string;
 }
 
-/** Длины полос относительно максимума (пустой список / все нули — нулевые полосы). */
-export function toBars(items: Omit<BarDatum, "share">[]): BarDatum[] {
+/**
+ * Полосы. С total — длина и подпись «%» как доля от целого (сумма полос =
+ * 100 %), без — длина относительно максимума.
+ */
+export function toBars(items: Omit<BarDatum, "share" | "pct">[], total?: number): BarDatum[] {
+  if (total != null) {
+    return items.map((i) => ({ ...i, share: total > 0 ? i.value / total : 0, pct: percent(i.value, total) }));
+  }
   const max = Math.max(0, ...items.map((i) => i.value));
   return items.map((i) => ({ ...i, share: max > 0 ? i.value / max : 0 }));
 }
