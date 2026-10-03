@@ -100,6 +100,12 @@ export const HotelCashPage: React.FC = () => {
   const currencies = [...new Set(totals.map((t) => t.currency))];
   // Итог дня по каждой валюте отдельно — разные валюты не складываем.
   const net = (cur: string, key: "payments" | "refunds" | "net") => totals.filter((t) => t.currency === cur).reduce((s, t) => s + Number(t[key]), 0);
+  // Валюта в сомах — по курсам самих оплат (netBase с сервера), а не по сегодняшнему курсу.
+  const baseCurrency = property?.currency || "KGS";
+  const netBaseOf = (cur: string) =>
+    totals.filter((t) => t.currency === cur).reduce((s, t) => s + (t.netBase != null ? Number(t.netBase) : cur === baseCurrency ? Number(t.net) : 0), 0);
+  const hasBase = (cur: string) => cur === baseCurrency || totals.some((t) => t.currency === cur && t.netBase != null);
+  const totalInBase = currencies.reduce((s, cur) => s + netBaseOf(cur), 0);
   const isToday = date.isSame(dayjs(), "day");
 
   // В файл — все операции дня (все страницы), а не только показанные.
@@ -159,47 +165,61 @@ export const HotelCashPage: React.FC = () => {
               <EmptyState icon={<PaymentsOutlined />} title="Оплат за этот день нет" description={accepter !== "" ? "Попробуйте другого сотрудника или все." : "Когда гости заплатят, здесь появятся итоги и операции."} />
             </Surface>
           ) : (
-            currencies.map((cur) => (
-              <Box key={cur}>
-                <SectionLabel>Итоги дня{currencies.length > 1 ? `, ${unit(cur)}` : ""}</SectionLabel>
-                <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
-                  <MetricTile label="Принято" value={money(net(cur, "payments"), cur)} accent={theme.palette.success.main} />
-                  <MetricTile label="Возвраты" value={money(net(cur, "refunds"), cur)} accent={net(cur, "refunds") > 0 ? theme.palette.error.main : undefined} />
-                  <MetricTile label="Итого в кассе" value={money(net(cur, "net"), cur)} hint="принято минус возвраты" />
-                </Box>
-                <Surface padded={false} sx={{ overflow: "hidden", mt: 2 }}>
-                  <Table sx={tableSx} size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell sx={{ pl: 2.5 }}>Способ оплаты</TableCell>
-                        <TableCell align="right">Принято</TableCell>
-                        <TableCell align="right">Возвраты</TableCell>
-                        <TableCell align="right" sx={{ pr: 2.5 }}>
-                          Итого
-                        </TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {totals
-                        .filter((t) => t.currency === cur)
-                        .map((t) => (
-                          <TableRow key={`${t.method}-${t.cashlessMethodId ?? 0}`}>
-                            <TableCell sx={{ pl: 2.5, fontWeight: 600 }}>
-                              {t.methodLabel || t.method}
-                              {t.cashlessMethodName ? <Typography component="span" variant="body2" color="text.secondary"> · {t.cashlessMethodName}</Typography> : null}
-                            </TableCell>
-                            <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{money(t.payments, cur)}</TableCell>
-                            <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", color: Number(t.refunds) > 0 ? "error.main" : "text.disabled" }}>
-                              {Number(t.refunds) > 0 ? `−${money(t.refunds, cur)}` : "—"}
-                            </TableCell>
-                            <TableCell align="right" sx={{ pr: 2.5, fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{money(t.net, cur)}</TableCell>
-                          </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
+            <>
+              {currencies.length > 1 && currencies.every(hasBase) && (
+                <Surface sx={{ py: 1.5 }}>
+                  <Stack direction="row" alignItems="baseline" gap={1.5} flexWrap="wrap">
+                    <Typography variant="body2" color="text.secondary">Всего в кассе в {unit(baseCurrency) === "сом" ? "сомах" : baseCurrency}</Typography>
+                    <Typography sx={{ fontSize: 22, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{money(totalInBase, baseCurrency)}</Typography>
+                    <Typography variant="caption" color="text.secondary">валюта — по курсу каждой оплаты</Typography>
+                  </Stack>
                 </Surface>
-              </Box>
-            ))
+              )}
+              {currencies.map((cur) => (
+                <Box key={cur}>
+                  <SectionLabel>Итоги дня{currencies.length > 1 ? `, ${unit(cur)}` : ""}</SectionLabel>
+                  <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
+                    <MetricTile label="Принято" value={money(net(cur, "payments"), cur)} accent={theme.palette.success.main} />
+                    <MetricTile label="Возвраты" value={money(net(cur, "refunds"), cur)} accent={net(cur, "refunds") > 0 ? theme.palette.error.main : undefined} />
+                    <MetricTile label="Итого в кассе" value={money(net(cur, "net"), cur)} hint="принято минус возвраты" />
+                    {cur !== baseCurrency && hasBase(cur) && (
+                      <MetricTile label={`В ${unit(baseCurrency) === "сом" ? "сомах" : baseCurrency}`} value={money(netBaseOf(cur), baseCurrency)} hint="по курсу каждой оплаты" />
+                    )}
+                  </Box>
+                  <Surface padded={false} sx={{ overflow: "hidden", mt: 2 }}>
+                    <Table sx={tableSx} size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ pl: 2.5 }}>Способ оплаты</TableCell>
+                          <TableCell align="right">Принято</TableCell>
+                          <TableCell align="right">Возвраты</TableCell>
+                          <TableCell align="right" sx={{ pr: 2.5 }}>
+                            Итого
+                          </TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {totals
+                          .filter((t) => t.currency === cur)
+                          .map((t) => (
+                            <TableRow key={`${t.method}-${t.cashlessMethodId ?? 0}`}>
+                              <TableCell sx={{ pl: 2.5, fontWeight: 600 }}>
+                                {t.methodLabel || t.method}
+                                {t.cashlessMethodName ? <Typography component="span" variant="body2" color="text.secondary"> · {t.cashlessMethodName}</Typography> : null}
+                              </TableCell>
+                              <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{money(t.payments, cur)}</TableCell>
+                              <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", color: Number(t.refunds) > 0 ? "error.main" : "text.disabled" }}>
+                                {Number(t.refunds) > 0 ? `−${money(t.refunds, cur)}` : "—"}
+                              </TableCell>
+                              <TableCell align="right" sx={{ pr: 2.5, fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{money(t.net, cur)}</TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  </Surface>
+                </Box>
+              ))}
+            </>
           )}
 
           {(first.count > 0 || accepter !== "") && (
@@ -265,6 +285,12 @@ export const HotelCashPage: React.FC = () => {
                             <TableCell align="right" sx={{ pr: 2.5, fontVariantNumeric: "tabular-nums", fontWeight: 700, whiteSpace: "nowrap", color: refund ? "error.main" : "text.primary" }}>
                               {refund ? "−" : "+"}
                               {money(p.amount, p.currency)}
+                              {p.amountBase != null && p.currency !== (p.baseCurrency || p.currency) && (
+                                <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 400 }}>
+                                  = {money(p.amountBase, p.baseCurrency)}
+                                  {p.exchangeRate ? ` по ${Number(p.exchangeRate).toLocaleString("ru-RU")}` : ""}
+                                </Typography>
+                              )}
                             </TableCell>
                           </TableRow>
                         );
