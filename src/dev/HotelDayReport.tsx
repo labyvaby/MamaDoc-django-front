@@ -9,6 +9,10 @@ import React from "react";
 import { Box, Button, CircularProgress, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
+import HotelOutlined from "@mui/icons-material/HotelOutlined";
+import MeetingRoomOutlined from "@mui/icons-material/MeetingRoomOutlined";
+import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
+import SellOutlined from "@mui/icons-material/SellOutlined";
 import dayjs from "dayjs";
 import { useQuery } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
@@ -17,7 +21,7 @@ import { getDailyReport, type HotelDailyReportRow } from "../api/hotel";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { exportHotelDailyReportXlsx } from "./exportHotelDailyReportXlsx";
 import { formatSellableSummary, HOTEL_OFF_SALE_LABEL, HOTEL_STAY_STATUS_LABELS, hotelStayStatusColor, mapStayDisplayStatus } from "./hotelDisplay";
-import { axisMoney, fmtMoney, niceTicks } from "./hotelReportFormat";
+import { axisMoney, fmtMoney, fmtPercent, niceTicks } from "./hotelReportFormat";
 import { ReportKpi, ReportLink, type ReportNav } from "./hotelReportUi";
 import { DateStepper, SectionLabel, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
 import { formatHotelDateRange } from "./mockDemoData";
@@ -91,15 +95,16 @@ export const HotelDayReport: React.FC<{ propertyId: number; nav: ReportNav }> = 
       ) : (
         <>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 1.5 }}>
+            <ReportKpi emphasis tone="success" icon={<SellOutlined />} label="Выручка за ночь" value={fmtMoney(report.revenue, report.currency)} hint="по ценам занятых номеров" />
             <ReportKpi
               tone="info"
+              icon={<HotelOutlined />}
               label="Загрузка"
-              value={`${Number(report.occupancyPercent).toLocaleString("ru-RU")}%`}
+              value={fmtPercent(report.occupancyPercent)}
               hint={`занято ${formatSellableSummary(report.occupiedRooms, report.totalRooms, report.blockedRooms)}`}
             />
-            <ReportKpi tone="success" label="Свободно" value={report.freeRooms} hint="номеров в продаже" />
-            <ReportKpi label="Заезды / выезды" value={`${report.arrivals} / ${report.departures}`} hint="за день" />
-            <ReportKpi label="Выручка за ночь" value={fmtMoney(report.revenue, report.currency)} hint="по ценам занятых номеров" />
+            <ReportKpi tone="success" icon={<MeetingRoomOutlined />} label="Свободно" value={report.freeRooms} hint="номеров в продаже" />
+            <ReportKpi icon={<SwapHorizOutlined />} label="Заезды / выезды" value={`${report.arrivals} / ${report.departures}`} hint="за день" />
           </Box>
 
           {revenueByCategory.length > 0 && (
