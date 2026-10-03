@@ -331,8 +331,10 @@ export function useVisibleSettingsTabs(): TabDef[] {
     "tasks",
     "skud",
     "announcements",
+    // «Ставки за уборку» — модуль уборки клиники. Зарплата отеля считается только
+    // по сменам «Графика персонала» (ставка поста × смены); две модели путали (ревьюер).
+    "cleaning",
   ];
-  const isHotel = activeOrganization?.vertical === "hotel";
   return TAB_DEFS.filter((tab) => {
     if (
       (activeOrganization?.vertical === "retail" || activeOrganization?.vertical === "hotel") &&
@@ -362,11 +364,7 @@ export function useVisibleSettingsTabs(): TabDef[] {
     return tab.key === "cleaning"
       ? moduleGate("cleaning", [SETTINGS_TAB_PERMISSIONS.cleaning])
       : can(SETTINGS_TAB_PERMISSIONS[tab.key]);
-  }).map((tab) =>
-    // В отеле «Уборка» — задачи горничным (/housekeeping); эта вкладка — ставки
-    // за уборку для зарплаты. Одно слово на два разных раздела путало.
-    isHotel && tab.key === "cleaning" ? { ...tab, labelOverride: "Ставки за уборку" } : tab,
-  );
+  });
 }
 
 /**

@@ -63,9 +63,9 @@ export const ReportKpi: React.FC<{
             {icon}
           </Box>
         )}
+        {/* Переносится, а не режется: на телефоне «ВЫРУЧКА НО…» читать было нечего. */}
         <Typography
-          noWrap
-          sx={{ flex: 1, minWidth: 0, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary" }}
+          sx={{ flex: 1, minWidth: 0, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary", lineHeight: 1.3 }}
         >
           {label}
         </Typography>
@@ -85,7 +85,7 @@ export const ReportKpi: React.FC<{
         {value}
       </Typography>
       {(hasDelta || hint) && (
-        <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+        <Stack direction="row" alignItems="center" gap={0.75} rowGap={0.25} flexWrap="wrap" sx={{ minWidth: 0 }}>
           {hasDelta && (
             <Stack
               direction="row"
@@ -108,7 +108,7 @@ export const ReportKpi: React.FC<{
             </Stack>
           )}
           {hint && (
-            <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ minWidth: 0, lineHeight: 1.3 }}>
               {hint}
             </Typography>
           )}

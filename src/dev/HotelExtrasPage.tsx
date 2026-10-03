@@ -25,13 +25,11 @@ import {
   InputAdornment,
   Stack,
   Switch,
-  Tab,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
-  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
@@ -83,31 +81,38 @@ const RULES = {
 const money = (v: string | number) => Number(v).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 const PAGE = 100;
 
-export const HotelExtrasPage: React.FC = () => {
-  usePageTitle("Услуги и юрлица");
+/**
+ * «Услуги» (/hotel-extras) и «Юрлица» (/hotel-companies) — два пункта меню, а не
+ * вкладки одной страницы «Услуги и юрлица»: прачечная и компании-контрагенты
+ * между собой не связаны (ревьюер).
+ */
+export const HotelExtrasPage: React.FC<{ section?: "services" | "corporate" }> = ({ section = "services" }) => {
+  usePageTitle(section === "services" ? "Услуги" : "Юрлица");
   const vivaActive = useIsVivaActive();
   const { property, isLoading: propertyLoading } = useHotelProperty();
-  const [tab, setTab] = React.useState<"services" | "corporate">("services");
+  const tab = section;
 
   if (!vivaActive) return <Navigate to="/" replace />;
 
   return (
     <HotelPage>
       <HotelPageHeader
-        title="Услуги и юрлица"
+        title={tab === "services" ? "Услуги" : "Юрлица"}
         subtitle={tab === "services" ? "Допуслуги для счёта гостя" : "Компании со скидкой и договором"}
         info={
-          <>
-            Услуги — то, что добавляют в счёт брони сверх проживания: мини-бар, прачечная, поздний выезд. Юрлица — компании, на
-            которых бронируют: скидка юрлица действует на проживание, но не на услуги. Изменение справочника не меняет уже
-            выставленные счета и привязанные брони.
-          </>
+          tab === "services" ? (
+            <>
+              То, что добавляют в счёт брони сверх проживания: мини-бар, прачечная, поздний выезд. Изменение справочника не меняет уже
+              выставленные счета.
+            </>
+          ) : (
+            <>
+              Компании, на которых бронируют: скидка юрлица действует на проживание, но не на услуги. Изменение справочника не меняет уже
+              привязанные брони.
+            </>
+          )
         }
       />
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ minHeight: 40, mt: -1, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600 } }}>
-        <Tab value="services" label="Услуги" />
-        <Tab value="corporate" label="Юрлица" />
-      </Tabs>
       {!property && !propertyLoading ? (
         <HotelPropertyMissing />
       ) : property ? (

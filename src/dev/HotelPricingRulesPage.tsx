@@ -35,6 +35,7 @@ import { Link as RouterLink } from "react-router";
 import dayjs from "dayjs";
 
 import { usePageTitle } from "../hooks/usePageTitle";
+import { PricingSectionTabs } from "./PricingSectionTabs";
 import { useCan } from "../hooks/useCan";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
@@ -131,6 +132,7 @@ export const HotelPricingRulesPage: React.FC = () => {
 
   return (
     <HotelPage>
+        <PricingSectionTabs />
         <HotelPageHeader
           title="Ценообразование"
           subtitle={

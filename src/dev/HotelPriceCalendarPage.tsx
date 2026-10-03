@@ -49,6 +49,7 @@ import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker } from "../components/ui";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { PricingSectionTabs } from "./PricingSectionTabs";
 import { useCan } from "../hooks/useCan";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import {
@@ -136,6 +137,7 @@ export const HotelPriceCalendarPage: React.FC = () => {
 
   return (
     <HotelPage maxWidth={1600}>
+      <PricingSectionTabs />
       <HotelPageHeader
         title="Календарь цен"
         subtitle={

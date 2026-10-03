@@ -1005,7 +1005,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           : prepaymentFailed
           ? { text: `Бронь №${reservation.number} создана, но предоплату записать не удалось (${prepaymentFailed}). Внесите её в карточке брони.`, severity: "warning" }
           : chargesFailed > 0
-          ? { text: `Бронь №${reservation.number} создана, но ${chargesFailed} из допуслуг не записались. Добавьте их на вкладке «Проживание и услуги».`, severity: "warning" }
+          ? { text: `Бронь №${reservation.number} создана, но ${chargesFailed} из допуслуг не записались. Добавьте их на вкладке «Проживание».`, severity: "warning" }
           : { text: `Бронь №${reservation.number} для «${guestName.trim()}» добавлена в шахматку`, severity: "success" },
       );
       reset();

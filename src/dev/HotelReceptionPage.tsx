@@ -58,7 +58,7 @@ import { useSnackbar } from "notistack";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useCan } from "../hooks/useCan";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
-import { cancelReservation, checkInReservationItem, checkOutReservationItem, listReservations, type HotelReservation } from "../api/hotel";
+import { cancelReservation, checkInReservationItem, checkOutReservationItem, listReservations, listRooms, type HotelReservation, type HotelRoom } from "../api/hotel";
 import { ApiError, getErrorMessage } from "../api/client";
 import { subtleBorder } from "../theme/uiHelpers";
 import { useHotelProperty } from "./useHotelProperty";
@@ -108,12 +108,26 @@ const BalancePill: React.FC<{ reservation: HotelReservation }> = ({ reservation 
  * открытия брони. Кнопка — заселить в один клик (или открыть бронь, если
  * решение за человеком: номер не убран, группа, нет номера).
  */
+/**
+ * Готов ли номер к заселению — видно до нажатия «Заселить»: сервер в грязный
+ * номер без подтверждения сотрудника не заселит (ROOM_NOT_READY), но узнавать
+ * об этом по отказу поздно — гость уже стоит у стойки.
+ */
+const ROOM_READINESS: Record<HotelRoom["state"], { label: string; tone: "success" | "warning" | "error" }> = {
+  inspected: { label: "номер проверен", tone: "success" },
+  clean: { label: "номер убран", tone: "success" },
+  dirty: { label: "номер не убран", tone: "warning" },
+  repair: { label: "номер в ремонте", tone: "error" },
+};
+
 const ArrivalCard: React.FC<{
   reservation: HotelReservation;
   checkInTime: string | null;
   action?: { label: string; onClick: () => void; busy: boolean; disabled?: boolean };
   onOpen: () => void;
-}> = ({ reservation: r, checkInTime, action, onOpen }) => {
+  /** Состояние уборки номеров брони (roomId → state); нет — не показываем. */
+  roomStates?: Map<number, HotelRoom["state"]>;
+}> = ({ reservation: r, checkInTime, action, onOpen, roomStates }) => {
   const theme = useTheme();
   const dark = theme.palette.mode === "dark";
   const item = r.items[0];
@@ -218,6 +232,16 @@ const ArrivalCard: React.FC<{
         ) : (
           <StatusPill color={theme.palette.success.main} label="оплачено" />
         )}
+        {!arrived &&
+          (() => {
+            // Худшее состояние среди номеров брони — его и показываем.
+            const order: HotelRoom["state"][] = ["repair", "dirty", "clean", "inspected"];
+            const states = r.items.map((i) => (i.roomId != null ? roomStates?.get(i.roomId) : undefined)).filter((s): s is HotelRoom["state"] => s != null);
+            const worst = order.find((s) => states.includes(s));
+            if (!worst) return null;
+            const meta = ROOM_READINESS[worst];
+            return <StatusPill color={theme.palette[meta.tone].main} label={meta.label} />;
+          })()}
         {docKnown && (
           <StatusPill
             color={hasDoc ? theme.palette.success.main : theme.palette.warning.main}
@@ -394,6 +418,13 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
       placeholderData: undefined,
     });
   const arrivingQuery = useList("arriving", { arrivingOn: dateStr });
+  // Готовность номеров для карточек заезда — тот же кэш, что у «Номеров» и «Уборки».
+  const roomsQuery = useQuery({
+    queryKey: ["hotel", "rooms", propertyId],
+    queryFn: ({ signal }) => listRooms({ propertyId }, signal),
+    staleTime: 30_000,
+  });
+  const roomStates = React.useMemo(() => new Map((roomsQuery.data ?? []).map((room) => [room.id, room.state])), [roomsQuery.data]);
   const departingQuery = useList("departing", { departingOn: dateStr });
   const inHouseQuery = useList("inHouse", { inHouseOn: dateStr });
   // Просроченные: брони последних 30 дней, срок которых уже прошёл, а гость
@@ -542,7 +573,14 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
             {[...arriving]
               .sort((a, b) => Number(a.items.every((i) => i.stayStatus !== "expected")) - Number(b.items.every((i) => i.stayStatus !== "expected")))
               .map((r) => (
-                <ArrivalCard key={r.id} reservation={r} checkInTime={checkInTime} action={isToday ? checkInAction(r) : undefined} onOpen={() => onOpen(r.id)} />
+                <ArrivalCard
+                  key={r.id}
+                  reservation={r}
+                  checkInTime={checkInTime}
+                  action={isToday ? checkInAction(r) : undefined}
+                  onOpen={() => onOpen(r.id)}
+                  roomStates={isToday ? roomStates : undefined}
+                />
               ))}
           </Box>
         )}
