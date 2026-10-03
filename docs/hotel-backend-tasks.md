@@ -9,10 +9,11 @@
 
 ## Сделано в ветке `seitek/hotel-backend-r2` — посмотреть и влить в `test`
 
-Коммиты `2d167227`, `83789394` и `d8c4ee32` от `origin/test` (`76a99b32`). Новых прав нет,
-существующие поля не менялись — только добавлены. Одна миграция —
-`0021_reservation_expected_departure_time`: добавляет одно поле, допускающее
-`null`, и уточняет подпись времени заезда. Данные не переносит.
+Коммиты `2d167227`, `83789394`, `d8c4ee32`, `d6a60dbe` и `57b193fb` от `origin/test`
+(`76a99b32`). Новых прав нет, существующие поля не менялись — только добавлены.
+Две миграции, обе добавляют по одному полю с `null` и данные не переносят:
+`0021_reservation_expected_departure_time` (ещё уточняет подпись времени
+заезда) и `0022_staffpost_rotation`.
 
 | Что | Где |
 | --- | --- |
@@ -24,6 +25,8 @@
 | `expectedArrivalTime` в позициях `GET /calendar/` | `serializers._calendar_details` |
 | Своё время выезда у брони — `expectedDepartureTime` | `Reservation.expected_departure_time`, миграция `0021` |
 | Поиск по частям: гости, подсказка гостя, брони, шахматка | новый модуль `hotel.search`; `views` (`?q=`), `serializers.guest_search_to_payload` |
+| Отчёты считают только ночи, которые кто-то прожил; `notArrived`, `leftEarly*`, `occupancy: not_arrived / left` | `selectors.stayed_nights`, `occupancy_report`, `yield_report`, `daily_report(today=)` |
+| График работы поста — `rotation` (очередь и повтор) | `StaffPost.rotation`, миграция `0022`, `staffing.validate_rotation` |
 
 Подробности:
 
@@ -83,11 +86,48 @@
 
   Прежние проверки (`test_guest_search_matches_document_number_and_inn`)
   проходят без изменений. Тест — `test_search_by_parts.py`.
+- **Отчёты считают только прожитые ночи** (руководитель попросил проверить,
+  нет ли рассинхрона между отчётами). Было: `reports/occupancy`,
+  `reports/yield`, `reports/daily` и «занято» на дашборде считали все ночи
+  подтверждённой брони по датам. Гость, который так и не заехал (ожидается,
+  день заезда прошёл, незаезд не закрыт), и ночи после выезда шли в проданные
+  ночи и в выручку, а ресепшен, «Проживают» (`not_in_house_q`) и долги их не
+  считали. На стенде Иванов №17 был в выручке октября на 5 400 и в долгах на 0;
+  в сентябре 65 200 из 149 100 — пять не приехавших. Теперь:
+  - `selectors.stayed_nights` — одно правило для всех отчётов: ночь не
+    считается, если гость всё ещё `expected`, а `check_in < today`, или он
+    `checked_out`, а ночь не раньше местного дня `checked_out_at`;
+  - `occupancy_report` / `yield_report` берут `today` (вид передаёт
+    `timezone.localdate()`), проданные ночи — по тем же ночам, что и выручка
+    (временная бронь больше не проданная ночь); в ответах `notArrived`
+    {reservations, nights, revenue} и `leftEarlyNights` / `leftEarlyRevenue`;
+  - `daily_report(today=)`: строка номера остаётся с `occupancy`
+    `not_arrived` / `left` и ценой, но не занят и не выручка; без `today`
+    (пересчёт цен по загрузке) считает по датам брони, как раньше;
+  - `occupancy_snapshot` и `kitchen_day_plan` передают `today` — «занято»
+    на дашборде сходится с «проживают».
 
-**Проверка:** 12 новых тестов
+  Это смена смысла цифр: в `test_viva.py::test_daily_report_and_dashboard`
+  ожидания поправлены (201 ждали и не заселили — номер не занят, выручка
+  6 000, а не 12 000). Тест — `test_reports_count_guests_present.py`.
+  `?inHouseOn=` в списке броней оставлен как был (по датам): ресепшен из этого
+  же списка считает «не заехали», потребители фильтруют сами.
+- **График работы поста** (`StaffPost.rotation`, миграция `0022`): кто
+  выходит и как — `cycle` (по очереди, `daysPerTurn` дней подряд каждый) или
+  `weekdays` (у каждого свои дни недели, один человек на день), `startDate`,
+  `repeat`. Проверка — `staffing.validate_rotation` (сотрудники организации,
+  1–14 дней). В `POST` / `PATCH staff-posts/` объект ставит, `null` убирает,
+  нет поля — не трогает; в ответе поста — `rotation`. В смены график
+  превращает фронт: заполняет пустые клетки «Графика персонала», с повтором —
+  и следующие месяцы, когда кто-то открывает график. Если понадобится, чтобы
+  смены появлялись без открытия страницы, — это в ночной аудит (п. 1):
+  заполнить по графику завтра. Тест — `test_staff_rotation.py`.
+
+**Проверка:** 18 новых тестов
 (`tests/test_apps/test_hotel/test_in_house_storefront_guest_doc.py`,
-`test_reservation_departure_time.py`, `test_search_by_parts.py`). Все тесты
-`test_hotel` и `tests/test_server` проходят (863), `makemigrations --check` —
+`test_reservation_departure_time.py`, `test_search_by_parts.py`,
+`test_reports_count_guests_present.py`, `test_staff_rotation.py`). Все тесты
+`test_hotel` и `tests/test_server` проходят, `makemigrations --check` —
 изменений нет. Три исключения, все падают и на чистой ветке:
 
 - `test_openapi_docs.py::test_every_operation_is_tagged` — у
