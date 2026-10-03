@@ -39,6 +39,12 @@ describe("buildGuestMessage", () => {
     expect(text).toContain("Заезд с 14:00, выезд до 12:00");
   });
 
+  it("своё время брони — ранний заезд и поздний выезд вместо правил", () => {
+    const own = { ...reservation, expectedArrivalTime: "10:00", expectedDepartureTime: "15:30" } as HotelReservation;
+    expect(buildGuestMessage("confirmation", own, property)).toContain("Заезд в 10:00, выезд до 15:30");
+    expect(buildGuestMessage("reminder", own, property)).toContain("в 10:00, бронь №14");
+  });
+
   it("остаток к оплате", () => {
     expect(buildGuestMessage("balance", reservation, property)).toContain("к оплате 6");
   });

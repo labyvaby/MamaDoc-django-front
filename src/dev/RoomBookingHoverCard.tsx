@@ -40,6 +40,7 @@ import {
 } from "./hotelDisplay";
 import { nightsBetween } from "./mockDemoData";
 import type { StayBalance } from "./useStayBalances";
+import { stayTimeView } from "./stayTimes";
 
 export interface BarHoverData {
   item: HotelCalendarItem;
@@ -155,6 +156,9 @@ export const RoomBookingHoverCard = React.forwardRef<BarHoverHandle>((_, ref) =>
   const { item: it, balance, roomNumber, roomTypeName, checkInTime, checkOutTime } = state.data;
   const details = balance?.details;
   const itemInfo = details?.items[it.itemId];
+  // Время брони (ранний заезд / поздний выезд) или правило объекта.
+  const arrival = stayTimeView("arrival", details?.expectedArrivalTime, checkInTime);
+  const departure = stayTimeView("departure", details?.expectedDepartureTime, checkOutTime);
   const status = mapStayDisplayStatus(it.stayStatus);
   const StatusIcon = HOTEL_STAY_STATUS_ICONS[status];
   const statusColor = hotelStayStatusColor(status, theme);
@@ -296,9 +300,10 @@ export const RoomBookingHoverCard = React.forwardRef<BarHoverHandle>((_, ref) =>
             <Stack gap={0.5} sx={{ mt: 1.25 }}>
               {row(
                 "Проживание",
-                `${shortDate(it.checkIn)}${checkInTime ? ` (${checkInTime})` : ""} → ${shortDate(it.checkOut)}${checkOutTime ? ` (${checkOutTime})` : ""} · ${nights} ${nightsWord(nights)}`,
+                `${shortDate(it.checkIn)}${arrival.time ? ` (${arrival.time})` : ""} → ${shortDate(it.checkOut)}${departure.time ? ` (${departure.time})` : ""} · ${nights} ${nightsWord(nights)}`,
               )}
-              {!itemInfo?.checkedInAt && it.stayStatus === "expected" && details?.expectedArrivalTime && row("Приедет", `около ${details.expectedArrivalTime}, со слов гостя`, theme.palette.info.main)}
+              {!itemInfo?.checkedInAt && it.stayStatus === "expected" && arrival.own && row("Заезд", `в ${arrival.time}${arrival.note ? ` · ${arrival.note}` : ""}`, theme.palette.info.main)}
+              {!itemInfo?.checkedOutAt && departure.own && row("Выезд", `до ${departure.time}${departure.note ? ` · ${departure.note}` : ""}`, theme.palette.warning.dark)}
               {itemInfo?.checkedInAt && row("Заселился", dayjs(itemInfo.checkedInAt).format("D MMM, HH:mm"), theme.palette.success.main)}
               {itemInfo?.checkedOutAt && row("Выехал", dayjs(itemInfo.checkedOutAt).format("D MMM, HH:mm"))}
               {row("Номер", `${roomNumber ?? "не назначен"}${roomTypeName ? ` · ${roomTypeName}` : ""}`)}

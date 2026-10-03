@@ -210,9 +210,9 @@ export const HotelBalancesReport: React.FC<{
         cell: (r) =>
           twoLine(
             r.checkIn,
-            r.checkedInAt ? `${dayjs(r.checkedInAt).format("HH:mm")} · заселён` : r.expectedArrivalTime ? `около ${r.expectedArrivalTime}` : inTime,
+            r.checkedInAt ? `${dayjs(r.checkedInAt).format("HH:mm")} · заселён` : (r.expectedArrivalTime ?? inTime),
             r.checkedInAt ? "success.main" : r.expectedArrivalTime ? "info.main" : undefined,
-            r.checkedInAt ? "Время фактического заселения" : r.expectedArrivalTime ? "Время заезда со слов гостя" : "Время заезда по правилам объекта",
+            r.checkedInAt ? "Время фактического заселения" : r.expectedArrivalTime ? "Время заезда брони: ранний заезд или со слов гостя" : "Время заезда по правилам объекта",
           ),
         text: (r) => dateTime(r.checkIn, r.expectedArrivalTime ?? inTime, r.checkedInAt),
         xlsx: { value: (r) => dateTime(r.checkIn, r.expectedArrivalTime ?? inTime, r.checkedInAt) },
@@ -222,9 +222,15 @@ export const HotelBalancesReport: React.FC<{
         label: "Выезд",
         sort: "checkOut",
         def: true,
-        cell: (r) => twoLine(r.checkOut, r.checkedOutAt ? `${dayjs(r.checkedOutAt).format("HH:mm")} · выехал` : outTime),
-        text: (r) => dateTime(r.checkOut, outTime, r.checkedOutAt),
-        xlsx: { value: (r) => dateTime(r.checkOut, outTime, r.checkedOutAt) },
+        cell: (r) =>
+          twoLine(
+            r.checkOut,
+            r.checkedOutAt ? `${dayjs(r.checkedOutAt).format("HH:mm")} · выехал` : (r.expectedDepartureTime ?? outTime),
+            r.checkedOutAt ? undefined : r.expectedDepartureTime ? "warning.dark" : undefined,
+            r.checkedOutAt ? "Время фактического выезда" : r.expectedDepartureTime ? "Время выезда брони: поздний выезд" : "Время выезда по правилам объекта",
+          ),
+        text: (r) => dateTime(r.checkOut, r.expectedDepartureTime ?? outTime, r.checkedOutAt),
+        xlsx: { value: (r) => dateTime(r.checkOut, r.expectedDepartureTime ?? outTime, r.checkedOutAt) },
       },
       { key: "nights", label: "Ночей", align: "right", sort: "nights", def: false, cell: (r) => r.nights, text: (r) => String(r.nights), xlsx: { kind: "int", value: (r) => r.nights } },
       { key: "guests", label: "Гостей", align: "right", def: false, cell: (r) => r.guests, text: (r) => String(r.guests), xlsx: { kind: "int", value: (r) => r.guests } },
@@ -483,8 +489,10 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
     const arrival = r.checkedInAt
       ? { text: `заселён в ${dayjs(r.checkedInAt).format("HH:mm")}`, color: "success.main" }
       : r.expectedArrivalTime
-        ? { text: `приедет около ${r.expectedArrivalTime}`, color: "info.main" }
-        : null;
+        ? { text: `заезд в ${r.expectedArrivalTime}`, color: "info.main" }
+        : r.expectedDepartureTime && !r.checkedOutAt
+          ? { text: `выезд до ${r.expectedDepartureTime}`, color: "warning.dark" }
+          : null;
     return (
       <ButtonBase
         key={r.id}
