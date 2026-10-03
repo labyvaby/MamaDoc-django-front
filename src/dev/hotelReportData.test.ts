@@ -195,6 +195,20 @@ describe("summarizePayments — валюта в кассе", () => {
   });
 });
 
+describe("summarizePayments — настоящая оплата в валюте", () => {
+  it("складывает в сомах по amountBase, доллары в кассе — по currency", () => {
+    const s = summarizePayments([
+      payment({ amount: "1000" }),
+      payment({ id: 2, amount: "50.00", currency: "USD", amountBase: "4375.00", exchangeRate: "87.50", baseCurrency: "KGS" }),
+      payment({ id: 3, kind: "refund", amount: "10.00", currency: "USD", amountBase: "875.00", exchangeRate: "87.50", baseCurrency: "KGS" }),
+    ]);
+    expect(s.cash).toBe(1000 + 4375 - 875);
+    expect(s.refunds).toBe(875);
+    expect(s.foreignCash).toEqual([{ currency: "USD", amount: 40 }]);
+    expect(s.byCurrency.map((c) => c.currency)).toEqual(["KGS"]);
+  });
+});
+
 describe("summarizeExpenses", () => {
   const expense = (over: Partial<Expense>): Expense =>
     ({ id: 1, name: "", cashAmount: "0", cardAmount: "0", amount: "0", categoryName: "Закуп", isVoided: false, ...over }) as Expense;

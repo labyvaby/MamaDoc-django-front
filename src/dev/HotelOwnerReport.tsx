@@ -127,11 +127,18 @@ export const HotelOwnerReport: React.FC<{
   );
   const debtTotal = debtors.reduce((s, r) => s + Number(r.balanceDue), 0);
 
-  // Поступления — по реестру (net = оплаты − возвраты), в валюте объекта.
+  // Поступления — по реестру (net = оплаты − возвраты), в валюте объекта: у
+  // групп в валюте (наличные USD) — netBase, иначе такие оплаты выпадали из итога.
   const payTotals = paymentsQuery.data?.totals ?? [];
-  const received = payTotals.filter((t) => t.currency === (occ?.currency ?? currency)).reduce((s, t) => s + Number(t.net), 0);
+  const baseCur = occ?.currency ?? currency;
+  const netInBase = (t: (typeof payTotals)[number]) => (t.netBase != null ? Number(t.netBase) : t.currency === baseCur ? Number(t.net) : 0);
+  const received = payTotals.reduce((s, t) => s + netInBase(t), 0);
   const payChannels = payTotals
-    .map((t) => ({ label: t.cashlessMethodName ? `${t.methodLabel} · ${t.cashlessMethodName}` : t.methodLabel, amount: Number(t.net), currency: t.currency }))
+    .map((t) => ({
+      label: [t.cashlessMethodName ? `${t.methodLabel} · ${t.cashlessMethodName}` : t.methodLabel, t.currency !== baseCur ? t.currency : ""].filter(Boolean).join(" · "),
+      amount: t.netBase != null || t.currency === baseCur ? netInBase(t) : Number(t.net),
+      currency: t.netBase != null ? baseCur : t.currency,
+    }))
     .filter((t) => t.amount !== 0)
     .sort((a, b) => b.amount - a.amount);
   const expenses = React.useMemo(() => summarizeExpenses(expensesQuery.data?.rows ?? []), [expensesQuery.data]);

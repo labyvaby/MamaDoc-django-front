@@ -788,6 +788,8 @@ export interface HotelPaymentRegisterTotal {
   payments: Money;
   refunds: Money;
   net: Money;
+  /** Итог группы в валюте объекта: у группы «наличные USD» — net по курсам оплат (контракт §5). */
+  netBase?: Money;
 }
 
 export interface HotelPaymentRegister extends HotelPage<HotelPayment> {

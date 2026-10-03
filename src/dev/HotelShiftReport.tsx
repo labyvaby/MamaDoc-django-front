@@ -71,6 +71,7 @@ import {
   reservationCheckOut,
   shiftWindow,
   signedAmount,
+  foreignPaymentLabel,
   summarizeExpenses,
   summarizePayments,
 } from "./hotelReportData";
@@ -263,7 +264,8 @@ export const HotelShiftReport: React.FC<{
       cash: p.method === "cash" ? amount : null,
       cashless: p.method !== "cash" ? amount : null,
       channel: paymentChannelLabel(p),
-      note: p.note,
+      // В сомах — сумма по курсу; сколько и чего дал гость — в комментарии.
+      note: [foreignPaymentLabel(p), p.note].filter(Boolean).join(" · "),
       acceptedBy: p.acceptedByName,
       refund: p.kind === "refund",
     };

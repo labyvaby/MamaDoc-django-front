@@ -114,6 +114,8 @@ export async function exportPaymentsXlsx(opts: {
             { header: "Терминал / банк" },
             { header: "Сумма", kind: "money" },
             { header: "Валюта" },
+            // У оплаты в валюте — сумма в валюте брони по курсу оплаты.
+            { header: "В валюте брони", kind: "money" },
             { header: "Комментарий", width: 30 },
             { header: "Принял" },
           ],
@@ -125,6 +127,7 @@ export async function exportPaymentsXlsx(opts: {
             p.cashlessMethodName,
             p.kind === "refund" ? -Number(p.amount) : Number(p.amount),
             p.currency,
+            (p.kind === "refund" ? -1 : 1) * Number(p.amountBase ?? p.amount),
             p.note,
             p.acceptedByName,
           ]),
