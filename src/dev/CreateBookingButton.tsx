@@ -95,6 +95,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import { CustomDatePicker } from "../components/ui";
 import { useHotelProperty } from "./useHotelProperty";
 import { formatGuestMatchedBy } from "./hotelDisplay";
+import { hhmm, stayTimeView } from "./stayTimes";
 import { CountStepper, DisabledReason, DRAWER_WIDTH, DrawerBody, DrawerFooter, DrawerHeader, DrawerSection } from "./hotelUi";
 import { isDocumentFile, prepareDocumentFile, useDocumentScan } from "./useDocumentScan";
 import { DocumentDropzone } from "./DocumentDropzone";
@@ -272,8 +273,21 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
   // Дополнительно
   const [bookingSource, setBookingSource] = React.useState("");
   const [specialRequests, setSpecialRequests] = React.useState("");
-  // Во сколько приедет, со слов гостя ("HH:MM") — ресепшен видит в «Кто сегодня заедет».
+  // Время заезда и выезда брони ("HH:MM"): пусто или как в правилах объекта — не отправляем,
+  // на сервере null = «по правилам». Ранний заезд / поздний выезд — своё время.
   const [arrivalTime, setArrivalTime] = React.useState("");
+  const [departureTime, setDepartureTime] = React.useState("");
+  const ruleIn = hhmm(property?.checkInTime);
+  const ruleOut = hhmm(property?.checkOutTime);
+  const ownArrival = arrivalTime && arrivalTime !== ruleIn ? arrivalTime : null;
+  const ownDeparture = departureTime && departureTime !== ruleOut ? departureTime : null;
+  const timeHint = (kind: "arrival" | "departure") => {
+    const view = stayTimeView(kind, kind === "arrival" ? ownArrival : ownDeparture, kind === "arrival" ? ruleIn : ruleOut);
+    if (view.note) return view.note[0].toUpperCase() + view.note.slice(1);
+    if (view.own) return "Своё время брони";
+    const rule = kind === "arrival" ? ruleIn : ruleOut;
+    return rule ? `По правилам: ${kind === "arrival" ? "с" : "до"} ${rule}` : "Необязательно";
+  };
   const [companyInfo, setCompanyInfo] = React.useState("");
   // Юрлицо из справочника: скидка идёт на проживание, бэк сам пересчитает сумму.
   const [corporateId, setCorporateId] = React.useState<number | "">("");
@@ -339,6 +353,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setBookingSource("");
     setSpecialRequests("");
     setArrivalTime("");
+    setDepartureTime("");
     setCompanyInfo("");
     setCorporateOther(false);
     setDataConsent(false);
@@ -861,7 +876,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           ? { customerId: selectedClientId }
           : { customer: { fullName: guestName.trim(), phone: orUndefined(guestPhone) ?? "", email: orUndefined(guestEmail) ?? "", source: bookingSource || "" } }),
         guestComment: orUndefined(specialRequests) ?? "",
-        ...(arrivalTime ? { expectedArrivalTime: arrivalTime } : {}),
+        ...(ownArrival ? { expectedArrivalTime: ownArrival } : {}),
+        ...(ownDeparture ? { expectedDepartureTime: ownDeparture } : {}),
         companyInfo: orUndefined(companyInfo) ?? "",
         corporateAccountId: corporateId === "" ? undefined : corporateId,
         dataConsent,
@@ -946,6 +962,9 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
         });
       }
 
+      // Сервер без своего времени выезда незнакомое поле молча пропускает — говорим, а не теряем.
+      const departureLost = ownDeparture != null && !("expectedDepartureTime" in reservation);
+
       const createdGuestId = reservation.items[0]?.guests[0]?.id;
       if (passportPhotoFile && createdGuestId != null) {
         try {
@@ -1006,6 +1025,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
           ? { text: `Бронь №${reservation.number} создана, но предоплату записать не удалось (${prepaymentFailed}). Внесите её в карточке брони.`, severity: "warning" }
           : chargesFailed > 0
           ? { text: `Бронь №${reservation.number} создана, но ${chargesFailed} из допуслуг не записались. Добавьте их на вкладке «Проживание».`, severity: "warning" }
+          : departureLost
+          ? { text: `Бронь №${reservation.number} создана, но время выезда ${ownDeparture} не сохранилось: сервер ещё без этого поля. Запишите его в пожелания.`, severity: "warning" }
           : { text: `Бронь №${reservation.number} для «${guestName.trim()}» добавлена в шахматку`, severity: "success" },
       );
       reset();
@@ -1125,6 +1146,26 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 value={checkOut}
                 onChange={setCheckOut}
                 minDate={checkIn ?? undefined}
+                sx={{ flex: 1 }}
+              />
+            </Stack>
+            <Stack direction="row" gap={2}>
+              <TextField
+                type="time"
+                label="Время заезда"
+                value={arrivalTime || ruleIn || ""}
+                onChange={(e) => setArrivalTime(e.target.value)}
+                helperText={timeHint("arrival")}
+                slotProps={{ inputLabel: { shrink: true }, formHelperText: { sx: ownArrival ? { color: "warning.dark", fontWeight: 600 } : undefined } }}
+                sx={{ flex: 1 }}
+              />
+              <TextField
+                type="time"
+                label="Время выезда"
+                value={departureTime || ruleOut || ""}
+                onChange={(e) => setDepartureTime(e.target.value)}
+                helperText={timeHint("departure")}
+                slotProps={{ inputLabel: { shrink: true }, formHelperText: { sx: ownDeparture ? { color: "warning.dark", fontWeight: 600 } : undefined } }}
                 sx={{ flex: 1 }}
               />
             </Stack>
@@ -1884,15 +1925,6 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         fullWidth
                       />
                     )}
-                    <TextField
-                      type="time"
-                      label="Приедет около"
-                      value={arrivalTime}
-                      onChange={(e) => setArrivalTime(e.target.value)}
-                      helperText="Со слов гостя — необязательно"
-                      slotProps={{ inputLabel: { shrink: true } }}
-                      sx={{ width: { xs: "100%", sm: 220 } }}
-                    />
                     <FormField
                       icon={<ChatBubbleOutlineOutlined />}
                       rules={GUEST_RULES.comment}
