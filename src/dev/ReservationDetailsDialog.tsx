@@ -64,11 +64,12 @@ import {
   Stack,
   Tab,
   Tabs,
+  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
-  TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -128,6 +129,8 @@ export interface ReservationDetailsDialogProps {
 
 export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> = ({ reservationId, initialItemId, onClose }) => {
   const theme = useTheme();
+  // На телефоне окно с полями по 32 px теряло шестую часть ширины — во весь экран, как ящики брони и гостя.
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
   const queryClient = useQueryClient();
   const canManageReservation = useCan("hotel.reservations.manage");
   const canManageStays = useCan("hotel.stays.manage");
@@ -711,9 +714,10 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
       onClose={onClose}
       maxWidth="md"
       fullWidth
+      fullScreen={phone}
       // Окно прижато к верху: при смене вкладок высота меняется, и по центру оно бы «прыгало».
       sx={{ "& .MuiDialog-container": { alignItems: { md: "flex-start" } } }}
-      PaperProps={{ sx: { borderRadius: "16px", overflow: "hidden", backgroundImage: "none", mt: { md: 5 } } }}
+      PaperProps={{ sx: { borderRadius: phone ? 0 : "16px", overflow: "hidden", backgroundImage: "none", mt: { md: 5 } } }}
     >
       {reservationId != null && !reservation && (
         <Stack alignItems="center" justifyContent="center" gap={1.5} sx={{ py: 8 }}>
