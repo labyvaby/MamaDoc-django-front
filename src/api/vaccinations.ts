@@ -335,6 +335,9 @@ export interface RecordsFilters {
   /** Проведённые прививки пациентов без ИНН («Дополнить ИНН»). */
   missingInn?: boolean;
   organizationId?: number;
+  /** Порция ленты: пропустить offset записей и взять limit (не больше 200). */
+  offset?: number;
+  limit?: number;
 }
 
 /** Сценарий 1 «у нас» — batchId + administeredById; Сценарий 2 «внешняя» — isExternal + ручные поля. */
@@ -938,6 +941,8 @@ export function getRecords(
   if (filters.administeredById != null) q.set("administeredById", String(filters.administeredById));
   if (filters.missingInn) q.set("missingInn", "1");
   if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
+  if (filters.offset != null) q.set("offset", String(filters.offset));
+  if (filters.limit != null) q.set("limit", String(filters.limit));
   const qs = q.toString();
   return apiRequest<{ results: VaccinationRecord[] } | VaccinationRecord[]>(
     `/vaccinations/records/${qs ? `?${qs}` : ""}`,

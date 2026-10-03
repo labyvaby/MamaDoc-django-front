@@ -35,7 +35,6 @@ import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import MedicationOutlined from "@mui/icons-material/MedicationOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
-import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import DeleteSweepOutlined from "@mui/icons-material/DeleteSweepOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
@@ -43,10 +42,8 @@ import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 
 import {
   AppButton,
-  DateRangeField,
   PageHeader,
   UserAvatar,
-  type DateRange,
 } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCanChecker } from "../../hooks/useCan";
@@ -69,7 +66,6 @@ import {
   VACCINATION_SCHEDULE_BRANCH_SCOPING,
   getCalendarTemplate,
   getMonthlyReport,
-  getRecords,
   getScheduleDashboard,
   getVaccines,
   updateSchedule,
@@ -78,12 +74,11 @@ import {
   type ScheduleStatus,
   type Vaccine,
   type VaccineBatch,
-  type VaccinationRecord,
   type VaccinationScheduleSlot,
 } from "../../api/vaccinations";
 import { getPatient, type DjangoPatient } from "../../api/patients";
 import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
-import { RecordStatusChip, ScheduleStatusChip } from "../../components/vaccinations/VaccinationChips";
+import { ScheduleStatusChip } from "../../components/vaccinations/VaccinationChips";
 import RecordVaccinationDrawer from "../../components/vaccinations/RecordVaccinationDrawer";
 import VaccineDialog from "../../components/vaccinations/VaccineDialog";
 import BatchDialog from "../../components/vaccinations/BatchDialog";
@@ -91,13 +86,15 @@ import BatchWriteOffDialog from "../../components/vaccinations/BatchWriteOffDial
 import CalendarTemplateDialog from "../../components/vaccinations/CalendarTemplateDialog";
 import DraftsTab from "./DraftsTab";
 import Form5Tab from "./Form5Tab";
+import RecordsTab from "./RecordsTab";
+import CalendarTab from "./CalendarTab";
 import PeriodStepper from "../../components/vaccinations/PeriodStepper";
 import KrCalendarDialog from "../../components/vaccinations/KrCalendarDialog";
 import {
   ExemptionDialog,
   RefusalDialog,
 } from "../../components/vaccinations/ExemptionRefusalDialogs";
-import { injectionSiteLabel, scheduleDateInfo } from "./meta";
+import { scheduleDateInfo } from "./meta";
 
 type VaccTab = "drafts" | "due" | "records" | "vaccines" | "batches" | "calendar" | "report" | "form5";
 
@@ -244,10 +241,6 @@ const VaccinationsPage: React.FC = () => {
   React.useEffect(() => {
     if (!tabs.some((t) => t.id === tab)) setTab("due");
   }, [tabs, tab]);
-  const [recordsRange, setRecordsRange] = React.useState<DateRange>({
-    from: dayjs().subtract(29, "day").startOf("day"),
-    to: dayjs().endOf("day"),
-  });
   const [drawerPatient, setDrawerPatient] = React.useState<DjangoPatient | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
@@ -261,7 +254,11 @@ const VaccinationsPage: React.FC = () => {
   });
   // Списание доз партии (порча/срок) — отдельное действие, не правка прихода.
   const [writeOffBatchTarget, setWriteOffBatchTarget] = React.useState<VaccineBatch | null>(null);
-  const [calendarDialog, setCalendarDialog] = React.useState<{ open: boolean; row: CalendarTemplateRow | null }>({
+  const [calendarDialog, setCalendarDialog] = React.useState<{
+    open: boolean;
+    row: CalendarTemplateRow | null;
+    preset?: { vaccineId: number; doseNumber: number } | null;
+  }>({
     open: false,
     row: null,
   });
@@ -344,28 +341,6 @@ const VaccinationsPage: React.FC = () => {
       return { overdue: overdue.count, week: week.count };
     },
     enabled: enabled && tab === "due" && serverPaged,
-    staleTime: DJANGO_LIST_STALE_TIME_MS,
-    placeholderData: keepPreviousData,
-  });
-
-  const recordsQuery = useQuery({
-    queryKey: djangoQueryKeys.vaccinations.records({
-      branchId,
-      orgId,
-      from: recordsRange.from.format("YYYY-MM-DD"),
-      to: recordsRange.to.format("YYYY-MM-DD"),
-    }),
-    queryFn: ({ signal }) =>
-      getRecords(
-        {
-          branchId: branchId ?? undefined,
-          dateFrom: recordsRange.from.format("YYYY-MM-DD"),
-          dateTo: recordsRange.to.format("YYYY-MM-DD"),
-          organizationId: orgId,
-        },
-        signal,
-      ),
-    enabled: enabled && tab === "records",
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
@@ -613,64 +588,6 @@ const VaccinationsPage: React.FC = () => {
     [canRecord, canUpdatePatient, editPatientLoadingId, openEditPatient, scheduleMutation.isPending, t],
   );
 
-  const recordsColumns = React.useMemo<GridColDef<VaccinationRecord>[]>(
-    () => [
-      {
-        field: "administeredAt",
-        headerName: "Дата",
-        width: 130,
-        sortable: false,
-        renderCell: ({ row }) => (
-          <Typography variant="body2">{dayjs(row.administeredAt).format("DD.MM.YYYY")}</Typography>
-        ),
-      },
-      {
-        field: "vaccineName",
-        headerName: "Вакцина",
-        flex: 1,
-        minWidth: 180,
-        sortable: false,
-        renderCell: ({ row }) => (
-          <Box sx={twoLineCellSx}>
-            <Typography variant="body2" fontWeight={500} noWrap>
-              {row.vaccineName} · доза {row.doseNumber}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {row.isExternal ? "Внешняя" : "Со склада"} · {injectionSiteLabel(row.injectionSite)}
-            </Typography>
-          </Box>
-        ),
-      },
-      {
-        field: "administeredBy",
-        headerName: "Кто вводил",
-        width: 190,
-        sortable: false,
-        renderCell: ({ row }) =>
-          row.administeredBy ? (
-            <Stack direction="row" alignItems="center" gap={1} sx={{ height: "100%", minWidth: 0 }}>
-              <UserAvatar name={row.administeredBy.fullName} size={28} sx={{ borderRadius: "8px", flexShrink: 0 }} />
-              <Typography variant="body2" noWrap>
-                {row.administeredBy.fullName}
-              </Typography>
-            </Stack>
-          ) : (
-            <Typography variant="body2" color="text.disabled">
-              —
-            </Typography>
-          ),
-      },
-      {
-        field: "status",
-        headerName: "Статус",
-        width: 150,
-        sortable: false,
-        renderCell: ({ row }) => <RecordStatusChip status={row.status} />,
-      },
-    ],
-    [],
-  );
-
   const vaccinesColumns = React.useMemo<GridColDef<Vaccine>[]>(
     () => [
       {
@@ -866,118 +783,6 @@ const VaccinationsPage: React.FC = () => {
     [],
   );
 
-  const calendarColumns = React.useMemo<GridColDef<CalendarTemplateRow>[]>(
-    () => [
-      {
-        field: "vaccineName",
-        headerName: "Вакцина",
-        flex: 1,
-        minWidth: 180,
-        sortable: false,
-        renderCell: ({ row }) => (
-          <Box sx={twoLineCellSx}>
-            <Typography variant="body2" fontWeight={500} noWrap>
-              {row.vaccineName} · доза {row.doseNumber}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {row.label || `${row.ageMonths} мес`}
-            </Typography>
-          </Box>
-        ),
-      },
-      {
-        field: "sex",
-        headerName: "Кому",
-        width: 110,
-        sortable: false,
-        valueGetter: (_v, row) =>
-          row.sex === "female" ? "Девочкам" : row.sex === "male" ? "Мальчикам" : "Всем",
-      },
-      {
-        field: "ageMonths",
-        headerName: "Возраст",
-        width: 150,
-        sortable: false,
-        // ageDays точнее месяцев (135 дн = 4,5 мес) и имеет приоритет у бэка,
-        // maxAgeMonths отсекает переросших — показываем оба, когда заданы.
-        renderCell: ({ row }) => (
-          <Box sx={twoLineCellSx}>
-            <Typography variant="body2" noWrap>
-              {row.ageDays != null ? `${row.ageDays} дн` : `${row.ageMonths} мес`}
-            </Typography>
-            {row.maxAgeMonths != null && (
-              <Typography variant="caption" color="text.secondary" noWrap>
-                до {row.maxAgeMonths} мес
-              </Typography>
-            )}
-          </Box>
-        ),
-      },
-      {
-        field: "dueWindowDays",
-        headerName: "Окно",
-        width: 110,
-        sortable: false,
-        renderCell: ({ row }) => (
-          <Typography variant="body2">{row.dueWindowDays} дн</Typography>
-        ),
-      },
-      {
-        field: "mandatory",
-        headerName: "Тип",
-        width: 140,
-        sortable: false,
-        renderCell: ({ row }) =>
-          row.mandatory ? (
-            <Chip size="small" label="Обязательная" color="primary" variant="outlined" sx={{ borderRadius: "7px" }} />
-          ) : (
-            <Chip size="small" label="Рекоменд." variant="outlined" sx={{ borderRadius: "7px" }} />
-          ),
-      },
-      {
-        field: "isActive",
-        headerName: "Статус",
-        width: 120,
-        sortable: false,
-        renderCell: ({ row }) =>
-          row.isActive ? (
-            <Chip size="small" label="Активна" color="success" variant="outlined" sx={{ borderRadius: "7px" }} />
-          ) : (
-            <Chip size="small" label="Скрыта" variant="outlined" sx={{ borderRadius: "7px" }} />
-          ),
-      },
-      ...(canManage
-        ? [
-            {
-              field: "actions",
-              headerName: "",
-              width: 96,
-              sortable: false,
-              renderCell: ({ row }: { row: CalendarTemplateRow }) => (
-                <Stack direction="row" gap={0.25}>
-                  <IconButton
-                    size="small"
-                    aria-label="Изменить строку"
-                    onClick={() => setCalendarDialog({ open: true, row })}
-                  >
-                    <EditOutlined fontSize="small" />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    aria-label="Удалить строку"
-                    onClick={() => setDeleteConfirm(row)}
-                  >
-                    <DeleteOutlineOutlined fontSize="small" />
-                  </IconButton>
-                </Stack>
-              ),
-            } satisfies GridColDef<CalendarTemplateRow>,
-          ]
-        : []),
-    ],
-    [canManage],
-  );
-
   const reportColumns = React.useMemo<GridColDef<MonthlyReportRow>[]>(
     () => [
       {
@@ -1054,7 +859,6 @@ const VaccinationsPage: React.FC = () => {
         showTitle={false}
         loading={
           dueQuery.isFetching ||
-          recordsQuery.isFetching ||
           vaccinesQuery.isFetching ||
           batchesQuery.isFetching ||
           calendarQuery.isFetching ||
@@ -1206,10 +1010,6 @@ const VaccinationsPage: React.FC = () => {
             </Stack>
           )}
 
-          {tab === "records" && (
-            <DateRangeField value={recordsRange} onChange={setRecordsRange} minWidth={220} />
-          )}
-
           {(tab === "due" || tab === "records") && canRecord && (
             <AppButton variant="contained" startIcon={<AddOutlined />} onClick={() => openDrawerFor(null)}>
               Добавить внешнюю вакцину
@@ -1333,29 +1133,7 @@ const VaccinationsPage: React.FC = () => {
             </Box>
           ))}
 
-        {tab === "records" &&
-          (recordsQuery.error ? (
-            <Alert severity="error">
-              {recordsQuery.error instanceof Error ? recordsQuery.error.message : "Ошибка загрузки"}
-            </Alert>
-          ) : (
-            <Box sx={{ flex: 1, minHeight: 360 }}>
-              <DataGrid<VaccinationRecord>
-                rows={recordsQuery.data ?? []}
-                columns={recordsColumns}
-                loading={recordsQuery.isLoading}
-                disableColumnMenu
-                disableRowSelectionOnClick
-                rowHeight={64}
-                columnHeaderHeight={theme.appLayout.table.headerRowHeight}
-                slots={{ noRowsOverlay: NoRows("Нет записей за период") }}
-                localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
-                sx={gridSx}
-                initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-                pageSizeOptions={[25, 50, 100]}
-              />
-            </Box>
-          ))}
+        {tab === "records" && <RecordsTab branchId={branchId} orgId={orgId} />}
 
         {tab === "vaccines" && canManage &&
           (vaccinesQuery.error ? (
@@ -1405,32 +1183,19 @@ const VaccinationsPage: React.FC = () => {
             </Box>
           ))}
 
-        {tab === "calendar" &&
-          (calendarQuery.error ? (
-            <Alert severity="error">
-              {calendarQuery.error instanceof Error ? calendarQuery.error.message : "Ошибка загрузки"}
-            </Alert>
-          ) : (
-            <Box sx={{ flex: 1, minHeight: 360 }}>
-              <DataGrid<CalendarTemplateRow>
-                rows={calendarQuery.data ?? []}
-                columns={calendarColumns}
-                loading={calendarQuery.isLoading}
-                disableColumnMenu
-                disableRowSelectionOnClick
-                rowHeight={60}
-                columnHeaderHeight={theme.appLayout.table.headerRowHeight}
-                slots={{ noRowsOverlay: NoRows("Календарь пуст — добавьте строки") }}
-                localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
-                sx={gridSx}
-                initialState={{
-                  pagination: { paginationModel: { pageSize: 50 } },
-                  sorting: { sortModel: [{ field: "ageMonths", sort: "asc" }] },
-                }}
-                pageSizeOptions={[25, 50, 100]}
-              />
-            </Box>
-          ))}
+        {tab === "calendar" && (
+          <CalendarTab
+            rows={calendarQuery.data ?? []}
+            loading={calendarQuery.isLoading}
+            error={calendarQuery.error}
+            canManage={canManage}
+            onEdit={(row) => setCalendarDialog({ open: true, row, preset: null })}
+            onDelete={(row) => setDeleteConfirm(row)}
+            onAddDose={(vaccineId, doseNumber) =>
+              setCalendarDialog({ open: true, row: null, preset: { vaccineId, doseNumber } })
+            }
+          />
+        )}
 
         {tab === "report" &&
           (reportQuery.error ? (
@@ -1524,6 +1289,7 @@ const VaccinationsPage: React.FC = () => {
       <CalendarTemplateDialog
         open={calendarDialog.open}
         row={calendarDialog.row}
+        preset={calendarDialog.preset}
         onClose={() => setCalendarDialog({ open: false, row: null })}
       />
 
