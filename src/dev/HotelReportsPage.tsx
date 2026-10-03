@@ -241,7 +241,7 @@ export const HotelReportsPage: React.FC = () => {
       ) : current.kind === "housekeeping" ? (
         <HotelHousekeepersReport key={property.id} propertyId={property.id} nav={nav} />
       ) : (
-        <HotelDayReport key={property.id} propertyId={property.id} nav={nav} />
+        <HotelDayReport key={property.id} propertyId={property.id} propertyName={property.name} nav={nav} />
       )}
 
       <ReservationDetailsDialog reservationId={openId} onClose={() => setOpenId(null)} />
