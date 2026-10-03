@@ -82,8 +82,10 @@ const Tile: React.FC<{
       <Typography variant="body1" fontWeight={600} noWrap>
         {value}
       </Typography>
+      {/* Перенос, а не многоточие: при меню слева плитки узкие, и хвост
+          подписи («· СКУД 45%») иначе пропадал. */}
       {sub && (
-        <Typography variant="caption" color="text.disabled" display="block" noWrap>
+        <Typography variant="caption" color="text.disabled" display="block">
           {sub}
         </Typography>
       )}
