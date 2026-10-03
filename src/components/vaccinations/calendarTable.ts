@@ -55,3 +55,27 @@ export function doseAgeText(row: Pick<CalendarTemplateRow, "ageMonths" | "ageDay
 export function doseMaxAgeText(row: Pick<CalendarTemplateRow, "maxAgeMonths">): string | null {
   return row.maxAgeMonths == null ? null : `до ${formatMonths(row.maxAgeMonths)}`;
 }
+
+export interface AgeColumn {
+  /** Ключ колонки = подпись возраста («2 мес.», «105 дн.»). */
+  key: string;
+  label: string;
+  days: number;
+}
+
+/** Возрастные точки календаря слева направо — колонки таблицы «вакцина × возраст». */
+export function ageColumns(rows: CalendarTemplateRow[]): AgeColumn[] {
+  const byKey = new Map<string, AgeColumn>();
+  for (const r of rows) {
+    const label = doseAgeText(r);
+    const days = rowAgeDays(r);
+    const prev = byKey.get(label);
+    if (!prev || days < prev.days) byKey.set(label, { key: label, label, days });
+  }
+  return [...byKey.values()].sort((a, b) => a.days - b.days);
+}
+
+/** Дозы вакцины в колонке возраста (обычно одна). */
+export function dosesAt(group: CalendarVaccineGroup, column: AgeColumn): CalendarTemplateRow[] {
+  return group.doses.filter((d) => doseAgeText(d) === column.key);
+}
