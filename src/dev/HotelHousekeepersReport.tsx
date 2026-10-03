@@ -167,6 +167,12 @@ export const HotelHousekeepersReport: React.FC<{ propertyId: number; nav: Report
         </Button>
       </Stack>
 
+      {shiftsQuery.isError && (
+        <Alert severity="warning" variant="outlined">
+          График персонала недоступен (нужно право «видеть график») — горничные по этажам не определены, все уборки показаны как «без горничной».
+        </Alert>
+      )}
+
       {isDemo && (
         <Alert severity="info" variant="outlined">
           Горничные и этажи — из примера «Графика персонала» по вашей таблице; брони и выезды — настоящие. С обновлением сервера здесь будет ваш график.
