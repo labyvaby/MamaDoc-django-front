@@ -31,8 +31,9 @@ import { useIsVivaActive } from "../../dev/mockDemoData";
 import { useHotelProperty } from "../../dev/useHotelProperty";
 import { prefetchHotelPages } from "../../dev/prefetchHotelPages";
 import { useSiteRequests } from "../../dev/useSiteRequests";
+import { usePricingSections } from "../../dev/PricingSectionTabs";
+import HandshakeOutlined from "@mui/icons-material/HandshakeOutlined";
 import CelebrationOutlined from "@mui/icons-material/CelebrationOutlined";
-import CalendarViewMonthOutlined from "@mui/icons-material/CalendarViewMonthOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 import ConciergeOutlined from "@mui/icons-material/BusinessCenterOutlined";
 import RoomServiceOutlined from "@mui/icons-material/RoomServiceOutlined";
@@ -437,6 +438,8 @@ const HotelSidebarMenu: React.FC = () => {
   const canReception = can(PAGE_PERMISSIONS.hotelReception);
   // Заявки с сайта, ждущие подтверждения, — счётчик на «Ресепшен».
   const { requests: siteRequests } = useSiteRequests(canReception);
+  // Четыре страницы цен — один пункт «Цены»; ведёт в первый доступный раздел, горит на любом из них.
+  const pricingSections = usePricingSections();
 
   const sectionLabel = (text: string) =>
     siderCollapsed && !isMobile ? (
@@ -456,6 +459,7 @@ const HotelSidebarMenu: React.FC = () => {
       )}
       {canSchedule && <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Бронирования" collapsed={siderCollapsed} />}
       {canGuests && <SidebarMenuItem to="/patients" icon={<PeopleOutlineOutlined />} label="Гости" collapsed={siderCollapsed} />}
+      {canExtras && <SidebarMenuItem to="/hotel-companies" icon={<HandshakeOutlined />} label="Юрлица" collapsed={siderCollapsed} />}
       {canHousekeeping && <SidebarMenuItem to="/housekeeping" icon={<CleaningServicesOutlined />} label="Уборка" collapsed={siderCollapsed} />}
       {canKitchen && <SidebarMenuItem to="/kitchen" icon={<RestaurantOutlined />} label="Кухня" collapsed={siderCollapsed} />}
       {canCash && <SidebarMenuItem to="/hotel-cash" icon={<PointOfSaleOutlined />} label="Касса" collapsed={siderCollapsed} />}
@@ -464,11 +468,16 @@ const HotelSidebarMenu: React.FC = () => {
 
       {(canRooms || canCategories || canRatePlans || canExtras || canPricing || canPriceCalendar || canEvents) && sectionLabel("Отель")}
       {canRooms && <SidebarMenuItem to="/rooms" icon={<HotelOutlined />} label="Номера" collapsed={siderCollapsed} />}
-      {canCategories && <SidebarMenuItem to="/room-categories" icon={<CategoryOutlined />} label="Категории и тарифы" collapsed={siderCollapsed} />}
-      {canRatePlans && <SidebarMenuItem to="/rate-plans" icon={<LocalOfferOutlined />} label="Тарифные планы" collapsed={siderCollapsed} />}
-      {canPricing && <SidebarMenuItem to="/pricing-rules" icon={<PriceChangeOutlined />} label="Ценообразование" collapsed={siderCollapsed} />}
-      {canPriceCalendar && <SidebarMenuItem to="/price-calendar" icon={<CalendarViewMonthOutlined />} label="Календарь цен" collapsed={siderCollapsed} />}
-      {canExtras && <SidebarMenuItem to="/hotel-extras" icon={<ConciergeOutlined />} label="Услуги и юрлица" collapsed={siderCollapsed} />}
+      {pricingSections.length > 0 && (
+        <SidebarMenuItem
+          to={pricingSections[0].to}
+          icon={<LocalOfferOutlined />}
+          label="Цены"
+          collapsed={siderCollapsed}
+          alsoActivePaths={pricingSections.map((s) => s.to)}
+        />
+      )}
+      {canExtras && <SidebarMenuItem to="/hotel-extras" icon={<ConciergeOutlined />} label="Услуги" collapsed={siderCollapsed} />}
       {canEvents && <SidebarMenuItem to="/events" icon={<CelebrationOutlined />} label="События" collapsed={siderCollapsed} />}
       {canSettings && (
         <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
@@ -1162,6 +1171,8 @@ type SidebarMenuItemProps = {
    * (e.g. "/settings/notifications").
    */
   excludePaths?: string[];
+  /** Ещё разделы, на которых пункт горит (один пункт меню на несколько страниц, как «Цены»). */
+  alsoActivePaths?: string[];
 };
 
 /**
@@ -1190,6 +1201,7 @@ const HOTEL_ONLY_NAV_PATHS = [
   "/price-calendar",
   "/rate-plans",
   "/hotel-extras",
+  "/hotel-companies",
   "/hotel-cash",
   "/hotel-staff",
   "/events",
@@ -1206,6 +1218,7 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   badgeCount = 0,
   badgeColor = "error",
   excludePaths,
+  alsoActivePaths,
 }) => {
   const location = useLocation();
   const theme = useTheme();
@@ -1221,8 +1234,9 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   const collapsedFinal = (collapsed ?? false) && !isMobile;
   const hasBadge = badgeCount > 0;
   const badgeLabel = badgeCount > 99 ? "99+" : String(badgeCount);
-  const matchesSelf =
-    location.pathname === to || location.pathname.startsWith(to + "/");
+  const matchesSelf = [to, ...(alsoActivePaths ?? [])].some(
+    (p) => location.pathname === p || location.pathname.startsWith(p + "/"),
+  );
   const matchesExcluded = (excludePaths ?? []).some(
     (p) => location.pathname === p || location.pathname.startsWith(p + "/"),
   );

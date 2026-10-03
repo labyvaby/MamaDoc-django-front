@@ -784,7 +784,17 @@ function App() {
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.hotelExtras}>
                               <Suspense fallback={<LinearProgress />}>
-                                <HotelExtrasPage />
+                                <HotelExtrasPage section="services" />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="hotel-companies"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.hotelExtras}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <HotelExtrasPage section="corporate" />
                               </Suspense>
                             </RequirePermission>
                           }

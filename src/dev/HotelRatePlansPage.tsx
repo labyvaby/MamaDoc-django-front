@@ -40,6 +40,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
 import { usePageTitle } from "../hooks/usePageTitle";
+import { PricingSectionTabs } from "./PricingSectionTabs";
 import { useCan } from "../hooks/useCan";
 import { createRatePlan, listRatePlans, listRoomTypes, updateRatePlan, type HotelRatePlan } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
@@ -105,6 +106,7 @@ export const HotelRatePlansPage: React.FC = () => {
 
   return (
     <HotelPage>
+      <PricingSectionTabs />
       <HotelPageHeader
         title="Тарифные планы"
         subtitle={plansQuery.isSuccess ? `${active} ${active === 1 ? "действует" : "действуют"}${plans.length > active ? ` · ${plans.length - active} выключено` : ""}` : undefined}

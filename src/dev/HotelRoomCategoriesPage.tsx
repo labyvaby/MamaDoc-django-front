@@ -29,6 +29,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router";
 
 import { usePageTitle } from "../hooks/usePageTitle";
+import { PricingSectionTabs } from "./PricingSectionTabs";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { getHotelCatalogs, listRoomTypes, listRooms } from "../api/hotel";
@@ -83,6 +84,7 @@ export const HotelRoomCategoriesPage: React.FC = () => {
 
   return (
     <HotelPage>
+      <PricingSectionTabs />
       <HotelPageHeader
         title="Категории и тарифы"
         subtitle={roomTypes.length > 0 ? `${roomTypes.length} ${plural(roomTypes.length, "категория", "категории", "категорий")} · ${priceRange}` : undefined}
