@@ -31,7 +31,11 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link as RouterLink } from "react-router";
+import { Link as RouterLink, useNavigate } from "react-router";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
+import { leadTimeLabel, LEAD_TIME_TEMPLATES } from "./pricingLeadTime";
 import dayjs from "dayjs";
 
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -69,7 +73,8 @@ function describeConditions(rule: HotelPricingRule): string[] {
     parts.push(`Загрузка ${c.occupancyFrom ?? 0}–${c.occupancyTo ?? 100}%`);
   }
   if (c.leadTimeFrom != null || c.leadTimeTo != null) {
-    parts.push(`До заезда ${c.leadTimeFrom ?? 0}–${c.leadTimeTo ?? "∞"} дн.`);
+    const label = leadTimeLabel(c.leadTimeFrom, c.leadTimeTo);
+    parts.push(label.charAt(0).toUpperCase() + label.slice(1));
   }
   if (c.nightsFrom != null || c.nightsTo != null) {
     parts.push(`${c.nightsFrom ?? 1}–${c.nightsTo ?? "∞"} ноч.`);
@@ -87,6 +92,8 @@ export const HotelPricingRulesPage: React.FC = () => {
   const queryClient = useQueryClient();
   const canManageRates = useCan("hotel.rates.manage");
   const [toggleError, setToggleError] = React.useState<string | null>(null);
+  const [templatesAnchor, setTemplatesAnchor] = React.useState<HTMLElement | null>(null);
+  const navigate = useNavigate();
   const [togglingId, setTogglingId] = React.useState<number | null>(null);
 
   const roomTypesQuery = useQuery({
@@ -163,16 +170,26 @@ export const HotelPricingRulesPage: React.FC = () => {
                         : null
                 }
               >
-                <Button
-                  variant="contained"
-                  disableElevation
-                  startIcon={<AddOutlined />}
-                  component={RouterLink}
-                  to="/pricing-rules/new"
-                  disabled={loading || !property || roomTypes.length === 0}
-                >
-                  Добавить правило
-                </Button>
+                <Stack direction="row" gap={1} flexWrap="wrap">
+                  <Button
+                    variant="outlined"
+                    startIcon={<AutoAwesomeOutlined />}
+                    onClick={(e) => setTemplatesAnchor(e.currentTarget)}
+                    disabled={loading || !property || roomTypes.length === 0}
+                  >
+                    По дате заезда
+                  </Button>
+                  <Button
+                    variant="contained"
+                    disableElevation
+                    startIcon={<AddOutlined />}
+                    component={RouterLink}
+                    to="/pricing-rules/new"
+                    disabled={loading || !property || roomTypes.length === 0}
+                  >
+                    Добавить правило
+                  </Button>
+                </Stack>
               </DisabledReason>
             ) : (
               <Tooltip title="Изменять правила может роль с правом «Управление тарифами»">
@@ -183,6 +200,27 @@ export const HotelPricingRulesPage: React.FC = () => {
             )
           }
         />
+
+        {/* Шаблоны «по приближению даты заезда»: форма откроется заполненной, сохранить — вручную. */}
+        <Menu anchorEl={templatesAnchor} open={templatesAnchor != null} onClose={() => setTemplatesAnchor(null)}>
+          {LEAD_TIME_TEMPLATES.map((t) => (
+            <MenuItem
+              key={t.key}
+              onClick={() => {
+                setTemplatesAnchor(null);
+                navigate("/pricing-rules/new", { state: { prefill: t.prefill } });
+              }}
+              sx={{ display: "block", maxWidth: 360, whiteSpace: "normal", py: 1 }}
+            >
+              <Typography variant="body2" fontWeight={700}>
+                {t.label}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {t.hint}
+              </Typography>
+            </MenuItem>
+          ))}
+        </Menu>
 
         {toggleError && (
           <Alert severity="warning" variant="outlined" sx={{ fontSize: "0.8rem" }} onClose={() => setToggleError(null)}>
