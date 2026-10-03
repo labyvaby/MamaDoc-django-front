@@ -485,7 +485,7 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
   const searchField = (
     <TextField
       size="small"
-      placeholder="Гость, №, номер, телефон"
+      placeholder="ФИО, телефон, № брони, комната"
       value={q}
       onChange={(e) => setQ(e.target.value)}
       sx={{ minWidth: { xs: 0, md: 220 } }}

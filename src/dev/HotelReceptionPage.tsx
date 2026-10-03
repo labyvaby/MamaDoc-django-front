@@ -805,7 +805,7 @@ const AllTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> = (
           size="small"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Имя, телефон или номер брони"
+          placeholder="ФИО, телефон, № брони, комната"
           sx={{ width: { xs: "100%", md: 340 } }}
           slotProps={{
             input: {
