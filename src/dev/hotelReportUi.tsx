@@ -5,12 +5,13 @@
  * открывают соседний отчёт с нужным фильтром.
  */
 import React from "react";
-import { Box, ButtonBase, LinearProgress, Stack, Typography } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { Box, Button, ButtonBase, Collapse, LinearProgress, Skeleton, Stack, Typography, useMediaQuery } from "@mui/material";
+import { alpha, useTheme, type Breakpoint } from "@mui/material/styles";
 import ArrowOutwardOutlined from "@mui/icons-material/ArrowOutwardOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import NorthEastOutlined from "@mui/icons-material/NorthEastOutlined";
 import SouthEastOutlined from "@mui/icons-material/SouthEastOutlined";
+import TuneOutlined from "@mui/icons-material/TuneOutlined";
 
 import { subtleBorder } from "../theme/uiHelpers";
 import { fmtPercent } from "./hotelReportFormat";
@@ -235,6 +236,93 @@ export const ShareRow: React.FC<{
     content
   );
 };
+
+/**
+ * Второстепенные фильтры отчёта. На телефоне — под кнопкой «Фильтры» с числом
+ * включённых, чтобы первым экраном были цифры, а не панель на весь экран; на
+ * компьютере — как есть. extra — кнопки рядом с «Фильтрами» (Excel, печать).
+ */
+export const ReportFilters: React.FC<{ active: number; extra?: React.ReactNode; children: React.ReactNode }> = ({ active, extra, children }) => {
+  const theme = useTheme();
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
+  const [open, setOpen] = React.useState(false);
+  if (!phone) return <>{children}</>;
+  return (
+    <>
+      <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center" sx={{ "& .MuiButton-startIcon": { mr: 0.5 } }}>
+        <Button
+          variant={open ? "contained" : "outlined"}
+          disableElevation
+          startIcon={<TuneOutlined />}
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          sx={{ minHeight: 40, px: 1.5 }}
+        >
+          Фильтры
+          {active > 0 && (
+            <Box
+              component="span"
+              aria-label={`включено: ${active}`}
+              sx={{
+                ml: 0.75,
+                minWidth: 20,
+                height: 20,
+                px: 0.5,
+                borderRadius: 10,
+                fontSize: 12,
+                fontWeight: 800,
+                lineHeight: "20px",
+                textAlign: "center",
+                bgcolor: open ? theme.palette.primary.contrastText : theme.palette.primary.main,
+                color: open ? theme.palette.primary.main : theme.palette.primary.contrastText,
+              }}
+            >
+              {active}
+            </Box>
+          )}
+        </Button>
+        {extra}
+      </Stack>
+      <Collapse in={open} unmountOnExit>
+        <Stack gap={1.5}>{children}</Stack>
+      </Collapse>
+    </>
+  );
+};
+
+/**
+ * Заготовка отчёта на время загрузки: карточки цифр и блок под график или
+ * таблицу на своих местах — вместо пустого экрана с крутилкой и прыжка
+ * страницы, когда данные пришли. columns — как у сетки KPI самого отчёта.
+ */
+export const ReportSkeleton: React.FC<{ kpis?: number; columns?: string | Partial<Record<Breakpoint, string>>; block?: number | false }> = ({
+  kpis = 4,
+  columns = { xs: "1fr 1fr", md: "repeat(4, 1fr)" },
+  block = 280,
+}) => (
+  <Stack gap={2.5} role="status" aria-label="Отчёт загружается">
+    <Box sx={{ display: "grid", gridTemplateColumns: columns, gap: 1.5 }}>
+      {Array.from({ length: kpis }, (_, i) => (
+        <Surface key={i} sx={{ p: { xs: 1.75, md: 2 } }}>
+          <Stack gap={1.25}>
+            <Stack direction="row" alignItems="center" gap={1}>
+              <Skeleton variant="rounded" width={32} height={32} sx={{ borderRadius: "10px", flexShrink: 0 }} />
+              <Skeleton variant="text" width="45%" sx={{ fontSize: 11 }} />
+            </Stack>
+            <Skeleton variant="text" width="70%" sx={{ fontSize: { xs: 21, md: 24 }, lineHeight: 1.1 }} />
+            <Skeleton variant="text" width="50%" sx={{ fontSize: 12 }} />
+          </Stack>
+        </Surface>
+      ))}
+    </Box>
+    {block !== false && (
+      <Surface sx={{ p: { xs: 1.75, md: 2 } }}>
+        <Skeleton variant="text" width={180} sx={{ fontSize: 16, mb: 1.5 }} />
+        <Skeleton variant="rounded" height={block} sx={{ borderRadius: "10px" }} />
+      </Surface>
+    )}
+  </Stack>
+);
 
 /** Пустая разбивка — коротко и по делу, без иллюстраций. */
 export const ReportEmpty: React.FC<{ children: React.ReactNode }> = ({ children }) => (

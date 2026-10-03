@@ -6,7 +6,7 @@
  * брони; Excel. Расчёт — hotelYield.ts по броням периода и номерам фонда.
  */
 import React from "react";
-import { Alert, Box, Button, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, Button, FormControlLabel, MenuItem, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import SellOutlined from "@mui/icons-material/SellOutlined";
@@ -27,9 +27,9 @@ import { getYieldReport, listRooms } from "../api/hotel";
 import { CustomDatePicker } from "../components/ui";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { HOTEL_BOOKING_SOURCE_LABELS } from "./hotelDisplay";
-import { fmtInt, fmtMoney, fmtPercent } from "./hotelReportFormat";
+import { axisMoney, fmtInt, fmtMoney, fmtPercent, niceTicks } from "./hotelReportFormat";
 import { deltaPercent, fetchAllReservations } from "./hotelReportData";
-import { ReportKpi, ReportSection, type ReportNav } from "./hotelReportUi";
+import { ReportFilters, ReportKpi, ReportSection, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { FilterChip, Surface, useHotelTableSx } from "./hotelUi";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
 import {
@@ -98,6 +98,9 @@ const rowLabel = (r: YieldRow, group: YieldGroup) =>
 
 export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; nav: ReportNav }> = ({ propertyId, currency, nav }) => {
   const tableSx = useHotelTableSx();
+  const theme = useTheme();
+  // На телефоне фильтры прячутся под «Фильтры», вид отчёта — отдельной строкой во всю ширину.
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
   const today = dayjs();
   const from = nav.param("from") ?? D(today.startOf("month"));
   const toRaw = nav.param("to") ?? D(today.endOf("month"));
@@ -205,6 +208,12 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
   };
 
   const loading = mainQuery.isPending || roomsQuery.isPending;
+  const activeFilters = (group !== "month" ? 1 : 0) + (compare !== "none" ? 1 : 0) + (byCategory ? 1 : 0) + (cats.size > 0 ? 1 : 0) + (sources.size > 0 ? 1 : 0);
+  const excelButton = (
+    <Button variant="outlined" startIcon={<FileDownloadOutlined />} disabled={!result || exporting} onClick={() => void exportXlsx()} sx={{ minHeight: { xs: 40, md: 0 }, px: { xs: 1.25, md: 2 } }}>
+      {exporting ? "Готовим…" : phone ? "Excel" : "Экспорт в Excel"}
+    </Button>
+  );
 
   return (
     <Stack gap={2.5}>
@@ -222,63 +231,75 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
                 </Button>
               ))}
             </Stack>
-            <Box sx={{ flex: 1 }} />
-            <Button variant="outlined" startIcon={<FileDownloadOutlined />} disabled={!result || exporting} onClick={() => void exportXlsx()}>
-              {exporting ? "Готовим…" : "Экспорт в Excel"}
-            </Button>
+            <Box sx={{ flex: 1, display: { xs: "none", md: "block" } }} />
+            {!phone && excelButton}
           </Stack>
-          <Stack direction={{ xs: "column", lg: "row" }} gap={1.5} alignItems={{ lg: "center" }} flexWrap="wrap">
-            <ToggleButtonGroup size="small" exclusive value={group} onChange={(_, v: YieldGroup | null) => v && setParam({ group: v })} sx={{ "& .MuiToggleButton-root": { textTransform: "none", fontWeight: 600, py: 0.4 } }}>
-              <ToggleButton value="month">По месяцам</ToggleButton>
-              <ToggleButton value="week">По неделям</ToggleButton>
-              <ToggleButton value="day">По дням</ToggleButton>
-            </ToggleButtonGroup>
-            <TextField
-              select
-              size="small"
-              label="Сравнить"
-              value={compare}
-              onChange={(e) => setParam({ compare: e.target.value === "none" ? null : e.target.value })}
-              sx={{ minWidth: 200 }}
-            >
-              <MenuItem value="none">Без сравнения</MenuItem>
-              <MenuItem value="prev">С прошлым периодом</MenuItem>
-              <MenuItem value="year">С прошлым годом</MenuItem>
-            </TextField>
-            <FormControlLabel control={<Switch size="small" checked={byCategory} onChange={(e) => setByCategory(e.target.checked)} />} label={<Typography variant="body2">Детализация по категориям</Typography>} />
-            <Box sx={{ flex: 1 }} />
-            <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, v: View | null) => v && setParam({ view: v === "table" ? null : v })} sx={{ "& .MuiToggleButton-root": { textTransform: "none", fontWeight: 600, py: 0.4, gap: 0.5 } }}>
-              <ToggleButton value="table">
-                <TableRowsOutlined sx={{ fontSize: 17 }} /> Таблица
-              </ToggleButton>
-              <ToggleButton value="chart">
-                <InsertChartOutlined sx={{ fontSize: 17 }} /> График
-              </ToggleButton>
-              <ToggleButton value="calendar">
-                <CalendarMonthOutlined sx={{ fontSize: 17 }} /> Календарь
-              </ToggleButton>
-              <ToggleButton value="weekdays">
-                <ViewWeekOutlined sx={{ fontSize: 17 }} /> Дни недели
-              </ToggleButton>
-            </ToggleButtonGroup>
-          </Stack>
-          <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center">
-            <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
-              Категории:
-            </Typography>
-            <FilterChip label="Все" active={cats.size === 0} onClick={() => setCats(new Set())} />
-            {categories.map(([id, name]) => (
-              <FilterChip key={id} label={name} active={cats.has(id)} onClick={() => setCats((c) => toggle(c, id))} />
-            ))}
-            <Box sx={{ width: "1px", height: 22, bgcolor: "divider", mx: 0.75 }} />
-            <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
-              Источник:
-            </Typography>
-            <FilterChip label="Все" active={sources.size === 0} onClick={() => setSources(new Set())} />
-            {SOURCES.filter((s) => s !== "website").map((s) => (
-              <FilterChip key={s} label={HOTEL_BOOKING_SOURCE_LABELS[s] ?? s} active={sources.has(s)} onClick={() => setSources((x) => toggle(x, s))} />
-            ))}
-          </Stack>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={view}
+            onChange={(_, v: View | null) => v && setParam({ view: v === "table" ? null : v })}
+            sx={{ display: { xs: "flex", md: "none" }, "& .MuiToggleButton-root": { flex: 1, textTransform: "none", fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", py: 0.75, px: 0.25 } }}
+          >
+            <ToggleButton value="table">Таблица</ToggleButton>
+            <ToggleButton value="chart">График</ToggleButton>
+            <ToggleButton value="calendar">Календарь</ToggleButton>
+            <ToggleButton value="weekdays">Дни недели</ToggleButton>
+          </ToggleButtonGroup>
+          <ReportFilters active={activeFilters} extra={excelButton}>
+            <Stack direction={{ xs: "column", lg: "row" }} gap={1.5} alignItems={{ lg: "center" }} flexWrap="wrap">
+              <ToggleButtonGroup size="small" exclusive value={group} onChange={(_, v: YieldGroup | null) => v && setParam({ group: v })} sx={{ "& .MuiToggleButton-root": { flex: { xs: 1, md: "none" }, textTransform: "none", fontWeight: 600, py: 0.4 } }}>
+                <ToggleButton value="month">По месяцам</ToggleButton>
+                <ToggleButton value="week">По неделям</ToggleButton>
+                <ToggleButton value="day">По дням</ToggleButton>
+              </ToggleButtonGroup>
+              <TextField
+                select
+                size="small"
+                label="Сравнить"
+                value={compare}
+                onChange={(e) => setParam({ compare: e.target.value === "none" ? null : e.target.value })}
+                sx={{ minWidth: { md: 200 } }}
+              >
+                <MenuItem value="none">Без сравнения</MenuItem>
+                <MenuItem value="prev">С прошлым периодом</MenuItem>
+                <MenuItem value="year">С прошлым годом</MenuItem>
+              </TextField>
+              <FormControlLabel control={<Switch size="small" checked={byCategory} onChange={(e) => setByCategory(e.target.checked)} />} label={<Typography variant="body2">Детализация по категориям</Typography>} />
+              <Box sx={{ flex: 1 }} />
+              <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, v: View | null) => v && setParam({ view: v === "table" ? null : v })} sx={{ display: { xs: "none", md: "flex" }, "& .MuiToggleButton-root": { textTransform: "none", fontWeight: 600, py: 0.4, gap: 0.5 } }}>
+                <ToggleButton value="table">
+                  <TableRowsOutlined sx={{ fontSize: 17 }} /> Таблица
+                </ToggleButton>
+                <ToggleButton value="chart">
+                  <InsertChartOutlined sx={{ fontSize: 17 }} /> График
+                </ToggleButton>
+                <ToggleButton value="calendar">
+                  <CalendarMonthOutlined sx={{ fontSize: 17 }} /> Календарь
+                </ToggleButton>
+                <ToggleButton value="weekdays">
+                  <ViewWeekOutlined sx={{ fontSize: 17 }} /> Дни недели
+                </ToggleButton>
+              </ToggleButtonGroup>
+            </Stack>
+            <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center">
+              <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+                Категории:
+              </Typography>
+              <FilterChip label="Все" active={cats.size === 0} onClick={() => setCats(new Set())} />
+              {categories.map(([id, name]) => (
+                <FilterChip key={id} label={name} active={cats.has(id)} onClick={() => setCats((c) => toggle(c, id))} />
+              ))}
+              <Box sx={{ width: "1px", height: 22, bgcolor: "divider", mx: 0.75 }} />
+              <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+                Источник:
+              </Typography>
+              <FilterChip label="Все" active={sources.size === 0} onClick={() => setSources(new Set())} />
+              {SOURCES.filter((s) => s !== "website").map((s) => (
+                <FilterChip key={s} label={HOTEL_BOOKING_SOURCE_LABELS[s] ?? s} active={sources.has(s)} onClick={() => setSources((x) => toggle(x, s))} />
+              ))}
+            </Stack>
+          </ReportFilters>
         </Stack>
       </Surface>
 
@@ -298,9 +319,7 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
           Не удалось загрузить брони за период
         </Alert>
       ) : loading || !result ? (
-        <Stack alignItems="center" sx={{ py: 6 }}>
-          <CircularProgress size={28} />
-        </Stack>
+        <ReportSkeleton kpis={6} columns={{ xs: "1fr 1fr", md: "repeat(3, 1fr)", xl: "repeat(6, 1fr)" }} block={240} />
       ) : (
         <>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(3, 1fr)", xl: "repeat(6, 1fr)" }, gap: 1.5 }}>
@@ -326,7 +345,7 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
           {byCategory && (
             <ReportSection title="По категориям номеров" subtitle="Те же показатели для каждой категории за период" padded={false}>
               <Box sx={{ overflowX: "auto" }}>
-                <Table size="small" sx={{ ...tableSx, minWidth: 880, "& td": { whiteSpace: "nowrap" }, "& th": { whiteSpace: "normal", lineHeight: 1.25, verticalAlign: "bottom" } }}>
+                <Table size="small" sx={{ ...tableSx, minWidth: 880, "& td": { whiteSpace: "nowrap" }, "& th.MuiTableCell-head": { whiteSpace: "normal", lineHeight: 1.25, verticalAlign: "bottom" } }}>
                   <MetricsHead first="Категория" />
                   <TableBody>
                     {result.byCategory.map((c) => (
@@ -451,7 +470,14 @@ const YieldTable: React.FC<{
         <Table
           size="small"
           stickyHeader
-          sx={{ ...tableSx, minWidth: withDelta ? 1100 : 920, "& td": { whiteSpace: "nowrap" }, "& th": { whiteSpace: "normal", lineHeight: 1.25, verticalAlign: "bottom" } }}
+          sx={{
+            ...tableSx,
+            minWidth: withDelta ? 1040 : 920,
+            "& td": { whiteSpace: "nowrap" },
+            // Со сравнением 11 колонок — поуже отступы, чтобы «Δ загрузки» не уезжала за край.
+            ...(withDelta ? { "& .MuiTableCell-root:not(:first-of-type):not(:last-of-type)": { px: 1.25 } } : {}),
+            "& th.MuiTableCell-head": { whiteSpace: "normal", lineHeight: 1.25, verticalAlign: "bottom" },
+          }}
         >
           <MetricsHead first={group === "day" ? "Дата" : "Период"} withDelta={withDelta} />
           <TableBody>
@@ -533,6 +559,7 @@ const YieldChart: React.FC<{ result: YieldResult; cmp: YieldResult | null; group
     prevOccupancy: cmpRows?.[i]?.occupancy ?? null,
     from: r.from,
   }));
+  const moneyTicks = niceTicks(Math.max(0, ...data.map((p) => Math.max(p.revenue, p.prevRevenue ?? 0))));
   const tick = { fontSize: 11.5, fill: theme.palette.text.secondary };
   const tooltipStyle = { borderRadius: 10, border: `1px solid ${subtleBorder(theme)}`, backgroundColor: theme.palette.background.paper, color: theme.palette.text.primary, fontSize: 13 };
   const names: Record<string, string> = { revenue: "Доход", occupancy: "Загрузка", adr: "ADR", prevRevenue: "Доход (сравнение)", prevOccupancy: "Загрузка (сравнение)" };
@@ -543,7 +570,7 @@ const YieldChart: React.FC<{ result: YieldResult; cmp: YieldResult | null; group
           <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
             <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={10} />
-            <YAxis yAxisId="money" tick={tick} width={64} axisLine={false} tickLine={false} tickFormatter={(v: number) => (v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}м` : v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
+            <YAxis yAxisId="money" tick={tick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, moneyTicks[moneyTicks.length - 1]]} tickFormatter={axisMoney} />
             <YAxis yAxisId="occ" orientation="right" tick={tick} width={44} axisLine={false} tickLine={false} domain={[0, (max: number) => Math.max(100, Math.ceil(max / 10) * 10)]} tickFormatter={(v: number) => `${v}%`} />
             <RechartsTooltip
               contentStyle={tooltipStyle}
@@ -656,6 +683,7 @@ const YieldWeekdays: React.FC<{ result: YieldResult; currency: string }> = ({ re
   const data = result.byWeekday.map((w) => ({ label: WEEKDAYS[w.weekday], occupancy: w.occupancy, adr: w.adr, revenue: w.days ? w.revenue / w.days : 0 }));
   const best = [...result.byWeekday].sort((a, b) => b.occupancy - a.occupancy)[0];
   const worst = [...result.byWeekday].filter((w) => w.days > 0).sort((a, b) => a.occupancy - b.occupancy)[0];
+  const adrTicks = niceTicks(Math.max(0, ...data.map((w) => w.adr)));
   const tick = { fontSize: 12, fill: theme.palette.text.secondary };
   return (
     <ReportSection
@@ -668,7 +696,7 @@ const YieldWeekdays: React.FC<{ result: YieldResult; currency: string }> = ({ re
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
             <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} />
             <YAxis yAxisId="occ" tick={tick} width={44} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
-            <YAxis yAxisId="money" orientation="right" tick={tick} width={60} axisLine={false} tickLine={false} tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
+            <YAxis yAxisId="money" orientation="right" tick={tick} width={64} axisLine={false} tickLine={false} ticks={adrTicks} domain={[0, adrTicks[adrTicks.length - 1]]} tickFormatter={axisMoney} />
             <RechartsTooltip
               contentStyle={{ borderRadius: 10, border: `1px solid ${subtleBorder(theme)}`, backgroundColor: theme.palette.background.paper, color: theme.palette.text.primary, fontSize: 13 }}
               formatter={(value?: number | string, name?: string | number) =>

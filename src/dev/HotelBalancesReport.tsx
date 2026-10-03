@@ -11,8 +11,8 @@ import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   Checkbox,
-  CircularProgress,
   InputAdornment,
   LinearProgress,
   ListItemText,
@@ -27,6 +27,7 @@ import {
   TableSortLabel,
   TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
@@ -42,13 +43,15 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getErrorMessage } from "../api/client";
 import { CustomDatePicker } from "../components/ui";
+import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { formatPhoneDisplay } from "../utility/phone";
 import { HOTEL_BOARD_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS, HOTEL_GUARANTEE_METHOD_LABELS, HOTEL_RESERVATION_STATUS_LABELS, hotelSourceColor } from "./hotelDisplay";
 import { esc, printHtmlDocument } from "./hotelPrintDocs";
 import { fmtInt, fmtMoney } from "./hotelReportFormat";
 import { balanceRows, balanceTotals, fetchAllReservations, type BalanceFilter, type BalanceRow, type BalanceStatusFilter } from "./hotelReportData";
-import { ReportKpi, type ReportNav } from "./hotelReportUi";
+import { ReportFilters, ReportKpi, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { FilterChip, plural, Surface, useHotelTableSx } from "./hotelUi";
+import { formatHotelDateRange } from "./mockDemoData";
 import { downloadXlsx, xlsxFileName, type XlsxKind, type XlsxValue } from "./hotelXlsx";
 
 type SortKey = "number" | "createdAt" | "customer" | "checkIn" | "checkOut" | "nights" | "rooms" | "adr" | "total" | "paid" | "balance";
@@ -101,6 +104,8 @@ export const HotelBalancesReport: React.FC<{
 }> = ({ propertyId, currency, checkInTime, checkOutTime, nav }) => {
   const theme = useTheme();
   const tableSx = useHotelTableSx();
+  // На телефоне широкая таблица Exely видна на треть — там карточка брони.
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
   const today = D(dayjs());
   const from = nav.param("from") ?? today;
   const toRaw = nav.param("to") ?? from;
@@ -448,6 +453,92 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
     </TableCell>
   );
 
+  const viewButton = (
+    <Button variant="outlined" startIcon={<ViewColumnOutlined />} onClick={(e) => setViewAnchor(e.currentTarget)} sx={{ alignSelf: { xs: "flex-start", md: "auto" } }}>
+      {phone ? "Колонки печати и Excel" : "Вид"}
+    </Button>
+  );
+  const printButton = (
+    <Button variant="outlined" startIcon={<PrintOutlined />} disabled={rows.length === 0} onClick={handlePrint} sx={{ minHeight: { xs: 40, md: 0 }, px: { xs: 1.25, md: 2 } }}>
+      Печать
+    </Button>
+  );
+  const excelButton = (
+    <Button variant="outlined" startIcon={<FileDownloadOutlined />} disabled={exporting || rows.length === 0} onClick={() => void handleExport()} sx={{ minHeight: { xs: 40, md: 0 }, px: { xs: 1.25, md: 2 } }}>
+      {exporting ? "Готовим…" : "Excel"}
+    </Button>
+  );
+  const searchField = (
+    <TextField
+      size="small"
+      placeholder="Гость, №, номер, телефон"
+      value={q}
+      onChange={(e) => setQ(e.target.value)}
+      sx={{ minWidth: { xs: 0, md: 220 } }}
+      slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchOutlined fontSize="small" /></InputAdornment> } }}
+    />
+  );
+
+  const phoneCard = (r: BalanceRow, i: number) => {
+    const arrival = r.checkedInAt
+      ? { text: `заселён в ${dayjs(r.checkedInAt).format("HH:mm")}`, color: "success.main" }
+      : r.expectedArrivalTime
+        ? { text: `приедет около ${r.expectedArrivalTime}`, color: "info.main" }
+        : null;
+    return (
+      <ButtonBase
+        key={r.id}
+        component="div"
+        onClick={() => nav.openReservation(r.id)}
+        sx={{
+          display: "block",
+          width: "100%",
+          textAlign: "left",
+          px: 2,
+          py: 1.5,
+          borderTop: i > 0 ? `1px solid ${subtleBorder(theme)}` : "none",
+          "&.Mui-focusVisible": { bgcolor: subtleBg(theme, true) },
+        }}
+      >
+        <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={1.5}>
+          <Typography variant="body2" fontWeight={700} sx={{ minWidth: 0, overflowWrap: "anywhere" }}>
+            {r.customer || "—"}
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: r.balance > 0 ? "error.main" : r.balance < 0 ? "warning.main" : "success.main" }}
+          >
+            {r.balance > 0 ? `долг ${fmtMoney(r.balance, r.currency)}` : r.balance < 0 ? `переплата ${fmtMoney(-r.balance, r.currency)}` : "оплачено"}
+          </Typography>
+        </Stack>
+        <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.25, fontVariantNumeric: "tabular-nums" }}>
+          №{r.number}
+          {r.checkIn && r.checkOut ? ` · ${formatHotelDateRange(r.checkIn, r.checkOut)}` : ""} · {r.nights} {plural(r.nights, "ночь", "ночи", "ночей")}
+          {r.rooms ? ` · номер ${r.rooms}` : ""}
+        </Typography>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ mt: 0.75 }}>
+          <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ minWidth: 0 }}>
+            <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: hotelSourceColor(r.source), flexShrink: 0 }} />
+            <Typography variant="caption">{HOTEL_BOOKING_SOURCE_LABELS[r.source] ?? r.source}</Typography>
+            {r.status !== "confirmed" && (
+              <Typography variant="caption" color="error.main" fontWeight={600}>
+                · {statusWord(r.status)}
+              </Typography>
+            )}
+            {arrival && (
+              <Typography variant="caption" color={arrival.color} fontWeight={600}>
+                · {arrival.text}
+              </Typography>
+            )}
+          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+            {fmtMoney(r.paid)} из {fmtMoney(r.total, r.currency)}
+          </Typography>
+        </Stack>
+      </ButtonBase>
+    );
+  };
+
   return (
     <Stack gap={2.5}>
       <Surface sx={{ p: { xs: 1.75, md: 2 } }}>
@@ -464,73 +555,74 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
                 </Button>
               ))}
             </Stack>
-            <Box sx={{ flex: 1 }} />
-            <Stack direction="row" gap={1}>
-              <Button variant="outlined" startIcon={<ViewColumnOutlined />} onClick={(e) => setViewAnchor(e.currentTarget)}>
-                Вид
-              </Button>
-              <Button variant="outlined" startIcon={<PrintOutlined />} disabled={rows.length === 0} onClick={handlePrint}>
-                Печать
-              </Button>
-              <Button variant="outlined" startIcon={<FileDownloadOutlined />} disabled={exporting || rows.length === 0} onClick={() => void handleExport()}>
-                {exporting ? "Готовим…" : "Excel"}
-              </Button>
-            </Stack>
+            <Box sx={{ flex: 1, display: { xs: "none", md: "block" } }} />
+            {!phone && (
+              <Stack direction="row" gap={1}>
+                {viewButton}
+                {printButton}
+                {excelButton}
+              </Stack>
+            )}
           </Stack>
-          <Stack direction={{ xs: "column", lg: "row" }} gap={1.5} alignItems={{ lg: "center" }}>
-            <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center">
-              {(Object.keys(STATUS_LABELS) as BalanceStatusFilter[]).map((k) => (
-                <FilterChip key={k} label={STATUS_LABELS[k]} active={status === k} onClick={() => nav.setParams({ status: k === "active" ? null : k })} />
-              ))}
-              <Box sx={{ width: "1px", height: 22, bgcolor: "divider", mx: 0.5, display: { xs: "none", sm: "block" } }} />
-              {(Object.keys(BALANCE_LABELS) as BalanceFilter[]).map((k) => (
-                <FilterChip key={k} label={BALANCE_LABELS[k]} active={balance === k} onClick={() => nav.setParams({ balance: k === "all" ? null : k })} />
-              ))}
-            </Stack>
-            <Box sx={{ flex: 1 }} />
-            <Stack direction={{ xs: "column", sm: "row" }} gap={1}>
-              <TextField
-                select
-                size="small"
-                label="Канал"
-                value={source}
-                onChange={(e) => nav.setParams({ source: e.target.value || null })}
-                sx={{ minWidth: 160 }}
-                slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
-              >
-                <MenuItem value="">Все каналы</MenuItem>
-                {sources.map((s) => (
-                  <MenuItem key={s} value={s}>
-                    {HOTEL_BOOKING_SOURCE_LABELS[s] ?? s}
-                  </MenuItem>
+          {phone && searchField}
+          <ReportFilters
+            active={(status !== "active" ? 1 : 0) + (balance !== "all" ? 1 : 0) + (source ? 1 : 0) + (corporate ? 1 : 0)}
+            extra={
+              <>
+                {printButton}
+                {excelButton}
+              </>
+            }
+          >
+            <Stack direction={{ xs: "column", lg: "row" }} gap={1.5} alignItems={{ lg: "center" }}>
+              <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center">
+                {(Object.keys(STATUS_LABELS) as BalanceStatusFilter[]).map((k) => (
+                  <FilterChip key={k} label={STATUS_LABELS[k]} active={status === k} onClick={() => nav.setParams({ status: k === "active" ? null : k })} />
                 ))}
-              </TextField>
-              <TextField
-                select
-                size="small"
-                label="Компания-заказчик"
-                value={corporate}
-                onChange={(e) => nav.setParams({ corporate: e.target.value || null })}
-                sx={{ minWidth: 180 }}
-                slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
-              >
-                <MenuItem value="">Все</MenuItem>
-                {corporates.map((c) => (
-                  <MenuItem key={c} value={c}>
-                    {c}
-                  </MenuItem>
+                <Box sx={{ width: "1px", height: 22, bgcolor: "divider", mx: 0.5, display: { xs: "none", sm: "block" } }} />
+                {(Object.keys(BALANCE_LABELS) as BalanceFilter[]).map((k) => (
+                  <FilterChip key={k} label={BALANCE_LABELS[k]} active={balance === k} onClick={() => nav.setParams({ balance: k === "all" ? null : k })} />
                 ))}
-              </TextField>
-              <TextField
-                size="small"
-                placeholder="Гость, №, номер, телефон"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                sx={{ minWidth: { xs: 0, sm: 220 } }}
-                slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchOutlined fontSize="small" /></InputAdornment> } }}
-              />
+              </Stack>
+              <Box sx={{ flex: 1 }} />
+              <Stack direction={{ xs: "column", md: "row" }} gap={1}>
+                <TextField
+                  select
+                  size="small"
+                  label="Канал"
+                  value={source}
+                  onChange={(e) => nav.setParams({ source: e.target.value || null })}
+                  sx={{ minWidth: { md: 160 } }}
+                  slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+                >
+                  <MenuItem value="">Все каналы</MenuItem>
+                  {sources.map((s) => (
+                    <MenuItem key={s} value={s}>
+                      {HOTEL_BOOKING_SOURCE_LABELS[s] ?? s}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  select
+                  size="small"
+                  label="Компания-заказчик"
+                  value={corporate}
+                  onChange={(e) => nav.setParams({ corporate: e.target.value || null })}
+                  sx={{ minWidth: { md: 180 } }}
+                  slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+                >
+                  <MenuItem value="">Все</MenuItem>
+                  {corporates.map((c) => (
+                    <MenuItem key={c} value={c}>
+                      {c}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                {!phone && searchField}
+                {phone && viewButton}
+              </Stack>
             </Stack>
-          </Stack>
+          </ReportFilters>
         </Stack>
       </Surface>
 
@@ -556,9 +648,7 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
           {getErrorMessage(query.error, "Не удалось загрузить брони")}
         </Alert>
       ) : !query.data ? (
-        <Stack alignItems="center" sx={{ py: 6 }}>
-          <CircularProgress size={28} />
-        </Stack>
+        <ReportSkeleton block={320} />
       ) : (
         <>
           {query.data.truncated && (
@@ -587,6 +677,8 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
               <Typography color="text.secondary" sx={{ p: 4, textAlign: "center" }}>
                 {balance === "debt" ? "Должников среди заездов нет" : "Заездов за период нет"}
               </Typography>
+            ) : phone ? (
+              rows.map(phoneCard)
             ) : (
               <Box sx={{ overflowX: "auto" }}>
                 <Table

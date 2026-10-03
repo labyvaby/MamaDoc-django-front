@@ -16,7 +16,7 @@
  * остальным — номера.
  */
 import React from "react";
-import { Box, ButtonBase, CircularProgress, Stack, Typography } from "@mui/material";
+import { Box, ButtonBase, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 import AssignmentTurnedInOutlined from "@mui/icons-material/AssignmentTurnedInOutlined";
@@ -36,7 +36,7 @@ import { HotelOwnerReport } from "./HotelOwnerReport";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { HotelShiftReport } from "./HotelShiftReport";
 import { HotelYieldReport } from "./HotelYieldReport";
-import type { HotelReportKind, ReportNav } from "./hotelReportUi";
+import { ReportSkeleton, type HotelReportKind, type ReportNav } from "./hotelReportUi";
 import { HotelPage, HotelPageHeader } from "./hotelUi";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 import { useHotelProperty } from "./useHotelProperty";
@@ -101,6 +101,8 @@ const REPORTS: ReportMeta[] = [
   },
 ];
 
+const TIGHT_ROW = "@media (min-width: 1200px) and (max-width: 1399.95px)";
+
 export const HotelReportsPage: React.FC = () => {
   usePageTitle("Отчёты");
   const theme = useTheme();
@@ -114,6 +116,8 @@ export const HotelReportsPage: React.FC = () => {
   const visible = REPORTS.filter((r) =>
     r.kind === "owner" ? canOwner : r.kind === "shift" ? canShift : r.kind === "housekeeping" ? canHousekeeping : true,
   );
+  // Больше четырёх отчётов в ряд на 1200–1400 px — плитка с иконкой сверху.
+  const tight = visible.length > 4;
   const requested = params.get("r") as HotelReportKind | null;
   const current = visible.find((r) => r.kind === requested) ?? visible[0];
 
@@ -146,62 +150,102 @@ export const HotelReportsPage: React.FC = () => {
     <HotelPage>
       <HotelPageHeader title="Отчёты" subtitle={`${current.label} · для: ${current.audience}`} info={current.info} />
 
-      {/* Переключатель отчётов: на телефоне — лента, на компьютере — карточки в ряд. */}
+      {/*
+        Переключатель отчётов. Все отчёты видны сразу: на телефоне — сетка в два
+        столбца (лента уезжала за край, было видно полтора отчёта), на планшете —
+        в три, на компьютере — в ряд. Шесть в ряд на 1200–1400 px — плитка с
+        иконкой сверху, иначе «Собственнику» и «Доходность» обрезались.
+      */}
       <Box
+        role="group"
+        aria-label="Отчёты"
         sx={{
-          display: { xs: "flex", md: "grid" },
-          gridTemplateColumns: { md: `repeat(${visible.length}, 1fr)` },
-          gap: 1.25,
-          overflowX: { xs: "auto", md: "visible" },
-          mx: { xs: -0.5, md: 0 },
-          px: { xs: 0.5, md: 0 },
-          pb: { xs: 0.5, md: 0 },
-          scrollbarWidth: "none",
+          display: "grid",
+          gridTemplateColumns: {
+            xs: `repeat(${Math.min(2, visible.length)}, minmax(0, 1fr))`,
+            md: `repeat(${visible.length === 4 ? 2 : Math.min(3, visible.length)}, minmax(0, 1fr))`,
+            lg: `repeat(${visible.length}, minmax(0, 1fr))`,
+          },
+          gap: { xs: 1, md: 1.25 },
         }}
       >
         {visible.map((r) => {
           const active = r.kind === current.kind;
+          const primary = theme.palette.primary.main;
+          const dark = theme.palette.mode === "dark";
+          const restShadow = `0 1px 2px ${alpha("#101828", dark ? 0.4 : 0.05)}`;
           return (
             <ButtonBase
               key={r.kind}
               onClick={() => nav.go(r.kind)}
               aria-pressed={active}
               sx={{
-                flexShrink: 0,
-                minWidth: { xs: 210, md: 0 },
+                display: "flex",
+                alignItems: "center",
                 justifyContent: "flex-start",
                 textAlign: "left",
-                gap: 1.25,
-                p: 1.5,
+                minWidth: 0,
+                gap: { xs: 1, md: 1.25 },
+                p: { xs: 1.25, md: 1.5 },
                 borderRadius: "14px",
-                border: `1px solid ${active ? alpha(theme.palette.primary.main, 0.5) : subtleBorder(theme)}`,
-                bgcolor: active ? alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.16 : 0.06) : "background.paper",
-                transition: "border-color .15s, background-color .15s",
-                "&:hover": { borderColor: alpha(theme.palette.primary.main, 0.4) },
+                border: `1px solid ${active ? alpha(primary, 0.55) : subtleBorder(theme)}`,
+                bgcolor: active ? alpha(primary, dark ? 0.16 : 0.07) : "background.paper",
+                boxShadow: active ? `${restShadow}, 0 6px 16px -8px ${alpha(primary, 0.45)}` : restShadow,
+                transition: "border-color .15s, background-color .15s, box-shadow .15s, transform .15s",
+                "@media (hover: hover)": {
+                  "&:hover": {
+                    borderColor: alpha(primary, active ? 0.65 : 0.4),
+                    boxShadow: `${restShadow}, 0 6px 16px -8px ${alpha(primary, 0.35)}`,
+                    transform: "translateY(-1px)",
+                  },
+                },
+                "&.Mui-focusVisible": { outline: `2px solid ${primary}`, outlineOffset: 2 },
+                "@media (prefers-reduced-motion: reduce)": { transition: "none", "&:hover": { transform: "none" } },
+                ...(tight ? { [TIGHT_ROW]: { flexDirection: "column", alignItems: "flex-start", gap: 1 } } : {}),
               }}
             >
               <Box
                 sx={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: "11px",
+                  width: { xs: 32, md: 38 },
+                  height: { xs: 32, md: 38 },
+                  borderRadius: { xs: "9px", md: "11px" },
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   flexShrink: 0,
                   color: active ? "primary.contrastText" : "primary.main",
-                  bgcolor: active ? "primary.main" : alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.18 : 0.08),
-                  "& svg": { fontSize: 20 },
+                  bgcolor: active ? "primary.main" : alpha(primary, dark ? 0.18 : 0.08),
+                  boxShadow: active ? `0 2px 6px -1px ${alpha(primary, 0.5)}` : "none",
+                  transition: "background-color .15s, color .15s",
+                  "& svg": { fontSize: { xs: 18, md: 20 } },
+                  ...(tight ? { [TIGHT_ROW]: { width: 34, height: 34, borderRadius: "10px" } } : {}),
                 }}
               >
                 {r.icon}
               </Box>
               <Box sx={{ minWidth: 0 }}>
-                <Typography sx={{ fontWeight: 700, fontSize: 14.5, lineHeight: 1.2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                <Typography
+                  sx={{
+                    fontWeight: 700,
+                    fontSize: { xs: 13, md: 14.5 },
+                    lineHeight: 1.25,
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    ...(tight ? { [TIGHT_ROW]: { fontSize: 14 } } : {}),
+                  }}
+                >
                   {r.label}
                 </Typography>
-                {/* Отчётов шесть: на средних экранах подпись прячем, полное описание — в «i» у заголовка. */}
-                <Typography variant="caption" color="text.secondary" component="div" noWrap sx={{ display: { xs: "block", md: visible.length > 4 ? "none" : "block", xl: "block" } }}>
+                {/* Подпись — где есть место; полное описание — в «i» у заголовка. */}
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  component="div"
+                  noWrap
+                  sx={{ display: { xs: "none", md: "block", lg: tight ? "none" : "block", xl: "block" }, mt: 0.25 }}
+                >
                   {r.hint}
                 </Typography>
               </Box>
@@ -212,9 +256,7 @@ export const HotelReportsPage: React.FC = () => {
 
       {!property ? (
         propertyLoading ? (
-          <Stack alignItems="center" sx={{ py: 6 }}>
-            <CircularProgress size={28} />
-          </Stack>
+          <ReportSkeleton />
         ) : (
           <HotelPropertyMissing />
         )

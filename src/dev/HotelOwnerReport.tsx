@@ -44,9 +44,10 @@ import {
   revenueBySource,
   summarizeExpenses,
 } from "./hotelReportData";
+import { previousPeriod } from "./hotelYield";
 import { isGuestDebt } from "./hotelInHouse";
-import { fmtInt, fmtMoney, fmtPercent, REPORT_PALETTE } from "./hotelReportFormat";
-import { ReportEmpty, ReportKpi, ReportLink, ReportSection, ShareRow, type ReportNav } from "./hotelReportUi";
+import { axisMoney, fmtInt, fmtMoney, fmtPercent, niceTicks, REPORT_PALETTE } from "./hotelReportFormat";
+import { ReportEmpty, ReportKpi, ReportLink, ReportSection, ReportSkeleton, ShareRow, type ReportNav } from "./hotelReportUi";
 import { plural, SectionLabel, Surface } from "./hotelUi";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
 import { formatHotelDate } from "./mockDemoData";
@@ -74,17 +75,20 @@ export const HotelOwnerReport: React.FC<{
   const toRaw = nav.param("to") ?? D(today);
   const to = toRaw < from ? from : toRaw;
   const days = dayjs(to).diff(dayjs(from), "day") + 1;
-  const prevTo = D(dayjs(from).subtract(1, "day"));
-  const prevFrom = D(dayjs(prevTo).subtract(days - 1, "day"));
+  const { from: prevFrom, to: prevTo } = previousPeriod(from, to);
   const toExcl = D(dayjs(to).add(1, "day"));
+  // reports/occupancy/ считает [from, to) — «по» в отчёте включительно, поэтому
+  // передаём следующий день: иначе выручка и загрузка теряли последний день
+  // (а «за один день» был 400 — to должен быть позже from).
+  const prevToExcl = D(dayjs(prevTo).add(1, "day"));
 
   const occupancyQuery = useQuery({
-    queryKey: ["hotel", "reports", "occupancy", propertyId, from, to],
-    queryFn: ({ signal }) => getOccupancyReport(propertyId, from, to, signal),
+    queryKey: ["hotel", "reports", "occupancy", propertyId, from, toExcl],
+    queryFn: ({ signal }) => getOccupancyReport(propertyId, from, toExcl, signal),
   });
   const prevQuery = useQuery({
-    queryKey: ["hotel", "reports", "occupancy", propertyId, prevFrom, prevTo],
-    queryFn: ({ signal }) => getOccupancyReport(propertyId, prevFrom, prevTo, signal),
+    queryKey: ["hotel", "reports", "occupancy", propertyId, prevFrom, prevToExcl],
+    queryFn: ({ signal }) => getOccupancyReport(propertyId, prevFrom, prevToExcl, signal),
   });
   const reservationsQuery = useQuery({
     queryKey: ["hotel", "reports", "ownerReservations", propertyId, from, to],
@@ -114,6 +118,7 @@ export const HotelOwnerReport: React.FC<{
       })),
     [reservations, from, to, roomsCount, days],
   );
+  const moneyTicks = React.useMemo(() => niceTicks(Math.max(0, ...series.map((p) => p.revenue))), [series]);
   const categories = React.useMemo(() => revenueByCategory(reservations, from, to), [reservations, from, to]);
   const sources = React.useMemo(() => revenueBySource(reservations, from, to, sourceLabel), [reservations, from, to]);
   const todayStr = D(today);
@@ -286,9 +291,7 @@ export const HotelOwnerReport: React.FC<{
           Не удалось загрузить показатели за период
         </Alert>
       ) : !occ ? (
-        <Stack alignItems="center" sx={{ py: 6 }}>
-          <CircularProgress size={28} />
-        </Stack>
+        <ReportSkeleton kpis={8} block={300} />
       ) : (
         <>
           <Box>
@@ -392,7 +395,7 @@ export const HotelOwnerReport: React.FC<{
                   >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={subtleBorder(theme)} />
                     <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={12} />
-                    <YAxis yAxisId="money" tick={axisTick} width={64} axisLine={false} tickLine={false} tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
+                    <YAxis yAxisId="money" tick={axisTick} width={64} axisLine={false} tickLine={false} ticks={moneyTicks} domain={[0, moneyTicks[moneyTicks.length - 1]]} tickFormatter={axisMoney} />
                     <YAxis yAxisId="occ" orientation="right" tick={axisTick} width={40} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
                     <RechartsTooltip
                       cursor={{ fill: subtleBg(theme, true) }}
