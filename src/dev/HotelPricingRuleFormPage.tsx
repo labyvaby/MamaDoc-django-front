@@ -51,6 +51,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Collapse,
   FormControlLabel,
@@ -59,6 +60,8 @@ import {
   Stack,
   Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -76,6 +79,7 @@ import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { formatHotelDate } from "./mockDemoData";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate, useParams, useLocation } from "react-router";
+import { leadTimeLabel, leadTimeModeOf, type LeadTimeMode } from "./pricingLeadTime";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker } from "../components/ui";
@@ -163,8 +167,9 @@ interface RuleFormState {
 
 /**
  * Заполнение новой формы извне — «Поднять цены на эти даты» в «Событиях»
- * (HotelEventsPage) передаёт его в state навигации. Правило всё равно
- * сохраняет человек: форма открывается заполненной, но не сохраняется сама.
+ * (HotelEventsPage) и шаблоны «Горящие номера» / «Раннее бронирование» на
+ * странице правил (pricingLeadTime.ts) передают его в state навигации. Правило
+ * всё равно сохраняет человек: форма открывается заполненной, но не сохраняется сама.
  */
 export interface PricingRulePrefill {
   name: string;
@@ -173,22 +178,29 @@ export interface PricingRulePrefill {
   /** Со знаком, как form.amount: наценка — положительная. */
   amount: string;
   /** Даты включительно (YYYY-MM-DD). */
-  dateFrom: string;
-  dateTo: string;
+  dateFrom?: string;
+  dateTo?: string;
+  /** Дней от брони до заезда, включительно; null — без границы. */
+  leadTimeFrom?: number | null;
+  leadTimeTo?: number | null;
 }
 
 function prefilledForm(prefill: PricingRulePrefill): RuleFormState {
+  const hasLead = prefill.leadTimeFrom != null || prefill.leadTimeTo != null;
   return {
     ...emptyForm(),
     name: prefill.name,
     category: prefill.category,
     adjustmentType: prefill.adjustmentType,
     amount: prefill.amount,
-    // Событие поднимает спрос на все номера, не на одну категорию.
+    // Событие и «горящие» касаются всех номеров, не одной категории.
     allCategories: true,
-    datesEnabled: true,
-    dateFrom: dayjs(prefill.dateFrom),
-    dateTo: dayjs(prefill.dateTo),
+    datesEnabled: Boolean(prefill.dateFrom && prefill.dateTo),
+    dateFrom: prefill.dateFrom ? dayjs(prefill.dateFrom) : null,
+    dateTo: prefill.dateTo ? dayjs(prefill.dateTo) : null,
+    leadTimeEnabled: hasLead,
+    leadTimeFrom: prefill.leadTimeFrom != null ? String(prefill.leadTimeFrom) : "",
+    leadTimeTo: prefill.leadTimeTo != null ? String(prefill.leadTimeTo) : "",
   };
 }
 
@@ -305,7 +317,7 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
   const enabledConditions = [
     form.datesEnabled && "даты",
     form.occupancyEnabled && "загрузка",
-    form.leadTimeEnabled && "срок до заезда",
+    form.leadTimeEnabled && "приближение даты заезда",
     form.nightsEnabled && "длительность",
     form.daysOfWeekEnabled && "дни недели",
   ].filter((v): v is string => Boolean(v));
@@ -401,7 +413,10 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
       // а conditions.dateTo у самого правила — включительно: отсюда +1 день.
       windowTo = conditionsTo.add(1, "day");
     } else {
-      windowFrom = dayjs();
+      // «Заранее, за 60 дней и больше» — окно с заездами через 60 дней, иначе в
+      // предпросмотре правило «не срабатывает» ни у одной категории.
+      const leadFrom = form.leadTimeEnabled && form.leadTimeFrom ? Number(form.leadTimeFrom) : 0;
+      windowFrom = dayjs().add(Number.isFinite(leadFrom) ? leadFrom : 0, "day");
       windowTo = windowFrom.add(NO_DATES_PREVIEW_DAYS, "day");
     }
     const roomTypeIds = form.allCategories ? [] : form.roomTypeIds;
@@ -451,7 +466,8 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
 
   // «Дороже / дешевле» — отдельным выбором, а не знаком минус в поле: в поле
   // всегда модуль, знак хранится в form.amount как раньше (бэк ждёт signed).
-  const [direction, setDirection] = React.useState<"up" | "down">(() => (Number(editing?.adjustmentValue ?? 0) < 0 ? "down" : "up"));
+  // Из формы, а не из editing: шаблон «Горящие номера» открывает форму со скидкой (минусом).
+  const [direction, setDirection] = React.useState<"up" | "down">(() => (Number(form.amount || 0) < 0 ? "down" : "up"));
   const absAmount = form.amount.replace("-", "");
   const setAbsAmount = (raw: string) => {
     const clean = raw.replace(/[^\d.,]/g, "").replace(",", ".");
@@ -479,7 +495,8 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
     );
   }
   if (form.occupancyEnabled && (form.occupancyFrom || form.occupancyTo)) summaryParts.push(`загрузка ${form.occupancyFrom || 0}–${form.occupancyTo || 100}%`);
-  if (form.leadTimeEnabled && (form.leadTimeFrom || form.leadTimeTo)) summaryParts.push(`за ${form.leadTimeFrom || 0}–${form.leadTimeTo || "∞"} дн. до заезда`);
+  if (form.leadTimeEnabled && (form.leadTimeFrom || form.leadTimeTo))
+    summaryParts.push(leadTimeLabel(form.leadTimeFrom ? Number(form.leadTimeFrom) : null, form.leadTimeTo ? Number(form.leadTimeTo) : null));
   if (form.nightsEnabled && (form.nightsFrom || form.nightsTo)) summaryParts.push(`от ${form.nightsFrom || 1} до ${form.nightsTo || "∞"} ноч.`);
   if (form.daysOfWeekEnabled && form.daysOfWeek.length > 0)
     summaryParts.push(DAYS_OF_WEEK.filter((d) => form.daysOfWeek.includes(d.key)).map((d) => d.label).join(", "));
@@ -586,22 +603,16 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
     {
       key: "leadTime",
       icon: <ScheduleOutlined />,
-      title: "Срок до заезда",
-      description: "Горящие номера или раннее бронирование",
+      title: "Приближение даты заезда",
+      description: "Скидка горящих номеров, дорожание в последние дни или раннее бронирование",
       enabled: form.leadTimeEnabled,
       toggle: (v) => patchForm({ leadTimeEnabled: v }),
       body: (
-        <RangeFields
-          fromLabel="От"
-          toLabel="До"
-          unit="дн."
+        <LeadTimeFields
           from={form.leadTimeFrom}
           to={form.leadTimeTo}
-          min={0}
-          max={730}
           disabled={saving}
-          onFrom={(v) => patchForm({ leadTimeFrom: v })}
-          onTo={(v) => patchForm({ leadTimeTo: v })}
+          onChange={(leadTimeFrom, leadTimeTo) => patchForm({ leadTimeFrom, leadTimeTo })}
         />
       ),
     },
@@ -1054,6 +1065,95 @@ const RuleForm: React.FC<RuleFormProps> = ({ propertyId, editing, roomTypes }) =
 };
 
 /** Пара «от — до» для условий правила. */
+/**
+ * «Приближение даты заезда»: три понятных варианта вместо голого «от–до дней».
+ * «Осталось N дней и меньше» — горящие номера или дорожание у даты (0..N),
+ * «За N дней и больше» — раннее бронирование (N..∞), «Свой диапазон» — от–до.
+ */
+const LEAD_NEAR_PRESETS = [1, 2, 3, 7, 14];
+const LEAD_AHEAD_PRESETS = [14, 30, 60, 90];
+
+const LeadTimeFields: React.FC<{
+  from: string;
+  to: string;
+  disabled: boolean;
+  onChange: (from: string, to: string) => void;
+}> = ({ from, to, disabled, onChange }) => {
+  const [mode, setMode] = React.useState<LeadTimeMode>(() => leadTimeModeOf(from, to));
+  const days = mode === "near" ? to : from;
+  const setDays = (v: string) => (mode === "near" ? onChange("0", v) : onChange(v, ""));
+  const pickMode = (m: LeadTimeMode) => {
+    setMode(m);
+    // Переносим число в новый вариант: «3 дня и меньше» → «за 3 дня и больше».
+    const n = mode === "near" ? to : from;
+    if (m === "near") onChange("0", n || "3");
+    else if (m === "ahead") onChange(n && n !== "0" ? n : "30", "");
+  };
+  const presets = mode === "near" ? LEAD_NEAR_PRESETS : LEAD_AHEAD_PRESETS;
+  return (
+    <Stack gap={1.25}>
+      <ToggleButtonGroup
+        size="small"
+        exclusive
+        value={mode}
+        onChange={(_, v: LeadTimeMode | null) => v && pickMode(v)}
+        disabled={disabled}
+        sx={{ flexWrap: "wrap", "& .MuiToggleButton-root": { textTransform: "none", fontWeight: 600, px: 1.5 } }}
+      >
+        <ToggleButton value="near">Близко к заезду</ToggleButton>
+        <ToggleButton value="ahead">Заранее</ToggleButton>
+        <ToggleButton value="range">Свой диапазон</ToggleButton>
+      </ToggleButtonGroup>
+      {mode === "range" ? (
+        <RangeFields
+          fromLabel="От"
+          toLabel="До"
+          unit="дн."
+          from={from}
+          to={to}
+          min={0}
+          max={730}
+          disabled={disabled}
+          onFrom={(v) => onChange(v, to)}
+          onTo={(v) => onChange(from, v)}
+        />
+      ) : (
+        <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+          <Typography variant="body2">{mode === "near" ? "Когда до заезда осталось" : "Когда до заезда"}</Typography>
+          <FormField
+            label="Дней"
+            value={days}
+            onValueChange={setDays}
+            rules={{ kind: "int", min: mode === "near" ? 0 : 1, max: 730 }}
+            disabled={disabled}
+            size="small"
+            sx={{ width: 96 }}
+          />
+          <Typography variant="body2">{mode === "near" ? "и меньше" : "и больше"}</Typography>
+          <Stack direction="row" gap={0.5} flexWrap="wrap">
+            {presets.map((n) => (
+              <Chip
+                key={n}
+                size="small"
+                label={n}
+                variant={days === String(n) ? "filled" : "outlined"}
+                color={days === String(n) ? "primary" : "default"}
+                onClick={() => setDays(String(n))}
+                disabled={disabled}
+              />
+            ))}
+          </Stack>
+        </Stack>
+      )}
+      <Typography variant="caption" color="text.secondary">
+        {(from || to) && `Сейчас: ${leadTimeLabel(from ? Number(from) : null, to ? Number(to) : null)}. `}
+        Считается от дня брони: бронируют сегодня на послезавтра — до заезда 2 дня. Цена меняется в момент брони — в форме брони и на сайте;
+        в «Календаре цен» её не видно, там цена даты без правил брони.
+      </Typography>
+    </Stack>
+  );
+};
+
 const RangeFields: React.FC<{
   fromLabel: string;
   toLabel: string;
