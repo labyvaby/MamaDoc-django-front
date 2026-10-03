@@ -1100,7 +1100,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                       <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>
                         {r.label}
                       </Typography>
-                      <Typography variant="body2" fontWeight={600} sx={{ flex: 1, textAlign: "right", minWidth: 0 }}>
+                      {/* div, а не p: в значении бывает блок (правка «Приедет около»). */}
+                      <Typography component="div" variant="body2" fontWeight={600} sx={{ flex: 1, textAlign: "right", minWidth: 0 }}>
                         {r.value}
                       </Typography>
                     </Stack>
