@@ -1,5 +1,5 @@
 import type { CalendarSex, CalendarTemplateRow } from "../../api/vaccinations";
-import { formatMonths } from "./calendarRowForm";
+import { formatMonths, formatRowAge } from "./calendarRowForm";
 
 export interface CalendarVaccineGroup {
   vaccineId: number;
@@ -45,10 +45,9 @@ export function groupCalendarByVaccine(rows: CalendarTemplateRow[]): CalendarVac
   return groups.sort((a, b) => firstAge(a) - firstAge(b) || a.vaccineName.localeCompare(b.vaccineName, "ru"));
 }
 
-/** «При рождении», «105 дн.», «11 лет 6 мес.» — возраст дозы. */
+/** «При рождении», «3,5 мес.», «11 лет 6 мес.» — возраст дозы. */
 export function doseAgeText(row: Pick<CalendarTemplateRow, "ageMonths" | "ageDays">): string {
-  if (row.ageDays != null) return row.ageDays === 0 ? "При рождении" : `${row.ageDays} дн.`;
-  return row.ageMonths === 0 ? "При рождении" : formatMonths(row.ageMonths);
+  return formatRowAge(row);
 }
 
 /** «до 5 лет» — верхняя граница, если задана. */

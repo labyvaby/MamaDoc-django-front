@@ -37,7 +37,11 @@ describe("calendarTable", () => {
 
   it("возраст дозы словами", () => {
     expect(doseAgeText({ ageMonths: 0, ageDays: 0 })).toBe("При рождении");
-    expect(doseAgeText({ ageMonths: 3, ageDays: 105 })).toBe("105 дн.");
+    expect(doseAgeText({ ageMonths: 3, ageDays: 105 })).toBe("3,5 мес.");
+    expect(doseAgeText({ ageMonths: 0, ageDays: 7 })).toBe("7 дн.");
+    expect(doseAgeText({ ageMonths: 2, ageDays: 61 })).toBe("2 мес.");
+    expect(doseAgeText({ ageMonths: 1, ageDays: 45 })).toBe("1,5 мес.");
+    expect(doseAgeText({ ageMonths: 1, ageDays: 50 })).toBe("50 дн.");
     expect(doseAgeText({ ageMonths: 138, ageDays: null })).toBe("11 лет 6 мес.");
     expect(doseMaxAgeText({ maxAgeMonths: 168 })).toBe("до 14 лет");
     expect(doseMaxAgeText({ maxAgeMonths: null })).toBeNull();
@@ -54,7 +58,7 @@ describe("ageColumns", () => {
       row({ id: 5, vaccineId: 4, vaccineName: "КПК", doseNumber: 1, ageMonths: 12 }),
     ];
     const cols = ageColumns(rows);
-    expect(cols.map((c) => c.label)).toEqual(["При рождении", "2 мес.", "105 дн.", "1 год"]);
+    expect(cols.map((c) => c.label)).toEqual(["При рождении", "2 мес.", "3,5 мес.", "1 год"]);
     const penta = groupCalendarByVaccine(rows).find((g) => g.vaccineName === "Пента")!;
     expect(dosesAt(penta, cols[1]).map((d) => d.doseNumber)).toEqual([1]);
     expect(dosesAt(penta, cols[0])).toEqual([]);

@@ -34,7 +34,8 @@ describe("calendarRowForm", () => {
     expect(formatMonths(18)).toBe("1 год 6 мес.");
     expect(formatMonths(2)).toBe("2 мес.");
     expect(formatRowAge({ ageMonths: 0, ageDays: 0 })).toBe("При рождении");
-    expect(formatRowAge({ ageMonths: 3, ageDays: 105 })).toBe("105 дн.");
+    expect(formatRowAge({ ageMonths: 3, ageDays: 105 })).toBe("3,5 мес.");
+    expect(formatRowAge({ ageMonths: 4, ageDays: 135 })).toBe("4,5 мес.");
   });
 
   it("подпись и сводка простыми словами", () => {
