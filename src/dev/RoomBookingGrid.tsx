@@ -810,6 +810,7 @@ export const RoomBookingGrid: React.FC = () => {
     corporateName: it.corporateName ?? "",
     internalNote: it.internalNote ?? "",
     guestComment: it.guestComment ?? "",
+    expectedArrivalTime: it.expectedArrivalTime ? it.expectedArrivalTime.slice(0, 5) : null,
     items: {
       [it.itemId]: {
         adults: it.adults ?? 0,

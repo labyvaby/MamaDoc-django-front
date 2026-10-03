@@ -1225,6 +1225,8 @@ export interface HotelCalendarItem {
   checkedOutAt?: string | null;
   internalNote?: string;
   guestComment?: string;
+  /** "14:30" — во сколько приедет, со слов гостя. */
+  expectedArrivalTime?: string | null;
 }
 
 export interface HotelRoomBlock {
