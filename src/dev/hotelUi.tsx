@@ -575,10 +575,7 @@ export const MetricTile: React.FC<{ label: string; value: React.ReactNode; hint?
   <Surface sx={{ p: { xs: 1.75, md: 2 }, minWidth: 0 }}>
     <Stack direction="row" alignItems="center" gap={0.75} sx={{ mb: 1 }}>
       {accent && <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: accent }} />}
-      <Typography
-        noWrap
-        sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary" }}
-      >
+      <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "text.secondary", lineHeight: 1.3 }}>
         {label}
       </Typography>
     </Stack>
@@ -586,7 +583,7 @@ export const MetricTile: React.FC<{ label: string; value: React.ReactNode; hint?
       {value}
     </Typography>
     {hint && (
-      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }} noWrap>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5, lineHeight: 1.3 }}>
         {hint}
       </Typography>
     )}
