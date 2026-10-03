@@ -2369,6 +2369,12 @@ export interface HotelKitchenDayPlan {
   occupiedRooms: number;
   /** Взрослые + дети в подтверждённых проживаниях на дату — база порций. */
   occupiedGuests: number;
+  /**
+   * Не вошли в порции: не заехали после дня заезда / выехали раньше этого дня.
+   * Нет полей — старый сервер, он незаезды считает в occupiedGuests.
+   */
+  noShowGuests?: number;
+  departedGuests?: number;
   dishes: HotelPlannedDish[];
   shoppingList: HotelShoppingLine[];
   plannedTotal: Money;

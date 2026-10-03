@@ -232,7 +232,24 @@ export const HotelKitchenPage: React.FC = () => {
         <Tab value="products" label="Продукты" />
       </Tabs>
 
-      {tab === "plan" && plan && (inHouse?.missedGuests ?? 0) > 0 && (
+      {/* Сервер сам не считает незаезды и ранние выезды — просто говорим, сколько гостей не вошло в порции. */}
+      {tab === "plan" && plan && plan.noShowGuests !== undefined && (plan.noShowGuests > 0 || (plan.departedGuests ?? 0) > 0) && (
+        <Alert severity="info" variant="outlined">
+          В порции не вошли:{" "}
+          {[
+            plan.noShowGuests > 0 ? `${plan.noShowGuests} ${plural(plan.noShowGuests, "гость не заехал", "гостя не заехали", "гостей не заехали")}` : "",
+            (plan.departedGuests ?? 0) > 0
+              ? `${plan.departedGuests} ${plural(plan.departedGuests ?? 0, "гость уже выехал", "гостя уже выехали", "гостей уже выехали")}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(", ")}
+          .
+        </Alert>
+      )}
+
+      {/* Старый сервер: незаезды сидят в порциях — подсказываем закрыть день. */}
+      {tab === "plan" && plan && plan.noShowGuests === undefined && (inHouse?.missedGuests ?? 0) > 0 && (
         <Alert
           severity="warning"
           variant="outlined"
