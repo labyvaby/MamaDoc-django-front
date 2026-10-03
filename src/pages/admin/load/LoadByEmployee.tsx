@@ -4,6 +4,7 @@ import { alpha } from "@mui/material/styles";
 
 import type { EmployeeLoad } from "../../../api/load";
 import { useT } from "../../../i18n/VerticalProvider";
+import { employeeMeta } from "./loadBuckets";
 
 interface Props {
   rows: EmployeeLoad[];
@@ -20,7 +21,6 @@ function initials(name: string): string {
 
 export const LoadByEmployee: React.FC<Props> = ({ rows, selectedIds, onToggle }) => {
   const { t } = useT("load");
-  const maxAppts = rows.reduce((m, r) => Math.max(m, r.appointments), 0) || 1;
 
   if (rows.length === 0) {
     return (
@@ -34,8 +34,6 @@ export const LoadByEmployee: React.FC<Props> = ({ rows, selectedIds, onToggle })
     <Stack spacing={1.25}>
       {rows.map((r) => {
         const selected = selectedIds.includes(r.employeeId);
-        const pct = Math.round((r.appointments / maxAppts) * 100);
-        const hoursNum = parseFloat(r.hours);
         return (
           <Stack
             key={r.employeeId}
@@ -70,13 +68,19 @@ export const LoadByEmployee: React.FC<Props> = ({ rows, selectedIds, onToggle })
               {initials(r.fullName)}
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Stack direction="row" justifyContent="space-between" spacing={1}>
+              <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={1}>
                 <Typography variant="body2" fontWeight={selected ? 600 : 500} noWrap>
                   {r.fullName}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                  {t("count", { count: r.appointments })}{hoursNum > 0 ? ` · ${hoursNum.toLocaleString("ru-RU")} ч` : ""}
-                </Typography>
+                {r.utilizationPct != null ? (
+                  <Typography variant="body2" fontWeight={600} sx={{ flexShrink: 0 }}>
+                    {r.utilizationPct}%
+                  </Typography>
+                ) : (
+                  <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>
+                    нет графика
+                  </Typography>
+                )}
               </Stack>
               <Box
                 sx={(t) => ({
@@ -89,7 +93,7 @@ export const LoadByEmployee: React.FC<Props> = ({ rows, selectedIds, onToggle })
               >
                 <Box
                   sx={{
-                    width: `${pct}%`,
+                    width: `${r.utilizationPct ?? 0}%`,
                     height: "100%",
                     borderRadius: "4px",
                     bgcolor: "primary.main",
@@ -97,6 +101,9 @@ export const LoadByEmployee: React.FC<Props> = ({ rows, selectedIds, onToggle })
                   }}
                 />
               </Box>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                {employeeMeta(r, t("count", { count: r.appointments }))}
+              </Typography>
             </Box>
           </Stack>
         );
