@@ -15,11 +15,22 @@ import { subtleBorder } from "../theme/uiHelpers";
 import { HOTEL_BOARD_TYPE_LABELS, HOTEL_RESERVATION_STATUS_LABELS } from "./hotelDisplay";
 import { formatHotelDate } from "./mockDemoData";
 import { plural } from "./hotelUi";
+import { describePriceChange } from "./reservationPriceLog";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const value = (v: string) => (ISO_DATE.test(v) ? formatHotelDate(v) : v || "—");
 const change = (log: HotelReservationLog, map?: Record<string, string>) =>
   `${map?.[log.oldValue] ?? value(log.oldValue)} → ${map?.[log.newValue] ?? value(log.newValue)}`;
+
+/** Поля брони в записях "updated". */
+const RESERVATION_FIELDS: Record<string, string> = {
+  expected_arrival_time: "Время заезда со слов гостя",
+  guest_comment: "Пожелания гостя",
+  internal_note: "Заметка",
+  source: "Источник",
+  guarantee_method: "Гарантия",
+  company_info: "Компания",
+};
 
 const ITEM_FIELDS: Record<string, string> = {
   check_in: "Заезд",
@@ -48,6 +59,8 @@ function describe(log: HotelReservationLog): string {
       return `Переселение: номер ${change(log)}`;
     case "overbooking":
       return `Овербукинг: ${value(log.newValue)}`;
+    case "price_changed":
+      return describePriceChange(log);
     case "repriced":
       return `Пересчёт цены: ${change(log)}`;
     case "payment":
@@ -67,7 +80,7 @@ function describe(log: HotelReservationLog): string {
     case "channel_modified":
       return "Изменено площадкой бронирования";
     case "updated":
-      return log.field ? `Изменено: ${log.field}` : "Данные брони изменены";
+      return log.field ? (RESERVATION_FIELDS[log.field] ? `${RESERVATION_FIELDS[log.field]}: ${change(log)}` : `Изменено: ${log.field}`) : "Данные брони изменены";
     default:
       return log.field ? `${log.action}: ${change(log)}` : log.action;
   }
