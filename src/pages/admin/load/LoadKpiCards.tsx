@@ -107,7 +107,7 @@ const LoadKpiCards: React.FC<LoadKpiCardsProps> = ({ kpi, daysCount }) => {
       : `${deltaUp ? "+" : ""}${kpi.deltaPct.toLocaleString("ru-RU")}%`;
   const utilizationSub = [
     kpi.scheduleMinutes > 0
-      ? `${formatHours(kpi.busyMinutes)} ч из ${formatHours(kpi.scheduleMinutes)} ч`
+      ? `${formatHours(kpi.busyMinutes)} из ${formatHours(kpi.scheduleMinutes)} ч`
       : "нет графика",
     kpi.attendanceUtilizationPct != null ? `СКУД ${kpi.attendanceUtilizationPct}%` : null,
   ]

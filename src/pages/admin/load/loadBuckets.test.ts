@@ -40,6 +40,11 @@ describe("formatHours", () => {
     expect(formatHours(750)).toBe("12,5");
     expect(formatHours(0)).toBe("0");
   });
+
+  it("от 100 ч — без десятых, чтобы подпись помещалась в плитку", () => {
+    expect(formatHours(54924)).toBe("915");
+    expect(formatHours(87444)).toBe((1457).toLocaleString("ru-RU"));
+  });
 });
 
 describe("availableGranularities", () => {

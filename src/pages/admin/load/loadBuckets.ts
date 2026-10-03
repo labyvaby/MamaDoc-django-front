@@ -28,9 +28,12 @@ export function utilizationPct(busyMinutes: number, scheduleMinutes: number): nu
   return Math.min(100, Math.round((busyMinutes * 100) / scheduleMinutes));
 }
 
-/** Минуты → часы для подписи: «47», «12,5». */
+/** Минуты → часы для подписи: «47», «12,5», «1 457». */
 export function formatHours(minutes: number): string {
-  return (Math.round((minutes / 60) * 10) / 10).toLocaleString("ru-RU");
+  const hours = minutes / 60;
+  // От 100 ч десятые только мешают читать и не влезают в плитку сводки.
+  const rounded = hours >= 100 ? Math.round(hours) : Math.round(hours * 10) / 10;
+  return rounded.toLocaleString("ru-RU");
 }
 
 /** Разбивки, которые имеют смысл для периода. */
