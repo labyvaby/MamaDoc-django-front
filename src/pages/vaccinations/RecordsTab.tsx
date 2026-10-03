@@ -1,5 +1,14 @@
 import React from "react";
-import { Alert, Box, CircularProgress, Skeleton, Stack, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  CircularProgress,
+  Skeleton,
+  Stack,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
+} from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -8,6 +17,8 @@ import { DateRangeField, DEFAULT_RANGE_PRESETS, UserAvatar, type DateRange, type
 import { RecordStatusChip } from "../../components/vaccinations/VaccinationChips";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { getRecords, type VaccinationRecord } from "../../api/vaccinations";
+import PeriodStepper from "../../components/vaccinations/PeriodStepper";
+import { periodBounds } from "../../components/vaccinations/periodStep";
 import { injectionSiteLabel } from "./meta";
 import { ageAt, groupRecordsByDay, RECORDS_PAGE_SIZE } from "./recordsFeed";
 
@@ -26,43 +37,44 @@ const RANGE_PRESETS: DateRangePreset[] = [
 /** Колонки строки ленты: время · пациент · вакцина · кто вводил · статус. */
 const ROW_GRID = {
   display: "grid",
-  gridTemplateColumns: { xs: "56px 1fr auto", md: "64px minmax(180px, 1.1fr) minmax(200px, 1.4fr) 200px 130px" },
-  columnGap: 2,
+  gridTemplateColumns: { xs: "44px 1fr auto", md: "48px minmax(200px, 1fr) minmax(240px, 1.5fr) 180px 112px" },
+  columnGap: 1.5,
   alignItems: "center",
 } as const;
 
+/** Одна запись — одна строка: главное обычным цветом, пояснения серым рядом. */
 const RecordRow: React.FC<{ r: VaccinationRecord }> = ({ r }) => {
   const age = ageAt(r.patient?.birthDate, r.administeredAt);
+  const where = [r.isExternal ? "в другом месте" : "со склада", r.injectionSite ? injectionSiteLabel(r.injectionSite).toLowerCase() : null]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <Box sx={{ ...ROW_GRID, px: 2, py: 1.25, borderTop: 1, borderColor: "divider", "&:hover": { bgcolor: "action.hover" } }}>
-      <Typography variant="body2" color="text.secondary">
+    <Box sx={{ ...ROW_GRID, px: 2, py: 0.5, minHeight: 36, borderTop: 1, borderColor: "divider", "&:hover": { bgcolor: "action.hover" } }}>
+      <Typography variant="body2" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
         {dayjs(r.administeredAt).format("HH:mm")}
       </Typography>
-      <Box sx={{ minWidth: 0 }}>
-        <Typography variant="body2" fontWeight={600} noWrap>
+      <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
+        <Box component="span" sx={{ fontWeight: 600 }}>
           {r.patient?.fullName ?? `Пациент #${r.patientId}`}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" noWrap component="div">
-          {age ?? "возраст не указан"}
-          {/* На узком экране вакцина — под пациентом. */}
-          <Box component="span" sx={{ display: { xs: "inline", md: "none" } }}>
-            {` · ${r.vaccineName}, доза ${r.doseNumber}`}
-          </Box>
-        </Typography>
-      </Box>
-      <Box sx={{ minWidth: 0, display: { xs: "none", md: "block" } }}>
-        <Typography variant="body2" fontWeight={500} noWrap>
-          {r.vaccineName} · доза {r.doseNumber}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" noWrap component="div">
-          {r.isExternal ? "Сделана в другом месте" : "Со склада"}
-          {r.injectionSite ? ` · ${injectionSiteLabel(r.injectionSite)}` : ""}
-        </Typography>
-      </Box>
-      <Stack direction="row" alignItems="center" gap={1} sx={{ minWidth: 0, display: { xs: "none", md: "flex" } }}>
+        </Box>
+        <Box component="span" sx={{ color: "text.secondary" }}>
+          {age ? ` · ${age}` : ""}
+        </Box>
+        {/* На узком экране вакцина — в той же строке. */}
+        <Box component="span" sx={{ color: "text.secondary", display: { xs: "inline", md: "none" } }}>
+          {` · ${r.vaccineName}, доза ${r.doseNumber}`}
+        </Box>
+      </Typography>
+      <Typography variant="body2" noWrap sx={{ minWidth: 0, display: { xs: "none", md: "block" } }}>
+        {r.vaccineName} · доза {r.doseNumber}
+        <Box component="span" sx={{ color: "text.secondary" }}>
+          {` · ${where}`}
+        </Box>
+      </Typography>
+      <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0, display: { xs: "none", md: "flex" } }}>
         {r.administeredBy ? (
           <>
-            <UserAvatar name={r.administeredBy.fullName} size={28} sx={{ borderRadius: "8px", flexShrink: 0 }} />
+            <UserAvatar name={r.administeredBy.fullName} size={22} sx={{ borderRadius: "6px", flexShrink: 0, fontSize: 10 }} />
             <Typography variant="body2" noWrap>
               {r.administeredBy.fullName}
             </Typography>
@@ -73,7 +85,7 @@ const RecordRow: React.FC<{ r: VaccinationRecord }> = ({ r }) => {
           </Typography>
         )}
       </Stack>
-      <Box sx={{ justifySelf: "end" }}>
+      <Box sx={{ justifySelf: "end", transform: "scale(0.9)", transformOrigin: "right center" }}>
         <RecordStatusChip status={r.status} />
       </Box>
     </Box>
@@ -85,12 +97,19 @@ const RecordRow: React.FC<{ r: VaccinationRecord }> = ({ r }) => {
  * догрузка порциями при прокрутке до конца.
  */
 const RecordsTab: React.FC<Props> = ({ branchId, orgId }) => {
+  // Период: месяц/год стрелками (по умолчанию — текущий месяц) или свой.
+  const [mode, setMode] = React.useState<"month" | "year" | "custom">("month");
+  const [month, setMonth] = React.useState(() => dayjs().format("YYYY-MM"));
   const [range, setRange] = React.useState<DateRange>({
     from: dayjs().subtract(29, "day").startOf("day"),
     to: dayjs().endOf("day"),
   });
-  const dateFrom = range.from.format("YYYY-MM-DD");
-  const dateTo = range.to.format("YYYY-MM-DD");
+  const bounds =
+    mode === "custom"
+      ? { from: range.from.format("YYYY-MM-DD"), to: range.to.format("YYYY-MM-DD") }
+      : periodBounds(month, mode);
+  const dateFrom = bounds.from;
+  const dateTo = bounds.to;
 
   const query = useInfiniteQuery({
     queryKey: djangoQueryKeys.vaccinations.records({ feed: true, branchId, orgId, dateFrom, dateTo }),
@@ -135,7 +154,22 @@ const RecordsTab: React.FC<Props> = ({ branchId, orgId }) => {
   return (
     <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <Stack direction="row" gap={1.5} alignItems="center" flexWrap="wrap" sx={{ mb: 1.5, flexShrink: 0 }}>
-        <DateRangeField value={range} onChange={setRange} presets={RANGE_PRESETS} minWidth={240} />
+        <ToggleButtonGroup exclusive size="small" value={mode} onChange={(_, v) => v && setMode(v)}>
+          <ToggleButton value="month" sx={{ textTransform: "none", px: 1.5 }}>
+            Месяц
+          </ToggleButton>
+          <ToggleButton value="year" sx={{ textTransform: "none", px: 1.5 }}>
+            Год
+          </ToggleButton>
+          <ToggleButton value="custom" sx={{ textTransform: "none", px: 1.5 }}>
+            Период
+          </ToggleButton>
+        </ToggleButtonGroup>
+        {mode === "custom" ? (
+          <DateRangeField value={range} onChange={setRange} presets={RANGE_PRESETS} minWidth={240} />
+        ) : (
+          <PeriodStepper value={month} onChange={setMonth} mode={mode} />
+        )}
         <Typography variant="body2" color="text.secondary">
           {query.isLoading
             ? "Загрузка…"
@@ -160,7 +194,7 @@ const RecordsTab: React.FC<Props> = ({ branchId, orgId }) => {
               ...ROW_GRID,
               display: { xs: "none", md: "grid" },
               px: 2,
-              py: 1,
+              py: 0.75,
               position: "sticky",
               top: 0,
               zIndex: 2,
@@ -201,9 +235,9 @@ const RecordsTab: React.FC<Props> = ({ branchId, orgId }) => {
                   gap={1}
                   sx={(th) => ({
                     px: 2,
-                    py: 0.75,
+                    py: 0.4,
                     position: "sticky",
-                    top: { xs: 0, md: 37 },
+                    top: { xs: 0, md: 33 },
                     zIndex: 1,
                     bgcolor: alpha(th.palette.primary.main, 0.06),
                     backdropFilter: "blur(6px)",
