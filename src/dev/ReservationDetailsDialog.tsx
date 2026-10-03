@@ -1060,15 +1060,16 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               variant="scrollable"
               scrollButtons="auto"
               allowScrollButtonsMobile
-              sx={{ minHeight: 46, "& .MuiTab-root": { minHeight: 46, textTransform: "none", fontWeight: 600, fontSize: 14, px: 1.75 } }}
+              // Короткие подписи: шесть вкладок с длинными не влезали даже на 1440 px — «История» уезжала под стрелку.
+              sx={{ minHeight: 46, "& .MuiTab-root": { minHeight: 46, minWidth: 0, textTransform: "none", fontWeight: 600, fontSize: 14, px: 1.5 } }}
             >
               <Tab value="overview" label="Обзор" />
-              <Tab value="stay" label="Проживание и услуги" />
+              <Tab value="stay" label="Проживание" />
               <Tab
                 value="billing"
                 label={
                   <Stack direction="row" alignItems="center" gap={0.75}>
-                    Счета и платежи
+                    Оплата
                     {balance > 0 && <Box component="span" sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: "error.main" }} />}
                   </Stack>
                 }
