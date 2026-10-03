@@ -222,6 +222,8 @@ export interface BalanceRow {
   createdByName: string;
   checkedInAt: string | null;
   checkedOutAt: string | null;
+  /** Во сколько приедет, со слов гостя ("14:30"). */
+  expectedArrivalTime: string | null;
   reservation: HotelReservation;
 }
 
@@ -268,6 +270,7 @@ export function balanceRows(
         createdByName: r.createdByName,
         checkedInAt: active.map((i) => i.checkedInAt).filter((v): v is string => v != null).sort()[0] ?? null,
         checkedOutAt: active.map((i) => i.checkedOutAt).filter((v): v is string => v != null).sort().pop() ?? null,
+        expectedArrivalTime: r.expectedArrivalTime ? r.expectedArrivalTime.slice(0, 5) : null,
         reservation: r,
       };
     })

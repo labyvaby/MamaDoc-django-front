@@ -205,12 +205,12 @@ export const HotelBalancesReport: React.FC<{
         cell: (r) =>
           twoLine(
             r.checkIn,
-            r.checkedInAt ? `${dayjs(r.checkedInAt).format("HH:mm")} · заселён` : inTime,
-            r.checkedInAt ? "success.main" : undefined,
-            r.checkedInAt ? "Время фактического заселения" : "Время заезда по правилам объекта",
+            r.checkedInAt ? `${dayjs(r.checkedInAt).format("HH:mm")} · заселён` : r.expectedArrivalTime ? `около ${r.expectedArrivalTime}` : inTime,
+            r.checkedInAt ? "success.main" : r.expectedArrivalTime ? "info.main" : undefined,
+            r.checkedInAt ? "Время фактического заселения" : r.expectedArrivalTime ? "Время заезда со слов гостя" : "Время заезда по правилам объекта",
           ),
-        text: (r) => dateTime(r.checkIn, inTime, r.checkedInAt),
-        xlsx: { value: (r) => dateTime(r.checkIn, inTime, r.checkedInAt) },
+        text: (r) => dateTime(r.checkIn, r.expectedArrivalTime ?? inTime, r.checkedInAt),
+        xlsx: { value: (r) => dateTime(r.checkIn, r.expectedArrivalTime ?? inTime, r.checkedInAt) },
       },
       {
         key: "checkOut",
