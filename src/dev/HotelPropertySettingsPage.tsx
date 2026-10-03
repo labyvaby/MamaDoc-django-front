@@ -45,6 +45,22 @@ import { PublicBookingSettingsCard } from "./PublicBookingSettingsCard";
 import { ExchangeRatesSettingsCard } from "./ExchangeRatesSettingsCard";
 import { RequisitesSettingsCard } from "./RequisitesSettingsCard";
 import { ConsentSettingsCard } from "./ConsentSettingsCard";
+import { FilterChip } from "./hotelUi";
+
+/**
+ * Страница длинная (заезд, правила, сайт, реквизиты, согласие, валюты) —
+ * оглавление сверху ведёт к разделу. id совпадают с якорями: реквизиты
+ * открываются ссылкой «Заполнить» из карточки брони (#requisites).
+ */
+const SECTIONS = [
+  { id: "check-in", label: "Заезд и правила" },
+  { id: "public-site", label: "Сайт" },
+  { id: "requisites", label: "Реквизиты" },
+  { id: "consent", label: "Согласие" },
+  { id: "currencies", label: "Валюты" },
+] as const;
+
+const goTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 import { updateHotelProperty, type HotelPropertyUpdateData } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 
@@ -133,13 +149,18 @@ export const HotelPropertySettingsPage: React.FC = () => {
 
       {!isLoading && property && (
         <Stack gap={3} sx={{ maxWidth: 640 }}>
+          <Stack direction="row" gap={0.75} flexWrap="wrap" aria-label="Разделы настроек отеля">
+            {SECTIONS.map((s) => (
+              <FilterChip key={s.id} label={s.label} active={false} onClick={() => goTo(s.id)} />
+            ))}
+          </Stack>
           {saveError && (
             <Alert severity="error" variant="outlined" onClose={() => setSaveError(null)} sx={{ fontSize: "0.8rem" }}>
               {saveError}
             </Alert>
           )}
 
-          <Box>
+          <Box id="check-in" sx={{ scrollMarginTop: 16 }}>
             <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>
               Заезд и выезд
             </Typography>
@@ -238,7 +259,9 @@ export const HotelPropertySettingsPage: React.FC = () => {
 
           <Divider />
 
-          <PublicBookingSettingsCard propertyId={property.id} />
+          <Box id="public-site" sx={{ scrollMarginTop: 16 }}>
+            <PublicBookingSettingsCard propertyId={property.id} />
+          </Box>
 
           <Divider />
 
@@ -246,11 +269,15 @@ export const HotelPropertySettingsPage: React.FC = () => {
 
           <Divider />
 
-          <ConsentSettingsCard property={property} />
+          <Box id="consent" sx={{ scrollMarginTop: 16 }}>
+            <ConsentSettingsCard property={property} />
+          </Box>
 
           <Divider />
 
-          <ExchangeRatesSettingsCard propertyId={property.id} baseCurrency={property.currency || "KGS"} />
+          <Box id="currencies" sx={{ scrollMarginTop: 16 }}>
+            <ExchangeRatesSettingsCard propertyId={property.id} baseCurrency={property.currency || "KGS"} />
+          </Box>
         </Stack>
       )}
 
