@@ -16,6 +16,7 @@ import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -32,6 +33,7 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import AddOutlined from "@mui/icons-material/AddOutlined";
@@ -298,6 +300,8 @@ const CorporatePanel: React.FC<{ propertyId: number }> = ({ propertyId }) => {
     queryFn: ({ signal }) => listCorporateAccounts(propertyId, { q: q || undefined, includeInactive: true, limit: PAGE }, signal),
   });
   const rows = query.data?.results ?? [];
+  // На телефоне пять колонок не помещаются: договор и скидка уезжали за край.
+  const phone = useMediaQuery((t) => t.breakpoints.down("md"));
 
   return (
     <>
@@ -315,6 +319,36 @@ const CorporatePanel: React.FC<{ propertyId: number }> = ({ propertyId }) => {
             title={q ? "Ничего не найдено" : "Юрлиц пока нет"}
             description={q ? "Проверьте название или ИНН." : "Заведите компанию с договором и скидкой — бронь привяжется к ней в своей карточке."}
           />
+        </Surface>
+      ) : phone ? (
+        <Surface padded={false} sx={{ overflow: "hidden" }}>
+          {rows.map((a, i) => (
+            <ButtonBase
+              key={a.id}
+              component="div"
+              disabled={!canManage}
+              onClick={canManage ? () => setEditing(a) : undefined}
+              sx={{ display: "block", width: "100%", textAlign: "left", px: 2, py: 1.5, borderTop: i > 0 ? `1px solid ${theme.palette.divider}` : "none", opacity: a.isActive ? 1 : 0.55 }}
+            >
+              <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={1.5}>
+                <Typography variant="body2" fontWeight={700} sx={{ minWidth: 0, overflowWrap: "anywhere" }}>
+                  {a.name}
+                </Typography>
+                <Typography variant="body2" fontWeight={700} sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: Number(a.discountPercent) > 0 ? "success.main" : "text.disabled" }}>
+                  {Number(a.discountPercent) > 0 ? `−${money(a.discountPercent)}%` : "без скидки"}
+                </Typography>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.25, fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>
+                ИНН {a.inn || "—"}
+                {a.contract ? ` · ${a.contract}` : ""}
+              </Typography>
+              {!a.isActive && (
+                <Box sx={{ mt: 0.5 }}>
+                  <StatusPill color={theme.palette.text.disabled} label="В архиве" />
+                </Box>
+              )}
+            </ButtonBase>
+          ))}
         </Surface>
       ) : (
         <Surface padded={false} sx={{ overflow: "hidden" }}>
