@@ -550,7 +550,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
           </ToggleButton>
         </ToggleButtonGroup>
         {paymentError && <Alert severity="error">{paymentError}</Alert>}
-        <Stack direction="row" gap={1.5}>
+        {/* На телефоне три поля в ряд не помещались (способ — «Н…», сумма за единицей): способ своей строкой. */}
+        <Stack direction="row" gap={1.5} sx={{ flexWrap: { xs: "wrap", md: "nowrap" } }}>
           <TextField
             select
             label={paymentKind === "refund" ? "Способ возврата" : "Способ оплаты"}
@@ -558,7 +559,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
             onChange={(e) => setPaymentMethod(e.target.value)}
             slotProps={{ input: { startAdornment: <FieldIcon icon={<AccountBalanceWalletOutlined />} /> } }}
             size="small"
-            sx={{ flex: 1 }}
+            sx={{ flex: 1, minWidth: { xs: "100%", md: "auto" } }}
             disabled={paymentSaving}
           >
             {paymentMethodChoices.length === 0 && (
