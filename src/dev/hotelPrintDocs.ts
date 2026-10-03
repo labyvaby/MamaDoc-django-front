@@ -33,6 +33,7 @@ import {
   HOTEL_VISIT_PURPOSE_LABELS,
 } from "./hotelDisplay";
 import { formatHotelDate, nightsBetween } from "./mockDemoData";
+import { arrivalTimeOf, departureTimeOf } from "./stayTimes";
 
 export type HotelPrintDoc = "confirmation" | "invoice" | "registrationCard" | "certificate" | "registration";
 
@@ -125,7 +126,6 @@ const fullDate = (iso: string | null | undefined) => (iso ? `${formatHotelDate(i
 const docDate = (iso: string | null | undefined) => (iso ? dayjs(iso).format("DD.MM.YYYY") : "");
 const weekday = (iso: string) => ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"][dayjs(iso).day()];
 const nightsWord = (n: number) => (n % 10 === 1 && n % 100 !== 11 ? "ночь" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "ночи" : "ночей");
-const time5 = (t: string | null | undefined) => (t ? t.slice(0, 5) : "");
 
 function moneyOf(currency: string, decimals = false) {
   const unit = currency === "KGS" || !currency ? "сом" : currency;
@@ -247,12 +247,15 @@ function confirmation(p: PrintInput): string {
   const nights = first ? nightsBetween(first.checkIn, first.checkOut) : 0;
   const guestsCount = r.items.reduce((s, it) => s + it.adults + it.children, 0);
   const created = dayjs(r.createdAt);
+  // Своё время брони (ранний заезд / поздний выезд) или правило объекта.
+  const inTime = arrivalTimeOf(r, pr?.checkInTime);
+  const outTime = departureTimeOf(r, pr?.checkOutTime);
   return `${header(p, "Подтверждение бронирования", `Бронь №${r.number}`)}
     <div class="muted small">Дата и время бронирования: ${esc(fullDate(r.createdAt))}, ${esc(weekday(r.createdAt))} (${esc(created.format("HH:mm"))})</div>
     <h2>Детали бронирования</h2>
     <table class="kv">
-      ${first ? `<tr><td>Заезд</td><td><b>${esc(fullDate(first.checkIn))}, ${esc(weekday(first.checkIn))}</b>${pr?.checkInTime ? ` после ${esc(time5(pr.checkInTime))}` : ""}</td></tr>` : ""}
-      ${first ? `<tr><td>Выезд</td><td><b>${esc(fullDate(first.checkOut))}, ${esc(weekday(first.checkOut))}</b>${pr?.checkOutTime ? ` до ${esc(time5(pr.checkOutTime))}` : ""}</td></tr>` : ""}
+      ${first ? `<tr><td>Заезд</td><td><b>${esc(fullDate(first.checkIn))}, ${esc(weekday(first.checkIn))}</b>${inTime ? ` ${r.expectedArrivalTime ? "в" : "после"} ${esc(inTime)}` : ""}</td></tr>` : ""}
+      ${first ? `<tr><td>Выезд</td><td><b>${esc(fullDate(first.checkOut))}, ${esc(weekday(first.checkOut))}</b>${outTime ? ` до ${esc(outTime)}` : ""}</td></tr>` : ""}
       <tr><td>Ночей · гостей · номеров</td><td>${nights} · ${guestsCount} · ${r.items.length}</td></tr>
       <tr><td>Заказчик</td><td><b>${esc(r.customerName || guest?.fullName || "—")}</b>${guest?.phone ? `, ${esc(guest.phone)}` : ""}</td></tr>
       ${first?.ratePlanName ? `<tr><td>Тариф</td><td>${esc(first.ratePlanName)}</td></tr>` : ""}
@@ -383,8 +386,8 @@ function registrationCardFor(p: PrintInput, it: HotelReservation["items"][number
   const pr = p.property;
   const g = it.guests.find((x) => x.isPrimary) ?? it.guests[0];
   const money = moneyOf(r.currency);
-  const inTime = time5(pr?.checkInTime) || "14:00";
-  const outTime = time5(pr?.checkOutTime) || "12:00";
+  const inTime = arrivalTimeOf(r, pr?.checkInTime) || "14:00";
+  const outTime = departureTimeOf(r, pr?.checkOutTime) || "12:00";
   const field = (value: string, label: string, style = "") =>
     `<div style="${style}"><div class="field">${value ? esc(value) : "&nbsp;"}</div><div class="lbl">${label}</div></div>`;
   return `<div class="head" style="align-items:center">

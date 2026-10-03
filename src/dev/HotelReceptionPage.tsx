@@ -82,6 +82,7 @@ import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 import { useSiteRequests } from "./useSiteRequests";
 import { siteRequestLine } from "./HotelSiteRequestsNotifier";
 import { DateStepper, EmptyState, FilterChip, HotelPage, HotelPageHeader, plural, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
+import { stayTimeView } from "./stayTimes";
 
 type Tab = "today" | "all";
 const LIVE = new Set<HotelReservation["status"]>(["draft", "hold", "confirmed"]);
@@ -123,11 +124,15 @@ const ROOM_READINESS: Record<HotelRoom["state"], { label: string; tone: "success
 const ArrivalCard: React.FC<{
   reservation: HotelReservation;
   checkInTime: string | null;
+  checkOutTime?: string | null;
   action?: { label: string; onClick: () => void; busy: boolean; disabled?: boolean };
   onOpen: () => void;
   /** Состояние уборки номеров брони (roomId → state); нет — не показываем. */
   roomStates?: Map<number, HotelRoom["state"]>;
-}> = ({ reservation: r, checkInTime, action, onOpen, roomStates }) => {
+}> = ({ reservation: r, checkInTime, checkOutTime, action, onOpen, roomStates }) => {
+  // Время брони (ранний заезд / поздний выезд) или правило объекта.
+  const arrival = stayTimeView("arrival", r.expectedArrivalTime, checkInTime);
+  const departure = stayTimeView("departure", r.expectedDepartureTime, checkOutTime);
   const theme = useTheme();
   const dark = theme.palette.mode === "dark";
   const item = r.items[0];
@@ -211,9 +216,8 @@ const ArrivalCard: React.FC<{
         <Stack direction="row" alignItems="center" gap={0.5}>
           <AccessTimeOutlined sx={{ fontSize: 15 }} />
           <Typography variant="caption">
-            {r.expectedArrivalTime ? `около ${r.expectedArrivalTime.slice(0, 5)}` : checkInTime ? `с ${checkInTime}` : "сегодня"} · {nights}{" "}
-            {plural(nights, "ночь", "ночи", "ночей")}
-            {item ? ` · до ${formatHotelDate(item.checkOut)}` : ""}
+            {arrival.time ? `${arrival.own ? "в" : "с"} ${arrival.time}` : "сегодня"} · {nights} {plural(nights, "ночь", "ночи", "ночей")}
+            {item ? ` · до ${formatHotelDate(item.checkOut)}${departure.own ? `, ${departure.time}` : ""}` : ""}
           </Typography>
         </Stack>
         <Stack direction="row" alignItems="center" gap={0.5}>
@@ -224,6 +228,12 @@ const ArrivalCard: React.FC<{
           <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: hotelSourceColor(r.source) }} />
           <Typography variant="caption">{HOTEL_BOOKING_SOURCE_LABELS[r.source] ?? r.source}</Typography>
         </Stack>
+        {/* Договорились иначе, чем в правилах, — отдельной строкой, чтобы не потерялось. */}
+        {(arrival.note || departure.note) && (
+          <Typography variant="caption" color="warning.dark" fontWeight={700} sx={{ width: "100%" }}>
+            {[arrival.note, departure.note].filter(Boolean).join(" · ")}
+          </Typography>
+        )}
       </Stack>
 
       <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" sx={{ mt: 1.5 }}>
@@ -288,8 +298,11 @@ const ReservationRow: React.FC<{
   reservation: HotelReservation;
   action?: { label: string; onClick: () => void; busy: boolean; disabled?: boolean };
   note?: string;
+  /** Выезды: «выезд до 12:00» по правилам или своё время брони (поздний выезд). */
+  checkOutTime?: string | null;
   onOpen: () => void;
-}> = ({ reservation, action, note, onOpen }) => {
+}> = ({ reservation, action, note, checkOutTime, onOpen }) => {
+  const departure = checkOutTime !== undefined ? stayTimeView("departure", reservation.expectedDepartureTime, checkOutTime) : null;
   const theme = useTheme();
   const item = reservation.items[0];
   const name = reservation.customerName || item?.guests[0]?.fullName || "Без заказчика";
@@ -328,6 +341,12 @@ const ReservationRow: React.FC<{
             ? `номер ${item.roomNumber ?? "не назначен"} · ${item.roomTypeName} · ${formatHotelDateRange(item.checkIn, item.checkOut)} · ${nightsBetween(item.checkIn, item.checkOut)} ноч.`
             : `бронь №${reservation.number}`}
         </Typography>
+        {departure?.time && (
+          <Typography variant="caption" component="div" color={departure.own ? "warning.dark" : "text.secondary"} fontWeight={departure.own ? 700 : 400}>
+            выезд до {departure.time}
+            {departure.note ? ` · ${departure.note}` : ""}
+          </Typography>
+        )}
         {note && (
           <Typography variant="caption" color="error.main" fontWeight={600} component="div">
             {note}
@@ -398,6 +417,7 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
   const theme = useTheme();
   const { property } = useHotelProperty();
   const checkInTime = property?.checkInTime ? formatHotelTime(property.checkInTime) : null;
+  const checkOutTime = property?.checkOutTime ? formatHotelTime(property.checkOutTime) : null;
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
   const canManageStays = useCan("hotel.stays.manage");
@@ -577,6 +597,7 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
                   key={r.id}
                   reservation={r}
                   checkInTime={checkInTime}
+                  checkOutTime={checkOutTime}
                   action={isToday ? checkInAction(r) : undefined}
                   onOpen={() => onOpen(r.id)}
                   roomStates={isToday ? roomStates : undefined}
@@ -626,7 +647,7 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
           loading={departingQuery.isPending}
         >
           {departing.map((r) => (
-            <ReservationRow key={r.id} reservation={r} action={isToday ? checkOutAction(r) : undefined} onOpen={() => onOpen(r.id)} />
+            <ReservationRow key={r.id} reservation={r} checkOutTime={checkOutTime} action={isToday ? checkOutAction(r) : undefined} onOpen={() => onOpen(r.id)} />
           ))}
         </ListCard>
         <ListCard

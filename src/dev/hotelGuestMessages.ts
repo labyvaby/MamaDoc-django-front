@@ -7,6 +7,7 @@
  */
 import type { HotelProperty, HotelReservation } from "../api/hotel";
 import { formatHotelDate, nightsBetween } from "./mockDemoData";
+import { arrivalTimeOf, departureTimeOf } from "./stayTimes";
 
 export type GuestMessageKind = "confirmation" | "reminder" | "balance" | "thanks";
 
@@ -46,8 +47,10 @@ export function buildGuestMessage(kind: GuestMessageKind, reservation: HotelRese
   const hotel = property?.name ?? "наш отель";
   const unit = reservation.currency === "KGS" || !reservation.currency ? "сом" : reservation.currency;
   const money = (v: string | number) => `${Number(v).toLocaleString("ru-RU")} ${unit}`;
-  const checkInTime = property?.checkInTime?.slice(0, 5);
-  const checkOutTime = property?.checkOutTime?.slice(0, 5);
+  // Своё время брони (ранний заезд / поздний выезд) или правило объекта.
+  const checkInTime = arrivalTimeOf(reservation, property?.checkInTime);
+  const checkOutTime = departureTimeOf(reservation, property?.checkOutTime);
+  const inWord = reservation.expectedArrivalTime ? "в" : "с";
   const balance = Number(reservation.balanceDue);
   const rooms =
     reservation.items.length > 1
@@ -67,7 +70,7 @@ export function buildGuestMessage(kind: GuestMessageKind, reservation: HotelRese
       return [
         hello,
         `Ваша бронь №${reservation.number} в ${hotel} подтверждена: ${dates}, ${rooms}.`,
-        checkInTime || checkOutTime ? `Заезд с ${checkInTime ?? "—"}, выезд до ${checkOutTime ?? "—"}.` : "",
+        checkInTime || checkOutTime ? `Заезд ${inWord} ${checkInTime ?? "—"}, выезд до ${checkOutTime ?? "—"}.` : "",
         `Стоимость — ${money(reservation.totalAmount)}${Number(reservation.paidAmount) > 0 ? `, оплачено ${money(reservation.paidAmount)}` : ""}${balance > 0 ? `, к оплате ${money(balance)}` : ""}.`,
         address,
         contact,
@@ -78,7 +81,7 @@ export function buildGuestMessage(kind: GuestMessageKind, reservation: HotelRese
     case "reminder":
       return [
         hello,
-        item ? `Напоминаем о заезде в ${hotel} ${formatHotelDate(item.checkIn)}${checkInTime ? ` с ${checkInTime}` : ""}, бронь №${reservation.number}.` : `Напоминаем о брони №${reservation.number} в ${hotel}.`,
+        item ? `Напоминаем о заезде в ${hotel} ${formatHotelDate(item.checkIn)}${checkInTime ? ` ${inWord} ${checkInTime}` : ""}, бронь №${reservation.number}.` : `Напоминаем о брони №${reservation.number} в ${hotel}.`,
         balance > 0 ? `К оплате при заезде — ${money(balance)}.` : "",
         "Если планы изменились, напишите нам — поможем.",
         address,

@@ -811,6 +811,7 @@ export const RoomBookingGrid: React.FC = () => {
     internalNote: it.internalNote ?? "",
     guestComment: it.guestComment ?? "",
     expectedArrivalTime: it.expectedArrivalTime ? it.expectedArrivalTime.slice(0, 5) : null,
+    expectedDepartureTime: it.expectedDepartureTime ? it.expectedDepartureTime.slice(0, 5) : null,
     items: {
       [it.itemId]: {
         adults: it.adults ?? 0,

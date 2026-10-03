@@ -1225,8 +1225,10 @@ export interface HotelCalendarItem {
   checkedOutAt?: string | null;
   internalNote?: string;
   guestComment?: string;
-  /** "14:30" — во сколько приедет, со слов гостя. */
+  /** "14:30" — время заезда брони (ранний заезд, со слов гостя); null — как в правилах объекта. */
   expectedArrivalTime?: string | null;
+  /** "15:30" — время выезда брони (поздний выезд); null — как в правилах. Нет поля — сервер старый. */
+  expectedDepartureTime?: string | null;
 }
 
 export interface HotelRoomBlock {
@@ -1434,8 +1436,10 @@ export interface HotelReservationCreateData {
   dataConsent?: boolean;
   allowOverbooking?: boolean;
   holdMinutes?: number;
-  /** "HH:MM" — во сколько приедет гость, со слов гостя. */
+  /** "HH:MM" — время заезда брони; не передано — как в правилах объекта. */
   expectedArrivalTime?: string;
+  /** "HH:MM" — время выезда брони (поздний выезд); не передано — как в правилах. */
+  expectedDepartureTime?: string;
   /** Юрлицо из справочника: скидка идёт на проживание, не на допуслуги. */
   corporateAccountId?: number | null;
   /** Сумма, которую видел гость; при расхождении 409 PRICE_CHANGED. Для корпоративной — после скидки. */
@@ -1487,8 +1491,10 @@ export interface HotelReservation {
   version: number;
   checkIn: string | null;
   checkOut: string | null;
-  /** Во сколько приедет гость, со слов гостя: "14:30" по часам объекта или null (hotel-roster §10.4). */
+  /** Время заезда брони: "14:30" по часам объекта или null — как в правилах (hotel-roster §10.4). */
   expectedArrivalTime?: string | null;
+  /** Время выезда брони: "15:30" или null — как в правилах. Поля нет — сервер ещё без него. */
+  expectedDepartureTime?: string | null;
   items: HotelReservationItem[];
   createdById: number | null;
   createdByName: string;
@@ -1530,6 +1536,8 @@ export interface HotelReservationUpdateData {
   version?: number;
   /** "HH:MM" ставит, null очищает, поле не передано — не трогает. */
   expectedArrivalTime?: string | null;
+  /** Так же для времени выезда. */
+  expectedDepartureTime?: string | null;
   customerId?: number | null;
   clearCustomer?: boolean;
   source?: string;

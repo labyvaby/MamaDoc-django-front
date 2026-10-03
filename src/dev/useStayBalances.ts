@@ -24,8 +24,10 @@ export interface StayDetails {
   corporateName: string;
   internalNote: string;
   guestComment: string;
-  /** "14:30" со слов гостя или null. */
+  /** "14:30" — время заезда брони или null (как в правилах объекта). */
   expectedArrivalTime: string | null;
+  /** "15:30" — время выезда брони (поздний выезд) или null. */
+  expectedDepartureTime: string | null;
   /** По позициям брони: взрослые/дети, тариф, время фактического заезда и выезда. */
   items: Record<number, { adults: number; children: number; ratePlanName: string | null; checkedInAt: string | null; checkedOutAt: string | null }>;
 }
@@ -53,6 +55,7 @@ const detailsOf = (r: HotelReservation): StayDetails => {
     internalNote: r.internalNote,
     guestComment: r.guestComment,
     expectedArrivalTime: r.expectedArrivalTime ? r.expectedArrivalTime.slice(0, 5) : null,
+    expectedDepartureTime: r.expectedDepartureTime ? r.expectedDepartureTime.slice(0, 5) : null,
     items: Object.fromEntries(
       r.items.map((i) => [i.id, { adults: i.adults, children: i.children, ratePlanName: i.ratePlanName, checkedInAt: i.checkedInAt, checkedOutAt: i.checkedOutAt }]),
     ),
