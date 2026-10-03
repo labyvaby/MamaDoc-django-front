@@ -16,8 +16,11 @@
  * остальным — номера.
  */
 import React from "react";
-import { Box, IconButton, Tooltip } from "@mui/material";
+import { Box, IconButton, Tooltip, useMediaQuery } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
+import UnfoldLessOutlined from "@mui/icons-material/UnfoldLessOutlined";
+import UnfoldMoreOutlined from "@mui/icons-material/UnfoldMoreOutlined";
 import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 import AssignmentTurnedInOutlined from "@mui/icons-material/AssignmentTurnedInOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
@@ -93,6 +96,19 @@ const REPORTS: ReportMeta[] = [
   },
 ];
 
+/** Отчёты с панелью дат и фильтров (ReportControls) — её можно свернуть в строку. */
+const COLLAPSIBLE = new Set<HotelReportKind>(["owner", "balances", "yield"]);
+const CONTROLS_KEY = "mamadoc:hotel-reports:controls-collapsed";
+type Device = "phone" | "desktop";
+const readCollapsed = (): Partial<Record<Device, boolean>> => {
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(CONTROLS_KEY) ?? "{}") as unknown;
+    return raw && typeof raw === "object" ? (raw as Partial<Record<Device, boolean>>) : {};
+  } catch {
+    return {};
+  }
+};
+
 export const HotelReportsPage: React.FC = () => {
   usePageTitle("Отчёты");
   const { property, isLoading: propertyLoading } = useHotelProperty();
@@ -101,6 +117,26 @@ export const HotelReportsPage: React.FC = () => {
   const canHousekeeping = useCan(["hotel.housekeeping.view", "hotel.manage"]);
   const [params, setParams] = useSearchParams();
   const [openId, setOpenId] = React.useState<number | null>(null);
+  // Свернуть панель фильтров — как сводку над шахматкой. Отдельно для телефона и
+  // компьютера: на телефоне по умолчанию свёрнута, чтобы первым экраном были цифры.
+  const theme = useTheme();
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
+  const device: Device = phone ? "phone" : "desktop";
+  const [collapsedPref, setCollapsedPref] = React.useState(readCollapsed);
+  const controlsCollapsed = collapsedPref[device] ?? phone;
+  const setControlsCollapsed = React.useCallback(
+    (collapsed: boolean) =>
+      setCollapsedPref((prev) => {
+        const next = { ...prev, [device]: collapsed };
+        try {
+          window.localStorage.setItem(CONTROLS_KEY, JSON.stringify(next));
+        } catch {
+          /* не запомнится — не страшно */
+        }
+        return next;
+      }),
+    [device],
+  );
 
   const visible = REPORTS.filter((r) =>
     r.kind === "owner" ? canOwner : r.kind === "shift" ? canShift : r.kind === "housekeeping" ? canHousekeeping : true,
@@ -129,33 +165,48 @@ export const HotelReportsPage: React.FC = () => {
         setParams(next);
       },
       openReservation: (id) => setOpenId(id),
+      controlsCollapsed,
+      setControlsCollapsed,
     }),
-    [params, setParams, current.kind],
+    [params, setParams, current.kind, controlsCollapsed, setControlsCollapsed],
   );
 
   return (
     <HotelPage>
-
       <HotelReportSwitcher
         reports={visible}
         current={current}
         onSelect={(kind) => nav.go(kind)}
         trailing={
-          <Tooltip
-            title={
-              <Box sx={{ fontSize: 13, lineHeight: 1.5, p: 0.5 }}>
-                <b>{current.label}</b> — для: {current.audience}. {current.info}
-              </Box>
-            }
-            placement="bottom-end"
-            enterTouchDelay={0}
-            leaveTouchDelay={8000}
-            slotProps={{ tooltip: { sx: { maxWidth: 380 } } }}
-          >
-            <IconButton aria-label={`Как устроен отчёт «${current.label}»`} sx={{ color: "text.secondary" }}>
-              <InfoOutlined sx={{ fontSize: 20 }} />
-            </IconButton>
-          </Tooltip>
+          <>
+            {COLLAPSIBLE.has(current.kind) && (
+              <Tooltip title={controlsCollapsed ? "Развернуть панель: даты и фильтры" : "Свернуть панель в строку — больше места отчёту"}>
+                <IconButton
+                  aria-label={controlsCollapsed ? "Развернуть панель дат и фильтров" : "Свернуть панель дат и фильтров"}
+                  aria-pressed={controlsCollapsed}
+                  onClick={() => setControlsCollapsed(!controlsCollapsed)}
+                  sx={{ color: "text.secondary" }}
+                >
+                  {controlsCollapsed ? <UnfoldMoreOutlined sx={{ fontSize: 20 }} /> : <UnfoldLessOutlined sx={{ fontSize: 20 }} />}
+                </IconButton>
+              </Tooltip>
+            )}
+            <Tooltip
+              title={
+                <Box sx={{ fontSize: 13, lineHeight: 1.5, p: 0.5 }}>
+                  <b>{current.label}</b> — для: {current.audience}. {current.info}
+                </Box>
+              }
+              placement="bottom-end"
+              enterTouchDelay={0}
+              leaveTouchDelay={8000}
+              slotProps={{ tooltip: { sx: { maxWidth: 380 } } }}
+            >
+              <IconButton aria-label={`Как устроен отчёт «${current.label}»`} sx={{ color: "text.secondary" }}>
+                <InfoOutlined sx={{ fontSize: 20 }} />
+              </IconButton>
+            </Tooltip>
+          </>
         }
       />
 

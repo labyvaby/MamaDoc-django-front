@@ -29,7 +29,7 @@ import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { HOTEL_BOOKING_SOURCE_LABELS } from "./hotelDisplay";
 import { axisMoney, fmtInt, fmtMoney, fmtPercent, niceTicks } from "./hotelReportFormat";
 import { deltaPercent, fetchAllReservations } from "./hotelReportData";
-import { ReportFilters, ReportKpi, ReportSection, ReportSkeleton, type ReportNav } from "./hotelReportUi";
+import { ReportControls, ReportFilters, ReportKpi, ReportSection, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { FilterChip, Surface, useHotelTableSx } from "./hotelUi";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
 import {
@@ -46,6 +46,7 @@ import {
   type YieldRoom,
   type YieldRow,
 } from "./hotelYield";
+import { formatHotelDateRange } from "./mockDemoData";
 
 type View = "table" | "chart" | "calendar" | "weekdays";
 type Compare = "none" | "prev" | "year";
@@ -215,9 +216,50 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
     </Button>
   );
 
+  // Свёрнутая панель — одной строкой: период и всё, что включено сверх обычного.
+  const activePreset = presets.find((p) => p.from === from && p.to === to);
+  const summaryParts = [
+    group === "week" ? "по неделям" : group === "day" ? "по дням" : null,
+    compare === "prev" ? "с прошлым периодом" : compare === "year" ? "с прошлым годом" : null,
+    byCategory ? "по категориям" : null,
+    cats.size ? `категорий: ${cats.size}` : null,
+    sources.size ? `источников: ${sources.size}` : null,
+  ].filter(Boolean);
+  // Вид отчёта остаётся и в свёрнутой панели: без него не переключить «Таблица / График».
+  const compactViewToggle = (
+    <ToggleButtonGroup
+      size="small"
+      exclusive
+      value={view}
+      onChange={(_, v: View | null) => v && setParam({ view: v === "table" ? null : v })}
+      sx={{ "& .MuiToggleButton-root": { flex: { xs: 1, md: "none" }, textTransform: "none", fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", py: 0.75, px: { xs: 0.25, md: 1.25 } } }}
+    >
+      <ToggleButton value="table">Таблица</ToggleButton>
+      <ToggleButton value="chart">График</ToggleButton>
+      <ToggleButton value="calendar">Календарь</ToggleButton>
+      <ToggleButton value="weekdays">Дни недели</ToggleButton>
+    </ToggleButtonGroup>
+  );
+
   return (
     <Stack gap={2.5}>
-      <Surface sx={{ p: { xs: 1.75, md: 2 } }}>
+      <ReportControls
+        nav={nav}
+        summary={
+          <>
+            {formatHotelDateRange(from, to)}
+            {activePreset ? ` · ${activePreset.label.toLowerCase()}` : ""}
+            {summaryParts.length > 0 && (
+              <Box component="span" sx={{ color: "text.secondary", fontWeight: 400 }}>
+                {" "}
+                · {summaryParts.join(" · ")}
+              </Box>
+            )}
+          </>
+        }
+        persistent={compactViewToggle}
+        actions={[{ label: exporting ? "Готовим…" : "Excel", icon: <FileDownloadOutlined />, onClick: () => void exportXlsx(), disabled: !result || exporting }]}
+      >
         <Stack gap={1.5}>
           <Stack direction={{ xs: "column", md: "row" }} gap={1.5} alignItems={{ md: "center" }} flexWrap="wrap">
             <Stack direction="row" alignItems="center" gap={1}>
@@ -301,7 +343,7 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
             </Stack>
           </ReportFilters>
         </Stack>
-      </Surface>
+      </ReportControls>
 
       {days > 120 && mainQuery.data?.fromServer !== true && (
         <Alert severity="info" variant="outlined">
