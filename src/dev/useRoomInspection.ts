@@ -2,6 +2,8 @@
  * Состояние проверки номера перед выездом для карточки брони (см.
  * roomInspection.ts): активная задача проверки этой брони, её результат и
  * действия — отправить на проверку, отменить, закрыть после выселения.
+ * Задача создаётся со ссылкой на позицию брони (reservationItemId) и находится
+ * по ней; старые задачи без ссылки — по номеру брони в заметке.
  */
 import React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,7 +34,13 @@ export function useRoomInspection(reservation: HotelReservation | null | undefin
     // Пока карточка открыта — подтягиваем ответ горничной сами, без перезагрузки.
     refetchInterval: 20_000,
   });
-  const task = reservation && active ? tasksQuery.data?.find((t) => t.roomId === roomId && isInspectionFor(t, reservation.number)) : undefined;
+  const itemId = reservation?.items.find((i) => i.roomId === roomId)?.id;
+  const task =
+    reservation && active
+      ? tasksQuery.data?.find(
+          (t) => t.roomId === roomId && (t.reservationItemId != null ? t.reservationItemId === itemId : isInspectionFor(t, reservation.number)),
+        )
+      : undefined;
   const state = inspectionState(task);
   const result = task ? parseInspectionResult(task.note) : null;
   const [busy, setBusy] = React.useState(false);
@@ -55,6 +63,7 @@ export function useRoomInspection(reservation: HotelReservation | null | undefin
         assignedToId: assignedToId ?? undefined,
         dueAt: new Date().toISOString(),
         note: buildInspectionNote(reservation.number, guest),
+        reservationItemId: item?.id,
       });
       refresh();
     } finally {

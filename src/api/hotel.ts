@@ -2490,6 +2490,8 @@ export interface HotelHousekeepingTaskCreateData {
   assignedToId?: number | null;
   dueAt?: string | null;
   note?: string;
+  /** Позиция брони того же объекта — задачу потом находят по ней (?reservationItemId=). */
+  reservationItemId?: number | null;
 }
 
 export interface HotelHousekeepingTaskUpdateData {
