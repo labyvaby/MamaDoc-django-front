@@ -44,6 +44,7 @@ import {
   revenueBySource,
   summarizeExpenses,
 } from "./hotelReportData";
+import { previousPeriod } from "./hotelYield";
 import { isGuestDebt } from "./hotelInHouse";
 import { axisMoney, fmtInt, fmtMoney, fmtPercent, niceTicks, REPORT_PALETTE } from "./hotelReportFormat";
 import { ReportEmpty, ReportKpi, ReportLink, ReportSection, ShareRow, type ReportNav } from "./hotelReportUi";
@@ -74,8 +75,7 @@ export const HotelOwnerReport: React.FC<{
   const toRaw = nav.param("to") ?? D(today);
   const to = toRaw < from ? from : toRaw;
   const days = dayjs(to).diff(dayjs(from), "day") + 1;
-  const prevTo = D(dayjs(from).subtract(1, "day"));
-  const prevFrom = D(dayjs(prevTo).subtract(days - 1, "day"));
+  const { from: prevFrom, to: prevTo } = previousPeriod(from, to);
   const toExcl = D(dayjs(to).add(1, "day"));
   // reports/occupancy/ считает [from, to) — «по» в отчёте включительно, поэтому
   // передаём следующий день: иначе выручка и загрузка теряли последний день

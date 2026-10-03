@@ -244,9 +244,20 @@ export function computeYield(opts: {
   });
 }
 
-/** Тот же по длине период непосредственно перед выбранным. */
+/**
+ * Период непосредственно перед выбранным. Целые месяцы — прошлые целые месяцы
+ * (октябрь → сентябрь, квартал → прошлый квартал): «той же длины» для октября
+ * давало 31 авг – 30 сент, и в таблице по месяцам октябрь сравнивался с одним
+ * днём 31 августа. Остальное — та же длина в днях.
+ */
 export function previousPeriod(from: string, to: string): { from: string; to: string } {
-  const len = dayjs(to).diff(dayjs(from), "day") + 1;
+  const f = dayjs(from);
+  const t = dayjs(to);
+  if (f.date() === 1 && t.isSame(t.endOf("month"), "day")) {
+    const months = t.diff(f, "month") + 1;
+    return { from: f.subtract(months, "month").format("YYYY-MM-DD"), to: f.subtract(1, "day").format("YYYY-MM-DD") };
+  }
+  const len = t.diff(f, "day") + 1;
   const prevTo = dayjs(from).subtract(1, "day");
   return { from: prevTo.subtract(len - 1, "day").format("YYYY-MM-DD"), to: prevTo.format("YYYY-MM-DD") };
 }

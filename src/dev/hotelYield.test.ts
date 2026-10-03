@@ -111,7 +111,11 @@ describe("summarizeYield — факты с сервера", () => {
 
 describe("периоды сравнения", () => {
   it("прошлый период той же длины и тот же период год назад", () => {
-    expect(previousPeriod("2026-10-01", "2026-10-31")).toEqual({ from: "2026-08-31", to: "2026-09-30" });
+    expect(previousPeriod("2026-10-01", "2026-10-31")).toEqual({ from: "2026-09-01", to: "2026-09-30" });
+    expect(previousPeriod("2026-03-01", "2026-03-31")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+    expect(previousPeriod("2026-08-01", "2026-10-31")).toEqual({ from: "2026-05-01", to: "2026-07-31" });
+    expect(previousPeriod("2026-10-01", "2026-10-03")).toEqual({ from: "2026-09-28", to: "2026-09-30" });
+    expect(previousPeriod("2026-10-05", "2026-10-11")).toEqual({ from: "2026-09-28", to: "2026-10-04" });
     expect(lastYearPeriod("2026-10-01", "2026-10-31")).toEqual({ from: "2025-10-01", to: "2025-10-31" });
   });
 });
