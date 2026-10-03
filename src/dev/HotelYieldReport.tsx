@@ -6,7 +6,7 @@
  * брони; Excel. Расчёт — hotelYield.ts по броням периода и номерам фонда.
  */
 import React from "react";
-import { Alert, Box, Button, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, Button, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import SellOutlined from "@mui/icons-material/SellOutlined";
@@ -29,7 +29,7 @@ import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { HOTEL_BOOKING_SOURCE_LABELS } from "./hotelDisplay";
 import { axisMoney, fmtInt, fmtMoney, fmtPercent, niceTicks } from "./hotelReportFormat";
 import { deltaPercent, fetchAllReservations } from "./hotelReportData";
-import { ReportKpi, ReportSection, type ReportNav } from "./hotelReportUi";
+import { ReportFilters, ReportKpi, ReportSection, type ReportNav } from "./hotelReportUi";
 import { FilterChip, Surface, useHotelTableSx } from "./hotelUi";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
 import {
@@ -98,6 +98,9 @@ const rowLabel = (r: YieldRow, group: YieldGroup) =>
 
 export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; nav: ReportNav }> = ({ propertyId, currency, nav }) => {
   const tableSx = useHotelTableSx();
+  const theme = useTheme();
+  // На телефоне фильтры прячутся под «Фильтры», вид отчёта — отдельной строкой во всю ширину.
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
   const today = dayjs();
   const from = nav.param("from") ?? D(today.startOf("month"));
   const toRaw = nav.param("to") ?? D(today.endOf("month"));
@@ -205,6 +208,12 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
   };
 
   const loading = mainQuery.isPending || roomsQuery.isPending;
+  const activeFilters = (group !== "month" ? 1 : 0) + (compare !== "none" ? 1 : 0) + (byCategory ? 1 : 0) + (cats.size > 0 ? 1 : 0) + (sources.size > 0 ? 1 : 0);
+  const excelButton = (
+    <Button variant="outlined" startIcon={<FileDownloadOutlined />} disabled={!result || exporting} onClick={() => void exportXlsx()} sx={{ minHeight: { xs: 40, md: 0 }, px: { xs: 1.25, md: 2 } }}>
+      {exporting ? "Готовим…" : phone ? "Excel" : "Экспорт в Excel"}
+    </Button>
+  );
 
   return (
     <Stack gap={2.5}>
@@ -222,63 +231,75 @@ export const HotelYieldReport: React.FC<{ propertyId: number; currency: string; 
                 </Button>
               ))}
             </Stack>
-            <Box sx={{ flex: 1 }} />
-            <Button variant="outlined" startIcon={<FileDownloadOutlined />} disabled={!result || exporting} onClick={() => void exportXlsx()}>
-              {exporting ? "Готовим…" : "Экспорт в Excel"}
-            </Button>
+            <Box sx={{ flex: 1, display: { xs: "none", md: "block" } }} />
+            {!phone && excelButton}
           </Stack>
-          <Stack direction={{ xs: "column", lg: "row" }} gap={1.5} alignItems={{ lg: "center" }} flexWrap="wrap">
-            <ToggleButtonGroup size="small" exclusive value={group} onChange={(_, v: YieldGroup | null) => v && setParam({ group: v })} sx={{ "& .MuiToggleButton-root": { textTransform: "none", fontWeight: 600, py: 0.4 } }}>
-              <ToggleButton value="month">По месяцам</ToggleButton>
-              <ToggleButton value="week">По неделям</ToggleButton>
-              <ToggleButton value="day">По дням</ToggleButton>
-            </ToggleButtonGroup>
-            <TextField
-              select
-              size="small"
-              label="Сравнить"
-              value={compare}
-              onChange={(e) => setParam({ compare: e.target.value === "none" ? null : e.target.value })}
-              sx={{ minWidth: 200 }}
-            >
-              <MenuItem value="none">Без сравнения</MenuItem>
-              <MenuItem value="prev">С прошлым периодом</MenuItem>
-              <MenuItem value="year">С прошлым годом</MenuItem>
-            </TextField>
-            <FormControlLabel control={<Switch size="small" checked={byCategory} onChange={(e) => setByCategory(e.target.checked)} />} label={<Typography variant="body2">Детализация по категориям</Typography>} />
-            <Box sx={{ flex: 1 }} />
-            <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, v: View | null) => v && setParam({ view: v === "table" ? null : v })} sx={{ "& .MuiToggleButton-root": { textTransform: "none", fontWeight: 600, py: 0.4, gap: 0.5 } }}>
-              <ToggleButton value="table">
-                <TableRowsOutlined sx={{ fontSize: 17 }} /> Таблица
-              </ToggleButton>
-              <ToggleButton value="chart">
-                <InsertChartOutlined sx={{ fontSize: 17 }} /> График
-              </ToggleButton>
-              <ToggleButton value="calendar">
-                <CalendarMonthOutlined sx={{ fontSize: 17 }} /> Календарь
-              </ToggleButton>
-              <ToggleButton value="weekdays">
-                <ViewWeekOutlined sx={{ fontSize: 17 }} /> Дни недели
-              </ToggleButton>
-            </ToggleButtonGroup>
-          </Stack>
-          <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center">
-            <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
-              Категории:
-            </Typography>
-            <FilterChip label="Все" active={cats.size === 0} onClick={() => setCats(new Set())} />
-            {categories.map(([id, name]) => (
-              <FilterChip key={id} label={name} active={cats.has(id)} onClick={() => setCats((c) => toggle(c, id))} />
-            ))}
-            <Box sx={{ width: "1px", height: 22, bgcolor: "divider", mx: 0.75 }} />
-            <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
-              Источник:
-            </Typography>
-            <FilterChip label="Все" active={sources.size === 0} onClick={() => setSources(new Set())} />
-            {SOURCES.filter((s) => s !== "website").map((s) => (
-              <FilterChip key={s} label={HOTEL_BOOKING_SOURCE_LABELS[s] ?? s} active={sources.has(s)} onClick={() => setSources((x) => toggle(x, s))} />
-            ))}
-          </Stack>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={view}
+            onChange={(_, v: View | null) => v && setParam({ view: v === "table" ? null : v })}
+            sx={{ display: { xs: "flex", md: "none" }, "& .MuiToggleButton-root": { flex: 1, textTransform: "none", fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", py: 0.75, px: 0.25 } }}
+          >
+            <ToggleButton value="table">Таблица</ToggleButton>
+            <ToggleButton value="chart">График</ToggleButton>
+            <ToggleButton value="calendar">Календарь</ToggleButton>
+            <ToggleButton value="weekdays">Дни недели</ToggleButton>
+          </ToggleButtonGroup>
+          <ReportFilters active={activeFilters} extra={excelButton}>
+            <Stack direction={{ xs: "column", lg: "row" }} gap={1.5} alignItems={{ lg: "center" }} flexWrap="wrap">
+              <ToggleButtonGroup size="small" exclusive value={group} onChange={(_, v: YieldGroup | null) => v && setParam({ group: v })} sx={{ "& .MuiToggleButton-root": { flex: { xs: 1, md: "none" }, textTransform: "none", fontWeight: 600, py: 0.4 } }}>
+                <ToggleButton value="month">По месяцам</ToggleButton>
+                <ToggleButton value="week">По неделям</ToggleButton>
+                <ToggleButton value="day">По дням</ToggleButton>
+              </ToggleButtonGroup>
+              <TextField
+                select
+                size="small"
+                label="Сравнить"
+                value={compare}
+                onChange={(e) => setParam({ compare: e.target.value === "none" ? null : e.target.value })}
+                sx={{ minWidth: { md: 200 } }}
+              >
+                <MenuItem value="none">Без сравнения</MenuItem>
+                <MenuItem value="prev">С прошлым периодом</MenuItem>
+                <MenuItem value="year">С прошлым годом</MenuItem>
+              </TextField>
+              <FormControlLabel control={<Switch size="small" checked={byCategory} onChange={(e) => setByCategory(e.target.checked)} />} label={<Typography variant="body2">Детализация по категориям</Typography>} />
+              <Box sx={{ flex: 1 }} />
+              <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, v: View | null) => v && setParam({ view: v === "table" ? null : v })} sx={{ display: { xs: "none", md: "flex" }, "& .MuiToggleButton-root": { textTransform: "none", fontWeight: 600, py: 0.4, gap: 0.5 } }}>
+                <ToggleButton value="table">
+                  <TableRowsOutlined sx={{ fontSize: 17 }} /> Таблица
+                </ToggleButton>
+                <ToggleButton value="chart">
+                  <InsertChartOutlined sx={{ fontSize: 17 }} /> График
+                </ToggleButton>
+                <ToggleButton value="calendar">
+                  <CalendarMonthOutlined sx={{ fontSize: 17 }} /> Календарь
+                </ToggleButton>
+                <ToggleButton value="weekdays">
+                  <ViewWeekOutlined sx={{ fontSize: 17 }} /> Дни недели
+                </ToggleButton>
+              </ToggleButtonGroup>
+            </Stack>
+            <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center">
+              <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+                Категории:
+              </Typography>
+              <FilterChip label="Все" active={cats.size === 0} onClick={() => setCats(new Set())} />
+              {categories.map(([id, name]) => (
+                <FilterChip key={id} label={name} active={cats.has(id)} onClick={() => setCats((c) => toggle(c, id))} />
+              ))}
+              <Box sx={{ width: "1px", height: 22, bgcolor: "divider", mx: 0.75 }} />
+              <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+                Источник:
+              </Typography>
+              <FilterChip label="Все" active={sources.size === 0} onClick={() => setSources(new Set())} />
+              {SOURCES.filter((s) => s !== "website").map((s) => (
+                <FilterChip key={s} label={HOTEL_BOOKING_SOURCE_LABELS[s] ?? s} active={sources.has(s)} onClick={() => setSources((x) => toggle(x, s))} />
+              ))}
+            </Stack>
+          </ReportFilters>
         </Stack>
       </Surface>
 

@@ -5,12 +5,13 @@
  * открывают соседний отчёт с нужным фильтром.
  */
 import React from "react";
-import { Box, ButtonBase, LinearProgress, Stack, Typography } from "@mui/material";
+import { Box, Button, ButtonBase, Collapse, LinearProgress, Stack, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ArrowOutwardOutlined from "@mui/icons-material/ArrowOutwardOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import NorthEastOutlined from "@mui/icons-material/NorthEastOutlined";
 import SouthEastOutlined from "@mui/icons-material/SouthEastOutlined";
+import TuneOutlined from "@mui/icons-material/TuneOutlined";
 
 import { subtleBorder } from "../theme/uiHelpers";
 import { fmtPercent } from "./hotelReportFormat";
@@ -233,6 +234,59 @@ export const ShareRow: React.FC<{
     </ButtonBase>
   ) : (
     content
+  );
+};
+
+/**
+ * Второстепенные фильтры отчёта. На телефоне — под кнопкой «Фильтры» с числом
+ * включённых, чтобы первым экраном были цифры, а не панель на весь экран; на
+ * компьютере — как есть. extra — кнопки рядом с «Фильтрами» (Excel, печать).
+ */
+export const ReportFilters: React.FC<{ active: number; extra?: React.ReactNode; children: React.ReactNode }> = ({ active, extra, children }) => {
+  const theme = useTheme();
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
+  const [open, setOpen] = React.useState(false);
+  if (!phone) return <>{children}</>;
+  return (
+    <>
+      <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center" sx={{ "& .MuiButton-startIcon": { mr: 0.5 } }}>
+        <Button
+          variant={open ? "contained" : "outlined"}
+          disableElevation
+          startIcon={<TuneOutlined />}
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          sx={{ minHeight: 40, px: 1.5 }}
+        >
+          Фильтры
+          {active > 0 && (
+            <Box
+              component="span"
+              aria-label={`включено: ${active}`}
+              sx={{
+                ml: 0.75,
+                minWidth: 20,
+                height: 20,
+                px: 0.5,
+                borderRadius: 10,
+                fontSize: 12,
+                fontWeight: 800,
+                lineHeight: "20px",
+                textAlign: "center",
+                bgcolor: open ? theme.palette.primary.contrastText : theme.palette.primary.main,
+                color: open ? theme.palette.primary.main : theme.palette.primary.contrastText,
+              }}
+            >
+              {active}
+            </Box>
+          )}
+        </Button>
+        {extra}
+      </Stack>
+      <Collapse in={open} unmountOnExit>
+        <Stack gap={1.5}>{children}</Stack>
+      </Collapse>
+    </>
   );
 };
 
