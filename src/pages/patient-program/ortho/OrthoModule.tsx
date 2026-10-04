@@ -12,7 +12,7 @@ import { AppButton, AppCard, ListEmptyState } from "../../../components/ui";
 import type { ActiveScope } from "../../../hooks/useActiveScope";
 import { NextCheckLine } from "../vision/VisionLatest";
 import type { ExamType } from "./orthoCatalog";
-import { classifyOrthoRecords } from "./orthoData";
+import { classifyOrthoRecords, conductedByToday } from "./orthoData";
 import { OrthoDiagnoses } from "./OrthoDiagnoses";
 import { OrthoDiagnosisDrawer } from "./OrthoDiagnosisDrawer";
 import { OrthoExamDrawer } from "./OrthoExamDrawer";
@@ -57,7 +57,8 @@ export const OrthoModule: React.FC<OrthoModuleProps> = ({ enrollmentId, module, 
   const [diagnosis, setDiagnosis] = React.useState<{ open: boolean; record: ProgramModuleRecord | null }>({ open: false, record: null });
 
   const records = React.useMemo(() => classifyOrthoRecords(query.data?.results ?? []), [query.data]);
-  const done = React.useMemo(() => records.exams.filter((item) => item.record.status !== "missed"), [records]);
+  // запись с датой в будущем — ошибка ввода: в истории она есть, последним осмотром не считается
+  const done = React.useMemo(() => conductedByToday(records.exams.filter((item) => item.record.status !== "missed")), [records]);
   const trend = React.useMemo(() => orthoTrend(done), [done]);
   const schedule = React.useMemo(
     () => scheduleRows(done.map((item) => item.record.occurredAt), birthDate),
@@ -90,8 +91,9 @@ export const OrthoModule: React.FC<OrthoModuleProps> = ({ enrollmentId, module, 
       <AppCard
         variant="outlined"
         header={
-          <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ md: "center" }} gap={1.5} sx={{ px: 2, pt: 2 }}>
-            <Box sx={{ minWidth: 0 }}>
+          <Stack direction="row" flexWrap="wrap" justifyContent="space-between" alignItems="center" columnGap={1.5} rowGap={1.25} sx={{ px: 2, pt: 2 }}>
+            {/* кнопкам не хватает места рядом с названием — уходят под него, название в одну строку */}
+            <Box sx={{ minWidth: 0, flex: "1 1 340px" }}>
               <Typography variant="h6" fontWeight={700}>
                 {module.name}
               </Typography>
@@ -100,7 +102,7 @@ export const OrthoModule: React.FC<OrthoModuleProps> = ({ enrollmentId, module, 
               </Typography>
             </Box>
             {canManage && (
-              <Stack direction="row" gap={1} flexWrap="wrap" sx={{ flexShrink: 0 }}>
+              <Stack direction="row" gap={1} flexWrap="wrap">
                 <AppButton variant="outlined" size="small" startIcon={<AddOutlined />} onClick={() => setDiagnosis({ open: true, record: null })}>
                   Диагноз
                 </AppButton>

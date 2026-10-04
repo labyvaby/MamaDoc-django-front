@@ -5,7 +5,7 @@ import dayjs from "dayjs";
 
 import type { ProgramModuleRecord } from "../../../api/programs";
 import { EXAM_TYPES, optionLabel } from "./orthoCatalog";
-import { conclusionLabels, type OrthoExam } from "./orthoData";
+import { conclusionLabels, isFutureExam, type OrthoExam } from "./orthoData";
 import { ageMonths, ageText, ageWeeks } from "./orthoNorms";
 import { examSummary } from "./orthoSummary";
 import { StatusChip } from "./OrthoLatest";
@@ -43,6 +43,11 @@ export const OrthoHistory: React.FC<{
                 {[date, ageText(age.months), exam.record.createdByName ?? "", exam.record.status === "missed" ? "пропущен" : ""]
                   .filter(Boolean)
                   .join(" · ")}
+                {isFutureExam(exam.record) && (
+                  <Box component="span" sx={{ color: "warning.main" }}>
+                    {" · дата в будущем — не считается последним осмотром"}
+                  </Box>
+                )}
               </Typography>
               {(conclusions.length > 0 || legacy.length > 0) && (
                 <Typography variant="caption" display="block">

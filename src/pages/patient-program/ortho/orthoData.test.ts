@@ -1,3 +1,4 @@
+import dayjs from "dayjs";
 import { describe, expect, it } from "vitest";
 
 import type { ProgramModuleRecord } from "../../../api/programs";
@@ -8,6 +9,7 @@ import {
   chronicSuggestions,
   classifyOrthoRecords,
   composeRecommendation,
+  conductedByToday,
   emptyDiagnosisForm,
   emptyExamForm,
   emptyFoot,
@@ -17,6 +19,7 @@ import {
   examToForm,
   feetText,
   filledBlocks,
+  isFutureExam,
   isOrthoModule,
   postureText,
   readDiagnosis,
@@ -179,5 +182,26 @@ describe("блоки окна по возрасту", () => {
     form.hips = { ...emptyHips(), folds: true };
     form.beighton = 4;
     expect(filledBlocks(form)).toEqual(["hips", "other"]);
+  });
+});
+
+describe("conductedByToday", () => {
+  const now = dayjs("2026-10-05T12:00:00+06:00");
+  it("запись с датой в будущем не становится последним осмотром", () => {
+    const future = readExam(record({ posture: "фыв", feet: "фыв1" }, { occurredAt: "2026-10-11T08:05:04Z" }));
+    const past = readExam(record({ orthoKind: "exam" }, { occurredAt: "2026-10-02T10:00:00Z" }));
+    expect(isFutureExam(future.record, now)).toBe(true);
+    expect(isFutureExam(past.record, now)).toBe(false);
+    expect(conductedByToday([future, past], now)).toEqual([past]);
+  });
+
+  it("осмотр сегодня — не в будущем", () => {
+    const today = readExam(record({ orthoKind: "exam" }, { occurredAt: "2026-10-05T17:30:00+06:00" }));
+    expect(conductedByToday([today], now)).toEqual([today]);
+  });
+
+  it("если все записи в будущем — показывает их, а не пустоту", () => {
+    const future = readExam(record({ orthoKind: "exam" }, { occurredAt: "2026-11-01T10:00:00Z" }));
+    expect(conductedByToday([future], now)).toEqual([future]);
   });
 });
