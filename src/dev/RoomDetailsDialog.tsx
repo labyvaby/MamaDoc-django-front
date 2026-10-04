@@ -26,6 +26,7 @@ import {
   Stack,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { alpha, useTheme, type Theme } from "@mui/material/styles";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -325,6 +326,8 @@ export interface RoomDetailsDialogProps {
 
 export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, roomTypes, onClose, onReservationClick, focusBlock }) => {
   const theme = useTheme();
+  // На телефоне окно с полями по 32 px теряло шестую часть ширины — во весь экран, как карточка брони.
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
   const navigate = useNavigate();
   const location = useLocation();
   const canEditRoom = useCan(PAGE_PERMISSIONS.hotelRooms);
@@ -389,7 +392,8 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, ro
       onClose={onClose}
       maxWidth="md"
       fullWidth
-      PaperProps={{ sx: { borderRadius: "16px", overflow: "hidden", backgroundImage: "none" } }}
+      fullScreen={phone}
+      PaperProps={{ sx: { borderRadius: phone ? 0 : "16px", overflow: "hidden", backgroundImage: "none" } }}
     >
       {roomId != null && !availability && (
         <Stack alignItems="center" justifyContent="center" gap={1.5} sx={{ py: 8 }}>
