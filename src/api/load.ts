@@ -7,6 +7,7 @@ export interface HourPoint {
   count: number;
   scheduleMinutes: number; // shift minutes in this hour of day (all days, all staff)
   busyMinutes: number; // busy minutes inside those shifts
+  outsideMinutes: number; // busy minutes outside shifts (staff with shifts in the period)
 }
 
 export interface DayPoint {
@@ -14,6 +15,7 @@ export interface DayPoint {
   count: number;
   scheduleMinutes: number;
   busyMinutes: number;
+  outsideMinutes: number;
 }
 
 export interface HeatCell {
@@ -45,7 +47,7 @@ export interface LoadKpi {
   deltaPct: number | null;
   scheduleMinutes: number;
   busyMinutes: number;
-  outsideMinutes: number;
+  outsideMinutes: number; // only staff who have shifts in the period
   utilizationPct: number | null;
   attendanceUtilizationPct: number | null;
 }

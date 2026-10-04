@@ -4,7 +4,7 @@ import { alpha } from "@mui/material/styles";
 
 import type { EmployeeLoad } from "../../../api/load";
 import { useT } from "../../../i18n/VerticalProvider";
-import { employeeMeta } from "./loadBuckets";
+import { employeeLoadPct, employeeMeta, loadBarSegments, sortByLoad } from "./loadBuckets";
 
 interface Props {
   rows: EmployeeLoad[];
@@ -19,8 +19,24 @@ function initials(name: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+const LegendItem: React.FC<{ swatch: React.ReactNode; label: string }> = ({ swatch, label }) => (
+  <Stack direction="row" alignItems="center" spacing={0.5}>
+    {swatch}
+    <Typography variant="caption" color="text.secondary">
+      {label}
+    </Typography>
+  </Stack>
+);
+
+const Dot: React.FC<{ color: string }> = ({ color }) => (
+  <Box sx={{ width: 10, height: 6, borderRadius: "3px", bgcolor: color, flexShrink: 0 }} />
+);
+
 export const LoadByEmployee: React.FC<Props> = ({ rows, selectedIds, onToggle }) => {
   const { t } = useT("load");
+  const sorted = React.useMemo(() => sortByLoad(rows), [rows]);
+  const anyOutside = rows.some((r) => r.scheduleMinutes > 0 && r.outsideMinutes > 0);
+  const anyOver = rows.some((r) => (employeeLoadPct(r) ?? 0) > 100);
 
   if (rows.length === 0) {
     return (
@@ -32,8 +48,23 @@ export const LoadByEmployee: React.FC<Props> = ({ rows, selectedIds, onToggle })
 
   return (
     <Stack spacing={1.25}>
-      {rows.map((r) => {
+      {(anyOutside || anyOver) && (
+        <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" sx={{ px: 0.75 }}>
+          <LegendItem swatch={<Dot color="primary.main" />} label="в смену" />
+          <LegendItem swatch={<Dot color="warning.main" />} label="сверх графика" />
+          {anyOver && (
+            <LegendItem
+              swatch={<Box sx={{ width: 2, height: 10, bgcolor: "text.primary", opacity: 0.7 }} />}
+              label="конец графика"
+            />
+          )}
+        </Stack>
+      )}
+      {sorted.map((r) => {
         const selected = selectedIds.includes(r.employeeId);
+        const pct = employeeLoadPct(r);
+        const over = pct != null && pct > 100;
+        const bar = loadBarSegments(r);
         return (
           <Stack
             key={r.employeeId}
@@ -72,9 +103,13 @@ export const LoadByEmployee: React.FC<Props> = ({ rows, selectedIds, onToggle })
                 <Typography variant="body2" fontWeight={selected ? 600 : 500} noWrap>
                   {r.fullName}
                 </Typography>
-                {r.utilizationPct != null ? (
-                  <Typography variant="body2" fontWeight={600} sx={{ flexShrink: 0 }}>
-                    {r.utilizationPct}%
+                {pct != null ? (
+                  <Typography
+                    variant="body2"
+                    fontWeight={600}
+                    sx={{ flexShrink: 0, color: over ? "warning.main" : "text.primary" }}
+                  >
+                    {pct}%
                   </Typography>
                 ) : (
                   <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>
@@ -84,22 +119,30 @@ export const LoadByEmployee: React.FC<Props> = ({ rows, selectedIds, onToggle })
               </Stack>
               <Box
                 sx={(t) => ({
+                  position: "relative",
                   mt: 0.5,
                   height: 8,
                   borderRadius: "4px",
                   bgcolor: alpha(t.palette.text.primary, t.palette.mode === "dark" ? 0.1 : 0.06),
                   overflow: "hidden",
+                  display: "flex",
                 })}
               >
-                <Box
-                  sx={{
-                    width: `${r.utilizationPct ?? 0}%`,
-                    height: "100%",
-                    borderRadius: "4px",
-                    bgcolor: "primary.main",
-                    transition: "width .3s ease",
-                  }}
-                />
+                <Box sx={{ width: `${bar.inside}%`, bgcolor: "primary.main", transition: "width .3s ease" }} />
+                <Box sx={{ width: `${bar.outside}%`, bgcolor: "warning.main", transition: "width .3s ease" }} />
+                {bar.marker != null && (
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      top: 0,
+                      bottom: 0,
+                      left: `calc(${bar.marker}% - 1px)`,
+                      width: 2,
+                      bgcolor: "text.primary",
+                      opacity: 0.7,
+                    }}
+                  />
+                )}
               </Box>
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
                 {employeeMeta(r, t("count", { count: r.appointments }))}
