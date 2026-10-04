@@ -96,12 +96,18 @@ export function startScribeRecording(input: {
 }
 
 /** Кусок звука — multipart-поле `chunk`; повтор того же `seq` бэк принимает безвредно. */
-export function uploadScribeChunk(id: number, seq: number, blob: Blob): Promise<ScribeChunkReceipt> {
+export function uploadScribeChunk(
+  id: number,
+  seq: number,
+  blob: Blob,
+  signal?: AbortSignal,
+): Promise<ScribeChunkReceipt> {
   const form = new FormData();
   form.append("chunk", blob, `part-${seq}`);
   return apiRequest<ScribeChunkReceipt>(`/scribe/recordings/${id}/chunks/${seq}/`, {
     method: "POST",
     formData: form,
+    signal,
   });
 }
 

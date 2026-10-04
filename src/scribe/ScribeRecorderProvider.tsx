@@ -13,12 +13,20 @@ import {
 } from "../api/scribe";
 import { useCan } from "../hooks/useCan";
 import { useChangesSocket, type ChangeMessage } from "../hooks/useChangesSocket";
-import { usePermissions } from "../hooks/usePermissions";
+import { addContextSwitchGuard, usePermissions } from "../hooks/usePermissions";
 import { useT } from "../i18n/VerticalProvider";
-import { micErrorCode, openMicrophone, pickMimeType, watchLevel, type MicErrorCode } from "./microphone";
+import {
+  MIC_ERROR_CODES,
+  micErrorCode,
+  openMicrophone,
+  pickMimeType,
+  watchLevel,
+  type MicErrorCode,
+} from "./microphone";
 import {
   INITIAL_RECORDER,
   elapsedMs,
+  isScribeBusy,
   nextUpload,
   recorderReducer,
   savedMs,
@@ -30,14 +38,22 @@ const SLICE_MS = 15_000;
 const LIMIT_MS = 60 * 60_000;
 const WARN_MS = 55 * 60_000;
 const RETRY_MAX_MS = 30_000;
-const MIC_ERRORS: readonly string[] = ["mic_denied", "mic_missing", "mic_insecure", "unsupported"];
+/** Кусок дольше минуты не грузится — обрываем и повторяем (сеть «висит»). */
+const CHUNK_TIMEOUT_MS = 60_000;
+const MIC_ERRORS: readonly string[] = MIC_ERROR_CODES;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
+/** Таймаут загрузки куска; таймаут становится сетевой ошибкой — значит, повтор. */
+const chunkTimeout = (): AbortSignal | undefined =>
+  typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+    ? AbortSignal.timeout(CHUNK_TIMEOUT_MS)
+    : undefined;
+
 /**
  * Отказ сервера, который повтором не лечится: запись уже остановлена или
- * отменена в другом месте, нет доступа, кусок не принят. Сеть, 5xx, 401
- * (войдут заново — досылка продолжится) и 429 — повторяем.
+ * отменена в другом месте, нет доступа, кусок не принят. Сеть, таймаут, 5xx,
+ * 401 и 429 — повторяем.
  */
 function isPermanentError(err: unknown): boolean {
   if (!(err instanceof ApiError)) return false;
@@ -61,6 +77,11 @@ export interface ScribeRecorderApi {
   resume: () => void;
   stop: () => void;
   cancel: () => Promise<void>;
+  /**
+   * Остановить запись (если идёт) и дождаться конца досылки — перед выходом
+   * из системы. Завершается и при отказе сервера (фаза error).
+   */
+  flush: () => Promise<void>;
 }
 
 /**
@@ -79,8 +100,9 @@ const ScribeClockContext = React.createContext<ScribeClock>({ level: 0, elapsed:
 export const scribeQueryKey = (lineId: number) => ["scribe", "line", lineId] as const;
 
 /**
- * Запись приёма живёт над маршрутами: окно заключения можно закрыть и уйти
- * на другую страницу — звук пишется и досылается кусками по 15 с.
+ * Запись приёма живёт над рабочими макетами (только для вошедших): окно
+ * заключения можно закрыть и уйти на другую страницу — звук пишется и
+ * досылается кусками по 15 с.
  */
 export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, dispatch] = React.useReducer(recorderReducer, INITIAL_RECORDER);
@@ -98,6 +120,8 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
   const rejected = React.useRef(false);
   const lastSliceAt = React.useRef(0);
   const warned = React.useRef(false);
+  /** Закрыть текущую запись ровно один раз: дослать и «Стоп» на сервере. */
+  const finalizeRef = React.useRef<(() => void) | null>(null);
   /** Записи, начатые в этой вкладке: только о них тост «готово». */
   const mine = React.useRef(new Set<number>());
   const { open: notify } = useNotification();
@@ -139,8 +163,13 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
     if (rec) {
       rec.ondataavailable = null;
       rec.onstop = null;
+      rec.onerror = null;
       if (rec.state !== "inactive") rec.stop();
     }
+    stream.current?.getTracks().forEach((track) => {
+      track.onended = null;
+    });
+    finalizeRef.current = null;
     releaseMic();
     blobs.current.clear();
   }, [releaseMic]);
@@ -170,7 +199,7 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
         const blob = blobs.current.get(seq);
         if (!blob) break;
         try {
-          await uploadScribeChunk(current.recordingId, seq, blob);
+          await uploadScribeChunk(current.recordingId, seq, blob, chunkTimeout());
           // Пока кусок летел, запись отменили и начали новую — её очередь
           // разберёт следующий проход.
           if (stateRef.current.recordingId !== current.recordingId) {
@@ -269,28 +298,75 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
       warned.current = false;
       blobs.current.clear();
       mine.current.add(recording.id);
-      rec.ondataavailable = (event) => {
-        if (recorder.current !== rec || !event.data || event.data.size === 0) return;
-        const seq = stateRef.current.chunks;
-        const at = Date.now();
-        blobs.current.set(seq, event.data);
-        send({ type: "chunk", sliceMs: at - lastSliceAt.current });
-        lastSliceAt.current = at;
-        void pump();
-      };
-      // Последний кусок приходит перед onstop — после него можно досылать и
-      // закрывать запись на сервере.
-      rec.onstop = () => {
+
+      let finalized = false;
+      const finalize = () => {
+        if (finalized) return;
+        finalized = true;
+        finalizeRef.current = null;
         releaseMic();
         void finish();
       };
-      stopLevel.current = watchLevel(media, setLevel);
-      lastSliceAt.current = Date.now();
-      rec.start(SLICE_MS);
+      // Рекордер остановился сам (микрофон выдернули, доступ отозвали, сбой
+      // кодека): фиксируем «Стоп» с длительностью и досылаем, что успели.
+      const endedByItself = () => {
+        const current = stateRef.current.phase;
+        if (current !== "recording" && current !== "paused") return;
+        send({ type: "stop", now: Date.now() });
+        notifyRef.current?.({ type: "error", message: tRef.current("errors.mic_lost") });
+      };
+      try {
+        rec.ondataavailable = (event) => {
+          if (recorder.current !== rec || !event.data || event.data.size === 0) return;
+          const seq = stateRef.current.chunks;
+          const at = Date.now();
+          blobs.current.set(seq, event.data);
+          send({ type: "chunk", sliceMs: at - lastSliceAt.current });
+          lastSliceAt.current = at;
+          void pump();
+        };
+        // Последний кусок приходит перед onstop — после него можно досылать и
+        // закрывать запись на сервере.
+        rec.onstop = () => {
+          endedByItself();
+          finalize();
+        };
+        rec.onerror = () => {
+          endedByItself();
+          if (rec.state !== "inactive") {
+            try {
+              rec.stop(); // дальше — onstop
+              return;
+            } catch {
+              /* уже остановлен — закрываем сами */
+            }
+          }
+          finalize();
+        };
+        media.getAudioTracks().forEach((track) => {
+          track.onended = () => {
+            if (rec.state === "inactive") return;
+            endedByItself();
+            rec.stop();
+          };
+        });
+        finalizeRef.current = finalize;
+        stopLevel.current = watchLevel(media, setLevel);
+        lastSliceAt.current = Date.now();
+        rec.start(SLICE_MS);
+      } catch {
+        // Сервер запись уже завёл, а браузер писать не смог: гасим микрофон и
+        // отменяем запись на сервере — пустой «брошенной» она не останется.
+        dropRecorder();
+        mine.current.delete(recording.id);
+        void cancelScribeRecording(recording.id).catch(() => undefined);
+        refreshLine(lineId);
+        return fail("start_failed");
+      }
       send({ type: "started", recordingId: recording.id, lineId, mode, now: Date.now() });
       refreshLine(lineId);
     },
-    [finish, pump, refreshLine, releaseMic, send],
+    [dropRecorder, finish, pump, refreshLine, releaseMic, send],
   );
 
   const stop = React.useCallback(() => {
@@ -299,7 +375,9 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
     send({ type: "stop", now: Date.now() });
     const rec = recorder.current;
     if (rec && rec.state !== "inactive") {
-      rec.stop();
+      rec.stop(); // дальше — onstop → finalize
+    } else if (finalizeRef.current) {
+      finalizeRef.current();
     } else {
       releaseMic();
       void finish();
@@ -330,6 +408,15 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
     refreshLine(current.lineId);
   }, [dropRecorder, refreshLine, send]);
 
+  const flush = React.useCallback(async () => {
+    for (;;) {
+      const phase = stateRef.current.phase;
+      if (phase === "recording" || phase === "paused") stop();
+      else if (phase !== "starting" && phase !== "stopping") return;
+      await sleep(200);
+    }
+  }, [stop]);
+
   // Тикер времени и лимит 60 минут.
   React.useEffect(() => {
     if (state.phase !== "recording" && state.phase !== "paused") return undefined;
@@ -354,6 +441,10 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
   React.useEffect(() => {
     if (!busy) return undefined;
     const handler = (event: BeforeUnloadEvent) => {
+      // Состояние — синхронное: досылка могла закончиться за миг до ухода
+      // (выход после flush), а слушатель ещё не снят рендером.
+      const phase = stateRef.current.phase;
+      if (phase !== "recording" && phase !== "paused" && phase !== "stopping") return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -361,15 +452,27 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
     return () => window.removeEventListener("beforeunload", handler);
   }, [busy]);
 
-  // Смена организации/филиала — остановить и дослать, не терять звук.
+  // Пока запись занята, организацию и филиал не переключить: событие о смене
+  // приходит уже после неё, и хвост со «Стопом» ушли бы в чужом контексте
+  // (403/404). Экраны переключения показывают причину из ошибки.
+  React.useEffect(
+    () =>
+      addContextSwitchGuard(() =>
+        isScribeBusy(stateRef.current.phase) ? tRef.current("busy.switch") : null,
+      ),
+    [],
+  );
+
+  // Запасной путь: контекст всё же сменился в обход охранника — остановить
+  // и дослать, что получится.
   React.useEffect(() => {
     const handler = () => stop();
     window.addEventListener("mamadoc:django-context-switched", handler);
     return () => window.removeEventListener("mamadoc:django-context-switched", handler);
   }, [stop]);
 
-  // Провайдер живёт всё время работы приложения; на всякий случай отпускаем
-  // микрофон, если его всё же размонтируют.
+  // Размонтирование (сессия истекла — RequireAuth увёл на вход): отпускаем
+  // микрофон. Что успело уйти, на сервере станет «незавершённой записью».
   React.useEffect(() => () => releaseMic(), [releaseMic]);
 
   // Готово — тост, даже если окно заключения закрыто. Сокет — только у тех,
@@ -398,8 +501,9 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
       resume,
       stop,
       cancel,
+      flush,
     }),
-    [state, start, pause, resume, stop, cancel],
+    [state, start, pause, resume, stop, cancel, flush],
   );
 
   const clock = React.useMemo<ScribeClock>(
@@ -420,4 +524,9 @@ export function useScribeRecorder(): ScribeRecorderApi | null {
 
 export function useScribeClock(): ScribeClock {
   return React.useContext(ScribeClockContext);
+}
+
+/** Идёт запись или досылка. Вне провайдера (публичные страницы) — false. */
+export function useScribeBusy(): boolean {
+  return isScribeBusy(React.useContext(ScribeRecorderContext)?.state.phase);
 }

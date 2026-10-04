@@ -2,7 +2,16 @@
 
 const CANDIDATES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"];
 
-export type MicErrorCode = "mic_denied" | "mic_missing" | "mic_insecure" | "unsupported";
+export type MicErrorCode = "mic_denied" | "mic_missing" | "mic_busy" | "mic_insecure" | "unsupported";
+
+/** Коды ошибок микрофона — у каждого свой понятный текст в словаре. */
+export const MIC_ERROR_CODES: readonly MicErrorCode[] = [
+  "mic_denied",
+  "mic_missing",
+  "mic_busy",
+  "mic_insecure",
+  "unsupported",
+];
 
 /**
  * Формат записи: null — браузер не умеет MediaRecorder вовсе; "" — ни один из
@@ -17,6 +26,9 @@ export function micErrorCode(err: unknown): MicErrorCode {
   const name = err instanceof DOMException ? err.name : "";
   if (name === "NotAllowedError" || name === "SecurityError") return "mic_denied";
   if (name === "NotFoundError" || name === "OverconstrainedError") return "mic_missing";
+  // Устройство есть, но открыть его нельзя: занято другой программой
+  // (Zoom, диктофон) или отвалилось на старте.
+  if (name === "NotReadableError" || name === "AbortError") return "mic_busy";
   return "unsupported";
 }
 
@@ -41,6 +53,9 @@ export function watchLevel(stream: MediaStream, onLevel: (level: number) => void
   } catch {
     return () => undefined;
   }
+  // Контекст, созданный не прямо в обработчике нажатия, браузер может
+  // оставить «на паузе» — тогда уровень всегда ноль.
+  void context.resume().catch(() => undefined);
   const source = context.createMediaStreamSource(stream);
   const analyser = context.createAnalyser();
   analyser.fftSize = 512;

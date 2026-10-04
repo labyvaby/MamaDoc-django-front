@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   INITIAL_RECORDER,
   elapsedMs,
+  isScribeBusy,
   nextUpload,
   recorderReducer,
   savedMs,
@@ -56,6 +57,16 @@ describe("recorderMachine", () => {
     s = recorderReducer(s, { type: "stopped" });
     expect(s.phase).toBe("idle");
     expect(s.lastRecordingId).toBe(7);
+  });
+
+  it("занята — от старта до конца досылки", () => {
+    expect(isScribeBusy("idle")).toBe(false);
+    expect(isScribeBusy("error")).toBe(false);
+    expect(isScribeBusy(null)).toBe(false);
+    expect(isScribeBusy(undefined)).toBe(false);
+    for (const phase of ["starting", "recording", "paused", "stopping"] as const) {
+      expect(isScribeBusy(phase)).toBe(true);
+    }
   });
 
   it("ошибка и сброс", () => {

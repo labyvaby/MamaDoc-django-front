@@ -159,7 +159,29 @@ export async function refreshAuthContext(): Promise<void> {
   }
 }
 
+/**
+ * Запрет смены организации/филиала, пока идёт работа, привязанная к текущему
+ * контексту (ИИ-запись приёма досылает звук в его рамках). Охранник
+ * возвращает текст причины или null; первая причина отклоняет переключение
+ * ошибкой с этим текстом — её покажут вызывающие экраны, как любую ошибку
+ * переключения.
+ */
+type ContextSwitchGuard = () => string | null;
+const contextSwitchGuards = new Set<ContextSwitchGuard>();
+
+/** Регистрирует охранника; возвращает функцию снятия. */
+export function addContextSwitchGuard(guard: ContextSwitchGuard): () => void {
+  contextSwitchGuards.add(guard);
+  return () => {
+    contextSwitchGuards.delete(guard);
+  };
+}
+
 export async function switchContext(payload: SwitchContextPayload): Promise<MeResponse> {
+  for (const guard of contextSwitchGuards) {
+    const reason = guard();
+    if (reason) throw new Error(reason);
+  }
   setGlobal({ switching: true });
   try {
     const meData = await switchAuthContext(payload);

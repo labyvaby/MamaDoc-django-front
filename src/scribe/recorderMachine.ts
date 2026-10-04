@@ -55,6 +55,15 @@ export const INITIAL_RECORDER: RecorderState = {
   lastRecordingId: null,
 };
 
+/**
+ * Запись «занята»: стартует, пишется, на паузе или досылается. В это время
+ * нельзя менять организацию/филиал и выходить без досылки — хвост и «Стоп»
+ * ушли бы уже в другом контексте.
+ */
+export function isScribeBusy(phase: RecorderPhase | null | undefined): boolean {
+  return phase === "starting" || phase === "recording" || phase === "paused" || phase === "stopping";
+}
+
 export function elapsedMs(state: RecorderState, now: number): number {
   if (state.startedAt == null) return 0;
   const end = state.pausedAt ?? now;

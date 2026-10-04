@@ -43,6 +43,13 @@ describe("api/scribe", () => {
     expect((options?.formData as FormData).get("chunk")).toBeInstanceOf(Blob);
   });
 
+  it("у куска свой таймаут — сигнал уходит в запрос", async () => {
+    mocked.mockResolvedValue({ seq: 0, chunkCount: 1, bytesTotal: 1 });
+    const signal = new AbortController().signal;
+    await uploadScribeChunk(9, 0, new Blob(["x"]), signal);
+    expect(mocked.mock.calls[0][1]?.signal).toBe(signal);
+  });
+
   it("стоп с длительностью", async () => {
     mocked.mockResolvedValue({ id: 9, status: "queued" });
     await stopScribeRecording(9, 4200.7);
